@@ -24,6 +24,8 @@
 //!   TAction140/141 now set/clear the separate timed defensive alert54F4/54FC
 //!   through that same HouseState owner. Native141 also clears54F8, whose
 //!   current constructor-zero restriction remains part of this residual.
+//!   Ares's IsTargetConstraintsEligible10032110 reads it as well, so its
+//!   defensive-cell constraints see an unset cell.
 //! - A building's cloak stage (`BuildingClass+0x6ED`): a stage of 15 also
 //!   draws in AI_FindBestRallyTarget (`0x0050CF99..0x0050CFA8`); VERA has no
 //!   writer of the stage, so only CloakState 2 draws.
@@ -111,8 +113,7 @@ impl AiFireArm {
             SuperWeaponKind::IronCurtain
             | SuperWeaponKind::ChronoSphere
             | SuperWeaponKind::ChronoWarp
-            | SuperWeaponKind::NoEffect
-            | SuperWeaponKind::HunterSeeker => Self::None,
+            | SuperWeaponKind::NoEffect => Self::None,
         }
     }
 }
@@ -180,7 +181,7 @@ pub(crate) fn try_fire(
         if human
             && rules
                 .super_weapon_target_policy(name)
-                .is_none_or(|policy| !policy.auto_fire)
+                .is_none_or(|policy| !policy.auto_fire())
         {
             continue;
         }
@@ -257,97 +258,65 @@ pub(crate) fn try_fire(
     }
 }
 
-/// SWTypeExt::CanFire10032110. Manual UseAITargeting skips the transient
-/// storm/dominator/attack/power tests, but not preference or enemy constraints.
+/// `IsTargetConstraintsEligible`10032110 for `owner`, with the manual return
+/// of a SPECIAL_PLACE launch, through the one [`TargetConstraints`] owner.
+///
+/// [`TargetConstraints`]: crate::rules::superweapon_targeting::TargetConstraints
 #[cfg(feature = "ares")]
 fn extension_constraints(
     sim: &Simulation,
     owner: InternedId,
-    policy: &crate::rules::superweapon_targeting::AresTargetPolicy,
+    policy: crate::rules::superweapon_targeting::AresSuperWeaponTargetingState,
     manual: bool,
 ) -> bool {
     let Some(house) = sim.houses.get(&owner) else {
         return false;
     };
-    let flags = policy.constraints();
-    let offensive = house.preferred_super_weapon_target() != (0, 0);
-    // House+54F8 still has its represented constructor value; the missing
-    // writer is the existing secondary-defensive-cell residual above.
-    let defensive = false;
-    if flags & 1 != 0 && offensive
-        || flags & 128 != 0 && !offensive
-        || flags & 2 != 0 && defensive
-        || flags & 256 != 0 && !defensive
-        || flags & 4 != 0 && house.enemy_house().is_none()
-    {
-        return false;
-    }
+    let constraints = policy.constraints();
+    let observations = house.target_constraints_observations();
     if manual {
-        return true;
+        return constraints.allows_manual_fire(observations);
     }
-    if flags & 8 != 0 && super::lightning_storm::raging(sim)
-        || flags & 16 != 0 && super::psychic_dominator::active(sim)
-    {
-        return false;
-    }
-    let last_attack = house.strategy_emergency().last_building_attack_frame();
-    if flags & 32 != 0
-        && last_attack != 0
-        && last_attack.wrapping_add(75) < sim.session.binary_frame() as i32
-    {
-        return false;
-    }
-    if flags & 64 != 0
-        && sim.power_states.get(&owner).is_none_or(|power| {
-            power.total_drain() == 0 || power.total_output() >= power.total_drain()
-        })
-    {
-        return false;
-    }
-    true
+    let power = sim.power_states.get(&owner);
+    constraints.allows_automatic_fire(
+        observations,
+        crate::rules::superweapon_targeting::AutomaticConstraintObservations {
+            lightning_storm_active: super::lightning_storm::raging(sim),
+            dominator_active: super::psychic_dominator::active(sim),
+            last_building_attack_frame: house.strategy_emergency().last_building_attack_frame(),
+            frame: sim.session.binary_frame() as i32,
+            power_output: power.map_or(0, |power| power.total_output()),
+            power_drain: power.map_or(0, |power| power.total_drain()),
+        },
+    )
 }
 
+/// Sidebar select hook10034DA0: base CanFire, which `SW.AutoFire` without
+/// `SW.ManualFire` skips, precedes the wallet, which precedes the UseAI
+/// constraint warning; that AutoFire-only type is then refused silently.
+/// The constraint result is the view's `constraints_blocked`. The
+/// AutoFire-only refusal applies to the two extension types whose automatic
+/// launch VERA ports.
 #[cfg(feature = "ares")]
-pub(super) struct ManualCameoAdmission {
-    pub can_fire: bool,
-    pub refusal: Option<super::AresCameoRefusal>,
-}
-
-/// Sidebar hook10034DA0: base CanFire precedes money, which precedes the
-/// UseAI constraint warning. AutoFire&&!ManualFire bypasses the base test,
-/// then silently refuses selection after those warning tests. Keep one
-/// constraint owner shared with automatic launch100382D0.
-#[cfg(feature = "ares")]
-pub(super) fn manual_cameo_admission(
-    sim: &Simulation,
+pub(super) fn manual_cameo_refusal(
     rules: &RuleSet,
-    owner: InternedId,
     sw: &crate::rules::superweapon_type::SuperWeaponType,
     native_can_fire: bool,
     can_afford: bool,
-) -> ManualCameoAdmission {
-    let Some(policy) = rules.super_weapon_target_policy(&sw.id) else {
-        return ManualCameoAdmission {
-            can_fire: native_can_fire,
-            refusal: (native_can_fire && !can_afford)
-                .then_some(super::AresCameoRefusal::InsufficientFunds),
-        };
-    };
-    let manual_disabled = policy.auto_fire && !policy.manual_fire;
-    let constraint_refused =
-        policy.use_ai_targeting && !extension_constraints(sim, owner, policy, true);
-    let refusal = if !native_can_fire && !manual_disabled {
+    constraints_blocked: bool,
+) -> Option<super::AresCameoRefusal> {
+    use super::AresCameoRefusal as R;
+    let manual_disabled = rules
+        .super_weapon_target_policy(&sw.id)
+        .is_some_and(|policy| policy.auto_fire() && !policy.manual_fire());
+    if !native_can_fire && !manual_disabled {
         None
     } else if !can_afford {
-        Some(super::AresCameoRefusal::InsufficientFunds)
-    } else if constraint_refused {
-        Some(super::AresCameoRefusal::CannotFire)
+        Some(R::InsufficientFunds)
+    } else if constraints_blocked {
+        Some(R::CannotFire)
     } else {
-        None
-    };
-    ManualCameoAdmission {
-        can_fire: native_can_fire && !manual_disabled && !constraint_refused,
-        refusal,
+        manual_disabled.then_some(R::ManualFireDisabled)
     }
 }
 
@@ -404,7 +373,7 @@ fn extension_target(
     rules: &RuleSet,
     owner: InternedId,
     sw: &crate::rules::superweapon_type::SuperWeaponType,
-    policy: &crate::rules::superweapon_targeting::AresTargetPolicy,
+    policy: crate::rules::superweapon_targeting::AresSuperWeaponTargetingState,
     registry: Option<&OverlayTypeRegistry>,
 ) -> Option<(u16, u16)> {
     use crate::rules::superweapon_targeting::{AiTargetPreference as P, AiTargetingMode as M};
@@ -417,7 +386,7 @@ fn extension_target(
     }
     // Defensive preference reads +54F8, currently the constructor-zero residual.
     let kind = house.preferred_super_weapon_target_kind();
-    match policy.ai_mode {
+    match policy.mode() {
         M::None | M::IronCurtain => None,
         M::NoTarget | M::HunterSeeker | M::Attack | M::LowPower | M::LowPowerAttack => Some((0, 0)),
         M::PsychicDominator => ares_spread_target(sim, rules, owner, sw, policy, &data, false),
@@ -607,18 +576,14 @@ fn offensive_target(
     rules: &RuleSet,
     owner: InternedId,
     sw: &crate::rules::superweapon_type::SuperWeaponType,
-    policy: &crate::rules::superweapon_targeting::AresTargetPolicy,
+    policy: crate::rules::superweapon_targeting::AresSuperWeaponTargetingState,
     data: &super::targeting::TargetingData,
 ) -> Option<(u16, u16)> {
     let house = sim.houses.get(&owner)?;
     let enemy = house.enemy_house();
     let mut best = 0;
     let mut picks = Vec::new();
-    let mask = policy
-        .targeting()
-        .automatic
-        .target
-        .expect("retained native mask");
+    let mask = policy.automatic().target;
     for entity in potential_targets(sim, mask) {
         if enemy.is_some_and(|enemy| entity.owner() != enemy) {
             continue;
@@ -657,7 +622,7 @@ fn ares_spread_target(
     rules: &RuleSet,
     owner: InternedId,
     sw: &crate::rules::superweapon_type::SuperWeaponType,
-    policy: &crate::rules::superweapon_targeting::AresTargetPolicy,
+    policy: crate::rules::superweapon_targeting::AresSuperWeaponTargetingState,
     data: &super::targeting::TargetingData,
     genetic: bool,
 ) -> Option<(u16, u16)> {
@@ -673,11 +638,7 @@ fn ares_spread_target(
             entity.category() != EntityCategory::Structure
         })
     };
-    let mask = policy
-        .targeting()
-        .automatic
-        .target
-        .expect("retained native mask");
+    let mask = policy.automatic().target;
     let (id, _) = best_spread_center(
         terrain,
         potential_targets(sim, mask),

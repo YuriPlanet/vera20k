@@ -43,7 +43,7 @@ pub(crate) use test_service::{
 
 /// The wait box's reveal timer and the login drop list's scroll repeats;
 /// the caller schedules the earliest deadline with the other shell timers.
-pub(crate) fn poll(state: &mut AppState) -> Option<std::time::Instant> {
+pub(crate) fn poll(state: &mut AppState) -> Option<crate::util::time::Instant> {
     [
         service::poll_wait(state),
         login::poll_scroll_repeat(state),

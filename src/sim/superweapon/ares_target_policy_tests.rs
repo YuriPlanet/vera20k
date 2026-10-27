@@ -71,7 +71,7 @@ fn ares_refusal_view_obeys_native_readiness_money_and_constraint_priority() {
         .set_enemy_house_for_test(None);
     let before = (sim.state_hash(), sim.rng_state());
     let rejected = view(&sim);
-    assert!(!rejected.can_fire);
+    assert!(rejected.constraints_blocked && !rejected.sidebar_enabled());
     assert_eq!(rejected.ares_refusal, Some(AresCameoRefusal::CannotFire));
     assert_eq!(
         (sim.state_hash(), sim.rng_state()),
@@ -177,7 +177,6 @@ fn use_ai_place_ignores_click_and_keeps_first_eligible_maximum_after_invalid_lat
         rules
             .super_weapon_target_policy("Strike")
             .unwrap()
-            .targeting()
             .range()
             .1,
         100.25
@@ -230,8 +229,8 @@ fn human_auto_fire_uses_house_strategy_hook_and_manual_switch_requires_auto_fire
             "",
         );
         assert_eq!(
-            superweapon_views_for_owner(&sim, &rules, &owner)[0].can_fire,
-            !automatic
+            superweapon_views_for_owner(&sim, &rules, &owner)[0].ares_refusal,
+            automatic.then_some(AresCameoRefusal::ManualFireDisabled)
         );
         crate::sim::house_strategy::update_strategy(
             &mut sim,

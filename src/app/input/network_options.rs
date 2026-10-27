@@ -7,7 +7,7 @@ use crate::app::{App, AppState};
 use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::ui::network_options::*;
 use crate::ui::shell::descriptor::DialogId;
-use std::time::Instant;
+use crate::util::time::Instant;
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
 

@@ -206,7 +206,6 @@ pub(super) fn check(
             sw.kind,
             crate::rules::superweapon_type::SuperWeaponKind::GenericWarhead
                 | crate::rules::superweapon_type::SuperWeaponKind::UnitDelivery
-                | crate::rules::superweapon_type::SuperWeaponKind::HunterSeeker
         ) {
             Err(TargetReject::InvalidPayload)
         } else {
@@ -215,11 +214,6 @@ pub(super) fn check(
     }
     #[cfg(feature = "ares")]
     {
-        // Ares SW_HunterSeeker direct clicks go straight to Activate10072850.
-        // Selected automatic cells still follow their shared CanFireAt path.
-        if !automatic && sw.kind == crate::rules::superweapon_type::SuperWeaponKind::HunterSeeker {
-            return Ok(());
-        }
         let data = prepare(sim, rules, owner, sw);
         check_with_data(sim, rules, owner, sw, cell, automatic, &data)
     }
@@ -253,7 +247,11 @@ pub(super) fn check_with_data(
             },
         );
     }
-    let targeting = policy.targeting();
+    let requirements = if automatic {
+        policy.automatic()
+    } else {
+        policy.manual()
+    };
     let terrain = sim
         .resolved_terrain
         .as_ref()
@@ -294,7 +292,7 @@ pub(super) fn check_with_data(
             },
         })
         .collect();
-    let shrouded = (!targeting.fire_into_shroud).then(|| {
+    let shrouded = (!policy.fire_into_shroud()).then(|| {
         crate::sim::vision::cell_is_shrouded(
             &sim.fog,
             &NativeCellQuery::isolated(terrain),
@@ -305,19 +303,15 @@ pub(super) fn check_with_data(
     evaluate_target(&TargetPreflightInput {
         target_cell: Some((i32::from(cell.0), i32::from(cell.1))),
         requires_target_cell: true,
-        requirements: if automatic {
-            &targeting.automatic
-        } else {
-            &targeting.manual
-        },
+        requirements: &requirements,
         contents: &contents,
         target_in_bounds: true,
         terrain_is_water: Some(
             target.land_type == crate::rules::terrain_rules::LandType::Water.as_index(),
         ),
-        fire_into_shroud: targeting.fire_into_shroud,
+        fire_into_shroud: policy.fire_into_shroud(),
         shrouded,
-        range: targeting.range(),
+        range: policy.range(),
         requires_launch_site: false,
         launch_sites: &data.sites,
     })?;

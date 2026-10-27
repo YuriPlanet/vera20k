@@ -57,16 +57,12 @@ fn vertex_impl(
     );
 
     let local: vec2f = quad_pos[idx];
-    // Screen-space pixel position of this vertex, scaled by zoom.
-    // At native zoom (1.0) we pixel-snap to prevent sub-pixel seams between
-    // adjacent tiles. At other zoom levels we skip the snap — floor() on
-    // fractional screen positions causes 1px gaps between tiles because
-    // adjacent world-space boundaries can round to different integers.
-    // We also expand each quad by 0.5 screen pixels per side to eliminate
-    // rasterization gaps at diamond edge midpoints (top-left fill rule).
+    // Keep the source-to-screen scale exact. Padding a quad while keeping its
+    // UV range stretches every sprite independently, distorting pixel spacing
+    // and misaligning neighboring terrain texels. Nearest sampling needs no
+    // extra coverage; shared world boundaries project to the same screen edge.
     let is_zoomed: bool = abs(camera.zoom - 1.0) >= 0.001;
-    let pad: f32 = select(0.0, 0.5 / camera.zoom, is_zoomed);
-    let raw_pos: vec2f = (instance.position - vec2f(pad, pad) + local * (instance.size + vec2f(pad * 2.0, pad * 2.0)) - camera.camera_pos) * camera.zoom;
+    let raw_pos: vec2f = (instance.position + local * instance.size - camera.camera_pos) * camera.zoom;
     let pixel_pos: vec2f = select(raw_pos, floor(raw_pos + vec2f(0.5, 0.5)), !is_zoomed);
 
     // Convert pixel coordinates to clip space.

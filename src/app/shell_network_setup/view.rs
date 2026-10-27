@@ -341,8 +341,15 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             });
         }
         if visible {
+            let flag = match u16::try_from(country)
+                .ok()
+                .and_then(|index| state.process_assets.country_flag_surface(index))
+            {
+                Some(flag) => Some(flag),
+                None => flag_pcx_for_side_item_data(country).map(str::to_owned),
+            };
             row_icons[visible_row] = Some(SetupRowIcon {
-                country: flag_pcx_for_side_item_data(country).map(str::to_owned),
+                country: flag,
                 // 0x5EA3E0: wolhost.pcx on the human row named [0xA8D610];
                 // a WOL guest learns it from the user list, otherwise the
                 // host is row 0.

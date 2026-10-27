@@ -36,7 +36,7 @@ use crate::ui::wol_lobby::{
     EX_INFO_VERSION, GAME_CHANNEL, MEMBER_OPERATOR, MEMBER_VOICE, WolChannel, WolMember,
 };
 use crate::ui::wol_login::WolCredential;
-use std::time::Instant;
+use crate::util::time::Instant;
 
 /// Event 9's status that completes the server-list wait.
 const SERVER_STATUS_READY: u32 = 0x0004_012F;

@@ -94,9 +94,8 @@ fn vs_main(
 
     let local: vec2f = quad_pos[idx];
     let is_zoomed: bool = abs(camera.zoom - 1.0) >= 0.001;
-    let pad: f32 = select(0.0, 0.5 / camera.zoom, is_zoomed);
-    let raw_pos: vec2f = (instance.position - vec2f(pad, pad)
-        + local * (instance.size + vec2f(pad * 2.0, pad * 2.0))
+    // Match the exact source scale used by the other tactical blitters.
+    let raw_pos: vec2f = (instance.position + local * instance.size
         - camera.camera_pos) * camera.zoom;
     let pixel_pos: vec2f = select(raw_pos, floor(raw_pos + vec2f(0.5, 0.5)), !is_zoomed);
 
@@ -141,7 +140,7 @@ fn native_candidate(in: VertexOutput) -> i32 {
     // Unit final composite 0x73B140: full-width upper h-16 then bottom 16,
     // seeded independently by Standard_SHP_blitter. A shared rectangle across
     // hull/turret/barrel makes their depth decision identical at every pixel.
-    // Retain full quads/UVs so the split introduces no extra zoom-padding edge.
+    // Retain full quads/UVs so both regions sample the same source pixel grid.
     if ((in.z_gradient & 0x400u) != 0u) {
         rect_top = round(rect_top);
         if (height > 16) {
@@ -170,11 +169,9 @@ fn native_candidate(in: VertexOutput) -> i32 {
         let bottom: f32 = min(region_bottom, f32(camera_row) + round(clip_height));
         rect_top = max(rect_top, f32(camera_row));
         height = i32(bottom - rect_top);
-        // VERA zoom padding belongs to the full quad. Re-testing untouched
-        // natural edges against a smooth interpolant can discard a padded
-        // source row through rounding (observed at 2x). Only actual tactical
-        // clip intersections cut coverage; the existing row clamp owns natural
-        // edges. Native 1x geometry and split/depth selection are unchanged.
+        // Only actual tactical clip intersections cut coverage; the full quad
+        // and existing row clamp own natural edges. Re-testing those edges
+        // against interpolated coordinates can discard a boundary source row.
         if (height <= 0
             || (rect_top > region_top && in.world_pos.y < rect_top)
             || (bottom < region_bottom && in.world_pos.y >= bottom)) {

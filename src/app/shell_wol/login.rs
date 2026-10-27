@@ -1,7 +1,7 @@
 //! `0x10F`'s app adapter: creation from `0x00787010` (after the server list),
 //! pointer and key routing into [`WolLoginState`], and its close.
 
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use super::service::{self, WolServiceRequest};
 use super::{WolPage, WolVisit};

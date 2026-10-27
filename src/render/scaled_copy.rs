@@ -1,5 +1,5 @@
-//! A surface drawn at its own size and shown scaled in a bigger target: the
-//! match zoom (`upscale_pass`) and the sidebar's size (`sidebar_surface`).
+//! A surface drawn at its own size and shown scaled: resolution and wheel
+//! zoom (`upscale_pass`) and the sidebar's size (`sidebar_surface`).
 //!
 //! The surface has its own colour and depth targets, so the batch pipelines
 //! draw into it as they draw into the frame. Its copy (`scaled_copy.wgsl`)
@@ -7,6 +7,8 @@
 //! covering `scale` target pixels: a whole scale copies blocks and stays
 //! sharp, and a step between blends the two source pixels a target pixel
 //! straddles by how much of it each covers, so only the seams soften.
+//! Shrinking integrates all covered source texels after scene composition,
+//! retaining thin details without filtering palette indices or depth values.
 
 const SHADER_SRC: &str = include_str!("scaled_copy.wgsl");
 
@@ -154,6 +156,7 @@ fn create_color_target(
         format,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT
             | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_SRC
             | wgpu::TextureUsages::COPY_DST,
         // Destination-dependent native drawing snapshots encoded channel
         // bytes through the compatible linear view, before RGB565 packing.
@@ -167,7 +170,7 @@ fn create_color_target(
     (texture, view)
 }
 
-fn create_depth_target(
+pub(crate) fn create_depth_target(
     device: &wgpu::Device,
     label: &str,
     (width, height): (u32, u32),

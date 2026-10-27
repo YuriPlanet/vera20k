@@ -16,7 +16,7 @@ use crate::ui::main_menu_dialogs::options::{
     LauncherCheckboxId, LauncherComboId, LauncherTrackbarId, OptionsDialogState, Zoom,
 };
 use crate::ui::shell::geom::{RectPx, ShellScale};
-use std::time::Instant;
+use crate::util::time::Instant;
 
 /// A Zoom row: the zoom and the battle's size in game pixels in this window,
 /// what `App::sync_zoom_pass` will give the match.

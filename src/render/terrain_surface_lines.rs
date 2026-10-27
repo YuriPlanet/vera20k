@@ -365,6 +365,9 @@ impl SurfaceLineGpu {
             return;
         }
         // Stable sort is a dependency grouping, never a reordering at a pixel.
+        // Only the staged chunk is sorted and written here: batches before this
+        // one keep their own buffers, so repeated calls across a wave pile-on
+        // stay linear in the frame's total operations.
         self.work.sort_by_key(|(point, _)| (point[1], point[0]));
         self.operations.clear();
         self.instances.clear();
@@ -569,6 +572,13 @@ impl TerrainDrawRenderer {
             if wave {
                 // Even adjacent coalesced Surface bodies need the preceding
                 //Wave/object's completed destination, never a frame snapshot.
+                //Each Wave therefore lands in its own batch:75FA90/7602E0 read
+                //displaced words from the live destination, so a wave must
+                //observe every earlier draw's completed output (a later wave
+                //must observe this one) and later readers must not share this
+                //batch. upload() sorts and writes only the work staged since
+                //the last upload, so the per-frame cost stays linear in total
+                //operations: one upload and one snapshot/blend pass per wave.
                 gpu.upload(device, queue, viewport.zoom, size);
             }
             let first = gpu.active;

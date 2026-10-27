@@ -22,7 +22,7 @@
 //! The frame is centered in the static's window along an axis where the window
 //! is larger (`0x0061595E..0x0061597E`).
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 /// Control id of the monitor static in every dialog that has one.
 pub(crate) const WARNING_MONITOR_CONTROL: u16 = 0x071C;

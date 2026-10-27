@@ -262,6 +262,9 @@ impl From<LoadingArtVariant> for LoadingScreenArtInput<'_> {
 pub struct LoadingParticipantArtInput {
     pub variant: Option<LoadingArtVariant>,
     pub ramp: [Color; 16],
+    /// Row insignia file the Country selection resolves through
+    /// `Game_GetFlagSurface @ 0x1001DCE0`, replacing the stock chain name.
+    pub side_icon: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -300,6 +303,17 @@ struct RenderedLoadingEntry {
     width: u32,
     height: u32,
     rgba: Vec<u8>,
+}
+
+/// Row insignia file selected for a loading row. A Country row with retained
+/// Ares state answers from its own `File.Flag` through `Game_GetFlagSurface @
+/// 0x1001DCE0` (patch site `0x4E3562`); every other selection keeps the stock
+/// chain name from `0x00844AE8..0x00844B14`.
+fn side_icon_name<'a>(
+    variant: Option<LoadingArtVariant>,
+    country_file: Option<&'a str>,
+) -> Option<&'a str> {
+    country_file.or_else(|| variant.map(LoadingArtVariant::side_icon_pcx))
 }
 
 /// Resolve the one background layer before atlas packing. Explicit Country
@@ -392,8 +406,7 @@ pub fn build_loading_screen_atlas_with_composition<'a>(
     // Side-icon is non-fatal: if its PCX is missing or malformed the bar still
     // draws. Record its label so it can be looked up after packing.
     let side_icon_label = variant.and_then(|variant| {
-        let side_icon_name = variant.side_icon_pcx();
-        let entry = render_pcx_entry(assets, side_icon_name)?;
+        let entry = render_pcx_entry(assets, variant.side_icon_pcx())?;
         let label = entry.label.clone();
         rendered.push(entry);
         Some(label)
@@ -412,17 +425,18 @@ pub fn build_loading_screen_atlas_with_composition<'a>(
             rendered.push(entry);
             label
         };
-        let icon_label = participant.variant.and_then(|variant| {
-            let icon_name = variant.side_icon_pcx();
-            if rendered.iter().any(|entry| entry.label == icon_name) {
-                Some(icon_name.to_string())
-            } else {
-                let entry = render_pcx_entry(assets, icon_name)?;
-                let label = entry.label.clone();
-                rendered.push(entry);
-                Some(label)
-            }
-        });
+        let icon_label = side_icon_name(participant.variant, participant.side_icon.as_deref())
+            .and_then(|name| {
+                let label = name.to_ascii_lowercase();
+                if rendered.iter().any(|entry| entry.label == label) {
+                    Some(label)
+                } else {
+                    let entry = render_pcx_entry(assets, name)?;
+                    let label = entry.label.clone();
+                    rendered.push(entry);
+                    Some(label)
+                }
+            });
         participant_labels.push((frame_label, icon_label));
     }
 

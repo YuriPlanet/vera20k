@@ -353,9 +353,409 @@ pub(super) fn money_crate_amount(
     if solo_money != 0 {
         return solo_money;
     }
-    let base =
-        crate::util::native_x87::X87Chop53::ftol_f64_low_masked(f64::from_bits(magnitude.bits()));
+    let base = magnitude_amount(magnitude);
     scenario_rng.next_range_i32_inclusive(base, base.wrapping_add(900))
+}
+
+/// `Math__ftol` of one `[Powerups]` magnitude double, the damage base the Gas
+/// (`fld` at `0x00481E08`), Napalm (`fld` at `0x004827E8`, `call` at
+/// `0x004827EC`) and Explosion (`fld` at `0x00482579`) arms convert out of the
+/// shared `local_170` magnitude load at `0x00481DC3`.
+fn magnitude_amount(magnitude: NativeF64Bits) -> i32 {
+    crate::util::native_x87::X87Chop53::ftol_f64_low_masked(f64::from_bits(magnitude.bits()))
+}
+
+/// The Gas arm `0x00481DE7..0x00481E99`: the named "GAS" warhead on the crate
+/// cell and each `0x0089F688` neighbour (centre first, then N, NE, E, SE, S,
+/// SW, W, NW), each one `Apply_area_damage(cellCentre, amount, 0, warhead, 0,
+/// 0)` whose arg3 source of 0 walks no per-cell spread. No RNG and no sound:
+/// the arm jumps to the shared anim tail past `0x004832F0`.
+pub(super) fn apply_gas_crate(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    cell: (i16, i16),
+    magnitude: NativeF64Bits,
+    frame_effects: FrameEffects<'_>,
+) {
+    // `0x00481DE7..0x00481E06` walks the 0x8874C4 WarheadType array for
+    // "GAS" through the `strcasecmp` finder 0x75E4A0; the WarheadType
+    // factory 0x75E3B0 (which reads `FlameDamage=`) scans and allocates into
+    // the same array. `rules.warhead` is the same case-insensitive name
+    // search over the parsed warheads.
+    let Some(warhead) = rules.warhead("GAS") else {
+        // 0x75E4A0 returns NULL for a missing name (0x75E4D3), and
+        // Apply_area_damage returns on a null warhead (0x004892D7), so all
+        // nine calls are inert; the anim tail still runs.
+        return;
+    };
+    let warhead_ref = sim.interner.intern(&warhead.id);
+    let amount = magnitude_amount(magnitude);
+    // The nine-cell centres go through the same retained-Cell centre owner as
+    // the dispatcher (`crate_center`); the direction adds are native WORD adds.
+    let mut targets = Vec::with_capacity(9);
+    targets.push(cell);
+    for (dx, dy) in crate::util::direction::DIRECTION_DELTAS {
+        targets.push((
+            cell.0.wrapping_add(dx as i16),
+            cell.1.wrapping_add(dy as i16),
+        ));
+    }
+    for target in targets {
+        let receiver = sim.resolved_terrain.as_ref().map(|terrain| {
+            crate::map::resolved_terrain::NativeCellQuery::canonical(terrain).lookup(target)
+        });
+        let centre = super::pickup::crate_center(sim, target, receiver);
+        // RESIDUAL: native passes affectsTiberium=0 (0x00481E17, 0x00481E71);
+        // apply_area_damage hard-codes 1. Dormant: retail [Gas] sets no Tiberium=.
+        crate::sim::combat::world_receiver::apply_area_damage(
+            sim,
+            rules,
+            registry,
+            crate::sim::projectile::ProjectileCoord::new(centre.x, centre.y, centre.z),
+            amount,
+            warhead,
+            (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
+            frame_effects,
+        );
+    }
+}
+
+/// The Tiberium arm `0x00481E99..0x00481F68`: one `IncreaseTiberium(type, 1)`
+/// on the crate cell, then `RandomRanged(10, 20)` further ones at coordinates
+/// the shared `0x0049F420` random-direction helper (snap 1) moves up to
+/// `RandomRanged(0, 0x300)` leptons away — two draws per loop pass, with no
+/// validity retry, so a refused cell still spends its pair.
+pub(super) fn apply_tiberium_crate(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+    cell: (i16, i16),
+    base: DriveCoord,
+) {
+    // `0x00481EAD..0x00481ED1`: `RandomRanged(0, Tiberiums.Count - 1)` picks
+    // the ore type, and a drawn 1 clamps it to 0 (`cmp edi,1`/`jne`/`xor
+    // edi,edi` at `0x00481ECC..0x00481ED1`) — both paths fall into the same
+    // `IncreaseTiberium(type, 1)` at `0x00481ED3..0x00481ED8`, so the arm
+    // never abandons on the draw.
+    let tiberium_count = rules.tiberium_types.len();
+    if tiberium_count == 0 {
+        // Unpinned defensive edge: with no registered ore type native would
+        // draw `RandomRanged(0, -1)` and index an empty array; VERA leaves
+        // the arm (and its RNG) alone instead.
+        return;
+    }
+    let drawn = sim
+        .scenario_rng
+        .next_range_i32_inclusive(0, tiberium_count as i32 - 1);
+    // Unpinned: past 256 ore types `u8::try_from` fails where native keeps
+    // indexing the type array with the raw value; VERA drops the arm there.
+    let Ok(type_index) = u8::try_from(if drawn == 1 { 0 } else { drawn }) else {
+        return;
+    };
+    let type_id = crate::rules::tiberium_type::TiberiumTypeId(type_index);
+    let (Ok(pickup_x), Ok(pickup_y)) = (u16::try_from(cell.0), u16::try_from(cell.1)) else {
+        return;
+    };
+    // `CellClass::IncreaseTiberium @ 0x00487190` runs on the live map: the
+    // shared placement owner already consumes the exact native draw order —
+    // the twelve-image flat variant pick, the growth-queue priority draw and
+    // the spread feeds — so the arm drives it with the scenario RNG and never
+    // draws around it (see `place_tiberium`).
+    let binary_frame = sim.session.binary_frame();
+    let growth_enabled = sim.ore_growth_config.grows();
+    let spread_enabled = sim.ore_growth_config.spreads();
+    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+        // Native always increases tiberium through the map owner; a mapless
+        // fixture has no Cell to write and stops after its Draw1.
+        return;
+    };
+    let live_objects = crate::sim::tiberium::TiberiumPlacementObjectContext::new(
+        &sim.substrate.entities,
+        &sim.substrate.occupancy,
+        &sim.substrate.raw_cell_occupation,
+        rules,
+        &sim.interner,
+        sim.terrain_objects.cell_index(),
+    );
+    let admission = crate::sim::tiberium::NewTiberiumAdmission::runtime(terrain, live_objects);
+    let Some(grid) = sim.overlay_grid.as_mut() else {
+        return;
+    };
+    let mut context = crate::sim::tiberium::PlaceTiberiumContext {
+        overlay_grid: grid,
+        ore_growth_state: &mut sim.ore_growth_state,
+        overlay_registry: registry,
+        tiberium_types: &rules.tiberium_types,
+        resolved_terrain: Some(terrain),
+        source_object_cells: sim.terrain_objects.spawning_cells(),
+        new_cell_admission: Some(admission),
+        live_objects: Some(admission.live_objects().object_view()),
+        rng: &mut sim.scenario_rng,
+        binary_frame,
+        growth_enabled,
+        spread_enabled,
+        dirty_cells: Some(&mut sim.dirty_cells),
+    };
+    let mut receipts = Vec::new();
+    let mut placed_cells = Vec::new();
+    if let Some(placement) =
+        crate::sim::tiberium::place_tiberium(&mut context, (pickup_x, pickup_y), type_id, 1)
+    {
+        placed_cells.push(placement.cell());
+        receipts.extend(placement.into_overlay_construction());
+    }
+    // `0x00481EDD..0x00481F68`: the loop count, then per pass one
+    // `RandomRanged(0, 0x300)` distance and the one raw draw inside 0x49F420
+    // (the snap-1 CellCentre mask applies after the 512-cell fallback).
+    let count = context.rng.next_range_i32_inclusive(10, 20);
+    for _ in 0..count.max(0) {
+        let distance = context.rng.next_range_i32_inclusive(0, 0x300);
+        let (x, y) = crate::sim::combat::inviso_scatter::random_direction_coord(
+            context.rng,
+            base.x,
+            base.y,
+            distance,
+            crate::sim::combat::inviso_scatter::RandomDirectionSnap::CellCenter,
+        );
+        let target = (
+            crate::util::lepton::lepton_to_cell(x)
+                .try_into()
+                .unwrap_or(u16::MAX),
+            crate::util::lepton::lepton_to_cell(y)
+                .try_into()
+                .unwrap_or(u16::MAX),
+        );
+        if let Some(placement) =
+            crate::sim::tiberium::place_tiberium(&mut context, target, type_id, 1)
+        {
+            placed_cells.push(placement.cell());
+            receipts.extend(placement.into_overlay_construction());
+        }
+    }
+    drop(context);
+    // Place487190's overlay constructor joins the runtime registries and its
+    // Mark republishes the cell's land, as the ore drivers publish theirs.
+    Simulation::publish_overlay_constructions(
+        &mut sim.native_unique_ids,
+        &mut sim.load_objects,
+        &mut sim.substrate,
+        receipts,
+    );
+    sim.publish_tiberium_cells(rules, registry, &placed_cells);
+}
+
+/// The Explosion arm `0x00482565..0x0048271E`: the picker first takes
+/// `ReceiveDamage(&amount, 0, C4Warhead, NULL, 1, 0, NULL)`, then five
+/// blasts — each `RandomRanged(0, 0x200)` plus the raw draw inside the
+/// unsnapped `0x0049F420`, `Apply_area_damage` at the scattered coordinate,
+/// the `SelectAnim @ 0x0048A4F0` animation (`AnimClass(type, &coord, 0, 1,
+/// 0x2600, -15, 0)`) and the `0x0048A620` flash.
+pub(super) fn apply_explosion_crate(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    actor_id: u64,
+    center: DriveCoord,
+    magnitude: NativeF64Bits,
+    frame_effects: FrameEffects<'_>,
+) {
+    // `0x00482572`: Rules+0xFA8. A null C4Warhead leaves ReceiveDamage
+    // (701BF6), SelectAnim (48A4FF), Flash (48A652) and Apply_area_damage
+    // (4892D7) each inert natively, but the five passes still spend their
+    // ten draws.
+    let c4 = rules
+        .warhead(&rules.bridge_warheads.c4_name)
+        .map(|warhead| (warhead, sim.interner.intern(&warhead.id)));
+    let amount = magnitude_amount(magnitude);
+    // `0x0048258D..0x004825A2`. The blasts read the pre-receive copy at
+    // `[esp+0x1C]` (`0x004825A1`, `0x0048263E`), never the receiver's
+    // in/out amount.
+    if let Some((_, warhead_ref)) = c4 {
+        sim.commit_direct_damage_receiver(
+            rules,
+            registry,
+            crate::sim::combat::EntityDamageEvent::direct_receiver(
+                actor_id,
+                amount,
+                0,
+                crate::sim::combat::RAD_NO_ATTACKER,
+                None,
+                warhead_ref,
+                crate::sim::combat::ReceiverCallFlags {
+                    ignore_defenses: true,
+                    arg6: false,
+                },
+            ),
+            frame_effects,
+        );
+    }
+    for _ in 0..5 {
+        // `0x004825AA..0x004825C2` and the 0x49F420 copy: one distance draw,
+        // one raw direction draw, no cell snap.
+        let distance = sim.scenario_rng.next_range_i32_inclusive(0, 0x200);
+        let (x, y) = crate::sim::combat::inviso_scatter::random_direction_coord(
+            &mut sim.scenario_rng,
+            center.x,
+            center.y,
+            distance,
+            crate::sim::combat::inviso_scatter::RandomDirectionSnap::Preserve,
+        );
+        let Some((warhead, warhead_ref)) = c4 else {
+            continue;
+        };
+        let scattered = crate::sim::projectile::ProjectileCoord::new(x, y, center.z);
+        crate::sim::combat::world_receiver::apply_area_damage(
+            sim,
+            rules,
+            registry,
+            scattered,
+            amount,
+            warhead,
+            (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
+            frame_effects,
+        );
+        // `0x0048A4F0` selection feeding the combat constructor shape
+        // `spawn_combat_explosion_anim` owns (`0x2600`/`-15`, Start at
+        // construction). The same owners serve TAction42's DoExplosionAt.
+        // `0x0048267D` passes the constant LandType 0 (Clear), so the
+        // water-splash branch never fires here.
+        if let Some(effect) = crate::sim::combat::detonation_anim::effect(
+            sim, rules, warhead, amount, 0, scattered, scattered,
+        ) {
+            crate::sim::world::damage_consequences::admit_explosion_effect(sim, rules, effect);
+        }
+        sim.combat_light_requests
+            .emit(crate::sim::combat::CombatLightRequest::Impact {
+                target_id: None,
+                damage: amount,
+                warhead_ref,
+                coord: scattered,
+                force_create: false,
+                flags: 0,
+            });
+    }
+}
+
+/// The Napalm arm `0x0048271E..0x00482840`: `AnimTypeArray8B4154[0]` at the
+/// componentwise midpoint of the crate centre and the picker coordinate, the
+/// picker's `ReceiveDamage(&buf, 0, FlameDamage, NULL, 1, 0, NULL)`, then one
+/// `Apply_area_damage(mid, ftol(magnitude), 0, FlameDamage, 1, 0)`. No RNG
+/// and no sound.
+pub(super) fn apply_napalm_crate(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    actor_id: u64,
+    cell_center: DriveCoord,
+    magnitude: NativeF64Bits,
+    frame_effects: FrameEffects<'_>,
+) {
+    let mid = sim.substrate.entities.get(actor_id).map(|entity| {
+        let picker = position_world_coord(&entity.position);
+        DriveCoord {
+            x: cell_center.x.wrapping_add(picker.x) / 2,
+            y: cell_center.y.wrapping_add(picker.y) / 2,
+            z: cell_center.z.wrapping_add(picker.z) / 2,
+        }
+    });
+    let Some(mid) = mid else {
+        // A picker the synchronous crate trigger already deleted has no
+        // modeled coordinate; native would read its lingering object. Unpinned.
+        return;
+    };
+    if let Some(fire_anim) = rules.anim_type_name_by_index(0) {
+        // `0x004827C9..0x004827E3`: AnimClass(type, &mid, 0, 1, 0x600, 0, 0).
+        sim.spawn_named_anim(
+            rules,
+            fire_anim,
+            crate::sim::anim_class::AnimWorldCoord {
+                x: mid.x,
+                y: mid.y,
+                z: mid.z,
+            },
+            0,
+            0x600,
+            0,
+        );
+    }
+    // `0x00482803`/`0x00482827`: Rules+0xF84. A null warhead drops the
+    // ReceiveDamage (701BF6) and returns from Apply_area_damage (4892D7).
+    let Some(warhead) = rules
+        .combat_damage
+        .flame_damage()
+        .and_then(|name| rules.warhead(name))
+    else {
+        return;
+    };
+    let warhead_ref = sim.interner.intern(&warhead.id);
+    let amount = magnitude_amount(magnitude);
+    sim.commit_direct_damage_receiver(
+        rules,
+        registry,
+        crate::sim::combat::EntityDamageEvent::direct_receiver(
+            actor_id,
+            amount,
+            0,
+            crate::sim::combat::RAD_NO_ATTACKER,
+            None,
+            warhead_ref,
+            crate::sim::combat::ReceiverCallFlags {
+                ignore_defenses: true,
+                arg6: false,
+            },
+        ),
+        frame_effects,
+    );
+    crate::sim::combat::world_receiver::apply_area_damage(
+        sim,
+        rules,
+        registry,
+        crate::sim::projectile::ProjectileCoord::new(mid.x, mid.y, mid.z),
+        amount,
+        warhead,
+        (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
+        frame_effects,
+    );
+}
+
+/// The ICBM arm `0x00482CA1..0x00482D56`. `FindFirstOfAction(20)` at
+/// `0x00482CB8` names the first type whose `Action=` is Nuke (retail
+/// `NukeSpecial`). A scan of the picker House's Supers for one whose type's
+/// `Type=` (`+0xB4`) is 0, MultiMissile, gates the grant
+/// (`0x00482CC9..0x00482D07`; the matched index is discarded), then
+/// `Grant(1, 0, 0)` runs on the found type's own Super (`+0x98`,
+/// `0x00482D0D..0x00482D20`). No RNG and no sound.
+pub(super) fn apply_icbm_crate(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
+    // The House constructor holds one Super per registered type, so a
+    // registered MultiMissile type is the scan's admission.
+    if crate::sim::superweapon::super_types_with_type(rules, 0)
+        .next()
+        .is_none()
+    {
+        return;
+    }
+    let Some(type_name) = crate::sim::superweapon::first_super_type_with_action(rules, "Nuke")
+    else {
+        // Unpinned: native dereferences the null type here (`0x00482D0D`).
+        return;
+    };
+    let Some(type_id) = sim.interner.get(type_name) else {
+        return;
+    };
+    crate::sim::superweapon::trigger_grant_super(
+        &sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &sim.houses,
+        &mut sim.super_weapons,
+        rules,
+        owner,
+        type_id,
+        true,
+    );
+    // `0x00482D2D..0x00482D4C`: a successful grant adds the current player's
+    // cameo (`AddCameo(0x1F, ..)`); the sidebar projects active Supers.
 }
 
 /// What the Unit arm `0x00482041..0x00482461` did.

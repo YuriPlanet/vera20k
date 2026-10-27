@@ -195,7 +195,7 @@ pub(super) fn decode_randmap_preview_from_runtime_file()
 -> Option<crate::map::preview::DecodedPreview> {
     let config = crate::util::config::GameConfig::load().ok()?;
     let preview_path = config.paths.ra2_dir.join(RANDMAP_PREVIEW_FILE_NAME);
-    let bytes = match std::fs::read(&preview_path) {
+    let bytes = match crate::util::file_system::read(&preview_path) {
         Ok(bytes) => bytes,
         Err(err) => {
             log::warn!(

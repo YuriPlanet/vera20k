@@ -7,7 +7,7 @@
 //! `ui::campaign_score_shell`. It deliberately does not borrow the Skirmish
 //! score table (`0x108`) or its side-art owner.
 
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use anyhow::Result;
 

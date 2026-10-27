@@ -283,21 +283,35 @@ pub fn combo_items(
 /// Shared4E3A00 country catalog: registered source order, Multiplay enabled,
 /// and a nonempty HouseType UIName. Random is the first entry.
 pub fn country_choices(rules: &crate::rules::ruleset::RuleSet) -> Vec<SkirmishComboItem> {
+    let mut countries: Vec<(i32, usize, LaunchCountry)> = rules
+        .cooperative_country_candidates()
+        .enumerate()
+        .filter(|(_, (id, _))| {
+            rules.country_multiplay(id)
+                && rules
+                    .country_display_name_sources(id)
+                    .0
+                    .is_some_and(|key| !key.is_empty())
+        })
+        .filter_map(|(index, (id, _))| {
+            let list_index = rules.country_list_index(id);
+            (list_index >= 0).then(|| {
+                (
+                    list_index,
+                    index,
+                    LaunchCountry::from_country_index(index as u32),
+                )
+            })
+        })
+        .collect();
+    // Ares ListIndex, then the Country registry index. A stock build returns
+    // the common 100, so this preserves source order.
+    countries.sort_by_key(|&(list_index, index, _)| (list_index, index));
     std::iter::once(SkirmishCountryChoice::Random)
         .chain(
-            rules
-                .cooperative_country_candidates()
-                .enumerate()
-                .filter(|(_, (id, _))| {
-                    rules.country_multiplay(id)
-                        && rules
-                            .country_display_name_sources(id)
-                            .0
-                            .is_some_and(|key| !key.is_empty())
-                })
-                .map(|(index, _)| {
-                    SkirmishCountryChoice::Country(LaunchCountry::from_country_index(index as u32))
-                }),
+            countries
+                .into_iter()
+                .map(|(_, _, country)| SkirmishCountryChoice::Country(country)),
         )
         .map(SkirmishComboItem::Country)
         .collect()

@@ -11,7 +11,7 @@ use crate::ui::shell::list::ShellListGeometry;
 use crate::ui::shell::sound::{
     SoundButton, SoundControl, SoundLayout, SoundSlider, SoundState, SoundTrackRow,
 };
-use std::time::Instant;
+use crate::util::time::Instant;
 use winit::event::MouseButton;
 
 fn channel(id: SoundSlider) -> AudioVolume {

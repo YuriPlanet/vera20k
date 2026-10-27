@@ -16,7 +16,7 @@
 //!   applies the result to Theme and the event loop), so it stays
 //!   headless-testable.
 
-use std::time::Instant;
+use crate::util::time::Instant;
 
 /// Safety ceiling on the trailing-voice wait: `0xBB8` buckets of
 /// `timeGetTime() >> 4` (`0x006C8C40`), 3000 × 16 ms (`0x0052E796`). The

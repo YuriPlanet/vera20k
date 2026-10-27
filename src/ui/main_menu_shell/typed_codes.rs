@@ -17,10 +17,10 @@ pub enum MainMenuTypedCode {
     /// `PENGO` (`0x00825CC8`) toggles `0x00A8ED90`, which nothing else reads.
     Pengo,
     /// `THETEAM` (`0x00825CBC`) toggles `0x00A8ED91`. In skirmish (game mode
-    /// 5) `ScenarioClass::Full_Init` reads it at `0x00687B21` and Processes
-    /// `TMCJ4F.INI` (`0x00687B2A..0x00687B76`) when the file exists. Only RA2's
+    /// 5) `ScenarioClass::Full_Init` reads it at `0x00687B21`, checks
+    /// `TMCJ4F.INI` availability at `0x00687B2A..0x00687B58`, then Processes
+    /// it at `0x00687B76`, after the AIMD/map AI readers. Only RA2's
     /// MAPS01/02.MIX carry it; stock YR mounts neither.
-    /// RESIDUAL: VERA loads no `TMCJ4F.INI` rules layer.
     TheTeam,
     /// `HIRES` (`0x00825CB4`) toggles OptionsClass+0x35 (`0x00A8EB95`), the
     /// `[Video] AllowHiResModes` byte.
@@ -55,6 +55,12 @@ pub struct MainMenuTypedCodes {
 }
 
 impl MainMenuTypedCodes {
+    /// The retained `THETEAM` flag read by Full_Init's mode-5 TMCJ4F gate
+    /// (`0x00A8ED91`, `0x00687B21`).
+    pub(crate) const fn the_team_enabled(&self) -> bool {
+        self.the_team
+    }
+
     /// One key-down from the Keyboard queue (`0x00531DEB..0x00531F40`); the
     /// caller skips releases (0x800, `0x00531E13`). A match toggles its flag
     /// and returns the code, which `0xE2` answers with one `OptionsChanged`.

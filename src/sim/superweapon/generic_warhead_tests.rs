@@ -4,10 +4,10 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+use crate::rules::superweapon_targeting::AiTargetingMode;
 use crate::rules::superweapon_type::SuperWeaponKind;
 use crate::sim::command::Command;
 use crate::sim::superweapon::SuperWeaponInstance;
-use crate::sim::world::SimSoundEvent;
 
 const RULES: &str = "\
 [SuperWeaponTypes]
@@ -110,6 +110,88 @@ fn ares_common_launch_constructs_hidden_anim_and_sound_only_on_admitted_fire() {
     );
 }
 
+/// SWTypeExt::LoadFromINI 0x1003362B..0x1003367D through readers 0x10034430
+/// and 0x100341D0: a donor alias or a spaced token fails the whole read and
+/// keeps the earlier layer's mask; unset AI masks use the Offensive row.
+#[test]
+fn ares_target_masks_keep_prior_layers_on_native_parse_failures() {
+    use crate::rules::superweapon_targeting::{HouseMask, TargetMask, TargetRequirements};
+    let mut layers = common_presentation_layers("all");
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str(
+            "[Strike]\nSW.RequiresTarget=buildings\nSW.RequiresHouse=enemies\n\
+             SW.AIRequiresTarget=aircraft\n",
+        ),
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Strike]\nSW.RequiresTarget=units, buildings\nSW.RequiresHouse=self\n"),
+    );
+    let targeting = |layers: &RulesLayerStack| {
+        common_presentation_rules(layers)
+            .super_weapon_target_policy("Strike")
+            .unwrap()
+    };
+    let retained = targeting(&layers);
+    assert_eq!(
+        (retained.manual(), retained.automatic()),
+        (
+            TargetRequirements {
+                target: TargetMask::BUILDING,
+                house: HouseMask::ENEMIES,
+            },
+            TargetRequirements {
+                target: TargetMask::ALL_TECHNOS,
+                house: HouseMask::ENEMIES,
+            },
+        )
+    );
+
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Strike]\nSW.RequiresTarget=,\nSW.AIRequiresHouse=OWNER\n"),
+    );
+    let replaced = targeting(&layers);
+    assert_eq!(replaced.manual().target, TargetMask::NONE);
+    assert_eq!(replaced.automatic().house, HouseMask::OWNER);
+}
+
+/// LoadFromINIFile 0x10033250 runs GenericWarhead's Initialize (0x10071860,
+/// Offensive) on a type's first rules pass only, so `Late` keeps
+/// PsychicReveal's ParaDrop (10075336); reader 0x10034350 keeps the prior
+/// mode for a name outside its table.
+#[test]
+fn ares_ai_targeting_initializes_once_and_keeps_prior_layers_on_unknown_names() {
+    let mut layers = common_presentation_layers("all");
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str(
+            "[SuperWeaponTypes]\n1=Late\n[Late]\nType=PsychicReveal\n\
+             [Strike]\nSW.AITargeting=Bogus\n",
+        ),
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Late]\nType=GenericWarhead\n"),
+    );
+    let mode = |layers: &RulesLayerStack, id| {
+        common_presentation_rules(layers)
+            .super_weapon_target_policy(id)
+            .unwrap()
+            .mode()
+    };
+    assert_eq!(mode(&layers, "Strike"), AiTargetingMode::Offensive);
+    assert_eq!(mode(&layers, "Late"), AiTargetingMode::ParaDrop);
+
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Strike]\nSW.AITargeting=NONE\n[Late]\nSW.AITargeting=offensive\n"),
+    );
+    assert_eq!(mode(&layers, "Strike"), AiTargetingMode::None);
+    assert_eq!(mode(&layers, "Late"), AiTargetingMode::Offensive);
+}
+
 #[test]
 fn ares_common_launch_reader_retains_unknowns_and_honors_explicit_none() {
     let mut layers = common_presentation_layers("team");
@@ -147,7 +229,7 @@ fn ares_common_launch_reader_retains_unknowns_and_honors_explicit_none() {
     assert_eq!(p.height, -9);
     assert_eq!(
         p.visibility,
-        crate::rules::superweapon_targeting::HouseMask::parse("team").unwrap()
+        crate::rules::superweapon_targeting::HouseMask::TEAM
     );
     assert!(!retained.anim_type_names.contains("UNKNOWNANIM"));
     layers.push(
@@ -406,8 +488,8 @@ fn ares_generic_warhead_binds_unlisted_payload_and_preserves_layered_references(
     assert_eq!(settings.warhead.as_deref(), Some("Payload"));
     assert_eq!(settings.damage, 40);
     assert_eq!(
-        parsed.super_weapon_target_policy("Strike").unwrap().ai_mode,
-        crate::rules::superweapon_targeting::AiTargetingMode::Offensive
+        parsed.super_weapon_target_policy("Strike").unwrap().mode(),
+        AiTargetingMode::Offensive
     );
     assert!(parsed.warhead("Payload").is_some());
 

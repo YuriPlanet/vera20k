@@ -4,10 +4,13 @@ use crate::app::{App, AppState};
 use crate::ui::shell::keyboard::*;
 use crate::ui::shell::list::ListMetrics;
 use crate::ui::shell::list::ShellListGeometry;
-use std::time::Instant;
+use crate::util::time::Instant;
 use winit::event::{ElementState, KeyEvent, MouseButton};
 use winit::keyboard::{Key, KeyCode, KeyLocation, NamedKey};
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+use crate::app::web_keyboard::KeyEventExtModifierSupplement;
 
 /// A keyboard edge after the front-end/dialog admission gates. Both a window
 /// event and a literal-key production capture enter this same binding owner.
@@ -161,9 +164,28 @@ pub(crate) fn open(state: &mut AppState, parent: KeyboardParent) {
         state.match_state.match_presentation.in_game_menu =
             crate::ui::pause_menu::InGameMenuState::Keyboard;
     }
+    // Phobos registers `FireTacticalSW1..10` and `ToggleSWSidebar` only when
+    // their rules switches are on, so the page does not list them otherwise.
+    #[cfg(feature = "phobos")]
+    let sw_sidebar_globals = state.rules().map(|rules| rules.sw_sidebar);
     let commands = registered_commands()
         .iter()
         .enumerate()
+        .filter(|(_, metadata)| {
+            #[cfg(feature = "phobos")]
+            {
+                sw_sidebar_globals.is_none_or(|globals| match metadata.command {
+                    hotkeys::HotkeyCommand::FireTacticalSw(_) => globals.keys_enabled,
+                    hotkeys::HotkeyCommand::ToggleSwSidebar => globals.toggle_key_enabled,
+                    _ => true,
+                })
+            }
+            #[cfg(not(feature = "phobos"))]
+            {
+                let _ = metadata;
+                true
+            }
+        })
         .map(|(index, metadata)| KeyboardCommandRow {
             command_index: index,
             name: localized(state, metadata.name_key, metadata.parameter),

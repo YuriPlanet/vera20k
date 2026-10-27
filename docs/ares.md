@@ -26,7 +26,8 @@ attempt retains that resolved palette until it retires, instead of reopening a
 later Country palette. CnCNet's offline route admits Countries through the same
 reader without replaying cached shell settings or consuming a PortPool RNG draw.
 Campaign, observer and generated-map presentation retain their existing paths;
-this support does not certify custom participant insignia or whole-frame parity.
+country row flags and status use the country presentation chain, and this
+support does not certify whole-frame parity.
 
 For offline CnCNet campaign launches, both builds pass the client's explicit `Scenario`
 independently of campaign record 0, as the upstream spawner's
@@ -47,6 +48,17 @@ Supported extensions:
   game loading and default `asset csf-get` / `csf-grep` queries.
 - [Per-type SHP building palettes](ares-building-palettes.md)
 - [EVA voice tags and Side selection](ares-eva.md)
+- [Fourth and later Side defaults](ares-side-defaults.md): crew, engineer,
+  technician, disguise, survivor divisor, AI base defences and counts,
+  paradrop lists/plane, parachute animation, tooltip and message colors, and
+  the registered-side AI trigger token. Score screens, dialog backgrounds and
+  the Hunter Seeker launch remain separate.
+- [Country presentation](ares-country-presentation.md): `File.Flag`,
+  `MenuText.Status`, `File.Taunt`, `ListIndex`, random/AI selection weights,
+  ParentCountry inheritance, and the shell/Co-Op flag and status consumers.
+  Observer art is retained but has no renderer yet.
+- [Country paradrop overrides](ares-country-paradrop.md): `ParaDrop.Types`,
+  `.Num`, `.Aircraft` and `Parachute.Anim` in front of the SideExt values.
 - [Generic production prerequisites](ares-prerequisites.md)
 - [Factory-source restrictions](../src/sim/production/can_build.rs) (`BuiltAt`,
   `Factory.ExplicitOnly`) and [Country plan qualification](../tools/rules_oracle/ares_factory_owners.md)
@@ -58,7 +70,6 @@ Supported extensions:
   cloakability and forced decloaking. Temporal and airborne victim
   collection remain outside this chain; manual game acceptance remains pending.
 - [GenericWarhead](ares-generic-warhead.md)
-- [HunterSeeker launch and initial target acquisition](ares-hunter-seeker.md)
 - [House survival](ares-house-survival.md)
 - [Superweapon building gates](ares-superweapon-building-gates.md)
 - [Superweapon money](ares-superweapon-money.md)

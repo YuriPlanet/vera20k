@@ -801,6 +801,46 @@ fn continued_process_keeps_the_rules_class_type_pointers() {
     assert_eq!(v3.damage, 5);
 }
 
+/// ReadCombatDamage66C2A1..66C2CF retains the `FlameDamage=` Warhead at
+/// Rules+F84 (retail authors `FlameDamage=Fire`), beside FlameDamage2 at +F88;
+/// the crate Napalm arm reads the former (`0x00482803`, `0x00482827`). An
+/// omitted key keeps the constructor null, and `none` keeps it null too.
+#[test]
+fn combat_damage_flame_warhead_pointer_publishes() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[CombatDamage]\nFlameDamage=Fire\nFlameDamage2=Fire2\n[Warheads]\n0=Fire\n1=Fire2\n",
+    ))
+    .unwrap();
+    assert_eq!(
+        rules
+            .combat_damage
+            .flame_damage()
+            .map(str::to_ascii_uppercase)
+            .as_deref(),
+        Some("FIRE")
+    );
+    assert_eq!(
+        rules
+            .combat_damage
+            .flame_damage2()
+            .map(str::to_ascii_uppercase)
+            .as_deref(),
+        Some("FIRE2")
+    );
+
+    let absent = RuleSet::from_ini(&IniFile::from_str(
+        "[CombatDamage]\nFlameDamage2=Fire2\n[Warheads]\n0=Fire2\n",
+    ))
+    .unwrap();
+    assert_eq!(absent.combat_damage.flame_damage(), None);
+
+    let none = RuleSet::from_ini(&IniFile::from_str(
+        "[CombatDamage]\nFlameDamage=none\n[Warheads]\n0=Fire\n",
+    ))
+    .unwrap();
+    assert_eq!(none.combat_damage.flame_damage(), None);
+}
+
 /// Full_Init's reset (`0x006686C0`) deletes the Types and leaves RulesClass
 /// alone, so its scalars are the next scenario's defaults while its Type
 /// pointers dangle. VERA clears every pointer and list there, the crate and
@@ -808,9 +848,10 @@ fn continued_process_keeps_the_rules_class_type_pointers() {
 /// restarted from the constructor.
 #[test]
 fn scenario_reset_clears_the_rules_class_type_pointers_and_keeps_the_scalars() {
-    let rules = after_rules_class_references(RulesProcessContext::ScenarioReset(
-        crate::rules::object_image::ImageTheater::Temperate,
-    ));
+    let rules = after_rules_class_references(RulesProcessContext::ScenarioReset {
+        theater: crate::rules::object_image::ImageTheater::Temperate,
+        skip_root_color_add_and_mode: false,
+    });
 
     assert_eq!(rules.combat_damage.ivan_warhead, None);
     assert_eq!(rules.bridge_warheads.c4_name, "");
@@ -973,9 +1014,10 @@ fn retail_published_references_are_pinned() {
                     .process_with_fixed_art_and_registry_state_recovering(
                         &artmd,
                         state,
-                        RulesProcessContext::ScenarioReset(
-                            crate::rules::object_image::ImageTheater::Temperate,
-                        ),
+                        RulesProcessContext::ScenarioReset {
+                            theater: crate::rules::object_image::ImageTheater::Temperate,
+                            skip_root_color_add_and_mode: false,
+                        },
                         &crate::rules::sound_ini::EvaRegistry::default(),
                     )
                     .unwrap();

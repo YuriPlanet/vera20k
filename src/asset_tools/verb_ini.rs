@@ -254,7 +254,7 @@ fn assemble_type(rules: &RuleSet, type_id: &str, layers: Vec<Value>) -> Result<V
         "limits": [
             "Fields come from the final Rust scenario RuleSet, including its constructors/readers/post-passes; this report alone establishes no new native equivalence.",
             "Jumpjet parameters are stored type values on every ObjectType, independent of JumpJet. Locomotor Link conversions/clamps and live flight state are not applied.",
-            "Rules inspection executes the supported noncampaign skirmish path with the special TMCJ4F flag absent; campaign passes, LANGRULE Digest handling and that flagged extra pass are not modeled.",
+            "Rules inspection executes the supported noncampaign skirmish path, including the LANGRULE Digest check, with the THETEAM flag absent; campaign passes and the TMCJ4F pass are not run.",
             "Existing production parser/reader residuals remain; no replacement parser or type loader is used."
         ],
     }))
@@ -282,7 +282,7 @@ fn assemble(
         "result_kind": "production_ini_accessor",
         "limits": [
             "An accessor result is not a final gameplay field: constructors, type allocation timing, field-specific defaults/clamps, art indirection and post-read passes may change it.",
-            "Rules inspection executes the supported noncampaign skirmish path with the special TMCJ4F flag absent; campaign passes, LANGRULE Digest handling and that flagged extra pass are not modeled.",
+            "Rules inspection executes the supported noncampaign skirmish path, including the LANGRULE Digest check, with the THETEAM flag absent; campaign passes and the TMCJ4F pass are not run.",
             "Authored values reflect the production byte parser: empty values are omitted and duplicate-key resolution retains its documented stock-inert residual.",
             "Reader residuals remain: malformed ReadDouble/coord values use deterministic Rust recovery; ReadRange overflow differs from native. No new native equivalence is claimed."
         ],

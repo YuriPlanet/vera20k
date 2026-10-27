@@ -6,6 +6,9 @@
 //! clock lives in presentation. New world/load/exit replaces that source. The
 //! immutable process art follows InitGame52C1EF..52C302's literal files, with
 //! native palette shifts and index-zero transparency; never theater/remap art.
+//! An Ares side naming `GraphicalText.Image=`/`.Palette=` replaces those two
+//! slots per game load (`Game_LoadUI_LoadSideData` 0x1002F4A0), each slot
+//! falling back to the literal file on its own.
 
 use crate::app::AppState;
 use crate::assets::{asset_manager::AssetManager, pal_file::Palette, shp_file::ShpFile};
@@ -27,13 +30,50 @@ pub(crate) struct OutcomeBannerArt {
     frames: Vec<Frame>,
 }
 
+/// InitGame52C1EF..52C302's literal overlay files.
+const STOCK_IMAGE: &str = "GRFXTXT.SHP";
+const STOCK_PALETTE: &str = "GRFXTXT.PAL";
+
 impl OutcomeBannerArt {
     pub(crate) fn build(
         gpu: &GpuContext,
         batch: &BatchRenderer,
         assets: &AssetManager,
     ) -> Option<Self> {
-        let shp = ShpFile::from_bytes(assets.get_ref("GRFXTXT.SHP")?).ok()?;
+        Self::build_slots(gpu, batch, assets, None, None)
+    }
+
+    /// `Game_LoadUI_LoadSideData` (`0x1002F4A0`) hands the local side's
+    /// `GraphicalText.Image=` / `.Palette=` to the slot writer at `0x1002ECC0`,
+    /// and the draw resolves each slot through `0x1002DF10` / `0x1002DF00`,
+    /// which answer InitGame's literal surface whenever that slot is unset or
+    /// never loaded. Each slot therefore falls back on its own.
+    #[cfg(feature = "ares")]
+    pub(crate) fn build_for_side(
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        assets: &AssetManager,
+        image: Option<&str>,
+        palette: Option<&str>,
+    ) -> Option<Self> {
+        Self::build_slots(gpu, batch, assets, image, palette)
+    }
+
+    fn build_slots(
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        assets: &AssetManager,
+        image: Option<&str>,
+        palette: Option<&str>,
+    ) -> Option<Self> {
+        let shp = assets
+            .get_ref(image.unwrap_or(STOCK_IMAGE))
+            .and_then(|bytes| ShpFile::from_bytes(bytes).ok())
+            .or_else(|| {
+                assets
+                    .get_ref(STOCK_IMAGE)
+                    .and_then(|bytes| ShpFile::from_bytes(bytes).ok())
+            })?;
         //6D4E8D sign-extends the SHP frame count; its invalid-count branch
         //uses text. The normal retail shape has a small positive count.
         if (shp.frames.len() as i16) <= 0 {
@@ -41,7 +81,14 @@ impl OutcomeBannerArt {
         }
         //6D4E20 draws the frame with CC_Draw_Shape SHAPE_NORMAL through the
         //GRFXTXT ConvertClass: the shared palette conversion, index 0 skipped.
-        let palette = Palette::from_bytes(assets.get_ref("GRFXTXT.PAL")?).ok()?;
+        let palette = assets
+            .get_ref(palette.unwrap_or(STOCK_PALETTE))
+            .and_then(|bytes| Palette::from_bytes(bytes).ok())
+            .or_else(|| {
+                assets
+                    .get_ref(STOCK_PALETTE)
+                    .and_then(|bytes| Palette::from_bytes(bytes).ok())
+            })?;
         let atlas_width: u32 = shp
             .frames
             .iter()
@@ -155,9 +202,11 @@ pub(crate) fn instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteIns
         state.match_state.input.camera_y,
     ];
     if let Some(quad) = state
-        .renderer
-        .outcome_banner_art
+        .match_state
+        .match_presentation
+        .outcome_banner_side_art
         .as_ref()
+        .or(state.renderer.outcome_banner_art.as_ref())
         .and_then(|art| art.quad(frame, view, camera))
     {
         return (vec![quad], Vec::new());

@@ -909,7 +909,7 @@ impl App {
                 state.match_state.match_presentation.chrono_screen.before_frame(
                     &state.renderer.gpu,
                     &mut encoder,
-                    state.renderer.combat_light_renderer.composition_texture(),
+                    state.renderer.game_frame_texture(),
                     [chrono_tactical.0, chrono_tactical.1, chrono_tactical.2, chrono_tactical.3],
                 );
                 let times = render::GameRenderTimes {
@@ -925,7 +925,7 @@ impl App {
                     let result = render::render_game(state, &mut encoder, times);
                     state.renderer.depth_view = saved_depth;
                     let render_output = result?;
-                    state.renderer.combat_light_renderer.copy_to(
+                    state.renderer.copy_game_frame_to(
                         &mut encoder,
                         state.renderer.upscale_pass.as_ref().unwrap().color_texture(),
                     );
@@ -938,8 +938,8 @@ impl App {
                 } else {
                     let render_output = render::render_game(state, &mut encoder, times)?;
                     state
-                        .renderer.combat_light_renderer
-                        .copy_to(&mut encoder, &output.texture);
+                        .renderer
+                        .copy_game_frame_to(&mut encoder, &output.texture);
                     render_output
                 };
                 #[cfg(feature = "telemetry-dashboard")]

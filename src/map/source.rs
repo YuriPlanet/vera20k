@@ -126,7 +126,7 @@ pub struct LoadedMap {
 }
 
 pub fn read_map_ini_for_metadata(path: &Path) -> Option<IniFile> {
-    map_file::ini_from_file_bytes(std::fs::read(path).ok()?).ok()
+    map_file::ini_from_file_bytes(crate::util::file_system::read(path).ok()?).ok()
 }
 
 /// Physical INI plus the exact source bytes used by shell map verification.
@@ -144,16 +144,16 @@ struct MapInput<'a> {
 
 fn local_map_path(ra2_dir: &Path, map_name: &str) -> Result<PathBuf> {
     let direct = PathBuf::from(map_name);
-    if direct.is_absolute() && direct.exists() {
+    if direct.is_absolute() && crate::util::file_system::exists(&direct) {
         return Ok(direct);
     }
     let in_ra2 = ra2_dir.join(map_name);
-    if in_ra2.exists() {
+    if crate::util::file_system::exists(&in_ra2) {
         return Ok(in_ra2);
     }
     for ext in MAP_EXTENSIONS {
         let candidate = ra2_dir.join(format!("{map_name}.{ext}"));
-        if candidate.exists() {
+        if crate::util::file_system::exists(&candidate) {
             return Ok(candidate);
         }
     }
@@ -168,11 +168,24 @@ fn read_loose_map_input(path: &Path) -> Result<MapInput<'static>> {
 }
 
 fn read_loose_map_input_bounded(path: &Path, limit: Option<usize>) -> Result<MapInput<'static>> {
-    use std::io::Read;
-    let mut bytes = Vec::new();
-    let file = std::fs::File::open(path)?;
-    file.take(limit.map_or(u64::MAX, |limit| limit as u64 + 1))
-        .read_to_end(&mut bytes)?;
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    let bytes = {
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        let file = std::fs::File::open(path)?;
+        file.take(limit.map_or(u64::MAX, |limit| limit as u64 + 1))
+            .read_to_end(&mut bytes)?;
+        bytes
+    };
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    let bytes = {
+        let shared = crate::util::file_system::read_shared(path)?;
+        anyhow::ensure!(
+            limit.is_none_or(|limit| shared.len() <= limit),
+            "map exceeds transfer size limit"
+        );
+        shared.to_vec()
+    };
     anyhow::ensure!(
         limit.is_none_or(|limit| bytes.len() <= limit),
         "map exceeds transfer size limit"
@@ -611,7 +624,7 @@ fn install_received_asset_with_limits(
             std::fs::rename(&stage, &path)
         })();
         if result.is_err() {
-            let _ = std::fs::remove_file(&stage);
+            let _ = crate::util::file_system::remove_file(&stage);
         }
         result?;
     }
@@ -700,7 +713,7 @@ fn load_map_from_path_with_source(path: &Path) -> Result<LoadedMap> {
 pub fn try_load_mmx(ra2_dir: &Path, names: &[&str]) -> Result<LoadedMap> {
     for &name in names {
         let path: PathBuf = ra2_dir.join(name);
-        if path.exists() {
+        if crate::util::file_system::exists(&path) {
             match load_map_from_path_with_source(&path) {
                 Ok(loaded) => {
                     log::info!("Loaded map from {}", name);

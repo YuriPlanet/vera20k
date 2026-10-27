@@ -16,7 +16,142 @@
 //! Depends on: `render/gpu.rs` (GpuContext), `render/scaled_copy.rs` (the copy)
 
 use super::gpu::GpuContext;
-use super::scaled_copy::ScaledSurface;
+use super::scaled_copy::{ScaledSurface, create_depth_target};
+
+/// VERA-only wheel zoom composes at one source pixel per world pixel (stock YR
+/// has no world zoom).
+/// Only the completed scene is resampled; indexed palettes, native Z and
+/// destination-dependent edits therefore never filter indices or depth values.
+/// Screen-fixed UI is added to `color_view` afterwards at the frame resolution.
+pub(crate) struct WorldZoomPass {
+    surface: ScaledSurface,
+    world_depth: wgpu::TextureView,
+    source_size: [u32; 2],
+    scale: f32,
+}
+
+/// The world target for `target` at `scale`: `ceil(target / scale)`, clamped
+/// to the device's 2D texture limit (the minimum-zoom clamp on a very wide
+/// window can otherwise round one texel past it).
+fn world_source_size(device: &wgpu::Device, target: [u32; 2], scale: f32) -> [u32; 2] {
+    let max = device.limits().max_texture_dimension_2d;
+    target.map(|v| ((v as f32 / scale).ceil().max(1.0) as u32).min(max))
+}
+
+impl WorldZoomPass {
+    pub(crate) fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: wgpu::TextureFormat,
+        target: [u32; 2],
+        scale: f32,
+    ) -> Self {
+        let source_size = world_source_size(device, target, scale);
+        let (_, world_depth) =
+            create_depth_target(device, "Wheel zoom world", (source_size[0], source_size[1]));
+        let surface = ScaledSurface::new(
+            device,
+            "Wheel zoom frame",
+            format,
+            (target[0], target[1]),
+            Some(wgpu::TextureFormat::Depth32Float),
+        );
+        surface.place(queue, (0.0, 0.0), scale, scale.fract() == 0.0);
+        Self {
+            surface,
+            world_depth,
+            source_size,
+            scale,
+        }
+    }
+
+    pub(crate) fn set_view(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        target: [u32; 2],
+        scale: f32,
+    ) {
+        let source_size = world_source_size(device, target, scale);
+        if source_size != self.source_size {
+            let (_, depth) =
+                create_depth_target(device, "Wheel zoom world", (source_size[0], source_size[1]));
+            self.world_depth = depth;
+            self.source_size = source_size;
+        }
+        self.surface.resize(device, (target[0], target[1]));
+        if scale != self.scale {
+            self.surface
+                .place(queue, (0.0, 0.0), scale, scale.fract() == 0.0);
+            self.scale = scale;
+        }
+    }
+
+    pub(crate) fn source_size(&self) -> [u32; 2] {
+        self.source_size
+    }
+    pub(crate) fn depth_view(&self) -> &wgpu::TextureView {
+        &self.world_depth
+    }
+    pub(crate) fn color_view(&self) -> &wgpu::TextureView {
+        self.surface.color_view()
+    }
+    pub(crate) fn color_texture(&self) -> &wgpu::Texture {
+        self.surface.color_texture()
+    }
+
+    pub(crate) fn frame_depth_view(&self) -> &wgpu::TextureView {
+        self.surface.depth_view()
+    }
+
+    pub(crate) fn world_clip(&self, [x, y, w, h]: [u32; 4]) -> [u32; 4] {
+        let left = (x as f32 / self.scale).floor() as u32;
+        let top = (y as f32 / self.scale).floor() as u32;
+        let right = (((x + w) as f32 / self.scale).ceil() as u32).min(self.source_size[0]);
+        let bottom = (((y + h) as f32 / self.scale).ceil() as u32).min(self.source_size[1]);
+        [
+            left,
+            top,
+            right.saturating_sub(left),
+            bottom.saturating_sub(top),
+        ]
+    }
+
+    pub(crate) fn composite(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        source: &wgpu::Texture,
+        tactical: [u32; 4],
+        clear: wgpu::Color,
+    ) {
+        let bind_group = self.surface.bind_group_for(device, source);
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Wheel zoom completed world"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: self.surface.color_view(),
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(clear),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: self.surface.depth_view(),
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(super::native_z::STORED_DEPTH_CLEAR),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        self.surface.draw(&mut pass, Some(&bind_group), tactical);
+    }
+}
 
 /// The match frame's shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

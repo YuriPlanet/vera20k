@@ -385,9 +385,13 @@ impl App {
                 if let Some(state) = self.state.as_ref() {
                     crate::app::input::cursor::apply_cursor_confinement(state);
                 }
+                #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+                crate::web::status(self.state.as_ref().and_then(|state| state.frontend.main_menu_shell_error.as_deref()).unwrap_or("Ready"));
                 log::info!("Initialization complete");
             }
             Err(err) => {
+                #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+                crate::web::status(&format!("Startup failed: {err:#}"));
                 log::error!("Failed to initialize: {:#}", err);
                 if self.spawn_request.is_some() || self.replay_request.is_some() {
                     self.startup_failure = Some(format!("CnCNet initialization failed: {err:#}"));

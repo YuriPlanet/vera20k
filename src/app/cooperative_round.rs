@@ -227,6 +227,7 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
             assets,
             model.side,
             crate::app::frontend::shell_layout::art_key_screen_width(state),
+            state.process_assets.side_score_art(model.side),
         )
     });
     state.frontend.score_page = None;
@@ -442,7 +443,7 @@ fn build_campaign_end(
 pub(crate) struct CoopSlotView {
     pub(crate) name: String,
     pub(crate) country: crate::ui::multiplayer_setup::SetupChoice,
-    pub(crate) flag: Option<&'static str>,
+    pub(crate) flag: Option<String>,
     pub(crate) color: crate::ui::multiplayer_setup::SetupChoice,
     pub(crate) start: crate::ui::multiplayer_setup::SetupChoice,
     /// `0x89E000[slot]`.
@@ -466,6 +467,7 @@ pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
         flag_pcx_for_side_item_data, side_item_data_for_country,
     };
     use crate::app::shell_network_setup::view::choice;
+    use crate::rules::ruleset::CountryIdx;
     use crate::ui::skirmish_shell::{SkirmishComboItem, SkirmishCountryChoice};
     let session = &state.match_state.session;
     let round = session.cooperative_round()?;
@@ -501,10 +503,22 @@ pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
         } else {
             SkirmishComboItem::Color(usize::from(slot.color_index))
         };
+        let rules = state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.resources.rules);
+        let flag = rules
+            .and_then(|rules| {
+                let index = u16::try_from(country_value).ok()?;
+                let id = rules.country_name(CountryIdx(index))?;
+                rules.country_flag_surface(id)
+            })
+            .or_else(|| flag_pcx_for_side_item_data(country_value).map(str::to_owned));
         slots[usize::from(row)] = Some(CoopSlotView {
             name: human.name.clone(),
             country,
-            flag: flag_pcx_for_side_item_data(country_value),
+            flag,
             color: choice(state, color_item),
             start: choice(state, SkirmishComboItem::Start(slot.start_position)),
             ready: session.cooperative_round_slot_ready(index),

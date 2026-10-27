@@ -1368,7 +1368,8 @@ fn superweapon_retained_cameo_keeps_identity_through_hold_and_recovery() {
         CameoReconcile::default(),
         "hold keeps the retained entry"
     );
-    assert!(!held.enabled && held.is_ready);
+    // A held Super cannot fire, so StripDraw never darkens it (6A99B5).
+    assert!(held.enabled && held.is_ready);
     let mut input = MatchInputState::new(Default::default());
     let mut gadgets = SidebarGadgetState::new();
     input.begin_building_placement("BUILDING", 0, owner);

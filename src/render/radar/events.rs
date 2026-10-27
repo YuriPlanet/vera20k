@@ -13,7 +13,7 @@
 //! Type 5 is produced render-side by the radar object tracker
 //! (`TechnoClass::IdleAnimDispatch 0x0070DAD7`).
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use crate::rules::radar_event_config::RadarEventConfig;
 use crate::sim::radar::RadarEventType;

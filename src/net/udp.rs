@@ -754,6 +754,12 @@ impl UdpIo {
     /// Explicit bind addresses allow independent clients/tests to select
     /// interfaces or ephemeral ports. A failure drops any socket already
     /// opened by this call; no partially open transport escapes.
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    fn bind(_: UdpBindConfig, _: LanConnections) -> io::Result<Self> {
+        Err(io::Error::new(io::ErrorKind::Unsupported, "LAN play is unavailable in the single-player browser build"))
+    }
+
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     fn bind(config: UdpBindConfig, connections: LanConnections) -> io::Result<Self> {
         let primary = UdpSocket::bind(config.primary)?;
         primary.set_nonblocking(true)?;

@@ -22,7 +22,7 @@
 //! - Reads from sim/ via EntityStore iteration (GameEntity fields).
 
 use std::collections::{HashMap, HashSet};
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::mix_archive::SharedBytes;
@@ -2250,20 +2250,15 @@ pub(crate) fn prepare_sprite_atlas(
     // This registers the no-remap GlobalAnim/colour-0 fallback. The live
     // AnimClass remap closure adds SelectedScheme variants for remapped canopies;
     // both use the unit palette here because PARACH sets `AltPalette=`.
-    let parachutes = rules
-        .filter(|_| previous_atlas.is_none())
-        .into_iter()
-        .flat_map(|r| {
-            [
-                r.general.parachute_shp.as_deref(),
-                if crate::rules::NPATCH_ENABLED {
-                    r.general.vehicle_parachute.as_deref()
-                } else {
-                    None
-                },
-            ]
-        })
-        .flatten();
+    let mut parachutes: Vec<&str> = Vec::new();
+    if let Some(rules) = rules.filter(|_| previous_atlas.is_none()) {
+        parachutes.extend(rules.general.parachute_shp.as_deref());
+        if crate::rules::NPATCH_ENABLED {
+            parachutes.extend(rules.general.vehicle_parachute.as_deref());
+        }
+        #[cfg(feature = "ares")]
+        parachutes.extend(rules.side_parachute_animations());
+    }
     for shp_name in parachutes {
         let candidates = [
             format!("{}.shp", shp_name.to_ascii_lowercase()),
@@ -3518,9 +3513,15 @@ fn upload_shelves(
     placed: &[(usize, [u32; 2])],
     band_bytes: u64,
 ) {
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    let _ = device;
     for (origin, size, bytes) in ShpUploadBands::new(sprites, placed, indices.width(), band_bytes) {
         atlas_growth::write_texels(queue, indices, origin, size, 1, &bytes);
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        queue.submit(std::iter::empty());
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let submission_index = queue.submit(std::iter::empty());
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         if let Err(error) = device.poll(wgpu::PollType::Wait {
             submission_index: Some(submission_index),
             timeout: Some(PACK_BAND_TIMEOUT),

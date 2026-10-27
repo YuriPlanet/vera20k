@@ -22,6 +22,7 @@ pub use combos::{
     combo_dropdown_scrollbar_rect, combo_dropdown_visible_row_count, combo_enabled, combo_items,
     combo_rect, country_choices, selected_combo_item, selected_combo_item_index, team_choices,
 };
+pub(crate) use hit_test::status_help_key_for_hover_with_catalog;
 pub use hit_test::{
     action_for_owner_draw_button, apply_action, hit_test, hit_test_owner_draw_button,
     hovered_choose_map_modal_control, hovered_shell_control, status_help_key_for_choose_map_hover,
@@ -33,6 +34,7 @@ pub use choose_map::{
     ChooseMapContext, ChooseMapListPress, ChooseMapModalState, ChooseMapSelection, EjectPrompt,
     EjectPromptButton, ai_rows_beyond_limit_occupied,
 };
+pub(crate) use player_name::CountryMenuCatalog;
 pub use player_name::{
     PLAYER_NAME_CARET_MARGIN_PX, PLAYER_NAME_DEFAULT, PLAYER_NAME_EDIT_LIMIT_BYTES,
     PlayerNameEditState, SkirmishShellDialog, SkirmishShellState, accept_selected_map,

@@ -48,6 +48,31 @@ fn checked_digest_removal_preserves_the_sorted_duplicate_section_order() {
 }
 
 #[test]
+fn langrule_digest_verification_accepts_matching_sha1_and_rejects_changed_sha1() {
+    // This original LANGRULE control carries the native SaveToPipe SHA-1.
+    // Changing one base64 symbol keeps a well-formed 20-byte digest while
+    // proving mismatch admission is distinct from a missing Digest section.
+    const BODY: &str = concat!(
+        "[ColorAdd]\nLANG0=7,8,9\nLANG1=30,31,32\n",
+        "[AudioVisual]\nLaserTargetColor=6\nBerserkColor=9\n",
+    );
+    const DIGEST: &str = "5Z9CTq3TQS20/wfWQHiRlHIBMME=";
+    let valid = IniFile::from_str(&format!("{BODY}[Digest]\n1={DIGEST}\n"));
+    assert_eq!(valid.verify_digest(1), DigestVerification::Valid);
+
+    let changed = format!("B{}", &DIGEST[1..]);
+    let mismatched = IniFile::from_str(&format!("{BODY}[Digest]\n1={changed}\n"));
+    assert_eq!(mismatched.verify_digest(1), DigestVerification::Invalid);
+
+    let missing = IniFile::from_str(BODY);
+    assert_eq!(missing.verify_digest(1), DigestVerification::Missing);
+    assert_eq!(IniFile::empty().verify_digest(0), DigestVerification::Empty);
+
+    let short = IniFile::from_str("[Digest]\n1=QQ==\n");
+    assert_eq!(short.verify_digest(8), DigestVerification::Indeterminate);
+}
+
+#[test]
 fn packed_reader_visits_duplicate_physical_keys_through_the_value_index() {
     // ReadUUBlock526FB0 uses the physical entry count at52708C and walks
     // each physical key at5270C5, then resolves its value at527108.

@@ -56,10 +56,11 @@ Provide the normal art/cameo assets for your mod.
   introduced. Like Ares's new-type action, this type uses the default attack
   cursor (`Action=Custom` is accepted); user `PreClick`, `PostClick` and
   `PreDependent` tags cannot turn it into a two-click superweapon.
-- `SW.AITargeting=Offensive` is the handler default. Targeting, constraints,
-  manual/automatic masks and ranges now belong to the common SWType metadata,
-  shared with `Type=UnitDelivery` and `Type=HunterSeeker`; they are not duplicated
-  in the payload.
+- `SW.AITargeting=Offensive` is the handler default, set once on the type's
+  first rules pass, so a type that becomes GenericWarhead only in a later layer
+  starts with `None`. Targeting, constraints, manual/automatic masks and ranges
+  belong to the common SWType metadata, shared with `Type=UnitDelivery`; they
+  are not duplicated in the payload.
 - `SW.UseAITargeting=yes` makes a left click queue the automatic selector rather
   than entering a target cursor. The selector's result is not checked again
   against different manual masks. Script launches retain their explicit cell.
@@ -97,7 +98,7 @@ consumers and the available official Ares sources.
 
 | ra2-mono source | Rust adaptation |
 | --- | --- |
-| `TryParseTargetMask`, `TryParseHouseMask` | `TargetMask::parse`, `HouseMask::parse`; preserve composable aliases and unknown-token rejection |
+| `TryParseTargetMask`, `TryParseHouseMask` | Replaced by Ares's own readers (`0x10034430`, `0x100341D0`): `TargetMask::read_ares`, `HouseMask::read_ares` |
 | `Evaluate` and its input/result types | `evaluate_target`; same ordered terrain/content/house/shroud/range gates, typed rejection reasons |
 | `ResolveSuperweaponLaunchSites` | VERA's retained house building list and shared operational-state query; no OOP/ECS bridge copied |
 | `EvaluateSuperweaponTargetPreflight` | Read-only occupancy, alliance and fog observations; the same gate serves cursor, command and AI |
@@ -106,15 +107,16 @@ consumers and the available official Ares sources.
 
 Intentional boundaries/adaptations:
 
-- The common policy is executed for GenericWarhead, UnitDelivery and HunterSeeker. Automatic
+- The common policy is executed for GenericWarhead and UnitDelivery. Automatic
   requirements remain independent of manual ones and take their defaults from
   the selected native targeting mode; stock dispatch stays separate.
-- The historical pure-kernel aliases below remain API compatibility helpers.
-  Production SWType metadata reads the native comma-separated tokens and retains
-  prior values after unknown tokens; it does not reinterpret unsupported modes.
 - `SW.RequiresTarget`, `SW.RequiresHouse`, `SW.AIRequiresTarget`,
   `SW.AIRequiresHouse`, `SW.FireIntoShroud`, `SW.RangeMinimum` and
-  `SW.RangeMaximum` are supported. Range limits are inclusive; negative limits
+  `SW.RangeMaximum` are supported. The four masks take Ares's comma-separated
+  names only (`land`, `water`, `empty`, `infantry`, `units`, `buildings`,
+  `all`, `none`; `owner`, `allies`, `enemies`, `team`, `trump`, `others`,
+  `all`, `none`), with no spaces around commas. An unknown name keeps the
+  value from earlier rules layers, as in Ares. Range limits are inclusive; negative limits
   are disabled. Missing/inactive launchers cannot satisfy a configured range.
 - SWType metadata uses the shared Ares value readers, retaining binary64
   ranges and earlier values after unsuccessful reads.

@@ -98,9 +98,22 @@ fn coords(entity: &crate::sim::game_entity::GameEntity, sim: &Simulation) -> [i3
 }
 fn initial_endpoint(parent: [i32; 3], facing: u16, radius: i32) -> [i32; 3] {
     //435988..435AA9: signed facing minus3FFF; double spill before table calls.
+    endpoint_for_facing(
+        parent,
+        facing,
+        radius,
+        NativeF64Bits::from_bits(0xbf19222d989f5e57),
+    )
+}
+fn endpoint_for_facing(
+    parent: [i32; 3],
+    facing: u16,
+    radius: i32,
+    scale: NativeF64Bits,
+) -> [i32; 3] {
     let a = save(X::mul(
         X::load_i32(i32::from(facing as i16) - 0x3fff),
-        d(NativeF64Bits::from_bits(0xbf19222d989f5e57)),
+        d(scale),
     ));
     let t = TrigTable::embedded();
     [
@@ -181,6 +194,7 @@ fn bucket(parent: [i32; 3], light: [i32; 3], rules: SpotlightRules) -> i32 {
 pub struct BuildingSpotlight {
     pub coord: [i32; 3],
     pub glow_stage: u8,
+    pub glow_flags: u32,
     pub beam_origin: [i32; 3],
     pub beam_edges: Option<[[i32; 3]; 2]>,
     pub beam_z_adjust: [i32; 2],
@@ -198,11 +212,44 @@ impl Simulation {
         if !light.alive
             || light.mode == 0
             || !parent.lifecycle.object_alive()
-            || parent.category() != EntityCategory::Structure
-            || self.building_operational_state(parent.stable_id(), rules) != Some(true)
+            || (parent.category() != EntityCategory::Structure && !cfg!(feature = "ares"))
+            || (parent.category() == EntityCategory::Structure
+                && self.building_operational_state(parent.stable_id(), rules) != Some(true))
         {
             return None;
         }
+        #[cfg(feature = "ares")]
+        if parent
+            .cloak
+            .as_ref()
+            .is_some_and(|cloak| cloak.state() >= 2)
+            || parent.deactivated.is_offline()
+            || parent.is_warped_out()
+            || crate::sim::movement::air_movement::current_fly_height(
+                parent,
+                self.resolved_terrain.as_ref(),
+            ) < -10
+        {
+            // BuildingLightDraw_Start1004EB42..1004EB96 hides the beam,
+            // retaining its child through cloak, EMP and underground travel.
+            return None;
+        }
+        let (start_height, middle_height, edge_height, glow_flags) = (430, 400, 250, 0);
+        #[cfg(feature = "ares")]
+        let (start_height, middle_height, edge_height, glow_flags) =
+            self.entity_object_type(parent, rules).map_or(
+                (start_height, middle_height, edge_height, glow_flags),
+                |object| {
+                    let options = object.spotlight_rules();
+                    let height = options.start_height();
+                    (
+                        height.max(0),
+                        height.wrapping_sub(30).max(400),
+                        height.wrapping_sub(180).max(250),
+                        options.glow_flags(),
+                    )
+                },
+            );
         let p = coords(parent, self);
         let coord = light.coord;
         let params = rules.general.spotlight;
@@ -234,12 +281,13 @@ impl Simulation {
         Some(BuildingSpotlight {
             coord,
             glow_stage: stage as u8,
-            beam_origin: [p[0], p[1], p[2].wrapping_add(430)],
+            glow_flags,
+            beam_origin: [p[0], p[1], p[2].wrapping_add(start_height)],
             beam_edges,
             beam_z_adjust: [
-                crate::util::native_x87::adjust_for_z_standard(p[2].wrapping_add(400))
+                crate::util::native_x87::adjust_for_z_standard(p[2].wrapping_add(middle_height))
                     .wrapping_neg(),
-                crate::util::native_x87::adjust_for_z_standard(coord[2].wrapping_add(250))
+                crate::util::native_x87::adjust_for_z_standard(coord[2].wrapping_add(edge_height))
                     .wrapping_neg(),
             ],
             beam_amount: 75_i32.wrapping_sub(6_i32.wrapping_mul(b)),
@@ -289,11 +337,12 @@ impl Simulation {
         Ok(())
     }
 
-    pub(super) fn construct_spotlight(&mut self, parent_id: u64, rules: &RuleSet) {
+    pub(crate) fn construct_spotlight(&mut self, parent_id: u64, rules: &RuleSet) {
         let Some(parent) = self.substrate.entities.get(parent_id).filter(|e| {
-            e.category() == EntityCategory::Structure
+            (e.category() == EntityCategory::Structure
+                || (cfg!(feature = "ares") && e.category().is_foot()))
                 && self
-                    .object_type(e.type_ref(), rules)
+                    .entity_object_type(e, rules)
                     .map_or(e.building_light.spotlight_capable(), |o| o.has_spotlight)
                 && e.building_light.light().is_none()
         }) else {
@@ -351,7 +400,7 @@ impl Simulation {
         );
         self.register_spotlight_logic(id);
     }
-    pub(super) fn destroy_spotlight_for_parent(&mut self, parent: u64, context: UninitContext<'_>) {
+    pub(crate) fn destroy_spotlight_for_parent(&mut self, parent: u64, context: UninitContext<'_>) {
         if let Some(id) = self
             .substrate
             .entities
@@ -506,6 +555,38 @@ impl Simulation {
         }
         match light.mode {
             1 => {
+                #[cfg(feature = "ares")]
+                let params = if parent.category().is_foot() {
+                    // BuildingLight_AI1004EC10..1004EDD2: both endpoint
+                    // and pivot follow the current Foot facing, not its old
+                    // construction cell; the native angle bound becomes0.
+                    if let Some(object) = self.entity_object_type(parent, rules) {
+                        let options = object.spotlight_rules();
+                        let frame = self.session.binary_frame();
+                        let facing = if options.follows_secondary() {
+                            parent
+                                .barrel_facing
+                                .as_ref()
+                                .map_or(0, |facing| facing.current(frame))
+                        } else {
+                            parent.body_facing_current(frame)
+                        };
+                        let endpoint = endpoint_for_facing(
+                            parent_raw,
+                            facing,
+                            options.distance(),
+                            NativeF64Bits::from_bits(0xbf1922147658a371),
+                        );
+                        light.endpoint = endpoint;
+                        light.pivot = endpoint;
+                    }
+                    SpotlightRules {
+                        angle: NativeF64Bits::POSITIVE_ZERO,
+                        ..params
+                    }
+                } else {
+                    params
+                };
                 advance_angle(&mut light, params);
                 let Some(coord) = rotate(light.endpoint, light.pivot, light.angle) else {
                     return;
@@ -554,7 +635,8 @@ impl Simulation {
         }
         let scan = light.mode == 1
             && self.object_has_trigger_tag(parent_id)
-            && self.building_operational_state(parent_id, rules) == Some(true);
+            && (self.building_operational_state(parent_id, rules) == Some(true)
+                || (cfg!(feature = "ares") && parent.category().is_foot()));
         let coord = light.coord;
         self.substrate.spotlights.objects.insert(id, light);
         if scan {
@@ -580,10 +662,13 @@ impl Simulation {
 }
 
 impl crate::sim::world::ObjectSubstrate {
-    pub(super) fn spotlights_pointer_expired(&mut self, id: u64) {
-        //436A00 always nulls matching parent/target, regardless of control flag.
+    pub(super) fn spotlights_pointer_expired(&mut self, id: u64, removed: bool) {
+        //436A00 clears the target for either control. Ares1004EBC0 at
+        //436A25 skips only the parent clear on DetachAll(false), allowing
+        //the beam to reappear after its parent uncloaks. Real removal clears it.
+        let clear_parent = removed || !cfg!(feature = "ares");
         for light in self.spotlights.values_mut() {
-            if light.parent == Some(id) {
+            if clear_parent && light.parent == Some(id) {
                 light.parent = None;
             }
             if light.target == Some(id) {

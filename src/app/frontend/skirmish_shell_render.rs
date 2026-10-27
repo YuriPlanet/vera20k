@@ -197,12 +197,18 @@ fn flag_name_for_country(country: LaunchCountry) -> Option<&'static str> {
     flag_pcx_for_side_item_data(side_item_data_for_country(country))
 }
 
-fn flag_name_for_country_choice(random: bool, country: LaunchCountry) -> Option<&'static str> {
-    if random {
-        flag_pcx_for_side_item_data(-2)
-    } else {
-        flag_name_for_country(country)
-    }
+fn flag_name_for_country_choice<'a>(
+    catalog: &'a crate::ui::skirmish_shell::CountryMenuCatalog,
+    random: bool,
+    country: LaunchCountry,
+) -> Option<&'a str> {
+    catalog.flag_for_choice(random, country).or_else(|| {
+        if random {
+            flag_pcx_for_side_item_data(-2)
+        } else {
+            flag_name_for_country(country)
+        }
+    })
 }
 
 fn flag_entry(atlas: &SkirmishShellChromeAtlas, label: &str) -> Option<SkirmishShellChromeEntry> {
@@ -416,9 +422,12 @@ fn build_skirmish_shell_instances(
     push_checkbox_instances(&mut instances, atlas, layout, shell);
     push_trackbar_instances(&mut instances, atlas, layout, shell);
 
-    if let Some(flag) =
-        flag_name_for_country_choice(shell.player_country_random, shell.player_country)
-            .and_then(|name| flag_entry(atlas, name))
+    if let Some(flag) = flag_name_for_country_choice(
+        &shell.country_catalog,
+        shell.player_country_random,
+        shell.player_country,
+    )
+    .and_then(|name| flag_entry(atlas, name))
     {
         push_flag_entry_clipped_centered(
             &mut instances,
@@ -437,7 +446,11 @@ fn build_skirmish_shell_instances(
             .get(idx - 1)
             .filter(|opponent| opponent.is_active())
             .and_then(|opponent| {
-                flag_name_for_country_choice(opponent.country_random, opponent.country)
+                flag_name_for_country_choice(
+                    &shell.country_catalog,
+                    opponent.country_random,
+                    opponent.country,
+                )
             })
             .and_then(|name| flag_entry(atlas, name));
         if let Some(flag) = entry {

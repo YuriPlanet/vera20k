@@ -45,12 +45,14 @@ pub(crate) fn preflight_recalc(
         .get(difficulty.table_index())
         .ok_or(RecalcPreflightError::MissingRefineryDifficulty)?;
 
-    let defense_counts = match side_index {
-        0 => Some(&rules.allied_base_defense_counts),
-        1 => Some(&rules.soviet_base_defense_counts),
-        2 => Some(&rules.third_base_defense_counts),
-        _ => None,
-    };
+    let defense_counts = rules
+        .side_base_defense_counts(side_index)
+        .or(match side_index {
+            0 => Some(&rules.allied_base_defense_counts[..]),
+            1 => Some(&rules.soviet_base_defense_counts[..]),
+            2 => Some(&rules.third_base_defense_counts[..]),
+            _ => None,
+        });
     if defense_counts.is_some_and(|counts| counts.get(difficulty.table_index()).is_none()) {
         return Err(RecalcPreflightError::MissingDefenseDifficulty);
     }
@@ -228,11 +230,14 @@ pub(crate) fn recalc_base_plan(
             .map(|candidate| candidate.base_plan_type_index),
     );
 
-    let defense_count = match side_index {
-        0 => rules.allied_base_defense_counts[difficulty.table_index()],
-        1 => rules.soviet_base_defense_counts[difficulty.table_index()],
-        2 => rules.third_base_defense_counts[difficulty.table_index()],
-        _ => 0,
+    let defense_count = match rules.side_base_defense_counts(side_index) {
+        Some(counts) => counts.get(difficulty.table_index()).copied().unwrap_or(0),
+        None => match side_index {
+            0 => rules.allied_base_defense_counts[difficulty.table_index()],
+            1 => rules.soviet_base_defense_counts[difficulty.table_index()],
+            2 => rules.third_base_defense_counts[difficulty.table_index()],
+            _ => 0,
+        },
     };
     for _ in 0..defense_count.max(0) {
         let insert_after = scenario_rng

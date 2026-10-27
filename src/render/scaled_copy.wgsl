@@ -5,11 +5,13 @@
 // scales a target pixel can straddle two source pixels on an axis; it blends
 // them by how much of it each covers (a box filter), so a source pixel keeps
 // its own colour wherever it covers a target pixel alone and only the seams
-// soften. The draw's scissor covers exactly the scaled surface.
+// soften. When shrinking, integrate every source texel covered by the target
+// pixel instead of dropping thin details through nearest-neighbor sampling.
+// The draw's scissor covers exactly the scaled surface.
 
 struct Params {
     origin: vec2f,   // target pixel where source pixel (0, 0) lands
-    scale: f32,      // target pixels per source pixel, at least 1
+    scale: f32,      // target pixels per source pixel, positive
     sharp: f32,      // 1 for a whole scale
 };
 
@@ -36,6 +38,23 @@ fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
     if params.sharp != 0.0 {
         // The floor names the block.
         return texel(vec2i(floor(centre)));
+    }
+    if params.scale < 1.0 {
+        // Area resampling of the completed image: palette, transparent holes,
+        // depth and destination-dependent blits have already been resolved.
+        // textureLoad addresses texels directly:
+        // https://www.w3.org/TR/WGSL/#textureload
+        let lo = (position.xy - vec2f(0.5) - params.origin) / params.scale;
+        let hi = (position.xy + vec2f(0.5) - params.origin) / params.scale;
+        var sum = vec4f(0.0);
+        for (var y = i32(floor(lo.y)); y < i32(ceil(hi.y)); y += 1) {
+            let wy = min(hi.y, f32(y + 1)) - max(lo.y, f32(y));
+            for (var x = i32(floor(lo.x)); x < i32(ceil(hi.x)); x += 1) {
+                let wx = min(hi.x, f32(x + 1)) - max(lo.x, f32(x));
+                sum += texel(vec2i(x, y)) * (wx * wy);
+            }
+        }
+        return sum * (params.scale * params.scale);
     }
     // The target pixel spans 1 / scale source pixels, so at most two per
     // axis: `first` holds its top-left corner, `t` is its share past the seam.

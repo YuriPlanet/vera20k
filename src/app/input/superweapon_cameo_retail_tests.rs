@@ -199,10 +199,9 @@ fn retail_supers_recheck_live_admission_after_power_loss_and_recovery() {
         );
         let offline_item = sidebar_item(&sim, &rules, owner, name);
         assert!(offline_item.is_ready);
-        assert_eq!(
-            offline_item.enabled, !sw.is_powered,
-            "{name}: draw availability"
-        );
+        // StripDraw clears the darken flag for a Super (6A99B5); held, it
+        // cannot fire, so Ares's hook (10034EF0) leaves it clear too.
+        assert!(offline_item.enabled, "{name}: draw availability");
         for item in [&cached_online_item, &offline_item] {
             let outcome = click(&sim, &rules, owner, item, &mut input, &mut gadgets, false);
             if sw.is_powered {

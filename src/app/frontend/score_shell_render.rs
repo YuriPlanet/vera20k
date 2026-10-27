@@ -75,7 +75,7 @@ pub(crate) fn render_score_page(
     // texts stay hidden until the entry slide's end starts them.
     let children = !leaving;
 
-    let now = std::time::Instant::now();
+    let now = crate::util::time::Instant::now();
     let monitor_frame = if children {
         crate::app::frontend::menu_page_render::paint_shell_monitor(state)
     } else {

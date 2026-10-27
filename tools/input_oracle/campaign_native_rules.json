@@ -1,0 +1,319 @@
+{
+  "campaign_named_ini_cases": [
+    {
+      "bytes_read": 0,
+      "digest_key_present_after": null,
+      "input": {
+        "cached_entry_flag": 1,
+        "case": "entry0_current0_skips_named",
+        "current_mode": 0,
+        "entry_mode": 0,
+        "file": {
+          "digest_variant": "valid",
+          "filename": "ALL01UMD.INI",
+          "present": true,
+          "raw_ini": "[ColorAdd]\nLANG0=7,8,9\nLANG1=30,31,32\n[AudioVisual]\nLaserTargetColor=6\nBerserkColor=9\n[Digest]\n1=5Z9CTq3TQS20/wfWQHiRlHIBMME=\n"
+        },
+        "scenario_file": "ALL01UMD.MAP"
+      },
+      "process_reached": false,
+      "readccfile_status": null,
+      "requested_filename": null
+    },
+    {
+      "bytes_read": 0,
+      "digest_key_present_after": null,
+      "input": {
+        "cached_entry_flag": 0,
+        "case": "entry1_current1_skips_by_mode",
+        "current_mode": 1,
+        "entry_mode": 1,
+        "file": {
+          "digest_variant": "valid",
+          "filename": "ALL01UMD.INI",
+          "present": true,
+          "raw_ini": "[ColorAdd]\nLANG0=7,8,9\nLANG1=30,31,32\n[AudioVisual]\nLaserTargetColor=6\nBerserkColor=9\n[Digest]\n1=5Z9CTq3TQS20/wfWQHiRlHIBMME=\n"
+        },
+        "scenario_file": "ALL01UMD.MAP"
+      },
+      "process_reached": false,
+      "readccfile_status": null,
+      "requested_filename": null
+    },
+    {
+      "bytes_read": 126,
+      "digest_key_present_after": true,
+      "input": {
+        "cached_entry_flag": 0,
+        "case": "entry5_current0_prepared_named_admission",
+        "current_mode": 0,
+        "entry_mode": 5,
+        "file": {
+          "digest_variant": "valid",
+          "filename": "ALL01UMD.INI",
+          "present": true,
+          "raw_ini": "[ColorAdd]\nLANG0=7,8,9\nLANG1=30,31,32\n[AudioVisual]\nLaserTargetColor=6\nBerserkColor=9\n[Digest]\n1=5Z9CTq3TQS20/wfWQHiRlHIBMME=\n"
+        },
+        "scenario_file": "ALL01UMD.MAP"
+      },
+      "process_reached": true,
+      "readccfile_status": 1,
+      "requested_filename": "ALL01UMD.INI"
+    }
+  ],
+  "schema_version": 1,
+  "tmcj_cases": [
+    {
+      "bytes_read": 0,
+      "color_add_after": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      "color_add_before": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      "digest_key_present_after": null,
+      "input": {
+        "case": "mode_gate_skips_file",
+        "file": {
+          "digest_variant": "valid",
+          "filename": "TMCJ4F.INI",
+          "present": true,
+          "raw_ini": "[ColorAdd]\nLANG0=7,8,9\nLANG1=30,31,32\n[AudioVisual]\nLaserTargetColor=6\nBerserkColor=9\n[Digest]\n1=5Z9CTq3TQS20/wfWQHiRlHIBMME=\n"
+        },
+        "flag": 1,
+        "mode": 4
+      },
+      "process_reached": false,
+      "readccfile_status": null,
+      "requested_filename": null
+    },
+    {
+      "bytes_read": 0,
+      "color_add_after": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      "color_add_before": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      "digest_key_present_after": null,
+      "input": {
+        "case": "flag_gate_skips_file",
+        "file": {
+          "digest_variant": "valid",
+          "filename": "TMCJ4F.INI",
+          "present": true,
+          "raw_ini": "[ColorAdd]\nLANG0=7,8,9\nLANG1=30,31,32\n[AudioVisual]\nLaserTargetColor=6\nBerserkColor=9\n[Digest]\n1=5Z9CTq3TQS20/wfWQHiRlHIBMME=\n"
+        },
+        "flag": 0,
+        "mode": 5
+      },
+      "process_reached": false,
+      "readccfile_status": null,
+      "requested_filename": null
+    },
+    {
+      "bytes_read": 0,
+      "color_add_after": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      "color_add_before": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      "digest_key_present_after": null,
+      "input": {
+        "case": "admitted_file_absent",
+        "file": {
+          "digest_variant": "none",
+          "filename": "TMCJ4F.INI",
+          "present": false,
+          "raw_ini": null
+        },
+        "flag": 1,
+        "mode": 5
+      },
+      "process_reached": false,
+      "readccfile_status": null,
+      "requested_filename": "TMCJ4F.INI"
+    },
+    {
+      "bytes_read": 126,
+      "color_add_after": [
+        [
+          7,
+          8,
+          9
+        ],
+        [
+          30,
+          31,
+          32
+        ]
+      ],
+      "color_add_before": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      "digest_key_present_after": true,
+      "input": {
+        "case": "admitted_valid_file",
+        "file": {
+          "digest_variant": "valid",
+          "filename": "TMCJ4F.INI",
+          "present": true,
+          "raw_ini": "[ColorAdd]\nLANG0=7,8,9\nLANG1=30,31,32\n[AudioVisual]\nLaserTargetColor=6\nBerserkColor=9\n[Digest]\n1=5Z9CTq3TQS20/wfWQHiRlHIBMME=\n"
+        },
+        "flag": 1,
+        "mode": 5
+      },
+      "process_reached": true,
+      "readccfile_status": 1,
+      "requested_filename": "TMCJ4F.INI"
+    },
+    {
+      "bytes_read": 86,
+      "color_add_after": [
+        [
+          7,
+          8,
+          9
+        ],
+        [
+          30,
+          31,
+          32
+        ]
+      ],
+      "color_add_before": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      "digest_key_present_after": false,
+      "input": {
+        "case": "admitted_missing_digest",
+        "file": {
+          "digest_variant": "missing",
+          "filename": "TMCJ4F.INI",
+          "present": true,
+          "raw_ini": "[ColorAdd]\nLANG0=7,8,9\nLANG1=30,31,32\n[AudioVisual]\nLaserTargetColor=6\nBerserkColor=9\n"
+        },
+        "flag": 1,
+        "mode": 5
+      },
+      "process_reached": true,
+      "readccfile_status": 1,
+      "requested_filename": "TMCJ4F.INI"
+    },
+    {
+      "bytes_read": 126,
+      "color_add_after": [
+        [
+          7,
+          8,
+          9
+        ],
+        [
+          30,
+          31,
+          32
+        ]
+      ],
+      "color_add_before": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      "digest_key_present_after": true,
+      "input": {
+        "case": "admitted_wrong_digest",
+        "file": {
+          "digest_variant": "wrong",
+          "filename": "TMCJ4F.INI",
+          "present": true,
+          "raw_ini": "[ColorAdd]\nLANG0=7,8,9\nLANG1=30,31,32\n[AudioVisual]\nLaserTargetColor=6\nBerserkColor=9\n[Digest]\n1=AAAAAAAAAAAAAAAAAAAAAAAAAAA=\n"
+        },
+        "flag": 1,
+        "mode": 5
+      },
+      "process_reached": true,
+      "readccfile_status": 1,
+      "requested_filename": "TMCJ4F.INI"
+    }
+  ]
+}

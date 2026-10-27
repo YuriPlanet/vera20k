@@ -232,7 +232,13 @@ pub(super) fn dispatch_draw_passes(
     draw_sidebar_surface(state, encoder, data);
     let pool: &InstanceBufferPool = &state.renderer.instance_pool;
     let pose_cache = state.renderer.vxl_pose_frame_cache.borrow();
-    let mut pass = begin_main_pass(encoder, view, &state.renderer.depth_view);
+    let world_depth = state
+        .renderer
+        .world_zoom_pass
+        .as_ref()
+        .map_or(&state.renderer.depth_view, |zoom| zoom.depth_view())
+        .clone();
+    let mut pass = begin_main_pass(encoder, view, &world_depth);
 
     // Everything from here to the screen-fixed chrome block is battlefield: it
     // belongs to the tactical viewport and must not be able to paint a pixel
@@ -244,7 +250,12 @@ pub(super) fn dispatch_draw_passes(
     // Keep the native surface boundary independent of chrome coverage. The
     // ordinary sidebar now uses the resolved stock side archive, real source
     // canvas heights, and one pixel per source pixel in every theme.
-    let (tac_x, tac_y, tac_w, tac_h) = crate::app::input::camera::tactical_viewport_px(state);
+    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(state);
+    let [tac_x, tac_y, tac_w, tac_h] = state
+        .renderer
+        .world_zoom_pass
+        .as_ref()
+        .map_or([x, y, w, h], |zoom| zoom.world_clip([x, y, w, h]));
     pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
 
     // --- Step 1: Terrain (Z-depth pipeline for per-pixel depth from TMP Z-data) ---
@@ -302,7 +313,7 @@ pub(super) fn dispatch_draw_passes(
         draw_bridge_shadows(
             encoder,
             view,
-            &state.renderer.depth_view,
+            &world_depth,
             &mut state.renderer.terrain_draw_renderer,
             [tac_x, tac_y, tac_w, tac_h],
             &state.renderer.batch_renderer,
@@ -315,7 +326,7 @@ pub(super) fn dispatch_draw_passes(
                 .as_ref()
                 .map(|atlas| &atlas.texture),
         );
-        pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
+        pass = begin_main_load_pass(encoder, view, &world_depth);
         pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
     }
 
@@ -346,7 +357,7 @@ pub(super) fn dispatch_draw_passes(
             encoder,
             super::merge_passes::ObjectDrawPhase::Display,
             view,
-            &state.renderer.depth_view,
+            &world_depth,
             &mut state.renderer.terrain_draw_renderer,
             [tac_x, tac_y, tac_w, tac_h],
             &state.renderer.batch_renderer,
@@ -369,7 +380,7 @@ pub(super) fn dispatch_draw_passes(
             None,
             None,
         );
-        pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
+        pass = begin_main_load_pass(encoder, view, &world_depth);
         pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
     }
 
@@ -387,7 +398,7 @@ pub(super) fn dispatch_draw_passes(
             encoder,
             super::merge_passes::ObjectDrawPhase::BuildingBase,
             view,
-            &state.renderer.depth_view,
+            &world_depth,
             &mut state.renderer.terrain_draw_renderer,
             [tac_x, tac_y, tac_w, tac_h],
             &state.renderer.batch_renderer,
@@ -410,7 +421,7 @@ pub(super) fn dispatch_draw_passes(
             None,
             None,
         );
-        pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
+        pass = begin_main_load_pass(encoder, view, &world_depth);
         pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
     }
 
@@ -424,7 +435,7 @@ pub(super) fn dispatch_draw_passes(
     // 6D465F. Building bases have already primed Z; mobile bodies and Anim
     // slots can cover the line. The second pass follows effects and BandBox.
     // Both rally leaves bypass Z.
-    draw_pooled_ui_passthrough(
+    draw_pooled_surface_lines(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
@@ -445,7 +456,7 @@ pub(super) fn dispatch_draw_passes(
             .renderer
             .terrain_draw_renderer
             .draw_ion_blasts(encoder, view);
-        pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
+        pass = begin_main_load_pass(encoder, view, &world_depth);
         pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
     }
 
@@ -465,7 +476,7 @@ pub(super) fn dispatch_draw_passes(
             encoder,
             super::merge_passes::ObjectDrawPhase::Display,
             view,
-            &state.renderer.depth_view,
+            &world_depth,
             &mut state.renderer.terrain_draw_renderer,
             [tac_x, tac_y, tac_w, tac_h],
             &state.renderer.batch_renderer,
@@ -497,13 +508,13 @@ pub(super) fn dispatch_draw_passes(
                 .map(|(overlay, buffer)| (overlay, buffer, Some(state.renderer.bit_font.atlas()))),
             Some(&state.renderer.combat_light_renderer),
         );
-        if layer == 2 {
+        if layer == 2 && state.renderer.world_zoom_pass.is_none() {
             // Tactical6D9427 admits this BuildingClass::Array sweep only
             // after Ground2, before Air3/Top4 and the late Extras sweep.
             super::object_extras::draw_building_status_text(
                 encoder,
                 view,
-                &state.renderer.depth_view,
+                &world_depth,
                 &mut state.renderer.terrain_draw_renderer,
                 [tac_x, tac_y, tac_w, tac_h],
                 &state.renderer.batch_renderer,
@@ -515,11 +526,12 @@ pub(super) fn dispatch_draw_passes(
                 pool.get("building_status_text").map(|(buffer, _)| buffer),
                 Some(state.renderer.bit_font.atlas()),
                 &data.building_status_text.runs,
+                state.renderer.batch_renderer.surface_camera_bind_group(),
             );
         }
     }
 
-    let mut pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
+    let mut pass = begin_main_load_pass(encoder, view, &world_depth);
     pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
 
     // (There is no separate building-turret pass. gamemd draws a building's
@@ -537,7 +549,7 @@ pub(super) fn dispatch_draw_passes(
         encoder,
         super::merge_passes::ObjectDrawPhase::Display,
         view,
-        &state.renderer.depth_view,
+        &world_depth,
         &mut state.renderer.terrain_draw_renderer,
         [tac_x, tac_y, tac_w, tac_h],
         &state.renderer.batch_renderer,
@@ -570,7 +582,7 @@ pub(super) fn dispatch_draw_passes(
         Some(&state.renderer.combat_light_renderer),
     );
 
-    let mut pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
+    let mut pass = begin_main_load_pass(encoder, view, &world_depth);
     pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
 
     // --- Step 8: Debug overlays ---
@@ -663,7 +675,7 @@ pub(super) fn dispatch_draw_passes(
         super::object_extras::draw_object_extras(
             encoder,
             view,
-            &state.renderer.depth_view,
+            &world_depth,
             &mut state.renderer.terrain_draw_renderer,
             [tac_x, tac_y, tac_w, tac_h],
             &state.renderer.batch_renderer,
@@ -701,7 +713,7 @@ pub(super) fn dispatch_draw_passes(
         .renderer
         .terrain_draw_renderer
         .draw_surface_lines(encoder, view, data.surface_effects);
-    let mut pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
+    let mut pass = begin_main_load_pass(encoder, view, &world_depth);
     pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
 
     // BeaconManager Draw 430AC0 (6D46B6) precedes BandBox. Its flags 600
@@ -721,22 +733,25 @@ pub(super) fn dispatch_draw_passes(
         }
     }
     // BandBox6DA180 is between the two rally passes (native6D46BD).
-    // Drag rectangle — screen-fixed, use UI camera (zoom=1.0).
+    // Wheel zoom defers its screen-pixel border until after resampling;
+    // native scale retains the original ordering between the rally passes.
     let drag_tex = state
         .match_state
         .match_presentation
         .selection_overlay
         .as_ref()
         .map(|o| o.drag_texture());
-    draw_pooled_ui_passthrough(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        drag_tex,
-        "drag",
-    );
+    if state.renderer.world_zoom_pass.is_none() {
+        draw_pooled_ui_passthrough(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            drag_tex,
+            "drag",
+        );
+    }
     // Tactical6D46CF redraws rally pixels whose ABuffer sample is zero.
-    draw_pooled_ui_passthrough(
+    draw_pooled_surface_lines(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
@@ -747,7 +762,7 @@ pub(super) fn dispatch_draw_passes(
     // The selected Techno's vt+438 (Foot4DC060) runs
     // AFTER rally pass1 at6D46CF. Its solid surface stores do not read/write Z.
     // See tools/procedural_drawing_oracle/rally-caller.instructions.json.
-    draw_pooled_ui_passthrough(
+    draw_pooled_surface_lines(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
@@ -762,7 +777,7 @@ pub(super) fn dispatch_draw_passes(
             .renderer
             .terrain_draw_renderer
             .draw_surface_lines(encoder, view, data.tactical_lines);
-        pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
+        pass = begin_main_load_pass(encoder, view, &world_depth);
         pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
     }
     // Cell47EC90 flags20600 -> plain Convert/RLE4960A0: opaque stores,
@@ -802,14 +817,14 @@ pub(super) fn dispatch_draw_passes(
                 draw_placement_ghost_pass(
                     encoder,
                     view,
-                    &state.renderer.depth_view,
+                    &world_depth,
                     [tac_x, tac_y, tac_w, tac_h],
                     &state.renderer.batch_renderer,
                     texture,
                     buffer,
                     count,
                 );
-                pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
+                pass = begin_main_load_pass(encoder, view, &world_depth);
                 pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
             }
         }
@@ -837,6 +852,84 @@ pub(super) fn dispatch_draw_passes(
         );
     }
 
+    // Resolve wheel zoom once, after every world/depth/destination operation.
+    // Timers, sidebar, messages and cursor then draw in frame pixels.
+    drop(pass);
+    let (tac_x, tac_y, tac_w, tac_h) = crate::app::input::camera::tactical_viewport_px(state);
+    let view = if let Some(zoom) = state.renderer.world_zoom_pass.as_ref() {
+        composite_world_with_drag_rect(
+            &state.renderer.gpu.device,
+            encoder,
+            state.renderer.combat_light_renderer.composition_texture(),
+            zoom,
+            [tac_x, tac_y, tac_w, tac_h],
+            &state.renderer.batch_renderer,
+            pool,
+            drag_tex,
+        );
+        zoom.color_view()
+    } else {
+        view
+    };
+    let frame_depth = state
+        .renderer
+        .world_zoom_pass
+        .as_ref()
+        .map_or(&state.renderer.depth_view, |zoom| zoom.frame_depth_view());
+    if state.renderer.world_zoom_pass.is_some() {
+        // Zoomed labels keep GAME.FNT and their backing in frame pixels.
+        // Their producer projects the building anchor, then measures/clips
+        // the text at native font size. Native zoom retains the Ground2 pass.
+        super::object_extras::draw_building_status_text(
+            encoder,
+            view,
+            frame_depth,
+            &mut state.renderer.terrain_draw_renderer,
+            [tac_x, tac_y, tac_w, tac_h],
+            &state.renderer.batch_renderer,
+            state
+                .match_state
+                .match_presentation
+                .selection_overlay
+                .as_ref(),
+            pool.get("building_status_text").map(|(buffer, _)| buffer),
+            Some(state.renderer.bit_font.atlas()),
+            &data.building_status_text.runs,
+            state.renderer.batch_renderer.ui_camera_bind_group(),
+        );
+    }
+    let health_cameras = data
+        .object_layers
+        .iter()
+        .any(|layer| !layer.frame_health.is_empty())
+        .then(|| {
+            state.renderer.batch_renderer.create_frame_world_cameras(
+                &state.renderer.gpu.device,
+                state.match_state.input.zoom_level,
+                (!state.match_state.sandbox_full_visibility)
+                    .then_some(state.match_state.match_presentation.shroud_buffer.as_ref())
+                    .flatten(),
+            )
+        });
+    let mut pass = begin_main_load_pass(encoder, view, frame_depth);
+    pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
+    if let Some(cameras) = &health_cameras {
+        for (layer, objects) in data.object_layers.iter().enumerate() {
+            super::object_extras::draw_frame_health(
+                &mut pass,
+                &state.renderer.batch_renderer,
+                state
+                    .match_state
+                    .match_presentation
+                    .selection_overlay
+                    .as_ref(),
+                pool.get_page("object_extras", layer)
+                    .map(|(buffer, _)| buffer),
+                objects,
+                [&cameras[0], &cameras[1]],
+            );
+        }
+    }
     // --- Step 10.6: timer lines ---
     // TacticalClass::Draw's Scenario, Super and blackout timers
     // (`0x006D4941..0x006D4B25`) follow the sparkles: black boxes, then text,
@@ -859,30 +952,6 @@ pub(super) fn dispatch_draw_passes(
         pool,
         Some(state.renderer.bit_font.atlas()),
         "super_timer_text",
-    );
-
-    // --- Step 10.7: build description ---
-    // GScreenClass_DrawText's Phobos VersionDescription (`0x4F4583`): the
-    // black box and red text at the tactical view's top right, same
-    // screen-fixed tactical clip as the timer lines above.
-    draw_pooled_ui_passthrough(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        state
-            .match_state
-            .match_presentation
-            .selection_overlay
-            .as_ref()
-            .map(|o| o.white_texture()),
-        "build_text_fill",
-    );
-    draw_pooled_ui_passthrough(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        Some(state.renderer.bit_font.atlas()),
-        "build_text_text",
     );
 
     // TacticalDraw6D4B25->6D4E20 is its last battlefield draw: centred
@@ -917,11 +986,11 @@ pub(super) fn dispatch_draw_passes(
         .draw_tactical(
             &state.renderer.gpu,
             encoder,
-            state.renderer.combat_light_renderer.composition_texture(),
+            state.renderer.game_frame_texture(),
             [tac_x, tac_y, tac_w, tac_h],
         );
     let page_draw = crate::app::frontend::skirmish_shell_render::in_match_page_draw(state);
-    let mut pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
+    let mut pass = begin_main_load_pass(encoder, view, frame_depth);
 
     // --- Screen-fixed UI: sidebar, messages, tooltips, cursor — UI camera (zoom=1.0) ---
     // Chrome owns the whole window: the sidebar column, the message list that
@@ -937,6 +1006,61 @@ pub(super) fn dispatch_draw_passes(
         surface.composite(&mut pass);
     }
     pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
+    // Phobos SuperWeaponSidebar: left-edge screen-fixed layers. Drawn after
+    // the right sidebar blit and before messages, like Phobos' own gadgets.
+    #[cfg(feature = "phobos")]
+    {
+        let presentation = &state.match_state.match_presentation;
+        let chrome = crate::app::presentation::sidebar_render::current_sidebar_chrome(state);
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            presentation.sw_sidebar_art.as_ref().map(|art| &art.texture),
+            "sw_sidebar_chrome",
+        );
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            presentation
+                .sidebar_cameo_atlas
+                .as_ref()
+                .map(|atlas| &atlas.texture),
+            "sw_sidebar_cameo",
+        );
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            presentation
+                .selection_overlay
+                .as_ref()
+                .map(|overlay| overlay.white_texture()),
+            "sw_sidebar_hover",
+        );
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            chrome.and_then(|atlas| atlas.gclock_texture.as_ref()),
+            "sw_sidebar_gclock",
+        );
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            state.renderer.bit_font.darken_texture(),
+            "sw_sidebar_overlay",
+        );
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            Some(state.renderer.bit_font.atlas()),
+            "sw_sidebar_text",
+        );
+    }
     // The message rows' black boxes: native rows render through the shared
     // text engine with the row's opaque-background style, which fills a black
     // box one pixel out on every side (0x4A5EB0 @ 0x4A5F61) behind each line
@@ -997,26 +1121,61 @@ pub(super) fn dispatch_draw_passes(
         page.draw(&mut pass, state);
     }
 
+    // --- Step 10.7: build description ---
+    // Original4F4480's tail: MessageListClass::Draw `0x4F455D`(->`0x5D49A0`),
+    // the CCToolTip vtable+0xC call `0x4F4570` and the debug-stats call
+    // `0x4F457E` all precede the Phobos VersionDescription hook `0x4F4583`,
+    // which precedes the mouse-restore vtable+0x3C call `0x4F4593`. The black
+    // box and red text at the tactical view's top right therefore go down at
+    // the frame tail, after messages and tooltips. The dialog-vs-version-text
+    // order is unpinned natively; this draws the description after the dialog.
+    // `draw_pooled_ui_passthrough` keeps depth compare Always with no depth
+    // write, so the late draw cannot be depth-rejected by the message/tooltip
+    // quads that wrote depth, and it stays before
+    // `stage_pre_cursor_composition`, so the text is inside the
+    // ScreenCapture-retained pre-cursor composition (0x537BC0 hides the mouse
+    // while copying).
+    draw_pooled_ui_passthrough(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        state
+            .match_state
+            .match_presentation
+            .selection_overlay
+            .as_ref()
+            .map(|o| o.white_texture()),
+        "build_text_fill",
+    );
+    draw_pooled_ui_passthrough(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        Some(state.renderer.bit_font.atlas()),
+        "build_text_text",
+    );
+
     // Active YR ScreenCaptureCommandClass::Execute (0x00537BC0) hides
     // WWMouse while copying the already-presented client. Preserve the same
     // composition boundary without changing the displayed frame: retain every
     // completed UI/sidebar surface here, then resume and draw the cursor into
     // the ordinary presentation target.
     drop(pass);
+    let screenshot_source = state.renderer.game_frame_texture().clone();
     state
         .renderer
         .retail_screenshot_frame_cache
         .stage_pre_cursor_composition(
             &state.renderer.gpu.device,
             encoder,
-            state.renderer.combat_light_renderer.composition_texture(),
+            &screenshot_source,
             state.renderer.gpu.config.format,
             state.render_width(),
             state.render_height(),
             state.renderer.gpu.config.width,
             state.renderer.gpu.config.height,
         );
-    let mut pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
+    let mut pass = begin_main_load_pass(encoder, view, frame_depth);
     pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
     draw_pooled_ui(
         &mut pass,
@@ -1105,6 +1264,40 @@ fn draw_pooled_passthrough_overlay<'a>(
 ) {
     if let (Some(a), Some((buf, count))) = (atlas, pool.get(key)) {
         batch.draw_passthrough_range(pass, &a.texture, buf, 0, count);
+    }
+}
+
+/// Wheel zoom's boundary between world pixels and the screen-fixed band box.
+fn composite_world_with_drag_rect(
+    device: &wgpu::Device,
+    encoder: &mut wgpu::CommandEncoder,
+    world: &wgpu::Texture,
+    zoom: &crate::render::upscale_pass::WorldZoomPass,
+    tactical: [u32; 4],
+    batch: &BatchRenderer,
+    pool: &InstanceBufferPool,
+    drag: Option<&BatchTexture>,
+) {
+    zoom.composite(device, encoder, world, tactical, super::CLEAR_COLOR);
+    // Draw on the final pixel grid: a 1px border must not become a subpixel
+    // span on the world attachment and disappear before the filtered copy.
+    if drag.is_some() && pool.get("drag").is_some_and(|(_, count)| count != 0) {
+        let mut pass = begin_main_load_pass(encoder, zoom.color_view(), zoom.frame_depth_view());
+        pass.set_scissor_rect(tactical[0], tactical[1], tactical[2], tactical[3]);
+        draw_pooled_ui_passthrough(&mut pass, batch, pool, drag, "drag");
+    }
+}
+
+/// Native path/rally pixels belong to the world surface, before wheel zoom.
+pub(super) fn draw_pooled_surface_lines<'a>(
+    pass: &mut wgpu::RenderPass<'a>,
+    batch: &'a BatchRenderer,
+    pool: &'a InstanceBufferPool,
+    tex: Option<&'a BatchTexture>,
+    key: &'static str,
+) {
+    if let (Some(t), Some((buf, count))) = (tex, pool.get(key)) {
+        batch.draw_with_buffer_passthrough(pass, t, buf, count);
     }
 }
 
@@ -1285,6 +1478,11 @@ mod tests {
             "pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());",
         );
         let first_screen_submission = source_offset("\"message_text\"");
+        let tooltip_text = source_offset("\"tooltip_text\"");
+        let build_fill = source_offset("\"build_text_fill\"");
+        let build_text = source_offset("\"build_text_text\"");
+        let pre_cursor_capture = source_offset(".stage_pre_cursor_composition(");
+        let cursor = source_offset("\"software_cursor\"");
 
         // Original6D4648,6D4656,6D465F: IonBlast DrawAll between the first
         // rally pass and the object loop.
@@ -1316,13 +1514,32 @@ mod tests {
         assert!(screen_fixed < sidebar_blit);
         assert!(sidebar_blit < full_window_scissor);
         assert!(full_window_scissor < first_screen_submission);
+        // The description lives in the chrome pass, after the scissor reset.
+        assert!(full_window_scissor < build_fill);
+        // Native tail: CCToolTip 0x4F4570 then Phobos 0x4F4583.
+        assert!(tooltip_text < build_fill);
+        // Fill box first, then the red text, like every pooled text pair.
+        assert!(build_fill < build_text);
+        // The text stays inside the pre-cursor composition (mouse restore
+        // 0x4F4593 follows the Phobos hook 0x4F4583 natively).
+        assert!(build_text < pre_cursor_capture);
+        // The software cursor draws after the retained composition.
+        assert!(pre_cursor_capture < cursor);
 
         let timer_tail = &SOURCE[sparkle..outcome_start];
         assert_eq!(
             timer_tail.matches(".draw").count() + timer_tail.matches("draw_pooled").count(),
-            5,
-            "PixelFX, the two timer submissions and the two Phobos build-description \
-             submissions (empty outside Phobos builds) precede the native result draw"
+            3,
+            "PixelFX and the two timer submissions precede the native result draw; \
+             the Phobos build description now draws at the RenderFrame_main tail"
+        );
+        // Exhaustiveness: the description draws exactly once in the span from
+        // tooltips to cursor, pinning it out of the tactical tail.
+        let tail = &SOURCE[tooltip_text..cursor];
+        assert_eq!(
+            tail.matches("\"build_text_fill\"").count(),
+            1,
+            "the Phobos build description draws exactly once, at the frame tail"
         );
     }
 

@@ -1,12 +1,96 @@
 //! Replay clock, wrench, rank, health, scale pips and lines in Extras order.
 //! Other status families retain their existing owners and open parity bounds.
-use super::draw_plan_lowering::{ObjectExtrasRun, ObjectLayerPass};
+use super::draw_plan_lowering::{FrameHealthBar, ObjectExtrasRun, ObjectLayerPass};
 use crate::app::presentation::sidebar_render::begin_main_load_pass;
 use crate::app::presentation::ui_overlays::StatusTextRun;
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::selection_overlay::SelectionOverlay;
 use crate::render::tactical_draw_plan::RenderZPolicy;
 use crate::render::terrain_draw::{PackedCompositePiece, PackedSpriteKind, TerrainDrawRenderer};
+
+/// Wheel zoom has no stock YR equivalent. Health strips rasterize after world
+/// resampling: mobile strips keep their pixel size; building strips follow the
+/// projected roof. Keep retained parent order and one upload;
+/// removing these ranges also suppresses the initial Building Extras visit.
+/// At native zoom the original interleaved Display replay stays authoritative.
+pub(super) fn defer_health_to_frame(layer: &mut ObjectLayerPass, camera: [f32; 2], zoom: f32) {
+    if zoom == 1.0 {
+        return;
+    }
+    for run in &mut layer.extras_runs {
+        let ObjectExtrasRun::Status {
+            background,
+            shield_background,
+            fills,
+            ..
+        } = run
+        else {
+            continue;
+        };
+        if background.is_none() && shield_background.is_none() && fills.start == fills.end {
+            continue;
+        }
+        let health = FrameHealthBar {
+            background: background.take(),
+            shield_background: shield_background.take(),
+            fills: std::mem::replace(fills, fills.start..fills.start),
+        };
+        let first = health
+            .background
+            .or(health.shield_background)
+            .unwrap_or(health.fills.start);
+        let origin = layer.extras_instances[first as usize].position;
+        let frame_origin: [f32; 2] =
+            std::array::from_fn(|axis| ((origin[axis] - camera[axis]) * zoom + 0.5).floor());
+        for index in health
+            .background
+            .into_iter()
+            .chain(health.shield_background)
+            .chain(health.fills.clone())
+        {
+            let instance = &mut layer.extras_instances[index as usize];
+            // The producer compensates mobile pips and zoomed-out building
+            // health by 1/zoom; other building rows retain world dimensions.
+            // Snap on the FINAL lattice, never on the native world target.
+            // Quantize one common origin and the integer local offsets:
+            // independently rounding large world coordinates at a half-pixel
+            // tie gives adjacent pips different results after f32 cancellation.
+            for axis in 0..2 {
+                let offset = ((instance.position[axis] - origin[axis]) * zoom).round();
+                instance.position[axis] = camera[axis] + (frame_origin[axis] + offset) / zoom;
+                instance.size[axis] = (instance.size[axis] * zoom).round() / zoom;
+            }
+        }
+        layer.frame_health.push(health);
+    }
+}
+
+/// Final-frame health keeps the same PIPBRD/E00 and PIPS/600 material owner
+/// as native Extras. Zoomed health is UI above the completed battlefield,
+/// before timers/chrome; it never passes through the world filter twice.
+pub(super) fn draw_frame_health<'a>(
+    pass: &mut wgpu::RenderPass<'a>,
+    batch: &'a BatchRenderer,
+    overlay: Option<&'a SelectionOverlay>,
+    buffer: Option<&'a wgpu::Buffer>,
+    layer: &ObjectLayerPass,
+    cameras: [&'a wgpu::BindGroup; 2],
+) {
+    let (Some(overlay), Some(buffer)) = (overlay, buffer) else {
+        return;
+    };
+    for health in &layer.frame_health {
+        draw_health_bar(
+            pass,
+            batch,
+            overlay,
+            buffer,
+            [health.background, health.shield_background],
+            health.fills.clone(),
+            cameras,
+        );
+    }
+}
 
 /// Native6F5190/70A990/6F64A0: rank and PIPBRD E00 consume A (493DF0);
 /// PIPS/PIPS2 600 bypasses A (4912B0). Neither shape reads or writes Z. Commands
@@ -252,22 +336,15 @@ fn draw_status_prefix<'a>(
     if let (Some(index), Some(shape)) = (rank, overlay.pips()) {
         batch.draw_passthrough_range(pass, shape.texture(), buffer, *index, rank_count);
     }
-    if let Some(shape) = overlay.pipbrd() {
-        // Both health and Phobos shield borders are PIPBRD/E00. Their UVs
-        // belong to this texture, independently of the following PIPS fills.
-        for index in [background, shield_background].into_iter().flatten() {
-            batch.draw_passthrough_range(pass, shape.texture(), buffer, *index, 1);
-        }
-    }
-    if let Some(shape) = overlay.pips() {
-        batch.draw_with_buffer_passthrough_range(
-            pass,
-            shape.texture(),
-            buffer,
-            fills.start,
-            fills.end - fills.start,
-        );
-    }
+    draw_health_bar(
+        pass,
+        batch,
+        overlay,
+        buffer,
+        [*background, *shield_background],
+        fills.clone(),
+        [batch.camera_bind_group(), batch.surface_camera_bind_group()],
+    );
     if let Some(shape) = overlay.scale_pips() {
         //709A90 physical PIPS2 uses plain600 neutral-A/no-Z stores.
         batch.draw_with_buffer_passthrough_range(
@@ -276,6 +353,35 @@ fn draw_status_prefix<'a>(
             buffer,
             scale.start,
             scale.end - scale.start,
+        );
+    }
+}
+
+/// Native6F64A0: PIPBRD E00 reads A; PIPS600 bypasses it. Both bypass Z.
+fn draw_health_bar<'a>(
+    pass: &mut wgpu::RenderPass<'a>,
+    batch: &'a BatchRenderer,
+    overlay: &'a SelectionOverlay,
+    buffer: &'a wgpu::Buffer,
+    backgrounds: [Option<u32>; 2],
+    fills: std::ops::Range<u32>,
+    cameras: [&'a wgpu::BindGroup; 2],
+) {
+    if let Some(shape) = overlay.pipbrd() {
+        // Both health and Phobos shield borders are PIPBRD/E00. Their UVs
+        // belong to this texture, independently of the following PIPS fills.
+        for index in backgrounds.into_iter().flatten() {
+            batch.draw_passthrough_range_bound(pass, shape.texture(), buffer, cameras[0], index, 1);
+        }
+    }
+    if let Some(shape) = overlay.pips() {
+        batch.draw_passthrough_range_bound(
+            pass,
+            shape.texture(),
+            buffer,
+            cameras[1],
+            fills.start,
+            fills.end - fills.start,
         );
     }
 }
@@ -309,6 +415,7 @@ fn draw_status_group<'a>(
         buffer,
         group_rectangles.clone(),
         group_text.clone(),
+        batch.surface_camera_bind_group(),
     );
     // Phobos DigitalDisplay: each entry's backing then glyphs in list order,
     // using the same GAME.FNT material.
@@ -321,6 +428,7 @@ fn draw_status_group<'a>(
             buffer,
             rectangles.clone(),
             text.clone(),
+            batch.surface_camera_bind_group(),
         );
     }
     #[cfg(feature = "phobos")]
@@ -350,6 +458,7 @@ pub(super) fn draw_building_status_text(
     buffer: Option<&wgpu::Buffer>,
     font: Option<&BatchTexture>,
     runs: &[StatusTextRun],
+    camera: &wgpu::BindGroup,
 ) {
     let (Some(overlay), Some(buffer)) = (overlay, buffer) else {
         return;
@@ -368,6 +477,7 @@ pub(super) fn draw_building_status_text(
             buffer,
             run.rectangles.clone(),
             run.text.clone(),
+            camera,
         );
     }
     drop(pass);
@@ -384,19 +494,22 @@ fn draw_status_text_material<'a>(
     buffer: &'a wgpu::Buffer,
     rectangles: std::ops::Range<u32>,
     text: std::ops::Range<u32>,
+    camera: &'a wgpu::BindGroup,
 ) {
-    batch.draw_with_buffer_passthrough_range(
+    batch.draw_passthrough_range_bound(
         pass,
         white,
         buffer,
+        camera,
         rectangles.start,
         rectangles.end - rectangles.start,
     );
     if let Some(font) = font {
-        batch.draw_with_buffer_passthrough_range(
+        batch.draw_passthrough_range_bound(
             pass,
             font,
             buffer,
+            camera,
             text.start,
             text.end - text.start,
         );

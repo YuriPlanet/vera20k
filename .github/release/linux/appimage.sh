@@ -30,8 +30,8 @@ chmod +x "$stage/appimagetool"
 app="$stage/VERA20K.AppDir"
 mkdir -p "$app/usr/bin" "$app/usr/share/doc/vera20k"
 cp "$package/vera20k" "$app/usr/bin/"
-cp "$package/README.txt" "$package/LICENSE-GPL" "$package/THIRD_PARTY_LICENSES.html" \
-  "$app/usr/share/doc/vera20k/"
+cp "$package/README.txt" "$package/LICENSE-GPL" "$package/LGPL-2.1-or-later.txt" \
+  "$package/THIRD_PARTY_LICENSES.html" "$app/usr/share/doc/vera20k/"
 ln -s usr/bin/vera20k "$app/AppRun"
 cp "$here/vera20k.desktop" "$app/"
 # Red Alert 2's red star, as the icon desktops show and as the .DirIcon file

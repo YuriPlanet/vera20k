@@ -47,7 +47,15 @@ pub(crate) fn press(
     let Some(view) = view else {
         return SuperWeaponClick::None;
     };
-    if !view.can_fire || !view.can_afford {
+    // Ares's sidebar hook 10034E75 and Phobos's LaunchSuper also refuse a
+    // `SW.UseAITargeting` type whose constraints fail. Ares's select hook
+    // 10034DA0 also refuses an AutoFire-only type; the caller posts its
+    // messages.
+    if !view.can_fire || !view.can_afford || view.constraints_blocked {
+        return SuperWeaponClick::Refused;
+    }
+    #[cfg(feature = "ares")]
+    if view.ares_refusal.is_some() {
         return SuperWeaponClick::Refused;
     }
     // Ares sidebar10034F3F sends SPECIAL_PLACE immediately for UseAI; the

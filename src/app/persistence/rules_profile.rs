@@ -26,12 +26,12 @@ const STARTER: &[u8] = b"; Personal gameplay changes. Original game files are ne
 /// existing spelling and bytes without replacing their edits.
 pub(crate) fn load_or_create(directory: &Path) -> io::Result<Vec<u8>> {
     let path = find(directory, FILENAME).unwrap_or_else(|| directory.join(FILENAME));
-    match std::fs::read(&path) {
+    match crate::util::file_system::read(&path) {
         Ok(bytes) => Ok(bytes),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            std::fs::create_dir_all(directory)?;
+            crate::util::file_system::create_dir_all(directory)?;
             super::profile_file::create_new(&path, STARTER)?;
-            std::fs::read(path)
+            crate::util::file_system::read(path)
         }
         Err(error) => Err(error),
     }

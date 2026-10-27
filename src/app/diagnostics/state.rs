@@ -5,7 +5,7 @@
 //! owner is process-scoped tooling state.
 
 use std::collections::VecDeque;
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 const FRAME_TIMER_WINDOW: usize = 60;
 

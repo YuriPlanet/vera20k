@@ -133,6 +133,7 @@ pub(crate) fn render_diplomacy_shell(
         };
         if let Some(entry) = shown
             .insignia
+            .as_deref()
             .and_then(|name| chrome.and_then(|atlas| atlas.lan_player_side(name)))
         {
             push_flag_entry_clipped_centered(

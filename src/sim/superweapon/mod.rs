@@ -42,10 +42,6 @@ mod ares_charge_tests;
 mod ares_target_policy_tests;
 #[cfg(feature = "ares")]
 mod ares_presentation;
-#[cfg(feature = "ares")]
-mod hunter_seeker;
-#[cfg(test)]
-mod hunter_seeker_tests;
 pub mod genetic_converter;
 pub mod invulnerability;
 pub mod iron_curtain;
@@ -759,8 +755,11 @@ impl SuperWeaponInstance {
                 self.charge_drain_state = 0;
             }
             #[cfg(feature = "ares")]
-            if sw.kind.has_ares_handler()
-                && let Some(metadata) = rules.super_weapon_metadata(&sw.id)
+            if matches!(
+                sw.kind,
+                crate::rules::superweapon_type::SuperWeaponKind::GenericWarhead
+                    | crate::rules::superweapon_type::SuperWeaponKind::UnitDelivery
+            ) && let Some(metadata) = rules.super_weapon_metadata(&sw.id)
             {
                 // These handlers already retain successful launch history.
                 // Stock redirects need their own success boundary before using
@@ -1160,6 +1159,27 @@ pub(crate) fn super_types_with_type(
         .map(String::as_str)
 }
 
+/// `SuperWeaponTypeClass::FindFirstOfAction @ 0x006CEEB0`: the first
+/// `[SuperWeaponTypes]` entry whose `Action=` (`+0xBC`) is `action`, or none.
+/// An absent `Action=` keeps the constructor's action 0, `None`.
+pub(crate) fn first_super_type_with_action<'a>(
+    rules: &'a RuleSet,
+    action: &str,
+) -> Option<&'a str> {
+    rules
+        .super_weapon_order
+        .iter()
+        .find(|name| {
+            rules.super_weapon(name).is_some_and(|sw| {
+                sw.action
+                    .as_deref()
+                    .unwrap_or("None")
+                    .eq_ignore_ascii_case(action)
+            })
+        })
+        .map(String::as_str)
+}
+
 /// `owner`'s Super of `type_name` is granted (`+0x6D`) and, in PC53/chop, its
 /// remaining charge over its recharge time is not above `1.0f - [General]
 /// AIMinorSuperReadyPercent=` (`FCOMPP`, `TEST AH,0x1`, so an unordered
@@ -1356,12 +1376,18 @@ pub struct SuperWeaponDisplay {
     pub status: Option<SuperWeaponStatus>,
 }
 
-/// Ephemeral sidebar rejection; gameplay state remains with the Super/House owners.
+/// Why Ares's sidebar select hook (10034DA0) refuses a cameo press, in its
+/// test order. Ephemeral; gameplay state stays with the Super/House owners.
 #[cfg(feature = "ares")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AresCameoRefusal {
+    /// Prints `Message.InsufficientFunds`.
     InsufficientFunds,
+    /// A `SW.UseAITargeting` type's constraints refuse; prints
+    /// `Message.CannotFire`.
     CannotFire,
+    /// `SW.AutoFire` without `SW.ManualFire`: refused without a message.
+    ManualFireDisabled,
 }
 
 /// View struct for sidebar display — no sim internals exposed.
@@ -1382,8 +1408,24 @@ pub struct SuperWeaponView {
     pub can_fire: bool,
     /// Derived from the same wallet predicate used at launch, not readiness.
     pub can_afford: bool,
+    /// A `SW.UseAITargeting` type whose Ares constraints fail for a manual
+    /// launch (IsTargetConstraintsEligible10032110). Ares's sidebar hooks
+    /// darken (10034F3F) and refuse (10034E75) it, as Phobos's
+    /// SWButtonClass does. Always false without Ares.
+    pub constraints_blocked: bool,
+    /// The select hook's refusal of a press, if any.
     #[cfg(feature = "ares")]
     pub ares_refusal: Option<AresCameoRefusal>,
+}
+
+impl SuperWeaponView {
+    /// The strip cameo's enabled state, the inverse of its darken flag (BL).
+    /// Stock StripDraw clears BL for every superweapon (0x006A99B5); Ares's
+    /// hook there (10034EF0) sets it while CanFire (0x006CC360) holds and the
+    /// type is unaffordable or its constraints refuse a manual launch.
+    pub fn sidebar_enabled(&self) -> bool {
+        !(self.can_fire && (!self.can_afford || self.constraints_blocked))
+    }
 }
 
 /// Query active superweapons for a specific owner (for sidebar rendering).
@@ -1419,14 +1461,18 @@ pub fn superweapon_views_for_owner(
         #[cfg(feature = "ares")]
         let can_afford = money::can_afford(&sim.houses, *owner, money_type);
         #[cfg(feature = "ares")]
-        let admission = ai_fire::manual_cameo_admission(
-            sim,
-            rules,
-            *owner,
-            sw_type,
-            native_can_fire,
-            can_afford,
-        );
+        let constraints_blocked = rules
+            .super_weapon_metadata(type_id_str)
+            .is_some_and(|metadata| {
+                let targeting = metadata.targeting();
+                targeting.use_ai_targeting()
+                    && !targeting.constraints().allows_manual_fire(
+                        sim.houses
+                            .get(owner)
+                            .map(|house| house.target_constraints_observations())
+                            .unwrap_or_default(),
+                    )
+            });
         views.push(SuperWeaponView {
             type_id: inst.type_id,
             use_ai_targeting: rules.super_weapon_uses_ai_targeting(type_id_str),
@@ -1436,16 +1482,7 @@ pub fn superweapon_views_for_owner(
             is_ready: inst.is_ready,
             is_online: !inst.is_suspended,
             should_flash_tab: inst.should_flash_tab(sw_type, current_frame),
-            can_fire: {
-                #[cfg(feature = "ares")]
-                {
-                    admission.can_fire
-                }
-                #[cfg(not(feature = "ares"))]
-                {
-                    native_can_fire
-                }
-            },
+            can_fire: native_can_fire,
             can_afford: {
                 #[cfg(feature = "ares")]
                 {
@@ -1456,8 +1493,24 @@ pub fn superweapon_views_for_owner(
                     true
                 }
             },
+            constraints_blocked: {
+                #[cfg(feature = "ares")]
+                {
+                    constraints_blocked
+                }
+                #[cfg(not(feature = "ares"))]
+                {
+                    false
+                }
+            },
             #[cfg(feature = "ares")]
-            ares_refusal: admission.refusal,
+            ares_refusal: ai_fire::manual_cameo_refusal(
+                rules,
+                sw_type,
+                native_can_fire,
+                can_afford,
+                constraints_blocked,
+            ),
         });
     }
     views
@@ -1875,14 +1928,7 @@ fn finish_ares_launch(
     if recheck && let Some(house) = sim.houses.get_mut(&owner) {
         house.request_tech_recheck();
     }
-    // Common Launch10032F15 records success before its activation EVA.
-    // Emit once here, after Activate has finished all immediate payloads.
-    let [x, y, z] = deck_coords(sim, cell);
-    sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
-        owner,
-        sw_type: typ,
-        world: crate::sim::components::DriveCoord { x, y, z }.into(),
-    });
+    ares_presentation::on_launch(sim, rules, owner, typ, cell);
 }
 
 /// Shared provider facts for one reached House pass. Source authority is the

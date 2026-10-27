@@ -93,7 +93,12 @@ pub(crate) fn execute(state: &mut AppState, number: u8, now_ms: u64) {
     // RESIDUAL: a House with no resolved country stands as 0; the local
     // node always has one natively (the 0x0069B8C0 assignment).
     let byte = taunt_byte(country.map_or(0, |index| index.0), number);
-    play(state, byte);
+    let pattern = runtime
+        .resources
+        .rules
+        .country_taunt_pattern_by_index(u16::from(byte >> 4))
+        .map(str::to_owned);
+    play(state, byte, pattern.as_deref());
     let recipients = crate::app::input::chat::listener_peers(state, local);
     if !recipients.is_empty() {
         state.match_state.session.request_taunt(recipients, byte);
@@ -106,16 +111,27 @@ pub(crate) fn execute(state: &mut AppState, number: u8, now_ms: u64) {
 pub(crate) fn receive(state: &mut AppState, byte: u8) {
     let mode = state.match_state.session_mode();
     if state.frontend.multiplayer_shell_runtime.taunts_on(mode) == Some(true) {
-        play(state, byte);
+        let pattern = state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .and_then(|runtime| {
+                runtime
+                    .resources
+                    .rules
+                    .country_taunt_pattern_by_index(u16::from(byte >> 4))
+            })
+            .map(str::to_owned);
+        play(state, byte, pattern.as_deref());
     }
 }
 
-fn play(state: &mut AppState, byte: u8) {
+fn play(state: &mut AppState, byte: u8, pattern: Option<&str>) {
     if let (Some(sfx), Some(assets)) = (
         state.audio.sfx_player.as_mut(),
         state.process_assets.manager(),
     ) {
-        sfx.play_taunt(byte, assets);
+        sfx.play_taunt(byte, assets, pattern);
     }
 }
 

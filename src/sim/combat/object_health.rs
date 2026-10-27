@@ -70,6 +70,20 @@ impl Health {
         X87::div(X87::load_i32(self.current), X87::load_i32(strength))
     }
 
+    /// ObjectClass::SetHealthFraction5F5C80..5F5CC5, called by installed
+    /// Ares conversion10043745 through10046400. The stored double must be
+    /// positive and ordered; only a zero integer product is raised to one.
+    #[cfg(feature = "ares")]
+    pub(crate) fn set_fraction(&mut self, fraction: NativeF64Bits, strength: i32) {
+        let fraction = X87::load_f64(fraction);
+        self.current = if X87::compare(fraction, X87::load_i32(0)) == MaskedX87Ordering::Greater {
+            let product = X87::ftol_i32_low_masked(X87::mul(fraction, X87::load_i32(strength)));
+            if product == 0 { 1 } else { product }
+        } else {
+            0
+        };
+    }
+
     /// [`Self::ratio`] compared `>=` `Rules+0x16F8` with an ordered FCOMP
     /// (the C0-clear test): 0/0 (NaN) is not full and x/0 for x > 0 (+inf)
     /// is. AudioVisual `0x0066B323..0x0066B32D` writes that threshold as 1.0

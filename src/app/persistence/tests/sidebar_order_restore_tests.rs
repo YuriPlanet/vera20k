@@ -191,6 +191,32 @@ fn prepare(
     )
 }
 
+#[cfg(feature = "phobos")]
+#[test]
+fn sw_sidebar_expanded_flag_survives_the_snapshot_envelope() {
+    let (sim, rules, owner, types) = fixture();
+    let mut saved = retained_history(owner, types).saved_order().unwrap();
+    saved.set_sw_sidebar_expanded(false);
+    let bytes = save(&sim, &rules, Some(&saved));
+    let loaded = GameSnapshot::load_validated(
+        &bytes,
+        LOAD_FIXTURE_MAP_HASH,
+        rules.simulation_config_hash(),
+        LOAD_FIXTURE_MAP_NAME,
+    )
+    .unwrap();
+    assert!(!loaded.sidebar_order().unwrap().sw_sidebar_expanded());
+    let prepared = prepare(&bytes, &sim, &rules).unwrap();
+    let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
+    let committed = prepared.commit_into(&mut runtime);
+    assert!(
+        !committed
+            .sidebar_order
+            .expect("retained sidebar")
+            .sw_sidebar_expanded()
+    );
+}
+
 #[test]
 fn sidebar_order_envelope_roundtrips_without_changing_simulation_hash() {
     let (sim, rules, owner, types) = fixture();

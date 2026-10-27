@@ -257,7 +257,7 @@ pub(crate) struct MatchInputState {
     /// the 800 ms double-tap that centres the camera. Wall clock, never sim
     /// state: the original stamps `timeGetTime()` here and only a recall writes
     /// it — assigning with Ctrl+digit never does.
-    pub(crate) last_control_group_press: Option<(usize, std::time::Instant)>,
+    pub(crate) last_control_group_press: Option<(usize, crate::util::time::Instant)>,
     /// The object the camera is following, i.e. `DisplayClass +0x11A0` behind
     /// its valid byte `+0x119C`. `None` is the cleared pair.
     pub(crate) follow_target: Option<u64>,

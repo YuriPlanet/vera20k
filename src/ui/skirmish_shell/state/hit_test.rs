@@ -126,6 +126,24 @@ pub fn hovered_shell_control(
     None
 }
 
+/// Like [`status_help_key_for_hover`], but an Ares country row may supply
+/// its own `MenuText.Status` CSF key from the refreshed catalog.
+pub(crate) fn status_help_key_for_hover_with_catalog<'a>(
+    target: SkirmishHoverTarget,
+    catalog: Option<&'a super::CountryMenuCatalog>,
+) -> Option<&'a str> {
+    if let SkirmishHoverTarget::ComboItem {
+        id: SkirmishComboId::Side(_),
+        item: SkirmishComboItem::Country(country),
+    } = target
+    {
+        if let Some(key) = catalog.and_then(|catalog| catalog.status_key_for_choice(country)) {
+            return Some(key);
+        }
+    }
+    status_help_key_for_hover(target)
+}
+
 pub fn status_help_key_for_hover(target: SkirmishHoverTarget) -> Option<&'static str> {
     match target {
         SkirmishHoverTarget::StatusHelp0x695 => None,

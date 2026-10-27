@@ -6,7 +6,7 @@
 //! successfully presented count, and one dirty-paint generation. The app layer
 //! acknowledges that generation only after swapchain presentation.
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 /// Native kind-1 timer interval of the right-panel heading `0x694`
 /// (`0x1e` milliseconds).

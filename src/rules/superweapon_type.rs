@@ -58,8 +58,6 @@ pub enum SuperWeaponKind {
     GenericWarhead,
     /// Ares reinforcement delivery extension.
     UnitDelivery,
-    /// Ares extension: launch UnitClass payloads from designated buildings.
-    HunterSeeker,
     /// Constructor Type=-1: no recognized name has replaced it. Launch's
     /// unsigned guard6CC3AC returns without a case; ordinary ClickFire still
     /// consumes readiness or its one-time grant. This is not an extension.
@@ -67,15 +65,6 @@ pub enum SuperWeaponKind {
 }
 
 impl SuperWeaponKind {
-    /// The three implemented NewSWType Activate owners, absent from retail builds.
-    #[cfg(feature = "ares")]
-    pub(crate) const fn has_ares_handler(self) -> bool {
-        matches!(
-            self,
-            Self::GenericWarhead | Self::UnitDelivery | Self::HunterSeeker
-        )
-    }
-
     /// Retail Type value; extensions use identifiers outside 0..12.
     pub const fn native_index(self) -> i32 {
         match self {
@@ -92,7 +81,6 @@ impl SuperWeaponKind {
             Self::ForceShield => 10,
             Self::PsychicReveal => 11,
             Self::UnitDelivery => 0x101,
-            Self::HunterSeeker => 0x102,
             Self::GenericWarhead => -1,
             Self::NoEffect => -1,
         }
@@ -115,8 +103,6 @@ impl SuperWeaponKind {
             "psychicreveal" => Some(Self::PsychicReveal),
             #[cfg(feature = "ares")]
             "unitdelivery" => Some(Self::UnitDelivery),
-            #[cfg(feature = "ares")]
-            "hunterseeker" => Some(Self::HunterSeeker),
             #[cfg(feature = "ares")]
             "genericwarhead" => Some(Self::GenericWarhead),
             _ => None,
@@ -146,76 +132,6 @@ pub(crate) struct AresSuperWeaponPresentation {
     pub(crate) sound: Option<Option<String>>,
     #[serde(default)]
     pub(crate) messages: AresSuperWeaponMessages,
-    #[serde(default)]
-    pub(crate) eva: AresSuperWeaponEva,
-}
-
-/// Fixed-catalog references. The ordered SWType reader owns initialization and
-/// mutation; the client uses the existing EVA queue for playback and removal.
-#[cfg(feature = "ares")]
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct AresSuperWeaponEva {
-    ready: Option<String>,
-    activated: Option<String>,
-    detected: Option<String>,
-}
-
-#[cfg(feature = "ares")]
-impl AresSuperWeaponEva {
-    pub fn ready(&self) -> Option<&str> {
-        self.ready.as_deref()
-    }
-    pub fn activated(&self) -> Option<&str> {
-        self.activated.as_deref()
-    }
-    pub fn detected(&self) -> Option<&str> {
-        self.detected.as_deref()
-    }
-
-    pub(crate) fn initialize_for_kind(
-        &mut self,
-        kind: Option<&str>,
-        eva: &crate::rules::sound_ini::EvaRegistry,
-    ) {
-        // SWTypeExt ctor100316C5/CF/D9 initializes all three ordinals to -1.
-        // HunterSeeker Initialize10072990 resolves its three literal names.
-        // GenericWarhead10071860 and UnitDelivery100759D0 set only AI mode.
-        if kind.is_some_and(|kind| kind.eq_ignore_ascii_case("HunterSeeker")) {
-            self.ready = eva
-                .entry("EVA_HunterSeekerReady")
-                .map(|entry| entry.name.clone());
-            self.activated = eva
-                .entry("EVA_HunterSeekerLaunched")
-                .map(|entry| entry.name.clone());
-            self.detected = eva
-                .entry("EVA_HunterSeekerDetected")
-                .map(|entry| entry.name.clone());
-        }
-    }
-
-    pub(crate) fn read_pass(
-        &mut self,
-        section: &IniSection,
-        eva: &crate::rules::sound_ini::EvaRegistry,
-    ) {
-        // SWTypeExt::LoadFromINI10033370 reads these first, in this order,
-        // via1000EC10: a fixed-catalog lookup, then none, otherwise retention.
-        self.ready = eva.read_rules_reference(
-            Some(section),
-            "EVA.Ready",
-            self.ready.as_deref().unwrap_or(""),
-        );
-        self.activated = eva.read_rules_reference(
-            Some(section),
-            "EVA.Activated",
-            self.activated.as_deref().unwrap_or(""),
-        );
-        self.detected = eva.read_rules_reference(
-            Some(section),
-            "EVA.Detected",
-            self.detected.as_deref().unwrap_or(""),
-        );
-    }
 }
 
 /// SWTypeExt message/style fields. The ordered reader owns mutation; clients
@@ -285,7 +201,6 @@ impl Default for AresSuperWeaponPresentation {
             visibility: crate::rules::superweapon_targeting::HouseMask::ALL,
             sound: None,
             messages: AresSuperWeaponMessages::default(),
-            eva: AresSuperWeaponEva::default(),
         }
     }
 }
@@ -411,26 +326,34 @@ pub struct SuperWeaponType {
     pub ai_defend_against: bool,
     /// When true, suspension doesn't auto-resume on power restore.
     pub manual_control: bool,
+    /// Phobos `SW.ShowCameo=`, read by `SWTypeExt` for the superweapon
+    /// sidebar's `AddButton` gate. Not the ordinary right-sidebar cameo.
+    #[cfg(feature = "phobos")]
+    pub sw_show_cameo: bool,
+    /// Phobos `SuperWeaponSidebar.Allow=`. Unset falls back to
+    /// `[AudioVisual] SuperWeaponSidebar.AllowByDefault`.
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_allow: Option<bool>,
+    /// Phobos `SuperWeaponSidebar.PriorityHouses=` tokens. Owners in the list
+    /// sort before owners outside it; the constructor's mask is 0.
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_priority_houses: Vec<String>,
+    /// Phobos `SuperWeaponSidebar.RequiredHouses=` tokens; `None` keeps the
+    /// constructor's all-bits mask, and a comma-only list is mask 0.
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_required_houses: Option<Vec<String>>,
+    /// Phobos `SuperWeaponSidebar.Significance=`, default 0.
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_significance: i32,
     /// Present only for the explicitly selected Ares extension; stock types
     /// retain their existing readers and behavior.
     pub generic_warhead: Option<GenericWarheadSettings>,
-    /// Pointer bindings retained by the ordered Ares reader.
-    pub hunter_seeker: Option<crate::rules::hunter_seeker::HunterSeekerSettings>,
 }
 
 impl SuperWeaponType {
     #[cfg(feature = "ares")]
     pub fn ares_messages(&self) -> &AresSuperWeaponMessages {
         &self.presentation.messages
-    }
-
-    /// Only implemented extension handlers own the Ares announcement path.
-    /// Stock redirects keep their existing readers and dispatch boundaries.
-    #[cfg(feature = "ares")]
-    pub fn ares_eva(&self) -> Option<&AresSuperWeaponEva> {
-        self.kind
-            .has_ares_handler()
-            .then_some(&self.presentation.eva)
     }
 
     /// Ares3.0 SWType extension reader10033B50..10033B66, PCXFile100762C0.
@@ -457,7 +380,10 @@ impl SuperWeaponType {
             // not remove the registered type or skip its other fields.
             .unwrap_or(SuperWeaponKind::NoEffect);
         #[cfg(feature = "ares")]
-        let extension_kind = kind.has_ares_handler();
+        let extension_kind = matches!(
+            kind,
+            SuperWeaponKind::GenericWarhead | SuperWeaponKind::UnitDelivery
+        );
         #[cfg(not(feature = "ares"))]
         let extension_kind = false;
         Self {
@@ -491,9 +417,6 @@ impl SuperWeaponType {
             action: match kind {
                 #[cfg(feature = "ares")]
                 SuperWeaponKind::GenericWarhead => Some("Attack".to_string()),
-                // SW_HunterSeeker sets Action=None after all INI reads.
-                #[cfg(feature = "ares")]
-                SuperWeaponKind::HunterSeeker => None,
                 #[cfg(feature = "ares")]
                 SuperWeaponKind::UnitDelivery => Some(
                     section
@@ -539,7 +462,6 @@ impl SuperWeaponType {
             money_amount: 0,
             insufficient_funds_eva: None,
             unit_delivery: None,
-            hunter_seeker: None,
             special_sound: section.read_name("SpecialSound", 0x80).map(str::to_string),
             start_sound: section.read_name("StartSound", 0x80).map(str::to_string),
             // The native constructor starts at -1; the final projected INI
@@ -547,6 +469,25 @@ impl SuperWeaponType {
             flash_sidebar_tab_frames: section.read_int("FlashSidebarTabFrames", -1),
             ai_defend_against: section.read_bool("AIDefendAgainst", false),
             manual_control: section.read_bool("ManualControl", false),
+            #[cfg(feature = "phobos")]
+            sw_show_cameo: section.read_bool("SW.ShowCameo", true),
+            #[cfg(feature = "phobos")]
+            sw_sidebar_allow: section.read_bool_value("SuperWeaponSidebar.Allow"),
+            // Both lists use Phobos's ReadHouseTypesList, YRpp's jump to
+            // gamemd's ReadOwners4750D0 with its char[128] buffer.
+            #[cfg(feature = "phobos")]
+            sw_sidebar_priority_houses: section
+                .read_list("SuperWeaponSidebar.PriorityHouses", 0x80)
+                .unwrap_or_default()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            #[cfg(feature = "phobos")]
+            sw_sidebar_required_houses: section
+                .read_list("SuperWeaponSidebar.RequiredHouses", 0x80)
+                .map(|tokens| tokens.into_iter().map(str::to_string).collect()),
+            #[cfg(feature = "phobos")]
+            sw_sidebar_significance: section.read_int("SuperWeaponSidebar.Significance", 0),
             #[cfg(not(feature = "ares"))]
             generic_warhead: None,
             #[cfg(feature = "ares")]
@@ -641,7 +582,7 @@ pub(crate) struct AresSuperWeaponMetadata {
     buildings: Option<SuperWeaponBuildingRequirements>,
     charge: AresSuperWeaponCharge,
     influence: crate::rules::superweapon_influence::SuperWeaponInfluence,
-    targeting: crate::rules::superweapon_targeting::AresTargetPolicy,
+    targeting: crate::rules::superweapon_targeting::AresSuperWeaponTargetingState,
 }
 
 /// SWTypeExt+284/+285: constructor10031460 clears AX at10031471 and
@@ -670,7 +611,7 @@ impl AresSuperWeaponMetadata {
         buildings: Option<&SuperWeaponBuildingRequirements>,
         charge: &AresSuperWeaponCharge,
         influence: &crate::rules::superweapon_influence::SuperWeaponInfluence,
-        targeting: &crate::rules::superweapon_targeting::AresTargetPolicy,
+        targeting: crate::rules::superweapon_targeting::AresSuperWeaponTargetingState,
     ) -> Self {
         Self {
             availability: availability.clone(),
@@ -678,7 +619,7 @@ impl AresSuperWeaponMetadata {
             buildings: buildings.cloned(),
             charge: charge.clone(),
             influence: influence.clone(),
-            targeting: targeting.clone(),
+            targeting,
         }
     }
 
@@ -700,8 +641,11 @@ impl AresSuperWeaponMetadata {
         &self.influence
     }
 
-    pub(crate) fn targeting(&self) -> &crate::rules::superweapon_targeting::AresTargetPolicy {
-        &self.targeting
+    /// The ordered SWTypeExt targeting fields.
+    pub(crate) fn targeting(
+        &self,
+    ) -> crate::rules::superweapon_targeting::AresSuperWeaponTargetingState {
+        self.targeting
     }
 }
 
@@ -812,69 +756,6 @@ mod tests {
 
     #[cfg(feature = "ares")]
     #[test]
-    fn ares_superweapon_eva_uses_fixed_catalog_defaults_and_ordered_retention() {
-        use crate::rules::ini_parser::IniFile;
-        use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
-        use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
-        use std::sync::Arc;
-        let eva = Arc::new(EvaRegistry::from_ini(&IniFile::from_str(
-            "[DialogList]\n0=EVA_HunterSeekerReady\n1=EVA_HunterSeekerLaunched\n\
-             2=EVA_HunterSeekerDetected\n3=Custom\n4=none\n",
-        )));
-        let root = IniFile::from_str(
-            "[SuperWeaponTypes]\n0=Seek\n1=Plain\n2=Strike\n3=Delivery\n\
-             [Seek]\nType=HunterSeeker\nEVA.Ready=Custom\nEVA.Activated=none\n\
-             [Plain]\nType=HunterSeeker\n[Strike]\nType=GenericWarhead\n\
-             [Delivery]\nType=UnitDelivery\n",
-        );
-        let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
-            root,
-            None,
-            IniFile::empty(),
-            Arc::new(SoundRegistry::from_ini(&IniFile::empty())),
-            eva,
-        )
-        .unwrap();
-        let map = IniFile::from_str(
-            "[Seek]\nEVA.Ready=UNKNOWN\nEVA.Activated=?invalid\nEVA.Detected=<none>\n",
-        );
-        let (rules, ..) = owner
-            .load_scenario(NativeScenarioRulesPrefix::NonCampaign(None), &map)
-            .unwrap()
-            .into_parts();
-        let seek = rules.super_weapon("Seek").unwrap().ares_eva().unwrap();
-        assert_eq!(
-            (seek.ready(), seek.activated(), seek.detected()),
-            (Some("Custom"), Some("none"), None)
-        );
-        let plain = rules.super_weapon("Plain").unwrap().ares_eva().unwrap();
-        assert_eq!(
-            (plain.ready(), plain.activated(), plain.detected()),
-            (
-                Some("EVA_HunterSeekerReady"),
-                Some("EVA_HunterSeekerLaunched"),
-                Some("EVA_HunterSeekerDetected")
-            )
-        );
-        for name in ["Strike", "Delivery"] {
-            let eva = rules.super_weapon(name).unwrap().ares_eva().unwrap();
-            assert_eq!(
-                (eva.ready(), eva.activated(), eva.detected()),
-                (None, None, None)
-            );
-        }
-        let saved =
-            crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
-        let restored = crate::util::save_codec::deserialize(&saved).unwrap();
-        let restored = owner.project_saved_scenario_rules(&restored).unwrap();
-        assert_eq!(
-            rules.super_weapon("Seek").unwrap().ares_eva(),
-            restored.super_weapon("Seek").unwrap().ares_eva()
-        );
-    }
-
-    #[cfg(feature = "ares")]
-    #[test]
     fn ares_refusal_messages_retain_layers_and_resolve_registered_none_before_sentinel() {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
@@ -894,15 +775,15 @@ mod tests {
         let processed = layers.process_with_fixed_art(&IniFile::empty()).unwrap();
         let rules = crate::rules::ruleset::RuleSet::from_processed_rules(&processed).unwrap();
         assert_eq!(
-            rules.super_weapon_target_policy("Strike").unwrap().ai_mode,
+            rules.super_weapon_target_policy("Strike").unwrap().mode(),
             crate::rules::superweapon_targeting::AiTargetingMode::Offensive,
             "handler initialization supplies the default mode in the metadata owner",
         );
         let strike = rules.super_weapon("Strike").unwrap().ares_messages();
         assert_eq!(
             strike.color_scheme(),
-            1,
-            "the registered none is a real colour"
+            0,
+            "the registered none is a real colour; Find(name, 1) gives 2i"
         );
         assert!(strike.firer_color());
         assert_eq!(strike.cannot_fire(), "123456789012345678901234567890 ");

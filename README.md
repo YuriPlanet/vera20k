@@ -105,6 +105,9 @@ Arrows show data flow:
 
 ## Build and run
 
+An opt-in [WebAssembly single-player preview](docs/wasm.md) is also available.
+It uses a separate build command; desktop builds keep their existing defaults.
+
 You need:
 
 - **Rust and Git:** [Rust](https://rustup.rs/) 1.97 or later, installed with rustup, and

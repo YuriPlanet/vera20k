@@ -547,7 +547,7 @@ fn collect_build_entries(
                 display_name: sw.display_name.clone(),
                 cost: None,
                 queue_category: ProductionCategory::Defense,
-                enabled: sw.is_online && sw.can_afford,
+                enabled: sw.sidebar_enabled(),
                 at_build_limit: false,
                 progress: sw.progress,
                 queued_count: 0,
@@ -665,6 +665,7 @@ mod tests {
                 display: Default::default(),
                 can_fire: online,
                 can_afford: affordable,
+                constraints_blocked: false,
                 #[cfg(feature = "ares")]
                 ares_refusal: None,
             }];
@@ -678,7 +679,8 @@ mod tests {
                 &views,
             );
             assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0].enabled, online && affordable);
+            // Only a firable Super darkens; on hold it never does.
+            assert_eq!(entries[0].enabled, !online || affordable);
             assert!(entries[0].is_ready, "cash does not erase the charged Super");
         }
     }

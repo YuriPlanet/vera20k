@@ -62,7 +62,7 @@ pub(crate) struct WolPageDialog {
     pub(crate) send_enabled: bool,
     pub(crate) buttons: ShellButtonInteraction<u16>,
     /// The focused edit's caret blink start (NewEdit's 1000 ms timer).
-    pub(crate) focus_at: Option<std::time::Instant>,
+    pub(crate) focus_at: Option<crate::util::time::Instant>,
 }
 
 /// The page reply window `{start [0xB76478], duration [0xB76480]}` in
@@ -178,7 +178,7 @@ impl WolPageDialog {
             return;
         }
         let old = std::mem::replace(&mut self.focus, target);
-        self.focus_at = Some(std::time::Instant::now());
+        self.focus_at = Some(crate::util::time::Instant::now());
         self.name.focused = target == Some(NAME);
         self.text.focused = target == Some(TEXT);
         if let Some(old) = old {
@@ -324,7 +324,7 @@ pub(crate) struct WolPageReceived {
     pub(crate) reply_to: String,
     pub(crate) send_enabled: bool,
     pub(crate) buttons: ShellButtonInteraction<u16>,
-    pub(crate) focus_at: Option<std::time::Instant>,
+    pub(crate) focus_at: Option<crate::util::time::Instant>,
     /// `[0xB76E24]`, the selected buddy, as it was at open: only `0x116`
     /// writes it, and nothing under `0x11E` takes input while it exists.
     pub(crate) fallback: String,
@@ -373,7 +373,7 @@ impl WolPageReceived {
     /// [`WolPageDialog::press_transcript_row`]).
     pub(crate) fn press(&mut self, control: u16) {
         if control == TEXT && !self.reply.focused {
-            self.focus_at = Some(std::time::Instant::now());
+            self.focus_at = Some(crate::util::time::Instant::now());
             self.reply.focused = true;
         }
     }
@@ -444,7 +444,7 @@ impl WolPageReceived {
 }
 
 /// NewEdit's caret: shown in the first of each two seconds of focus.
-pub(crate) fn caret_visible(focus_at: Option<std::time::Instant>, now: std::time::Instant) -> bool {
+pub(crate) fn caret_visible(focus_at: Option<crate::util::time::Instant>, now: crate::util::time::Instant) -> bool {
     focus_at.is_some_and(|at| now.saturating_duration_since(at).as_secs() % 2 == 0)
 }
 

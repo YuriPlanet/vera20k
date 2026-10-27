@@ -11,11 +11,13 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::sim::combat::Health;
+use crate::sim::combat::inviso_scatter::{RandomDirectionSnap, random_direction_coord};
 use crate::sim::crates::CrateSlot;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::world::{PlacementEvidence, RevealPosition, RevealRequest, SimSoundEvent};
+use crate::util::lepton::lepton_to_cell;
 use crate::util::native_x87::NativeF64Bits;
 
 const CELL: (i16, i16) = (10, 10);
@@ -1647,4 +1649,504 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
             "{name} lifetime adds no draws"
         );
     }
+}
+
+// --- The five residual jump-table arms -------------------------------------
+
+/// The residual arms' synthetic rules: the three named warheads they resolve
+/// (Gas by its table name, `[CombatDamage] C4Warhead=` and `FlameDamage=`),
+/// the retail zero-weight `[Powerups]` rows with their magnitudes, and a
+/// registered animation table (registration order, so `AnimTypeArray8B4154`
+/// index 0 is FIRE1) with fixed ART sections, so the explosion and fire
+/// animations construct.
+fn residual_rules() -> RuleSet {
+    let ini = IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n[AircraftTypes]\n[VehicleTypes]\n[BuildingTypes]\n\
+         [E1]\nStrength=100\n\
+         [Warheads]\n0=Super\n1=Gas\n2=Flame\n\
+         [Super]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\nAnimList=BOOM\n\
+         [Gas]\nVerses=50%,50%,50%,50%,50%,50%,50%,50%,50%,50%,50%\n\
+         [Flame]\nVerses=50%,50%,50%,50%,50%,50%,50%,50%,50%,50%,50%\n\
+         [CombatDamage]\nC4Warhead=Super\nFlameDamage=Flame\n\
+         [Animations]\n0=FIRE1\n1=BOOM\n\
+         [CrateRules]\nCrateImg=SILVER\nWoodCrateImg=WOOD\nWaterCrateImg=WATER\nCrateRadius=3.0\n\
+         [Powerups]\nExplosion=0,<none>,yes,500\nNapalm=0,<none>,no,600\n\
+         ICBM=0,CHEMISLE,yes\nGas=0,<none>,yes,100\nTiberium=0,<none>,no\n",
+    );
+    let art = IniFile::from_str("[FIRE1]\nStart=0\n[BOOM]\nStart=0\n");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    let mut art_registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
+    art_registry.bind_anim_frame_count_for_test("FIRE1", 2);
+    art_registry.bind_anim_frame_count_for_test("BOOM", 2);
+    rules.install_art_fixture(art_registry);
+    rules
+}
+
+/// Every live anim as (type, coordinate, flags, zAdjust) in creation order.
+fn anim_briefs(
+    sim: &Simulation,
+) -> Vec<(String, crate::sim::anim_class::AnimWorldCoord, u32, i32)> {
+    sim.substrate
+        .anims
+        .iter()
+        .map(|(_, anim)| {
+            (
+                sim.interner.resolve(anim.type_id()).to_ascii_uppercase(),
+                anim.world_coord(),
+                anim.draw_flags(),
+                anim.z_adjust(),
+            )
+        })
+        .collect()
+}
+
+fn health_of(sim: &Simulation, id: u64) -> i32 {
+    sim.substrate.entities.get(id).unwrap().health.current()
+}
+
+/// `0x00481DE7..0x00481E99`: the "GAS" warhead lands on the crate cell and
+/// each 0x89F688 neighbour at `ftol(magnitude)`, all through the Gas warhead's
+/// 50% verses quotient, with no RNG draw and no crate sound.
+#[test]
+fn gas_crate_hits_the_nine_cells_with_the_gas_warhead_without_rng() {
+    let (mut sim, _, registry, owner, actor) = multiplayer_fixture(POWERUP_GAS as u8);
+    let rules = residual_rules();
+    let victim = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (11, 10),
+        EntityCategory::Infantry,
+        "E1",
+    );
+    let corner = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (9, 9),
+        EntityCategory::Infantry,
+        "E1",
+    );
+    let far = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (20, 20),
+        EntityCategory::Infantry,
+        "E1",
+    );
+    let rng = sim.scenario_rng.native_state_hex();
+
+    assert!(pickup_crate(
+        &mut sim,
+        &rules,
+        &registry,
+        CELL,
+        actor,
+        crate::sim::world::FrameEffects::default()
+    ));
+
+    assert_eq!(
+        sim.scenario_rng.native_state_hex(),
+        rng,
+        "Gas spends no draw"
+    );
+    // `ftol(100) * 50%` per hit; every unit in the nine cells takes exactly
+    // one (the [Gas] warhead carries no CellSpread).
+    assert_eq!(health_of(&sim, actor), 50, "the centre cell");
+    assert_eq!(health_of(&sim, victim), 50, "the E neighbour");
+    assert_eq!(health_of(&sim, corner), 50, "the NW neighbour");
+    assert_eq!(health_of(&sim, far), 100, "outside the nine cells");
+    assert!(sounds(&sim).is_empty(), "the arm skips the pickup sound");
+}
+
+/// The Gas arm's defensive branch: a ruleset with no "GAS"-named warhead
+/// applies no damage anywhere in the nine cells and spends no draw, while the
+/// shared anim tail still runs (the slot's `Gas=0,BOOM,…` anim).
+#[test]
+fn gas_crate_without_a_gas_warhead_leaves_the_nine_cells_unharmed() {
+    let (mut sim, _, registry, owner, actor) = multiplayer_fixture(POWERUP_GAS as u8);
+    let ini = IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n[AircraftTypes]\n[VehicleTypes]\n[BuildingTypes]\n\
+         [E1]\nStrength=100\n\
+         [Warheads]\n0=Super\n\
+         [Animations]\n0=FIRE1\n1=BOOM\n\
+         [CrateRules]\nCrateImg=SILVER\nWoodCrateImg=WOOD\nWaterCrateImg=WATER\nCrateRadius=3.0\n\
+         [Powerups]\nGas=0,BOOM,yes,100\n",
+    );
+    let art = IniFile::from_str("[FIRE1]\nStart=0\n[BOOM]\nStart=0\n");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    let mut art_registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
+    art_registry.bind_anim_frame_count_for_test("BOOM", 2);
+    rules.install_art_fixture(art_registry);
+    let victim = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (11, 10),
+        EntityCategory::Infantry,
+        "E1",
+    );
+    let corner = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (9, 9),
+        EntityCategory::Infantry,
+        "E1",
+    );
+    let rng = sim.scenario_rng.native_state_hex();
+
+    assert!(pickup_crate(
+        &mut sim,
+        &rules,
+        &registry,
+        CELL,
+        actor,
+        crate::sim::world::FrameEffects::default()
+    ));
+
+    assert_eq!(
+        sim.scenario_rng.native_state_hex(),
+        rng,
+        "the arm still spends no draw"
+    );
+    assert_eq!(health_of(&sim, actor), 100, "the centre cell");
+    assert_eq!(health_of(&sim, victim), 100, "the E neighbour");
+    assert_eq!(health_of(&sim, corner), 100, "the NW neighbour");
+    let briefs = anim_briefs(&sim);
+    assert_eq!(briefs.len(), 1, "the anim tail still runs");
+    assert_eq!(briefs[0].0, "BOOM");
+    assert!(sounds(&sim).is_empty(), "the arm skips the pickup sound");
+}
+
+/// `0x00481E99..0x00481F68` with the drawn type 1: the clamp at
+/// `0x00481ECC..0x00481ED1` (`cmp edi,1`/`jne`/`xor edi,edi`) forces the ore
+/// type to 0 and both paths fall into the same `IncreaseTiberium(type, 1)` —
+/// the arm runs on with the full `2 + 2N` draw order and Riparius ore.
+#[test]
+fn tiberium_crate_with_the_drawn_type_one_clamps_to_type_zero_and_places_anyway() {
+    let (mut sim, rules, registry, _owner, actor) = tiberium_fixture();
+    // A seed whose first `RandomRanged(0, 1)` draw answers 1.
+    let seed = (0..1000)
+        .find(|&seed| {
+            let mut probe = crate::sim::rng::SimRng::new(seed);
+            probe.next_range_i32_inclusive(0, 1) == 1
+        })
+        .expect("a seed whose first draw is 1");
+    sim.scenario_rng = crate::sim::rng::SimRng::new(seed);
+    let receiver = sim.resolved_terrain.as_ref().map(|terrain| {
+        crate::map::resolved_terrain::NativeCellQuery::canonical(terrain).lookup(CELL)
+    });
+    let base = crate_center(&sim, CELL, receiver);
+
+    // The clamp spends nothing: exactly the drawn-0 arm's replay.
+    let mut probe = sim.scenario_rng.clone();
+    assert_eq!(probe.next_range_i32_inclusive(0, 1), 1);
+    probe.next_range_u32(12);
+    probe.next_u32();
+    let count = probe.next_range_i32_inclusive(10, 20);
+    let mut expected_cells = std::collections::BTreeSet::from([CELL]);
+    for _ in 0..count {
+        let distance = probe.next_range_i32_inclusive(0, 0x300);
+        let (x, y) = random_direction_coord(
+            &mut probe,
+            base.x,
+            base.y,
+            distance,
+            RandomDirectionSnap::CellCenter,
+        );
+        let cell = (
+            u16::try_from(lepton_to_cell(x)).unwrap_or(u16::MAX),
+            u16::try_from(lepton_to_cell(y)).unwrap_or(u16::MAX),
+        );
+        if expected_cells.insert((cell.0 as i16, cell.1 as i16)) {
+            probe.next_range_u32(12);
+            probe.next_u32();
+        }
+    }
+
+    assert!(pickup_crate(
+        &mut sim,
+        &rules,
+        &registry,
+        CELL,
+        actor,
+        crate::sim::world::FrameEffects::default()
+    ));
+
+    assert_eq!(
+        sim.scenario_rng.native_state_hex(),
+        probe.native_state_hex(),
+        "the clamp spends nothing; the arm runs its full draw order"
+    );
+    assert_eq!(
+        total_bales(&sim, &registry),
+        u32::try_from(expected_cells.len()).unwrap(),
+        "{count} jitter passes over {expected_cells:?}"
+    );
+    let pickup = sim
+        .overlay_grid
+        .as_ref()
+        .unwrap()
+        .cell(CELL.0 as u16, CELL.1 as u16);
+    assert_eq!(
+        pickup
+            .overlay_id
+            .and_then(|id| registry.tiberium_type_for_overlay(&rules.tiberium_types, id))
+            .map(|type_id| type_id.0),
+        Some(0),
+        "the drawn 1 plants the first registered type"
+    );
+}
+
+/// `0x00482565..0x0048271E`: the picker takes the C4Warhead's 500 first, then
+/// five blasts — exactly ten draws (distance plus raw direction each), each
+/// with a 0x2600/-15 combat animation and a flash at the scattered coordinate.
+#[test]
+fn explosion_crate_hurts_the_picker_then_blasts_five_scattered_cells() {
+    let (mut sim, _, registry, _, actor) = multiplayer_fixture(POWERUP_EXPLOSION as u8);
+    let rules = residual_rules();
+    sim.substrate
+        .entities
+        .get_mut(actor)
+        .unwrap()
+        .health
+        .set_for_test(10000);
+    let mut probe = sim.scenario_rng.clone();
+    for _ in 0..5 {
+        probe.next_range_i32_inclusive(0, 0x200);
+        probe.next_u32();
+    }
+
+    assert!(pickup_crate(
+        &mut sim,
+        &rules,
+        &registry,
+        CELL,
+        actor,
+        crate::sim::world::FrameEffects::default()
+    ));
+
+    assert_eq!(
+        sim.scenario_rng.native_state_hex(),
+        probe.native_state_hex(),
+        "exactly two draws per blast"
+    );
+    // The direct 500, then up to five 500s whose scatter can reach the
+    // picker's own cell ([Super] carries no CellSpread).
+    let health = health_of(&sim, actor);
+    assert!(
+        (7000..=9500).contains(&health),
+        "9500 less the blasts: {health}"
+    );
+    let blasts = anim_briefs(&sim);
+    assert_eq!(blasts.len(), 5, "one SelectAnim construction per blast");
+    for (name, _, flags, z_adjust) in &blasts {
+        assert_eq!(name, "BOOM");
+        assert_eq!(*flags, 0x2600);
+        assert_eq!(*z_adjust, -15);
+    }
+    let flashes: Vec<i32> = sim
+        .combat_light_requests
+        .iter()
+        .filter_map(|event| match event {
+            crate::sim::combat::CombatLightRequest::Impact { damage, .. } => Some(*damage),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(flashes, vec![500; 5], "one Flash per blast");
+    assert!(sounds(&sim).is_empty(), "the arm skips the pickup sound");
+}
+
+/// `0x0048271E..0x00482840`: AnimTypeArray8B4154[0] at the componentwise
+/// midpoint of the crate centre and the picker coordinate, then both damage
+/// applications through the FlameDamage warhead — 50% verses on 600 twice,
+/// 300 each — with no RNG draw. A bystander on the crate cell stays intact
+/// because the area damage lands at the midpoint, not the crate cell.
+#[test]
+fn napalm_crate_burns_at_the_midpoint_with_the_flame_warhead_without_rng() {
+    let (mut sim, _, registry, _, bystander) = multiplayer_fixture(POWERUP_NAPALM as u8);
+    let rules = residual_rules();
+    let owner = sim.interner.intern("H0");
+    let picker = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (11, 10),
+        EntityCategory::Infantry,
+        "E1",
+    );
+    for id in [bystander, picker] {
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .health
+            .set_for_test(10000);
+    }
+    let rng = sim.scenario_rng.native_state_hex();
+
+    assert!(pickup_crate(
+        &mut sim,
+        &rules,
+        &registry,
+        CELL,
+        picker,
+        crate::sim::world::FrameEffects::default()
+    ));
+
+    assert_eq!(
+        sim.scenario_rng.native_state_hex(),
+        rng,
+        "Napalm spends no draw"
+    );
+    let centre = crate_center(
+        &sim,
+        CELL,
+        sim.resolved_terrain.as_ref().map(|terrain| {
+            crate::map::resolved_terrain::NativeCellQuery::canonical(terrain).lookup(CELL)
+        }),
+    );
+    let picker_coord = crate::sim::movement::ground_pose::position_world_coord(
+        &sim.substrate.entities.get(picker).unwrap().position,
+    );
+    let expected_mid = crate::sim::anim_class::AnimWorldCoord {
+        x: (centre.x + picker_coord.x) / 2,
+        y: (centre.y + picker_coord.y) / 2,
+        z: (centre.z + picker_coord.z) / 2,
+    };
+    assert_eq!(
+        anim_briefs(&sim),
+        vec![("FIRE1".to_owned(), expected_mid, 0x600, 0)],
+        "one fire animation at the midpoint"
+    );
+    assert_eq!(health_of(&sim, picker), 9400, "two 300 Flame hits");
+    assert_eq!(
+        health_of(&sim, bystander),
+        10000,
+        "the area misses the crate cell"
+    );
+    assert!(sounds(&sim).is_empty(), "the arm skips the pickup sound");
+}
+
+/// `0x00482CA1..0x00482D56` on retail rules: FindFirstOfAction(Nuke) names
+/// `NukeSpecial`, the picker House holds a MultiMissile Super, so the crate
+/// grants `NukeSpecial` once (`Grant(1, 0, 0)`), charged, without a draw.
+#[test]
+fn retail_icbm_crate_grants_the_owner_a_one_time_nuke() {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+        return;
+    };
+    let (mut sim, _, registry, owner, actor) = multiplayer_fixture(POWERUP_ICBM as u8);
+    crate::sim::superweapon::construct_house_supers(&mut sim, &rules, owner, false);
+    let rng = sim.scenario_rng.native_state_hex();
+
+    assert!(pickup_crate(
+        &mut sim,
+        &rules,
+        &registry,
+        CELL,
+        actor,
+        crate::sim::world::FrameEffects::default()
+    ));
+
+    assert_eq!(
+        sim.scenario_rng.native_state_hex(),
+        rng,
+        "ICBM spends no draw"
+    );
+    let nuke = sim.interner.get("NukeSpecial").unwrap();
+    let granted: Vec<_> = sim.super_weapons[&owner]
+        .iter()
+        .filter(|(_, instance)| instance.is_active())
+        .map(|(id, _)| *id)
+        .collect();
+    assert_eq!(granted, vec![nuke], "only the first Action=Nuke type");
+    let instance = &sim.super_weapons[&owner][&nuke];
+    assert!(instance.is_ready(), "a one-time grant is charged at once");
+    assert_eq!(
+        serde_json::to_value(instance).unwrap()["one_time"],
+        serde_json::json!(true)
+    );
+}
+
+/// The Tiberium arm's fixture: ore-admitting terrain, a two-type `[Tiberiums]`
+/// table with zero growth/spread percentages (an existing-cell re-hit refuses
+/// without a draw) and the crate overlay beside the twelve flat ore variants.
+fn tiberium_fixture() -> (Simulation, RuleSet, OverlayTypeRegistry, InternedId, u64) {
+    let mut sim = sim_with_grid(31);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    sim.session.game_options_mut_for_test().crates = false;
+    sim.session.game_options_mut_for_test().bases = false;
+    // Mark's ordinary admission (0x004834A0, Track, both ignores) must admit
+    // each cell, or mark_overlay answers Marked without writing the identity
+    // and every placement silently no-ops; the retail Clear row carries
+    // Track=100%.
+    let mut terrain = crate::map::resolved_terrain::test_grid(40, 40, |rx, ry| {
+        crate::map::resolved_terrain::ResolvedTerrainCell {
+            allows_tiberium: true,
+            ..crate::map::resolved_terrain::test_retail_clear_cell(rx, ry)
+        }
+    });
+    terrain.set_land_speed_rules_for_test(&crate::map::resolved_terrain::test_retail_clear_rules());
+    sim.install_resolved_terrain_for_new_map(terrain);
+    sim.session.set_binary_frame_for_test(100);
+    sim.playfield_bounds_mut_for_test().as_mut().unwrap().base = 10;
+    sim.set_playfield_size_height_for_test(Some(10));
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n[AircraftTypes]\n[VehicleTypes]\n[BuildingTypes]\n\
+         [E1]\nStrength=100\n\
+         [Tiberiums]\n0=Riparius\n1=Cruentus\n\
+         [Riparius]\nImage=1\nValue=25\nGrowth=2200\nGrowthPercentage=0\nSpread=2200\nSpreadPercentage=0\n\
+         [Cruentus]\nImage=2\nValue=50\nGrowth=10000\nGrowthPercentage=0\nSpread=10000\nSpreadPercentage=0\n\
+         [CrateRules]\nCrateImg=SILVER\nWoodCrateImg=WOOD\nWaterCrateImg=WATER\nCrateRadius=3.0\n\
+         [Powerups]\nTiberium=0,<none>,no\n",
+    ))
+    .unwrap();
+    // The ore drivers size their per-type queues from the same tables.
+    sim.ore_growth_state.reset_native_tiberium_classes_for_rect(
+        (8, 8),
+        rules.tiberium_types.len(),
+        100,
+    );
+    let mut registry_text = String::from("[OverlayTypes]\n0=WOOD\n");
+    for index in 1..=12 {
+        registry_text.push_str(&format!("{index}=TIB{index:02}\n"));
+    }
+    registry_text.push_str("[WOOD]\nCrate=yes\nLand=Clear\n");
+    for index in 1..=12 {
+        registry_text.push_str(&format!("[TIB{index:02}]\nTiberium=yes\nLand=Tiberium\n"));
+    }
+    let registry = OverlayTypeRegistry::from_ini(&IniFile::from_str(&registry_text), None);
+    place_registered_crate(&mut sim, &registry, CELL, POWERUP_TIBERIUM as u8);
+    let owner = house(&mut sim, "H0", false);
+    let actor = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (CELL.0 as u16, CELL.1 as u16),
+        EntityCategory::Infantry,
+        "E1",
+    );
+    (sim, rules, registry, owner, actor)
+}
+
+/// Ore bales (density bytes) over every tiberium overlay on the grid.
+fn total_bales(sim: &Simulation, registry: &OverlayTypeRegistry) -> u32 {
+    let grid = sim.overlay_grid.as_ref().unwrap();
+    let mut total = 0;
+    for ry in 0..grid.height() {
+        for rx in 0..grid.width() {
+            let cell = grid.cell(rx, ry);
+            if cell
+                .overlay_id
+                .is_some_and(|id| registry.flags(id).is_some_and(|flags| flags.tiberium))
+            {
+                total += u32::from(cell.overlay_data);
+            }
+        }
+    }
+    total
 }

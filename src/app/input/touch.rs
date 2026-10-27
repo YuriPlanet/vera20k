@@ -41,7 +41,7 @@
 // there; only the call site is Windows-bound.
 #![cfg_attr(target_os = "linux", allow(dead_code))]
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use winit::dpi::PhysicalPosition;
 use winit::event::{DeviceId, ElementState, MouseButton, Touch, TouchPhase, WindowEvent};
