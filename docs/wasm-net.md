@@ -1,10 +1,12 @@
 # WASM 联机适配
 
+[简体中文](wasm-net.md) | [English](wasm-net.en.md)
+
 `wasm-net` 为浏览器版本增加现有在线大厅和 UDP relay 的访问入口。默认构建、桌面联网和仅启用 `wasm` 的单机包继续使用原路径。接入方式是 WS 与 UDP 的透明转换：原大厅和 relay 服务端、消息格式、票据、加密、ACK、可靠消息和指令排序协议均不修改。
 
 ## 构建和地址
 
-使用 [WASM 构建要求](wasm.md#build) 安装 Rust target 和匹配 lockfile 的 wasm-bindgen CLI，然后执行：
+使用 [WASM 构建要求](wasm.zh-CN.md#构建) 安装 Rust target 和匹配 lockfile 的 wasm-bindgen CLI，然后执行：
 
 ```sh
 # 默认单机包
@@ -41,7 +43,7 @@ WS_PROXY_URL=ws://localhost:8788 python3 tools/wasm/build.py --network
 | WASM 启用 `wasm-net` | WS 数据报适配、Fetch 和浏览器加载等待 |
 | WASM 未启用 `wasm` | 保留原编译错误 |
 
-独立手动 WASM workflow 分别打包单机与联网版本；桌面 workflow 不增加网关或 Node 依赖。网关位于 [`tools/wasm/gateway`](../tools/wasm/gateway/README.md)，独立安装和运行，不属于 Rust workspace。
+独立手动 WASM workflow 分别打包单机与联网版本；桌面 workflow 不增加网关或 Node 依赖。网关位于 [`tools/wasm/gateway`](../tools/wasm/gateway/README.zh-CN.md)，独立安装和运行，不属于 Rust workspace。
 
 ## 传输和服务
 
@@ -54,7 +56,7 @@ WS_PROXY_URL=ws://localhost:8788 python3 tools/wasm/build.py --network
 
 一条 WS binary message 就是一份完整的原 UDP 数据报，不增加目的地址头、JSON、base64 或自定义握手，不拼接报文。认证、续期、ACK、重试、排序及对局日志始终由原所有者处理。WS OPEN 不是 relay admission；连接 Ping/Pong 不代表游戏层确认。
 
-每个 WS 连接独占一个 connected UDP socket，存活期间源端口稳定，不同玩家和通道不共用端口。网关的 UDP 目标由管理员固定配置，必须对应大厅下发的 relay；浏览器不能指定任意转发目标。部署方法和限制见 [网关说明](../tools/wasm/gateway/README.md)。
+每个 WS 连接独占一个 connected UDP socket，存活期间源端口稳定，不同玩家和通道不共用端口。网关的 UDP 目标由管理员固定配置，必须对应大厅下发的 relay；浏览器不能指定任意转发目标。部署方法和限制见 [网关说明](../tools/wasm/gateway/README.zh-CN.md)。
 
 `/v1/*` 代理保持现有方法、路径、Authorization、请求体、状态码和响应体，不解析或改写游戏 JSON，也不替客户端重试。跨源 CORS 由网关处理，原大厅不需要增加 OPTIONS。网关的 HTTP 部分会经手 bearer 和包含 payload key 的响应，属于大厅凭据的信任边界；它不需要 relay 签名密钥，不记录凭据，也不读取零售资源。
 

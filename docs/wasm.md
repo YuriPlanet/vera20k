@@ -1,5 +1,7 @@
 # Browser WebAssembly preview
 
+[English](wasm.md) | [简体中文](wasm.zh-CN.md)
+
 Wasm is an opt-in fourth build target alongside macOS, Windows and Linux. It
 uses the existing client, rules, simulation, menu and loading owners. The default
 browser package is single-player. Optional online transport uses the separate
@@ -42,7 +44,7 @@ The online package requires a separately running
 [WS/UDP gateway](../tools/wasm/gateway/README.md). Its default domain is a build
 setting, not a deployment guarantee. The gateway forwards each binary WS message
 as one unchanged UDP datagram, and proxies existing HTTPS lobby requests. Original
-game protocols and servers stay unchanged. See [network implementation](wasm-net.md)
+game protocols and servers stay unchanged. See [network implementation](wasm-net.en.md)
 for ownership, compile boundaries and runtime acceptance requirements.
 
 The equivalent compilation command (without JS packaging) is:

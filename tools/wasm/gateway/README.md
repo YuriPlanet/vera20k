@@ -1,5 +1,7 @@
 # Browser network gateway
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 This optional service forwards `/game/primary` and `/game/alternate` binary
 WebSocket messages to a fixed UDP relay. One message is one unchanged datagram,
 and each WebSocket owns a separate connected UDP socket. It does not interpret
