@@ -421,7 +421,8 @@ mod tests {
             "[Countries]\n0=Americans\n1=Russians\n2=Special\n\
              [Special]\nMultiplayPassive=yes\n\
              [InfantryTypes]\n2=OP\n3=DRIVER\n4=CONTROLLER\n[VehicleTypes]\n0=HOST\n\
-             [CONTROLLER]\nStrength=100\nPrimary=ControlGun\n\
+             [CONTROLLER]\nStrength=100\nPrimary=ControlGun\nSpeedType=Foot\n\
+             Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
              [ControlGun]\nDamage=1\nRange=6\nProjectile=Invisible\nWarhead=CONTROL_WH\n\
              [OP]\nStrength=100\nSpeedType=Foot\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
              [DRIVER]\nStrength=100\nCanDrive=yes\nSpeedType=Foot\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
@@ -459,7 +460,7 @@ mod tests {
             ));
         }
         let invoker = sim
-            .spawn_object_at_height("E1", "Americans", 15, 15, 0, 0, &rules)
+            .spawn_object_at_height("OP", "Americans", 15, 15, 0, 0, &rules)
             .unwrap();
         let driver = sim
             .spawn_object_at_height("DRIVER", "Americans", 15, 16, 0, 0, &rules)
