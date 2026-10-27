@@ -452,7 +452,7 @@ mod tests {
         ] {
             let owner = sim.interner.intern(name);
             sim.houses
-                .register(HouseState::new(owner, side, None, false, 0, 10));
+                .register(HouseState::new(owner, side, Some(owner), false, 0, 10));
         }
         let host = sim
             .spawn_object_at_height("HOST", "Russians", 16, 15, 0, 0, &rules)
