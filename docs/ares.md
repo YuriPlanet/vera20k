@@ -59,6 +59,8 @@ Supported extensions:
   Observer art is retained but has no renderer yet.
 - [Country paradrop overrides](ares-country-paradrop.md): `ParaDrop.Types`,
   `.Num`, `.Aircraft` and `Parachute.Anim` in front of the SideExt values.
+- [Country AI power plants](ares-country-powerplants.md): `AI.PowerPlants=`
+  and the draw among the plants the AI can build when it splices one.
 - [Generic production prerequisites](ares-prerequisites.md)
 - [Factory-source restrictions](../src/sim/production/can_build.rs) (`BuiltAt`,
   `Factory.ExplicitOnly`) and [Country plan qualification](../tools/rules_oracle/ares_factory_owners.md)

@@ -2971,6 +2971,7 @@ struct AresCountryState {
     loading: crate::rules::country_loading::AresCountryLoading,
     presentation: crate::rules::ares_country_presentation::AresCountryPresentation,
     paradrop: crate::rules::ares_country_paradrop::AresCountryParadrop,
+    power_plants: Vec<String>,
 }
 
 // GUI fields are process-retained and persisted, but do not enter simulation CRC.
@@ -2981,6 +2982,7 @@ impl Hash for AresCountryState {
         self.parent_initialized.hash(state);
         self.buildings.hash(state);
         self.paradrop.hash(state);
+        self.power_plants.hash(state);
     }
 }
 
@@ -2995,6 +2997,12 @@ impl CountryVeterancyState {
         &self,
     ) -> &crate::rules::ares_country_presentation::AresCountryPresentation {
         &self.ares.presentation
+    }
+
+    /// The country's own `AI.PowerPlants=` list.
+    #[cfg(feature = "ares")]
+    pub(crate) fn power_plants(&self) -> &[String] {
+        &self.ares.power_plants
     }
 
     /// The country's own Ares paradrop overrides.
@@ -5872,6 +5880,7 @@ impl RulesPassProcessor {
                 current.loading = inherited.loading;
                 current.presentation.inherit_from(&inherited.presentation);
                 current.paradrop.inherit_from(&inherited.paradrop);
+                current.power_plants = inherited.power_plants;
             }
             //1001C0CB consumes the attempt even when Find failed. Empty
             // and case-insensitive self references above do not consume it.
@@ -5879,6 +5888,23 @@ impl RulesPassProcessor {
                 .country_veterancy
                 .ares
                 .parent_initialized = true;
+        }
+        // Common1001C5D0's first read after its one-shot parent copy1001BDC0,
+        // on every pass: `AI.PowerPlants`1001C60C, through the same Building
+        // vector reader10010850 as `VeteranBuildings`. An empty list is what
+        // GetPowerplants1001BD20 answers with the side's `[General]` plants.
+        if let Some(resolved) = pass.section(&id).and_then(|section| {
+            self.resolve_existing_list_from(
+                section,
+                "AI.PowerPlants",
+                RulesTypeFamily::Building,
+                0x800,
+            )
+        }) {
+            self.family_mut(RulesTypeFamily::Country)[index]
+                .country_veterancy
+                .ares
+                .power_plants = resolved;
         }
         // Common1001C5D0 reads the paradrop block on every pass, after its
         // one-shot parent copy1001BDC0 and before the color: `Parachute.Anim`
@@ -7792,6 +7818,10 @@ mod ares_side_sidebar_tests;
 #[cfg(all(test, feature = "ares"))]
 #[path = "ares_country_paradrop_tests.rs"]
 mod ares_country_paradrop_tests;
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "ares_country_power_plants_tests.rs"]
+mod ares_country_power_plants_tests;
 
 #[cfg(all(test, feature = "ares"))]
 #[path = "ares_country_presentation_tests.rs"]

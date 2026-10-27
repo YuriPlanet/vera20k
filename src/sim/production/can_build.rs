@@ -180,13 +180,7 @@ pub(crate) fn can_build(
     if !crate::rules::ARES_ENABLED && !controlled_by_human {
         return CanBuild::Yes;
     }
-    if !bypass_prerequisites
-        && controlled_by_human
-        && !obj
-            .prerequisite
-            .iter()
-            .all(|&entry| prerequisite_on_map(sim, rules, house, entry))
-    {
+    if !bypass_prerequisites && controlled_by_human && !owns_prerequisites(sim, rules, house, obj) {
         return CanBuild::No;
     }
     #[cfg(feature = "ares")]
@@ -196,6 +190,26 @@ pub(crate) fn can_build(
         FactorySearch::Online(_) | FactorySearch::Primary(_) => {}
     }
     build_limit(sim, rules, owner, obj, count_in_production)
+}
+
+/// Whether `house` has every `Prerequisite=` entry of `obj` on the map
+/// ([`prerequisite_on_map`]; an empty list is met): CanBuild's human arm, and
+/// with `ares` the power plant filter `0x10021CA0` of `sim::ai_base_building`.
+/// That filter asks HouseOwnsAll `0x10008110` of each of the type's
+/// prerequisite lists (TechnoTypeExt `+0x40`) and is met by any one. Ares
+/// reads list 0 from `Prerequisite=` (`0x1003E0B7`); VERA reads no
+/// `Prerequisite.Lists=`/`Prerequisite.List#=` (`0x1003E093`, `0x1003E0F1`),
+/// so a type that adds lists is judged by list 0 alone. No retail INI sets
+/// either key.
+pub(crate) fn owns_prerequisites(
+    sim: &Simulation,
+    rules: &RuleSet,
+    house: &HouseState,
+    obj: &ObjectType,
+) -> bool {
+    obj.prerequisite
+        .iter()
+        .all(|&entry| prerequisite_on_map(sim, rules, house, entry))
 }
 
 /// One `Prerequisite=` entry of CanBuild's human arm

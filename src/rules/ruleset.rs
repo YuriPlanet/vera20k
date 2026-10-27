@@ -144,6 +144,10 @@ pub struct CountryRules {
     /// state: which units a paradrop superweapon sends.
     #[cfg(feature = "ares")]
     pub(crate) paradrop: crate::rules::ares_country_paradrop::AresCountryParadrop,
+    /// Ares country `AI.PowerPlants=` candidates. Simulation state: which
+    /// building the AI splices when its base runs short of power.
+    #[cfg(feature = "ares")]
+    pub(crate) power_plants: Vec<String>,
 }
 
 /// The House factors [`RuleSet::cost_of`] multiplies in, each indexed by
@@ -201,6 +205,8 @@ impl Default for CountryRules {
             ),
             #[cfg(feature = "ares")]
             paradrop: crate::rules::ares_country_paradrop::AresCountryParadrop::default(),
+            #[cfg(feature = "ares")]
+            power_plants: Vec::new(),
         }
     }
 }
@@ -260,6 +266,8 @@ impl CountryRules {
             ),
             #[cfg(feature = "ares")]
             paradrop: crate::rules::ares_country_paradrop::AresCountryParadrop::default(),
+            #[cfg(feature = "ares")]
+            power_plants: Vec::new(),
         }
     }
 }
@@ -6785,6 +6793,16 @@ impl RuleSet {
             .map(|(id, country)| (id.to_ascii_uppercase(), &country.veteran_types))
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
+        // Which plant a computer house splices is simulation state.
+        #[cfg(feature = "ares")]
+        {
+            b"ares-country-powerplants-v1".hash(&mut hasher);
+            self.countries
+                .iter()
+                .map(|(id, country)| (id.to_ascii_uppercase(), &country.power_plants))
+                .collect::<BTreeMap<_, _>>()
+                .hash(&mut hasher);
+        }
         // Which units a country's paradrop sends is simulation state, so the
         // Ares country overrides enter the state hash alongside it.
         #[cfg(feature = "ares")]
@@ -8135,6 +8153,37 @@ impl RuleSet {
         {
             self.country_random_weight(id)
         }
+    }
+
+    /// Ares `HouseTypeExt::GetPowerplants @ 0x1001BD20`, as BuildingType
+    /// indices: country `id`'s `AI.PowerPlants=` (`+0x130`) while it is
+    /// non-empty, else by the country's side (`HouseType+0xBC`): 0
+    /// `[GDIPowerPlant]`, 1 `[NodRegularPower, NodAdvancedPower]`
+    /// (`0x1001BD6C..0x1001BD8C`), 2 `[ThirdPowerPlant]`, each without its
+    /// unset slots, and any other side none.
+    #[cfg(feature = "ares")]
+    pub fn ares_power_plants(&self, id: &str, side: i32) -> Vec<i32> {
+        let index = |name: &Option<String>| {
+            name.as_deref()
+                .and_then(|name| self.building_type_index(name))
+        };
+        let country = self
+            .country_rules(id)
+            .map_or(&[][..], |country| country.power_plants.as_slice());
+        if !country.is_empty() {
+            return country
+                .iter()
+                .filter_map(|name| self.building_type_index(name))
+                .collect();
+        }
+        let plants = &self.general.building_types;
+        let slots = match side {
+            0 => [&plants.gdi_power_plant, &None],
+            1 => [&plants.nod_regular_power, &plants.nod_advanced_power],
+            2 => [&plants.third_power_plant, &None],
+            _ => [&None, &None],
+        };
+        slots.into_iter().filter_map(index).collect()
     }
 
     /// `HouseTypeExt::GetParadropContent @ 0x1001BC20` for a country: its own
@@ -9696,6 +9745,7 @@ fn project_country_side_registry<'a>(
             {
                 fields.presentation = veteran.presentation().clone();
                 fields.paradrop = veteran.paradrop().clone();
+                fields.power_plants = veteran.power_plants().to_vec();
             }
             fields
         });

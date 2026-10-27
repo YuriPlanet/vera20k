@@ -30,6 +30,10 @@ pub(crate) struct FrontendState {
         crate::app::frontend::skirmish_session::MultiplayerShellRuntime,
     pub(crate) skirmish_shell_chrome:
         Option<crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas>,
+    /// The `DialogBackground.Image/.Palette` pair the shell chrome atlas was
+    /// built with. A game load that resolves a different pair drops the atlas
+    /// so it rebuilds with the side's three dialog slots.
+    pub(crate) shell_dialog_background: Option<(String, String)>,
     pub(crate) main_menu_shell_state: crate::ui::main_menu_shell::MainMenuShellState,
     pub(crate) single_player_shell_state: crate::ui::single_player_shell::SinglePlayerShellState,
     /// Shared descriptor-driven input authority for the front-end shell dialogs
