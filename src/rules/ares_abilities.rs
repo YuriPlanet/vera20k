@@ -114,10 +114,27 @@ mod tests {
             Some(tank),
             restored.object("TANK").unwrap().promotion_abilities()
         );
-        let (_, mut changed) = load(&root.replace("protected_driver", "radimmune"));
-        changed.source_ini_hash = rules.source_ini_hash();
+        // Continue both histories with identical current INI text. The retained
+        // registry, not a private source-hash override, must distinguish them.
+        let continued = |source: &str| {
+            use crate::rules::native_processing::RulesLayerStack;
+            let (_, trace) = RulesLayerStack::new(IniFile::from_str(source))
+                .process()
+                .unwrap()
+                .into_ini_and_native_type_construction_trace();
+            let processed = RulesLayerStack::new(IniFile::empty())
+                .process_with_fixed_art_and_registry_state(
+                    &IniFile::empty(),
+                    trace.into_registry_state_discarding_events(),
+                )
+                .unwrap();
+            crate::rules::ruleset::RuleSet::from_processed_rules(&processed).unwrap()
+        };
+        let retained = continued(root);
+        let changed = continued(&root.replace("protected_driver", "radimmune"));
+        assert_eq!(changed.source_ini_hash(), retained.source_ini_hash());
         assert_ne!(
-            rules.simulation_config_hash(),
+            retained.simulation_config_hash(),
             changed.simulation_config_hash()
         );
     }

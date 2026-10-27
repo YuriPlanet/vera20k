@@ -128,7 +128,17 @@ mod tests {
         let load = |root: &str| {
             let mut layers = RulesLayerStack::new(IniFile::from_str(root));
             layers.push(RulesLayerKind::Scenario, map.clone());
-            RuleSet::from_rules_layers(&layers).unwrap()
+            let (_, trace) = layers
+                .process()
+                .unwrap()
+                .into_ini_and_native_type_construction_trace();
+            let retained = RulesLayerStack::new(IniFile::empty())
+                .process_with_fixed_art_and_registry_state(
+                    &IniFile::empty(),
+                    trace.into_registry_state_discarding_events(),
+                )
+                .unwrap();
+            RuleSet::from_processed_rules(&retained).unwrap()
         };
         let rules = load(root);
         let protection = rules.object("HOST").unwrap().driver_rules();
@@ -164,8 +174,8 @@ mod tests {
                 .kill_driver(),
             &KillDriverRules::default()
         );
-        let mut changed = load(&root.replace("KillDriver.Chance=25%", "KillDriver.Chance=75%"));
-        changed.source_ini_hash = rules.source_ini_hash();
+        let changed = load(&root.replace("KillDriver.Chance=25%", "KillDriver.Chance=75%"));
+        assert_eq!(changed.source_ini_hash(), rules.source_ini_hash());
         assert_ne!(
             rules.simulation_config_hash(),
             changed.simulation_config_hash()
