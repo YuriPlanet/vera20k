@@ -532,10 +532,12 @@ impl RuntimeDefinitions {
 // Original jump-table bytes71F700/71F744/71F780/71F7C0 and6E3F08.
 // These are classification only, never substitutes for event predicates.
 fn event_classification(kind: i32) -> u8 {
-    // Ares3.0 GetFlags1004F6A0: EMP62..65 and capture69/70 are attached
-    // object events. This is independent of the Persistable predicate.
+    // Ares3.0 GetFlags1004F6A0 (table1004F704): EMP62..65, driver killed
+    //67/68 and vehicle taken69/70 are attached object events. The table
+    // also flags 66 and 71..74, which VERA never raises. This is independent
+    // of the Persistable predicate.
     #[cfg(feature = "ares")]
-    if matches!(kind, 62..=65 | 69 | 70) {
+    if matches!(kind, 62..=65 | 67..=70) {
         return 2;
     }
     let mut flags = 0;
@@ -1498,16 +1500,17 @@ impl Simulation {
             .clone();
         match condition.kind {
             #[cfg(feature = "ares")]
-            69 | 70 => {
-                // Ares HasOccurred71E949 ->100503E0/1004F8CA..1004F91F.
-                // Both require the affected Techno;70 additionally compares
-                // the source's raw House+30. No persistence write. Original
-                //71F950 stays false for these kinds, so they never latch.
+            67..=70 => {
+                // Ares HasOccurred71E949 ->100503E0: driver killed
+                //1004F881..1004F8C7 and vehicle taken1004F8CA..1004F91F.
+                // Each requires the affected Techno;68 and70 additionally
+                // compare the source's raw House+30. No persistence write.
+                // Original71F950 stays false for these kinds, so they never latch.
                 input.kind == condition.kind
                     && input
                         .actor
                         .is_some_and(|id| self.substrate.entities.contains(id))
-                    && (condition.kind == 69
+                    && (matches!(condition.kind, 67 | 69)
                         || input
                             .source
                             .and_then(|id| self.substrate.entities.get(id))

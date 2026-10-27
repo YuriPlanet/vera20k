@@ -1304,6 +1304,7 @@ impl Simulation {
     /// optional LeaveTransportSound and empty-hold virtual RemoveGunner.
     /// The caller retains ownership of the passenger's carrier link until
     /// its placement or UnInit; this operation only changes the Cargo list.
+    #[cfg(feature = "ares")]
     pub(crate) fn remove_cargo_passenger(
         &mut self,
         transport_id: u64,

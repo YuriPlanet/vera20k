@@ -1323,6 +1323,11 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "the +0x6CC writers and PointerExpired's clear",
         ),
         (
+            "sim/building_entry.rs",
+            "set_nearest_occupiable_seek",
+            "Ares writes the +0x691 seek latch with its scan's answer (0x10046A8B/0x10046ACC)",
+        ),
+        (
             "sim/combat/attack_target.rs",
             "set",
             "the TarCom class setter; callers port each native writer, such as \
@@ -1503,6 +1508,18 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "sim/superweapon/mod.rs",
             "set_recharge_time",
             "SuperClass::SetRechargeTime (0x006CC280, TAction 132) changes only Super+24",
+        ),
+        (
+            "sim/vehicle_theft.rs",
+            "set_killed_from_owner",
+            "Ares copies the new owner's MultiplayPassive into the driver-killed flag \
+             (0x100456E8..0x100456F5)",
+        ),
+        (
+            "sim/vehicle_theft.rs",
+            "set_vehicle_seek",
+            "the Ares vehicle-seek latch (Ext+0xB0), written by its scan and by script actions \
+             64/67 (dispatcher 0x1003A110)",
         ),
         (
             "sim/world/mod.rs",

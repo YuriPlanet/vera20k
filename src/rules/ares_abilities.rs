@@ -1,6 +1,7 @@
 //! The seven TypeExt rank abilities read by Ares100405A0. The retained
 //! processing registry owns these flags; individual effects only query them.
 
+#[cfg(feature = "ares")]
 use crate::util::native_x87::NativeF32Bits;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -41,6 +42,7 @@ impl PromotionAbilities {
 
     /// CanKillDriver1004358F..100435CE samples the raw binary32 XP, not the
     /// cached rank. Above two, either tier protects; below one neither does.
+    #[cfg(feature = "ares")]
     pub(crate) fn driver_protected(&self, experience: NativeF32Bits) -> bool {
         let experience = f32::from_bits(experience.bits());
         if experience >= 2.0 {

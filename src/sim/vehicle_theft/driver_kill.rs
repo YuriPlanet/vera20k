@@ -669,4 +669,70 @@ mod tests {
             );
         }
     }
+
+    /// Ares GetFlags (table `0x1004F704`) makes driver killed 67/68 and
+    /// vehicle taken 69/70 attached-object events; HasOccurred
+    /// (`0x1004F881..0x1004F8C7`, `0x1004F8CA..0x1004F91F`) admits 67/69 for
+    /// the affected Techno and 68/70 only when the source's House+0x30 is the
+    /// event value.
+    #[test]
+    fn driver_and_takeover_events_spring_the_vehicles_tag() {
+        let (mut sim, rules, _overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+            "[Countries]\n0=Americans\n1=Russians\n[InfantryTypes]\n2=OP\n[VehicleTypes]\n0=HOST\n\
+             [OP]\nStrength=100\nSpeedType=Foot\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+             [HOST]\nStrength=300\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+        );
+        for (name, side) in [("Americans", 0), ("Russians", 1)] {
+            let owner = sim.interner.intern(name);
+            sim.houses
+                .register(HouseState::new(owner, side, Some(owner), false, 0, 10));
+        }
+        let host = sim
+            .spawn_object_at_height("HOST", "Russians", 16, 15, 0, 0, &rules)
+            .unwrap();
+        let invoker = sim
+            .spawn_object_at_height("OP", "Americans", 15, 15, 0, 0, &rules)
+            .unwrap();
+        let house = sim
+            .base_reservation_house_index(sim.entities().get(invoker).unwrap().owner())
+            .unwrap();
+        let map = crate::map::map_file::MapFile::from_bytes(
+            format!(
+                "[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+                 [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
+                 [Basic]\nNewINIFormat=4\n\
+                 [Triggers]\nE67=Americans,E68,E67,0,1,1,1,0\n\
+                 E68=Americans,E69,E68,0,1,1,1,0\nE69=Americans,E70,E69,0,1,1,1,0\n\
+                 E70=Americans,<none>,E70,0,1,1,1,0\n\
+                 [Events]\nE67=1,67,0,0\nE68=1,68,0,{house}\nE69=1,69,0,0\n\
+                 E70=1,70,0,{other}\n\
+                 [Actions]\nE67=1,56,0,0,0,0,0,0,A\nE68=1,56,0,1,0,0,0,0,A\n\
+                 E69=1,56,0,2,0,0,0,0,A\nE70=1,56,0,3,0,0,0,0,A\n\
+                 [Tags]\nTAG=2,TAG,E67\n",
+                other = house + 1
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        sim.initialize_trigger_definitions(&map, &Default::default(), None, None);
+        sim.attach_object_trigger_tag(host, Some("TAG"));
+
+        let context = UninitContext::new(&rules, None);
+        for (kind, source) in [
+            (68, Some(invoker)),
+            (67, None),
+            (70, Some(invoker)),
+            (69, None),
+        ] {
+            sim.dispatch_object_tag_event(host, kind, Some(host), source, context);
+        }
+
+        assert!(sim.trigger_local_is_set_for_test(0), "67");
+        assert!(
+            sim.trigger_local_is_set_for_test(1),
+            "68 by the event's house"
+        );
+        assert!(sim.trigger_local_is_set_for_test(2), "69");
+        assert!(!sim.trigger_local_is_set_for_test(3), "70 by another house");
+    }
 }

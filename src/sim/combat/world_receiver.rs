@@ -2286,11 +2286,14 @@ fn finish_concrete_death(
     // The killing call's concrete receiver booleans: IgnoreDefenses (arg5)
     // becomes the building's NoSurvivor and kills a unit's passengers, arg6
     // gates the vehicle crew.
-    let (ignore_defenses, prevent_crew_escape) = damage_events
+    let killing_flags = damage_events
         .iter()
         .rfind(|event| event.target_id == dead_id)
-        .map(|event| event.receiver_flags)
-        .map_or((false, false), |flags| (flags.ignore_defenses, flags.arg6));
+        .map(|event| event.receiver_flags);
+    let ignore_defenses = killing_flags.is_some_and(|flags| flags.ignore_defenses);
+    // Ares's survivor release (`0x100464C0`) reads only IgnoreDefenses.
+    #[cfg(not(feature = "ares"))]
+    let prevent_crew_escape = killing_flags.is_some_and(|flags| flags.arg6);
 
     // BuildingClass runs DestructionEffects/SpawnSurvivors only after
     // TechnoClass's synchronous death weapon has returned. Capture the

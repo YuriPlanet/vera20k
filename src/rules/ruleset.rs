@@ -8838,20 +8838,13 @@ impl RuleSet {
 
     /// `[Side] Engineer=` else global `[General] Engineer=`
     /// (`SideExt::GetEngineer @ 0x1002DEE0`).
+    #[cfg(feature = "ares")]
     pub(crate) fn side_engineer(&self, side: i32) -> Option<Option<&str>> {
-        #[cfg(feature = "ares")]
-        {
-            let extension = self.side_extension(side)?;
-            return Some(match &extension.engineer {
-                Some(value) => value.as_deref(),
-                None => self.general.engineer_infantry.as_deref(),
-            });
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = side;
-            None
-        }
+        let extension = self.side_extension(side)?;
+        Some(match &extension.engineer {
+            Some(value) => value.as_deref(),
+            None => self.general.engineer_infantry.as_deref(),
+        })
     }
 
     /// `[Side] Technician=` else global `[General] Technician=`
