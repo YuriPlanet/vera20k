@@ -8,6 +8,7 @@ use crate::rules::superweapon_targeting::AiTargetingMode;
 use crate::rules::superweapon_type::SuperWeaponKind;
 use crate::sim::command::Command;
 use crate::sim::superweapon::SuperWeaponInstance;
+use crate::sim::world::SimSoundEvent;
 
 const RULES: &str = "\
 [SuperWeaponTypes]

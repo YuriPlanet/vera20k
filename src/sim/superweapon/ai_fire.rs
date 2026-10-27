@@ -113,7 +113,8 @@ impl AiFireArm {
             SuperWeaponKind::IronCurtain
             | SuperWeaponKind::ChronoSphere
             | SuperWeaponKind::ChronoWarp
-            | SuperWeaponKind::NoEffect => Self::None,
+            | SuperWeaponKind::NoEffect
+            | SuperWeaponKind::HunterSeeker => Self::None,
         }
     }
 }

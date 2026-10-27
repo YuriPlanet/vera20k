@@ -199,16 +199,6 @@ pub(crate) fn launch(
         base_normal: config.base_normal,
         activation_sound: config.activation_sound.clone(),
     };
-    // The existing launch event retires the player's armed selection now,
-    // not when the delivery later appears. The placement cue is separate.
-    // This case plays no positional cue: the target cell's centre, with no
-    // Map lookup (a lookup off the map would stamp the shared Dummy).
-    let world = crate::sim::components::DriveCoord::cell(cell.0, cell.1, 0).into();
-    sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
-        owner,
-        sw_type,
-        world,
-    });
     if config.deferment == 0 {
         apply(sim, rules, request, registry, effects);
     } else {

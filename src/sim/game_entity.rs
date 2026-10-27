@@ -519,6 +519,9 @@ pub struct GameEntity {
     /// Per-instance Deliver.BaseNormal override, not a mutation of its type.
     #[serde(default)]
     unit_delivery_no_base: bool,
+    /// Ares launch source; the entity owns its lifetime and save state.
+    #[serde(default)]
+    hunter_seeker_origin: Option<crate::sim::hunter_seeker::HunterSeekerOrigin>,
     /// Building+66C charger pointers and +661 weapon latch, owned by
     /// `sim::tesla_charging` independently of House power accounting.
     #[serde(default)]
@@ -924,12 +927,30 @@ impl GameEntity {
         self.unit_delivery_no_base = self.category() == EntityCategory::Structure && !base_normal;
     }
 
+    pub(crate) fn hunter_seeker_origin(
+        &self,
+    ) -> Option<crate::sim::hunter_seeker::HunterSeekerOrigin> {
+        self.hunter_seeker_origin
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn set_hunter_seeker_origin(
+        &mut self,
+        origin: crate::sim::hunter_seeker::HunterSeekerOrigin,
+    ) {
+        self.hunter_seeker_origin = Some(origin);
+    }
+
     /// Saved extension effects must be admitted by the build that resumes them.
     /// Keep the raw delivery override private to its entity owner.
     pub(crate) fn validate_ares_build_compatibility(&self) -> Result<(), &'static str> {
         #[cfg(not(feature = "ares"))]
         if self.unit_delivery_no_base {
             return Err("delivery base overrides require a build with the ares feature");
+        }
+        #[cfg(not(feature = "ares"))]
+        if self.hunter_seeker_origin.is_some() {
+            return Err("hunter seeker launch sources require a build with the ares feature");
         }
         Ok(())
     }
@@ -1881,6 +1902,7 @@ impl GameEntity {
             building_art: Default::default(),
             building_online: Default::default(),
             unit_delivery_no_base: false,
+            hunter_seeker_origin: None,
             tesla_charge: Default::default(),
             tesla_charger: Default::default(),
             building_last_operational: Default::default(),

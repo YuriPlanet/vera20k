@@ -42,6 +42,10 @@ mod ares_charge_tests;
 mod ares_target_policy_tests;
 #[cfg(feature = "ares")]
 mod ares_presentation;
+#[cfg(feature = "ares")]
+mod hunter_seeker;
+#[cfg(test)]
+mod hunter_seeker_tests;
 pub mod genetic_converter;
 pub mod invulnerability;
 pub mod iron_curtain;
@@ -755,11 +759,8 @@ impl SuperWeaponInstance {
                 self.charge_drain_state = 0;
             }
             #[cfg(feature = "ares")]
-            if matches!(
-                sw.kind,
-                crate::rules::superweapon_type::SuperWeaponKind::GenericWarhead
-                    | crate::rules::superweapon_type::SuperWeaponKind::UnitDelivery
-            ) && let Some(metadata) = rules.super_weapon_metadata(&sw.id)
+            if sw.kind.has_ares_handler()
+                && let Some(metadata) = rules.super_weapon_metadata(&sw.id)
             {
                 // These handlers already retain successful launch history.
                 // Stock redirects need their own success boundary before using
@@ -1928,7 +1929,14 @@ fn finish_ares_launch(
     if recheck && let Some(house) = sim.houses.get_mut(&owner) {
         house.request_tech_recheck();
     }
-    ares_presentation::on_launch(sim, rules, owner, typ, cell);
+    // Common Launch10032F15 records success before its activation EVA.
+    // Emit once here, after Activate has finished all immediate payloads.
+    let [x, y, z] = deck_coords(sim, cell);
+    sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
+        owner,
+        sw_type: typ,
+        world: crate::sim::components::DriveCoord { x, y, z }.into(),
+    });
 }
 
 /// Shared provider facts for one reached House pass. Source authority is the

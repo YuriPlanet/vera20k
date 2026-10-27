@@ -218,6 +218,7 @@ pub mod sound_ini;
 pub(crate) mod superweapon_influence;
 pub mod superweapon_targeting;
 pub mod superweapon_type;
+pub mod hunter_seeker;
 pub mod team_ai_ini;
 pub mod terrain_asset_catalog;
 pub mod terrain_object_type;

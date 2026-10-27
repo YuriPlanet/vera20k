@@ -206,6 +206,7 @@ pub(super) fn check(
             sw.kind,
             crate::rules::superweapon_type::SuperWeaponKind::GenericWarhead
                 | crate::rules::superweapon_type::SuperWeaponKind::UnitDelivery
+                | crate::rules::superweapon_type::SuperWeaponKind::HunterSeeker
         ) {
             Err(TargetReject::InvalidPayload)
         } else {
@@ -214,6 +215,11 @@ pub(super) fn check(
     }
     #[cfg(feature = "ares")]
     {
+        // Ares SW_HunterSeeker direct clicks go straight to Activate10072850.
+        // Selected automatic cells still follow their shared CanFireAt path.
+        if !automatic && sw.kind == crate::rules::superweapon_type::SuperWeaponKind::HunterSeeker {
+            return Ok(());
+        }
         let data = prepare(sim, rules, owner, sw);
         check_with_data(sim, rules, owner, sw, cell, automatic, &data)
     }
@@ -279,17 +285,7 @@ pub(super) fn check_with_data(
                 EntityCategory::Structure => TargetMask::BUILDING,
                 EntityCategory::Unit | EntityCategory::Aircraft => TargetMask::UNIT,
             },
-            relation: if entity.owner() == owner {
-                HouseMask::OWNER
-            } else if is_allied_with(
-                sim.house_alliances.as_map(),
-                sim.interner.resolve(owner),
-                sim.interner.resolve(entity.owner()),
-            ) {
-                HouseMask::ALLIES
-            } else {
-                HouseMask::ENEMIES
-            },
+            relation: sim.ares_house_relation(owner, entity.owner()),
         })
         .collect();
     let shrouded = (!policy.fire_into_shroud()).then(|| {
@@ -356,4 +352,24 @@ pub(super) fn launch_sites(
             ))
         })
         .collect()
+}
+
+#[cfg(feature = "ares")]
+impl Simulation {
+    /// Ares's house relation (10021440): the same house is the owner, then
+    /// the owner's directed IsAlliedWith(other) makes an ally; any other
+    /// house, including an absent one, is an enemy.
+    pub(crate) fn ares_house_relation(&self, owner: InternedId, other: InternedId) -> HouseMask {
+        if owner == other {
+            HouseMask::OWNER
+        } else if is_allied_with(
+            self.house_alliances.as_map(),
+            self.interner.resolve(owner),
+            self.interner.resolve(other),
+        ) {
+            HouseMask::ALLIES
+        } else {
+            HouseMask::ENEMIES
+        }
+    }
 }

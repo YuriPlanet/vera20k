@@ -30,7 +30,7 @@ claims remain unverified. This is not imported Ares C++ code.
 The independently checked [Ares cost contract](https://ares-developers.github.io/Ares-docs/new/superweapons/cost.html)
 defines zero as free, negative amounts as fees, and positive amounts as rewards.
 VERA implements that contract for single-stage powers, including
-GenericWarhead and UnitDelivery, and ticketed two-stage powers described below.
+GenericWarhead, UnitDelivery and HunterSeeker, and ticketed two-stage powers described below.
 It retains the existing House wallet as the
 sole owner of balances, spending and score:
 
@@ -46,9 +46,13 @@ sole owner of balances, spending and score:
 - Readiness, supported configuration, required buildings and target/payload
   admission precede settlement. AI checks affordability before target search,
   and the final command rechecks the current wallet after any input delay.
-- Settlement occurs once immediately before the admitted Launch call. A later
-  effect failure does not refund it. For UnitDelivery, acceptance means enqueue:
-  later provider loss, blocked landing or save/reload cannot repeat settlement.
+- GenericWarhead, UnitDelivery and HunterSeeker settle once after successful
+  Activate, following Ares `SWTypeExt::Launch` (`0x10032EEF..0x10032FF6`).
+  A declined effect does not pay a fee; ordinary readiness consumption still
+  follows ClickFire. UnitDelivery accepts by enqueueing: later provider loss,
+  blocked landing or save/reload cannot repeat settlement.
+- Stock redirected powers retain the existing before-Launch settlement path;
+  their activation-success boundaries still need separate ports.
 - The owner-local refusal cue defaults to the fixed EVA catalog's
   `EVA_InsufficientFunds`, can be replaced by a registered cue, and can be
   silenced. Unknown later names retain the previously resolved cue. The

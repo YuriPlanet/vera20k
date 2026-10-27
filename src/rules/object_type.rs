@@ -1917,6 +1917,9 @@ pub struct ObjectType {
     designator_range: Option<i32>,
     #[cfg(feature = "ares")]
     inhibitor_range: Option<i32>,
+    /// Ares TechnoTypeExt+3DC; AcquireHunterSeekerTarget10042E40 checks1004306C.
+    #[cfg(feature = "ares")]
+    hunter_seeker_ignore: bool,
     pub non_vehicle: bool,
     pub jumpjet_turn: bool,
     pub emp_pulse_cannon: bool,
@@ -2476,13 +2479,20 @@ impl ObjectType {
     }
 
     #[cfg(feature = "ares")]
-    pub(crate) fn bind_super_weapon_ranges(
+    pub(crate) fn bind_super_weapon_techno_rules(
         &mut self,
         designator: Option<i32>,
         inhibitor: Option<i32>,
+        hunter_seeker_ignore: bool,
     ) {
         self.designator_range = designator;
         self.inhibitor_range = inhibitor;
+        self.hunter_seeker_ignore = hunter_seeker_ignore;
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn hunter_seeker_ignored(&self) -> bool {
+        self.hunter_seeker_ignore
     }
 
     #[cfg(feature = "ares")]
@@ -4047,6 +4057,8 @@ impl ObjectType {
             designator_range: None,
             #[cfg(feature = "ares")]
             inhibitor_range: None,
+            #[cfg(feature = "ares")]
+            hunter_seeker_ignore: false,
             non_vehicle: category == ObjectCategory::Vehicle
                 && section.read_bool("NonVehicle", false),
             jumpjet_turn: category == ObjectCategory::Infantry

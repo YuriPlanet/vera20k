@@ -4579,6 +4579,12 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
+    /// Ares RulesExt+70, used by SW_HunterSeeker::Activate100728EB.
+    #[cfg(feature = "ares")]
+    pub(crate) fn hunter_seeker_buildings(&self) -> &[String] {
+        self.ares_global_controls.hunter_seeker_buildings()
+    }
+
     /// RulesExt+14A indexed by native House difficulty0/1/2 (hardest first).
     /// Only the compiled Ares CanBuild owner consumes this retained policy.
     pub fn ares_ai_bypasses_build_limit(&self, difficulty_index: usize) -> bool {
@@ -4799,8 +4805,11 @@ impl RuleSet {
                 .get(&(category, name.to_ascii_uppercase()))
                 .copied()
             {
-                rules.object_list[handle.0 as usize]
-                    .bind_super_weapon_ranges(retained.designator_range, retained.inhibitor_range);
+                rules.object_list[handle.0 as usize].bind_super_weapon_techno_rules(
+                    retained.designator_range,
+                    retained.inhibitor_range,
+                    retained.hunter_seeker_ignore,
+                );
             }
         }
         for (name, ares) in processed.ares_warhead_states() {
@@ -5181,6 +5190,15 @@ impl RuleSet {
                 }) {
                     building.project_additional_super_weapons(supers);
                 }
+            }
+        }
+        for (name, settings) in processed.hunter_seeker_states() {
+            if let Some(sw) = rules
+                .super_weapons
+                .values_mut()
+                .find(|sw| sw.id.eq_ignore_ascii_case(name))
+            {
+                sw.hunter_seeker = settings.cloned();
             }
         }
         for (name, delivery) in processed.unit_delivery_states() {
@@ -6278,11 +6296,7 @@ impl RuleSet {
         &self,
         id: &str,
     ) -> Option<crate::rules::superweapon_targeting::AresSuperWeaponTargetingState> {
-        use crate::rules::superweapon_type::SuperWeaponKind as K;
-        if !matches!(
-            self.super_weapon(id)?.kind,
-            K::GenericWarhead | K::UnitDelivery
-        ) {
+        if !self.super_weapon(id)?.kind.has_ares_handler() {
             return None;
         }
         self.super_weapon_metadata(id)
@@ -6915,17 +6929,23 @@ impl RuleSet {
                 .object_list
                 .iter()
                 .filter(|object| {
-                    object.designator_range().is_some() || object.inhibitor_range().is_some()
+                    object.designator_range().is_some()
+                        || object.inhibitor_range().is_some()
+                        || object.hunter_seeker_ignored()
                 })
                 .map(|object| {
                     (
                         (object.category, object.id.to_ascii_uppercase()),
-                        (object.designator_range(), object.inhibitor_range()),
+                        (
+                            object.designator_range(),
+                            object.inhibitor_range(),
+                            object.hunter_seeker_ignored(),
+                        ),
                     )
                 })
                 .collect::<BTreeMap<_, _>>();
             if !influence_types.is_empty() {
-                b"ares-sw-influence-types-v1".hash(&mut hasher);
+                b"ares-sw-influence-types-v2".hash(&mut hasher);
                 influence_types.hash(&mut hasher);
             }
             self.object_list
@@ -7331,6 +7351,23 @@ impl RuleSet {
             .collect::<BTreeMap<_, _>>();
         if !generic_warheads.is_empty() {
             generic_warheads.hash(&mut hasher);
+        }
+        let hunters = self
+            .super_weapons
+            .iter()
+            .filter_map(|(id, sw)| {
+                sw.hunter_seeker
+                    .as_ref()
+                    .map(|settings| (id.to_ascii_uppercase(), settings))
+            })
+            .collect::<BTreeMap<_, _>>();
+        if !hunters.is_empty() {
+            b"ares-hunter-seeker-v1".hash(&mut hasher);
+            hunters.hash(&mut hasher);
+            #[cfg(feature = "ares")]
+            self.ares_global_controls
+                .hunter_seeker_buildings()
+                .hash(&mut hasher);
         }
         // No extension tags means no extra hash input: preserve stock hashes.
         let building_requirements = self
@@ -8711,12 +8748,9 @@ impl RuleSet {
         }
     }
 
-    /// `[Side] HunterSeeker=`; no VERA consumer yet (the Hunter Seeker
-    /// superweapon is a separate unported mechanism).
+    /// `[Side] HunterSeeker=` (SideExt+0x94), the fallback UnitType of
+    /// SW_HunterSeeker::Activate10072885.
     #[cfg(feature = "ares")]
-    // Hunter Seeker superweapon launch is not ported; the parsed value has no
-    // production consumer yet.
-    #[allow(dead_code)]
     pub(crate) fn side_hunter_seeker(&self, side: i32) -> Option<&str> {
         self.side_extension(side)?
             .hunter_seeker

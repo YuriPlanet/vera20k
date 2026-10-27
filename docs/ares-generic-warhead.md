@@ -58,9 +58,10 @@ Provide the normal art/cameo assets for your mod.
   `PreDependent` tags cannot turn it into a two-click superweapon.
 - `SW.AITargeting=Offensive` is the handler default, set once on the type's
   first rules pass, so a type that becomes GenericWarhead only in a later layer
-  starts with `None`. Targeting, constraints, manual/automatic masks and ranges
-  belong to the common SWType metadata, shared with `Type=UnitDelivery`; they
-  are not duplicated in the payload.
+  keeps the mode its first `Type`'s handler stored. Targeting, constraints,
+  manual/automatic masks and ranges belong to the common SWType metadata,
+  shared with `Type=UnitDelivery` and `Type=HunterSeeker`; they are not
+  duplicated in the payload.
 - `SW.UseAITargeting=yes` makes a left click queue the automatic selector rather
   than entering a target cursor. The selector's result is not checked again
   against different manual masks. Script launches retain their explicit cell.
@@ -107,7 +108,7 @@ consumers and the available official Ares sources.
 
 Intentional boundaries/adaptations:
 
-- The common policy is executed for GenericWarhead and UnitDelivery. Automatic
+- The common policy is executed for GenericWarhead, UnitDelivery and HunterSeeker. Automatic
   requirements remain independent of manual ones and take their defaults from
   the selected native targeting mode; stock dispatch stays separate.
 - `SW.RequiresTarget`, `SW.RequiresHouse`, `SW.AIRequiresTarget`,

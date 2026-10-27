@@ -304,7 +304,7 @@ const OFFENSIVE_MODE: u8 = 8;
 /// ChronoSphere's (1006EF10) and ChronoWarp's (100700B0) store nothing and
 /// EMPulse's stores 0 (1007146B), so they keep the constructor's 0.
 #[cfg(feature = "ares")]
-pub(crate) fn handler_initial_mode(type_name: &str) -> u8 {
+fn handler_initial_mode(type_name: &str) -> u8 {
     const MODES: [(&str, u8); 17] = [
         ("MultiMissile", 1),                // 100733BC
         ("IronCurtain", 15),                // 10074BFE
@@ -395,18 +395,25 @@ impl Default for AresSuperWeaponTargetingState {
 #[cfg(feature = "ares")]
 impl AresSuperWeaponTargetingState {
     /// LoadFromINIFile10033250 with this type's section. Only its first call
-    /// runs the type handler's Initialize (10033337), which stores
-    /// `initial_mode` ([`handler_initial_mode`]). LoadFromINI10033370 then
-    /// reads the fields in this order with Valueable<bool> (1000EBF0), the
-    /// house (10033CE0) and target (10033D20) masks, the mode (10033D00), the
-    /// Nullable constraints, preference and AI masks (10033C80, 10033CA0,
-    /// 10033CC0, 10033C60), and Valueable<double> (1000EB00). The mode
-    /// (10034350) and preference (100343C0) readers need the whole value to
-    /// `_strcmpi` a name; anything else keeps the prior value. The Nullable
-    /// wrappers set their flag only on a successful read.
-    pub(crate) fn read_pass(&mut self, section: &IniSection, initial_mode: u8) {
-        if !self.initialized {
-            self.mode = initial_mode;
+    /// runs the `Type` handler's Initialize (10033337), which stores the
+    /// handler's mode ([`handler_initial_mode`]); HunterSeeker's (10072990)
+    /// also stores AffectsHouse=enemies (100729EB). Returns whether this call
+    /// ran Initialize, whose other writes the caller's owners make.
+    /// LoadFromINI10033370 then reads the fields in this order with
+    /// Valueable<bool> (1000EBF0), the house (10033CE0) and target (10033D20)
+    /// masks, the mode (10033D00), the Nullable constraints, preference and
+    /// AI masks (10033C80, 10033CA0, 10033CC0, 10033C60), and
+    /// Valueable<double> (1000EB00). The mode (10034350) and preference
+    /// (100343C0) readers need the whole value to `_strcmpi` a name; anything
+    /// else keeps the prior value. The Nullable wrappers set their flag only
+    /// on a successful read.
+    pub(crate) fn read_pass(&mut self, section: &IniSection, type_name: Option<&str>) -> bool {
+        let initialize = !self.initialized;
+        if initialize {
+            self.mode = type_name.map_or(0, handler_initial_mode);
+            if type_name.is_some_and(|name| name.eq_ignore_ascii_case("HunterSeeker")) {
+                self.affects_house = HouseMask::ENEMIES;
+            }
         }
         self.initialized = true;
         // 1003341A..10033457
@@ -460,6 +467,7 @@ impl AresSuperWeaponTargetingState {
         // 10033942/10033958
         self.range_minimum = section.read_ares_double_bits("SW.RangeMinimum", self.range_minimum);
         self.range_maximum = section.read_ares_double_bits("SW.RangeMaximum", self.range_maximum);
+        initialize
     }
 
     /// A pass without this type's section still ends the first call
@@ -486,6 +494,16 @@ impl AresSuperWeaponTargetingState {
 
     pub(crate) fn fire_into_shroud(self) -> bool {
         self.fire_into_shroud
+    }
+
+    /// `SW.AffectsHouse` (+0x23C).
+    pub(crate) fn affects_house(self) -> HouseMask {
+        self.affects_house
+    }
+
+    /// `SW.AffectsTarget` (+0x240).
+    pub(crate) fn affects_target(self) -> TargetMask {
+        self.affects_target
     }
 
     pub(crate) fn manual(self) -> TargetRequirements {

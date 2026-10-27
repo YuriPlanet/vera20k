@@ -8,7 +8,7 @@ fn read_passes(type_name: &str, passes: &[&str]) -> AresSuperWeaponTargetingStat
     for pass in passes {
         let ini =
             crate::rules::ini_parser::IniFile::from_str(&format!("[SW]\nType={type_name}\n{pass}"));
-        state.read_pass(ini.section("SW").unwrap(), handler_initial_mode(type_name));
+        state.read_pass(ini.section("SW").unwrap(), Some(type_name));
     }
     state
 }

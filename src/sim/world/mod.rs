@@ -1046,6 +1046,12 @@ pub enum SimSoundEvent {
         owner: InternedId,
         sw_type: InternedId,
     },
+    /// Common Ares Launch10033201..10033242: Ready queue cleanup after FX.
+    #[cfg(feature = "ares")]
+    AresSuperWeaponFinished {
+        owner: InternedId,
+        sw_type: InternedId,
+    },
 }
 
 impl SimSoundEvent {

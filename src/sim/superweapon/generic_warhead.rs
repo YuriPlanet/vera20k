@@ -13,7 +13,7 @@ use crate::rules::superweapon_type::SuperWeaponType;
 use crate::sim::combat::{CombatLightRequest, RAD_NO_ATTACKER, detonation_anim, world_receiver};
 use crate::sim::intern::InternedId;
 use crate::sim::projectile::ProjectileCoord;
-use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
+use crate::sim::world::{FrameEffects, Simulation};
 
 #[cfg(test)]
 #[path = "generic_warhead_tests.rs"]
@@ -42,7 +42,6 @@ pub(super) fn launch(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
-    sw_type: InternedId,
     sw: &SuperWeaponType,
     cell: (u16, u16),
     overlays: Option<&OverlayTypeRegistry>,
@@ -100,14 +99,6 @@ pub(super) fn launch(
         coord: impact,
         force_create: false,
         flags: 0,
-    });
-    // This case plays no positional cue: the target cell's centre, with no
-    // Map lookup (a lookup off the map would stamp the shared Dummy).
-    let world = crate::sim::components::DriveCoord::cell(cell.0, cell.1, 0).into();
-    sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
-        owner,
-        sw_type,
-        world,
     });
     true
 }

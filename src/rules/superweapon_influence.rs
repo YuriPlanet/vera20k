@@ -19,14 +19,19 @@ pub(crate) struct SuperWeaponInfluence {
 /// an invalid later value must not erase an earlier explicit range.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct TechnoSuperWeaponRules {
+    /// TechnoTypeExt constructor: EAX=0 at1003CB80, byte store1003CC79.
+    pub(crate) hunter_seeker_ignore: bool,
     pub(crate) designator_range: Option<i32>,
     pub(crate) inhibitor_range: Option<i32>,
 }
 
 impl TechnoSuperWeaponRules {
     pub(crate) fn read_pass(&mut self, section: &crate::rules::ini_parser::IniSection) {
-        // Ares TechnoTypeExt::LoadFromINI1003DEC0 nullable reads at
+        // Ares TechnoTypeExt::LoadFromINI1003DEC0: Ignore1003ED8F,
+        // then nullable reads at
         //1003EE23/1003EE39 via10008CC0: presence is set only on success.
+        self.hunter_seeker_ignore =
+            section.read_ares_bool("HunterSeeker.Ignore", self.hunter_seeker_ignore);
         self.designator_range =
             section.read_ares_nullable_int("DesignatorRange", self.designator_range);
         self.inhibitor_range =
