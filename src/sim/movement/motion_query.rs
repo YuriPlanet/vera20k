@@ -9,6 +9,22 @@ use super::track_process::TrackFamily;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::game_entity::GameEntity;
 
+/// ILocomotion+60, dispatched by Ares TechnoUpdate1004B49B. Hover516C70
+/// uses its existing height-aware owner; the other active families use the
+/// retained base power owner, rather than the object's Deactivated byte.
+#[cfg(feature = "ares")]
+pub(crate) fn is_powered(
+    entity: &GameEntity,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+) -> Option<bool> {
+    let locomotor = entity.locomotor.as_ref()?;
+    Some(if locomotor.active_kind() == LocomotorKind::Hover {
+        super::hover::hover_is_powered(entity, cells)
+    } else {
+        locomotor.is_powered()
+    })
+}
+
 /// ILocomotion+14 Destination, distinct from Head_To(+18) and the Foot's
 /// NavCom. Original retail gamemd.exe: Drive4AFC90, Ship69F3A0,
 /// Walk75ABA0, Hover514CB0, Fly4CCAE0, Jumpjet54AE60, Rocket661FB0 and

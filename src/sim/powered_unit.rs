@@ -342,6 +342,73 @@ impl Simulation {
         }
     }
 
+    /// Ares TechnoUpdate1004B439..1004B526, ordinary Foot branch. Operator
+    /// membership is derived by its existing owner; transitions use the same
+    /// Deactivate/Reactivate owners as power and EMP recovery.
+    #[cfg(feature = "ares")]
+    pub(crate) fn update_ares_operator_operability(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
+        let (offline, powered, operated) = {
+            let Some(actor) = self.substrate.entities.get(id) else {
+                return;
+            };
+            if !actor.category().is_foot()
+                || self.entity_object_type(actor, rules).is_none_or(|kind| {
+                    matches!(
+                        kind.driver_rules().operator(),
+                        crate::rules::ares_driver::OperatorRequirement::None
+                    )
+                })
+            {
+                return;
+            }
+            let Some(terrain) = self.resolved_terrain.as_ref() else {
+                return;
+            };
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            let cell = crate::sim::movement::ground_pose::query_object_cell(
+                &cells,
+                crate::sim::movement::ground_pose::object_location(actor, Some(terrain)),
+            );
+            let (rx, ry) = cells.coord(cell);
+            //1004B459/468: a Foot inside a building skips this update.
+            if u16::try_from(rx)
+                .ok()
+                .zip(u16::try_from(ry).ok())
+                .is_some_and(|(rx, ry)| {
+                    self.substrate
+                        .occupancy
+                        .first_building_on_layer(rx, ry, MovementLayer::Ground)
+                        .is_some()
+                })
+            {
+                return;
+            }
+            let Some(powered) = crate::sim::movement::motion_query::is_powered(actor, Some(&cells))
+            else {
+                return;
+            };
+            (
+                actor.deactivated.is_offline(),
+                powered,
+                self.ares_is_operated(id, rules),
+            )
+        };
+        if !operated {
+            if !offline {
+                self.techno_deactivate(id, rules, effects);
+            }
+        } else if powered == offline || offline {
+            //1004B4ED..1004B526 also repairs a mismatched locomotor power bit.
+            // Reactivate itself owns the EMP, power-source and Operator vetoes.
+            self.techno_reactivate(id, rules, effects);
+        }
+    }
+
     /// `TechnoClass::Reactivate @ 0x0070FBE0`: ResetOrdersToGuard
     /// (vt+0x3D0), a Foot's ILocomotion Power_On (the base `0x0055A8F0` in
     /// every family), its type's `ActivateSound=` where it stands if it was
@@ -401,6 +468,10 @@ impl Simulation {
                 if !powered {
                     return;
                 }
+            }
+            // Activate1004CCE2..1004CCF4 applies this after power admission.
+            if !self.ares_is_operated(id, rules) {
+                return;
             }
         }
         #[cfg(feature = "ares")]

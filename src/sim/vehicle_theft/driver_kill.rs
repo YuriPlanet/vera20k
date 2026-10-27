@@ -557,6 +557,8 @@ mod tests {
         );
         assert!(!sim.can_capture(controller, host, &rules));
         assert!(!sim.can_be_perma_mind_controlled(host, &rules));
+        sim.update_ares_operator_operability(host, &rules, Default::default());
+        assert!(sim.entities().get(host).unwrap().deactivated.is_offline());
         // A subsequent order cannot reactivate a driverless hull.
         let frame = sim.session.binary_frame();
         let actor = sim.substrate.entities.get_mut(host).unwrap();
@@ -586,6 +588,28 @@ mod tests {
         assert!(sim.entities().get(driver).unwrap().lifecycle.in_limbo());
         assert!(sim.can_capture(controller, host, &rules));
         assert!(sim.can_be_perma_mind_controlled(host, &rules));
+
+        // A generic driver satisfies _ANY_; a named operator requirement
+        // still needs its matching passenger before either recovery caller
+        // may power the hull back on.
+        sim.techno_reactivate(host, &rules, Default::default());
+        assert_eq!(
+            sim.entities().get(host).unwrap().deactivated.is_offline(),
+            operator_rule == "OP"
+        );
+        if operator_rule == "OP" {
+            assert!(board_passenger(
+                &mut sim,
+                &rules,
+                rider,
+                host,
+                BoardingArm::InfantryTransport,
+                Some(&overlays),
+                Default::default(),
+            ));
+        }
+        sim.update_ares_operator_operability(host, &rules, Default::default());
+        assert!(!sim.entities().get(host).unwrap().deactivated.is_offline());
 
         // Chance zero still spends the native single draw after all gates.
         // Calling the production aftermath isolates it from unrelated damage
