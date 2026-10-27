@@ -1018,6 +1018,10 @@ pub struct ObjectType {
     #[cfg(feature = "ares")]
     convert_script: Option<crate::rules::superweapon_type::DeliveryType>,
     #[cfg(feature = "ares")]
+    convert_water: Option<crate::rules::superweapon_type::DeliveryType>,
+    #[cfg(feature = "ares")]
+    convert_land: Option<crate::rules::superweapon_type::DeliveryType>,
+    #[cfg(feature = "ares")]
     turret_rot_override: Option<i32>,
     #[cfg(feature = "ares")]
     spotlight: crate::rules::ares_spotlight::SpotlightTypeRules,
@@ -2469,6 +2473,28 @@ impl ObjectType {
         self.convert_script = target.cloned();
     }
 
+    #[cfg(feature = "ares")]
+    pub(crate) fn surface_conversion(
+        &self,
+        water: bool,
+    ) -> Option<&crate::rules::superweapon_type::DeliveryType> {
+        if water {
+            self.convert_water.as_ref()
+        } else {
+            self.convert_land.as_ref()
+        }
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_surface_conversions(
+        &mut self,
+        water: Option<&crate::rules::superweapon_type::DeliveryType>,
+        land: Option<&crate::rules::superweapon_type::DeliveryType>,
+    ) {
+        self.convert_water = water.cloned();
+        self.convert_land = land.cloned();
+    }
+
     /// Retained TechnoType+C9E; building crew admission reads this input
     /// separately from the constructed Infantry's survivor marker.
     pub const fn nominal(&self) -> bool {
@@ -3648,6 +3674,10 @@ impl ObjectType {
             keep_alive: section.read_ares_nullable_bool("KeepAlive", None),
             #[cfg(feature = "ares")]
             convert_script: None,
+            #[cfg(feature = "ares")]
+            convert_water: None,
+            #[cfg(feature = "ares")]
+            convert_land: None,
             #[cfg(feature = "ares")]
             turret_rot_override: None,
             #[cfg(feature = "ares")]

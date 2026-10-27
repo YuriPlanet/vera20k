@@ -43,6 +43,10 @@ complete mission loading or all downstream campaign extensions.
 Supported extensions:
 
 - [Ordinary ground and tower EMP](ares-emp.md) (bounded human Drive/Walk, unteamed AI Drive and independent powered defensive buildings)
+- [Water and land type conversion](../src/sim/game_entity/type_conversion.rs):
+  `Convert.Water` applies over water or beach; `Convert.Land` applies over land
+  and bridges. It uses the same in-place conversion owner as script action 68,
+  preserves the object identity and ignores a target equal to the current type.
 - [Custom armor](ares-custom-armor.md)
 - [Supplemental string tables](../tools/rules_oracle/ares_csf.md), shared by
   game loading and default `asset csf-get` / `csf-grep` queries.

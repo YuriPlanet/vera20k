@@ -4124,6 +4124,14 @@ pub(crate) struct TechnoTypeReferences {
     #[cfg(feature = "ares")]
     #[serde(default)]
     convert_script: Option<crate::rules::superweapon_type::DeliveryType>,
+    /// Installed Ares TypeExt+610/+614: constructor1003CF40/1003CF46 clears;
+    /// Convert.Water1003F3C7 and Convert.Land1003F3DD use lookup1003FA40.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    convert_water: Option<crate::rules::superweapon_type::DeliveryType>,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    convert_land: Option<crate::rules::superweapon_type::DeliveryType>,
 }
 
 impl TechnoTypeReferences {
@@ -4154,6 +4162,10 @@ impl TechnoTypeReferences {
             to_overlay: None,
             #[cfg(feature = "ares")]
             convert_script: None,
+            #[cfg(feature = "ares")]
+            convert_water: None,
+            #[cfg(feature = "ares")]
+            convert_land: None,
         }
     }
 
@@ -4195,6 +4207,8 @@ impl TechnoTypeReferences {
         object.to_overlay.clone_from(&self.to_overlay);
         #[cfg(feature = "ares")]
         object.bind_script_conversion(self.convert_script.as_ref());
+        #[cfg(feature = "ares")]
+        object.bind_surface_conversions(self.convert_water.as_ref(), self.convert_land.as_ref());
     }
 }
 
@@ -6319,6 +6333,19 @@ impl RulesPassProcessor {
                     member.building_has_spotlight =
                         raw.read_ares_bool("HasSpotlight", member.building_has_spotlight);
                     member.spotlight.read_pass(&raw);
+                }
+                #[cfg(feature = "ares")]
+                if let Some(target) = self.resolve_existing_techno_type_from(&raw, "Convert.Water")
+                {
+                    self.family_mut(family)[index]
+                        .techno_references
+                        .convert_water = target;
+                }
+                #[cfg(feature = "ares")]
+                if let Some(target) = self.resolve_existing_techno_type_from(&raw, "Convert.Land") {
+                    self.family_mut(family)[index]
+                        .techno_references
+                        .convert_land = target;
                 }
                 #[cfg(feature = "ares")]
                 if let Some(target) = self.resolve_existing_techno_type_from(&raw, "Convert.Script")

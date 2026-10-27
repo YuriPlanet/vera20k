@@ -1470,6 +1470,10 @@ fn techno_common_steps(
     effects: FrameEffects<'_>,
     turret_rotate_sample: Option<bool>,
 ) -> bool {
+    // Ares TechnoClass_Update1004B348..1004B397 converts for the current
+    // surface before the same visit updates self-attached effects1004B434.
+    #[cfg(feature = "ares")]
+    sim.update_ares_surface_conversion(id, rules, effects);
     // Ares1004B434 updates attachments before1004B528 EMP recovery.
     #[cfg(feature = "ares")]
     sim.update_ares_attach_effects(id, rules);
@@ -5786,3 +5790,7 @@ use super::bridge_test_evidence;
 #[cfg(test)]
 #[path = "techno_ai/promotion_sound_tests.rs"]
 mod promotion_sound_tests;
+
+#[cfg(test)]
+#[path = "techno_ai/surface_conversion_tests.rs"]
+mod surface_conversion_tests;

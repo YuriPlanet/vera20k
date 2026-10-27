@@ -6902,6 +6902,22 @@ impl RuleSet {
                 b"ares-script-conversion-v1".hash(&mut hasher);
                 conversions.hash(&mut hasher);
             }
+            let surface_conversions = self
+                .object_list
+                .iter()
+                .filter_map(|object| {
+                    let targets = (
+                        object.surface_conversion(true),
+                        object.surface_conversion(false),
+                    );
+                    (targets.0.is_some() || targets.1.is_some())
+                        .then(|| ((object.category, object.id.to_ascii_uppercase()), targets))
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !surface_conversions.is_empty() {
+                b"ares-surface-conversion-v1".hash(&mut hasher);
+                surface_conversions.hash(&mut hasher);
+            }
             let turn_overrides = self
                 .object_list
                 .iter()
