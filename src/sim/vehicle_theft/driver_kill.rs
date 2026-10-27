@@ -570,8 +570,12 @@ mod tests {
         assert_eq!(actor.mission.queued(), crate::sim::mission::MissionId::NONE);
         sim.update_ares_driver_killed_mission(host, &rules, Some(&overlays), Default::default());
         assert_eq!(
-            sim.entities().get(host).unwrap().mission.queued().known(),
+            sim.entities().get(host).unwrap().mission.current().known(),
             Some(crate::sim::mission::MissionType::Harmless)
+        );
+        assert_eq!(
+            sim.entities().get(host).unwrap().mission.queued(),
+            crate::sim::mission::MissionId::NONE
         );
         assert_eq!(
             crate::sim::radio::receive::unit_can_enter_radio(&sim, host, Some(driver), &rules),
@@ -599,7 +603,7 @@ mod tests {
         );
         if operator_rule == "OP" {
             let replacement = sim
-                .spawn_object_at_height("OP", "Americans", 14, 15, 0, 0, &rules)
+                .spawn_object_at_height("OP", "Americans", 17, 14, 0, 0, &rules)
                 .unwrap();
             assert!(board_passenger(
                 &mut sim,
