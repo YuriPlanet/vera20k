@@ -67,6 +67,9 @@ Supported extensions:
   vehicle theft and driver replacement, with passenger and survivor handoff.
   [KillDriver](../src/sim/vehicle_theft/driver_kill.rs) respects type/rank protection,
   health and chance gates; a driverless hull stops acting until a new driver enters.
+  Foot `Operator` requirements deactivate an empty hull and resume it through the
+  shared power/EMP admission when a qualifying passenger enters. Building-specific
+  Operator updates remain outside this path.
   Per-type `Survivor.*`, `Crew.TechnicianChance`, `Crew.EngineerChance` and nullable
   aircraft `Crashable` share the existing crew and placement owners. These paths
   require `ares`; loading INI settings cannot activate them in a default build.
