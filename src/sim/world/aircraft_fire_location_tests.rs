@@ -52,6 +52,10 @@ fn insert(
 }
 
 fn fixture(input: &Value) -> (Simulation, RuleSet) {
+    fixture_with_art(input, &IniFile::empty())
+}
+
+fn fixture_with_art(input: &Value, art: &IniFile) -> (Simulation, RuleSet) {
     let passengers = input["passengers"].as_array().cloned().unwrap_or_default();
     let mut definitions = String::new();
     let mut registered = String::new();
@@ -125,7 +129,9 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         input["rot"].as_i64().unwrap_or(3),
         input["inviso"].as_bool().unwrap_or(false),
     );
-    let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
+    let mut rules =
+        RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(&ini), art).unwrap();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(art));
     let mut sim = Simulation::with_seed(input["seed"].as_u64().unwrap_or(31));
     sim.session.set_map_width_for_test(128);
     sim.session.set_map_height_for_test(128);
@@ -306,12 +312,16 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
 }
 
 pub(super) fn reengagement_fixture(input: &Value) -> (Simulation, RuleSet) {
+    reengagement_fixture_with_art(input, &IniFile::empty())
+}
+
+pub(super) fn reengagement_fixture_with_art(input: &Value, art: &IniFile) -> (Simulation, RuleSet) {
     use crate::sim::ammo::TechnoAmmo;
     use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionLeafState};
     use crate::sim::movement::locomotor::LocomotorState;
     let mut case = input.clone();
     case["open_topped"] = json!(input["open_transport"].as_bool().unwrap_or(false));
-    let (mut sim, mut rules) = fixture(&case);
+    let (mut sim, mut rules) = fixture_with_art(&case, art);
     rules.general.blockage_path_delay_ticks = 11;
     rules.mission_control =
         crate::rules::mission_data::MissionControl::from_ini(&IniFile::from_str(&format!(

@@ -200,6 +200,7 @@ pub mod gunner_turrets;
 pub mod house_colors;
 pub mod infantry_sequence;
 pub mod ini_parser;
+pub(crate) mod weapon_offsets;
 // The readers are a child of the raw store, so only they see raw value text.
 pub use ini_parser::ini_value;
 pub mod audio_sources;

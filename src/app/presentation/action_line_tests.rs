@@ -599,9 +599,9 @@ fn retail_tank_attack_inputs_match_original_readers() {
     assert_eq!(serde_json::json!(art.turret_offset), input["turret_offset"]);
     assert_eq!(
         [
-            art.primary_fire_flh.forward,
-            art.primary_fire_flh.lateral,
-            art.primary_fire_flh.height,
+            object.weapon_flh(0, false).forward,
+            object.weapon_flh(0, false).lateral,
+            object.weapon_flh(0, false).height,
         ],
         point::<3>(&input["primary_flh"])
     );
