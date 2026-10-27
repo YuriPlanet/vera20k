@@ -248,15 +248,9 @@ fn retail_dustbowl_battle_fortress_riders_fire_from_its_ports() {
         } = &fortress.scenario.runtime;
         let rules = &resources.rules;
         let object = rules.object("BFRT").unwrap();
-        let art = rules
-            .art()
-            .get(&object.image)
-            .or_else(|| rules.art().get(&object.id))
-            .expect("BFRT art");
         let transport = sim.substrate.entities.get(bfrt).unwrap();
-        let ports: [crate::rules::flh::Flh; 5] = std::array::from_fn(|port| {
-            art.alternate_fire_flh(port, object.turret_count, object.weapon_count)
-        });
+        let ports: [crate::rules::flh::Flh; 5] =
+            std::array::from_fn(|port| object.alternate_fire_flh(port));
         (
             ports,
             crate::sim::movement::ground_pose::object_world_z_leptons(
