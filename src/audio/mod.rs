@@ -16,3 +16,5 @@ pub mod sfx;
 pub(crate) mod theme;
 pub mod voice_queue;
 pub mod vox;
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+pub mod web_output;

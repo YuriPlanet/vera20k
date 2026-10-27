@@ -2683,7 +2683,6 @@ dependencies = [
  "bytemuck",
  "console_error_panic_hook",
  "console_log",
- "cpal",
  "getrandom 0.3.4",
  "glam",
  "image",

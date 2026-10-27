@@ -39,7 +39,7 @@ required-features = ["telemetry-dashboard"]
 
 [features]
 # Browser host support; target selection still controls every platform implementation.
-wasm = ["vera20k-core/wasm", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:web-sys", "dep:console_log", "dep:console_error_panic_hook", "dep:cpal", "getrandom/wasm_js"]
+wasm = ["vera20k-core/wasm", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:web-sys", "dep:console_log", "dep:console_error_panic_hook", "getrandom/wasm_js"]
 # Optional browser networking; desktop targets keep their native transport.
 wasm-net = ["wasm", "vera20k-core/wasm-net"]
 # Browser LAN play over WebRTC; the gateway only coordinates the handshake.
@@ -128,11 +128,9 @@ ureq = { version = "3.5", default-features = false, features = ["rustls", "json"
 wasm-bindgen = { version = "0.2", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 js-sys = { version = "0.3", optional = true }
-web-sys = { version = "0.3", optional = true, features = ["Window", "Document", "HtmlCanvasElement", "Element", "HtmlElement"] }
+web-sys = { version = "0.3", optional = true, features = ["Window", "Document", "HtmlCanvasElement", "Element", "HtmlElement", "AudioBuffer", "AudioBufferSourceNode", "AudioContext", "AudioDestinationNode", "AudioNode", "AudioScheduledSourceNode", "BaseAudioContext"] }
 console_log = { version = "1", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
-# Match rodio's CPAL version; this enables only its browser output backend.
-cpal = { version = "0.17", optional = true, features = ["wasm-bindgen"] }
 
 [target.'cfg(unix)'.dependencies]
 # Continuing presentation uptime across saved-game process restarts. The

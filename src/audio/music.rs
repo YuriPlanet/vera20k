@@ -7,7 +7,9 @@
 use std::num::NonZero;
 use std::time::Duration;
 
-use rodio::{DeviceSinkBuilder, MixerDeviceSink, Player, Source};
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+use rodio::{DeviceSinkBuilder, MixerDeviceSink};
+use rodio::{Player, Source};
 
 use crate::audio::arbiter::{VolumeInterp, combine_linear};
 use crate::audio::sfx::native_volume_amplitude;
@@ -51,8 +53,14 @@ const SPAN_SAMPLES: usize = 32_768;
 
 const STEREO: NonZero<u16> = NonZero::new(2).unwrap();
 
-#[cfg(not(test))]
+#[cfg(not(any(
+    test,
+    all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")
+)))]
 type MusicOutput = MixerDeviceSink;
+/// Shares the SFX player's browser output; see [`crate::audio::web_output`].
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+type MusicOutput = crate::audio::web_output::WebAudioSink;
 
 // Control-state regressions use rodio's offline mixer. Opening devices from
 // short-lived Windows test threads can outlive CPAL's cached COM apartment:
@@ -136,8 +144,13 @@ impl MusicPlayer {
     /// Create a physical music output. Theme construction never depends on
     /// this succeeding.
     pub fn new() -> Option<Self> {
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let device = DeviceSinkBuilder::open_default_sink()
             .map_err(|error| log::error!("Failed to initialize music audio: {error}"))
+            .ok()?;
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let device = crate::audio::web_output::WebAudioSink::open()
+            .map_err(|error| log::error!("Failed to initialize music audio: {error:?}"))
             .ok()?;
         #[cfg(test)]
         let device = MusicOutput::Device(device);
