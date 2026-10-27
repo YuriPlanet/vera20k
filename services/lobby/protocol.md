@@ -281,3 +281,17 @@ short-lived ticket for the existing source/generation and the current shell curs
 This recovers an expired lobby event cursor without skipping gameplay: missed
 commands still come from the relay's complete journal. It shares the existing
 renewal action budget; it cannot create a membership or change match identity.
+
+`POST /v1/admin/notice` is for operators, not players: its bearer is the
+deployment's `ADMIN_KEY`. Without a key of at least 32 characters it returns 404
+`not_found`; a missing or different bearer returns 401 `unauthorized`. It shares
+the sign-in ingress limit of 120 requests a minute per address. `{text,minutes}`
+sets the one current notice, replacing any earlier one: non-blank text of at most
+2048 UTF-8 bytes, kept for 1–10080 minutes. `{minutes:0}` alone clears it. Both
+return `{notice,delivered}`: the notice `{id,text,expires_at}` or `null`, and how
+many sessions received it at once. A notice is an ordinary public `chat` event from
+`{player_id:"00000000-0000-0000-0000-000000000000",name:"VERA20k",flags:1,squad:0,clan_name:"",clan_tag:""}`.
+Sessions in German Bunker or a game room that has not started receive it when it is
+set; others receive it on their next German Bunker join until it expires. Each
+session receives a notice once. Sign-in refuses `VERA20k` without case with 409
+`name_unavailable`.

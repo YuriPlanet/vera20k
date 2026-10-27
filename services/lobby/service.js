@@ -26,6 +26,11 @@ const MAX_PREVIEW_BYTES = 512 * 1024;
 const TRANSLATION_SECONDS = 24 * 60 * 60;
 // About $0.30/day of model time at most; cached repeats are free.
 const DAILY_TRANSLATIONS = 10000;
+// Operator notices last at most a week. They arrive as public chat from this
+// operator member, which every client already shows; nobody can sign in as it.
+const MAX_NOTICE_MINUTES = 7 * 24 * 60;
+const NOTICE_SENDER = { player_id: '00000000-0000-0000-0000-000000000000', name: 'VERA20k',
+  flags: 1, squad: 0, clan_name: '', clan_tag: '' };
 const copy = (value) => structuredClone(value);
 const pendingMatch = (value) => value?.phase === 'connecting' || value?.phase === 'probing';
 const softEvent = (kind) => ['chat', 'locales', 'buddies', 'located'].includes(kind);
@@ -252,9 +257,11 @@ export class LobbyService {
       // Ingress reads cannot hold the actor's mutation queue. A client that
       // never finishes its body loses only its own request at the deadline.
       if (request.method === 'POST') {
-        if (['/v1/accounts', '/v1/sessions'].includes(new URL(request.url).pathname)) {
+        const path = new URL(request.url).pathname;
+        if (['/v1/accounts', '/v1/sessions', '/v1/admin/notice'].includes(path)) {
           const key = await sha256(request.headers.get('CF-Connecting-IP') ?? 'local');
           this.store.transaction(() => this.rateLimit(`ingress-auth:${key}`, 120, 60));
+          if (path === '/v1/admin/notice') this.administrator(request);
         } else {
           const { session } = await this.authenticated(request);
           this.store.transaction(() => this.rateLimit(`ingress-account:${session.player_id}`, 900, 60));
@@ -345,6 +352,14 @@ export class LobbyService {
     return { sessionId, session };
   }
 
+  // Operators hold ADMIN_KEY, a deployment secret of at least 32 characters.
+  // Without one the notice endpoint does not exist.
+  administrator(request) {
+    const key = this.env.ADMIN_KEY;
+    requireThat(typeof key === 'string' && key.length >= 32, 'not_found', 'Endpoint not found.', 404);
+    requireThat(sameSecret(request.headers.get('authorization') ?? '', `Bearer ${key}`), 'unauthorized', 'Unauthorized.', 401);
+  }
+
   // The model takes about a second, so translation waits beside the mutation
   // queue. It owns only its rate and cache keys, each changed synchronously.
   // Readers of one message share one model call and its cached reply.
@@ -393,6 +408,10 @@ export class LobbyService {
       this.rateLimit(`auth:${address}`, 60, 300);
       this.reap();
       return this.authenticate(body, url.pathname === '/v1/accounts', address);
+    }
+    if (url.pathname === '/v1/admin/notice' && request.method === 'POST') {
+      this.administrator(request);
+      return this.json(this.store.transaction(() => this.setNotice(body)));
     }
     const { sessionId, session } = await this.authenticated(request);
     requireThat(session.protocol === LOBBY_PROTOCOL || url.pathname === '/v1/events' ||
@@ -508,6 +527,8 @@ export class LobbyService {
     requireThat(record(body, ['nickname', 'protocol']), 'invalid_request', 'Invalid sign-in request.');
     const { nickname } = body;
     requireThat(playerName(nickname), 'invalid_name', 'Use 1–24 letters, digits, underscores or hyphens.');
+    requireThat(nickname.toLowerCase() !== NOTICE_SENDER.name.toLowerCase(),
+      'name_unavailable', 'That player name is reserved. Choose another username.', 409);
     this.rateLimit(`login:account:${nickname.toLowerCase()}`, 30, 300);
     const playerId = crypto.randomUUID();
     const profileKey = `guest:${playerId}`;
@@ -548,6 +569,34 @@ export class LobbyService {
 
   broadcast(room, kind, payload, except = null) {
     for (const member of room.members) if (member.session_id !== except) this.emit(member.session_id, kind, payload, room.id);
+  }
+
+  // One operator notice at a time: a new one replaces it and `minutes: 0`
+  // alone clears it. Each session receives it once, at once in a lobby-phase
+  // room, otherwise on its next German Bunker join; games drop chat in a match.
+  setNotice(body) {
+    if (record(body, ['minutes']) && body.minutes === 0) {
+      this.store.delete('notice');
+      return { notice: null, delivered: 0 };
+    }
+    requireThat(record(body, ['text', 'minutes']) && typeof body.text === 'string' && body.text.trim() !== '' &&
+      byteLength(body.text) <= 2048 && Number.isInteger(body.minutes) && body.minutes > 0 && body.minutes <= MAX_NOTICE_MINUTES,
+      'invalid_request', 'A notice needs text of at most 2048 bytes and 1–10080 minutes.');
+    const notice = { id: crypto.randomUUID(), text: body.text, expires_at: this.clock() + body.minutes * 60 };
+    this.store.put('notice', notice);
+    let delivered = 0;
+    for (const room of this.store.list('room:')) if (room.phase === 'lobby')
+      for (const member of room.members) if (this.deliverNotice(member.session_id)) delivered++;
+    return { notice, delivered };
+  }
+
+  deliverNotice(sessionId) {
+    const notice = this.store.get('notice');
+    const session = this.store.get(`session:${sessionId}`);
+    if (!notice || notice.expires_at <= this.clock() || !session || session.notice === notice.id) return false;
+    session.notice = notice.id; this.store.put(`session:${sessionId}`, session);
+    this.emit(sessionId, 'chat', { from: NOTICE_SENDER, text: notice.text, private: false, action: false });
+    return true;
   }
 
   events(sessionId, after) {
@@ -885,6 +934,7 @@ export class LobbyService {
       room.members.push(member); session.channel_id = room.id;
       this.store.put(`session:${sessionId}`, session);
       this.emit(sessionId, operation === 'create' ? 'created' : 'joined', { channel: channelView(room), members: room.members.map((member) => memberView(member, room)) });
+      if (room.id === 'public') this.deliverNotice(sessionId);
       if (room.kind === 41) this.invalidate(room);
       this.store.put(`room:${room.id}`, room); return;
     }

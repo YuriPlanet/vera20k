@@ -845,3 +845,68 @@ test('translation failures, unsupported requests and the daily budget never cach
   assert.equal((await translate('再见')).body.error.code, 'translation_unavailable');
   assert.deepEqual(await translate('你好'), { status: 200, body: { text: 'hello' } });
 });
+
+const ADMIN_KEY = 'cd'.repeat(32);
+const notices = async (f, user) => (await f.request('/v1/events?after=0', user.token)).body.events
+  .filter((event) => event.kind === 'chat' && event.payload.from.name === 'VERA20k').map((event) => event.payload.text);
+
+test('operator notices need the deployment key and nobody can sign in as their sender', async () => {
+  const f = fixture();
+  const notice = { text: 'Server restart at 20:00 UTC.', minutes: 60 };
+  for (const key of [undefined, 'short']) {
+    f.env.ADMIN_KEY = key;
+    assert.equal((await f.request('/v1/admin/notice', ADMIN_KEY, notice)).status, 404);
+  }
+  f.env.ADMIN_KEY = ADMIN_KEY;
+  for (const token of [null, 'ef'.repeat(32)])
+    assert.equal((await f.request('/v1/admin/notice', token, notice)).status, 401);
+  for (const body of [{ text: ' ', minutes: 60 }, { text: 'x', minutes: 0 }, { text: 'x', minutes: 10081 }])
+    assert.equal((await f.request('/v1/admin/notice', ADMIN_KEY, body)).status, 400);
+  assert.equal((await f.request('/v1/admin/notice', ADMIN_KEY, notice)).status, 200);
+  const impostor = await f.request('/v1/sessions', null, { nickname: 'vera20K' });
+  assert.equal(impostor.status, 409); assert.equal(impostor.body.error.code, 'name_unavailable');
+});
+
+test('operator notices reach each open chat once and wait for players outside one', async () => {
+  const f = fixture(); f.env.ADMIN_KEY = ADMIN_KEY;
+  const host = await f.player('Host'), guest = await f.player('Guest'), lobby = await f.player('Lobby');
+  const away = await f.player('Away'), playing = await f.player('Playing');
+  await f.command(host, 'create', { channel, key: '' });
+  await f.command(guest, 'join', { channel: channel.name, key: '' });
+  await f.command(lobby, 'join', { channel: 'Lob_41_2', key: '' });
+  await f.command(playing, 'create', { channel: { ...channel, name: 'Match' }, key: '' });
+  const match = f.store.list('room:').find((room) => room.channel.name === 'Match');
+  f.store.put(`room:${match.id}`, { ...match, phase: 'playing' });
+  const text = 'Server restart at 20:00 UTC.';
+  const set = await f.request('/v1/admin/notice', ADMIN_KEY, { text, minutes: 60 });
+  assert.equal(set.status, 200); assert.equal(set.body.delivered, 3);
+  const event = (await f.request('/v1/events?after=0', lobby.token)).body.events.find((value) => value.kind === 'chat');
+  assert.deepEqual(event.payload, { from: { player_id: '00000000-0000-0000-0000-000000000000', name: 'VERA20k',
+    flags: 1, squad: 0, clan_name: '', clan_tag: '' }, text, private: false, action: false });
+  for (const user of [host, guest]) assert.deepEqual(await notices(f, user), [text]);
+  for (const user of [away, playing]) assert.deepEqual(await notices(f, user), []);
+  await f.command(playing, 'leave');
+  await f.command(lobby, 'leave');
+  for (const user of [playing, away, lobby]) {
+    assert.equal((await f.command(user, 'join', { channel: 'Lob_41_2', key: '' })).status, 200);
+    assert.deepEqual(await notices(f, user), [text]);
+  }
+});
+
+test('a replacement notice reaches players again while clearing or expiry stops delivery', async () => {
+  const f = fixture(); f.env.ADMIN_KEY = ADMIN_KEY;
+  const reader = await f.player('Reader');
+  await f.command(reader, 'join', { channel: 'Lob_41_2', key: '' });
+  for (const text of ['First', 'Second'])
+    assert.equal((await f.request('/v1/admin/notice', ADMIN_KEY, { text, minutes: 1 })).status, 200);
+  assert.deepEqual(await notices(f, reader), ['First', 'Second']);
+  assert.deepEqual((await f.request('/v1/admin/notice', ADMIN_KEY, { minutes: 0 })).body, { notice: null, delivered: 0 });
+  const cleared = await f.player('Cleared');
+  await f.command(cleared, 'join', { channel: 'Lob_41_2', key: '' });
+  assert.equal((await f.request('/v1/admin/notice', ADMIN_KEY, { text: 'Brief', minutes: 1 })).status, 200);
+  f.advance(60);
+  const late = await f.player('Late');
+  await f.command(late, 'join', { channel: 'Lob_41_2', key: '' });
+  assert.deepEqual(await notices(f, cleared), ['Brief']);
+  assert.deepEqual(await notices(f, late), []);
+});
