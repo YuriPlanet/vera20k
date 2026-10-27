@@ -90,10 +90,17 @@ pub(crate) fn update_strategy(
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    if !house.strategy_timer().expired(frame)
-        || house.is_controlled_by_human(sim.session.game_mode_nonzero())
-        || house.multiplay_passive()
-    {
+    if !house.strategy_timer().expired(frame) {
+        return;
+    }
+    if house.is_controlled_by_human(sim.session.game_mode_nonzero()) {
+        // Ares4F9004 hook10034CD0 calls AI_TryFireSW for humans, after
+        // the existing strategy timer gate, without restarting that timer.
+        #[cfg(feature = "ares")]
+        crate::sim::superweapon::ai_fire::try_fire(sim, rules, owner, registry, frame_effects);
+        return;
+    }
+    if house.multiplay_passive() {
         return;
     }
     let delay = building_strategy(sim, rules, owner, registry, frame_effects);

@@ -200,6 +200,56 @@ mod retail_tests;
 
 #[cfg(feature = "ares")]
 #[test]
+fn use_ai_targeting_cameo_launches_immediately_through_the_normal_press_owner() {
+    for automatic in [false, true] {
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[SuperWeaponTypes]\n0=Strike\n[Strike]\nType=GenericWarhead\n\
+             SW.AITargeting=NoTarget\nSW.UseAITargeting={}\n",
+            if automatic { "yes" } else { "no" }
+        )))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let owner = sim.intern("Americans");
+        sim.houses_mut_for_test()
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 0,
+            ));
+        let id = sim.intern("Strike");
+        let mut instance = SuperWeaponInstance::new(id, owner, 0);
+        instance.set_is_active_for_test(true);
+        instance.set_is_ready_for_test(true);
+        sim.super_weapons_mut_for_test()
+            .entry(owner)
+            .or_default()
+            .insert(id, instance);
+        let item = sidebar_item(&sim, &rules, owner, "Strike");
+        assert!(matches!(
+            gadget_press(&item, false),
+            SidebarAction::SuperWeaponPress { right: false, .. }
+        ));
+        let views = superweapon_views_for_owner(&sim, &rules, &owner);
+        let mut input = MatchInputState::new(Default::default());
+        let result = press(
+            &mut input,
+            &mut SidebarGadgetState::default(),
+            views.first(),
+            rules.super_weapon("Strike").unwrap().action.as_deref(),
+            false,
+        );
+        assert_eq!(
+            result,
+            if automatic {
+                SuperWeaponClick::Launch(id)
+            } else {
+                SuperWeaponClick::Target
+            }
+        );
+        assert_eq!(input.targeting_mode.is_none(), automatic);
+    }
+}
+
+#[cfg(feature = "ares")]
+#[test]
 fn delivery_missing_or_custom_action_arms_the_real_cameo_targeting_path() {
     for action in ["", "Action=Custom\n"] {
         let rules = RuleSet::from_ini(&IniFile::from_str(&format!(

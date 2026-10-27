@@ -38,6 +38,8 @@ pub mod force_shield;
 mod generic_warhead;
 #[cfg(all(test, feature = "ares"))]
 mod ares_charge_tests;
+#[cfg(all(test, feature = "ares"))]
+mod ares_target_policy_tests;
 #[cfg(feature = "ares")]
 mod ares_presentation;
 pub mod genetic_converter;
@@ -61,6 +63,17 @@ pub mod psychic_reveal;
 mod spy_plane;
 mod two_stage;
 pub use two_stage::PaidSuperWeaponSelection;
+
+/// A cell selected by the Ares selector has already followed its native
+/// CanFireAt/preference path. In particular preferred/no-target results are
+/// not passed through a second, different target-policy decision.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SuperWeaponTargetSource {
+    Manual,
+    Automatic,
+    #[cfg(feature = "ares")]
+    SelectedAutomatic,
+}
 #[cfg(test)]
 mod spy_plane_tests;
 mod targeting;
@@ -1363,10 +1376,26 @@ pub struct SuperWeaponDisplay {
     pub status: Option<SuperWeaponStatus>,
 }
 
+/// Why Ares's sidebar select hook (10034DA0) refuses a cameo press, in its
+/// test order. Ephemeral; gameplay state stays with the Super/House owners.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AresCameoRefusal {
+    /// Prints `Message.InsufficientFunds`.
+    InsufficientFunds,
+    /// A `SW.UseAITargeting` type's constraints refuse; prints
+    /// `Message.CannotFire`.
+    CannotFire,
+    /// `SW.AutoFire` without `SW.ManualFire`: refused without a message.
+    ManualFireDisabled,
+}
+
 /// View struct for sidebar display — no sim internals exposed.
 #[derive(Debug, Clone)]
 pub struct SuperWeaponView {
     pub type_id: InternedId,
+    /// Immutable selection flag projected from the common Rules owner.
+    pub use_ai_targeting: bool,
     pub display_name: String,
     pub progress: f32,
     pub display: SuperWeaponDisplay,
@@ -1384,6 +1413,9 @@ pub struct SuperWeaponView {
     /// darken (10034F3F) and refuse (10034E75) it, as Phobos's
     /// SWButtonClass does. Always false without Ares.
     pub constraints_blocked: bool,
+    /// The select hook's refusal of a press, if any.
+    #[cfg(feature = "ares")]
+    pub ares_refusal: Option<AresCameoRefusal>,
 }
 
 impl SuperWeaponView {
@@ -1420,24 +1452,41 @@ pub fn superweapon_views_for_owner(
         let money_type = financial_type(rules, sw_type);
         let display =
             inst.sidebar_display(sw_type, current_frame, rules.general.charge_to_drain_ratio);
+        let native_can_fire = if paid_source.is_some() {
+            sim.paid_super_weapon_selection(*owner)
+                .is_some_and(|selection| selection.destination == inst.type_id)
+        } else {
+            inst.can_fire(sw_type)
+        };
+        #[cfg(feature = "ares")]
+        let can_afford = money::can_afford(&sim.houses, *owner, money_type);
+        #[cfg(feature = "ares")]
+        let constraints_blocked = rules
+            .super_weapon_metadata(type_id_str)
+            .is_some_and(|metadata| {
+                let targeting = metadata.targeting();
+                targeting.use_ai_targeting()
+                    && !targeting.constraints().allows_manual_fire(
+                        sim.houses
+                            .get(owner)
+                            .map(|house| house.target_constraints_observations())
+                            .unwrap_or_default(),
+                    )
+            });
         views.push(SuperWeaponView {
             type_id: inst.type_id,
+            use_ai_targeting: rules.super_weapon_uses_ai_targeting(type_id_str),
             display_name: type_id_str.to_string(),
             progress: display.stage as f32 / 54.0,
             display,
             is_ready: inst.is_ready,
             is_online: !inst.is_suspended,
             should_flash_tab: inst.should_flash_tab(sw_type, current_frame),
-            can_fire: if paid_source.is_some() {
-                sim.paid_super_weapon_selection(*owner)
-                    .is_some_and(|selection| selection.destination == inst.type_id)
-            } else {
-                inst.can_fire(sw_type)
-            },
+            can_fire: native_can_fire,
             can_afford: {
                 #[cfg(feature = "ares")]
                 {
-                    money::can_afford(&sim.houses, *owner, money_type)
+                    can_afford
                 }
                 #[cfg(not(feature = "ares"))]
                 {
@@ -1447,19 +1496,21 @@ pub fn superweapon_views_for_owner(
             constraints_blocked: {
                 #[cfg(feature = "ares")]
                 {
-                    sw_type.use_ai_targeting
-                        && !sw_type.target_constraints().allows_manual_fire(
-                            sim.houses
-                                .get(owner)
-                                .map(|house| house.target_constraints_observations())
-                                .unwrap_or_default(),
-                        )
+                    constraints_blocked
                 }
                 #[cfg(not(feature = "ares"))]
                 {
                     false
                 }
             },
+            #[cfg(feature = "ares")]
+            ares_refusal: ai_fire::manual_cameo_refusal(
+                rules,
+                sw_type,
+                native_can_fire,
+                can_afford,
+                constraints_blocked,
+            ),
         });
     }
     views

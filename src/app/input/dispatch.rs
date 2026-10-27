@@ -1926,9 +1926,17 @@ fn press_super_weapon(state: &mut AppState, section: &str, right: bool, gui_soun
     }
     match click {
         super::superweapon_cameo::SuperWeaponClick::Refused
-            if selection
-                .as_ref()
-                .is_some_and(|(view, _)| view.can_fire && !view.can_afford) =>
+            if selection.as_ref().is_some_and(|(view, _)| {
+                #[cfg(feature = "ares")]
+                {
+                    view.ares_refusal
+                        == Some(crate::sim::superweapon::AresCameoRefusal::InsufficientFunds)
+                }
+                #[cfg(not(feature = "ares"))]
+                {
+                    view.can_fire && !view.can_afford
+                }
+            }) =>
         {
             let cue = state
                 .rules()
@@ -1956,6 +1964,12 @@ fn press_super_weapon(state: &mut AppState, section: &str, right: bool, gui_soun
             );
         }
         _ => {}
+    }
+    #[cfg(feature = "ares")]
+    if click == super::superweapon_cameo::SuperWeaponClick::Refused
+        && let Some(refusal) = selection.as_ref().and_then(|(view, _)| view.ares_refusal)
+    {
+        crate::app::input::messages::post_ares_superweapon_refusal(state, section, refusal);
     }
 }
 

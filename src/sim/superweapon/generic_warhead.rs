@@ -25,11 +25,13 @@ pub(super) fn can_launch(
     sw: &SuperWeaponType,
     (x, y): (u16, u16),
 ) -> bool {
-    sw.generic_warhead
-        .as_ref()
-        .and_then(|settings| settings.warhead.as_deref())
-        .and_then(|id| rules.warhead(id))
-        .is_some()
+    rules.super_weapon_target_policy(&sw.id).is_some()
+        && sw
+            .generic_warhead
+            .as_ref()
+            .and_then(|settings| settings.warhead.as_deref())
+            .and_then(|id| rules.warhead(id))
+            .is_some()
         && sim
             .resolved_terrain
             .as_ref()
@@ -62,7 +64,10 @@ pub(super) fn launch(
         .find(|(_, site)| {
             site.admits(
                 (i32::from(cell.0), i32::from(cell.1)),
-                settings.targeting.range(),
+                rules
+                    .super_weapon_target_policy(&sw.id)
+                    .expect("extension policy")
+                    .range(),
             )
         })
         .map(|(id, _)| id)

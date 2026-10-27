@@ -695,6 +695,8 @@ pub(super) fn dispatch_sim_sound_events(
             #[cfg(not(feature = "ares"))]
             SimSoundEvent::SuperWeaponInsufficientFunds { .. } => continue,
             #[cfg(feature = "ares")]
+            SimSoundEvent::AresSuperWeaponRefused { .. } => continue,
+            #[cfg(feature = "ares")]
             SimSoundEvent::SuperWeaponInsufficientFunds { owner, sw_type } => {
                 if !owner_is_local(sim.interner(), owner, local_owner_name) {
                     continue;
@@ -1198,6 +1200,12 @@ pub(super) fn hud_messages(
             SimSoundEvent::PsychicDominatorRefused { owner } => {
                 owner_is_local(interner, owner, local_owner_name)
                     .then_some(HudMessage::SuperWeapon("Msg:DominatorActive"))
+            }
+            #[cfg(feature = "ares")]
+            SimSoundEvent::AresSuperWeaponRefused { owner, sw_type } => {
+                // Ares10038ECE compares the event House with PlayerPtr.
+                owner_is_local(interner, owner, local_owner_name)
+                    .then_some(HudMessage::AresSuperWeaponRefused(sw_type))
             }
             // House4F8D14/4F8D5C emits voice and text at the same admitted
             // guard edge. Consume the fact even if audio was delivered inline.
@@ -2367,17 +2375,31 @@ mod tests {
         let mut sim = Simulation::new();
         let local = sim.intern("Local");
         let other = sim.intern("Other");
+        #[cfg(feature = "ares")]
+        let sw_type = sim.intern("Strike");
         let events = [
             SimSoundEvent::LightningStormRefused { owner: local },
             SimSoundEvent::PsychicDominatorRefused { owner: other },
             SimSoundEvent::PsychicDominatorRefused { owner: local },
             SimSoundEvent::LightningStormRefused { owner: other },
+            #[cfg(feature = "ares")]
+            SimSoundEvent::AresSuperWeaponRefused {
+                owner: local,
+                sw_type,
+            },
+            #[cfg(feature = "ares")]
+            SimSoundEvent::AresSuperWeaponRefused {
+                owner: other,
+                sw_type,
+            },
         ];
         assert_eq!(
             hud_messages(&events, sim.interner(), Some("Local")),
             [
                 HudMessage::SuperWeapon("Msg:LightningStormActive"),
-                HudMessage::SuperWeapon("Msg:DominatorActive")
+                HudMessage::SuperWeapon("Msg:DominatorActive"),
+                #[cfg(feature = "ares")]
+                HudMessage::AresSuperWeaponRefused(sw_type),
             ]
         );
         assert!(hud_messages(&events, sim.interner(), None).is_empty());

@@ -326,14 +326,9 @@ fn default_build_scene(
     crate::sim::intern::InternedId,
     crate::sim::intern::InternedId,
 ) {
-    use crate::rules::superweapon_targeting::{
-        HouseMask, SuperWeaponTargeting, TargetMask, TargetRequirements,
-    };
     use crate::rules::superweapon_type::{
-        DeliveryType, GenericWarheadAiTargeting, GenericWarheadSettings, SuperWeaponKind,
-        UnitDeliveryRules,
+        DeliveryType, GenericWarheadSettings, SuperWeaponKind, UnitDeliveryRules,
     };
-    use crate::util::native_x87::NativeF64Bits;
     let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
         "{RULES}\n[Warheads]\n0=Payload\n[Payload]\nCellSpread=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
     ));
@@ -343,21 +338,9 @@ fn default_build_scene(
     sw.kind = kind;
     match kind {
         SuperWeaponKind::GenericWarhead => {
-            let unrestricted = TargetRequirements {
-                target: TargetMask::ALL,
-                house: HouseMask::NONE,
-            };
             sw.generic_warhead = Some(GenericWarheadSettings {
                 warhead: Some("Payload".into()),
                 damage: 75,
-                ai_targeting: GenericWarheadAiTargeting::Offensive,
-                targeting: SuperWeaponTargeting {
-                    manual: unrestricted.clone(),
-                    automatic: unrestricted,
-                    fire_into_shroud: true,
-                    range_minimum: NativeF64Bits::from_bits((-1.0f64).to_bits()),
-                    range_maximum: NativeF64Bits::from_bits((-1.0f64).to_bits()),
-                },
             });
         }
         SuperWeaponKind::UnitDelivery => {
@@ -523,7 +506,7 @@ fn default_build_refuses_forged_paid_commands_and_saved_selection_state() {
         (20, 20),
         None,
         crate::sim::world::FrameEffects::default(),
-        false,
+        crate::sim::superweapon::SuperWeaponTargetSource::Manual,
         Some(selection),
     ));
     assert!(!Simulation::cancel_paid_super_weapon_selection(

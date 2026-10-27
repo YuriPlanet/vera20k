@@ -45,6 +45,37 @@ use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
 impl Simulation {
+    /// Ares SPECIAL_PLACE hook10038E90: UseAITargeting replaces the event
+    /// cell with the shared automatic selector. Script producers still call
+    /// Fire_SW directly and retain their explicit location.
+    pub(crate) fn place_super_weapon(
+        &mut self,
+        rules: &RuleSet,
+        owner: InternedId,
+        sw_type_id: InternedId,
+        cell: (u16, u16),
+        overlays: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        #[cfg(feature = "ares")]
+        if rules.super_weapon_uses_ai_targeting(self.interner.resolve(sw_type_id)) {
+            let launched = super::ai_fire::fire_extension_automatic(
+                self, rules, owner, sw_type_id, overlays, effects, true,
+            );
+            if !launched {
+                // Ares SPECIAL_PLACE10038ECA..10038EE0 prints CannotFire
+                // after selector failure. The client owns the PlayerPtr gate.
+                self.sound_events
+                    .emit(SimSoundEvent::AresSuperWeaponRefused {
+                        owner,
+                        sw_type: sw_type_id,
+                    });
+            }
+            return launched;
+        }
+        self.fire_super_weapon(rules, owner, sw_type_id, cell, overlays, effects, false)
+    }
+
     /// `HouseClass::Fire_SW @ 0x004FAE50` for `owner`'s Super of type
     /// `sw_type_id` at `cell`. Returns whether ClickFire called Launch, a
     /// VERA answer: native Fire_SW returns 1 either way.
@@ -67,7 +98,11 @@ impl Simulation {
             cell,
             overlay_registry,
             frame_effects,
-            automatic,
+            if automatic {
+                super::SuperWeaponTargetSource::Automatic
+            } else {
+                super::SuperWeaponTargetSource::Manual
+            },
             None,
         )
     }
@@ -80,9 +115,10 @@ impl Simulation {
         cell: (u16, u16),
         overlay_registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
-        automatic: bool,
+        target_source: super::SuperWeaponTargetSource,
         selection: Option<super::PaidSuperWeaponSelection>,
     ) -> bool {
+        let automatic = target_source != super::SuperWeaponTargetSource::Manual;
         #[cfg(any(test, feature = "test-support"))]
         super::ai_fire::observe(super::ai_fire::AiFireEvent::Fire(sw_type_id, cell));
         let Some(sw) = rules.super_weapon(self.interner.resolve(sw_type_id)) else {
@@ -134,7 +170,9 @@ impl Simulation {
             return false;
         }
         #[cfg(feature = "ares")]
-        if super::targeting::check(self, rules, owner, sw, cell, automatic).is_err() {
+        if target_source != super::SuperWeaponTargetSource::SelectedAutomatic
+            && super::targeting::check(self, rules, owner, sw, cell, automatic).is_err()
+        {
             return false;
         }
         #[cfg(feature = "ares")]

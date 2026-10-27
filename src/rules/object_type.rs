@@ -1911,6 +1911,12 @@ pub struct ObjectType {
     pub berserk_friendly: bool,
     pub mobile_fire: bool,
     pub hunter_seeker: bool,
+    /// Ares TechnoTypeExt+3E0/+3E8 Nullable<int>, read1003EE23/1003EE39.
+    /// An unset value uses native Sight; zero/negative overrides remain set.
+    #[cfg(feature = "ares")]
+    designator_range: Option<i32>,
+    #[cfg(feature = "ares")]
+    inhibitor_range: Option<i32>,
     pub non_vehicle: bool,
     pub jumpjet_turn: bool,
     pub emp_pulse_cannon: bool,
@@ -2467,6 +2473,26 @@ impl ObjectType {
         target: Option<&crate::rules::superweapon_type::DeliveryType>,
     ) {
         self.convert_script = target.cloned();
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_super_weapon_ranges(
+        &mut self,
+        designator: Option<i32>,
+        inhibitor: Option<i32>,
+    ) {
+        self.designator_range = designator;
+        self.inhibitor_range = inhibitor;
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn designator_range(&self) -> Option<i32> {
+        self.designator_range
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn inhibitor_range(&self) -> Option<i32> {
+        self.inhibitor_range
     }
 
     /// Retained TechnoType+C9E; building crew admission reads this input
@@ -4017,6 +4043,10 @@ impl ObjectType {
             berserk_friendly: section.read_bool("BerserkFriendly", false),
             mobile_fire: section.read_bool("MobileFire", true),
             hunter_seeker: section.read_bool("HunterSeeker", false),
+            #[cfg(feature = "ares")]
+            designator_range: None,
+            #[cfg(feature = "ares")]
+            inhibitor_range: None,
             non_vehicle: category == ObjectCategory::Vehicle
                 && section.read_bool("NonVehicle", false),
             jumpjet_turn: category == ObjectCategory::Infantry

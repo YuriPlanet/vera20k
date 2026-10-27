@@ -858,6 +858,7 @@ mod tests {
         let project = |display, online| {
             let supers = [SuperWeaponView {
                 type_id: id,
+                use_ai_targeting: false,
                 display_name: "Drain".into(),
                 progress: 1.0,
                 is_ready: true,
@@ -866,6 +867,8 @@ mod tests {
                 can_fire: online,
                 can_afford: true,
                 constraints_blocked: false,
+                #[cfg(feature = "ares")]
+                ares_refusal: None,
                 display,
             }];
             let cameos = sidebar::cameo_order::CameoStrips::layout_fixture(&[], &[], &supers);
