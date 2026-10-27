@@ -464,6 +464,9 @@ impl CaptureVictimFacts {
                 target.mission.current().known(),
                 Some(MissionType::Construction | MissionType::Selling)
             );
+        // Ares CanCapture10048FB8 refuses a killed driver for every consumer.
+        #[cfg(feature = "ares")]
+        let refused = refused || target.driver_killed();
         Self {
             owner: target.owner(),
             capturable: !refused,
@@ -662,6 +665,11 @@ impl Simulation {
         let Some(object) = self.substrate.entities.get(id) else {
             return false;
         };
+        // Ares CanBePermaMindControlled10049E54 shares the driverless refusal.
+        #[cfg(feature = "ares")]
+        if object.driver_killed() {
+            return false;
+        }
         if object.category() == EntityCategory::Structure {
             return false;
         }

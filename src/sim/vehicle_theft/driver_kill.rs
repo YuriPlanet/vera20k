@@ -14,6 +14,36 @@ use crate::util::native_x87::{
 };
 
 impl Simulation {
+    /// TechnoClass_Update1004B65D..1004B6A6 keeps a driverless hull harmless
+    /// on every AI visit. Foot+6AD is the locomotor swap, not ordinary motion.
+    pub(crate) fn update_ares_driver_killed_mission(
+        &mut self,
+        target: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        use crate::sim::mission::{MissionId, MissionType};
+        let Some(actor) = self.substrate.entities.get(target) else {
+            return;
+        };
+        if !actor.driver_killed()
+            || actor.mission.current().known() == Some(MissionType::Harmless)
+            || (actor.category().is_foot() && actor.lift.swap_active())
+        {
+            return;
+        }
+        let _ = self.assign_target_represented(target, None, rules, registry, effects);
+        let _ = self.assign_destination_represented(target, None, rules, registry, effects);
+        let _ = self.mission_queue_exact(
+            target,
+            MissionId::from_known(MissionType::Harmless),
+            1,
+            self.session.binary_frame(),
+            &crate::sim::mission::authority::LiveReadyInputProvider { rules },
+        );
+    }
+
     /// ReceiveDamage_Aftermath1004AB50, after protected-Techno responses and
     /// before the native Uncloak70281D. Unlike EMP this is not a Bullet AoE.
     pub(crate) fn ares_driver_kill_aftermath(
@@ -364,7 +394,8 @@ impl Simulation {
             );
         }
         let _ = self.assign_target_represented(target, None, rules, registry, effects);
-        let _ = self.assign_destination_represented(target, None, rules, registry, effects);
+        // ReplaceDriver10045995 passes mode 0; the later AI enforcement uses 1.
+        let _ = self.assign_destination_keeping_queue(target, None, rules, registry, effects);
         self.dispatch_object_tag_event(target, 68, Some(target), Some(invoker), context);
         if self
             .substrate
@@ -389,13 +420,16 @@ mod tests {
         let (mut sim, rules, overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
             "[Countries]\n0=Americans\n1=Russians\n2=Special\n\
              [Special]\nMultiplayPassive=yes\n\
-             [InfantryTypes]\n2=OP\n3=DRIVER\n[VehicleTypes]\n0=HOST\n\
+             [InfantryTypes]\n2=OP\n3=DRIVER\n4=CONTROLLER\n[VehicleTypes]\n0=HOST\n\
+             [CONTROLLER]\nStrength=100\nPrimary=ControlGun\n\
+             [ControlGun]\nDamage=1\nRange=6\nProjectile=Invisible\nWarhead=CONTROL_WH\n\
              [OP]\nStrength=100\nSpeedType=Foot\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
              [DRIVER]\nStrength=100\nCanDrive=yes\nSpeedType=Foot\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
              [HOST]\nStrength=300\nPassengers=3\nOperator=_ANY_\nSpeed=5\nPrimary=HostGun\n\
              Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
              [HostGun]\nDamage=1\nRange=6\nROF=20\nProjectile=Invisible\nWarhead=DRIVER_WH\n\
-             [Warheads]\n0=DRIVER_WH\n1=ZERO_CHANCE\n\
+             [Warheads]\n0=DRIVER_WH\n1=ZERO_CHANCE\n2=CONTROL_WH\n\
+             [CONTROL_WH]\nMindControl=yes\n\
              [DRIVER_WH]\nKillDriver=yes\nKillDriver.RemoveVeterancy=yes\n\
              [ZERO_CHANCE]\nKillDriver=yes\nKillDriver.Chance=0\nAffectsOwner=yes\n",
         );
@@ -430,6 +464,11 @@ mod tests {
         let driver = sim
             .spawn_object_at_height("DRIVER", "Americans", 15, 16, 0, 0, &rules)
             .unwrap();
+        let controller = sim
+            .spawn_object_at_height("CONTROLLER", "Americans", 14, 16, 0, 0, &rules)
+            .unwrap();
+        assert!(sim.can_capture(controller, host, &rules));
+        assert!(sim.can_be_perma_mind_controlled(host, &rules));
         sim.substrate
             .entities
             .get_mut(host)
@@ -465,6 +504,23 @@ mod tests {
         );
         let passenger = sim.entities().get(rider).unwrap();
         assert!(!passenger.lifecycle.in_limbo() && !passenger.passenger_role.is_inside_transport());
+        assert!(!sim.can_capture(controller, host, &rules));
+        assert!(!sim.can_be_perma_mind_controlled(host, &rules));
+        // A subsequent order cannot reactivate a driverless hull.
+        sim.substrate
+            .entities
+            .get_mut(host)
+            .unwrap()
+            .mission
+            .set_current_for_test(
+                crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Move),
+                0,
+            );
+        sim.update_ares_driver_killed_mission(host, &rules, Some(&overlays), Default::default());
+        assert_eq!(
+            sim.entities().get(host).unwrap().mission.queued().known(),
+            Some(crate::sim::mission::MissionType::Harmless)
+        );
         assert_eq!(
             crate::sim::radio::receive::unit_can_enter_radio(&sim, host, Some(driver), &rules),
             crate::sim::radio::RadioResponse::None
@@ -478,6 +534,8 @@ mod tests {
         assert!(!vehicle.driver_killed());
         assert_eq!(vehicle.passenger_role.passenger_count(), 1);
         assert!(sim.entities().get(driver).unwrap().lifecycle.in_limbo());
+        assert!(sim.can_capture(controller, host, &rules));
+        assert!(sim.can_be_perma_mind_controlled(host, &rules));
 
         // Chance zero still spends the native single draw after all gates.
         // Calling the production aftermath isolates it from unrelated damage

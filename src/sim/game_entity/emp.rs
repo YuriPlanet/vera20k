@@ -632,7 +632,21 @@ mod receiver {
             };
             //100628B2 tests AbstractFlags bit4 before Foot recovery. Buildings
             //never queue Hunt, even in a computer House.
-            if !entity.category().is_foot() || self.owner_is_human(entity.owner()) {
+            if !entity.category().is_foot() {
+                return;
+            }
+            // DisableEMP100628C2 precedes the human/AI recovery choice.
+            if entity.driver_killed() {
+                let _ = self.mission_queue_exact(
+                    target,
+                    crate::sim::mission::MissionId::from_known(MissionType::Harmless),
+                    1,
+                    self.session.binary_frame(),
+                    &crate::sim::mission::authority::LiveReadyInputProvider { rules },
+                );
+                return;
+            }
+            if self.owner_is_human(entity.owner()) {
                 return;
             }
             let mission = rules
