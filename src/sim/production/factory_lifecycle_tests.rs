@@ -2737,6 +2737,77 @@ fn building_queue_switch_keeps_a_suspended_held_building() {
     assert_eq!(sim.interner.resolve(factory.queue[0].type_id), "YAREFN");
 }
 
+/// The same cancel through the production entry: Phobos'
+/// `HouseClass_AbandonProduction_RewriteForBuilding @ 0x004FAAD8` makes one
+/// right-click on a queued structure remove that queued copy, so the building
+/// under construction stays and nothing refunds (a queued copy is unpaid until
+/// it starts). Without the rewrite this call abandons the held product instead.
+#[cfg(feature = "phobos")]
+#[test]
+fn cancel_one_queued_structure_keeps_the_building_under_construction() {
+    use crate::sim::production::ProductionCancellation;
+    use crate::sim::world::FrameEffects;
+
+    let (mut sim, rules, owner) = world_with_building_queue(0xb001_0003);
+    assert!(enqueue_by_type(
+        &mut sim,
+        &rules,
+        "Americans",
+        "GAPOWR",
+        FrameEffects::default(),
+        false,
+    ));
+    let held = held_id(&sim, owner, ProductionCategory::Building);
+    assert!(enqueue_by_type(
+        &mut sim,
+        &rules,
+        "Americans",
+        "GAPOWR",
+        FrameEffects::default(),
+        false,
+    ));
+    let credits = sim.houses[&owner].economy().credits();
+    assert_eq!(
+        sim.production
+            .factories()
+            .view(owner, ProductionCategory::Building)
+            .unwrap()
+            .queue
+            .len(),
+        1,
+        "the second GAPOWR waits in the queue"
+    );
+
+    assert!(cancel_production_for_owner(
+        &mut sim,
+        &rules,
+        "Americans",
+        ProductionCancellation::Type {
+            type_id: "GAPOWR",
+            naval: false,
+        },
+        false,
+        FrameEffects::default(),
+    ));
+
+    let factory = sim
+        .production
+        .factories()
+        .view(owner, ProductionCategory::Building)
+        .unwrap();
+    assert!(factory.queue.is_empty(), "the queued copy is gone");
+    assert_eq!(
+        held_id(&sim, owner, ProductionCategory::Building),
+        held,
+        "the building under construction is retained"
+    );
+    assert_eq!(
+        sim.houses[&owner].economy().credits(),
+        credits,
+        "an unpaid queued copy refunds nothing"
+    );
+}
+
 /// Begin_Production drops a building's PRODUCE while the building factory
 /// runs (`0x004FA520..0x004FA550`: rate set, +0x70 clear, RTTI
 /// BuildingType), ahead of its same-type branch and without a scold: a second

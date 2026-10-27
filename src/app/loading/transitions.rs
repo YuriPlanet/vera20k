@@ -89,6 +89,8 @@ pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {
             #[cfg(feature = "phobos")]
             sw_sidebar_ui: crate::rules::phobos_sw_sidebar::SuperWeaponSidebarUi::default(),
             #[cfg(feature = "phobos")]
+            center_pause_menu_background: false,
+            #[cfg(feature = "phobos")]
             sw_sidebar_art: None,
             outcome_banner_side_art: None,
             software_cursor: None,
@@ -203,6 +205,8 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.sidebar_chrome = assets.sidebar_chrome;
     #[cfg(feature = "phobos")]
     {
+        state.match_state.match_presentation.center_pause_menu_background =
+            assets.center_pause_menu_background;
         state.match_state.match_presentation.sw_sidebar_art = assets.sw_sidebar_art;
         let significance = state
             .match_state
@@ -216,6 +220,23 @@ pub(crate) fn install_world_presentation(
             .configure(assets.sw_sidebar_ui, significance);
     }
     state.match_state.match_presentation.outcome_banner_side_art = assets.outcome_banner_side_art;
+    // `Game_LoadUI_LoadSideData` resolves the dialog background pair once per
+    // game load. The shell chrome atlas carries the three side slots, so a
+    // changed pair drops it and the next paint rebuilds with the side's art;
+    // the process-lifetime slot 0 (`PUDLGBGN`) is not part of the hook.
+    #[cfg(feature = "ares")]
+    {
+        let side = state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map_or(-1, |runtime| runtime.simulation.session().scenario_side());
+        let pair = state.process_assets.side_dialog_background(side);
+        if state.frontend.shell_dialog_background != pair {
+            state.frontend.shell_dialog_background = pair;
+            state.frontend.skirmish_shell_chrome = None;
+        }
+    }
     // GAME.FNT is process artwork, so retain the established process fallback
     // when optional font preparation did not produce a replacement.
     if let Some(ref fnt) = assets.fnt_file {
@@ -601,7 +622,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     state.match_state.input.keys_held.clear();
     state.match_state.input.cursor_x = tactical_width as f32 * 0.5;
     state.match_state.input.cursor_y = tactical_height as f32 * 0.5;
-    state.platform.frame_pacer.reset_for_immediate_frame();
+    state.platform.frame_pacer.reset_for_new_world();
     state.match_state.input.queued_order_mode = render::OrderMode::Move;
     state.match_state.local_owner_override = result.scenario.initial_local_owner;
     state.match_state.match_audio.reset_for_new_match();

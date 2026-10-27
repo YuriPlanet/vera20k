@@ -4,6 +4,9 @@
 //! whether one outer event-loop iteration may admit a gameplay frame, while the
 //! scenario elapsed clock supplies the score screen's match duration.
 
+use crate::net::live_commands::SequencedTiming;
+use crate::util::time::{Duration, Instant};
+
 const FRAME_BUCKET_SHIFT: u32 = 4;
 const FRAME_BUCKET_MS: u64 = 1 << FRAME_BUCKET_SHIFT;
 /// Wake interval of the hidden-window match service loop: half a pacer
@@ -35,7 +38,10 @@ pub(crate) fn wall_clock_ms() -> u64 {
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     {
         static START: std::sync::OnceLock<crate::util::time::Instant> = std::sync::OnceLock::new();
-        START.get_or_init(crate::util::time::Instant::now).elapsed().as_millis() as u64
+        START
+            .get_or_init(crate::util::time::Instant::now)
+            .elapsed()
+            .as_millis() as u64
     }
     #[cfg(windows)]
     {
@@ -70,6 +76,175 @@ pub(crate) fn wall_clock_ms() -> u64 {
 #[derive(Debug, Default)]
 pub(crate) struct LocalFramePacer {
     last_frame_start_ms: Option<u32>,
+    last_presented: Option<crate::util::time::Instant>,
+    frames_since_present: u32,
+    chunks_since_present: u8,
+    render_deferred: bool,
+    total_render_deferrals: u64,
+    online: Option<OnlinePacer>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OnlineFrameDecision {
+    WaitingForCanonical,
+    HoldUntil(Instant),
+    Run,
+    CatchUp,
+}
+impl OnlineFrameDecision {
+    pub(crate) fn admits(self) -> bool {
+        matches!(self, Self::Run | Self::CatchUp)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct OnlinePacingStatus {
+    pub(crate) reserve_micros: u32,
+    pub(crate) underruns: u64,
+    pub(crate) catching_up: bool,
+}
+
+/// A local playout schedule, never another simulation or relay timeline.
+/// Receipt frames are immutable network facts; `next_frame` always comes
+/// from Simulation. Ordinary jitter changes only the bounded reserve.
+#[derive(Debug, Clone)]
+struct OnlinePacer {
+    origin_frame: u32,
+    origin_at: Instant,
+    receipt: SequencedTiming,
+    reserve: Duration,
+    decay_at: Instant,
+    underrun: Option<(u32, Instant)>,
+    underruns: u64,
+    catching_up: bool,
+}
+impl OnlinePacer {
+    fn new(receipt: SequencedTiming, now: Instant) -> Self {
+        Self {
+            origin_frame: receipt.frame,
+            origin_at: receipt.received_at,
+            receipt,
+            reserve: Duration::ZERO,
+            decay_at: now,
+            underrun: None,
+            underruns: 0,
+            catching_up: false,
+        }
+    }
+
+    fn span(&self, frames: u32) -> Duration {
+        // One division of the whole frame distance avoids rounded per-tick
+        // drift (45Hz is not an integral number of milliseconds/nanoseconds).
+        Duration::from_nanos(
+            u64::from(frames) * 1_000_000_000 / u64::from(self.receipt.frames_per_second),
+        )
+    }
+
+    fn deadline(&self, frame: u32) -> Instant {
+        let base = if frame >= self.origin_frame {
+            self.origin_at
+                .checked_add(self.span(frame - self.origin_frame))
+                .unwrap_or(self.origin_at)
+        } else {
+            self.origin_at
+                .checked_sub(self.span(self.origin_frame - frame))
+                .unwrap_or(self.origin_at)
+        };
+        base.checked_add(self.reserve).unwrap_or(base)
+    }
+
+    fn learn(&mut self, required: Duration, now: Instant) {
+        let required = required.min(Duration::from_millis(20)).min(self.span(1));
+        if required > self.reserve {
+            self.reserve = required;
+            self.decay_at = now;
+        }
+    }
+
+    fn observe(&mut self, receipt: SequencedTiming, now: Instant, recovering: bool) {
+        if receipt.frame > self.receipt.frame {
+            if !recovering && !self.catching_up {
+                let interval = receipt
+                    .received_at
+                    .saturating_duration_since(self.receipt.received_at);
+                self.learn(
+                    interval.saturating_sub(self.span(receipt.frame - self.receipt.frame)),
+                    now,
+                );
+            }
+            self.receipt = receipt;
+        }
+        if !recovering && !self.catching_up && self.underrun.is_none() {
+            let seconds = now.saturating_duration_since(self.decay_at).as_secs();
+            if seconds > 0 {
+                self.reserve = self.reserve.saturating_sub(Duration::from_millis(seconds));
+                self.decay_at += Duration::from_secs(seconds);
+            }
+        }
+    }
+
+    fn decide(
+        &mut self,
+        now: Instant,
+        next_frame: u32,
+        frontier: u32,
+        receipt: SequencedTiming,
+        recovering: bool,
+    ) -> OnlineFrameDecision {
+        self.observe(receipt, now, recovering);
+        let available = if next_frame <= frontier {
+            frontier - next_frame + 1
+        } else {
+            0
+        };
+        let deadline = self.deadline(next_frame);
+        if recovering {
+            self.catching_up = true;
+        }
+        if available == 0 {
+            if !recovering
+                && !self.catching_up
+                && now >= deadline
+                && self.underrun.is_none_or(|(frame, _)| frame != next_frame)
+            {
+                self.underrun = Some((next_frame, deadline));
+                self.underruns = self.underruns.saturating_add(1);
+                self.decay_at = now;
+            }
+            return OnlineFrameDecision::WaitingForCanonical;
+        }
+        if let Some((frame, deadline)) = self.underrun.take()
+            && frame == next_frame
+            && !recovering
+        {
+            self.learn(receipt.received_at.saturating_duration_since(deadline), now);
+        }
+        if !self.catching_up
+            && (available >= 3
+                || (available >= 2
+                    && now.saturating_duration_since(self.deadline(next_frame)) > self.span(2)))
+        {
+            self.catching_up = true;
+            self.decay_at = now;
+        }
+        if self.catching_up {
+            if recovering || available > 1 {
+                return OnlineFrameDecision::CatchUp;
+            }
+            // A real recovery/new playout phase may re-anchor. Ordinary
+            // receipts, including late ones, never move the phase origin.
+            self.origin_frame = self.receipt.frame;
+            self.origin_at = self.receipt.received_at;
+            self.catching_up = false;
+            self.decay_at = now;
+        }
+        let deadline = self.deadline(next_frame);
+        if now >= deadline {
+            OnlineFrameDecision::Run
+        } else {
+            OnlineFrameDecision::HoldUntil(deadline)
+        }
+    }
 }
 
 /// App-owned elapsed-time clock used by the end-of-match score dialog.
@@ -226,7 +401,136 @@ impl LocalFramePacer {
     pub(crate) const fn new() -> Self {
         Self {
             last_frame_start_ms: None,
+            last_presented: None,
+            frames_since_present: 0,
+            chunks_since_present: 0,
+            render_deferred: false,
+            total_render_deferrals: 0,
+            online: None,
         }
+    }
+
+    pub(crate) fn online_frame_decision(
+        &mut self,
+        now: Instant,
+        next_frame: u32,
+        frontier: u32,
+        receipt: SequencedTiming,
+        resuming: bool,
+        recovering: bool,
+    ) -> OnlineFrameDecision {
+        // A retained transaction already owns its pacing admission. Missing
+        // canonical bytes still block it; a local reserve never does.
+        if next_frame == 0 || resuming {
+            return if Self::admits_canonical_frame(next_frame, frontier) {
+                OnlineFrameDecision::Run
+            } else {
+                OnlineFrameDecision::WaitingForCanonical
+            };
+        }
+        if receipt.frames_per_second == 0 {
+            return OnlineFrameDecision::WaitingForCanonical;
+        }
+        if self
+            .online
+            .as_ref()
+            .is_none_or(|online| online.receipt.frames_per_second != receipt.frames_per_second)
+        {
+            self.online = Some(OnlinePacer::new(receipt, now));
+        }
+        self.online
+            .as_mut()
+            .unwrap()
+            .decide(now, next_frame, frontier, receipt, recovering)
+    }
+
+    /// Read-only continuation uses the same policy on a small derived copy;
+    /// it cannot learn a second time or consume any simulation/network state.
+    pub(crate) fn online_catch_up_ready(
+        &self,
+        now: Instant,
+        next_frame: u32,
+        frontier: u32,
+        receipt: SequencedTiming,
+        recovering: bool,
+    ) -> bool {
+        if next_frame == 0 || receipt.frames_per_second == 0 {
+            return false;
+        }
+        let mut online = self
+            .online
+            .as_ref()
+            .filter(|online| online.receipt.frames_per_second == receipt.frames_per_second)
+            .cloned()
+            .unwrap_or_else(|| OnlinePacer::new(receipt, now));
+        matches!(
+            online.decide(now, next_frame, frontier, receipt, recovering),
+            OnlineFrameDecision::CatchUp
+        )
+    }
+
+    pub(crate) fn online_pacing_status(&self) -> Option<OnlinePacingStatus> {
+        self.online.as_ref().map(|online| OnlinePacingStatus {
+            reserve_micros: online.reserve.as_micros() as u32,
+            underruns: online.underruns,
+            catching_up: online.catching_up,
+        })
+    }
+
+    pub(crate) fn reset_for_new_world(&mut self) {
+        self.reset_for_immediate_frame();
+        self.online = None;
+    }
+
+    /// Clear a queued continuation on entry or loss of render eligibility.
+    /// Neither operation pretends its surface was presented.
+    pub(crate) fn clear_render_continuation(&mut self) {
+        self.render_deferred = false;
+    }
+
+    /// Yield to winit between ordinary online catch-up chunks. Only completed
+    /// transactions count; neither a blocked frame nor a modal may defer.
+    /// Four existing chunks contain at most 32 ticks, below checksum history.
+    pub(crate) fn defer_online_render(
+        &mut self,
+        now: crate::util::time::Instant,
+        completed_frames: u32,
+        last_frame_completed: bool,
+        next_canonical: Option<(u32, u32)>,
+    ) -> bool {
+        self.frames_since_present = self.frames_since_present.saturating_add(completed_frames);
+        self.chunks_since_present = self
+            .chunks_since_present
+            .saturating_add(u8::from(completed_frames > 0));
+        self.render_deferred = completed_frames > 0
+            && last_frame_completed
+            && next_canonical.is_some_and(|(frame, frontier)| frame > 0 && frame <= frontier)
+            && self.last_presented.is_some_and(|last| {
+                now.saturating_duration_since(last) < std::time::Duration::from_millis(50)
+            })
+            && self.frames_since_present < 32
+            && self.chunks_since_present < 4;
+        if self.render_deferred {
+            self.total_render_deferrals = self.total_render_deferrals.saturating_add(1);
+        }
+        self.render_deferred
+    }
+
+    pub(crate) fn render_deferred(&self) -> bool {
+        self.render_deferred
+    }
+
+    pub(crate) fn total_render_deferrals(&self) -> u64 {
+        self.total_render_deferrals
+    }
+
+    /// Reset only after a successful presentation. A shell/loading surface
+    /// cannot make the first battlefield presentation eligible for deferral.
+    pub(crate) fn record_presented(&mut self, now: crate::util::time::Instant, battlefield: bool) {
+        self.last_presented = battlefield.then_some(now);
+        self.frames_since_present = 0;
+        self.chunks_since_present = 0;
+        self.render_deferred = false;
     }
 
     /// Read the same bucket interval used by `should_admit`, for diagnostics.
@@ -334,6 +638,201 @@ pub(crate) fn wall_clock_bucket() -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn push_receipt(at: Instant, frame: u32) -> SequencedTiming {
+        SequencedTiming {
+            frame,
+            received_at: at,
+            frames_per_second: 45,
+        }
+    }
+
+    #[test]
+    fn pushed_frames_keep_rational_cadence_and_repeated_queries_are_idempotent() {
+        let start = Instant::now();
+        let mut pacer = LocalFramePacer::new();
+        let first = push_receipt(start, 1);
+        assert_eq!(
+            pacer.online_frame_decision(start, 1, 1, first, false, false),
+            OnlineFrameDecision::Run
+        );
+        let early = push_receipt(start + Duration::from_millis(20), 2);
+        let due = start + Duration::from_nanos(1_000_000_000 / 45);
+        for _ in 0..2 {
+            assert_eq!(
+                pacer.online_frame_decision(early.received_at, 2, 2, early, false, false),
+                OnlineFrameDecision::HoldUntil(due)
+            );
+        }
+        assert_eq!(
+            pacer.online_frame_decision(due, 2, 2, early, false, false),
+            OnlineFrameDecision::Run
+        );
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 0);
+        assert_eq!(pacer.online_pacing_status().unwrap().underruns, 0);
+        assert_eq!(
+            pacer.online.as_ref().unwrap().deadline(1_000),
+            start + Duration::from_nanos(999 * 1_000_000_000 / 45)
+        );
+        let duplicate = push_receipt(early.received_at + Duration::from_millis(15), 2);
+        pacer.online_frame_decision(due, 2, 2, duplicate, false, false);
+        assert_eq!(pacer.online.as_ref().unwrap().origin_at, start);
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 0);
+    }
+
+    #[test]
+    fn pushed_jitter_and_underruns_learn_once_with_bounded_reserve_and_slow_decay() {
+        let start = Instant::now();
+        let tick = Duration::from_nanos(1_000_000_000 / 45);
+        let mut pacer = LocalFramePacer::new();
+        pacer.online_frame_decision(start, 1, 1, push_receipt(start, 1), false, false);
+        let late = push_receipt(start + tick + Duration::from_millis(15), 2);
+        pacer.online_frame_decision(late.received_at, 2, 2, late, false, false);
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 15_000);
+        assert_eq!(
+            pacer.online.as_ref().unwrap().origin_at,
+            start,
+            "ordinary jitter must not move the origin"
+        );
+        pacer.online_frame_decision(late.received_at, 2, 2, late, false, false);
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 15_000);
+        let burst = push_receipt(start + tick * 2 + Duration::from_millis(100), 3);
+        pacer.online_frame_decision(burst.received_at, 3, 3, burst, false, false);
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 20_000);
+
+        pacer.reset_for_new_world();
+        pacer.online_frame_decision(start, 1, 1, push_receipt(start, 1), false, false);
+        pacer.online_frame_decision(late.received_at, 2, 2, late, false, false);
+        let steady = push_receipt(start + Duration::from_nanos(93 * 1_000_000_000 / 45), 94);
+        pacer.online_frame_decision(steady.received_at, 94, 94, steady, false, false);
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 13_000);
+        let due = pacer.online.as_ref().unwrap().deadline(95);
+        assert_eq!(
+            pacer.online_frame_decision(due, 95, 94, steady, false, false),
+            OnlineFrameDecision::WaitingForCanonical
+        );
+        pacer.online_frame_decision(due + Duration::from_millis(2), 95, 94, steady, false, false);
+        assert_eq!(pacer.online_pacing_status().unwrap().underruns, 1);
+        let arrived = push_receipt(due + Duration::from_millis(30), 95);
+        pacer.online_frame_decision(arrived.received_at, 95, 95, arrived, false, false);
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 20_000);
+    }
+
+    #[test]
+    fn pushed_recovery_preserves_canonical_gaps_and_transaction_resume_then_resets() {
+        let start = Instant::now();
+        let mut pacer = LocalFramePacer::new();
+        let first = push_receipt(start, 1);
+        pacer.online_frame_decision(start, 1, 1, first, false, false);
+        let bulk = push_receipt(start + Duration::from_nanos(19 * 1_000_000_000 / 45), 20);
+        for next in 2..20 {
+            assert_eq!(
+                pacer.online_frame_decision(bulk.received_at, next, 20, bulk, false, true),
+                OnlineFrameDecision::CatchUp
+            );
+        }
+        assert!(pacer.online_catch_up_ready(bulk.received_at, 19, 20, bulk, true));
+        let delayed_service = bulk.received_at + Duration::from_millis(80);
+        assert_eq!(
+            pacer.online_frame_decision(delayed_service, 20, 20, bulk, false, false),
+            OnlineFrameDecision::Run
+        );
+        assert!(!pacer.online_pacing_status().unwrap().catching_up);
+        assert_eq!(pacer.online.as_ref().unwrap().origin_at, bulk.received_at);
+        assert_eq!(
+            pacer.online_frame_decision(delayed_service, 20, 20, bulk, false, false),
+            OnlineFrameDecision::Run
+        );
+        assert_eq!(pacer.online.as_ref().unwrap().origin_at, bulk.received_at);
+        assert_eq!(
+            pacer.online_frame_decision(bulk.received_at, 21, 20, bulk, true, false),
+            OnlineFrameDecision::WaitingForCanonical
+        );
+        assert_eq!(
+            pacer.online_frame_decision(bulk.received_at, 21, 21, bulk, true, false),
+            OnlineFrameDecision::Run,
+            "a retained transaction must ignore a future playout deadline"
+        );
+        assert_eq!(
+            pacer.online_frame_decision(bulk.received_at, 0, 0, bulk, false, false),
+            OnlineFrameDecision::Run
+        );
+        pacer.reset_for_new_world();
+        assert!(pacer.online_pacing_status().is_none());
+        let restart = push_receipt(bulk.received_at + Duration::from_secs(10), 1);
+        assert_eq!(
+            pacer.online_frame_decision(restart.received_at, 1, 1, restart, false, false),
+            OnlineFrameDecision::Run
+        );
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 0);
+    }
+
+    #[test]
+    fn online_render_continuation_is_bounded_and_resets_only_on_present() {
+        let now = crate::util::time::Instant::now();
+        let mut pacer = LocalFramePacer::new();
+        assert!(
+            !pacer.defer_online_render(now, 8, true, Some((10, 100))),
+            "first surface must present"
+        );
+        pacer.record_presented(now, true);
+        assert!(pacer.defer_online_render(now, 8, true, Some((18, 100))));
+        assert!(pacer.render_deferred());
+        pacer.clear_render_continuation();
+        assert!(
+            !pacer.render_deferred(),
+            "hidden/ineligible windows cancel the queued continuation"
+        );
+        assert_eq!(pacer.total_render_deferrals(), 1);
+        assert!(pacer.defer_online_render(now, 8, true, Some((26, 100))));
+        assert!(pacer.defer_online_render(now, 8, true, Some((34, 100))));
+        assert!(
+            !pacer.defer_online_render(now, 8, true, Some((42, 100))),
+            "32 ticks force a present"
+        );
+        pacer.clear_render_continuation();
+        assert!(
+            !pacer.defer_online_render(now, 1, true, Some((43, 100))),
+            "a failed acquisition cannot reset the budget"
+        );
+        pacer.record_presented(now, true);
+        assert!(pacer.defer_online_render(now, 1, true, Some((44, 100))));
+        assert!(!pacer.defer_online_render(
+            now + std::time::Duration::from_millis(50),
+            1,
+            true,
+            Some((45, 100))
+        ));
+        pacer.record_presented(now, false);
+        assert!(
+            !pacer.defer_online_render(now, 1, true, Some((45, 100))),
+            "a loading surface does not replace the first battlefield present"
+        );
+        pacer.record_presented(now, true);
+        for _ in 0..3 {
+            assert!(pacer.defer_online_render(now, 1, true, Some((45, 100))));
+        }
+        assert!(
+            !pacer.defer_online_render(now, 1, true, Some((45, 100))),
+            "four short chunks also force a present"
+        );
+    }
+
+    #[test]
+    fn online_render_continuation_requires_completed_work_and_next_canonical_frame() {
+        let now = crate::util::time::Instant::now();
+        for (completed, last_completed, next) in [
+            (0, true, Some((10, 20))),
+            (1, false, Some((10, 20))),
+            (1, true, None), // offline, focus/modal/terminal, or exact-step exclusion
+            (1, true, Some((0, 20))),
+            (1, true, Some((21, 20))),
+        ] {
+            let mut pacer = LocalFramePacer::new();
+            pacer.record_presented(now, true);
+            assert!(!pacer.defer_online_render(now, completed, last_completed, next));
+        }
+    }
 
     #[test]
     fn canonical_frontier_admits_buffered_ticks_without_a_local_timer_and_bounds_work() {

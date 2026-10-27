@@ -257,12 +257,26 @@ impl crate::sim::world::Simulation {
             // even for NULL. Each call re-reads Object+34, without Alive/HP
             // gates. This precedes the base CostOf and its6/4 callbacks.
             // Source: original bodies/vtable via tools.native_inspect.
-            // RESIDUAL: hijacked Units (+338 !=-1) with a transferable Tag
-            // skip this prefix; hijacking state/crew transfer is not ported.
+            //74472F..74473F: a retained captor and transferable Tag skip
+            //this prefix;738374 later copies that Tag to the escaped captor.
             // No own RNG/timer/detach; synchronous Tag actions own those.
-            for kind in [7, 48, 29] {
-                if kind != 7 || source.is_present() {
-                    self.dispatch_object_tag_event(victim_id, kind, Some(victim_id), None, context);
+            let captor_has_tag = self
+                .substrate
+                .entities
+                .get(victim_id)
+                .is_some_and(|victim| victim.capture_infantry_type_index.get() != -1)
+                && self.trigger_runtime.object_tag_is_transferable(victim_id);
+            if !captor_has_tag {
+                for kind in [7, 48, 29] {
+                    if kind != 7 || source.is_present() {
+                        self.dispatch_object_tag_event(
+                            victim_id,
+                            kind,
+                            Some(victim_id),
+                            None,
+                            context,
+                        );
+                    }
                 }
             }
         }

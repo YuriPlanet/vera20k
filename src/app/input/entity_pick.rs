@@ -747,11 +747,12 @@ fn type_select_candidates(
             let dynamic = selection_dynamic_prefix(entity, entities, rules, interner)
                 && type_is_selectable(type_id, rules)
                 && (!require_playfield_membership || entity.in_playfield());
-            let undeploying_building_fallback = entity.category() == EntityCategory::Structure
-                && rules
-                    .and_then(|r| r.object(type_id))
-                    .is_some_and(|object| object.undeploys_into.is_some());
-            (dynamic || undeploying_building_fallback).then_some(*id)
+            // A structure answers false on the ordinary dynamic virtual; the ID
+            // match's building arm (`0x00732C61..0x00732C83`) admits it
+            // through `RuleSet::structure_type_selectable` instead.
+            let structure_admission = entity.category() == EntityCategory::Structure
+                && rules.is_some_and(|rules| rules.structure_type_selectable(type_id));
+            (dynamic || structure_admission).then_some(*id)
         })
         .collect()
 }
@@ -1001,7 +1002,8 @@ pub(crate) fn selection_dynamic_prefix(
     interner: Option<&crate::sim::intern::StringInterner>,
 ) -> bool {
     // BuildingClass answers false on the ordinary dynamic selection virtual.
-    // TypeSelect owns the verified UndeploysInto fallback separately.
+    // TypeSelect owns the separate building admission
+    // (`RuleSet::structure_type_selectable`) instead.
     if entity.category() == EntityCategory::Structure {
         return false;
     }
@@ -1202,6 +1204,10 @@ fn is_local_band_candidate(
 #[cfg(test)]
 #[path = "entity_pick_reveal_tests.rs"]
 mod reveal_tests;
+
+#[cfg(test)]
+#[path = "entity_pick_building_type_select_tests.rs"]
+mod building_type_select_tests;
 
 #[cfg(test)]
 mod tests {

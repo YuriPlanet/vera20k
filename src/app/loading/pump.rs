@@ -657,6 +657,29 @@ pub(crate) struct NetworkLoadingObservation<'a> {
 }
 
 impl LoadingSession {
+    #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+    fn await_browser_network_peers(
+        result: Box<MapLoadResult>,
+        native: Option<NativeLoadingScreenState>,
+        job: LoadingJob,
+    ) -> Self {
+        let progress = native.as_ref().expect("network load retains progress rows");
+        let now = (crate::app::match_runtime::frame_pacer::wall_clock_ms() >> 4) as i32;
+        let mut wait = NetworkLoadWait::new(
+            now,
+            progress.progress_row.total_fraction(&progress.progress),
+        );
+        // The browser still owes the terminal milestone's ACK drain. Anchor
+        // the peer wait only when that drain has completed on a later turn.
+        wait.start_pending = true;
+        Self {
+            stage: LoadingStage::AwaitingPeers { result, wait },
+            native,
+            job,
+            next_frame: NextLoadingFrame::Later,
+        }
+    }
+
     fn network_observation(
         &self,
         stage: &'static str,
@@ -692,6 +715,11 @@ struct NetworkLoadWait {
     timeout: crate::sim::timer::CdTimer,
     resend: crate::sim::timer::CdTimer,
     last_fraction: f64,
+    #[cfg(any(
+        test,
+        all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")
+    ))]
+    start_pending: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -708,9 +736,21 @@ impl NetworkLoadWait {
             timeout: crate::sim::timer::CdTimer::started(now, 3600),
             resend: crate::sim::timer::CdTimer::started(now, 300),
             last_fraction: fraction,
+            #[cfg(any(
+                test,
+                all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")
+            ))]
+            start_pending: false,
         }
     }
     fn poll(&mut self, now: i32, fraction: f64) -> NetworkLoadPoll {
+        #[cfg(any(
+            test,
+            all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")
+        ))]
+        if self.start_pending {
+            *self = Self::new(now, fraction);
+        }
         // Expiry precedes the completion check at68442D..684465.
         if self.timeout.expired(now) {
             return NetworkLoadPoll::TimedOut;
@@ -1592,6 +1632,40 @@ fn pump_loading_after_present(
     let Some(session) = state.frontend.loading_session.take() else {
         return Ok(LoadingPump::Pending);
     };
+    #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+    let session = if matches!(session.stage.startup(), LoadingStartup::Network(_)) {
+        let Some(mut session) = service_network_loading_boundary(state, session) else {
+            return Ok(LoadingPump::Pending);
+        };
+        // Every online continuation, including atlas preparation and the final
+        // handoff, resumes the original ACK drain before advancing another phase.
+        let resumed = (|| -> anyhow::Result<bool> {
+            if let Some(native) = session.native.as_mut()
+                && let Some(mut network) = crate::app::lan_service::LoadingNetworkService::borrow(
+                    &mut state.match_state.session,
+                    state.match_state.lan_service.as_mut(),
+                    state.platform.capture_client_size.is_some(),
+                )?
+            {
+                return network.resume(&mut native.progress_row);
+            }
+            Ok(true)
+        })();
+        match resumed {
+            Ok(true) => {}
+            Ok(false) => {
+                state.frontend.loading_session = Some(session);
+                return Ok(LoadingPump::Pending);
+            }
+            Err(error) => {
+                session.retire(&mut state.process_assets);
+                return Ok(LoadingPump::Failed(error));
+            }
+        }
+        session
+    } else {
+        session
+    };
     if matches!(session.stage, LoadingStage::ConstructingScenario(_)) {
         return pump_map_construction(state, session, observer);
     }
@@ -1604,7 +1678,12 @@ fn pump_loading_after_present(
     if matches!(session.stage, LoadingStage::AwaitingPeers { .. }) {
         return poll_network_load_wait(state, session, observer);
     }
-    let session = if matches!(session.stage.startup(), LoadingStartup::Network(_)) {
+    let session = if matches!(session.stage.startup(), LoadingStartup::Network(_))
+        && !cfg!(all(
+            feature = "wasm-net",
+            target_arch = "wasm32",
+            target_os = "unknown"
+        )) {
         let Some(session) = service_network_loading_boundary(state, session) else {
             return Ok(LoadingPump::Pending);
         };
@@ -1803,7 +1882,13 @@ fn pump_loading_after_present(
                     )
                 },
             );
-            if matches!(startup, LoadingStartup::Network(_)) {
+            if matches!(startup, LoadingStartup::Network(_))
+                && !cfg!(all(
+                    feature = "wasm-net",
+                    target_arch = "wasm32",
+                    target_os = "unknown"
+                ))
+            {
                 init::load_map_from_initial(
                     &state.renderer.gpu,
                     &state.renderer.batch_renderer,
@@ -1966,10 +2051,18 @@ fn pump_map_construction(
             .main_menu_shell_state
             .typed_codes
             .the_team_enabled();
+        #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+        let network = crate::app::lan_service::LoadingNetworkService::borrow(
+            &mut state.match_state.session,
+            state.match_state.lan_service.as_mut(),
+            state.platform.capture_client_size.is_some(),
+        )?;
+        #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+        let network = None;
         let mut progress = LoadingPhaseProgress::select(
             session.native.as_mut(),
             constructing.load.theater_cache_mismatch(),
-            None,
+            network,
             |native, network| {
                 RenderingProgressSink::new(
                     native,
@@ -2029,6 +2122,16 @@ fn pump_map_construction(
                 state.frontend.loading_session = Some(session);
                 Ok(LoadingPump::Pending)
             } else {
+                #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+                if matches!(result.scenario.startup, LoadingStartup::Network(_)) {
+                    state.frontend.loading_session =
+                        Some(LoadingSession::await_browser_network_peers(
+                            Box::new(result),
+                            session.native,
+                            session.job,
+                        ));
+                    return Ok(LoadingPump::Pending);
+                }
                 Ok(LoadingPump::Finished {
                     result: Box::new(result),
                     timed_out: Vec::new(),
@@ -2130,6 +2233,15 @@ fn pump_presentation(
     let LoadingStage::PreparingPresentation { result } = session.stage else {
         unreachable!()
     };
+    #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+    if matches!(result.scenario.startup, LoadingStartup::Network(_)) {
+        state.frontend.loading_session = Some(LoadingSession::await_browser_network_peers(
+            result,
+            session.native,
+            session.job,
+        ));
+        return Ok(LoadingPump::Pending);
+    }
     Ok(LoadingPump::Finished {
         result,
         timed_out: Vec::new(),

@@ -326,6 +326,7 @@ mod tests {
             column_button: 0,
             view: SuperWeaponView {
                 type_id: InternedId::default(),
+                use_ai_targeting: false,
                 display_name: type_id.to_string(),
                 progress: 0.0,
                 display: Default::default(),
@@ -335,6 +336,8 @@ mod tests {
                 can_fire: false,
                 can_afford: false,
                 constraints_blocked: false,
+                #[cfg(feature = "ares")]
+                ares_refusal: None,
             },
         }
     }
@@ -375,6 +378,7 @@ mod tests {
             .iter()
             .map(|&name| SuperWeaponView {
                 type_id: interner.intern(name),
+                use_ai_targeting: false,
                 display_name: name.to_string(),
                 progress: 0.0,
                 display: Default::default(),
@@ -384,6 +388,8 @@ mod tests {
                 can_fire: false,
                 can_afford: false,
                 constraints_blocked: false,
+                #[cfg(feature = "ares")]
+                ares_refusal: None,
             })
             .collect()
     }

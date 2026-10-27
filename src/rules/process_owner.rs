@@ -493,6 +493,17 @@ impl NativeRulesProcessOwner {
         }
     }
 
+    /// The side's `DialogBackground.Image/.Palette` names for the shell dialog
+    /// chrome ([`AresSideExtension::dialog_background`]), or `None` to keep
+    /// the stock per-side backgrounds: a side with no SideExt, or one that
+    /// leaves either name unset.
+    ///
+    /// [`AresSideExtension::dialog_background`]: crate::rules::ares_side_extension::AresSideExtension::dialog_background
+    #[cfg(feature = "ares")]
+    pub fn side_dialog_background(&self, side: i32) -> Option<(&str, &str)> {
+        self.side_extension(side)?.dialog_background()
+    }
+
     /// The side's seven score-screen file names (SideExt `+0x98..+0x158`). A
     /// stock build and a negative or unallocated side leave every field
     /// `None`, so the callers keep their fixed tables.

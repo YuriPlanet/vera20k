@@ -19,9 +19,10 @@ pub(super) fn shell_layout(
     atlas: &SidebarChromeAtlas,
     width: i32,
     height: i32,
+    center_background: bool,
 ) -> Option<InGameShellLayout> {
     let size = |entry: SidebarChromeEntry| entry.pixel_size.map(|v| v as i32);
-    InGameShellLayout::new(
+    let layout = InGameShellLayout::new(
         width,
         height,
         InGameShellSizes {
@@ -40,7 +41,14 @@ pub(super) fn shell_layout(
             button_background: size(atlas.command_bar.background?),
             right_cap: size(atlas.command_bar.right_cap?),
         },
-    )
+    )?;
+    // Phobos `[Sidebar] CenterPauseMenuBackground`; the hook rewrites the same
+    // rectangle every active-game modal paints first.
+    Some(if center_background {
+        layout.with_centered_background(width, height)
+    } else {
+        layout
+    })
 }
 
 /// The pixels every active-game shell lays out, paints and hit-tests in: the
@@ -97,10 +105,16 @@ pub(crate) fn native_in_game_shell_active(state: &AppState) -> bool {
 pub(crate) fn current_in_game_shell_layout(state: &AppState) -> Option<InGameShellGeometry> {
     let atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)?;
     let (width, height) = in_game_shell_size(state);
+    // The Phobos switch is absent from builds without the capability, so those
+    // keep the native top-left placement.
+    #[cfg(feature = "phobos")]
+    let center_background = state.match_state.match_presentation.center_pause_menu_background;
+    #[cfg(not(feature = "phobos"))]
+    let center_background = false;
     Some(InGameShellGeometry {
         width,
         height,
-        layout: shell_layout(atlas, width, height)?,
+        layout: shell_layout(atlas, width, height, center_background)?,
         button_size: atlas.in_game_shell.buttons[0]?
             .pixel_size
             .map(|value| value as i32),

@@ -3,6 +3,7 @@
 //! Event priority and consumption order are player-visible contracts; this
 //! module keeps the original handler body intact.
 
+use super::frame::FrameRenderOutcome;
 use super::input::dispatch;
 use super::{
     ActiveEventLoop, App, AppState, ApplicationHandler, ControlFlow, GameScreen, Instant, KeyCode,
@@ -15,6 +16,15 @@ use super::{
 /// keyboard routing seam.
 fn launcher_options_consumes_escape<T>(dialog: &Option<T>, is_escape: bool) -> bool {
     is_escape && dialog.is_some()
+}
+
+fn capture_render_continues(deadline: &mut Option<Instant>, outcome: FrameRenderOutcome) -> bool {
+    if outcome == FrameRenderOutcome::Deferred {
+        *deadline = None;
+        true
+    } else {
+        false
+    }
 }
 
 impl App {
@@ -386,7 +396,12 @@ impl App {
                     crate::app::input::cursor::apply_cursor_confinement(state);
                 }
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-                crate::web::status(self.state.as_ref().and_then(|state| state.frontend.main_menu_shell_error.as_deref()).unwrap_or("Ready"));
+                crate::web::status(
+                    self.state
+                        .as_ref()
+                        .and_then(|state| state.frontend.main_menu_shell_error.as_deref())
+                        .unwrap_or("Ready"),
+                );
                 log::info!("Initialization complete");
             }
             Err(err) => {
@@ -1641,16 +1656,23 @@ impl ApplicationHandler for App {
             }
             WindowEvent::Ime(ime) => crate::app::input::ime::event(state, ime),
             WindowEvent::RedrawRequested => {
-                if let Err(err) = Self::render_frame(state, event_loop, None, None) {
-                    log::error!("Render: {:#}", err);
-                    if state
-                        .match_state
-                        .match_diagnostics
-                        .playback_capture_requested()
-                    {
-                        state.frontend.external_launch_error =
-                            Some(format!("Replay capture failed: {err:#}"));
-                        event_loop.exit();
+                match Self::render_frame(state, event_loop, None, None) {
+                    Ok(FrameRenderOutcome::Deferred) => {
+                        event_loop.set_control_flow(ControlFlow::Poll);
+                        state.platform.window.request_redraw();
+                    }
+                    Ok(_) => {}
+                    Err(err) => {
+                        log::error!("Render: {:#}", err);
+                        if state
+                            .match_state
+                            .match_diagnostics
+                            .playback_capture_requested()
+                        {
+                            state.frontend.external_launch_error =
+                                Some(format!("Replay capture failed: {err:#}"));
+                            event_loop.exit();
+                        }
                     }
                 }
             }
@@ -1734,10 +1756,17 @@ impl ApplicationHandler for App {
         }
         if let (Some(state), Some(session)) = (self.state.as_mut(), self.tactical_capture.as_mut())
         {
-            if let Err(err) = Self::render_frame(state, event_loop, None, Some(&mut *session)) {
-                log::error!("Tactical capture render: {err:#}");
-                session.fail(format!("tactical capture render failed: {err:#}"));
-                event_loop.exit();
+            let outcome = match Self::render_frame(state, event_loop, None, Some(&mut *session)) {
+                Ok(outcome) => outcome,
+                Err(err) => {
+                    log::error!("Tactical capture render: {err:#}");
+                    session.fail(format!("tactical capture render failed: {err:#}"));
+                    event_loop.exit();
+                    return;
+                }
+            };
+            if capture_render_continues(&mut self.capture_render_not_before, outcome) {
+                event_loop.set_control_flow(ControlFlow::Poll);
                 return;
             }
             if !session.is_finished() {
@@ -1750,10 +1779,17 @@ impl ApplicationHandler for App {
         } else if let (Some(state), Some(session)) =
             (self.state.as_mut(), self.shell_capture.as_mut())
         {
-            if let Err(err) = Self::render_frame(state, event_loop, Some(&mut *session), None) {
-                log::error!("Shell capture render: {err:#}");
-                session.fail(format!("shell capture render failed: {err:#}"));
-                event_loop.exit();
+            let outcome = match Self::render_frame(state, event_loop, Some(&mut *session), None) {
+                Ok(outcome) => outcome,
+                Err(err) => {
+                    log::error!("Shell capture render: {err:#}");
+                    session.fail(format!("shell capture render failed: {err:#}"));
+                    event_loop.exit();
+                    return;
+                }
+            };
+            if capture_render_continues(&mut self.capture_render_not_before, outcome) {
+                event_loop.set_control_flow(ControlFlow::Poll);
                 return;
             }
             if !session.is_finished() {
@@ -1770,10 +1806,21 @@ impl ApplicationHandler for App {
                 if let Some(service) = shell_scroll_wake {
                     deadline = deadline.min(service);
                 }
-                event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+                event_loop.set_control_flow(if deadline <= Instant::now() {
+                    ControlFlow::Poll
+                } else {
+                    ControlFlow::WaitUntil(deadline)
+                });
             }
         } else if let Some(state) = self.state.as_mut() {
-            if crate::app::frontend::shell_transition::main_menu_presented_is_poisoned(state) {
+            if Self::next_online_render_frame(state).is_none() {
+                state.platform.frame_pacer.clear_render_continuation();
+            }
+            if state.platform.frame_pacer.render_deferred() {
+                event_loop.set_control_flow(ControlFlow::Poll);
+                state.platform.window.request_redraw();
+            } else if crate::app::frontend::shell_transition::main_menu_presented_is_poisoned(state)
+            {
                 event_loop.set_control_flow(ControlFlow::Wait);
             } else if let Some(deadline) =
                 crate::app::frontend::shell_transition::main_menu_presented_wake_deadline(state)
@@ -1827,6 +1874,26 @@ impl ApplicationHandler for App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deferred_capture_clears_render_delay_for_the_next_event_loop_pass() {
+        let deadline = Instant::now() + std::time::Duration::from_millis(8);
+        let mut not_before = Some(deadline);
+        assert!(!capture_render_continues(
+            &mut not_before,
+            FrameRenderOutcome::Unavailable
+        ));
+        assert_eq!(not_before, Some(deadline));
+        assert!(capture_render_continues(
+            &mut not_before,
+            FrameRenderOutcome::Deferred
+        ));
+        assert_eq!(not_before, None);
+        assert!(!capture_render_continues(
+            &mut not_before,
+            FrameRenderOutcome::Presented
+        ));
+    }
 
     #[test]
     fn capture_render_deadline_survives_early_service_wakes_and_admits_when_due() {

@@ -918,6 +918,10 @@ impl App {
                     #[cfg(feature = "phobos")]
                     show_placement_preview: phobos_client.show_placement_preview,
                     #[cfg(feature = "phobos")]
+                    show_flash_on_selecting: phobos_client.show_flash_on_selecting,
+                    #[cfg(feature = "phobos")]
+                    center_pause_menu_background: false,
+                    #[cfg(feature = "phobos")]
                     placement_preview_art: Default::default(),
                     #[cfg(feature = "phobos")]
                     sw_sidebar: crate::app::presentation::sw_sidebar::SwSidebarState {
@@ -985,6 +989,7 @@ impl App {
                 ),
             },
             frontend: crate::app::frontend::state::FrontendState {
+                shell_dialog_background: None,
                 campaign_speed_control: startup_options.campaign_speed_control,
                 external_launch: false,
                 external_launch_error: None,

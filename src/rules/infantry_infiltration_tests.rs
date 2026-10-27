@@ -3,6 +3,53 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
 use crate::rules::ruleset::RuleSet;
 
+#[test]
+fn thief_capture_flags_retain_native_reads_and_legacy_save_projection() {
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[InfantryTypes]\n0=THIEF\n[THIEF]\nThief=yes\nVehicleThief=yes\n",
+    ));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[THIEF]\nThief=unknown\nVehicleThief=unknown\n"),
+    );
+    let retained = RuleSet::from_rules_layers(&layers).unwrap();
+    let ty = retained.object("THIEF").unwrap();
+    assert!(ty.thief && ty.vehicle_thief);
+    assert!(!ty.infiltrate, "neither theft byte forces Infiltrate");
+
+    let flat = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=THIEF\n[THIEF]\nThief=unknown\nVehicleThief=unknown\n",
+    ))
+    .unwrap();
+    assert!(!flat.object("THIEF").unwrap().thief);
+    assert_ne!(
+        retained.simulation_config_hash(),
+        flat.simulation_config_hash()
+    );
+
+    // Persisted current-default bytes survive rebind; old processing states
+    // without them keep the raw projection used before these fields existed.
+    let ini = IniFile::from_str("[THIEF]\nThief=yes\nVehicleThief=yes\n");
+    let raw = ini.section("THIEF").unwrap();
+    let mut state = super::InfantryInfiltration::default();
+    state.apply_pass(raw);
+    let state = serde_json::from_slice(&serde_json::to_vec(&state).unwrap()).unwrap();
+    let invalid_ini = IniFile::from_str("[THIEF]\nThief=unknown\nVehicleThief=unknown\n");
+    let mut ty = ObjectType::from_ini_section(
+        "THIEF",
+        invalid_ini.section("THIEF").unwrap(),
+        ObjectCategory::Infantry,
+    );
+    ty.project_infantry_infiltration(state);
+    assert!(ty.thief && ty.vehicle_thief);
+    let legacy =
+        serde_json::from_str(r#"{"infiltrate":false,"c4":false,"engineer":false,"agent":false}"#)
+            .unwrap();
+    let mut ty = ObjectType::from_ini_section("THIEF", raw, ObjectCategory::Infantry);
+    ty.project_infantry_infiltration(legacy);
+    assert!(ty.thief && ty.vehicle_thief);
+}
+
 /// Infantry ReadINI52466E..52469A runs after the explicit Infiltrate read.
 #[test]
 fn infantry_roles_force_infiltrate_even_after_explicit_no() {

@@ -3032,6 +3032,16 @@ fn sequenced_udp_paused_client_catches_up_without_stalling_healthy_commands() {
             late_issued = true;
         }
         relay.advance_clock(now_ms, 100 + (now_ms - 16_000) / 1000);
+        for forwarded in relay.drain_ordering_push(now_ms, 100 + (now_ms - 16_000) / 1000) {
+            // A disconnected client loses unsolicited delivery too; dropping
+            // only its requests no longer pauses a server-pushed stream.
+            if !paused || forwarded.endpoint != boundaries[1].live.borrow().primary_addr().unwrap()
+            {
+                socket
+                    .send_to(&forwarded.bytes, forwarded.endpoint)
+                    .unwrap();
+            }
+        }
         for side in 0..2 {
             boundaries[side].now.set((now_ms >> 4) as u32);
             boundaries[side]
@@ -3149,4 +3159,743 @@ fn sequenced_udp_paused_client_catches_up_without_stalling_healthy_commands() {
     drop(boundaries);
     drop(relay);
     std::fs::remove_dir_all(journal_dir).unwrap();
+}
+
+#[test]
+fn sequenced_unsent_batch_retries_when_the_relay_route_recovers() {
+    use crate::net::udp::{
+        OrderingCertificate, RelayTicket,
+        test_support::{MAX_DATAGRAM, RelayServer, SecretKey, derive_packet_key},
+    };
+    use vera20k_relay_protocol::OrderEvent;
+
+    let key = SecretKey::new([31; 32]);
+    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+    socket.set_nonblocking(true).unwrap();
+    let std::net::SocketAddr::V4(address) = socket.local_addr().unwrap() else {
+        unreachable!()
+    };
+    let ticket = RelayTicket {
+        room: [27; 16],
+        player: [1; 16],
+        source: 0,
+        generation: 1,
+        expires: 300,
+        nonce: [3; 16],
+    }
+    .sign(&key)
+    .unwrap();
+    let certificate = OrderingCertificate {
+        room: [27; 16],
+        sources_mask: 1,
+        tick_hz: 30,
+        expires: 86_500,
+    }
+    .sign(&key)
+    .unwrap();
+    let mut wire = transport();
+    wire.enable_relay(
+        address,
+        &ticket,
+        *derive_packet_key(&key, &ticket).expose_for_https(),
+        [29; 32],
+    )
+    .unwrap();
+    wire.set_ordering_certificate(certificate.to_vec()).unwrap();
+    let agreement =
+        StartupAgreement::new([(0, 0)], [0], 73, 10, 30, NonZeroU32::new(1).unwrap(), 0).unwrap();
+    let mut session = sequenced::SequencedSession::new(&agreement, &wire, 0).unwrap();
+    let mut relay = RelayServer::new(key, 1);
+    let pump = |wire: &mut LanUdpTransport, relay: &mut RelayServer, now: u32| {
+        wire.service(now >> 4);
+        loop {
+            let mut packet = [0; MAX_DATAGRAM + 1];
+            let (length, std::net::SocketAddr::V4(from)) = (match socket.recv_from(&mut packet) {
+                Ok(value) => value,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(error) => panic!("{error}"),
+            }) else {
+                unreachable!()
+            };
+            for reply in relay
+                .process_at(
+                    from,
+                    &packet[..length],
+                    100 + u64::from(now) / 1000,
+                    u64::from(now),
+                )
+                .unwrap()
+            {
+                socket.send_to(&reply.bytes, reply.endpoint).unwrap();
+            }
+        }
+        wire.service(now >> 4);
+    };
+    let mut now = 16_000;
+    for _ in 0..60 {
+        session.service(&mut wire, now);
+        pump(&mut wire, &mut relay, now);
+        if session.started() {
+            break;
+        }
+        now += 16;
+    }
+    assert!(session.started(), "authenticated ordering startup");
+    let mut sim = Simulation::new();
+    sim.session.set_game_mode(ScenarioGameMode::Wol);
+    assert_eq!(
+        session
+            .poll(
+                &mut wire,
+                &mut sim.network_command_queues(),
+                NetworkQueueContext {
+                    frame: 0,
+                    checksum: 0
+                },
+                now
+            )
+            .unwrap(),
+        NetworkQueuePass::SkipDispatch
+    );
+
+    // The production silence timer withdraws readiness. Retain the same
+    // ordering session and source; its next first-send attempt cannot go out.
+    now += 10_016;
+    wire.service(now >> 4);
+    assert!(!wire.relay_ready());
+    let mut stop = CommandRecord::encode(crate::sim::command::IDLE_OPCODE, 0, 0, &[]).unwrap();
+    crate::sim::command::StopRecord {
+        house_id: 0,
+        frame: 0,
+        entity_id: 7,
+    }
+    .write_into(&mut stop);
+    assert!(sim.issue_local_command(CommandEnvelope::synchronized(stop.clone(), 0)));
+    session
+        .poll(
+            &mut wire,
+            &mut sim.network_command_queues(),
+            NetworkQueueContext {
+                frame: 1,
+                checksum: 0,
+            },
+            now,
+        )
+        .unwrap();
+
+    let recovered_at = now + 16;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !wire.relay_ready() && Instant::now() < deadline {
+        pump(&mut wire, &mut relay, recovered_at);
+        std::thread::yield_now();
+    }
+    assert!(
+        wire.relay_ready(),
+        "same route completed its real challenge"
+    );
+    session.service(&mut wire, recovered_at);
+    pump(&mut wire, &mut relay, recovered_at);
+    let drain_ack = |wire: &mut LanUdpTransport| {
+        let mut acknowledged = false;
+        while let Some(event) = wire.pop_ordering_received() {
+            match event {
+                OrderEvent::Ack { batch_id: 1, .. } => acknowledged = true,
+                OrderEvent::Error { code, .. } => {
+                    panic!("relay rejected immutable batch: {code:?}")
+                }
+                _ => {}
+            }
+        }
+        acknowledged
+    };
+    let mut acknowledged = drain_ack(&mut wire);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !acknowledged && Instant::now() < deadline {
+        pump(&mut wire, &mut relay, recovered_at);
+        acknowledged = drain_ack(&mut wire);
+        std::thread::yield_now();
+    }
+    assert!(
+        acknowledged,
+        "an unsent batch must not wait for the 100ms retransmission deadline"
+    );
+
+    // Withhold the acceptance from the app owner. The ordinary later retry
+    // must receive another ACK, rather than a ModifiedRetry rejection.
+    session.service(&mut wire, recovered_at + 112);
+    let mut acknowledged = false;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !acknowledged && Instant::now() < deadline {
+        pump(&mut wire, &mut relay, recovered_at + 112);
+        acknowledged = drain_ack(&mut wire);
+        std::thread::yield_now();
+    }
+    assert!(
+        acknowledged,
+        "sealed retry retained the accepted ciphertext"
+    );
+    assert_eq!(session.sent_commands(), 0);
+    assert_eq!(
+        sim.network_command_queues().local_records().unwrap(),
+        vec![&stop]
+    );
+}
+
+fn sequenced_pair() -> (
+    [Simulation; 2],
+    RuleSet,
+    u64,
+    Vec<Boundary>,
+    UdpSocket,
+    crate::net::udp::test_support::RelayServer,
+) {
+    use crate::net::udp::{
+        OrderingCertificate, RelayTicket, relay_peer_endpoint,
+        test_support::{RelayServer, SecretKey, derive_packet_key},
+    };
+    use std::num::NonZeroU8;
+    let key = SecretKey::new([21; 32]);
+    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+    socket.set_nonblocking(true).unwrap();
+    let std::net::SocketAddr::V4(address) = socket.local_addr().unwrap() else {
+        unreachable!()
+    };
+    let relay = RelayServer::new(key.clone(), 2);
+    let (first, rules, actor) = stop_scene();
+    let (second, _, _) = stop_scene();
+    let mut worlds = [first, second];
+    for sim in &mut worlds {
+        sim.session.set_game_mode(ScenarioGameMode::Wol);
+        sim.network_command_queues()
+            .install_timing(0, NonZeroU8::new(1).unwrap(), [0, 1]);
+        sim.network_command_queues().configure_sequenced_clock(30);
+    }
+    let certificate = OrderingCertificate {
+        room: [17; 16],
+        sources_mask: 3,
+        tick_hz: 30,
+        expires: 86_500,
+    }
+    .sign(&key)
+    .unwrap();
+    let agreement = StartupAgreement::new(
+        [(0, 0), (1, 1)],
+        [0, 1],
+        73,
+        10,
+        30,
+        NonZeroU32::new(1).unwrap(),
+        worlds[0].state_hash(),
+    )
+    .unwrap();
+    let boundaries: Vec<_> = (0..2u8)
+        .map(|source| {
+            let ticket = RelayTicket {
+                room: [17; 16],
+                player: [source + 1; 16],
+                source,
+                generation: 1,
+                expires: 300,
+                nonce: [source + 3; 16],
+            }
+            .sign(&key)
+            .unwrap();
+            let mut wire = transport();
+            wire.enable_relay(
+                address,
+                &ticket,
+                *derive_packet_key(&key, &ticket).expose_for_https(),
+                [19; 32],
+            )
+            .unwrap();
+            wire.set_ordering_certificate(certificate.to_vec()).unwrap();
+            wire.connections_mut()
+                .add_peer(
+                    i32::from(1 - source),
+                    relay_peer_endpoint(1 - source).unwrap(),
+                )
+                .unwrap();
+            Boundary::new(
+                LiveCommandSession::new(
+                    agreement.clone(),
+                    wire,
+                    source as i8,
+                    73,
+                    NonZeroU32::new(1).unwrap(),
+                    LiveCommandMode::Wol,
+                )
+                .unwrap(),
+            )
+        })
+        .collect();
+    (worlds, rules, actor, boundaries, socket, relay)
+}
+
+#[test]
+fn sequenced_push_advances_without_requests_and_repairs_a_lost_range() {
+    use crate::net::udp::test_support::MAX_DATAGRAM;
+    use crate::sim::command::{Command, MEGAMISSION_OPCODE};
+
+    let (mut worlds, rules, actor, boundaries, socket, mut relay) = sequenced_pair();
+    let second_address = boundaries[1].live.borrow().primary_addr().unwrap();
+    let pump = |relay: &mut crate::net::udp::test_support::RelayServer,
+                now_ms: u64,
+                accept_requests: bool,
+                lose_second: bool| {
+        let deliver = |packet: vera20k_relay_protocol::ForwardDatagram| {
+            if !lose_second || packet.endpoint != second_address {
+                socket.send_to(&packet.bytes, packet.endpoint).unwrap();
+            }
+        };
+        let mut requests = 0;
+        {
+            loop {
+                let mut bytes = [0; MAX_DATAGRAM + 1];
+                let (length, std::net::SocketAddr::V4(source)) = (match socket.recv_from(&mut bytes)
+                {
+                    Ok(packet) => packet,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                    Err(error) => panic!("{error}"),
+                }) else {
+                    unreachable!()
+                };
+                requests += 1;
+                if !accept_requests {
+                    continue;
+                }
+                for packet in relay
+                    .process_at(
+                        source,
+                        &bytes[..length],
+                        100 + (now_ms - 16_000) / 1000,
+                        now_ms,
+                    )
+                    .unwrap_or_default()
+                {
+                    deliver(packet);
+                }
+            }
+        }
+        for packet in relay.drain_ordering_push(now_ms, 100 + (now_ms - 16_000) / 1000) {
+            deliver(packet);
+        }
+        requests
+    };
+    let service = |worlds: &mut [Simulation; 2], now_ms: u64| {
+        for (world, boundary) in worlds.iter_mut().zip(&boundaries) {
+            boundary.now.set((now_ms >> 4) as u32);
+            boundary.live.borrow_mut().service_pending_commands(
+                &mut world.network_command_queues(),
+                (now_ms >> 4) as u32,
+            );
+        }
+    };
+    let mut now_ms = 16_000;
+    for _ in 0..250 {
+        now_ms += 16;
+        relay.advance_clock(now_ms, 100 + (now_ms - 16_000) / 1000);
+        service(&mut worlds, now_ms);
+        pump(&mut relay, now_ms, true, false);
+        for (world, boundary) in worlds.iter_mut().zip(&boundaries) {
+            production_frame(world, &rules, boundary);
+        }
+        if boundaries
+            .iter()
+            .all(|boundary| boundary.live.borrow().sequenced_timing().is_some())
+            && worlds
+                .iter()
+                .all(|world| world.session().binary_frame() >= 20)
+        {
+            break;
+        }
+    }
+    assert!(
+        boundaries
+            .iter()
+            .all(|boundary| boundary.live.borrow().sequenced_timing().is_some())
+    );
+    let before = worlds.each_ref().map(|world| world.session().tick());
+    // For less than one credit window, discard every client request before
+    // server processing. Only independently clocked push supplies these frames.
+    let mut idle_requests = 0;
+    for _ in 0..24 {
+        now_ms += 16;
+        relay.advance_clock(now_ms, 100 + (now_ms - 16_000) / 1000);
+        service(&mut worlds, now_ms);
+        idle_requests += pump(&mut relay, now_ms, false, false);
+        for (world, boundary) in worlds.iter_mut().zip(&boundaries) {
+            production_frame(world, &rules, boundary);
+        }
+    }
+    for (world, before) in worlds.iter().zip(before) {
+        assert!(
+            world.session().tick() >= before + 8,
+            "push cannot depend on frame requests"
+        );
+    }
+    assert!(
+        idle_requests < 48,
+        "healthy clients must not request frames on every service pass"
+    );
+    let owner = worlds[0].interner.get("Alpha").unwrap();
+    let record = worlds[0]
+        .encode_megamission_record(
+            owner,
+            &Command::Move {
+                entity_id: actor,
+                target_rx: 42,
+                target_ry: 42,
+            },
+        )
+        .unwrap();
+    let tick = worlds[0].session().tick();
+    assert!(worlds[0].issue_local_command(CommandEnvelope::synchronized(record, tick)));
+    let mut recovered = false;
+    let mut committed = [
+        std::collections::BTreeMap::new(),
+        std::collections::BTreeMap::new(),
+    ];
+    for step in 0..250 {
+        now_ms += 16;
+        relay.advance_clock(now_ms, 100 + (now_ms - 16_000) / 1000);
+        service(&mut worlds, now_ms);
+        // Lose a real range of pushed frames and replies, then allow the
+        // existing Pull/history owner to repair the contiguous stream.
+        pump(&mut relay, now_ms, true, step < 15);
+        for (side, (world, boundary)) in worlds.iter_mut().zip(&boundaries).enumerate() {
+            for _ in 0..4 {
+                if production_frame(world, &rules, boundary)
+                    .tick
+                    .frame_committed
+                {
+                    committed[side].insert(world.session().binary_frame(), world.state_hash());
+                } else {
+                    break;
+                }
+            }
+            assert!(world.pending_network_interruption().is_none());
+        }
+        let applied = |boundary: &Boundary| {
+            boundary
+                .applied
+                .borrow()
+                .iter()
+                .filter(|(_, record, ok)| {
+                    record.opcode() == MEGAMISSION_OPCODE && record.house_id() == 0 && *ok
+                })
+                .count()
+        };
+        if step >= 15
+            && applied(&boundaries[0]) == 1
+            && applied(&boundaries[1]) == 1
+            && worlds[0].session().binary_frame() == worlds[1].session().binary_frame()
+        {
+            let frame = worlds[0].session().binary_frame();
+            // Current state may already include the following frame's Logic
+            // while its network boundary waits. Compare only completed ticks.
+            assert_eq!(committed[0].get(&frame), committed[1].get(&frame));
+            assert!(committed[0].contains_key(&frame));
+            for (frame, hash) in &committed[0] {
+                if let Some(other) = committed[1].get(frame) {
+                    assert_eq!(hash, other, "replayed frame {frame}");
+                }
+            }
+            recovered = true;
+            break;
+        }
+    }
+    assert!(
+        recovered,
+        "the lost push range must replay exactly once to the same world"
+    );
+}
+
+#[test]
+fn sequenced_player_input_passes_an_unacknowledged_checksum_batch() {
+    use crate::net::udp::test_support::MAX_DATAGRAM;
+    use crate::sim::command::{Command, MEGAMISSION_OPCODE};
+    let (mut worlds, rules, actor, boundaries, socket, mut relay) = sequenced_pair();
+    let first_address = boundaries[0].live.borrow().primary_addr().unwrap();
+    let mut hold_receipts = false;
+    let mut issued = false;
+    let mut observed = false;
+    for step in 0..250 {
+        let now_ms = 16_000 + step * 16;
+        // Frame15 emits the normal checksum-only batch. Withhold every
+        // response to this sender, including its canonical acceptance entry.
+        let checksum_already_held = hold_receipts;
+        hold_receipts |= worlds[0].session().binary_frame() >= 15;
+        if checksum_already_held && !issued {
+            let owner = worlds[0].interner.get("Alpha").unwrap();
+            let record = worlds[0]
+                .encode_megamission_record(
+                    owner,
+                    &Command::Move {
+                        entity_id: actor,
+                        target_rx: 42,
+                        target_ry: 42,
+                    },
+                )
+                .unwrap();
+            let tick = worlds[0].session().tick();
+            assert!(worlds[0].issue_local_command(CommandEnvelope::synchronized(record, tick)));
+            issued = true;
+        }
+        relay.advance_clock(now_ms, 100 + (now_ms - 16_000) / 1000);
+        for forwarded in relay.drain_ordering_push(now_ms, 100 + (now_ms - 16_000) / 1000) {
+            if !hold_receipts || forwarded.endpoint != first_address {
+                socket
+                    .send_to(&forwarded.bytes, forwarded.endpoint)
+                    .unwrap();
+            }
+        }
+        for boundary in &boundaries {
+            boundary.now.set((now_ms >> 4) as u32);
+            boundary
+                .live
+                .borrow_mut()
+                .service_transport((now_ms >> 4) as u32);
+        }
+        loop {
+            let mut packet = [0; MAX_DATAGRAM + 1];
+            let (length, std::net::SocketAddr::V4(from)) = (match socket.recv_from(&mut packet) {
+                Ok(value) => value,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(error) => panic!("{error}"),
+            }) else {
+                unreachable!()
+            };
+            for forwarded in relay
+                .process_at(
+                    from,
+                    &packet[..length],
+                    100 + (now_ms - 16_000) / 1000,
+                    now_ms,
+                )
+                .unwrap_or_default()
+            {
+                if !hold_receipts || forwarded.endpoint != first_address {
+                    socket
+                        .send_to(&forwarded.bytes, forwarded.endpoint)
+                        .unwrap();
+                }
+            }
+        }
+        for side in 0..2 {
+            production_frame(&mut worlds[side], &rules, &boundaries[side]);
+        }
+        observed = boundaries[1]
+            .applied
+            .borrow()
+            .iter()
+            .any(|(_, record, applied)| {
+                record.opcode() == MEGAMISSION_OPCODE && record.house_id() == 0 && *applied
+            });
+        if observed {
+            break;
+        }
+    }
+    assert!(
+        hold_receipts && issued,
+        "setup did not reach the held checksum: frames={:?}",
+        worlds
+            .iter()
+            .map(|sim| sim.session().binary_frame())
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        observed,
+        "another client must execute the Move while its sender's checksum ACK is withheld"
+    );
+    assert_eq!(
+        boundaries[0].live.borrow().sent_commands(),
+        0,
+        "the sender received no acceptance receipt for either batch"
+    );
+    assert_eq!(
+        worlds[0].network_command_queues().local_len(),
+        1,
+        "unacknowledged input stays in the authoritative OutList"
+    );
+    assert_eq!(
+        boundaries[1]
+            .applied
+            .borrow()
+            .iter()
+            .filter(|(_, record, applied)| record.opcode() == MEGAMISSION_OPCODE
+                && record.house_id() == 0
+                && *applied)
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn sequenced_transport_sends_input_while_the_canonical_frontier_is_closed() {
+    use crate::net::udp::test_support::MAX_DATAGRAM;
+    use crate::sim::command::{Command, MEGAMISSION_OPCODE};
+
+    let (mut worlds, rules, actor, boundaries, socket, mut relay) = sequenced_pair();
+    let first_address = boundaries[0].live.borrow().primary_addr().unwrap();
+    let pump = |relay: &mut crate::net::udp::test_support::RelayServer,
+                now_ms: u64,
+                hold_sender: bool| {
+        loop {
+            let mut packet = [0; MAX_DATAGRAM + 1];
+            let (length, std::net::SocketAddr::V4(from)) = (match socket.recv_from(&mut packet) {
+                Ok(value) => value,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(error) => panic!("{error}"),
+            }) else {
+                unreachable!()
+            };
+            for forwarded in relay
+                .process_at(
+                    from,
+                    &packet[..length],
+                    100 + (now_ms - 16_000) / 1000,
+                    now_ms,
+                )
+                .unwrap_or_default()
+            {
+                if !hold_sender || forwarded.endpoint != first_address {
+                    socket
+                        .send_to(&forwarded.bytes, forwarded.endpoint)
+                        .unwrap();
+                }
+            }
+        }
+        for forwarded in relay.drain_ordering_push(now_ms, 100 + (now_ms - 16_000) / 1000) {
+            if !hold_sender || forwarded.endpoint != first_address {
+                socket
+                    .send_to(&forwarded.bytes, forwarded.endpoint)
+                    .unwrap();
+            }
+        }
+    };
+    let mut hold_sender = false;
+    let mut held_tick = None;
+    let mut observed = false;
+    for step in 0..250 {
+        let now_ms = 16_000 + step * 16;
+        // Let the real pair establish a checksum context, then withhold new
+        // canonical frames. Input arrives after the sender's frontier closes.
+        hold_sender |= worlds[0].session().binary_frame() >= 15;
+        if hold_sender
+            && held_tick.is_none()
+            && worlds[0].session().binary_frame() > boundaries[0].live.borrow().committed_frontier()
+        {
+            let owner = worlds[0].interner.get("Alpha").unwrap();
+            let record = worlds[0]
+                .encode_megamission_record(
+                    owner,
+                    &Command::Move {
+                        entity_id: actor,
+                        target_rx: 42,
+                        target_ry: 42,
+                    },
+                )
+                .unwrap();
+            let tick = worlds[0].session().tick();
+            assert!(worlds[0].issue_local_command(CommandEnvelope::synchronized(record, tick)));
+            held_tick = Some(tick);
+        }
+        relay.advance_clock(now_ms, 100 + (now_ms - 16_000) / 1000);
+        for (world, boundary) in worlds.iter_mut().zip(&boundaries) {
+            boundary.now.set((now_ms >> 4) as u32);
+            boundary.live.borrow_mut().service_pending_commands(
+                &mut world.network_command_queues(),
+                (now_ms >> 4) as u32,
+            );
+        }
+        pump(&mut relay, now_ms, hold_sender);
+        if held_tick.is_none() {
+            production_frame(&mut worlds[0], &rules, &boundaries[0]);
+        }
+        production_frame(&mut worlds[1], &rules, &boundaries[1]);
+        observed = boundaries[1]
+            .applied
+            .borrow()
+            .iter()
+            .any(|(_, record, applied)| {
+                record.opcode() == MEGAMISSION_OPCODE && record.house_id() == 0 && *applied
+            });
+        if observed {
+            break;
+        }
+    }
+    let held_tick = held_tick.expect("the sender reached a closed canonical frontier");
+    assert_eq!(worlds[0].session().tick(), held_tick);
+    assert!(
+        observed,
+        "transport service must send fresh input without another canonical frame"
+    );
+    assert_eq!(
+        boundaries[1]
+            .applied
+            .borrow()
+            .iter()
+            .filter(|(_, record, applied)| record.opcode() == MEGAMISSION_OPCODE
+                && record.house_id() == 0
+                && *applied)
+            .count(),
+        1
+    );
+    assert_eq!(worlds[0].network_command_queues().local_len(), 1);
+
+    // Release receipts but keep both simulations fixed. Once prior work has
+    // committed, each relay frame adds only its FrameEnd record. Repeated
+    // empty services must not manufacture checksum-only submissions.
+    let mut committed_batches = None;
+    let mut status_cursor = 1;
+    let quiescent_start = u64::from(boundaries[0].now.get()) * 16;
+    for step in 1..=32 {
+        let now_ms = quiescent_start + step * 16;
+        relay.advance_clock(now_ms, 100 + (now_ms - 16_000) / 1000);
+        for (world, boundary) in worlds.iter_mut().zip(&boundaries) {
+            boundary.live.borrow_mut().service_pending_commands(
+                &mut world.network_command_queues(),
+                (now_ms >> 4) as u32,
+            );
+        }
+        pump(&mut relay, now_ms, false);
+        let mut peer = boundaries[1].live.borrow_mut();
+        // An explicit diagnostic read is independent of normal pushed
+        // delivery. Idle clients no longer request a status every frame.
+        peer.transport.pull_ordering(status_cursor).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let mut saw_status = false;
+        while !saw_status && Instant::now() < deadline {
+            pump(&mut relay, now_ms, false);
+            peer.transport.service((now_ms >> 4) as u32);
+            while let Some(event) = peer.transport.pop_ordering_received() {
+                match event {
+                    vera20k_relay_protocol::OrderEvent::Status(status) => {
+                        saw_status = true;
+                        status_cursor = status.next_seq;
+                        if step >= 12 {
+                            let count = status.next_seq - u64::from(status.head_frame);
+                            assert_eq!(
+                                *committed_batches.get_or_insert(count),
+                                count,
+                                "empty transport services created extra canonical batches"
+                            );
+                        }
+                    }
+                    vera20k_relay_protocol::OrderEvent::Error { code, .. } => {
+                        panic!("relay rejected the retained stream: {code:?}");
+                    }
+                    _ => {}
+                }
+            }
+            std::thread::yield_now();
+        }
+        assert!(saw_status, "relay returned this service's status");
+    }
+    assert!(
+        committed_batches.is_some(),
+        "observed the quiescent relay timeline"
+    );
+    assert_eq!(worlds[0].session().tick(), held_tick);
+    assert_eq!(worlds[0].network_command_queues().local_len(), 0);
 }

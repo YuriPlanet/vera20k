@@ -241,6 +241,9 @@ pub(crate) fn post_selection_navigation_text(state: &mut AppState, text: &str) {
 pub(crate) enum HudMessage {
     LowPower,
     SuperWeapon(&'static str),
+    /// The configured label/style is resolved from its type at presentation.
+    #[cfg(feature = "ares")]
+    AresSuperWeaponRefused(crate::sim::intern::InternedId),
     /// MPlayer_Defeated's line for a non-observer House (`0x004FC271`,
     /// `0x004FC34F`).
     PlayerDefeated(crate::sim::intern::InternedId),
@@ -259,14 +262,16 @@ pub(crate) enum HudMessage {
 }
 
 impl HudMessage {
-    fn csf_key(self) -> &'static str {
-        match self {
+    fn csf_key(self) -> Option<&'static str> {
+        Some(match self {
+            #[cfg(feature = "ares")]
+            Self::AresSuperWeaponRefused(_) => return None,
             Self::LowPower => "TXT_LOW_POWER", // original House4F8D4A
             Self::SuperWeapon(key) | Self::BeaconHelp(key) => key,
             Self::PlayerDefeated(_) => "TXT_PLAYER_DEFEATED",
             Self::Alliance { formed: true, .. } => "TXT_HAS_ALLIED",
             Self::Alliance { formed: false, .. } => "TXT_AT_WAR",
-        }
+        })
     }
 
     fn timeout_ms(self, rules: &crate::rules::ruleset::RuleSet) -> Option<u64> {
@@ -277,6 +282,10 @@ impl HudMessage {
                 message_delay_timeout_ms(rules.general.message_delay_minutes)
             }
             Self::SuperWeapon(_) => Some(SUPER_WEAPON_MESSAGE_TIMEOUT_MS),
+            #[cfg(feature = "ares")]
+            Self::AresSuperWeaponRefused(_) => {
+                ares_message_delay_timeout_ms(rules.general.message_delay_minutes)
+            }
             Self::BeaconHelp(_) => Some(BEACON_HELP_TIMEOUT_MS),
         }
     }
@@ -285,20 +294,114 @@ impl HudMessage {
         self,
         rules: &crate::rules::ruleset::RuleSet,
         rgb: [f32; 3],
-    ) -> crate::ui::messages::MessagePost<'static> {
-        crate::ui::messages::MessagePost {
+    ) -> Option<crate::ui::messages::MessagePost<'static>> {
+        Some(crate::ui::messages::MessagePost {
             prefix: None,
-            text: self.csf_key(),
+            text: self.csf_key()?,
             rgb,
             timeout_ms: self.timeout_ms(rules),
             silent: false,
-        }
+        })
     }
 }
 
 fn message_delay_timeout_ms(delay: crate::util::native_x87::NativeF64Bits) -> Option<u64> {
     let buckets = message_delay_buckets(delay);
+    message_timeout_ms_from_buckets(buckets)
+}
+
+fn message_timeout_ms_from_buckets(buckets: i32) -> Option<u64> {
     (buckets != -1).then(|| u64::try_from(buckets).unwrap_or(0) * 16)
+}
+
+/// Ares PrintMessage10033BD0 uses CRT100772B0's signed32 conversion,
+/// unlike the stock callers' Math7C5F00 low dword. Reuse the numeric owner.
+#[cfg(feature = "ares")]
+fn ares_message_delay_timeout_ms(delay: crate::util::native_x87::NativeF64Bits) -> Option<u64> {
+    use crate::util::native_x87::{MaskedX87Chop53 as X, NativeF64Bits};
+    let scaled = X::mul(
+        X::load_f64(delay),
+        X::load_f64(NativeF64Bits::from_bits(0x408c_2000_0000_0000)),
+    );
+    message_timeout_ms_from_buckets(X::fistp_i32_masked(scaled))
+}
+
+/// Installed Ares PrintMessage10033BD0: retain the caller's label, choose
+/// firer/configured/player colour (Gold only for a null house), MessageDelay
+/// in900 wall-clock buckets, no prefix and silent0. The existing message list
+/// owns CSF lookup, empty-text admission, repeated rows, expiry and insert audio.
+#[cfg(feature = "ares")]
+fn ares_refusal_post<'a>(
+    settings: &'a crate::rules::superweapon_type::AresSuperWeaponMessages,
+    refusal: crate::sim::superweapon::AresCameoRefusal,
+    schemes: &[crate::rules::color_scheme::ColorSchemeEntry],
+    colors: &crate::map::houses::HouseColorMap,
+    firer: Option<&str>,
+    player: Option<&str>,
+    delay: crate::util::native_x87::NativeF64Bits,
+) -> Option<crate::ui::messages::MessagePost<'a>> {
+    use crate::sim::superweapon::AresCameoRefusal;
+    let text = match refusal {
+        AresCameoRefusal::CannotFire => settings.cannot_fire(),
+        AresCameoRefusal::InsufficientFunds => settings.insufficient_funds(),
+        AresCameoRefusal::ManualFireDisabled => return None,
+    };
+    if text.is_empty() {
+        return None;
+    }
+    let house = if settings.firer_color() {
+        firer
+    } else {
+        player
+    };
+    let rgb = if !settings.firer_color() && settings.color_scheme() >= 0 {
+        country_message_rgb(settings.color_scheme(), schemes)
+    } else if let Some(house) = house {
+        house_message_rgb(Some(house), colors, Some(schemes))
+    } else {
+        // PrintMessage10033BD0 calls ColorScheme::Find("Gold", 1): the even member.
+        let gold = crate::rules::color_scheme::scheme_entry_by_name(schemes, "Gold")
+            .map_or(-1, |entry| (entry as i32).wrapping_mul(2));
+        country_message_rgb(gold, schemes)
+    };
+    Some(crate::ui::messages::MessagePost {
+        prefix: None,
+        text,
+        rgb,
+        timeout_ms: ares_message_delay_timeout_ms(delay),
+        silent: false,
+    })
+}
+
+#[cfg(feature = "ares")]
+pub(crate) fn post_ares_superweapon_refusal(
+    state: &mut AppState,
+    section: &str,
+    refusal: crate::sim::superweapon::AresCameoRefusal,
+) {
+    let Some(settings) = state
+        .rules()
+        .and_then(|rules| rules.super_weapon(section))
+        .map(|sw| sw.ares_messages().clone())
+    else {
+        return;
+    };
+    let owner = crate::app::input::commands::preferred_local_owner_name(state);
+    let Some(rules) = state.rules() else {
+        return;
+    };
+    let Some(post) = ares_refusal_post(
+        &settings,
+        refusal,
+        &rules.color_schemes,
+        &state.match_state.match_presentation.house_color_map,
+        owner.as_deref(),
+        owner.as_deref(),
+        rules.general.message_delay_minutes,
+    ) else {
+        return;
+    };
+    post_localized_message(state, &post);
 }
 
 /// House4F8D5C and the Super print callers use MessageList5D3BA0 with
@@ -307,17 +410,33 @@ fn message_delay_timeout_ms(delay: crate::util::native_x87::NativeF64Bits) -> Op
 /// The callers' text flags still share the existing bitmap-text lane; this
 /// transport does not establish native glyph/style raster equivalence.
 pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
+    #[cfg(feature = "ares")]
+    if let HudMessage::AresSuperWeaponRefused(sw_type) = message {
+        let section = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+            runtime
+                .simulation
+                .interner()
+                .try_resolve(sw_type)
+                .map(str::to_owned)
+        });
+        if let Some(section) = section {
+            post_ares_superweapon_refusal(
+                state,
+                &section,
+                crate::sim::superweapon::AresCameoRefusal::CannotFire,
+            );
+        }
+        return;
+    }
+    let Some(key) = message.csf_key() else {
+        return;
+    };
     if let HudMessage::PlayerDefeated(house) = message {
-        post_house_line(state, message.csf_key(), house, HouseLineColor::Player);
+        post_house_line(state, key, house, HouseLineColor::Player);
         return;
     }
     if let HudMessage::Alliance { owner, other, .. } = message {
-        post_house_names_line(
-            state,
-            message.csf_key(),
-            &[owner, other],
-            HouseLineColor::Country,
-        );
+        post_house_names_line(state, key, &[owner, other], HouseLineColor::Country);
         return;
     }
     let Some(rules) = state.rules() else {
@@ -328,8 +447,9 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
         &state.match_state.match_presentation.house_color_map,
         Some(&rules.color_schemes),
     );
-    let post = message.post(rules, rgb);
-    post_localized_message(state, &post);
+    if let Some(post) = message.post(rules, rgb) {
+        post_localized_message(state, &post);
+    }
 }
 
 /// The colour of a House-named line.
@@ -788,6 +908,82 @@ fn message_instances(
 mod tests {
     use super::*;
 
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_refusal_post_uses_localized_message_owner_colour_and_expiry() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::native_processing::RulesLayerStack;
+        use crate::sim::superweapon::AresCameoRefusal;
+        let ini = IniFile::from_str(
+            "[AudioVisual]\nMessageDelay=1\n[Colors]\nGold=85,255,255\nOwner=0,255,255\nPlayer=170,255,255\n\
+             [SuperWeaponTypes]\n0=Strike\n1=Configured\n2=Firer\n\
+             [Strike]\nType=GenericWarhead\nMessage.CannotFire=MSG:Denied\nMessage.InsufficientFunds=MSG:Funds\n\
+             [Configured]\nType=GenericWarhead\nMessage.CannotFire=MSG:Denied\nMessage.Color=Owner\n\
+             [Firer]\nType=GenericWarhead\nMessage.CannotFire=MSG:Denied\nMessage.FirerColor=yes\nMessage.Color=Player\n",
+        );
+        let processed = RulesLayerStack::new(ini)
+            .process_with_fixed_art(&IniFile::empty())
+            .unwrap();
+        let rules = crate::rules::ruleset::RuleSet::from_processed_rules(&processed).unwrap();
+        let mut colors = crate::map::houses::HouseColorMap::new();
+        colors.insert(
+            "FirerHouse".into(),
+            crate::rules::house_colors::HouseColorIndex(1),
+        );
+        colors.insert(
+            "PlayerHouse".into(),
+            crate::rules::house_colors::HouseColorIndex(2),
+        );
+        let build = |id: &str, firer| {
+            ares_refusal_post(
+                rules.super_weapon(id).unwrap().ares_messages(),
+                AresCameoRefusal::CannotFire,
+                &rules.color_schemes,
+                &colors,
+                firer,
+                Some("PlayerHouse"),
+                rules.general.message_delay_minutes,
+            )
+            .unwrap()
+        };
+        let post = build("Strike", Some("FirerHouse"));
+        assert_eq!(post.rgb, [0.0, 0.0, 1.0]);
+        assert_eq!(post.timeout_ms, Some(14_400));
+        assert!(post.prefix.is_none() && !post.silent);
+        assert_eq!(build("Configured", Some("FirerHouse")).rgb, [1.0, 0.0, 0.0]);
+        assert_eq!(build("Firer", Some("FirerHouse")).rgb, [1.0, 0.0, 0.0]);
+        assert_eq!(
+            build("Firer", None).rgb,
+            [0.0, 1.0, 0.0],
+            "null firer uses Gold"
+        );
+        let csf = test_csf("MSG:Denied", "No eligible target");
+        let mut list = crate::ui::messages::MessageList::new(3, 0, 6, 600);
+        assert!(
+            add_localized_message(&mut list, Some(&csf), &post, 100, &|s| s.len() as i32)
+                .play_sound
+        );
+        assert_eq!(list.messages()[0].text, "No eligible target");
+        assert_eq!(list.messages()[0].deadline_ms, Some(14_500));
+        assert!(
+            add_localized_message(&mut list, Some(&csf), &post, 101, &|s| s.len() as i32)
+                .play_sound
+        );
+        assert_eq!(
+            list.messages().len(),
+            2,
+            "retain native repeated rows; no new debounce"
+        );
+        let empty = test_csf("MSG:Denied", "");
+        assert!(
+            !add_localized_message(&mut list, Some(&empty), &post, 102, &|s| s.len() as i32)
+                .play_sound
+        );
+        assert_eq!(list.messages().len(), 2);
+        list.manage(14_502);
+        assert!(list.messages().is_empty());
+    }
+
     #[test]
     fn timed_release_admission_survives_a_new_pause_in_the_same_logic_pass() {
         use crate::app::match_runtime::session::SessionMode;
@@ -1079,7 +1275,7 @@ mod tests {
             &colors,
             Some(&retail.rules.color_schemes),
         );
-        let post = HudMessage::LowPower.post(&retail.rules, rgb);
+        let post = HudMessage::LowPower.post(&retail.rules, rgb).unwrap();
         assert!(post.prefix.is_none());
         assert_eq!(post.text, "TXT_LOW_POWER");
         assert_eq!(post.silent, args[6] != 0);

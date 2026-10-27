@@ -177,8 +177,9 @@ impl InfantryPips {
     }
 }
 
-/// InfantryType constructor clears EBE/EC2/EC3/EC4. ReadINI reads these
-/// current-default flags, then 52466E..52469A forces Infiltrate for any role.
+/// InfantryType constructor clears EBE/EC2..EC6. ReadINI reads these
+/// current-default flags, then 52466E..52469A forces Infiltrate for C4,
+/// Engineer or Agent, independently of either theft byte.
 /// Retain the postprocessed byte across reached rules passes.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct InfantryInfiltration {
@@ -186,6 +187,10 @@ pub(crate) struct InfantryInfiltration {
     c4: bool,
     engineer: bool,
     agent: bool,
+    #[serde(default)]
+    thief: Option<bool>,
+    #[serde(default)]
+    vehicle_thief: Option<bool>,
 }
 
 impl InfantryInfiltration {
@@ -196,6 +201,11 @@ impl InfantryInfiltration {
         self.c4 = section.read_bool("C4", self.c4);
         self.engineer = section.read_bool("Engineer", self.engineer);
         self.agent = section.read_bool("Agent", self.agent);
+        // InfantryType ReadINI5245B8..5245F5, current defaults; constructor
+        // 5237BC/5237C3 clears both bytes (retail gamemd.exe).
+        self.thief = Some(section.read_bool("Thief", self.thief.unwrap_or(false)));
+        self.vehicle_thief =
+            Some(section.read_bool("VehicleThief", self.vehicle_thief.unwrap_or(false)));
         self.infiltrate |= self.c4 || self.engineer || self.agent;
     }
 }
@@ -585,6 +595,12 @@ pub struct ObjectType {
     /// TechnoType+C95: ctor7113B9=false, ReadINI712350..712373 reads
     /// IsDropship; Fly4CDA28 selects its distinct vertical motion.
     pub(crate) is_dropship: bool,
+    /// Phobos `AircraftTypeExt::FlyNoWobbles`: overrides whether the Fly
+    /// `Draw_Point` wobble runs, which retail gates on `IsDropship` alone at
+    /// `0x4CF8B1`. Unset defers to `[AudioVisual] FlyNoWobbles`, then to that
+    /// retail rule; `rules::phobos_fly_wobble` owns the resolution.
+    #[cfg(feature = "phobos")]
+    pub(crate) fly_no_wobbles: Option<bool>,
     /// TechnoType+7FC, read from the current Image section of fixed ARTMD.
     /// The ordered processor owns its retained default (constructor0).
     voxel_shadow_index: i32,
@@ -1286,6 +1302,10 @@ pub struct ObjectType {
     pub fraidycat: bool,
     /// `Crawls=yes` from art.ini. Controls the prone movement speed branch.
     pub crawls: bool,
+    /// Phobos `InfantryTypeExt::ProneSpeed`: the prone movement multiplier for
+    /// this type. Unset defers to the `[General]` value `Crawls=` selects.
+    #[cfg(feature = "phobos")]
+    pub(crate) prone_speed: Option<f64>,
     /// InfantryType+E40 signed primary standing frame, art.ini `FireUp=`.
     /// ART ReadInt5246D6 retains this field independently; constructor0.
     pub fire_up_frame: i32,
@@ -1583,6 +1603,11 @@ pub struct ObjectType {
     /// `BuildingClass::Infiltrate` (`0x00519FF8`).
     pub agent: bool,
 
+    /// InfantryType+EC5, constructor5237BC=false; ReadINI5245B8..5245D2
+    /// reads exact-case Thief with the current byte as default. The native
+    /// vehicle capture receiver5202F0 checks this, separately from EC6.
+    pub thief: bool,
+
     /// Whether this unit can self-deploy/undeploy via the Deploy command.
     /// Parsed from `Deployer=yes` in rules.ini. Triggers `Deploy`/`NoDeploy`
     /// cursor when the player hovers over this unit itself.
@@ -1747,6 +1772,12 @@ pub struct ObjectType {
     /// weapon slot a deployed unit fires. Constructor default slot 1
     /// (`0x0071113A`).
     pub deploy_fire_weapon: i32,
+
+    /// Phobos `InfantryTypeExt::InfantryAutoDeploy`: re-enables the undeployed
+    /// `Approach_Target` arm at `0x00522434` for this type. Unset defers to
+    /// `[General] InfantryAutoDeploy`.
+    #[cfg(feature = "phobos")]
+    pub(crate) infantry_auto_deploy: Option<bool>,
 
     /// Maximum number of garrison occupants for CanBeOccupied buildings.
     /// Parsed from `MaxNumberOccupants=N` in rules.ini. Default 0.
@@ -1915,6 +1946,15 @@ pub struct ObjectType {
     pub berserk_friendly: bool,
     pub mobile_fire: bool,
     pub hunter_seeker: bool,
+    /// Ares TechnoTypeExt+3E0/+3E8 Nullable<int>, read1003EE23/1003EE39.
+    /// An unset value uses native Sight; zero/negative overrides remain set.
+    #[cfg(feature = "ares")]
+    designator_range: Option<i32>,
+    #[cfg(feature = "ares")]
+    inhibitor_range: Option<i32>,
+    /// Ares TechnoTypeExt+3DC; AcquireHunterSeekerTarget10042E40 checks1004306C.
+    #[cfg(feature = "ares")]
+    hunter_seeker_ignore: bool,
     pub non_vehicle: bool,
     pub jumpjet_turn: bool,
     pub emp_pulse_cannon: bool,
@@ -2474,6 +2514,33 @@ impl ObjectType {
     }
 
     #[cfg(feature = "ares")]
+    pub(crate) fn bind_super_weapon_techno_rules(
+        &mut self,
+        designator: Option<i32>,
+        inhibitor: Option<i32>,
+        hunter_seeker_ignore: bool,
+    ) {
+        self.designator_range = designator;
+        self.inhibitor_range = inhibitor;
+        self.hunter_seeker_ignore = hunter_seeker_ignore;
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn hunter_seeker_ignored(&self) -> bool {
+        self.hunter_seeker_ignore
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn designator_range(&self) -> Option<i32> {
+        self.designator_range
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn inhibitor_range(&self) -> Option<i32> {
+        self.inhibitor_range
+    }
+
+    #[cfg(feature = "ares")]
     pub(crate) fn surface_conversion(
         &self,
         water: bool,
@@ -2721,6 +2788,25 @@ impl ObjectType {
         self.is_dropship
     }
 
+    /// Phobos `InfantryTypeExt::InfantryAutoDeploy`, unset when the key is
+    /// absent.
+    #[cfg(feature = "phobos")]
+    pub(crate) const fn infantry_auto_deploy(&self) -> Option<bool> {
+        self.infantry_auto_deploy
+    }
+
+    /// Phobos `InfantryTypeExt::ProneSpeed`, unset when the key is absent.
+    #[cfg(feature = "phobos")]
+    pub(crate) const fn prone_speed(&self) -> Option<f64> {
+        self.prone_speed
+    }
+
+    /// Phobos `AircraftTypeExt::FlyNoWobbles`, unset when the key is absent.
+    #[cfg(feature = "phobos")]
+    pub(crate) const fn fly_no_wobbles(&self) -> Option<bool> {
+        self.fly_no_wobbles
+    }
+
     pub const fn building_light(&self) -> crate::rules::building_light::BuildingLightRules {
         self.building_light
     }
@@ -2839,6 +2925,10 @@ impl ObjectType {
         self.c4 = flags.c4;
         self.engineer = flags.engineer;
         self.agent = flags.agent;
+        // Older serialized processing states lack these two members. Keep
+        // their merged-INI projection until a reached read supplies a byte.
+        self.thief = flags.thief.unwrap_or(self.thief);
+        self.vehicle_thief = flags.vehicle_thief.unwrap_or(self.vehicle_thief);
     }
 
     /// TechnoType GetPipMax716290, virtual+74. Signed configuration capacity;
@@ -3458,6 +3548,22 @@ impl ObjectType {
             slowdown_distance: section.read_int("SlowdownDistance", 500),
             flight_level: section.read_int("FlightLevel", -1),
             is_dropship: section.read_bool("IsDropship", false),
+            // Phobos holds this in InfantryTypeExt, so only an
+            // `[InfantryTypes]` section carries it.
+            #[cfg(feature = "phobos")]
+            prone_speed: if category == ObjectCategory::Infantry {
+                section.read_phobos_nullable_double("ProneSpeed", None)
+            } else {
+                None
+            },
+            // Phobos keeps this in AircraftTypeExt, so a non-aircraft section
+            // carries no value even when it repeats the key.
+            #[cfg(feature = "phobos")]
+            fly_no_wobbles: if category == ObjectCategory::Aircraft {
+                section.read_phobos_nullable_bool("FlyNoWobbles", None)
+            } else {
+                None
+            },
             voxel_shadow_index: 0,
             pitch_speed: section.read_double_bits(
                 "PitchSpeed",
@@ -4000,10 +4106,20 @@ impl ObjectType {
             undeploy_delay: section.read_int("UndeployDelay", -1),
             fire_angle: section.read_int("FireAngle", 8),
             deploy_fire_weapon: section.read_int("DeployFireWeapon", 1),
+            // Phobos holds this in InfantryTypeExt, so only an
+            // `[InfantryTypes]` section carries it.
+            #[cfg(feature = "phobos")]
+            infantry_auto_deploy: if category == ObjectCategory::Infantry {
+                section.read_phobos_nullable_bool("InfantryAutoDeploy", None)
+            } else {
+                None
+            },
             max_number_occupants: section.read_int("MaxNumberOccupants", 0).max(0) as u32,
             occupier: section.read_bool("Occupier", false),
             assaulter: section.read_bool("Assaulter", false),
-            vehicle_thief: section.read_bool("VehicleThief", false),
+            thief: category == ObjectCategory::Infantry && section.read_bool("Thief", false),
+            vehicle_thief: category == ObjectCategory::Infantry
+                && section.read_bool("VehicleThief", false),
             // Constructor nulls; only the ordered Process owner reads them.
             occupy_weapon: None,
             elite_occupy_weapon: None,
@@ -4047,6 +4163,12 @@ impl ObjectType {
             berserk_friendly: section.read_bool("BerserkFriendly", false),
             mobile_fire: section.read_bool("MobileFire", true),
             hunter_seeker: section.read_bool("HunterSeeker", false),
+            #[cfg(feature = "ares")]
+            designator_range: None,
+            #[cfg(feature = "ares")]
+            inhibitor_range: None,
+            #[cfg(feature = "ares")]
+            hunter_seeker_ignore: false,
             non_vehicle: category == ObjectCategory::Vehicle
                 && section.read_bool("NonVehicle", false),
             jumpjet_turn: category == ObjectCategory::Infantry

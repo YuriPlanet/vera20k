@@ -53,9 +53,19 @@ late commands are assigned a future frame. The sender also waits for that commit
 Frames use the existing Event codec and simulation queues, with a fresh compression
 cache per self-contained encrypted batch. The relay never receives payload keys.
 
-Each client reads retained history independently. A paused or slow client catches
-up through at most eight ordinary simulation transactions or eight milliseconds
-per service wake, then yields to input/rendering. It never skips simulation ticks.
+Clients negotiate server-pushed updates from that same retained history. Healthy
+clients send cumulative receive watermarks instead of continually requesting new
+frames; gaps use the existing replay reader. Older relays fall back to polling,
+and older clients can still pull from an upgraded relay.
+
+Pushed clients use a local adaptive playout schedule based on socket receipt
+timestamps. It starts with no added buffer and can reserve at most20ms or one
+frame, whichever is smaller, to absorb jitter. Stable delivery gradually reduces
+the reserve. The relay still owns the fixed clock; local pacing never changes
+commands, simulation order or another player's progress. A paused or slow client
+catches up through at most eight ordinary simulation transactions or eight
+milliseconds per service wake, then yields to input/rendering. It never skips
+simulation ticks, and pacing never interrupts an already-started frame transaction.
 Peer lag, acknowledgements and CPU reports cannot slow the shared clock. The
 initial speed stays fixed for the match. The relay keeps a bounded RAM cache and the full encrypted match journal on
 disk. Temporary connection loss keeps the player's identity, units, input cursor
@@ -82,6 +92,8 @@ restored mid-match segments currently lack standalone replay startup.
 | Global application message admission, acknowledgements and retirement | `net::global` |
 | UDP sockets, datagram checksum and retained raw send attempts | `net::udp` |
 | Startup agreement, native send cadence and command wait | `net::live_commands` |
+| Certified online clock, immutable command history and bounded push/replay delivery | `vera20k-relay-protocol` |
+| Local adaptive playout and bounded catch-up presentation | `app::match_runtime::frame_pacer` |
 | LAN packet layouts and options parsing | `net::lan_messages` |
 | Participant membership, admitted endpoints, launch state and checksum history | `app::match_runtime::session::MatchSession` |
 | Discovery projection and physical LAN lobby/setup service | `app::lan_service` |

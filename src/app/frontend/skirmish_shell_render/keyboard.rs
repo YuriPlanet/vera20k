@@ -18,7 +18,7 @@ use crate::render::{
     shell_paint,
     shell_text::{self, ShellAlign, ShellTextDraw},
 };
-use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::keyboard::{KEYBOARD_PAGE, KeyboardButton, KeyboardParent};
 use crate::ui::shell::list::ListMetrics;
 use crate::ui::shell::list::ShellListGeometry;
@@ -230,22 +230,20 @@ pub(crate) fn render_keyboard_shell(
         )
     };
     let group_caption = localized_label(state, "GUI:Description", "Description");
-    let (group_frame, group_caption_rect) = group_box_geometry(
-        layout.group,
-        (font.cell_height() * glyph_scale).round() as i32,
-        font.cell_height() as i32,
-    );
+    let cell = font.cell_height() as i32;
+    let (group_frame, group_caption_rect) = group_box_geometry(layout.group, cell, layout.scale);
     push_group_or_plain_frame(
         &mut controls,
-        atlas,
+        atlas.white_pixel,
         group_frame,
         Some(font.text_width(&group_caption) as i32),
         false,
+        layout.scale,
     );
     //61ED86..88 adds one to the window extents before6208F0 expands border2.
     push_group_or_plain_frame(
         &mut controls,
-        atlas,
+        atlas.white_pixel,
         RectPx::new(
             layout.capture.x - 2,
             layout.capture.y - 2,
@@ -254,6 +252,7 @@ pub(crate) fn render_keyboard_shell(
         ),
         None,
         true,
+        ShellScale::RETAIL,
     );
     let buttons =
         [KeyboardButton::Assign, KeyboardButton::ResetAll].map(|id| shell_paint::ModalButton {
@@ -522,6 +521,31 @@ mod tests {
             (RectPx::new(96, 168, 8, 1), [0xc5, 0xbe, 0xa7])
         );
         assert!(segments.contains(&(RectPx::new(301, 167, 1, 1), [0xa2, 0x9c, 0x87])));
+    }
+
+    #[test]
+    fn stretched_group_caption_and_frame_keep_native_geometry() {
+        use crate::render::skirmish_shell_chrome::SkirmishShellChromeEntry;
+
+        let scale = ShellScale::from_screen(1600, 1200);
+        let group = scale.scale_rect(RectPx::new(95, 159, 207, 154));
+        let (frame, caption) = group_box_geometry(group, 17, scale);
+        assert_eq!(caption, RectPx::new(210, 318, 394, 34));
+        assert_eq!(frame, RectPx::new(190, 334, 414, 292));
+        let white = SkirmishShellChromeEntry {
+            uv_origin: [0.0; 2],
+            uv_size: [1.0; 2],
+            pixel_size: [1.0; 2],
+        };
+        let mut sprites = Vec::new();
+        push_group_or_plain_frame(&mut sprites, Some(white), frame, Some(66), false, scale);
+        assert_eq!(sprites.len(), 14);
+        assert_eq!(sprites[0].position, [190.0, 334.0]);
+        assert_eq!(sprites[0].size, [18.0, 2.0]);
+        assert_eq!(sprites[1].position, [346.0, 334.0]);
+        assert_eq!(sprites[1].size, [258.0, 2.0]);
+        assert_eq!(sprites[7].position, [192.0, 336.0]);
+        assert_eq!(sprites[7].size, [16.0, 2.0]);
     }
 
     #[test]

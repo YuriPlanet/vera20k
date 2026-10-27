@@ -396,6 +396,13 @@ impl TeleportRuntime {
         self.resolved
     }
 
+    /// Teleport::Destination7180A0 copies complete-object+1C while moving.
+    /// The armed request belongs to the ordinary warp adapter, independently
+    /// of the resolver's +28 reservation and ChronoWarp's Techno+288 target.
+    pub(crate) fn armed_destination(&self) -> Option<DriveCoord> {
+        self.warp.as_ref().and_then(|warp| warp.destination)
+    }
+
     pub(crate) fn chrono(&self) -> Option<&ChronoWarp> {
         self.chrono.as_ref()
     }

@@ -7,6 +7,16 @@ use crate::skirmish_launch::{
     SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLocalSlot,
 };
 
+#[test]
+fn browser_peer_wait_starts_after_the_terminal_ack_drain() {
+    let mut wait = NetworkLoadWait::new(100, 0.5);
+    wait.start_pending = true;
+    assert_eq!(wait.poll(340, 0.75), NetworkLoadPoll::Pending);
+    assert_eq!(wait.poll(639, 0.75), NetworkLoadPoll::Pending);
+    assert_eq!(wait.poll(640, 0.75), NetworkLoadPoll::ReportProgress);
+    assert_eq!(wait.poll(3940, 0.75), NetworkLoadPoll::TimedOut);
+}
+
 pub(super) fn test_launch_session(country: LaunchCountry) -> SkirmishLaunchSession {
     SkirmishLaunchSession {
         mode: SkirmishLaunchMode {

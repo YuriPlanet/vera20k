@@ -131,10 +131,11 @@ pub(crate) fn render_network_options(
             let top = (font.cell_height() * scale.factor()).round() as i32 / 2;
             push_group_or_plain_frame(
                 &mut controls,
-                atlas,
+                atlas.white_pixel,
                 RectPx::new(rect.x, rect.y + top, rect.w, rect.h - top),
                 Some((font.text_width(&caption) as f32 * scale.factor()).round() as i32),
                 false,
+                ShellScale::RETAIL,
             );
             texts.push(text(
                 &caption,

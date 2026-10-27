@@ -1,0 +1,40 @@
+name: Publish website downloads
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Published stable release tag (vMAJOR.MINOR.PATCH)'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  attestations: read
+
+concurrency:
+  group: website-download-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'YuriPlanet/vera20k' && (github.event_name == 'workflow_dispatch' || (!github.event.release.draft && !github.event.release.prerelease))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      # Read the publisher from maintained main, while the script resolves and
+      # verifies the selected release tag independently. No source build occurs.
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Mirror verified release installers to R2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: bash .github/release/publish-r2.sh "$RELEASE_TAG"

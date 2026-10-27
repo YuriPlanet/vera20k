@@ -635,6 +635,8 @@ struct Peer {
     received: ReplayWindow,
     sent: u64,
     last_seen: u64,
+    push: Option<sequenced::PushSubscription>,
+    push_control_sequence: u64,
 }
 
 #[derive(Default)]
@@ -678,6 +680,7 @@ pub struct RelayServer {
     outgoing: RateBudget,
     order_packets: RateBudget,
     last_pruned: u64,
+    push_after: Option<([u8; 16], u8)>,
     journal_directory: Option<journal::JournalDirectory>,
 }
 
@@ -694,6 +697,7 @@ impl RelayServer {
             outgoing: RateBudget::default(),
             order_packets: RateBudget::default(),
             last_pruned: 0,
+            push_after: None,
             journal_directory: None,
         }
     }
@@ -965,6 +969,11 @@ impl RelayServer {
                 return Err(RelayError::Replay);
             }
             peer.received.accept(message.sequence)?;
+            if peer.endpoint != source {
+                // A confirmed new path must opt in before receiving history.
+                peer.push = None;
+                peer.push_control_sequence = 0;
+            }
             peer.endpoint = source;
             peer.last_seen = now;
             server_packet(peer, READY, message.ticket.source, &[])?
@@ -1066,6 +1075,8 @@ fn new_peer(message: &Incoming<'_>, endpoint: SocketAddrV4, now: u64) -> Peer {
         received: ReplayWindow::default(),
         sent: 0,
         last_seen: now,
+        push: None,
+        push_control_sequence: 0,
     }
 }
 

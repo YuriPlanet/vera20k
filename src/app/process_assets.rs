@@ -425,6 +425,16 @@ impl ProcessAssets {
             .unwrap_or_default()
     }
 
+    /// The side's `DialogBackground.Image/.Palette` pair for the shell dialog
+    /// chrome, or `None` to keep the stock per-side backgrounds.
+    #[cfg(feature = "ares")]
+    pub(crate) fn side_dialog_background(&self, side: i32) -> Option<(String, String)> {
+        self.native_rules
+            .as_ref()
+            .and_then(|rules| rules.side_dialog_background(side))
+            .map(|(image, palette)| (image.to_owned(), palette.to_owned()))
+    }
+
     /// The score dialog's theme name for a side, or `None` for gamemd's
     /// literal `SCORE`.
     pub(crate) fn side_score_theme(

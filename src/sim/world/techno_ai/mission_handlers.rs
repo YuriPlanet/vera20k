@@ -1517,10 +1517,10 @@ fn hunt_scans(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
 /// `0x004D54C6`) and approaches the target (`0x004D54D2`), so he picks his
 /// approach cell afresh on every dispatch.
 ///
-/// RESIDUAL: the theft a `VehicleThief=` man commits on reaching a vehicle
-/// (`InfantryClass::PerCellProcess`, `0x0051A0DA`, `0x0051A1C3`) is not
-/// ported: he arrives and idles on Capture. Frequency: zero on stock data, as
-/// no retail section sets the key.
+/// VehicleThief controls this approach; original vehicle capture separately
+/// requires Thief (InfantryAI51BEC0 ->5202F0). PerCell51A0DA/51A1C3 only
+/// changes candidate lookup order. Ares replaces that capture admission;
+/// this original Hunt arm does not imply the extension is implemented.
 ///
 /// Neither call runs for a man out of a deploy action whom the Foot body does
 /// not represent ([`Simulation::owns_foot_approach`]): his Target has left

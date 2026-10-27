@@ -164,8 +164,8 @@ impl RocketRuntime {
         self.mission_state
     }
 
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn destination_for_test(&self) -> DriveCoord {
+    /// ILocomotion::Destination661FB0 copies the retained +14 coordinate.
+    pub(crate) fn destination(&self) -> DriveCoord {
         self.destination
     }
 

@@ -22,6 +22,13 @@ pub(crate) struct CameoFactoryStatus {
     pub(crate) is_ready: bool,
     pub(crate) is_building: bool,
     pub(crate) is_on_hold: bool,
+    /// The linked Factory's held product type (`Factory+0x58`), finished or
+    /// not. `StripClass::Draw` compares it with the entry's own type at
+    /// `0x006A9CBF..0x006A9CC3` before drawing a count of one.
+    /// RESIDUAL: native reads the house's primary Factory (`0x00500510`, called
+    /// at `0x006A9C67`), not this link; they differ only after a rearm leaves
+    /// the link on a Factory holding another type.
+    pub(crate) held_type: Option<InternedId>,
 }
 
 /// One retained object cameo's live inputs to `StripClass::Draw @ 0x006A9540`,
@@ -68,6 +75,7 @@ pub(crate) fn draw_object_cameo(item: &mut SidebarItem, inputs: &ObjectCameoDraw
         .clamp(0.0, 1.0);
     item.is_ready = status.is_some_and(|status| status.is_ready);
     item.is_building_this_type = status.is_some_and(|status| status.is_building);
+    item.is_held_this_type = status.is_some_and(|status| status.held_type == Some(status.type_id));
     item.is_on_hold = status.is_some_and(|status| status.is_on_hold);
     item.is_armed = item.is_ready && inputs.armed;
 }
@@ -356,6 +364,8 @@ pub(crate) fn build_sidebar_view_with_spec(
                 progress: entry.progress,
                 queued_count: entry.queued_count,
                 is_building_this_type: entry.is_building_this_type,
+                // `draw_object_cameo` owns this one for every object entry.
+                is_held_this_type: false,
                 is_ready: entry.is_ready,
                 is_on_hold: entry.is_on_hold,
                 is_armed: entry.is_armed,
@@ -656,6 +666,7 @@ mod tests {
         for (online, affordable) in [(true, true), (true, false), (false, true), (false, false)] {
             let views = [crate::sim::superweapon::SuperWeaponView {
                 type_id: id,
+                use_ai_targeting: false,
                 display_name: "Paid".to_owned(),
                 progress: 1.0,
                 is_ready: true,
@@ -665,6 +676,8 @@ mod tests {
                 can_fire: online,
                 can_afford: affordable,
                 constraints_blocked: false,
+                #[cfg(feature = "ares")]
+                ares_refusal: None,
             }];
             let entries = super::collect_build_entries(
                 ProductionCategory::Defense,
@@ -816,6 +829,9 @@ mod tests {
                             is_ready: complete,
                             is_building: running,
                             is_on_hold: !complete && !running,
+                            held_type: Some(
+                                interner.intern(factory["held_type"].as_str().unwrap()),
+                            ),
                         }),
                         armed: false,
                     },
@@ -834,6 +850,14 @@ mod tests {
                 assert_eq!(!item.enabled, drew("unavailable_darken"));
                 assert_eq!(item.is_ready, drew("ready_text"));
                 assert_eq!(item.is_building_this_type, drew("clock"));
+                // `StripClass::Draw` reads `Factory+0x58`'s own type for the
+                // count-of-one badge arm; the sidecar names that product.
+                assert_eq!(
+                    item.is_held_this_type,
+                    linked && factory["held_type"].as_str().unwrap() == name,
+                    "{}",
+                    control["name"]
+                );
                 assert_eq!(
                     (item.progress * f32::from(PRODUCTION_STEPS)).round() as u16,
                     decision["stage"].as_u64().unwrap() as u16,

@@ -5,11 +5,11 @@
 //! shell in a second renderer. It waits for the production main-menu dispatcher
 //! to reach one ordinary steady frame, then records the final swapchain bytes.
 
+use crate::util::time::{Duration, Instant};
 use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use crate::util::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
@@ -1175,6 +1175,7 @@ pub(crate) struct LiveOnlineConfig {
     pub start: Option<u8>,
     pub frames: u32,
     pub simple_input: bool,
+    pub latency: bool,
     pub mass_input: bool,
     /// Public coordinator nonce; only diagnostic Observe input waits for ACK.
     pub network_checkpoint: Option<String>,
@@ -1383,6 +1384,7 @@ where
     let mut online_start = None;
     let mut online_frames = None;
     let mut online_simple = false;
+    let mut online_latency = false;
     let mut online_mass = false;
     let mut online_network_checkpoint = None;
     let mut online_exit_checkpoint = None;
@@ -1584,6 +1586,10 @@ where
                 next_utf8(&mut args, "value after --online-exit-checkpoint")?,
                 "--online-exit-checkpoint",
             )?,
+            "--online-latency" => {
+                ensure!(!online_latency, "duplicate --online-latency");
+                online_latency = true;
+            }
             "--online-simple-input" => {
                 ensure!(!online_simple, "duplicate --online-simple-input");
                 online_simple = true;
@@ -1599,8 +1605,9 @@ where
     let output_dir = output_dir.context("missing required --output")?;
 
     ensure!(
-        width == EXPECTED_WIDTH && height == EXPECTED_HEIGHT,
-        "checkpoint {} requires exactly {EXPECTED_WIDTH}x{EXPECTED_HEIGHT}, got {width}x{height}",
+        (width == EXPECTED_WIDTH && height == EXPECTED_HEIGHT)
+            || (online_latency && width == 640 && height == 480),
+        "checkpoint {} requires exactly {EXPECTED_WIDTH}x{EXPECTED_HEIGHT} (640x480 also allowed for --online-latency), got {width}x{height}",
         checkpoint.as_str()
     );
     ensure!(
@@ -1691,7 +1698,23 @@ where
                     && online_frames.is_none_or(|frames| frames == 300)),
             "online failure capture requires two players, simple input and exactly300 prefix frames"
         );
-        let frames = online_frames.unwrap_or(if online_failure {
+        ensure!(
+            !online_latency
+                || (players == 2
+                    && !online_failure
+                    && !online_mass
+                    && online_ai.is_none()
+                    && !profile_check
+                    && online_network_checkpoint.is_none()
+                    && online_exit_checkpoint.is_none()
+                    && online_loading_host_loss.is_none()
+                    && online_startup_host_loss.is_none()
+                    && online_loading_cancel.is_none()),
+            "--online-latency requires a normal online pair without another diagnostic mode"
+        );
+        let frames = online_frames.unwrap_or(if online_latency {
+            6000
+        } else if online_failure {
             300
         } else if online_ai.is_some() {
             600
@@ -1842,7 +1865,12 @@ where
             mode_id: online_mode_id,
             start: online_start.map(|start| start as u8),
             frames,
-            simple_input: online_simple || online_mass || online_failure || online_ai.is_some(),
+            simple_input: online_simple
+                || online_latency
+                || online_mass
+                || online_failure
+                || online_ai.is_some(),
+            latency: online_latency,
             mass_input: online_mass,
             failure_prefix_output: if online_failure || online_network_checkpoint.is_some() {
                 let mut path = output_dir.as_os_str().to_owned();
@@ -1890,6 +1918,7 @@ where
                 && online_start.is_none()
                 && online_frames.is_none()
                 && !online_simple
+                && !online_latency
                 && !online_mass
                 && online_network_checkpoint.is_none()
                 && online_exit_checkpoint.is_none()
@@ -2074,6 +2103,7 @@ struct MainMenuCaptureSnapshot {
     movie_loaded: bool,
     movie_owner_is_main_menu: bool,
     movie_base_is_large: bool,
+    movie_base_matches_layout: bool,
     chrome_loaded: bool,
     software_cursor_active: bool,
     cursor_x: f32,
@@ -2108,6 +2138,10 @@ impl MainMenuCaptureSnapshot {
                 .is_some_and(|identity| identity.owner() == Ra2tsDialogOwner::MainMenu0xE2),
             movie_base_is_large: movie_identity
                 .is_some_and(|identity| identity.base() == MainMenuMovieBase::Ra2tsL),
+            movie_base_matches_layout: movie_identity.is_some_and(|identity| {
+                identity.base()
+                    == crate::app::frontend::shell_layout::main_menu_layout(state).movie_base
+            }),
             chrome_loaded: state.frontend.main_menu_shell_chrome.is_some(),
             software_cursor_active: state.use_software_cursor(),
             cursor_x: state.match_state.input.cursor_x,
@@ -2117,9 +2151,20 @@ impl MainMenuCaptureSnapshot {
 }
 
 fn steady_main_menu_capture_ready(snapshot: MainMenuCaptureSnapshot) -> Result<bool> {
+    steady_main_menu_capture_ready_for(snapshot, false)
+}
+
+/// Live latency runs may use the normal 640x480 shell. Other captures retain
+/// their fixed reference surface and large movie. The outer live capture also
+/// checks that its actual surface equals the requested dimensions each frame.
+fn steady_main_menu_capture_ready_for(
+    snapshot: MainMenuCaptureSnapshot,
+    latency: bool,
+) -> Result<bool> {
     ensure!(
-        snapshot.width == EXPECTED_WIDTH && snapshot.height == EXPECTED_HEIGHT,
-        "capture surface changed from 800x600 to {}x{}",
+        (snapshot.width == EXPECTED_WIDTH && snapshot.height == EXPECTED_HEIGHT)
+            || (latency && (snapshot.width, snapshot.height) == (640, 480)),
+        "capture surface is outside its allowed dimensions: {}x{}",
         snapshot.width,
         snapshot.height
     );
@@ -2153,8 +2198,14 @@ fn steady_main_menu_capture_ready(snapshot: MainMenuCaptureSnapshot) -> Result<b
         "main-menu first-paint lifecycle did not settle on dialog 0xE2"
     );
     ensure!(
-        snapshot.movie_loaded && snapshot.movie_owner_is_main_menu && snapshot.movie_base_is_large,
-        "main-menu RA2TS_L session identity is not ready"
+        snapshot.movie_loaded
+            && snapshot.movie_owner_is_main_menu
+            && if latency {
+                snapshot.movie_base_matches_layout
+            } else {
+                snapshot.movie_base_is_large
+            },
+        "main-menu movie session identity is not ready"
     );
     ensure!(
         snapshot.chrome_loaded,
@@ -2463,6 +2514,30 @@ impl ShellCaptureSession {
             .saturating_add(MAX_CAPTURE_FRAMES)
     }
 
+    fn is_online_latency(&self) -> bool {
+        self.request
+            .live_online
+            .as_ref()
+            .is_some_and(|config| config.latency)
+    }
+
+    fn check_capture_budget(&self, elapsed: Duration) -> Result<()> {
+        // Latency uses the ordinary immediate redraw cadence: render count
+        // no longer estimates wall time. Its existing wall deadline remains
+        // mandatory even if a fast GPU produces many more than 125 draws/sec.
+        let max_frames = self.max_capture_frames();
+        ensure!(
+            self.is_online_latency() || self.frames_seen <= max_frames,
+            "shell capture exceeded {max_frames} frames"
+        );
+        ensure!(
+            elapsed <= self.timeout(),
+            "shell capture timed out after {} seconds",
+            self.timeout().as_secs()
+        );
+        Ok(())
+    }
+
     fn steady_ready(&self, state: &AppState) -> Result<bool> {
         if let Some(capture) = &self.movies {
             return capture.ready(state);
@@ -2484,6 +2559,15 @@ impl ShellCaptureSession {
         state: &mut AppState,
         rendered: PresentedShell,
     ) -> Result<()> {
+        if self.is_online_latency() {
+            ensure!(
+                (
+                    state.renderer.gpu.config.width,
+                    state.renderer.gpu.config.height
+                ) == (self.request.width, self.request.height),
+                "latency capture surface changed from the requested dimensions"
+            );
+        }
         if let Some(visit) = state.frontend.wol.as_mut() {
             let mut changed = visit.set_legacy_ui(self.request.legacy_wol_ui());
             let mut provider_selected = false;
@@ -2535,16 +2619,7 @@ impl ShellCaptureSession {
             .started_at
             .context("shell capture was not initialized")?;
         self.frames_seen = self.frames_seen.saturating_add(1);
-        let max_frames = self.max_capture_frames();
-        ensure!(
-            self.frames_seen <= max_frames,
-            "shell capture exceeded {max_frames} frames"
-        );
-        ensure!(
-            started_at.elapsed() <= self.timeout(),
-            "shell capture timed out after {} seconds",
-            self.timeout().as_secs()
-        );
+        self.check_capture_budget(started_at.elapsed())?;
 
         if self.is_entry_sequence() {
             return Ok(false);
@@ -2708,7 +2783,15 @@ impl ShellCaptureSession {
     }
 
     pub(crate) fn next_wake_deadline(&self) -> Instant {
-        Instant::now() + CAPTURE_FRAME_INTERVAL
+        self.next_wake_deadline_at(Instant::now())
+    }
+
+    fn next_wake_deadline_at(&self, now: Instant) -> Instant {
+        if self.is_online_latency() {
+            now
+        } else {
+            now + CAPTURE_FRAME_INTERVAL
+        }
     }
 
     pub(crate) fn complete(
@@ -3579,6 +3662,40 @@ mod tests {
         assert_eq!(config.mode_id, Some(1));
         assert_eq!(config.frames, 600);
         assert!(config.simple_input && !config.mass_input);
+    }
+
+    #[test]
+    fn online_latency_is_opt_in_and_rejects_conflicting_modes() {
+        let output = new_output_path("online-latency");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-host".into();
+        values.extend(args(&["--online-account", "Host", "--online-latency"]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture");
+        };
+        assert_eq!((request.width(), request.height()), (800, 600));
+        let config = request.live_online.unwrap();
+        assert!(config.latency && config.simple_input);
+        assert_eq!(config.frames, 6000);
+        let mut small = values.clone();
+        let width = small.iter().position(|arg| arg == "--width").unwrap();
+        let height = small.iter().position(|arg| arg == "--height").unwrap();
+        small[width + 1] = "640".into();
+        small[height + 1] = "480".into();
+        small.extend(args(&["--online-frames", "9000"]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(small.clone()).unwrap() else {
+            panic!("capture")
+        };
+        assert_eq!((request.width(), request.height()), (640, 480));
+        assert_eq!(request.live_online.unwrap().frames, 9000);
+        small.retain(|arg| arg != "--online-latency");
+        assert!(
+            parse_launch_args(small).is_err(),
+            "ordinary captures retain800x600"
+        );
+        values.extend(args(&["--online-mass-input"]));
+        assert!(parse_launch_args(values).is_err());
     }
 
     #[test]
@@ -4472,6 +4589,45 @@ mod tests {
     }
 
     #[test]
+    fn latency_capture_uses_immediate_redraws_but_keeps_its_wall_deadline() {
+        let output = new_output_path("latency-cadence");
+        let mut values = valid_args(&output);
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture")
+        };
+        let mut still = ShellCaptureSession::new(request);
+        let now = Instant::now();
+        assert_eq!(
+            still.next_wake_deadline_at(now),
+            now + Duration::from_millis(8)
+        );
+        still.frames_seen = still.max_capture_frames() + 1;
+        assert!(still.check_capture_budget(Duration::ZERO).is_err());
+
+        values[1] = "online-live-host".into();
+        values.extend(args(&[
+            "--online-account",
+            "Host",
+            "--online-latency",
+            "--online-frames",
+            "9000",
+        ]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values).unwrap() else {
+            panic!("capture")
+        };
+        let mut latency = ShellCaptureSession::new(request);
+        assert_eq!(latency.next_wake_deadline_at(now), now);
+        latency.frames_seen = u32::MAX;
+        assert!(latency.check_capture_budget(latency.timeout()).is_ok());
+        assert!(
+            latency
+                .check_capture_budget(latency.timeout() + Duration::from_nanos(1))
+                .is_err()
+        );
+    }
+
+    #[test]
     fn live_network_frame_budget_covers_two_rounds_and_keeps_stills_bounded() {
         let output = new_output_path("live-frame-budget");
         let values = valid_args(&output);
@@ -4738,6 +4894,7 @@ mod tests {
             movie_loaded: true,
             movie_owner_is_main_menu: true,
             movie_base_is_large: true,
+            movie_base_matches_layout: true,
             chrome_loaded: true,
             software_cursor_active: true,
             cursor_x: 400.0,
@@ -4757,6 +4914,24 @@ mod tests {
     #[test]
     fn first_ordinary_steady_frame_is_capture_ready() {
         assert!(steady_main_menu_capture_ready(ready_snapshot()).expect("ready"));
+    }
+
+    #[test]
+    fn latency_main_menu_entry_and_return_accept_the_640_shell_movie() {
+        let mut snapshot = ready_snapshot();
+        snapshot.width = 640;
+        snapshot.height = 480;
+        snapshot.movie_base_is_large = false;
+        assert!(steady_main_menu_capture_ready_for(snapshot, true).unwrap());
+        assert!(
+            steady_main_menu_capture_ready(snapshot).is_err(),
+            "ordinary reference captures remain fixed"
+        );
+        snapshot.movie_base_matches_layout = false;
+        assert!(
+            steady_main_menu_capture_ready_for(snapshot, true).is_err(),
+            "the actual 640 shell movie identity is still required"
+        );
     }
 
     #[test]

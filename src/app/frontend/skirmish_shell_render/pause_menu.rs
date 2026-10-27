@@ -181,13 +181,14 @@ pub(crate) fn render_pause_menu_shell(
             .expect("active FF controls");
         let group_caption = caption(csf, "GUI:InternetGameControls");
         let cell = font.cell_height() as i32;
-        let (frame, caption_rect) = group_box_geometry(internet.group, cell, cell);
+        let (frame, caption_rect) = group_box_geometry(internet.group, cell, ShellScale::RETAIL);
         push_group_or_plain_frame(
             &mut controls,
-            chrome_atlas,
+            chrome_atlas.white_pixel,
             frame,
             Some(font.text_width(&group_caption) as i32),
             false,
+            ShellScale::RETAIL,
         );
         texts.push(text_draw(
             font,

@@ -30,6 +30,35 @@ const MODE_TWO_DIALOG_ART: [(&str, &str); 4] = [
     ("PUDLGBGY.SHP", "DIALOGY.PAL"),
 ];
 
+/// Ares `DialogBackground.Image/.Palette`: `0x1002ECC0` loads the side's image
+/// and palette into two slots at game load, each only from a set name that
+/// loads, and the hook at `0x622223` (body `0x1002FB50`) draws them in place
+/// of the side-selected stock background only while both are non-null. The
+/// entry is labeled by both files, so a pair that reuses a stock SHP name with
+/// another palette keeps its own entry.
+fn render_side_dialog_art(
+    assets: &AssetManager,
+    (image, palette_name): (&str, &str),
+) -> Option<RenderedShellEntry> {
+    let palette = load_named_palette(assets, palette_name)?;
+    let label = format!(
+        "{}#{}",
+        image.to_ascii_lowercase(),
+        palette_name.to_ascii_lowercase()
+    );
+    render_shp_entry_labeled(assets, image, &label, &palette, 0)
+}
+
+/// The atlas label of each mode-2 dialog background slot: the stock art, or
+/// for the three side slots the rendered side pair. The no-session slot 0
+/// (`0x62225F`) is not patched and keeps `PUDLGBGN`.
+fn mode_two_dialog_labels(side_art: Option<&str>) -> [String; 4] {
+    std::array::from_fn(|slot| match side_art {
+        Some(label) if slot > 0 => label.to_owned(),
+        _ => format!("{}#0", MODE_TWO_DIALOG_ART[slot].0.to_ascii_lowercase()),
+    })
+}
+
 fn mode_two_dialog_background_slot(side: Option<SidebarTheme>) -> usize {
     match side {
         None => 0,
@@ -383,6 +412,7 @@ pub fn build_skirmish_shell_chrome_atlas(
     batch: &BatchRenderer,
     assets: &AssetManager,
     extra_flags: &[String],
+    dialog_background: Option<(&str, &str)>,
 ) -> Option<SkirmishShellChromeAtlas> {
     let shell_palette = load_shell_palette(assets)?;
     let shell2_palette = load_named_palette(assets, "SHELL2.PAL")?;
@@ -495,6 +525,13 @@ pub fn build_skirmish_shell_chrome_atlas(
             );
         }
     }
+    let side_dialog_art = dialog_background
+        .and_then(|pair| render_side_dialog_art(assets, pair))
+        .map(|entry| {
+            let label = entry.label.clone();
+            rendered.push(entry);
+            label
+        });
     rendered.push(mandatory_shp(
         assets,
         "SDMPBTN.SHP",
@@ -723,11 +760,8 @@ pub fn build_skirmish_shell_chrome_atlas(
         wol_setup_icons: WOL_SETUP_PCX_NAMES.map(|name| by_label.get(name).copied()),
         lower_side_640_lwscrns: by_label.get("lwscrns.shp").copied(),
         lower_side_large_lwscrnl: by_label.get("lwscrnl.shp").copied(),
-        mode_two_dialog_backgrounds: MODE_TWO_DIALOG_ART.map(|(name, _)| {
-            by_label
-                .get(&format!("{}#0", name.to_ascii_lowercase()))
-                .copied()
-        }),
+        mode_two_dialog_backgrounds: mode_two_dialog_labels(side_dialog_art.as_deref())
+            .map(|label| by_label.get(&label).copied()),
         button_up_left_30: by_label.get("bue_li30.pcx").copied(),
         button_up_mid_30: by_label.get("bue_mi30.pcx").copied(),
         button_up_right_30: by_label.get("bue_ri30.pcx").copied(),
@@ -1266,6 +1300,30 @@ mod tests {
         trackbar_frame_rgba,
     };
     use crate::assets::asset_manager::MediaArchiveMode;
+
+    /// The hook at `0x622223` keeps the stock selection unless both slots of
+    /// the side's pair loaded; a loaded pair takes the three side slots, keyed
+    /// on both files.
+    #[test]
+    fn ares_dialog_background_takes_the_side_slots_only_once_loaded() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let stock = super::mode_two_dialog_labels(None);
+        assert_eq!(stock[1], "pudlgbga.shp#0");
+        for missing in [("NOSUCH.SHP", "DIALOG.PAL"), ("PUDLGBGA.SHP", "NOSUCH.PAL")] {
+            assert!(super::render_side_dialog_art(&assets, missing).is_none());
+        }
+        let side = super::render_side_dialog_art(&assets, ("PUDLGBGA.SHP", "DIALOGY.PAL"))
+            .expect("a stock SHP under another palette renders");
+        let labels = super::mode_two_dialog_labels(Some(&side.label));
+        assert_eq!(labels[0], stock[0]);
+        assert_eq!(
+            labels[1..],
+            [side.label.clone(), side.label.clone(), side.label]
+        );
+        assert_ne!(labels[1], stock[1]);
+    }
 
     #[test]
     fn mode_two_background_binding_matches_original_progress_paint() {

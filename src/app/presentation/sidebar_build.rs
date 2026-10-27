@@ -382,12 +382,28 @@ fn cameo_status_text<'a>(
     }
 }
 
-fn shows_queue_badge(item: &crate::ui::sidebar::SidebarItem) -> bool {
-    !matches!(
+/// Whether a Building or Defense cameo may draw a queue count at all.
+///
+/// gamemd's badge path resolves the requested type's House Factory with a
+/// hard-coded `BuildCat` (`StripClass::Draw`, `0x006A9C48..0x006A9CC3`), so a
+/// structure entry never finds its own Factory and never counts. Phobos'
+/// `StripClass_DrawStrip_FindFactoryDehardCode @ 0x006A9C54`
+/// (`src/Ext/Building/Hooks.cpp`) replaces that `BuildCat` with the building
+/// type's own, unconditionally — it is not gated on
+/// `[General] BuildingProductionQueue=`, which only decides whether a
+/// structure strip may stack copies at all.
+const STRUCTURE_QUEUE_BADGES: bool = cfg!(feature = "phobos");
+
+fn shows_queue_badge(item: &crate::ui::sidebar::SidebarItem, structure_badges: bool) -> bool {
+    let counts = !matches!(
         item.queue_category,
         crate::sim::production::ProductionCategory::Building
             | crate::sim::production::ProductionCategory::Defense
-    ) && (item.queued_count > 1 || (item.queued_count > 0 && !item.is_building_this_type))
+    ) || structure_badges;
+    // `Factory::CountType @ 0x004CA670` counts the held product as one when it
+    // is this type, so a count of one is a queued copy only while the held
+    // product is something else (`0x006A9C99..0x006A9CC3`).
+    counts && (item.queued_count > 1 || (item.queued_count > 0 && !item.is_held_this_type))
 }
 
 /// Whether a cameo draws the build clock. gamemd's strip draw sets its clock
@@ -610,7 +626,7 @@ pub(crate) fn build_sidebar_cameo_instances(
             }
         }
 
-        let has_queue_badge = shows_queue_badge(item);
+        let has_queue_badge = shows_queue_badge(item, STRUCTURE_QUEUE_BADGES);
 
         // Dark strip overlay behind the cameo status text (alpha 0xAF).
         // When a queue badge is also present, the status strip shifts left.
@@ -707,7 +723,7 @@ pub(crate) fn build_sidebar_text_instances(
     for item in &view.items {
         let slot = item.rect;
 
-        let has_queue_badge = shows_queue_badge(item);
+        let has_queue_badge = shows_queue_badge(item, STRUCTURE_QUEUE_BADGES);
 
         // Cameo status text ("Ready" / "On Hold") — at the top of the cameo.
         // When a queue badge is also shown, the status text shifts left to
@@ -858,6 +874,7 @@ mod tests {
         let project = |display, online| {
             let supers = [SuperWeaponView {
                 type_id: id,
+                use_ai_targeting: false,
                 display_name: "Drain".into(),
                 progress: 1.0,
                 is_ready: true,
@@ -866,6 +883,8 @@ mod tests {
                 can_fire: online,
                 can_afford: true,
                 constraints_blocked: false,
+                #[cfg(feature = "ares")]
+                ares_refusal: None,
                 display,
             }];
             let cameos = sidebar::cameo_order::CameoStrips::layout_fixture(&[], &[], &supers);
@@ -994,6 +1013,7 @@ mod tests {
             progress: 0.5,
             queued_count: 1,
             is_building_this_type: false,
+            is_held_this_type: false,
             is_ready: false,
             is_on_hold: false,
             is_armed: false,
@@ -1036,6 +1056,7 @@ mod tests {
             progress: 0.0,
             queued_count: 1,
             is_building_this_type: false,
+            is_held_this_type: false,
             is_ready: false,
             is_on_hold: false,
             is_armed: false,
@@ -1053,5 +1074,86 @@ mod tests {
         item.is_ready = true;
         item.progress = 1.0;
         assert!(!shows_build_clock(&item), "ready");
+    }
+
+    /// The `StripClass::Draw` badge inputs for one cameo.
+    fn badge_item(
+        category: crate::sim::production::ProductionCategory,
+        queued_count: usize,
+        is_building: bool,
+        is_held: bool,
+    ) -> crate::ui::sidebar::SidebarItem {
+        crate::ui::sidebar::SidebarItem {
+            rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 60.0,
+                h: 48.0,
+            },
+            type_id: "GAPOWR".to_string(),
+            display_name: "GAPOWR".to_string(),
+            cost: Some(600),
+            has_cameo_art: true,
+            alt_cameo: false,
+            flash_darkened: false,
+            queue_category: category,
+            enabled: true,
+            at_build_limit: false,
+            progress: 0.0,
+            queued_count,
+            is_building_this_type: is_building,
+            is_held_this_type: is_held,
+            is_ready: false,
+            is_on_hold: false,
+            is_armed: false,
+            is_superweapon: false,
+            super_weapon_section: None,
+            super_weapon_display: None,
+        }
+    }
+
+    /// A structure cameo counts queued copies only where the badge can resolve
+    /// its Factory: gamemd keeps a hard-coded `BuildCat` there, and Phobos
+    /// de-hard-codes it at `0x006A9C54` for every Phobos build.
+    #[test]
+    fn structure_queue_badge_needs_the_phobos_factory_lookup() {
+        use super::shows_queue_badge;
+        use crate::sim::production::ProductionCategory::{Building, Defense, Vehicle};
+
+        let stacked = badge_item(Building, 2, true, true);
+        assert!(
+            !shows_queue_badge(&stacked, false),
+            "a default build never stacks structures"
+        );
+        assert!(shows_queue_badge(&stacked, true));
+        assert!(shows_queue_badge(&badge_item(Defense, 3, true, true), true));
+
+        let mobile = badge_item(Vehicle, 2, true, true);
+        assert!(shows_queue_badge(&mobile, false));
+        assert!(shows_queue_badge(&mobile, true));
+    }
+
+    /// A count of one is the held product rather than a queued copy whenever the
+    /// linked Factory holds this entry's type, whether that product is finished
+    /// or on hold: gamemd compares `Factory+0x58`'s type with the requested one
+    /// at `0x006A9CBF..0x006A9CC3` and draws nothing. Reading the building flag
+    /// instead left a bare `1` on a placement-ready structure.
+    #[test]
+    fn queue_badge_of_one_waits_for_a_copy_that_is_not_the_held_product() {
+        use super::shows_queue_badge;
+        use crate::sim::production::ProductionCategory::{Building, Vehicle};
+
+        assert!(!shows_queue_badge(
+            &badge_item(Building, 1, false, true),
+            true
+        ));
+        assert!(!shows_queue_badge(
+            &badge_item(Vehicle, 1, false, true),
+            false
+        ));
+        assert!(shows_queue_badge(
+            &badge_item(Vehicle, 1, false, false),
+            false
+        ));
     }
 }

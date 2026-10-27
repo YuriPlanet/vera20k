@@ -187,8 +187,9 @@ pub(crate) fn paint_wol_login_children(
             SHELL_CONTROL_TEXT_DEPTH,
         ));
     } else {
+        // Under the field, starting where its text does.
         let rect = scale.derive_rect(layout.nickname_face, |rect| {
-            RectPx::new(rect.x - 100, rect.y + 34, 380, 36)
+            RectPx::new(rect.x + 3, rect.y + rect.h + 4, rect.w - 6, 16)
         });
         paint.texts.push(text(
             "Use 1-24 letters, digits, _ or -.",

@@ -9,6 +9,35 @@ use super::track_process::TrackFamily;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::game_entity::GameEntity;
 
+/// ILocomotion+14 Destination, distinct from Head_To(+18) and the Foot's
+/// NavCom. Original retail gamemd.exe: Drive4AFC90, Ship69F3A0,
+/// Walk75ABA0, Hover514CB0, Fly4CCAE0, Jumpjet54AE60, Rocket661FB0 and
+/// Teleport7180A0. No state, map query, RNG or timers are changed.
+pub(crate) fn destination(entity: &GameEntity) -> Option<crate::sim::components::DriveCoord> {
+    use crate::sim::components::DriveCoord;
+    let null = DriveCoord { x: 0, y: 0, z: 0 };
+    let loco = entity.locomotor.as_ref()?;
+    Some(match loco.active_kind() {
+        LocomotorKind::Drive => loco.track_destination(TrackFamily::Drive).unwrap_or(null),
+        LocomotorKind::Ship => loco.track_destination(TrackFamily::Ship).unwrap_or(null),
+        LocomotorKind::Hover => loco.hover_runtime()?.destination().unwrap_or(null),
+        LocomotorKind::Rocket => loco.rocket_runtime()?.destination(),
+        LocomotorKind::Teleport if !is_moving(entity)? => {
+            //7180CC returns the linked object's Location when stopped.
+            super::foot_coordinate::current_coordinate(entity)
+        }
+        LocomotorKind::Walk | LocomotorKind::Fly | LocomotorKind::Jumpjet
+            if !is_moving(entity)? =>
+        {
+            null
+        }
+        LocomotorKind::Walk => loco.walk_destination().unwrap_or(null),
+        LocomotorKind::Fly => loco.fly_runtime()?.destination(),
+        LocomotorKind::Jumpjet => loco.jumpjet_runtime()?.destination(),
+        LocomotorKind::Teleport => loco.teleport_runtime()?.armed_destination().unwrap_or(null),
+    })
+}
+
 /// Drive4AFB80, Ship69F290, Walk75AB30, Fly4CCA90, Jumpjet54AE50,
 /// Hover514C30 and Rocket661F50. Teleport718080 delegates to its existing
 /// state owner.
