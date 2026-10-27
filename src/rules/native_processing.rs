@@ -5104,47 +5104,29 @@ impl RulesPassProcessor {
             })
     }
 
-    /// Phobos `SW.AuxTechnos`/`SW.NegTechnos`:
-    /// `ValueableVector<TechnoTypeClass*>` resolves each token across every
-    /// techno family (`TechnoTypeClass::Find`), skipping unknown ones; a
-    /// reached list replaces and an absent key retains.
-    #[cfg(feature = "phobos")]
+    /// Ares vector1000EDD0 -> Find10007EA0 scans TechnoType::Array A8EB04
+    /// in constructor order, not separate category arrays. Phobos' techno
+    /// vectors use that same Find. Unknown/none tokens are skipped; a reached
+    /// nonempty read replaces. Keep category identity across equal names.
+    #[cfg(any(feature = "ares", feature = "phobos"))]
     fn resolve_existing_techno_list_from(
         &self,
         section: &IniSection,
         key: &str,
         capacity: usize,
-    ) -> Option<Vec<String>> {
-        let tokens = section.read_list(key, capacity)?;
-        let mut resolved = Vec::new();
-        for token in tokens {
-            for family in [
-                RulesTypeFamily::Infantry,
-                RulesTypeFamily::Vehicle,
-                RulesTypeFamily::Aircraft,
-                RulesTypeFamily::Building,
-            ] {
-                let Some(members) = self.families.get(&family) else {
-                    continue;
-                };
-                let index = ares_type_index_of_name(
-                    token,
-                    members
-                        .iter()
-                        .map(|member| member.native_stored_id.as_str()),
-                );
-                if let Some(index) = index {
-                    resolved.push(members[index].native_stored_id.clone());
-                    break;
-                }
-            }
-        }
-        Some(resolved)
+    ) -> Option<Vec<crate::rules::superweapon_type::TechnoTypeReference>> {
+        Some(
+            section
+                .read_list(key, capacity)?
+                .into_iter()
+                .filter_map(|token| self.find_existing_techno_type(token))
+                .collect(),
+        )
     }
 
     /// Installed Ares Find10007EA0 resolves a nullable TechnoType pointer.
     /// The common construction array decides equal names across categories.
-    #[cfg(feature = "ares")]
+    #[cfg(any(feature = "ares", feature = "phobos"))]
     fn find_existing_techno_type(
         &self,
         name: &str,
@@ -5177,19 +5159,21 @@ impl RulesPassProcessor {
         self.find_existing_techno_type(name).map(Some)
     }
 
-    /// Installed Ares Anim pointer Parser1000C9C0/Find1000D3E0: look up
-    /// only registered AnimTypes. A successful none clears; unknown retains.
+    /// Ares nullable pointer policy: Anim1000C9C0 and the Survivor.SideN
+    /// reads1003E040..1003E070. Resolve within the requested registered family;
+    /// a successful none clears, while an unknown name retains.
     #[cfg(feature = "ares")]
-    fn resolve_existing_anim_from(
+    fn resolve_existing_type_from(
         &self,
         section: &IniSection,
         key: &str,
+        family: RulesTypeFamily,
     ) -> Option<Option<String>> {
         let name = section.read_name(key, 2048)?;
         if is_native_none_type_name(name) {
             return Some(None);
         }
-        let members = self.families.get(&RulesTypeFamily::Animation)?;
+        let members = self.families.get(&family)?;
         let index = ares_type_index_of_name(
             name,
             members
@@ -6046,19 +6030,23 @@ impl RulesPassProcessor {
                     if let Some(aux) =
                         self.resolve_existing_techno_list_from(&raw, "SW.AuxTechnos", 0x800)
                     {
-                        availability.set_aux_technos(aux);
+                        availability.set_aux_technos(aux.into_iter().map(|kind| kind.id).collect());
                     }
                     if let Some(neg) =
                         self.resolve_existing_techno_list_from(&raw, "SW.NegTechnos", 0x800)
                     {
-                        availability.set_neg_technos(neg);
+                        availability.set_neg_technos(neg.into_iter().map(|kind| kind.id).collect());
                     }
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_phobos_availability = availability;
                 }
                 #[cfg(feature = "ares")]
                 {
-                    let animation = self.resolve_existing_anim_from(&raw, "SW.Animation");
+                    let animation = self.resolve_existing_type_from(
+                        &raw,
+                        "SW.Animation",
+                        RulesTypeFamily::Animation,
+                    );
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_presentation
                         .read_pass(&raw, animation);
@@ -6441,7 +6429,11 @@ impl RulesPassProcessor {
                         .as_mut()
                         .expect("TechnoType promotion abilities")
                         .read_pass(&raw);
-                    let sparkle = self.resolve_existing_anim_from(&raw, "EMP.Sparkles");
+                    let sparkle = self.resolve_existing_type_from(
+                        &raw,
+                        "EMP.Sparkles",
+                        RulesTypeFamily::Animation,
+                    );
                     self.family_mut(family)[index]
                         .emp_type
                         .as_mut()
@@ -6449,7 +6441,11 @@ impl RulesPassProcessor {
                         .read_pass(&raw, sparkle);
                     // TechnoTypeExt::LoadFromINI1003DEC0 calls the shared
                     // descriptor reader10058A50 at1003E8D4, before subclasses.
-                    let animation = self.resolve_existing_anim_from(&raw, "AttachEffect.Animation");
+                    let animation = self.resolve_existing_type_from(
+                        &raw,
+                        "AttachEffect.Animation",
+                        RulesTypeFamily::Animation,
+                    );
                     let member = &mut self.family_mut(family)[index];
                     member
                         .self_attach_effect
@@ -7168,10 +7164,22 @@ impl RulesPassProcessor {
             {
                 let sparkle = pass
                     .section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
-                    .and_then(|raw| self.resolve_existing_anim_from(raw, "EMP.Sparkles"));
+                    .and_then(|raw| {
+                        self.resolve_existing_type_from(
+                            raw,
+                            "EMP.Sparkles",
+                            RulesTypeFamily::Animation,
+                        )
+                    });
                 let animation = pass
                     .section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
-                    .and_then(|raw| self.resolve_existing_anim_from(raw, "AttachEffect.Animation"));
+                    .and_then(|raw| {
+                        self.resolve_existing_type_from(
+                            raw,
+                            "AttachEffect.Animation",
+                            RulesTypeFamily::Animation,
+                        )
+                    });
                 let member = &mut self
                     .families
                     .get_mut(&RulesTypeFamily::Warhead)
