@@ -338,7 +338,7 @@ fn native_disk_constructor_fire_ai_expiry_and_common_drain_histories() {
     assert_eq!(weapon.range_leptons, int(&priors["range_leptons"]));
     assert_eq!(weapon.laser_duration, int(&priors["duration_byte"]));
     assert_eq!(
-        rules.art().get("DISK").unwrap().primary_fire_flh,
+        rules.object("DISK").unwrap().weapon_flh(0, false),
         [0, 0, 75].into()
     );
     assert_eq!(

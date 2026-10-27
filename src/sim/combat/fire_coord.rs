@@ -339,31 +339,28 @@ pub(crate) fn fire_coordinate(
     let aim_facing16 = base.fire_facing;
     let art = base.art;
 
-    let flh_delta = art
-        .and_then(|art| {
-            // GetFLH6F3B28 calls GetWeapon70E140. Its elite FLH belongs to
-            // the elite weapon record, which is used only when nonnull.
-            let use_elite = usize::try_from(weapon_index).is_ok_and(|index| {
-                super::combat_weapon::uses_elite_weapon(obj, snap.veterancy, index)
-            });
-            // GetFLH6F3AF5..6F3B21 selects AlternateFLH before GetWeapon.
-            let flh = if weapon_index < 0 {
-                art.alternate_fire_flh(
-                    (-i64::from(weapon_index) - 1) as usize,
-                    obj.turret_count,
-                    obj.weapon_count,
-                )
-            } else {
-                art.weapon_flh(obj.turret_count, obj.weapon_count, weapon_index, use_elite)
-            };
-            let flh = Flh {
-                forward: flh.forward.wrapping_add(base_coords.forward),
-                lateral: flh.lateral.wrapping_add(base_coords.lateral),
-                height: flh.height.wrapping_add(base_coords.height),
-            };
-            flh_world_delta(art, flh, base.facings, burst_index, base.locomotor_basis)
-        })
-        .unwrap_or((0, 0, 0));
+    // GetFLH6F3B28 selects the stored WeaponStruct, not a fresh ART read.
+    // GetWeapon70E140 qualifies its elite record only when nonnull.
+    let use_elite = usize::try_from(weapon_index)
+        .is_ok_and(|index| super::combat_weapon::uses_elite_weapon(obj, snap.veterancy, index));
+    let flh = if weapon_index < 0 {
+        obj.alternate_fire_flh((-i64::from(weapon_index) - 1) as usize)
+    } else {
+        obj.weapon_flh(weapon_index, use_elite)
+    };
+    let flh = Flh {
+        forward: flh.forward.wrapping_add(base_coords.forward),
+        lateral: flh.lateral.wrapping_add(base_coords.lateral),
+        height: flh.height.wrapping_add(base_coords.height),
+    };
+    let flh_delta = flh_world_delta(
+        art.map_or(0, |art| art.turret_offset),
+        flh,
+        base.facings,
+        burst_index,
+        base.locomotor_basis,
+    )
+    .unwrap_or((0, 0, 0));
     if snap.category == EntityCategory::Structure
         && let Some((px, py)) = art.and_then(|art| building_pixel_offset(art, snap))
     {
@@ -770,7 +767,7 @@ fn coords_xy(
 /// `TechnoClass::GetFLH @ 0x006F3AD0`'s transform of one FLH triple about
 /// the object's turret offset.
 fn flh_world_delta(
-    art: &ArtEntry,
+    turret_offset: i32,
     flh: crate::rules::flh::Flh,
     facings: crate::util::flh_transform::FlhFacings,
     burst_index: u8,
@@ -780,7 +777,7 @@ fn flh_world_delta(
         flh.forward,
         flh.lateral,
         flh.height,
-        art.turret_offset,
+        turret_offset,
         facings,
         burst_index,
         locomotor_basis,
@@ -815,14 +812,16 @@ fn open_topped_port_coordinate(
     let transport_obj = world.interner.object_type(transport.type_ref(), rules)?;
     let source = FireSource::of_entity(transport);
     let base = fire_coordinate_base(world, rules, &source, transport_obj);
-    let flh = base.art.map_or_else(Default::default, |art| {
-        art.alternate_fire_flh(port, transport_obj.turret_count, transport_obj.weapon_count)
-    });
+    let flh = transport_obj.alternate_fire_flh(port);
     let burst_index = (transport.weapon_burst.index() & 1) as u8;
-    let delta = base
-        .art
-        .and_then(|art| flh_world_delta(art, flh, base.facings, burst_index, base.locomotor_basis))
-        .unwrap_or((0, 0, 0));
+    let delta = flh_world_delta(
+        base.art.map_or(0, |art| art.turret_offset),
+        flh,
+        base.facings,
+        burst_index,
+        base.locomotor_basis,
+    )
+    .unwrap_or((0, 0, 0));
     let rider_aim = fire_coordinate_base(
         world,
         rules,
@@ -917,8 +916,9 @@ mod tests {
     use crate::util::fixed_math::SimFixed;
 
     fn rules() -> RuleSet {
-        let mut rules = RuleSet::from_ini(&IniFile::from_str(
-            "[InfantryTypes]\n0=E1\n1=INIT\n[VehicleTypes]\n[AircraftTypes]\n\
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[InfantryTypes]\n0=E1\n1=INIT\n[VehicleTypes]\n[AircraftTypes]\n\
              [BuildingTypes]\n0=BUNK\n1=TOWER\n\
              [E1]\nStrength=125\nImage=GI\nPrimary=M60\nSecondary=ONE\n\
              [INIT]\nStrength=125\nPrimary=JAB\n\
@@ -930,8 +930,14 @@ mod tests {
              [BARE]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\n\
              [JAB]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\nOpenToppedAnim=GUNFIRE\n\
              [SA]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-        ))
-        .expect("rules");
+            ),
+            &IniFile::from_str(
+                "[GI]\nPrimaryFireFLH=0,0,105\nSecondaryFireFLH=0,0,90\n\
+             [BUNK]\nMuzzleFlash0=30,15\nMuzzleFlash1=-30,15\n\
+             [TOWER]\nPrimaryFirePixelOffset=30,15\nPrimaryFireDualOffset=yes\n",
+            ),
+        )
+        .unwrap();
         rules.replace_art_registry_for_test(ArtRegistry::from_ini(&IniFile::from_str(
             "[GI]\nPrimaryFireFLH=0,0,105\nSecondaryFireFLH=0,0,90\n\
              [BUNK]\nMuzzleFlash0=30,15\nMuzzleFlash1=-30,15\n\
@@ -1057,15 +1063,18 @@ mod tests {
             for (key, value) in row["art"].as_object().unwrap() {
                 text.push_str(&format!("{key}={}\n", value.as_str().unwrap()));
             }
-            let art = ArtRegistry::from_ini(&IniFile::from_str(&text));
-            let entry = art.get("FV").unwrap();
+            let ini = IniFile::from_str(&format!(
+                "[VehicleTypes]\n0=FV\n[FV]\nTurretCount={}\nWeaponCount={}\n",
+                row["turret_count"].as_i64().unwrap(),
+                row["weapon_count"].as_i64().unwrap(),
+            ));
+            let processed = crate::rules::native_processing::RulesLayerStack::new(ini)
+                .process_with_fixed_art(&IniFile::from_str(&text))
+                .unwrap();
+            let rules = RuleSet::from_processed_rules(&processed).unwrap();
+            let object = rules.object("FV").unwrap();
             for (elite, expected) in [(false, "normal"), (true, "elite")] {
-                let flh = entry.weapon_flh(
-                    row["turret_count"].as_i64().unwrap() as i32,
-                    row["weapon_count"].as_i64().unwrap() as i32,
-                    row["index"].as_i64().unwrap() as i32,
-                    elite,
-                );
+                let flh = object.weapon_flh(row["index"].as_i64().unwrap() as i32, elite);
                 let xyz = [flh.forward, flh.lateral, flh.height];
                 let original =
                     std::array::from_fn::<_, 3, _>(|i| row[expected][i].as_i64().unwrap() as i32);
@@ -1226,7 +1235,7 @@ mod tests {
             let obj = rules.object("DISK").unwrap();
             assert_eq!(obj.has_turret, input["has_turret"].as_bool().unwrap());
             assert_eq!(
-                rules.art().get("DISK").unwrap().primary_fire_flh,
+                rules.object("DISK").unwrap().weapon_flh(0, false),
                 Flh::from(triple(&input["primary_flh"]))
             );
             let before = world.state_hash();
@@ -1278,10 +1287,16 @@ mod tests {
 
     #[test]
     fn numbered_weapon_index_and_elite_weapon_binding_reach_fire_coordinate() {
-        let mut rules = RuleSet::from_ini(&IniFile::from_str(
-            "[VehicleTypes]\n0=FV\n[FV]\nTurretCount=4\nWeaponCount=3\n\
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[VehicleTypes]\n0=FV\n[FV]\nTurretCount=4\nWeaponCount=3\n\
              Weapon1=W\nWeapon3=W\nEliteWeapon3=WE\n[W]\nDamage=1\n[WE]\nDamage=2\n",
-        ))
+            ),
+            &IniFile::from_str(
+                "[FV]\nWeapon1FLH=0,0,3\nWeapon3FLH=0,0,6\n\
+             EliteWeapon1FLH=0,0,99\nEliteWeapon3FLH=0,0,9\n",
+            ),
+        )
         .unwrap();
         rules.install_art_data(ArtRegistry::from_ini(&IniFile::from_str(
             "[FV]\nWeapon1FLH=0,0,3\nWeapon3FLH=0,0,6\n\
@@ -1311,6 +1326,65 @@ mod tests {
                 .z,
             Z + 3
         );
+    }
+
+    fn layered_firing_offset_rules(map: &str) -> RuleSet {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[VehicleTypes]\n0=TEST\n[TEST]\nImage=OLD\nTurretCount=2\nWeaponCount=1\nWeapon1=W\n[W]\nDamage=1\n",
+        ));
+        layers.push(RulesLayerKind::Scenario, IniFile::from_str(map));
+        let art = IniFile::from_str("[OLD]\nVoxel=yes\nWeapon1FLH=0,0,73\n[NEW]\nVoxel=yes\n");
+        let mut rules =
+            RuleSet::from_processed_rules(&layers.process_with_fixed_art(&art).unwrap()).unwrap();
+        rules.install_art_data(ArtRegistry::from_ini(&art));
+        rules
+    }
+
+    #[test]
+    fn image_change_keeps_the_previously_read_weapon_firing_offset() {
+        // TechnoType::ReadINI712170:715B76 supplies the stored coordinate as
+        // ReadCoord3's default after ObjectType5F92F8 changes Image.
+        let retained = layered_firing_offset_rules("[TEST]\nImage=NEW\n");
+        let unchanged = layered_firing_offset_rules("[TEST]\n");
+        let world = Simulation::new();
+        let source = source(EntityCategory::Unit);
+        let shot = |rules: &RuleSet| {
+            fire_coordinate(
+                &world,
+                rules,
+                &source,
+                rules.object("TEST").unwrap(),
+                0,
+                0,
+                Flh::default(),
+            )
+        };
+        assert_eq!(shot(&retained), shot(&unchanged));
+        assert_eq!(shot(&retained).coord.z, Z + 73);
+    }
+
+    #[test]
+    fn reducing_weapon_count_keeps_the_skipped_firing_offset() {
+        //715B27 jumps over numbered coordinate writes at count0; GetFLH
+        //6F3B28 still reads the retained WeaponStruct at the supplied index.
+        let retained = layered_firing_offset_rules("[TEST]\nWeaponCount=0\n");
+        let unchanged = layered_firing_offset_rules("[TEST]\n");
+        let world = Simulation::new();
+        let source = source(EntityCategory::Unit);
+        let shot = |rules: &RuleSet| {
+            fire_coordinate(
+                &world,
+                rules,
+                &source,
+                rules.object("TEST").unwrap(),
+                0,
+                0,
+                Flh::default(),
+            )
+        };
+        assert_eq!(shot(&retained), shot(&unchanged));
+        assert_eq!(shot(&retained).coord.z, Z + 73);
     }
 
     /// The source Z is the stored firer's actual height, not its level byte.

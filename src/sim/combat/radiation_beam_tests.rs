@@ -308,7 +308,7 @@ fn assert_selected_inputs(rules: &RuleSet, actor: &str, type_fields: &Value, exp
     assert_eq!(object.strength, integer(&type_fields["strength"]));
     let art = super::fire_coord::firer_art(rules, object).unwrap();
     assert_eq!(
-        <[i32; 3]>::from(art.primary_fire_flh),
+        <[i32; 3]>::from(object.weapon_flh(0, false)),
         xyz(&type_fields["primary_flh"])
     );
     assert_eq!(art.turret_offset, integer(&type_fields["turret_offset"]));
@@ -435,11 +435,7 @@ fn assert_native_births(
         let name = input["name"].as_str().unwrap();
         let rules = rules_for_birth(retail, actor, input);
         assert_eq!(
-            <[i32; 3]>::from(
-                super::fire_coord::firer_art(&rules, rules.object(actor).unwrap())
-                    .unwrap()
-                    .primary_fire_flh
-            ),
+            <[i32; 3]>::from(rules.object(actor).unwrap().weapon_flh(0, false)),
             xyz(&row["physical_flh"]),
             "{name} original ART reader"
         );

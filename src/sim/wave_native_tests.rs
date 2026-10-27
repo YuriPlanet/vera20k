@@ -153,9 +153,8 @@ fn retail_tele_and_mtnk_read_the_native_magnetic_and_lift_inputs() {
             // firer. MTNK's weapons are outside this target-only component.
             assert_eq!(object.primary(), native["primary"].as_str());
             assert_eq!(object.elite_primary(), native["elite_primary"].as_str());
-            let art = crate::sim::combat::fire_coord::firer_art(rules, object).unwrap();
             assert_eq!(
-                <[i32; 3]>::from(art.primary_fire_flh),
+                <[i32; 3]>::from(object.weapon_flh(0, false)),
                 [
                     integer(&native["primary_flh"][0]),
                     integer(&native["primary_flh"][1]),

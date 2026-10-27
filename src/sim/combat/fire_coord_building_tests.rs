@@ -170,11 +170,6 @@ fn building_primary_pixel_and_selected_flh_match_original_slot_and_burst_control
     for row in rows {
         let input = &row["input"];
         let name = input["name"].as_str().unwrap();
-        let mut rules = RuleSet::from_ini(&IniFile::from_str(
-            "[BuildingTypes]\n0=BLD\n[BLD]\nStrength=500\nTurret=no\n\
-             Primary=GUN\nSecondary=SUPPORT\n[GUN]\nDamage=1\n[SUPPORT]\nDamage=1\n",
-        ))
-        .unwrap();
         let triplet = |key: &str, fallback: [i32; 3]| -> [i32; 3] {
             input[key].as_array().map_or(fallback, |v| {
                 std::array::from_fn(|axis| v[axis].as_i64().unwrap() as i32)
@@ -186,6 +181,18 @@ fn building_primary_pixel_and_selected_flh_match_original_slot_and_burst_control
             (v[0].as_i64().unwrap(), v[1].as_i64().unwrap())
         });
         let dual = input["primary_dual"].as_bool().unwrap();
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[BuildingTypes]\n0=BLD\n[BLD]\nStrength=500\nTurret=no\n\
+             Primary=GUN\nSecondary=SUPPORT\n[GUN]\nDamage=1\n[SUPPORT]\nDamage=1\n",
+            ),
+            &IniFile::from_str(&format!(
+                "[BLD]\nFoundation=1x1\nPrimaryFirePixelOffset={px},{py}\n\
+             PrimaryFireDualOffset={dual}\nPrimaryFireFLH={forward},{lateral},{height}\n\
+             SecondaryFireFLH={sf},{sl},{sh}\n",
+            )),
+        )
+        .unwrap();
         rules.install_art_data(ArtRegistry::from_ini(&IniFile::from_str(&format!(
             "[BLD]\nFoundation=1x1\nPrimaryFirePixelOffset={px},{py}\n\
              PrimaryFireDualOffset={dual}\nPrimaryFireFLH={forward},{lateral},{height}\n\
@@ -252,9 +259,14 @@ fn building_identity_matrix_matches_original_get_flh() {
         let input = &row["input"];
         let [forward, lateral, height] = triple(&input["flh"]);
         let offset = input["turret_offset"].as_i64().unwrap();
-        let mut rules = RuleSet::from_ini(&IniFile::from_str(
-            "[BuildingTypes]\n0=BLD\n[BLD]\nStrength=500\nPrimary=GUN\n[GUN]\nDamage=1\n",
-        ))
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[BuildingTypes]\n0=BLD\n[BLD]\nStrength=500\nPrimary=GUN\n[GUN]\nDamage=1\n",
+            ),
+            &IniFile::from_str(&format!(
+                "[BLD]\nTurretOffset={offset}\nPrimaryFireFLH={forward},{lateral},{height}\n",
+            )),
+        )
         .unwrap();
         rules.install_art_data(ArtRegistry::from_ini(&IniFile::from_str(&format!(
             "[BLD]\nTurretOffset={offset}\nPrimaryFireFLH={forward},{lateral},{height}\n",
@@ -318,15 +330,25 @@ fn voxel_rules_with(input: &Value, primary: Option<&str>) -> RuleSet {
         ),
         None => (String::new(), String::new()),
     };
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-        "[BuildingTypes]\n0=BLD\n\
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(&format!(
+            "[BuildingTypes]\n0=BLD\n\
          [BLD]\nStrength=500\nTurret=yes\nTurretAnimIsVoxel={}\n\
          TurretAnimX={}\nTurretAnimY={}\n{primary_key}{primary_section}",
-        flag("turret_anim_is_voxel"),
-        input["turret_anim_x"].as_i64().unwrap(),
-        input["turret_anim_y"].as_i64().unwrap(),
-    )))
-    .expect("rules");
+            flag("turret_anim_is_voxel"),
+            input["turret_anim_x"].as_i64().unwrap(),
+            input["turret_anim_y"].as_i64().unwrap(),
+        )),
+        &IniFile::from_str(&format!(
+            "[BLD]\nPrimaryFirePixelOffset={}\nPrimaryFireDualOffset={}\n\
+         PrimaryFireFLH={}\nSecondaryFireFLH={}\n",
+            pair("primary_pixel_offset"),
+            flag("primary_dual"),
+            triple_text("primary_flh"),
+            triple_text("secondary_flh"),
+        )),
+    )
+    .unwrap();
     rules.replace_art_registry_for_test(ArtRegistry::from_ini(&IniFile::from_str(&format!(
         "[BLD]\nPrimaryFirePixelOffset={}\nPrimaryFireDualOffset={}\n\
          PrimaryFireFLH={}\nSecondaryFireFLH={}\n",
@@ -562,10 +584,7 @@ fn retail_voxel_turret_inputs_match_the_native_rows() {
             None,
             "{type_id} takes no alternative pixel arm"
         );
-        let flh =
-            art_entry
-                .expect(type_id)
-                .weapon_flh(obj.turret_count, obj.weapon_count, 0, false);
+        let flh = obj.weapon_flh(0, false);
         assert_eq!(
             [flh.forward, flh.lateral, flh.height],
             triple(&input["primary_flh"]),

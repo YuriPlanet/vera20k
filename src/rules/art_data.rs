@@ -132,27 +132,6 @@ pub struct ArtEntry {
     pub sequence: Option<String>,
     /// Infantry `Crawls=` art flag. Merged into ObjectType for sim stance speed.
     pub crawls: bool,
-    /// Muzzle offset for primary weapon fire (from art.ini `PrimaryFireFLH=`).
-    pub primary_fire_flh: Flh,
-    /// Muzzle offset for secondary weapon fire (from art.ini `SecondaryFireFLH=`).
-    pub secondary_fire_flh: Flh,
-    /// Elite-rank override for primary fire offset (from art.ini `ElitePrimaryFireFLH=`).
-    /// None means use `primary_fire_flh`.
-    pub elite_primary_fire_flh: Option<Flh>,
-    /// Elite-rank override for secondary fire offset (from art.ini `EliteSecondaryFireFLH=`).
-    /// None means use `secondary_fire_flh`.
-    pub elite_secondary_fire_flh: Option<Flh>,
-    /// Numbered weapon offsets read by715B10 when TurretCount>0. The type's
-    /// WeaponCount bounds consumption; each elite default is its normal FLH.
-    pub numbered_weapon_flh: [Flh; crate::rules::object_type::WEAPON_SLOT_COUNT],
-    pub elite_numbered_weapon_flh: [Flh; crate::rules::object_type::WEAPON_SLOT_COUNT],
-    /// `AlternateFLH0..4=` (`TechnoTypeClass+0x85C`, five 12-byte slots read
-    /// at `0x00715FA4..0x00716005`): the firing ports an `OpenTopped=`
-    /// transport lends its passengers, by cargo index. `None` where the
-    /// coordinate read kept its default, Weapon[0]'s FLH (`+0x89C`); see
-    /// [`ArtEntry::alternate_fire_flh`]. Stock: only `[BFRT]`'s five gun
-    /// ports.
-    pub alternate_flh: [Option<Flh>; 5],
     /// `SecondSpawnOffset=` (`TechnoTypeClass+0xDB0`): the same art read's
     /// coordinate read of the image section (`0x0071602E..0x00716058`,
     /// `Read3Int @ 0x00529CA0`), default the constructor's zeros
@@ -271,61 +250,6 @@ pub struct ArtEntry {
     /// name is [`AnimTypeRuntimeConfig::double_thick`]. A warping building of
     /// such a type draws at 75% translucency, not 50%.
     pub building_double_thick: bool,
-}
-
-impl ArtEntry {
-    /// Native715B10 tests HasTurrets717880 (`TurretCount > 0`) before
-    /// reading Weapon1..WeaponCount FLHs. GetFLH6F3B28 uses the selected
-    /// weapon-array index; it does not reduce numbered indices to two slots.
-    /// `use_elite` means GetWeapon70E140 resolved a nonnull elite weapon.
-    pub(crate) fn weapon_flh(
-        &self,
-        turret_count: i32,
-        weapon_count: i32,
-        index: i32,
-        use_elite: bool,
-    ) -> Flh {
-        if turret_count > 0 {
-            let Ok(slot) = usize::try_from(index) else {
-                return Flh::default();
-            };
-            if index >= weapon_count {
-                return Flh::default();
-            }
-            let slots = if use_elite {
-                &self.elite_numbered_weapon_flh
-            } else {
-                &self.numbered_weapon_flh
-            };
-            return slots.get(slot).copied().unwrap_or_default();
-        }
-        crate::rules::flh::resolve_flh(
-            self.primary_fire_flh,
-            self.secondary_fire_flh,
-            self.elite_primary_fire_flh,
-            self.elite_secondary_fire_flh,
-            index != 1,
-            if use_elite { 200 } else { 0 },
-        )
-    }
-
-    /// `TechnoClass::GetFLH @ 0x006F3AD0` for weapon index `-k`, the port an
-    /// `OpenTopped=` transport lends its `k`th rider (`port = k - 1`):
-    /// `AlternateFLH[k-1]` for `k <= 5`, else a zero FLH
-    /// (`0x006F3AF5..0x006F3B21`). A slot the coordinate read left at its
-    /// default holds Weapon[0]'s FLH as the weapon arm stored it (`+0x89C`).
-    pub(crate) fn alternate_fire_flh(
-        &self,
-        port: usize,
-        turret_count: i32,
-        weapon_count: i32,
-    ) -> Flh {
-        match self.alternate_flh.get(port) {
-            Some(Some(flh)) => *flh,
-            Some(None) => self.weapon_flh(turret_count, weapon_count, 0, false),
-            None => Flh::default(),
-        }
-    }
 }
 
 /// One native building-damage-fire art offset.
@@ -1159,38 +1083,6 @@ impl ArtRegistry {
                 sequence_frames("DeployedFire"),
             );
             let crawls = section.read_bool("Crawls", false);
-            // The non-turret arm of TechnoTypeClass's art read
-            // (`0x00715D94..0x00715F4D`): each key through the coordinate
-            // read, the elite slot defaulting to its base slot. A
-            // `TurretCount>0` type reads the numbered keys instead
-            // (`0x00715B10`); `ArtEntry::weapon_flh` picks the arm.
-            let primary_fire_flh = Flh::from(section.read_coord3("PrimaryFireFLH", [0; 3]));
-            let secondary_fire_flh = Flh::from(section.read_coord3("SecondaryFireFLH", [0; 3]));
-            let elite_primary_fire_flh: Option<Flh> =
-                section.is_present("ElitePrimaryFireFLH").then(|| {
-                    Flh::from(section.read_coord3("ElitePrimaryFireFLH", primary_fire_flh.into()))
-                });
-            let elite_secondary_fire_flh: Option<Flh> =
-                section.is_present("EliteSecondaryFireFLH").then(|| {
-                    Flh::from(
-                        section.read_coord3("EliteSecondaryFireFLH", secondary_fire_flh.into()),
-                    )
-                });
-            let numbered_weapon_flh: [Flh; crate::rules::object_type::WEAPON_SLOT_COUNT] =
-                std::array::from_fn(|index| {
-                    Flh::from(section.read_coord3(&format!("Weapon{}FLH", index + 1), [0; 3]))
-                });
-            let elite_numbered_weapon_flh = std::array::from_fn(|index| {
-                Flh::from(section.read_coord3(
-                    &format!("EliteWeapon{}FLH", index + 1),
-                    numbered_weapon_flh[index].into(),
-                ))
-            });
-            let alternate_flh: [Option<Flh>; 5] = std::array::from_fn(|slot| {
-                section
-                    .read_coord3_value(&format!("AlternateFLH{slot}"))
-                    .map(Flh::from)
-            });
             let second_spawn_offset = Flh::from(section.read_coord3("SecondSpawnOffset", [0; 3]));
             // ReadMinMax (`0x00461305`, `0x00461332`); `None` marks an absent key.
             let present_pair = |key: &str| {
@@ -1355,13 +1247,6 @@ impl ArtRegistry {
                     palette,
                     sequence,
                     crawls,
-                    primary_fire_flh,
-                    secondary_fire_flh,
-                    elite_primary_fire_flh,
-                    elite_secondary_fire_flh,
-                    numbered_weapon_flh,
-                    elite_numbered_weapon_flh,
-                    alternate_flh,
                     second_spawn_offset,
                     primary_fire_pixel_offset,
                     secondary_fire_pixel_offset,

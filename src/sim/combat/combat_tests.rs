@@ -10672,10 +10672,13 @@ fn gsi_08_12_a_base_defence_kill_pays_nobody() {
 /// X term down a lepton.
 #[test]
 fn gsi_08_04_projectile_spawns_at_the_muzzle_not_the_hull_centre() {
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+&IniFile::from_str(
         "[VehicleTypes]\n0=MTNK\n1=HTNK\n[MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nCost=700\nPrimary=105mm\nTurret=yes\n[HTNK]\nStrength=2000\nArmor=heavy\nSpeed=4\nCost=900\nPrimary=105mm\n[105mm]\nDamage=65\nROF=50\nRange=6\nSpeed=40\nProjectile=Cannon\nWarhead=AP\n[Cannon]\nArcing=true\n[AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-    ))
-    .expect("fire-origin fixture parses");
+    ),
+
+        &IniFile::from_str("[MTNK]\nPrimaryFireFLH=190,25,120\n"),
+).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(
         &IniFile::from_str("[MTNK]\nPrimaryFireFLH=190,25,120\n"),
     ));
@@ -10716,10 +10719,13 @@ fn gsi_08_04_projectile_spawns_at_the_muzzle_not_the_hull_centre() {
 /// Same fixture as `gsi_08_04`, whose `Arcing=` shell keeps the muzzle.
 #[test]
 fn gsi_08_04_a_dropping_shell_leaves_the_hull_centre() {
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+&IniFile::from_str(
         "[VehicleTypes]\n0=MTNK\n1=HTNK\n[MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nCost=700\nPrimary=105mm\nTurret=yes\n[HTNK]\nStrength=2000\nArmor=heavy\nSpeed=4\nCost=900\nPrimary=105mm\n[105mm]\nDamage=65\nROF=50\nRange=6\nSpeed=40\nProjectile=Bomb\nWarhead=AP\n[Bomb]\nDropping=yes\n[AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-    ))
-    .expect("dropping fixture parses");
+    ),
+
+        &IniFile::from_str("[MTNK]\nPrimaryFireFLH=190,25,120\n"),
+).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(
         &IniFile::from_str("[MTNK]\nPrimaryFireFLH=190,25,120\n"),
     ));

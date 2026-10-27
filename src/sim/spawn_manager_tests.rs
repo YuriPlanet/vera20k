@@ -2934,8 +2934,16 @@ fn retail_missiles_keep_their_launch_coordinate_from_unlimbo() {
     // The production readers agree with the original's reads of the inputs.
     for (name, row) in native["types"].as_object().unwrap() {
         let art = rules.art().get(name).unwrap();
-        assert_eq!(art.primary_fire_flh, flh(&row["weapon_flh"][0]), "{name}");
-        assert_eq!(art.secondary_fire_flh, flh(&row["weapon_flh"][1]), "{name}");
+        assert_eq!(
+            rules.object(name).unwrap().weapon_flh(0, false),
+            flh(&row["weapon_flh"][0]),
+            "{name}"
+        );
+        assert_eq!(
+            rules.object(name).unwrap().weapon_flh(1, false),
+            flh(&row["weapon_flh"][1]),
+            "{name}"
+        );
         assert_eq!(
             art.second_spawn_offset,
             flh(&row["second_spawn_offset"]),
