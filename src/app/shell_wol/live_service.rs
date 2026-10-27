@@ -490,6 +490,17 @@ impl LiveService {
         self.command_with_id(operation, payload);
     }
 
+    fn publish_options_agreement(&mut self, mut agreement: Value, status: u8, host: bool) {
+        // Protocol v4 shares the agreement fields, but ready rejects status.
+        let mut map_status = agreement.clone();
+        map_status["status"] = json!(status);
+        self.command("map_status", map_status);
+        if host {
+            agreement["ready"] = json!(true);
+            self.command("ready", agreement);
+        }
+    }
+
     fn command_with_id(&mut self, operation: &'static str, payload: Value) -> u64 {
         let id = self.next_request;
         self.next_request = self.next_request.wrapping_add(1);
@@ -1930,13 +1941,9 @@ fn apply_event(
             maps::received_options(state, service, generated)?;
             // The owner is ready without a guest Accept button, but still proves its
             // own local map and rules to the same server admission gate.
-            let mut agreement = local_agreement(state, service.revision)?;
-            agreement["status"] = json!(local_map_status(state, service));
-            service.command("map_status", agreement.clone());
-            if state.match_state.session.host() {
-                agreement["ready"] = json!(true);
-                service.command("ready", agreement);
-            }
+            let agreement = local_agreement(state, service.revision)?;
+            let status = local_map_status(state, service);
+            service.publish_options_agreement(agreement, status, state.match_state.session.host());
         }
         "choices" => {
             #[derive(Deserialize)]
@@ -2435,6 +2442,36 @@ mod completion_tests {
             translations: Translations::default(),
         };
         (service, input, output)
+    }
+
+    #[test]
+    fn options_agreement_keeps_map_status_out_of_host_ready() {
+        let (mut service, input, _output) = control_service(None);
+        let agreement = json!({
+            "revision": 7, "version": "0.2.2", "rules_digest": "rules",
+            "map_digest": "physical", "effective_map_digest": "effective",
+            "staging_digest": "staging"
+        });
+        service.publish_options_agreement(agreement.clone(), 1, true);
+        let next = || match input.try_recv().expect("queued agreement") {
+            http::Request::Command {
+                operation, payload, ..
+            } => (operation, payload),
+            _ => panic!("expected a protocol command"),
+        };
+        let mut expected_map = agreement.clone();
+        expected_map["status"] = json!(1);
+        let mut expected_ready = agreement.clone();
+        expected_ready["ready"] = json!(true);
+        assert_eq!(next(), ("map_status", expected_map));
+        assert_eq!(next(), ("ready", expected_ready));
+        assert!(input.try_recv().is_err());
+
+        service.publish_options_agreement(agreement.clone(), 0, false);
+        let mut expected_map = agreement;
+        expected_map["status"] = json!(0);
+        assert_eq!(next(), ("map_status", expected_map));
+        assert!(input.try_recv().is_err(), "guests must accept explicitly");
     }
 
     #[test]
