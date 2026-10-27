@@ -1554,6 +1554,8 @@ impl Fixture {
 
 /// The ready MTNK shot runs building fires, crew and deferred cleanup, with
 /// and without the stock smudges joined.
+// Stock oracle; Ares replaces the Unit tail (737F97) and GetCrew (707D20).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn original_ready_mtnk_shot_runs_building_fires_crew_and_deferred_cleanup() {
     for path in [

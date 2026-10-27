@@ -411,6 +411,8 @@ fn vanished_structural_deck_per_cell_arms_the_same_object_fall() {
 /// The bomb byte kills cargo independently of the killing hit's force
 /// flags (Unit737F80): being shot while still falling must never escape a
 /// passenger merely because this ordinary hit did not use ignoreDefenses.
+// The +8F passenger kill (7380AF) is in the stock Unit tail Ares replaces.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn a_transport_shot_mid_fall_kills_its_passenger_without_the_landing_force_flags() {
     use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};

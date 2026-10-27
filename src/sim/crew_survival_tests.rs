@@ -524,6 +524,9 @@ fn a_captured_building_remembers_it() {
 /// is owed), then that cell's mark. A hit draws the Engineer roll, the
 /// constructor word, the centre-row placement draw, the health roll and
 /// Scatter's first draw, in that order.
+// Stock Building GetCrew44EB10 always draws for the Engineer; Ares1004C650
+// draws only with a positive Engineer chance.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn phase_b_interleaves_each_cells_roll_with_its_mark() {
     let rules = rules();
@@ -705,6 +708,9 @@ fn a_building_owing_no_survivor_draws_and_marks_nothing() {
 
 /// A building carrying a C4 charge rolls one in two, and its crew attacks an
 /// enemy planter; an allied planter only changes the odds.
+// Stock Building GetCrew44EB10 always draws for the Engineer; Ares1004C650
+// draws only with a positive Engineer chance.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn survivors_of_a_c4_charged_building_attack_an_enemy_planter() {
     let rules = rules();
@@ -1062,6 +1068,8 @@ fn hijacked_vehicle_returns_its_captor_without_an_escape_roll() {
 
 /// The vehicle's transferable Tag waits for the escaped infantry's death,
 /// rather than firing Unit744720's destruction prefix on the vehicle.
+// Stock Unit tail; Ares's SpawnSurvivors100464C0 attaches no Tag to the hijacker.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn hijacked_vehicle_preserves_its_transferable_tag_until_captor_death() {
     let rules = rules();
@@ -1220,6 +1228,9 @@ const ORDINARY: ReceiverCallFlags = ReceiverCallFlags {
 /// The production rules reader and death receiver must use each side's
 /// `*Crew=` name, rather than the stock E1/E2/INIT assignment. Reusing the
 /// fixture's registered infantry types keeps this test about the binding.
+// Ares GetCrew1004C780 reads HouseType SideIndex (+BC), which this fixture's
+// undeclared countries leave at -1, and returns the Technician.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn renamed_general_crew_types_spawn_through_the_building_death_receiver() {
     let renamed = RULES
@@ -1343,6 +1354,8 @@ fn cargo_len(sim: &Simulation, transport: u64) -> usize {
 /// Through the production receiver: a dying transport's passengers step out
 /// onto its cell in cargo order, uncredited; a computer's Hunt and a human's
 /// stay put.
+// Stock Unit tail (737F97..73838A); Ares replaces it with SpawnSurvivors100464C0.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn a_killing_hit_lets_the_passengers_out() {
     let rules = rules();
@@ -1800,6 +1813,8 @@ fn a_select_started_by_a_partners_tag_event_does_not_expand() {
 /// Retail `rulesmd.ini` and `artmd.ini` (the local `ini/`): the stock crew
 /// keys bind, and a power plant and an MCV killed through the production
 /// receiver leave stock crew with native health ranges.
+// The MCV crew takes the stock Unit tail; Ares's EjectSurvivor needs a map cell.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_rules_crew_the_power_plant_and_the_mcv() {
     let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
