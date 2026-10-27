@@ -74,7 +74,8 @@ fn ordered_reduction_matches_original_sequence_prefixes() {
             let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
             let dv = depth.create_view(&Default::default());
             terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
-            if height == 3 {
+            // Storage bands do not exist on the WebGL2 fallback's render targets.
+            if height == 3 && !crate::render::gpu::webgl_fallback(&gpu.device) {
                 force_scratch_rows(&gpu, &mut terrain, 4, 1);
             }
             for case in cases {
@@ -196,7 +197,12 @@ fn ordered_reduction_matches_original_sequence_prefixes() {
                         commands[..prefix * height as usize].iter().copied(),
                         [0, 0, 4, height],
                     );
-                    assert_eq!(stats.passes, 4 * height as usize);
+                    let bands = if crate::render::gpu::webgl_fallback(&gpu.device) {
+                        1
+                    } else {
+                        height as usize
+                    };
+                    assert_eq!(stats.passes, 4 * bands);
                     assert_eq!(stats.waves, 1);
                     assert_eq!(stats.tile_dependencies, 0);
                     let reads = [

@@ -61,13 +61,14 @@ python3 -m tools.cargo_run -- rustc -p vera20k --lib \
 python3 -m http.server 8000 --bind 127.0.0.1 --directory target/wasm-dist
 ```
 
-Open `http://localhost:8000` in a browser with WebGPU. WebGPU requires a secure
-context (HTTPS or localhost). Select an extracted retail Yuri's Revenge resource
-folder, then click Start. No game resources are included in the package. The
-single-player package uploads none; online play can share the selected map through
-the existing map-transfer protocol, while other retail assets stay local. Audio is
-prepared in that click to satisfy browser autoplay policy. Resource bytes are
-held in memory, so large installations need substantial browser memory.
+Open `http://localhost:8000` in a browser with WebGPU or WebGL2. The page
+requires a secure context (HTTPS or localhost). Select an extracted retail
+Yuri's Revenge resource folder, then click Start. No game resources are included
+in the package. The single-player package uploads none; online play can share
+the selected map through the existing map-transfer protocol, while other retail
+assets stay local. Audio is prepared in that click to satisfy browser autoplay
+policy. Resource bytes are held in memory, so large installations need
+substantial browser memory.
 
 The host restores and queues settings/save writes in IndexedDB for this origin.
 The page shows storage failures and pending writes. Engine writes complete in
@@ -94,6 +95,13 @@ the desktop implementations. A browser build without `wasm` is rejected.
 - GPU acquisition yields through the existing initialization jobs. Rendering
   uses an offscreen sRGB frame and a canvas presentation pass. Browser texture
   uploads do not block waiting for GPU completion.
+- Without a WebGPU adapter the browser build falls back to WebGL2. WebGL2 has
+  no storage buffers, compute, fragment atomics or reinterpreting texture views,
+  so the renderers that use them select render-target equivalents there
+  (`render::webgl`, `gpu::webgl_fallback`); every other device keeps its path.
+  A native test translates its shaders to GLSL ES 3.00, and
+  `VERA20K_TEST_WEBGL_FALLBACK=1` runs the GPU goldens through its passes on
+  a native device.
 - The browser entry supplies a canvas, status callback and storage callbacks;
   the existing App retains startup and match lifecycle ownership.
 

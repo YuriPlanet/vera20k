@@ -161,7 +161,7 @@ fn create_color_target(
         // Destination-dependent native drawing snapshots encoded channel
         // bytes through the compatible linear view, before RGB565 packing.
         view_formats: if format.is_srgb() {
-            &encoded_view_formats
+            super::webgl::view_formats(device, &encoded_view_formats)
         } else {
             &[]
         },

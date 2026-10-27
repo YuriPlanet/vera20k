@@ -45,7 +45,7 @@ pub(crate) struct ShellSurfacePresenter {
     _source_encoded_view: wgpu::TextureView,
     presented_texture: wgpu::Texture,
     presented_view: wgpu::TextureView,
-    _profile_buffer: wgpu::Buffer,
+    _profile_buffer: Profile,
     /// Always-zero effects: ordinary presentation can never inherit effects.
     no_effects_buffer: wgpu::Buffer,
     /// Rewritten by each [`Self::encode_present_with_effects`] call.
@@ -72,16 +72,30 @@ impl ShellSurfacePresenter {
             );
         }
         let surface_format = gpu.surface_format;
-        let encoded_format = encoded_surface_format(surface_format)?;
+        encoded_surface_format(surface_format)?;
+        // The WebGL2 fallback presents through sRGB views and textures, and
+        // reads the codebook from a data texture (see `render::webgl`).
+        let encoded_format = super::webgl::encoded_format(&gpu.device, surface_format);
         let bind_group_layout = create_bind_group_layout(&gpu.device);
         let profile_words = ACTIVE_RETAIL_RGB565_PRESENTATION.shader_words();
-        let profile_buffer = gpu
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Active retail RGB565 presentation profile"),
-                contents: bytemuck::cast_slice(&profile_words),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
+        let profile_buffer = if super::gpu::webgl_fallback(&gpu.device) {
+            Profile::Table(super::webgl::table_texture(
+                &gpu.device,
+                &gpu.queue,
+                "Active retail RGB565 presentation profile",
+                wgpu::TextureFormat::R32Uint,
+                bytemuck::cast_slice(&profile_words),
+            ))
+        } else {
+            Profile::Buffer(
+                gpu.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("Active retail RGB565 presentation profile"),
+                        contents: bytemuck::cast_slice(&profile_words),
+                        usage: wgpu::BufferUsages::STORAGE,
+                    }),
+            )
+        };
         let effects_usage = wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST;
         let no_effects_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Shell presentation: no surface effects"),
@@ -175,7 +189,10 @@ impl ShellSurfacePresenter {
             return;
         }
         debug_assert_eq!(self.surface_format, gpu.surface_format);
-        debug_assert_eq!(self.encoded_format, gpu.surface_format.remove_srgb_suffix());
+        debug_assert_eq!(
+            self.encoded_format,
+            super::webgl::encoded_format(&gpu.device, gpu.surface_format)
+        );
 
         let targets = create_targets(
             &gpu.device,
@@ -284,6 +301,22 @@ impl ShellSurfacePresenter {
     }
 }
 
+/// The presentation codebook: a storage buffer, or the WebGL2 fallback's
+/// data texture with the same words.
+enum Profile {
+    Buffer(wgpu::Buffer),
+    Table(wgpu::TextureView),
+}
+
+impl Profile {
+    fn binding(&self) -> wgpu::BindingResource<'_> {
+        match self {
+            Self::Buffer(buffer) => buffer.as_entire_binding(),
+            Self::Table(view) => wgpu::BindingResource::TextureView(view),
+        }
+    }
+}
+
 struct PresentationTargets {
     source_texture: wgpu::Texture,
     source_render_view: wgpu::TextureView,
@@ -309,7 +342,7 @@ fn encoded_surface_format(surface_format: wgpu::TextureFormat) -> Result<wgpu::T
 fn create_targets(
     device: &wgpu::Device,
     bind_group_layout: &wgpu::BindGroupLayout,
-    profile_buffer: &wgpu::Buffer,
+    profile_buffer: &Profile,
     [no_effects_buffer, effects_buffer]: [&wgpu::Buffer; 2],
     surface_format: wgpu::TextureFormat,
     encoded_format: wgpu::TextureFormat,
@@ -332,7 +365,7 @@ fn create_targets(
             | wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::COPY_SRC
             | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[encoded_format],
+        view_formats: super::webgl::view_formats(device, &[encoded_format]),
     });
     let source_render_view = source_texture.create_view(&wgpu::TextureViewDescriptor {
         label: Some("Stock shell sRGB render view"),
@@ -373,7 +406,7 @@ fn create_targets(
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: profile_buffer.as_entire_binding(),
+                    resource: profile_buffer.binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
@@ -416,10 +449,18 @@ fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
             wgpu::BindGroupLayoutEntry {
                 binding: 1,
                 visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: NonZeroU64::new(PROFILE_BUFFER_SIZE),
+                ty: if super::gpu::webgl_fallback(device) {
+                    wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Uint,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    }
+                } else {
+                    wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: NonZeroU64::new(PROFILE_BUFFER_SIZE),
+                    }
                 },
                 count: None,
             },
@@ -437,14 +478,46 @@ fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     })
 }
 
+/// The WebGL2 fallback reads the codebook from a data texture and the
+/// composition through its sRGB view (see `render::webgl`).
+pub(crate) fn shader_source(webgl: bool) -> String {
+    if webgl {
+        let source = super::webgl::encoded_shader(
+            SHADER_SOURCE,
+            &[
+                (
+                    "var<storage, read> codebook: array<u32>;",
+                    "var codebook_table: texture_2d<u32>;",
+                ),
+                (
+                    "let encoded = textureLoad(source, pixel, 0);",
+                    "let encoded = fallback_load_encoded(textureLoad(source, pixel, 0));",
+                ),
+                (
+                    "return vec4f(presented) / 255.0;",
+                    "return fallback_store_encoded(vec4f(presented) / 255.0);",
+                ),
+            ],
+        );
+        format!(
+            "{}\nfn codebook_at(index: u32) -> u32 {{ return textureLoad(codebook_table, fallback_table_texel(index), 0).r; }}\n{}",
+            super::webgl::TABLE_WGSL,
+            super::webgl::index_calls(&source, "codebook", "codebook_at")
+        )
+    } else {
+        SHADER_SOURCE.to_owned()
+    }
+}
+
 fn create_pipeline(
     device: &wgpu::Device,
     bind_group_layout: &wgpu::BindGroupLayout,
     encoded_format: wgpu::TextureFormat,
 ) -> wgpu::RenderPipeline {
+    let source = shader_source(super::gpu::webgl_fallback(device));
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Stock shell RGB565 presentation shader"),
-        source: wgpu::ShaderSource::Wgsl(SHADER_SOURCE.into()),
+        source: wgpu::ShaderSource::Wgsl(source.into()),
     });
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Stock shell RGB565 presentation pipeline layout"),

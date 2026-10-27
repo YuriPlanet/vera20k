@@ -260,8 +260,60 @@ struct PixelInstance {
     rect: [f32; 4],
     span: [u32; 2],
 }
+/// Ordered operations: a storage buffer, or on the WebGL2 fallback a data
+/// texture holding the same words (see `render::webgl`).
+enum OperationStore {
+    Buffer(wgpu::Buffer),
+    Table(wgpu::Texture),
+}
+
+const OPERATION_WORDS: usize = std::mem::size_of::<Operation>() / 4;
+
+/// Operations one upload can bind.
+fn operation_limit(device: &wgpu::Device) -> usize {
+    if crate::render::gpu::webgl_fallback(device) {
+        crate::render::webgl::table_capacity(device) / OPERATION_WORDS
+    } else {
+        device.limits().max_storage_buffer_binding_size as usize / std::mem::size_of::<Operation>()
+    }
+}
+
+pub(super) fn shader_source(webgl: bool) -> String {
+    let source = include_str!("terrain_surface_lines.wgsl");
+    if !webgl {
+        return crate::render::tactical_shader::source(source);
+    }
+    let source = crate::render::webgl::patch(
+        source,
+        "@group(1) @binding(0) var<storage, read> operations: array<Operation>;",
+        "@group(1) @binding(0) var operation_table: texture_2d<u32>;
+fn operation_word(index: u32) -> u32 {
+    return textureLoad(operation_table, fallback_table_texel(index), 0).r;
+}
+fn operation_at(index: u32) -> Operation {
+    let base = index * 10u;
+    return Operation(operation_word(base), bitcast<i32>(operation_word(base + 1u)),
+        operation_word(base + 2u), operation_word(base + 3u), operation_word(base + 4u),
+        bitcast<i32>(operation_word(base + 5u)), bitcast<i32>(operation_word(base + 6u)),
+        bitcast<i32>(operation_word(base + 7u)), bitcast<i32>(operation_word(base + 8u)),
+        bitcast<i32>(operation_word(base + 9u)));
+}",
+    );
+    // GLSL ES 3.00 has no integer mix(), naga's lowering of vector select.
+    let source = crate::render::webgl::patch(
+        &source,
+        "lit += select(vec3i(excess), vec3i(0), full);",
+        "lit += vec3i(excess) * vec3i(!full);",
+    );
+    crate::render::tactical_shader::source(&format!(
+        "{}\n{}",
+        crate::render::webgl::TABLE_WGSL,
+        crate::render::webgl::index_calls(&source, "operations", "operation_at")
+    ))
+}
+
 struct Prepared {
-    operations: wgpu::Buffer,
+    operations: OperationStore,
     instances: wgpu::Buffer,
     binding: wgpu::BindGroup,
     operation_capacity: usize,
@@ -296,10 +348,18 @@ impl SurfaceLineGpu {
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+                ty: if crate::render::gpu::webgl_fallback(device) {
+                    wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Uint,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    }
+                } else {
+                    wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    }
                 },
                 count: None,
             }],
@@ -307,8 +367,7 @@ impl SurfaceLineGpu {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Original surface line RGB565 operations"),
             source: wgpu::ShaderSource::Wgsl(
-                crate::render::tactical_shader::source(include_str!("terrain_surface_lines.wgsl"))
-                    .into(),
+                shader_source(crate::render::gpu::webgl_fallback(device)).into(),
             ),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -423,19 +482,31 @@ impl SurfaceLineGpu {
         let index = self.active;
         let op_capacity = self.operations.len().next_power_of_two();
         let instance_capacity = self.instances.len().next_power_of_two();
-        let limit = device.limits().max_storage_buffer_binding_size as usize
-            / std::mem::size_of::<Operation>();
+        let limit = operation_limit(device);
         if self.batches.get(index).is_none_or(|b| {
             b.operation_capacity < self.operations.len()
                 || b.instance_capacity < self.instances.len()
         }) {
             let op_capacity = op_capacity.min(limit);
-            let operations = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Surface line ordered operations"),
-                size: (op_capacity * std::mem::size_of::<Operation>()) as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
+            let operations = if crate::render::gpu::webgl_fallback(device) {
+                OperationStore::Table(crate::render::webgl::empty_table(
+                    device,
+                    "Surface line ordered operations",
+                    wgpu::TextureFormat::R32Uint,
+                    op_capacity * OPERATION_WORDS,
+                ))
+            } else {
+                OperationStore::Buffer(device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("Surface line ordered operations"),
+                    size: (op_capacity * std::mem::size_of::<Operation>()) as u64,
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }))
+            };
+            let table_view = match &operations {
+                OperationStore::Table(texture) => Some(texture.create_view(&Default::default())),
+                OperationStore::Buffer(_) => None,
+            };
             let instances = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Surface line touched pixels"),
                 size: (instance_capacity * std::mem::size_of::<PixelInstance>()) as u64,
@@ -447,7 +518,13 @@ impl SurfaceLineGpu {
                 layout: &self.layout,
                 entries: &[wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: operations.as_entire_binding(),
+                    resource: match (&operations, &table_view) {
+                        (OperationStore::Buffer(buffer), _) => buffer.as_entire_binding(),
+                        (OperationStore::Table(_), Some(view)) => {
+                            wgpu::BindingResource::TextureView(view)
+                        }
+                        (OperationStore::Table(_), None) => unreachable!("table view created"),
+                    },
                 }],
             });
             let prepared = Prepared {
@@ -466,7 +543,16 @@ impl SurfaceLineGpu {
             }
         }
         let batch = &mut self.batches[index];
-        queue.write_buffer(&batch.operations, 0, bytemuck::cast_slice(&self.operations));
+        match &batch.operations {
+            OperationStore::Buffer(buffer) => {
+                queue.write_buffer(buffer, 0, bytemuck::cast_slice(&self.operations))
+            }
+            OperationStore::Table(texture) => crate::render::webgl::write_table(
+                queue,
+                texture,
+                bytemuck::cast_slice(&self.operations),
+            ),
+        }
         queue.write_buffer(&batch.instances, 0, bytemuck::cast_slice(&self.instances));
         right = right.min(size[0]);
         bottom = bottom.min(size[1]);
@@ -518,9 +604,7 @@ impl TerrainDrawRenderer {
             return SurfaceLineBatch::default();
         };
         let size = [targets.source_color.width(), targets.source_color.height()];
-        let limit = (device.limits().max_storage_buffer_binding_size as usize
-            / std::mem::size_of::<Operation>())
-        .min(1_048_576);
+        let limit = operation_limit(device).min(1_048_576);
         assert!(limit >= 2, "the native pair must fit one storage binding");
         #[cfg(test)]
         let limit = self

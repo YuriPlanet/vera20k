@@ -98,6 +98,7 @@ mod voxel_parity_tests;
 pub mod vxl_normals;
 pub mod vxl_raster;
 pub mod wave_geometry;
+pub(crate) mod webgl;
 
 #[cfg(test)]
 mod sidebar_gpu_tests;

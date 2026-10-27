@@ -41,7 +41,7 @@ python3 -m tools.cargo_run -- rustc -p vera20k --lib \
 python3 -m http.server 8000 --bind 127.0.0.1 --directory target/wasm-dist
 ```
 
-在支持 WebGPU 的浏览器中打开 `http://localhost:8000`。WebGPU 要求安全上下文，即 HTTPS 或 localhost。选择已解压的《尤里的复仇》零售资源目录，然后点击 Start。构建包不包含游戏资源。单机版不会上传资源；联机时可以通过现有地图传输协议分享所选地图，其他零售资源仍留在本地。点击 Start 时会准备音频，以满足浏览器自动播放策略。资源字节保存在内存中，因此较大的游戏安装目录需要较多浏览器内存。
+在支持 WebGPU 或 WebGL2 的浏览器中打开 `http://localhost:8000`。页面要求安全上下文，即 HTTPS 或 localhost。选择已解压的《尤里的复仇》零售资源目录，然后点击 Start。构建包不包含游戏资源。单机版不会上传资源；联机时可以通过现有地图传输协议分享所选地图，其他零售资源仍留在本地。点击 Start 时会准备音频，以满足浏览器自动播放策略。资源字节保存在内存中，因此较大的游戏安装目录需要较多浏览器内存。
 
 宿主页面通过当前 origin 的 IndexedDB 恢复设置和存档，并排队保存后续写入。页面会显示存储失败和待写入状态。引擎先完成内存写入，异步存储事务随后才会完成；关闭页面前应等待已保存状态。清除站点数据会删除这些副本。导入的零售资源不会持久化，每次访问都会重新读取。在支持 File System Access API 的浏览器（Chrome、Edge）中，启动页会在单独的 `vera20k-wasm-launcher` 数据库中保存所选文件夹的读取句柄，下次访问时可一键继续；其它浏览器需要再次选择文件夹。
 
@@ -53,6 +53,7 @@ python3 -m http.server 8000 --bind 127.0.0.1 --directory target/wasm-dist
 - `util::file_system` 在桌面端重新导出标准文件操作。浏览器导入资源位于 `/retail`，存档位于 `/saves`，配置位于 `/saves/profile`；MIX 归档共享导入字节，不使用内存映射。
 - 浏览器通过现有并行工作接口串行执行工作。桌面端仍选择原生 Rayon 和工作线程路径。
 - GPU 获取通过现有初始化任务让出执行。渲染使用离屏 sRGB 帧和 canvas 呈现 pass。浏览器纹理上传不会阻塞等待 GPU 完成。
+- 没有可用的 WebGPU 适配器时，浏览器构建回退到 WebGL2。WebGL2 没有存储缓冲、计算着色器、片元原子操作和重解释格式的纹理视图，因此用到这些能力的渲染器只在该设备上改用等价的渲染目标实现（`render::webgl`、`gpu::webgl_fallback`）；其他设备的路径不变。原生测试会把这些着色器翻译为 GLSL ES 3.00，设置 `VERA20K_TEST_WEBGL_FALLBACK=1` 可在原生设备上让 GPU 基准测试走回退路径。
 - 浏览器入口提供 canvas、状态回调和存储回调；现有 App 继续负责启动和对局生命周期。
 
 只有同时启用 `wasm-net` 和浏览器目标，才会启用 Fetch、WS socket 和延后的联机加载等待。桌面构建（包括启用 `wasm-net` 的构建）仍使用原生 UDP、阻塞 HTTPS 和线程调度。仅启用 `wasm` 的单机包仍会在网络入口明确返回不支持错误。浏览器不支持 LAN 发现和直接 UDP 连接。

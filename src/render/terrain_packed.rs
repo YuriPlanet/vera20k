@@ -52,6 +52,40 @@ struct Params {
 pub(super) struct Stencil {
     words: wgpu::TextureView,
     candidates: wgpu::TextureView,
+    /// WebGL2 ordered words target and its resolve binding (`fs_feedback`).
+    results: Option<(wgpu::TextureView, wgpu::BindGroup)>,
+}
+
+/// Native signed candidate and projection have one source shared with the
+/// opaque path, rather than another geometry/Z port.
+pub(super) fn raster_source(body: &str, fragment: &str) -> String {
+    let prefix = &body[..body.find("fn apply_fx(").expect("projection boundary")];
+    crate::render::tactical_shader::world_source(&format!("{prefix}\n{fragment}"))
+}
+
+/// Packed shader source. The WebGL2 fallback drops the compute entry point
+/// and storage results for `terrain_packed_webgl.wgsl`.
+pub(super) fn packed_source(webgl: bool) -> String {
+    let source = include_str!("terrain_packed.wgsl");
+    if !webgl {
+        return crate::render::tactical_shader::source(source);
+    }
+    use crate::render::webgl::patch;
+    let shared = &source[..source.find("fn resolve_pixel(").expect("packed resolve")];
+    let shared = patch(
+        shared,
+        "@group(0) @binding(4) var<storage, read_write> results: array<u32>;\n",
+        "",
+    );
+    let tail = patch(
+        &source[source.find("@vertex").expect("packed full-screen passes")..],
+        "let word = results[local_index(p)];",
+        "let word = textureLoad(fallback_results, vec2i(p), 0).r;",
+    );
+    crate::render::tactical_shader::source(&format!(
+        "{shared}\n{}\n{tail}",
+        include_str!("terrain_packed_webgl.wgsl")
+    ))
 }
 
 pub(super) struct PackedSpriteGpu {
@@ -62,7 +96,10 @@ pub(super) struct PackedSpriteGpu {
     ui: wgpu::RenderPipeline,
     voxel: wgpu::RenderPipeline,
     clear: wgpu::RenderPipeline,
-    compute: wgpu::ComputePipeline,
+    /// Ordinary devices order feedback in compute; WebGL2 in `feedback`.
+    compute: Option<wgpu::ComputePipeline>,
+    feedback: Option<wgpu::RenderPipeline>,
+    results_layout: Option<wgpu::BindGroupLayout>,
     resolve_read: wgpu::RenderPipeline,
     resolve_write: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
@@ -92,14 +129,12 @@ impl PackedSpriteGpu {
                       fragment: &str,
                       source_layout: &wgpu::BindGroupLayout,
                       material_layout: &wgpu::BindGroupLayout| {
-            // Native signed candidate and projection have one source shared
-            // with the opaque path, rather than another geometry/Z port.
-            let prefix = &body[..body.find("fn apply_fx(").expect("projection boundary")];
-            let source =
-                crate::render::tactical_shader::world_source(&format!("{prefix}\n{fragment}"));
+            let source = raster_source(body, fragment);
             let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Packed source stencil"),
-                source: wgpu::ShaderSource::Wgsl(source.into()),
+                source: wgpu::ShaderSource::Wgsl(
+                    crate::render::webgl::camera_source(device, source).into(),
+                ),
             });
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Packed source layout"),
@@ -139,9 +174,15 @@ impl PackedSpriteGpu {
                 cache: None,
             })
         };
+        let webgl = crate::render::gpu::webgl_fallback(device);
+        let visibility = if webgl {
+            wgpu::ShaderStages::FRAGMENT
+        } else {
+            wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT
+        };
         let texture = |binding, sample_type| wgpu::BindGroupLayoutEntry {
             binding,
-            visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+            visibility,
             ty: wgpu::BindingType::Texture {
                 sample_type,
                 view_dimension: wgpu::TextureViewDimension::D2,
@@ -149,43 +190,62 @@ impl PackedSpriteGpu {
             },
             count: None,
         };
+        let results = wgpu::BindGroupLayoutEntry {
+            binding: 4,
+            visibility,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: false },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        };
+        let params = wgpu::BindGroupLayoutEntry {
+            binding: 5,
+            visibility,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: true,
+                min_binding_size: wgpu::BufferSize::new(32),
+            },
+            count: None,
+        };
+        let sources = [
+            texture(0, wgpu::TextureSampleType::Uint),
+            texture(1, wgpu::TextureSampleType::Float { filterable: false }),
+            texture(2, wgpu::TextureSampleType::Uint),
+            texture(3, wgpu::TextureSampleType::Float { filterable: false }),
+        ];
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Packed destination transaction"),
-            entries: &[
-                texture(0, wgpu::TextureSampleType::Uint),
-                texture(1, wgpu::TextureSampleType::Float { filterable: false }),
-                texture(2, wgpu::TextureSampleType::Uint),
-                texture(3, wgpu::TextureSampleType::Float { filterable: false }),
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
-                        min_binding_size: wgpu::BufferSize::new(32),
-                    },
-                    count: None,
-                },
-            ],
+            entries: &if webgl {
+                [sources.as_slice(), &[params]].concat()
+            } else {
+                [sources.as_slice(), &[results, params]].concat()
+            },
+        });
+        // WebGL2 resolve reads the ordered words its feedback pass rendered.
+        let results_layout = webgl.then(|| {
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("WebGL2 packed ordered words"),
+                entries: &[texture(0, wgpu::TextureSampleType::Uint)],
+            })
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Native packed residue feedback"),
-            source: wgpu::ShaderSource::Wgsl(
-                crate::render::tactical_shader::source(include_str!("terrain_packed.wgsl")).into(),
-            ),
+            source: wgpu::ShaderSource::Wgsl(packed_source(webgl).into()),
         });
+        let resolve_groups: Vec<_> = std::iter::once(&layout)
+            .chain(results_layout.as_ref())
+            .map(Some)
+            .collect();
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Packed resolve layout"),
+            bind_group_layouts: &resolve_groups,
+            immediate_size: 0,
+        });
+        let feedback_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Packed feedback layout"),
             bind_group_layouts: &[Some(&layout)],
             immediate_size: 0,
         });
@@ -277,14 +337,25 @@ impl PackedSpriteGpu {
                 ],
                 None,
             ),
-            compute: device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("Packed native ordered words"),
-                layout: Some(&pipeline_layout),
-                module: &shader,
-                entry_point: Some("cs_main"),
-                compilation_options: Default::default(),
-                cache: None,
+            compute: (!webgl).then(|| {
+                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("Packed native ordered words"),
+                    layout: Some(&feedback_layout),
+                    module: &shader,
+                    entry_point: Some("cs_main"),
+                    compilation_options: Default::default(),
+                    cache: None,
+                })
             }),
+            feedback: webgl.then(|| {
+                full_screen(
+                    "fs_feedback",
+                    &feedback_layout,
+                    &[target(wgpu::TextureFormat::R32Uint)],
+                    None,
+                )
+            }),
+            results_layout,
             resolve_read: full_screen(
                 "fs_resolve",
                 &pipeline_layout,
@@ -331,6 +402,18 @@ impl PackedSpriteGpu {
         Stencil {
             words: create(wgpu::TextureFormat::R32Uint),
             candidates: create(wgpu::TextureFormat::R32Float),
+            results: self.results_layout.as_ref().map(|layout| {
+                let results = create(wgpu::TextureFormat::R32Uint);
+                let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("WebGL2 packed ordered words"),
+                    layout,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&results),
+                    }],
+                });
+                (results, group)
+            }),
         }
     }
 
@@ -347,7 +430,7 @@ impl PackedSpriteGpu {
         &mut self,
         params: Params,
         result_bytes: u64,
-    ) -> (wgpu::Buffer, wgpu::Buffer, u32) {
+    ) -> (wgpu::Buffer, Option<wgpu::Buffer>, u32) {
         const SLOTS: usize = 128;
         let chunk = self.uniform_slot / SLOTS;
         let offset = (self.uniform_slot % SLOTS) as u64 * self.uniform_stride;
@@ -364,6 +447,9 @@ impl PackedSpriteGpu {
         self.queue
             .write_buffer(&uniform, offset, bytemuck::bytes_of(&params));
         self.uniform_slot += 1;
+        if self.compute.is_none() {
+            return (uniform, None, offset as u32);
+        }
         if self
             .results
             .as_ref()
@@ -376,11 +462,7 @@ impl PackedSpriteGpu {
                 mapped_at_creation: false,
             }));
         }
-        (
-            uniform,
-            self.results.as_ref().unwrap().clone(),
-            offset as u32,
-        )
+        (uniform, self.results.clone(), offset as u32)
     }
 }
 
@@ -624,7 +706,8 @@ impl TerrainDrawRenderer {
         };
         let bytes = u64::from(rect[2]) * u64::from(rect[3]) * 4;
         assert!(
-            bytes <= u64::from(self.packed.device.limits().max_storage_buffer_binding_size),
+            self.packed.compute.is_none()
+                || bytes <= u64::from(self.packed.device.limits().max_storage_buffer_binding_size),
             "packed source rectangle fits storage binding"
         );
         let (params, results, uniform_offset) = self.packed.transaction_buffers(params, bytes);
@@ -642,27 +725,38 @@ impl TerrainDrawRenderer {
             binding,
             resource: wgpu::BindingResource::TextureView(view),
         };
+        let params = wgpu::BindGroupEntry {
+            binding: 5,
+            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                buffer: &params,
+                offset: 0,
+                size: wgpu::BufferSize::new(32),
+            }),
+        };
+        let sources = [
+            view(0, &targets.words),
+            view(1, &targets.depth),
+            view(2, &stencil.words),
+            view(3, &stencil.candidates),
+        ];
+        let entries = match &results {
+            Some(results) => [
+                sources.as_slice(),
+                &[
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: results.as_entire_binding(),
+                    },
+                    params,
+                ],
+            ]
+            .concat(),
+            None => [sources.as_slice(), &[params]].concat(),
+        };
         let transaction = packed.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Packed transaction"),
             layout: &packed.layout,
-            entries: &[
-                view(0, &targets.words),
-                view(1, &targets.depth),
-                view(2, &stencil.words),
-                view(3, &stencil.candidates),
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: results.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &params,
-                        offset: 0,
-                        size: wgpu::BufferSize::new(32),
-                    }),
-                },
-            ],
+            entries: &entries,
         });
         let attachment = |view| {
             Some(wgpu::RenderPassColorAttachment {
@@ -726,12 +820,26 @@ impl TerrainDrawRenderer {
                 pass.draw(0..6, piece.index..piece.index + 1);
             }
         }
-        {
+        if let (Some(feedback), Some((results, _))) = (&packed.feedback, &stencil.results) {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("WebGL2 packed ordered feedback"),
+                color_attachments: &[attachment(results)],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(feedback);
+            pass.set_bind_group(0, &transaction, &[uniform_offset]);
+            pass.set_scissor_rect(rect[0], rect[1], rect[2], rect[3]);
+            pass.draw(0..3, 0..1);
+        }
+        if let Some(compute) = &packed.compute {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("Native packed ordered feedback"),
                 timestamp_writes: None,
             });
-            pass.set_pipeline(&packed.compute);
+            pass.set_pipeline(compute);
             pass.set_bind_group(0, &transaction, &[uniform_offset]);
             let invocations = if offset < 0 {
                 offset.unsigned_abs()
@@ -768,6 +876,9 @@ impl TerrainDrawRenderer {
                 &packed.resolve_read
             });
             pass.set_bind_group(0, &transaction, &[uniform_offset]);
+            if let Some((_, results)) = &stencil.results {
+                pass.set_bind_group(1, results, &[]);
+            }
             pass.set_scissor_rect(rect[0], rect[1], rect[2], rect[3]);
             pass.draw(0..3, 0..1);
         }

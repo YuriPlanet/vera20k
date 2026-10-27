@@ -61,6 +61,10 @@ struct Targets {
     // Derived scratch, never display authority: snapshot clears every covered
     // pixel before each read-only chunk. prepare replaces it with target handles.
     read_only: wgpu::BindGroup,
+    /// WebGL2 resolve inputs: last bodies and shadow counts.
+    read_only_resolve: Option<wgpu::BindGroup>,
+    /// WebGL2 last-body and shadow-count attachments replacing the atomics.
+    read_only_targets: Option<[wgpu::TextureView; 2]>,
     read_only_rows: u32,
 }
 
@@ -87,6 +91,10 @@ pub(crate) struct TerrainDrawRenderer {
     source_layout: wgpu::BindGroupLayout,
     snapshot_layout: wgpu::BindGroupLayout,
     read_only_layout: wgpu::BindGroupLayout,
+    /// The read-only layout itself, or on WebGL2 its bodies plus shadow counts.
+    read_only_resolve_layout: wgpu::BindGroupLayout,
+    /// Browser WebGL2 fallback: read-only reduction uses render targets.
+    webgl: bool,
     targets: Option<Targets>,
     camera: CameraUniform,
     batches: TerrainBatches,
@@ -125,7 +133,16 @@ impl TerrainDrawRenderer {
             label: Some("Terrain live attachments"),
             entries: &[
                 entry(0, wgpu::TextureSampleType::Float { filterable: false }),
-                entry(1, wgpu::TextureSampleType::Depth),
+                // GLSL has no texelFetch for depth samplers; the WebGL2
+                // fallback loads depth as an unfilterable float texture.
+                entry(
+                    1,
+                    if super::gpu::webgl_fallback(device) {
+                        wgpu::TextureSampleType::Float { filterable: false }
+                    } else {
+                        wgpu::TextureSampleType::Depth
+                    },
+                ),
             ],
         });
         let snapshot_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -135,29 +152,41 @@ impl TerrainDrawRenderer {
                 entry(1, wgpu::TextureSampleType::Float { filterable: false }),
             ],
         });
-        let read_only_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Native read-only destination reduction"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: false },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        let webgl = super::gpu::webgl_fallback(device);
+        let read_only_layout = if webgl {
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("WebGL2 read-only last bodies"),
+                entries: &[entry(0, wgpu::TextureSampleType::Uint)],
+            })
+        } else {
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Native read-only destination reduction"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            })
+        };
+        let read_only_resolve_layout = if webgl {
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("WebGL2 read-only last bodies and shadow counts"),
+                entries: &[
+                    entry(0, wgpu::TextureSampleType::Uint),
+                    entry(1, wgpu::TextureSampleType::Float { filterable: false }),
+                ],
+            })
+        } else {
+            read_only_layout.clone()
+        };
         let snapshot_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Terrain encoded RGB565 and native Z snapshot"),
-            source: wgpu::ShaderSource::Wgsl(
-                format!(
-                    "{}\n{}",
-                    include_str!("native_packed.wgsl"),
-                    include_str!("terrain_snapshot.wgsl")
-                )
-                .into(),
-            ),
+            source: wgpu::ShaderSource::Wgsl(snapshot_source(webgl).into()),
         });
         let snapshot_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -165,10 +194,16 @@ impl TerrainDrawRenderer {
                 bind_group_layouts: &[Some(&source_layout)],
                 immediate_size: 0,
             });
+        // WebGL2 resets its render-target scratch through attachments instead.
+        let read_only_snapshot_groups: &[_] = if webgl {
+            &[Some(&source_layout)]
+        } else {
+            &[Some(&source_layout), Some(&read_only_layout)]
+        };
         let read_only_snapshot_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Native read-only snapshot/reset layout"),
-                bind_group_layouts: &[Some(&source_layout), Some(&read_only_layout)],
+                bind_group_layouts: read_only_snapshot_groups,
                 immediate_size: 0,
             });
         let target = |format| {
@@ -178,7 +213,13 @@ impl TerrainDrawRenderer {
                 write_mask: wgpu::ColorWrites::ALL,
             })
         };
-        let snapshot_pipeline = |fragment, layout: &wgpu::PipelineLayout| {
+        let snapshot_targets = [
+            target(wgpu::TextureFormat::R32Uint),
+            target(wgpu::TextureFormat::R32Float),
+            target(wgpu::TextureFormat::R32Uint),
+            target(wgpu::TextureFormat::R8Unorm),
+        ];
+        let snapshot_pipeline = |fragment, layout: &wgpu::PipelineLayout, targets| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("Terrain piece snapshot"),
                 layout: Some(layout),
@@ -191,10 +232,7 @@ impl TerrainDrawRenderer {
                 fragment: Some(wgpu::FragmentState {
                     module: &snapshot_shader,
                     entry_point: Some(fragment),
-                    targets: &[
-                        target(wgpu::TextureFormat::R32Uint),
-                        target(wgpu::TextureFormat::R32Float),
-                    ],
+                    targets,
                     compilation_options: Default::default(),
                 }),
                 primitive: Default::default(),
@@ -204,21 +242,11 @@ impl TerrainDrawRenderer {
                 cache: None,
             })
         };
-        // Reuse the production SHP projection/ABI verbatim, without its shape
-        // binding or fragment policy. Both consumers share native_row_z.
-        let shp = include_str!("zsprite_shader.wgsl");
-        let vertex = shp[..shp
-            .find("// One signed candidate owner")
-            .expect("SHP projection boundary")]
-            .replace("@group(2) @binding(0) var t_zshape: texture_2d<f32>;", "");
-        let source = super::tactical_shader::sprite_source(&format!(
-            "{vertex}\n{}\n{}",
-            include_str!("terrain_edit.wgsl"),
-            include_str!("terrain_read_only.wgsl")
-        ));
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Terrain signed Z and packed destination edit"),
-            source: wgpu::ShaderSource::Wgsl(source.into()),
+            source: wgpu::ShaderSource::Wgsl(
+                super::webgl::camera_source(device, edit_source(webgl)).into(),
+            ),
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Terrain edit layout"),
@@ -275,10 +303,25 @@ impl TerrainDrawRenderer {
                 ],
                 immediate_size: 0,
             });
-        let read_only_pipeline = |fragment| {
+        // The WebGL2 bodies pass writes the R32Uint target its shadows pass
+        // reads, so it binds no read-only group.
+        let read_only_body_layout = if webgl {
+            &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("WebGL2 read-only last body layout"),
+                bind_group_layouts: &[
+                    Some(batch.camera_bind_group_layout()),
+                    Some(batch.texture_bind_group_layout()),
+                    Some(&snapshot_layout),
+                ],
+                immediate_size: 0,
+            })
+        } else {
+            &read_only_pipeline_layout
+        };
+        let read_only_pipeline = |fragment, layout, target: wgpu::ColorTargetState| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(fragment),
-                layout: Some(&read_only_pipeline_layout),
+                layout: Some(layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_read_only"),
@@ -292,11 +335,7 @@ impl TerrainDrawRenderer {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: Some(fragment),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::empty(),
-                    })],
+                    targets: &[Some(target)],
                     compilation_options: Default::default(),
                 }),
                 primitive: Default::default(),
@@ -308,16 +347,43 @@ impl TerrainDrawRenderer {
         };
         let resolve_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Native read-only ordered word resolution"),
-            source: wgpu::ShaderSource::Wgsl(
-                super::tactical_shader::source(include_str!("terrain_read_only_resolve.wgsl"))
-                    .into(),
-            ),
+            source: wgpu::ShaderSource::Wgsl(resolve_source(webgl).into()),
         });
         let resolve_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Native read-only resolve layout"),
-            bind_group_layouts: &[Some(&snapshot_layout), Some(&read_only_layout)],
+            bind_group_layouts: &[Some(&snapshot_layout), Some(&read_only_resolve_layout)],
             immediate_size: 0,
         });
+        // Color writes are disabled on ordinary devices; only the scratch atomics change.
+        let discarded = wgpu::ColorTargetState {
+            format,
+            blend: None,
+            write_mask: wgpu::ColorWrites::empty(),
+        };
+        let (body_target, shadow_target) = if webgl {
+            let count = wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            };
+            (
+                wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::R32Uint,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                },
+                wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::R8Unorm,
+                    blend: Some(wgpu::BlendState {
+                        color: count,
+                        alpha: count,
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                },
+            )
+        } else {
+            (discarded.clone(), discarded)
+        };
         let read_only_resolve_pipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("Native read-only final destination words"),
@@ -341,15 +407,28 @@ impl TerrainDrawRenderer {
                 cache: None,
             });
         Self {
-            snapshot_pipeline: snapshot_pipeline("fs_main", &snapshot_pipeline_layout),
+            snapshot_pipeline: snapshot_pipeline(
+                "fs_main",
+                &snapshot_pipeline_layout,
+                &snapshot_targets[..2],
+            ),
             read_only_snapshot_pipeline: snapshot_pipeline(
                 "fs_read_only",
                 &read_only_snapshot_layout,
+                &snapshot_targets[..if webgl { 4 } else { 2 }],
             ),
             body_pipeline: pipeline("fs_body", true),
             shadow_pipeline: pipeline("fs_shadow", true),
-            read_only_body_pipeline: read_only_pipeline("fs_read_only_body"),
-            read_only_shadow_pipeline: read_only_pipeline("fs_read_only_shadow"),
+            read_only_body_pipeline: read_only_pipeline(
+                "fs_read_only_body",
+                read_only_body_layout,
+                body_target,
+            ),
+            read_only_shadow_pipeline: read_only_pipeline(
+                "fs_read_only_shadow",
+                &read_only_pipeline_layout,
+                shadow_target,
+            ),
             read_only_resolve_pipeline,
             // Original per-piece transactions remain only as test references.
             #[cfg(test)]
@@ -362,6 +441,8 @@ impl TerrainDrawRenderer {
             source_layout,
             snapshot_layout,
             read_only_layout,
+            read_only_resolve_layout,
+            webgl,
             targets: None,
             batches: TerrainBatches::default(),
             read_only_commands: Vec::new(),
@@ -465,7 +546,7 @@ impl TerrainDrawRenderer {
         assert_eq!(color.size(), depth.texture().size());
         let encoded_source = color.create_view(&wgpu::TextureViewDescriptor {
             label: Some("Terrain encoded source bytes"),
-            format: Some(color.format().remove_srgb_suffix()),
+            format: Some(super::webgl::encoded_format(device, color.format())),
             usage: Some(wgpu::TextureUsages::TEXTURE_BINDING),
             ..Default::default()
         });
@@ -500,6 +581,34 @@ impl TerrainDrawRenderer {
             layout: &self.snapshot_layout,
             entries: &[binding(0, &words), binding(1, &scratch_depth)],
         });
+        if self.webgl {
+            // Whole-surface render targets: one band covers every row.
+            let bodies = scratch(wgpu::TextureFormat::R32Uint);
+            let shadows = scratch(wgpu::TextureFormat::R8Unorm);
+            let read_only = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("WebGL2 read-only last bodies"),
+                layout: &self.read_only_layout,
+                entries: &[binding(0, &bodies)],
+            });
+            let read_only_resolve = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("WebGL2 read-only last bodies and shadow counts"),
+                layout: &self.read_only_resolve_layout,
+                entries: &[binding(0, &bodies), binding(1, &shadows)],
+            });
+            return Targets {
+                source_color: color.clone(),
+                source_depth: depth.clone(),
+                _encoded_source: encoded_source,
+                words,
+                depth: scratch_depth,
+                source,
+                snapshot,
+                read_only,
+                read_only_resolve: Some(read_only_resolve),
+                read_only_targets: Some([bodies, shadows]),
+                read_only_rows: color.height(),
+            };
+        }
         let read_only_rows = color.height().min(
             (u64::from(device.limits().max_storage_buffer_binding_size)
                 / 8
@@ -532,6 +641,8 @@ impl TerrainDrawRenderer {
             source,
             snapshot,
             read_only,
+            read_only_resolve: None,
+            read_only_targets: None,
             read_only_rows,
         }
     }
@@ -684,9 +795,20 @@ impl TerrainDrawRenderer {
                 continue;
             }
             {
+                let snapshot = [attachment(&targets.words), attachment(&targets.depth)];
+                let webgl_snapshot = targets.read_only_targets.as_ref().map(|[bodies, shadows]| {
+                    [
+                        attachment(&targets.words),
+                        attachment(&targets.depth),
+                        attachment(bodies),
+                        attachment(shadows),
+                    ]
+                });
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Read-only snapshot and covered scratch reset"),
-                    color_attachments: &[attachment(&targets.words), attachment(&targets.depth)],
+                    color_attachments: webgl_snapshot
+                        .as_ref()
+                        .map_or(&snapshot[..], |all| &all[..]),
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
@@ -694,7 +816,9 @@ impl TerrainDrawRenderer {
                 });
                 pass.set_pipeline(&self.read_only_snapshot_pipeline);
                 pass.set_bind_group(0, &targets.source, &[]);
-                pass.set_bind_group(1, &targets.read_only, &[]);
+                if targets.read_only_targets.is_none() {
+                    pass.set_bind_group(1, &targets.read_only, &[]);
+                }
                 for command in commands {
                     let Some([x, y, width, height]) = band_rect(command.rect) else {
                         continue;
@@ -707,9 +831,16 @@ impl TerrainDrawRenderer {
                 (TerrainPiece::Body, &self.read_only_body_pipeline),
                 (TerrainPiece::Shadow, &self.read_only_shadow_pipeline),
             ] {
+                // WebGL2 reduces into its own attachments; ordinary devices
+                // attach the colour target with writes disabled.
+                let output = match (&targets.read_only_targets, piece) {
+                    (Some([bodies, _]), TerrainPiece::Body) => bodies,
+                    (Some([_, shadows]), TerrainPiece::Shadow) => shadows,
+                    (None, _) => color,
+                };
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Read-only admitted source reduction"),
-                    color_attachments: &[attachment(color)],
+                    color_attachments: &[attachment(output)],
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
@@ -718,7 +849,9 @@ impl TerrainDrawRenderer {
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, batch.camera_bind_group(), &[]);
                 pass.set_bind_group(2, &targets.snapshot, &[]);
-                pass.set_bind_group(3, &targets.read_only, &[]);
+                if targets.read_only_targets.is_none() || piece == TerrainPiece::Shadow {
+                    pass.set_bind_group(3, &targets.read_only, &[]);
+                }
                 pass.set_vertex_buffer(0, buffer.slice(..));
                 let mut bound_atlas = None;
                 for (ordinal, command) in commands.iter().enumerate() {
@@ -752,7 +885,14 @@ impl TerrainDrawRenderer {
                 });
                 pass.set_pipeline(&self.read_only_resolve_pipeline);
                 pass.set_bind_group(0, &targets.snapshot, &[]);
-                pass.set_bind_group(1, &targets.read_only, &[]);
+                pass.set_bind_group(
+                    1,
+                    targets
+                        .read_only_resolve
+                        .as_ref()
+                        .unwrap_or(&targets.read_only),
+                    &[],
+                );
                 // Repeated clipped rectangles write the same immutable result.
                 // Pixels with no admitted operation discard, preserving live bytes.
                 for command in commands {
@@ -892,6 +1032,143 @@ impl TerrainDrawRenderer {
     }
 }
 
+/// Snapshot module source. The WebGL2 fallback loads the scene through its
+/// sRGB view and resets render-target scratch instead of storage atomics.
+fn snapshot_source(webgl: bool) -> String {
+    let snapshot = include_str!("terrain_snapshot.wgsl");
+    if !webgl {
+        return format!("{}\n{}", include_str!("native_packed.wgsl"), snapshot);
+    }
+    let ordinary = &snapshot[..snapshot
+        .find("// Read-only span scratch")
+        .expect("read-only snapshot section")];
+    crate::render::webgl::encoded_shader(
+        &format!(
+            "{}\n{ordinary}\n{}",
+            include_str!("native_packed.wgsl"),
+            WEBGL_READ_ONLY_SNAPSHOT
+        ),
+        &[
+            (
+                "textureLoad(scene, p, 0).rgb",
+                "fallback_load_encoded(textureLoad(scene, p, 0)).rgb",
+            ),
+            (
+                "var live_depth: texture_depth_2d;",
+                "var live_depth: texture_2d<f32>;",
+            ),
+            (
+                "output.depth = textureLoad(live_depth, p, 0);",
+                "output.depth = textureLoad(live_depth, p, 0).r;",
+            ),
+        ],
+    )
+}
+
+/// WebGL2 read-only reset: the covered pixels' last body and shadow count.
+const WEBGL_READ_ONLY_SNAPSHOT: &str = "struct FallbackReadOnlySnapshot {
+    @location(0) word: u32,
+    @location(1) depth: f32,
+    @location(2) body: u32,
+    @location(3) shadows: vec4f,
+};
+@fragment
+fn fs_read_only(@builtin(position) position: vec4f) -> FallbackReadOnlySnapshot {
+    let snapshot = snapshot_at(position);
+    return FallbackReadOnlySnapshot(snapshot.word, snapshot.depth, 0u, vec4f(0.0));
+}";
+
+/// Destination edit module source. Without fragment atomics, the WebGL2
+/// fallback draws one span's bodies in command order into an R32Uint target,
+/// so the last admitted body is the one stored, as `atomicMax` selects; each
+/// later admitted shadow adds 1/255 to an R8Unorm count by additive blending.
+fn edit_source(webgl: bool) -> String {
+    // Reuse the production SHP projection/ABI verbatim, without its shape
+    // binding or fragment policy. Both consumers share native_row_z.
+    let shp = include_str!("zsprite_shader.wgsl");
+    let vertex = shp[..shp
+        .find("// One signed candidate owner")
+        .expect("SHP projection boundary")]
+        .replace("@group(2) @binding(0) var t_zshape: texture_2d<f32>;", "");
+    let read_only = include_str!("terrain_read_only.wgsl");
+    let read_only = if webgl {
+        use crate::render::webgl::patch;
+        let read_only = patch(
+            read_only,
+            "struct ReadOnlyPixel { body: atomic<u32>, shadows: atomic<u32> };
+@group(3) @binding(0) var<storage, read_write> read_only_pixels: array<ReadOnlyPixel>;",
+            "@group(3) @binding(0) var read_only_bodies: texture_2d<u32>;",
+        );
+        let read_only = patch(
+            &read_only,
+            "fn read_only_address(input: VertexOutput) -> u32 {
+    let p = vec2u(input.position.xy);
+    let width = textureDimensions(old_depth).x;
+    let rows = arrayLength(&read_only_pixels) / width;
+    return (p.y % rows) * width + p.x;
+}",
+            "",
+        );
+        let read_only = patch(
+            &read_only,
+            "fn fs_read_only_body(input: VertexOutput) -> @location(0) vec4f {",
+            "fn fs_read_only_body(input: VertexOutput) -> @location(0) u32 {",
+        );
+        let read_only = patch(
+            &read_only,
+            "    atomicMax(&read_only_pixels[read_only_address(input)].body,
+        (input.command_ordinal << 16u) | word);
+    return vec4f(0.0); // Color writes are disabled; only the scratch atomic changes.",
+            "    return (input.command_ordinal << 16u) | word;",
+        );
+        patch(
+            &read_only,
+            "    let address = read_only_address(input);
+    let last_body = atomicLoad(&read_only_pixels[address].body) >> 16u;
+    if input.command_ordinal > last_body {
+        atomicAdd(&read_only_pixels[address].shadows, 1u);
+    }
+    return vec4f(0.0);",
+            "    let last_body = textureLoad(read_only_bodies, vec2i(input.position.xy), 0).r >> 16u;
+    if input.command_ordinal <= last_body { discard; }
+    return vec4f(1.0 / 255.0);",
+        )
+    } else {
+        read_only.to_owned()
+    };
+    super::tactical_shader::sprite_source(&format!(
+        "{vertex}\n{}\n{read_only}",
+        include_str!("terrain_edit.wgsl"),
+    ))
+}
+
+/// Read-only resolve module source; the WebGL2 fallback reads the last body
+/// and shadow count from the render-target scratch.
+fn resolve_source(webgl: bool) -> String {
+    let resolve = include_str!("terrain_read_only_resolve.wgsl");
+    if !webgl {
+        return super::tactical_shader::source(resolve);
+    }
+    use crate::render::webgl::patch;
+    let resolve = patch(
+        resolve,
+        "struct ReadOnlyPixel { body: atomic<u32>, shadows: atomic<u32> };
+@group(1) @binding(0) var<storage, read_write> read_only_pixels: array<ReadOnlyPixel>;",
+        "@group(1) @binding(0) var read_only_bodies: texture_2d<u32>;
+@group(1) @binding(1) var read_only_shadows: texture_2d<f32>;",
+    );
+    let resolve = patch(
+        &resolve,
+        "    let rows = arrayLength(&read_only_pixels) / width;
+    let address = (p.y % rows) * width + p.x;
+    let body = atomicLoad(&read_only_pixels[address].body);
+    let shadows = atomicLoad(&read_only_pixels[address].shadows);",
+        "    let body = textureLoad(read_only_bodies, vec2i(p), 0).r;
+    let shadows = u32(round(textureLoad(read_only_shadows, vec2i(p), 0).r * 255.0));",
+    );
+    super::tactical_shader::source(&resolve)
+}
+
 fn piece_scissor(
     instance: &SpriteInstance,
     camera: CameraUniform,
@@ -925,3 +1202,181 @@ fn piece_scissor(
 #[cfg(test)]
 #[path = "projectile_draw_gpu_tests.rs"]
 mod projectile_gpu_tests;
+
+#[cfg(test)]
+mod webgl_shader_tests {
+    use crate::render::{batch, tactical_shader, webgl::pad_camera_structs};
+
+    /// Every module the browser WebGL2 fallback compiles, as it compiles it.
+    fn fallback_sources() -> Vec<(&'static str, String)> {
+        let sprite = format!(
+            "{}\n{}",
+            tactical_shader::SPRITE_SOURCE,
+            include_str!("zsprite_shader.wgsl")
+        );
+        vec![
+            (
+                "batch",
+                pad_camera_structs(&tactical_shader::sprite_source(batch::BATCH_SHADER)),
+            ),
+            (
+                "z depth",
+                pad_camera_structs(&tactical_shader::world_source(batch::ZDEPTH_SHADER)),
+            ),
+            (
+                "z sprite",
+                pad_camera_structs(&tactical_shader::sprite_source(batch::ZSPRITE_SHADER)),
+            ),
+            (
+                "voxel sprite",
+                pad_camera_structs(&tactical_shader::world_source(batch::VOXEL_SPRITE_SHADER)),
+            ),
+            ("terrain snapshot", super::snapshot_source(true)),
+            (
+                "terrain edit",
+                pad_camera_structs(&super::edit_source(true)),
+            ),
+            ("read-only resolve", super::resolve_source(true)),
+            ("packed composite", super::packed::packed_source(true)),
+            (
+                "packed SHP",
+                pad_camera_structs(&super::packed::raster_source(
+                    &sprite,
+                    include_str!("terrain_packed_shp.wgsl"),
+                )),
+            ),
+            (
+                "packed voxel",
+                pad_camera_structs(&super::packed::raster_source(
+                    include_str!("sprite_voxel_shader.wgsl"),
+                    include_str!("terrain_packed_voxel.wgsl"),
+                )),
+            ),
+            ("surface lines", super::surface_lines::shader_source(true)),
+            (
+                "ion blast",
+                tactical_shader::source(include_str!("terrain_ion_blast.wgsl")),
+            ),
+            ("scaled copy", include_str!("scaled_copy.wgsl").to_owned()),
+            (
+                "chrono screen",
+                crate::render::chrono_screen::shader_source(true),
+            ),
+            (
+                "shell presentation",
+                crate::render::shell_surface_present::shader_source(true),
+            ),
+            (
+                "combat light",
+                pad_camera_structs(&crate::render::combat_light::shader_source(true)),
+            ),
+        ]
+    }
+
+    /// The fallback edits the ordinary shader sources; every edit must still
+    /// apply, and every entry point must translate to WebGL2's GLSL ES 3.00
+    /// as wgpu's GL backend translates it.
+    #[test]
+    fn webgl_fallback_shaders_translate_to_glsl_es() {
+        let mut integer_mix = Vec::new();
+        for (name, source) in fallback_sources() {
+            let module = naga::front::wgsl::parse_str(&source)
+                .unwrap_or_else(|error| panic!("{name}: {}", error.emit_to_string(&source)));
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap_or_else(|error| panic!("{name}: {error:?}"));
+            assert!(
+                !source.contains("var<storage") && !source.contains("@compute"),
+                "{name} keeps a WebGL2-unsupported resource"
+            );
+            let functions = module
+                .functions
+                .iter()
+                .map(|(handle, function)| (function, &info[handle]))
+                .chain(
+                    module
+                        .entry_points
+                        .iter()
+                        .enumerate()
+                        .map(|(index, entry)| (&entry.function, info.get_entry_point(index))),
+                );
+            for (function, function_info) in functions {
+                for (handle, expression) in function.expressions.iter() {
+                    let naga::Expression::Select { condition, .. } = expression else {
+                        continue;
+                    };
+                    let vector = matches!(
+                        function_info[*condition].ty.inner_with(&module.types),
+                        naga::TypeInner::Vector { .. }
+                    );
+                    let float = matches!(
+                        function_info[handle].ty.inner_with(&module.types),
+                        naga::TypeInner::Vector {
+                            scalar: naga::Scalar {
+                                kind: naga::ScalarKind::Float,
+                                ..
+                            },
+                            ..
+                        }
+                    );
+                    // naga writes a vector select as mix(), which GLSL ES 3.00
+                    // defines for float vectors only.
+                    if vector && !float {
+                        let line = function
+                            .expressions
+                            .get_span(handle)
+                            .location(&source)
+                            .line_number;
+                        integer_mix.push(format!(
+                            "{name}: {}",
+                            source
+                                .lines()
+                                .nth(line as usize - 1)
+                                .unwrap_or_default()
+                                .trim()
+                        ));
+                    }
+                }
+            }
+            for entry in &module.entry_points {
+                let options = naga::back::glsl::Options {
+                    version: naga::back::glsl::Version::Embedded {
+                        version: 300,
+                        is_webgl: true,
+                    },
+                    ..Default::default()
+                };
+                let pipeline = naga::back::glsl::PipelineOptions {
+                    shader_stage: entry.stage,
+                    entry_point: entry.name.clone(),
+                    multiview: None,
+                };
+                let mut glsl = String::new();
+                naga::back::glsl::Writer::new(
+                    &mut glsl,
+                    &module,
+                    &info,
+                    &options,
+                    &pipeline,
+                    naga::proc::BoundsCheckPolicies::default(),
+                )
+                .and_then(|mut writer| writer.write().map(drop))
+                .unwrap_or_else(|error| panic!("{name} {}: {error}", entry.name));
+                assert!(
+                    !glsl.contains("webgl_"),
+                    "{name} {}: WebGL reserves webgl_ names",
+                    entry.name
+                );
+            }
+        }
+        integer_mix.dedup();
+        assert!(
+            integer_mix.is_empty(),
+            "GLSL ES 3.00 has no integer mix():\n{}",
+            integer_mix.join("\n")
+        );
+    }
+}

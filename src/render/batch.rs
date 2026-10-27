@@ -20,20 +20,20 @@ use crate::render::gpu::GpuContext;
 /// Vertex shader: generates quad from vertex_index, applies per-instance position/size,
 /// and transforms screen-space pixel coordinates to clip space using the camera uniform.
 /// Fragment shader: samples the sprite texture with per-instance UV coordinates.
-const BATCH_SHADER: &str = include_str!("batch_shader.wgsl");
+pub(crate) const BATCH_SHADER: &str = include_str!("batch_shader.wgsl");
 
 /// WGSL shader with per-pixel Z-depth output via @builtin(frag_depth).
 /// Samples a parallel R8 depth atlas to compute per-pixel terrain depth.
-const ZDEPTH_SHADER: &str = include_str!("zdepth_shader.wgsl");
+pub(crate) const ZDEPTH_SHADER: &str = include_str!("zdepth_shader.wgsl");
 
 /// WGSL per-pixel Z-tested SHP shader: native row Z from the gradient table,
 /// optional BUILDNGZ z-shape subtraction, `frag_depth` on the shared axis.
-const ZSPRITE_SHADER: &str = include_str!("zsprite_shader.wgsl");
+pub(crate) const ZSPRITE_SHADER: &str = include_str!("zsprite_shader.wgsl");
 
 /// WGSL voxel-sprite shader: byte → (palette | house_ramp) → fx pipeline.
 /// Atlas is R8Uint (palette indices); palette + per-house RGB ramp are
 /// sampled via PaletteSet (bind group 2).
-const VOXEL_SPRITE_SHADER: &str = include_str!("sprite_voxel_shader.wgsl");
+pub(crate) const VOXEL_SPRITE_SHADER: &str = include_str!("sprite_voxel_shader.wgsl");
 
 /// Per-sprite instance data uploaded to the GPU each frame.
 ///
@@ -525,7 +525,11 @@ impl BatchRenderer {
             device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Batch Shader"),
                 source: wgpu::ShaderSource::Wgsl(
-                    crate::render::tactical_shader::sprite_source(BATCH_SHADER).into(),
+                    crate::render::webgl::camera_source(
+                        device,
+                        crate::render::tactical_shader::sprite_source(BATCH_SHADER),
+                    )
+                    .into(),
                 ),
             });
 
@@ -618,7 +622,10 @@ impl BatchRenderer {
         let camera_buffer: wgpu::Buffer =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Camera Uniform"),
-                contents: bytemuck::cast_slice(&[camera_uniform]),
+                contents: &crate::render::webgl::uniform_bytes(
+                    device,
+                    bytemuck::cast_slice(&[camera_uniform]),
+                ),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
@@ -637,7 +644,10 @@ impl BatchRenderer {
         let ui_camera_buffer: wgpu::Buffer =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("UI Camera Uniform"),
-                contents: bytemuck::cast_slice(&[camera_uniform]),
+                contents: &crate::render::webgl::uniform_bytes(
+                    device,
+                    bytemuck::cast_slice(&[camera_uniform]),
+                ),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
         let ui_camera_bind_group = camera_group(
@@ -878,7 +888,11 @@ impl BatchRenderer {
             device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("ZDepth Shader"),
                 source: wgpu::ShaderSource::Wgsl(
-                    crate::render::tactical_shader::world_source(ZDEPTH_SHADER).into(),
+                    crate::render::webgl::camera_source(
+                        device,
+                        crate::render::tactical_shader::world_source(ZDEPTH_SHADER),
+                    )
+                    .into(),
                 ),
             });
         let zdepth_pipeline_layout: wgpu::PipelineLayout =
@@ -969,7 +983,11 @@ impl BatchRenderer {
             device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("ZSprite Shader"),
                 source: wgpu::ShaderSource::Wgsl(
-                    crate::render::tactical_shader::sprite_source(ZSPRITE_SHADER).into(),
+                    crate::render::webgl::camera_source(
+                        device,
+                        crate::render::tactical_shader::sprite_source(ZSPRITE_SHADER),
+                    )
+                    .into(),
                 ),
             });
         let zsprite_pipeline_layout: wgpu::PipelineLayout =
@@ -1092,7 +1110,11 @@ impl BatchRenderer {
             device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Voxel Sprite Shader"),
                 source: wgpu::ShaderSource::Wgsl(
-                    crate::render::tactical_shader::world_source(VOXEL_SPRITE_SHADER).into(),
+                    crate::render::webgl::camera_source(
+                        device,
+                        crate::render::tactical_shader::world_source(VOXEL_SPRITE_SHADER),
+                    )
+                    .into(),
                 ),
             });
         let voxel_sprite_pipeline_layout: wgpu::PipelineLayout =
@@ -1553,7 +1575,10 @@ impl BatchRenderer {
     ) -> (wgpu::Buffer, wgpu::BindGroup) {
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Surface UI Camera Uniform"),
-            contents: bytemuck::bytes_of(&self.ui_camera_uniform()),
+            contents: &crate::render::webgl::uniform_bytes(
+                device,
+                bytemuck::bytes_of(&self.ui_camera_uniform()),
+            ),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let group = camera_group(

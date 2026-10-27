@@ -131,6 +131,8 @@ js-sys = { version = "0.3", optional = true }
 web-sys = { version = "0.3", optional = true, features = ["Window", "Document", "HtmlCanvasElement", "Element", "HtmlElement", "AudioBuffer", "AudioBufferSourceNode", "AudioContext", "AudioDestinationNode", "AudioNode", "AudioScheduledSourceNode", "BaseAudioContext"] }
 console_log = { version = "1", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
+# Browser WebGL2 fallback for pages without WebGPU; desktop backends are unchanged.
+wgpu = { version = "29.0.4", features = ["webgl"] }
 
 [target.'cfg(unix)'.dependencies]
 # Continuing presentation uptime across saved-game process restarts. The
@@ -160,6 +162,9 @@ winresource = { version = "0.1.34", default-features = false }
 [dev-dependencies]
 # Client tests use core's test fixtures and helpers.
 vera20k-core = { path = "src", features = ["test-support"] }
+# wgpu's own naga, with the GLSL ES writer its WebGL2 backend uses, so the
+# browser fallback's shaders are translated in ordinary test runs.
+naga = { version = "29.0.4", features = ["wgsl-in", "glsl-out"] }
 
 # Dependencies both crates use, declared once so they cannot drift apart.
 [workspace.dependencies]

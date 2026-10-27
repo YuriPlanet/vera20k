@@ -34,6 +34,35 @@ mod web_present;
 /// clamped to the adapter's own maximum anyway.
 pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 16_384;
 
+/// True on the browser's WebGL2 fallback device, which has no storage buffers,
+/// compute, fragment atomics or reinterpreting texture views. Renderers that
+/// use those select render-target equivalents there; every other device keeps
+/// its ordinary path. Always false outside the browser build.
+pub(crate) fn webgl_fallback(device: &wgpu::Device) -> bool {
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    {
+        device.limits().max_storage_buffers_per_shader_stage == 0
+    }
+    // Tests can run the fallback's passes on a native device, where the GPU
+    // goldens check them against the storage/compute paths they replace.
+    #[cfg(all(
+        test,
+        not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))
+    ))]
+    {
+        let _ = device;
+        std::env::var_os("VERA20K_TEST_WEBGL_FALLBACK").is_some_and(|value| value == "1")
+    }
+    #[cfg(not(any(
+        test,
+        all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")
+    )))]
+    {
+        let _ = device;
+        false
+    }
+}
+
 /// One production frame, backed by either the window or its hidden capture target.
 pub struct GpuFrame {
     pub texture: wgpu::Texture,
@@ -189,10 +218,42 @@ impl GpuContext {
         // shroud GPU comparisons while retaining primary backends by default.
         // wgpu 29 requires the display at instance creation for Wayland EGL:
         // https://docs.rs/wgpu-types/29.0.1/wgpu_types/struct.InstanceDescriptor.html
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let instance: wgpu::Instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY.with_env(),
             ..wgpu::InstanceDescriptor::new_with_display_handle(Box::new(display))
         });
+        // Browsers without a usable WebGPU adapter fall back to WebGL2. A
+        // surface-less probe with the adapter options used below decides
+        // first: a canvas given a WebGPU context can no longer create WebGL2.
+        // wgpu's own probe (util::is_browser_webgpu_supported) asks with
+        // default options, which can succeed where this request fails.
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let instance: wgpu::Instance = {
+            let probe = wgpu::Instance::new(wgpu::InstanceDescriptor {
+                backends: wgpu::Backends::BROWSER_WEBGPU,
+                ..wgpu::InstanceDescriptor::new_without_display_handle()
+            });
+            let webgpu = probe
+                .request_adapter(&wgpu::RequestAdapterOptions {
+                    power_preference: wgpu::PowerPreference::HighPerformance,
+                    compatible_surface: None,
+                    force_fallback_adapter: false,
+                })
+                .await
+                .is_ok();
+            if !webgpu {
+                log::warn!("WebGPU adapter unavailable; using the WebGL2 fallback");
+            }
+            wgpu::Instance::new(wgpu::InstanceDescriptor {
+                backends: if webgpu {
+                    wgpu::Backends::BROWSER_WEBGPU
+                } else {
+                    wgpu::Backends::GL
+                },
+                ..wgpu::InstanceDescriptor::new_with_display_handle(Box::new(display))
+            })
+        };
 
         // Create the surface from our window. The surface is what we draw pixels to.
         let surface: wgpu::Surface<'static> = instance
@@ -241,6 +302,18 @@ impl GpuContext {
                 .min(MAX_USEFUL_TEXTURE_DIM),
             ..wgpu::Limits::default()
         };
+        // WebGL2 has no storage buffers or compute, so the WebGPU baseline is
+        // unattainable; request what the context offers. Renderers detect the
+        // fallback through `webgl_fallback`.
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let required_limits = if adapter_info.backend == wgpu::Backend::Gl {
+            wgpu::Limits {
+                max_texture_dimension_2d: required_limits.max_texture_dimension_2d,
+                ..adapter_limits.clone()
+            }
+        } else {
+            required_limits
+        };
         let (device, queue): (wgpu::Device, wgpu::Queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("RA2 Device"),
@@ -268,7 +341,13 @@ impl GpuContext {
             );
         }
         let downlevel = adapter.get_downlevel_capabilities();
-        if !downlevel.flags.contains(wgpu::DownlevelFlags::VIEW_FORMATS) {
+        // The WebGL2 fallback replaces both requirements below with
+        // render-target equivalents; see `webgl_fallback`.
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let webgl = false;
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let webgl = adapter_info.backend == wgpu::Backend::Gl;
+        if !webgl && !downlevel.flags.contains(wgpu::DownlevelFlags::VIEW_FORMATS) {
             bail!(
                 "exact stock-shell presentation requires compatible sRGB/unorm \
                  texture views, adapter downlevel flags are {:?}",
@@ -278,9 +357,10 @@ impl GpuContext {
         // TerrainDrawRenderer reduces ordered read-only Bullet destinations
         // with fragment atomics. Reject an insufficient downlevel adapter here
         // rather than panicking later during render-pipeline validation.
-        if !downlevel
-            .flags
-            .contains(wgpu::DownlevelFlags::FRAGMENT_WRITABLE_STORAGE)
+        if !webgl
+            && !downlevel
+                .flags
+                .contains(wgpu::DownlevelFlags::FRAGMENT_WRITABLE_STORAGE)
         {
             bail!(
                 "native projectile drawing requires fragment-writable storage, \

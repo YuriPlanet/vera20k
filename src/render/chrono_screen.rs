@@ -50,7 +50,8 @@ impl ChronoScreenRenderer {
             depth_or_array_layers: 1,
         };
         let format = source.format();
-        let encoded_format = format.remove_srgb_suffix();
+        let encoded_format = super::webgl::encoded_format(&gpu.device, format);
+        let webgl = super::gpu::webgl_fallback(&gpu.device);
         let snapshot = gpu.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Chrono native retained scene"),
             size: extent,
@@ -74,13 +75,24 @@ impl ChronoScreenRenderer {
             mapped_at_creation: false,
         });
         // One immutable retail table owner; do not regenerate sin/cos.
-        let trig = gpu
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Chrono shared retail trig table"),
-                contents: crate::util::native_trig::RETAIL_SINE_TABLE,
-                usage: wgpu::BufferUsages::STORAGE,
-            });
+        // WebGL2 has no storage buffers; the same bytes become a data texture.
+        let trig = (!webgl).then(|| {
+            gpu.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Chrono shared retail trig table"),
+                    contents: crate::util::native_trig::RETAIL_SINE_TABLE,
+                    usage: wgpu::BufferUsages::STORAGE,
+                })
+        });
+        let trig_table = webgl.then(|| {
+            super::webgl::table_texture(
+                &gpu.device,
+                &gpu.queue,
+                "Chrono shared retail trig table",
+                wgpu::TextureFormat::R32Float,
+                crate::util::native_trig::RETAIL_SINE_TABLE,
+            )
+        });
         let layout = gpu
             .device
             .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -109,10 +121,18 @@ impl ChronoScreenRenderer {
                     wgpu::BindGroupLayoutEntry {
                         binding: 2,
                         visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                        ty: if webgl {
+                            wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            }
+                        } else {
+                            wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            }
                         },
                         count: None,
                     },
@@ -132,7 +152,11 @@ impl ChronoScreenRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: trig.as_entire_binding(),
+                    resource: match (&trig, &trig_table) {
+                        (Some(trig), _) => trig.as_entire_binding(),
+                        (None, Some(table)) => wgpu::BindingResource::TextureView(table),
+                        (None, None) => unreachable!("one trig table owner"),
+                    },
                 },
             ],
         });
@@ -140,7 +164,7 @@ impl ChronoScreenRenderer {
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Chrono native screen shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("chrono_screen.wgsl").into()),
+                source: wgpu::ShaderSource::Wgsl(shader_source(webgl).into()),
             });
         let pipeline_layout = gpu
             .device
@@ -191,7 +215,7 @@ impl ChronoScreenRenderer {
         self.extent.width == tactical[2]
             && self.extent.height == source.height()
             && self.origin[0] == tactical[0]
-            && self.encoded_format == source.format().remove_srgb_suffix()
+            && self.encoded_format.remove_srgb_suffix() == source.format().remove_srgb_suffix()
     }
 
     pub(crate) fn capture(&self, encoder: &mut wgpu::CommandEncoder, source: &wgpu::Texture) {
@@ -261,6 +285,37 @@ impl ChronoScreenRenderer {
         pass.set_bind_group(0, &self.group, &[]);
         pass.draw(0..3, 0..1);
     }
+}
+
+/// The WebGL2 fallback reads the trig table from a data texture and the
+/// retained scene through its sRGB view (see `render::webgl`).
+pub(crate) fn shader_source(webgl: bool) -> String {
+    const SOURCE: &str = include_str!("chrono_screen.wgsl");
+    if !webgl {
+        return SOURCE.to_owned();
+    }
+    let source = super::webgl::encoded_shader(
+        SOURCE,
+        &[
+            (
+                "@group(0) @binding(2) var<storage, read> trig: array<f32>;",
+                "@group(0) @binding(2) var trig_table: texture_2d<f32>;",
+            ),
+            (
+                "let colour = textureLoad(snapshot, sampled, 0);",
+                "let colour = fallback_load_encoded(textureLoad(snapshot, sampled, 0));",
+            ),
+            (
+                "return vec4(vec3<f32>(components) / vec3(31.0,63.0,31.0), 1.0);",
+                "return fallback_store_encoded(vec4(vec3<f32>(components) / vec3(31.0,63.0,31.0), 1.0));",
+            ),
+        ],
+    );
+    format!(
+        "{}\nfn trig_at(index: u32) -> f32 {{ return textureLoad(trig_table, fallback_table_texel(index), 0).r; }}\n{}",
+        super::webgl::TABLE_WGSL,
+        super::webgl::index_calls(&source, "trig", "trig_at")
+    )
 }
 
 fn draw_amplitude(step: i32) -> f32 {
