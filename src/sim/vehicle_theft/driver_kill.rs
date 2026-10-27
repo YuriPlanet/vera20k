@@ -178,11 +178,14 @@ impl Simulation {
         let Some(kind) = self.entity_object_type(actor, rules) else {
             return false;
         };
+        //100434D8..100434F7 tests WhatAmI==2 (Aircraft41C180), not
+        // Unit746E20==1. AircraftType+E0D is AirportBound41CC61..41CC8A;
+        // UnitType's unrelated CrateGoodie happens to share that offset.
         if !matches!(
             actor.category(),
             EntityCategory::Unit | EntityCategory::Aircraft
-        ) || actor.category() == EntityCategory::Unit
-            && (kind.crate_goodie || !kind.dock.is_empty())
+        ) || actor.category() == EntityCategory::Aircraft
+            && (kind.airport_bound || !kind.dock.is_empty())
             || actor.is_warped_out()
             || crate::sim::superweapon::invulnerability::is_invulnerable(
                 actor.invulnerability.as_ref(),
@@ -436,6 +439,7 @@ mod tests {
              [OP]\nStrength=100\nSpeedType=Foot\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
              [DRIVER]\nStrength=100\nCanDrive=yes\nSpeedType=Foot\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
              [HOST]\nStrength=300\nPassengers=3\nOperator=_ANY_\nSpeed=5\nPrimary=HostGun\n\
+             CrateGoodie=yes\nDock=CABHUT\n\
              Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
              [HostGun]\nDamage=1\nRange=6\nROF=20\nProjectile=Invisible\nWarhead=DRIVER_WH\n\
              [Warheads]\n0=DRIVER_WH\n1=ZERO_CHANCE\n2=CONTROL_WH\n\
@@ -638,5 +642,31 @@ mod tests {
         );
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
         assert!(!sim.entities().get(host).unwrap().driver_killed());
+    }
+
+    #[test]
+    fn driver_eligibility_applies_aircraft_airport_and_dock_limits() {
+        for (airport_bound, dock, expected) in [
+            ("yes", "", false),
+            ("no", "CABHUT", false),
+            ("no", "", true),
+        ] {
+            let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+                &format!(
+                    "[Countries]\n0=Americans\n[HORNET]\nAirportBound={airport_bound}\nDock={dock}\n"
+                ),
+            );
+            let owner = sim.interner.intern("Americans");
+            sim.houses
+                .register(HouseState::new(owner, 0, Some(owner), false, 0, 10));
+            let plane = sim
+                .spawn_object_at_height("HORNET", "Americans", 20, 15, 0, 0, &rules)
+                .unwrap();
+            assert_eq!(
+                sim.ares_can_kill_driver(plane, NativeF64Bits::ONE, &rules),
+                expected,
+                "AirportBound={airport_bound}, Dock={dock}"
+            );
+        }
     }
 }
