@@ -145,6 +145,14 @@ pub(crate) fn paint_wol_lobby_children(
             SHELL_LABEL_TEXT_RGB,
         ));
     }
+    if let Some(rect) = layout.observer_caption {
+        paint.texts.push(text(
+            &label(state, "GUI:Observe"),
+            rect,
+            ShellAlign::H_RIGHT,
+            SHELL_LABEL_TEXT_RGB,
+        ));
+    }
 
     // The image buttons' faces and the text sort buttons' captions.
     for (id, rect) in layout
@@ -201,7 +209,7 @@ pub(crate) fn paint_wol_lobby_children(
         },
         scale,
     );
-    if let Some(entry) = atlas.lan_observer_toggle(ui.observer) {
+    if !modern && let Some(entry) = atlas.lan_observer_toggle(ui.observer) {
         push_flag_entry_clipped_centered(
             &mut paint.controls,
             entry,
@@ -300,6 +308,7 @@ pub(crate) fn paint_wol_lobby_children(
             SHELL_LABEL_TEXT_RGB,
         ));
     }
+    let ping_header = layout.control_rect(SORT_PING);
     for (visible, row) in ui
         .game_rows
         .iter()
@@ -323,18 +332,22 @@ pub(crate) fn paint_wol_lobby_children(
             ShellAlign::V_CENTER,
             rgb,
         ));
-        // A -1 ping is the text "???"; any other is an integer cell.
+        // A -1 ping is the text "???"; any other is an integer cell. The
+        // modern list centres it under its Ping header instead of starting
+        // it at the retail column, left of the header's caption.
         let ping = if row.ping == -1 {
             "???".to_owned()
         } else {
             row.ping.to_string()
         };
-        paint.texts.push(text(
-            &ping,
-            cell(rect, GAME_PING_X, 0),
-            ShellAlign::V_CENTER,
-            rgb,
-        ));
+        let (ping_rect, ping_align) = match ping_header.filter(|_| modern) {
+            Some(header) => (
+                RectPx::new(header.x, rect.y, header.w, rect.h),
+                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            ),
+            None => (cell(rect, GAME_PING_X, 0), ShellAlign::V_CENTER),
+        };
+        paint.texts.push(text(&ping, ping_rect, ping_align, rgb));
         if !modern && let Some(art) = art {
             push_icon(
                 &mut paint.icons,

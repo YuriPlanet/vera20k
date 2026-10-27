@@ -247,6 +247,9 @@ pub(crate) struct WolLobbyLayout {
     pub(crate) sort_buttons: Vec<(u16, RectPx)>,
     pub(crate) observer_image: RectPx,
     pub(crate) observer_toggle: RectPx,
+    /// The modern lobby's right-aligned `GUI:Observe` before the checkbox;
+    /// the retail dialog has no caption there.
+    pub(crate) observer_caption: Option<RectPx>,
     pub(crate) labels: [(&'static str, RectPx); 2],
 }
 
@@ -310,6 +313,7 @@ impl WolLobbyLayout {
             .into(),
             observer_image: px(594, 10, 28, 21),
             observer_toggle: px(576, 13, 16, 17),
+            observer_caption: None,
             labels: [
                 ("GUI:OpenGames", px(50, 10, 201, 17)),
                 ("GUI:Players", px(324, 10, 157, 17)),
@@ -583,6 +587,16 @@ impl WolLobbyState {
                     _ => {}
                 }
             }
+            // The retail checkbox and eye image sit on two centre lines below
+            // the Players heading, with no caption. Here the checkbox trails
+            // that heading: its 18x18 plate is the control (the plate alone
+            // toggles, as on every shell checkbox), flush with the list's
+            // right edge and centred on the heading's capitals (rows 14..22),
+            // and a caption on the heading's baseline names it. It shows the
+            // state, so the eye image is gone.
+            layout.observer_toggle = scale.scale_rect(RectPx::new(604, 10, 18, 18));
+            layout.observer_caption = Some(scale.scale_rect(RectPx::new(484, 10, 114, 17)));
+            layout.observer_image = RectPx::new(0, 0, 0, 0);
         }
         layout
     }
@@ -941,7 +955,6 @@ mod tests {
             LOBBIES,
             CHAT_LOG,
             CHAT,
-            OBSERVER_IMAGE,
             OBSERVER_TOGGLE,
         ] {
             let rect = layout.control_rect(id).expect("useful control");
@@ -950,6 +963,29 @@ mod tests {
                 Some(id)
             );
         }
+    }
+
+    /// The modern Observe checkbox trails the Players heading on its row,
+    /// flush with the player list, with its caption between the two; the
+    /// retail eye image's place left of it takes no clicks.
+    #[test]
+    fn modern_observe_checkbox_trails_the_players_heading() {
+        let layout = WolLobbyState::new(false, true).layout(800, 600, false);
+        let legacy = WolLobbyState::new(false, false).layout(800, 600, false);
+        let (_, heading) = layout.labels[1];
+        let plate = crate::ui::skirmish_shell::checkbox_icon_rect(
+            layout.observer_toggle,
+            layout.page.scale,
+        );
+        assert_eq!(plate, layout.observer_toggle);
+        assert_eq!(plate.y, heading.y);
+        assert_eq!(plate.x + plate.w, layout.players.x + layout.players.w);
+        let caption = layout.observer_caption.expect("caption");
+        assert_eq!(caption.y, heading.y);
+        assert!(heading.x + heading.w <= caption.x && caption.x + caption.w < plate.x);
+        let eye = legacy.observer_image;
+        assert_eq!(layout.control_at(eye.x + 2, eye.y + eye.h / 2), None);
+        assert_eq!(legacy.observer_caption, None);
     }
 
     #[test]
