@@ -485,6 +485,38 @@ mod tests {
             .unwrap();
         assert!(sim.can_capture(controller, host, &rules));
         assert!(sim.can_be_perma_mind_controlled(host, &rules));
+        sim.assign_target_represented(
+            host,
+            Some(crate::sim::combat::TargetKind::Entity(invoker)),
+            &rules,
+            Some(&overlays),
+            Default::default(),
+        )
+        .unwrap();
+        sim.assign_destination_represented(
+            host,
+            Some(crate::sim::components::NavTargetRef::cell(18, 15)),
+            &rules,
+            Some(&overlays),
+            Default::default(),
+        )
+        .unwrap();
+        assert!(
+            sim.entities()
+                .get(host)
+                .unwrap()
+                .attack_target
+                .target()
+                .is_some()
+        );
+        assert!(
+            sim.entities()
+                .get(host)
+                .unwrap()
+                .navigation
+                .nav_com()
+                .is_some()
+        );
         sim.substrate
             .entities
             .get_mut(host)
@@ -526,15 +558,14 @@ mod tests {
         assert!(!sim.can_capture(controller, host, &rules));
         assert!(!sim.can_be_perma_mind_controlled(host, &rules));
         // A subsequent order cannot reactivate a driverless hull.
-        sim.substrate
-            .entities
-            .get_mut(host)
-            .unwrap()
-            .mission
-            .set_current_for_test(
-                crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Move),
-                0,
-            );
+        let frame = sim.session.binary_frame();
+        let actor = sim.substrate.entities.get_mut(host).unwrap();
+        actor.mission = crate::sim::mission::MissionCom::at_frame(frame);
+        actor.mission.set_current_for_test(
+            crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Move),
+            0,
+        );
+        assert_eq!(actor.mission.queued(), crate::sim::mission::MissionId::NONE);
         sim.update_ares_driver_killed_mission(host, &rules, Some(&overlays), Default::default());
         assert_eq!(
             sim.entities().get(host).unwrap().mission.queued().known(),
