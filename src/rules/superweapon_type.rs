@@ -488,13 +488,14 @@ impl SuperWeaponType {
 
 /// Canonical, category-distinct TechnoType identity shared by pointer readers.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct TechnoTypeReference {
+pub struct DeliveryType {
     pub category: crate::rules::object_type::ObjectCategory,
     pub id: String,
 }
 
-/// Existing UnitDelivery API uses the same type identity.
-pub type DeliveryType = TechnoTypeReference;
+/// Shared pointer identity. Keep the original struct's serde name: snapshot
+/// layout descriptions include it even in builds without Ares.
+pub type TechnoTypeReference = DeliveryType;
 
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
