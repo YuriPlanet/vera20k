@@ -28,7 +28,11 @@ class WasmBuildTests(unittest.TestCase):
             self.assertTrue((output / 'lobby.js').is_file())
             self.assertIn('Online play can share selected maps;',
                           (output / 'index.html').read_text(encoding='utf-8'))
+            self.assertFalse((output / 'lan_rtc.js').exists())
+            package_host(network, output, True, lan=True)
+            self.assertIn("import './lan_rtc.js';", (output / 'host.js').read_text())
             package_host(single, output, False)
+            self.assertFalse((output / 'lan_rtc.js').exists())
             self.assertNotIn('network.js', (output / 'host.js').read_text())
             self.assertFalse((output / 'network.js').exists())
             self.assertFalse((output / 'lobby.js').exists())

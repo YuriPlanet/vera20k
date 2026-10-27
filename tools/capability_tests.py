@@ -122,6 +122,13 @@ CAPABILITIES: tuple[Capability, ...] = (
         "The separate WebAssembly workflow builds the browser target.",
         test=False,
     ),
+    Capability(
+        "wasm-lan",
+        ("wasm-lan",),
+        "Optional browser LAN play over WebRTC; desktop feature-isolation "
+        "compilation. The separate WebAssembly workflow builds the browser target.",
+        test=False,
+    ),
 )
 
 # The capability mixes #2797 declares meaningful: the three extension flags are

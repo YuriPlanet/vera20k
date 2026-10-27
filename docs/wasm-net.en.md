@@ -28,6 +28,16 @@ Both modes write to `target/wasm-dist/` and accept `--profile release`. Online p
 
 The default WS endpoints are `wss://wss.vera20k.com/game/primary` and `wss://wss.vera20k.com/game/alternate`. Lobby Fetch requests use HTTPS `/v1/*` at the same authority (local `ws:` maps to `http:`). There is no runtime address setting, localStorage override or fallback to the page's domain. The default domain is a build convention, not a claim that the service has been deployed. `WS_PROXY_URL` does not change the lobby's `RelayGrant.address`.
 
+## LAN (`wasm-lan`)
+
+`python3 tools/wasm/build.py --network --lan` builds the `wasm-lan` package and adds [`lan_rtc.js`](../tools/wasm/lan_rtc.js). The feature requires `wasm-net` and reuses its `WS_PROXY_URL`; without it the LAN menu still reports unsupported. Browser LAN play is browser-to-browser only and does not interoperate with desktop builds (their build identities differ too).
+
+The gateway's `/lan/signal` only coordinates the handshake. It groups browsers by public address (full IPv4, IPv6 /64), assigns each member a virtual `10.20.0.N` address and forwards WebRTC offers, answers and candidates within the group. Game datagrams never pass through the gateway. Each pair of members opens a `negotiated`, `ordered:false`, `maxRetransmits:0` DataChannel; the lower address sends the offer.
+
+[`web_rtc.rs`](../src/net/web_rtc.rs) replaces the physical socket only for LAN binds (`0.0.0.0:1234/1236`); the ephemeral online bind still uses the WS relay. Discovery, join, start, ACKs, retries and match state stay with the existing `lan_service` and `net::udp` owners. A `255.255.255.255` broadcast sends one copy to each connected member and does not loop back to the sender; self-filtering was already name-based. Peer frames carry a 4-byte header with the source and destination ports. Unknown or unconnected peers lose the datagram, as with UDP.
+
+A signaling disconnect does not close connected DataChannels. Reconnecting requests the previous virtual address; a changed address counts as a new LAN identity. Browsers hide LAN IPs behind mDNS by default, so networks that isolate clients or block multicast may prevent direct connections; the gateway can then set `VERA_LAN_STUN`. TURN is not offered because it would relay game traffic. Browsers on one network that reach the gateway over different IP families (IPv4 and IPv6) land in different groups.
+
 ## Compile isolation
 
 The root crate's `wasm-net` enables `wasm` and core's `wasm-net`; core adds an optional `wasm-bindgen` dependency for the browser target. Production browser networking branches require all three conditions:
@@ -64,7 +74,7 @@ The `/v1/*` proxy preserves the existing method, path, Authorization, request bo
 
 ### Sockets and recovery
 
-[`web_socket.rs`](../src/net/web_socket.rs) replaces only `UdpIo`'s private physical socket, preserving the `LanUdpTransport` interface and original protocol queues. `bind` creates only logical handles; WS connections open after the original owner accepts a relay grant. Opening the LAN menu cannot incidentally connect to a remote proxy. Send and receive endpoints are pinned to that grant, rather than inferring the source from the last send destination.
+[`web_socket.rs`](../src/net/web_socket.rs) replaces only `UdpIo`'s private physical socket, preserving the `LanUdpTransport` interface and original protocol queues. `bind` creates only logical handles; WS connections open after the original owner accepts a relay grant. Opening the LAN menu cannot incidentally connect to a remote proxy (`wasm-lan` connects only to signaling; see above). Send and receive endpoints are pinned to that grant, rather than inferring the source from the last send destination.
 
 [`network.js`](../tools/wasm/network.js) buffers only raw bytes. Reception is limited to 256 packets and 256 KiB; sending uses `bufferedAmount` to enforce a 256 KiB limit. Rust uses the original codec's `MAX_DATAGRAM`. A pending connection or send backlog returns WouldBlock, leaving retries with the protocol queues.
 
@@ -105,4 +115,4 @@ Runtime acceptance still requires complete two-client matches, matching committe
 
 Interop tests require identical source and feature sets on both clients: the existing build identity includes every Cargo feature. This adaptation does not relax that check. Build the desktop test client corresponding to the browser online package with `--no-default-features --features wasm-net`; it still uses native networking. Do not assume an existing older desktop installation can join the new build.
 
-This work connects existing online play only. It does not add LAN broadcast discovery, arbitrary direct-IP connections, CnCNet, a new protocol, random map generation or simulation restoration after page reload. Browser background throttling, long synchronous asset operations and WS head-of-line blocking still need runtime observation; the original relay's process-restart recovery limits remain. Support for 30 protocol sources does not establish browser performance at 30 players and 20,000 units.
+This work connects existing online play and optional browser-to-browser LAN play (above). It does not add browser LAN play with desktop clients, arbitrary direct-IP connections, CnCNet, a new protocol, random map generation or simulation restoration after page reload. Browser background throttling, long synchronous asset operations and WS head-of-line blocking still need runtime observation; the original relay's process-restart recovery limits remain. Support for 30 protocol sources does not establish browser performance at 30 players and 20,000 units.

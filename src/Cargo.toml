@@ -34,6 +34,7 @@ required-features = ["test-support"]
 # Forwarded by the client only for an explicitly requested browser build.
 wasm = ["dep:web-time", "dep:getrandom", "dep:js-sys"]
 wasm-net = ["wasm", "dep:wasm-bindgen"]
+wasm-lan = ["wasm-net"]
 # Compile the supported Ares behavior; INIs cannot enable an absent capability.
 ares = []
 # Compile the supported Phobos behavior; INIs cannot enable an absent capability.

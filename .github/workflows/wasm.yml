@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        mode: [single-player, network]
+        mode: [single-player, network, lan]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
@@ -30,13 +30,15 @@ jobs:
         env:
           WASM_MODE: ${{ matrix.mode }}
         run: |
-          if [ "$WASM_MODE" = network ]; then
+          if [ "$WASM_MODE" = lan ]; then
+            python3 tools/wasm/build.py --network --lan
+          elif [ "$WASM_MODE" = network ]; then
             python3 tools/wasm/build.py --network
           else
             python3 tools/wasm/build.py
           fi
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.mode == 'network' && 'vera20k-wasm-net' || 'vera20k-wasm' }}
+          name: ${{ matrix.mode == 'lan' && 'vera20k-wasm-lan' || matrix.mode == 'network' && 'vera20k-wasm-net' || 'vera20k-wasm' }}
           path: target/wasm-dist/
           if-no-files-found: error

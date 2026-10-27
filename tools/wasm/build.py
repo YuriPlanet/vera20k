@@ -34,11 +34,12 @@ def validate_proxy_url(value):
         raise ValueError('WS_PROXY_URL must be a wss:// origin (ws:// is allowed only on loopback)')
 
 
-def package_host(stage, destination, network):
+def package_host(stage, destination, network, lan=False):
     """Publish only this mode's host files, retiring known network-only outputs."""
     host = (HOST / 'host.js').read_text(encoding='utf-8')
     page = (HOST / 'index.html').read_text(encoding='utf-8')
-    network_files = ('network.js', 'lobby.js')
+    optional_files = ('network.js', 'lobby.js', 'lan_rtc.js')
+    network_files = ('network.js', 'lobby.js') + (('lan_rtc.js',) if lan else ())
     if network:
         host = ''.join(f"import './{name}';\n" for name in network_files) + host
         page = page.replace(
@@ -50,10 +51,10 @@ def package_host(stage, destination, network):
     (stage / 'host.js').write_text(host, encoding='utf-8')
     (stage / 'index.html').write_text(page, encoding='utf-8')
     destination.mkdir(exist_ok=True)
-    for name in ('index.html', 'host.js', *network_files):
+    for name in ('index.html', 'host.js', *optional_files):
         if (stage / name).exists():
             shutil.copyfile(stage / name, destination / name)
-        elif name in network_files:
+        elif name in optional_files:
             (destination / name).unlink(missing_ok=True)
 
 
@@ -61,7 +62,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--profile', choices=['fast', 'release'], default='fast')
     parser.add_argument('--network', action='store_true', help='Enable the optional WS/UDP browser transport')
+    parser.add_argument('--lan', action='store_true', help='Also enable browser LAN play over WebRTC (requires --network)')
     args = parser.parse_args()
+    if args.lan and not args.network:
+        parser.error('--lan requires --network')
     if args.network:
         try:
             validate_proxy_url(os.environ.get('WS_PROXY_URL'))
@@ -74,7 +78,7 @@ def main():
         parser.error(f'Install the matching binding CLI: cargo install wasm-bindgen-cli --version {version} --locked')
     subprocess.run([
         sys.executable, '-m', 'tools.cargo_run', '--', 'rustc', '-p', 'vera20k', '--lib',
-        '--target', 'wasm32-unknown-unknown', '--no-default-features', '--features', 'wasm-net' if args.network else 'wasm',
+        '--target', 'wasm32-unknown-unknown', '--no-default-features', '--features', 'wasm-lan' if args.lan else 'wasm-net' if args.network else 'wasm',
         '--profile', args.profile, '--locked', '--crate-type', 'cdylib',
         '--', '-C', 'link-arg=-zstack-size=8388608',
     ], cwd=ROOT, check=True)
@@ -86,7 +90,7 @@ def main():
         subprocess.run([cli, '--target', 'web', '--out-dir', str(stage / 'pkg'), str(binary)], check=True)
         destination = ROOT / 'target/wasm-dist'
         # Only generated public files; retail data never enters the package.
-        package_host(stage, destination, args.network)
+        package_host(stage, destination, args.network, args.lan)
         shutil.copytree(stage / 'pkg', destination / 'pkg', dirs_exist_ok=True)
     print(f'Browser build: {destination}\nServe with: python3 -m http.server 8000 --bind 127.0.0.1 --directory target/wasm-dist')
 

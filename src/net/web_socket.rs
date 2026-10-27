@@ -1,5 +1,6 @@
 //! Browser physical transport only. Each binary WS message is an unchanged
 //! relay datagram; the existing UDP owner retains all protocol state.
+//! With `wasm-lan`, a LAN-port bind instead selects the WebRTC peer socket.
 
 use std::io;
 use std::net::{SocketAddr, SocketAddrV4};
@@ -20,16 +21,33 @@ extern "C" {
     fn close(id: u32);
 }
 
+#[cfg(feature = "wasm-lan")]
+#[path = "web_rtc.rs"]
+mod web_rtc;
+
 #[derive(Debug)]
 pub(super) struct UdpSocket {
     id: Option<u32>,
     channel: &'static str,
     local: SocketAddrV4,
     relay: Option<SocketAddrV4>,
+    #[cfg(feature = "wasm-lan")]
+    lan: Option<web_rtc::LanSocket>,
 }
 
 impl UdpSocket {
     pub fn bind(local: SocketAddrV4, channel: &'static str) -> io::Result<Self> {
+        // Online binds an ephemeral port; the LAN menu binds its fixed ports.
+        #[cfg(feature = "wasm-lan")]
+        if local.ip().is_unspecified() && local.port() != 0 {
+            return Ok(Self {
+                id: None,
+                channel,
+                local,
+                relay: None,
+                lan: Some(web_rtc::LanSocket::open(local.port())?),
+            });
+        }
         if !local.ip().is_unspecified() || local.port() != 0 {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
@@ -43,10 +61,19 @@ impl UdpSocket {
             channel,
             local,
             relay: None,
+            #[cfg(feature = "wasm-lan")]
+            lan: None,
         })
     }
 
     pub fn set_relay(&mut self, endpoint: SocketAddrV4) -> io::Result<()> {
+        #[cfg(feature = "wasm-lan")]
+        if self.lan.is_some() {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "a browser LAN socket cannot carry a relay session",
+            ));
+        }
         let next = open(
             super::browser_proxy_url(),
             self.channel,
@@ -75,6 +102,11 @@ impl UdpSocket {
     }
 
     pub fn set_broadcast(&self, enabled: bool) -> io::Result<()> {
+        // Group peers receive one copy each, like limited IPv4 broadcast.
+        #[cfg(feature = "wasm-lan")]
+        if self.lan.is_some() {
+            return Ok(());
+        }
         if enabled {
             Err(io::Error::new(
                 io::ErrorKind::Unsupported,
@@ -90,10 +122,18 @@ impl UdpSocket {
     }
 
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        #[cfg(feature = "wasm-lan")]
+        if let Some(lan) = &self.lan {
+            return Ok(lan.local_addr());
+        }
         Ok(self.local.into())
     }
 
     pub fn send_to(&self, bytes: &[u8], endpoint: SocketAddrV4) -> io::Result<usize> {
+        #[cfg(feature = "wasm-lan")]
+        if let Some(lan) = &self.lan {
+            return lan.send_to(bytes, endpoint);
+        }
         if self.relay != Some(endpoint) {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
@@ -115,6 +155,10 @@ impl UdpSocket {
     }
 
     pub fn recv_from(&self, buffer: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
+        #[cfg(feature = "wasm-lan")]
+        if let Some(lan) = &self.lan {
+            return lan.recv_from(buffer);
+        }
         let Some(id) = self.id else {
             return Err(io::ErrorKind::WouldBlock.into());
         };

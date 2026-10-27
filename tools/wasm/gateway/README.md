@@ -34,6 +34,17 @@ allow at least 70 seconds before an idle WebSocket timeout. The Node server bind
 `127.0.0.1:8788` by default (`HOST` and `PORT` can override it). It serves no static
 game files. The static site and gateway may be hosted separately.
 
+LAN signaling is off by default. `VERA_LAN_SIGNAL=1` enables `/lan/signal` for
+`wasm-lan` builds: it groups browsers by public address, assigns virtual IPv4s
+and forwards WebRTC descriptions and candidates within the group; game datagrams
+never pass through it. Behind a reverse proxy, set `VERA_CLIENT_IP_HEADER` to the
+header that proxy writes (for example `cf-connecting-ip`, or `x-forwarded-for`,
+whose last entry is used) and route `/lan/*` WebSocket Upgrades here; never set it
+when clients can reach the gateway directly. `VERA_LAN_STUN` optionally lists
+comma-separated `stun:` URLs for networks that hide host candidates; TURN is
+rejected. Limits are in `signal.mjs`: 256 connections, 16 members per group,
+16 KiB messages and 64 messages per second per connection.
+
 Local development can use `VERA_WEB_ORIGIN=http://localhost:8000`. An HTTP lobby
 requires both `VERA_ALLOW_LOCAL_HTTP=1` and a loopback lobby origin, for example
 `VERA_LOBBY_URL=http://127.0.0.1:8790`. Remote HTTP is rejected. The browser must be

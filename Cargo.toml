@@ -42,6 +42,8 @@ required-features = ["telemetry-dashboard"]
 wasm = ["vera20k-core/wasm", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:web-sys", "dep:console_log", "dep:console_error_panic_hook", "dep:cpal", "getrandom/wasm_js"]
 # Optional browser networking; desktop targets keep their native transport.
 wasm-net = ["wasm", "vera20k-core/wasm-net"]
+# Browser LAN play over WebRTC; the gateway only coordinates the handshake.
+wasm-lan = ["wasm-net", "vera20k-core/wasm-lan"]
 # Development builds carry the Ctrl+Shift dev chord. The release workflow builds
 # with `--no-default-features`, so shipped binaries do not.
 default = ["dev-overlays"]

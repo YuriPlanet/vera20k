@@ -1,9 +1,12 @@
 // Transport only: every binary WS message is one unchanged UDP datagram.
+// Optional LAN signaling lives in signal.mjs and never carries game datagrams.
 import http from 'node:http';
 import https from 'node:https';
 import dgram from 'node:dgram';
 import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
+import { rateLimit } from './rate_limit.mjs';
+import { createSignaling, iceServersFromEnv } from './signal.mjs';
 
 export const LIMITS = Object.freeze({
   datagram: 2048, connections: 256, httpRequests: 128,
@@ -22,17 +25,7 @@ function originUrl(value, allowLocalHttp = false) {
   return url;
 }
 
-function rateLimit(maximum) {
-  let start = performance.now();
-  let count = 0;
-  return () => {
-    const now = performance.now();
-    if (now - start >= 1000) { start = now; count = 0; }
-    return ++count <= maximum;
-  };
-}
-
-export function createGateway({ lobby, relayHost, relayPort, origin, allowHttp = false }) {
+export function createGateway({ lobby, relayHost, relayPort, origin, allowHttp = false, lanSignal }) {
   const upstream = originUrl(lobby, allowHttp);
   const allowed = originUrl(origin, true).origin;
   if (typeof relayHost !== 'string' || !/^[a-zA-Z0-9.-]+$/.test(relayHost)
@@ -43,6 +36,7 @@ export function createGateway({ lobby, relayHost, relayPort, origin, allowHttp =
   const closeSockets = new Map();
   const totalTraffic = rateLimit(LIMITS.totalPacketsPerSecond);
   const handshakes = rateLimit(512);
+  const signaling = lanSignal ? createSignaling({ origin: allowed, ...lanSignal }) : null;
   let closing = false;
   const server = http.createServer({ maxHeaderSize: 16384 }, (req, res) => {
     if (closing) { res.writeHead(503).end(); return; }
@@ -145,6 +139,11 @@ export function createGateway({ lobby, relayHost, relayPort, origin, allowHttp =
     maxFragments: 128, maxBufferedChunks: 128, closeTimeout: 1000,
   });
   server.on('upgrade', (req, socket, head) => {
+    const url = new URL(req.url ?? '/', 'http://gateway');
+    if (signaling && !closing && url.pathname === '/lan/signal') {
+      signaling.upgrade(req, socket, head, url);
+      return;
+    }
     if (closing || !handshakes() || req.headers.origin !== allowed
       || !['/game/primary', '/game/alternate'].includes(req.url)
       || closeSockets.size >= LIMITS.connections) {
@@ -225,6 +224,7 @@ export function createGateway({ lobby, relayHost, relayPort, origin, allowHttp =
       closing = true;
       for (const finish of closeSockets.values()) finish();
       for (const cleanup of exchanges) cleanup();
+      signaling?.close();
       wss.close();
       await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
     },
@@ -238,6 +238,10 @@ export function gatewayOptionsFromEnv(env) {
     relayPort: Number(env.VERA_RELAY_PORT ?? 5000),
     origin: env.VERA_WEB_ORIGIN,
     allowHttp: env.VERA_ALLOW_LOCAL_HTTP === '1',
+    lanSignal: env.VERA_LAN_SIGNAL === '1' ? {
+      iceServers: iceServersFromEnv(env.VERA_LAN_STUN),
+      clientIpHeader: env.VERA_CLIENT_IP_HEADER?.toLowerCase() || undefined,
+    } : undefined,
   };
 }
 

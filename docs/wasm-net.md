@@ -28,6 +28,16 @@ WS_PROXY_URL=ws://localhost:8788 python3 tools/wasm/build.py --network
 
 默认的两条 WS 地址为 `wss://wss.vera20k.com/game/primary` 和 `wss://wss.vera20k.com/game/alternate`。大厅 Fetch 使用同一 authority 的 HTTPS `/v1/*`（本地 `ws:` 对应 `http:`）。没有运行时地址设置、localStorage 或页面域名回退。默认域名只是构建约定，不表示服务已部署。`WS_PROXY_URL` 不改变大厅下发的 `RelayGrant.address`。
 
+## 局域网（`wasm-lan`）
+
+`python3 tools/wasm/build.py --network --lan` 构建 `wasm-lan` 包，额外打包 [`lan_rtc.js`](../tools/wasm/lan_rtc.js)。该 feature 依赖 `wasm-net`，复用同一个 `WS_PROXY_URL`；未开启时 LAN 菜单仍返回不支持。网页版局域网只在浏览器之间联机，不与桌面互通（build identity 也不同）。
+
+网关的 `/lan/signal` 只协调握手：按公网出口地址分组（IPv4 全地址、IPv6 /64），给组员分配 `10.20.0.N` 虚拟地址，并在组内转发 WebRTC offer/answer/candidate。游戏数据报不经过网关。组内两两建立 `negotiated`、`ordered:false`、`maxRetransmits:0` 的 DataChannel，地址较小的一方发起 offer。
+
+[`web_rtc.rs`](../src/net/web_rtc.rs) 只在 LAN 绑定（`0.0.0.0:1234/1236`）时替换物理 socket；在线绑定的临时端口仍走 WS relay。发现、加入、开局、ACK、重试和对局状态都由原 `lan_service` 与 `net::udp` 处理。广播 `255.255.255.255` 对每个已连通组员各发一份，不回环到自身（自身过滤原本按名字进行）。对端帧头 4 字节，为源端口和目的端口；不认识或未连通的对端按 UDP 丢包处理。
+
+信令断线不会关闭已连通的 DataChannel，重连时会请求原虚拟地址；若虚拟地址变化，就视为新的 LAN 身份。浏览器默认用 mDNS 隐藏局域网 IP，开启 AP 隔离或屏蔽组播的网络可能无法直连，此时可在网关配置 `VERA_LAN_STUN`。不提供 TURN，因为 TURN 会转发游戏流量。同一网络里一台走 IPv4、一台走 IPv6 的浏览器会被分到不同组。
+
 ## 编译隔离
 
 根 crate 的 `wasm-net` 启用 `wasm` 和 core 的 `wasm-net`；core 在浏览器 target 下增加可选 `wasm-bindgen` 依赖。生产代码的浏览器联网分支同时检查：
@@ -64,7 +74,7 @@ WS_PROXY_URL=ws://localhost:8788 python3 tools/wasm/build.py --network
 
 ### socket 和恢复
 
-[`web_socket.rs`](../src/net/web_socket.rs) 仅替换 `UdpIo` 的私有物理 socket，保留 `LanUdpTransport` 接口和原协议队列。`bind` 只创建逻辑句柄，直到原 owner 接受 relay grant 后才打开 WS；局域网菜单不能顺带连接远程代理。发送和接收端点绑定于该 grant，不使用“最后一次发送目的地”推断来源。
+[`web_socket.rs`](../src/net/web_socket.rs) 仅替换 `UdpIo` 的私有物理 socket，保留 `LanUdpTransport` 接口和原协议队列。`bind` 只创建逻辑句柄，直到原 owner 接受 relay grant 后才打开 WS；局域网菜单不能顺带连接远程代理（`wasm-lan` 只连接信令，见上文）。发送和接收端点绑定于该 grant，不使用“最后一次发送目的地”推断来源。
 
 [`network.js`](../tools/wasm/network.js) 只缓冲原始字节。接收上限为 256 包和 256 KiB，发送通过 `bufferedAmount` 限制为 256 KiB；Rust 使用原 codec 的 `MAX_DATAGRAM`。未连接或发送积压时返回 WouldBlock，协议队列仍拥有重试责任。
 
@@ -105,4 +115,4 @@ Rust 验证通过 `python3 -m tools.cargo_run -- test -p <crate> --lib <filter>`
 
 互联测试两端必须有相同源码和 feature 集合：既有 build identity 包含全部 Cargo feature。本方案不放宽该校验；对应浏览器联网包的桌面测试端应使用 `--no-default-features --features wasm-net` 构建，仍选择原生网络实现。不能直接假定现成的旧桌面安装包能加入新构建。
 
-本轮只接入现有在线对战，不提供局域网广播发现、任意 IP 直连、CnCNet、新协议、随机地图生成或刷新页面后恢复模拟。浏览器后台节流、长时间同步资源操作和 WS 队头阻塞仍需实机观察；原 relay 的进程重启恢复边界保持不变。30 个协议 source 不代表浏览器已达到 30 人和 20,000 单位性能目标。
+本轮接入现有在线对战和可选的浏览器间局域网（见上文），不提供与桌面互通的网页局域网、任意 IP 直连、CnCNet、新协议、随机地图生成或刷新页面后恢复模拟。浏览器后台节流、长时间同步资源操作和 WS 队头阻塞仍需实机观察；原 relay 的进程重启恢复边界保持不变。30 个协议 source 不代表浏览器已达到 30 人和 20,000 单位性能目标。

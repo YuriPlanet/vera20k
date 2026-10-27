@@ -17,6 +17,8 @@ VERA_RELAY_HOST=relay.example.com VERA_RELAY_PORT=5000 \
 
 浏览器的 `WS_PROXY_URL` 会编译进 `wasm-net` 构建，默认值为 `wss://wss.vera20k.com`。这是客户端配置，与服务端的 UDP 目标分别设置。请在该 origin 部署终止 TLS 的反向代理，将 `/game/*` 路由的 WebSocket Upgrade 连接以及 `/v1/*` HTTP 请求转发到本进程。保留浏览器的 Origin 请求头；WebSocket 空闲超时至少设为 70 秒。Node 服务默认绑定 `127.0.0.1:8788`（可通过 `HOST` 和 `PORT` 覆盖），不提供游戏静态文件。静态站点和网关可以分别托管。
 
+局域网信令默认关闭。设置 `VERA_LAN_SIGNAL=1` 后会为 `wasm-lan` 构建启用 `/lan/signal`：按公网地址分组、分配虚拟 IPv4，并在组内转发 WebRTC 描述和候选地址；游戏数据报不经过网关。部署在反向代理后时，把 `VERA_CLIENT_IP_HEADER` 设为该代理写入的请求头（例如 `cf-connecting-ip`；`x-forwarded-for` 取最后一项），并把 `/lan/*` 的 WebSocket Upgrade 转发到本进程。客户端能直连网关时不要设置该项。`VERA_LAN_STUN` 可选，填写逗号分隔的 `stun:` 地址，用于隐藏 host candidate 的网络；TURN 会被拒绝。限制定义在 `signal.mjs`：256 个连接、每组 16 人、单条消息 16 KiB、每连接每秒 64 条。
+
 本地开发可以使用 `VERA_WEB_ORIGIN=http://localhost:8000`。若大厅使用 HTTP，必须同时设置 `VERA_ALLOW_LOCAL_HTTP=1`，并使用回环地址的大厅 origin，例如 `VERA_LOBBY_URL=http://127.0.0.1:8790`。远程 HTTP 地址会被拒绝。此时浏览器也必须使用匹配的本地代理 origin `ws://localhost:8788` 进行编译。
 
 所有游戏载荷仍保持加密，但 HTTP 代理会处理大厅 bearer 和包含密钥的响应。因此，网关属于受信任的大厅基础设施；不要记录请求头、请求体、响应体、票据或载荷密钥。网关不需要 relay 签名密钥，也不需要零售资源。WS Origin 检查只是现有 relay 身份认证的补充，不能认证任意非浏览器客户端。
