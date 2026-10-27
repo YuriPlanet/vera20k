@@ -7,7 +7,7 @@ use super::*;
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 
-use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags, TargetKind};
+use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
 use crate::sim::house_state::HouseState;
 use crate::sim::passenger::{PassengerCargo, PassengerRole};
 use crate::sim::rng::SimRng;
@@ -761,7 +761,10 @@ fn survivors_of_a_c4_charged_building_attack_an_enemy_planter() {
                 let target = survivor.attack_target.target();
                 if expect_attack {
                     assert_eq!(queued(&sim, id), MissionId::from_known(MissionType::Attack));
-                    assert_eq!(target, Some(TargetKind::Entity(planter)));
+                    assert_eq!(
+                        target,
+                        Some(crate::sim::combat::TargetKind::Entity(planter))
+                    );
                     attacked += 1;
                 } else {
                     assert_eq!(queued(&sim, id), MissionId::from_known(MissionType::Hunt));
