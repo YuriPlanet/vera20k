@@ -122,9 +122,10 @@ impl Simulation {
         // nothing here refreshes it: passenger capacity (PassengerCargo from
         // Passengers=/SizeLimit=), the SHP vehicle Animation component, the
         // Phobos shield, the gunner weapon and voxel recoil. Trigger: an Ares
-        // Convert.Script between types that differ in them (retail sets none).
-        // Effect: the object keeps the old type's values; converting a
-        // transport is the visible case, keeping its old capacity.
+        // Convert.Script, Convert.Water or Convert.Land between types that
+        // differ in them (retail sets none); the surface keys fire on each
+        // shoreline crossing. Effect: the object keeps the old type's values;
+        // converting a transport is the visible case, keeping its old capacity.
         crate::sim::miner::Miner::change_type_binding(&mut actor.miner, destination);
         health.apply(actor);
         Self::update_house_tracking(
