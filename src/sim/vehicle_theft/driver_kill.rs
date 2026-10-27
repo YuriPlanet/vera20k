@@ -598,10 +598,13 @@ mod tests {
             operator_rule == "OP"
         );
         if operator_rule == "OP" {
+            let replacement = sim
+                .spawn_object_at_height("OP", "Americans", 14, 15, 0, 0, &rules)
+                .unwrap();
             assert!(board_passenger(
                 &mut sim,
                 &rules,
-                rider,
+                replacement,
                 host,
                 BoardingArm::InfantryTransport,
                 Some(&overlays),
