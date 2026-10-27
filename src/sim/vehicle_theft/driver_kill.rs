@@ -320,6 +320,9 @@ impl Simulation {
                     {
                         self.remove_cargo_passenger(target, Some(passenger), rules, effects);
                         self.record_kill_and_uninit(passenger, Some(invoker), context);
+                        //100457D0 falls through to100457D6 after the first
+                        //matching operator; only nonmatches advance the list.
+                        break;
                     }
                 }
             }
@@ -417,8 +420,14 @@ mod tests {
 
     #[test]
     fn driver_hit_kills_one_operator_ejects_rider_and_allows_a_new_driver() {
+        for operator_rule in ["_ANY_", "OP"] {
+            exercise_driver_handoff(operator_rule);
+        }
+    }
+
+    fn exercise_driver_handoff(operator_rule: &str) {
         let (mut sim, rules, overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
-            "[Countries]\n0=Americans\n1=Russians\n2=Special\n\
+            &"[Countries]\n0=Americans\n1=Russians\n2=Special\n\
              [Special]\nMultiplayPassive=yes\n\
              [InfantryTypes]\n2=OP\n3=DRIVER\n4=CONTROLLER\n[VehicleTypes]\n0=HOST\n\
              [CONTROLLER]\nStrength=100\nPrimary=ControlGun\nSpeedType=Foot\n\
@@ -432,7 +441,8 @@ mod tests {
              [Warheads]\n0=DRIVER_WH\n1=ZERO_CHANCE\n2=CONTROL_WH\n\
              [CONTROL_WH]\nMindControl=yes\n\
              [DRIVER_WH]\nKillDriver=yes\nKillDriver.RemoveVeterancy=yes\n\
-             [ZERO_CHANCE]\nKillDriver=yes\nKillDriver.Chance=0\nAffectsOwner=yes\n",
+             [ZERO_CHANCE]\nKillDriver=yes\nKillDriver.Chance=0\nAffectsOwner=yes\n"
+                .replace("Operator=_ANY_", &format!("Operator={operator_rule}")),
         );
         for (name, side) in [("Americans", 0), ("Russians", 1), ("Special", 0)] {
             let owner = sim.interner.intern(name);
@@ -501,10 +511,13 @@ mod tests {
             sim.entities()
                 .get(operator)
                 .is_none_or(|actor| !actor.lifecycle.object_alive()),
-            "_ANY_ kills only the cargo head"
+            "{operator_rule} kills only the first matching operator"
         );
         let passenger = sim.entities().get(rider).unwrap();
-        assert!(!passenger.lifecycle.in_limbo() && !passenger.passenger_role.is_inside_transport());
+        assert!(
+            !passenger.lifecycle.in_limbo() && !passenger.passenger_role.is_inside_transport(),
+            "{operator_rule} ejects the other matching passenger alive"
+        );
         assert!(!sim.can_capture(controller, host, &rules));
         assert!(!sim.can_be_perma_mind_controlled(host, &rules));
         // A subsequent order cannot reactivate a driverless hull.
