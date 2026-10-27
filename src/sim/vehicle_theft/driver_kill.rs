@@ -427,7 +427,7 @@ mod tests {
 
     fn exercise_driver_handoff(operator_rule: &str) {
         let (mut sim, rules, overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
-            &"[Countries]\n0=Americans\n1=Russians\n2=Special\n\
+            &"[Countries]\n0=Americans\n1=Russians\n2=Special\n3=French\n\
              [Special]\nMultiplayPassive=yes\n\
              [InfantryTypes]\n2=OP\n3=DRIVER\n4=CONTROLLER\n[VehicleTypes]\n0=HOST\n\
              [CONTROLLER]\nStrength=100\nPrimary=ControlGun\nSpeedType=Foot\n\
@@ -444,7 +444,12 @@ mod tests {
              [ZERO_CHANCE]\nKillDriver=yes\nKillDriver.Chance=0\nAffectsOwner=yes\n"
                 .replace("Operator=_ANY_", &format!("Operator={operator_rule}")),
         );
-        for (name, side) in [("Americans", 0), ("Russians", 1), ("Special", 0)] {
+        for (name, side) in [
+            ("Americans", 0),
+            ("Russians", 1),
+            ("Special", 0),
+            ("French", 0),
+        ] {
             let owner = sim.interner.intern(name);
             sim.houses
                 .register(HouseState::new(owner, side, None, false, 0, 10));
@@ -476,7 +481,7 @@ mod tests {
             .spawn_object_at_height("DRIVER", "Americans", 15, 16, 0, 0, &rules)
             .unwrap();
         let controller = sim
-            .spawn_object_at_height("CONTROLLER", "Americans", 14, 16, 0, 0, &rules)
+            .spawn_object_at_height("CONTROLLER", "French", 14, 16, 0, 0, &rules)
             .unwrap();
         assert!(sim.can_capture(controller, host, &rules));
         assert!(sim.can_be_perma_mind_controlled(host, &rules));
