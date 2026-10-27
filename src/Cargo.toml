@@ -1,6 +1,6 @@
 [package]
 name = "vera20k-core"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 description = "VERA20k's GPU-free engine: assets, rules, map, simulation, lockstep and the headless scenario"
 publish = false

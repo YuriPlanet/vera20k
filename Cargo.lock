@@ -2676,7 +2676,7 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
 name = "vera20k"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2712,7 +2712,7 @@ dependencies = [
 
 [[package]]
 name = "vera20k-core"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "bytemuck",
