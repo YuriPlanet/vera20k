@@ -119,8 +119,20 @@
 pub mod airstrike;
 pub mod digital_display;
 pub mod phobos_parallel_ai_queues;
+#[cfg(all(test, feature = "phobos"))]
+#[path = "phobos_infantry_deploy_tests.rs"]
+mod phobos_infantry_deploy_tests;
+#[cfg(all(test, feature = "phobos"))]
+#[path = "phobos_prone_speed_tests.rs"]
+mod phobos_prone_speed_tests;
+#[cfg(feature = "phobos")]
+pub mod phobos_fly_wobble;
+#[cfg(feature = "phobos")]
+pub mod phobos_pause_menu;
 #[cfg(feature = "phobos")]
 pub mod phobos_placement_preview;
+#[cfg(feature = "phobos")]
+pub mod phobos_selection_flash;
 #[cfg(feature = "phobos")]
 pub mod phobos_sw_sidebar;
 pub mod phobos_radiation;
@@ -219,8 +231,11 @@ pub mod shp_vehicle_sequence;
 pub mod skirmish_colors;
 pub mod smudge_type;
 pub mod sound_ini;
+#[cfg(feature = "ares")]
+pub(crate) mod superweapon_influence;
 pub mod superweapon_targeting;
 pub mod superweapon_type;
+pub mod hunter_seeker;
 pub mod team_ai_ini;
 pub mod terrain_asset_catalog;
 pub mod terrain_object_type;

@@ -93,7 +93,9 @@ constructors, infantry placement and Scatter retain their own simulation RNG dra
 search cost for large blocked payloads has not been profiled; no 20,000-unit
 performance claim is made for this extension.
 
-Money.Amount, custom AI modes, designators/inhibitors, Deliver.Buildups and generic
-Ares animation/visual settings remain outside this feature. AI uses the existing
-ParaDrop-style target arm. The implementation and synthetic regression scenes do
-not establish full Mental Omega compatibility or executable Ares parity.
+The common [money](ares-superweapon-money.md) and
+[targeting/presentation](ares-generic-warhead.md) owners also serve UnitDelivery.
+Its default automatic mode remains ParaDrop. Deliver.Buildups and the documented
+placement/RNG differences remain outside this port. The implementation and
+synthetic regression scenes do not establish full Mental Omega compatibility or
+executable Ares parity.

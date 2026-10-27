@@ -192,6 +192,14 @@ fn the_production_mode_steps_as_native() {
 fn the_building_choice_handles_nodes_as_native() {
     let oracle = oracle();
     for row in oracle["chooser"].as_array().unwrap() {
+        // The rows that splice a plant run the stock choice Ares replaces
+        // (`0x004FE782..0x004FE893`); its gates still apply.
+        #[cfg(feature = "ares")]
+        if row["nodes_after"].as_array().unwrap().len()
+            == row["nodes"].as_array().unwrap().len() + 1
+        {
+            continue;
+        }
         let prerequisite = match row["advanced_prereqs"].as_array().unwrap().as_slice() {
             [] => "",
             [index] => match int(index) {
@@ -761,5 +769,80 @@ fn a_naval_producer_reads_its_own_vehicle_choice() {
             "U"
         }),
         "only the NPatch build has a naval channel"
+    );
+}
+
+/// Ares hook body `0x1001DDC0`: when no candidate passes CanBuild and the
+/// prerequisite filter (this house has no Construction Yard), the splice takes
+/// the country's first listed plant (`0x1001DEA2..0x1001DEC6`) without a draw.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_power_plants_fall_back_to_the_first_candidate_without_a_draw() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Countries]\n0=Greece\n[Greece]\nAI.PowerPlants=NAAPWR,NAPOWR\n\
+         [BuildingTypes]\n0=GAPOWR\n1=NAAPWR\n2=NAPOWR\n3=RADAR\n\
+         [GAPOWR]\n[NAAPWR]\n[NAPOWR]\n[RADAR]\nPower=-50\n\
+         [General]\nGDIPowerPlant=GAPOWR\n",
+    ))
+    .expect("country power plant rules");
+    let mut sim = Simulation::new();
+    let country = sim.interner.intern("Greece");
+    let owner = sim.interner.intern("AI");
+    sim.houses
+        .register(HouseState::new(owner, 0, Some(country), false, 10_000, 10));
+    sim.power_states
+        .map_mut_for_test()
+        .insert(owner, PowerState::default());
+    let before = sim.scenario_rng.logical_state();
+    let radar = rules.object("RADAR").expect("consumer type");
+    assert_eq!(
+        super::power_plant_to_splice(&mut sim, &rules, owner, radar),
+        rules.building_type_index("NAAPWR"),
+    );
+    assert_eq!(sim.scenario_rng.logical_state(), before, "no draw");
+}
+
+/// Retail rules through the production layers: no retail country sets
+/// `AI.PowerPlants=`, so with Ares a Soviet computer house is offered
+/// `[NodRegularPower, NodAdvancedPower]`, NAPOWR and NANRCT
+/// (`0x1001BD6C..0x1001BD8C`). With its Construction Yard and Battle Lab
+/// (NANRCT's `Prerequisite=NATECH,NACNST`) both pass, and one
+/// `Randomizer(0, 1)` on Scenario+0x218 picks the reactor. Stock gamemd
+/// always splices NAPOWR here.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_retail_soviet_computer_draws_between_both_nod_plants() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let plants = &rules.general.building_types;
+    assert_eq!(plants.nod_regular_power.as_deref(), Some("NAPOWR"));
+    assert_eq!(plants.nod_advanced_power.as_deref(), Some("NANRCT"));
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+    let owner = sim.interner.intern("Russians");
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_side_index_for_test(1);
+    for (name, x) in [("NACNST", 4), ("NATECH", 12)] {
+        sim.spawn_object_at_height(name, "Russians", x, 4, 0, 0, &rules)
+            .unwrap_or_else(|| panic!("{name} spawns"));
+    }
+    sim.power_states
+        .map_mut_for_test()
+        .insert(owner, PowerState::default());
+    sim.scenario_rng = SimRng::answering(0, 1, 1);
+    let mut expected = sim.scenario_rng.clone();
+    expected.next_range_i32_inclusive(0, 1);
+    let radar = rules.object("NARADR").expect("retail NARADR");
+    assert_eq!(
+        super::power_plant_to_splice(&mut sim, &rules, owner, radar),
+        rules.building_type_index("NANRCT"),
+    );
+    assert_eq!(
+        sim.scenario_rng.logical_state(),
+        expected.logical_state(),
+        "one Randomizer(0, 1)"
     );
 }

@@ -411,6 +411,29 @@ impl IniSection {
             })
     }
 
+    /// Ares `ValueableIdx<ColorScheme>` 1001CC70: ReadString 2048, then
+    /// `find`, the ColorScheme Find 1001BB30 with shade count 1. A found
+    /// scheme stores its index and `none`/`<none>` (10003950) stores -1;
+    /// anything else, or an absent key, keeps `current`.
+    #[cfg(feature = "ares")]
+    pub(crate) fn read_ares_color_scheme_index(
+        &self,
+        key: &str,
+        current: i32,
+        find: impl Fn(&str) -> Option<i32>,
+    ) -> i32 {
+        let Some(name) = self.read_name(key, 2048) else {
+            return current;
+        };
+        find(name).unwrap_or(
+            if crate::rules::ini_parser::is_native_none_type_name(name) {
+                -1
+            } else {
+                current
+            },
+        )
+    }
+
     /// CCINIClass::ReadEdge475980: ReadString into128 bytes with an empty
     /// default. Empty retains the caller's value; case-insensitive cardinal
     /// names map to0..3 and every other nonempty name returns literal-1.
@@ -660,27 +683,19 @@ impl IniSection {
         self.read_phobos_nullable_with(key, current, read_bool_decision)
     }
 
-    /// Phobos b90ab4bc Utilities/Parser.h:248..271: `strtod`, cast to
-    /// binary32, optional binary32 percent scaling, then widen to double.
+    /// Phobos `Nullable<double>`: the clearing tokens of
+    /// [`Self::read_phobos_nullable_with`], then [`parse_phobos_double`].
     /// Unlike stock ReadDouble, a failed conversion keeps the old nullable.
     pub fn read_phobos_nullable_double(&self, key: &str, current: Option<f64>) -> Option<f64> {
-        self.read_phobos_nullable_with(key, current, |raw| {
-            let parsed = try_parse_leading_f64(raw, FloatScanRounding::Nearest)?;
-            // strtod reports ERANGE on overflow and underflow. Reuse the
-            // decimal scanner's token to distinguish underflow from literal 0.
-            let token = leading_float_token(raw)?;
-            let mantissa = token.split(['e', 'E']).next().unwrap_or(token);
-            if !parsed.is_finite()
-                || (parsed != 0.0 && parsed.abs() < f64::MIN_POSITIVE)
-                || (parsed == 0.0 && mantissa.bytes().any(|byte| matches!(byte, b'1'..=b'9')))
-            {
-                return None;
-            }
-            let mut value = parsed as f32;
-            if raw.contains('%') {
-                value *= 0.01_f32;
-            }
-            Some(f64::from(value))
+        self.read_phobos_nullable_with(key, current, parse_phobos_double)
+    }
+
+    /// Phobos `Valueable<double>` (`INI_EX::ReadDouble`): ReadString(2048),
+    /// then [`parse_phobos_double`]. Absent, empty and failed reads keep the
+    /// current value.
+    pub fn read_phobos_double(&self, key: &str, current: f64) -> f64 {
+        self.read_string_with(key, 2048, current, |current, raw| {
+            parse_phobos_double(raw).unwrap_or(current)
         })
     }
 
@@ -1711,6 +1726,28 @@ impl PartialIntPair {
     pub const fn is_single(&self) -> bool {
         self.values < 2 || self.low >= self.high
     }
+}
+
+/// Phobos b90ab4bc Utilities/Parser.h:248..271 `Parser<double>`: `strtod`,
+/// cast to binary32, optional binary32 percent scaling, then widen to double.
+/// `None` where `strtod` converts nothing or reports ERANGE.
+fn parse_phobos_double(raw: &str) -> Option<f64> {
+    let parsed = try_parse_leading_f64(raw, FloatScanRounding::Nearest)?;
+    // strtod reports ERANGE on overflow and underflow. Reuse the decimal
+    // scanner's token to distinguish underflow from literal 0.
+    let token = leading_float_token(raw)?;
+    let mantissa = token.split(['e', 'E']).next().unwrap_or(token);
+    if !parsed.is_finite()
+        || (parsed != 0.0 && parsed.abs() < f64::MIN_POSITIVE)
+        || (parsed == 0.0 && mantissa.bytes().any(|byte| matches!(byte, b'1'..=b'9')))
+    {
+        return None;
+    }
+    let mut value = parsed as f32;
+    if raw.contains('%') {
+        value *= 0.01_f32;
+    }
+    Some(f64::from(value))
 }
 
 /// Installed Ares Parser<double>10076B60, shared by value and nullable reads.

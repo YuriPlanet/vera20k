@@ -6,10 +6,10 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use std::collections::HashSet;
-use std::path::Path;
 #[cfg(feature = "telemetry-dashboard")]
 use crate::util::time::Instant;
+use std::collections::HashSet;
+use std::path::Path;
 
 use crate::app::AppState;
 use crate::app::input::commands::{preferred_local_owner, preferred_local_owner_name};
@@ -828,6 +828,11 @@ fn advance_in_game_runtime_mode(
     crate::app::input::commands::reconcile_paid_super_weapon_cursor(state);
     let frame_stepping = matches!(mode, RuntimeAdvanceMode::WallClock { .. })
         && state.diag.debug_frame_step_requested;
+    let resume_wait = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .is_some_and(|rt| rt.simulation.pending_network_wait());
     let pacer_timing_admits = match mode {
         RuntimeAdvanceMode::WallClock { now_ms } => {
             let game_speed = state
@@ -854,17 +859,37 @@ fn advance_in_game_runtime_mode(
                 .as_ref()
                 .filter(|live| live.uses_sequenced_lockstep())
             {
-                live.has_terminal_network_error()
-                    || state
-                        .match_state
-                        .sim_runtime
-                        .as_ref()
-                        .is_some_and(|runtime| {
-                            super::frame_pacer::LocalFramePacer::admits_canonical_frame(
-                                runtime.simulation.session().binary_frame(),
-                                live.committed_frontier(),
+                if live.has_terminal_network_error() {
+                    true
+                } else if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+                    let frame = runtime.simulation.session().binary_frame();
+                    let frontier = live.committed_frontier();
+                    if let Some(timing) = live.sequenced_timing().filter(|_| {
+                        !replaying
+                            && !frame_stepping
+                            && !state.match_state.paused()
+                            && !state.focus_freeze_active()
+                            && !runtime.simulation.session().scenario_paused()
+                    }) {
+                        let recovering = live.recovery_status(now_ms as u32, frame).is_some();
+                        state
+                            .platform
+                            .frame_pacer
+                            .online_frame_decision(
+                                crate::util::time::Instant::now(),
+                                frame,
+                                frontier,
+                                timing,
+                                resume_wait,
+                                recovering,
                             )
-                        })
+                            .admits()
+                    } else {
+                        super::frame_pacer::LocalFramePacer::admits_canonical_frame(frame, frontier)
+                    }
+                } else {
+                    false
+                }
             } else {
                 state
                     .platform
@@ -907,11 +932,6 @@ fn advance_in_game_runtime_mode(
         super::scenario_pause::apply_service(state, ScenarioServiceInput::StepChronoScreen);
         state.platform.frame_pacer.record_admitted_frame(wall_ms);
     }
-    let resume_wait = state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .is_some_and(|rt| rt.simulation.pending_network_wait());
     let mut decision = decide_runtime_pass(RuntimePassInputs {
         exact_step: matches!(mode, RuntimeAdvanceMode::ExactOneStep),
         window_active: state.platform.window_active,

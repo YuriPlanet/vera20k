@@ -115,6 +115,20 @@ CAPABILITIES: tuple[Capability, ...] = (
         "The optional read-only browser dashboard on its own, without the "
         "trainer/event hooks debug-tools adds.",
     ),
+    Capability(
+        "wasm-net",
+        ("wasm-net",),
+        "Optional browser networking; desktop feature-isolation compilation. "
+        "The separate WebAssembly workflow builds the browser target.",
+        test=False,
+    ),
+    Capability(
+        "wasm-lan",
+        ("wasm-lan",),
+        "Optional browser LAN play over WebRTC; desktop feature-isolation "
+        "compilation. The separate WebAssembly workflow builds the browser target.",
+        test=False,
+    ),
 )
 
 # The capability mixes #2797 declares meaningful: the three extension flags are

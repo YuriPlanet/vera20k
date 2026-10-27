@@ -248,20 +248,14 @@ impl AresCountryLoading {
         }
     }
 
-    /// Common1001C686/1001CC70: Find-only, kind1, unknown retains, none=-1.
-    /// The caller supplies the current authoritative ColorScheme registry.
+    /// Common1001C686/1001CC70. The caller supplies the current
+    /// authoritative ColorScheme registry.
     pub(crate) fn read_color(
         &mut self,
         section: &crate::rules::ini_parser::IniSection,
         find: impl Fn(&str) -> Option<i32>,
     ) {
-        if let Some(value) = section.read_name("LoadScreenText.Color", 2048) {
-            if let Some(index) = find(value) {
-                self.color = index;
-            } else if crate::rules::ini_parser::is_native_none_type_name(value) {
-                self.color = -1;
-            }
-        }
+        self.color = section.read_ares_color_scheme_index("LoadScreenText.Color", self.color, find);
     }
 
     /// First-phase1001C549 uses Side only for this color, not any GUI file/key.

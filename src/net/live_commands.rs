@@ -15,7 +15,7 @@ use std::num::NonZeroU32;
 mod sequenced;
 mod startup;
 mod timing;
-pub use sequenced::SequencedError;
+pub use sequenced::{SequencedError, SequencedTiming};
 pub use startup::{StartupAgreement, StartupError};
 
 use crate::sim::world::{NetworkCommandQueues, NetworkQueueContext, NetworkQueuePass};
@@ -284,6 +284,12 @@ impl LiveCommandSession {
         self.sequenced.as_ref().map(|session| session.fps)
     }
 
+    /// App-only pacing observation. Availability and canonical dispatch remain
+    /// owned by this session, irrespective of presentation's chosen cadence.
+    pub fn sequenced_timing(&self) -> Option<SequencedTiming> {
+        self.sequenced.as_ref()?.timing()
+    }
+
     pub fn recovery_status(
         &self,
         now_millis: u32,
@@ -335,6 +341,27 @@ impl LiveCommandSession {
         );
         if let Some(session) = &mut self.sequenced {
             session.service(&mut self.transport, now_wall_bucket.wrapping_shl(4));
+        }
+    }
+
+    /// Service the same transport and send fresh sequenced input while the
+    /// canonical frontier is closed. Queue ownership stays in Simulation;
+    /// this does not advance Logic or dispatch received commands. Native LAN
+    /// keeps its existing post-Logic transfer boundary.
+    pub fn service_pending_commands(
+        &mut self,
+        queues: &mut NetworkCommandQueues<'_>,
+        now_wall_bucket: u32,
+    ) {
+        self.service_transport(now_wall_bucket);
+        if !self.sequenced_failed
+            && let Some(session) = &mut self.sequenced
+        {
+            session.service_pending_commands(
+                &mut self.transport,
+                queues,
+                now_wall_bucket.wrapping_shl(4),
+            );
         }
     }
 
@@ -595,7 +622,15 @@ impl LiveCommandSession {
                 &mut self.last_service,
                 self.transport.service(now_wall_bucket),
             );
-            let result = session.poll(&mut self.transport, queues, context, now_millis);
+            // Transport-only service receives the same wall bucket. Do not
+            // alternate raw milliseconds with its rounded value: a later
+            // rounded sample can otherwise underflow sequenced retry timers.
+            let result = session.poll(
+                &mut self.transport,
+                queues,
+                context,
+                now_wall_bucket.wrapping_shl(4),
+            );
             self.sequenced_failed = result.is_err();
             return result;
         }

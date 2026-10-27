@@ -144,6 +144,10 @@ pub struct CountryRules {
     /// state: which units a paradrop superweapon sends.
     #[cfg(feature = "ares")]
     pub(crate) paradrop: crate::rules::ares_country_paradrop::AresCountryParadrop,
+    /// Ares country `AI.PowerPlants=` candidates. Simulation state: which
+    /// building the AI splices when its base runs short of power.
+    #[cfg(feature = "ares")]
+    pub(crate) power_plants: Vec<String>,
 }
 
 /// The House factors [`RuleSet::cost_of`] multiplies in, each indexed by
@@ -201,6 +205,8 @@ impl Default for CountryRules {
             ),
             #[cfg(feature = "ares")]
             paradrop: crate::rules::ares_country_paradrop::AresCountryParadrop::default(),
+            #[cfg(feature = "ares")]
+            power_plants: Vec::new(),
         }
     }
 }
@@ -260,6 +266,8 @@ impl CountryRules {
             ),
             #[cfg(feature = "ares")]
             paradrop: crate::rules::ares_country_paradrop::AresCountryParadrop::default(),
+            #[cfg(feature = "ares")]
+            power_plants: Vec::new(),
         }
     }
 }
@@ -551,6 +559,15 @@ pub struct GeneralRules {
     /// speed by it at `0x004DB1F1..0x004DB200` for a `FASTER`-ability holder.
     /// Constructor default UNCHECKED.
     pub veteran_speed: f64,
+    /// Phobos `[General] ProneSpeed.Crawls=` (default 0.67): the multiplier
+    /// `InfantryClass::GetMovementSpeed @ 0x00521D80` applies to a prone
+    /// infantryman whose type has `Crawls=`.
+    #[cfg(feature = "phobos")]
+    pub prone_speed_crawls: f64,
+    /// Phobos `[General] ProneSpeed.NoCrawls=` (default 1.5): the same
+    /// multiplier for a prone type without `Crawls=`.
+    #[cfg(feature = "phobos")]
+    pub prone_speed_no_crawls: f64,
     /// `[General] VeteranROF=` — `RulesClass+0x690`, read at `0x0066EF61`.
     /// `TechnoClass::GetROF @ 0x006FCFA0` multiplies the jittered reload by it
     /// at `0x006FD136..0x006FD145` for a `ROF`-ability holder. Constructor
@@ -1685,6 +1702,12 @@ pub struct GeneralRules {
     /// building starts only after the held one is placed.
     #[cfg(feature = "phobos")]
     pub building_production_queue: bool,
+    /// Phobos `[General] BuildingTypeSelectable=` (default false): type select
+    /// admits every building, not only the `UndeploysInto=` ones the retail ID
+    /// match admits (`0x00732C61..0x00732C83`). Phobos disables the switch
+    /// without Ares (`BuildingClass_Is1x1AndUndeployable_BuildingMassSelectable`).
+    #[cfg(all(feature = "phobos", feature = "ares"))]
+    pub building_type_selectable: bool,
     /// Phobos `[General] AIFireSale=` (default true): whether a computer
     /// house on its last legs (`0x004FD879..0x004FD904`, no live
     /// `Factory=` building) sells every building.
@@ -1909,6 +1932,11 @@ pub struct GeneralRules {
     /// Rules+E2C (data+E30), indexed Hard/Normal/Easy by Infantry52155C.
     /// Constructor666932..666961 leaves it empty; stock15,25,100 is authored.
     pub ai_auto_deploy_frame_delay: Vec<i32>,
+    /// Phobos `[General] InfantryAutoDeploy` (`RulesExt`, default false): the
+    /// default for the TechnoType key that re-enables the undeployed
+    /// `Approach_Target` arm at `0x00522434`.
+    #[cfg(feature = "phobos")]
+    pub infantry_auto_deploy: bool,
     /// `[AI] AIForcePredictionFudge=`, the signed DynamicVector at `Rules+0x9A8`
     /// (items `+0x9AC`) indexed Hard/Normal/Easy by the House difficulty:
     /// the percent by which the computer's estimate of its enemy's forces
@@ -2721,6 +2749,8 @@ impl Default for GeneralRules {
             maximum_queued_objects: 5,
             #[cfg(feature = "phobos")]
             building_production_queue: false,
+            #[cfg(all(feature = "phobos", feature = "ares"))]
+            building_type_selectable: false,
             #[cfg(feature = "phobos")]
             ai_fire_sale: true,
             #[cfg(feature = "phobos")]
@@ -2778,6 +2808,10 @@ impl Default for GeneralRules {
             infantry_repair_rate: 0.016,
             repair_step: 5,
             repair_percent: 0.25,
+            #[cfg(feature = "phobos")]
+            prone_speed_crawls: 0.67,
+            #[cfg(feature = "phobos")]
+            prone_speed_no_crawls: 1.5,
             // RulesClass constructor 0x0066738F.
             reload_rate: 0.05,
             // PathDelay=.01 min = 0.6 sec = 9 ticks at 15 Hz.
@@ -2785,6 +2819,8 @@ impl Default for GeneralRules {
             // BlockagePathDelay=60 frames (directly in frames, not minutes).
             blockage_path_delay_ticks: 60,
             ai_auto_deploy_frame_delay: Vec::new(),
+            #[cfg(feature = "phobos")]
+            infantry_auto_deploy: false,
             ai_force_prediction_fudge: Vec::new(),
             ai_pick_wall_defense_percent: Vec::new(),
             // RulesClass constructor clears PlayerScatter and stores 3 into
@@ -3998,6 +4034,8 @@ impl GeneralRules {
             maximum_queued_objects: general.read_int("MaximumQueuedObjects", 5),
             #[cfg(feature = "phobos")]
             building_production_queue: general.read_bool("BuildingProductionQueue", false),
+            #[cfg(all(feature = "phobos", feature = "ares"))]
+            building_type_selectable: general.read_bool("BuildingTypeSelectable", false),
             #[cfg(feature = "phobos")]
             ai_fire_sale: general.read_bool("AIFireSale", true),
             #[cfg(feature = "phobos")]
@@ -4074,6 +4112,12 @@ impl GeneralRules {
             // Repair service scalars below are projected from the ordered
             // native reader; do not reread them from this flattened INI.
             repair_percent: general.read_double("RepairPercent", defaults.repair_percent),
+            #[cfg(feature = "phobos")]
+            prone_speed_crawls: general
+                .read_phobos_double("ProneSpeed.Crawls", defaults.prone_speed_crawls),
+            #[cfg(feature = "phobos")]
+            prone_speed_no_crawls: general
+                .read_phobos_double("ProneSpeed.NoCrawls", defaults.prone_speed_no_crawls),
             repair_step: general.read_int("RepairStep", defaults.repair_step),
             unit_repair_rate: defaults.unit_repair_rate,
             charge_to_drain_ratio: defaults.charge_to_drain_ratio,
@@ -4087,6 +4131,8 @@ impl GeneralRules {
             ai_auto_deploy_frame_delay: general
                 .read_int_list("AIAutoDeployFrameDelay")
                 .unwrap_or_default(),
+            #[cfg(feature = "phobos")]
+            infantry_auto_deploy: general.read_bool("InfantryAutoDeploy", false),
             ai_force_prediction_fudge: ai
                 .read_int_list("AIForcePredictionFudge")
                 .unwrap_or_default(),
@@ -4301,6 +4347,15 @@ pub struct RuleSet {
     /// superweapon sidebar.
     #[cfg(feature = "phobos")]
     pub sw_sidebar: crate::rules::phobos_sw_sidebar::SuperWeaponSidebarGlobals,
+    /// Phobos `[AudioVisual] SelectionFlashDuration=`: frames a newly selected
+    /// Techno flashes for; 0 disables it.
+    #[cfg(feature = "phobos")]
+    pub selection_flash: crate::rules::phobos_selection_flash::SelectionFlashGlobals,
+    /// Phobos `[AudioVisual] FlyNoWobbles=`: the default a TechnoType's own
+    /// `FlyNoWobbles` overrides. `None` keeps the retail rule, where
+    /// `IsDropship` alone disables the Fly wobble.
+    #[cfg(feature = "phobos")]
+    fly_no_wobbles: Option<bool>,
     /// Phobos `[SIDE] SuperWeaponSidebar.*PCX=` names, in `[Sides]` order.
     #[cfg(feature = "phobos")]
     side_sw_sidebar_art: Vec<crate::rules::phobos_sw_sidebar::SuperWeaponSidebarSideArt>,
@@ -4579,6 +4634,12 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
+    /// Ares RulesExt+70, used by SW_HunterSeeker::Activate100728EB.
+    #[cfg(feature = "ares")]
+    pub(crate) fn hunter_seeker_buildings(&self) -> &[String] {
+        self.ares_global_controls.hunter_seeker_buildings()
+    }
+
     /// RulesExt+14A indexed by native House difficulty0/1/2 (hardest first).
     /// Only the compiled Ares CanBuild owner consumes this retained policy.
     pub fn ares_ai_bypasses_build_limit(&self, difficulty_index: usize) -> bool {
@@ -4805,6 +4866,20 @@ impl RuleSet {
                 .copied()
             {
                 rules.object_list[handle.0 as usize].bind_ares_spotlight(enabled, options);
+            }
+        }
+        #[cfg(feature = "ares")]
+        for (category, name, retained) in processed.super_weapon_techno_states() {
+            if let Some(handle) = rules
+                .object_category_index
+                .get(&(category, name.to_ascii_uppercase()))
+                .copied()
+            {
+                rules.object_list[handle.0 as usize].bind_super_weapon_techno_rules(
+                    retained.designator_range,
+                    retained.inhibitor_range,
+                    retained.hunter_seeker_ignore,
+                );
             }
         }
         #[cfg(feature = "ares")]
@@ -5198,18 +5273,6 @@ impl RuleSet {
                     sw.presentation = presentation.clone();
                 }
             }
-            for (name, targeting) in processed.super_weapon_targeting_states() {
-                if let Some(sw) = rules
-                    .super_weapons
-                    .values_mut()
-                    .find(|sw| sw.id.eq_ignore_ascii_case(name))
-                {
-                    sw.target_constraints = targeting.constraints();
-                    if let Some(settings) = sw.generic_warhead.as_mut() {
-                        settings.install_targeting(&sw.id, targeting);
-                    }
-                }
-            }
             for (name, supers) in processed.additional_super_weapon_states() {
                 if let Some(building) = rules.object_list.iter_mut().find(|object| {
                     object.category == ObjectCategory::Building
@@ -5217,6 +5280,15 @@ impl RuleSet {
                 }) {
                     building.project_additional_super_weapons(supers);
                 }
+            }
+        }
+        for (name, settings) in processed.hunter_seeker_states() {
+            if let Some(sw) = rules
+                .super_weapons
+                .values_mut()
+                .find(|sw| sw.id.eq_ignore_ascii_case(name))
+            {
+                sw.hunter_seeker = settings.cloned();
             }
         }
         for (name, delivery) in processed.unit_delivery_states() {
@@ -5777,6 +5849,13 @@ impl RuleSet {
         #[cfg(feature = "phobos")]
         let sw_sidebar = crate::rules::phobos_sw_sidebar::SuperWeaponSidebarGlobals::from_ini(ini);
         #[cfg(feature = "phobos")]
+        let selection_flash =
+            crate::rules::phobos_selection_flash::SelectionFlashGlobals::from_ini(ini);
+        #[cfg(feature = "phobos")]
+        let fly_no_wobbles = ini
+            .section("AudioVisual")
+            .and_then(|section| section.read_phobos_nullable_bool("FlyNoWobbles", None));
+        #[cfg(feature = "phobos")]
         let side_sw_sidebar_art: Vec<
             crate::rules::phobos_sw_sidebar::SuperWeaponSidebarSideArt,
         > = country_side_registry
@@ -6073,6 +6152,10 @@ impl RuleSet {
             #[cfg(feature = "phobos")]
             sw_sidebar,
             #[cfg(feature = "phobos")]
+            selection_flash,
+            #[cfg(feature = "phobos")]
+            fly_no_wobbles,
+            #[cfg(feature = "phobos")]
             side_sw_sidebar_art,
             #[cfg(feature = "ares")]
             side_extensions: country_side_registry.side_extensions,
@@ -6290,6 +6373,35 @@ impl RuleSet {
     /// Look up a game object by ID (case-insensitive, engine parity).
     pub fn object(&self, id: &str) -> Option<&ObjectType> {
         self.type_handle(id).map(|h| self.object_by_handle(h))
+    }
+
+    /// Cameo10034E75/10034F3F and SPECIAL_PLACE10038EB9 use the same
+    /// retained flag. Expose the fact without exporting mutable SWExt state.
+    pub fn super_weapon_uses_ai_targeting(&self, id: &str) -> bool {
+        #[cfg(feature = "ares")]
+        {
+            self.super_weapon_target_policy(id)
+                .is_some_and(|policy| policy.use_ai_targeting())
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            let _ = id;
+            false
+        }
+    }
+
+    /// The ordered SWTypeExt targeting fields of an Ares GenericWarhead or
+    /// UnitDelivery type. Stock types keep their retail dispatch owners.
+    #[cfg(feature = "ares")]
+    pub(crate) fn super_weapon_target_policy(
+        &self,
+        id: &str,
+    ) -> Option<crate::rules::superweapon_targeting::AresSuperWeaponTargetingState> {
+        if !self.super_weapon(id)?.kind.has_ares_handler() {
+            return None;
+        }
+        self.super_weapon_metadata(id)
+            .map(|metadata| metadata.targeting())
     }
 
     /// `Type == Rules+0x498` (`[General] PrismType=`, `0x0044B2F8`).
@@ -6796,6 +6908,16 @@ impl RuleSet {
             .map(|(id, country)| (id.to_ascii_uppercase(), &country.veteran_types))
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
+        // Which plant a computer house splices is simulation state.
+        #[cfg(feature = "ares")]
+        {
+            b"ares-country-powerplants-v1".hash(&mut hasher);
+            self.countries
+                .iter()
+                .map(|(id, country)| (id.to_ascii_uppercase(), &country.power_plants))
+                .collect::<BTreeMap<_, _>>()
+                .hash(&mut hasher);
+        }
         // Which units a country's paradrop sends is simulation state, so the
         // Ares country overrides enter the state hash alongside it.
         #[cfg(feature = "ares")]
@@ -6936,6 +7058,29 @@ impl RuleSet {
                 .collect::<BTreeMap<_, _>>()
                 .hash(&mut hasher);
             b"ares-keep-alive-v1".hash(&mut hasher);
+            let influence_types = self
+                .object_list
+                .iter()
+                .filter(|object| {
+                    object.designator_range().is_some()
+                        || object.inhibitor_range().is_some()
+                        || object.hunter_seeker_ignored()
+                })
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        (
+                            object.designator_range(),
+                            object.inhibitor_range(),
+                            object.hunter_seeker_ignored(),
+                        ),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !influence_types.is_empty() {
+                b"ares-sw-influence-types-v2".hash(&mut hasher);
+                influence_types.hash(&mut hasher);
+            }
             self.object_list
                 .iter()
                 .map(|object| {
@@ -6958,6 +7103,22 @@ impl RuleSet {
             if !conversions.is_empty() {
                 b"ares-script-conversion-v1".hash(&mut hasher);
                 conversions.hash(&mut hasher);
+            }
+            let surface_conversions = self
+                .object_list
+                .iter()
+                .filter_map(|object| {
+                    let targets = (
+                        object.surface_conversion(true),
+                        object.surface_conversion(false),
+                    );
+                    (targets.0.is_some() || targets.1.is_some())
+                        .then(|| ((object.category, object.id.to_ascii_uppercase()), targets))
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !surface_conversions.is_empty() {
+                b"ares-surface-conversion-v1".hash(&mut hasher);
+                surface_conversions.hash(&mut hasher);
             }
             let turn_overrides = self
                 .object_list
@@ -7395,6 +7556,23 @@ impl RuleSet {
             .collect::<BTreeMap<_, _>>();
         if !generic_warheads.is_empty() {
             generic_warheads.hash(&mut hasher);
+        }
+        let hunters = self
+            .super_weapons
+            .iter()
+            .filter_map(|(id, sw)| {
+                sw.hunter_seeker
+                    .as_ref()
+                    .map(|settings| (id.to_ascii_uppercase(), settings))
+            })
+            .collect::<BTreeMap<_, _>>();
+        if !hunters.is_empty() {
+            b"ares-hunter-seeker-v1".hash(&mut hasher);
+            hunters.hash(&mut hasher);
+            #[cfg(feature = "ares")]
+            self.ares_global_controls
+                .hunter_seeker_buildings()
+                .hash(&mut hasher);
         }
         // No extension tags means no extra hash input: preserve stock hashes.
         let building_requirements = self
@@ -8164,6 +8342,37 @@ impl RuleSet {
         }
     }
 
+    /// Ares `HouseTypeExt::GetPowerplants @ 0x1001BD20`, as BuildingType
+    /// indices: country `id`'s `AI.PowerPlants=` (`+0x130`) while it is
+    /// non-empty, else by the country's side (`HouseType+0xBC`): 0
+    /// `[GDIPowerPlant]`, 1 `[NodRegularPower, NodAdvancedPower]`
+    /// (`0x1001BD6C..0x1001BD8C`), 2 `[ThirdPowerPlant]`, each without its
+    /// unset slots, and any other side none.
+    #[cfg(feature = "ares")]
+    pub fn ares_power_plants(&self, id: &str, side: i32) -> Vec<i32> {
+        let index = |name: &Option<String>| {
+            name.as_deref()
+                .and_then(|name| self.building_type_index(name))
+        };
+        let country = self
+            .country_rules(id)
+            .map_or(&[][..], |country| country.power_plants.as_slice());
+        if !country.is_empty() {
+            return country
+                .iter()
+                .filter_map(|name| self.building_type_index(name))
+                .collect();
+        }
+        let plants = &self.general.building_types;
+        let slots = match side {
+            0 => [&plants.gdi_power_plant, &None],
+            1 => [&plants.nod_regular_power, &plants.nod_advanced_power],
+            2 => [&plants.third_power_plant, &None],
+            _ => [&None, &None],
+        };
+        slots.into_iter().filter_map(index).collect()
+    }
+
     /// `HouseTypeExt::GetParadropContent @ 0x1001BC20` for a country: its own
     /// `ParaDrop.Types`/`.Num` while the type list is non-empty, else `None`,
     /// which defers to the side layer (also the answer in a stock build).
@@ -8446,6 +8655,51 @@ impl RuleSet {
         self.side_indices.get(&id.to_ascii_uppercase()).copied()
     }
 
+    /// Phobos `InfantryAutoDeploy`, resolved the way `InfantryClass::
+    /// Approach_Target`'s hook resolves it: the TechnoType's own value, then
+    /// `[General]`, defaulting to `false` (the retail YR behaviour). `true`
+    /// re-enables the deploy arm at original `0x00522434`.
+    #[cfg(feature = "phobos")]
+    pub fn infantry_auto_deploy_for(&self, ty: &ObjectType) -> bool {
+        ty.infantry_auto_deploy()
+            .unwrap_or(self.general.infantry_auto_deploy)
+    }
+
+    /// Phobos `ProneSpeed`, resolved the way the hook at original `0x00521D94`
+    /// resolves it: the InfantryType's own value, then the global that the
+    /// type's `Crawls=` selects.
+    #[cfg(feature = "phobos")]
+    pub fn prone_speed_for(&self, ty: &ObjectType) -> f64 {
+        ty.prone_speed().unwrap_or(if ty.crawls {
+            self.general.prone_speed_crawls
+        } else {
+            self.general.prone_speed_no_crawls
+        })
+    }
+
+    /// Type-select admission for a structure.
+    ///
+    /// The native ID match (`0x00732C30`) admits a building of a listed type
+    /// when CanBeSelectedNow (vt+0x13C) answers true or its type has
+    /// `UndeploysInto=` (`0x00732C61..0x00732C83`). A building's
+    /// CanBeSelectedNow (`0x00459C00`) first asks `0x00465D40`, true only for
+    /// a 1x1 `UndeploysInto=` type, so retail admits exactly the
+    /// `UndeploysInto=` buildings. Phobos's hook makes `0x00465D40` answer true
+    /// during the ID match under `BuildingTypeSelectable`, with Ares loaded.
+    /// RESIDUAL: with the switch on, native still applies CanBeSelectedNow's
+    /// TechnoClass checks (`0x006FC030`); this admits every building of the
+    /// type.
+    pub fn structure_type_selectable(&self, id: &str) -> bool {
+        #[cfg(all(feature = "phobos", feature = "ares"))]
+        {
+            if self.general.building_type_selectable {
+                return true;
+            }
+        }
+        self.object(id)
+            .is_some_and(|object| object.undeploys_into.is_some())
+    }
+
     /// Phobos `Sidebar.GDIPositions=` for a native side index. A missing or
     /// out-of-range side falls back to the first-side default (index 0 true).
     #[cfg(feature = "phobos")]
@@ -8454,6 +8708,19 @@ impl RuleSet {
             .ok()
             .and_then(|index| self.side_gdi_positions.get(index).copied())
             .unwrap_or(index == 0)
+    }
+
+    /// Phobos `FlyNoWobbles`, resolved the way the hook at original `0x4CF8B1`
+    /// resolves it: the TechnoType's own value, then `[AudioVisual]`, then the
+    /// retail rule that branch reads in an unmodified game (`IsDropship`).
+    /// `true` skips the `FlyLocomotionClass::Draw_Point` wobble.
+    #[cfg(feature = "phobos")]
+    pub fn fly_no_wobbles_for(&self, ty: &ObjectType) -> bool {
+        crate::rules::phobos_fly_wobble::resolve(
+            ty.fly_no_wobbles(),
+            self.fly_no_wobbles,
+            ty.is_dropship(),
+        )
     }
 
     /// Phobos `[SIDE] SuperWeaponSidebar.*PCX=` for a native side index.
@@ -8787,12 +9054,9 @@ impl RuleSet {
         }
     }
 
-    /// `[Side] HunterSeeker=`; no VERA consumer yet (the Hunter Seeker
-    /// superweapon is a separate unported mechanism).
+    /// `[Side] HunterSeeker=` (SideExt+0x94), the fallback UnitType of
+    /// SW_HunterSeeker::Activate10072885.
     #[cfg(feature = "ares")]
-    // Hunter Seeker superweapon launch is not ported; the parsed value has no
-    // production consumer yet.
-    #[allow(dead_code)]
     pub(crate) fn side_hunter_seeker(&self, side: i32) -> Option<&str> {
         self.side_extension(side)?
             .hunter_seeker
@@ -9738,6 +10002,7 @@ fn project_country_side_registry<'a>(
             {
                 fields.presentation = veteran.presentation().clone();
                 fields.paradrop = veteran.paradrop().clone();
+                fields.power_plants = veteran.power_plants().to_vec();
             }
             fields
         });

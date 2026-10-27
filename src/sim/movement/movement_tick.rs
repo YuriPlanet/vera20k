@@ -83,6 +83,8 @@ struct OrdinaryMoverVisit {
     snap: MoverSnapshot,
     walk_position_before_step: Option<crate::sim::components::Position>,
     prone_crawls: Option<bool>,
+    /// Phobos `ProneSpeed` for the same prone infantryman.
+    prone_multiplier: Option<f64>,
     /// Walk75AEC0 argument1: the outer call may retry a refused head once.
     walk_retry_allowed: bool,
 }
@@ -211,6 +213,7 @@ impl FootPathRequest {
                 snap,
                 walk_position_before_step: None,
                 prone_crawls: None,
+                prone_multiplier: None,
                 walk_retry_allowed: true,
             },
         })
@@ -421,17 +424,22 @@ fn advance_ordinary_mover(
             .as_ref()
             .filter(|loco| loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Walk)
             .and_then(|_| entities.get(entity_id).map(|entity| entity.position));
-        let prone_crawls = entities.get(entity_id).and_then(|entity| {
-            if !infantry::is_prone_for_damage(entity) {
-                return None;
-            }
-            let obj = interner.object_type(entity.type_ref(), rules)?;
-            Some(obj.crawls)
-        });
+        // The prone arm of `InfantryClass::GetMovementSpeed @ 0x00521D80`
+        // reads the type's `Crawls=` and, under Phobos, its `ProneSpeed`.
+        let prone_type = entities
+            .get(entity_id)
+            .filter(|entity| infantry::is_prone_for_damage(entity))
+            .and_then(|entity| interner.object_type(entity.type_ref(), rules));
+        let prone_crawls = prone_type.map(|obj| obj.crawls);
+        #[cfg(feature = "phobos")]
+        let prone_multiplier = prone_type.map(|obj| rules.prone_speed_for(obj));
+        #[cfg(not(feature = "phobos"))]
+        let prone_multiplier = None;
         OrdinaryMoverVisit {
             snap,
             walk_position_before_step,
             prone_crawls,
+            prone_multiplier,
             walk_retry_allowed: true,
         }
     };
@@ -471,6 +479,7 @@ fn advance_ordinary_mover(
         snap,
         walk_position_before_step,
         prone_crawls,
+        prone_multiplier,
         walk_retry_allowed,
     } = visit;
     let Some(entity) = entities.get_mut(entity_id) else {
@@ -492,6 +501,7 @@ fn advance_ordinary_mover(
                 snap,
                 walk_position_before_step,
                 prone_crawls,
+                prone_multiplier,
                 walk_retry_allowed,
             },
         });
@@ -521,6 +531,7 @@ fn advance_ordinary_mover(
         entity,
         adjusted_speed,
         prone_crawls,
+        prone_multiplier,
         native_frame,
         resolved_terrain,
         path_grid,

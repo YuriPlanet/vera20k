@@ -406,17 +406,35 @@ impl RenderInterpolation {
     }
 
     fn sample(&self, id: u64, current: RenderPose, frame: u32) -> RenderPose {
-        if !self.enabled || self.held {
-            return current;
-        }
+        self.sample_endpoints(id, current, frame)
+            .map_or(current, |endpoints| {
+                endpoints.previous.between(current, self.alpha)
+            })
+    }
+
+    fn sample_endpoints(&self, id: u64, current: RenderPose, frame: u32) -> Option<&Endpoints> {
         self.poses
             .get(&id)
             // An out-of-band mutation must snap the WHOLE transform, not mix
             // a stale position with current facing (same guard as ra2-mono).
-            .filter(|endpoints| endpoints.frame == frame && endpoints.current == current)
-            .map_or(current, |endpoints| {
-                endpoints.previous.between(current, self.alpha)
+            .filter(|endpoints| {
+                self.enabled
+                    && !self.held
+                    && endpoints.frame == frame
+                    && endpoints.current == current
             })
+    }
+
+    /// Earliest logical endpoint contributing to this exact entity draw.
+    /// Diagnostics share the sampler's stale-history guard, without changing it.
+    pub(crate) fn sampled_from_frame(&self, entity: &GameEntity, frame: u32) -> u32 {
+        let current = RenderPose::read(entity, frame);
+        if !eligible(entity) {
+            return frame;
+        }
+        self.sample_endpoints(entity.stable_id(), current, frame)
+            .filter(|endpoints| endpoints.previous != current && self.alpha < 1.0)
+            .map_or(frame, |_| frame.wrapping_sub(1))
     }
 
     pub(crate) fn readout(&self) -> SimulationReadout {
@@ -836,11 +854,21 @@ mod tests {
         let painted = cache.sample(7, current, sim.session().binary_frame());
         assert_eq!(painted.screen, old.between(current, 0.5).screen);
         assert_ne!(painted.screen, current.screen);
+        assert_eq!(
+            cache.sampled_from_frame(sim.entities().get(7).unwrap(), next_frame),
+            next_frame - 1,
+            "diagnostics observe the same previous endpoint as the actual blended draw"
+        );
         cache.observe(&sim, 49, Some(32.0), true);
         cache.observe(&sim, 50, Some(32.0), false);
         assert_eq!(
             cache.sample(7, current, sim.session().binary_frame()),
             current
+        );
+        assert_eq!(
+            cache.sampled_from_frame(sim.entities().get(7).unwrap(), next_frame),
+            next_frame,
+            "a held/reset draw has no earlier contributing endpoint"
         );
         // A same-frame out-of-band relocation cannot reuse old endpoints.
         let mut relocated = current;

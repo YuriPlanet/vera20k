@@ -1559,11 +1559,11 @@ pub(crate) fn handle_type_select_key_edge(
         if !is_type_select {
             return false;
         }
-        state
-            .match_state
-            .input
-            .type_select
-            .press(physical_code, crate::util::time::Instant::now(), repeat);
+        state.match_state.input.type_select.press(
+            physical_code,
+            crate::util::time::Instant::now(),
+            repeat,
+        );
         return true;
     }
     if !is_type_select && !state.match_state.input.type_select.owns_key(physical_code) {
@@ -1926,9 +1926,17 @@ fn press_super_weapon(state: &mut AppState, section: &str, right: bool, gui_soun
     }
     match click {
         super::superweapon_cameo::SuperWeaponClick::Refused
-            if selection
-                .as_ref()
-                .is_some_and(|(view, _)| view.can_fire && !view.can_afford) =>
+            if selection.as_ref().is_some_and(|(view, _)| {
+                #[cfg(feature = "ares")]
+                {
+                    view.ares_refusal
+                        == Some(crate::sim::superweapon::AresCameoRefusal::InsufficientFunds)
+                }
+                #[cfg(not(feature = "ares"))]
+                {
+                    view.can_fire && !view.can_afford
+                }
+            }) =>
         {
             let cue = state
                 .rules()
@@ -1956,6 +1964,12 @@ fn press_super_weapon(state: &mut AppState, section: &str, right: bool, gui_soun
             );
         }
         _ => {}
+    }
+    #[cfg(feature = "ares")]
+    if click == super::superweapon_cameo::SuperWeaponClick::Refused
+        && let Some(refusal) = selection.as_ref().and_then(|(view, _)| view.ares_refusal)
+    {
+        crate::app::input::messages::post_ares_superweapon_refusal(state, section, refusal);
     }
 }
 
@@ -2343,12 +2357,24 @@ pub(crate) fn reconcile_selection_order_after_sim(
         state.match_state.input.type_select.reset_scope();
         return;
     };
+    let selected = logic_selects(outputs);
     reconcile_selection_order_for_sim(
         &mut state.match_state.input,
         &runtime.simulation,
         Some(&runtime.resources.rules),
-        &logic_selects(outputs),
+        &selected,
     );
+    // Phobos "Flashing Technos on selecting" sits in ObjectClass::Select
+    // (`0x005F46AE`/`0x005F4718`), so the frame's logic Selects flash too.
+    #[cfg(feature = "phobos")]
+    if state.match_state.match_presentation.show_flash_on_selecting
+        && !selected.is_empty()
+        && let Some(runtime) = state.match_state.sim_runtime.as_mut()
+    {
+        runtime
+            .simulation
+            .flash_selected_for_current_player(&selected, &runtime.resources.rules);
+    }
 }
 
 /// Reconcile the existing input owner against its bound simulation. Kept
@@ -2473,6 +2499,20 @@ fn apply_selection_mutation(
         &mutation,
     );
     state.match_state.input.follow_target = follow_target;
+    // Phobos "Flashing Technos on selecting": the client switch gates the
+    // `[AudioVisual] SelectionFlashDuration` the sim's flash owner reads.
+    // ObjectClass_Select flashes each newly selected Techno the current player
+    // controls (0x005F46AE/0x005F4718); an already-selected object makes no
+    // Select call and therefore no flash.
+    #[cfg(feature = "phobos")]
+    if state.match_state.match_presentation.show_flash_on_selecting
+        && !successful_adds.is_empty()
+        && let Some(runtime) = state.match_state.sim_runtime.as_mut()
+    {
+        runtime
+            .simulation
+            .flash_selected_for_current_player(&successful_adds, &runtime.resources.rules);
+    }
     if unselected_all {
         // Unselect_All's tail, BeaconManager ClearSelection (0x0048DCB8).
         state

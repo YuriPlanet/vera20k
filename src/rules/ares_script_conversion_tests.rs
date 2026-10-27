@@ -92,3 +92,64 @@ fn script_conversion_retains_registered_identity_through_layers_save_and_hash() 
     );
     assert_eq!(light, restored.object("SOURCE").unwrap().spotlight_rules());
 }
+
+#[test]
+fn surface_conversion_retains_nullable_bindings_layers_save_and_hash() {
+    let root = "[VehicleTypes]\n0=LAND\n1=WATER\n2=CLEAR\n3=UNSET\n\
+                [LAND]\nConvert.Water=WATER\nConvert.Land=LAND\n\
+                [CLEAR]\nConvert.Water=WATER\nConvert.Land=LAND\n";
+    let map = IniFile::from_str(
+        "[LAND]\nConvert.Water=MISSING\nConvert.Land=\n\
+         [CLEAR]\nConvert.Water=<none>\nConvert.Land=none\n\
+         [UNSET]\nConvert.Water=MISSING\nConvert.Land=MISSING\n",
+    );
+    let load = |root: &str| {
+        let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+            IniFile::from_str(root),
+            None,
+            IniFile::empty(),
+            Arc::new(SoundRegistry::from_ini(&IniFile::empty())),
+            Arc::new(EvaRegistry::from_ini(&IniFile::empty())),
+        )
+        .unwrap();
+        let (rules, ..) = owner
+            .load_scenario(NativeScenarioRulesPrefix::NonCampaign(None), &map)
+            .unwrap()
+            .into_parts();
+        (owner, rules)
+    };
+    let (owner, rules) = load(root);
+    let land = rules.object("LAND").unwrap();
+    assert_eq!(land.surface_conversion(true).unwrap().id, "WATER");
+    assert_eq!(land.surface_conversion(false).unwrap().id, "LAND");
+    assert_eq!(
+        land.surface_conversion(true).unwrap().category,
+        ObjectCategory::Vehicle
+    );
+    for id in ["CLEAR", "UNSET"] {
+        let object = rules.object(id).unwrap();
+        assert!(object.surface_conversion(true).is_none());
+        assert!(object.surface_conversion(false).is_none());
+    }
+    assert!(rules.object("MISSING").is_none());
+    for changed in [
+        root.replace("Convert.Water=WATER", "Convert.Water=LAND"),
+        root.replace("Convert.Land=LAND", "Convert.Land=WATER"),
+    ] {
+        let (_, mut other) = load(&changed);
+        other.source_ini_hash = rules.source_ini_hash();
+        assert_ne!(
+            other.simulation_config_hash(),
+            rules.simulation_config_hash()
+        );
+    }
+    let saved = crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+    let restored = crate::util::save_codec::deserialize(&saved).unwrap();
+    let restored = owner.project_saved_scenario_rules(&restored).unwrap();
+    for water in [false, true] {
+        assert_eq!(
+            land.surface_conversion(water),
+            restored.object("LAND").unwrap().surface_conversion(water)
+        );
+    }
+}

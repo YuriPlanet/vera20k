@@ -32,6 +32,7 @@ pub(crate) struct MatchDiagnosticsState {
     /// by the frame loop, closed by the lifecycle flush points above.
     pub(crate) replay_log: Option<ReplayLog>,
     command_executions: Option<CommandExecutionLog>,
+    actor_presentation: std::cell::RefCell<Option<ActorPresentationProbe>>,
     loading_cancel: Option<Vec<LoadingCancelObservation>>,
     replay_playback: Option<ReplayPlaybackState>,
     replay_capture_output: Option<PathBuf>,
@@ -47,14 +48,101 @@ enum ReplayPlaybackState {
 /// One actual post-formation native command dispatch and its immediate
 /// receiver state. This opt-in app observation is never saved or hashed.
 pub(crate) struct CommandExecutionObservation {
+    pub observed_at: ObservationTime,
     pub frame: u32,
     pub record: crate::sim::command::CommandRecord,
     pub applied: bool,
     pub actor: Option<u64>,
+    pub motion: Option<ActorMotionObservation>,
     pub timing: Option<CommandTimingObservation>,
     pub destination: Option<crate::sim::components::NavTargetRef>,
     pub cell: Option<(u16, u16)>,
     pub mission: Option<(i32, i32)>,
+}
+
+/// Existing movement owners projected for app diagnostics; no mutable access.
+#[derive(Clone, serde::Serialize)]
+pub(crate) struct ActorMotionObservation {
+    pub actor_type: String,
+    pub locomotor: Option<String>,
+    pub applied_fraction: f64,
+    pub applied_fraction_bits: u64,
+    pub moving: Option<bool>,
+    pub drive_destination: Option<crate::sim::components::DriveCoord>,
+    pub drive_head: Option<crate::sim::components::DriveCoord>,
+    pub mission: (i32, i32),
+}
+impl ActorMotionObservation {
+    pub(crate) fn read(
+        sim: &crate::sim::world::Simulation,
+        entity: &crate::sim::game_entity::GameEntity,
+    ) -> Self {
+        use crate::sim::movement::track_process::TrackFamily;
+        let drive = entity.locomotor.as_ref().filter(|loco| {
+            loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Drive
+        });
+        let bits = entity.foot_speed.native_applied_fraction().bits();
+        Self {
+            actor_type: sim.interner().resolve(entity.type_ref()).to_owned(),
+            locomotor: entity
+                .locomotor
+                .as_ref()
+                .map(|loco| format!("{:?}", loco.active_kind())),
+            applied_fraction: f64::from_bits(bits),
+            applied_fraction_bits: bits,
+            moving: crate::sim::movement::motion_query::is_moving(entity),
+            drive_destination: drive.and_then(|loco| loco.track_destination(TrackFamily::Drive)),
+            drive_head: drive.and_then(|loco| loco.track_head(TrackFamily::Drive)),
+            mission: (
+                entity.mission.current().raw(),
+                entity.mission.queued().raw(),
+            ),
+        }
+    }
+}
+
+/// App-only clocks for measurement. Neither clock enters commands or hashes.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ObservationTime {
+    pub instant: crate::util::time::Instant,
+    pub unix_us: u64,
+}
+impl ObservationTime {
+    pub(crate) fn now() -> Self {
+        Self {
+            instant: crate::util::time::Instant::now(),
+            unix_us: crate::util::time::SystemTime::now()
+                .duration_since(crate::util::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_micros() as u64,
+        }
+    }
+}
+
+pub(crate) type GpuCompletion = std::sync::Arc<std::sync::Mutex<Option<ObservationTime>>>;
+
+#[derive(Clone)]
+pub(crate) struct ActorPresentation {
+    pub at: ObservationTime,
+    pub frame: u32,
+    pub screen: [f32; 2],
+    pub body: u16,
+    pub motion: ActorMotionObservation,
+    pub sampled_from_frame: u32,
+    pub gpu_done: GpuCompletion,
+}
+impl ActorPresentation {
+    pub(crate) fn gpu_completed_at(&self) -> Option<ObservationTime> {
+        *self
+            .gpu_done
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+    }
+}
+struct ActorPresentationProbe {
+    actor: u64,
+    pending: Option<(u32, [f32; 2], u16, ActorMotionObservation, u32)>,
+    submitted: Option<ActorPresentation>,
 }
 pub(crate) struct CommandTimingObservation {
     pub publisher: Option<i8>,
@@ -92,10 +180,12 @@ impl CommandExecutionLog {
         }
         let entity = actor.and_then(|actor| sim.entities().get(actor));
         self.records.push(CommandExecutionObservation {
+            observed_at: ObservationTime::now(),
             frame: sim.session().binary_frame(),
             record: record.clone(),
             applied,
             actor,
+            motion: entity.map(|entity| ActorMotionObservation::read(sim, entity)),
             timing: sim
                 .session()
                 .network_command_timing()
@@ -127,6 +217,71 @@ pub(crate) struct ReplayLogFlush {
 }
 
 impl MatchDiagnosticsState {
+    pub(crate) fn actor_presentation_observer_active(&self) -> bool {
+        self.actor_presentation.borrow().is_some()
+    }
+
+    pub(crate) fn observe_actor_presentation(&self, actor: u64) {
+        *self.actor_presentation.borrow_mut() = Some(ActorPresentationProbe {
+            actor,
+            pending: None,
+            submitted: None,
+        });
+    }
+    pub(crate) fn begin_presentation_observation(&self) {
+        if let Some(probe) = self.actor_presentation.borrow_mut().as_mut() {
+            probe.pending = None;
+            probe.submitted = None;
+        }
+    }
+    pub(crate) fn record_actor_draw(
+        &self,
+        sim: &crate::sim::world::Simulation,
+        entity: &crate::sim::game_entity::GameEntity,
+        frame: u32,
+        screen: [f32; 2],
+        body: u16,
+        interpolation: &crate::app::presentation::interpolation::RenderInterpolation,
+    ) {
+        if let Some(probe) = self.actor_presentation.borrow_mut().as_mut()
+            && probe.actor == entity.stable_id()
+        {
+            probe.pending = Some((
+                frame,
+                screen,
+                body,
+                ActorMotionObservation::read(sim, entity),
+                interpolation.sampled_from_frame(entity, frame),
+            ));
+        }
+    }
+    pub(crate) fn commit_presentation_observation(&self) -> Option<GpuCompletion> {
+        if let Some(probe) = self.actor_presentation.borrow_mut().as_mut() {
+            probe.submitted =
+                probe
+                    .pending
+                    .take()
+                    .map(
+                        |(frame, screen, body, motion, sampled_from_frame)| ActorPresentation {
+                            at: ObservationTime::now(),
+                            frame,
+                            screen,
+                            body,
+                            motion,
+                            sampled_from_frame,
+                            gpu_done: Default::default(),
+                        },
+                    );
+            return probe.submitted.as_ref().map(|frame| frame.gpu_done.clone());
+        }
+        None
+    }
+    pub(crate) fn actor_presentation(&self) -> Option<ActorPresentation> {
+        self.actor_presentation.borrow().as_ref()?.submitted.clone()
+    }
+    pub(crate) fn end_presentation_observation(&self) {
+        *self.actor_presentation.borrow_mut() = None;
+    }
     pub(crate) fn is_replay_playback(&self) -> bool {
         self.replay_playback.is_some()
     }
@@ -526,6 +681,19 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_TEST_PATH: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn actor_observer_is_active_before_a_draw_and_until_explicit_end() {
+        let diagnostics = MatchDiagnosticsState::default();
+        assert!(!diagnostics.actor_presentation_observer_active());
+        diagnostics.observe_actor_presentation(7);
+        assert!(diagnostics.actor_presentation_observer_active());
+        assert!(diagnostics.actor_presentation().is_none());
+        diagnostics.begin_presentation_observation();
+        assert!(diagnostics.actor_presentation_observer_active());
+        diagnostics.end_presentation_observation();
+        assert!(!diagnostics.actor_presentation_observer_active());
+    }
 
     #[cfg(feature = "debug-tools")]
     #[test]

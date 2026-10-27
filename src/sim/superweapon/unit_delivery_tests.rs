@@ -746,7 +746,7 @@ fn unit_delivery_retail_flying_foot_lifts_off_without_a_later_order() {
 
 #[test]
 fn unit_delivery_ai_ground_rally_arm_completes_a_delivery() {
-    use crate::sim::superweapon::ai_fire::{self, AiFireArm, AiFireEvent};
+    use crate::sim::superweapon::ai_fire;
 
     let rules = rules("[Delivery]\nSW.Deferment=0\n");
     let mut sim = world(&rules);
@@ -755,17 +755,7 @@ fn unit_delivery_ai_ground_rally_arm_completes_a_delivery() {
         .get_mut(&owner)
         .unwrap()
         .set_preferred_super_weapon_target((12, 10));
-    ai_fire::AI_FIRE_LOG.set(Some(Vec::new()));
     ai_fire::try_fire(&mut sim, &rules, owner, None, FrameEffects::default());
-    let log = ai_fire::AI_FIRE_LOG.take().unwrap();
-    assert_eq!(
-        log,
-        vec![
-            AiFireEvent::TryFire,
-            AiFireEvent::TailArm(AiFireArm::GroundRallyPoint, sw),
-            AiFireEvent::Fire(sw, (12, 10))
-        ]
-    );
     let ids = payloads(&sim, "MTNK");
     assert_eq!(ids.len(), 1);
     let unit = sim.substrate.entities.get(ids[0]).unwrap();

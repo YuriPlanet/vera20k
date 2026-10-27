@@ -668,9 +668,10 @@ impl LiveRoundFlow {
         match self.phase {
             RoundPhase::Main
                 if rendered == PresentedShell::MainMenu
-                    && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
-                        state,
-                    ))? =>
+                    && steady_main_menu_capture_ready_for(
+                        MainMenuCaptureSnapshot::from_state(state),
+                        self.config.as_ref().is_some_and(|config| config.latency),
+                    )? =>
             {
                 LanCapture::isolated_root(state)?;
                 ensure!(
@@ -1410,9 +1411,10 @@ impl LiveRoundFlow {
             }
             RoundPhase::MainReturn
                 if rendered == PresentedShell::MainMenu
-                    && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
-                        state,
-                    ))? =>
+                    && steady_main_menu_capture_ready_for(
+                        MainMenuCaptureSnapshot::from_state(state),
+                        self.config.as_ref().is_some_and(|config| config.latency),
+                    )? =>
             {
                 if !self.observe_exit_cleanup(state, frame)? {
                     return Ok(());
@@ -1525,12 +1527,15 @@ fn reset_round(core: &mut LiveLanCapture) {
     core.actor_last_seen = None;
     core.origin = None;
     core.observed_movement = false;
-    core.stopped_position = None;
+    core.stop_observation = super::StopObservation::default();
     core.stopped = false;
     core.last_wait = None;
     core.kick_observed = false;
     core.entered_setup = false;
     core.country_selected = false;
+    if core.latency.is_some() {
+        core.latency = Some(super::latency::LatencyCapture::default());
+    }
     if core.mass.is_some() {
         core.mass = Some(mass::MassInput::default());
     }

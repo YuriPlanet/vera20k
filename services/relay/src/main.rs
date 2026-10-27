@@ -6,7 +6,7 @@ use std::net::{SocketAddr, UdpSocket};
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use vera20k_relay_protocol::{MAX_DATAGRAM, RelayError, RelayServer, SecretKey};
+use vera20k_relay_protocol::{ForwardDatagram, MAX_DATAGRAM, RelayError, RelayServer, SecretKey};
 
 /// Aggregate operational counts only. No request, endpoint, room identity,
 /// authentication material or error body enters the relay's journal.
@@ -81,6 +81,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let monotonic_ms = clock_origin.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
         // Clock advancement is independent of datagram arrivals and readers.
         server.advance_clock(monotonic_ms, now);
+        send_datagrams(
+            &socket,
+            &mut counts,
+            server.drain_ordering_push(monotonic_ms, now),
+        );
         let elapsed = reported_at.elapsed().as_secs();
         if elapsed >= 60 {
             counts.report(elapsed, server.room_count());
@@ -115,15 +120,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Rejections expose no packet, key, ticket, address or player data.
         // Ordinary UDP loss is handled by the existing client reliable owner.
         match server.process_at(source, &buffer[..length], now, monotonic_ms) {
-            Ok(forward) => {
-                for datagram in forward {
-                    match socket.send_to(&datagram.bytes, datagram.endpoint) {
-                        Ok(_) => counts.forwarded += 1,
-                        Err(_) => counts.send_errors += 1,
-                    }
-                }
-            }
+            Ok(forward) => send_datagrams(&socket, &mut counts, forward),
             Err(error) => counts.reject(error),
+        }
+    }
+}
+
+fn send_datagrams(socket: &UdpSocket, counts: &mut TrafficCounts, datagrams: Vec<ForwardDatagram>) {
+    for datagram in datagrams {
+        match socket.send_to(&datagram.bytes, datagram.endpoint) {
+            Ok(_) => counts.forwarded += 1,
+            Err(_) => counts.send_errors += 1,
         }
     }
 }

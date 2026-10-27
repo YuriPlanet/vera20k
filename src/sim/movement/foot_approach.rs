@@ -262,9 +262,9 @@ impl Simulation {
     /// Mission_Hunt (`0x004D54E3`, `0x004D54D2`), Mission_AreaGuard
     /// (`0x004D6F32`), Mission_Rescue (`0x004DDFEB`) and TechnoClass::AI's
     /// reach block (`0x006FAB74`) call it: a Unit's head
-    /// ([`Self::approach_unit_head`]) or an infantryman's deployed arm
-    /// ([`Self::approach_infantry_deployed`]), then the Foot body
-    /// ([`Self::approach_foot_target`]; Unit `0x00741689`, Infantry
+    /// ([`Self::approach_unit_head`]) or an infantryman's deploy arm
+    /// ([`Self::approach_infantry_deploy_arm`]) for a deploy action, then the
+    /// Foot body ([`Self::approach_foot_target`]; Unit `0x00741689`, Infantry
     /// `0x0052236E`) for a mover [`Self::owns_foot_approach`] represents.
     pub(crate) fn approach_target(
         &mut self,
@@ -281,14 +281,36 @@ impl Simulation {
         if super::approach_oracle_seam::take_approach_return().is_some() {
             return;
         }
-        if self.approach_unit_head(id, rules, registry, frame_effects)
-            || self.approach_infantry_deployed(id, rules, registry, frame_effects)
-            || !self.owns_foot_approach(id, rules)
-        {
+        if self.approach_unit_head(id, rules, registry, frame_effects) {
+            return;
+        }
+        // 0x0052234C..0x0052236A: an infantryman with a Target in a deploy
+        // action (Doing 27..30) takes the deploy arm and never the Foot body.
+        if self.substrate.entities.get(id).is_some_and(|actor| {
+            actor.attack_target.target().is_some() && actor.infantry_deploy_doing()
+        }) {
+            self.approach_infantry_deploy_arm(id, rules, registry, frame_effects);
+            return;
+        }
+        if !self.owns_foot_approach(id, rules) {
             return;
         }
         self.approach_foot_target(id, rules, registry, frame_effects)
             .expect("ordinary Foot approach requires valid live map/navigation state");
+        // Phobos `InfantryAutoDeploy`: the hook at `0x00522373`
+        // (`InfantryClass_ApproachTarget_InfantryAutoDeploy`) turns the Foot
+        // body's return into a jump to the deploy arm at `0x00522378`.
+        #[cfg(feature = "phobos")]
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .filter(|actor| actor.category() == EntityCategory::Infantry)
+            .and_then(|actor| self.object_type(actor.type_ref(), rules))
+            .is_some_and(|object| rules.infantry_auto_deploy_for(object))
+        {
+            self.approach_infantry_deploy_arm(id, rules, registry, frame_effects);
+        }
     }
 
     /// The head of Approach ([`Self::approach_target`]) for a Unit
@@ -314,68 +336,102 @@ impl Simulation {
         true
     }
 
-    /// The deployed arm of `InfantryClass::Approach_Target @ 0x00522340`
-    /// (`0x00522378..0x005224C6`): an infantryman with a Target and in a deploy
-    /// action (Doing 27..30) never reaches the Foot body. A computer house's
+    /// The deploy arm of `InfantryClass::Approach_Target @ 0x00522340`
+    /// (`0x00522378..0x005224C6`). Retail reaches it only for an infantryman
+    /// with a Target in a deploy action (Doing 27..30); Phobos
+    /// `InfantryAutoDeploy` also enters it after the Foot body
+    /// ([`Self::approach_target`]). A computer house's (`0x00522381`)
     /// `Deployer=` (`+0xEC8`), `DeployFire=` (`+0x6AC`) man whose
     /// `DeployFireWeapon=` (`+0x6A8`) slot holds a weapon that is not
-    /// `AreaFire=` (GetWeapon, vt+0x3F8), and who cannot fire on the Target
-    /// with it from where he stands (CanFireAt, vt+0x3A8), undeploys
-    /// (Do_Action(0x1F, 0, 0), vt+0x558) so his next Approach can walk. No RNG.
-    /// Answers whether the arm took the call.
+    /// `AreaFire=` (GetWeapon, vt+0x3F8) acts on whether he can fire on the
+    /// Target with it from where he stands (CanFireAt, vt+0x3A8, asked first):
+    /// - in a deploy action (Doing re-read at `0x005223EF`), out of reach, he
+    ///   undeploys (Do_Action(0x1F, 0, 0), vt+0x558) so his next Approach can
+    ///   walk;
+    /// - otherwise (`0x00522434`), in reach, a still man deploys (unforced
+    ///   Do_Action(0x1B), `0x00522472`), and a moving one is stopped
+    ///   (ILocomotion+0x48), marked pending-deploy (Infantry `+0x6E4`) and
+    ///   draws one Scenario RandomRanged(0, 2) the arm discards
+    ///   (`0x0052247F..0x005224C1`).
     ///
-    /// Not ported: the arm at `0x00522434` (deploy, or stop with a discarded
-    /// RandomRanged(0, 2)) needs a Doing outside 27..30 at `0x005223EF`, which
-    /// the entry test (`0x00522352..0x0052236A`) excludes and the two queries
-    /// between (`0x006F77B0`, `0x0070E140`) do not write.
-    fn approach_infantry_deployed(
+    /// Both arms also test the no-move argument (`0x00522411`, `0x0052243C`),
+    /// which every Approach caller passes as 0. Not ported: the
+    /// `Get_MissionControl` call at `0x005224A8` only supplies a pointer the
+    /// arm discards.
+    fn approach_infantry_deploy_arm(
         &mut self,
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
-    ) -> bool {
+    ) {
         let Some(actor) = self.substrate.entities.get(id) else {
-            return false;
+            return;
         };
-        let Some(target) = actor.attack_target.target() else {
-            return false;
-        };
-        if !actor.infantry_deploy_doing() {
-            return false;
-        }
         if self.owner_is_human(actor.owner()) {
-            return true;
+            return;
         }
         let Some(object) = self.object_type(actor.type_ref(), rules) else {
-            return true;
+            return;
         };
         if !object.deployer || !object.deploy_fire {
-            return true;
+            return;
         }
         let slot = object.deploy_fire_weapon;
-        let in_reach = crate::sim::world::can_fire_at(self, rules, id, target, slot, registry);
+        // CanFireAt answers true for a null Target (`0x006F77BB..0x006F77C6`),
+        // which only the Phobos re-entry after a Foot body that cleared it
+        // can bring here.
+        let in_reach = actor.attack_target.target().is_none_or(|target| {
+            crate::sim::world::can_fire_at(self, rules, id, target, slot, registry)
+        });
         if crate::sim::world::weapon_at_index(self, rules, id, slot)
             .is_none_or(|weapon| weapon.area_fire)
-            || in_reach
         {
-            return true;
+            return;
         }
-        if let Err(cause) = self.infantry_do_action(
-            id,
-            super::infantry_action::DO_UNDEPLOY,
-            false,
-            rules,
-            frame_effects,
-        ) {
-            log::debug!("infantry {id} Approach undeploy: {cause}");
+        if actor.infantry_deploy_doing() {
+            if !in_reach
+                && let Err(cause) = self.infantry_do_action(
+                    id,
+                    super::infantry_action::DO_UNDEPLOY,
+                    false,
+                    rules,
+                    frame_effects,
+                )
+            {
+                log::debug!("infantry {id} Approach undeploy: {cause}");
+            }
+            return;
         }
-        true
+        if !in_reach {
+            return;
+        }
+        if !crate::sim::movement::motion_query::is_moving(actor).unwrap_or(false) {
+            if let Err(cause) = self.infantry_do_action(
+                id,
+                super::infantry_action::DO_DEPLOY,
+                false,
+                rules,
+                frame_effects,
+            ) {
+                log::debug!("infantry {id} Approach deploy: {cause}");
+            }
+            return;
+        }
+        if let Err(cause) = self.locomotor_stop_moving(id, rules, registry, frame_effects) {
+            log::debug!("infantry {id} Approach deploy stop: {cause}");
+        }
+        // 0x005224A1 writes the pending-deploy byte after Stop_Moving
+        // returns, so the Stop callback that just ran could not consume it.
+        if let Some(actor) = self.substrate.entities.get_mut(id) {
+            actor.mission_leaf.set_infantry_pending_deploy(1);
+        }
+        let _ = self.scenario_rng.next_range_u32_inclusive(0, 2);
     }
 
     /// Whether the Foot body ([`Self::approach_foot_target`]) represents
     /// `id`'s Approach: a Unit or an infantryman out of a deploy action (the
-    /// deployed arm is [`Self::approach_infantry_deployed`]) with a locomotor,
+    /// deploy arm is [`Self::approach_infantry_deploy_arm`]) with a locomotor,
     /// a type and a live target, on a map with zones. Unit7414E0 ends in
     /// Foot4D5690(false) at 741689, and Infantry522340 calls it at 52236E,
     /// whatever the locomotor: the body tells a Jumpjet apart itself. A

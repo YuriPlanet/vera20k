@@ -11,6 +11,8 @@ fn inspection_lists_required_failures_and_keeps_later_readable_archives() {
 
     let (assets, issues) =
         AssetManager::inspect_install(directory.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    // Missing MOVMD03 falls through to MOVIES03 in mount_startup_movie_media;
+    // the required failure names that final attempted fallback archive.
     assert_eq!(
         issues
             .iter()

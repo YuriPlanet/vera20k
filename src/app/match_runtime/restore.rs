@@ -222,7 +222,7 @@ pub(crate) fn commit_prepared_load(
     crate::app::input::camera::restore_tactical_view(state, committed.details.tactical_view);
 
     // Reset pacing, not saved simulation input delay or elapsed score time.
-    state.platform.frame_pacer.reset_for_immediate_frame();
+    state.platform.frame_pacer.reset_for_new_world();
     crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
     // The incoming chrome owns the footer allowance; refresh its layout
     // before initializing derived geometry, including on a cold/different-side

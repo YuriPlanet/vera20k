@@ -6,6 +6,7 @@ mod http;
 mod maps;
 mod wire;
 
+use crate::util::time::{Duration, Instant};
 use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -13,11 +14,10 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use crate::util::time::{Duration, Instant};
 
-use anyhow::{Result, anyhow, ensure};
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 use anyhow::Context;
+use anyhow::{Result, anyhow, ensure};
 use base64::Engine;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -226,6 +226,8 @@ impl OnlineCleanup {
 }
 
 pub(super) struct LiveService {
+    #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+    _browser_requests: http::RequestOwner,
     stopping: Arc<AtomicBool>,
     requests: Sender<http::Request>,
     responses: Receiver<http::Response>,
@@ -415,15 +417,25 @@ struct PendingStart {
 }
 
 impl LiveService {
-    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    #[cfg(all(
+        feature = "wasm",
+        not(feature = "wasm-net"),
+        target_arch = "wasm32",
+        target_os = "unknown"
+    ))]
     fn new() -> Result<Self> {
         anyhow::bail!("Online play is unavailable in the single-player browser build")
     }
 
-    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    #[cfg(any(
+        not(all(target_arch = "wasm32", target_os = "unknown")),
+        feature = "wasm-net"
+    ))]
     fn new() -> Result<Self> {
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let base =
             std::env::var("VERA20K_LOBBY_URL").unwrap_or_else(|_| DEFAULT_LOBBY_URL.to_owned());
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         ensure!(
             base.starts_with("https://")
                 && !base[8..].chars().any(|ch| matches!(ch, '@' | '?' | '#')),
@@ -433,6 +445,7 @@ impl LiveService {
         let (output, responses) = mpsc::channel();
         let stopping = Arc::new(AtomicBool::new(false));
         let worker_stopping = Arc::clone(&stopping);
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         std::thread::Builder::new()
             .name("vera-lobby".into())
             .spawn(move || {
@@ -444,7 +457,11 @@ impl LiveService {
                 )
             })
             .context("could not start online lobby worker")?;
+        #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+        let browser_requests = http::start_browser(input, output, worker_stopping)?;
         Ok(Self {
+            #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+            _browser_requests: browser_requests,
             stopping,
             requests,
             responses,
@@ -471,6 +488,17 @@ impl LiveService {
 
     fn command(&mut self, operation: &'static str, payload: Value) {
         self.command_with_id(operation, payload);
+    }
+
+    fn publish_options_agreement(&mut self, mut agreement: Value, status: u8, host: bool) {
+        // Protocol v4 shares the agreement fields, but ready rejects status.
+        let mut map_status = agreement.clone();
+        map_status["status"] = json!(status);
+        self.command("map_status", map_status);
+        if host {
+            agreement["ready"] = json!(true);
+            self.command("ready", agreement);
+        }
     }
 
     fn command_with_id(&mut self, operation: &'static str, payload: Value) -> u64 {
@@ -1913,13 +1941,9 @@ fn apply_event(
             maps::received_options(state, service, generated)?;
             // The owner is ready without a guest Accept button, but still proves its
             // own local map and rules to the same server admission gate.
-            let mut agreement = local_agreement(state, service.revision)?;
-            agreement["status"] = json!(local_map_status(state, service));
-            service.command("map_status", agreement.clone());
-            if state.match_state.session.host() {
-                agreement["ready"] = json!(true);
-                service.command("ready", agreement);
-            }
+            let agreement = local_agreement(state, service.revision)?;
+            let status = local_map_status(state, service);
+            service.publish_options_agreement(agreement, status, state.match_state.session.host());
         }
         "choices" => {
             #[derive(Deserialize)]
@@ -2418,6 +2442,36 @@ mod completion_tests {
             translations: Translations::default(),
         };
         (service, input, output)
+    }
+
+    #[test]
+    fn options_agreement_keeps_map_status_out_of_host_ready() {
+        let (mut service, input, _output) = control_service(None);
+        let agreement = json!({
+            "revision": 7, "version": "0.2.2", "rules_digest": "rules",
+            "map_digest": "physical", "effective_map_digest": "effective",
+            "staging_digest": "staging"
+        });
+        service.publish_options_agreement(agreement.clone(), 1, true);
+        let next = || match input.try_recv().expect("queued agreement") {
+            http::Request::Command {
+                operation, payload, ..
+            } => (operation, payload),
+            _ => panic!("expected a protocol command"),
+        };
+        let mut expected_map = agreement.clone();
+        expected_map["status"] = json!(1);
+        let mut expected_ready = agreement.clone();
+        expected_ready["ready"] = json!(true);
+        assert_eq!(next(), ("map_status", expected_map));
+        assert_eq!(next(), ("ready", expected_ready));
+        assert!(input.try_recv().is_err());
+
+        service.publish_options_agreement(agreement.clone(), 0, false);
+        let mut expected_map = agreement;
+        expected_map["status"] = json!(0);
+        assert_eq!(next(), ("map_status", expected_map));
+        assert!(input.try_recv().is_err(), "guests must accept explicitly");
     }
 
     #[test]

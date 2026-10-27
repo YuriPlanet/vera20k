@@ -1533,6 +1533,10 @@ pub struct PresentationLoadAssets {
     pub sidebar_chrome: Option<SidebarChromeSet>,
     #[cfg(feature = "phobos")]
     pub sw_sidebar_ui: crate::rules::phobos_sw_sidebar::SuperWeaponSidebarUi,
+    /// Phobos `uimd.ini [Sidebar] CenterPauseMenuBackground`, read from the
+    /// same file as the superweapon sidebar settings.
+    #[cfg(feature = "phobos")]
+    pub center_pause_menu_background: bool,
     #[cfg(feature = "phobos")]
     pub sw_sidebar_art: Option<crate::render::sw_sidebar_art::SwSidebarArt>,
     /// This match's Ares `GraphicalText.Image/Palette` overlay art. `None`
@@ -4141,10 +4145,7 @@ mod full_init_rules_gate_tests {
     }
 
     fn native_rules_fixture() -> serde_json::Value {
-        serde_json::from_str(include_str!(
-            "../../../tools/input_oracle/campaign_native_rules.json"
-        ))
-        .expect("native Rules fixture")
+        crate::test_fixture::json("tools/input_oracle/campaign_native_rules.json").clone()
     }
 
     #[test]

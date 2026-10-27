@@ -126,6 +126,18 @@ impl AresSideExtension {
         };
         field.as_deref()
     }
+
+    /// The `DialogBackground.Image/.Palette` names, while both are set. The
+    /// game-load writer `0x1002ECC0` fills the image and palette slots only
+    /// from a non-empty name (`0x1002EE6B`, `0x1002EEB9`), and the hook at
+    /// `0x622223` (body `0x1002FB50`) resumes past the stock selection at
+    /// `0x62226A` only while both loaded slots are non-null; the caller
+    /// still needs both files to load.
+    pub fn dialog_background(&self) -> Option<(&str, &str)> {
+        let image = self.dialog_background_image.as_deref()?;
+        let palette = self.dialog_background_palette.as_deref()?;
+        (!image.is_empty() && !palette.is_empty()).then_some((image, palette))
+    }
 }
 
 #[cfg(feature = "ares")]

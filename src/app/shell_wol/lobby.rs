@@ -303,6 +303,20 @@ impl WolLobby {
         self.lobbies = channels;
     }
 
+    /// The lobby list's rows. The modern lobby lists its one lobby beside
+    /// that lobby's users: the joined row counts them, not the listing from
+    /// before the join, which the 53 s timer refreshes.
+    fn lobby_rows(&self) -> Vec<WolLobbyRow> {
+        let mut rows = lobby_rows(&self.lobbies);
+        if self.ui.is_modern() && !self.members.is_empty() {
+            let current = self.current.as_ref().map(|channel| &channel.name);
+            for row in rows.iter_mut().filter(|row| current == Some(&row.name)) {
+                row.users = i32::try_from(self.members.len()).unwrap_or(i32::MAX);
+            }
+        }
+        rows
+    }
+
     pub(crate) fn message(&self) -> Option<&WolMessageBox> {
         self.message.as_ref().map(|(message, _)| message)
     }
@@ -1162,9 +1176,8 @@ fn refill_lobbies(state: &mut AppState) {
         return;
     };
     let current = lobby.current.as_ref().map(|channel| channel.name.clone());
-    lobby
-        .ui
-        .replace_lobbies(lobby_rows(&lobby.lobbies), current.as_deref());
+    let rows = lobby.lobby_rows();
+    lobby.ui.replace_lobbies(rows, current.as_deref());
 }
 
 /// `0x00783C80`: the chat lobby's users with their ladder ranks and
@@ -1214,6 +1227,9 @@ pub(super) fn refill_players(state: &mut AppState) {
         _ => Vec::new(),
     };
     lobby.ui.replace_players(rows);
+    if lobby.ui.is_modern() {
+        refill_lobbies(state);
+    }
 }
 
 /// `0x0079BA60` for the selected game row (`show` prints its refusal).
@@ -3914,6 +3930,28 @@ mod tests {
         legacy.set_lobbies(channels);
         assert_eq!(legacy.lobbies.len(), 3);
         assert_eq!(legacy.ui.page_spec().stacked.len(), 8);
+    }
+
+    /// The modern lobby's row counts the users the player list beside it
+    /// shows; the retail list keeps the count from the last listing.
+    #[test]
+    fn modern_lobby_row_counts_the_joined_lobbys_users() {
+        let bunker = WolChannel {
+            name: PUBLIC_LOBBY_NAME.into(),
+            ..Default::default()
+        };
+        for (modern, users) in [(true, 2), (false, 0)] {
+            let mut lobby = new_runner(Runner::Lobby, false, false, Instant::now(), modern);
+            lobby.set_lobbies(vec![bunker.clone()]);
+            lobby.current = Some(bunker.clone());
+            lobby.members = ["Tanya", "Boris"]
+                .map(|name| WolMember {
+                    name: name.into(),
+                    ..Default::default()
+                })
+                .into();
+            assert_eq!(lobby.lobby_rows()[0].users, users);
+        }
     }
 
     #[test]

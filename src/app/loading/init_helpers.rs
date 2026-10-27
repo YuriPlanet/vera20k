@@ -626,10 +626,18 @@ pub(crate) fn finish_presentation_assets(
     }
     let sidebar_cameo_atlas = build_sidebar_cameo_atlas(gpu, batch, asset_manager, Some(rules));
     #[cfg(feature = "phobos")]
-    let sw_sidebar_ui = asset_manager
-        .get_ref("UIMD.INI")
+    let uimd_bytes = asset_manager.get_ref("UIMD.INI");
+    #[cfg(feature = "phobos")]
+    let sw_sidebar_ui = uimd_bytes
         .map(crate::rules::phobos_sw_sidebar::SuperWeaponSidebarUi::from_uimd_bytes)
         .unwrap_or_default();
+    // The same loaded `uimd.ini` carries the pause-menu switch; Phobos reads
+    // both from `[Sidebar]` at startup.
+    #[cfg(feature = "phobos")]
+    let center_pause_menu_background = uimd_bytes
+        .map(crate::rules::phobos_pause_menu::PauseMenuUi::from_uimd_bytes)
+        .unwrap_or_default()
+        .center_background;
     #[cfg(feature = "phobos")]
     let sw_sidebar_art = sw_sidebar_ui
         .enabled
@@ -709,6 +717,8 @@ pub(crate) fn finish_presentation_assets(
         sidebar_chrome,
         #[cfg(feature = "phobos")]
         sw_sidebar_ui,
+        #[cfg(feature = "phobos")]
+        center_pause_menu_background,
         #[cfg(feature = "phobos")]
         sw_sidebar_art,
         outcome_banner_side_art,

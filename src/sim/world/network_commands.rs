@@ -195,17 +195,46 @@ impl<'a> NetworkCommandQueues<'a> {
     /// cannot silently turn into a locally executed network command: its native
     /// producer must be supplied before this transport can send it.
     pub fn local_records(&self) -> Result<Vec<&CommandRecord>, NetworkQueueError> {
+        self.local_records_after(std::iter::empty())
+    }
+
+    /// Verify an immutable in-flight prefix against OutList, then borrow the
+    /// unreserved suffix under the same mirror capacity. Accepted batches
+    /// still retire through `commit_local_submission`; this read never drains
+    /// or creates a second authoritative command queue.
+    pub fn local_records_after<'r>(
+        &self,
+        reserved: impl IntoIterator<Item = &'r CommandRecord>,
+    ) -> Result<Vec<&CommandRecord>, NetworkQueueError> {
+        let mut sources = self.sim.local_commands.iter();
+        let mut reserved_count = 0;
+        for retained in reserved {
+            let source = sources
+                .next()
+                .ok_or(NetworkQueueError::ChangedLocalEvent {
+                    index: reserved_count,
+                })?
+                .record()
+                .ok_or(NetworkQueueError::UnencodedLocalEvent {
+                    index: reserved_count,
+                })?;
+            if source.opcode() != retained.opcode() || source.payload() != retained.payload() {
+                return Err(NetworkQueueError::ChangedLocalEvent {
+                    index: reserved_count,
+                });
+            }
+            reserved_count += 1;
+        }
         let mut records = Vec::new();
-        for (index, entry) in self
-            .sim
-            .local_commands
-            .iter()
+        for (offset, entry) in sources
             .take(
                 self.mirror_allowance()
-                    .min(crate::sim::command_queue::OUT_LIST_CAPACITY),
+                    .min(crate::sim::command_queue::OUT_LIST_CAPACITY)
+                    .saturating_sub(reserved_count),
             )
             .enumerate()
         {
+            let index = reserved_count + offset;
             match entry.record() {
                 Some(record) => records.push(record),
                 None if records.is_empty() => {

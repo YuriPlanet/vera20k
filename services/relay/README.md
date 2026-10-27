@@ -65,16 +65,29 @@ Modern ordering uses authenticated control kind4 and a lobby-signed `VO1C`
 certificate (see `../lobby/protocol.md`). All sources certify the same initial
 world; fixed FPS deadlines then commit encrypted batches sorted by source and
 batch ID, followed by an explicit frame end. An absent input contributes nothing.
-Late input goes at least two frames beyond the sealed head. Readers pull up to32
-entries from independent cursors, so one reader never gates another. Retries are
-idempotent; modified batch retries and source impersonation fail authentication.
+Late input goes at least two frames beyond the sealed head. New clients opt in
+to server-pushed updates through ordering request4 and its authenticated
+`PushState` acknowledgement. Older clients continue pulling the same history.
+The subscription is bound to the confirmed hop and expires after3seconds without
+a receive watermark; renewing or rebinding a hop requires a fresh subscription.
+Control-envelope ordering prevents a delayed enable from undoing a newer disable.
+Retries are idempotent; modified batch retries and source impersonation fail
+authentication.
+
+Each pushed reader has64entries of independent delivery credit. Receive
+watermarks acknowledge contiguous retained data, never simulation progress or
+another reader's input. Each socket-loop drain rotates recipients and emits at
+most128packets/96KiB total,32packets per room and8per reader, using the same
+authenticated output budgets as replies. A250ms status heartbeat exposes a lost
+tail. Clients use the existing Pull operation to repair gaps, reading at most32
+entries at a time; healthy pushed clients do not continually request frames.
 
 The RAM hot cache retains4,096 entries/2 MiB per room under a64 MiB global
 budget. Eviction from this cache does not evict match history: every complete
 canonical frame first appends to the encrypted full-match disk journal. The data
 file uses a length prefix per entry and the separate offset index is also on
-disk; no full-match index grows in RAM. Pull reads at most32 records from either
-the cache or journal, always from the requested independent sequence. Active
+disk; no full-match index grows in RAM. Push and Pull share one reader for the
+cache and journal, always from the recipient's independent sequence. Active
 journals therefore advertise oldest sequence1 throughout the match.
 
 Poor or disconnected internet never removes a player. Healthy players continue;

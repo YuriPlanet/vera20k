@@ -685,11 +685,24 @@ pub fn is_prone_for_damage(entity: &GameEntity) -> bool {
     entity.infantry.is_some_and(|infantry| infantry.is_prone)
 }
 
-pub fn apply_prone_speed(speed: SimFixed, crawls: bool) -> SimFixed {
+/// `InfantryClass::GetMovementSpeed @ 0x00521D80`'s prone arm: retail applies
+/// the two integer sequences below at `0x00521DA4..0x00521DBB` (`Crawls=`) and
+/// `0x00521DBC..0x00521DC3` (no `Crawls=`).
+///
+/// Phobos's `InfantryClass_CurrentSpeed_ProneSpeed` hook at `0x00521D94`
+/// replaces both with `static_cast<int>(speed * ProneSpeed)`, so a `multiplier`
+/// short-circuits them. The product is a plain IEEE double; Rust's `as i32`
+/// truncates toward zero, as the C++ cast does. Every multiplier the readers
+/// store is a widened binary32 or a 0.67/1.5 default, so the product of a
+/// whole speed truncates alike under x87 and SSE2.
+pub fn apply_prone_speed(speed: SimFixed, crawls: bool, multiplier: Option<f64>) -> SimFixed {
     if speed <= SIM_ZERO {
         return speed;
     }
     let whole_speed = speed.to_num::<i32>().max(0);
+    if let Some(multiplier) = multiplier {
+        return SimFixed::from_num((f64::from(whole_speed) * multiplier) as i32);
+    }
     let adjusted = if crawls {
         (whole_speed.saturating_mul(2) + 2) / 3
     } else {
@@ -1627,20 +1640,49 @@ mod tests {
     #[test]
     fn prone_speed_rounding_is_exact() {
         assert_eq!(
-            apply_prone_speed(SimFixed::from_num(10), true),
+            apply_prone_speed(SimFixed::from_num(10), true, None),
             SimFixed::from_num(7)
         );
         assert_eq!(
-            apply_prone_speed(SimFixed::from_num(11), true),
+            apply_prone_speed(SimFixed::from_num(11), true, None),
             SimFixed::from_num(8)
         );
         assert_eq!(
-            apply_prone_speed(SimFixed::from_num(10), false),
+            apply_prone_speed(SimFixed::from_num(10), false, None),
             SimFixed::from_num(15)
         );
         assert_eq!(
-            apply_prone_speed(SimFixed::from_num(11), false),
+            apply_prone_speed(SimFixed::from_num(11), false, None),
             SimFixed::from_num(16)
+        );
+    }
+
+    /// Phobos replaces both retail integer arms with `(int)(speed * ProneSpeed)`,
+    /// a double product truncated toward zero. The default 1.5 matches the
+    /// retail `speed + speed / 2`, but 0.67 is not `speed - speed / 3`: ten
+    /// leptons crawl at 6 here and at 7 there.
+    #[test]
+    fn phobos_prone_multiplier_truncates_the_double_product() {
+        for (speed, multiplier, expected) in [
+            (10, 0.67, 6),
+            (11, 0.67, 7),
+            (10, 1.5, 15),
+            (11, 1.5, 16),
+            (3, 0.67, 2),
+            (3, 2.0, 6),
+            (5, 0.5, 2),
+            // The retail crawl arm keeps one lepton at 1.
+            (1, 0.67, 0),
+        ] {
+            assert_eq!(
+                apply_prone_speed(SimFixed::from_num(speed), true, Some(multiplier)),
+                SimFixed::from_num(expected),
+                "{speed} x {multiplier}"
+            );
+        }
+        assert_eq!(
+            apply_prone_speed(SimFixed::from_num(0), true, Some(0.67)),
+            SimFixed::from_num(0)
         );
     }
 }

@@ -583,7 +583,9 @@ fn install_received_asset_with_limits(
     resource: TransferResource,
     limits: cache::Limits,
 ) -> Result<LoadedTransferAsset> {
+    #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
     use std::io::Write;
+    #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
     use std::sync::atomic::{AtomicU64, Ordering};
     anyhow::ensure!(valid_source_sha256(digest), "invalid map source identity");
     anyhow::ensure!(
@@ -600,6 +602,14 @@ fn install_received_asset_with_limits(
     let already_cached = read_loose_map_input_bounded(&path, Some(resource.limit()))
         .is_ok_and(|previous| previous.bytes.as_ref() == bytes.as_slice());
     cache.make_room(&path, if already_cached { 0 } else { length })?;
+    #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+    if !already_cached {
+        // Validation and cache reservation have completed. The browser VFS
+        // publishes the complete byte buffer in one synchronous replacement,
+        // then schedules the existing /saves persistence callback.
+        crate::util::file_system::write(&path, &bytes)?;
+    }
+    #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
     if !already_cached {
         static NEXT_STAGE: AtomicU64 = AtomicU64::new(0);
         let (stage, mut file) = loop {
