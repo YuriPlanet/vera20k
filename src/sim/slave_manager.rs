@@ -1614,11 +1614,33 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
+        let _ = self.free_slaves_retaining_storage(
+            master,
+            killer,
+            house,
+            rules,
+            registry,
+            frame_effects,
+        );
+    }
+
+    // FreeSlaves clears Native+24 but does not destroy the manager's storage.
+    // Ordinary callers retire it; Ares100458F3 reattaches this same manager
+    // after clearing its nodes. Move it at that boundary, never clone it.
+    fn free_slaves_retaining_storage(
+        &mut self,
+        master: u64,
+        killer: Option<u64>,
+        house: Option<InternedId>,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> Option<SlaveManager> {
         let Some(count) = self
             .slave_manager(master)
             .map(|manager| manager.nodes.len())
         else {
-            return;
+            return None;
         };
         let civilian = self.civilian_side_house(rules);
         let killer_house = killer
@@ -1661,8 +1683,55 @@ impl Simulation {
                 .emit(SimSoundEvent::voc_at(sound, &entity.position));
         }
         // 6B0C67 clears the manager's owner only after callbacks and sound.
-        if let Some(entity) = self.substrate.entities.get_mut(master) {
-            entity.slave_manager = None;
+        self.substrate
+            .entities
+            .get_mut(master)?
+            .slave_manager
+            .take()
+    }
+
+    /// Ares100458F3..10045953: FreeSlaves, then100038E0 clears every node,
+    /// reattach the owner and pause/resume its AI clock before ChangeOwner.
+    #[cfg(feature = "ares")]
+    pub(crate) fn free_slaves_for_driver_change(
+        &mut self,
+        master: u64,
+        invoker: u64,
+        passive: bool,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(mut manager) = self.free_slaves_retaining_storage(
+            master,
+            Some(invoker),
+            None,
+            rules,
+            registry,
+            effects,
+        ) else {
+            return;
+        };
+        let now = Self::now_frame(&self.session);
+        for node in &mut manager.nodes {
+            if let Some(slave) = node.slave.take()
+                && let Some(entity) = self.substrate.entities.get_mut(slave)
+            {
+                entity.slave.owner = None;
+            }
+            node.state = SlaveState::Dead;
+            node.timer.start(now, manager.regen_rate);
+        }
+        if passive {
+            let duration = manager.ai_timer.duration();
+            manager.ai_timer = CdTimer::from_raw(-1, if duration == 0 { 1 } else { duration });
+        } else {
+            manager.ai_timer.resume(now);
+        }
+        if let Some(entity) = self.substrate.entities.get_mut(master)
+            && entity.slave_manager.is_none()
+        {
+            entity.slave_manager = Some(manager);
         }
     }
 

@@ -1964,6 +1964,7 @@ impl ProcessedRulesLayers {
             ObjectCategory,
             &str,
             Option<&crate::rules::ares_emp::EmpTypeRules>,
+            Option<&crate::rules::ares_abilities::PromotionAbilities>,
             Option<&crate::rules::ares_warhead::AttachEffectRules>,
             bool,
             Option<i32>,
@@ -1983,6 +1984,10 @@ impl ProcessedRulesLayers {
                         category,
                         member.native_stored_id.as_str(),
                         member.emp_type.as_ref(),
+                        #[cfg(feature = "ares")]
+                        member.promotion_abilities.as_ref(),
+                        #[cfg(not(feature = "ares"))]
+                        None,
                         member.self_attach_effect.as_ref(),
                         member.cloak_allowed,
                         #[cfg(feature = "ares")]
@@ -4044,6 +4049,9 @@ struct ProcessedType {
     ares_verses: Option<AresWarheadVerses>,
     ares_warhead: Option<crate::rules::ares_warhead::AresWarheadRules>,
     emp_type: Option<crate::rules::ares_emp::EmpTypeRules>,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    promotion_abilities: Option<crate::rules::ares_abilities::PromotionAbilities>,
     self_attach_effect: Option<crate::rules::ares_warhead::AttachEffectRules>,
     /// TechnoTypeExt+1FA: ctor1003C9D7 defaults true; read1003EBEF.
     cloak_allowed: bool,
@@ -4512,6 +4520,8 @@ impl ProcessedType {
             ares_verses: None,
             ares_warhead: None,
             emp_type: None,
+            #[cfg(feature = "ares")]
+            promotion_abilities: None,
             self_attach_effect: None,
             cloak_allowed: true,
             #[cfg(feature = "ares")]
@@ -4615,6 +4625,7 @@ fn find_or_construct_type(
         #[cfg(feature = "ares")]
         {
             members[index].emp_type = Some(Default::default());
+            members[index].promotion_abilities = Some(Default::default());
             members[index].self_attach_effect = Some(Default::default());
         }
         #[cfg(feature = "ares")]
@@ -6425,6 +6436,11 @@ impl RulesPassProcessor {
                 #[cfg(feature = "ares")]
                 {
                     // Find only: this nullable Anim reader never allocates.
+                    self.family_mut(family)[index]
+                        .promotion_abilities
+                        .as_mut()
+                        .expect("TechnoType promotion abilities")
+                        .read_pass(&raw);
                     let sparkle = self.resolve_existing_anim_from(&raw, "EMP.Sparkles");
                     self.family_mut(family)[index]
                         .emp_type

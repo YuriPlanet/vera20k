@@ -19,7 +19,7 @@ use crate::util::fixed_math::SimFixed;
 impl Simulation {
     ///100445E0 picks one Scenario direction, then CellPlace481180(0,0,0).
     /// The wrapper passes returned XY and the original Z to10044690.
-    fn place_ares_survivor(
+    pub(crate) fn place_ares_survivor(
         &mut self,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,

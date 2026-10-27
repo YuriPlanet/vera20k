@@ -1740,6 +1740,12 @@ impl GameEntity {
         self.useless
     }
 
+    /// Ares TechnoExt+9C. Gameplay and drawing read the same driver state.
+    #[cfg(feature = "ares")]
+    pub fn driver_killed(&self) -> bool {
+        self.vehicle_driver.killed()
+    }
+
     /// `Mission_Harvest`'s two writes to Techno+3D0 (`0x0073E8FA`,
     /// `0x0073E925`). Other systems only read this shared Techno state.
     pub(crate) fn set_useless(&mut self, useless: bool) {

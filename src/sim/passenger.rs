@@ -1299,6 +1299,72 @@ fn receive_gunner(
 
 /// Gunner caller dispatch to UnitClass +4D8 (7464E0). RemoveGunner always
 /// selects mode0 after optional temporal return/LetGo, even with no gunner.
+impl Simulation {
+    /// FootClass::RemovePassenger4DE670: the named Cargo4734B0 removal,
+    /// optional LeaveTransportSound and empty-hold virtual RemoveGunner.
+    /// The caller retains ownership of the passenger's carrier link until
+    /// its placement or UnInit; this operation only changes the Cargo list.
+    pub(crate) fn remove_cargo_passenger(
+        &mut self,
+        transport_id: u64,
+        passenger: Option<u64>,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
+        if let Some(id) = passenger
+            && let Some(cargo) = self
+                .substrate
+                .entities
+                .get_mut(transport_id)
+                .and_then(|entity| entity.passenger_role.cargo_mut())
+        {
+            cargo.disembark(id);
+        }
+        if passenger.is_some()
+            && let Some(transport) = self.substrate.entities.get(transport_id)
+            && let Some(sound_id) = self
+                .entity_object_type(transport, rules)
+                .and_then(|kind| kind.leave_transport_sound.clone())
+        {
+            self.sound_events
+                .emit(crate::sim::world::SimSoundEvent::VocAtCoord {
+                    sound_id,
+                    coordinate: crate::sim::movement::ground_pose::position_world_coord(
+                        &transport.position,
+                    ),
+                    flags: 0,
+                });
+            effects.flush_sound(self, rules);
+        }
+        if self
+            .substrate
+            .entities
+            .get(transport_id)
+            .is_some_and(|entity| {
+                entity
+                    .passenger_role
+                    .cargo()
+                    .is_some_and(|cargo| cargo.is_empty())
+                    && self
+                        .entity_object_type(entity, rules)
+                        .is_some_and(|kind| kind.gunner)
+            })
+        {
+            remove_gunner(
+                &self.interner,
+                &self.session,
+                &mut self.scenario_rng,
+                &mut self.substrate,
+                &mut self.houses,
+                &mut self.power_states,
+                rules,
+                transport_id,
+                passenger,
+            );
+        }
+    }
+}
+
 fn remove_gunner(
     interner: &StringInterner,
     session: &ScenarioSession,

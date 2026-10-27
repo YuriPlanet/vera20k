@@ -1509,6 +1509,8 @@ pub struct ObjectType {
     pub type_immune: bool,
     emp: Option<crate::rules::ares_emp::EmpTypeRules>,
     #[cfg(feature = "ares")]
+    promotion_abilities: Option<crate::rules::ares_abilities::PromotionAbilities>,
+    #[cfg(feature = "ares")]
     self_attach_effect: Option<crate::rules::ares_warhead::AttachEffectRules>,
     #[cfg(feature = "ares")]
     cloak_allowed: bool,
@@ -2412,6 +2414,18 @@ impl ObjectType {
     pub(crate) fn emp_rules(&self) -> Option<&crate::rules::ares_emp::EmpTypeRules> {
         self.emp.as_ref()
     }
+    pub(crate) fn promotion_abilities(
+        &self,
+    ) -> Option<&crate::rules::ares_abilities::PromotionAbilities> {
+        #[cfg(feature = "ares")]
+        {
+            self.promotion_abilities.as_ref()
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            None
+        }
+    }
     pub(crate) fn self_attach_effect(
         &self,
     ) -> Option<&crate::rules::ares_warhead::AttachEffectRules> {
@@ -2480,6 +2494,7 @@ impl ObjectType {
     pub(crate) fn bind_ares_techno_rules(
         &mut self,
         emp: Option<&crate::rules::ares_emp::EmpTypeRules>,
+        abilities: Option<&crate::rules::ares_abilities::PromotionAbilities>,
         attachment: Option<&crate::rules::ares_warhead::AttachEffectRules>,
         cloak_allowed: bool,
         turret_rot_override: Option<i32>,
@@ -2488,6 +2503,7 @@ impl ObjectType {
         self.emp = emp.cloned();
         #[cfg(feature = "ares")]
         {
+            self.promotion_abilities = abilities.cloned();
             self.self_attach_effect = attachment.cloned();
             self.cloak_allowed = cloak_allowed;
             self.turret_rot_override = turret_rot_override;
@@ -2495,6 +2511,7 @@ impl ObjectType {
         }
         #[cfg(not(feature = "ares"))]
         let _ = (
+            abilities,
             attachment,
             cloak_allowed,
             turret_rot_override,
@@ -3952,6 +3969,8 @@ impl ObjectType {
             immune: section.read_bool("Immune", false),
             type_immune: section.read_bool("TypeImmune", false),
             emp: None,
+            #[cfg(feature = "ares")]
+            promotion_abilities: None,
             #[cfg(feature = "ares")]
             self_attach_effect: None,
             #[cfg(feature = "ares")]

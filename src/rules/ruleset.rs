@@ -4771,8 +4771,16 @@ impl RuleSet {
                 warhead.particle_system = particle_system.map(str::to_owned);
             }
         }
-        for (category, name, emp, attachment, cloak_allowed, turret_rot, aircraft_crashable) in
-            processed.ares_techno_states()
+        for (
+            category,
+            name,
+            emp,
+            abilities,
+            attachment,
+            cloak_allowed,
+            turret_rot,
+            aircraft_crashable,
+        ) in processed.ares_techno_states()
         {
             if let Some(object) = rules
                 .object_list
@@ -4781,6 +4789,7 @@ impl RuleSet {
             {
                 object.bind_ares_techno_rules(
                     emp,
+                    abilities,
                     attachment,
                     cloak_allowed,
                     turret_rot,
@@ -7089,6 +7098,7 @@ impl RuleSet {
                         (object.category, object.id.to_ascii_uppercase()),
                         (
                             object.emp_rules(),
+                            object.promotion_abilities(),
                             object.self_attach_effect(),
                             object.cloak_allowed(),
                         ),

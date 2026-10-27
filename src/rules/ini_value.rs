@@ -536,13 +536,20 @@ impl IniSection {
     /// The shared scanner/percent kernel also serves the stock reader.
     pub fn read_ares_double_bits(&self, key: &str, default: NativeF64Bits) -> NativeF64Bits {
         self.read_string_with(key, 2048, default, |current, value| {
-            try_parse_leading_f64(value, FloatScanRounding::AresChop).map_or(current, |number| {
-                NativeF64Bits::from_bits(if value.contains('%') {
-                    scale_percent(number).to_bits()
-                } else {
-                    number.to_bits()
-                })
-            })
+            parse_ares_double_bits(value).unwrap_or(current)
+        })
+    }
+
+    /// Ares Nullable<double>10008CE0 ->10008E90 ->10076B60: only a
+    /// successful shared double parse sets presence. `none` is invalid,
+    /// so it retains the pair instead of clearing a prior value.
+    pub fn read_ares_nullable_double_bits(
+        &self,
+        key: &str,
+        current: Option<NativeF64Bits>,
+    ) -> Option<NativeF64Bits> {
+        self.read_string_with(key, 2048, current, |current, value| {
+            parse_ares_double_bits(value).or(current)
         })
     }
 
@@ -1704,6 +1711,16 @@ impl PartialIntPair {
     pub const fn is_single(&self) -> bool {
         self.values < 2 || self.low >= self.high
     }
+}
+
+/// Installed Ares Parser<double>10076B60, shared by value and nullable reads.
+fn parse_ares_double_bits(value: &str) -> Option<NativeF64Bits> {
+    let number = try_parse_leading_f64(value, FloatScanRounding::AresChop)?;
+    Some(NativeF64Bits::from_bits(if value.contains('%') {
+        scale_percent(number).to_bits()
+    } else {
+        number.to_bits()
+    }))
 }
 
 /// The single Ares Parser<int> core, also used by compound int/bool readers.

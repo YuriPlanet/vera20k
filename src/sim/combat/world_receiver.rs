@@ -1187,6 +1187,13 @@ pub(crate) fn commit_entities(
             }
         };
         #[cfg(feature = "phobos")]
+        #[cfg(feature = "ares")]
+        let ares_initially_positive = shield_receipt
+            .as_ref()
+            .map_or(event.damage > 0, |receipt| receipt.remaining > 0);
+        #[cfg(all(feature = "ares", not(feature = "phobos")))]
+        let ares_initially_positive = event.damage > 0;
+        #[cfg(feature = "phobos")]
         let receiver_outcome = match shield_receipt {
             Some(receipt) => resolve_receive_damage_with_input(
                 event,
@@ -1438,6 +1445,36 @@ pub(crate) fn commit_entities(
                 run.effects(),
             );
         }
+
+        // Installed Ares702819 ->1004AB50 is a receiver aftermath, after
+        // protected responses and before Uncloak. The early701914 hook
+        // records the sign before defenses; callbacks may alter a pointed
+        // damage field before the aftermath reads it again.
+        #[cfg(feature = "ares")]
+        {
+            let current_damage = event
+                .damage_writeback
+                .map(|writeback| writeback.read(world, rules))
+                .or_else(|| {
+                    receiver_outcome.and_then(|resolved| resolved.outcome.post_object_damage)
+                })
+                .unwrap_or(event.damage);
+            world.ares_driver_kill_aftermath(
+                event,
+                receive_state,
+                ares_initially_positive,
+                current_damage,
+                rules,
+                overlay_registry,
+                run.effects(),
+            );
+        }
+
+        //1004AB68..1004AB88 returns702823 for result0, skipping Uncloak
+        //even when no extension effect is configured or admitted.
+        #[cfg(feature = "ares")]
+        let uncloak_after_damage =
+            uncloak_after_damage && receive_state != damage::DamageState::Unaffected;
 
         // `0x0070281D`, in its native slot: after the `ToProtect` response
         // (`0x007027E9`); Object's Kill/Destroy have already returned. The

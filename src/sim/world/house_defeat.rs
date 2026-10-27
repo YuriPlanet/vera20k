@@ -942,6 +942,39 @@ impl Simulation {
             .find(|&owner| self.house_type_is_civilian(owner, rules))
     }
 
+    /// Installed Ares HouseExt::GetHouseKind10021310 with random_allowed=0.
+    /// KillDriver10052C31 passes this flag clear; UnitDelivery's represented
+    /// owner kinds also require no draw. Keep its native distinction between
+    /// a missing invoker/killer/victim (fallback) and missing named houses
+    /// (NULL). A future random-enabled caller must provide the Scenario draw.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_nonrandom_house_kind(
+        &self,
+        selector: crate::rules::ares_warhead::HouseSelector,
+        fallback: Option<InternedId>,
+        invoker: Option<InternedId>,
+        killer: Option<InternedId>,
+        victim: Option<InternedId>,
+        rules: &RuleSet,
+    ) -> Option<InternedId> {
+        use crate::rules::ares_warhead::HouseSelector;
+        match selector {
+            HouseSelector::Default | HouseSelector::Random => fallback,
+            HouseSelector::Invoker => invoker.or(fallback),
+            HouseSelector::Killer => killer.or(fallback),
+            HouseSelector::Victim => victim.or(fallback),
+            HouseSelector::Civilian => self.civilian_side_house(rules),
+            HouseSelector::Special | HouseSelector::Neutral => {
+                let name = if selector == HouseSelector::Special {
+                    "Special"
+                } else {
+                    "Neutral"
+                };
+                self.house_by_country_index(rules.country_index(name)?, rules)
+            }
+        }
+    }
+
     /// `CaptureManagerClass::SetOriginalOwnerToCivilian @ 0x00472330`: the
     /// first house in HouseClass::Array order whose side is `Civilian`
     /// (`0x006A46D0`) becomes the victim's original owner in every node of

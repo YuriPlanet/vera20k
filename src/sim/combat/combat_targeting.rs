@@ -293,6 +293,11 @@ pub(crate) fn should_retaliate(
     // `0x007087DD` CanRetaliate; `0x007087EB` a slave (SlaveOwner `+0x2DC`);
     // `0x007087F9` a slaver (SlaveManager `+0x2D8`). A slave freed by its
     // master's death (`0x006B0B73`) retaliates again.
+    // Ares7087EB ->1004B2D0 refuses a driverless victim before the slave gates.
+    #[cfg(feature = "ares")]
+    if victim.driver_killed() {
+        return false;
+    }
     if !victim_type.can_retaliate
         || victim.slave.owner().is_some()
         || victim.slave_manager.is_some()

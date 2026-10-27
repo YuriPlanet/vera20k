@@ -137,6 +137,7 @@ pub const VERAX_ENABLED: bool = cfg!(feature = "verax");
 pub(crate) mod ares_prerequisites;
 pub(crate) mod ares_armor;
 pub(crate) mod ares_emp;
+pub(crate) mod ares_abilities;
 #[cfg(feature = "ares")]
 pub(crate) mod ares_country_paradrop;
 #[cfg(feature = "ares")]

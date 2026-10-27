@@ -5,6 +5,8 @@ use crate::map::entities::EntityCategory;
 use crate::rules::{ares_driver::OperatorRequirement, ruleset::RuleSet};
 use crate::sim::{mission::MissionType, world::Simulation};
 
+mod driver_kill;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum VehicleCaptureMode {
     Hijack,
@@ -45,6 +47,16 @@ pub(crate) struct VehicleDriverState {
 }
 
 impl VehicleDriverState {
+    pub(crate) fn killed(&self) -> bool {
+        self.killed
+    }
+
+    /// Ares100456E8..100456F5 copies the new HouseType's MultiplayPassive,
+    /// before even testing whether the owner itself changes.
+    pub(crate) fn set_killed_from_owner(&mut self, passive: bool) {
+        self.killed = passive;
+    }
+
     pub(crate) fn set_vehicle_seek(&mut self, value: bool) {
         self.vehicle_seek = value;
     }

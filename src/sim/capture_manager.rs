@@ -386,6 +386,13 @@ impl MindControlLink {
         self.house_controller
     }
 
+    /// Installed Ares KillDriver10045892 clears Techno+2CC explicitly;
+    /// ordinary ChangeOwner deliberately preserves this separate controller.
+    #[cfg(feature = "ares")]
+    pub(crate) fn clear_house_controller(&mut self) {
+        self.house_controller = None;
+    }
+
     pub(crate) fn house_original_owner(&self) -> Option<InternedId> {
         self.house_original_owner
     }

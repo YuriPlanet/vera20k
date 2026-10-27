@@ -355,7 +355,10 @@ mod receiver {
                 }
                 _ => return EmpDelivery::Unsupported,
             };
-            if kind.immune().unwrap_or(default_immune) || kind.rank_immune(victim.veterancy.rank())
+            if kind.immune().unwrap_or(default_immune)
+                || object
+                    .promotion_abilities()
+                    .is_some_and(|abilities| abilities.emp_immune(victim.veterancy.rank()))
             {
                 return EmpDelivery::Rejected;
             }

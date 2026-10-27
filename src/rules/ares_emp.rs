@@ -11,7 +11,11 @@ pub(crate) struct EmpTypeRules {
     threshold: i32,
     immune: Option<bool>,
     sparkles: Option<Option<String>>,
+    // These inactive bytes retain the existing default-build save layout.
+    // Ares builds keep rank flags only in PromotionAbilities.
+    #[cfg(not(feature = "ares"))]
     veteran_immune: bool,
+    #[cfg(not(feature = "ares"))]
     elite_immune: bool,
 }
 impl Default for EmpTypeRules {
@@ -21,7 +25,9 @@ impl Default for EmpTypeRules {
             threshold: -1,
             immune: None,
             sparkles: None,
+            #[cfg(not(feature = "ares"))]
             veteran_immune: false,
+            #[cfg(not(feature = "ares"))]
             elite_immune: false,
         }
     }
@@ -39,9 +45,6 @@ impl EmpTypeRules {
     pub(crate) fn sparkles(&self) -> Option<Option<&str>> {
         self.sparkles.as_ref().map(|name| name.as_deref())
     }
-    pub(crate) fn rank_immune(&self, rank: u16) -> bool {
-        rank >= 100 && self.veteran_immune || rank >= 200 && self.elite_immune
-    }
     #[cfg(feature = "ares")]
     pub(crate) fn read_pass(&mut self, section: &IniSection, sparkle: Option<Option<String>>) {
         self.immune = section.read_ares_nullable_bool("ImmuneToEMP", self.immune);
@@ -50,18 +53,6 @@ impl EmpTypeRules {
             self.sparkles = Some(sparkle);
         }
         self.threshold = section.read_ares_emp_threshold("EMP.Threshold", self.threshold);
-        // Installed suffix100405A0 clears that tier's seven extension flags
-        // only after a nonempty ReadString2048; strtok has comma-only delimiters.
-        if let Some(tokens) = section.read_list("VeteranAbilities", 2048) {
-            self.veteran_immune = tokens
-                .iter()
-                .any(|name| name.eq_ignore_ascii_case("EMPIMMUNE"));
-        }
-        if let Some(tokens) = section.read_list("EliteAbilities", 2048) {
-            self.elite_immune = tokens
-                .iter()
-                .any(|name| name.eq_ignore_ascii_case("EMPIMMUNE"));
-        }
     }
 }
 
@@ -140,11 +131,12 @@ mod tests {
             let section = ini.section_or_empty("T");
             let expected = &row["result"]["bytes"];
             if kind == "abilities" {
-                let mut config = EmpTypeRules::default();
-                config.veteran_immune = true;
-                config.read_pass(section, None);
+                let mut config = crate::rules::ares_abilities::PromotionAbilities::default();
+                let prior = IniFile::from_str("[T]\nVeteranAbilities=EMPIMMUNE\n");
+                config.read_pass(prior.section_or_empty("T"));
+                config.read_pass(section);
                 assert_eq!(
-                    config.veteran_immune,
+                    config.emp_immune(100),
                     expected[0].as_i64().unwrap() != 0,
                     "{row}"
                 );
@@ -184,8 +176,9 @@ mod tests {
             assert_eq!(config.immune(), Some(false));
             assert_eq!(config.threshold(), -1);
             assert_eq!(config.sparkles(), Some(Some("SPARK")));
-            assert!(!config.rank_immune(100));
-            assert!(config.rank_immune(200));
+            let abilities = object.promotion_abilities().unwrap();
+            assert!(!abilities.emp_immune(100));
+            assert!(abilities.emp_immune(200));
             let wh = rules.warhead("EMPWH").unwrap().ares_rules().unwrap();
             assert_eq!(wh.duration(), 121);
             assert_eq!(wh.cap(), 0);

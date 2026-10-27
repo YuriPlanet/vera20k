@@ -1542,6 +1542,12 @@ pub(crate) fn scale_pip_draws(
     local_owner: Option<&str>,
     rules: &RuleSet,
 ) -> Vec<ScalePipDraw> {
+    // Ares6F6A58 ->1004A260 skips mobile scale pips to6F6AB6. The health
+    // strip itself still draws; it has a separate admission path.
+    #[cfg(feature = "ares")]
+    if entity.driver_killed() {
+        return Vec::new();
+    }
     if entity.sinking.is_active()
         || entity.passenger_role.is_inside_transport()
         || !entity_status_pips_drawable(
