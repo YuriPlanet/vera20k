@@ -2590,17 +2590,12 @@ fn ares_fatal_aircraft_parachutes_crew_and_honors_explicit_no_crash() {
     sim.houses
         .register(HouseState::new(owner, 0, None, false, 0, 10));
     let plane = sim
-        .spawn_object_at_height("HORNET", "Americans", 20, 15, 0, 5, &rules)
+        .spawn_object_at_height("HORNET", "Americans", 20, 15, 0, 0, &rules)
         .unwrap();
-    assert!(
-        crate::sim::movement::ground_pose::position_world_coord(
-            &sim.entities().get(plane).unwrap().position
-        )
-        .z > 208
-    );
     let passenger = spawn(&mut sim, &rules, "ENGINEER", "Americans", 21, 15);
-    // Seed the already-boarded flying state through the actual class arrival
-    // leaf; admission/takeoff are tested by their own owners.
+    // Board while landed, then seed the in-flight coordinate between the
+    // production Mark(UP)/Mark(DOWN) owners. Aircraft Put intentionally
+    // seeds a landed plane, independently of its caller's coarse Z.
     assert!(board_passenger(
         &mut sim,
         &rules,
@@ -2610,6 +2605,20 @@ fn ares_fatal_aircraft_parachutes_crew_and_honors_explicit_no_crash() {
         Some(&overlays),
         Default::default()
     ));
+    assert!(sim.foot_mark_remove(plane, &rules, Some(&overlays), Default::default()));
+    sim.substrate
+        .entities
+        .get_mut(plane)
+        .unwrap()
+        .position
+        .set_exact_z_leptons_for_test(Some(500));
+    assert!(sim.foot_mark_put(plane, &rules, Some(&overlays), Default::default()));
+    assert!(
+        crate::sim::movement::ground_pose::position_world_coord(
+            &sim.entities().get(plane).unwrap().position
+        )
+        .z > 208
+    );
     let before = sim.substrate.entities.keys_sorted();
     let warhead = sim.interner.intern("Super");
     let hit = EntityDamageEvent::direct_receiver(
