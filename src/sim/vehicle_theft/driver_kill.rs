@@ -392,8 +392,9 @@ mod tests {
              [InfantryTypes]\n2=OP\n3=DRIVER\n[VehicleTypes]\n0=HOST\n\
              [OP]\nStrength=100\nSpeedType=Foot\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
              [DRIVER]\nStrength=100\nCanDrive=yes\nSpeedType=Foot\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
-             [HOST]\nStrength=300\nPassengers=3\nOperator=_ANY_\nSpeed=5\n\
+             [HOST]\nStrength=300\nPassengers=3\nOperator=_ANY_\nSpeed=5\nPrimary=HostGun\n\
              Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+             [HostGun]\nDamage=1\nRange=6\nROF=20\nProjectile=Invisible\nWarhead=DRIVER_WH\n\
              [Warheads]\n0=DRIVER_WH\n1=ZERO_CHANCE\n\
              [DRIVER_WH]\nKillDriver=yes\nKillDriver.RemoveVeterancy=yes\n\
              [ZERO_CHANCE]\nKillDriver=yes\nKillDriver.Chance=0\nAffectsOwner=yes\n",
@@ -452,6 +453,8 @@ mod tests {
         let vehicle = sim.entities().get(host).unwrap();
         assert_eq!(sim.interner.resolve(vehicle.owner()), "Special");
         assert!(vehicle.driver_killed());
+        assert!(vehicle.attack_target.target().is_none());
+        assert!(vehicle.navigation.nav_com().is_none());
         assert_eq!(vehicle.passenger_role.passenger_count(), 0);
         assert_eq!(vehicle.veterancy.raw(), NativeF32Bits::from_bits(0));
         assert!(
