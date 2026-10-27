@@ -2733,6 +2733,7 @@ dependencies = [
  "thiserror 2.0.18",
  "unicode-ident",
  "vera20k-relay-protocol",
+ "wasm-bindgen",
  "web-time",
 ]
 

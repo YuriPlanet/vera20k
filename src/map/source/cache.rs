@@ -4,14 +4,25 @@
 //! stays pinned while a source or pending upload retains its shared sidecar lock;
 //! eviction requires the exclusive lock, so another VERA instance cannot remove
 //! a map still needed by a loader. The final source clone releases the pin.
+//! Browser networking uses the same quota/eviction owner over the per-tab VFS;
+//! synchronous operations need no process lock, and shared leases retain pins.
 
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+use crate::util::file_system as fs;
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+use crate::util::time::SystemTime;
+#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
 use std::fs::{self, File, OpenOptions};
+#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
 use std::time::SystemTime;
 
-use anyhow::{Context, Result, ensure};
+#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+use anyhow::Context;
+use anyhow::{Result, ensure};
 
 use super::{TransferResource, valid_source_sha256};
 
@@ -32,6 +43,7 @@ impl Default for Limits {
 
 pub(super) struct Cache {
     directory: PathBuf,
+    #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
     _lock: File,
     limits: Limits,
 }
@@ -48,7 +60,18 @@ struct Entry {
 /// is process metadata: it does not change a source's serialized identity or
 /// equality, and an ordinary loose source has the empty default lease.
 #[derive(Clone, Default)]
-pub struct CacheLease(Option<Arc<File>>);
+pub struct CacheLease(Option<Arc<Lease>>);
+
+#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+type Lease = File;
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+type Lease = PathBuf;
+
+#[cfg(any(
+    all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"),
+    all(test, feature = "wasm-net")
+))]
+mod browser_pins;
 
 impl PartialEq for CacheLease {
     fn eq(&self, _other: &Self) -> bool {
@@ -66,6 +89,7 @@ impl std::fmt::Debug for CacheLease {
     }
 }
 
+#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
 fn open_regular(path: &Path, create: bool, writable: bool) -> Result<File> {
     let mut options = OpenOptions::new();
     options.read(true).write(writable).create(create);
@@ -88,6 +112,7 @@ fn open_regular(path: &Path, create: bool, writable: bool) -> Result<File> {
     Ok(file)
 }
 
+#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
 fn pin_path(path: &Path) -> PathBuf {
     path.with_file_name(format!(
         ".{}.pin",
@@ -115,10 +140,13 @@ impl Cache {
             fs::create_dir_all(directory)?;
         }
         let directory = fs::canonicalize(directory)?;
+        #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
         let lock = open_regular(&directory.join(".vera20k-cache.lock"), true, true)?;
+        #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
         lock.lock().context("lock network map cache")?;
         Ok(Self {
             directory,
+            #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
             _lock: lock,
             limits,
         })
@@ -128,9 +156,9 @@ impl Cache {
         let path = self
             .directory
             .join(format!("{digest}.{}", resource.extension()));
-        match fs::symlink_metadata(&path) {
+        match entry_metadata(&path) {
             Ok(metadata) => ensure!(
-                metadata.is_file() && !metadata.file_type().is_symlink(),
+                is_regular(&metadata),
                 "network cache destination is not a regular file"
             ),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -140,9 +168,18 @@ impl Cache {
     }
 
     pub fn pin(&self, path: &Path) -> Result<CacheLease> {
-        let file = open_regular(&pin_path(path), true, true)?;
-        file.lock_shared().context("pin active network map")?;
-        Ok(CacheLease(Some(Arc::new(file))))
+        #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+        {
+            // Browser cache operations are synchronous on this tab's one
+            // event loop. Only active-file leases need to outlive the call.
+            Ok(CacheLease(Some(browser_pins::pin(path))))
+        }
+        #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+        {
+            let file = open_regular(&pin_path(path), true, true)?;
+            file.lock_shared().context("pin active network map")?;
+            Ok(CacheLease(Some(Arc::new(file))))
+        }
     }
 
     pub fn directory(&self) -> &Path {
@@ -163,8 +200,8 @@ impl Cache {
         let mut bytes = incoming as u64;
         for item in fs::read_dir(&self.directory)? {
             let item = item?;
-            let metadata = fs::symlink_metadata(item.path())?;
-            if !metadata.is_file() || metadata.file_type().is_symlink() {
+            let metadata = entry_metadata(&item.path())?;
+            if !is_regular(&metadata) {
                 continue;
             }
             let name = item.file_name();
@@ -173,6 +210,11 @@ impl Cache {
                 if name == ".vera20k-cache.lock" {
                     continue;
                 }
+                #[cfg(not(all(
+                    feature = "wasm-net",
+                    target_arch = "wasm32",
+                    target_os = "unknown"
+                )))]
                 if let Some(data_name) = name.strip_prefix('.').and_then(|s| s.strip_suffix(".pin"))
                     && entry_name(data_name).is_some()
                 {
@@ -212,26 +254,31 @@ impl Cache {
             if entry.path == destination || entry.length > entry.resource.limit() as u64 {
                 continue;
             }
-            let Ok(file) = open_regular(&entry.path, false, false) else {
+            let contents = read_eviction_candidate(&entry.path, entry.resource.limit())?;
+            let Some(contents) = contents else {
                 continue;
             };
-            let mut contents = Vec::new();
-            file.take(entry.resource.limit() as u64 + 1)
-                .read_to_end(&mut contents)?;
             if contents.len() as u64 != entry.length
                 || crate::util::sha256::sha256_hex(&contents) != entry.digest
             {
                 continue;
             }
+            #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+            if browser_pins::is_pinned(&entry.path) {
+                continue;
+            }
+            #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
             let Ok(pin) = open_regular(&pin_path(&entry.path), true, true) else {
                 continue;
             };
+            #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
             if pin.try_lock().is_err() {
                 continue;
             }
             fs::remove_file(&entry.path)?;
             // No cooperating opener can race sidecar retirement while the
             // directory lock is held and this exclusive pin lock is live.
+            #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
             fs::remove_file(pin_path(&entry.path))?;
             bytes -= entry.length;
             files -= 1;
@@ -242,4 +289,40 @@ impl Cache {
         );
         Ok(())
     }
+}
+
+// Only filesystem operations differ. Selection, quota accounting, validation,
+// eviction order and active-source lifetime stay in the shared Cache owner.
+#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+fn entry_metadata(path: &Path) -> std::io::Result<fs::Metadata> {
+    fs::symlink_metadata(path)
+}
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+fn entry_metadata(path: &Path) -> std::io::Result<fs::Metadata> {
+    // Imported browser files cannot be symlinks.
+    fs::metadata(path)
+}
+#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+fn is_regular(metadata: &fs::Metadata) -> bool {
+    metadata.is_file() && !metadata.file_type().is_symlink()
+}
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+fn is_regular(metadata: &fs::Metadata) -> bool {
+    metadata.is_file()
+}
+#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+fn read_eviction_candidate(path: &Path, limit: usize) -> Result<Option<Vec<u8>>> {
+    let Ok(file) = open_regular(path, false, false) else {
+        return Ok(None);
+    };
+    let mut contents = Vec::new();
+    file.take(limit as u64 + 1).read_to_end(&mut contents)?;
+    Ok(Some(contents))
+}
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+fn read_eviction_candidate(path: &Path, limit: usize) -> Result<Option<Arc<[u8]>>> {
+    // Retain shared imported bytes without another whole-map allocation.
+    Ok(fs::read_shared(path)
+        .ok()
+        .filter(|bytes| bytes.len() <= limit))
 }

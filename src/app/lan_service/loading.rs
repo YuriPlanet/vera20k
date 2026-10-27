@@ -59,19 +59,50 @@ impl<'a> LoadingNetworkService<'a> {
         };
         service.drain_loading_reports(self.session)?;
         let now = loading_bucket();
-        let drain = crate::sim::timer::CdTimer::started(now as i32, 240);
-        loop {
-            self.pump(rows, loading_bucket())?;
-            if self.service.as_deref().unwrap().queued_setup_count() <= 5
-                || drain.expired(loading_bucket() as i32)
-            {
-                break;
-            }
-            //69B015..69B079 services ACK/retry traffic while the existing
-            //global queue exceeds5, bounded by240 wall buckets with20ms waits.
-            std::thread::sleep(std::time::Duration::from_millis(20));
+        #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+        {
+            self.pump(rows, now)?;
+            self.service
+                .as_deref_mut()
+                .unwrap()
+                .defer_loading_drain(now);
+            return Ok(());
         }
-        Ok(())
+        #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+        {
+            let drain = crate::sim::timer::CdTimer::started(now as i32, 240);
+            loop {
+                self.pump(rows, loading_bucket())?;
+                if self.service.as_deref().unwrap().queued_setup_count() <= 5
+                    || drain.expired(loading_bucket() as i32)
+                {
+                    break;
+                }
+                //69B015..69B079 services ACK/retry traffic while the existing
+                //global queue exceeds5, bounded by240 wall buckets with20ms waits.
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Ok(())
+        }
+    }
+
+    /// Resume the same bounded ACK wait after the browser has delivered events.
+    #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+    pub(crate) fn resume(&mut self, rows: &mut LoadingProgressRowSnapshot) -> anyhow::Result<bool> {
+        if self
+            .service
+            .as_deref()
+            .is_none_or(|service| service.loading_drain.is_none())
+        {
+            return Ok(true);
+        }
+        let now = loading_bucket();
+        self.pump(rows, now)?;
+        Ok(self
+            .service
+            .as_deref_mut()
+            .unwrap()
+            .finish_loading_drain(now))
     }
 
     fn pump(&mut self, rows: &mut LoadingProgressRowSnapshot, now: u32) -> anyhow::Result<()> {
@@ -234,6 +265,33 @@ pub(super) fn progress_packets(
 }
 
 impl LanService {
+    #[cfg(any(
+        test,
+        all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")
+    ))]
+    fn defer_loading_drain(&mut self, now: u32) {
+        if self.queued_setup_count() > 5 && self.loading_drain.is_none() {
+            // LoadingCallback69AE90's 240-bucket bound; only the wait scheduling
+            // changes on the browser, not the reliable queue or its retry timers.
+            self.loading_drain = Some(crate::sim::timer::CdTimer::started(now as i32, 240));
+        }
+    }
+
+    #[cfg(any(
+        test,
+        all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")
+    ))]
+    fn finish_loading_drain(&mut self, now: u32) -> bool {
+        if self
+            .loading_drain
+            .is_some_and(|deadline| self.queued_setup_count() > 5 && !deadline.expired(now as i32))
+        {
+            return false;
+        }
+        self.loading_drain = None;
+        true
+    }
+
     /// A pre-install Departure has no private connection table yet in VERA.
     /// Preserve the admitted exact endpoint and current LAN proof instead of
     /// the native48D81A private-table lookup. No display name selects a source.
@@ -311,6 +369,33 @@ impl LanService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deferred_loading_drain_keeps_its_deadline_and_reliable_queue() {
+        let mut service = super::super::tests::service();
+        let peer = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 12345);
+        for value in 0..6 {
+            assert!(service.send(&[value], direct(peer), true));
+        }
+        service.defer_loading_drain(100);
+        assert!(!service.finish_loading_drain(339));
+        service.defer_loading_drain(339);
+        assert!(
+            service.finish_loading_drain(340),
+            "a later callback must not extend the drain"
+        );
+        assert_eq!(
+            service.queued_setup_count(),
+            6,
+            "only the reliable owner retires messages"
+        );
+        service.defer_loading_drain(400);
+        service.clear_setup();
+        assert!(
+            service.loading_drain.is_none(),
+            "a cancelled setup cannot retain its wait"
+        );
+    }
 
     #[test]
     fn controlled_loading_retains_report_intents_without_masking_a_broken_live_service() {

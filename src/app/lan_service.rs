@@ -111,6 +111,13 @@ pub(crate) struct LanService {
     setup_reassembly: crate::net::lan_messages::extended_setup::Reassembly,
     maps: maps::Transfers,
     pending_setup: std::collections::VecDeque<(Vec<u8>, GlobalDestination)>,
+    // Browser loading suspends the native ACK drain between event-loop turns.
+    // The same service retains the queue and deadline; no progress is duplicated.
+    #[cfg(any(
+        test,
+        all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")
+    ))]
+    loading_drain: Option<crate::sim::timer::CdTimer>,
     transport: Option<LanUdpTransport>,
     // Explicit visit exit, never inferred from silence or the current screen.
     // The same socket owner survives until its terminal relay ACK arrives.
@@ -219,6 +226,11 @@ impl LanService {
             setup_reassembly: Default::default(),
             maps: Default::default(),
             pending_setup: Default::default(),
+            #[cfg(any(
+                test,
+                all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")
+            ))]
+            loading_drain: None,
         }
     }
 
@@ -971,6 +983,13 @@ impl LanService {
     /// BC/BD Back stays inside5DC350's lobby visit (5DC93E..5DC985).
     /// Admission and pending app work end; global transport history survives.
     fn clear_setup(&mut self) {
+        #[cfg(any(
+            test,
+            all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")
+        ))]
+        {
+            self.loading_drain = None;
+        }
         self.maps.cancel();
         self.online_timing = None;
         self.setup_scope = None;

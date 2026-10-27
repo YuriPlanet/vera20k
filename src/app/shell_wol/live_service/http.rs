@@ -1,25 +1,22 @@
 //! Blocking HTTPS is confined to this worker. Session bearer tokens never
 //! enter Debug output, file storage, error strings, or the gameplay client state.
 
+use crate::util::time::{Duration, Instant};
 use base64::Engine;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 use std::io::Read;
 use std::path::PathBuf;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+use std::sync::mpsc::RecvTimeoutError;
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-use std::time::{Duration, Instant};
 
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 use super::wire::EventBatch;
 use super::wire::{ChannelList, Envelope, Session};
 use serde_json::Value;
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 use serde_json::json;
 
 pub(super) enum Request {
@@ -226,11 +223,14 @@ impl RequestFailure {
     }
 }
 
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 struct Client {
     stopping: Arc<AtomicBool>,
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     agent: ureq::Agent,
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     base: String,
+    #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+    browser: u32,
     token: Option<String>,
     cursor: u64,
     active_match: Option<String>,
@@ -259,54 +259,7 @@ fn decode_session(value: Value, requested_nickname: &str) -> Result<Session, Req
     Ok(session)
 }
 
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 impl Client {
-    fn session_failed(&mut self, error: RequestFailure, output: &Sender<Response>) -> bool {
-        if error == RequestFailure::LostCursor
-            && let Some(match_id) = self.active_match.clone()
-        {
-            let recovered = self
-                .request(&format!("/v1/match/resume?match_id={match_id}"), None)
-                .and_then(|value| self.accept_match_resume(value, output));
-            // Shell event history is separate from the committed gameplay
-            // journal. Network failures keep the same bearer/identity/cursor
-            // until a matching active-match recovery succeeds.
-            if !matches!(
-                recovered,
-                Err(RequestFailure::Status(401) | RequestFailure::AlreadyFinished)
-            ) {
-                return true;
-            }
-            self.active_match = None;
-        }
-        if matches!(
-            error,
-            RequestFailure::Status(401) | RequestFailure::LostCursor
-        ) {
-            if error == RequestFailure::LostCursor && self.token.is_some() {
-                // The bearer still owns this guest name, even though its
-                // event history cannot be replayed. Ordinary logout accepts
-                // an expired cursor and retires only this session. If the
-                // request fails, normal stale-session reap remains the fallback.
-                let _ = self.request(
-                    "/v1/commands",
-                    Some(&json!({
-                        "request_id":"lost-cursor-logout","operation":"logout","payload":{}
-                    })),
-                );
-            }
-            // A missing history cannot be replayed safely. Retire this login so
-            // it stops refreshing the broken server session and use the WOL
-            // disconnect/re-login path. Repeated queued failures emit once.
-            if self.token.take().is_some() {
-                let _ = output.send(Response::Offline);
-            }
-            true
-        } else {
-            false
-        }
-    }
-
     fn accept_match_resume(
         &mut self,
         value: Value,
@@ -334,25 +287,39 @@ impl Client {
         Ok(())
     }
 
-    fn poll_finished(
-        &mut self,
-        result: Result<(), RequestFailure>,
-        failed_polls: &mut u8,
-        output: &Sender<Response>,
-    ) -> Duration {
-        match result {
-            Ok(()) => {
-                *failed_polls = 0;
-                Duration::from_secs(1)
-            }
-            Err(error) if self.session_failed(error, output) => Duration::from_secs(30),
-            Err(_) => {
-                *failed_polls = failed_polls.saturating_add(1);
-                Duration::from_secs((1u64 << (*failed_polls).min(5)).min(30))
-            }
+    fn batch(&mut self, value: Value, output: &Sender<Response>) -> Result<(), RequestFailure> {
+        let mut batch: EventBatch =
+            serde_json::from_value(value).map_err(|_| RequestFailure::Status(0))?;
+        batch.events.retain(|event| event.sequence > self.cursor);
+        if batch.cursor < self.cursor
+            || batch
+                .events
+                .iter()
+                .any(|event| event.sequence > batch.cursor)
+        {
+            return Err(RequestFailure::Status(0));
         }
+        self.cursor = batch.cursor;
+        // A callback can begin a shell slide halfway through a server batch.
+        // Each event stays on the same FIFO until the UI may pump messages;
+        // emitting one batch would force the consumer to duplicate its tail.
+        for event in batch.events {
+            if event.kind == "timing_confirmed"
+                && let Some(id) = event.payload["match_id"].as_str()
+                && super::relay_uuid(id).is_ok()
+            {
+                self.active_match = Some(id.to_owned());
+            }
+            output
+                .send(Response::Event(event))
+                .map_err(|_| RequestFailure::Status(0))?;
+        }
+        Ok(())
     }
+}
 
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+impl Client {
     fn request(&self, path: &str, body: Option<&Value>) -> Result<Value, RequestFailure> {
         if self.stopping.load(Ordering::Acquire) {
             return Err(RequestFailure::Status(0));
@@ -397,52 +364,16 @@ impl Client {
         }
         serde_json::from_slice(&bytes).map_err(|_| RequestFailure::Status(0))
     }
+}
 
-    fn batch(&mut self, value: Value, output: &Sender<Response>) -> Result<(), RequestFailure> {
-        let mut batch: EventBatch =
-            serde_json::from_value(value).map_err(|_| RequestFailure::Status(0))?;
-        batch.events.retain(|event| event.sequence > self.cursor);
-        if batch.cursor < self.cursor
-            || batch
-                .events
-                .iter()
-                .any(|event| event.sequence > batch.cursor)
-        {
-            return Err(RequestFailure::Status(0));
-        }
-        self.cursor = batch.cursor;
-        // A callback can begin a shell slide halfway through a server batch.
-        // Each event stays on the same FIFO until the UI may pump messages;
-        // emitting one batch would force the consumer to duplicate its tail.
-        for event in batch.events {
-            if event.kind == "timing_confirmed"
-                && let Some(id) = event.payload["match_id"].as_str()
-                && super::relay_uuid(id).is_ok()
-            {
-                self.active_match = Some(id.to_owned());
-            }
-            output
-                .send(Response::Event(event))
-                .map_err(|_| RequestFailure::Status(0))?;
-        }
-        Ok(())
-    }
-
-    fn drain_events(&mut self, output: &Sender<Response>) -> Result<(), RequestFailure> {
-        for _ in 0..MAX_CLEANUP_DRAIN_BATCHES {
-            let value = self.request(&format!("/v1/events?after={}", self.cursor), None)?;
-            let empty = value
-                .get("events")
-                .and_then(Value::as_array)
-                .is_some_and(Vec::is_empty);
-            self.batch(value, output)?;
-            if empty {
-                return Ok(());
-            }
-        }
-        // Keep the same cleanup request ID and retry; a busy event stream is
-        // not proof that all old room callbacks have reached the UI owner.
-        Err(RequestFailure::Status(0))
+fn translation_result(result: Result<Value, RequestFailure>) -> Result<String, TranslateFailure> {
+    match result {
+        Ok(value) => value["text"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or(TranslateFailure::Unavailable),
+        Err(RequestFailure::Status(400)) => Err(TranslateFailure::Unsupported),
+        Err(_) => Err(TranslateFailure::Unavailable),
     }
 }
 
@@ -469,14 +400,7 @@ fn spawn_translator(
             for (id, token, text, target) in input {
                 translator.token = Some(token);
                 let body = json!({"text":text,"target":target});
-                let outcome = match translator.request("/v1/translate", Some(&body)) {
-                    Ok(value) => value["text"]
-                        .as_str()
-                        .map(str::to_owned)
-                        .ok_or(TranslateFailure::Unavailable),
-                    Err(RequestFailure::Status(400)) => Err(TranslateFailure::Unsupported),
-                    Err(_) => Err(TranslateFailure::Unavailable),
-                };
+                let outcome = translation_result(translator.request("/v1/translate", Some(&body)));
                 if output.send(Response::Translated { id, outcome }).is_err() {
                     break;
                 }
@@ -499,7 +423,7 @@ pub(super) fn run(
         .http_status_as_error(false)
         .timeout_global(Some(Duration::from_secs(12)))
         .build();
-    let mut client = Client {
+    let client = Client {
         stopping: Arc::clone(&stopping),
         agent: config.into(),
         base,
@@ -508,16 +432,126 @@ pub(super) fn run(
         active_match: None,
     };
     let translator = spawn_translator(&client, &output);
+    run_loop(client, input, output, translator);
+}
+
+// One source for the serial HTTP decisions. Native expands to ordinary blocking
+// functions; only the explicitly enabled browser target emits async functions.
+// No native executor or second copy of the protocol state is introduced.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+macro_rules! platform_await {
+    ($operation:expr) => {
+        $operation
+    };
+}
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+macro_rules! platform_await {
+    ($operation:expr) => {
+        $operation.await
+    };
+}
+
+macro_rules! serial_driver {
+    ($($asynchronous:tt)?) => {
+        impl Client {
+    $($asynchronous)? fn session_failed(&mut self, error: RequestFailure, output: &Sender<Response>) -> bool {
+        if error == RequestFailure::LostCursor
+            && let Some(match_id) = self.active_match.clone()
+        {
+            let recovered = platform_await!(self
+                .request(&format!("/v1/match/resume?match_id={match_id}"), None))
+                .and_then(|value| self.accept_match_resume(value, output));
+            // Shell event history is separate from the committed gameplay
+            // journal. Network failures keep the same bearer/identity/cursor
+            // until a matching active-match recovery succeeds.
+            if !matches!(
+                recovered,
+                Err(RequestFailure::Status(401) | RequestFailure::AlreadyFinished)
+            ) {
+                return true;
+            }
+            self.active_match = None;
+        }
+        if matches!(
+            error,
+            RequestFailure::Status(401) | RequestFailure::LostCursor
+        ) {
+            if error == RequestFailure::LostCursor && self.token.is_some() {
+                // The bearer still owns this guest name, even though its
+                // event history cannot be replayed. Ordinary logout accepts
+                // an expired cursor and retires only this session. If the
+                // request fails, normal stale-session reap remains the fallback.
+                let _ = platform_await!(self.request(
+                    "/v1/commands",
+                    Some(&json!({
+                        "request_id":"lost-cursor-logout","operation":"logout","payload":{}
+                    })),
+                ));
+            }
+            // A missing history cannot be replayed safely. Retire this login so
+            // it stops refreshing the broken server session and use the WOL
+            // disconnect/re-login path. Repeated queued failures emit once.
+            if self.token.take().is_some() {
+                let _ = output.send(Response::Offline);
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    $($asynchronous)? fn poll_finished(
+        &mut self,
+        result: Result<(), RequestFailure>,
+        failed_polls: &mut u8,
+        output: &Sender<Response>,
+    ) -> Duration {
+        match result {
+            Ok(()) => {
+                *failed_polls = 0;
+                Duration::from_secs(1)
+            }
+            Err(error) if platform_await!(self.session_failed(error, output)) => Duration::from_secs(30),
+            Err(_) => {
+                *failed_polls = failed_polls.saturating_add(1);
+                Duration::from_secs((1u64 << (*failed_polls).min(5)).min(30))
+            }
+        }
+    }
+
+    $($asynchronous)? fn drain_events(&mut self, output: &Sender<Response>) -> Result<(), RequestFailure> {
+        for _ in 0..MAX_CLEANUP_DRAIN_BATCHES {
+            let value = platform_await!(self.request(&format!("/v1/events?after={}", self.cursor), None))?;
+            let empty = value
+                .get("events")
+                .and_then(Value::as_array)
+                .is_some_and(Vec::is_empty);
+            self.batch(value, output)?;
+            if empty {
+                return Ok(());
+            }
+        }
+        // Keep the same cleanup request ID and retry; a busy event stream is
+        // not proof that all old room callbacks have reached the UI owner.
+        Err(RequestFailure::Status(0))
+    }
+        }
+        $($asynchronous)? fn run_loop(
+            mut client: Client,
+            input: Receiver<Request>,
+            output: Sender<Response>,
+            translator: Option<Sender<(u64, String, String, &'static str)>>,
+        ) {
+    let stopping = Arc::clone(&client.stopping);
     let mut failed_polls = 0_u8;
     let mut next_poll = Instant::now();
     loop {
         if stopping.load(Ordering::Acquire) {
             break;
         }
-        let request = match input.recv_timeout(Duration::from_secs(1)) {
-            Ok(request) => Some(request),
-            Err(RecvTimeoutError::Timeout) => None,
-            Err(RecvTimeoutError::Disconnected) => break,
+        let request = match platform_await!(next_request(&input)) {
+            Ok(request) => request,
+            Err(()) => break,
         };
         if stopping.load(Ordering::Acquire) {
             break;
@@ -578,7 +612,7 @@ pub(super) fn run(
                 offset,
             }) => {
                 let result = if crate::map::source::valid_source_sha256(&digest) {
-                    client.request(
+                    platform_await!(client.request(
                         &format!(
                             "/v1/maps/{seed_digest}?offset={offset}&resource={}",
                             if resource == crate::map::source::TransferResource::Preview {
@@ -588,12 +622,12 @@ pub(super) fn run(
                             }
                         ),
                         None,
-                    )
+                    ))
                 } else {
                     Err(RequestFailure::Status(400))
                 };
                 if let Err(error) = result.as_ref() {
-                    client.session_failed(*error, &output);
+                    platform_await!(client.session_failed(*error, &output));
                 }
                 let response = match result {
                     Ok(value) => {
@@ -649,11 +683,11 @@ pub(super) fn run(
                 let body = json!({"request_id":id.to_string(),"after":client.cursor,"operation":"map_upload",
                     "payload":{"digest":digest,"byte_length":total,"offset":offset,"resource":if resource == crate::map::source::TransferResource::Preview { "preview" } else { "map" },
                     "data":base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)}});
-                let result = client
-                    .request("/v1/commands", Some(&body))
+                let result = platform_await!(client
+                    .request("/v1/commands", Some(&body)))
                     .and_then(|value| client.batch(value, &output));
                 if let Err(error) = result.as_ref() {
-                    client.session_failed(*error, &output);
+                    platform_await!(client.session_failed(*error, &output));
                 }
                 let response = match result {
                     Ok(()) => Response::MapUploaded {
@@ -682,11 +716,11 @@ pub(super) fn run(
                 }
                 client.cursor = 0;
                 client.active_match = None;
-                let result = client
+                let result = platform_await!(client
                     .request(
                         "/v1/sessions",
                         Some(&json!({"nickname": nickname, "protocol": 4})),
-                    )
+                    ))
                     .and_then(|value| decode_session(value, &nickname));
                 match result {
                     Ok(session) => {
@@ -727,8 +761,8 @@ pub(super) fn run(
                 }
             }
             Some(Request::Channels(kind)) => {
-                match client
-                    .request(&format!("/v1/channels?kind={kind}"), None)
+                match platform_await!(client
+                    .request(&format!("/v1/channels?kind={kind}"), None))
                     .and_then(|value| {
                         serde_json::from_value(value).map_err(|_| RequestFailure::Status(0))
                     }) {
@@ -736,7 +770,7 @@ pub(super) fn run(
                         let _ = output.send(Response::Channels(channels));
                     }
                     Err(error) => {
-                        if !client.session_failed(error, &output) {
+                        if !platform_await!(client.session_failed(error, &output)) {
                             let _ = output
                                 .send(Response::Failure("Could not refresh the online lobby."));
                         }
@@ -744,7 +778,7 @@ pub(super) fn run(
                 }
             }
             Some(Request::Stats) => {
-                if let Ok(stats) = client.request("/v1/stats", None).and_then(|value| {
+                if let Ok(stats) = platform_await!(client.request("/v1/stats", None)).and_then(|value| {
                     serde_json::from_value(value).map_err(|_| RequestFailure::Status(0))
                 }) {
                     let _ = output.send(Response::Stats(stats));
@@ -763,16 +797,11 @@ pub(super) fn run(
                     continue;
                 }
                 let body = json!({"request_id":id.to_string(),"after":client.cursor,"operation":operation,"payload":payload});
-                let result = client
-                    .request("/v1/commands", Some(&body))
-                    .or_else(|error| {
-                        if error == RequestFailure::Status(0) {
-                            client.request("/v1/commands", Some(&body))
-                        } else {
-                            Err(error)
-                        }
-                    })
-                    .and_then(|value| {
+                let mut response = platform_await!(client.request("/v1/commands", Some(&body)));
+                if response == Err(RequestFailure::Status(0)) {
+                    response = platform_await!(client.request("/v1/commands", Some(&body)));
+                }
+                let result = response.and_then(|value| {
                         // Logout removes its event stream and returns cursor0.
                         // Its successful HTTP response is the completion receipt.
                         if operation == "logout" {
@@ -784,7 +813,7 @@ pub(super) fn run(
                 let result = if result.is_ok() && matches!(operation, "finish" | "leave") {
                     // The server may return events pending before the mutation.
                     // Drain its committed tail before releasing the next room.
-                    client.drain_events(&output)
+                    platform_await!(client.drain_events(&output))
                 } else {
                     result
                 };
@@ -805,7 +834,7 @@ pub(super) fn run(
                         let _ = output.send(Response::CommandCompleted { id, operation });
                     }
                     Err(error)
-                        if !client.session_failed(error, &output) && operation != "renew_relay" =>
+                        if !platform_await!(client.session_failed(error, &output)) && operation != "renew_relay" =>
                     {
                         let _ = output.send(if operation == "start" {
                             Response::StartRejected { id }
@@ -838,13 +867,44 @@ pub(super) fn run(
             None => {}
         }
         if client.token.is_some() && Instant::now() >= next_poll {
-            let result = client
-                .request(&format!("/v1/events?after={}", client.cursor), None)
+            let result = platform_await!(client
+                .request(&format!("/v1/events?after={}", client.cursor), None))
                 .and_then(|value| client.batch(value, &output));
-            next_poll = Instant::now() + client.poll_finished(result, &mut failed_polls, &output);
+            next_poll = Instant::now() + platform_await!(client.poll_finished(result, &mut failed_polls, &output));
+        }
+    }
+        }
+    };
+}
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+serial_driver!();
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+serial_driver!(async);
+
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+fn next_request(input: &Receiver<Request>) -> Result<Option<Request>, ()> {
+    match input.recv_timeout(Duration::from_secs(1)) {
+        Ok(request) => Ok(Some(request)),
+        Err(RecvTimeoutError::Timeout) => Ok(None),
+        Err(RecvTimeoutError::Disconnected) => Err(()),
+    }
+}
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+async fn next_request(input: &Receiver<Request>) -> Result<Option<Request>, ()> {
+    match input.try_recv() {
+        Ok(request) => Ok(Some(request)),
+        Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(()),
+        Err(std::sync::mpsc::TryRecvError::Empty) => {
+            browser::delay(50).await;
+            Ok(None)
         }
     }
 }
+
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+mod browser;
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+pub(super) use browser::{RequestOwner, start as start_browser};
 
 #[cfg(test)]
 mod tests {

@@ -7,6 +7,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        mode: [single-player, network]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
@@ -24,9 +27,16 @@ jobs:
           version=$(python3 -c 'import tomllib; lock = tomllib.load(open("Cargo.lock", "rb")); print(next(p["version"] for p in lock["package"] if p["name"] == "wasm-bindgen"))')
           cargo install wasm-bindgen-cli --version "$version" --locked
       - name: Build browser package
-        run: python3 tools/wasm/build.py
+        env:
+          WASM_MODE: ${{ matrix.mode }}
+        run: |
+          if [ "$WASM_MODE" = network ]; then
+            python3 tools/wasm/build.py --network
+          else
+            python3 tools/wasm/build.py
+          fi
       - uses: actions/upload-artifact@v4
         with:
-          name: vera20k-wasm
+          name: ${{ matrix.mode == 'network' && 'vera20k-wasm-net' || 'vera20k-wasm' }}
           path: target/wasm-dist/
           if-no-files-found: error

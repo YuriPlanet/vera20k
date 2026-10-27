@@ -33,6 +33,7 @@ required-features = ["test-support"]
 [features]
 # Forwarded by the client only for an explicitly requested browser build.
 wasm = ["dep:web-time", "dep:getrandom", "dep:js-sys"]
+wasm-net = ["wasm", "dep:wasm-bindgen"]
 # Compile the supported Ares behavior; INIs cannot enable an absent capability.
 ares = []
 # Compile the supported Phobos behavior; INIs cannot enable an absent capability.
@@ -98,6 +99,7 @@ rayon = "1.11"
 web-time = { version = "1", optional = true }
 getrandom = { version = "=0.3.4", optional = true, features = ["wasm_js"] }
 js-sys = { version = "0.3", optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

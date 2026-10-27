@@ -6,6 +6,7 @@ mod http;
 mod maps;
 mod wire;
 
+use crate::util::time::{Duration, Instant};
 use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -13,11 +14,10 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use crate::util::time::{Duration, Instant};
 
-use anyhow::{Result, anyhow, ensure};
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 use anyhow::Context;
+use anyhow::{Result, anyhow, ensure};
 use base64::Engine;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -226,6 +226,8 @@ impl OnlineCleanup {
 }
 
 pub(super) struct LiveService {
+    #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+    _browser_requests: http::RequestOwner,
     stopping: Arc<AtomicBool>,
     requests: Sender<http::Request>,
     responses: Receiver<http::Response>,
@@ -415,15 +417,25 @@ struct PendingStart {
 }
 
 impl LiveService {
-    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    #[cfg(all(
+        feature = "wasm",
+        not(feature = "wasm-net"),
+        target_arch = "wasm32",
+        target_os = "unknown"
+    ))]
     fn new() -> Result<Self> {
         anyhow::bail!("Online play is unavailable in the single-player browser build")
     }
 
-    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    #[cfg(any(
+        not(all(target_arch = "wasm32", target_os = "unknown")),
+        feature = "wasm-net"
+    ))]
     fn new() -> Result<Self> {
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let base =
             std::env::var("VERA20K_LOBBY_URL").unwrap_or_else(|_| DEFAULT_LOBBY_URL.to_owned());
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         ensure!(
             base.starts_with("https://")
                 && !base[8..].chars().any(|ch| matches!(ch, '@' | '?' | '#')),
@@ -433,6 +445,7 @@ impl LiveService {
         let (output, responses) = mpsc::channel();
         let stopping = Arc::new(AtomicBool::new(false));
         let worker_stopping = Arc::clone(&stopping);
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         std::thread::Builder::new()
             .name("vera-lobby".into())
             .spawn(move || {
@@ -444,7 +457,11 @@ impl LiveService {
                 )
             })
             .context("could not start online lobby worker")?;
+        #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+        let browser_requests = http::start_browser(input, output, worker_stopping)?;
         Ok(Self {
+            #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+            _browser_requests: browser_requests,
             stopping,
             requests,
             responses,

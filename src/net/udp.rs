@@ -9,12 +9,29 @@
 
 use std::collections::VecDeque;
 use std::io;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket};
+#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+use std::net::UdpSocket;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle, Thread};
 use std::time::Duration;
+
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+#[path = "web_socket.rs"]
+mod web_socket;
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+use web_socket::UdpSocket;
+
+/// One compile-time proxy origin for both the browser datagram and HTTPS adapters.
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+pub fn browser_proxy_url() -> &'static str {
+    match option_env!("WS_PROXY_URL") {
+        Some(origin) => origin,
+        None => "wss://wss.vera20k.com",
+    }
+}
 
 use vera20k_relay_protocol::{ClientSession, RelayError, ServerEvent};
 pub use vera20k_relay_protocol::{
@@ -360,6 +377,14 @@ impl LanUdpTransport {
     /// Logic/render/capture work. The App injects its existing native wall
     /// bucket function, and only this worker samples it after taking the lock.
     /// Thread creation is fallible; failure leaves a synchronous transport.
+    #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+    pub fn start_io_pump(&mut self, _: fn() -> u32) -> io::Result<()> {
+        // Browser callbacks only queue raw datagrams; App services the same
+        // protocol owner after returning to the event loop.
+        Ok(())
+    }
+
+    #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
     pub fn start_io_pump(&mut self, wall_bucket: fn() -> u32) -> io::Result<()> {
         if self.pump.is_some() {
             self.check_worker();
@@ -754,16 +779,33 @@ impl UdpIo {
     /// Explicit bind addresses allow independent clients/tests to select
     /// interfaces or ephemeral ports. A failure drops any socket already
     /// opened by this call; no partially open transport escapes.
-    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    #[cfg(all(
+        feature = "wasm",
+        not(feature = "wasm-net"),
+        target_arch = "wasm32",
+        target_os = "unknown"
+    ))]
     fn bind(_: UdpBindConfig, _: LanConnections) -> io::Result<Self> {
-        Err(io::Error::new(io::ErrorKind::Unsupported, "LAN play is unavailable in the single-player browser build"))
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "LAN play is unavailable in the single-player browser build",
+        ))
     }
 
-    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    #[cfg(any(
+        not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")),
+        all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")
+    ))]
     fn bind(config: UdpBindConfig, connections: LanConnections) -> io::Result<Self> {
+        #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
         let primary = UdpSocket::bind(config.primary)?;
+        #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+        let primary = UdpSocket::bind(config.primary, "primary")?;
         primary.set_nonblocking(true)?;
+        #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
         let alternate = UdpSocket::bind(config.alternate)?;
+        #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+        let alternate = UdpSocket::bind(config.alternate, "alternate")?;
         alternate.set_nonblocking(true)?;
         let global = GlobalChannel::new(
             GlobalConfig {
@@ -878,6 +920,11 @@ impl UdpIo {
         }
         let session =
             ClientSession::new(ticket, packet_key, payload_key).map_err(relay_io_error)?;
+        #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+        {
+            self.primary.set_relay(address)?;
+            self.alternate.set_relay(address)?;
+        }
         self.relay = Some(RelayRoute {
             address,
             session,
@@ -1116,6 +1163,19 @@ impl UdpIo {
     /// owner alone decides retries, sequence order and peer failure identity.
     fn service(&mut self, now_ticks: u32, receive_budget: usize) -> UdpServiceReport {
         let mut report = UdpServiceReport::default();
+        #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+        if self.primary.take_route_change() {
+            // A replacement WS owns a new UDP source port. Reuse the existing
+            // challenge and retry owners; physical loss never means Leave.
+            if let Some(route) = self.relay.as_mut() {
+                route.session.forget_readiness();
+                if let Some(renewing) = route.renewing.as_mut() {
+                    renewing.forget_readiness();
+                }
+                route.last_probe = None;
+                route.last_response = None;
+            }
+        }
         if let Some(route) = self.relay.as_mut() {
             if let Some(retiring) = route.retiring.as_mut() {
                 if retiring
@@ -1663,6 +1723,15 @@ fn record_io_error(
     operation: UdpIoOperation,
     error: io::Error,
 ) {
+    #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+    if error.kind() == io::ErrorKind::WouldBlock {
+        // An asynchronous WS connection/backpressure is not an admission
+        // failure. The original protocol owners retain and retry their work.
+        if operation == UdpIoOperation::Send {
+            report.send_would_block += 1;
+        }
+        return;
+    }
     if report.first_io_error.is_none() {
         report.first_io_error = Some(UdpIoFailure {
             channel,
