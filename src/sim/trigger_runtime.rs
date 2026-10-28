@@ -801,6 +801,7 @@ impl TriggerRuntime {
         condition: &EventCondition,
         current_frame: u32,
         simulation: &Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
     ) -> bool {
         match condition.kind {
             EVENT_ELAPSED_SCENARIO_TIME => {
@@ -826,29 +827,27 @@ impl TriggerRuntime {
                 values.contains(&(condition.value as u32))
                     == matches!(condition.kind, EVENT_GLOBAL_IS_SET | EVENT_LOCAL_IS_SET)
             }
-            EVENT_TECHTYPE_EXISTS => {
-                let sim = simulation;
-                let min_count = condition.value;
-                let Some(type_id) = condition.type_name.as_deref() else {
+            EVENT_TECHTYPE_EXISTS | EVENT_TECHTYPE_DOES_NOT_EXIST => {
+                // TEventClass::HasOccurred, original gamemd.exe:
+                // 71E96B/71EA30 select the last global TechnoType with an
+                // exact stored ID before comparing concrete type pointers.
+                // Reuse Action106's registry owner, including its explicit
+                // unrepresentable truncated-identity boundary.
+                let Some(object) = condition
+                    .type_name
+                    .as_deref()
+                    .and_then(|name| rules.native_techno_type_exact(name))
+                else {
                     return false;
                 };
-                if type_id.is_empty() {
-                    return false;
+                let count = count_techtype(simulation, object);
+                if condition.kind == EVENT_TECHTYPE_EXISTS {
+                    // 71EA19 checks the signed threshold inside the scan:
+                    // zero/negative still requires a nonempty Techno vector.
+                    !simulation.entities().is_empty() && count as i64 >= i64::from(condition.value)
+                } else {
+                    count == 0
                 }
-                // Native71EA03 tests the signed threshold inside its scan:
-                // even a nonpositive threshold requires at least one Techno.
-                !sim.entities().is_empty()
-                    && count_techtype(sim, type_id) as i64 >= i64::from(min_count)
-            }
-            EVENT_TECHTYPE_DOES_NOT_EXIST => {
-                let sim = simulation;
-                let Some(type_id) = condition.type_name.as_deref() else {
-                    return false;
-                };
-                if type_id.is_empty() {
-                    return false;
-                }
-                count_techtype(sim, type_id) == 0
             }
             _ => false,
         }
@@ -1906,9 +1905,12 @@ impl Simulation {
             }
             //71F28B selects the generic true tail71F1B4, no persistence write.
             EVENT_ANY => true,
-            _ => self
-                .trigger_runtime
-                .evaluate_event(&condition, self.session.binary_frame(), self),
+            _ => self.trigger_runtime.evaluate_event(
+                &condition,
+                self.session.binary_frame(),
+                self,
+                rules,
+            ),
         }
     }
 
@@ -5065,15 +5067,18 @@ fn parse_visible_map_area(fields: &[String]) -> Option<[i32; 4]> {
     Some([atoi(2)?, atoi(3)?, atoi(4)?, atoi(5)?])
 }
 
-fn count_techtype(sim: &Simulation, type_id: &str) -> usize {
+fn count_techtype(sim: &Simulation, object: &crate::rules::object_type::ObjectType) -> usize {
+    // HasOccurred71EA03/71EAC0 walks all stored Technos, including Limbo
+    // and Health0, comparing virtual84's concrete type pointer. Category
+    // plus interned ID preserves that identity for representable types.
+    let Some(type_id) = sim.interner.get(&object.id) else {
+        return 0;
+    };
+    let category = crate::map::entities::EntityCategory::from(object.category);
     sim.substrate
         .entities
         .values()
-        .filter(|e| {
-            sim.interner
-                .resolve(e.type_ref())
-                .eq_ignore_ascii_case(type_id)
-        })
+        .filter(|e| e.category() == category && e.type_ref() == type_id)
         .count()
 }
 
