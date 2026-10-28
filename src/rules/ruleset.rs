@@ -4770,8 +4770,8 @@ impl RuleSet {
             {
                 object.turret_count = slots.turret_count();
                 object.weapon_count = slots.weapon_count();
-                object.weapon_list = slots.base().to_vec();
-                object.elite_weapon_list = slots.elite().to_vec();
+                object.weapon_list = slots.base();
+                object.elite_weapon_list = slots.elite();
                 object.bind_weapon_offsets(slots.offsets());
             }
         }
@@ -5079,7 +5079,8 @@ impl RuleSet {
                 .iter_mut()
                 .find(|object| object.category == category && object.id == name)
             {
-                object.gunner_turrets = *gunner_turrets;
+                object.gunner = gunner_turrets.is_gunner();
+                object.gunner_turrets = gunner_turrets.clone();
             }
         }
         #[cfg(feature = "ares")]
@@ -8065,7 +8066,7 @@ impl RuleSet {
                         object.gunner,
                         object.ifv_mode,
                         object.turret_count,
-                        object.gunner_turrets,
+                        &object.gunner_turrets,
                     ),
                 )
             })
@@ -8080,7 +8081,7 @@ impl RuleSet {
                     .art_registry
                     .get(&object.image)
                     .or_else(|| self.art_registry.get(&object.id));
-                let slots = (0..crate::rules::object_type::WEAPON_SLOT_COUNT)
+                let slots = (0..object.weapon_record_count())
                     .map(|index| {
                         let elite = object
                             .elite_weapon_list

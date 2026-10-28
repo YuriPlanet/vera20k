@@ -47,11 +47,14 @@ impl GameEntity {
         if object.gunner_turrets.is_charge_turret() {
             return;
         }
-        let mode = if (0..WEAPON_SLOT_COUNT as i32).contains(&mode) {
-            mode
+        // Installed SwitchGunner hook10042480 validates against WeaponCount;
+        // the default build retains the original eighteen-record boundary.
+        let limit = if cfg!(feature = "ares") {
+            object.weapon_count
         } else {
-            0
+            WEAPON_SLOT_COUNT as i32
         };
+        let mode = if (0..limit).contains(&mode) { mode } else { 0 };
         self.turret_selection.current_weapon_number = mode;
         self.turret_selection.current_turret_index = object.gunner_turrets.turret_for_weapon(mode);
     }

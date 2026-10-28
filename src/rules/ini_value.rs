@@ -540,6 +540,32 @@ impl IniSection {
         })
     }
 
+    /// Ares coordinate reader100406D0 -> MultiParser1000C7E0. Each comma
+    /// token uses the shared Parser<int> and a 128-byte scanf_s buffer.
+    /// A partial native parse copies uninitialized trailing locals; retain
+    /// the prior coordinate for that malformed-input boundary in Rust.
+    #[cfg(feature = "ares")]
+    pub(crate) fn read_ares_coord3(&self, key: &str, current: [i32; 3]) -> [i32; 3] {
+        self.read_string_with(key, 2048, current, |previous, value| {
+            if value.split(',').take(3).any(|token| {
+                token
+                    .as_bytes()
+                    .iter()
+                    .skip_while(|byte| is_crt_space(**byte))
+                    .count()
+                    >= 128
+            }) {
+                return previous;
+            }
+            let mut fields = previous;
+            if scan_partial_int_fields(value, &mut fields) == 3 {
+                fields
+            } else {
+                previous
+            }
+        })
+    }
+
     /// Ares/Phobos `ValueableVector<int>` (`detail::parse_values<int>` over
     /// `strtok(",")`): ReadString(2048), split on commas, and each token
     /// through [`parse_ares_int`]. A token that does not convert is skipped, so

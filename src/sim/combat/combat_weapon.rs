@@ -35,7 +35,7 @@ use crate::map::houses::{HouseAllianceMap, is_allied_with};
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::armor::ArmorId;
 use crate::rules::locomotor_type::SpeedType;
-use crate::rules::object_type::{ObjectType, WEAPON_SLOT_COUNT};
+use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::LandType;
 use crate::rules::warhead_type::WarheadType;
@@ -337,7 +337,10 @@ pub(crate) fn weapon_for_index(
         return None;
     }
     let slot_index = usize::try_from(index).ok()?;
-    if slot_index >= WEAPON_SLOT_COUNT {
+    // Ares7177C0/7177E0 ->1003DBC0 exposes the extension WeaponStruct
+    // vectors beyond the original eighteen. The type owns their lifetime.
+    let slot_count = obj.weapon_record_count();
+    if slot_index >= slot_count {
         return None;
     }
     let weapon_id = if uses_elite_weapon(obj, veterancy, slot_index) {

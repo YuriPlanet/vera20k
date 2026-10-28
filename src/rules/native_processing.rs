@@ -4482,6 +4482,14 @@ pub(crate) struct WeaponSlots {
     /// Base (+898) and elite (+A94) arrays, as stored WeaponType IDs.
     base: [Option<String>; WEAPON_SLOT_COUNT],
     elite: [Option<String>; WEAPON_SLOT_COUNT],
+    // Installed Ares loader10040020 and GetWeapon1003DBC0 retain the
+    // original eighteen records and own separate resized extension vectors.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    extra_base: Vec<Option<String>>,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    extra_elite: Vec<Option<String>>,
     #[serde(default)]
     offsets: crate::rules::weapon_offsets::WeaponOffsets,
 }
@@ -4499,12 +4507,24 @@ impl WeaponSlots {
         self.weapon_count
     }
 
-    pub(crate) fn base(&self) -> &[Option<String>] {
-        &self.base
+    pub(crate) fn base(&self) -> Vec<Option<String>> {
+        let records = self.base.to_vec();
+        #[cfg(feature = "ares")]
+        let records = records
+            .into_iter()
+            .chain(self.extra_base.iter().cloned())
+            .collect();
+        records
     }
 
-    pub(crate) fn elite(&self) -> &[Option<String>] {
-        &self.elite
+    pub(crate) fn elite(&self) -> Vec<Option<String>> {
+        let records = self.elite.to_vec();
+        #[cfg(feature = "ares")]
+        let records = records
+            .into_iter()
+            .chain(self.extra_elite.iter().cloned())
+            .collect();
+        records
     }
 }
 
@@ -6597,12 +6617,14 @@ impl RulesPassProcessor {
                 self.families.get_mut(&family).unwrap()[index]
                     .recoil
                     .apply_pass(&raw);
+                let weapon_count = self.families[&family][index].weapon_slots.weapon_count;
                 self.families.get_mut(&family).unwrap()[index]
                     .gunner_turrets
                     .apply_pass(
                         &native_stored_id,
                         &raw,
                         family.object_category().expect("TechnoType family"),
+                        weapon_count,
                     );
                 if family == RulesTypeFamily::Infantry {
                     let member = &mut self.families.get_mut(&family).unwrap()[index];
@@ -7055,36 +7077,55 @@ impl RulesPassProcessor {
         slots.weapon_count = raw.read_int("WeaponCount", slots.weapon_count);
         slots.clear_all_weapons = raw.read_bool("ClearAllWeapons", slots.clear_all_weapons);
         if slots.turret_count > 0 {
-            // 0x007128C0..0x0071299E: Weapon%d then EliteWeapon%d for
-            // 1..=WeaponCount, each ReadString128 empty read keeping the slot.
+            #[cfg(feature = "ares")]
+            {
+                self.family_mut(family)[index]
+                    .gunner_turrets
+                    .prepare_numbered_read(slots.weapon_count);
+                //10040020 resizes before reading: shrinking destroys the
+                // extra tail; regrowing supplies null WeaponStruct pointers.
+                let extra = usize::try_from(slots.weapon_count)
+                    .unwrap_or(0)
+                    .saturating_sub(WEAPON_SLOT_COUNT);
+                slots.extra_base.resize(extra, None);
+                slots.extra_elite.resize(extra, None);
+            }
+            let capacity = if cfg!(feature = "ares") { 2048 } else { 0x80 };
             for slot in 1..=slots.weapon_count {
+                // Ares1003C6B0 ->10010570 retains Find-or-Allocate semantics
+                // (constructor trampoline100103C0 -> WeaponType771C70).
                 let base = self.resolve_scalar_from(
                     raw,
                     &format!("Weapon{slot}"),
                     RulesTypeFamily::Weapon,
-                    0x80,
+                    capacity,
                 );
                 let elite = self.resolve_scalar_from(
                     raw,
                     &format!("EliteWeapon{slot}"),
                     RulesTypeFamily::Weapon,
-                    0x80,
+                    capacity,
                 );
-                // RESIDUAL: native has no bound, so WeaponCount > 18 stores
-                // past both arrays (slot 19's base write lands on
-                // ClearAllWeapons at +A90). VERA allocates every authored slot
-                // but keeps the first 18. Retail's largest WeaponCount is 17.
-                let Some(slot) = usize::try_from(slot - 1)
-                    .ok()
-                    .filter(|&slot| slot < WEAPON_SLOT_COUNT)
-                else {
-                    continue;
-                };
-                if let Some(weapon) = base {
-                    slots.base[slot] = weapon;
-                }
-                if let Some(weapon) = elite {
-                    slots.elite[slot] = weapon;
+                let index = (slot - 1) as usize;
+                if index < WEAPON_SLOT_COUNT {
+                    if let Some(weapon) = base {
+                        slots.base[index] = weapon;
+                    }
+                    if let Some(weapon) = elite {
+                        slots.elite[index] = weapon;
+                    }
+                } else {
+                    #[cfg(feature = "ares")]
+                    {
+                        if let Some(weapon) = base {
+                            slots.extra_base[index - WEAPON_SLOT_COUNT] = weapon;
+                        }
+                        if let Some(weapon) = elite {
+                            slots.extra_elite[index - WEAPON_SLOT_COUNT] = weapon;
+                        }
+                    }
+                    // Original gamemd writes out of bounds beyond eighteen.
+                    // The default build keeps its existing safety boundary.
                 }
             }
         } else if !slots.clear_all_weapons {

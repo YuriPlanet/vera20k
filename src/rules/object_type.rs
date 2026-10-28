@@ -2410,7 +2410,7 @@ impl ObjectType {
         &mut self,
         offsets: &crate::rules::weapon_offsets::WeaponOffsets,
     ) {
-        self.weapon_offsets = *offsets;
+        self.weapon_offsets = offsets.clone();
     }
 
     /// GetFLH6F3B28 after GetWeapon has qualified the base or elite record.
@@ -3290,6 +3290,16 @@ impl ObjectType {
     #[cfg(feature = "ares")]
     pub(crate) fn vehicle_thief_sound(&self, leaving: bool) -> Option<&str> {
         self.vehicle_thief_sounds[usize::from(leaving)].as_deref()
+    }
+
+    /// Storage reached by GetWeapon7177C0/7177E0; Ares1003DBC0 adds
+    /// extension records while the original build keeps its fixed bound.
+    pub fn weapon_record_count(&self) -> usize {
+        if cfg!(feature = "ares") {
+            self.weapon_list.len()
+        } else {
+            WEAPON_SLOT_COUNT
+        }
     }
 
     /// `Weapon[index]` (`TechnoTypeClass+0x898 + index*0x1C`): the weapon in
@@ -4280,7 +4290,7 @@ impl ObjectType {
             size: section.read_double("Size", 1.0),
             size_limit: section.read_double("SizeLimit", 0.0),
             open_topped: section.read_bool("OpenTopped", false),
-            gunner: section.read_bool("Gunner", false),
+            gunner: false, // Constructor byte; retained reader binds GunnerTurrets::is_gunner.
             ifv_mode: section.read_int("IFVMode", 0),
             // Constructor table; only the ordered Process owner reads it.
             gunner_turrets: crate::rules::gunner_turrets::GunnerTurrets::default(),
