@@ -69,7 +69,6 @@ fn view(screen: [i32; 2], side: usize, count: usize, scroll: usize) -> SidebarVi
         &options,
         &[],
         None,
-        &[],
         Some(&interner),
         &[],
         &gadget,
@@ -143,10 +142,6 @@ fn native_21_screen_and_theme_layouts_drive_actual_view() {
         let empty = view(c.screen, c.side, 0, usize::MAX);
         assert_eq!(empty.layout.side2_tile_count, l.side2_tile_count);
         assert_eq!(empty.scroll_rows, 0);
-        assert!(!empty.cycle_owner_button.rect.contains(
-            empty.cycle_owner_button.rect.x,
-            empty.cycle_owner_button.rect.y
-        ));
     }
 }
 #[test]

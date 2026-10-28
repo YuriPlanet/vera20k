@@ -2,12 +2,13 @@
 //! Fullscreen and tactical radar callers own their respective continuations.
 //! Existing 4326C0/432E40 playback port; physical rodio/GPU timing is a
 //! cross-platform substitute, not an executed DirectSound/Bink timing proof.
+use crate::app::movie_subtitles::{Subtitle, SubtitleTrack};
 use crate::assets::bink_audio::BinkAudioDecoder;
 use crate::assets::bink_file::BinkFile;
 use crate::audio::movie_stream::MovieAudioStream;
 use crate::render::bink_movie::{BinkMovieStep, BinkMovieSurface};
-use anyhow::Result;
 use crate::util::time::Instant;
+use anyhow::Result;
 
 /// Bink soundtrack track 0 fed frame by frame alongside the video.
 struct Soundtrack {
@@ -70,6 +71,8 @@ pub(crate) struct MoviePlayback {
     paused: bool,
     /// Diagnostic shell capture only: playback is pinned at one frame.
     capture_hold: bool,
+    /// The movie's `subtitlemd.txt` cues, when it has any.
+    subtitles: Option<SubtitleTrack>,
 }
 
 impl MoviePlayback {
@@ -77,12 +80,16 @@ impl MoviePlayback {
         surface: BinkMovieSurface,
         mixer: Option<&rodio::mixer::Mixer>,
         voice_volume: f32,
+        mut subtitles: Option<SubtitleTrack>,
     ) -> Self {
         let mut soundtrack =
             mixer.and_then(|mixer| Soundtrack::open(surface.file(), mixer, voice_volume));
         // Frame 0 is decoded on construction; queue its audio (the preload).
         if let Some(soundtrack) = soundtrack.as_mut() {
             soundtrack.feed(surface.file(), surface.next_frame());
+        }
+        if let Some(subtitles) = subtitles.as_mut() {
+            subtitles.advance(surface.next_frame() as u32);
         }
         Self {
             surface,
@@ -92,7 +99,31 @@ impl MoviePlayback {
             voice_volume,
             paused: false,
             capture_hold: false,
+            subtitles,
         }
+    }
+
+    /// Decode due frames, running `0x006C9C60` after each one as
+    /// `0x00432E40` does after BinkDoFrame.
+    fn step_surface(
+        &mut self,
+        gpu: &crate::render::gpu::GpuContext,
+        elapsed_secs: f64,
+    ) -> Result<BinkMovieStep> {
+        let first = self.surface.next_frame();
+        let step = self.surface.step(gpu, elapsed_secs)?;
+        if let Some(subtitles) = self.subtitles.as_mut() {
+            // Bink's one-based FrameNum of each frame just decoded.
+            for frame in first + 1..=self.surface.next_frame() {
+                subtitles.advance(frame as u32);
+            }
+        }
+        Ok(step)
+    }
+
+    /// The subtitle on screen, if any.
+    pub(crate) fn shown_subtitle(&self) -> Option<&Subtitle> {
+        self.subtitles.as_ref()?.shown()
     }
 
     /// `BinkPause` while the application is inactive (`[0xA8ED80]`): the
@@ -140,7 +171,7 @@ impl MoviePlayback {
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_step).as_secs_f64();
         self.last_step = now;
-        let step = self.surface.step(gpu, elapsed)?;
+        let step = self.step_surface(gpu, elapsed)?;
         if let Some(soundtrack) = self.soundtrack.as_mut() {
             soundtrack.feed(self.surface.file(), self.surface.next_frame());
         }
@@ -164,7 +195,7 @@ impl MoviePlayback {
     ) -> Result<()> {
         let frame_time = 1.0 / self.surface.fps().max(1.0);
         while self.surface.next_frame() <= target {
-            if matches!(self.surface.step(gpu, frame_time)?, BinkMovieStep::Ended) {
+            if matches!(self.step_surface(gpu, frame_time)?, BinkMovieStep::Ended) {
                 break;
             }
         }

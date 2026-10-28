@@ -950,6 +950,22 @@ impl OverlayGrid {
             })
     }
 
+    /// Occupied cells as presentation entries carrying the full Cell+0x11E
+    /// byte (wall connectivity plus damage nibble). Fresh map loads and saved
+    /// worlds seed their overlay presentation from this one projection.
+    pub fn occupied_entries(&self) -> Vec<OverlayEntry> {
+        self.iter_occupied()
+            .filter_map(|(rx, ry, cell)| {
+                cell.overlay_id.map(|overlay_id| OverlayEntry {
+                    rx,
+                    ry,
+                    overlay_id,
+                    frame: cell.overlay_data,
+                })
+            })
+            .collect()
+    }
+
     pub fn width(&self) -> u16 {
         self.width
     }
@@ -1689,8 +1705,7 @@ fn recompute_wall_connectivity_target(
         return RecomputeResult::NoChange;
     }
 
-    // Cardinal neighbor connectivity scan. Bit assignment matches existing
-    // compute_wall_connectivity: N=0, E=1, S=2, W=3.
+    // Cardinal neighbor connectivity scan, bits N=0, E=1, S=2, W=3.
     const CARDINAL: [(i32, i32); 4] = [(0, -1), (1, 0), (0, 1), (-1, 0)];
     let mut connectivity: u8 = 0;
     for (bit, (dx, dy)) in CARDINAL.iter().enumerate() {

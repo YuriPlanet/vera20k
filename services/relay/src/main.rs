@@ -81,6 +81,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let monotonic_ms = clock_origin.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
         // Clock advancement is independent of datagram arrivals and readers.
         server.advance_clock(monotonic_ms, now);
+        // Federated relays exchange what they just sealed before players read it.
+        send_datagrams(
+            &socket,
+            &mut counts,
+            server.drain_federation(monotonic_ms, now),
+        );
         send_datagrams(
             &socket,
             &mut counts,

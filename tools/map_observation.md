@@ -253,8 +253,10 @@ about that state. An explicit `null` means no installed track state was observed
 The explicit profile schema belongs to
 `src/app/diagnostics/tactical_capture/map_observation.rs`. Start from
 [`map_observation.example.json`](map_observation.example.json), whose launch is the
-existing Rust `SkirmishLaunchSession` DTO. Change `launch.selected_map_file` to the
-chosen retail map. Keep explicit countries, colors and distinct start slots, and
+existing Rust `SkirmishLaunchSession` DTO. Its v2 `cursor_position` parks the cursor
+over the sidebar: the post-load centre of the tactical view can rest on the local
+MCV, whose Select cursor fails the static-cursor check. Change
+`launch.selected_map_file` to the chosen retail map. Keep explicit countries, colors and distinct start slots, and
 keep `pre_fill_house_roster` consistent with the opponents. Rust validates launch
 admission; Python does not maintain a second launch parser or synthesize defaults.
 
@@ -2445,7 +2447,11 @@ statistics, surface format and actual BGRA bytes. Clock policies must match; a
 legacy wall-clock observation and a diagnostic-clock observation are `INVALID`
 together even when their pixels match.
 Differences name precise field paths and before/after values. There are no pixel
-tolerances or omitted atlas fields.
+tolerances or omitted atlas fields. Process Main RNG reads (`rng.main` and every
+`main_rng_cursor`) are listed in `main_rng_differences` instead and do not decide
+`MATCH`: Main (`0x886B88`) is outside the state hash and saves, and the audio
+service draws it for SFX and Theme on wall time, so two runs of the same inputs
+can legitimately differ there. Scenario and Mapgen streams stay compared.
 Current v8 pairs also compare the complete command, rule-handle inventory,
 actor/building/animation/unit/miner/radio/House/terrain transcript and camera,
 including the delayed-shot and color/fade observations when requested. Historical

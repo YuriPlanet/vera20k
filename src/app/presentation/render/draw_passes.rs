@@ -930,6 +930,18 @@ pub(super) fn dispatch_draw_passes(
             );
         }
     }
+    // Ares Tactical_Draw_FlyingStrings6D4684 ->10064430 draws copied
+    // signed credit labels before the later6D4941 timer lines. Keep the
+    // existing tactical scissor and shared GAME.FNT passthrough batch.
+    #[cfg(feature = "ares")]
+    draw_pooled_ui_passthrough(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        Some(state.renderer.bit_font.atlas()),
+        "bounty_text",
+    );
+
     // --- Step 10.6: timer lines ---
     // TacticalClass::Draw's Scenario, Super and blackout timers
     // (`0x006D4941..0x006D4B25`) follow the sparkles: black boxes, then text,

@@ -567,6 +567,18 @@ impl LanUdpTransport {
         Ok(())
     }
 
+    /// A federated match's lobby relay roster, carried in every admission of
+    /// this route. Set it before the pump answers the first challenge.
+    pub fn set_federation_roster(&mut self, roster: &[u8]) -> io::Result<()> {
+        let mut io = self.lock();
+        let route = io
+            .relay
+            .as_mut()
+            .filter(|route| route.retiring.is_none())
+            .ok_or_else(|| io::Error::other("no relay route"))?;
+        route.session.set_federation(roster).map_err(relay_io_error)
+    }
+
     pub fn ordering_certificate(&self) -> Option<Vec<u8>> {
         self.lock().relay.as_ref()?.ordering_certificate.clone()
     }

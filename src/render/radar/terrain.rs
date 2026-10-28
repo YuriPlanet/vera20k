@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53, X87Value};
 
 use super::geometry::NativeRadarSurfaceGeometry;
+use super::helpers::RadarCellIndex;
 use crate::render::native_surface_format::RGB565;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,6 +29,8 @@ pub(super) struct NativeRadarTerrainSurface {
     geometry: NativeRadarSurfaceGeometry,
     terrain_brightness: f32,
     base_cells: Vec<NativeRadarCellColors>,
+    /// Built once: dirty updates rewrite colors but never cell identities.
+    base_index: RadarCellIndex,
     overrides: BTreeMap<(u16, u16), [u8; 3]>,
     raw_rgb: Vec<[u8; 3]>,
     generated_rgb565: Vec<u16>,
@@ -42,10 +45,12 @@ impl NativeRadarTerrainSurface {
     ) -> Self {
         let raw_size = geometry.raw_size();
         let generated_size = geometry.generated_size();
+        let base_index = RadarCellIndex::new(base_cells.iter().map(|base| base.cell));
         let mut surface = Self {
             geometry,
             terrain_brightness,
             base_cells,
+            base_index,
             overrides,
             raw_rgb: vec![[0; 3]; area(raw_size)],
             generated_rgb565: vec![0; area(generated_size)],
@@ -81,11 +86,9 @@ impl NativeRadarTerrainSurface {
     ) -> bool {
         let mut changed = false;
         for update in changes {
-            if let Some(base) = self
-                .base_cells
-                .iter_mut()
-                .find(|base| base.cell == update.base.cell)
-            {
+            let (rx, ry) = update.base.cell;
+            if let Some(slot) = self.base_index.slot(rx, ry) {
+                let base = &mut self.base_cells[slot];
                 changed |= *base != update.base;
                 *base = update.base;
             }

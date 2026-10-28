@@ -348,7 +348,11 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
             .surface
             .take()
             .expect("unstarted head owns video");
-        let playback = MoviePlayback::new(surface, state.audio.movie_mixer(), voice_volume);
+        // RESIDUAL: BinkMovie_Open 0x00432750 also looks radar clips up in
+        // subtitlemd.txt and 0x00433270 would copy their text into the radar
+        // rect; no retail file is known to cue a radar clip, and VERA draws
+        // subtitles over full-screen movies only.
+        let playback = MoviePlayback::new(surface, state.audio.movie_mixer(), voice_volume, None);
         state.match_state.match_presentation.radar_movies.playing = Some(playback);
     }
     let active = playback_active(state);

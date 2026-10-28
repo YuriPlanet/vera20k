@@ -144,7 +144,6 @@ mod tests {
             &[],
             &[],
             None,
-            &[],
             None,
             &[],
             &SidebarGadgetState::new(),

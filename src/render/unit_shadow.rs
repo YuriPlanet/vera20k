@@ -28,6 +28,28 @@ pub(crate) struct UnitShadowPose {
     pub mask_offset: [i32; 2],
 }
 
+impl UnitShadowPose {
+    /// The atlas stencil drawn. The cache key (73B619, 73C21E..73C287)
+    /// carries no body HVA frame and 707280 samples frame zero; the grounded
+    /// mask has its own entry.
+    pub(crate) fn key(&self, type_id: &str) -> crate::render::unit_atlas::UnitSpriteKey {
+        use crate::render::unit_atlas::{GROUNDED_SHADOW_FRAME_FLAG, UnitSpriteKey, VxlLayer};
+        UnitSpriteKey {
+            type_id: type_id.to_owned(),
+            turret_index: 0,
+            facing: self.facing,
+            layer: VxlLayer::Shadow,
+            frame: if self.mask == UnitShadowMask::Retained {
+                GROUNDED_SHADOW_FRAME_FLAG
+            } else {
+                0
+            },
+            slope_type: self.slope,
+            barrel_pitch: 0,
+        }
+    }
+}
+
 pub(crate) fn pose(
     context: UnitShadowContext,
     lookup: impl FnOnce([i16; 2]) -> DepthCell,

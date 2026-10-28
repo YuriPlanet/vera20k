@@ -155,7 +155,6 @@ fn terminal_sensor_receiver_finishes_before_shp_and_is_not_deferred_to_cell_chan
     sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
         .expect("fixture object turn must complete");
     let entity = sim.substrate.entities.get(1).unwrap();
-    assert_eq!(entity.sensor_deposit.unwrap().center(), (10, 10));
     assert!(!sim.fog.has_sensor_for_house(owner, 5, 10));
     assert!(sim.fog.has_sensor_for_house(owner, 10, 10));
     assert!(entity.navigation.nav_com().is_none());
@@ -240,7 +239,11 @@ fn accepted_chain_runs_sensor_callback_and_consumes_more_paid_points_in_same_obj
     // Retail RawTrack[3]7E7A58 -> point37 at7E66B4=(-136,136,32).
     // TurnTrack[1]7E7B34 flags8 leaves XY unchanged in Transform4B4780.
     // With head(2688,2432), PerCell4B1CFD runs in signed cell(9,10).
-    assert_eq!(entity.sensor_deposit.unwrap().center(), (9, 10));
+    // SensorsSight=1 stamps only the centre cell: the PerCell removed the
+    // Unlimbo add at (10,10) and added at (9,10).
+    let owner = entity.owner();
+    assert!(sim.fog.has_sensor_for_house(owner, 9, 10));
+    assert!(!sim.fog.has_sensor_for_house(owner, 10, 10));
     // Live MTNK Speed=6 gives budget15: the next paid point must move away
     // from the callback's exact coordinates, even if it stays in that cell.
     let current = crate::sim::movement::ground_pose::position_world_coord(&entity.position);

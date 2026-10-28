@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { LOCATION_HEADER, LobbyService, SqlStore, locatedRequest } from './service.js';
+import { FEDERATION_HEADER, LOCATION_HEADER, LobbyService, SqlStore, locatedRequest } from './service.js';
 
 function fixture(bodyTimeoutMs = 5000) {
   const db = new DatabaseSync(':memory:');
@@ -22,20 +22,20 @@ function fixture(bodyTimeoutMs = 5000) {
   let requestId = 0;
   const cursors = new Map();
   const locations = new Map();
-  async function request(path, token, body) {
+  async function request(path, token, body, headers = {}) {
     if (body && (path === '/v1/accounts' || path === '/v1/sessions') && body.protocol === undefined) body = { ...body, protocol: 4 };
     const response = await service.fetch(new Request(`https://lobby.invalid${path}`, {
       method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json',
         ...(token ? { authorization: `Bearer ${token}` } : {}),
-        ...(locations.has(token) ? { [LOCATION_HEADER]: locations.get(token) } : {}) },
+        ...(locations.has(token) ? { [LOCATION_HEADER]: locations.get(token) } : {}), ...headers },
       ...(body ? { body: JSON.stringify(body) } : {}),
     }));
     const value = await response.json();
     if (token && value.cursor !== undefined) cursors.set(token, Math.max(cursors.get(token) ?? 0, value.cursor));
     return { status: response.status, body: value };
   }
-  async function player(nickname) {
-    const result = await request('/v1/sessions', null, { nickname });
+  async function player(nickname, headers) {
+    const result = await request('/v1/sessions', null, { nickname }, headers);
     assert.equal(result.status, 200); return result.body;
   }
   const command = async (user, operation, payload = {}, extra = {}) => {
@@ -588,6 +588,53 @@ test('each match takes the relay nearest its farthest player and keeps it throug
   const pacific = await play();
   assert.equal(pacific.relay.address, '192.0.2.10:42000', 'Frankfurt is nearer Singapore than San Francisco is');
   assert.equal(signer(pacific.relay), f.env.RELAY_TICKET_KEY);
+});
+
+test('distant players federate their nearest relays under one lobby-signed roster', async () => {
+  const f = fixture(); const federating = { [FEDERATION_HEADER]: '1' };
+  const host = await f.player('Host', federating); const old = await f.player('Guest');
+  Object.assign(f.env, { RELAY_TICKET_KEY_SFO3: 'cd'.repeat(32), RELAY_TICKET_KEY_SGP1: 'ef'.repeat(32) });
+  f.env.RELAYS = JSON.stringify([{ address: '192.0.2.10:42000', key: 'RELAY_TICKET_KEY', latitude: 50.1, longitude: 8.7 },
+    { address: '192.0.2.20:42000', key: 'RELAY_TICKET_KEY_SFO3', latitude: 37.8, longitude: -122.4, federation: true },
+    { address: '192.0.2.30:42000', key: 'RELAY_TICKET_KEY_SGP1', latitude: 1.3, longitude: 103.8, federation: true }]);
+  f.locate(host, '37.77,-122.42'); f.locate(old, '1.35,103.82');
+  const start = async (guest) => {
+    const revision = await room(f, host, guest);
+    const started = await f.command(host, 'start', { users: ['Host', 'Guest'], ...agreement(revision) });
+    return started.body.events.find((event) => event.kind === 'game_started').payload;
+  };
+  const single = await start(old);
+  assert.equal(single.relay.federation, undefined, 'a client without the roster keeps one relay');
+  for (const user of [host, old]) { await f.command(user, 'leave'); await f.command(user, 'finish', { match_id: single.match_id }); }
+  await f.command(old, 'logout');
+  const guest = await f.player('Guest', federating); f.locate(guest, '1.35,103.82');
+  const begun = await start(guest);
+  const joined = (await f.command(guest, 'relay_ready', { match_id: begun.match_id })).body.events
+    .find((event) => event.kind === 'game_started').payload;
+  assert.deepEqual([begun.relay.address, joined.relay.address], ['192.0.2.20:42000', '192.0.2.30:42000']);
+  assert.equal(begun.relay.federation, joined.relay.federation);
+  const roster = Buffer.from(begun.relay.federation, 'base64url');
+  assert.equal(roster.subarray(0, 4).toString(), 'VO1F');
+  assert.equal(roster.subarray(4, 20).toString('hex'), begun.match_id.replaceAll('-', ''));
+  assert.equal(roster[20], 2);
+  const table = roster.subarray(0, 41);
+  const links = [f.env.RELAY_TICKET_KEY_SFO3, f.env.RELAY_TICKET_KEY_SGP1].map((key, index) => {
+    assert.equal(table.readUInt32LE(27 + index * 10), 1 << index, 'each relay homes its own player');
+    const mac = (domain, ...parts) => parts.reduce((hmac, part) => hmac.update(part), createHmac('sha256', Buffer.from(key, 'hex'))
+      .update(`VERA20k relay federation ${domain} v1\0`)).digest();
+    const at = 41 + index * 80;
+    const [nonce, wrapped, tag] = [roster.subarray(at, at + 16), roster.subarray(at + 16, at + 48), roster.subarray(at + 48, at + 80)];
+    assert.ok(mac('roster', table, Buffer.from([index]), nonce, wrapped).equals(tag));
+    const stream = mac('wrap', roster.subarray(4, 20), nonce);
+    return Buffer.from(wrapped.map((byte, offset) => byte ^ stream[offset]));
+  });
+  assert.ok(links[0].equals(links[1]), 'both relays recover one link key');
+  await f.command(host, 'relay_ready', { match_id: begun.match_id });
+  await f.command(host, 'latency_ready', { match_id: begun.match_id, pings: [{ source_index: 1, round_trip_ms: 180 }] });
+  await f.command(guest, 'latency_ready', { match_id: begun.match_id, pings: [{ source_index: 0, round_trip_ms: 180 }] });
+  const renewed = (await f.command(guest, 'renew_relay', { match_id: begun.match_id })).body.events
+    .find((event) => event.kind === 'relay_renewed').payload.relay;
+  assert.deepEqual([renewed.address, renewed.federation], [joined.relay.address, joined.relay.federation]);
 });
 
 test('only the Worker reports a client location to the lobby', () => {

@@ -18,6 +18,14 @@ pub(crate) struct FrontendState {
     /// External offline launch: returning from the session closes the process for its client.
     pub(crate) external_launch: bool,
     pub(crate) external_launch_error: Option<String>,
+    /// The external launch's local result, first decided wins
+    /// (docs/spawn.md); see `App::external_match_result`.
+    pub(crate) external_match_result: Option<crate::app::cncnet::ExternalMatchResult>,
+    /// Frames, duration and opponent departure for the launch report.
+    pub(crate) external_progress: crate::app::cncnet::ExternalLaunchProgress,
+    /// Browser only: an ended external launch waits on the menu backdrop,
+    /// without shell input, for the host's next `start_spawn` (docs/spawn.md).
+    pub(crate) external_idle: bool,
     /// The Skirmish setup dialog's state.
     pub(crate) skirmish_shell_state: crate::ui::skirmish_shell::SkirmishShellState,
     /// Choose Map's last clicked game-type row `[0x008316FC]`: starts at -1,

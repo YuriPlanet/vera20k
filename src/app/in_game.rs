@@ -624,6 +624,7 @@ impl App {
         // Abort is the independent EXIT-event route: it never inherits the
         // victory/defeat HouseClass SavourDelay or its outcome-voice wait.
         state.match_state.scenario_outcome = None;
+        Self::record_external_match_result(state, super::cncnet::ExternalMatchResult::Quit);
         //686570 clears the movie queue before its independent audio fade.
         crate::app::radar_movie::retire(state, wall_ms);
         crate::app::chrono_screen::retire(state, wall_ms);
@@ -798,5 +799,45 @@ impl App {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Every in-scenario modal route, including BBB's Keyboard (state 4,
+    /// `0x004E1FE0` control 0x52C) and Sound (state 6, control 0x52D)
+    /// children that `State_Machine 0x0048C8B0` returns to state 5, commits
+    /// through `App::enter_in_game_menu_state`. A direct write skips the
+    /// Options-anchor, interaction and BBB-init effects that ride on it.
+    #[test]
+    fn only_the_transition_owner_writes_the_in_game_menu_state() {
+        fn direct_writers(dir: &std::path::Path, writers: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    direct_writers(&path, writers);
+                    continue;
+                }
+                if path.extension().is_none_or(|ext| ext != "rs") || path.ends_with("in_game.rs") {
+                    continue;
+                }
+                let source: String = std::fs::read_to_string(&path)
+                    .unwrap()
+                    .split_whitespace()
+                    .collect();
+                if source
+                    .match_indices(".in_game_menu=")
+                    .any(|(at, write)| !source[at + write.len()..].starts_with('='))
+                {
+                    writers.push(path);
+                }
+            }
+        }
+        let mut writers = Vec::new();
+        direct_writers(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/app"),
+            &mut writers,
+        );
+        assert!(writers.is_empty(), "{writers:?}");
     }
 }

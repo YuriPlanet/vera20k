@@ -492,9 +492,14 @@ pub enum PlacementEvidence {
     /// An Unlimbo request for the class admission
     /// ([`Simulation::unlimbo_class_entry`]), which fixed/runtime constructors
     /// use so a later placement rejection can retain the spent constructor.
-    /// What reaches Reveal unconverted (a building, or a map-less fixture)
-    /// runs VERA's playfield gate before Mark(PUT); see
-    /// `reveal_position_is_in_playfield`.
+    /// What reaches Reveal unconverted (a building its admission accepted, or
+    /// a map-less fixture) goes straight to Mark(PUT): no Unlimbo layer
+    /// refuses on the playfield (Building `0x00440580..0x004415E6`, Techno
+    /// `0x006F6CA0`, Object `0x005F4EC0`). A building's playfield refusal is
+    /// its own Can_Enter_Cell (`0x00449440`), reached through Object
+    /// Unlimbo's +1AC call (`0x005F4F3C`), whose CanPlaceAt asks
+    /// Is_Clear_To_Build (`0x0047C620`; playfield test at `0x0047C878`) of
+    /// each foundation cell unless the type is `PlaceAnywhere=`.
     EvaluateMark,
     /// Object5F4F1B accepted a Foot's admission (Unit, Infantry or Aircraft):
     /// either its class +1AC receiver returned zero or the caller's A8E7AC
@@ -616,7 +621,7 @@ const NULL_TARGET_CELL_SENTINEL: (i16, i16) = (0, 0);
 /// would overflow and return `None`. No retail map approaches that bound.
 /// Native's own guard against a bad coordinate is the (0, 0) sentinel, checked
 /// at the callback instead, so this arm is not the sentinel's analogue.
-pub(super) fn object_get_coords_cell(
+pub(crate) fn object_get_coords_cell(
     entity: &crate::sim::game_entity::GameEntity,
 ) -> Option<(u16, u16)> {
     let [world_x, world_y] = crate::sim::movement::ground_pose::object_center_xy(entity);
@@ -1259,12 +1264,6 @@ impl Simulation {
             return RevealOutcome::AlreadyRevealed;
         }
         if entity.lifecycle.cell_marked || request.placement == PlacementEvidence::RejectedEarly {
-            return RevealOutcome::Failed(RevealFailure::RejectedEarly);
-        }
-        if request.placement == PlacementEvidence::EvaluateMark
-            && !self.object_placement_scope_active()
-            && !self.reveal_position_is_in_playfield(request.position, context)
-        {
             return RevealOutcome::Failed(RevealFailure::RejectedEarly);
         }
 
@@ -2314,23 +2313,9 @@ impl Simulation {
     }
 
     /// IsCellInPlayfield (`0x00578460`, mode 1) of the Reveal position's
-    /// origin Cell. Unbounded synthetic fixtures retain their historical
-    /// permissive behavior. Two consumers:
-    /// - an aircraft's Unlimbo Z ([`Self::unlimbo_z`]), as AircraftClass::
-    ///   Unlimbo asks it through `0x005785F0` (`0x00414352`);
-    /// - VERA's gate before Mark(PUT) for [`PlacementEvidence::EvaluateMark`]
-    ///   outside the `0x00A8E7AC` scope.
-    ///
-    /// RESIDUAL (#2393): the gate has no native counterpart. No Unlimbo layer
-    /// refuses on the playfield: Building (`0x00440580..0x004415E6`), Techno
-    /// (`0x006F6CA0`) and Object (`0x005F4EC0`), nor the Foot layers (see
-    /// [`PlacementEvidence::FootEntryAdmitted`]). With rules only a building
-    /// reaches it, since a Foot's admission comes back converted. Trigger: a
-    /// building revealed outside the scope whose origin Cell is outside the
-    /// playfield. Effect: the placement fails here, where native's Unlimbo
-    /// places it unless its caller refused first; those callers' own checks
-    /// were not traced. Frequency not counted. Downstream, the caller's
-    /// failure path runs instead of a placed building.
+    /// origin Cell, which AircraftClass::Unlimbo asks through `0x005785F0`
+    /// (`0x00414352`) for its Z ([`Self::unlimbo_z`]). Unbounded synthetic
+    /// fixtures retain their historical permissive behavior.
     fn reveal_position_is_in_playfield(
         &self,
         position: RevealPosition,
@@ -4045,6 +4030,10 @@ impl Simulation {
             .release_foot_air_tracker_before_limbo(stable_id);
         #[cfg(feature = "ares")]
         self.limbo_ares_attach_effects(stable_id, context.rules());
+        // Techno Remove6F6AC9 ->1004B140/1004B1A9 flushes even a repeated
+        // Limbo, before the base's alive/InLimbo and sight-release branches.
+        #[cfg(feature = "ares")]
+        self.flush_bounty_display(stable_id, context.rules(), context.effects(), true);
         if self
             .substrate
             .entities

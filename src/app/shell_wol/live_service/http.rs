@@ -61,6 +61,11 @@ pub(super) enum Request {
         attempt: u64,
         nickname: String,
     },
+    /// An external launch's bearer for its match API (docs/spawn.md), in
+    /// place of `/v1/sessions`. Polling starts with the first event.
+    AdoptSession {
+        token: String,
+    },
     Channels(u32),
     /// `GET /v1/stats`; a failure is dropped and the next poll asks again.
     Stats,
@@ -330,6 +335,10 @@ impl Client {
                 "User-Agent",
                 concat!("VERA20k/", env!("CARGO_PKG_VERSION"), " multiplayer-client"),
             );
+            if path == "/v1/sessions" {
+                // Its relay CONFIRM carries a federation roster; see services/lobby.
+                request = request.header("Vera-Relay-Federation", "1");
+            }
             if let Some(token) = &self.token {
                 request = request.header("Authorization", format!("Bearer {token}"));
             }
@@ -417,8 +426,9 @@ pub(super) fn run(
     output: Sender<Response>,
     stopping: Arc<AtomicBool>,
 ) {
+    // Only an external launch's validated loopback origin is plain HTTP.
     let config = ureq::Agent::config_builder()
-        .https_only(true)
+        .https_only(base.starts_with("https://"))
         .max_redirects(0)
         .http_status_as_error(false)
         .timeout_global(Some(Duration::from_secs(12)))
@@ -758,6 +768,14 @@ macro_rules! serial_driver {
                     Err(_) => {
                         let _ = output.send(Response::LoginFailed { attempt, code: 0 });
                     }
+                }
+            }
+            Some(Request::AdoptSession { token }) => {
+                if client.token.is_none() {
+                    client.token = Some(token);
+                    client.cursor = 0;
+                    client.active_match = None;
+                    failed_polls = 0;
                 }
             }
             Some(Request::Channels(kind)) => {

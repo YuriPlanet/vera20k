@@ -1,12 +1,34 @@
-"""The opt-in package cannot leak networking into a later single-player build."""
+"""The opt-in package cannot leak networking into a later single-player build,
+and every pull request that can break the browser build builds it."""
 from pathlib import Path
+import re
 import tempfile
 import unittest
 
 from tools.wasm.build import package_host, validate_proxy_url
 
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def github_path_filter(pattern):
+    """GitHub filter-pattern semantics: `**` crosses directories, `*` does not."""
+    parts = re.split(r'(\*\*|\*)', pattern)
+    return re.compile(''.join('.*' if part == '**' else '[^/]*' if part == '*' else re.escape(part)
+                              for part in parts) + r'\Z')
+
 
 class WasmBuildTests(unittest.TestCase):
+    def test_pull_request_paths_cover_every_browser_switch(self):
+        workflow = (ROOT / '.github/workflows/wasm.yml').read_text(encoding='utf-8')
+        filters = [github_path_filter(pattern)
+                   for pattern in re.findall(r"^      - '([^']+)'$", workflow, re.MULTILINE)]
+        self.assertTrue(filters)
+        switch = re.compile(r'feature = "wasm|target_arch = "wasm32"')
+        uncovered = [path.relative_to(ROOT).as_posix() for path in sorted((ROOT / 'src').rglob('*.rs'))
+                     if switch.search(path.read_text(encoding='utf-8'))
+                     and not any(f.match(path.relative_to(ROOT).as_posix()) for f in filters)]
+        self.assertEqual(uncovered, [])
+
     def test_proxy_override_requires_an_origin_and_secure_remote_transport(self):
         validate_proxy_url(None)
         validate_proxy_url('wss://proxy.example:9443')

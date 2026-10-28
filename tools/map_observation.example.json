@@ -1,5 +1,5 @@
 {
-  "schema_version": "vera20k.map-observation-profile.v1",
+  "schema_version": "vera20k.map-observation-profile.v2",
   "launch": {
     "mode": {
       "class": "Battle",
@@ -123,5 +123,9 @@
   "ticks": 30,
   "width": 800,
   "height": 600,
-  "timeout_seconds": 180
+  "timeout_seconds": 180,
+  "cursor_position": [
+    720,
+    556
+  ]
 }

@@ -826,6 +826,22 @@ fn upload_to_gpu(
     let (build_text_fill, build_text_text) =
         crate::app::presentation::build_text::build_instances(state);
 
+    #[cfg(feature = "ares")]
+    let bounty_text = {
+        let presentation = &state.match_state.match_presentation;
+        if presentation.chrono_screen.overrides_tactical_draw() {
+            Vec::new()
+        } else {
+            let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
+            presentation.flying_credits.borrow_mut().build_instances(
+                &state.renderer.bit_font,
+                [state.match_state.input.camera_x, state.match_state.input.camera_y],
+                state.match_state.input.zoom_level,
+                [width, height],
+            )
+        }
+    };
+
     let pool: &mut InstanceBufferPool = &mut state.renderer.instance_pool;
 
     // Debug overlays
@@ -879,6 +895,8 @@ fn upload_to_gpu(
     pool.upload(&state.renderer.gpu, "super_timer_text", &super_timer_text);
     pool.upload(&state.renderer.gpu, "build_text_fill", &build_text_fill);
     pool.upload(&state.renderer.gpu, "build_text_text", &build_text_text);
+    #[cfg(feature = "ares")]
+    pool.upload(&state.renderer.gpu, "bounty_text", &bounty_text);
 
     // UI overlays
     for (house, beacons) in ui.beacons.iter().enumerate() {

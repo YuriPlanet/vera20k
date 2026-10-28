@@ -182,23 +182,6 @@ pub fn placement_preview_for_owner_with_overlays(
     })
 }
 
-pub fn active_producer_for_owner_category(
-    sim: &Simulation,
-    rules: &RuleSet,
-    owner: &str,
-    category: ProductionCategory,
-) -> Option<ProducerFocusView> {
-    let candidates = producer_candidates_for_owner_category(
-        &sim.substrate.entities,
-        rules,
-        owner,
-        category,
-        true,
-        &sim.interner,
-    );
-    (!candidates.is_empty()).then_some(ProducerFocusView { category })
-}
-
 pub fn cycle_active_producer_for_owner_category(
     sim: &mut Simulation,
     rules: &RuleSet,

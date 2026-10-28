@@ -122,6 +122,17 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
         "Match end ready for local player '{owner}': {}",
         crate::app::match_runtime::scenario_exit::outcome_title(outcome)
     );
+    crate::app::App::record_external_match_result(
+        state,
+        match outcome {
+            crate::sim::house_state::HouseOutcomeKind::Victory => {
+                crate::app::cncnet::ExternalMatchResult::Won
+            }
+            crate::sim::house_state::HouseOutcomeKind::Defeat => {
+                crate::app::cncnet::ExternalMatchResult::Lost
+            }
+        },
+    );
     //685670/685DC0 clear5BF450 before either outcome fade.
     crate::app::radar_movie::retire(state, wall_ms);
     crate::app::chrono_screen::retire(state, wall_ms);
@@ -1334,6 +1345,14 @@ fn advance_one_simulation_frame(
                         .as_mut()
                         .and_then(|radar| radar.set_has_radar(available))
                 };
+                #[cfg(feature = "ares")]
+                let flying_credits = &state.match_state.match_presentation.flying_credits;
+                #[cfg(feature = "ares")]
+                let queue_bounty = |sim: &crate::sim::world::Simulation,
+                                    rules: &crate::rules::ruleset::RuleSet,
+                                    text: crate::sim::bounty::BountyText| {
+                    flying_credits.borrow_mut().admit(sim, rules, text);
+                };
                 let boundary = super::frame_effects::FrameClientBoundary::new(
                     playback,
                     local_owner_name.as_deref(),
@@ -1361,6 +1380,8 @@ fn advance_one_simulation_frame(
                     .with_network_commands(&boundary)
                     .with_production_strip(&production_visits, &clear_production_request)
                     .with_before_logic(&before_logic);
+                #[cfg(feature = "ares")]
+                let effects = effects.with_bounty_text(&queue_bounty);
                 // Recorded completion owns outcome timing during playback;
                 // a local audio wait cannot add a frame or change its hash.
                 let effects = if replaying {
@@ -2343,23 +2364,6 @@ pub(crate) fn screen_point_to_world_cell(
             .sim_view()
             .and_then(|view| tactical_cells(view.simulation())),
     )
-}
-
-pub(crate) fn nearest_walkable_cell(
-    grid: &crate::sim::pathfinding::PathGrid,
-    start: (u16, u16),
-    max_radius: u16,
-) -> Option<(u16, u16)> {
-    grid.nearest_walkable_any_layer(start.0, start.1, max_radius)
-}
-
-pub(crate) fn clamp_cell_to_grid(
-    grid: &crate::sim::pathfinding::PathGrid,
-    cell: (u16, u16),
-) -> (u16, u16) {
-    let max_x = grid.width().saturating_sub(1);
-    let max_y = grid.height().saturating_sub(1);
-    (cell.0.min(max_x), cell.1.min(max_y))
 }
 
 #[cfg(test)]

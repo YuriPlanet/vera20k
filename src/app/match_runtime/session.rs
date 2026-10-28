@@ -1451,6 +1451,27 @@ impl MatchSession {
 
     /// Bind content only to its currently accepted map identity. A late download
     /// cannot replace a newly selected map or acknowledge it as present.
+    /// An external launch's map is the launcher's file beside spawn.ini:
+    /// each participant loads its own copy, while the shared logical name
+    /// (the setup's `selected_map_file`) keeps every world identical.
+    pub(crate) fn accept_external_network_map_source(
+        &mut self,
+        source: crate::map::source::LoadedMapSource,
+        effective_digest: String,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.network_setup().is_some(),
+            "map binding requires an admitted setup"
+        );
+        let network = self
+            .network
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("no network visit"))?;
+        network.local_map_source = Some(source);
+        network.local_map_effective_digest = Some(effective_digest);
+        Ok(())
+    }
+
     pub(crate) fn accept_verified_network_map_source(
         &mut self,
         source: crate::map::source::LoadedMapSource,

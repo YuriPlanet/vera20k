@@ -308,10 +308,25 @@ impl App {
             .options_profile
             .voice_volume
             .clamp(0.0, 1.0);
+        // 0x006C99D0: the movie's subtitlemd.txt cues, when it has any.
+        let header = &surface.file().header;
+        let subtitles = state
+            .process_assets
+            .manager()
+            .and_then(|assets| assets.get_ref(crate::app::movie_subtitles::SUBTITLE_FILE))
+            .and_then(|file| crate::app::movie_subtitles::movie_subtitles(file, stem))
+            .and_then(|cues| {
+                crate::app::movie_subtitles::SubtitleTrack::new(
+                    cues,
+                    header.fps_num,
+                    header.fps_den,
+                )
+            });
         let movie = FullscreenMovie::new(
             surface,
             state.audio.music_player.as_ref().map(|music| music.mixer()),
             voice_volume,
+            subtitles,
             return_to,
         );
         state.frontend.fullscreen_movie = Some(movie);

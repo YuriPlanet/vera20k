@@ -137,8 +137,8 @@ Event kinds and payloads:
 | `kicked` | `{channel:<Channel>,user:<Member>,by:<Member>}` |
 | `error` | `{code,message}` |
 
-RelayGrant is `{address,ticket,packet_key,payload_key,source_index,ordering_certificate}`. Address is `IPv4:port`
-of the match's relay. The service chooses it at start and every later grant for that match names it;
+RelayGrant is `{address,ticket,packet_key,payload_key,source_index,ordering_certificate,federation?}`. Address is `IPv4:port`
+of the user's relay in the match. The service chooses it at start and every later grant for that match names it;
 ticket is the signed relay protocol ticket encoded base64url without padding and
 packet_key is 32 bytes encoded the same way. Credentials are unique to each user
 and each new match. `payload_key` is a random 32-byte match payload-encryption key
@@ -156,6 +156,16 @@ follows launch speed `[60,45,30,20,15,12,10]`. The certificate lasts24 hours;
 every UDP control still needs a live authenticated short-lived ticket. The relay
 binds the first matching startup agreement to this roster/clock and starts only
 when every signed source is ready. Renewals preserve the timeline and batch IDs.
+`federation`, present only in a federated match, is the same base64url roster
+in every grant: `VO1F`, room UUID16, relay count (2–6), then per relay IPv4,
+LE port and LE source mask, then per relay nonce16, wrapped32 and tag32. The
+masks partition the signed sources. `wrapped` is the match link key XORed with
+HMAC-SHA256(relay ticket key, `VERA20k relay federation wrap v1\0` ‖ room ‖
+nonce); `tag` is HMAC-SHA256(relay ticket key, `VERA20k relay federation roster
+v1\0` ‖ the table through the masks ‖ index byte ‖ nonce ‖ wrapped). The client
+appends it unchanged to every CONFIRM; the first relay coordinates the start.
+The lobby federates a match only when every human's sign-in request carried the
+header `Vera-Relay-Federation: 1`, which clients send once they forward the roster.
 
 The relay room uses the fresh `match_id`, including for rematches. The server sends
 `game_started` only after all current participants agree to revision, version,

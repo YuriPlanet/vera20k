@@ -55,7 +55,9 @@ impl FrameClock {
 }
 
 /// Slots in the per-frame ledger, in the order `advance_master_frame` runs
-/// them. Names are stable keys: the dashboard's i18n table is indexed by them.
+/// them, except that `TEAM_AI` runs between the two stretches `BOMBS` folds
+/// (Kamikaze, then the Disk walk). Names are stable keys: the dashboard's
+/// i18n table is indexed by them.
 pub mod phase {
     pub const COMMANDS_INGRESS: usize = 0;
     pub const COMMANDS_ADMIT: usize = 1;

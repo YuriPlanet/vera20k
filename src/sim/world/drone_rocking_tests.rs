@@ -783,12 +783,7 @@ fn stock_drone_monotonic_bites_match_native_state_rng_spark_births_and_flh() {
             format!("{:016x}", object.weight.to_num::<f64>().to_bits()),
             expected["weight_bits"].as_str().unwrap()
         );
-        let flh = scene.rules.art().get(&object.image).unwrap().weapon_flh(
-            object.turret_count,
-            object.weapon_count,
-            0,
-            false,
-        );
+        let flh = object.weapon_flh(0, false);
         assert_eq!(
             json!([flh.forward, flh.lateral, flh.height]),
             expected["primary_flh"]

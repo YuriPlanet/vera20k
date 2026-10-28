@@ -79,6 +79,12 @@ Supported extensions:
   Per-type `Survivor.*`, `Crew.TechnicianChance`, `Crew.EngineerChance` and nullable
   aircraft `Crashable` share the existing crew and placement owners. These paths
   require `ares`; loading INI settings cannot activate them in a default build.
+- [Extended IFV modes](../src/rules/gunner_turrets.rs): Gunner vehicles read
+  `WeaponCount` beyond the original eighteen slots, including normal/elite weapons,
+  ART firing offsets and `WeaponTurretIndexN` mappings. `WeaponUINameN` supplies
+  the current mode's full tooltip name. Default builds retain the original bound
+  and FV-only mapping. Barrel geometry and `TurretLocked` retain their separate
+  support limits documented in the [firing-offset owner](../src/rules/weapon_offsets.rs).
 - [Type selection groups](https://ares-developers.github.io/Ares-docs/new/typeselect.html):
   retained `GroupAs` keys share type IDs' case-insensitive namespace in T tap,
   held-T click/band and additive removal. `General/TypeSelectUseDeploy` controls
@@ -91,6 +97,10 @@ Supported extensions:
   cloakability and forced decloaking. Temporal and airborne victim
   collection remain outside this chain; manual game acceptance remains pending.
 - [GenericWarhead](ares-generic-warhead.md)
+- [Kill bounties](../src/sim/bounty.rs): `Bounty`, rank-specific `Bounty.Value`
+  overrides, `GivesBounty`, on-map `BountyEnablers`, signed wallet changes and
+  optional floating credit labels. All readers, state and display hooks are
+  compiled only with `ares`; default builds keep the retail kill path.
 - [HunterSeeker launch and initial target acquisition](ares-hunter-seeker.md)
 - [House survival](ares-house-survival.md)
 - [Superweapon building gates](ares-superweapon-building-gates.md)

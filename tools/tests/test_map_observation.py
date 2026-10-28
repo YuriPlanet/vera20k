@@ -22,7 +22,11 @@ class MapObservationTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve()
         self.profile = json.loads((observation.ROOT / 'tools/map_observation.example.json').read_text())
-        self.profile.update(width=2, height=2, ticks=3, timeout_seconds=1)
+        # These wrapper cases start from the v1 shape; the example's v2 cursor
+        # sits over the 800x600 sidebar, outside the synthetic 2x2 frames.
+        del self.profile['cursor_position']
+        self.profile.update(schema_version=observation.PROFILE_V1, width=2, height=2, ticks=3,
+                            timeout_seconds=1)
         # Rust owns admission and real extent limits. These small synthetic frames
         # intentionally exercise only wrapper receipt/byte validation.
         self.profile_path = self.root / 'profile.json'
@@ -3336,6 +3340,27 @@ class MapObservationTests(unittest.TestCase):
         report = self.run_capture()
         self.assertEqual(report['status'], 'INVALID')
         self.assertTrue(any('fire' in error for error in report['errors']), report['errors'])
+
+    def test_comparison_reports_process_main_rng_apart_from_the_match(self):
+        self.scripted_profile()
+        self.profile.update(observe_electric_bolts=True)
+        self.profile_path.write_text(json.dumps(self.profile))
+        for actors in self.actor_frames.values():
+            actors[0].update(prism=None)
+        before = self.valid_capture('main-rng-before')
+        self.electric_frames[1] = self.electric_snapshot()
+        self.electric_frames[1]['rng']['main']['index_b'] = 105
+        report = observation.compare_runs(before, self.valid_capture('main-rng-after'))
+        self.assertEqual(report['status'], 'MATCH', report['errors'])
+        self.assertEqual([row['field'] for row in report['main_rng_differences']],
+                         ['observations.electric_bolt_draws.frames[0].effects.rng.main.index_b',
+                          'observations.frames[1].electric_bolts.rng.main.index_b'])
+        self.electric_frames[1]['rng']['scenario']['index_b'] = 105
+        report = observation.compare_runs(before, self.valid_capture('scenario-rng-after'))
+        self.assertEqual(report['status'], 'MISMATCH', report['errors'])
+        self.assertEqual([row['field'] for row in report['differences']],
+                         ['observations.electric_bolt_draws.frames[0].effects.rng.scenario.index_b',
+                          'observations.frames[1].electric_bolts.rng.scenario.index_b'])
 
     def test_bomb_snapshot_shape_identity_order_and_signed_values_are_strict(self):
         valid = {'carriers': [8], 'records': [self.bomb_record()]}

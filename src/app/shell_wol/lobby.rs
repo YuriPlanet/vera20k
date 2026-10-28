@@ -5,7 +5,7 @@
 //! only then shows the dialog. While it shows, its proc `0x0078AC10` drives
 //! the lists, chat, sorts, Create (`0x00789B60`) and Join (`0x00789960`
 //! with admission `0x0079BA60` and the join `0x00788800`), and the chat
-//! sink's OnJoin (`0x007A5E40`) answers joins. Every service exchange is a
+//! sink's OnJoin (`0x007A5890`) answers joins. Every service exchange is a
 //! [`WolServiceRequest`]/[`WolServiceEvent`]; nothing here fabricates a
 //! result. No RNG is drawn on these paths.
 //!
@@ -230,7 +230,7 @@ enum AfterLeave {
 /// What closing a lobby box continues with.
 #[derive(Debug, Clone)]
 enum BoxThen {
-    /// `0x007A5E40`'s failure tail; `close` when it set event 5.
+    /// `0x007A5890`'s failure tail; `close` when it set event 5.
     JoinFailed { close: bool },
     /// Create's boxes: the lobby back with Join disabled.
     CreateFailed,
@@ -315,6 +315,47 @@ impl WolLobby {
             }
         }
         rows
+    }
+
+    /// `[0xB76B10] == 0`: the current channel record's kind is 0, or no
+    /// channel is current.
+    fn chat_kind_current(&self) -> bool {
+        self.current
+            .as_ref()
+            .is_none_or(|channel| channel.kind == 0)
+    }
+
+    /// This user's join of `channel` with its user list. The join sink
+    /// `0x007A5890` copies the record into `[0xB76B10]` before the user-list
+    /// sink `0x007A7110` lists the users anew: while that kind is 0 each
+    /// joins by the player sort, otherwise `0x007ACA00` appends each at the
+    /// count, in the listed order (`0x007A72A6..0x007A7346`).
+    fn users_listed(
+        &mut self,
+        channel: WolChannel,
+        listed: Vec<WolMember>,
+        sort: PlayerSort,
+        rank: &dyn Fn(&str) -> i32,
+    ) {
+        self.current = Some(channel);
+        self.members.clear();
+        if !self.chat_kind_current() {
+            self.members = listed;
+            return;
+        }
+        for member in listed {
+            insert_member(&mut self.members, member, sort, rank);
+        }
+    }
+
+    /// The join sink's insert of another user (`0x007A66B3`): by the player
+    /// sort into a channel of kind 0, otherwise [`insert_game_member`].
+    fn user_joined(&mut self, member: WolMember, sort: PlayerSort, rank: &dyn Fn(&str) -> i32) {
+        if self.chat_kind_current() {
+            insert_member(&mut self.members, member, sort, rank);
+        } else {
+            insert_game_member(&mut self.members, member);
+        }
     }
 
     pub(crate) fn message(&self) -> Option<&WolMessageBox> {
@@ -678,8 +719,12 @@ fn ladder_rank(
         .map_or(-1, |record| record.rank)
 }
 
-/// Each member joins the lobby's users by the player sort.
-fn insert_members(state: &mut AppState, members: impl IntoIterator<Item = WolMember>) {
+/// The runner with the player sort `[0xB77E48]` and the ladder rank
+/// `0x00782320` sorts by.
+fn sort_lobby(
+    state: &mut AppState,
+    then: impl FnOnce(&mut WolLobby, PlayerSort, &dyn Fn(&str) -> i32),
+) {
     let globals = &state.frontend.wol_lobby_globals;
     let Some(lobby) = state
         .frontend
@@ -689,12 +734,18 @@ fn insert_members(state: &mut AppState, members: impl IntoIterator<Item = WolMem
     else {
         return;
     };
-    let (sort, rank) = (globals.player_sort, |name: &str| {
+    then(lobby, globals.player_sort, &|name: &str| {
         ladder_rank(&globals.ladder, name)
     });
-    for member in members {
-        insert_member(&mut lobby.members, member, sort, &rank);
-    }
+}
+
+/// Each member joins the lobby's users by the player sort.
+fn insert_members(state: &mut AppState, members: impl IntoIterator<Item = WolMember>) {
+    sort_lobby(state, |lobby, sort, rank| {
+        for member in members {
+            insert_member(&mut lobby.members, member, sort, rank);
+        }
+    });
 }
 
 /// The ladder sink's re-sort (`0x007A3966..0x007A39C4`): under a rank
@@ -722,9 +773,7 @@ pub(super) fn rank_changed(state: &mut AppState, name: &str) {
 /// `[0xB76B10] == 0`: the current channel record's kind is 0, or no
 /// channel is current.
 fn chat_kind_current(state: &AppState) -> bool {
-    lobby(state)
-        .and_then(|lobby| lobby.current.as_ref())
-        .is_none_or(|channel| channel.kind == 0)
+    lobby(state).is_none_or(WolLobby::chat_kind_current)
 }
 
 /// The high-score sink `0x007A3B30`: each record replaces the table's
@@ -2225,7 +2274,7 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
     }
 }
 
-/// `0x007A5E40`'s failure tail: rejoin flag from the pending channel, the
+/// `0x007A5890`'s failure tail: rejoin flag from the pending channel, the
 /// pending and current channels cleared, the wait closed, the lists
 /// refilled and `0x113` shown; event 5 then ends the runner.
 fn join_failed_tail(state: &mut AppState, close: bool) {
@@ -2299,7 +2348,7 @@ fn entry_shown(state: &mut AppState) {
     );
 }
 
-/// `0x007A5E40` (CChatEventSink vt+0x28) for this user, or a result.
+/// `0x007A5890` (CChatEventSink vt+0x28) for this user, or a result.
 fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
     let online = state
         .frontend
@@ -2337,11 +2386,11 @@ fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
     runner.pending = None;
     let entry = matches!(runner.step, Step::JoiningLobby { entry: true, .. });
     runner.step = Step::Ready;
-    runner.members.clear();
     let listed = joined.members.clone();
-    insert_members(state, joined.members);
-    let runner = lobby_mut(state).expect("checked");
-    runner.current = Some(joined.channel.clone());
+    let channel = joined.channel.clone();
+    sort_lobby(state, |lobby, sort, rank| {
+        lobby.users_listed(channel, joined.members, sort, rank);
+    });
     request_listed(state, &listed);
     if joined.channel.kind == GAME_CHANNEL {
         // The guest dialog C9 over a hidden 0x113; the observer preference
@@ -2417,8 +2466,8 @@ fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
     }
 }
 
-/// `0x007A5E40`'s HRESULT branches in Custom Match.
-/// How `0x007A5E40` answers a failed join.
+/// `0x007A5890`'s HRESULT branches in Custom Match.
+/// How `0x007A5890` answers a failed join.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum JoinErrorReply {
     /// `0x8004006C`: nothing happens.
@@ -2670,7 +2719,9 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                 if high_score {
                     request(state, WolServiceRequest::HighScores(vec![key]));
                 }
-                insert_members(state, [member]);
+                sort_lobby(state, |lobby, sort, rank| {
+                    lobby.user_joined(member, sort, rank)
+                });
                 refill_players(state);
                 if in_setup_channel(state)
                     && let Err(error) = setup::user_joined(state, name)
@@ -3952,6 +4003,53 @@ mod tests {
                 .into();
             assert_eq!(lobby.lobby_rows()[0].users, users);
         }
+    }
+
+    fn user(name: &str, flags: u32) -> WolMember {
+        WolMember {
+            name: name.into(),
+            flags,
+            ..Default::default()
+        }
+    }
+
+    /// A runner whose user list for a channel of `kind` was listed
+    /// operator first, then by arrival, under the descending alpha sort 1.
+    fn listed_runner(kind: u32) -> Box<WolLobby> {
+        let mut lobby = new_runner(Runner::Lobby, false, false, Instant::now(), false);
+        let listed = vec![
+            user("Host", MEMBER_OPERATOR),
+            user("Mike", 0),
+            user("Zed", 0),
+        ];
+        let channel = WolChannel {
+            kind,
+            ..Default::default()
+        };
+        lobby.users_listed(channel, listed, 1, &|_| -1);
+        lobby
+    }
+
+    fn names(lobby: &WolLobby) -> Vec<&str> {
+        lobby.members.iter().map(|m| m.name.as_str()).collect()
+    }
+
+    /// The user-list sink sorts a chat lobby's users but keeps a game
+    /// channel's in the listed order, whatever the sort mode.
+    #[test]
+    fn game_channel_users_keep_the_listed_order() {
+        assert_eq!(names(&listed_runner(0)), ["Host", "Zed", "Mike"]);
+        assert_eq!(names(&listed_runner(GAME_CHANNEL)), ["Host", "Mike", "Zed"]);
+    }
+
+    /// A game channel's joiner goes before the first user who weighs less
+    /// (operator 4, voice 2), or as much with a later name.
+    #[test]
+    fn game_channel_joiners_insert_by_weight_then_name() {
+        let mut lobby = listed_runner(GAME_CHANNEL);
+        lobby.user_joined(user("alice", 0), 1, &|_| -1);
+        lobby.user_joined(user("Vic", MEMBER_VOICE), 1, &|_| -1);
+        assert_eq!(names(&lobby), ["Host", "Vic", "alice", "Mike", "Zed"]);
     }
 
     #[test]

@@ -31,6 +31,8 @@ pub(crate) mod object_fall;
 pub mod arena_fixture;
 pub(crate) mod build_site;
 pub mod building_art;
+#[cfg(feature = "ares")]
+pub mod bounty;
 pub(crate) mod building_upgrades;
 pub(crate) mod building_power;
 pub(crate) mod building_entry;

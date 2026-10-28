@@ -7,7 +7,7 @@ use wasm_bindgen_futures::JsFuture;
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(catch, js_namespace = globalThis, js_name = veraLobbyOpen)]
-    fn open(origin: &str) -> Result<u32, JsValue>;
+    fn open(origin: &str, service: Option<&str>) -> Result<u32, JsValue>;
     #[wasm_bindgen(js_namespace = globalThis, js_name = veraLobbyRequest)]
     fn fetch(
         id: u32,
@@ -74,8 +74,11 @@ pub(in crate::app::shell_wol::live_service) fn start(
     input: Receiver<Request>,
     output: Sender<Response>,
     stopping: Arc<AtomicBool>,
+    service_url: Option<&str>,
 ) -> anyhow::Result<RequestOwner> {
-    let id = open(crate::net::udp::browser_proxy_url())
+    // The lobby shares the gateway's origin; an external launch names its
+    // own match API origin (docs/spawn.md).
+    let id = open(crate::net::udp::browser_proxy_url(), service_url)
         .map_err(|_| anyhow::anyhow!("could not initialize the browser lobby transport"))?;
     let client = Client {
         browser: id,

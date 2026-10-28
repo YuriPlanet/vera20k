@@ -48,12 +48,6 @@ pub struct ReadyBuildingView {
     pub queue_category: ProductionCategory,
 }
 
-/// Active producer/facility focus for one queue category.
-#[derive(Debug, Clone)]
-pub struct ProducerFocusView {
-    pub category: ProductionCategory,
-}
-
 /// Placement preview/evaluation for a ready building.
 #[derive(Debug, Clone)]
 pub struct BuildingPlacementPreview {

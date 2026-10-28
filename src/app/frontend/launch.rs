@@ -77,6 +77,50 @@ where
     })())
 }
 
+/// `vera20k --probe [--ra2-dir <dir>] [--map <path>]` (docs/spawn.md): print
+/// one JSON object describing what a spawn launch on this installation is
+/// checked against, then exit. Headless: no logger, window or audio.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub fn try_probe<I>(args: I) -> Option<Result<i32>>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut args = args.into_iter();
+    if args.next().as_deref() != Some(OsStr::new("--probe")) {
+        return None;
+    }
+    Some((|| {
+        let (ra2_dir, map) = parse_probe_args(args)?;
+        let report = crate::app::spawn_probe::run_desktop(ra2_dir.as_deref(), map.as_deref())?;
+        println!("{}", serde_json::to_string(&report)?);
+        Ok(0)
+    })())
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn parse_probe_args(
+    args: impl Iterator<Item = OsString>,
+) -> Result<(Option<PathBuf>, Option<PathBuf>)> {
+    const USAGE: &str = "usage: vera20k --probe [--ra2-dir <retail-directory>] [--map <map-file>]";
+    let mut args = args;
+    let (mut ra2_dir, mut map) = (None, None);
+    while let Some(flag) = args.next() {
+        let slot = if flag == OsStr::new("--ra2-dir") {
+            &mut ra2_dir
+        } else if flag == OsStr::new("--map") {
+            &mut map
+        } else {
+            bail!("unexpected probe argument {flag:?}; {USAGE}");
+        };
+        ensure!(slot.is_none(), "{flag:?} given twice; {USAGE}");
+        *slot =
+            Some(PathBuf::from(args.next().with_context(|| {
+                format!("{flag:?} needs a value; {USAGE}")
+            })?));
+    }
+    Ok((ra2_dir, map))
+}
+
 #[derive(Debug)]
 pub enum AppLaunchMode {
     /// Ordinary launch, carrying whatever the retail switch table decided.
@@ -443,6 +487,32 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+    #[test]
+    fn probe_dispatch_is_strict_and_only_first() {
+        let args = |list: &[&str]| list.iter().map(OsString::from).collect::<Vec<_>>();
+        assert!(try_probe(args(&["-WIN", "--probe"])).is_none());
+        assert!(try_probe(args(&["-SPAWN"])).is_none());
+        for bad in [
+            &["--bogus"][..],
+            &["--map"],
+            &["--ra2-dir"],
+            &["--map", "a", "--map", "b"],
+            &["--ra2-dir", "a", "-WIN"],
+        ] {
+            assert!(parse_probe_args(args(bad).into_iter()).is_err(), "{bad:?}");
+        }
+        assert_eq!(
+            parse_probe_args(args(&["--map", "m.ini", "--ra2-dir", "r"]).into_iter()).unwrap(),
+            (Some(PathBuf::from("r")), Some(PathBuf::from("m.ini")))
+        );
+        assert_eq!(parse_probe_args(std::iter::empty()).unwrap(), (None, None));
+        // The interactive parser does not treat --probe as a launch mode.
+        assert!(!matches!(
+            parse_launch_args(args(&["--probe"])),
+            Ok(AppLaunchMode::Spawn(_))
+        ));
+    }
 
     #[test]
     fn standalone_replay_dispatch_is_strict_and_does_not_enter_interactive_startup() {

@@ -1574,6 +1574,18 @@ impl WolCapture {
                         ],
                     })),
                 );
+                // The joined channel's user list asks the unranked users'
+                // ladder and high scores (0x007A7110, 0x007A77CB).
+                let listed: Vec<String> = vec!["alpha".into(), NICKNAME.to_ascii_lowercase()];
+                let requests = self.requests(state, frame)?;
+                ensure!(
+                    requests
+                        == [
+                            WolServiceRequest::LadderRecords(listed.clone()),
+                            WolServiceRequest::HighScores(listed),
+                        ],
+                    "the joined channel's users were not looked up: {requests:?}"
+                );
                 self.event(frame, "controlled game join accepted");
                 self.phase = WolPhase::Setup;
             }
@@ -1588,7 +1600,23 @@ impl WolCapture {
                 } else {
                     vec![member(NICKNAME, MEMBER_OPERATOR, "")]
                 };
+                // The created channel's user list (sink 0x007A7110) asks the
+                // ladder and high scores of every unranked user, the host
+                // included (0x007A77CB).
+                let listed: Vec<String> = members
+                    .iter()
+                    .map(|member| member.name.to_ascii_lowercase())
+                    .collect();
                 service_event(state, WolServiceEvent::Created(Ok(members)));
+                let requests = self.requests(state, frame)?;
+                ensure!(
+                    requests
+                        == [
+                            WolServiceRequest::LadderRecords(listed.clone()),
+                            WolServiceRequest::HighScores(listed),
+                        ],
+                    "the created channel's users were not looked up: {requests:?}"
+                );
                 ensure!(
                     state.frontend.shell_exit.is_some(),
                     "the create did not slide 0x113 out"

@@ -580,7 +580,10 @@ impl Simulation {
                 if matches!(outcome, RevealOutcome::Revealed { .. }) {
                     Self::initialize_cloak_after_unlimbo(&sim.interner, &sim.session, &mut sim.substrate, stable_id, rules);
                     sim.add_unit_sensor_after_unlimbo(stable_id, rules, overlay_registry);
-                    sim.add_building_sensor_array_if_powered(stable_id, rules, overlay_registry);
+                    // ReadScenarioBuildings (0x0044F820) makes no sensor call:
+                    // a map building stamps only if the first opening its
+                    // Unlimbo already ran (0x00440D61 / 0x00440E76) passed
+                    // Is_Operational.
                 }
                 Self::commit_map_placement_mission(&sim.session, &mut sim.substrate, stable_id, map_ent.mission);
                 // ReadINI44FC1B..44FD23: the factory callback is inside
@@ -1999,8 +2002,8 @@ impl Simulation {
     }
 
     /// Store a new object, then place it through active
-    /// `ObjectClass::Reveal @ 0x005F4EC0`: coordinates commit, the mode-one
-    /// playfield gate and Mark(PUT) own the result, and eligible logic
+    /// `ObjectClass::Reveal @ 0x005F4EC0`: coordinates commit, Mark(PUT)
+    /// owns the result, and eligible logic
     /// registration happens last. A failed attempt keeps the constructed
     /// identity in limbo for its caller to retain or discard.
     #[cfg(any(test, feature = "test-support"))]
@@ -2277,8 +2280,10 @@ impl Simulation {
             {
                 return PlacementEvidence::RejectedEarly;
             }
-            // Keep the Reveal playfield gate (see its residual) and Mark. The
-            // class decision does not make PlaceAnywhere bypass the gate.
+            // These admissions hold the building's only playfield refusal:
+            // CanPlaceAt asks Is_Clear_To_Build (`0x0047C620`) of each
+            // foundation cell unless the type is PlaceAnywhere. No later
+            // Unlimbo layer asks; Mark(PUT) owns the rest.
             return PlacementEvidence::EvaluateMark;
         }
         match self.foot_can_enter(

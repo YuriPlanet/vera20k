@@ -284,7 +284,6 @@ fn refresh_fixture_sidebar(
         &options,
         &ready,
         armed.as_ref(),
-        &[],
         Some(fixture.sim.interner()),
         &[],
         &SidebarGadgetState::new(),

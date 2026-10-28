@@ -9,7 +9,7 @@ fn constructor_rules() -> RuleSet {
         "[InfantryTypes]\n0=E1\n1=SLAV\n\n\
          [VehicleTypes]\n0=MTNK\n1=CARRIER\n2=SMIN\n\n\
          [AircraftTypes]\n0=ORCA\n1=HORN\n\n\
-         [BuildingTypes]\n0=BASE\n1=UP1\n2=UP2\n3=YAREFN\n\n\
+         [BuildingTypes]\n0=BASE\n1=UP1\n2=UP2\n3=YAREFN\n4=ANYWHERE\n\n\
          [E1]\nStrength=100\nSpeed=4\n\n\
          [SLAV]\nStrength=125\nSpeed=4\nStorage=4\n\n\
          [MTNK]\nStrength=300\nSpeed=6\n\n\
@@ -20,7 +20,8 @@ fn constructor_rules() -> RuleSet {
          [BASE]\nStrength=500\nFoundation=2x2\n\n\
          [UP1]\nStrength=100\nFoundation=1x1\n\n\
          [UP2]\nStrength=100\nFoundation=1x1\n\n\
-         [YAREFN]\nStrength=2000\nFoundation=2x2\nEnslaves=SLAV\nSlavesNumber=2\nSlaveRegenRate=500\nSlaveReloadRate=25\n",
+         [YAREFN]\nStrength=2000\nFoundation=2x2\nEnslaves=SLAV\nSlavesNumber=2\nSlaveRegenRate=500\nSlaveReloadRate=25\n\n\
+         [ANYWHERE]\nStrength=1\nFoundation=1x1\nPlaceAnywhere=yes\n",
     ))
     .expect("constructor fixture rules parse")
 }
@@ -1308,8 +1309,10 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
     assert!(held.lighting_sources.buildings()[&held_id].active);
     assert_eq!(held.lighting_sources.pending().len(), 1);
 
+    // Is_Clear_To_Build (`0x0047C620`) refuses (1,1), outside the playfield.
     let mut failed_new = Simulation::with_seed(0x1a43);
     install_constructor_test_playfield(&mut failed_new);
+    install_constructor_flat_terrain(&mut failed_new);
     assert!(
         failed_new
             .spawn_object_at_height("GALITE", "Americans", 1, 1, 0, 0, &rules)
@@ -1459,6 +1462,46 @@ fn an_admitted_aircraft_takes_no_playfield_gate() {
     assert_eq!(
         crate::sim::movement::ground_pose::position_world_coord(&aircraft.position).z,
         flight_level
+    );
+}
+
+/// No Unlimbo layer refuses a building on the playfield: Building
+/// (`0x00440580..0x004415E6`), Techno (`0x006F6CA0`) and Object
+/// (`0x005F4EC0`). Its own Can_Enter_Cell (`0x00449440`) does, through each
+/// foundation cell's Is_Clear_To_Build (`0x0047C620`), unless CanPlaceAt
+/// (`0x00464AC0`) admits a `PlaceAnywhere=` type first. Cell (5,5) lies just
+/// outside this playfield.
+#[test]
+fn a_place_anywhere_building_is_placed_just_outside_the_playfield() {
+    let rules = constructor_rules();
+    let mut sim = Simulation::with_seed(0x2393);
+    install_constructor_test_playfield(&mut sim);
+    install_constructor_flat_terrain(&mut sim);
+    install_american_house(&mut sim);
+    let held = sim
+        .construct_object_limbo_at_height(
+            "ANYWHERE",
+            "Americans",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .expect("construct held building");
+    assert_eq!(
+        sim.reveal_constructed_object_at_height(
+            held,
+            5,
+            5,
+            0,
+            0,
+            PlacementEvidence::EvaluateMark,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        ),
+        Some(held)
     );
 }
 
@@ -1808,6 +1851,9 @@ fn techno_constructor_runtime_fresh_paths_draw_once_after_type_resolution() {
     let rules = constructor_rules();
     let mut sim = Simulation::with_seed(seed);
     install_constructor_test_playfield(&mut sim);
+    // BASE fails at (1,1), outside the playfield: Is_Clear_To_Build
+    // (`0x0047C620`) refuses it.
+    install_constructor_flat_terrain(&mut sim);
     let mut expected = SimRng::new(seed);
 
     let before_invalid = sim.scenario_rng.logical_state();
@@ -2058,16 +2104,26 @@ fn techno_constructor_failed_parent_placement_discards_both_manager_pool_kinds_w
     ] {
         let mut sim = Simulation::with_seed(seed);
         install_constructor_test_playfield(&mut sim);
+        install_constructor_flat_terrain(&mut sim);
         let mut expected = SimRng::new(seed);
-        for _ in 0..draw_count {
+        // UnitClass::Can_Enter_Cell refuses the parent on the authored
+        // blocker's cell; the blocker took one draw first.
+        assert_eq!(
+            sim.spawn_from_map(
+                &[map_entity("MTNK", EntityCategory::Unit, (6, 5))],
+                Some(&rules),
+            ),
+            1
+        );
+        for _ in 0..=draw_count {
             let _ = expected.next_u32();
         }
 
         assert!(
-            sim.spawn_object_at_height(parent_type, "Americans", 1, 1, 0, 0, &rules)
+            sim.spawn_object_at_height(parent_type, "Americans", 6, 5, 0, 0, &rules)
                 .is_none()
         );
-        assert!(sim.substrate.entities.is_empty());
+        assert_eq!(sim.substrate.entities.len(), 1);
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
     }
 }

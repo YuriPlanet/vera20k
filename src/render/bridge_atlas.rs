@@ -5,12 +5,11 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::Palette;
 use crate::assets::shp_file::ShpFile;
+use crate::render::atlas_growth;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::overlay_atlas::{OverlaySpriteEntry, stored_frame_offset};
 use crate::rules::effect_asset_catalog::load_overlay_shape;
 use crate::rules::overlay_types::{OverlayTypeFlags, OverlayTypeRegistry, is_high_bridge_index};
-
-const SPRITE_PADDING: u32 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BridgeFrameKind {
@@ -304,55 +303,21 @@ fn pack_bridge_sprites(
     batch: &BatchRenderer,
     sprites: &[RenderedBridge],
 ) -> BridgeAtlas {
-    let mut indices: Vec<usize> = (0..sprites.len()).collect();
-    indices.sort_by(|&a, &b| sprites[b].height.cmp(&sprites[a].height));
-
-    let total_area: u64 = sprites
-        .iter()
-        .map(|s| {
-            (s.width as u64 + SPRITE_PADDING as u64) * (s.height as u64 + SPRITE_PADDING as u64)
-        })
-        .sum();
-    let estimated_side: u32 = (total_area as f64).sqrt().ceil() as u32;
     let max_texture_dim: u32 = device.limits().max_texture_dimension_2d;
-    let mut atlas_width: u32 = estimated_side.clamp(64, max_texture_dim);
-
-    let placements: Vec<(usize, u32, u32)>;
-    let atlas_height: u32;
-    loop {
-        let mut trial: Vec<(usize, u32, u32)> = Vec::with_capacity(sprites.len());
-        let mut cx: u32 = 0;
-        let mut cy: u32 = 0;
-        let mut shelf_h: u32 = 0;
-        for &idx in &indices {
-            let w: u32 = sprites[idx].width;
-            let h: u32 = sprites[idx].height;
-            if cx + w > atlas_width {
-                cy += shelf_h + SPRITE_PADDING;
-                cx = 0;
-                shelf_h = 0;
-            }
-            trial.push((idx, cx, cy));
-            cx += w + SPRITE_PADDING;
-            shelf_h = shelf_h.max(h);
-        }
-        let trial_height: u32 = trial
-            .iter()
-            .map(|&(idx, _, py)| py + sprites[idx].height)
-            .max()
-            .unwrap_or(1);
-        if trial_height <= max_texture_dim {
-            placements = trial;
-            atlas_height = trial_height;
-            break;
-        }
-        if atlas_width >= max_texture_dim {
-            placements = trial;
-            atlas_height = trial_height.min(max_texture_dim);
-            break;
-        }
-        atlas_width = (atlas_width.saturating_mul(2)).min(max_texture_dim);
-    }
+    let sizes: Vec<[u32; 2]> = sprites
+        .iter()
+        .map(|sprite| [sprite.width, sprite.height])
+        .collect();
+    let plan = atlas_growth::plan_initial_shelves(
+        &sizes,
+        atlas_growth::InitialShelfPolicy {
+            padding: atlas_growth::SPRITE_PADDING,
+            max_dim: max_texture_dim,
+            split_pages: false,
+        },
+    );
+    let atlas_width = plan.width;
+    let atlas_height = plan.single_page_height().min(max_texture_dim);
 
     let mut rgba: Vec<u8> = vec![0u8; (atlas_width * atlas_height * 4) as usize];
     let mut source_indices = vec![0u8; (atlas_width * atlas_height) as usize];
@@ -362,8 +327,9 @@ fn pack_bridge_sprites(
     let aw: f32 = atlas_width as f32;
     let ah: f32 = atlas_height as f32;
 
-    for &(idx, px, py) in &placements {
-        let spr: &RenderedBridge = &sprites[idx];
+    for placed in &plan.placements {
+        let [px, py] = placed.origin;
+        let spr: &RenderedBridge = &sprites[placed.index];
         let w: u32 = spr.width;
         let h: u32 = spr.height;
         for y in 0..h {

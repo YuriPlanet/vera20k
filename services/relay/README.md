@@ -94,6 +94,23 @@ reservations made before accepting pause. Retries and stale epochs never toggle
 state. Lost markers replay through Pull. Ticket loss does not resume a game;
 the last explicit Leave appends a resume marker so the departure tail can finish.
 
+A federated match spreads its sources over up to six relays, each serving the
+players nearest it. The lobby-signed `VO1F` roster (see `../lobby/protocol.md`)
+rides in every CONFIRM after the cookie; a relay admits only the sources its
+own roster entry homes and recovers the match link key with its ticket key. Each
+relay seals its own players' entries at the shared frame deadlines and sends
+them, authenticated with the link key, to every other relay as `VF1L` link
+packets at each new seal and otherwise every 50 ms. Entries are retained and
+resent until acknowledged, and a packet carrying entries goes out twice. A
+frame is emitted once every relay sealed it, in the same canonical order, so
+every relay delivers the same stream and sequence numbers. Player DATA to a remote source crosses one link to its relay. The
+first roster relay picks the start time from measured link round trips; the
+others follow its clock offset. Only it cancels a startup: another relay's Leave
+before the start asks it to, and becomes a frame-1 departure if the start was
+already on its way. Federated rooms cannot pause. Link packets go to the roster
+address on the relay's existing UDP port and are authenticated by their MAC,
+whatever address they arrive from.
+
 The RAM hot cache retains4,096 entries/2 MiB per room under a64 MiB global
 budget. Eviction from this cache does not evict match history: every complete
 canonical frame first appends to the encrypted full-match disk journal. The data
