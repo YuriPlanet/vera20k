@@ -1046,6 +1046,8 @@ pub struct ObjectType {
     #[cfg(feature = "ares")]
     driver: crate::rules::ares_driver::DriverTypeRules,
     #[cfg(feature = "ares")]
+    bounty: crate::rules::ares_bounty::BountyTypeRules,
+    #[cfg(feature = "ares")]
     crew: crate::rules::ares_crew::CrewTypeRules,
     /// Immutable projection of the retained TechnoTypeExt+308/+314/+320/+321
     /// reader. Country identities bind during Process, never from merged INI.
@@ -2525,6 +2527,19 @@ impl ObjectType {
     }
 
     #[cfg(feature = "ares")]
+    pub(crate) fn bounty_rules(&self) -> &crate::rules::ares_bounty::BountyTypeRules {
+        &self.bounty
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_bounty_rules(
+        &mut self,
+        bounty: &crate::rules::ares_bounty::BountyTypeRules,
+    ) {
+        self.bounty = bounty.clone();
+    }
+
+    #[cfg(feature = "ares")]
     pub(crate) fn aircraft_crashable_override(&self) -> Option<bool> {
         self.aircraft_crashable
     }
@@ -3947,6 +3962,8 @@ impl ObjectType {
             spotlight: Default::default(),
             #[cfg(feature = "ares")]
             driver: Default::default(),
+            #[cfg(feature = "ares")]
+            bounty: Default::default(),
             #[cfg(feature = "ares")]
             crew: Default::default(),
             #[cfg(feature = "ares")]

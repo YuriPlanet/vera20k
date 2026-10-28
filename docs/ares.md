@@ -86,6 +86,10 @@ Supported extensions:
   cloakability and forced decloaking. Temporal and airborne victim
   collection remain outside this chain; manual game acceptance remains pending.
 - [GenericWarhead](ares-generic-warhead.md)
+- [Kill bounties](../src/sim/bounty.rs): `Bounty`, rank-specific `Bounty.Value`
+  overrides, `GivesBounty`, on-map `BountyEnablers`, signed wallet changes and
+  optional floating credit labels. All readers, state and display hooks are
+  compiled only with `ares`; default builds keep the retail kill path.
 - [HunterSeeker launch and initial target acquisition](ares-hunter-seeker.md)
 - [House survival](ares-house-survival.md)
 - [Superweapon building gates](ares-superweapon-building-gates.md)

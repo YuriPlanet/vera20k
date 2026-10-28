@@ -21,6 +21,13 @@ pub(crate) struct ChronoScreenPresentation {
 }
 
 impl ChronoScreenPresentation {
+    /// The existing4F4480 interception also suppresses tactical draw-owned
+    /// counters; consumers must not advance them behind a retained surface.
+    #[cfg(feature = "ares")]
+    pub(crate) fn overrides_tactical_draw(&self) -> bool {
+        self.draw.is_some()
+    }
+
     pub(crate) fn before_frame(
         &mut self,
         gpu: &crate::render::gpu::GpuContext,

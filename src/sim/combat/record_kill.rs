@@ -170,6 +170,21 @@ fn record_the_kill(
     if matches!(source, KillSource::Techno(_)) && victim.tracking_facts.dont_score() {
         return;
     }
+    #[cfg(feature = "ares")]
+    if let KillSource::Techno(Some(attacker)) = source {
+        // Ares RegisterDestruction_Bounty702E64 ->1004B100 precedes the
+        // original alliance/XP work, after Tags and DontScore. No E4 payout.
+        crate::sim::bounty::award(
+            entities, houses, interner, alliances, rules, victim_id, attacker,
+        );
+    }
+    // Bounty changes the existing wallet and may queue a presentation sum on
+    // an actor. Reborrow the victim after that visit rather than retaining a
+    // mutable-store alias across the native hook.
+    #[cfg(feature = "ares")]
+    let Some(victim) = entities.get(victim_id) else {
+        return;
+    };
     let killer_id = match source {
         KillSource::Techno(source) => source,
         KillSource::House(_) => None,

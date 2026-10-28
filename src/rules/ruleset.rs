@@ -4671,6 +4671,11 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
+    #[cfg(feature = "ares")]
+    pub(crate) fn bounty_rules(&self) -> &crate::rules::ares_bounty::BountyGlobalRules {
+        self.ares_global_controls.bounty()
+    }
+
     /// Ares RulesExt+70, used by SW_HunterSeeker::Activate100728EB.
     #[cfg(feature = "ares")]
     pub(crate) fn hunter_seeker_buildings(&self) -> &[String] {
@@ -4932,6 +4937,16 @@ impl RuleSet {
                 .copied()
             {
                 rules.object_list[handle.0 as usize].bind_driver_rules(driver);
+            }
+        }
+        #[cfg(feature = "ares")]
+        for (category, name, bounty) in processed.bounty_states() {
+            if let Some(handle) = rules
+                .object_category_index
+                .get(&(category, name.to_ascii_uppercase()))
+                .copied()
+            {
+                rules.object_list[handle.0 as usize].bind_bounty_rules(bounty);
             }
         }
         #[cfg(feature = "ares")]
@@ -7242,6 +7257,23 @@ impl RuleSet {
 
         #[cfg(feature = "ares")]
         {
+            // TypeExt bounty values and the attacker's enable bit are gameplay
+            // inputs; display-only overrides do not enter this map or its hash.
+            let bounty = self
+                .object_list
+                .iter()
+                .filter(|object| object.bounty_rules().has_gameplay_configuration())
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.bounty_rules(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !bounty.is_empty() {
+                b"ares-bounty-rules-v1".hash(&mut hasher);
+                bounty.hash(&mut hasher);
+            }
             // Ares TypeExt driver fields retain earlier successful reads even
             // when the merged text contains later invalid/empty values.
             let drivers = self
@@ -8502,6 +8534,13 @@ impl RuleSet {
                 .can_be_driven_override()
                 .unwrap_or(country.multiplay_passive)
         })
+    }
+
+    /// Victim CountryExt+1D1 gate in Ares bounty payout10043279..10043289.
+    #[cfg(feature = "ares")]
+    pub(crate) fn country_gives_bounty(&self, id: &str) -> bool {
+        self.country_rules(id)
+            .is_some_and(|country| country.veteran_types.gives_bounty())
     }
 
     /// HouseType511850 scalar fields used by SetDifficulty4F6EC0. Unknown

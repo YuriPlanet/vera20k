@@ -6210,6 +6210,10 @@ impl Simulation {
         if category == EntityCategory::Structure {
             self.houses.leave_house_base_lists(stable_id, old_owner);
         }
+        // Ares7014D5 ->10049FB0/10049FD7 displays the old owner's queued
+        // sum before target/destination callbacks and the actual owner store.
+        #[cfg(feature = "ares")]
+        self.flush_bounty_display(stable_id, rules, effects, true);
         // Original7014DB/7014E9 dispatch the class target and destination
         // setters, then70151A clears Archive and70156E queues Guard. All run
         // on the OLD house, before SpawnManager and the701735 owner swap.

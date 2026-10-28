@@ -4045,6 +4045,10 @@ impl Simulation {
             .release_foot_air_tracker_before_limbo(stable_id);
         #[cfg(feature = "ares")]
         self.limbo_ares_attach_effects(stable_id, context.rules());
+        // Techno Remove6F6AC9 ->1004B140/1004B1A9 flushes even a repeated
+        // Limbo, before the base's alive/InLimbo and sight-release branches.
+        #[cfg(feature = "ares")]
+        self.flush_bounty_display(stable_id, context.rules(), context.effects(), true);
         if self
             .substrate
             .entities

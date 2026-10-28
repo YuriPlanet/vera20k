@@ -1485,6 +1485,10 @@ fn techno_common_steps(
     sim.update_ares_emp_operability(id, rules, effects);
     #[cfg(feature = "ares")]
     sim.update_ares_driver_killed_mission(id, rules, overlay_registry, effects);
+    // Ares1004B64B..1004B658 follows the extension updates and precedes
+    // the original common head, consuming a ready displayed bounty sum.
+    #[cfg(feature = "ares")]
+    sim.flush_bounty_display(id, rules, effects, false);
     // Techno6F9E70..6F9EA8 re-drives +4A4 at Location before mission
     // Stop/Release. A zero gain must stop a live loop before Guard can
     // release it to decay at the previous gain.

@@ -744,6 +744,10 @@ pub struct GameEntity {
     #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) vehicle_driver: crate::sim::vehicle_theft::VehicleDriverState,
+    /// Ares TechnoExt+A8/AC, owned by sim::bounty; presentation only.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) bounty_display: crate::sim::bounty::BountyDisplayState,
     /// Shared Building C4/PostMortem detonation latch: the marker `+0x6DF`
     /// with its C4Timer (`+0x528`) and C4AppliedBy (`+0x540`). The C4 plant
     /// (`sim::c4_plant`) owns one producer; qualifying delayed-death receiver
@@ -1968,6 +1972,8 @@ impl GameEntity {
             capture_infantry_type_index: crate::sim::world::CapturedInfantryType::constructed(),
             #[cfg(feature = "ares")]
             vehicle_driver: Default::default(),
+            #[cfg(feature = "ares")]
+            bounty_display: Default::default(),
             pending_c4_detonation: Default::default(),
             has_been_captured: Default::default(),
             no_survivor: Default::default(),
