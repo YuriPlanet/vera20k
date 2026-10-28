@@ -931,6 +931,7 @@ mod tests {
             match_last: None,
             frames: 781,
             opponents_left: true,
+            ..Default::default()
         };
         let won = ExternalLaunchReport::new(Some(ExternalMatchResult::Won), Some(&progress), None);
         assert_eq!((won.result, won.exit_code), ("won", 10));

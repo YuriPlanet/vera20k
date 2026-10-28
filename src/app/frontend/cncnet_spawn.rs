@@ -10,8 +10,8 @@
 //! This boundary admits one local human, Battle and stock YR campaigns. Ares
 //! builds also carry allocated custom Country identities into Battle startup.
 //! External campaigns pass an explicit Scenario independently of record0.
-//! Multiplayer Battle files (`PlayerCount>1`, docs/spawn.md) normalize into a
-//! canonical source-ordered session plus a relay or direct transport.
+//! Multiplayer Battle files (`PlayerCount>1` or `[Relay]`, docs/spawn.md) normalize
+//! into a canonical source-ordered session plus a relay or direct transport.
 //! It does not load native saves or load extension DLLs.
 
 use std::net::{Ipv4Addr, SocketAddrV4};
@@ -264,7 +264,9 @@ impl SpawnRequest {
             1,
             NETWORK_PLAYER_SLOT_COUNT as i32,
         )? as usize;
-        let multiplayer = player_count > 1;
+        // A launcher may host one human against AI while the relay and match
+        // service still own the clock and lifecycle.
+        let multiplayer = player_count > 1 || ini.section("Relay").is_some();
         ensure!(
             !boolean(settings, "IsSpectator", false)?,
             "spectator launches are unsupported"
@@ -283,10 +285,6 @@ impl SpawnRequest {
                 "[Other{index}] requests an additional human player"
             );
         }
-        ensure!(
-            multiplayer || ini.section("Relay").is_none(),
-            "[Relay] requires PlayerCount>1"
-        );
 
         let mut game_speed = ranged(
             settings,
@@ -420,7 +418,7 @@ fn skirmish(
         !boolean(settings, "SpecialHouseIsAlly", true)?,
         "SpecialHouseIsAlly=Yes is unsupported; use the VERA client profile"
     );
-    let multiplayer = player_count > 1;
+    let multiplayer = player_count > 1 || ini.section("Relay").is_some();
     let house_slots = if multiplayer {
         NETWORK_PLAYER_SLOT_COUNT
     } else {

@@ -494,6 +494,22 @@ fn relay_section_at(source: u8, sources_mask: u32, tick_hz: u16) -> String {
 }
 
 #[test]
+fn one_human_with_ai_uses_the_certified_relay_transport() {
+    let text = network_spawn(1, 0, &relay_section(0, 1))
+        .replacen("[Settings]\n", "[Settings]\nAIPlayers=1\n", 1);
+    let text = format!(
+        "{text}\n[HouseHandicaps]\nMulti2=2\n[HouseCountries]\nMulti2=1\n[HouseColors]\nMulti2=1\n"
+    );
+    let request = SpawnRequest::parse(&text).unwrap();
+    let SpawnGame::Network(network) = request.game else {
+        panic!("one human plus AI must keep the relay service lifecycle")
+    };
+    assert_eq!(network.session.humans.len(), 1);
+    assert_eq!(network.session.opponents.len(), 1);
+    assert!(matches!(network.transport, SpawnTransport::Relay(_)));
+}
+
+#[test]
 fn two_player_relay_file_admits_the_grant_in_canonical_source_order() {
     let text = network_spawn(2, 1, &relay_section(1, 0b11));
     let request = SpawnRequest::parse(&text).unwrap();
