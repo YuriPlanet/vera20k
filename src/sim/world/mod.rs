@@ -7763,36 +7763,6 @@ impl Simulation {
         self.run_team_ai_pass(rules, overlay_registry, effects);
     }
 
-    /// Install fixed AIMD plus scenario AI definitions after RuleSet identities
-    /// are interned and before the first gameplay tick. This is data ingress
-    /// only: the installed VM contains no live TeamClass instances.
-    ///
-    /// A fixed-AIMD definition that fails RuleSet resolution refuses the whole
-    /// install (`Err`, nothing installed); scenario-origin omissions install
-    /// and come back as logged, nonfatal diagnostics.
-    pub fn install_team_ai_registry(
-        &mut self,
-        registry: &crate::rules::team_ai_ini::TeamAiIniRegistry,
-        rules: &RuleSet,
-    ) -> Result<
-        Vec<crate::sim::team_script_vm::TeamAiInstallDiagnostic>,
-        Vec<crate::sim::team_script_vm::TeamAiInstallDiagnostic>,
-    > {
-        let (vm, diagnostics) =
-            TeamScriptVm::from_ini_registry(registry, &mut self.interner, rules);
-        if diagnostics
-            .iter()
-            .any(crate::sim::team_script_vm::TeamAiInstallDiagnostic::is_fixed_source_refusal)
-        {
-            return Err(diagnostics);
-        }
-        self.team_script_vm = vm;
-        for diagnostic in &diagnostics {
-            log::warn!("Team AI install diagnostic: {diagnostic:?}");
-        }
-        Ok(diagnostics)
-    }
-
     /// The Drive, Hover and Ship locomotors each spawn `Rules->Wake`
     /// (Rules+0x94) from their own process; [`wake_anchor_for`] holds the
     /// three gates. All three build `AnimClass(Wake, Location, 0, 1, 0x600,

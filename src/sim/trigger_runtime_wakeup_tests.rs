@@ -289,9 +289,10 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
             sim.interner.get(row["name"].as_str().unwrap())
         );
     }
-    let cropped = super::tests::install_event_ingress_map(&mut sim, &rules, &body);
-    sim.install_team_ai_registry(&teams, &rules).unwrap();
+    let cropped = super::tests::trigger_fixture_map(&body);
     sim.initialize_trigger_definitions(&cropped, &teams, None, None);
+    sim.install_team_ai_registry(&teams, &rules).unwrap();
+    sim.install_authored_cell_trigger_tags(&cropped);
     sim.classify_map_triggers(&rules);
 
     for id in [chain[0], chain[1]] {

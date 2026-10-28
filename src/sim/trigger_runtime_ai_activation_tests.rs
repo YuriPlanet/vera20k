@@ -4,6 +4,59 @@ use crate::sim::house_state::HouseAiActivationLatches;
 use crate::util::save_codec;
 
 #[test]
+fn team_lookup_fixed_ai_uses_final_map_names_and_dependencies() {
+    use crate::rules::{ini_parser::IniFile, ruleset::RuleSet, team_ai_ini::TeamAiIniRegistry};
+
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n1=E2\n[E1]\nStrength=100\nTechLevel=1\n\
+         [E2]\nStrength=100\nTechLevel=7\n",
+    ))
+    .unwrap();
+    let fixed = IniFile::from_str(&format!(
+        "[TeamTypes]\n0=FIRST\n[FIRST]\nName=OLD\nScript=S\nTaskForce=F\n\
+         [ScriptTypes]\n0=S\n[S]\n0=5,1\n\
+         [TaskForces]\n0=F\n[F]\n0=1,E1\n\
+         [AITriggerTypes]\nA=Lookup,FINAL_ALIAS,<all>,0,-1,<none>,{},40,10,40,1,0,0,0,MAP_ALIAS,1,1,1\n",
+        "0".repeat(64)
+    ));
+    let map = crate::map::map_file::MapFile::from_ini(IniFile::from_str(
+        "[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+         [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
+         [TeamTypes]\n0=FIRST\n1=MAP\n[FIRST]\nName=FINAL_ALIAS\n\
+         [MAP]\nName=MAP_ALIAS\nScript=S\nTaskForce=F\n\
+         [TaskForces]\n0=F\n[F]\n0=1,E2\n\
+         [Triggers]\nT=Neutral,<none>,constructor,0,1,1,1,0\n\
+         [Actions]\nT=1,7,1,LATE,0,0,0,0,A\n",
+    ))
+    .unwrap();
+    let registry = TeamAiIniRegistry::from_sources(&fixed, &map.ini, true);
+    for prepared in [false, true] {
+        let mut sim = Simulation::new();
+        sim.intern_rule_type_ids(&rules);
+        if prepared {
+            sim.initialize_trigger_definitions(&map, &registry, None, None);
+        }
+        let rng = sim.scenario_rng.native_state_hex();
+        let diagnostics = sim.install_team_ai_registry(&registry, &rules).unwrap();
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        let trigger = sim.team_script_vm.ai_triggers_in_order().next().unwrap().0;
+        assert_eq!(trigger.primary_team_type, sim.interner.get("FIRST"));
+        assert_eq!(trigger.secondary_team_type, sim.interner.get("MAP"));
+        assert_eq!(
+            trigger.threshold, 7,
+            "the selected final TaskForce owns TechLevel"
+        );
+        let expected = if prepared {
+            vec!["FIRST", "MAP", "LATE"]
+        } else {
+            vec!["FIRST", "MAP"]
+        };
+        assert_eq!(sim.trigger_runtime.definitions.team_types, expected);
+        assert_eq!(sim.scenario_rng.native_state_hex(), rng);
+    }
+}
+
+#[test]
 fn authored_ai_trigger_actions_change_only_the_selected_house_latch() {
     for (kind, initial, expected) in [
         (75, true, false),

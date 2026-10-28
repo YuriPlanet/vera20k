@@ -4688,7 +4688,6 @@ mod tests {
         let team = restored.team_script_vm.team(team_id).unwrap();
         assert_eq!(team.member_count(), 0);
         assert_eq!(restored.team_script_vm.registry_counts(), (1, 1, 1, 1));
-        assert_eq!(restored.team_script_vm.team_type_order(), &[team_type_id]);
         let restored_team_type = restored
             .team_script_vm
             .team_type(team_type_id)

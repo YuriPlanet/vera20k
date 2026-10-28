@@ -298,11 +298,14 @@ fn tag(sim: &mut Simulation, name: &str) -> (usize, usize) {
 }
 
 fn install(sim: &mut Simulation, rules: &RuleSet, event: &str) -> (usize, usize) {
+    // These native predicate controls supply existing TeamTypes before
+    // TEvent::Read71F595 binds them; that reader must not construct them.
     install_event_ingress_map(
         sim,
         rules,
         &format!(
-            "[Triggers]\nMOVE=Country0,<none>,Move,0,1,1,1,0\n[Tags]\nMOVETAG=0,Move,MOVE\n[Events]\nMOVE=1,{event}\n[Actions]\nMOVE=1,28,0,7,0,0,0,0,A\n"
+            "[TeamTypes]\n0=MATCH\n1=OTHER\n[MATCH]\nName=MATCH\n[OTHER]\nName=OTHER\n\
+             [Triggers]\nMOVE=Country0,<none>,Move,0,1,1,1,0\n[Tags]\nMOVETAG=0,Move,MOVE\n[Events]\nMOVE=1,{event}\n[Actions]\nMOVE=1,28,0,7,0,0,0,0,A\n"
         ),
     );
     tag(sim, "MOVETAG")

@@ -2,6 +2,52 @@
 //! up the supplied native storage; every operation calls the production owner.
 
 use super::*;
+
+#[test]
+fn team_lookup_events_preserve_names_order_and_do_not_allocate() {
+    use crate::rules::{ini_parser::IniFile, team_ai_ini::TeamAiIniRegistry};
+
+    let long_name = "N".repeat(48);
+    let fixed = IniFile::from_str(&format!(
+        "[TeamTypes]\n0=MISSING\n1=FIRST\n2=SECOND\n\
+         [FIRST]\nName=SECOND\n[SECOND]\nName={long_name}Z\n"
+    ));
+    let map = crate::map::map_file::MapFile::from_ini(IniFile::from_str(&format!(
+        "[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+         [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
+         [TeamTypes]\n0=CASE_MISSING\n1=case_missing\n\
+         [case_missing]\nName=PHANTOM\nTag=BAD\n\
+         [Triggers]\nT=Neutral,<none>,lookup,0,1,1,1,0\n\
+         [Events]\nT=5,1,1,SECOND,1,1,GHOST,1,1, SECOND,1,1,{long_name},1,1,PHANTOM\n\
+         [Actions]\nT=1,7,1,LATE,0,0,0,0,A\n"
+    )))
+    .unwrap();
+    let teams = TeamAiIniRegistry::from_sources(&fixed, &map.ini, true);
+    let definitions = RuntimeDefinitions::read_map(&map, &teams, None, None);
+
+    // 6F19B0 constructs MISSING even though its section read fails; Event
+    // 71F595 never constructs GHOST or trims the leading space. The action
+    // factory runs after these events and alone appends LATE. CASE_MISSING
+    // keeps its first spelling, so [case_missing] cannot import Name or Tag.
+    assert_eq!(
+        definitions.team_types,
+        ["MISSING", "FIRST", "SECOND", "CASE_MISSING", "LATE"]
+    );
+    assert_eq!(definitions.team_tags, [None; 5]);
+    assert!(
+        definitions.tag_types.is_empty(),
+        "retained-case body is absent"
+    );
+    let event_names: Vec<_> = definitions.trigger_types[0]
+        .events
+        .iter()
+        .map(|event| event.team_name.as_deref())
+        .collect();
+    assert_eq!(
+        event_names,
+        [None, Some("SECOND"), None, None, Some("FIRST")]
+    );
+}
 use crate::sim::world::{DeferredDeleteQueue, DeferredDeleteTicket};
 use crate::util::save_codec;
 use serde_json::{Value, json};

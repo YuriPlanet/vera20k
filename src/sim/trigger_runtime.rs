@@ -231,7 +231,7 @@ struct TagType {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-struct RuntimeDefinitions {
+pub(crate) struct RuntimeDefinitions {
     team_types: Vec<String>,
     /// TeamType+D0 references resolved during physical Read6F1341. This is
     /// the sole owner; Team constructors consume the retained ordinal and
@@ -242,6 +242,27 @@ struct RuntimeDefinitions {
 }
 
 impl RuntimeDefinitions {
+    /// TeamTypeClass::FindByIDOrName @ 0x006F0FC0 (retail gamemd.exe).
+    /// Scan the constructor vector, ID then Name for each entry; callers own
+    /// token preprocessing. This never allocates, trims or handles sentinels.
+    pub(crate) fn find_team_type(
+        &self,
+        requested: &str,
+        teams: &crate::rules::team_ai_ini::TeamAiIniRegistry,
+    ) -> Option<&str> {
+        self.team_types
+            .iter()
+            .find(|id| {
+                id.eq_ignore_ascii_case(requested)
+                    || teams.team_type_name(id).eq_ignore_ascii_case(requested)
+            })
+            .map(String::as_str)
+    }
+
+    pub(crate) fn team_type_ids(&self) -> impl Iterator<Item = &str> {
+        self.team_types.iter().map(String::as_str)
+    }
+
     fn team_type(&mut self, name: &str) -> Option<usize> {
         if is_native_none_type_name(name) {
             return None;
@@ -360,19 +381,15 @@ impl RuntimeDefinitions {
             sound,
         }
     }
-    fn read_map(
-        map: &crate::map::map_file::MapFile,
-        teams: &crate::rules::team_ai_ini::TeamAiIniRegistry,
-        eva: Option<&crate::rules::sound_ini::EvaRegistry>,
-        sounds: Option<&crate::rules::sound_ini::SoundRegistry>,
-    ) -> Self {
+    pub(crate) fn read_teams(teams: &crate::rules::team_ai_ini::TeamAiIniRegistry) -> Self {
         let mut definitions = Self::default();
         // Full_Init687984/68798D: reads are transactions, not the final merged
         // TeamType vector. Team.Tag can first-construct TagTypes here.
-        for team in teams.team_type_read_sequence() {
-            let Some(index) = definitions.team_type(&team.id) else {
+        for (id, read) in teams.team_type_registration_sequence() {
+            let Some(index) = definitions.team_type(id) else {
                 continue;
             };
+            let Some(team) = read else { continue };
             // Read6F131E retains +D0 on an absent/empty ReadString; a
             // nonempty value calls6E6310, including either null literal.
             // Only this physical pass can construct a new TagType identity.
@@ -382,6 +399,16 @@ impl RuntimeDefinitions {
                 definitions.team_tags[index] = resolved;
             }
         }
+        definitions
+    }
+
+    fn read_map(
+        map: &crate::map::map_file::MapFile,
+        teams: &crate::rules::team_ai_ini::TeamAiIniRegistry,
+        eva: Option<&crate::rules::sound_ini::EvaRegistry>,
+        sounds: Option<&crate::rules::sound_ini::SoundRegistry>,
+    ) -> Self {
+        let mut definitions = Self::read_teams(teams);
         // LoadFromINIList7275D0/6E5ED0 find or allocate each key's Type,
         // ignoring case, and ReadINI727240/6E6080 read every record by that
         // Type's own ID, exact case. A key differing from an earlier one only
@@ -411,13 +438,12 @@ impl RuntimeDefinitions {
                     .events
                     .get(&id)
                     .map_or_else(Vec::new, |record| record.conditions().to_vec());
-                // Events are prepended, but their reference factories ran in
-                // source order before the retained reverse traversal.
+                // TEvent::Read71F595 is find-only and runs before this
+                // Trigger's action factories. Unknown references stay null.
                 for event in events.iter_mut().rev() {
                     if let Some(team) = event.team_name.as_deref() {
-                        event.team_name = definitions
-                            .team_type(team)
-                            .map(|index| definitions.team_types[index].clone());
+                        event.team_name =
+                            definitions.find_team_type(team, teams).map(str::to_owned);
                     }
                 }
                 //727530..7275A3: a present entry rebuilds the action list.
@@ -1087,6 +1113,50 @@ impl Simulation {
         // requiring equality with live indexes rejects valid death snapshots.
         // Executed: tag_lifecycle --damage-events object_destruction_controls.
         Ok(())
+    }
+
+    /// Install fixed AIMD plus scenario AI definitions after RuleSet identities
+    /// are interned and before the first gameplay tick. This is data ingress
+    /// only: the installed VM contains no live TeamClass instances.
+    ///
+    /// A fixed-AIMD definition that fails RuleSet resolution refuses the whole
+    /// install (`Err`, nothing installed); scenario-origin omissions install
+    /// and come back as logged, nonfatal diagnostics.
+    pub fn install_team_ai_registry(
+        &mut self,
+        registry: &crate::rules::team_ai_ini::TeamAiIniRegistry,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> Result<
+        Vec<crate::sim::team_script_vm::TeamAiInstallDiagnostic>,
+        Vec<crate::sim::team_script_vm::TeamAiInstallDiagnostic>,
+    > {
+        // Cold callers stage the same physical Team prefix. Ordinary loaders
+        // already prepared the map and its action-created identities; never
+        // replay those reads or replace that tail during AI installation.
+        let staged = (!self.trigger_runtime.definitions_prepared)
+            .then(|| RuntimeDefinitions::read_teams(registry));
+        let definitions = staged.as_ref().unwrap_or(&self.trigger_runtime.definitions);
+        let (vm, diagnostics) =
+            crate::sim::team_script_vm::TeamScriptVm::from_prepared_ini_registry(
+                registry,
+                definitions,
+                &mut self.interner,
+                rules,
+            );
+        if diagnostics
+            .iter()
+            .any(crate::sim::team_script_vm::TeamAiInstallDiagnostic::is_fixed_source_refusal)
+        {
+            return Err(diagnostics);
+        }
+        if let Some(definitions) = staged {
+            self.trigger_runtime.definitions = definitions;
+        }
+        self.team_script_vm = vm;
+        for diagnostic in &diagnostics {
+            log::warn!("Team AI install diagnostic: {diagnostic:?}");
+        }
+        Ok(diagnostics)
     }
 
     pub(crate) fn trigger_definitions_prepared(&self) -> bool {

@@ -15,22 +15,55 @@ use super::{
 };
 
 impl TeamScriptVm {
-    /// Resolve one fixed-AIMD + scenario registry load into deterministic sim
-    /// identities. This installs definitions only: no Team, House timer, RNG,
-    /// entity, or command state changes here.
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn from_ini_registry(
         registry: &TeamAiIniRegistry,
         interner: &mut StringInterner,
         rules: &RuleSet,
     ) -> (Self, Vec<TeamAiInstallDiagnostic>) {
-        // Validate the immutable fixed pass independently. Final records may
-        // have been replaced or partially overlaid by the map, which must not
-        // erase a required fixed-AIMD resolution refusal.
+        let definitions = crate::sim::trigger_runtime::RuntimeDefinitions::read_teams(registry);
+        Self::from_prepared_ini_registry(registry, &definitions, interner, rules)
+    }
+
+    /// Full_Init687984..6879E8 reads all Teams and map actions before either
+    /// AI pass. Both operands use that same final constructor-order owner.
+    pub(crate) fn from_prepared_ini_registry(
+        registry: &TeamAiIniRegistry,
+        definitions: &crate::sim::trigger_runtime::RuntimeDefinitions,
+        interner: &mut StringInterner,
+        rules: &RuleSet,
+    ) -> (Self, Vec<TeamAiInstallDiagnostic>) {
         let fixed_registry = registry.fixed_resolution_view();
         let mut fixed_interner = interner.clone();
+        // Keep independent fixed Script/TaskForce/member validation. Fixed AI
+        // records, however, bind after map Teams and derive their thresholds
+        // from the final typed dependencies, even when the map replaces them.
         let (_, mut diagnostics) =
-            Self::resolve_ini_registry(&fixed_registry, &mut fixed_interner, rules);
-        let (vm, final_diagnostics) = Self::resolve_ini_registry(registry, interner, rules);
+            Self::resolve_ini_definitions(&fixed_registry, &mut fixed_interner, rules);
+        let (mut vm, mut final_diagnostics) =
+            Self::resolve_ini_definitions(registry, interner, rules);
+        fixed_interner = interner.clone();
+        for trigger in &fixed_registry.ai_triggers {
+            vm.resolve_ai_trigger(
+                trigger,
+                registry,
+                definitions,
+                &mut fixed_interner,
+                rules,
+                &mut diagnostics,
+            );
+        }
+        for trigger in &registry.ai_triggers {
+            let definition = vm.resolve_ai_trigger(
+                trigger,
+                registry,
+                definitions,
+                interner,
+                rules,
+                &mut final_diagnostics,
+            );
+            vm.register_ai_trigger(definition);
+        }
         for diagnostic in final_diagnostics {
             if !diagnostics
                 .iter()
@@ -39,10 +72,11 @@ impl TeamScriptVm {
                 diagnostics.push(diagnostic);
             }
         }
+        derive_team_type_zone_fields(&mut vm, interner, rules, definitions);
         (vm, diagnostics)
     }
 
-    fn resolve_ini_registry(
+    fn resolve_ini_definitions(
         registry: &TeamAiIniRegistry,
         interner: &mut StringInterner,
         rules: &RuleSet,
@@ -228,71 +262,76 @@ impl TeamScriptVm {
             });
         }
 
-        for trigger in &registry.ai_triggers {
-            let id = interner.intern(&trigger.id);
-            let primary_team_type = resolve_trigger_team_type(
-                &trigger.id,
-                trigger.primary_team_type.as_deref(),
-                &vm.team_types,
-                interner,
-                &mut diagnostics,
-                trigger.source,
-            );
-            let secondary_team_type = resolve_trigger_team_type(
-                &trigger.id,
-                trigger.secondary_team_type.as_deref(),
-                &vm.team_types,
-                interner,
-                &mut diagnostics,
-                trigger.source,
-            );
-            let owner = resolve_trigger_owner(trigger, rules, &mut diagnostics);
-            let object_type = resolve_trigger_object(trigger, rules, interner, &mut diagnostics);
-            let primary_tech_level = trigger_task_force_tech_level(
-                &vm,
-                primary_team_type,
-                interner,
-                rules,
-                registry.game_mode_nonzero(),
-            );
-            let secondary_tech_level = trigger_task_force_tech_level(
-                &vm,
-                secondary_team_type,
-                interner,
-                rules,
-                registry.game_mode_nonzero(),
-            );
-            let threshold = [primary_tech_level, secondary_tech_level]
-                .into_iter()
-                .flatten()
-                .fold(0_i32, i32::max);
-            vm.register_ai_trigger(TeamAiTriggerDefinition {
-                id,
-                tokens: trigger.tokens.clone(),
-                display_name: trigger.display_name.clone(),
-                enabled: trigger.enabled,
-                primary_team_type,
-                owner,
-                threshold,
-                condition: trigger.condition,
-                object_type,
-                comparison_mask: trigger.comparison_mask,
-                weights: trigger.weights,
-                multiplayer: trigger.multiplayer,
-                side: trigger.side,
-                storage_flag_d1: trigger.storage_flag_d1,
-                secondary_team_type,
-                difficulty_enabled: trigger.difficulty_enabled,
-                source: trigger.source,
-            });
-        }
-
-        // ScenarioClass calls 0x006F2040 once after the final AITrigger pass.
-        // Recompute from the final resolved TaskForces instead of deriving from
-        // an earlier fixed/map section read.
-        derive_team_type_zone_fields(&mut vm, interner, rules);
-
         (vm, diagnostics)
+    }
+
+    fn resolve_ai_trigger(
+        &self,
+        trigger: &crate::rules::team_ai_ini::AiTriggerTypeIni,
+        registry: &TeamAiIniRegistry,
+        definitions: &crate::sim::trigger_runtime::RuntimeDefinitions,
+        interner: &mut StringInterner,
+        rules: &RuleSet,
+        diagnostics: &mut Vec<TeamAiInstallDiagnostic>,
+    ) -> TeamAiTriggerDefinition {
+        let id = interner.intern(&trigger.id);
+        let primary_team_type = resolve_trigger_team_type(
+            &trigger.id,
+            trigger.primary_team_type.as_deref(),
+            definitions,
+            registry,
+            interner,
+            diagnostics,
+            trigger.source,
+        );
+        let secondary_team_type = resolve_trigger_team_type(
+            &trigger.id,
+            trigger.secondary_team_type.as_deref(),
+            definitions,
+            registry,
+            interner,
+            diagnostics,
+            trigger.source,
+        );
+        let owner = resolve_trigger_owner(trigger, rules, diagnostics);
+        let object_type = resolve_trigger_object(trigger, rules, interner, diagnostics);
+        let primary_tech_level = trigger_task_force_tech_level(
+            self,
+            primary_team_type,
+            interner,
+            rules,
+            registry.game_mode_nonzero(),
+        );
+        let secondary_tech_level = trigger_task_force_tech_level(
+            self,
+            secondary_team_type,
+            interner,
+            rules,
+            registry.game_mode_nonzero(),
+        );
+        let threshold = [primary_tech_level, secondary_tech_level]
+            .into_iter()
+            .flatten()
+            .fold(0_i32, i32::max);
+        TeamAiTriggerDefinition {
+            id,
+            tokens: trigger.tokens.clone(),
+            display_name: trigger.display_name.clone(),
+            enabled: trigger.enabled,
+            primary_team_type,
+            owner,
+            threshold,
+            condition: trigger.condition,
+            object_type,
+            comparison_mask: trigger.comparison_mask,
+            weights: trigger.weights,
+            multiplayer: trigger.multiplayer,
+            side: trigger.side,
+            storage_flag_d1: trigger.storage_flag_d1,
+            secondary_team_type,
+            difficulty_enabled: trigger.difficulty_enabled,
+            source: trigger.source,
+        }
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -303,11 +342,6 @@ impl TeamScriptVm {
             self.team_types.len(),
             self.ai_triggers.len(),
         )
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn team_type_order(&self) -> &[InternedId] {
-        &self.team_type_order
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -385,16 +419,19 @@ fn find_or_allocate_definition<T>(
 fn resolve_trigger_team_type(
     trigger_id: &str,
     requested: Option<&str>,
-    definitions: &BTreeMap<InternedId, TeamTypeDefinition>,
-    interner: &StringInterner,
+    definitions: &crate::sim::trigger_runtime::RuntimeDefinitions,
+    registry: &TeamAiIniRegistry,
+    interner: &mut StringInterner,
     diagnostics: &mut Vec<TeamAiInstallDiagnostic>,
     source: TeamAiDefinitionSource,
 ) -> Option<InternedId> {
     let requested = requested?;
-    let resolved = interner
-        .get(requested)
-        .filter(|id| definitions.contains_key(id));
-    if resolved.is_none() {
+    let resolved = definitions
+        .find_team_type(requested, registry)
+        .map(|id| interner.intern(id));
+    // Empty AI tokens still reach 6F0FC0; a null result is not a missing
+    // authored identity diagnostic. Keep the existing nonempty policy.
+    if resolved.is_none() && !requested.is_empty() {
         diagnostics.push(TeamAiInstallDiagnostic::MissingAiTriggerTeamType {
             trigger_id: trigger_id.to_string(),
             team_type_id: requested.to_string(),
@@ -486,8 +523,16 @@ fn trigger_task_force_tech_level(
 
 // gamemd.exe 0x006F2040 -> 0x006F1FA0: reset and derive the retained
 // TeamTypeClass +0xEC/+0xF0/+0xF1 fields in final registry order.
-fn derive_team_type_zone_fields(vm: &mut TeamScriptVm, interner: &StringInterner, rules: &RuleSet) {
-    for team_type_id in vm.team_type_order.clone() {
+fn derive_team_type_zone_fields(
+    vm: &mut TeamScriptVm,
+    interner: &StringInterner,
+    rules: &RuleSet,
+    definitions: &crate::sim::trigger_runtime::RuntimeDefinitions,
+) {
+    for team_type_id in definitions
+        .team_type_ids()
+        .filter_map(|id| interner.get(id))
+    {
         let Some(team_type) = vm.team_types.get(&team_type_id).copied() else {
             continue;
         };

@@ -748,8 +748,6 @@ pub struct TeamScriptVm {
     task_force_order: Vec<InternedId>,
     team_types: BTreeMap<InternedId, TeamTypeDefinition>,
     #[serde(default)]
-    team_type_order: Vec<InternedId>,
-    #[serde(default)]
     team_type_ini: BTreeMap<InternedId, TeamTypeIniMetadata>,
     #[serde(default)]
     ai_triggers: BTreeMap<InternedId, TeamAiTriggerDefinition>,
@@ -797,9 +795,6 @@ impl TeamScriptVm {
     }
 
     pub fn register_team_type(&mut self, definition: TeamTypeDefinition) {
-        if !self.team_types.contains_key(&definition.id) {
-            self.team_type_order.push(definition.id);
-        }
         self.team_type_ini.entry(definition.id).or_default();
         self.team_types.insert(definition.id, definition);
     }
@@ -1906,9 +1901,8 @@ mod tests {
         assert!(diagnostics.is_empty());
         assert_eq!(vm.registry_counts(), (1, 1, 2, 1));
         assert_eq!(
-            vm.team_type_order()
-                .iter()
-                .map(|id| interner.resolve(*id))
+            crate::sim::trigger_runtime::RuntimeDefinitions::read_teams(&registry)
+                .team_type_ids()
                 .collect::<Vec<_>>(),
             ["TT1", "TT2"]
         );
@@ -2001,7 +1995,6 @@ mod tests {
         let encoded = serde_json::to_string(&vm).unwrap();
         let restored: TeamScriptVm = serde_json::from_str(&encoded).unwrap();
         assert_eq!(restored.registry_counts(), vm.registry_counts());
-        assert_eq!(restored.team_type_order(), vm.team_type_order());
         assert_eq!(restored.ai_trigger_order(), vm.ai_trigger_order());
         assert_eq!(
             restored.ai_trigger(interner.get("AT").unwrap()),
@@ -2542,8 +2535,8 @@ mod tests {
             12
         );
         let zone_rows = vm
-            .team_type_order()
-            .iter()
+            .team_types
+            .keys()
             .map(|id| {
                 let team_type = vm.team_type(*id).expect("ordered TeamType");
                 format!(

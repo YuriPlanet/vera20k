@@ -2273,7 +2273,7 @@ fn flat_trigger_playfield_terrain(
 
 /// One fixture INI body behind a minimal map header, read by the production
 /// map reader.
-fn trigger_fixture_map(body: &str) -> crate::map::map_file::MapFile {
+pub(super) fn trigger_fixture_map(body: &str) -> crate::map::map_file::MapFile {
     let text = format!(
         "[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
          [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
@@ -2283,12 +2283,16 @@ fn trigger_fixture_map(body: &str) -> crate::map::map_file::MapFile {
 }
 
 /// Install the map's trigger definitions through the production scenario-init
-/// reader, without Team, EVA or sound tables. Fill (`classify_map_triggers`)
-/// stays the caller's next step.
+/// reader, including authored Teams but no fixed AIMD, EVA or sound tables.
+/// Fill (`classify_map_triggers`) stays the caller's next step.
 fn install_map_triggers(sim: &mut Simulation, map: &crate::map::map_file::MapFile) {
     sim.initialize_trigger_definitions(
         map,
-        &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
+        &crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
+            &crate::rules::ini_parser::IniFile::empty(),
+            &map.ini,
+            true,
+        ),
         None,
         None,
     );
