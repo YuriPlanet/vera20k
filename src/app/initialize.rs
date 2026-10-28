@@ -278,6 +278,8 @@ impl App {
         startup_options: RetailStartupOptions,
         external_launch: bool,
         replay_retail_directory: Option<&Path>,
+        // A `-SPAWN` test run's opt-in invisible window (tools/spawn/README.md).
+        hidden_spawn_window: bool,
     ) -> Result<InitializationStep> {
         // One parsed retail profile snapshot yields two ordered products: the
         // independent frontend size selected after the early Video read, and the later
@@ -327,6 +329,7 @@ impl App {
             );
         let (window_width, window_height, window_visible) =
             startup_window_projection(profile_screen, capture_dimensions);
+        let window_visible = window_visible && !hidden_spawn_window;
         let startup_audio =
             StartupAudioDisposition::for_audio_enabled(startup_options.audio_enabled);
         // The player's window has a title bar and any size they drag it to; it
@@ -352,7 +355,7 @@ impl App {
             crate::app::display_target::current_displays_for(event_loop)
         };
         let wanted_display = super::display_target::screen_for(&displays, &options_profile.display);
-        let fullscreen = (!capture && options_profile.full_screen)
+        let fullscreen = (!capture && !hidden_spawn_window && options_profile.full_screen)
             .then(|| super::display_target::fullscreen_for(&displays, &options_profile.display));
         let mut window_attrs: WindowAttributes = WindowAttributes::default()
             .with_title(super::WINDOW_TITLE)
@@ -412,7 +415,13 @@ impl App {
             icon.set_dock_icon();
         }
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-        let gpu = GpuContext::new(window.clone(), event_loop.owned_display_handle(), capture)?;
+        // An invisible spawn test window renders into the same offscreen
+        // target as a hidden capture: it has no presentable swapchain.
+        let gpu = GpuContext::new(
+            window.clone(),
+            event_loop.owned_display_handle(),
+            capture || hidden_spawn_window,
+        )?;
         let quickplay_allowed = replay_retail_directory.is_none();
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         let pending = (
@@ -996,6 +1005,9 @@ impl App {
                 campaign_speed_control: startup_options.campaign_speed_control,
                 external_launch: false,
                 external_launch_error: None,
+                external_match_result: None,
+                external_progress: Default::default(),
+                external_idle: false,
                 screen: GameScreen::default(),
                 scenario_catalog,
                 skirmish_modes,

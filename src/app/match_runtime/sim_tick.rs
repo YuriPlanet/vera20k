@@ -122,6 +122,17 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
         "Match end ready for local player '{owner}': {}",
         crate::app::match_runtime::scenario_exit::outcome_title(outcome)
     );
+    crate::app::App::record_external_match_result(
+        state,
+        match outcome {
+            crate::sim::house_state::HouseOutcomeKind::Victory => {
+                crate::app::cncnet::ExternalMatchResult::Won
+            }
+            crate::sim::house_state::HouseOutcomeKind::Defeat => {
+                crate::app::cncnet::ExternalMatchResult::Lost
+            }
+        },
+    );
     //685670/685DC0 clear5BF450 before either outcome fade.
     crate::app::radar_movie::retire(state, wall_ms);
     crate::app::chrono_screen::retire(state, wall_ms);

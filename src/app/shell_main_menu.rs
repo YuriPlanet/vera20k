@@ -785,7 +785,11 @@ impl App {
     /// admitted network return owner.
     pub(crate) fn resume_shell_after_match(state: &mut AppState) {
         if state.frontend.external_launch {
-            Self::start_quit_cascade(state);
+            // A relay launch first reports its result to the match service;
+            // its live service starts the same quit once that settles.
+            if !crate::app::shell_wol::end_spawned_match(state) {
+                Self::start_quit_cascade(state);
+            }
             return;
         }
         if state.match_state.session.network_return_context().is_some() {

@@ -37,6 +37,18 @@ pub(crate) fn load_or_create(directory: &Path) -> io::Result<Vec<u8>> {
     }
 }
 
+/// The player's existing file, without creating the starter.
+pub(crate) fn load_existing(directory: &Path) -> io::Result<Option<Vec<u8>>> {
+    let Some(path) = find(directory, FILENAME) else {
+        return Ok(None);
+    };
+    match crate::util::file_system::read(&path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

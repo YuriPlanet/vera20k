@@ -723,6 +723,12 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
                 .as_mut()
                 .expect("setup owns protocol");
             protocol.wol_verify = None;
+            if protocol.external {
+                // No game channel or dialog: the launcher's room stays
+                // until the match's finish.
+                super::commit_start(state, seed);
+                return Ok(());
+            }
             protocol.requests.push(NetworkSetupRequest::Leave);
             state.frontend.skirmish_preview_texture = None;
             if super::quick_match(state) {

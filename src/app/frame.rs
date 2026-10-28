@@ -270,6 +270,8 @@ impl App {
             };
         }
         crate::app::lan_service::poll(state, scenario_now_ms);
+        Self::poll_external_launch_progress(state);
+        Self::poll_spawn_actions(state);
         // Resume receipts must release only the relay clock hold even while
         // focus or a local modal prevents another simulation transaction.
         state
@@ -301,6 +303,10 @@ impl App {
                     // Main_Game55D347 returns directly to shell cleanup.
                     // This is the same route as WaitPass::Leave, without an
                     // EXIT command or BattleControlTerminated686570.
+                    Self::record_external_match_result(
+                        state,
+                        super::cncnet::ExternalMatchResult::Disconnected,
+                    );
                     Self::return_to_main_menu(state);
                 }
             }
@@ -374,6 +380,18 @@ impl App {
                 // `Stop(1)` that began the wait; the exit ends any fade tail.
                 state.audio.stop_theme();
                 state.frontend.quit_cascade = None;
+                // docs/spawn.md: the browser host learns that the external
+                // launch is over and the page may start another; desktop
+                // exits the process instead and writes its result file.
+                #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+                if state.frontend.external_launch {
+                    Self::finish_browser_external_launch(state, None);
+                    return RuntimeServiceResult {
+                        main_tick_admitted,
+                        screen_shake_offset,
+                        ..Default::default()
+                    };
+                }
                 event_loop.exit();
                 return RuntimeServiceResult {
                     quit_requested: true,
@@ -442,6 +460,10 @@ impl App {
                 // Result 8 clears GameActive without an EXIT event, so
                 // Main_Game returns past the router without 0x00686570's
                 // EVA and fades (0x0064806C..0x006482A6, 0x0055D347).
+                Self::record_external_match_result(
+                    state,
+                    super::cncnet::ExternalMatchResult::Disconnected,
+                );
                 Self::return_to_main_menu(state);
                 return RuntimeServiceResult {
                     main_tick_admitted,
