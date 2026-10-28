@@ -734,6 +734,64 @@ fn retail_sov01_transport_hint_emits_the_named_cameo_on_the_native_clock() {
 }
 
 #[test]
+fn scenario_timer_uses_the_sound_parameter_ordinal_before_expiring() {
+    let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[SoundList]\n5=First\n99=Second\n100=SECOND\n",
+        ),
+    );
+    let map = trigger_fixture_map(
+        "[Triggers]\nSTART=Neutral,<none>,Start,0,1,1,1,0\nEND=Neutral,<none>,End,0,1,1,1,0\n\
+         [Events]\nSTART=1,13,0,0\nEND=1,14,0,0\n\
+         [Actions]\nSTART=1,27,7,sEcOnD,0,0,0,0,A\nEND=1,28,0,7,0,0,0,0,A\n\
+         [Tags]\nSTART_TAG=0,Start,START\nEND_TAG=0,End,END\n",
+    );
+    let mut sim = Simulation::new();
+    let rules = crate::rules::ruleset::RuleSet::empty_for_test();
+    sim.initialize_trigger_definitions(&map, &Default::default(), None, Some(&sounds));
+    sim.classify_map_triggers(rules);
+    let rng = sim.rng_state();
+    sim.advance_triggers(rules, None, FrameEffects::default());
+    // Read6DD7CE stores FindIndex7514D0's retained ordinal, not the list
+    // key or zero. Execute27 at6DE5C9 consumes it as signed seconds.
+    assert_eq!(sim.session.scenario_timer_view(), Some((15, "")));
+    assert!(!sim.global_variables()[7]);
+    sim.session.set_binary_frame_for_test(14);
+    sim.advance_triggers(rules, None, FrameEffects::default());
+    assert_eq!(sim.session.scenario_timer_view(), Some((1, "")));
+    assert!(!sim.global_variables()[7]);
+    sim.session.set_binary_frame_for_test(15);
+    sim.advance_triggers(rules, None, FrameEffects::default());
+    assert!(sim.global_variables()[7]);
+    assert_eq!(sim.session.scenario_timer_view(), None);
+    assert!(
+        sim.sound_events.is_empty(),
+        "a sound parameter does not play a cue"
+    );
+    assert_eq!(sim.rng_state(), rng);
+}
+
+#[test]
+fn scenario_timer_extends_by_minus_one_for_an_untrimmed_unknown_sound() {
+    let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(
+        &crate::rules::ini_parser::IniFile::from_str("[SoundList]\n0=First\n1=Second\n"),
+    );
+    let map = trigger_fixture_map(
+        "[Triggers]\nSTART=Neutral,<none>,Start,0,1,1,1,0\n\
+         [Events]\nSTART=1,13,0,0\n\
+         [Actions]\nSTART=2,27,0,2,0,0,0,0,A,25,7,Second ,0,0,0,0,A\n\
+         [Tags]\nSTART_TAG=0,Start,START\n",
+    );
+    let mut sim = Simulation::new();
+    let rules = crate::rules::ruleset::RuleSet::empty_for_test();
+    sim.initialize_trigger_definitions(&map, &Default::default(), None, Some(&sounds));
+    sim.classify_map_triggers(rules);
+    sim.advance_triggers(rules, None, FrameEffects::default());
+    // FindIndex7514D0 does not trim; its -1 reaches Extend6DE4A0.
+    assert_eq!(sim.session.scenario_timer_view(), Some((15, "")));
+}
+
+#[test]
 fn scenario_timer_expiry_polls_all_tags_before_stopping() {
     let rules = crate::rules::ruleset::RuleSet::empty_for_test();
     let map = trigger_fixture_map(

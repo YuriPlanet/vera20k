@@ -418,6 +418,16 @@ impl SoundRegistry {
         self.entries.get(&sound_id.to_ascii_uppercase())
     }
 
+    /// VocClass::FindIndex7514D0 returns the first registered slot matching
+    /// the raw name, case-insensitively. TAction::Read6DD7CE stores this
+    /// ordinal in +90 even when Execute uses it as a non-audio scalar.
+    pub fn index_of(&self, sound_id: &str) -> Option<i32> {
+        self.native_order
+            .iter()
+            .position(|key| key.eq_ignore_ascii_case(sound_id))
+            .and_then(|index| i32::try_from(index).ok())
+    }
+
     /// Literal action+90 consumers index the Voc array registered by7512CA..
     ///75133D. Duplicate IDs keep their first slot; a negative/missing slot is
     ///the existing safe invalid-reference boundary, without creating a sound.

@@ -328,23 +328,27 @@ impl RuntimeDefinitions {
             None => None,
         };
         let parameter_type = entry.params.first().map_or(0, |v| crt_atoi(v));
-        let value = if parameter_type == 6 {
-            // Original753250 scans the raw, untrimmed name. Missing names
-            // materialize -1; no cue-name resolution runs during Execute.
-            Some(
+        let value = match parameter_type {
+            // TAction::Read6DD7BC/6DD7CE stores the raw name's EVA753250
+            // or Voc7514D0 ordinal in +90 for every action, including timer
+            // Execute27 at6DE5C9. Unknown names materialize -1, not zero.
+            6 | 7 => Some(
                 entry
                     .params
                     .get(1)
-                    .and_then(|name| eva.and_then(|catalog| catalog.index_of(name)))
+                    .and_then(|name| {
+                        if parameter_type == 6 {
+                            eva?.index_of(name)
+                        } else {
+                            sounds?.index_of(name)
+                        }
+                    })
                     .unwrap_or(-1),
-            )
-        } else {
-            entry.literal_value()
+            ),
+            _ => entry.literal_value(),
         };
         // FindIndex7514D0 compares the untrimmed token case-insensitively.
-        let sound = if parameter_type == 7 {
-            entry.params.get(1).and_then(|name| sounds?.get(name))
-        } else if matches!(entry.kind, 19 | 98 | 99) {
+        let sound = if parameter_type == 7 || matches!(entry.kind, 19 | 98 | 99) {
             //Execute's Voc call consumes +90 regardless of the authored
             //parameter type. Resolve a literal ordinal once in this reader,
             //through the same fixed catalog as a type7 name.
