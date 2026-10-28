@@ -4365,8 +4365,9 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                 restored_hash.finish(),
                 "{name}/{step} saved hash"
             );
-            // Continue through the restored authority at every boundary. Only
-            // cumulative test observers are transferred outside serialization.
+            // Continue through the restored authority at every boundary.
+            // Test priors and cumulative observers stay outside serialization.
+            restored.fixture_difficulty = sim.trigger_runtime.fixture_difficulty;
             restored.action_trace = std::mem::take(&mut sim.trigger_runtime.action_trace);
             restored.dispatch_trace = std::mem::take(&mut sim.trigger_runtime.dispatch_trace);
             restored.freed_trace = std::mem::take(&mut sim.trigger_runtime.freed_trace);
