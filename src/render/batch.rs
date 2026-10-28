@@ -1607,7 +1607,7 @@ impl BatchRenderer {
         };
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Frame world projection"),
-            contents: bytemuck::bytes_of(&uniform),
+            contents: &crate::render::webgl::uniform_bytes(device, bytemuck::bytes_of(&uniform)),
             usage: wgpu::BufferUsages::UNIFORM,
         });
         let neutral = camera_group(
