@@ -232,6 +232,7 @@ pub use lifecycle::{
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use lifecycle::{LifecycleTestEvent, RevealFailure};
+pub(crate) use lifecycle::object_get_coords_cell;
 pub(crate) use load_object_lifecycle::{LoadObjectLifecycle, OverlayConstructionReceipt};
 pub(crate) use logic_vector::{LogicMembership, LogicVector};
 pub(crate) use object_entry::{EntryFacts, FootEntryReceiver};
@@ -499,6 +500,8 @@ pub(crate) enum MasterFrameTestRung {
     CrateRegen,
     Houses,
     TeamScript,
+    DiskLasers,
+    LightningStorm,
     FrameCommit,
     PendingDelete,
 }
@@ -7552,14 +7555,14 @@ impl Simulation {
         if cursor.is_none() {
             self.trace_master_frame_rung(MasterFrameTestRung::Houses);
         }
-        // Factory/production work has already completed in Phase 7. This early
-        // House update assesses its services before both
-        // defeat processing and strategic AI command generation. Native anger
-        // decay is unconditional; only the activation substep needs RuleSet.
-        // --- Phase 8: Defeat detection, strategy and building choice ---
-        // gamemd evaluates each house's defeat before its AI manage/produce
-        // step. The gate reads the house's tracking counts (`house_defeat.rs`),
-        // which construction and the frame-end pending-delete drain move: a
+        // The factory sweep has already run. This early House update assesses
+        // its services before both defeat processing and strategic AI command
+        // generation. Native anger decay is unconditional; only the activation
+        // substep needs RuleSet.
+        // Defeat detection, strategy and building choice: gamemd evaluates
+        // each house's defeat before its AI manage/produce step. The gate
+        // reads the house's tracking counts (`house_defeat.rs`), which
+        // construction and the frame-end pending-delete drain move: a
         // death reaches the gate on the next frame. Each house's strategy tick
         // (`house_strategy.rs`) and building choice follow its own gate.
         let generated = match self.house_rung(
@@ -7748,7 +7751,9 @@ impl Simulation {
     /// Run the copied TeamClass AI pass before the live LogicClass object walk.
     ///
     /// Native `LogicClass::PerTickUpdate @ 0x0055AFB0` snapshots the Team array
-    /// and calls TeamClass's `+0x5C` slot at `0x0055B502..0x0055B59F`; only
+    /// and calls TeamClass's `+0x5C` slot at `0x0055B502..0x0055B59F`, after
+    /// `Kamikaze__Update` (`0x0055B4F0`) and before the Disk walk and
+    /// `LightningStorm::Process` (`0x0055B5C8`); only
     /// afterwards can Building/Foot `ReceiveDamage` reach the base-defense
     /// suspension writer. A frame-N hit therefore arms suspension for the next
     /// Team visit, not the Team visit already completed on frame N.
@@ -8307,20 +8312,6 @@ impl Simulation {
         self.tick_fog_regrowth(UninitContext::new(rules, overlay_registry).with_effects(effects));
         profile_phase!(SHROUD);
 
-        // Interleaved object-AI pass: each object's mission precedes its own
-        // locomotion. Unit/Infantry firing and their class-specific tails run
-        // in that same slot; newly appended Bullets/Anims join the live walk.
-        // Each live object
-        // gets its `+0xC4` AI-counter tick, its owner-local queued-mission
-        // promotion (Ready→Commence), and its absorbed mission-handler
-        // dispatch (Harvest: the miner FSM, timer-gated with the post-handler
-        // epilogue write) here. Player commands from frame N-1 are already
-        // represented; frame N's EventClass tail is dispatched below.
-        // Movement stays before the Phase-3 vision recompute.
-        //
-        // Dock-reservation corpse sweep first (was the global miner tick's
-        // pre-pass): reservations held by/on dying objects release before the
-        // Harvest dispatches run.
         self.tick_scenario_lighting_transition(rules);
         profile_phase!(LIGHTING);
         self.tick_ore_growth_rungs(rules, overlay_registry);
@@ -8334,17 +8325,33 @@ impl Simulation {
             &mut self.bombs,
             rules,
         );
-        // `Kamikaze__Update` follows it (0x0055B4F0). `LightningStorm::
-        // Process` runs whatever the superweapons option (0x0055B5C8): a
-        // map's NUKE weapon starts the nuke flash without a Super.
+        // `Kamikaze__Update` follows it (0x0055B4F0).
         self.kamikaze_update(rules, effects);
+        profile_phase!(BOMBS);
+        // Logic55B502..55B59F: the copied TeamClass AI pass follows Kamikaze
+        // and precedes the Disk walk, LightningStorm::Process, the RadSite walk
+        // and the LogicClass object vector, so those steps see this frame's
+        // Team actions, and an object's ReceiveDamage that arms a Team's
+        // base-defense suspension reaches only the next Team visit.
+        self.run_team_script_pass(rules, overlay_registry, effects);
+        profile_phase!(TEAM_AI);
         // Logic55B5A1..55B5BD: reverse Disk AI before LaserUpdate and
         // ordinary object visits. FireAt births below wait until next tick.
+        #[cfg(any(test, feature = "test-support"))]
+        self.trace_master_frame_rung(MasterFrameTestRung::DiskLasers);
         bridge_state_changed |= self.tick_disk_lasers(rules, overlay_registry, effects);
+        // `SpotLightClass::UpdateAll @ 0x005FF390` (0x0055B5BE) only ramps the
+        // presentation's combat-light flashes. `LaserDrawClass::UpdateAllAI @
+        // 0x00550150` (0x0055B5C3) is the presentation's LaserUpdate.
         self.lifecycle_outputs.emit(LifecycleOutput::LaserUpdate {
             frame: self.session.binary_frame() as i32,
         });
         profile_phase!(BOMBS);
+        // `LightningStorm::Process @ 0x0053A6C0` (0x0055B5C8) runs whatever the
+        // superweapons option: a map's NUKE weapon starts the nuke flash
+        // without a Super.
+        #[cfg(any(test, feature = "test-support"))]
+        self.trace_master_frame_rung(MasterFrameTestRung::LightningStorm);
         bridge_state_changed |= crate::sim::superweapon::tick_active_superweapon_effects(
             self,
             rules,
@@ -8359,11 +8366,22 @@ impl Simulation {
             &mut self.lighting_sources,
         );
         profile_phase!(RADIATION);
-        // Native TeamClass AI precedes the main LogicClass object vector. In
-        // particular, ordinary object ReceiveDamage paths that arm a Team's
-        // base-defense suspension occur only after this frame's Team visit.
-        self.run_team_script_pass(rules, overlay_registry, effects);
-        profile_phase!(TEAM_AI);
+        // `LightSourceClass::UpdateLightConverts @ 0x00554D50` (0x0055B5EA..
+        // 0x0055B5F1, a 6 ms budget) applies queued cell light converts on a
+        // wall-clock budget; the renderer's `DeferredCellLightRefresh` owns
+        // that. `EMPulseClass::UpdateAll @ 0x004C54A0` (0x0055B5F6) expires
+        // EMPulses. RESIDUAL: EMPulseClass is not modelled. Its constructor
+        // (0x004C52B0) has no caller, so the walk always finds an empty
+        // vector: no RNG, timer or detach work is skipped.
+        // Interleaved object-AI pass: each object's mission precedes its own
+        // locomotion. Unit/Infantry firing and their class-specific tails run
+        // in that same slot; newly appended Bullets/Anims join the live walk.
+        // Each live object gets its `+0xC4` AI-counter tick, its owner-local
+        // queued-mission promotion (Ready→Commence), and its absorbed
+        // mission-handler dispatch (Harvest: the miner FSM, timer-gated with
+        // the post-handler epilogue write) here. Player commands from frame
+        // N-1 are already represented; frame N's EventClass tail is
+        // dispatched below. Movement stays before the vision refresh.
         // The live pass commits each object's AI, movement and lifecycle effects
         // before advancing its cursor; later phases need only these outcomes.
         #[cfg(any(test, feature = "test-support"))]
@@ -8382,10 +8400,10 @@ impl Simulation {
         self.spawn_wakes_for_frame(rules);
         profile_phase!(WAKES);
 
-        // --- Phase 3: Vision refresh ---
-        // The frame's sight projection and Gap Generator cover. Sources open,
-        // move and close their sight at their own events (Unlimbo, arrival,
-        // Limbo), so an object spawned after this pass holds its sight already.
+        // Vision refresh: the frame's sight projection and Gap Generator
+        // cover. Sources open, move and close their sight at their own events
+        // (Unlimbo, arrival, Limbo), so an object spawned after this pass
+        // holds its sight already.
         let vision_config = self.sight_reveal_config(rules);
         self.refresh_fog(&vision_config, rules);
         profile_phase!(VISION);
@@ -8457,13 +8475,10 @@ impl Simulation {
         }
         profile_phase!(CRATES);
 
-        // --- Phase 7: Production + Docks + Ore ---
-        // DEPENDS ON: completed live-object visits, including depot spending.
-        // PRODUCES: factory charges/change flags, dock/ore updates.
-        // Phase 7, FIRST production step — the authoritative factory sweep (C1:
-        // factories step BEFORE the house tail `run_late_region`). `step_all`
-        // charges each armed factory's per-step cost against the REAL wallet
-        // (house.economy.credits) in insertion_seq (temporal) order. Completed heads retain their
+        // The authoritative factory sweep, before the House tail
+        // `run_late_region`. `step_all` charges each armed factory's per-step
+        // cost against the REAL wallet (house.economy.credits) in
+        // insertion_seq (temporal) order. Completed heads retain their
         // change flag until the next Strip prefix; its PLACE event tail
         // releases the object and advances the queue-of-record there.
         //
@@ -8478,11 +8493,8 @@ impl Simulation {
         // mission; the slot stays in the ledger's fixed phase list.
         profile_phase!(DOCKS);
 
-        // ===== SPINE REGION: LATE — AI, defeat, anims, frame commit =====
-        // (Step 3a skeleton: extracted to a region method; call order unchanged —
-        // behavior-preserving.) Native-spine note: gamemd runs HouseClass updates
-        // (incl. defeat) in the tail and commits the frame counter late; AI
-        // placement is project-deferred and kept in its current slot.
+        // Late region: House updates (incl. defeat), network commands and the
+        // late frame commit; gamemd commits the frame counter late.
         let tail_result = self.run_late_region(
             &mut commands,
             rules,

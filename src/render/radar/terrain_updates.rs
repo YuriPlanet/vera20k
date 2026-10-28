@@ -104,23 +104,56 @@ pub(super) fn apply_radar_terrain_dirty_cells(
     overlay_radar_colors: &HashMap<(u8, u8), [u8; 3]>,
     cells: &[(u16, u16)],
 ) {
-    let mut native_changes = Vec::new();
-    let terrain_brightness = layers
-        .native_terrain
-        .as_ref()
-        .map_or(1.0, NativeRadarTerrainSurface::terrain_brightness);
+    let Some(surface) = layers.native_terrain.as_mut() else {
+        apply_mapless_dirty_cells(
+            layers,
+            authority,
+            structural_bridge_color,
+            overlay_radar_colors,
+            cells,
+        );
+        return;
+    };
+    // The generated surface bakes overlay precedence into its raw RGB and a
+    // changed batch re-rasterizes the whole base. The mapless per-cell terrain
+    // and overlay layers are not drawn beside it, so they are not maintained;
+    // stamping them would leave a non-native pixel when nothing changed.
+    let terrain_brightness = surface.terrain_brightness();
+    let changes = cells.iter().filter_map(|&(rx, ry)| {
+        let (left, right) = authority.tile_radar_colors(rx, ry, terrain_brightness)?;
+        Some(NativeRadarCellUpdate {
+            base: NativeRadarCellColors {
+                cell: (rx, ry),
+                left,
+                right,
+            },
+            override_color: authority
+                .source(rx, ry, structural_bridge_color, overlay_radar_colors)
+                .map(|(color, _)| color),
+        })
+    });
+    if surface.set_cell_states(changes) {
+        let (rgba, pixels) = rasterize_native_terrain(surface);
+        *layers.base_rgba = rgba;
+        *layers.surface_pixels = pixels;
+    }
+}
+
+/// Mapless fallback (no generated surface): restamp each dirty cell's terrain
+/// pixel and update the per-cell overlay list the minimap stamps in list
+/// order. A changed cell keeps its first slot, a cleared cell drops every
+/// entry, and a new cell appends in batch order. One pass over the list per
+/// batch replaces a list scan per dirty cell.
+fn apply_mapless_dirty_cells(
+    layers: RadarTerrainUpdateLayers<'_>,
+    authority: CurrentRadarCellAuthority<'_>,
+    structural_bridge_color: [u8; 3],
+    overlay_radar_colors: &HashMap<(u8, u8), [u8; 3]>,
+    cells: &[(u16, u16)],
+) {
+    let mut updates: Vec<Option<OverlayPixel>> = Vec::new();
+    let mut slots: HashMap<(u16, u16), usize> = HashMap::new();
     for &(rx, ry) in cells {
-        let source = authority.source(rx, ry, structural_bridge_color, overlay_radar_colors);
-        if let Some((left, right)) = authority.tile_radar_colors(rx, ry, terrain_brightness) {
-            native_changes.push(NativeRadarCellUpdate {
-                base: NativeRadarCellColors {
-                    cell: (rx, ry),
-                    left,
-                    right,
-                },
-                override_color: source.map(|(color, _)| color),
-            });
-        }
         let Some(terrain_pixel) = layers.terrain_pixels.cell(rx, ry).copied() else {
             continue;
         };
@@ -129,39 +162,37 @@ pub(super) fn apply_radar_terrain_dirty_cells(
         {
             set_pixel(layers.base_rgba, MINIMAP_WIDTH, x, y, terrain_pixel.color);
         }
-
-        if let Some((native_color, classification)) = source {
-            let color = [native_color[0], native_color[1], native_color[2], 255];
-            if let Some(existing) = layers
-                .overlay_pixels
-                .iter_mut()
-                .find(|pixel| pixel.rx == rx && pixel.ry == ry)
-            {
-                existing.px = terrain_pixel.px;
-                existing.py = terrain_pixel.py;
-                existing.color = color;
-                existing.classification = classification;
-            } else {
-                layers.overlay_pixels.push(OverlayPixel {
-                    rx,
-                    ry,
-                    px: terrain_pixel.px,
-                    py: terrain_pixel.py,
-                    color,
-                    classification,
-                });
-            }
-        } else {
-            layers
-                .overlay_pixels
-                .retain(|pixel| !(pixel.rx == rx && pixel.ry == ry));
+        slots.entry((rx, ry)).or_insert_with(|| {
+            let source = authority.source(rx, ry, structural_bridge_color, overlay_radar_colors);
+            updates.push(source.map(|(color, classification)| OverlayPixel {
+                rx,
+                ry,
+                px: terrain_pixel.px,
+                py: terrain_pixel.py,
+                color: [color[0], color[1], color[2], 255],
+                classification,
+            }));
+            updates.len() - 1
+        });
+    }
+    let mut placed = vec![false; updates.len()];
+    layers.overlay_pixels.retain_mut(|pixel| {
+        let Some(&slot) = slots.get(&(pixel.rx, pixel.ry)) else {
+            return true;
+        };
+        let Some(update) = updates[slot] else {
+            return false;
+        };
+        if !placed[slot] {
+            *pixel = update;
+            placed[slot] = true;
         }
-    }
-    if let Some(surface) = layers.native_terrain
-        && surface.set_cell_states(native_changes)
-    {
-        let (rgba, pixels) = rasterize_native_terrain(surface);
-        *layers.base_rgba = rgba;
-        *layers.surface_pixels = pixels;
-    }
+        true
+    });
+    layers.overlay_pixels.extend(
+        updates
+            .into_iter()
+            .zip(placed)
+            .filter_map(|(update, placed)| update.filter(|_| !placed)),
+    );
 }

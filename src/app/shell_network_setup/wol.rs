@@ -35,8 +35,8 @@ pub(crate) fn resident_seed(state: &AppState) -> u32 {
 }
 
 impl App {
-    /// The chat join sink `007A6100` creates C9 (`0x7A6256`) for a joined
-    /// game channel with the local node's choices unset (`0x7A5890`). Like
+    /// The chat join sink `0x7A5890` creates C9 (`0x7A6256`) for a joined
+    /// game channel with the local node's choices unset. Like
     /// BD, the host's options arrive later; unlike BD, C9 never disables
     /// Accept and the sink's `005E9850` enables it.
     pub(crate) fn open_wol_joined_setup(
@@ -162,7 +162,7 @@ pub(crate) fn send_first_choices(state: &mut AppState) {
     );
 }
 
-/// The join sink `0x7A6100` for another user in this game channel. While a
+/// The join sink `0x7A5890` for another user in this game channel. While a
 /// start is pending (`[0xB77DEC]`, `[0xB77E28]` or `[0xB77E27]`) the joiner
 /// is kicked (API+0x54) after the PlayerJoined sound and gets no node
 /// (`0x7A631E..0x7A6348`). A guest appends an unbound node. The host binds
@@ -723,6 +723,12 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
                 .as_mut()
                 .expect("setup owns protocol");
             protocol.wol_verify = None;
+            if protocol.external {
+                // No game channel or dialog: the launcher's room stays
+                // until the match's finish.
+                super::commit_start(state, seed);
+                return Ok(());
+            }
             protocol.requests.push(NetworkSetupRequest::Leave);
             state.frontend.skirmish_preview_texture = None;
             if super::quick_match(state) {

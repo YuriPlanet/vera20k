@@ -137,6 +137,10 @@ pub(crate) struct LanService {
     force_presence: bool,
     force_query: bool,
     deferred_setup: std::collections::VecDeque<super::shell_network_setup::NetworkSetupRequest>,
+    /// A direct spawn launch (docs/spawn.md): the launcher admitted the
+    /// roster and the map, so discovery, join/confirm and map transfer never
+    /// run; scope, nonces and endpoints come from [`DirectAdmission`].
+    preadmitted: bool,
 }
 
 impl LanService {
@@ -215,6 +219,7 @@ impl LanService {
             force_presence: true,
             force_query: false,
             deferred_setup: Default::default(),
+            preadmitted: false,
             setup_generation: 0,
             setup_scope: None,
             setup_agreement: None,
@@ -302,8 +307,10 @@ impl LanService {
     /// Physical source, effective map and generated preview/staging are one
     /// admission through the retained transfer owner, for this exact options.
     fn setup_maps_verified(&self) -> bool {
+        // A direct spawn's map is the launcher's file beside spawn.ini; the
+        // selected-mode agreement still compares the rules digest at GO.
         self.setup_scope
-            .is_some_and(|scope| self.maps.current_verified(scope))
+            .is_some_and(|scope| self.preadmitted || self.maps.current_verified(scope))
     }
 
     pub(super) fn setup_roster_complete(
@@ -313,6 +320,12 @@ impl LanService {
         let Some(launch) = session.network_setup() else {
             return false;
         };
+        if self.preadmitted {
+            // Every remote source was bound from the launch file at install.
+            return (0..launch.humans.len()).all(|source| {
+                source == launch.local_player_index || session.network_endpoint(source).is_some()
+            });
+        }
         if !session.host()
             && (self.received_options.is_none()
                 || self.peer_admissions.len() != launch.humans.len())
@@ -1243,6 +1256,222 @@ pub(crate) fn install_online_transport(
     Ok(())
 }
 
+/// The admission every participant of a direct spawn derives from the same
+/// launch (docs/spawn.md), in place of discovery and join/confirm: a shared
+/// setup scope, one join/admission nonce pair per source, and the bound
+/// remote sources. Only the local index differs between participants.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DirectAdmission {
+    scope: SessionScope,
+    /// The local source's pair, as carried by its control proofs.
+    local: PeerAdmission,
+    /// Source 0's name and endpoint; `None` at the host itself.
+    host: Option<(String, SocketAddrV4)>,
+    /// Every remote source: endpoint, name and that source's nonce pair.
+    peers: Vec<(SocketAddrV4, String, PeerAdmission)>,
+}
+
+impl DirectAdmission {
+    /// `map` is the launcher's map file: participants keep it in their own
+    /// directories, so its bytes, not its resolved path, are shared.
+    pub(crate) fn derive(
+        launch: &crate::skirmish_launch::SkirmishLaunchSession,
+        seed: u32,
+        peers: &[Option<SocketAddrV4>],
+        map: &[u8],
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            peers.len() == launch.humans.len()
+                && launch.humans.len() >= 2
+                && peers
+                    .iter()
+                    .enumerate()
+                    .all(|(source, peer)| peer.is_none() == (source == launch.local_player_index)),
+            "direct endpoints do not match the launch roster"
+        );
+        // Hash the launch every participant shares, so a different map,
+        // option or roster can never enter another participant's scope.
+        let mut shared = launch.clone();
+        shared.local_player_index = 0;
+        shared.selected_map_file = None;
+        let mut digest = crate::util::sha256::Sha256::new();
+        digest.update(b"VERA20k direct spawn\0");
+        digest.update(&seed.to_le_bytes());
+        let mut map_digest = crate::util::sha256::Sha256::new();
+        map_digest.update(map);
+        digest.update(&map_digest.finalize());
+        digest.update(&serde_json::to_vec(&shared)?);
+        let root = digest.finalize();
+        let nonce = |label: &[u8], source: usize| {
+            let mut digest = crate::util::sha256::Sha256::new();
+            digest.update(&root);
+            digest.update(label);
+            digest.update(&(source as u32).to_le_bytes());
+            let mut nonce = [0; 16];
+            nonce.copy_from_slice(&digest.finalize()[..16]);
+            // A zero nonce means "none" to the join owners.
+            nonce[0] |= 1;
+            nonce
+        };
+        let identity = |source| PeerAdmission {
+            join_nonce: nonce(b"join", source),
+            admission_nonce: nonce(b"admission", source),
+        };
+        let mut epoch = [0; 16];
+        epoch.copy_from_slice(&root[..16]);
+        epoch[0] |= 1;
+        let remote = peers
+            .iter()
+            .enumerate()
+            .filter_map(|(source, peer)| {
+                Some((
+                    *peer.as_ref()?,
+                    launch.humans[source].name.clone(),
+                    identity(source),
+                ))
+            })
+            .collect();
+        Ok(Self {
+            // The first published revision; maps::poll never serves a
+            // preadmitted service's scope.
+            scope: SessionScope { epoch, revision: 1 },
+            local: identity(launch.local_player_index),
+            host: (launch.local_player_index != 0)
+                .then(|| peers[0].map(|endpoint| (launch.humans[0].name.clone(), endpoint)))
+                .flatten(),
+            peers: remote,
+        })
+    }
+}
+
+impl LanService {
+    /// A direct spawn's service: the LAN socket on the launcher's port with
+    /// every participant already admitted. The alternate receive socket
+    /// (retail 1236) carries no VERA traffic, so it takes an ephemeral port
+    /// and never collides with another local participant.
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    fn open_direct(local_port: u16, admission: &DirectAdmission) -> std::io::Result<Self> {
+        let transport = LanUdpTransport::bind(
+            UdpBindConfig {
+                primary: SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, local_port),
+                alternate: SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0),
+            },
+            LanConnections::new(LanConnectionConfig::default(), LOBBY_RETRY_TIMING),
+        )?;
+        let mut service = Self::with_transport(transport);
+        service.adopt_direct_admission(admission);
+        Ok(service)
+    }
+
+    /// The setup state a completed discovery/join/confirm would have left.
+    fn adopt_direct_admission(&mut self, admission: &DirectAdmission) {
+        self.preadmitted = true;
+        self.force_presence = true;
+        self.setup_scope = Some(admission.scope);
+        self.join_nonce = Some(admission.local.join_nonce);
+        self.admission_nonce = Some(admission.local.admission_nonce);
+        self.admitted_host = admission.host.clone();
+        self.peer_admissions = admission
+            .peers
+            .iter()
+            .map(|(endpoint, name, identity)| {
+                (
+                    *endpoint,
+                    PeerAdmissionRecord::project(None, name.clone(), *identity),
+                )
+            })
+            .collect();
+    }
+
+    /// The host may send GO once every guest's keepalive has arrived: each
+    /// one is running and has admitted this host.
+    fn direct_peers_heard(&self) -> bool {
+        self.preadmitted
+            && self
+                .peer_admissions
+                .values()
+                .all(|record| record.heartbeat_sequence.is_some())
+    }
+}
+
+/// Enter a direct multiplayer spawn (docs/spawn.md): the launcher's session
+/// as a LAN setup without a dialog, every endpoint bound from the launch
+/// file, then the ordinary LAN GO handshake (host source 0), loading and
+/// gameplay. Desktop only.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) fn begin_direct_spawn(
+    state: &mut AppState,
+    launch: crate::skirmish_launch::SkirmishLaunchSession,
+    direct: crate::app::frontend::cncnet_spawn::DirectSpawn,
+    seed: u32,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        state.match_state.lan_service.is_none() && state.match_state.live_network.is_none(),
+        "a network service is already open"
+    );
+    let map_file = launch
+        .selected_map_file
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("direct launch has no map"))?;
+    let map = crate::util::file_system::read(std::path::Path::new(&map_file))
+        .map_err(|error| anyhow::anyhow!("could not read {map_file}: {error}"))?;
+    let admission = DirectAdmission::derive(&launch, seed, &direct.peers, &map)?;
+    let names: Vec<_> = launch
+        .humans
+        .iter()
+        .map(|human| human.name.clone())
+        .collect();
+    super::shell_network_setup::install_external_setup(
+        state,
+        launch,
+        super::match_runtime::session::NetworkReturnContext::LanLobby,
+    )?;
+    for (name, peer) in names.iter().zip(&direct.peers) {
+        if let Some(endpoint) = peer {
+            state
+                .match_state
+                .session
+                .bind_network_endpoint(name, *endpoint)?;
+        }
+    }
+    state.match_state.session.set_network_start_seed(seed)?;
+    let mut service = LanService::open_direct(direct.local_port, &admission).map_err(|error| {
+        anyhow::anyhow!("could not open UDP port {}: {error}", direct.local_port)
+    })?;
+    service.start_io_pump()?;
+    state.match_state.lan_service = Some(service);
+    let agreement = super::shell_network_setup::agreement::local(state)?;
+    state
+        .match_state
+        .lan_service
+        .as_mut()
+        .expect("installed")
+        .setup_agreement = Some(agreement);
+    Ok(())
+}
+
+/// The direct spawn host starts the ordinary LAN GO once every guest is up.
+fn poll_direct_start(state: &mut AppState) {
+    if !state.match_state.session.host()
+        || !super::shell_network_setup::external(state)
+        || !state
+            .frontend
+            .network_setup_protocol
+            .as_ref()
+            .is_some_and(|protocol| protocol.editable())
+        || !state
+            .match_state
+            .lan_service
+            .as_ref()
+            .is_some_and(LanService::direct_peers_heard)
+    {
+        return;
+    }
+    if let Err(error) = super::shell_network_setup::begin_external_lan_go(state) {
+        super::App::fail_external_launch(state, &format!("direct start: {error:#}"));
+    }
+}
+
 pub(crate) fn begin_online_latency_probe(state: &mut AppState) -> anyhow::Result<()> {
     let launch = state
         .match_state
@@ -1456,6 +1685,7 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
     if let Some(service) = state.match_state.lan_service.as_mut() {
         service.flush_setup();
     }
+    poll_direct_start(state);
     drain_setup_requests(state);
     drain_match_requests(state);
     advance_go(state, now, true);
@@ -3411,8 +3641,11 @@ fn announce(state: &mut AppState, now: u32) {
     let Some(service) = state.match_state.lan_service.as_mut() else {
         return;
     };
-    let discovery = service.discovery_timer.remaining(now) == 0 && !host_setup;
-    let query = service.force_query || service.query_timer.remaining(now) == 0;
+    // A direct spawn has no lobby to discover or query; it only renews the
+    // admitted peers' setup leases below.
+    let lobby = !service.preadmitted;
+    let discovery = lobby && service.discovery_timer.remaining(now) == 0 && !host_setup;
+    let query = lobby && (service.force_query || service.query_timer.remaining(now) == 0);
     let presence = service.force_presence || service.presence_timer.remaining(now) == 0;
     if discovery {
         service.discovery_timer = WallBucketTimer::start(now, 120);
@@ -3510,7 +3743,17 @@ fn drain_setup_requests(state: &mut AppState) {
         match setup_request(state, &request) {
             Ok(true) => {}
             Ok(false) => deferred.push_back(request),
-            Err(error) => log::warn!("LAN setup request failed: {error:#}"),
+            Err(error) => {
+                log::warn!("LAN setup request failed: {error:#}");
+                // A direct spawn has no dialog to retry from.
+                if super::shell_network_setup::external(state) {
+                    super::App::fail_external_launch(
+                        state,
+                        &format!("direct setup request: {error:#}"),
+                    );
+                    return;
+                }
+            }
         }
     }
     if let Some(service) = state.match_state.lan_service.as_mut() {
@@ -4340,6 +4583,147 @@ mod tests {
             !service.validate_peer_agreement(&received),
             "a different selected mode/rules closure is incompatible"
         );
+    }
+
+    /// Source `local`'s direct spawn.ini for `count` humans, all on loopback
+    /// with port 1300 + source (docs/spawn.md).
+    fn direct_spawn(
+        count: usize,
+        local: usize,
+        seed: u32,
+    ) -> crate::app::frontend::cncnet_spawn::NetworkSpawn {
+        let mut text = format!(
+            "[Settings]\nName=P{local}\nSide={}\nColor={local}\nPlayerCount={count}\n\
+             SourceIndex={local}\nSeed={seed}\nSpecialHouseIsAlly=No\nPort={}\n",
+            local % 2,
+            1300 + local
+        );
+        for (other, source) in (0..count).filter(|&source| source != local).enumerate() {
+            text.push_str(&format!(
+                "[Other{}]\nName=P{source}\nSide={}\nColor={source}\nSourceIndex={source}\n\
+                 Ip=127.0.0.1\nPort={}\n",
+                other + 1,
+                source % 2,
+                1300 + source
+            ));
+        }
+        match crate::app::frontend::cncnet_spawn::SpawnRequest::parse(&text)
+            .unwrap()
+            .game
+        {
+            crate::app::frontend::cncnet_spawn::SpawnGame::Network(network) => *network,
+            other => panic!("expected a network spawn, got {other:?}"),
+        }
+    }
+
+    fn direct_admission(count: usize, local: usize, seed: u32) -> (DirectAdmission, u16) {
+        let network = direct_spawn(count, local, seed);
+        let crate::app::frontend::cncnet_spawn::SpawnTransport::Direct(direct) = network.transport
+        else {
+            panic!("direct transport");
+        };
+        (
+            DirectAdmission::derive(&network.session, seed, &direct.peers, b"map").unwrap(),
+            direct.local_port,
+        )
+    }
+
+    #[test]
+    fn direct_spawn_participants_derive_one_admission() {
+        let endpoint = |source: usize| SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1300 + source as u16);
+        let all: Vec<_> = (0..3).map(|local| direct_admission(3, local, 77)).collect();
+        let (host, host_port) = &all[0];
+        assert_eq!(*host_port, 1300);
+        assert_ne!(host.scope.epoch, [0; 16]);
+        assert_eq!(host.scope.revision, 1, "a scope the match transport admits");
+        assert_eq!(host.host, None, "source 0 is the host");
+        for (local, (admission, port)) in all.iter().enumerate() {
+            assert_eq!(*port, 1300 + local as u16);
+            assert_eq!(admission.scope, host.scope, "one shared setup scope");
+            assert_ne!(admission.local.join_nonce, [0; 16]);
+            assert_ne!(admission.local.admission_nonce, [0; 16]);
+            let remote: Vec<_> = admission.peers.iter().map(|peer| peer.0).collect();
+            let expected: Vec<_> = (0..3).filter(|&s| s != local).map(endpoint).collect();
+            assert_eq!(remote, expected);
+            for (peer, name, identity) in &admission.peers {
+                let source = usize::from(peer.port() - 1300);
+                assert_eq!(*name, format!("P{source}"));
+                // Each record names the pair that source's own proofs carry.
+                assert_eq!(*identity, all[source].0.local);
+            }
+            if local != 0 {
+                assert_eq!(admission.host, Some(("P0".to_owned(), endpoint(0))));
+            }
+        }
+        assert_ne!(
+            all[1].0.local, all[2].0.local,
+            "sources have distinct pairs"
+        );
+        assert_ne!(
+            direct_admission(3, 1, 78).0.scope,
+            all[1].0.scope,
+            "another launch never shares a scope"
+        );
+        let network = direct_spawn(2, 0, 77);
+        assert!(
+            DirectAdmission::derive(&network.session, 77, &[None, None], b"map").is_err(),
+            "every remote source needs an endpoint"
+        );
+    }
+
+    #[test]
+    fn direct_spawn_admission_satisfies_the_lan_go_owners_over_udp() {
+        let mut host = service();
+        let mut guest = service();
+        let host_address = host.transport.as_ref().unwrap().primary_addr().unwrap();
+        let guest_address = guest.transport.as_ref().unwrap().primary_addr().unwrap();
+        let network = |local: usize| {
+            let mut launch = launch();
+            launch.local_player_index = local;
+            launch
+        };
+        let peers = [None, Some(guest_address)];
+        let host_admission = DirectAdmission::derive(&network(0), 5, &peers, b"map").unwrap();
+        let guest_admission =
+            DirectAdmission::derive(&network(1), 5, &[Some(host_address), None], b"map").unwrap();
+        let host_session = session(true, guest_address);
+        let guest_session = session(false, host_address);
+        let ordinary = service();
+        assert!(!ordinary.setup_roster_complete(&host_session));
+        assert!(!ordinary.setup_maps_verified());
+        host.adopt_direct_admission(&host_admission);
+        guest.adopt_direct_admission(&guest_admission);
+        assert!(host.setup_roster_complete(&host_session));
+        assert!(guest.setup_roster_complete(&guest_session));
+        assert!(host.setup_maps_verified() && guest.setup_maps_verified());
+        assert_eq!(guest.admitted_host, Some(("Host".to_owned(), host_address)));
+        assert!(!host.direct_peers_heard(), "GO waits for every guest");
+
+        guest.send_setup_keepalives(&guest_session).unwrap();
+        guest.transport.as_mut().unwrap().service(31);
+        let received = next_message(&mut host, &host_session);
+        let message = LanMessage::decode(&received.payload).unwrap();
+        assert!(
+            host.accept_setup_keepalive(&host_session, &received, &message, 1)
+                .unwrap()
+        );
+        assert!(host.direct_peers_heard());
+
+        host.send_setup_keepalives(&host_session).unwrap();
+        host.transport.as_mut().unwrap().service(32);
+        let received = next_message(&mut guest, &guest_session);
+        let message = LanMessage::decode(&received.payload).unwrap();
+        assert!(
+            guest
+                .accept_setup_keepalive(&guest_session, &received, &message, 2)
+                .unwrap(),
+            "the host echoes the guest's own pair"
+        );
+        // GO and its Type13 reply carry proofs the other side admits.
+        let go = host.control_proof().unwrap();
+        assert!(guest.validate_scope(&go) && guest.peer_admission_matches(host_address, &go));
+        let reply = guest.control_proof().unwrap();
+        assert!(host.validate_scope(&reply) && host.peer_admission_matches(guest_address, &reply));
     }
 
     #[test]

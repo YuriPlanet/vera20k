@@ -2062,20 +2062,6 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     } else {
         0u8.hash(hasher);
     }
-    if let Some(deposit) = entity.sensor_deposit {
-        1u8.hash(hasher);
-        deposit.owner().hash(hasher);
-        deposit.center().hash(hasher);
-        deposit.add_radius().hash(hasher);
-        deposit.remove_radius().hash(hasher);
-        deposit.building_array().hash(hasher);
-        // The cached `DetectDisguiseRange=` circle. It is the
-        // radius Limbo will decrement, so it selects which
-        // cells leave the disguise-detect plane.
-        deposit.detect_disguise_radius().hash(hasher);
-    } else {
-        0u8.hash(hasher);
-    }
     if let Some(disguise) = entity.disguise.as_ref() {
         1u8.hash(hasher);
         disguise.hash_state(hasher);

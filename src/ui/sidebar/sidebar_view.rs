@@ -4,8 +4,8 @@
 
 use crate::sim::intern::InternedId;
 use crate::sim::production::{
-    BuildOption, CameoDrawState, PRODUCTION_STEPS, ProducerFocusView, ProductionCategory,
-    QueueItemView, ReadyBuildingView,
+    BuildOption, CameoDrawState, PRODUCTION_STEPS, ProductionCategory, QueueItemView,
+    ReadyBuildingView,
 };
 use crate::sim::superweapon::SuperWeaponView;
 
@@ -108,9 +108,9 @@ impl ArmedSidebarEntry {
     }
 }
 use super::{
-    CAMEO_COLUMNS, Rect, SidebarAction, SidebarChromeLayoutSpec, SidebarControlButton, SidebarItem,
-    SidebarScrollButton, SidebarTab, SidebarTabButton, SidebarToggleButton, SidebarView,
-    compute_layout_with_spec, scroll_button_rects,
+    CAMEO_COLUMNS, Rect, SidebarAction, SidebarChromeLayoutSpec, SidebarItem, SidebarScrollButton,
+    SidebarTab, SidebarTabButton, SidebarToggleButton, SidebarView, compute_layout_with_spec,
+    scroll_button_rects,
 };
 
 #[cfg(test)]
@@ -126,7 +126,6 @@ pub(crate) fn build_sidebar_view(
     build_options: &[BuildOption],
     ready_buildings: &[ReadyBuildingView],
     armed: Option<&ArmedSidebarEntry>,
-    producer_focus: &[ProducerFocusView],
     scroll_rows: usize,
     interner: Option<&crate::sim::intern::StringInterner>,
     gadget_state: &SidebarGadgetState,
@@ -149,7 +148,6 @@ pub(crate) fn build_sidebar_view(
         build_options,
         ready_buildings,
         armed,
-        producer_focus,
         interner,
         &[],
         gadget_state,
@@ -175,7 +173,6 @@ pub(crate) fn build_sidebar_view_with_spec(
     build_options: &[BuildOption],
     ready_buildings: &[ReadyBuildingView],
     armed: Option<&ArmedSidebarEntry>,
-    producer_focus: &[ProducerFocusView],
     interner: Option<&crate::sim::intern::StringInterner>,
     sw_views: &[SuperWeaponView],
     gadget_state: &SidebarGadgetState,
@@ -219,7 +216,6 @@ pub(crate) fn build_sidebar_view_with_spec(
     // transitions, and it never substitutes another strip because the selected
     // one is empty (HasEntries refuses the switch instead).
     let scroll_rows = cameo_order.scroll_row(active_tab);
-    let selected_category = active_tab.category();
     let mut all_entries = std::mem::take(&mut strips[active_tab.tab_index()]);
     let total_items = all_entries.len();
     let total_rows = total_items.div_ceil(CAMEO_COLUMNS);
@@ -280,14 +276,12 @@ pub(crate) fn build_sidebar_view_with_spec(
         rect: repair_rect,
         action: SidebarAction::ToggleRepairMode,
         active: gadget_state.repair_mode_on,
-        disabled: gadget_state.repair_disabled,
         frame_index: gadget_state.repair_frame(),
     };
     let sell_button = SidebarToggleButton {
         rect: sell_rect,
         action: SidebarAction::ToggleSellMode,
         active: gadget_state.sell_mode_on,
-        disabled: gadget_state.sell_disabled,
         frame_index: gadget_state.sell_frame(),
     };
     let (scroll_down_rect, scroll_up_rect) = scroll_button_rects(
@@ -376,47 +370,6 @@ pub(crate) fn build_sidebar_view_with_spec(
         })
         .collect();
 
-    // Control buttons at bottom of sidebar (below side3).
-    // VERA-local development actions have no painted controls in the
-    // ordinary retail shell. Keep their semantic projection, but give them
-    // no hit area over native ADDON artwork (dev hotkeys remain available).
-    let btn_w = 0.0;
-    let btn_h = 0.0;
-    let btn_y = layout.side3_y + layout_spec.side3_height + layout_spec.control_block_top_pad;
-    let btn_pad = 4.0 * (layout_spec.sidebar_width / 168.0); // scale padding proportionally
-    let btn_x1 = layout.sidebar_x + btn_pad;
-    let btn_x2 = layout.sidebar_x + layout_spec.sidebar_width - btn_w - btn_pad;
-
-    // The producer button is an app-local control, not a native sidebar
-    // gadget. A native unit-tab cameo retains its own FactoryPtr/category, so
-    // the combined presentation tab is not authority for a House factory slot.
-    // When exactly one real queue category is present, use it. With multiple
-    // independent categories there is no evidenced global selector; omitting
-    // the ambiguous control is safer than emitting a command for Vehicle.
-    let active_queue_category = unique_category_for_tab(
-        selected_category,
-        queue_items.iter().map(|item| item.queue_category),
-    );
-    let producer_category = active_queue_category
-        .filter(|category| {
-            producer_focus
-                .iter()
-                .any(|focus| focus.category == *category)
-        })
-        .or_else(|| {
-            if queue_items
-                .iter()
-                .any(|item| category_is_on_tab(selected_category, item.queue_category))
-            {
-                None
-            } else {
-                unique_category_for_tab(
-                    selected_category,
-                    producer_focus.iter().map(|focus| focus.category),
-                )
-            }
-        });
-
     SidebarView {
         panel_rect,
         layout,
@@ -433,46 +386,6 @@ pub(crate) fn build_sidebar_view_with_spec(
         top_buttons,
         scroll_down_button,
         scroll_up_button,
-        producer_button: producer_category.map(|category| SidebarControlButton {
-            rect: Rect {
-                x: btn_x2,
-                y: btn_y,
-                w: btn_w,
-                h: btn_h,
-            },
-            action: SidebarAction::CycleProducer(category),
-            label: "Factory".to_string(),
-        }),
-        cycle_owner_button: SidebarControlButton {
-            rect: Rect {
-                x: btn_x2,
-                y: btn_y + btn_h + layout_spec.control_button_gap,
-                w: btn_w,
-                h: btn_h,
-            },
-            action: SidebarAction::CycleOwner,
-            label: "Owner".to_string(),
-        },
-        starter_base_button: SidebarControlButton {
-            rect: Rect {
-                x: btn_x1,
-                y: btn_y + (btn_h + layout_spec.control_button_gap) * 2.0,
-                w: btn_w,
-                h: btn_h,
-            },
-            action: SidebarAction::PlaceStarterBase,
-            label: "Base".to_string(),
-        },
-        spawn_test_units_button: SidebarControlButton {
-            rect: Rect {
-                x: btn_x2,
-                y: btn_y + (btn_h + layout_spec.control_button_gap) * 2.0,
-                w: btn_w,
-                h: btn_h,
-            },
-            action: SidebarAction::SpawnTestUnits,
-            label: "Spawn".to_string(),
-        },
     }
 }
 
@@ -481,24 +394,6 @@ fn category_is_on_tab(
     actual_category: ProductionCategory,
 ) -> bool {
     SidebarTab::for_category(actual_category) == SidebarTab::for_category(selected_category)
-}
-
-fn unique_category_for_tab(
-    selected_category: ProductionCategory,
-    categories: impl IntoIterator<Item = ProductionCategory>,
-) -> Option<ProductionCategory> {
-    let mut unique = None;
-    for category in categories {
-        if !category_is_on_tab(selected_category, category) {
-            continue;
-        }
-        match unique {
-            None => unique = Some(category),
-            Some(existing) if existing == category => {}
-            Some(_) => return None,
-        }
-    }
-    unique
 }
 
 struct BuildEntry {
@@ -793,7 +688,6 @@ mod tests {
                 &options,
                 &[],
                 None,
-                &[],
                 0,
                 Some(&interner),
                 &SidebarGadgetState::new(),

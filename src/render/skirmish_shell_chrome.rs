@@ -17,11 +17,11 @@ use crate::assets::pal_file::Palette;
 use crate::assets::pcx_file::PcxFile;
 use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
+use crate::render::chrome_atlas::{ChromeAtlasEntry, ChromePiece, pack_chrome_atlas};
 use crate::render::gpu::GpuContext;
 use crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION;
 use crate::ui::sidebar::SidebarTheme;
 
-const ATLAS_PADDING: u32 = 2;
 /// Original 72B060/72B0D0: neutral, Allied, Soviet, Yuri mode-2 assets.
 const MODE_TWO_DIALOG_ART: [(&str, &str); 4] = [
     ("PUDLGBGN.SHP", "DIALOGN.PAL"),
@@ -39,7 +39,7 @@ const MODE_TWO_DIALOG_ART: [(&str, &str); 4] = [
 fn render_side_dialog_art(
     assets: &AssetManager,
     (image, palette_name): (&str, &str),
-) -> Option<RenderedShellEntry> {
+) -> Option<ChromePiece> {
     let palette = load_named_palette(assets, palette_name)?;
     let label = format!(
         "{}#{}",
@@ -111,12 +111,7 @@ const WOL_SETUP_PCX_NAMES: [&str; 5] = [
     "wouact.pcx",
 ];
 
-#[derive(Debug, Clone, Copy)]
-pub struct SkirmishShellChromeEntry {
-    pub uv_origin: [f32; 2],
-    pub uv_size: [f32; 2],
-    pub pixel_size: [f32; 2],
-}
+pub type SkirmishShellChromeEntry = ChromeAtlasEntry;
 
 pub struct SkirmishShellChromeAtlas {
     pub texture: BatchTexture,
@@ -398,13 +393,6 @@ enum ShellAssetRole {
     VerifiedFlag,
     ResearchCandidate,
     Other,
-}
-
-struct RenderedShellEntry {
-    label: String,
-    width: u32,
-    height: u32,
-    rgba: Vec<u8>,
 }
 
 pub fn build_skirmish_shell_chrome_atlas(
@@ -708,7 +696,7 @@ pub fn build_skirmish_shell_chrome_atlas(
         push_optional(&mut rendered, render_flag_pcx_entry(assets, name), name);
     }
 
-    let (texture, packed) = pack_entries(gpu, batch, &rendered)?;
+    let (texture, packed) = pack_chrome_atlas(gpu, batch, "Skirmish shell chrome", &rendered)?;
     let by_label: HashMap<String, SkirmishShellChromeEntry> = rendered
         .iter()
         .map(|entry| entry.label.clone())
@@ -878,11 +866,7 @@ fn classify_shell_asset(name: &str) -> ShellAssetRole {
     }
 }
 
-fn push_optional(
-    entries: &mut Vec<RenderedShellEntry>,
-    entry: Option<RenderedShellEntry>,
-    name: &str,
-) {
+fn push_optional(entries: &mut Vec<ChromePiece>, entry: Option<ChromePiece>, name: &str) {
     if let Some(entry) = entry {
         entries.push(entry);
     } else {
@@ -896,7 +880,7 @@ fn mandatory_shp(
     palette: &Palette,
     frame: usize,
     palette_name: &str,
-) -> Option<RenderedShellEntry> {
+) -> Option<ChromePiece> {
     render_shp_entry(assets, file_name, palette, frame).or_else(|| {
         log::warn!(
             "Missing mandatory Skirmish shell asset {file_name} frame {frame} decoded with {palette_name}"
@@ -910,7 +894,7 @@ fn render_shp_entry(
     file_name: &str,
     palette: &Palette,
     frame: usize,
-) -> Option<RenderedShellEntry> {
+) -> Option<ChromePiece> {
     render_shp_entry_labeled(
         assets,
         file_name,
@@ -926,7 +910,7 @@ fn render_shp_entry_labeled(
     label: &str,
     palette: &Palette,
     frame: usize,
-) -> Option<RenderedShellEntry> {
+) -> Option<ChromePiece> {
     let bytes = assets.get_ref(file_name)?;
     let shp = ShpFile::from_bytes(bytes).ok()?;
     if frame >= shp.frames.len() {
@@ -954,7 +938,7 @@ fn render_shp_entry_labeled(
         }
         canvas
     };
-    Some(RenderedShellEntry {
+    Some(ChromePiece {
         label: label.to_ascii_lowercase(),
         width: canvas_w,
         height: canvas_h,
@@ -962,10 +946,10 @@ fn render_shp_entry_labeled(
     })
 }
 
-fn render_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<RenderedShellEntry> {
+fn render_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<ChromePiece> {
     let bytes = assets.get_ref(file_name)?;
     let pcx = PcxFile::from_bytes(bytes).ok()?;
-    Some(RenderedShellEntry {
+    Some(ChromePiece {
         label: file_name.to_ascii_lowercase(),
         width: pcx.width as u32,
         height: pcx.height as u32,
@@ -973,13 +957,13 @@ fn render_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<RenderedSh
     })
 }
 
-fn render_flag_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<RenderedShellEntry> {
+fn render_flag_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<ChromePiece> {
     let bytes = assets.get_ref(file_name)?;
     let pcx = PcxFile::from_bytes(bytes).ok()?;
     let mut rgba = pcx.to_rgba(None);
     ACTIVE_RETAIL_RGB565_PRESENTATION
         .apply_packed_color_key_rgba8(&mut rgba, OWNER_DRAW_FLAG_TRANSPARENT_RGB);
-    Some(RenderedShellEntry {
+    Some(ChromePiece {
         label: file_name.to_ascii_lowercase(),
         width: pcx.width as u32,
         height: pcx.height as u32,
@@ -987,12 +971,12 @@ fn render_flag_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<Rende
     })
 }
 
-fn render_solid_entry(label: &str, width: u32, height: u32, color: [u8; 4]) -> RenderedShellEntry {
+fn render_solid_entry(label: &str, width: u32, height: u32, color: [u8; 4]) -> ChromePiece {
     let mut rgba = vec![0u8; (width * height * 4) as usize];
     for px in rgba.as_chunks_mut::<4>().0 {
         px.copy_from_slice(&color);
     }
-    RenderedShellEntry {
+    ChromePiece {
         label: label.to_ascii_lowercase(),
         width,
         height,
@@ -1006,10 +990,10 @@ fn render_primitive_bevel_entry(
     height: u32,
     box_xywh: [i32; 4],
     border: i32,
-) -> RenderedShellEntry {
+) -> ChromePiece {
     let mut rgba = vec![0u8; (width * height * 4) as usize];
     draw_primitive_bevel(&mut rgba, width, height, box_xywh, border);
-    RenderedShellEntry {
+    ChromePiece {
         label: label.to_ascii_lowercase(),
         width,
         height,
@@ -1032,7 +1016,7 @@ fn render_trackbar_frame_geometry(
     control_width: u32,
     control_height: u32,
     reserve: i32,
-) -> RenderedShellEntry {
+) -> ChromePiece {
     let border = TRACKBAR_FRAME_BORDER;
     let width = control_width + (border as u32) * 2;
     let height = control_height + (border as u32) * 2;
@@ -1063,7 +1047,7 @@ fn render_trackbar_frame_geometry(
         border,
     );
 
-    RenderedShellEntry {
+    ChromePiece {
         label: label.to_ascii_lowercase(),
         width,
         height,
@@ -1218,84 +1202,12 @@ fn average_rgb(a: [u8; 3], b: [u8; 3]) -> [u8; 3] {
     ]
 }
 
-fn pack_entries(
-    gpu: &GpuContext,
-    batch: &BatchRenderer,
-    entries: &[RenderedShellEntry],
-) -> Option<(BatchTexture, Vec<SkirmishShellChromeEntry>)> {
-    if entries.is_empty() {
-        return None;
-    }
-
-    let atlas_width = entries
-        .iter()
-        .map(|entry| entry.width)
-        .max()
-        .unwrap_or(1)
-        .max(1024);
-    let mut x = 0u32;
-    let mut y = 0u32;
-    let mut row_h = 0u32;
-    let mut placements = Vec::with_capacity(entries.len());
-
-    for entry in entries {
-        if x > 0 && x + entry.width + ATLAS_PADDING > atlas_width {
-            x = 0;
-            y += row_h + ATLAS_PADDING;
-            row_h = 0;
-        }
-        placements.push((x, y));
-        x += entry.width + ATLAS_PADDING;
-        row_h = row_h.max(entry.height);
-    }
-
-    let atlas_height = (y + row_h).next_power_of_two().max(1);
-    let mut rgba = vec![0u8; (atlas_width * atlas_height * 4) as usize];
-
-    for (entry, (px, py)) in entries.iter().zip(placements.iter().copied()) {
-        for row in 0..entry.height {
-            let src = (row * entry.width * 4) as usize;
-            let dst = (((py + row) * atlas_width + px) * 4) as usize;
-            let len = (entry.width * 4) as usize;
-            rgba[dst..dst + len].copy_from_slice(&entry.rgba[src..src + len]);
-        }
-    }
-
-    log::info!(
-        "Skirmish shell chrome atlas: {}x{} px, {} pieces",
-        atlas_width,
-        atlas_height,
-        entries.len()
-    );
-    for entry in entries {
-        log::info!("  {}: {}x{}", entry.label, entry.width, entry.height);
-    }
-
-    let texture = batch.create_texture(gpu, &rgba, atlas_width, atlas_height);
-    let atlas_entries = entries
-        .iter()
-        .zip(placements)
-        .map(|(entry, (px, py))| SkirmishShellChromeEntry {
-            uv_origin: [
-                px as f32 / atlas_width as f32,
-                py as f32 / atlas_height as f32,
-            ],
-            uv_size: [
-                entry.width as f32 / atlas_width as f32,
-                entry.height as f32 / atlas_height as f32,
-            ],
-            pixel_size: [entry.width as f32, entry.height as f32],
-        })
-        .collect();
-    Some((texture, atlas_entries))
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        AssetManager, OWNER_DRAW_FLAG_TRANSPARENT_RGB, PRIMITIVE_BEVEL_COLOR_A_RGB,
-        PRIMITIVE_BEVEL_COLOR_B_RGB, RenderedShellEntry, ShellAssetRole, TRACKBAR_FRAME_BORDER,
-        average_rgb, classify_shell_asset, draw_axis_line_inclusive_clipped, load_named_palette,
+        AssetManager, ChromePiece, OWNER_DRAW_FLAG_TRANSPARENT_RGB, PRIMITIVE_BEVEL_COLOR_A_RGB,
+        PRIMITIVE_BEVEL_COLOR_B_RGB, ShellAssetRole, TRACKBAR_FRAME_BORDER, average_rgb,
+        classify_shell_asset, draw_axis_line_inclusive_clipped, load_named_palette,
         render_primitive_bevel_entry, render_shp_entry, render_trackbar_frame_geometry, rgba_color,
         trackbar_frame_rgba,
     };
@@ -1364,7 +1276,7 @@ mod tests {
         assert_eq!(compared, 4);
     }
 
-    fn pixel(entry: &RenderedShellEntry, x: u32, y: u32) -> [u8; 4] {
+    fn pixel(entry: &ChromePiece, x: u32, y: u32) -> [u8; 4] {
         let offset = ((y * entry.width + x) * 4) as usize;
         [
             entry.rgba[offset],
@@ -1486,7 +1398,7 @@ mod tests {
         let mut rgba = vec![0u8; 5 * 3 * 4];
 
         draw_axis_line_inclusive_clipped(&mut rgba, 5, 3, (1, 1), (3, 1), color);
-        let entry = RenderedShellEntry {
+        let entry = ChromePiece {
             label: "line".to_string(),
             width: 5,
             height: 3,
@@ -1507,7 +1419,7 @@ mod tests {
 
         draw_axis_line_inclusive_clipped(&mut rgba, 3, 3, (-2, 1), (5, 1), color);
         draw_axis_line_inclusive_clipped(&mut rgba, 3, 3, (2, -3), (2, 8), color);
-        let entry = RenderedShellEntry {
+        let entry = ChromePiece {
             label: "clip".to_string(),
             width: 3,
             height: 3,

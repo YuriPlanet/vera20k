@@ -365,14 +365,30 @@ impl App {
                     );
                     crate::app::loading::pump::begin_loading(&mut state, loading);
                 }
+                #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+                let mut browser_spawn_failure = None;
                 if let Some(request) = self.spawn_request.take()
                     && let Err(error) = Self::start_spawn_session(&mut state, request)
                 {
                     let error = format!("CnCNet startup failed: {error:#}");
                     log::error!("{error}");
-                    self.startup_failure = Some(error);
-                    event_loop.exit();
-                    return;
+                    // docs/spawn.md: the page keeps its engine and may start
+                    // another launch; the report follows the Ready status.
+                    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+                    {
+                        crate::web::status(&error);
+                        browser_spawn_failure = Some(error);
+                    }
+                    #[cfg(not(all(
+                        feature = "wasm",
+                        target_arch = "wasm32",
+                        target_os = "unknown"
+                    )))]
+                    {
+                        self.startup_failure = Some(error);
+                        event_loop.exit();
+                        return;
+                    }
                 }
                 if let Some(session) = self.shell_capture.as_mut() {
                     session.prepare_state(&mut state);
@@ -402,6 +418,10 @@ impl App {
                         .and_then(|state| state.frontend.main_menu_shell_error.as_deref())
                         .unwrap_or("Ready"),
                 );
+                #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+                if let (Some(error), Some(state)) = (browser_spawn_failure, self.state.as_mut()) {
+                    Self::finish_browser_external_launch(state, Some(&error));
+                }
                 log::info!("Initialization complete");
             }
             Err(err) => {
@@ -462,6 +482,7 @@ impl ApplicationHandler for App {
             self.replay_request
                 .as_ref()
                 .map(|request| request.retail_dir.as_path()),
+            self.spawn_request.is_some() && Self::spawn_hidden_window_requested(),
         );
         let result = if capture_dimensions.is_some() {
             result.and_then(super::initialize::InitializationStep::finish_synchronously)
@@ -902,8 +923,10 @@ impl ApplicationHandler for App {
             }
             WindowEvent::Occluded(occluded) => {
                 // Fully covered on the backends that report it. Windows does
-                // not; see the `Resized` arm above.
-                Self::set_window_hidden(state, occluded);
+                // not; see the `Resized` arm above. A spawn test run's
+                // deliberately invisible window keeps running as if shown.
+                let invisible_spawn = Self::invisible_spawn_window(state);
+                Self::set_window_hidden(state, occluded && !invisible_spawn);
             }
             WindowEvent::CursorEntered { .. } => {
                 state.match_state.input.reset_window_cursor_motion();
@@ -1719,6 +1742,9 @@ impl ApplicationHandler for App {
             return;
         }
         let shell_scroll_wake = if let Some(state) = self.state.as_mut() {
+            // docs/spawn.md: a browser page's next launch after the last ended.
+            #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+            Self::poll_queued_spawn(state);
             Self::follow_window_full_screen(state);
             // cursor lock: the OS drops the clip on focus loss /
             // Windows key, so re-assert the player's choice every frame while
@@ -1836,7 +1862,19 @@ impl ApplicationHandler for App {
             if Self::next_online_render_frame(state).is_none() {
                 state.platform.frame_pacer.clear_render_continuation();
             }
-            if state.platform.frame_pacer.render_deferred() {
+            if Self::invisible_spawn_window(state) {
+                // An invisible window receives no RedrawRequested; drive the
+                // same frame directly, as the hidden capture drivers do.
+                let deferred = matches!(
+                    Self::render_frame(state, event_loop, None, None),
+                    Ok(FrameRenderOutcome::Deferred)
+                );
+                event_loop.set_control_flow(if deferred {
+                    ControlFlow::Poll
+                } else {
+                    ControlFlow::WaitUntil(Instant::now() + std::time::Duration::from_millis(8))
+                });
+            } else if state.platform.frame_pacer.render_deferred() {
                 event_loop.set_control_flow(ControlFlow::Poll);
                 state.platform.window.request_redraw();
             } else if crate::app::frontend::shell_transition::main_menu_presented_is_poisoned(state)

@@ -928,6 +928,15 @@ pub(super) fn received_options(
 }
 
 pub(super) fn poll(state: &mut AppState) {
+    // A direct spawn's map is the launcher's file; nothing is transferred.
+    if state
+        .match_state
+        .lan_service
+        .as_ref()
+        .is_some_and(|service| service.preadmitted)
+    {
+        return;
+    }
     let scope = state
         .match_state
         .lan_service

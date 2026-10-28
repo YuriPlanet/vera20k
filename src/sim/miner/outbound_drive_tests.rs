@@ -444,8 +444,8 @@ fn assert_command_state(sim: &Simulation, entity_id: u64, target: (u16, u16)) {
     assert!(drive.track().cursor() >= 0);
     assert!(!drive.track().reversed());
     assert!(!entity.navigation.path_replay().directions().is_empty());
-    // The Harvest handler dispatches BEFORE Phase-1 ground movement (the
-    // native handler→locomotion order), so by observation time the drive has
+    // The Harvest handler dispatches BEFORE the miner's own ground movement
+    // (the native handler→locomotion order), so by observation time the drive has
     // already begun accelerating in the same tick the command was issued.
     assert!(entity.foot_speed.applied_fraction() > SIM_ZERO);
     assert_eq!(

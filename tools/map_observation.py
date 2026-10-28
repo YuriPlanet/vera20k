@@ -26,6 +26,7 @@ import argparse
 from bisect import bisect_left
 from dataclasses import dataclass
 import math
+import re
 import struct
 from pathlib import Path
 import sys
@@ -101,6 +102,10 @@ EXTENSION_FIELDS = frozenset(('commands', 'gestures', 'observe_owners', 'observe
                               'observe_super_weapons', 'observe_diplomacy', 'observe_sidebar_steps'))
 ASCII_UPPER = str.maketrans('abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')
 COPIES = {'profile': 'profile.json', 'config': 'config.toml', 'contract': 'contract.json'}
+# Process Main RNG reads (native global 0x886B88): `rng.main` and every
+# `main_rng_cursor`. The wall-time audio service draws Main for SFX and Theme,
+# so runs from identical inputs may differ there; compare reports them apart.
+MAIN_RNG_FIELD = re.compile(r'\.(?:rng\.main|main_rng_cursor)(?:[.\[]|$)')
 # Optimized Cargo profiles whose recorded or labelled vera20k a capture may run.
 CAPTURE_PROFILES = ('release', 'fast')
 
@@ -3504,7 +3509,8 @@ def compare_runs(before: Path, after: Path, *,
                  allow_legacy_clock: bool = False) -> dict[str, Any]:
     """Compare two checked production observations; MATCH is not native parity."""
     report = _report('comparison', 'INVALID')
-    report.update(before_path=str(before), after_path=str(after), differences=[])
+    report.update(before_path=str(before), after_path=str(after), differences=[],
+                  main_rng_differences=[])
     try:
         left_dir = require_directory(before, 'before run')
         right_dir = require_directory(after, 'after run')
@@ -3558,7 +3564,10 @@ def compare_runs(before: Path, after: Path, *,
         # Catch mutations while the other bundle was being checked as well.
         left.check_unchanged()
         right.check_unchanged()
-        report.update(status='MISMATCH' if differences else 'MATCH', differences=differences)
+        main_rng = [row for row in differences if MAIN_RNG_FIELD.search(row['field'])]
+        differences = [row for row in differences if not MAIN_RNG_FIELD.search(row['field'])]
+        report.update(status='MISMATCH' if differences else 'MATCH', differences=differences,
+                      main_rng_differences=main_rng)
     except (OSError, ValueError) as exc:
         report['errors'].append(str(exc))
     return report

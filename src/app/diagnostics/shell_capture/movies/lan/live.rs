@@ -1607,6 +1607,15 @@ impl LiveLanCapture {
         Ok(())
     }
 
+    /// An incomplete opt-in latency round. Its partial receipt is still
+    /// written before the capture outcome fails.
+    pub(super) fn measurement_failure(&self) -> Option<String> {
+        self.rounds
+            .as_ref()?
+            .latency_failure()
+            .map(|failure| format!("online latency measurement incomplete in {failure}"))
+    }
+
     pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
         if let Some(crash) = &self.setup_crash {
             return crash.receipt();

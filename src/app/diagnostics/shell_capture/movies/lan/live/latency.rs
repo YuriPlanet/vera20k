@@ -4,6 +4,7 @@ use super::*;
 use crate::app::match_diagnostics::{
     ActorPresentation, CommandExecutionObservation, ObservationTime,
 };
+use crate::net::live_commands::CommandDeliveryTrace;
 use crate::sim::command::{MegaMissionOrder, MegaMissionRecord, StopRecord};
 
 const TARGET_PAIRS: usize = 30;
@@ -237,9 +238,12 @@ pub(super) struct LatencyCapture {
     latest_actor_draw: Option<ActorPresentation>,
     previous_actor_draw: Option<ActorPresentation>,
     maximum_render_interval_us: u64,
+    // Delivery sampled after warmup, indexed by server push: [pull, push].
+    measured_delivery: [bool; 2],
     next_issue: Option<crate::util::time::Instant>,
     errors: Vec<String>,
     peer_rtt: Option<Vec<(u8, u32)>>,
+    command_delivery: std::collections::BTreeMap<u64, CommandDeliveryTrace>,
     finished: bool,
 }
 
@@ -481,6 +485,13 @@ impl LatencyCapture {
             .live_network
             .as_ref()
             .context("latency transport")?;
+        for trace in live.command_delivery_traces() {
+            if self.command_delivery.len() < 4096
+                || self.command_delivery.contains_key(&trace.batch_id)
+            {
+                self.command_delivery.insert(trace.batch_id, *trace);
+            }
+        }
         let fps = live.fixed_frames_per_second();
         let frontier = live.committed_frontier();
         let recovery = live.recovery_status(
@@ -510,7 +521,8 @@ impl LatencyCapture {
             sample["render_interval_us"] = json!(interval);
             sample["maximum_render_interval_us"] = json!(self.maximum_render_interval_us);
             sample["render_deferred_passes"] = json!(self.render_deferred_passes);
-            sample["server_push"] = json!(live.sequenced_timing().is_some());
+            let server_push = live.sequenced_timing().is_some();
+            sample["server_push"] = json!(server_push);
             if let Some(pacing) = state.platform.frame_pacer.online_pacing_status() {
                 sample["pacing_reserve_us"] = json!(pacing.reserve_micros);
                 sample["pacing_underruns"] = json!(pacing.underruns);
@@ -520,6 +532,7 @@ impl LatencyCapture {
             sample["pending_synchronized_commands"] =
                 json!(sim.synchronized_network_command_count());
             let samples = if self.warmup.as_ref().is_some_and(|w| w["passed"] == true) {
+                self.measured_delivery[usize::from(server_push)] = true;
                 &mut self.samples
             } else {
                 &mut self.startup_samples
@@ -649,7 +662,9 @@ impl LatencyCapture {
             return Ok(false);
         }
         if let Some(action) = self.actions.last() {
-            if !action_gpu_complete(action) && action.error.is_none() {
+            // After a failed action the actor's pose is unknown, so a later
+            // baseline would measure nothing. The round stays incomplete.
+            if action.error.is_some() || !action_gpu_complete(action) {
                 return Ok(false);
             }
             if action.kind == "Move" {
@@ -768,6 +783,45 @@ impl LatencyCapture {
             "receiver":{"destination":observed.destination,"cell":observed.cell,"mission":observed.mission,"motion":observed.motion}})
     }
 
+    /// Move/Stop pairs with both responses rendered and the Stop's braking
+    /// observed. An at-rest Stop response alone measures no braking.
+    fn completed_pairs(&self) -> usize {
+        self.actions
+            .chunks_exact(2)
+            .filter(|pair| {
+                pair.iter()
+                    .all(|a| action_gpu_complete(a) && a.error.is_none())
+                    && pair[1]
+                        .stop_reaction
+                        .first
+                        .as_ref()
+                        .is_some_and(|first| first.gpu_completed_at().is_some())
+            })
+            .count()
+    }
+
+    fn delivery(&self) -> Option<&'static str> {
+        match self.measured_delivery {
+            [false, false] => None,
+            [true, false] => Some("pull"),
+            [false, true] => Some("push"),
+            [true, true] => Some("mixed"),
+        }
+    }
+
+    /// Why this round did not measure every pair on one delivery path.
+    pub(super) fn incomplete(&self) -> Option<String> {
+        let pairs = self.completed_pairs();
+        let delivery = self.delivery();
+        (pairs != TARGET_PAIRS || !self.errors.is_empty() || delivery == Some("mixed")).then(|| {
+            format!(
+                "{pairs}/{TARGET_PAIRS} measured pairs, {} errors, {} delivery",
+                self.errors.len(),
+                delivery.unwrap_or("unsampled")
+            )
+        })
+    }
+
     pub(super) fn receipt(&self) -> Value {
         let actions: Vec<_> = self.actions.iter().enumerate().map(|(id, action)| {
             let execution = action.execution.map(|index| self.execution_json(&self.executions[index]));
@@ -778,6 +832,17 @@ impl LatencyCapture {
                 let mut value = self.timestamp(response.at, response.frame);
                 value["screen"] = json!(response.screen); value["body"] = json!(response.body); value
             });
+            let since_issue = |at: crate::util::time::Instant| at.saturating_duration_since(action.issue.instant).as_secs_f64() * 1000.0;
+            // The local batch the relay sealed into this command's frame.
+            let network = action.execution.and_then(|index| {
+                let frame = u32::try_from(self.executions[index].observed.record.frame_stamp()).ok()?;
+                self.command_delivery.values().rev().find(|trace| {
+                    trace.assigned.is_some_and(|(assigned, _)| assigned == frame)
+                        && trace.sent_at.is_some_and(|sent| sent >= action.issue.instant)
+                })
+            }).map(|trace| json!({"batch_id":trace.batch_id,"sent_ms":trace.sent_at.map(since_issue),
+                "assigned_frame":trace.assigned.map(|(frame,_)|frame),"assigned_ms":trace.assigned.map(|(_,at)|since_issue(at)),
+                "frame_received_ms":trace.frame_received_at.map(since_issue)}));
             let gpu = action.response.as_ref().and_then(|response| response.gpu_completed_at().map(|at| (at,response.frame)));
             let gpu_ms = gpu.map(|(at,_)|latency(at));
             let first_stop_response = action.stop_reaction.first.as_ref().map(|first| {
@@ -802,18 +867,11 @@ impl LatencyCapture {
                 "stop_rendered_travel_before":action.stop_reaction.rendered_travel_before,
                 "dispatch_motion":action.execution.and_then(|index|self.executions[index].observed.motion.as_ref()),
                 "stop_response_status":(action.kind=="Stop").then_some(if action.stop_reaction.no_op {"no_op"} else if action.stop_reaction.first.is_some() {"observed"} else {"unproven"}),
-                "latency_ms":{"dispatch":dispatch_ms,"submitted_response":response_ms,"gpu_response":gpu_ms},
+                "latency_ms":{"dispatch":dispatch_ms,"submitted_response":response_ms,"gpu_response":gpu_ms},"network":network,
                 "exceeds_500ms":{"dispatch":dispatch_ms.map(|ms|ms>500.0),"submitted_response":response_ms.map(|ms|ms>500.0),"gpu_response":gpu_ms.map(|ms|ms>500.0)}})
         }).collect();
-        let completed_pairs = self
-            .actions
-            .chunks_exact(2)
-            .filter(|pair| {
-                pair.iter()
-                    .all(|a| action_gpu_complete(a) && a.error.is_none())
-            })
-            .count();
-        let complete = completed_pairs == TARGET_PAIRS && self.errors.is_empty();
+        let completed_pairs = self.completed_pairs();
+        let complete = self.incomplete().is_none();
         let first_move_trace: Vec<_> = self
             .first_move_trace
             .iter()
@@ -853,7 +911,7 @@ impl LatencyCapture {
         json!({"schema":"vera20k.online-input-latency.v1","target_pairs":TARGET_PAIRS,
             "render_deferred_passes":self.render_deferred_passes,
             "first_move_trace":first_move_trace,
-            "completed_pairs":completed_pairs,"status":if complete {"complete"} else if self.finished {"incomplete"} else {"sampling"},
+            "completed_pairs":completed_pairs,"delivery":self.delivery(),"status":if complete {"complete"} else if self.finished {"incomplete"} else {"sampling"},
             "limitation":"submitted admitted Unit draw-plan geometry; GPU callback is a completion upper bound, not monitor scanout; remote observations are dispatch only",
             "clock":{"unix_unit":"microseconds","mono_unit":"microseconds since this round observer began","remote_requires_calibration":true},
             "preparation":preparation,"stop_preparations":stop_preparations,"warmup":self.warmup,"actions":actions,"executions":self.executions.iter().map(|e|self.execution_json(e)).collect::<Vec<_>>(),
@@ -1527,5 +1585,47 @@ mod tests {
             capture.receipt()["actions"][0]["latency_ms"]["submitted_response"],
             300.0
         );
+    }
+
+    #[test]
+    fn round_needs_every_stop_braking_on_one_delivery_path() {
+        let start = ObservationTime::now();
+        let motion = test_motion(0.0, false);
+        let rendered = |ms| ActorPresentation {
+            at: at(start, ms),
+            frame: 20,
+            screen: [0., 0.],
+            body: 0,
+            motion: motion.clone(),
+            sampled_from_frame: 20,
+            gpu_done: std::sync::Arc::new(std::sync::Mutex::new(Some(at(start, ms + 5)))),
+        };
+        let mut capture = LatencyCapture {
+            started: Some(start),
+            finished: true,
+            measured_delivery: [false, true],
+            ..Default::default()
+        };
+        for pair in 0..TARGET_PAIRS as u64 {
+            let mut moved = action(at(start, pair * 100));
+            moved.kind = "Move";
+            moved.response = Some(rendered(pair * 100 + 20));
+            let mut stopped = action(at(start, pair * 100 + 50));
+            stopped.response = Some(rendered(pair * 100 + 70));
+            stopped.stop_reaction.first = stopped.response.clone();
+            capture.actions.extend([moved, stopped]);
+        }
+        assert_eq!(capture.incomplete(), None);
+        // A rendered at-rest response without observed braking measures nothing.
+        capture.actions.last_mut().unwrap().stop_reaction.first = None;
+        assert!(capture.incomplete().is_some());
+        let receipt = capture.receipt();
+        assert_eq!(receipt["completed_pairs"], TARGET_PAIRS - 1);
+        assert_eq!(receipt["status"], "incomplete");
+        let last = capture.actions.last_mut().unwrap();
+        last.stop_reaction.first = last.response.clone();
+        capture.measured_delivery = [true, true];
+        assert!(capture.incomplete().unwrap().contains("mixed delivery"));
+        assert_eq!(capture.receipt()["status"], "incomplete");
     }
 }

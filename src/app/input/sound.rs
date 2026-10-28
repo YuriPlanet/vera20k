@@ -66,12 +66,15 @@ pub(crate) fn open(state: &mut AppState) {
             }
         })
         .collect();
+    // BBB's 0x52D writes state 6; State_Machine 0x0048C8B0 then runs B8
+    // (0x006B6230 at 0x0048C9EF) inside the same pause bracket. The transition
+    // owner clears B8's retained state, so the new dialog is installed after it.
+    App::enter_in_game_menu_state(state, InGameMenuState::Sound);
     state.match_state.match_presentation.sound_dialog = Some(SoundState::new(
         positions,
         rows,
         state.audio.theme.current_song(),
     ));
-    state.match_state.match_presentation.in_game_menu = InGameMenuState::Sound;
 }
 /// Back `0x686` in `0x6B6300`, shared by B8 and the shell's `0xD6`:
 /// re-apply the three volumes; a zero score volume queues the current song
@@ -108,10 +111,9 @@ fn back(state: &mut AppState) {
         return;
     };
     apply_back_volumes(state, dialog.positions);
-    state.match_state.match_presentation.in_game_options =
-        options::in_game_options_from_profile(&state.persistence.options_profile);
-    crate::app::input::in_game_options::on_open(state);
-    state.match_state.match_presentation.in_game_menu = InGameMenuState::Options;
+    // State_Machine 0x0048C9F4 writes state 5 after B8 returns: BBB is
+    // recreated, and its init reads the Options values B8 left untouched.
+    App::enter_in_game_menu_state(state, InGameMenuState::Options);
 }
 fn activate(state: &mut AppState, id: SoundButton) {
     let now = crate::app::match_runtime::frame_pacer::wall_clock_ms();

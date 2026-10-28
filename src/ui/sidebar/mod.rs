@@ -134,10 +134,6 @@ pub enum SidebarAction {
         section: String,
         right: bool,
     },
-    CycleProducer(ProductionCategory),
-    CycleOwner,
-    PlaceStarterBase,
-    SpawnTestUnits,
     /// Toggle Repair-mode (cursor stays armed for clicking buildings to repair).
     /// Clears Sell; pending building placement refuses the transition.
     ToggleRepairMode,
@@ -213,15 +209,14 @@ pub struct SidebarTabButton {
 
 /// View entry for an SHP-driven toggle button (Repair, Sell).
 /// Rect for hit-testing, action to dispatch on click, frame index for the
-/// 5-frame SHP state table.
+/// 5-frame SHP state table. Native never disables either button
+/// (see [`gadget_flash::SidebarGadgetState::repair_frame`]).
 #[derive(Debug, Clone)]
 pub struct SidebarToggleButton {
     pub rect: Rect,
     pub action: SidebarAction,
     /// Externally driven latch state for the toggle gadget.
     pub active: bool,
-    /// Retained gadget disabled bit for hit-testing and tooltip presentation.
-    pub disabled: bool,
     /// SHP frame index (0..=4) for the button's per-theme SHP atlas.
     pub frame_index: u8,
 }
@@ -234,13 +229,6 @@ pub struct SidebarScrollButton {
     pub disabled: bool,
     /// SHP frame index (0..=2) for the button's per-theme atlas.
     pub frame_index: u8,
-}
-
-#[derive(Debug, Clone)]
-pub struct SidebarControlButton {
-    pub rect: Rect,
-    pub action: SidebarAction,
-    pub label: String,
 }
 
 /// Computed vertical offsets for each chrome section, based on screen height.
@@ -281,10 +269,6 @@ pub struct SidebarView {
     pub top_buttons: [SidebarScrollButton; 2],
     pub scroll_down_button: SidebarScrollButton,
     pub scroll_up_button: SidebarScrollButton,
-    pub cycle_owner_button: SidebarControlButton,
-    pub starter_base_button: SidebarControlButton,
-    pub spawn_test_units_button: SidebarControlButton,
-    pub producer_button: Option<SidebarControlButton>,
 }
 
 pub fn default_active_tab() -> SidebarTab {
@@ -380,8 +364,8 @@ pub(crate) fn hit_test_item(item: &SidebarItem, right_click: bool, shift: bool) 
 }
 
 // `sidebar::hit_test` (the legacy press-path hit-test) was retired in A6: every
-// in-game surface — tabs/repair/sell/scroll (A1), cameos (A2), tactical/minimap
-// (A3), and the control/dev buttons (A6) — is now owned by the `app::input::gadget_input`
+// in-game surface — tabs/repair/sell/scroll (A1), cameos (A2) and tactical/minimap
+// (A3) — is now owned by the `app::input::gadget_input`
 // retained list (one order = hit + draw, R7 complete). `hit_test_item` (the cameo
 // click→action map) stays public for the driver.
 

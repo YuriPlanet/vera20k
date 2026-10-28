@@ -114,7 +114,8 @@ pub struct MinimapRenderer {
     /// shroud/fog cell and packed terrain color.
     surface_pixels: Vec<RadarSurfacePixel>,
     /// Per-cell overlay metadata. Authoritative radar surfaces bake these into
-    /// raw RGB before sampling; only the mapless fallback stamps them later.
+    /// raw RGB before sampling; only the mapless fallback stamps them later and
+    /// updates them for dirty cells.
     overlay_pixels: Vec<OverlayPixel>,
     /// Legacy mapless aspect-fit sub-region within the native aperture.
     pub(super) map_offset_x: f32,

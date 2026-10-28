@@ -2,8 +2,8 @@
 //!
 //! Verifies the FacingClass-driven combat behavior end-to-end through
 //! `Simulation::advance_tick`, covering 1-tick acquisition latency,
-//! mid-rotation retarget, slow vs fast ROT alignment timing, and the
-//! flipped Phase 5 tick order.
+//! mid-rotation retarget and slow vs fast ROT alignment timing, with each
+//! turret turning and firing in its own LogicClass visit.
 
 use std::collections::BTreeMap;
 

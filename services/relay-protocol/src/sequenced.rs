@@ -7,6 +7,8 @@ use sha2::Digest;
 
 use super::*;
 
+pub(crate) mod federation;
+
 pub const ORDERING_CERTIFICATE_LEN: usize = 66;
 pub const ORDERING_BATCH_CAPACITY: usize = 512;
 pub const ORDERING_PULL_LIMIT: usize = 32;
@@ -38,6 +40,14 @@ const PUSH_PEER_PACKETS: usize = 8;
 const PUSH_ROOM_PACKETS: usize = 32;
 const PUSH_DRAIN_PACKETS: usize = 128;
 const PUSH_DRAIN_BYTES: usize = 96 * 1024;
+// A reader sees a lost push only at a later entry, then repairs it a round
+// trip later. Unacknowledged entries are pushed once more when the oldest one
+// still owed a copy is this old: past a back-to-back drop and inside the
+// reader's one-frame gap grace.
+const PUSH_REPEAT_MS: u64 = 8;
+// Repeats per second relay-wide. They spend no fresh budget, so they add at
+// most one room's packet budget to the relay's ordering output.
+const PUSH_REPEAT_PACKETS: u64 = 8192;
 pub(super) const LEAVE_REQUEST: u8 = 3;
 const READY_EVENT: u8 = 0;
 const STATUS_EVENT: u8 = 1;
@@ -631,6 +641,10 @@ fn ack(batch_id: u64, frame: u32) -> Vec<Vec<u8>> {
 pub(super) struct PushSubscription {
     acknowledged_next: u64,
     sent_next: u64,
+    // Entries before this were pushed twice or acknowledged.
+    repeat_next: u64,
+    // When the oldest entry still owed a second push was first sent.
+    unrepeated_since: Option<u64>,
     refreshed_at: u64,
     status_at: u64,
     status_state: (bool, u32),
@@ -672,7 +686,14 @@ pub(super) struct OrderingRoom {
     starts_at: Option<u64>,
     paused_at: Option<u64>,
     pause_epoch: u64,
+    // Merged stream head. A federated relay seals its own sources first, at
+    // `sealed`, and merges a frame once every relay has sealed it.
     head: u32,
+    sealed: u32,
+    // Sources homed on this relay: all of them unless federated.
+    local: u32,
+    // A federated Leave before the start asks the coordinator to cancel.
+    cancel_requested: bool,
     next_seq: u64,
     history: VecDeque<Stored>,
     history_bytes: usize,
@@ -687,6 +708,7 @@ impl OrderingRoom {
         certificate: OrderingCertificate,
         agreement: [u8; 32],
         journal: Option<crate::journal::Journal>,
+        local: u32,
     ) -> Self {
         Self {
             certificate,
@@ -698,6 +720,9 @@ impl OrderingRoom {
             paused_at: None,
             pause_epoch: 0,
             head: 0,
+            sealed: 0,
+            local,
+            cancel_requested: false,
             next_seq: 1,
             history: VecDeque::new(),
             history_bytes: 0,
@@ -829,6 +854,9 @@ impl OrderingRoom {
     }
 
     fn supported_pause_sources(&self) -> u32 {
+        if self.local != self.certificate.sources_mask {
+            return 0;
+        }
         self.sources
             .iter()
             .enumerate()
@@ -916,18 +944,23 @@ impl OrderingRoom {
             return;
         }
         if self.starts_at.is_none() {
-            // The signed startup requires every source. An explicit Leave
-            // makes that immutable quorum impossible, including sources which
-            // never reached Ready. Keep an inactive short-ticket tombstone.
-            self.active = 0;
-            self.ready = 0;
-            self.finished_at = Some(now_ms);
-            return;
+            if self.local == self.certificate.sources_mask {
+                // The signed startup requires every source. An explicit Leave
+                // makes that immutable quorum impossible, including sources which
+                // never reached Ready. Keep an inactive short-ticket tombstone.
+                self.active = 0;
+                self.ready = 0;
+                self.finished_at = Some(now_ms);
+                return;
+            }
+            // Only the coordinator ends a federated startup. Its start may
+            // already be on the way; this Leave then departs at frame 1.
+            self.cancel_requested = true;
         }
         self.active &= !bit;
         let final_frame = (MAX_MATCH_SECONDS * u64::from(self.certificate.tick_hz)) as u32;
         self.pending
-            .entry((self.head + 2).min(final_frame))
+            .entry((self.sealed + 1).min(final_frame))
             .or_default()
             .push(Pending {
                 source,
@@ -943,7 +976,36 @@ impl OrderingRoom {
         }
     }
 
-    fn advance(&mut self, now_ms: u64) {
+    /// The coordinator's cancel before the start ends this startup here too.
+    fn cancel(&mut self, now_ms: u64) {
+        self.active = 0;
+        self.ready = 0;
+        self.finished_at = Some(now_ms);
+    }
+
+    /// Another relay's sealed entry, merged with this relay's own.
+    fn accept_remote(&mut self, frame: u32, source: u8, batch_id: u64, opaque: &[u8]) {
+        if batch_id == 0 {
+            self.active &= !(1 << source);
+        } else {
+            // Its home relay reserved it there; this journal stores the same
+            // merged stream. The batch is already sealed, so a full journal
+            // fails storage rather than dropping it.
+            if let Some(journal) = self.journal.as_mut()
+                && !journal.reserve_batch(22 + opaque.len())
+            {
+                self.storage_failed = true;
+            }
+            self.sources[usize::from(source)].pending += 1;
+        }
+        self.pending.entry(frame).or_default().push(Pending {
+            source,
+            batch_id,
+            opaque: opaque.to_vec(),
+        });
+    }
+
+    fn advance(&mut self, now_ms: u64, federation: Option<&mut federation::Federation>) {
         if self.storage_failed || self.paused_at.is_some() {
             return;
         }
@@ -957,9 +1019,9 @@ impl OrderingRoom {
             .min(MAX_MATCH_SECONDS * u64::from(self.certificate.tick_hz))
             as u32;
         let final_frame = (MAX_MATCH_SECONDS * u64::from(self.certificate.tick_hz)) as u32;
-        if target == final_frame && self.head < final_frame {
+        if target == final_frame && self.sealed < final_frame {
             for source in 0..MAX_PEERS {
-                if self.active & (1 << source) != 0 {
+                if self.active & self.local & (1 << source) != 0 {
                     self.pending.entry(final_frame).or_default().push(Pending {
                         source,
                         batch_id: 0,
@@ -967,16 +1029,37 @@ impl OrderingRoom {
                     });
                 }
             }
-            self.active = 0;
+            self.active &= !self.local;
         }
         let target = if self.active == 0 {
             target.min(
                 self.pending
                     .last_key_value()
-                    .map_or(self.head, |(&frame, _)| frame),
+                    .map_or(self.sealed, |(&frame, _)| frame),
             )
         } else {
             target
+        };
+        // A federated relay contributes its own sources' entries as it seals
+        // each frame, and merges only what every relay has sealed.
+        let target = if let Some(federation) = federation {
+            while self.sealed < target {
+                self.sealed += 1;
+                for entry in self.pending.get(&self.sealed).into_iter().flatten() {
+                    if self.local & (1 << entry.source) != 0 {
+                        federation.contribute(
+                            self.sealed,
+                            entry.source,
+                            entry.batch_id,
+                            &entry.opaque,
+                        );
+                    }
+                }
+            }
+            federation.merged_through(self.sealed)
+        } else {
+            self.sealed = self.sealed.max(target);
+            self.sealed
         };
         while self.head < target {
             // In-memory protocol fixtures may trim old empty prefixes. A real
@@ -1097,14 +1180,18 @@ impl OrderingRoom {
                 (OrderError::StorageUnavailable, self.next_seq)
             })
         } else {
-            Ok(self
-                .history
-                .iter()
-                .skip((cursor - self.hot_oldest_seq()) as usize)
-                .take(limit)
-                .map(|entry| entry.bytes.clone())
-                .collect())
+            Ok(self.hot_page(cursor, limit))
         }
+    }
+
+    /// Committed bytes from `cursor` on, which must still be in RAM.
+    fn hot_page(&self, cursor: u64, limit: usize) -> Vec<Vec<u8>> {
+        self.history
+            .iter()
+            .skip((cursor - self.hot_oldest_seq()) as usize)
+            .take(limit)
+            .map(|entry| entry.bytes.clone())
+            .collect()
     }
 
     fn push_status_state(&self, now_ms: u64) -> (bool, u32) {
@@ -1159,7 +1246,9 @@ impl OrderingRoom {
                 if id != expected {
                     return Ok(error(OrderError::BatchGap, expected));
                 }
-                let frame = self.head + 2;
+                // The open frame: `advance` above already sealed every due
+                // frame, and no reader executes a frame before its FrameEnd.
+                let frame = self.sealed + 1;
                 if frame > (MAX_MATCH_SECONDS * u64::from(self.certificate.tick_hz)) as u32 {
                     return Ok(error(OrderError::Inactive, 0));
                 }
@@ -1205,7 +1294,7 @@ impl OrderingRoom {
 mod tests {
     use super::*;
 
-    fn client(key: &SecretKey, source: u8) -> ClientSession {
+    pub(super) fn client(key: &SecretKey, source: u8) -> ClientSession {
         let ticket = Ticket {
             room: [5; 16],
             source,
@@ -1224,9 +1313,9 @@ mod tests {
         .unwrap()
     }
 
-    struct TestDirectory(std::path::PathBuf);
+    pub(super) struct TestDirectory(pub(super) std::path::PathBuf);
     impl TestDirectory {
-        fn new() -> Self {
+        pub(super) fn new() -> Self {
             let mut random = [0; 16];
             getrandom::fill(&mut random).unwrap();
             let name: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
@@ -1238,7 +1327,7 @@ mod tests {
             let _ = std::fs::remove_dir_all(&self.0);
         }
     }
-    fn unix(now_ms: u64) -> u64 {
+    pub(super) fn unix(now_ms: u64) -> u64 {
         1000 + now_ms / 1000
     }
 
@@ -1259,11 +1348,11 @@ mod tests {
         *client = candidate;
     }
 
-    fn endpoint(client: &ClientSession) -> SocketAddrV4 {
+    pub(super) fn endpoint(client: &ClientSession) -> SocketAddrV4 {
         SocketAddrV4::new(Ipv4Addr::LOCALHOST, 31000 + u16::from(client.source()))
     }
 
-    fn connect(server: &mut RelayServer, client: &mut ClientSession, now_ms: u64) {
+    pub(super) fn connect(server: &mut RelayServer, client: &mut ClientSession, now_ms: u64) {
         let mut bytes = Vec::new();
         client.probe(&mut bytes).unwrap();
         let challenge = server
@@ -1284,7 +1373,7 @@ mod tests {
         ));
     }
 
-    fn events(
+    pub(super) fn events(
         server: &mut RelayServer,
         client: &mut ClientSession,
         bytes: &[u8],
@@ -1303,7 +1392,7 @@ mod tests {
             .collect()
     }
 
-    fn configure(
+    pub(super) fn configure(
         server: &mut RelayServer,
         client: &mut ClientSession,
         cert: &[u8],
@@ -1316,7 +1405,7 @@ mod tests {
         events(server, client, &bytes, now_ms)
     }
 
-    fn pull(
+    pub(super) fn pull(
         server: &mut RelayServer,
         client: &mut ClientSession,
         cursor: u64,
@@ -1327,7 +1416,11 @@ mod tests {
         events(server, client, &bytes, now_ms)
     }
 
-    fn certificate(key: &SecretKey, mask: u32, expires: u64) -> [u8; ORDERING_CERTIFICATE_LEN] {
+    pub(super) fn certificate(
+        key: &SecretKey,
+        mask: u32,
+        expires: u64,
+    ) -> [u8; ORDERING_CERTIFICATE_LEN] {
         OrderingCertificate {
             room: [5; 16],
             sources_mask: mask,
@@ -1566,7 +1659,7 @@ mod tests {
             }
         }
         assert_eq!(markers, [(1, true), (2, false)]);
-        assert_eq!(inputs, [(6, b"accepted before pause".to_vec())]);
+        assert_eq!(inputs, [(5, b"accepted before pause".to_vec())]);
     }
 
     #[test]
@@ -1611,7 +1704,7 @@ mod tests {
                     ..
                 }) => resumed = true,
                 OrderEvent::Entry(OrderEntry::Departure {
-                    source, frame: 2, ..
+                    source, frame: 1, ..
                 }) => departed.push(source),
                 _ => {}
             }
@@ -1622,7 +1715,7 @@ mod tests {
         );
         assert_eq!(departed, [0, 1]);
         let ordering = server.rooms[&[5; 16]].ordering.as_ref().unwrap();
-        assert_eq!(ordering.head, 2);
+        assert_eq!(ordering.head, 1);
         assert!(ordering.finished_at.is_some());
     }
 
@@ -1832,6 +1925,95 @@ mod tests {
                     })
                 )),
             "the unchanged bounded Pull recovers the dropped entry"
+        );
+    }
+
+    #[test]
+    fn push_repeats_unacknowledged_entries_once_after_a_short_delay() {
+        fn frame_ends(reader: &mut ClientSession, packets: Vec<ForwardDatagram>) -> Vec<u64> {
+            packets
+                .into_iter()
+                .filter_map(|packet| match reader.receive(&packet.bytes).unwrap() {
+                    ServerEvent::Ordering(OrderEvent::Entry(OrderEntry::FrameEnd {
+                        sequence,
+                        ..
+                    })) => Some(sequence),
+                    _ => None,
+                })
+                .collect()
+        }
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 2);
+        let (mut reader, mut other) = (client(&key, 0), client(&key, 1));
+        let cert = certificate(&key, 3, 1400);
+        for peer in [&mut reader, &mut other] {
+            connect(&mut server, peer, 0);
+            configure(&mut server, peer, &cert, 0);
+        }
+        subscribe(&mut server, &mut reader, true, 1, 0);
+        server.advance_clock(350, unix(350));
+        let mut first = server.drain_ordering_push(350, unix(350));
+        let lost = first.pop().unwrap();
+        assert_eq!(lost.bytes[SERVER_HEADER], FRAME_END_EVENT);
+        assert_eq!(frame_ends(&mut reader, first), [1, 2, 3, 4, 5]);
+        // Requests advance the clock, and frame 7 is due only at 355.6 ms.
+        subscribe(&mut server, &mut reader, true, 5, 351);
+        assert!(server.drain_ordering_push(357, unix(357)).is_empty());
+        assert_eq!(
+            frame_ends(&mut reader, server.drain_ordering_push(358, unix(358))),
+            [5, 6],
+            "unacknowledged entries return without a reader request"
+        );
+        assert!(
+            server.drain_ordering_push(400, unix(400)).is_empty(),
+            "each entry is repeated once"
+        );
+    }
+
+    #[test]
+    fn repeats_take_only_what_fresh_pushes_leave() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 2);
+        let mut readers: Vec<_> = (0..5).map(|source| client(&key, source)).collect();
+        let cert = certificate(&key, 31, 1400);
+        for reader in &mut readers {
+            connect(&mut server, reader, 0);
+            configure(&mut server, reader, &cert, 0);
+            subscribe(&mut server, reader, true, 1, 0);
+        }
+        // Every reader holds frames 1-7, due for a repeat when frame 8 commits.
+        // A fresh entry plus seven repeats fill one reader's pass share, so
+        // four readers could otherwise take the room's whole pass.
+        server.advance_clock(360, unix(360));
+        while !server.drain_ordering_push(360, unix(360)).is_empty() {}
+        server.advance_clock(380, unix(380));
+        let spent = server.rooms[&[5; 16]].order_packets.spent;
+        let packets = server.drain_ordering_push(380, unix(380));
+        assert_eq!(packets.len(), PUSH_ROOM_PACKETS);
+        let fresh = packets
+            .iter()
+            .filter(|packet| {
+                let reader = readers
+                    .iter_mut()
+                    .find(|reader| endpoint(reader) == packet.endpoint)
+                    .unwrap();
+                matches!(
+                    reader.receive(&packet.bytes),
+                    Ok(ServerEvent::Ordering(OrderEvent::Entry(
+                        OrderEntry::FrameEnd { sequence: 8, .. }
+                    )))
+                )
+            })
+            .count();
+        assert_eq!(
+            fresh,
+            readers.len(),
+            "repeats never take a fresh entry's place"
+        );
+        assert_eq!(
+            server.rooms[&[5; 16]].order_packets.spent - spent,
+            5,
+            "repeats spend no fresh budget"
         );
     }
 
@@ -2213,8 +2395,8 @@ mod tests {
         assert_eq!(
             batch,
             [
-                (2, 2, 1, b"active input".as_slice()),
-                (3, 2, 2, b"third input".as_slice())
+                (1, 1, 1, b"active input".as_slice()),
+                (2, 1, 2, b"third input".as_slice())
             ]
         );
         let ends: Vec<_> = received
@@ -2226,7 +2408,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(ends, [(1, 1), (4, 2), (5, 3), (6, 4)]);
+        assert_eq!(ends, [(3, 1), (4, 2), (5, 3), (6, 4)]);
         active
             .submit_ordering(2, b"healthy input during outage", &mut bytes)
             .unwrap();
@@ -2419,26 +2601,26 @@ mod tests {
             events(&mut server, &mut first, &bytes, 300)[0],
             OrderEvent::Ack {
                 batch_id: 2,
-                frame: 6
+                frame: 5
             }
         ));
         first.leave_ordering(&mut bytes).unwrap();
         events(&mut server, &mut first, &bytes, 300);
         server.advance_clock(400, 1000);
-        let tail = pull(&mut server, &mut second, 7, 400);
-        let at_six: Vec<_> = tail
+        let tail = pull(&mut server, &mut second, 6, 400);
+        let at_five: Vec<_> = tail
             .iter()
             .filter_map(|event| match event {
-                OrderEvent::Entry(OrderEntry::Batch { frame: 6, .. }) => Some("batch"),
+                OrderEvent::Entry(OrderEntry::Batch { frame: 5, .. }) => Some("batch"),
                 OrderEvent::Entry(OrderEntry::Departure {
-                    frame: 6,
+                    frame: 5,
                     source: 0,
                     ..
                 }) => Some("departure"),
                 _ => None,
             })
             .collect();
-        assert_eq!(at_six, ["batch", "departure"]);
+        assert_eq!(at_five, ["batch", "departure"]);
         second.leave_ordering(&mut bytes).unwrap();
         events(&mut server, &mut second, &bytes, 400);
         server.advance_clock(600, unix(600));
@@ -2636,9 +2818,10 @@ mod tests {
         ));
         assert!(matches!(
             replay[1],
-            OrderEvent::Entry(OrderEntry::FrameEnd {
+            OrderEvent::Entry(OrderEntry::Batch {
                 sequence: 1,
-                frame: 1
+                frame: 1,
+                ..
             })
         ));
         assert!(
@@ -2826,13 +3009,11 @@ impl RelayServer {
         let mut rooms: Vec<_> = self.rooms.keys().copied().collect();
         rooms.sort_unstable();
         for id in rooms {
-            if let Some(ordering) = self
-                .rooms
-                .get_mut(&id)
-                .and_then(|room| room.ordering.as_mut())
+            if let Some(room) = self.rooms.get_mut(&id)
+                && let Some(ordering) = room.ordering.as_mut()
             {
                 let before = ordering.memory();
-                ordering.advance(now_ms);
+                ordering.advance(now_ms, room.federation.as_mut());
                 total = total
                     .saturating_sub(before)
                     .saturating_add(ordering.memory());
@@ -2888,13 +3069,11 @@ impl RelayServer {
     }
 
     pub(super) fn advance_ordering_room(&mut self, id: [u8; 16], now_ms: u64) {
-        if let Some(ordering) = self
-            .rooms
-            .get_mut(&id)
-            .and_then(|room| room.ordering.as_mut())
+        if let Some(room) = self.rooms.get_mut(&id)
+            && let Some(ordering) = room.ordering.as_mut()
         {
             let before = ordering.memory();
-            ordering.advance(now_ms);
+            ordering.advance(now_ms, room.federation.as_mut());
             if ordering.memory() > before {
                 self.reserve_ordering(0);
             }
@@ -3021,9 +3200,13 @@ impl RelayServer {
                 .rooms
                 .get_mut(&message.ticket.room)
                 .ok_or(RelayError::Unregistered)?;
+            let local = room
+                .federation
+                .as_ref()
+                .map_or(certificate.sources_mask, federation::Federation::local);
             let ordering = room
                 .ordering
-                .get_or_insert_with(|| OrderingRoom::new(certificate, agreement, journal));
+                .get_or_insert_with(|| OrderingRoom::new(certificate, agreement, journal, local));
             if ordering.storage_failed {
                 error(OrderError::StorageUnavailable, ordering.next_seq)
             } else if ordering.certificate.room != certificate.room
@@ -3044,13 +3227,20 @@ impl RelayServer {
                 ordering.certificate.expires =
                     ordering.certificate.expires.max(certificate.expires);
                 ordering.ready |= 1 << message.ticket.source;
-                if ordering.ready == ordering.certificate.sources_mask
-                    && ordering.starts_at.is_none()
-                {
-                    ordering.starts_at = Some(now_ms.saturating_add(START_DELAY_MS));
-                }
+                // A federated start belongs to the coordinator relay.
+                let ready_mask = match room.federation.as_ref() {
+                    Some(federation) => federation.ready(ordering.ready, &ordering.agreement),
+                    None => {
+                        if ordering.ready == ordering.certificate.sources_mask
+                            && ordering.starts_at.is_none()
+                        {
+                            ordering.starts_at = Some(now_ms.saturating_add(START_DELAY_MS));
+                        }
+                        ordering.ready
+                    }
+                };
                 let mut ready = vec![READY_EVENT];
-                ready.extend_from_slice(&ordering.ready.to_le_bytes());
+                ready.extend_from_slice(&ready_mask.to_le_bytes());
                 ready.extend_from_slice(&ordering.certificate.sources_mask.to_le_bytes());
                 vec![ready, ordering.status(now_ms)]
             }
@@ -3125,6 +3315,8 @@ impl RelayServer {
                     let push = peer.push.get_or_insert(PushSubscription {
                         acknowledged_next: cursor,
                         sent_next: cursor,
+                        repeat_next: cursor,
+                        unrepeated_since: None,
                         refreshed_at: now_ms,
                         status_at: now_ms,
                         status_state: state,
@@ -3179,6 +3371,9 @@ impl RelayServer {
         let mut output = Vec::new();
         let mut output_bytes = 0;
         let mut room_packets = HashMap::new();
+        // Each reader reached, with its stream end before this pass and the
+        // fresh packets it was sent.
+        let mut reached = Vec::new();
         for (id, source) in recipients {
             if output.len() == PUSH_DRAIN_PACKETS || output_bytes >= PUSH_DRAIN_BYTES {
                 break;
@@ -3199,6 +3394,7 @@ impl RelayServer {
                 .expect("listed peer");
             let ticket = peer.ticket;
             let push = peer.push.expect("listed subscription");
+            reached.push((id, ticket, push.sent_next, 0));
             let ordering = room.ordering.as_mut().expect("subscribed ordering room");
             let state = ordering.push_status_state(now_ms);
             let status_due = state != push.status_state
@@ -3234,6 +3430,9 @@ impl RelayServer {
             let Ok(datagrams) = self.ordering_reply(ticket, replies, now) else {
                 continue;
             };
+            if let Some((.., fresh)) = reached.last_mut() {
+                *fresh = datagrams.len();
+            }
             *room_packets.entry(id).or_insert(0) += datagrams.len();
             output_bytes += bytes;
             output.extend(datagrams);
@@ -3248,11 +3447,75 @@ impl RelayServer {
             if terminal {
                 peer.push = None;
             } else if let Some(push) = peer.push.as_mut() {
+                // With no older entry owed a copy, this pass starts the delay.
+                if entries > 0 && push.repeat_next.max(push.acknowledged_next) >= push.sent_next {
+                    push.unrepeated_since = Some(now_ms);
+                }
                 push.sent_next += entries as u64;
                 if status_due {
                     push.status_at = now_ms;
                     push.status_state = state;
                 }
+            }
+        }
+        // Fresh delivery has priority. Repeats then use only what this pass
+        // has left and a budget of their own, checked before any history is
+        // copied, so they never delay or rate-limit a fresh entry or a request
+        // reply. They copy entries sent before this pass, which the reader
+        // holds or lost, so they take no credit; a reader replaying the
+        // journal repairs its own losses.
+        for (id, ticket, before, fresh) in reached {
+            if output.len() == PUSH_DRAIN_PACKETS || output_bytes >= PUSH_DRAIN_BYTES {
+                break;
+            }
+            let room_used = *room_packets.get(&id).unwrap_or(&0);
+            let room = self.rooms.get_mut(&id).expect("listed room");
+            let Some(peer) = room.peers.iter_mut().find(|peer| peer.ticket == ticket) else {
+                continue;
+            };
+            let (Some(push), Some(ordering)) = (peer.push, room.ordering.as_ref()) else {
+                continue;
+            };
+            if push
+                .unrepeated_since
+                .is_none_or(|at| now_ms.saturating_sub(at) < PUSH_REPEAT_MS)
+            {
+                continue;
+            }
+            let from = push
+                .repeat_next
+                .max(push.acknowledged_next)
+                .max(ordering.hot_oldest_seq());
+            let capacity = (PUSH_PEER_PACKETS - fresh)
+                .min(PUSH_ROOM_PACKETS - room_used)
+                .min(PUSH_DRAIN_PACKETS - output.len());
+            let count = before
+                .saturating_sub(from)
+                .min(capacity as u64)
+                .min(self.repeat_packets.remaining(now, PUSH_REPEAT_PACKETS));
+            let mut repeated = 0;
+            if count > 0 {
+                for payload in ordering.hot_page(from, count as usize) {
+                    let bytes = SERVER_HEADER + MAC_LEN + payload.len();
+                    if output_bytes + bytes > PUSH_DRAIN_BYTES {
+                        break;
+                    }
+                    let Ok(datagram) = server_packet(peer, CONTROL, ticket.source, &payload) else {
+                        break;
+                    };
+                    output_bytes += bytes;
+                    output.push(datagram);
+                    repeated += 1;
+                }
+            }
+            self.repeat_packets.charge(now, repeated);
+            *room_packets.entry(id).or_insert(0) += repeated as usize;
+            let push = peer.push.as_mut().expect("subscribed reader");
+            push.repeat_next = from + repeated;
+            // Once every entry sent before this pass went twice, this pass's
+            // entries start the next wait.
+            if push.repeat_next >= before {
+                push.unrepeated_since = (push.sent_next > before).then_some(now_ms);
             }
         }
         output

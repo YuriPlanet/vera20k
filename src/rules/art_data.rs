@@ -203,11 +203,11 @@ pub struct ArtEntry {
     /// adds the low words to the dock's NW cell for the waiting miner's staging
     /// search (`0x0073ED25..0x0073ED3B`). GAREFN/NAREFN: `4,1`.
     pub queueing_cell: [i32; 2],
-    /// All `DockingOffset%d` entries actually present in this art.ini section,
-    /// in index order. Up to 8 (defensive ceiling for mod safety; retail uses
-    /// up to 4). The art→rules merge in [`crate::rules::ruleset`] is what
-    /// applies `NumberOfDocks`-aware sizing — see `ObjectType::pads` for the
-    /// merged shape.
+    /// `DockingOffset%d` pads by slot index, up to the last one present in
+    /// this art.ini section (at most 8; retail uses up to 4); an absent slot
+    /// before it is a zero pad. The art→rules merge in
+    /// [`crate::rules::ruleset`] is what applies `NumberOfDocks`-aware sizing —
+    /// see `ObjectType::pads` for the merged shape.
     pub pads: Vec<crate::rules::object_type::DockPad>,
     /// Pixel offsets where fire/smoke overlays appear when building health < ConditionYellow.
     /// Parsed from DamageFireOffset0=X,Y .. DamageFireOffset7=X,Y in art.ini. Max 8.
@@ -1133,17 +1133,27 @@ impl ArtRegistry {
             let (anim_theater, anim_new_theater) = (anim_image.theater(), anim_image.new_theater());
             let extra_light: i32 = section.read_int("ExtraLight", 0);
             let queueing_cell = section.read_minmax("QueueingCell", [0, 0]);
-            // Multi-pad parser: read DockingOffset0..7 from art.ini.
-            // Over-reads here; the art→rules merge in ruleset.rs truncates or
-            // zero-pads to match rules.ini NumberOfDocks. 8 is a defensive
-            // ceiling for mod safety (retail uses up to 4).
-            // Each `DockingOffset%d=` is a Read3Int (`0x00464A02`).
-            let pads: Vec<crate::rules::object_type::DockPad> = (0..8)
-                .filter_map(|i| {
-                    let [x, y, z] = section.read_coord3_value(&format!("DockingOffset{i}"))?;
-                    Some(crate::rules::object_type::DockPad {
+            // Native sizes the pad array by NumberOfDocks, zero-fills new slots
+            // (0x0046496F..0x0046499B), then reads each `DockingOffset%d=` by
+            // its slot index with the slot as default (Read3Int at 0x00464A02,
+            // loop 0x004649AF..0x00464A41), so an absent key keeps a zero pad
+            // at its index. NumberOfDocks is a rules key, so this reads slots
+            // 0..7 up to the last present one and the art→rules merge in
+            // ruleset.rs truncates or zero-pads to NumberOfDocks. RESIDUAL: a
+            // mod with NumberOfDocks > 8 loses DockingOffset8+ (retail uses 4).
+            let offsets: [Option<[i32; 3]>; 8] =
+                std::array::from_fn(|i| section.read_coord3_value(&format!("DockingOffset{i}")));
+            let present = offsets
+                .iter()
+                .rposition(Option::is_some)
+                .map_or(0, |last| last + 1);
+            let pads: Vec<crate::rules::object_type::DockPad> = offsets[..present]
+                .iter()
+                .map(|offset| {
+                    let [x, y, z] = offset.unwrap_or([0, 0, 0]);
+                    crate::rules::object_type::DockPad {
                         lepton_offset: (x, y, z),
-                    })
+                    }
                 })
                 .collect();
             // `DamageFireOffset%d=` (`0x0046039D..0x0046046B`): ReadMinMax over

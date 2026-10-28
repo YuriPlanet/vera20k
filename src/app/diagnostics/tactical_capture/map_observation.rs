@@ -1538,9 +1538,10 @@ impl MapSidebarObservation {
                 rect: rect(view.scroll_down_button.rect),
                 disabled: view.scroll_down_button.disabled,
             },
+            // Native never disables Repair/Sell; the receipt keeps the field.
             mode_buttons: [&view.repair_button, &view.sell_button].map(|button| MapSidebarToggle {
                 rect: rect(button.rect),
-                disabled: button.disabled,
+                disabled: false,
                 active: button.active,
             }),
         })

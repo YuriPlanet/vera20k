@@ -91,7 +91,7 @@ def validate_bundle(directory: Path) -> dict:
     _typed_fields(selection["options"], {
         "credits": int, "speed": int, "units": int, "short_game": bool,
         "super_weapons": bool, "build_off_ally": bool, "crates": bool,
-        "mcv_redeploy": bool, "zoom": bool,
+        "mcv_redeploy": bool,
     }, "options")
     for opponent in _require_array(selection["opponents"], "opponents"):
         _typed_fields(opponent, {"visible": bool, "enabled": bool, "type": str, **row_fields}, "opponent")

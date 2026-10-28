@@ -131,11 +131,30 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
     // The route stays NetworkSetup until the match returns, but GO's handoff
     // drops the setup protocol: later setup packets have no receiver.
     anyhow::ensure!(
-        (state.frontend.shell_route.network_setup() || super::quick_match(state))
+        (state.frontend.shell_route.network_setup()
+            || super::quick_match(state)
+            || super::external(state))
             && state.frontend.network_setup_protocol.is_some(),
         "no network setup is active"
     );
     let dialog = super::dialog(state);
+    if super::external(state)
+        && !dialog.wol()
+        && matches!(
+            event,
+            NetworkSetupEvent::HostLeft
+                | NetworkSetupEvent::ParticipantLeft { .. }
+                | NetworkSetupEvent::Kicked
+        )
+    {
+        // A direct spawn has no room to return to: a participant whose setup
+        // lease expired before GO ends the launch.
+        App::fail_external_launch(
+            state,
+            "a direct participant did not respond (unreachable, or its spawn.ini differs)",
+        );
+        return Ok(());
+    }
     // LAN-only packets: WOL negotiates timing and the map after OnGameStart
     // (0x794BA0), and its host-left/kick sinks are not established.
     anyhow::ensure!(
@@ -914,6 +933,13 @@ pub(crate) fn fail_go_handoff(state: &mut AppState) {
     {
         return;
     }
+    if super::external(state) {
+        if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+            protocol.lan_go = Some(LanGoWait::Failed);
+        }
+        App::fail_external_launch(state, "the direct start handshake failed");
+        return;
+    }
     let message = App::csf_label(state, "TXT_UNABLE_PLAY_WAAUGH", "TXT_UNABLE_PLAY_WAAUGH");
     let ok = App::csf_label(state, "TXT_OK", "OK");
     state
@@ -941,7 +967,9 @@ fn prepare_local_map_for_handoff(state: &mut AppState) -> anyhow::Result<()> {
     // accepted filename at695451..695479. Transferred files take their actual
     // FILE_INFO filename through the separate completion arm above.
     let session = &state.match_state.session;
-    if session.host() {
+    // A direct spawn's map is the launcher's file beside spawn.ini, loaded
+    // by the same owner as a relay spawn's; no host options describe it.
+    if session.host() || super::external(state) {
         return Ok(());
     }
     let file = session
@@ -1342,6 +1370,11 @@ fn finish_go(state: &mut AppState) -> anyhow::Result<()> {
         .session
         .network_start_seed()
         .ok_or_else(|| anyhow::anyhow!("GO has no admitted seed"))?;
+    if super::external(state) {
+        // A direct spawn has no dialog to slide out.
+        super::commit_start(state, seed);
+        return Ok(());
+    }
     App::leave_shell_dialog(
         state,
         shell_transition::ShellExitThen::NetworkStart {
@@ -1442,7 +1475,11 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     let pings = super::wol::poll(state);
     let go = poll_go(state);
     let offer = poll_preview_offer(state);
-    pings.into_iter().chain(go).chain(offer).min()
+    // A direct spawn's LAN service renews setup leases and waits for its
+    // peers before GO; keep the frame loop servicing it.
+    let direct = (super::external(state) && !super::dialog(state).wol())
+        .then(|| Instant::now() + std::time::Duration::from_millis(16));
+    pings.into_iter().chain(go).chain(offer).chain(direct).min()
 }
 
 /// Fewer than every guest answered within 1800 buckets: the host gives up

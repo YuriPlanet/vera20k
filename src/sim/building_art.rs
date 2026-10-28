@@ -397,6 +397,11 @@ impl Simulation {
         if first_opening {
             self.open_super_weapon_anims(id, damaged, garrisoned, rules);
         }
+        // 0x0044678B..0x004467C3: the sensor arm, last in the first-opening
+        // block before the ready latch.
+        if first_opening {
+            self.add_building_sensor_circles_at_opening(id, rules, registry);
+        }
         if first_opening && let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.mission_leaf.set_building_ready_latch(1);
         }
@@ -444,7 +449,6 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.building_art.actually_placed = true;
         }
-        self.add_building_sensor_array_if_powered(id, rules, registry);
         Self::announce_super_weapon_building_complete(
             &mut self.interner,
             &self.substrate,
