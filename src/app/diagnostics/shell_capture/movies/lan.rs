@@ -4411,6 +4411,10 @@ impl LanCapture {
             && state.frontend.shell_exit.is_none()
             && state.frontend.shell_first_paint_slide.is_none())
     }
+    pub(super) fn measurement_failure(&self) -> Option<String> {
+        self.live.as_ref()?.measurement_failure()
+    }
+
     pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
         if let Some(live) = &self.live {
             return live.receipt(state);

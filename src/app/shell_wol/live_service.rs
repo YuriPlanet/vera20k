@@ -1720,6 +1720,7 @@ pub(crate) struct DecodedRelayGrant {
     pub(crate) key: [u8; 32],
     pub(crate) payload_key: [u8; 32],
     pub(crate) ordering_certificate: Vec<u8>,
+    pub(crate) federation: Option<Vec<u8>>,
 }
 
 fn relay_uuid(value: &str) -> Result<[u8; 16]> {
@@ -1789,11 +1790,22 @@ fn decode_relay_grant(
             && certificate.sources_mask & (1 << parsed.source) != 0,
         "relay grant identity differs"
     );
+    let federation = grant
+        .federation
+        .as_ref()
+        .map(|roster| {
+            ensure!(roster.len() <= 1024, "invalid relay roster");
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(roster)
+                .map_err(|_| anyhow!("invalid relay roster"))
+        })
+        .transpose()?;
     Ok(DecodedRelayGrant {
         ticket,
         key,
         payload_key,
         ordering_certificate,
+        federation,
     })
 }
 
@@ -1806,6 +1818,7 @@ pub(crate) fn decode_external_relay_grant(
     packet_key: String,
     payload_key: String,
     ordering_certificate: String,
+    federation: Option<String>,
     source_index: u8,
     match_id: &str,
     player_id: &str,
@@ -1818,6 +1831,7 @@ pub(crate) fn decode_external_relay_grant(
             payload_key,
             source_index,
             ordering_certificate,
+            federation,
         },
         match_id,
         player_id,
@@ -2398,6 +2412,9 @@ fn admit_relay_start(
         connections,
     )?;
     transport.enable_relay(start.address, &grant.ticket, grant.key, grant.payload_key)?;
+    if let Some(roster) = &grant.federation {
+        transport.set_federation_roster(roster)?;
+    }
     let certificate = crate::net::udp::OrderingCertificate::parse(&grant.ordering_certificate)?;
     ensure!(
         certificate.sources_mask == (1u32 << start.users.len()) - 1,
@@ -2650,6 +2667,7 @@ mod completion_tests {
                 .sign(&signing_key)
                 .unwrap(),
             ),
+            federation: None,
         };
         assert_eq!(
             decode_relay_grant(&grant, match_id, player_id)

@@ -3373,7 +3373,8 @@ WOLTaunts=junk
         let mut runtime = runtime(snapshot, 3);
         let mut shell = SkirmishShellState::default();
         runtime.hydrate_shell(&mut shell, &[map()], &[mode()]);
-        shell.zoom_enabled = false;
+        shell.selected_mode_must_ally = !shell.selected_mode_must_ally;
+        let must_ally = shell.selected_mode_must_ally;
 
         runtime.snapshot.unit_count = 4;
         runtime.hydrate_shell(&mut shell, &[map()], &[mode()]);
@@ -3382,8 +3383,8 @@ WOLTaunts=junk
             shell.unit_count, 4,
             "a reopened page shows the durable record, not its own last face"
         );
-        assert!(
-            !shell.zoom_enabled,
+        assert_eq!(
+            shell.selected_mode_must_ally, must_ally,
             "a field outside the record is untouched"
         );
     }

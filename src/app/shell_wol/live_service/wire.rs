@@ -254,6 +254,9 @@ pub(super) struct RelayGrant {
     pub payload_key: String,
     pub source_index: u8,
     pub ordering_certificate: String,
+    // Present when the lobby homes the match on several regional relays.
+    #[serde(default)]
+    pub federation: Option<String>,
 }
 
 #[derive(Deserialize)]

@@ -913,7 +913,6 @@ mod tests {
                 &[],
                 &[],
                 None,
-                &[],
                 Some(&interner),
                 &supers,
                 &SidebarGadgetState::default(),

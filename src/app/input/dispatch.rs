@@ -17,9 +17,8 @@ use winit::keyboard::KeyCode;
 
 use crate::app::AppState;
 use crate::app::input::commands::{
-    cancel_build_by_type, cycle_active_producer, cycle_local_owner, place_ready_building_at_cell,
-    place_starter_base_for_local_owner, preferred_local_owner, preferred_local_owner_name,
-    queue_build_by_type, queue_house_cheer, schedule_command, spawn_test_units_for_local_owner,
+    cancel_build_by_type, place_ready_building_at_cell, preferred_local_owner,
+    preferred_local_owner_name, queue_build_by_type, queue_house_cheer, schedule_command,
     suspend_build,
 };
 use crate::app::input::context_order::{ContextOrderTarget, try_queue_context_order};
@@ -1283,18 +1282,6 @@ fn apply_sidebar_action_inner(state: &mut AppState, action: SidebarAction) {
         }
         SidebarAction::SuperWeaponPress { section, right } => {
             press_super_weapon(state, &section, right, true);
-        }
-        SidebarAction::CycleProducer(category) => {
-            cycle_active_producer(state, category);
-        }
-        SidebarAction::CycleOwner => {
-            cycle_local_owner(state);
-        }
-        SidebarAction::PlaceStarterBase => {
-            place_starter_base_for_local_owner(state);
-        }
-        SidebarAction::SpawnTestUnits => {
-            spawn_test_units_for_local_owner(state);
         }
         SidebarAction::ToggleRepairMode | SidebarAction::ToggleSellMode => {
             use crate::ui::sidebar::gadget_flash::SelectionMode;

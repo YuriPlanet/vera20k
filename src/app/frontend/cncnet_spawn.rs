@@ -873,6 +873,12 @@ fn transport(
             text(relay, "PacketKey")?,
             text(relay, "PayloadKey")?,
             text(relay, "OrderingCertificate")?,
+            // RelayGrant.federation: present when the service homes the match
+            // on several regional relays.
+            relay
+                .is_present("Federation")
+                .then(|| text(relay, "Federation"))
+                .transpose()?,
             session.local_player_index as u8,
             &match_id,
             &player_id,

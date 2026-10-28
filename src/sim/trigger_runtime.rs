@@ -657,6 +657,7 @@ pub struct TriggerRuntime {
     #[serde(skip)]
     spring_actions_left: usize,
     #[cfg(any(test, feature = "test-support"))]
+    #[serde(skip)]
     fixture_difficulty: Option<i32>,
     #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]

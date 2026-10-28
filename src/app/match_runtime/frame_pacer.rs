@@ -106,7 +106,8 @@ pub(crate) struct OnlinePacingStatus {
 
 /// A local playout schedule, never another simulation or relay timeline.
 /// Receipt frames are immutable network facts; `next_frame` always comes
-/// from Simulation. Ordinary jitter changes only the bounded reserve.
+/// from Simulation. Late jitter changes only the bounded reserve; an early
+/// receipt moves the origin, so no hold exceeds that reserve.
 #[derive(Debug, Clone)]
 struct OnlinePacer {
     origin_frame: u32,
@@ -114,6 +115,7 @@ struct OnlinePacer {
     receipt: SequencedTiming,
     reserve: Duration,
     decay_at: Instant,
+    stable: Duration,
     underrun: Option<(u32, Instant)>,
     underruns: u64,
     catching_up: bool,
@@ -126,6 +128,7 @@ impl OnlinePacer {
             receipt,
             reserve: Duration::ZERO,
             decay_at: now,
+            stable: Duration::ZERO,
             underrun: None,
             underruns: 0,
             catching_up: false,
@@ -158,8 +161,9 @@ impl OnlinePacer {
         )
     }
 
-    fn deadline(&self, frame: u32) -> Instant {
-        let base = if frame >= self.origin_frame {
+    /// The schedule's receipt time for `frame`, before the reserve.
+    fn scheduled(&self, frame: u32) -> Instant {
+        if frame >= self.origin_frame {
             self.origin_at
                 .checked_add(self.span(frame - self.origin_frame))
                 .unwrap_or(self.origin_at)
@@ -167,7 +171,11 @@ impl OnlinePacer {
             self.origin_at
                 .checked_sub(self.span(self.origin_frame - frame))
                 .unwrap_or(self.origin_at)
-        };
+        }
+    }
+
+    fn deadline(&self, frame: u32) -> Instant {
+        let base = self.scheduled(frame);
         base.checked_add(self.reserve).unwrap_or(base)
     }
 
@@ -176,6 +184,7 @@ impl OnlinePacer {
         if required > self.reserve {
             self.reserve = required;
             self.decay_at = now;
+            self.stable = Duration::ZERO;
         }
     }
 
@@ -190,15 +199,26 @@ impl OnlinePacer {
                     now,
                 );
             }
+            // No frame beats the path's fastest delivery, so a receipt before
+            // its scheduled time proves the origin late: a delayed first
+            // receipt, or a re-anchor on a repair burst's arrival. Holding to
+            // that origin would add a delay the reserve never reports.
+            if receipt.received_at < self.scheduled(receipt.frame) {
+                self.origin_frame = receipt.frame;
+                self.origin_at = receipt.received_at;
+            }
             self.receipt = receipt;
         }
         if !recovering && !self.catching_up && self.underrun.is_none() {
-            let seconds = now.saturating_duration_since(self.decay_at).as_secs();
-            if seconds > 0 {
-                self.reserve = self.reserve.saturating_sub(Duration::from_millis(seconds));
-                self.decay_at += Duration::from_secs(seconds);
-            }
+            // Stable delivery returns 1ms per second. Accrue it between
+            // observations: a slow renderer catches up after most passes,
+            // and each burst only pauses the decay instead of restarting it.
+            self.stable += now.saturating_duration_since(self.decay_at);
+            let seconds = self.stable.as_secs();
+            self.reserve = self.reserve.saturating_sub(Duration::from_millis(seconds));
+            self.stable -= Duration::from_secs(seconds);
         }
+        self.decay_at = now;
     }
 
     fn decide(
@@ -227,7 +247,7 @@ impl OnlinePacer {
             {
                 self.underrun = Some((next_frame, deadline));
                 self.underruns = self.underruns.saturating_add(1);
-                self.decay_at = now;
+                self.stable = Duration::ZERO;
             }
             return OnlineFrameDecision::WaitingForCanonical;
         }
@@ -243,18 +263,16 @@ impl OnlinePacer {
                     && now.saturating_duration_since(self.deadline(next_frame)) > self.span(2)))
         {
             self.catching_up = true;
-            self.decay_at = now;
         }
         if self.catching_up {
             if recovering || available > 1 {
                 return OnlineFrameDecision::CatchUp;
             }
-            // A real recovery/new playout phase may re-anchor. Ordinary
-            // receipts, including late ones, never move the phase origin.
+            // A real recovery/new playout phase may re-anchor. Ordinary late
+            // receipts never move the phase origin later.
             self.origin_frame = self.receipt.frame;
             self.origin_at = self.receipt.received_at;
             self.catching_up = false;
-            self.decay_at = now;
         }
         let deadline = self.deadline(next_frame);
         if now >= deadline {
@@ -732,35 +750,39 @@ mod tests {
     }
 
     #[test]
-    fn pushed_frames_keep_rational_cadence_and_repeated_queries_are_idempotent() {
+    fn early_receipt_moves_a_late_origin_and_repeated_queries_are_idempotent() {
         let start = Instant::now();
         let mut pacer = LocalFramePacer::new();
-        let first = push_receipt(start, 1);
+        let delayed = push_receipt(start + Duration::from_millis(15), 1);
         assert_eq!(
-            pacer.online_frame_decision(start, 1, 1, first, false, false),
+            pacer.online_frame_decision(delayed.received_at, 1, 1, delayed, false, false),
             OnlineFrameDecision::Run
         );
-        let early = push_receipt(start + Duration::from_millis(20), 2);
-        let due = start + Duration::from_nanos(1_000_000_000 / 45);
+        // Frame 2 arrives 15ms before the delayed anchor's schedule. Holding it
+        // to that schedule would delay every later frame without any reserve.
+        let on_time = push_receipt(start + Duration::from_nanos(1_000_000_000 / 45), 2);
         for _ in 0..2 {
             assert_eq!(
-                pacer.online_frame_decision(early.received_at, 2, 2, early, false, false),
-                OnlineFrameDecision::HoldUntil(due)
+                pacer.online_frame_decision(on_time.received_at, 2, 2, on_time, false, false),
+                OnlineFrameDecision::Run
             );
         }
         assert_eq!(
-            pacer.online_frame_decision(due, 2, 2, early, false, false),
-            OnlineFrameDecision::Run
+            pacer.online.as_ref().unwrap().origin_at,
+            on_time.received_at
         );
         assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 0);
         assert_eq!(pacer.online_pacing_status().unwrap().underruns, 0);
         assert_eq!(
-            pacer.online.as_ref().unwrap().deadline(1_000),
-            start + Duration::from_nanos(999 * 1_000_000_000 / 45)
+            pacer.online.as_ref().unwrap().deadline(1_001),
+            on_time.received_at + Duration::from_nanos(999 * 1_000_000_000 / 45)
         );
-        let duplicate = push_receipt(early.received_at + Duration::from_millis(15), 2);
-        pacer.online_frame_decision(due, 2, 2, duplicate, false, false);
-        assert_eq!(pacer.online.as_ref().unwrap().origin_at, start);
+        let duplicate = push_receipt(on_time.received_at + Duration::from_millis(15), 2);
+        pacer.online_frame_decision(duplicate.received_at, 2, 2, duplicate, false, false);
+        assert_eq!(
+            pacer.online.as_ref().unwrap().origin_at,
+            on_time.received_at
+        );
         assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 0);
     }
 
@@ -800,6 +822,34 @@ mod tests {
         let arrived = push_receipt(due + Duration::from_millis(30), 95);
         pacer.online_frame_decision(arrived.received_at, 95, 95, arrived, false, false);
         assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 20_000);
+    }
+
+    #[test]
+    fn pushed_reserve_decays_across_render_paced_catch_up_bursts() {
+        let start = Instant::now();
+        let tick = Duration::from_nanos(1_000_000_000 / 45);
+        let mut pacer = LocalFramePacer::new();
+        pacer.online_frame_decision(start, 1, 1, push_receipt(start, 1), false, false);
+        let late = push_receipt(start + tick + Duration::from_millis(15), 2);
+        pacer.online_frame_decision(late.received_at, 2, 2, late, false, false);
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 15_000);
+        // A 15Hz renderer services three on-time frames per pass, so every
+        // pass starts a short catch-up. Six seconds must still decay.
+        let mut next = 3;
+        for pass in 1..=90 {
+            let frontier = 2 + pass * 3;
+            let receipt = push_receipt(start + tick * (frontier - 1), frontier);
+            let now = receipt.received_at + Duration::from_millis(1);
+            while next <= frontier
+                && pacer
+                    .online_frame_decision(now, next, frontier, receipt, false, false)
+                    .admits()
+            {
+                next += 1;
+            }
+        }
+        assert!(next > 260, "the passes kept up");
+        assert!(pacer.online_pacing_status().unwrap().reserve_micros <= 10_000);
     }
 
     #[test]

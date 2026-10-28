@@ -28,6 +28,18 @@ const REPLAY_RETRY_INTERVAL_MS: i32 = 100;
 const PUSH_SILENCE_REPAIR_MS: u32 = 1_000;
 const PAUSE_PROBE_INTERVAL_MS: i32 = 500;
 const PAUSE_COMPATIBILITY_PROBE_INTERVAL_MS: i32 = 5_000;
+const COMMAND_TRACE_HISTORY: usize = 256;
+
+/// App diagnostics for one local command batch: its first transmission, the
+/// relay's frame assignment and the contiguous receipt of that sealed frame.
+/// Socket receipt times; this never enters simulation or delivery decisions.
+#[derive(Debug, Clone, Copy)]
+pub struct CommandDeliveryTrace {
+    pub batch_id: u64,
+    pub sent_at: Option<Instant>,
+    pub assigned: Option<(u32, Instant)>,
+    pub frame_received_at: Option<Instant>,
+}
 
 /// The socket's latest contiguous-frame receipt, independent of when the app
 /// drains it. Presentation can pace these frames; only the sequencer admits
@@ -83,6 +95,16 @@ struct ReceivedEntry {
     received_at: Instant,
 }
 
+fn trace_mut(
+    traces: &mut VecDeque<CommandDeliveryTrace>,
+    batch_id: u64,
+) -> Option<&mut CommandDeliveryTrace> {
+    traces
+        .iter_mut()
+        .rev()
+        .find(|trace| trace.batch_id == batch_id)
+}
+
 fn service_due(last: Option<u32>, now: u32, interval: i32) -> bool {
     last.is_none_or(|last| super::probe_due(last, now, interval))
 }
@@ -131,6 +153,7 @@ pub(super) struct SequencedSession {
     push: PushDelivery,
     last_push_control: Option<u32>,
     push_watermark: u64,
+    push_confirmations: u64,
     remote_next_sequence: u64,
     repair_gap_since: Option<u32>,
     pause: CanonicalPause,
@@ -158,6 +181,7 @@ pub(super) struct SequencedSession {
     samples: VecDeque<(u32, u32)>,
     current: Option<(NetworkQueueContext, bool)>,
     sent_commands: u64,
+    command_traces: VecDeque<CommandDeliveryTrace>,
 }
 
 impl SequencedSession {
@@ -206,6 +230,7 @@ impl SequencedSession {
             push: PushDelivery::Probing { attempts: 0 },
             last_push_control: None,
             push_watermark: 1,
+            push_confirmations: 0,
             remote_next_sequence: 1,
             repair_gap_since: None,
             pause: CanonicalPause::default(),
@@ -234,6 +259,7 @@ impl SequencedSession {
             samples: VecDeque::new(),
             current: None,
             sent_commands: 0,
+            command_traces: VecDeque::new(),
         })
     }
 
@@ -256,6 +282,16 @@ impl SequencedSession {
     }
     pub(super) fn sent_commands(&self) -> u64 {
         self.sent_commands
+    }
+
+    pub(super) fn command_traces(&self) -> &VecDeque<CommandDeliveryTrace> {
+        &self.command_traces
+    }
+
+    fn trace_assignment(&mut self, batch_id: u64, frame: u32, received_at: Instant) {
+        if let Some(trace) = trace_mut(&mut self.command_traces, batch_id) {
+            trace.assigned.get_or_insert((frame, received_at));
+        }
     }
 
     pub(super) fn timing(&self) -> Option<SequencedTiming> {
@@ -327,13 +363,24 @@ impl SequencedSession {
         for pending in &mut self.submissions {
             // An unready route or failed local send cannot start the remote
             // receipt timer. The next service retries the same retained bytes.
-            if pending.id > self.accepted_batch
-                && service_due(pending.last_sent, now, 100)
-                && transport
-                    .submit_ordering(pending.id, &pending.bytes)
-                    .is_ok()
-            {
-                pending.last_sent = Some(now);
+            if pending.id > self.accepted_batch && service_due(pending.last_sent, now, 100) {
+                // A fresh transmission goes out twice. The relay accepts batch
+                // IDs in order, so one lost datagram would otherwise hold this
+                // and every later batch until the retry; the copy is an
+                // idempotent retry of identical ciphertext.
+                let copies = if pending.last_sent.is_none() { 2 } else { 1 };
+                let mut sent = false;
+                for _ in 0..copies {
+                    sent |= transport
+                        .submit_ordering(pending.id, &pending.bytes)
+                        .is_ok();
+                }
+                if sent {
+                    pending.last_sent = Some(now);
+                    if let Some(trace) = trace_mut(&mut self.command_traces, pending.id) {
+                        trace.sent_at.get_or_insert_with(Instant::now);
+                    }
+                }
             }
         }
         // Network silence is recoverable. Keep the same stream cursor,
@@ -397,18 +444,28 @@ impl SequencedSession {
                             // Old relays reject unknown controls. Keep their
                             // established pull path after a bounded handshake.
                             self.push = PushDelivery::PullOnly;
-                        } else if transport
-                            .set_ordering_push(true, self.next_sequence)
-                            .is_ok()
-                        {
-                            *attempts += 1;
-                            self.last_push_control = Some(now);
-                            self.push_watermark = self.next_sequence;
+                        } else {
+                            let confirmations = transport.relay_confirmations();
+                            if transport
+                                .set_ordering_push(true, self.next_sequence)
+                                .is_ok()
+                            {
+                                *attempts += 1;
+                                self.last_push_control = Some(now);
+                                self.push_watermark = self.next_sequence;
+                                self.push_confirmations = confirmations;
+                            }
                         }
                     }
                 }
                 PushDelivery::Active => {
-                    if (self.next_sequence.saturating_sub(self.push_watermark) >= 32
+                    // RelayServer::confirm starts a renewed lease or a new path
+                    // without the old subscription. Re-subscribe on any READY
+                    // rather than up to a watermark interval later; after a
+                    // keepalive READY that is only an early watermark.
+                    let confirmations = transport.relay_confirmations();
+                    if (confirmations != self.push_confirmations
+                        || self.next_sequence.saturating_sub(self.push_watermark) >= 32
                         || service_due(self.last_push_control, now, PUSH_WATERMARK_INTERVAL_MS))
                         && transport
                             .set_ordering_push(true, self.next_sequence)
@@ -416,6 +473,7 @@ impl SequencedSession {
                     {
                         self.last_push_control = Some(now);
                         self.push_watermark = self.next_sequence;
+                        self.push_confirmations = confirmations;
                     }
                 }
                 PushDelivery::PullOnly => {}
@@ -530,11 +588,12 @@ impl SequencedSession {
                     PushDelivery::PullOnly
                 };
             }
-            OrderEvent::Ack { batch_id, .. } => {
+            OrderEvent::Ack { batch_id, frame } => {
                 if batch_id == 0 {
                     return Err(SequencedError::InvalidTimeline);
                 }
                 self.accept_through(batch_id)?;
+                self.trace_assignment(batch_id, frame, received_at);
             }
             OrderEvent::Entry(entry) => {
                 let sequence = match &entry {
@@ -542,10 +601,12 @@ impl SequencedSession {
                         sequence,
                         source,
                         batch_id,
+                        frame,
                         ..
                     } => {
                         if *source == self.local_source {
                             self.accept_through(*batch_id)?;
+                            self.trace_assignment(*batch_id, *frame, received_at);
                         }
                         *sequence
                     }
@@ -674,9 +735,18 @@ impl SequencedSession {
                             ..Default::default()
                         },
                     ));
+                    let received_at = self.contiguous_received_at.expect("consumed frame end");
+                    for trace in &mut self.command_traces {
+                        if trace
+                            .assigned
+                            .is_some_and(|(assigned, _)| assigned == frame)
+                        {
+                            trace.frame_received_at.get_or_insert(received_at);
+                        }
+                    }
                     self.latest_frame_receipt = Some(SequencedTiming {
                         frame,
-                        received_at: self.contiguous_received_at.expect("consumed frame end"),
+                        received_at,
                         frames_per_second: self.fps,
                         clock_epoch: self.pause.epoch,
                     });
@@ -808,6 +878,17 @@ impl SequencedSession {
                     .next_batch
                     .checked_add(1)
                     .ok_or(SequencedError::InvalidTimeline)?;
+                if !encoded.mirrors.is_empty() {
+                    if self.command_traces.len() == COMMAND_TRACE_HISTORY {
+                        self.command_traces.pop_front();
+                    }
+                    self.command_traces.push_back(CommandDeliveryTrace {
+                        batch_id: self.next_batch,
+                        sent_at: None,
+                        assigned: None,
+                        frame_received_at: None,
+                    });
+                }
                 self.submissions.push_back(Submission {
                     id: self.next_batch,
                     records: encoded.mirrors,

@@ -335,6 +335,10 @@ impl Client {
                 "User-Agent",
                 concat!("VERA20k/", env!("CARGO_PKG_VERSION"), " multiplayer-client"),
             );
+            if path == "/v1/sessions" {
+                // Its relay CONFIRM carries a federation roster; see services/lobby.
+                request = request.header("Vera-Relay-Federation", "1");
+            }
             if let Some(token) = &self.token {
                 request = request.header("Authorization", format!("Bearer {token}"));
             }

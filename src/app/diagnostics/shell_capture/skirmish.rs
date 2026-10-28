@@ -342,7 +342,7 @@ fn selected_scene(state: &AppState) -> Result<Value> {
             "credits": shell.starting_credits, "speed": shell.game_speed, "units": shell.unit_count,
             "short_game": shell.short_game, "super_weapons": shell.super_weapons,
             "build_off_ally": shell.build_off_ally, "crates": shell.crates,
-            "mcv_redeploy": shell.mcv_redeploy, "zoom": shell.zoom_enabled
+            "mcv_redeploy": shell.mcv_redeploy
         }
     }))
 }

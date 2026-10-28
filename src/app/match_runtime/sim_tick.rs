@@ -2356,23 +2356,6 @@ pub(crate) fn screen_point_to_world_cell(
     )
 }
 
-pub(crate) fn nearest_walkable_cell(
-    grid: &crate::sim::pathfinding::PathGrid,
-    start: (u16, u16),
-    max_radius: u16,
-) -> Option<(u16, u16)> {
-    grid.nearest_walkable_any_layer(start.0, start.1, max_radius)
-}
-
-pub(crate) fn clamp_cell_to_grid(
-    grid: &crate::sim::pathfinding::PathGrid,
-    cell: (u16, u16),
-) -> (u16, u16) {
-    let max_x = grid.width().saturating_sub(1);
-    let max_y = grid.height().saturating_sub(1);
-    (cell.0.min(max_x), cell.1.min(max_y))
-}
-
 #[cfg(test)]
 mod tests {
     use super::{

@@ -1,8 +1,50 @@
 name: WebAssembly
 
 # An independent fourth build option; existing desktop workflows are unchanged.
+# Desktop builds never compile the browser-only code, so a pull request that
+# touches it, or a shared file holding a browser switch, builds it here too.
+# The check is not required; it only reports a break on the PR that caused it.
+# tools/tests/test_wasm_build.py fails a browser switch outside these paths.
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/wasm.yml'
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - 'src/Cargo.toml'
+      - 'services/relay-protocol/**'
+      - 'tools/wasm/**'
+      - '**/web*.rs'
+      - 'src/lib.rs'
+      - 'src/core_lib.rs'
+      - 'src/net/**'
+      - 'src/util/**'
+      - 'src/audio/**'
+      - 'src/assets/asset_manager.rs'
+      - 'src/assets/mix_archive.rs'
+      - 'src/map/source**'
+      - 'src/sim/mod.rs'
+      - 'src/sim/parallel_web.rs'
+      - 'src/render/frame_readback.rs'
+      - 'src/render/gpu.rs'
+      - 'src/render/sprite_atlas*.rs'
+      - 'src/render/unit_atlas.rs'
+      - 'src/app/mod.rs'
+      - 'src/app/handler.rs'
+      - 'src/app/initialize.rs'
+      - 'src/app/shell_random_map.rs'
+      - 'src/app/input/keyboard.rs'
+      - 'src/app/lan_service**'
+      - 'src/app/loading/**'
+      - 'src/app/match_runtime/frame_pacer.rs'
+      - 'src/app/persistence/**'
+      - 'src/app/shell_wol/**'
+
+# A new push to the same pull request replaces its unfinished run.
+concurrency:
+  group: wasm-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -22,6 +64,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: '. -> target/owned-worktrees'
+          # Pull requests read main's cache without evicting the long-lived ones.
+          save-if: ${{ github.event_name != 'pull_request' }}
       - name: Install matching browser binding tool
         run: |
           version=$(python3 -c 'import tomllib; lock = tomllib.load(open("Cargo.lock", "rb")); print(next(p["version"] for p in lock["package"] if p["name"] == "wasm-bindgen"))')
@@ -38,6 +82,7 @@ jobs:
             python3 tools/wasm/build.py
           fi
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: ${{ matrix.mode == 'lan' && 'vera20k-wasm-lan' || matrix.mode == 'network' && 'vera20k-wasm-net' || 'vera20k-wasm' }}
           path: target/wasm-dist/

@@ -166,8 +166,7 @@ pub(crate) fn open(state: &mut AppState, parent: KeyboardParent) {
     if parent == KeyboardParent::GameControls {
         // BBB52C sets state4/result1;4E1D9A applies+writes before dispatcher48CA03.
         crate::app::persistence::options::accept_in_game_options(state);
-        state.match_state.match_presentation.in_game_menu =
-            crate::ui::pause_menu::InGameMenuState::Keyboard;
+        App::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Keyboard);
     }
     // Phobos registers `FireTacticalSW1..10` and `ToggleSWSidebar` only when
     // their rules switches are on, so the page does not list them otherwise.
@@ -291,14 +290,10 @@ pub(crate) fn commit_close(state: &mut AppState, exit: KeyboardExit) {
     }
     match dialog.parent {
         KeyboardParent::Launcher => App::open_launcher_options_dialog(state),
+        // State_Machine 0x0048CA0D writes state 5 after A3 returns; BBB is
+        // recreated, and its init reads the Options values A3 left untouched.
         KeyboardParent::GameControls => {
-            state.match_state.match_presentation.in_game_options =
-                crate::app::persistence::options::in_game_options_from_profile(
-                    &state.persistence.options_profile,
-                );
-            crate::app::input::in_game_options::on_open(state);
-            state.match_state.match_presentation.in_game_menu =
-                crate::ui::pause_menu::InGameMenuState::Options;
+            App::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Options)
         }
     }
     state.platform.window.request_redraw();

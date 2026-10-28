@@ -3965,3 +3965,12 @@ fn cell_tags_split_by_ini_format_and_keep_the_first_tag_per_cell() {
         );
     }
 }
+
+/// Test-support difficulty overrides stay out of saved trigger state.
+#[test]
+fn fixture_difficulty_is_not_serialized() {
+    let mut runtime = TriggerRuntime::default();
+    let unset = serde_json::to_value(&runtime).unwrap();
+    runtime.fixture_difficulty = Some(3);
+    assert_eq!(serde_json::to_value(&runtime).unwrap(), unset);
+}

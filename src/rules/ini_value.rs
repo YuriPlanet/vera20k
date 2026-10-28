@@ -437,11 +437,12 @@ impl IniSection {
     }
 
     /// CCINIClass::ReadEdge475980: ReadString into128 bytes with an empty
-    /// default. Empty retains the caller's value; case-insensitive cardinal
-    /// names map to0..3 and every other nonempty name returns literal-1.
+    /// default. Empty retains the caller's value; Edge_From_Name 0x0048DB80
+    /// matches the five names of table 0x007E1B60 case-insensitively (North,
+    /// East, South, West, Air → 0..4) and every other nonempty name returns -1.
     pub fn read_edge(&self, key: &str, default: i32) -> i32 {
         self.read_string_with(key, 128, default, |_, value| {
-            ["North", "East", "South", "West"]
+            ["North", "East", "South", "West", "Air"]
                 .iter()
                 .position(|name| name.eq_ignore_ascii_case(value))
                 .map_or(-1, |index| index as i32)
@@ -1973,6 +1974,13 @@ mod tests {
                 "{row}"
             );
         }
+    }
+
+    #[test]
+    fn read_edge_maps_air_to_the_fifth_table_name() {
+        let mut section = IniSection::new("Control".to_string());
+        section.set("Edge", "air");
+        assert_eq!(section.read_edge("Edge", -1), 4);
     }
 
     #[test]

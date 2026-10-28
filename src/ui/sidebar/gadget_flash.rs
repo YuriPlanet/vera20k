@@ -160,10 +160,6 @@ pub struct SidebarGadgetState {
     /// changes clear it (4AC916, 4AC6BB).
     pub place_beacon_mode_on: bool,
 
-    /// Per-button disabled bits. v1: always false.
-    pub repair_disabled: bool,
-    pub sell_disabled: bool,
-
     /// Last sim tick the orchestrator processed; used to advance per
     /// sim-tick delta (catch-up safe).
     pub last_sim_tick: u64,
@@ -294,19 +290,18 @@ impl SidebarGadgetState {
 
     /// Frame index for the Repair button. Only the tabs ever flash
     /// (StartFlashing `0x0069DFC0` callers `0x006A76F0` and StripAI).
+    /// Repair (`0x00B0B3A0`) and Sell (`0x00B07DF8`) are never disabled: the
+    /// GadgetClass constructor clears +0x1E (`0x004E1322`), no reference to
+    /// either button writes it, and GadgetClass::Disable `0x004E1460` (vtable
+    /// slot +0x3C) is only called on the tabs (Init `0x006A546E`, Recalculate
+    /// `0x006AAAE7`, `0x006A6858`) and the scroll pair (`0x006A6610`).
     pub fn repair_frame(&self) -> u8 {
-        shape_button_frame(
-            self.repair_disabled,
-            true,
-            false,
-            self.repair_mode_on,
-            false,
-        )
+        shape_button_frame(false, true, false, self.repair_mode_on, false)
     }
 
     /// Frame index for the Sell button. Same logic as `repair_frame`.
     pub fn sell_frame(&self) -> u8 {
-        shape_button_frame(self.sell_disabled, true, false, self.sell_mode_on, false)
+        shape_button_frame(false, true, false, self.sell_mode_on, false)
     }
 
     /// Frame index for the strip scroll-down (+page) button; `disabled` is the
@@ -437,14 +432,12 @@ mod tests {
         // Disabled overrides everything.
         s.tab_disabled[3] = true;
         assert_eq!(s.tab_frame(3, true), 2);
-        // Repair/Sell.
+        // Repair/Sell are never disabled, so they never draw frame 2.
         assert_eq!(s.repair_frame(), 0);
         s.repair_mode_on = true;
         assert_eq!(s.repair_frame(), 1);
-        s.repair_disabled = true;
-        assert_eq!(s.repair_frame(), 2);
+        assert_eq!(s.sell_frame(), 0);
         s.sell_mode_on = true;
-        s.sell_disabled = false;
         assert_eq!(s.sell_frame(), 1);
     }
 
