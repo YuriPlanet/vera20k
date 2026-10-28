@@ -61,9 +61,22 @@ fn advance(scene: &mut HeadlessScenario, command: Option<Command>) {
             )
         })
         .collect();
+    // A local house's mobile product leaves only through the Strip visit's
+    // PLACE event (StripClass::AI 0x6A8B30 -> EventCtor_Place 0x4C6AE0 ->
+    // HouseClass::Place_Production 0x4FB0E0). Headless frames have no sidebar,
+    // so supply the fixture strip or the paid AMCV stays in its Factory.
+    let visits = sim
+        .production()
+        .factories()
+        .strip_visits_for_test(sim.interner.get(OWNER).unwrap());
     scene
         .runtime
-        .advance_frame(&commands, 22, TickLane::Ordinary, FrameEffects::default())
+        .advance_frame(
+            &commands,
+            22,
+            TickLane::Ordinary,
+            FrameEffects::default().with_production_strip(&visits, &|_| {}),
+        )
         .expect("ordinary bound-resource frame");
 }
 
