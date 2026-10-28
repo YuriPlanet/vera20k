@@ -60,6 +60,14 @@ class WasmBuildTests(unittest.TestCase):
             self.assertFalse((output / 'lobby.js').exists())
             self.assertIn('Single player.', (output / 'index.html').read_text())
 
+    def test_package_names_its_build_in_the_footer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package_host(root, root / 'output', False, label='Build v1 · fast · single player')
+            page = (root / 'output' / 'index.html').read_text(encoding='utf-8')
+            self.assertIn('<span id="build">Build v1 · fast · single player</span>', page)
+            self.assertNotIn('Unpackaged page', page)
+
 
 if __name__ == '__main__':
     unittest.main()

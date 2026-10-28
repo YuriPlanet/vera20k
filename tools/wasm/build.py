@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build the opt-in browser client and its minimal, asset-free host page."""
 import argparse
+import html
 import os
 from pathlib import Path
 import shutil
@@ -34,10 +35,23 @@ def validate_proxy_url(value):
         raise ValueError('WS_PROXY_URL must be a wss:// origin (ws:// is allowed only on loopback)')
 
 
-def package_host(stage, destination, network, lan=False):
+def build_label(profile, network, lan):
+    """Name this package in the page footer and diagnostics: source revision, profile and mode."""
+    try:
+        revision = subprocess.check_output(['git', 'describe', '--tags', '--always', '--dirty'],
+                                           cwd=ROOT, text=True, stderr=subprocess.DEVNULL).strip()
+    except (OSError, subprocess.CalledProcessError):
+        revision = 'unknown revision'
+    mode = 'LAN' if lan else 'online' if network else 'single player'
+    return f'Build {revision} · {profile} · {mode}'
+
+
+def package_host(stage, destination, network, lan=False, label=None):
     """Publish only this mode's host files, retiring known network-only outputs."""
     host = (HOST / 'host.js').read_text(encoding='utf-8')
     page = (HOST / 'index.html').read_text(encoding='utf-8')
+    if label:
+        page = page.replace('<span id="build">Unpackaged page</span>', f'<span id="build">{html.escape(label)}</span>')
     optional_files = ('network.js', 'lobby.js', 'lan_rtc.js')
     network_files = ('network.js', 'lobby.js') + (('lan_rtc.js',) if lan else ())
     if network:
@@ -90,7 +104,7 @@ def main():
         subprocess.run([cli, '--target', 'web', '--out-dir', str(stage / 'pkg'), str(binary)], check=True)
         destination = ROOT / 'target/wasm-dist'
         # Only generated public files; retail data never enters the package.
-        package_host(stage, destination, args.network, args.lan)
+        package_host(stage, destination, args.network, args.lan, build_label(args.profile, args.network, args.lan))
         shutil.copytree(stage / 'pkg', destination / 'pkg', dirs_exist_ok=True)
     print(f'Browser build: {destination}\nServe with: python3 -m http.server 8000 --bind 127.0.0.1 --directory target/wasm-dist')
 

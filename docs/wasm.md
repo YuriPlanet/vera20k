@@ -73,7 +73,10 @@ The host restores and queues settings/save writes in IndexedDB for this origin.
 The page shows storage failures and pending writes. Engine writes complete in
 memory before the asynchronous storage transaction completes; wait for the
 saved status before closing. Clearing site data removes these copies. Imported
-retail resources are not persisted and must be selected again after reloading.
+retail resources are not persisted; they are read again on every visit. Where the
+browser has the File System Access API (Chrome, Edge), the launcher keeps a read
+handle to the chosen folder in a separate `vera20k-wasm-launcher` database and
+offers one-click Continue on the next visit; other browsers ask for the folder again.
 
 ## Compatibility boundary
 

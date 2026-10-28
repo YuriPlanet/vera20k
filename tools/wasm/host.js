@@ -5,6 +5,10 @@ const status = $('#status');
 const storageStatus = $('#storage');
 const picker = $('#files');
 const pick = $('#pick');
+const resume = $('#resume');
+const resumeLabel = $('#resume-label');
+const fullscreen = $('#fullscreen');
+const diagnostics = $('#diagnostics');
 const drop = $('#drop');
 const start = $('#start');
 const canvas = $('#game');
@@ -37,16 +41,21 @@ const TEXT = {
         startReady: 'Ready. Click Start game.',
         importing: (n, total, name) => `Importing ${n}/${total}: ${name}`,
         startFailed: error => `Could not start: ${error}. Reload the page to try again.`,
-        helpTitle: 'Help', helpHeading: 'Where is my game folder?',
+        helpTitle: 'Help', helpHeading: 'Where is my game folder?', close: 'Close',
         help1: 'Pick the Yuri’s Revenge install folder: the one that contains <code>ra2md.mix</code> and <code>ra2.mix</code>.',
         help2: 'Steam / EA app installs usually live under <code>Command and Conquer Red Alert II</code> in the library folder.',
         help3: 'Choosing a parent folder is fine — the game folder inside it is found automatically.',
-        help4: 'Nothing is uploaded. Game files are read into memory and must be chosen again after reloading.',
+        help4: 'Nothing is uploaded. Game files are read into memory each time; Chrome and Edge remember the folder for next time.',
         help5: 'Needs WebGPU: a recent Chrome or Edge works best. Large installs need plenty of memory.',
         storage: 'Settings and saves are stored in this browser for this site.',
         saving: 'Saving user data…', saved: 'User data saved in this browser.',
         storageFailed: error => `User data could not be saved in this browser: ${error}`,
         language: '中文',
+        resume: folder => `Continue with “${folder}”`,
+        resumeDenied: 'The browser was not allowed to read that folder. Choose it again.',
+        resumeGone: 'The remembered folder is no longer there. Choose it again.',
+        fullscreen: 'Start in full screen',
+        diagnostics: 'Copy diagnostics', copied: 'Copied', copyFailed: 'Copy failed; see the browser console',
     },
     zh: {
         tagline: '尤里的复仇 · 网页版',
@@ -66,11 +75,11 @@ const TEXT = {
         startReady: '准备就绪，点击“开始游戏”',
         importing: (n, total, name) => `正在导入 ${n}/${total}：${name}`,
         startFailed: error => `无法启动：${error}。请刷新页面重试。`,
-        helpTitle: '帮助', helpHeading: '游戏文件夹在哪里？',
+        helpTitle: '帮助', helpHeading: '游戏文件夹在哪里？', close: '关闭',
         help1: '选择《尤里的复仇》安装目录，即包含 <code>ra2md.mix</code> 和 <code>ra2.mix</code> 的文件夹。',
         help2: 'Steam / EA app 版本通常位于游戏库中的 <code>Command and Conquer Red Alert II</code> 目录。',
         help3: '选择上一级文件夹也可以，会自动找到其中的游戏目录。',
-        help4: '不会上传任何文件。游戏文件只读入内存，刷新页面后需要重新选择。',
+        help4: '不会上传任何文件。游戏文件每次只读入内存；Chrome 和 Edge 会记住该文件夹，下次可直接使用。',
         help5: '需要 WebGPU，推荐使用新版 Chrome 或 Edge。完整安装需要较多内存。',
         storage: '设置和存档保存在此浏览器中（仅限本站）。',
         saving: '正在保存用户数据…', saved: '用户数据已保存到此浏览器。',
@@ -78,6 +87,11 @@ const TEXT = {
         language: 'English',
         modeSingle: '单人游戏。资源只在本机读取，不会上传。',
         modeOnline: '联机时可能共享所选地图，其它资源只在本机读取。',
+        resume: folder => `继续使用“${folder}”`,
+        resumeDenied: '浏览器未获准读取该文件夹，请重新选择。',
+        resumeGone: '上次记住的文件夹已不存在，请重新选择。',
+        fullscreen: '以全屏模式开始',
+        diagnostics: '复制诊断信息', copied: '已复制', copyFailed: '复制失败，请查看浏览器控制台',
     },
 };
 let lang = 'en';
@@ -109,12 +123,52 @@ $('#lang').addEventListener('click', () => {
     try { localStorage.setItem('vera20k-lang', lang); } catch {}
     applyLanguage();
 });
-$('#help-toggle').addEventListener('click', event => {
-    const help = $('#help');
-    help.hidden = !help.hidden;
-    event.currentTarget.setAttribute('aria-expanded', String(!help.hidden));
-});
+const help = $('#help');
+$('#help-toggle').addEventListener('click', () => help.showModal());
+help.addEventListener('click', event => { if (event.target === help) help.close(); });
 applyLanguage();
+
+fullscreen.closest('label').hidden = !document.fullscreenEnabled;
+try { fullscreen.checked = localStorage.getItem('vera20k-fullscreen') === '1'; } catch {}
+fullscreen.addEventListener('change', () => {
+    try { localStorage.setItem('vera20k-fullscreen', fullscreen.checked ? '1' : '0'); } catch {}
+});
+
+// A plain-text report for bug reports: build, browser, GPU, memory, storage and the folder check.
+async function diagnosticReport() {
+    const lines = [
+        `VERA20k ${$('#build').textContent}`,
+        `Browser: ${navigator.userAgent}`,
+        `Screen: ${screen.width}×${screen.height} @${devicePixelRatio}x, window ${innerWidth}×${innerHeight}`,
+        `CPU threads: ${navigator.hardwareConcurrency ?? '?'}, memory: ${navigator.deviceMemory ?? '?'} GB, secure: ${isSecureContext}`,
+    ];
+    try {
+        const adapter = await navigator.gpu?.requestAdapter();
+        if (!adapter) lines.push('WebGPU: no adapter');
+        else {
+            const { vendor, architecture, device, description } = adapter.info ?? {};
+            const { maxTextureDimension2D, maxBufferSize, maxStorageBufferBindingSize } = adapter.limits;
+            lines.push(`WebGPU: ${[vendor, architecture, device, description].filter(Boolean).join(' / ') || 'adapter'}`,
+                `WebGPU limits: texture ${maxTextureDimension2D}, buffer ${formatSize(maxBufferSize)}, storage binding ${formatSize(maxStorageBufferBindingSize)}`);
+        }
+    } catch (error) { lines.push(`WebGPU: ${error}`); }
+    try {
+        const { usage, quota } = await navigator.storage.estimate();
+        lines.push(`Storage: ${formatSize(usage)} of ${formatSize(quota)}, persisted: ${await navigator.storage.persisted()}`);
+    } catch (error) { lines.push(`Storage: ${error}`); }
+    const checks = [...document.querySelectorAll('#checks div')].map(row => `${row.firstElementChild.textContent} ${row.lastElementChild.textContent}`);
+    lines.push(`Game files: ${checks.join(', ')}`, `Status: ${status.textContent}`);
+    if (folderDetail.textContent) lines.push(`Folder: ${folderDetail.textContent}`);
+    return lines.join('\n');
+}
+diagnostics.addEventListener('click', async () => {
+    const report = await diagnosticReport();
+    let key = 'copied';
+    try { await navigator.clipboard.writeText(report); }
+    catch { console.info(report); key = 'copyFailed'; }
+    diagnostics.textContent = TEXT[lang][key];
+    setTimeout(() => { diagnostics.textContent = TEXT[lang].diagnostics; }, 2500);
+});
 
 function setStatus(tone, key, ...args) {
     status.dataset.tone = tone;
@@ -141,7 +195,7 @@ function showManifest(top, total = '—') {
 function ready(canStart) {
     start.disabled = !canStart;
     start.classList.toggle('primary', canStart);
-    pick.classList.toggle('primary', !canStart);
+    pick.classList.toggle('primary', !canStart && resume.hidden);
     pick.classList.toggle('secondary', canStart);
 }
 
@@ -229,7 +283,7 @@ function choose(entries) {
         setStep(steps.folder, 'error');
         setStep(steps.start, 'waiting');
         ready(false);
-        return;
+        return false;
     }
     const top = new Set(selection.filter(([path]) => !path.includes('/')).map(([path]) => path.toLowerCase()));
     const bytes = selection.reduce((sum, [, file]) => sum + file.size, 0);
@@ -242,8 +296,41 @@ function choose(entries) {
     setStatus('ok', 'startReady');
     setStep(steps.folder, key ? 'done' : 'warn');
     setStep(steps.start, 'active');
+    resume.hidden = true;
     ready(true);
     start.focus();
+    return true;
+}
+const folderError = error => { folderDetail.className = 'err'; folderDetail.textContent = String(error); };
+
+// Chrome and Edge can keep a read handle to the game folder between visits. It lives in its
+// own database so the user-data database keeps its schema; only the handle is stored, never files.
+const canRemember = 'showDirectoryPicker' in window;
+let remembered;
+function folderStore(mode, operation) {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open('vera20k-wasm-launcher', 1);
+        request.onupgradeneeded = () => request.result.createObjectStore('folders');
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+            const db = request.result;
+            const result = operation(db.transaction('folders', mode).objectStore('folders'));
+            result.transaction.oncomplete = () => { db.close(); resolve(result.result); };
+            result.transaction.onerror = result.transaction.onabort = () => { db.close(); reject(result.transaction.error); };
+        };
+    });
+}
+const rememberFolder = handle => folderStore('readwrite', store => store.put(handle, 'game')).catch(() => {});
+async function readDirectory(handle, prefix = `${handle.name}/`, out = []) {
+    for await (const child of handle.values()) {
+        if (child.kind === 'file') out.push([prefix + child.name, await child.getFile()]);
+        else await readDirectory(child, `${prefix}${child.name}/`, out);
+    }
+    return out;
+}
+async function openFolder(handle) {
+    setFolder('', 'reading');
+    if (choose(await readDirectory(handle))) rememberFolder(handle);
 }
 
 async function dropped(items) {
@@ -265,6 +352,11 @@ async function dropped(items) {
 }
 
 async function launch() {
+    // Requested inside the click, before any await. Full screen puts the page edge at the screen
+    // edge, so edge scrolling works; the engine keeps drawing its own cursor.
+    if (fullscreen.checked && !document.fullscreenElement) {
+        document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+    }
     start.disabled = true;
     pick.disabled = true;
     picker.disabled = true;
@@ -311,7 +403,39 @@ try {
         pick.disabled = false;
         picker.disabled = false;
         drop.setAttribute('aria-disabled', 'false');
-        const browse = () => { if (!picker.disabled) picker.click(); };
+        const browse = async () => {
+            if (picker.disabled) return;
+            if (!canRemember) { picker.click(); return; }
+            let handle;
+            try { handle = await showDirectoryPicker({ id: 'vera20k-game', mode: 'read' }); }
+            catch (error) { if (error.name !== 'AbortError') folderError(error); return; }
+            try { await openFolder(handle); } catch (error) { folderError(error); }
+        };
+        if (canRemember) {
+            folderStore('readonly', store => store.get('game')).then(handle => {
+                if (!handle || selection.length) return;
+                remembered = handle;
+                say(resumeLabel, 'resume', handle.name);
+                resume.hidden = false;
+                ready(false);
+            }).catch(() => {});
+        }
+        resume.addEventListener('click', async () => {
+            try {
+                if (await remembered.queryPermission({ mode: 'read' }) !== 'granted'
+                    && await remembered.requestPermission({ mode: 'read' }) !== 'granted') {
+                    setFolder('warn', 'resumeDenied');
+                    return;
+                }
+                await openFolder(remembered);
+            } catch (error) {
+                if (error.name !== 'NotFoundError') { folderError(error); return; }
+                folderStore('readwrite', store => store.delete('game')).catch(() => {});
+                resume.hidden = true;
+                ready(false);
+                setFolder('warn', 'resumeGone');
+            }
+        });
         pick.addEventListener('click', browse);
         drop.addEventListener('click', browse);
         drop.addEventListener('keydown', event => {
@@ -329,11 +453,17 @@ try {
         drop.addEventListener('drop', async event => {
             drop.classList.remove('over');
             if (picker.disabled) return;
-            // Entries must be taken before the first await; the transfer expires afterwards.
-            const items = [...event.dataTransfer.items].map(item => item.webkitGetAsEntry?.()).filter(Boolean);
+            // Entries and handles must be taken before the first await; the transfer expires afterwards.
+            const list = [...event.dataTransfer.items];
+            const handles = list.map(item => item.getAsFileSystemHandle?.().catch(() => null));
+            const items = list.map(item => item.webkitGetAsEntry?.()).filter(Boolean);
             setFolder('', 'reading');
-            try { choose(await dropped(items)); }
-            catch (error) { folderDetail.className = 'err'; folderDetail.textContent = String(error); }
+            try {
+                if (choose(await dropped(items)) && handles.length === 1) {
+                    const handle = await handles[0];
+                    if (handle?.kind === 'directory') rememberFolder(handle);
+                }
+            } catch (error) { folderError(error); }
         });
         start.addEventListener('click', launch);
     }

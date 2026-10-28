@@ -5,212 +5,255 @@
 <meta name="color-scheme" content="dark">
 <title>VERA20k</title>
 <style>
-  /* Colours follow the game's dialogs: yellow text, red action plates, grey bevels on black. */
+  /* Storm palette: storm violet, lavender haze, lilac highlights. */
   :root {
-    --page: #000; --panel: #1b1b1b; --raised: #262626; --well: #0f0f0f;
-    --hi: #bdbdbd; --lo: #474747; --rule: #333;
-    --yellow: #ffff00; --yellow-dim: #8a8a1e; --red: #ff0000; --red-hi: #ff8080; --red-lo: #8c0000;
-    --text: #d4d4d4; --muted: #8a8a8a; --dim: #575757; --ok: #3cdc3c; --err: #ff4848;
+    --night: #0e0c1c; --panel-2: #201c3a; --line: #3b3562; --line-hi: #6f67a6;
+    --lilac: #ece7ff; --lavender: #bdb4ee; --violet: #7a62d8; --violet-hi: #9a86ee; --violet-lo: #3e2c8a;
+    --black: #000; --violet-pale: #b4a6f6; --violet-glow: #ad9cf6; --hover: #2a2550; --white: #fff;
+    --panel-top: rgba(23,20,44,.94); --panel-bottom: rgba(14,12,28,.97); --night-clear: rgba(14,12,28,0); --shade: rgba(5,4,12,.9);
+    --tint: rgba(122,98,216,.08); --tint-strong: rgba(122,98,216,.22); --disabled: rgba(32,28,58,.6); --overlay: rgba(14,12,28,.88);
+    --text: #e6e2f5; --muted: #ada7cb; --dim: #8c86ab; --ok: #8fe3a0; --warn: #ffd685; --err: #ff8296;
     --mono: Consolas, "SF Mono", Menlo, monospace;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
-  body { margin: 0; color: var(--text); background: var(--page); overflow: hidden;
+  body { margin: 0; color: var(--text); background: var(--night); overflow: hidden;
     font: 14px/1.5 "Microsoft YaHei", "PingFang SC", "Segoe UI", system-ui, sans-serif; }
   [hidden] { display: none !important; }
+  ::selection { background: var(--violet); color: var(--white); }
+  html { accent-color: var(--violet); caret-color: var(--lavender); }
   button { font: inherit; color: inherit; }
-  :focus-visible { outline: 2px dotted var(--yellow); outline-offset: 3px; }
-  a { color: var(--text); text-underline-offset: 3px; }
-  a:hover { color: var(--yellow); }
-  .bevel { border: 2px solid; border-color: var(--hi) var(--lo) var(--lo) var(--hi); }
-  .inset { border: 2px solid; border-color: var(--lo) var(--hi) var(--hi) var(--lo); }
+  :focus-visible { outline: 2px solid var(--lavender); outline-offset: 2px; }
+  a { color: var(--lavender); text-underline-offset: 3px; }
+  a:hover { color: var(--lilac); }
+  code { font: 12.5px var(--mono); color: var(--lilac); }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  canvas { position: fixed; inset: 0; display: block; width: 100vw; height: 100vh; outline: none; background: var(--black); }
 
-  canvas { position: fixed; inset: 0; display: block; width: 100vw; height: 100vh; outline: none; background: #000; }
-
-  #launcher { position: fixed; inset: 0; z-index: 2; overflow-y: auto; background: var(--page); padding: 40px 16px; transition: opacity .35s; }
+  /* A storm-violet glow fills the page behind the wordmark; the panel docks on the right. */
+  #launcher { position: fixed; inset: 0; z-index: 2; display: grid; grid-template-columns: minmax(0, 1fr) 400px; transition: opacity .35s;
+    background: radial-gradient(ellipse at 30% 30%, var(--violet-lo), var(--night) 70%) var(--night); }
   #launcher.leaving { opacity: 0; pointer-events: none; }
-  .wrap { max-width: 980px; margin: 0 auto; }
+  .art { min-height: 0; padding: 7vh 5vw; }
+  .wordmark { margin: 0; color: var(--lilac); font-size: clamp(40px, 6vw, 88px); font-weight: 800; line-height: 1; letter-spacing: .06em; }
+  .wordmark small { display: block; margin-top: 10px; color: var(--lavender); font-size: .2em; letter-spacing: .4em; }
+  /* Storm layers: cloud glows drift slowly and a rare, faint flash lights the wordmark. Fixed, so they never add scroll. */
+  #launcher::before, #launcher::after { content: ""; position: fixed; pointer-events: none; }
+  #launcher::before { inset: -15%;
+    background: radial-gradient(40% 30% at 22% 32%, var(--tint-strong), transparent 70%),
+      radial-gradient(35% 25% at 68% 18%, var(--tint-strong), transparent 70%),
+      radial-gradient(45% 35% at 45% 82%, var(--tint-strong), transparent 70%);
+    animation: drift 60s ease-in-out infinite alternate; }
+  #launcher::after { inset: 0; opacity: 0; background: radial-gradient(45% 40% at 25% 18%, var(--lilac), transparent 70%);
+    animation: flash 17s linear infinite; }
+  .art, .panel { position: relative; z-index: 1; }
+  @keyframes drift { to { transform: translate3d(6%, 3%, 0) scale(1.08); } }
+  @keyframes flash { 0%, 92%, 100% { opacity: 0; } 92.6% { opacity: .2; } 93.2% { opacity: .04; } 93.8% { opacity: .14; } 95.5% { opacity: 0; } }
 
-  /* Masthead */
-  .mast { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--rule); }
-  .mark { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
-  h1 { margin: 0; color: var(--yellow); font-size: 34px; font-weight: 900; line-height: 1; letter-spacing: .03em; }
-  .mark p { margin: 0; color: var(--muted); letter-spacing: .2em; }
-  .links { display: flex; gap: 6px; color: var(--dim); font-size: 13px; }
-  .links button { background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer; }
-  .links button:hover, .links button[aria-expanded="true"] { color: var(--yellow); }
+  .panel { display: flex; flex-direction: column; gap: 18px; min-height: 0; overflow-y: auto; padding: 24px 26px;
+    /* Scroll cue: the first layer scrolls with content and covers the shade once the end is reached. */
+    background: linear-gradient(var(--night-clear), var(--night) 70%) bottom / 100% 48px no-repeat local,
+      linear-gradient(var(--night-clear), var(--shade)) bottom / 100% 48px no-repeat scroll,
+      linear-gradient(180deg, var(--panel-top), var(--panel-bottom));
+    border-left: 1px solid var(--line-hi); scrollbar-width: none; }
+  /* Still scrolls by wheel, touch and keyboard; only the bar is hidden. */
+  .panel::-webkit-scrollbar { display: none; }
+  .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .tagline { margin: 0; min-width: 0; color: var(--lavender); font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .links { display: flex; gap: 4px; }
+  .links button { white-space: nowrap; min-height: 32px; padding: 4px 9px; background: none; border: 1px solid var(--line); color: var(--muted); cursor: pointer; font-size: 12.5px; }
+  .links button:hover { color: var(--lilac); border-color: var(--line-hi); }
 
-  /* Deployment track: where the player is, at a glance. */
-  ol.track { list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin: 22px 0 18px; padding: 0; counter-reset: step; }
-  .track li { position: relative; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 18px 0 30px; background: var(--raised); color: var(--dim);
-    clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 50%, calc(100% - 18px) 100%, 0 100%, 18px 50%); margin-right: -12px; }
-  .track li:last-child { margin-right: 0; }
-  .track li:first-child { padding-left: 16px; clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 50%, calc(100% - 18px) 100%, 0 100%); }
-  .track li::before { counter-increment: step; content: counter(step); flex: none; width: 28px; height: 28px; display: grid; place-items: center;
-    font: 900 15px var(--mono); border: 1px solid currentColor; }
-  .track b { font-weight: 800; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .track li[data-state="active"] { background: var(--red); color: var(--yellow); }
-  .track li[data-state="done"] { background: #2e2e14; color: var(--yellow); }
-  .track li[data-state="done"]::before { content: "✓"; }
-  .track li[data-state="warn"] { background: #2e2e14; color: var(--yellow); }
-  .track li[data-state="warn"]::before { content: "!"; }
-  .track li[data-state="error"] { background: #3a1010; color: var(--err); }
-  .track li[data-state="error"]::before { content: "!"; }
+  /* Touch screens get full-size targets. */
+  @media (pointer: coarse) { .links button { min-height: 44px; padding: 0 16px; } }
 
-  /* Main console */
-  .console { background: var(--panel); padding: 22px; display: grid; grid-template-columns: 1.15fr 1fr; gap: 22px; }
-  #drop { position: relative; display: grid; place-content: center; justify-items: center; gap: 6px; min-height: 300px; padding: 24px; text-align: center;
-    background: var(--well); cursor: pointer; transition: background .15s; }
-  #drop::after { content: ""; position: absolute; inset: 10px; border: 1px dashed var(--lo); pointer-events: none; transition: border-color .15s; }
-  #drop:hover::after { border-color: var(--yellow-dim); }
-  #drop.over { background: #16160a; }
-  #drop.over::after { border: 2px solid var(--yellow); }
-  #drop[aria-disabled="true"] { cursor: default; }
-  #drop svg { width: 92px; height: 76px; color: var(--yellow); margin-bottom: 10px; }
-  #drop[aria-disabled="true"] svg { color: var(--dim); }
-  .drop-title { margin: 0; color: var(--text); font-size: 20px; font-weight: 800; }
+  /* Steps read top to bottom, each with a numbered marker. */
+  ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: step; }
+  .steps li { display: flex; align-items: center; gap: 12px; padding: 8px 10px; color: var(--dim); font-weight: 700; }
+  .steps li::before { counter-increment: step; content: counter(step); flex: none; width: 24px; height: 24px; display: grid; place-items: center;
+    font: 700 12px var(--mono); border: 1px solid currentColor; }
+  .steps li[data-state="active"] { color: var(--lilac); background: var(--panel-2); }
+  .steps li[data-state="active"]::before { background: var(--violet); border-color: var(--violet-hi); color: var(--white); }
+  .steps li[data-state="done"] { color: var(--ok); }
+  /* Finished, warning and error markers keep the numbered square and swap the digit for a drawn icon.
+     The stroke colours repeat --ok, --warn and --err because a data URI cannot read CSS variables. */
+  .steps li[data-state="done"]::before, .steps li[data-state="warn"]::before, .steps li[data-state="error"]::before {
+    content: ""; background: var(--icon) center / 14px no-repeat; }
+  .steps li[data-state="done"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238fe3a0' stroke-width='2.2'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5'/%3E%3C/svg%3E"); }
+  .steps li[data-state="warn"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23ffd685' stroke-width='2.2'%3E%3Cpath d='M8 3v6.5M8 12v1.5'/%3E%3C/svg%3E"); }
+  .steps li[data-state="error"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23ff8296' stroke-width='2.2'%3E%3Cpath d='M8 3v6.5M8 12v1.5'/%3E%3C/svg%3E"); }
+  .steps li[data-state="warn"] { color: var(--warn); }
+  .steps li[data-state="error"] { color: var(--err); }
+
+  #drop { display: grid; justify-items: center; gap: 4px; padding: 26px 16px; text-align: center; cursor: pointer;
+    background: var(--tint); border: 1px dashed var(--line-hi); transition: background .15s, border-color .15s; }
+  #drop:hover { border-color: var(--lavender); }
+  #drop.over { background: var(--tint-strong); border: 1px solid var(--lilac); }
+  #drop[aria-disabled="true"] { cursor: default; opacity: .6; }
+  #drop svg { width: 54px; height: 44px; margin-bottom: 6px; color: var(--lavender); }
+  .drop-title { margin: 0; color: var(--lilac); font-size: 16px; font-weight: 800; }
   .drop-sub { margin: 0; color: var(--muted); }
 
-  .side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-  .side h2 { margin: 0; color: var(--yellow); font-size: 15px; font-weight: 800; letter-spacing: .08em; }
-  .manifest { background: var(--well); padding: 6px 14px; font: 13px var(--mono); }
-  .manifest div { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid #222; }
-  .manifest div:last-child { border-bottom: 0; }
+  .files h2 { margin: 0 0 6px; color: var(--muted); font-size: 11.5px; font-weight: 700; letter-spacing: .14em; }
+  .manifest { margin: 0; font: 12.5px var(--mono); border-top: 1px solid var(--line); }
+  .manifest div { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); }
   .manifest dt { color: var(--muted); }
-  .manifest dd { margin: 0; color: var(--text); text-align: right; overflow-wrap: anywhere; min-width: 0; }
+  .manifest dd { margin: 0; text-align: right; overflow-wrap: anywhere; min-width: 0; }
   .manifest dd.ok { color: var(--ok); }
   .manifest dd.missing { color: var(--err); }
   .manifest dd.idle { color: var(--dim); }
-  #folder-detail { margin: 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
-  #folder-detail.warn { color: var(--yellow); }
+  #folder-detail { margin: 8px 0 0; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+  #folder-detail:empty { display: none; }
+  #folder-detail.warn { color: var(--warn); }
   #folder-detail.err { color: var(--err); }
 
-  .plate { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; height: 52px; padding: 0 18px;
-    font-size: 18px; font-weight: 900; letter-spacing: .04em; cursor: pointer; border: 2px solid; }
-  .plate svg { flex: none; width: 20px; height: 20px; }
-  .plate.primary { background: var(--red); color: var(--yellow); border-color: var(--red-hi) var(--red-lo) var(--red-lo) var(--red-hi); }
-  .plate.primary:hover:not(:disabled) { background: #ff2626; }
-  .plate.primary:active:not(:disabled) { border-color: var(--red-lo) var(--red-hi) var(--red-hi) var(--red-lo); }
-  .plate.secondary { background: var(--raised); color: var(--text); border-color: #6a6a6a #333 #333 #6a6a6a; }
-  .plate.secondary:hover:not(:disabled) { color: var(--yellow); }
-  .plate:disabled { background: #202020; color: var(--dim); border-color: #3a3a3a; cursor: not-allowed; }
-  .buttons { display: grid; gap: 10px; margin-top: auto; }
+  /* The primary button always marks the next thing to do; host.js moves the class between them. */
+  .buttons { display: grid; gap: 10px; }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 10px; height: 46px; padding: 0 16px; cursor: pointer;
+    font-size: 15px; font-weight: 800; color: var(--lilac); background: var(--panel-2);
+    border: 1px solid var(--line-hi); transition: background .15s, border-color .15s; }
+  .btn svg { flex: none; width: 18px; height: 18px; }
+  .btn:hover:not(:disabled) { border-color: var(--lavender); background: var(--hover); }
+  .btn.primary { color: var(--white); background: linear-gradient(180deg, var(--violet-hi), var(--violet) 55%, var(--violet-lo)); border-color: var(--violet-pale); }
+  .btn.primary:hover:not(:disabled) { background: linear-gradient(180deg, var(--violet-glow), var(--violet-hi) 55%, var(--violet)); }
+  .btn:active:not(:disabled) { transform: translateY(1px); }
+  .btn:disabled { color: var(--dim); background: var(--disabled); border-color: var(--line); cursor: not-allowed; }
+
+  .option { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; cursor: pointer; }
+  .option:hover { color: var(--text); }
+  .progress { height: 6px; background: var(--panel-2); }
+  .progress div { height: 100%; width: 0; background: linear-gradient(90deg, var(--violet), var(--lavender)); transition: width .15s; }
+
+  .actions { display: grid; gap: 12px; }
+  #status { margin: 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+  #status::before { content: "› "; color: var(--violet-hi); }
+  #status[data-tone="ok"] { color: var(--text); }
+  #status[data-tone="err"], #status[data-tone="err"]::before { color: var(--err); }
   .note { margin: 0; color: var(--dim); font-size: 12.5px; }
 
-  .progress { grid-column: 1 / -1; height: 16px; padding: 3px; background: var(--well); }
-  /* Segmented like the game's loading bar. */
-  .progress div { height: 100%; width: 0; transition: width .15s; background: repeating-linear-gradient(90deg, var(--yellow) 0 9px, transparent 9px 12px); }
+  #help { width: min(520px, calc(100vw - 32px)); padding: 0; color: var(--text);
+    background: linear-gradient(180deg, var(--panel-top), var(--panel-bottom)); border: 1px solid var(--line-hi); box-shadow: 0 24px 64px var(--shade); }
+  #help::backdrop { background: var(--overlay); backdrop-filter: blur(3px); }
+  #help[open] { animation: rise .18s ease-out; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+  /* The padding sits on an inner box, so a click outside it lands on the dialog itself: the backdrop. */
+  .dialog-body { padding: 20px 22px 22px; }
+  .dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 14px; }
+  #help h2 { margin: 0; color: var(--lilac); font-size: 16px; }
+  #help ul { margin: 0; padding-left: 18px; font-size: 13.5px; }
+  #help li + li { margin-top: 8px; }
+  .close { flex: none; min-height: 32px; padding: 4px 10px; background: none; border: 1px solid var(--line); color: var(--muted); cursor: pointer; font-size: 12.5px; }
+  .close:hover { color: var(--lilac); border-color: var(--line-hi); }
 
-  #status { margin: 12px 0 0; padding: 0 2px; font: 13px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
-  #status::before { content: "> "; color: var(--yellow); }
-  #status[data-tone="ok"] { color: var(--text); }
-  #status[data-tone="err"] { color: var(--err); }
-  #status[data-tone="err"]::before { color: var(--err); }
-
-  #help { margin-top: 18px; padding: 16px 20px; background: var(--panel); }
-  #help h3 { margin: 0 0 8px; color: var(--yellow); font-size: 15px; }
-  #help ul { margin: 0; padding-left: 20px; }
-  #help li + li { margin-top: 5px; }
-  code { font: 13px var(--mono); color: var(--yellow); }
-
-  footer { margin-top: 36px; padding-top: 14px; border-top: 1px solid var(--rule); color: var(--dim); font-size: 12.5px;
-    display: flex; justify-content: space-between; gap: 6px 24px; flex-wrap: wrap; }
+  footer { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); color: var(--dim); font-size: 12px; display: grid; gap: 4px; }
   footer p { margin: 0; }
+  .link { padding: 0; background: none; border: 0; color: var(--lavender); cursor: pointer; font-size: inherit; text-decoration: underline; text-underline-offset: 3px; }
+  .link:hover { color: var(--lilac); }
 
   #hud { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 3; max-width: calc(100vw - 32px);
-    padding: 6px 14px; background: rgba(0, 0, 0, .85); border: 1px solid var(--lo); color: var(--yellow); font: 13px var(--mono);
+    padding: 6px 14px; background: var(--overlay); border: 1px solid var(--line-hi); color: var(--lilac); font: 13px var(--mono);
     transition: opacity .5s; pointer-events: none; }
   #hud.fade { opacity: 0; }
 
-  @media (max-width: 760px) {
-    #launcher { padding-top: 20px; }
-    .console { grid-template-columns: 1fr; padding: 14px; }
-    #drop { min-height: 200px; }
-    .track li { height: 46px; padding: 0 12px 0 24px; gap: 8px; }
-    .track li::before { width: 22px; height: 22px; font-size: 13px; }
-    .track b { font-size: 13px; }
+  /* Narrow screens: the wordmark becomes a banner and the panel scrolls beneath it. */
+  @media (max-width: 860px) {
+    #launcher { display: block; overflow-y: auto; }
+    .art { padding: 32px 16px; }
+    .panel { overflow: visible; padding: 20px 16px; border-left: 0; border-top: 1px solid var(--line-hi); }
   }
-  @media (max-width: 480px) { .track b { display: none; } .mast { flex-direction: column; align-items: flex-start; } }
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } #launcher::before, #launcher::after, #help[open] { animation: none; } }
 </style>
 
 <canvas id="game" width="1024" height="768" tabindex="0" aria-label="Game"></canvas>
 
 <main id="launcher">
-  <div class="wrap">
-    <header class="mast">
-      <div class="mark">
-        <h1>VERA20k</h1>
-        <p data-i18n="tagline">Yuri’s Revenge · Web edition</p>
-      </div>
+  <div class="art" aria-hidden="true"><p class="wordmark">VERA20K<small>RA2:YR ENGINE</small></p></div>
+
+  <section class="panel">
+    <h1 class="sr-only">VERA20k</h1>
+    <div class="head">
+      <p class="tagline" data-i18n="tagline">Yuri’s Revenge · Web edition</p>
       <nav class="links">
-        <button id="help-toggle" type="button" aria-expanded="false" aria-controls="help" data-i18n="helpTitle">Help</button>
-        <span aria-hidden="true">|</span>
+        <button id="help-toggle" type="button" aria-haspopup="dialog" data-i18n="helpTitle">Help</button>
         <button id="lang" type="button">中文</button>
       </nav>
-    </header>
+    </div>
 
-    <ol class="track" aria-label="Progress">
-      <li id="step-browser" data-state="active"><b data-i18n="browserTitle">Check browser</b></li>
-      <li id="step-folder" data-state="waiting"><b data-i18n="folderTitle">Import game files</b></li>
-      <li id="step-start" data-state="waiting"><b data-i18n="startTitle">Start game</b></li>
+    <ol class="steps" aria-label="Progress">
+      <li id="step-browser" data-state="active"><span data-i18n="browserTitle">Check browser</span></li>
+      <li id="step-folder" data-state="waiting"><span data-i18n="folderTitle">Import game files</span></li>
+      <li id="step-start" data-state="waiting"><span data-i18n="startTitle">Start game</span></li>
     </ol>
 
-    <section class="console bevel">
-      <div id="drop" class="inset" role="button" tabindex="0" aria-disabled="true">
-        <svg viewBox="0 0 92 76" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3">
-          <path d="M3 9h28l7 8h51v56H3z"/>
-          <path d="M3 27h86"/>
-          <path d="M46 37v26M35 52l11 11 11-11"/>
-        </svg>
-        <p class="drop-title" data-i18n="dropHint">Drop your game folder here</p>
-        <p class="drop-sub" data-i18n="dropSub">or click to choose it</p>
-      </div>
+    <div id="drop" role="button" tabindex="0" aria-disabled="true">
+      <svg viewBox="0 0 92 76" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3.5">
+        <path d="M3 9h28l7 8h51v56H3z"/><path d="M46 31v26M35 46l11 11 11-11"/>
+      </svg>
+      <p class="drop-title" data-i18n="dropHint">Drop your game folder here</p>
+      <p class="drop-sub" data-i18n="dropSub">or click to choose it</p>
+    </div>
 
-      <div class="side">
-        <h2 data-i18n="manifest">GAME FILES</h2>
-        <!-- A quick hint only; the engine's own install check reports what is really missing. -->
-        <dl class="manifest" id="checks">
-          <div><dt>ra2.mix</dt><dd class="idle" data-file="ra2.mix">—</dd></div>
-          <div><dt>ra2md.mix</dt><dd class="idle" data-file="ra2md.mix">—</dd></div>
-          <div><dt data-i18n="filesLabel">Files</dt><dd class="idle" id="file-total">—</dd></div>
-        </dl>
-        <p id="folder-detail" role="status" aria-live="polite"></p>
-        <p class="note" id="mode">Single player. Select your extracted Yuri’s Revenge game folder. Files stay on this computer.</p>
-        <div class="buttons">
-          <button class="plate primary" id="pick" type="button" disabled>
-            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M1.5 4h6l2 2.5h9v11h-17z" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-            <span data-i18n="pick">Choose game folder</span>
-          </button>
-          <button class="plate" id="start" type="button" disabled>
-            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 2l14 8-14 8z" fill="currentColor"/></svg>
-            <span data-i18n="start">Start game</span>
-          </button>
-        </div>
-        <input id="files" type="file" webkitdirectory multiple aria-label="Game resource folder" hidden disabled>
-      </div>
+    <div class="files">
+      <h2 data-i18n="manifest">GAME FILES</h2>
+      <!-- A quick hint only; the engine's own install check reports what is really missing. -->
+      <dl class="manifest" id="checks">
+        <div><dt>ra2.mix</dt><dd class="idle" data-file="ra2.mix">—</dd></div>
+        <div><dt>ra2md.mix</dt><dd class="idle" data-file="ra2md.mix">—</dd></div>
+        <!-- Required loose archives (AssetManager::open_startup_archives); the other required ones live inside ra2md.mix/ra2.mix. -->
+        <div><dt>multimd.mix</dt><dd class="idle" data-file="multimd.mix">—</dd></div>
+        <div><dt>mapsmd03.mix</dt><dd class="idle" data-file="mapsmd03.mix">—</dd></div>
+        <div><dt data-i18n="filesLabel">Files</dt><dd class="idle" id="file-total">—</dd></div>
+      </dl>
+      <p id="folder-detail" role="status" aria-live="polite"></p>
+    </div>
 
-      <div class="progress inset" id="progress" hidden><div></div></div>
-    </section>
+    <div class="actions">
+    <div class="buttons">
+      <!-- Shown when Chrome or Edge remembered the last game folder; one click reads it again. -->
+      <button class="btn primary" id="resume" type="button" hidden>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M1.5 4h6l2 2.5h9v11h-17z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 9.5l4.5 2.5L8 14.5z" fill="currentColor"/></svg>
+        <span id="resume-label"></span>
+      </button>
+      <button class="btn primary" id="pick" type="button" disabled>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M1.5 4h6l2 2.5h9v11h-17z" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        <span data-i18n="pick">Choose game folder</span>
+      </button>
+      <button class="btn" id="start" type="button" disabled>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 2l14 8-14 8z" fill="currentColor"/></svg>
+        <span data-i18n="start">Start game</span>
+      </button>
+      <div class="progress" id="progress" hidden><div></div></div>
+    </div>
+    <label class="option" hidden><input id="fullscreen" type="checkbox"> <span data-i18n="fullscreen">Start in full screen</span></label>
+    <input id="files" type="file" webkitdirectory multiple aria-label="Game resource folder" hidden disabled>
 
     <p id="status" role="status" aria-live="polite" data-i18n="engineLoading">Loading engine…</p>
+    <p class="note" id="mode">Single player. Select your extracted Yuri’s Revenge game folder. Files stay on this computer.</p>
+    </div>
 
-    <section id="help" class="bevel" hidden>
-      <h3 data-i18n="helpHeading">Where is my game folder?</h3>
-      <ul>
-        <li data-i18n-html="help1">Pick the Yuri’s Revenge install folder: the one that contains <code>ra2md.mix</code> and <code>ra2.mix</code>.</li>
-        <li data-i18n-html="help2">Steam / EA app installs usually live under <code>Command and Conquer Red Alert II</code> in the library folder.</li>
-        <li data-i18n="help3">Choosing a parent folder is fine — the game folder inside it is found automatically.</li>
-        <li data-i18n="help4">Nothing is uploaded. Game files are read into memory and must be chosen again after reloading.</li>
-        <li data-i18n="help5">Needs WebGPU: a recent Chrome or Edge works best. Large installs need plenty of memory.</li>
-      </ul>
-    </section>
+    <!-- A modal over the launcher; Esc, Close and a click on the backdrop dismiss it. -->
+    <dialog id="help" aria-labelledby="help-heading">
+      <div class="dialog-body">
+        <form method="dialog" class="dialog-head">
+          <h2 id="help-heading" data-i18n="helpHeading">Where is my game folder?</h2>
+          <button class="close" type="submit" data-i18n="close">Close</button>
+        </form>
+        <ul>
+          <li data-i18n-html="help1">Pick the Yuri’s Revenge install folder: the one that contains <code>ra2md.mix</code> and <code>ra2.mix</code>.</li>
+          <li data-i18n-html="help2">Steam / EA app installs usually live under <code>Command and Conquer Red Alert II</code> in the library folder.</li>
+          <li data-i18n="help3">Choosing a parent folder is fine — the game folder inside it is found automatically.</li>
+          <li data-i18n="help4">Nothing is uploaded. Game files are read into memory each time; Chrome and Edge remember the folder for next time.</li>
+          <li data-i18n="help5">Needs WebGPU: a recent Chrome or Edge works best. Large installs need plenty of memory.</li>
+        </ul>
+      </div>
+    </dialog>
 
     <footer>
       <p id="storage" role="status" data-i18n="storage">Settings and saves are stored in this browser for this site.</p>
+      <p><span id="build">Unpackaged page</span> · <button class="link" id="diagnostics" type="button" data-i18n="diagnostics">Copy diagnostics</button></p>
       <p id="license">VERA20k is free software under the <a href="https://github.com/YuriPlanet/vera20k/blob/main/LICENSE-GPL">GNU GPL version 3</a>. Source: <a href="https://github.com/YuriPlanet/vera20k">github.com/YuriPlanet/vera20k</a>.</p>
     </footer>
-  </div>
+  </section>
 </main>
 
 <div id="hud" role="status" hidden></div>
