@@ -108,6 +108,7 @@ fn send_wol_preferences(state: &mut AppState) {
 }
 
 use super::{App, AppState};
+use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_transition::ShellExitThen;
 use crate::app::shell_route::ShellRoute;
 use crate::ui::shell::descriptor::DialogId;
@@ -615,21 +616,22 @@ impl App {
         );
         let visit = state.frontend.wol.as_ref()?;
         if let Some(message) = visit.message() {
+            let scale = shell_layout::shell_scale_for_screen((width as u32, height as u32));
+            let layout = message.layout(width, height, scale);
             return Some(match message.buttons {
                 WolBoxButtons::Ok(_) => vec![LaidOutControl {
                     id: BOX_OK,
-                    rect: crate::ui::shell::modal::body_ok_layout(width, height).ok,
+                    rect: layout.ok,
                 }],
                 WolBoxButtons::YesNo { .. } => {
-                    let layout = crate::ui::shell::modal::yes_no_layout(width, height);
                     vec![
                         LaidOutControl {
                             id: BOX_NO,
-                            rect: layout.no,
+                            rect: layout.cancel.expect("Yes/No has No"),
                         },
                         LaidOutControl {
                             id: BOX_YES,
-                            rect: layout.yes,
+                            rect: layout.ok,
                         },
                     ]
                 }
@@ -639,7 +641,8 @@ impl App {
             // A hidden wait box takes no pointer.
             return Some(match visit.wait_box().filter(|wait| wait.shown) {
                 Some(_) => {
-                    let layout = crate::ui::shell::modal::wait_box_layout(width, height);
+                    let scale = shell_layout::shell_scale_for_screen((width as u32, height as u32));
+                    let layout = crate::ui::shell::modal::wait_box_layout_on(width, height, scale);
                     vec![
                         LaidOutControl {
                             id: WAIT_DISCONNECT,

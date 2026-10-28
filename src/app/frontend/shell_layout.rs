@@ -70,13 +70,17 @@ fn message_box_layout_for_screen(
     kind: crate::ui::shell::modal::ModalKind,
     size: (u32, u32),
 ) -> crate::ui::shell::modal::MessageBoxLayout {
+    let scale = shell_scale_for_screen(size);
+    crate::ui::shell::modal::message_box_layout_on(kind, size.0 as i32, size.1 as i32, scale)
+}
+
+pub(crate) fn shell_scale_for_screen(size: (u32, u32)) -> crate::ui::shell::geom::ShellScale {
     use crate::ui::shell::geom::ShellScale;
-    let scale = if window_takes_fitted_shell(size) {
+    if window_takes_fitted_shell(size) {
         ShellScale::from_screen(size.0 as i32, size.1 as i32)
     } else {
         ShellScale::RETAIL
-    };
-    crate::ui::shell::modal::message_box_layout_on(kind, size.0 as i32, size.1 as i32, scale)
+    }
 }
 
 /// The shared right-panel menu pages (`0x100` Single Player, `0x101` Movies &

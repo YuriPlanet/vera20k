@@ -58,6 +58,7 @@ pub(crate) fn message_box_parts(
     pressed: Option<u16>,
     screen_w: i32,
     screen_h: i32,
+    scale: ShellScale,
 ) -> (
     crate::ui::shell::geom::RectPx,
     Vec<(crate::ui::shell::geom::RectPx, bool)>,
@@ -71,9 +72,9 @@ pub(crate) fn message_box_parts(
         path_a_reveal: None,
     };
     let button_align = ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0);
+    let geometry = message.layout(screen_w, screen_h, scale);
     match &message.buttons {
         WolBoxButtons::Ok(ok) => {
-            let geometry = crate::ui::shell::modal::body_ok_layout(screen_w, screen_h);
             let ok_pressed = pressed == Some(BOX_OK);
             (
                 geometry.dialog,
@@ -89,22 +90,27 @@ pub(crate) fn message_box_parts(
             )
         }
         WolBoxButtons::YesNo { yes, no } => {
-            let geometry = crate::ui::shell::modal::yes_no_layout(screen_w, screen_h);
             let yes_pressed = pressed == Some(BOX_YES);
             let no_pressed = pressed == Some(BOX_NO);
             (
                 geometry.dialog,
-                vec![(geometry.yes, yes_pressed), (geometry.no, no_pressed)],
+                vec![
+                    (geometry.ok, yes_pressed),
+                    (geometry.cancel.expect("Yes/No has No"), no_pressed),
+                ],
                 vec![
                     label(&message.body, geometry.body, ShellAlign::NONE),
                     label(
                         yes,
-                        owner_draw_button_label_rect(geometry.yes, yes_pressed),
+                        owner_draw_button_label_rect(geometry.ok, yes_pressed),
                         button_align,
                     ),
                     label(
                         no,
-                        owner_draw_button_label_rect(geometry.no, no_pressed),
+                        owner_draw_button_label_rect(
+                            geometry.cancel.expect("Yes/No has No"),
+                            no_pressed,
+                        ),
                         button_align,
                     ),
                 ],
@@ -894,10 +900,10 @@ pub(crate) fn render_wol_page(
         };
         let button_align = ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0);
         let (dialog, buttons, box_labels) = if let Some(message) = &message {
-            message_box_parts(message, pressed, screen_w, screen_h)
+            message_box_parts(message, pressed, screen_w, screen_h, scale)
         } else {
             let wait = wait.as_ref().expect("filtered above");
-            let geometry = crate::ui::shell::modal::wait_box_layout(screen_w, screen_h);
+            let geometry = crate::ui::shell::modal::wait_box_layout_on(screen_w, screen_h, scale);
             let disconnect = pressed == Some(WAIT_DISCONNECT);
             let check = pressed == Some(WAIT_CHECK_STATUS);
             (
@@ -938,7 +944,7 @@ pub(crate) fn render_wol_page(
             dialog,
             &modal_buttons,
             &box_labels,
-            ShellScale::RETAIL,
+            scale,
             BOX_DEPTHS,
         );
         box_sprites = draw.sprites;

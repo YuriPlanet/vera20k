@@ -427,6 +427,25 @@ pub fn wait_box_layout(screen_w: i32, screen_h: i32) -> WaitBoxLayout {
     }
 }
 
+/// WOL wait proc 0x00792CF0 uses the same shell mapping for art and hit rectangles.
+pub fn wait_box_layout_on(
+    screen_w: i32,
+    screen_h: i32,
+    scale: geom::ShellScale,
+) -> WaitBoxLayout {
+    if scale.is_retail() {
+        return wait_box_layout(screen_w, screen_h);
+    }
+    let base = wait_box_layout(geom::SHELL_BASE_W, geom::SHELL_BASE_H);
+    WaitBoxLayout {
+        dialog: scale.scale_rect(base.dialog),
+        text: scale.scale_rect(base.text),
+        disconnect: scale.scale_rect(base.disconnect),
+        check_status: scale.scale_rect(base.check_status),
+        animation: scale.scale_rect(base.animation),
+    }
+}
+
 /// The Westwood Online Create Game popup `0xC3` (`0x0078DB70`), the same
 /// 451x326 centred box: executed client rects (tools/storage_oracle/
 /// wol_shell.json) of its controls from their templates.

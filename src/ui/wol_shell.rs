@@ -664,6 +664,21 @@ pub enum WolBoxButtons {
 }
 
 impl WolMessageBox {
+    /// WOL__MessageBox (0x005E2CD0)'s D0/126 share the CE/120 control rectangles.
+    pub fn layout(
+        &self,
+        width: i32,
+        height: i32,
+        scale: ShellScale,
+    ) -> super::shell::modal::MessageBoxLayout {
+        use super::shell::modal::{ModalKind, message_box_layout_on};
+        let kind = match self.buttons {
+            WolBoxButtons::Ok(_) => ModalKind::BodyOk,
+            WolBoxButtons::YesNo { .. } => ModalKind::Confirm,
+        };
+        message_box_layout_on(kind, width, height, scale)
+    }
+
     pub fn dialog(&self) -> DialogId {
         DialogId(match self.buttons {
             WolBoxButtons::Ok(_) => 0x00D0,
@@ -716,6 +731,65 @@ impl WolWaitBox {
 mod tests {
     use super::*;
     use crate::ui::shell::geom::centred_in_window;
+
+    #[test]
+    fn message_boxes_follow_the_quit_box_scale_and_hit_rectangles() {
+        use crate::ui::shell::modal::{ModalKind, message_box_layout_on};
+        let message = WolMessageBox {
+            body: "Question".into(),
+            buttons: WolBoxButtons::YesNo { yes: "Yes".into(), no: "No".into() },
+        };
+        for (w, h) in [(760, 600), (1024, 768), (1280, 720), (2560, 1600), (1200, 1600)] {
+            let scale = ShellScale::from_screen(w, h);
+            let layout = message.layout(w, h, scale);
+            let quit = message_box_layout_on(ModalKind::Confirm, w, h, scale);
+            assert_eq!(layout.dialog, quit.dialog);
+            assert_eq!(layout.body, quit.body);
+            assert_eq!(layout.ok, quit.ok);
+            let no = layout.cancel.unwrap();
+            assert_eq!(Some(no), quit.cancel);
+            let center = (no.x + no.w / 2, no.y + no.h / 2);
+            assert!(no.contains(center.0, center.1));
+            assert!(!layout.ok.contains(center.0, center.1));
+        }
+        let large = message.layout(2560, 1600, ShellScale::from_screen(2560, 1600));
+        assert_eq!(large.dialog, RectPx::new(680, 365, 1202, 870));
+    }
+
+    #[test]
+    fn retail_wol_prompts_keep_the_authored_size() {
+        for (w, h) in [(640, 480), (800, 600)] {
+            let message = WolMessageBox {
+                body: "Notice".into(),
+                buttons: WolBoxButtons::Ok("OK".into()),
+            };
+            let layout = message.layout(w, h, ShellScale::RETAIL);
+            assert_eq!((layout.dialog.w, layout.dialog.h), (451, 326));
+            assert_eq!(layout.ok, super::super::shell::modal::body_ok_layout(w, h).ok);
+            assert!(layout.cancel.is_none());
+        }
+    }
+
+    #[test]
+    fn wait_box_scales_art_text_and_both_button_hits_together() {
+        use crate::ui::shell::modal::{wait_box_layout, wait_box_layout_on};
+        let base = wait_box_layout(800, 600);
+        for (w, h) in [(760, 600), (1024, 768), (2560, 1600), (1200, 1600)] {
+            let scale = ShellScale::from_screen(w, h);
+            let layout = wait_box_layout_on(w, h, scale);
+            assert_eq!(layout.dialog, scale.scale_rect(base.dialog));
+            assert_eq!(layout.text, scale.scale_rect(base.text));
+            assert_eq!(layout.animation, scale.scale_rect(base.animation));
+            assert_eq!(layout.disconnect, scale.scale_rect(base.disconnect));
+            let check = layout.check_status;
+            let point = (check.x + check.w / 2, check.y + check.h / 2);
+            assert!(check.contains(point.0, point.1));
+            assert!(!layout.disconnect.contains(point.0, point.1));
+        }
+        for (w, h) in [(640, 480), (800, 600)] {
+            assert_eq!(wait_box_layout_on(w, h, ShellScale::RETAIL), wait_box_layout(w, h));
+        }
+    }
 
     #[test]
     fn welcome_buttons_write_the_native_modes() {

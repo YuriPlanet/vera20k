@@ -404,6 +404,7 @@ pub(crate) fn paint_wol_verify(
             pressed,
             state.renderer.gpu.config.width as i32,
             state.renderer.gpu.config.height as i32,
+            ShellScale::RETAIL,
         );
         let buttons: Vec<ModalButton> = buttons
             .into_iter()
