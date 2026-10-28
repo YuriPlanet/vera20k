@@ -79,6 +79,11 @@ Supported extensions:
   Per-type `Survivor.*`, `Crew.TechnicianChance`, `Crew.EngineerChance` and nullable
   aircraft `Crashable` share the existing crew and placement owners. These paths
   require `ares`; loading INI settings cannot activate them in a default build.
+- [Type selection groups](https://ares-developers.github.io/Ares-docs/new/typeselect.html):
+  retained `GroupAs` keys share type IDs' case-insensitive namespace in T tap,
+  held-T click/band and additive removal. `General/TypeSelectUseDeploy` controls
+  automatic deployed-form seeds. Without `ares`, both tags are ignored and
+  retail selection remains active.
 - [NoManualFire](../src/app/input/context_order.rs) blocks ordinary manual attacks;
   C4 and infiltration remain incomplete.
 - [AttachEffect](ares-attach-effect.md): ground warhead effects and type-owned

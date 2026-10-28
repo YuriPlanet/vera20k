@@ -1045,6 +1045,9 @@ pub struct ObjectType {
     spotlight: crate::rules::ares_spotlight::SpotlightTypeRules,
     #[cfg(feature = "ares")]
     driver: crate::rules::ares_driver::DriverTypeRules,
+    /// Ares TypeExt+250, projected from the retained rules reader.
+    #[cfg(feature = "ares")]
+    selection_group: String,
     #[cfg(feature = "ares")]
     crew: crate::rules::ares_crew::CrewTypeRules,
     /// Immutable projection of the retained TechnoTypeExt+308/+314/+320/+321
@@ -2547,6 +2550,22 @@ impl ObjectType {
         self.driver = driver.clone();
     }
 
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_selection_group(&mut self, group: &str) {
+        group.clone_into(&mut self.selection_group);
+    }
+
+    /// Installed Ares GetSelectionGroupID1003DB30: an empty override uses
+    /// the type's stored ID, not its localized name or another type's group.
+    #[cfg(feature = "ares")]
+    pub(crate) fn type_selection_key(&self) -> &str {
+        if self.selection_group.is_empty() {
+            &self.id
+        } else {
+            &self.selection_group
+        }
+    }
+
     pub(crate) fn bind_ares_techno_rules(
         &mut self,
         emp: Option<&crate::rules::ares_emp::EmpTypeRules>,
@@ -3947,6 +3966,8 @@ impl ObjectType {
             spotlight: Default::default(),
             #[cfg(feature = "ares")]
             driver: Default::default(),
+            #[cfg(feature = "ares")]
+            selection_group: String::new(),
             #[cfg(feature = "ares")]
             crew: Default::default(),
             #[cfg(feature = "ares")]

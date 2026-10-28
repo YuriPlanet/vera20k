@@ -170,6 +170,8 @@ pub mod alpha_image_assets;
 pub mod country_loading;
 #[cfg(test)]
 mod ares_manual_control_tests;
+#[cfg(test)]
+mod ares_type_selection_tests;
 pub mod compatibility;
 pub mod animation_sequence;
 pub mod art_data;

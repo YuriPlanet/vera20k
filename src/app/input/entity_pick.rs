@@ -630,23 +630,40 @@ pub(crate) fn compute_type_select_tap_with_playfield(
         }
     }
 
-    let mut seeds: Vec<InternedId> = Vec::new();
+    let mut seeds: Vec<TypeSelectionSeed> = Vec::new();
     for id in selected.iter().copied() {
         let Some(entity) = entities.get(id) else {
             continue;
         };
         let own = interner.map_or("", |i| i.resolve(entity.type_ref()));
-        push_exact_seed(&mut seeds, entity.type_ref());
-        if let Some(object) = rules.and_then(|r| r.object(own)) {
+        push_type_select_seed(
+            &mut seeds,
+            (entity.type_ref(), entity.category()),
+            rules,
+            interner,
+        );
+        if rules.is_none_or(RuleSet::type_select_uses_deploy)
+            && let Some(object) = rules.and_then(|r| r.object(own))
+        {
             if let Some(deploys_into) = object.deploys_into.as_deref()
                 && let Some(type_ref) = interner.and_then(|i| i.get(deploys_into))
             {
-                push_exact_seed(&mut seeds, type_ref);
+                push_type_select_seed(
+                    &mut seeds,
+                    (type_ref, EntityCategory::Structure),
+                    rules,
+                    interner,
+                );
             }
             if let Some(undeploys_into) = object.undeploys_into.as_deref()
                 && let Some(type_ref) = interner.and_then(|i| i.get(undeploys_into))
             {
-                push_exact_seed(&mut seeds, type_ref);
+                push_type_select_seed(
+                    &mut seeds,
+                    (type_ref, EntityCategory::Unit),
+                    rules,
+                    interner,
+                );
             }
         }
     }
@@ -711,8 +728,41 @@ pub(crate) fn compute_type_select_tap_with_playfield(
     }
 }
 
-fn push_exact_seed(seeds: &mut Vec<InternedId>, seed: InternedId) {
-    if !seeds.contains(&seed) {
+/// Ares GetSelectionGroupID1003DB30/1003DB50 and strcmpi10003990, used by
+/// IDMatches732C30 ->1004A490, click/band4ABD6C..4ABE58 ->10041760 and
+/// PlayerOwnedAliveAndNamed7327AA ->10041CD0. The rules owner provides the
+/// same key for all these callers; ownership, scope and admission stay here.
+type TypeSelectionSeed = (InternedId, EntityCategory);
+
+fn type_selection_matches(
+    left: TypeSelectionSeed,
+    right: TypeSelectionSeed,
+    rules: Option<&RuleSet>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+) -> bool {
+    #[cfg(feature = "ares")]
+    if let (Some(rules), Some(interner)) = (rules, interner) {
+        return rules
+            .type_selection_key(left.1.into(), interner.resolve(left.0))
+            .eq_ignore_ascii_case(
+                rules.type_selection_key(right.1.into(), interner.resolve(right.0)),
+            );
+    }
+    #[cfg(not(feature = "ares"))]
+    let _ = (rules, interner);
+    left.0 == right.0
+}
+
+fn push_type_select_seed(
+    seeds: &mut Vec<TypeSelectionSeed>,
+    seed: TypeSelectionSeed,
+    rules: Option<&RuleSet>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+) {
+    if !seeds
+        .iter()
+        .any(|&existing| type_selection_matches(existing, seed, rules, interner))
+    {
         seeds.push(seed);
     }
 }
@@ -720,7 +770,7 @@ fn push_exact_seed(seeds: &mut Vec<InternedId>, seed: InternedId) {
 fn type_select_candidates(
     entities: &EntityStore,
     source_order: &[u64],
-    seeds: &[InternedId],
+    seeds: &[TypeSelectionSeed],
     fog: Option<(&FogState, &crate::map::houses::HouseAllianceMap)>,
     local_owner: Option<&str>,
     rules: Option<&RuleSet>,
@@ -737,7 +787,14 @@ fn type_select_candidates(
             let type_id = interner.map_or("", |i| i.resolve(entity.type_ref()));
             if !entity.lifecycle.object_alive()
                 || local_owner.is_some_and(|local| !owner.eq_ignore_ascii_case(local))
-                || !seeds.contains(&entity.type_ref())
+                || !seeds.iter().any(|&seed| {
+                    type_selection_matches(
+                        seed,
+                        (entity.type_ref(), entity.category()),
+                        rules,
+                        interner,
+                    )
+                })
                 || (screen_only
                     && entity.category() != EntityCategory::Structure
                     && !is_drawn_for_local_owner(fog, local_owner, owner, entity, local_owner_id))
@@ -790,10 +847,10 @@ pub(crate) fn compute_type_select_click_mutation_with_playfield(
     let Some(clicked) = entities.get(clicked_id) else {
         return SelectionMutation::default();
     };
-    let clicked_type = clicked.type_ref();
+    let clicked_type = (clicked.type_ref(), clicked.category());
     if additive && current_selection.contains(&clicked_id) {
         return SelectionMutation {
-            deselect: exact_type_group(
+            deselect: matching_type_group(
                 entities,
                 scope_order,
                 clicked_type,
@@ -811,7 +868,7 @@ pub(crate) fn compute_type_select_click_mutation_with_playfield(
     }
     SelectionMutation {
         clear: !additive,
-        select: exact_type_group(
+        select: matching_type_group(
             entities,
             scope_order,
             clicked_type,
@@ -852,14 +909,17 @@ pub(crate) fn compute_type_select_box_mutation_with_playfield(
         {
             continue;
         }
-        if !represented_types.contains(&entity.type_ref()) {
-            represented_types.push(entity.type_ref());
-        }
+        push_type_select_seed(
+            &mut represented_types,
+            (entity.type_ref(), entity.category()),
+            rules,
+            interner,
+        );
     }
 
     let mut select = Vec::new();
     for type_ref in represented_types {
-        select.extend(exact_type_group(
+        select.extend(matching_type_group(
             entities,
             scope_order,
             type_ref,
@@ -878,10 +938,10 @@ pub(crate) fn compute_type_select_box_mutation_with_playfield(
     }
 }
 
-fn exact_type_group(
+fn matching_type_group(
     entities: &EntityStore,
     source_order: &[u64],
-    type_ref: InternedId,
+    type_ref: TypeSelectionSeed,
     local_owner: Option<&str>,
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
@@ -896,7 +956,12 @@ fn exact_type_group(
             let type_id = interner.map_or("", |i| i.resolve(entity.type_ref()));
             if !entity.lifecycle.object_alive()
                 || entity.lifecycle.in_limbo()
-                || entity.type_ref() != type_ref
+                || !type_selection_matches(
+                    (entity.type_ref(), entity.category()),
+                    type_ref,
+                    rules,
+                    interner,
+                )
                 || local_owner.is_some_and(|local| !owner.eq_ignore_ascii_case(local))
                 || (selecting
                     && !static_selection_gate(entity, type_id, rules, require_playfield_membership))
@@ -1208,6 +1273,10 @@ mod reveal_tests;
 #[cfg(test)]
 #[path = "entity_pick_building_type_select_tests.rs"]
 mod building_type_select_tests;
+
+#[cfg(test)]
+#[path = "entity_pick_group_as_tests.rs"]
+mod group_as_tests;
 
 #[cfg(test)]
 mod tests {

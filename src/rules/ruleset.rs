@@ -4671,6 +4671,31 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
+    /// Ares1003DB30/1003DB50. Both group labels and ordinary type IDs share
+    /// one namespace; callers compare these keys case-insensitively.
+    pub fn type_selection_key<'a>(&'a self, category: ObjectCategory, type_id: &'a str) -> &'a str {
+        #[cfg(feature = "ares")]
+        if let Some(object) = self.object_in_category(category, type_id) {
+            return object.type_selection_key();
+        }
+        #[cfg(not(feature = "ares"))]
+        let _ = category;
+        type_id
+    }
+
+    /// CollectSelectedIDs732D47 -> Ares10041990/10041A3F gates the
+    /// DeploysInto/UndeploysInto seeds. Default builds keep retail behavior.
+    pub fn type_select_uses_deploy(&self) -> bool {
+        #[cfg(feature = "ares")]
+        {
+            self.ares_global_controls.type_select_use_deploy()
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            true
+        }
+    }
+
     /// Ares RulesExt+70, used by SW_HunterSeeker::Activate100728EB.
     #[cfg(feature = "ares")]
     pub(crate) fn hunter_seeker_buildings(&self) -> &[String] {
@@ -4922,6 +4947,16 @@ impl RuleSet {
                     retained.inhibitor_range,
                     retained.hunter_seeker_ignore,
                 );
+            }
+        }
+        #[cfg(feature = "ares")]
+        for (category, name, group) in processed.selection_group_states() {
+            if let Some(handle) = rules
+                .object_category_index
+                .get(&(category, name.to_ascii_uppercase()))
+                .copied()
+            {
+                rules.object_list[handle.0 as usize].bind_selection_group(group);
             }
         }
         #[cfg(feature = "ares")]
