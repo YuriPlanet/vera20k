@@ -79,6 +79,12 @@ Supported extensions:
   Per-type `Survivor.*`, `Crew.TechnicianChance`, `Crew.EngineerChance` and nullable
   aircraft `Crashable` share the existing crew and placement owners. These paths
   require `ares`; loading INI settings cannot activate them in a default build.
+- [Extended IFV modes](../src/rules/gunner_turrets.rs): Gunner vehicles read
+  `WeaponCount` beyond the original eighteen slots, including normal/elite weapons,
+  ART firing offsets and `WeaponTurretIndexN` mappings. `WeaponUINameN` supplies
+  the current mode's full tooltip name. Default builds retain the original bound
+  and FV-only mapping. Barrel geometry and `TurretLocked` retain their separate
+  support limits documented in the [firing-offset owner](../src/rules/weapon_offsets.rs).
 - [NoManualFire](../src/app/input/context_order.rs) blocks ordinary manual attacks;
   C4 and infiltration remain incomplete.
 - [AttachEffect](ares-attach-effect.md): ground warhead effects and type-owned

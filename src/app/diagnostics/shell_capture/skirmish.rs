@@ -342,7 +342,7 @@ fn selected_scene(state: &AppState) -> Result<Value> {
             "credits": shell.starting_credits, "speed": shell.game_speed, "units": shell.unit_count,
             "short_game": shell.short_game, "super_weapons": shell.super_weapons,
             "build_off_ally": shell.build_off_ally, "crates": shell.crates,
-            "mcv_redeploy": shell.mcv_redeploy, "zoom": shell.zoom_enabled
+            "mcv_redeploy": shell.mcv_redeploy
         }
     }))
 }
@@ -800,6 +800,36 @@ impl SkirmishCapture {
         Ok(())
     }
 
+    /// The defeat routes need Short Game (`0x54E`), which the profile may
+    /// have saved off: only then does selling the last building, with no
+    /// `BaseUnit=` left, defeat the house (`HouseClass::Update`
+    /// `0x004F8EBD..0x004F8F77`); otherwise the starting units keep it alive.
+    /// The route checks the box through the production click.
+    fn check_short_game(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::ui::skirmish_shell::SkirmishCheckboxId;
+        let layout =
+            crate::ui::skirmish_shell::compute_layout(state.render_width(), state.render_height());
+        let rect = layout
+            .checkboxes
+            .iter()
+            .find(|checkbox| checkbox.id == SkirmishCheckboxId::ShortGame0x54e)
+            .context("0x102 has no Short Game box")?
+            .rect;
+        let icon = crate::ui::skirmish_shell::checkbox_icon_rect(rect, layout.scale);
+        Self::set_pointer(state, (icon.x + icon.w / 2, icon.y + icon.h / 2));
+        App::handle_skirmish_shell_mouse_down(state);
+        App::handle_skirmish_shell_mouse_up(state);
+        Self::set_pointer(state, self.rest_point());
+        ensure!(
+            state.frontend.skirmish_shell_state.short_game,
+            "the Short Game box did not take the click"
+        );
+        self.selected_scene = Some(selected_scene(state)?);
+        self.route
+            .push(json!({"dialog": 0x102, "frame": frame, "action": "check Short Game"}));
+        Ok(())
+    }
+
     /// Players 2, Generate Map and Use Map; once `0x105` has slid out, the
     /// hidden chooser's eject box asks while no dialog shows or slides, and
     /// the route answers it a presented frame later (`None` leaves it up).
@@ -1011,6 +1041,11 @@ impl SkirmishCapture {
                     self.route
                         .push(json!({"dialog": 0x102, "frame": frame, "action": "Back"}));
                     self.phase = Phase::SlideOut;
+                } else if self.selected_scene.is_some()
+                    && self.defeat_route()
+                    && !state.frontend.skirmish_shell_state.short_game
+                {
+                    self.check_short_game(state, frame)?;
                 } else if self.selected_scene.is_some() && self.loading.is_some() {
                     // The pointer moves onto Start Game (`0x617`), whose help
                     // reaches the status line as it would before a click,

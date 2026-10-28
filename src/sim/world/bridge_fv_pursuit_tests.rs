@@ -361,11 +361,33 @@ fn retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native() {
         |path| std::fs::read_to_string(path).unwrap(),
     );
     let packet: Value = serde_json::from_str(&input).unwrap();
+    let outside: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fv_cell_attack/paid_conditional_v26.input.json",
+    ))
+    .unwrap();
     let mut errors = Vec::new();
     for case in packet["cases"].as_array().unwrap() {
         let stage = case["stage"].as_str().unwrap();
+        let outside_frames = outside["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|input| input["stage"] == stage)
+            .expect("declared outside calls")["frames"]
+            .as_array()
+            .unwrap();
         let physical_stage = case["physical_stage"].as_str().unwrap_or(stage);
         let (mut scene, ambient_anims) = prepared_paid_scene(physical_stage, None);
+        // The packet declares the Scenario identity cursor before the FV
+        // constructor, as it declares the seed. The capture build's own map
+        // load supplied it; native whole-Scenario startup was not executed.
+        *scene.runtime.simulation.native_unique_ids_mut_for_test() = Some(
+            crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(
+                case["boundary"]["scenario_cursor_before_constructor"]
+                    .as_u64()
+                    .unwrap() as u32,
+            ),
+        );
         let id = command_paid_fv(
             &mut scene,
             serde_json::from_value(case["supplied_spawn"]["xyz"].clone()).unwrap(),
@@ -375,6 +397,12 @@ fn retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native() {
                 .expect("declared constructor Scenario seed"),
             case["options"]["game_speed"].as_u64().unwrap() as u8,
         );
+        // Native executes only the selected FV, its Bullets and new Anims
+        // (its Logic vector starts as the FV alone); the outside world's AI is
+        // the recorded raw Scenario Next calls (0x0065C780) before each pass.
+        // Keep the outside world physically present but out of Logic, and
+        // replay those calls below, so the FV's own draws read native words.
+        scene.runtime.simulation.set_logic_order_for_test(vec![id]);
         let mut actual_frames = Vec::new();
         let mut shots = Vec::new();
         let mut diagnostics = Vec::new();
@@ -403,6 +431,21 @@ fn retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native() {
                             Some(&runtime.resources.overlay_registry),
                             crate::sim::world::FrameEffects::default(),
                         ));
+                    }
+                    let calls = &outside_frames[frame as usize - 1];
+                    assert_eq!(calls["logic_frame"], frame);
+                    assert_eq!(calls["suffix"], json!([]), "no outside suffix calls");
+                    for (call, native) in calls["prefix"].as_array().unwrap().iter().enumerate() {
+                        assert_eq!(native["stream"], "scenario");
+                        // A word other than the recorded one means the
+                        // selected owners drew a different count before it.
+                        let word = scene.runtime.simulation.scenario_rng.next_u32();
+                        if native["value"] != word {
+                            errors.push(format!(
+                                "{stage}/frame{frame}/outside{call}: Rust word {word}, native {}",
+                                native["value"]
+                            ));
+                        }
                     }
                     scene
                         .runtime

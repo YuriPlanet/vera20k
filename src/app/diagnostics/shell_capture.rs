@@ -2946,7 +2946,18 @@ impl ShellCaptureSession {
             capture.cleanup()?;
         }
 
-        self.outcome = Some(Ok(()));
+        // The bundle keeps every partial observation, but an incomplete
+        // measurement must not exit as a successful capture.
+        self.outcome = Some(
+            match self
+                .movies
+                .as_ref()
+                .and_then(movies::MoviesCapture::measurement_failure)
+            {
+                Some(failure) => Err(failure),
+                None => Ok(()),
+            },
+        );
         Ok(())
     }
 

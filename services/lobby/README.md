@@ -29,6 +29,20 @@ mode-0600 JSON file outside the repository containing `RELAY_TICKET_KEY`, then r
 relay's systemd credential. The CLI's authentication stays in its own credential
 storage. No provider token or server key belongs in the build or client.
 
+For regional relays, set `VERA20K_RELAYS` instead to a JSON list such as
+`[{"address":"203.0.113.1:5000","key":"RELAY_TICKET_KEY","latitude":50.1,"longitude":8.7}]`.
+Each `key` names a `RELAY_TICKET_KEY` or `RELAY_TICKET_KEY_<NAME>` secret in the
+same secrets file. Give each relay its own key. Each match uses the relay nearest
+its farthest playing human, judged from Cloudflare's IP location rounded to whole degrees.
+It keeps that relay through renewal and resume. When a player's location is unknown,
+the first relay serves the match. Keep the previous relay first while older matches finish.
+Sessions keep the rounded location only until their normal cleanup.
+Add `"federation":true` to relays that run federation. When every human signed
+in with a client that sends `Vera-Relay-Federation: 1`, the playing humans'
+nearest federation relays differ, and homing each on its own relay beats the best
+single relay by about 25 ms of round trip, the match federates those relays (at
+most six) and each player's grants name their home relay.
+
 Chat translation (`POST /v1/translate`) calls a separately deployed Worker through a
 service binding. Set `VERA20K_TRANSLATOR_WORKER` to its name when deploying; without it
 the lobby deploys unbound and reports `translation_unavailable`. Deploy that Worker

@@ -387,7 +387,7 @@ fn production_rules(fire_up: u32) -> RuleSet {
     // The receiver-only fixture has the default Sight=1. Give this full-frame
     // scenario the retail GI sight/locomotor inputs so its target three cells
     // away is visible through the ordinary fog update and firing gates.
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+    let rules_ini = &IniFile::from_str(
         "[InfantryTypes]\n0=E1\n1=E2\n[BuildingTypes]\n0=TARGET\n\
          [E1]\nStrength=125\nArmor=flak\nSpeed=4\nSight=5\nImage=GI\nPrimary=M60\n\
          Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\nMovementZone=Infantry\n\
@@ -395,12 +395,12 @@ fn production_rules(fire_up: u32) -> RuleSet {
          [TARGET]\nStrength=125\nArmor=flak\nFoundation=2x3\n\
          [M60]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\n\
          [SA]\nVerses=100%,100%,100%,90%,70%,0%,100%,25%,25%,0%,0%\n",
-    ))
-    .unwrap();
+    );
     let art_ini = IniFile::from_str(&format!(
         "[GI]\nFireUp={fire_up}\nPrimaryFireFLH=80,20,40\nSequence=GISequence\n\
          [GISequence]\nReady=0,1,1\nGuard=0,1,1\nFireUp=8,6,6\n",
     ));
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
     rules.bind_animation_sequences(
         &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini),

@@ -573,6 +573,14 @@ pub(crate) fn render_fullscreen_movie(
         texture: movie.surface().batch_texture(),
         instances: vec![instance],
     }];
+    let subtitle: Vec<_> = movie
+        .subtitle_text(
+            &state.renderer.bit_font,
+            state.renderer.gpu.config.width as i32,
+            state.renderer.gpu.config.height as i32,
+        )
+        .into_iter()
+        .collect();
     encode_shell_pass(
         state,
         encoder,
@@ -580,6 +588,7 @@ pub(crate) fn render_fullscreen_movie(
         "Play_Movie",
         ShellComposition {
             draws: &draws,
+            text: &subtitle,
             ..ShellComposition::default()
         },
     );

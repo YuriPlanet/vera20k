@@ -203,7 +203,7 @@ fn pull_sensor_ship_across_cell(
     );
 }
 
-/// Imbue710000 preserves the sensor deposit; Jumpjet54AEC0 has no airborne
+/// Imbue710000 preserves the sensor circle; Jumpjet54AEC0 has no airborne
 /// PerCell. FootLimbo4DB376 removes at current GetCoords, not that old center.
 #[test]
 fn retail_lifted_destroyer_keeps_its_sensor_circle_until_real_lifecycle_callbacks() {
@@ -223,23 +223,11 @@ fn retail_lifted_destroyer_keeps_its_sensor_circle_until_real_lifecycle_callback
     // Keep the extra human house alive under the normal ShortGame option.
     spawn(&mut runtime.simulation, rules, "PCV", &enemy_name, 88, 49);
     // Physical bank and water, within MagneticBeam's stock 3..12 range.
-    // Spawn/Unlimbo supplies the deposit; no lift, head or sensor state is set.
+    // Spawn/Unlimbo supplies the circle; no lift, head or sensor state is set.
     let magnetron = spawn(&mut runtime.simulation, rules, "TELE", &enemy_name, 87, 50);
     let ship = spawn(&mut runtime.simulation, rules, "DEST", &player_name, 89, 54);
-    let origin = entity(&runtime.simulation, ship)
-        .sensor_deposit
-        .unwrap()
-        .center();
-    assert_eq!(origin, (89, 54));
+    let origin = (89, 54);
     let at = pull_sensor_ship_across_cell(runtime, magnetron, ship);
-    assert_eq!(
-        entity(&runtime.simulation, ship)
-            .sensor_deposit
-            .unwrap()
-            .center(),
-        origin,
-        "airborne cell crossing does not move the native sensor circle"
-    );
     let sim = &runtime.simulation;
     let current_circle = sim.fog.sensor_circle_cells(at, radius);
     let old_only = sim
@@ -250,7 +238,7 @@ fn retail_lifted_destroyer_keeps_its_sensor_circle_until_real_lifecycle_callback
         .unwrap();
     assert!(
         sim.fog.has_sensor_for_house(player, old_only.0, old_only.1),
-        "the original circle still supplies submarine detection"
+        "airborne cell crossing does not move the native sensor circle"
     );
     assert!(sim.fog.has_sensor_for_house(player, origin.0, origin.1));
     let counters = sim.fog.sensors_by_house().clone();
@@ -264,13 +252,6 @@ fn retail_lifted_destroyer_keeps_its_sensor_circle_until_real_lifecycle_callback
         FrameEffects::default(),
     );
     assert_eq!(runtime.simulation.fog.sensors_by_house(), &counters);
-    assert_eq!(
-        entity(&runtime.simulation, ship)
-            .sensor_deposit
-            .unwrap()
-            .center(),
-        origin
-    );
     // Unit's actual airborne damage/UnInit owns the current-coordinate remove.
     // Old-only coverage survives it natively; overlapping coverage is removed.
     kill(
@@ -367,10 +348,17 @@ fn retail_controller_death_restores_a_lifted_ships_current_sensor_circle() {
         }
     }
     assert!(captured, "the ground ship is captured through MindControl");
-    let origin = entity(&runtime.simulation, ship)
-        .sensor_deposit
-        .unwrap()
-        .center();
+    // Foot ChangeOwner4DBF81 re-adds for the captor at the current cell.
+    let origin = {
+        let captured = entity(&runtime.simulation, ship);
+        (captured.position.rx(), captured.position.ry())
+    };
+    assert!(
+        runtime
+            .simulation
+            .fog
+            .has_sensor_for_house(captor, origin.0, origin.1)
+    );
     let magnetron = spawn(
         &mut runtime.simulation,
         &runtime.resources.rules,
@@ -382,7 +370,6 @@ fn retail_controller_death_restores_a_lifted_ships_current_sensor_circle() {
     let at = pull_sensor_ship_across_cell(runtime, magnetron, ship);
     let held = entity(&runtime.simulation, ship);
     assert_eq!(held.owner(), captor);
-    assert_eq!(held.sensor_deposit.unwrap().center(), origin);
     assert_eq!(
         runtime
             .simulation
@@ -424,18 +411,16 @@ fn retail_controller_death_restores_a_lifted_ships_current_sensor_circle() {
     assert_eq!(freed.owner(), player);
     assert_eq!((freed.position.rx(), freed.position.ry()), at);
     assert_eq!(
-        freed.sensor_deposit.unwrap().center(),
-        at,
-        "restoration adds around the current cell after the owner flip"
-    );
-    assert_eq!(
         freed.navigation.neighbor_state().cell(),
         (origin.0 as i16, origin.1 as i16),
         "high-flight owner change preserves the distinct PerCell source"
     );
     assert!(sim.fog.has_sensor_for_house(captor, old_only.0, old_only.1));
     assert!(!sim.fog.has_sensor_for_house(captor, origin.0, origin.1));
-    assert!(sim.fog.has_sensor_for_house(player, at.0, at.1));
+    assert!(
+        sim.fog.has_sensor_for_house(player, at.0, at.1),
+        "restoration adds around the current cell after the owner flip"
+    );
     assert!(!sim.fog.has_sensor_for_house(player, old_only.0, old_only.1));
     assert!(
         freed.lift.source().is_none(),
@@ -452,7 +437,8 @@ fn retail_controller_death_restores_a_lifted_ships_current_sensor_circle() {
         if !ship.lift.swap_active()
             && ship.locomotor.as_ref().unwrap().active_kind() == LocomotorKind::Ship
         {
-            let center = ship.sensor_deposit.unwrap().center();
+            // Touchdown's PerCell adds at the landing cell.
+            let center = (ship.position.rx(), ship.position.ry());
             assert_eq!(
                 ship.navigation.neighbor_state().cell(),
                 (center.0 as i16, center.1 as i16)

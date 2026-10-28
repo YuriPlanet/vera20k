@@ -15,7 +15,9 @@ use std::num::NonZeroU32;
 mod sequenced;
 mod startup;
 mod timing;
-pub use sequenced::{MultiplayerPauseStatus, SequencedError, SequencedTiming};
+pub use sequenced::{
+    CommandDeliveryTrace, MultiplayerPauseStatus, SequencedError, SequencedTiming,
+};
 pub use startup::{StartupAgreement, StartupError};
 
 use crate::sim::world::{NetworkCommandQueues, NetworkQueueContext, NetworkQueuePass};
@@ -288,6 +290,14 @@ impl LiveCommandSession {
     /// owned by this session, irrespective of presentation's chosen cadence.
     pub fn sequenced_timing(&self) -> Option<SequencedTiming> {
         self.sequenced.as_ref()?.timing()
+    }
+
+    /// App diagnostics: recent local command batches' send, relay frame
+    /// assignment and sealed-frame receipt times.
+    pub fn command_delivery_traces(&self) -> impl Iterator<Item = &CommandDeliveryTrace> {
+        self.sequenced
+            .iter()
+            .flat_map(|session| session.command_traces())
     }
 
     /// Shared pause is a relay timeline control, independent of local menus.

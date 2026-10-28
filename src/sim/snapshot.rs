@@ -2282,17 +2282,7 @@ impl Simulation {
             .overlay_grid
             .as_ref()
             .expect("validated overlay cache")
-            .iter_occupied()
-            .filter_map(|(rx, ry, cell)| {
-                cell.overlay_id
-                    .map(|overlay_id| crate::map::overlay::OverlayEntry {
-                        rx,
-                        ry,
-                        overlay_id,
-                        frame: cell.overlay_data,
-                    })
-            })
-            .collect();
+            .occupied_entries();
         let native_tiberium_stats =
             self.rebuild_native_tiberium_queues_after_snapshot_load(rules, overlay_registry)?;
         // CellTag identities are meaningful only after the canonical Cell
@@ -6462,7 +6452,6 @@ mod tests {
         use crate::sim::cloak_disguise::CloakRuntime;
         use crate::sim::combat::Health;
         use crate::sim::game_entity::GameEntity;
-        use crate::sim::sensor_lifecycle::SensorDeposit;
 
         let mut sim = Simulation::new();
         let viewer = sim.interner.intern("AMERICANS");
@@ -6496,7 +6485,6 @@ mod tests {
         let mut cloak = CloakRuntime::new(0);
         cloak.establish_unlimbo_fully_cloaked();
         entity.cloak = Some(cloak);
-        entity.sensor_deposit = Some(SensorDeposit::unit(viewer, (3, 3), 2));
         sim.substrate.entities.insert(entity);
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // fog/sensor/cloak persistence on that same post-load cursor.
@@ -6504,7 +6492,7 @@ mod tests {
         let expected_hash = sim.state_hash();
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "cell_fog_sensor_cloak", 0);
-        let mut restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
+        let restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
 
         assert_eq!(restored.state_hash(), expected_hash);
         assert_eq!(restored.fog.fogged_objects().len(), 1);
@@ -6515,25 +6503,6 @@ mod tests {
             restored_entity.cloak,
             sim.substrate.entities.get(entity_id).unwrap().cloak
         );
-        assert_eq!(
-            restored_entity.sensor_deposit,
-            sim.substrate
-                .entities
-                .get(entity_id)
-                .unwrap()
-                .sensor_deposit
-        );
-        let same_hash = restored.state_hash();
-        restored
-            .substrate
-            .entities
-            .get_mut(entity_id)
-            .unwrap()
-            .sensor_deposit
-            .as_mut()
-            .unwrap()
-            .set_center_for_test((4, 3));
-        assert_ne!(restored.state_hash(), same_hash);
     }
 
     #[test]

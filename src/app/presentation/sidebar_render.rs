@@ -142,7 +142,6 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         build_options,
         queue_items,
         ready_buildings,
-        producer_focus,
         credits,
         power_produced,
         power_drained,
@@ -156,19 +155,6 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
                 .map(|rt| &rt.simulation)?,
             state.rules()?,
         );
-        let producer_focus = [
-            production::ProductionCategory::Building,
-            production::ProductionCategory::Defense,
-            production::ProductionCategory::Infantry,
-            production::ProductionCategory::Vehicle,
-            production::ProductionCategory::Aircraft,
-            production::ProductionCategory::Ship,
-        ]
-        .into_iter()
-        .filter_map(|category| {
-            production::active_producer_for_owner_category(sim, rules, &owner_name, category)
-        })
-        .collect::<Vec<_>>();
         let owner_iid = sim.interner().get(&owner_name).unwrap_or_default();
         let sw_views = crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner_iid);
         let (power_produced, power_drained) =
@@ -177,7 +163,6 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
             production::all_build_options_for_owner(sim, rules, &owner_name),
             production::queue_view_for_owner(sim, rules, &owner_name),
             production::ready_buildings_for_owner(sim, rules, &owner_name),
-            producer_focus,
             counter_credits(sim, &owner_name),
             power_produced,
             power_drained,
@@ -331,7 +316,6 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         &build_options,
         &ready_buildings,
         armed_entry.as_ref(),
-        &producer_focus,
         state
             .match_state
             .sim_runtime

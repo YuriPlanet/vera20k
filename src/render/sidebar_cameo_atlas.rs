@@ -9,6 +9,7 @@ use std::path::Path;
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::Palette;
 use crate::assets::shp_file::ShpFile;
+use crate::render::atlas_growth;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::gpu::GpuContext;
 use crate::rules::ruleset::RuleSet;
@@ -647,43 +648,33 @@ fn pack_cameos(
     batch: &BatchRenderer,
     cameos: &[RenderedCameo],
 ) -> Option<SidebarCameoAtlas> {
-    let mut indices: Vec<usize> = (0..cameos.len()).collect();
-    indices.sort_by(|&a, &b| cameos[b].height.cmp(&cameos[a].height));
-
-    let total_area: u64 = cameos
-        .iter()
-        .map(|cameo| {
-            (cameo.width as u64 + CAMEO_PADDING as u64)
-                * (cameo.height as u64 + CAMEO_PADDING as u64)
-        })
-        .sum();
     let max_texture_dim = gpu.device.limits().max_texture_dimension_2d;
     let widest_cameo = cameos.iter().map(|cameo| cameo.width).max().unwrap_or(1);
     if widest_cameo > max_texture_dim {
         log::error!("Sidebar cameo width {widest_cameo} exceeds GPU limit {max_texture_dim}");
         return None;
     }
-    let mut atlas_width =
-        ((total_area as f64).sqrt().ceil() as u32).clamp(widest_cameo.max(64), max_texture_dim);
-    let placements;
-    let atlas_height;
-
-    loop {
-        let (trial_placements, trial_height) = shelf_pack(cameos, &indices, atlas_width);
-        if trial_height <= max_texture_dim {
-            placements = trial_placements;
-            atlas_height = trial_height;
-            break;
-        }
-        if atlas_width >= max_texture_dim {
-            log::error!(
-                "Sidebar cameo atlas exceeds GPU limit even at max width: height={} limit={}",
-                trial_height,
-                max_texture_dim
-            );
-            return None;
-        }
-        atlas_width = (atlas_width.saturating_mul(2)).min(max_texture_dim);
+    let sizes: Vec<[u32; 2]> = cameos
+        .iter()
+        .map(|cameo| [cameo.width, cameo.height])
+        .collect();
+    let plan = atlas_growth::plan_initial_shelves(
+        &sizes,
+        atlas_growth::InitialShelfPolicy {
+            padding: CAMEO_PADDING,
+            max_dim: max_texture_dim,
+            split_pages: false,
+        },
+    );
+    let atlas_width = plan.width;
+    let atlas_height = plan.single_page_height();
+    if atlas_height > max_texture_dim {
+        log::error!(
+            "Sidebar cameo atlas exceeds GPU limit even at max width: height={} limit={}",
+            atlas_height,
+            max_texture_dim
+        );
+        return None;
     }
     let mut rgba = vec![0u8; (atlas_width * atlas_height * 4) as usize];
     let mut entries = HashMap::with_capacity(cameos.len());
@@ -692,8 +683,9 @@ fn pack_cameos(
     let aw = atlas_width as f32;
     let ah = atlas_height as f32;
 
-    for (idx, px, py) in placements {
-        let cameo = &cameos[idx];
+    for placed in &plan.placements {
+        let [px, py] = placed.origin;
+        let cameo = &cameos[placed.index];
         for y in 0..cameo.height {
             let src_start = (y * cameo.width * 4) as usize;
             let dst_start = (((py + y) * atlas_width + px) * 4) as usize;
@@ -724,34 +716,6 @@ fn pack_cameos(
         alt_entries,
         superweapon_entries,
     })
-}
-
-fn shelf_pack(
-    cameos: &[RenderedCameo],
-    indices: &[usize],
-    atlas_width: u32,
-) -> (Vec<(usize, u32, u32)>, u32) {
-    let mut placements: Vec<(usize, u32, u32)> = Vec::with_capacity(cameos.len());
-    let mut cursor_x = 0;
-    let mut cursor_y = 0;
-    let mut shelf_height = 0;
-    for &idx in indices {
-        let cameo = &cameos[idx];
-        if cursor_x + cameo.width > atlas_width {
-            cursor_y += shelf_height + CAMEO_PADDING;
-            cursor_x = 0;
-            shelf_height = 0;
-        }
-        placements.push((idx, cursor_x, cursor_y));
-        cursor_x += cameo.width + CAMEO_PADDING;
-        shelf_height = shelf_height.max(cameo.height);
-    }
-    let atlas_height = placements
-        .iter()
-        .map(|(idx, _, py)| py + cameos[*idx].height)
-        .max()
-        .unwrap_or(1);
-    (placements, atlas_height)
 }
 
 #[cfg(test)]

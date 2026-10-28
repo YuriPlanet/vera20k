@@ -1735,6 +1735,10 @@ impl MoviesCapture {
         Ok(())
     }
 
+    pub(super) fn measurement_failure(&self) -> Option<String> {
+        self.lan.as_ref()?.measurement_failure()
+    }
+
     pub(super) fn owns_simulation_steps(&self, state: &AppState) -> bool {
         if let Some(lan) = self.lan.as_ref() {
             return lan.owns_simulation_steps(state);

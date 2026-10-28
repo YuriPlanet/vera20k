@@ -18,13 +18,13 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::vpl_file::VplFile;
+use crate::render::atlas_growth::ShelfCursor;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::unit_atlas::{PoseTilt, UnitModel, UnitSpriteEntry, UnitSpriteKey};
 use crate::render::vxl_raster::{VxlLighting, VxlSprite};
 use crate::rules::ruleset::RuleSet;
 
 const PAGE_SIZE: u32 = 1024;
-const SPRITE_PADDING: u32 = 1;
 
 #[derive(Default)]
 pub struct VxlPoseFrameCache {
@@ -40,12 +40,9 @@ pub struct VxlPoseFrameCache {
     image_models: BTreeMap<String, ImageModel>,
 }
 
-#[derive(Default)]
 struct PosePage {
     pixels: Vec<u8>,
-    cursor_x: u32,
-    cursor_y: u32,
-    shelf_height: u32,
+    shelf: ShelfCursor,
     dirty: bool,
     texture: Option<BatchTexture>,
 }
@@ -437,43 +434,27 @@ impl PosePage {
     fn new() -> Self {
         Self {
             pixels: vec![0; (PAGE_SIZE * PAGE_SIZE) as usize],
-            ..Self::default()
+            shelf: ShelfCursor::new(PAGE_SIZE, PAGE_SIZE),
+            dirty: false,
+            texture: None,
         }
     }
 
     fn begin_frame(&mut self) {
         let used = (self.used_rows() * PAGE_SIZE) as usize;
         self.pixels[..used].fill(0);
-        self.cursor_x = 0;
-        self.cursor_y = 0;
-        self.shelf_height = 0;
+        self.shelf = ShelfCursor::new(PAGE_SIZE, PAGE_SIZE);
         self.dirty = false;
     }
 
     /// Rows holding this frame's sprites: every closed shelf and the open one.
     fn used_rows(&self) -> u32 {
-        (self.cursor_y + self.shelf_height).min(PAGE_SIZE)
+        self.shelf.used_height().min(PAGE_SIZE)
     }
 
     fn try_place(&mut self, sprite: &VxlSprite) -> Option<(u32, u32)> {
-        let (w, h) = (sprite.width, sprite.height);
-        if w > PAGE_SIZE || h > PAGE_SIZE {
-            return None;
-        }
-        if self.cursor_x + w > PAGE_SIZE {
-            self.cursor_y = self
-                .cursor_y
-                .saturating_add(self.shelf_height + SPRITE_PADDING);
-            self.cursor_x = 0;
-            self.shelf_height = 0;
-        }
-        if self.cursor_y + h > PAGE_SIZE {
-            return None;
-        }
-        let position = (self.cursor_x, self.cursor_y);
-        self.cursor_x = self.cursor_x.saturating_add(w + SPRITE_PADDING);
-        self.shelf_height = self.shelf_height.max(h);
-        Some(position)
+        let [x, y] = self.shelf.place(sprite.width, sprite.height)?;
+        Some((x, y))
     }
 
     fn blit(&mut self, sprite: &VxlSprite, px: u32, py: u32) {
@@ -489,6 +470,7 @@ impl PosePage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::atlas_growth::SPRITE_PADDING;
 
     fn ground_key(layer: crate::rules::voxel_frame_catalog::VxlLayer) -> UnitSpriteKey {
         UnitSpriteKey {
@@ -543,19 +525,14 @@ mod tests {
                 .render(&assets, Some(&battle.rules), &key, ground_pose(0.25))
                 .unwrap();
             let page = &cache.pages[first.page];
-            let allocation = (page.cursor_x, page.cursor_y, page.shelf_height);
+            let allocation = page.shelf;
             let pixels = cache.pages[first.page].pixels.clone();
             let repeated = cache
                 .render(&assets, Some(&battle.rules), &key, ground_pose(0.25))
                 .unwrap();
             assert_same_entry(repeated, first);
             assert_eq!(
-                (
-                    cache.pages[first.page].cursor_x,
-                    cache.pages[first.page].cursor_y,
-                    cache.pages[first.page].shelf_height
-                ),
-                allocation,
+                cache.pages[first.page].shelf, allocation,
                 "equal visible MTNK parts must not allocate a second rectangle"
             );
             assert_eq!(
@@ -694,22 +671,13 @@ mod tests {
             first.page > 0,
             "direct image poses share the overflow owner"
         );
-        let cursor = (
-            cache.pages[first.page].cursor_x,
-            cache.pages[first.page].cursor_y,
-            cache.pages[first.page].shelf_height,
-        );
+        let cursor = cache.pages[first.page].shelf;
         let repeated = cache
             .render_matrix(&assets, "ZBOMB", down, 0, true, VxlLighting::Diffuse)
             .unwrap();
         assert_same_entry(repeated, first);
         assert_eq!(
-            (
-                cache.pages[first.page].cursor_x,
-                cache.pages[first.page].cursor_y,
-                cache.pages[first.page].shelf_height
-            ),
-            cursor,
+            cache.pages[first.page].shelf, cursor,
             "equal simultaneous bombs must not consume extra page space"
         );
         let changed = cache

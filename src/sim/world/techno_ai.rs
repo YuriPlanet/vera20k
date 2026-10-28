@@ -199,8 +199,8 @@ impl Simulation {
     /// either side of the object's own locomotion, and both checkpoints are the
     /// same pair of virtuals — the readiness predicate at self-vtable `+0x200`
     /// followed by `Commence` at `+0x1ec` when it returns true. Our object-AI
-    /// stage is the first checkpoint (it runs immediately before Phase-1 ground
-    /// movement); this is the second.
+    /// stage is the first checkpoint (it runs immediately before the object's
+    /// own ground movement); this is the second.
     ///
     /// Without it a unit that came to rest during its own movement step could
     /// not commence until the next tick, so every mission commencement that

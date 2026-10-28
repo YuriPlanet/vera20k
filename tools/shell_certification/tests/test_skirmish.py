@@ -32,7 +32,7 @@ def fixture():
             "opponents": [], "options": {
                 "credits": 10000, "speed": 6, "units": 0, "short_game": True,
                 "super_weapons": True, "build_off_ally": True, "crates": False,
-                "mcv_redeploy": True, "zoom": False,
+                "mcv_redeploy": True,
             },
         },
         "frame": {"path": "frame.bgra", "byte_length": FRAME_BYTES,

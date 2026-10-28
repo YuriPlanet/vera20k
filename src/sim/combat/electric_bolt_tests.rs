@@ -212,9 +212,8 @@ fn retail_birth_fields_match_native_exact_flh() {
         physical["is_alternate_color"] == true
     );
     assert_eq!(weapon.range_leptons, int(&physical["range_leptons"]));
-    let art = retail.rules.art().get("NATSLA").unwrap();
     assert_eq!(
-        <[i32; 3]>::from(art.primary_fire_flh),
+        <[i32; 3]>::from(retail.rules.object("TESLA").unwrap().weapon_flh(0, false)),
         xyz(&ordinary_birth()["input"]["primary_flh"])
     );
 

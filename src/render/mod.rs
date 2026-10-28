@@ -27,6 +27,7 @@ pub mod bit_font;
 pub mod bridge_atlas;
 pub mod building_light;
 pub mod building_zshape;
+pub mod chrome_atlas;
 pub(crate) mod chrono_screen;
 pub mod combat_light;
 pub mod cursor_atlas;

@@ -97,3 +97,19 @@ test('retiring a visit aborts in-flight HTTP and cannot affect a later visit', a
     api.veraLobbyCancel(fresh);
     assert.equal(timers.size, 0);
 });
+
+test('an external launch targets its own match service origin, never a foreign or plain remote one', async () => {
+    const calls = [];
+    const {api} = fixture(async (...args) => { calls.push(args); return response(200, [new TextEncoder().encode('{}')]); });
+    for (const origin of ['http://match.example.com', 'https://match.example.com/v1', 'https://user@match.example.com',
+        'wss://match.example.com']) {
+        assert.throws(() => api.veraLobbyOpen('wss://wss.vera20k.com', origin), /Invalid service/);
+    }
+    const id = api.veraLobbyOpen('wss://wss.vera20k.com', 'https://match.example.com');
+    await api.veraLobbyRequest(id, '/v1/events?after=0', 'bearer', undefined, 10);
+    assert.equal(calls[0][0], 'https://match.example.com/v1/events?after=0');
+    const local = api.veraLobbyOpen('wss://wss.vera20k.com', 'http://127.0.0.1:8080');
+    await api.veraLobbyRequest(local, '/v1/commands', 'bearer', '{}', 10);
+    assert.equal(calls[1][0], 'http://127.0.0.1:8080/v1/commands');
+    await assert.rejects(api.veraLobbyRequest(id, 'https://wss.vera20k.com/v1/events', undefined, undefined, 10));
+});

@@ -6,6 +6,7 @@ use super::*;
 use crate::app::match_runtime::session::NetworkRowKind;
 use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition, LaunchTeam};
 use crate::ui::multiplayer_setup::*;
+pub(crate) use start::begin_external_lan_go;
 
 pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
     let dialog = super::dialog(state);
@@ -334,8 +335,10 @@ fn accept(state: &mut AppState) -> anyhow::Result<()> {
 
 pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
     let quick_match = super::quick_match(state);
-    // Quick Match has no setup dialog whose teardown writes settings.
-    if !quick_match {
+    let external = super::external(state);
+    // Quick Match and external launches have no setup dialog whose
+    // teardown writes settings.
+    if !quick_match && !external {
         super::persist_setup_preferences(state);
     }
     if let Some(launch) = state.match_state.session.network_setup()
@@ -347,7 +350,9 @@ pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
         // The dialog has already slid out; a refused start returns to a
         // fresh BB like the failed network StartScenario retry (52E75F).
         log::error!("Cannot admit network country identity: {error}");
-        if quick_match {
+        if external {
+            App::fail_external_launch(state, &format!("network country identity: {error}"));
+        } else if quick_match {
             crate::app::shell_wol::start_aborted(state);
         } else {
             super::commit_back(state);
@@ -424,7 +429,9 @@ pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
         }
         Err(error) => {
             log::error!("Could not freeze accepted LAN start: {error:#}");
-            if quick_match {
+            if external {
+                App::fail_external_launch(state, &format!("network start: {error:#}"));
+            } else if quick_match {
                 crate::app::shell_wol::start_aborted(state);
             } else {
                 super::commit_back(state);

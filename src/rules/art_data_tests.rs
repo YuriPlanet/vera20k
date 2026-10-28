@@ -793,9 +793,9 @@ fn gsi_04_05_hidden_object_id_gate_is_distinct_from_image_metadata() {
 }
 
 #[test]
-fn parse_partial_offsets_collects_what_exists() {
-    // art has only DockingOffset0 and DockingOffset2 (gap at 1).
-    // Parser collects what's present. The art→rules merge handles sizing to NumberOfDocks.
+fn parse_partial_offsets_keeps_each_pad_at_its_index() {
+    // art has only DockingOffset0 and DockingOffset2 (gap at 1). Native reads
+    // each slot by index (0x004649AF..0x00464A41); slot 1 keeps its zero.
     let ini: IniFile = IniFile::from_str(
         "[ODD]\n\
          DockingOffset0=64,0,0\n\
@@ -803,9 +803,10 @@ fn parse_partial_offsets_collects_what_exists() {
     );
     let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
     let entry: &ArtEntry = reg.get("ODD").expect("ODD entry");
-    assert_eq!(entry.pads.len(), 2, "filter_map skips missing index 1");
+    assert_eq!(entry.pads.len(), 3);
     assert_eq!(entry.pads[0].lepton_offset, (64, 0, 0));
-    assert_eq!(entry.pads[1].lepton_offset, (192, 0, 0));
+    assert_eq!(entry.pads[1].lepton_offset, (0, 0, 0));
+    assert_eq!(entry.pads[2].lepton_offset, (192, 0, 0));
 }
 
 #[test]

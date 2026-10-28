@@ -580,7 +580,10 @@ impl Simulation {
                 if matches!(outcome, RevealOutcome::Revealed { .. }) {
                     Self::initialize_cloak_after_unlimbo(&sim.interner, &sim.session, &mut sim.substrate, stable_id, rules);
                     sim.add_unit_sensor_after_unlimbo(stable_id, rules, overlay_registry);
-                    sim.add_building_sensor_array_if_powered(stable_id, rules, overlay_registry);
+                    // ReadScenarioBuildings (0x0044F820) makes no sensor call:
+                    // a map building stamps only if the first opening its
+                    // Unlimbo already ran (0x00440D61 / 0x00440E76) passed
+                    // Is_Operational.
                 }
                 Self::commit_map_placement_mission(&sim.session, &mut sim.substrate, stable_id, map_ent.mission);
                 // ReadINI44FC1B..44FD23: the factory callback is inside

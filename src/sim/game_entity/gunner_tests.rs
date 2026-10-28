@@ -64,6 +64,8 @@ fn replay_selector_events(entity: &mut GameEntity, object: &ObjectType, events: 
     assert_eq!(entity.turret_selection.charge_turret_delay, before_delay);
 }
 
+// The installed Ares SwitchGunner hook uses WeaponCount instead of eighteen.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn gunner_constructor_and_selector_match_original_components() {
     let native = corpus();
@@ -90,6 +92,8 @@ fn gunner_constructor_and_selector_match_original_components() {
     }
 }
 
+// The installed Ares SwitchGunner hook uses WeaponCount instead of eighteen.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn native_selector_ignores_turret_count_and_gattling_gates() {
     let native = corpus();

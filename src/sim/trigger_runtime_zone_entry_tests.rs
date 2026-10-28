@@ -321,6 +321,73 @@ fn zone_entry_from_an_ordinary_move_publishes_the_authored_camera_action() {
 }
 
 #[test]
+#[cfg(not(feature = "ares"))]
+fn vanilla_event_fallback_reaches_actions_from_an_ordinary_cell_entry() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    // HasOccurred71E950's unsigned range dispatch admits unknown kinds to
+    // its true tail. Explicit kind0 and kind18 retain their own predicates.
+    for (kind, fires) in [(-1, true), (62, true), (0, false), (18, false)] {
+        let (mut sim, rules, overlays, houses) =
+            event_ingress_fixture_with_rules("[TAGUNIT]\nROT=5\n");
+        let owner = sim.houses.get_mut(&houses[0]).unwrap();
+        owner.set_is_human_for_test(true);
+        owner.set_player_control_for_test(true);
+        let actor = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
+        let map = install_event_ingress_map(
+            &mut sim,
+            &rules,
+            &format!(
+                "[Triggers]\nENTRY=Country0,<none>,Entry,0,1,1,1,0\n\
+                 [Events]\nENTRY=2,59,0,-1,{kind},0,0\n\
+                 [Actions]\nENTRY=1,112,0,0,0,0,0,0,A\n\
+                 [Tags]\nTAG=2,Entry,ENTRY\n[CellTags]\n15017=TAG\n\
+                 [Waypoints]\n0=17017\n"
+            ),
+        );
+        assert_eq!(sim.trigger_runtime.cell_tags.len(), 1);
+        sim.session.install_waypoints(&map.waypoints);
+        sim.queue_command(CommandEnvelope::new(
+            houses[0],
+            sim.session.tick() + 1,
+            Command::Move {
+                entity_id: actor,
+                target_rx: 17,
+                target_ry: 15,
+            },
+        ));
+        let mut camera = Vec::new();
+        for _ in 0..120 {
+            let commands = sim.take_due_commands();
+            sim.advance_tick(&commands, Some(&rules), None, Some(&overlays), 33);
+            camera.extend(sim.drain_trigger_effects());
+        }
+        let unit = sim.entities().get(actor).unwrap();
+        assert_eq!((unit.position.rx(), unit.position.ry()), (17, 15));
+        assert!(
+            sim.trigger_runtime
+                .dispatch_trace
+                .iter()
+                .any(|call| call.1 == 1)
+        );
+        assert!(
+            sim.trigger_runtime
+                .dispatch_trace
+                .iter()
+                .any(|call| call.1 == 59)
+        );
+        let expected = if fires {
+            vec![TriggerEffect::CameraAtCoord {
+                coord: [4480, 4480, 0],
+                velocity: None,
+            }]
+        } else {
+            Vec::new()
+        };
+        assert_eq!(camera, expected, "vanilla event kind {kind}");
+    }
+}
+
+#[test]
 fn zone_entry_observes_destructor_changes_to_the_shared_map_cursor() {
     let (mut sim, rules, overlays, houses) = event_ingress_fixture();
     let actor = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));

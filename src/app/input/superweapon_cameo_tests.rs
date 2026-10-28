@@ -29,7 +29,6 @@ fn sidebar_item(
         &[],
         &[],
         None,
-        &[],
         Some(sim.interner()),
         &views,
         &SidebarGadgetState::default(),

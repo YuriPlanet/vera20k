@@ -16,9 +16,8 @@ use crate::assets::pal_file::Palette;
 use crate::assets::pcx_file::PcxFile;
 use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
+use crate::render::chrome_atlas::{ChromeAtlasEntry, ChromePiece, pack_chrome_atlas};
 use crate::render::gpu::GpuContext;
-
-const ATLAS_PADDING: u32 = 2;
 
 /// SDBTNANM.SHP frames baked for the first-paint slide ramp. The reveal animates
 /// "active" buttons through frames 5..=10 and "inactive" slots through 11..=16,
@@ -26,22 +25,7 @@ const ATLAS_PADDING: u32 = 2;
 /// clamps to the nearest available frame.
 const SDBTNANM_WAVE_FRAMES: usize = 17;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct MainMenuShellChromeEntry {
-    pub uv_origin: [f32; 2],
-    pub uv_size: [f32; 2],
-    pub pixel_size: [f32; 2],
-}
-
-impl MainMenuShellChromeEntry {
-    /// The image's native width and height in pixels.
-    pub fn native_size(self) -> (i32, i32) {
-        (
-            self.pixel_size[0].round() as i32,
-            self.pixel_size[1].round() as i32,
-        )
-    }
-}
+pub type MainMenuShellChromeEntry = ChromeAtlasEntry;
 
 pub struct MainMenuShellChromeAtlas {
     pub texture: BatchTexture,
@@ -121,13 +105,6 @@ fn blend_black_rgb565(rgba: &[u8], alpha: u8) -> Vec<u8> {
         .collect()
 }
 
-struct RenderedChromeEntry {
-    label: String,
-    width: u32,
-    height: u32,
-    rgba: Vec<u8>,
-}
-
 /// The `+0xD5` top panel's shapes, indexed by frame; `None` where missing.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TopPanelArt {
@@ -157,10 +134,10 @@ pub fn build_main_menu_shell_chrome_atlas(
         // Native SHP canvas size is read at parse time (not hardcoded).
         push_optional_shp(&mut rendered, assets, "MNSCRNS.SHP", pal, 0);
         push_optional_shp(&mut rendered, assets, "MNSCRNL.SHP", pal, 0);
-        let darkened: Vec<RenderedChromeEntry> = rendered
+        let darkened: Vec<ChromePiece> = rendered
             .iter()
             .filter(|entry| entry.label == "mnscrns.shp" || entry.label == "mnscrnl.shp")
-            .map(|entry| RenderedChromeEntry {
+            .map(|entry| ChromePiece {
                 label: format!("{}:list", entry.label),
                 width: entry.width,
                 height: entry.height,
@@ -194,14 +171,14 @@ pub fn build_main_menu_shell_chrome_atlas(
         }
     }
 
-    rendered.push(RenderedChromeEntry {
+    rendered.push(ChromePiece {
         label: "white".into(),
         width: 2,
         height: 2,
         rgba: vec![0xFF; 2 * 2 * 4],
     });
 
-    let (texture, packed) = pack_entries(gpu, batch, &rendered)
+    let (texture, packed) = pack_chrome_atlas(gpu, batch, "Main-menu shell chrome", &rendered)
         .context("Could not pack the required game-menu artwork")?;
     let mut by_label: std::collections::HashMap<String, MainMenuShellChromeEntry> =
         std::collections::HashMap::new();
@@ -267,7 +244,7 @@ pub fn build_main_menu_shell_chrome_atlas(
 }
 
 /// Decode mandatory buttons before GPU upload, retaining the asset and parser error.
-fn load_main_menu_button_frames(assets: &AssetManager) -> Result<Vec<RenderedChromeEntry>> {
+fn load_main_menu_button_frames(assets: &AssetManager) -> Result<Vec<ChromePiece>> {
     let palette = read_main_menu_button_palette(assets)?;
     let shp = read_main_menu_button_shape(assets)?;
     render_main_menu_button_frames(&shp, &palette)
@@ -315,10 +292,7 @@ fn read_main_menu_button_shape(assets: &AssetManager) -> Result<ShpFile> {
     Ok(shp)
 }
 
-fn render_main_menu_button_frames(
-    shp: &ShpFile,
-    palette: &Palette,
-) -> Result<Vec<RenderedChromeEntry>> {
+fn render_main_menu_button_frames(shp: &ShpFile, palette: &Palette) -> Result<Vec<ChromePiece>> {
     (0..shp.frames.len().min(SDBTNANM_WAVE_FRAMES))
         .map(|frame| {
             shp_frame_entry(
@@ -381,7 +355,7 @@ pub fn build_campaign_shell_art(
     let soviet_count = rendered.len() - allied_count;
     let mut labels: Vec<&str> = Vec::new();
     if let Some(entry) = render_shp_entry(assets, background, &background_pal?, 0, None) {
-        rendered.push(RenderedChromeEntry {
+        rendered.push(ChromePiece {
             label: "background:dark".into(),
             width: entry.width,
             height: entry.height,
@@ -396,14 +370,14 @@ pub fn build_campaign_shell_art(
     }
     let (frame_w, frame_h, frame_rgba) =
         crate::render::skirmish_shell_chrome::trackbar_frame_rgba(slider.0, slider.1, 0);
-    rendered.push(RenderedChromeEntry {
+    rendered.push(ChromePiece {
         label: "slider:frame".into(),
         width: frame_w,
         height: frame_h,
         rgba: frame_rgba,
     });
     labels.push("frame");
-    let (texture, packed) = pack_entries(gpu, batch, &rendered)?;
+    let (texture, packed) = pack_chrome_atlas(gpu, batch, "Main-menu shell chrome", &rendered)?;
     let extra = |name: &str| {
         labels
             .iter()
@@ -440,7 +414,7 @@ const IMAGE_STATIC_TRANSPARENT_RGB: [u8; 3] = [255, 0, 255];
 
 /// A kind-2 image static's PCX (the PCX cache `0x006BA140`), keyed to its
 /// transparent colour and labelled by its lower-case name.
-fn render_image_static_pcx(assets: &AssetManager, file: &str) -> Option<RenderedChromeEntry> {
+fn render_image_static_pcx(assets: &AssetManager, file: &str) -> Option<ChromePiece> {
     let bytes = assets.get_ref(file)?;
     let pcx = PcxFile::from_bytes(bytes)
         .map_err(|err| log::warn!("Could not parse {file}: {err:#}"))
@@ -448,7 +422,7 @@ fn render_image_static_pcx(assets: &AssetManager, file: &str) -> Option<Rendered
     let mut rgba = pcx.to_rgba(None);
     crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
         .apply_packed_color_key_rgba8(&mut rgba, IMAGE_STATIC_TRANSPARENT_RGB);
-    Some(RenderedChromeEntry {
+    Some(ChromePiece {
         label: file.to_ascii_lowercase(),
         width: pcx.width as u32,
         height: pcx.height as u32,
@@ -523,7 +497,8 @@ pub fn build_campaign_score_art(
     let palette_name = score_name(art.campaign_palette, palette_name);
     let palette = load_named_palette(assets, palette_name)?;
     let background = render_shp_entry(assets, background_name, &palette, 0, None)?;
-    let (texture, mut entries) = pack_entries(gpu, batch, &[background])?;
+    let (texture, mut entries) =
+        pack_chrome_atlas(gpu, batch, "Main-menu shell chrome", &[background])?;
     // SCRT and SCRA are distinct native SHPs. Keep their strips in separate
     // atlases so every frame remains independently addressable.
     let scrt = build_campaign_score_frame_strip(gpu, batch, assets, &palette, scrt_name);
@@ -548,7 +523,7 @@ fn build_campaign_score_frame_strip(
         log::warn!("Could not load campaign score shape frames {name}");
         return None;
     }
-    let (texture, frames) = pack_entries(gpu, batch, &rendered)?;
+    let (texture, frames) = pack_chrome_atlas(gpu, batch, "Main-menu shell chrome", &rendered)?;
     Some(CampaignScoreFrameStrip { texture, frames })
 }
 
@@ -602,7 +577,7 @@ pub fn build_score_art(
     if let Some(palette) = load_named_palette(assets, palette)
         && let Some(entry) = render_shp_entry(assets, shape, &palette, 0, None)
     {
-        rendered.push(RenderedChromeEntry {
+        rendered.push(ChromePiece {
             label: "background:shaded".into(),
             width: entry.width,
             height: entry.height,
@@ -625,7 +600,7 @@ pub fn build_score_art(
             None => log::warn!("Missing score bar {file}"),
         }
     }
-    let (texture, packed) = pack_entries(gpu, batch, &rendered)?;
+    let (texture, packed) = pack_chrome_atlas(gpu, batch, "Main-menu shell chrome", &rendered)?;
     let find = |name: &str| {
         labels
             .iter()
@@ -671,7 +646,7 @@ pub fn build_wol_page_art(
         rendered.push(entry);
         labels.push(name);
     }
-    let (texture, packed) = pack_entries(gpu, batch, &rendered)?;
+    let (texture, packed) = pack_chrome_atlas(gpu, batch, "Main-menu shell chrome", &rendered)?;
     let mut background = None;
     let mut icons = Vec::new();
     for (label, entry) in labels.into_iter().zip(packed) {
@@ -704,7 +679,7 @@ fn read_named_palette(assets: &AssetManager, name: &str) -> Result<Palette> {
 }
 
 fn push_optional_shp(
-    out: &mut Vec<RenderedChromeEntry>,
+    out: &mut Vec<ChromePiece>,
     assets: &AssetManager,
     file_name: &str,
     palette: &Palette,
@@ -722,7 +697,7 @@ fn render_shp_entry(
     palette: &Palette,
     frame: usize,
     tag: Option<&str>,
-) -> Option<RenderedChromeEntry> {
+) -> Option<ChromePiece> {
     let load = assets.load_file_from_mix(file_name)?;
     let shp = ShpFile::from_bytes(&load.bytes).ok()?;
     shp_frame_entry(&shp, file_name, palette, frame, tag).ok()
@@ -734,7 +709,7 @@ fn render_shp_frames(
     file_name: &str,
     palette: &Palette,
     tag_prefix: &str,
-) -> Vec<RenderedChromeEntry> {
+) -> Vec<ChromePiece> {
     let Some(load) = assets.load_file_from_mix(file_name) else {
         return Vec::new();
     };
@@ -763,7 +738,7 @@ fn shp_frame_entry(
     palette: &Palette,
     frame: usize,
     tag: Option<&str>,
-) -> Result<RenderedChromeEntry> {
+) -> Result<ChromePiece> {
     let frame_rgba = shp
         .frame_to_rgba(frame, palette)
         .with_context(|| format!("Could not render {file_name} frame {frame}"))?;
@@ -792,7 +767,7 @@ fn shp_frame_entry(
         Some(t) => format!("{}:{}", file_name.to_ascii_lowercase(), t),
         None => file_name.to_ascii_lowercase(),
     };
-    Ok(RenderedChromeEntry {
+    Ok(ChromePiece {
         label,
         width: canvas_w,
         height: canvas_h,
@@ -801,87 +776,15 @@ fn shp_frame_entry(
 }
 
 /// A PCX in its own palette, full canvas.
-fn render_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<RenderedChromeEntry> {
+fn render_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<ChromePiece> {
     let bytes = assets.get_ref(file_name)?;
     let pcx = PcxFile::from_bytes(bytes).ok()?;
-    Some(RenderedChromeEntry {
+    Some(ChromePiece {
         label: file_name.to_ascii_lowercase(),
         width: pcx.width as u32,
         height: pcx.height as u32,
         rgba: pcx.to_rgba(None),
     })
-}
-
-fn pack_entries(
-    gpu: &GpuContext,
-    batch: &BatchRenderer,
-    entries: &[RenderedChromeEntry],
-) -> Option<(BatchTexture, Vec<MainMenuShellChromeEntry>)> {
-    if entries.is_empty() {
-        return None;
-    }
-
-    let atlas_width = entries
-        .iter()
-        .map(|entry| entry.width)
-        .max()
-        .unwrap_or(1)
-        .max(1024);
-    let mut x = 0u32;
-    let mut y = 0u32;
-    let mut row_h = 0u32;
-    let mut placements = Vec::with_capacity(entries.len());
-
-    for entry in entries {
-        if x > 0 && x + entry.width + ATLAS_PADDING > atlas_width {
-            x = 0;
-            y += row_h + ATLAS_PADDING;
-            row_h = 0;
-        }
-        placements.push((x, y));
-        x += entry.width + ATLAS_PADDING;
-        row_h = row_h.max(entry.height);
-    }
-
-    let atlas_height = (y + row_h).next_power_of_two().max(1);
-    let mut rgba = vec![0u8; (atlas_width * atlas_height * 4) as usize];
-
-    for (entry, (px, py)) in entries.iter().zip(placements.iter().copied()) {
-        for row in 0..entry.height {
-            let src = (row * entry.width * 4) as usize;
-            let dst = (((py + row) * atlas_width + px) * 4) as usize;
-            let len = (entry.width * 4) as usize;
-            rgba[dst..dst + len].copy_from_slice(&entry.rgba[src..src + len]);
-        }
-    }
-
-    log::info!(
-        "Main-menu shell chrome atlas: {}x{} px, {} pieces",
-        atlas_width,
-        atlas_height,
-        entries.len()
-    );
-    for entry in entries {
-        log::info!("  {}: {}x{}", entry.label, entry.width, entry.height);
-    }
-
-    let texture = batch.create_texture(gpu, &rgba, atlas_width, atlas_height);
-    let atlas_entries = entries
-        .iter()
-        .zip(placements)
-        .map(|(entry, (px, py))| MainMenuShellChromeEntry {
-            uv_origin: [
-                px as f32 / atlas_width as f32,
-                py as f32 / atlas_height as f32,
-            ],
-            uv_size: [
-                entry.width as f32 / atlas_width as f32,
-                entry.height as f32 / atlas_height as f32,
-            ],
-            pixel_size: [entry.width as f32, entry.height as f32],
-        })
-        .collect();
-    Some((texture, atlas_entries))
 }
 
 #[cfg(test)]

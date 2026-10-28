@@ -322,10 +322,17 @@ pub(crate) fn paint_wol_lobby_children(
         } else {
             SHELL_LABEL_TEXT_RGB
         };
+        // The modern list keeps one retail icon, a password game's lock, in
+        // the first icon column; that row's name starts at the next one.
+        let name_x = if row.keyed {
+            GAME_PASSWORD_X
+        } else {
+            GAME_TYPE_X
+        };
         paint.texts.push(text(
             &row.text,
             if modern {
-                cell(rect, 2, GAME_PING_X - 4)
+                cell(rect, name_x, GAME_PING_X - 2 - name_x)
             } else {
                 cell(rect, GAME_NAME_X, GAME_NAME_W)
             },
@@ -348,7 +355,20 @@ pub(crate) fn paint_wol_lobby_children(
             None => (cell(rect, GAME_PING_X, 0), ShellAlign::V_CENTER),
         };
         paint.texts.push(text(&ping, ping_rect, ping_align, rgb));
-        if !modern && let Some(art) = art {
+        if modern {
+            if row.keyed
+                && let Some(art) = art
+            {
+                push_icon(
+                    &mut paint.icons,
+                    art,
+                    "wolpriv.pcx",
+                    rect,
+                    GAME_TYPE_X,
+                    scale,
+                );
+            }
+        } else if let Some(art) = art {
             push_icon(
                 &mut paint.icons,
                 art,

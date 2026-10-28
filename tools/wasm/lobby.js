@@ -3,12 +3,24 @@
     const visits = new Map();
     let next = 1;
 
-    globalThis.veraLobbyOpen = function(proxyOrigin) {
-        const url = new URL(proxyOrigin);
-        const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-        if (!(url.protocol === 'wss:' || (url.protocol === 'ws:' && local)) || url.username || url.password
-            || url.pathname !== '/' || url.search || url.hash) throw new Error('Invalid proxy origin');
-        url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+    // serviceOrigin: an external launch's match API (docs/spawn.md); the
+    // built-in lobby shares the gateway's origin.
+    globalThis.veraLobbyOpen = function(proxyOrigin, serviceOrigin) {
+        let url;
+        if (serviceOrigin == null) {
+            url = new URL(proxyOrigin);
+            const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+            if (!(url.protocol === 'wss:' || (url.protocol === 'ws:' && local)) || url.username || url.password
+                || url.pathname !== '/' || url.search || url.hash) throw new Error('Invalid proxy origin');
+            url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+        } else {
+            url = new URL(serviceOrigin);
+            const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+            if (!(url.protocol === 'https:' || (url.protocol === 'http:' && local)) || url.username
+                || url.password || url.pathname !== '/' || url.search || url.hash) {
+                throw new Error('Invalid service origin');
+            }
+        }
         const id = next++;
         visits.set(id, {origin: url.origin, requests: new Set()});
         return id;
