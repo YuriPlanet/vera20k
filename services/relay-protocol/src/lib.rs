@@ -21,6 +21,7 @@ use zeroize::Zeroize;
 
 mod journal;
 mod sequenced;
+pub use sequenced::federation::{MAX_FEDERATED_RELAYS, sign_federation_roster};
 pub use sequenced::{
     ORDERING_BATCH_CAPACITY, ORDERING_CERTIFICATE_LEN, ORDERING_PULL_LIMIT, OrderEntry, OrderError,
     OrderEvent, OrderStatus, OrderingCertificate,
@@ -294,6 +295,8 @@ pub struct ClientSession {
     probe: Option<u64>,
     ready: bool,
     ordering: Option<sequenced::ClientOrdering>,
+    // The lobby's relay roster of a federated match, sent with each CONFIRM.
+    federation: Option<Vec<u8>>,
 }
 
 impl fmt::Debug for ClientSession {
@@ -332,7 +335,22 @@ impl ClientSession {
             probe: None,
             ready: false,
             ordering: None,
+            federation: None,
         })
+    }
+
+    /// Carry a federated match's roster in every admission of this session.
+    pub fn set_federation(&mut self, roster: &[u8]) -> Result<(), RelayError> {
+        let (room, relays) = sequenced::federation::roster_table(roster)?;
+        if room != self.ticket.room
+            || !relays
+                .iter()
+                .any(|(_, sources)| sources & (1 << self.ticket.source) != 0)
+        {
+            return Err(RelayError::Authentication);
+        }
+        self.federation = Some(roster.to_vec());
+        Ok(())
     }
 
     pub fn source(&self) -> u8 {
@@ -368,6 +386,7 @@ impl ClientSession {
             return Err(RelayError::Authentication);
         }
         next.ordering = self.ordering.clone();
+        next.federation = self.federation.clone();
         Ok(next)
     }
     pub fn forget_readiness(&mut self) {
@@ -384,7 +403,9 @@ impl ClientSession {
         if cookie.len() != COOKIE_LEN {
             return Err(RelayError::Malformed);
         }
-        self.encode(CONFIRM, BROADCAST, cookie, out)
+        let mut payload = cookie.to_vec();
+        payload.extend(self.federation.iter().flatten());
+        self.encode(CONFIRM, BROADCAST, &payload, out)
     }
 
     pub fn data(
@@ -580,7 +601,9 @@ fn incoming<'a>(key: &SecretKey, bytes: &'a [u8], now: u64) -> Result<Incoming<'
         .map_err(|_| RelayError::Authentication)?;
     if (target >= MAX_PEERS && target != BROADCAST)
         || !matches!(kind, HELLO | CONFIRM | DATA | PING | CONTROL)
-        || (kind == CONFIRM && length != COOKIE_LEN)
+        || (kind == CONFIRM
+            && length != COOKIE_LEN
+            && !(length > COOKIE_LEN && sequenced::federation::is_roster_len(length - COOKIE_LEN)))
         || (kind == DATA
             && (length <= PAYLOAD_HEADER + PAYLOAD_TAG || bytes[CLIENT_HEADER] != target))
         || (matches!(kind, HELLO | PING) && length != 0)
@@ -615,8 +638,12 @@ struct RateBudget {
 
 impl RateBudget {
     fn permits(&self, now: u64, amount: u64, limit: u64) -> bool {
+        amount <= self.remaining(now, limit)
+    }
+
+    fn remaining(&self, now: u64, limit: u64) -> u64 {
         let spent = if self.second == now { self.spent } else { 0 };
-        amount <= limit.saturating_sub(spent)
+        limit.saturating_sub(spent)
     }
 
     fn charge(&mut self, now: u64, amount: u64) {
@@ -635,6 +662,8 @@ struct Peer {
     received: ReplayWindow,
     sent: u64,
     last_seen: u64,
+    push: Option<sequenced::PushSubscription>,
+    push_control_sequence: u64,
 }
 
 #[derive(Default)]
@@ -643,6 +672,8 @@ struct Room {
     outgoing: RateBudget,
     order_packets: RateBudget,
     ordering: Option<sequenced::OrderingRoom>,
+    // Set by the first admission carrying a lobby relay roster.
+    federation: Option<sequenced::federation::Federation>,
     // Only an explicit signed Leave before the first ordering Ready sets this.
     // Prevent a delayed Ready from recreating an already canceled startup.
     ordering_cancelled: bool,
@@ -677,7 +708,9 @@ pub struct RelayServer {
     handshakes: RateBudget,
     outgoing: RateBudget,
     order_packets: RateBudget,
+    repeat_packets: RateBudget,
     last_pruned: u64,
+    push_after: Option<([u8; 16], u8)>,
     journal_directory: Option<journal::JournalDirectory>,
 }
 
@@ -693,7 +726,9 @@ impl RelayServer {
             handshakes: RateBudget::default(),
             outgoing: RateBudget::default(),
             order_packets: RateBudget::default(),
+            repeat_packets: RateBudget::default(),
             last_pruned: 0,
+            push_after: None,
             journal_directory: None,
         }
     }
@@ -736,6 +771,9 @@ impl RelayServer {
             return Err(RelayError::RateLimited);
         }
         self.ingress.charge(now, 1);
+        if bytes.starts_with(sequenced::federation::LINK_MAGIC) {
+            return self.federation_receive(bytes, now, now_millis);
+        }
         let message = incoming(&self.key, bytes, now)?;
         self.prune(now);
         if message.kind == CONTROL && message.payload == [sequenced::LEAVE_REQUEST] {
@@ -814,7 +852,17 @@ impl RelayServer {
             } else {
                 message.payload.len()
             };
-        let cost = (recipients * packet_bytes) as u64;
+        // Players homed on other relays of a federated match get one copy
+        // through each of their relays.
+        let links = match (&room.federation, message.kind) {
+            (Some(federation), DATA) => {
+                federation.data_links(message.ticket.source, message.target)
+            }
+            _ => Vec::new(),
+        };
+        let cost = (recipients * packet_bytes
+            + links.len() * sequenced::federation::Federation::data_len(message.payload.len()))
+            as u64;
         // Reserve the full fan-out before any sequence mutation or delivery.
         // Renewals retain these principal budgets and cannot reset the rate.
         if !admission
@@ -846,6 +894,16 @@ impl RelayServer {
                     peer,
                     DATA,
                     message.ticket.source,
+                    message.payload,
+                )?);
+            }
+        }
+        if let Some(federation) = room.federation.as_mut() {
+            for position in links {
+                output.push(federation.link_data(
+                    position,
+                    message.ticket.source,
+                    message.target,
                     message.payload,
                 )?);
             }
@@ -935,6 +993,24 @@ impl RelayServer {
         }) {
             return Err(RelayError::Authentication);
         }
+        // A federated room admits only its own roster's players homed here.
+        let roster = &message.payload[COOKIE_LEN..];
+        let existing = self.rooms.get(&message.ticket.room);
+        let federation = match existing.and_then(|room| room.federation.as_ref()) {
+            Some(federation) if federation.admits(roster, message.ticket.source) => None,
+            Some(_) => return Err(RelayError::Authentication),
+            None if roster.is_empty() => None,
+            None if existing
+                .is_some_and(|room| !room.peers.is_empty() || room.ordering.is_some()) =>
+            {
+                return Err(RelayError::Authentication);
+            }
+            None => Some(sequenced::federation::Federation::admit(
+                &self.key,
+                roster,
+                &message.ticket,
+            )?),
+        };
         let cost = (SERVER_HEADER + MAC_LEN) as u64;
         if !self.outgoing.permits(now, cost, TOTAL_BYTES_PER_SECOND) {
             return Err(RelayError::RateLimited);
@@ -950,6 +1026,9 @@ impl RelayServer {
             }
         }
         let room = self.rooms.entry(message.ticket.room).or_default();
+        if federation.is_some() {
+            room.federation = federation;
+        }
         let reply = if let Some(peer) = room
             .peers
             .iter_mut()
@@ -965,6 +1044,11 @@ impl RelayServer {
                 return Err(RelayError::Replay);
             }
             peer.received.accept(message.sequence)?;
+            if peer.endpoint != source {
+                // A confirmed new path must opt in before receiving history.
+                peer.push = None;
+                peer.push_control_sequence = 0;
+            }
             peer.endpoint = source;
             peer.last_seen = now;
             server_packet(peer, READY, message.ticket.source, &[])?
@@ -1053,7 +1137,7 @@ impl RelayServer {
             return Err(RelayError::Expired);
         }
         self.cookie_mac(source, message.ticket_bytes, expires)
-            .verify_slice(&message.payload[8..])
+            .verify_slice(&message.payload[8..COOKIE_LEN])
             .map_err(|_| RelayError::Authentication)
     }
 }
@@ -1066,6 +1150,8 @@ fn new_peer(message: &Incoming<'_>, endpoint: SocketAddrV4, now: u64) -> Peer {
         received: ReplayWindow::default(),
         sent: 0,
         last_seen: now,
+        push: None,
+        push_control_sequence: 0,
     }
 }
 

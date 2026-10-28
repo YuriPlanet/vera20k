@@ -2445,7 +2445,11 @@ statistics, surface format and actual BGRA bytes. Clock policies must match; a
 legacy wall-clock observation and a diagnostic-clock observation are `INVALID`
 together even when their pixels match.
 Differences name precise field paths and before/after values. There are no pixel
-tolerances or omitted atlas fields.
+tolerances or omitted atlas fields. Process Main RNG reads (`rng.main` and every
+`main_rng_cursor`) are listed in `main_rng_differences` instead and do not decide
+`MATCH`: Main (`0x886B88`) is outside the state hash and saves, and the audio
+service draws it for SFX and Theme on wall time, so two runs of the same inputs
+can legitimately differ there. Scenario and Mapgen streams stay compared.
 Current v8 pairs also compare the complete command, rule-handle inventory,
 actor/building/animation/unit/miner/radio/House/terrain transcript and camera,
 including the delayed-shot and color/fade observations when requested. Historical

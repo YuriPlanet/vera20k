@@ -43,6 +43,10 @@ complete mission loading or all downstream campaign extensions.
 Supported extensions:
 
 - [Ordinary ground and tower EMP](ares-emp.md) (bounded human Drive/Walk, unteamed AI Drive and independent powered defensive buildings)
+- [Water and land type conversion](../src/sim/game_entity/type_conversion.rs):
+  `Convert.Water` applies over water or beach; `Convert.Land` applies over land
+  and bridges. It uses the same in-place conversion owner as script action 68,
+  preserves the object identity and ignores a target equal to the current type.
 - [Custom armor](ares-custom-armor.md)
 - [Supplemental string tables](../tools/rules_oracle/ares_csf.md), shared by
   game loading and default `asset csf-get` / `csf-grep` queries.
@@ -65,6 +69,16 @@ Supported extensions:
 - [Factory-source restrictions](../src/sim/production/can_build.rs) (`BuiltAt`,
   `Factory.ExplicitOnly`) and [Country plan qualification](../tools/rules_oracle/ares_factory_owners.md)
   (`FactoryOwners`, forbidden Countries and permanent plans).
+- [Vehicle drivers](../src/sim/vehicle_theft.rs): `CanDrive`, Country `CanBeDriven`,
+  vehicle theft and driver replacement, with passenger and survivor handoff.
+  [KillDriver](../src/sim/vehicle_theft/driver_kill.rs) respects type/rank protection,
+  health and chance gates; a driverless hull stops acting until a new driver enters.
+  Foot `Operator` requirements deactivate an empty hull and resume it through the
+  shared power/EMP admission when a qualifying passenger enters. Building-specific
+  Operator updates remain outside this path.
+  Per-type `Survivor.*`, `Crew.TechnicianChance`, `Crew.EngineerChance` and nullable
+  aircraft `Crashable` share the existing crew and placement owners. These paths
+  require `ares`; loading INI settings cannot activate them in a default build.
 - [NoManualFire](../src/app/input/context_order.rs) blocks ordinary manual attacks;
   C4 and infiltration remain incomplete.
 - [AttachEffect](ares-attach-effect.md): ground warhead effects and type-owned

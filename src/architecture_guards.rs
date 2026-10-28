@@ -1323,10 +1323,21 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "the +0x6CC writers and PointerExpired's clear",
         ),
         (
+            "sim/building_entry.rs",
+            "set_nearest_occupiable_seek",
+            "Ares writes the +0x691 seek latch with its scan's answer (0x10046A8B/0x10046ACC)",
+        ),
+        (
             "sim/combat/attack_target.rs",
             "set",
             "the TarCom class setter; callers port each native writer, such as \
              PointerExpired's NULL store (0x00707A33)",
+        ),
+        (
+            "sim/cloak_disguise.rs",
+            "set_attached",
+            "Ares RecalculateStats 0x1004613B/0x1004617D commits the cloak aggregate \
+             derived from the canonical attachment vector; permanent crate capability stays separate",
         ),
         (
             "sim/combat/base_defense_response.rs",
@@ -1343,6 +1354,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "set",
             "the Strength store of the native death paths (Crush 0x007416A0, \
              KillPassengers 0x00707CB0, KillOccupants 0x004585C0)",
+        ),
+        (
+            "sim/game_entity.rs",
+            "set_useless",
+            "Mission_Harvest alone writes Techno+3D0 at 0x0073E8FA/0x0073E925; \
+             depot admission reads the same latch",
         ),
         (
             "sim/house_state.rs",
@@ -1427,6 +1444,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "Techno+0x271, cleared by TimerCheck's expiry and state 7",
         ),
         (
+            "sim/object_fall.rs",
+            "set_parachute_animation",
+            "ObjectClass::Paradrop publishes Object+88 at 0x005F5AF1 before \
+             SetOwnerObject 0x005F5AFE; creation failure and matching expiry clear it",
+        ),
+        (
             "sim/pathfinding/zone_map.rs",
             "set_bridge_redirect",
             "the zone grid's derived bridge redirect table, rebuilt at zone build and bridge repair",
@@ -1454,6 +1477,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              carry-over restores that word separately from the incoming restart record",
         ),
         (
+            "sim/snapshot.rs",
+            "set_sw_sidebar_expanded",
+            "the save boundary copies the app-owned Phobos SWSidebar_Enable into its \
+             neutral presentation envelope; this does not mutate live simulation state",
+        ),
+        (
             "sim/snapshot/scenario_resources.rs",
             "set_elapsed_buckets",
             "ScenarioSave stops +0x614 into the +0x61C accumulator (0x00689360..0x0068936F) \
@@ -1479,6 +1508,18 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "sim/superweapon/mod.rs",
             "set_recharge_time",
             "SuperClass::SetRechargeTime (0x006CC280, TAction 132) changes only Super+24",
+        ),
+        (
+            "sim/vehicle_theft.rs",
+            "set_killed_from_owner",
+            "Ares copies the new owner's MultiplayPassive into the driver-killed flag \
+             (0x100456E8..0x100456F5)",
+        ),
+        (
+            "sim/vehicle_theft.rs",
+            "set_vehicle_seek",
+            "the Ares vehicle-seek latch (Ext+0xB0), written by its scan and by script actions \
+             64/67 (dispatcher 0x1003A110)",
         ),
         (
             "sim/world/mod.rs",

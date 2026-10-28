@@ -87,13 +87,17 @@ pub(crate) fn enter_with_owners(
 }
 
 pub(crate) fn resume(state: &mut AppState, wall_ms: u64) {
-    let paused = state
+    let elapsed_paused = state
+        .match_state
+        .elapsed_clock_paused(&state.frontend.screen);
+    let audio_paused = state
         .match_state
         .presentation_paused(&state.frontend.screen);
     resume_with_owners(
         &mut state.match_state.scenario_elapsed_clock,
         state.audio.sfx_player.as_mut(),
-        paused,
+        elapsed_paused,
+        audio_paused,
         wall_ms,
     );
 }
@@ -103,14 +107,15 @@ pub(crate) fn resume(state: &mut AppState, wall_ms: u64) {
 pub(crate) fn resume_with_owners(
     elapsed: &mut super::frame_pacer::ScenarioElapsedClock,
     sfx: Option<&mut crate::audio::sfx::SfxPlayer>,
-    paused: bool,
+    elapsed_paused: bool,
+    audio_paused: bool,
     wall_ms: u64,
 ) {
-    if !paused {
+    if !elapsed_paused {
         elapsed.resume(wall_ms);
     }
     if let Some(sfx) = sfx {
-        sfx.set_paused(paused, wall_ms);
+        sfx.set_paused(audio_paused, wall_ms);
     }
 }
 

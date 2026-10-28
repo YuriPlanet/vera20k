@@ -1,5 +1,7 @@
 //! Shared A3 lifecycle/input. Original5FBEF0/5FB320 and command assignment5FBB38.
 use crate::app::input::hotkeys::{self, BindingAssignmentError, catalog::registered_commands};
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+use crate::app::web_keyboard::KeyEventExtModifierSupplement;
 use crate::app::{App, AppState};
 use crate::ui::shell::keyboard::*;
 use crate::ui::shell::list::ListMetrics;
@@ -9,8 +11,6 @@ use winit::event::{ElementState, KeyEvent, MouseButton};
 use winit::keyboard::{Key, KeyCode, KeyLocation, NamedKey};
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
-#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-use crate::app::web_keyboard::KeyEventExtModifierSupplement;
 
 /// A keyboard edge after the front-end/dialog admission gates. Both a window
 /// event and a literal-key production capture enter this same binding owner.
@@ -38,6 +38,11 @@ pub(crate) fn in_game_key_edge(
                 state.match_state.input.keys_held.remove(&scroll_key);
             }
         }
+        return;
+    }
+    // Shared pause keeps network chat usable without admitting gameplay keys.
+    // Local modal/capture filtering has already happened in the window owner.
+    if !hotkeys::input_admitted_while_paused(paused_at_event, edge.logical) {
         return;
     }
     // Local prototype control; consume the chord before retail key dispatch.
@@ -161,8 +166,7 @@ pub(crate) fn open(state: &mut AppState, parent: KeyboardParent) {
     if parent == KeyboardParent::GameControls {
         // BBB52C sets state4/result1;4E1D9A applies+writes before dispatcher48CA03.
         crate::app::persistence::options::accept_in_game_options(state);
-        state.match_state.match_presentation.in_game_menu =
-            crate::ui::pause_menu::InGameMenuState::Keyboard;
+        App::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Keyboard);
     }
     // Phobos registers `FireTacticalSW1..10` and `ToggleSWSidebar` only when
     // their rules switches are on, so the page does not list them otherwise.
@@ -286,14 +290,10 @@ pub(crate) fn commit_close(state: &mut AppState, exit: KeyboardExit) {
     }
     match dialog.parent {
         KeyboardParent::Launcher => App::open_launcher_options_dialog(state),
+        // State_Machine 0x0048CA0D writes state 5 after A3 returns; BBB is
+        // recreated, and its init reads the Options values A3 left untouched.
         KeyboardParent::GameControls => {
-            state.match_state.match_presentation.in_game_options =
-                crate::app::persistence::options::in_game_options_from_profile(
-                    &state.persistence.options_profile,
-                );
-            crate::app::input::in_game_options::on_open(state);
-            state.match_state.match_presentation.in_game_menu =
-                crate::ui::pause_menu::InGameMenuState::Options;
+            App::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Options)
         }
     }
     state.platform.window.request_redraw();

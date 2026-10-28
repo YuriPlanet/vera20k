@@ -995,7 +995,7 @@ fn heal_base_crate_restores_the_owners_buildings() {
 
 /// HealBase482C18 walks Logic, so it reaches owned mobile classes and skips
 /// an Aircraft absent from Logic. Zero damage still reaches the full-health
-/// collector's surviving Techno receiver and uncloaks it.
+/// collector's surviving Techno receiver, which stock uncloaks.
 #[test]
 fn heal_base_reaches_mobile_logic_members_and_the_zero_damage_receiver() {
     let (mut sim, mut rules, registry, owner, tank) = arena();
@@ -1074,7 +1074,9 @@ fn heal_base_reaches_mobile_logic_members_and_the_zero_damage_receiver() {
             .cloak
             .unwrap()
             .state(),
-        3
+        // Installed Ares702819 ->1004AB50 resumes at 702823 for a zero result,
+        // past the Uncloak call.
+        if cfg!(feature = "ares") { 2 } else { 3 }
     );
     assert_eq!(sim.logic_order(), logic);
     assert_eq!(overlay_at(&sim, (21, 22)), None);

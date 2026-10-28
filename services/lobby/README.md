@@ -29,10 +29,38 @@ mode-0600 JSON file outside the repository containing `RELAY_TICKET_KEY`, then r
 relay's systemd credential. The CLI's authentication stays in its own credential
 storage. No provider token or server key belongs in the build or client.
 
+For regional relays, set `VERA20K_RELAYS` instead to a JSON list such as
+`[{"address":"203.0.113.1:5000","key":"RELAY_TICKET_KEY","latitude":50.1,"longitude":8.7}]`.
+Each `key` names a `RELAY_TICKET_KEY` or `RELAY_TICKET_KEY_<NAME>` secret in the
+same secrets file. Give each relay its own key. Each match uses the relay nearest
+its farthest playing human, judged from Cloudflare's IP location rounded to whole degrees.
+It keeps that relay through renewal and resume. When a player's location is unknown,
+the first relay serves the match. Keep the previous relay first while older matches finish.
+Sessions keep the rounded location only until their normal cleanup.
+Add `"federation":true` to relays that run federation. When every human signed
+in with a client that sends `Vera-Relay-Federation: 1`, the playing humans'
+nearest federation relays differ, and homing each on its own relay beats the best
+single relay by about 25 ms of round trip, the match federates those relays (at
+most six) and each player's grants name their home relay.
+
 Chat translation (`POST /v1/translate`) calls a separately deployed Worker through a
 service binding. Set `VERA20K_TRANSLATOR_WORKER` to its name when deploying; without it
 the lobby deploys unbound and reports `translation_unavailable`. Deploy that Worker
 first. The lobby caches its replies and owns the rate limits and daily budget.
+
+Operators can post one notice into the lobby chat. Add `ADMIN_KEY`, a random
+secret of at least 32 characters (`openssl rand -hex 32`), to the same secrets
+file and keep a copy with the relay key; without it the endpoint does not exist.
+
+```sh
+curl https://lobby.vera20k.org/v1/admin/notice -H "Authorization: Bearer $ADMIN_KEY" \
+  -H 'Content-Type: application/json' -d '{"text":"Server restart at 20:00 UTC.","minutes":60}'
+```
+
+The notice appears as public chat from `VERA20k`: at once for players in German
+Bunker or a game room that has not started, and for the others when they next
+enter German Bunker, until it expires. A new notice replaces it and
+`{"minutes":0}` clears it. Players who show only buddy or clan chat don't see it.
 
 The client defaults to the deployed lobby at `https://lobby.vera20k.org`, the
 Worker's custom domain. Its workers.dev and preview URLs stay off because their

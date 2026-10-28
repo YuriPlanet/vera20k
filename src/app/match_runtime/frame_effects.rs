@@ -189,6 +189,9 @@ impl<'a> FrameClientBoundary<'a> {
                 &mut elapsed,
                 sfx,
                 *other_local_pause,
+                // The admitted frame completes before a relay pause takes
+                // effect, so its native/audio pause reasons still coincide.
+                *other_local_pause,
                 wall_ms,
             ),
             _ => unreachable!(),

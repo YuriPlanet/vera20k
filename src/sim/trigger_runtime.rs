@@ -532,10 +532,12 @@ impl RuntimeDefinitions {
 // Original jump-table bytes71F700/71F744/71F780/71F7C0 and6E3F08.
 // These are classification only, never substitutes for event predicates.
 fn event_classification(kind: i32) -> u8 {
-    // Ares3.0 GetFlags1004F6A0: EMP62..65 are attached-object events;
-    // Persistable1004F610 returns false for every one of them.
+    // Ares3.0 GetFlags1004F6A0 (table1004F704): EMP62..65, driver killed
+    //67/68 and vehicle taken69/70 are attached object events. The table
+    // also flags 66 and 71..74, which VERA never raises. This is independent
+    // of the Persistable predicate.
     #[cfg(feature = "ares")]
-    if matches!(kind, 62..=65) {
+    if matches!(kind, 62..=65 | 67..=70) {
         return 2;
     }
     let mut flags = 0;
@@ -655,6 +657,7 @@ pub struct TriggerRuntime {
     #[serde(skip)]
     spring_actions_left: usize,
     #[cfg(any(test, feature = "test-support"))]
+    #[serde(skip)]
     fixture_difficulty: Option<i32>,
     #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
@@ -1498,6 +1501,24 @@ impl Simulation {
             .clone();
         match condition.kind {
             #[cfg(feature = "ares")]
+            67..=70 => {
+                // Ares HasOccurred71E949 ->100503E0: driver killed
+                //1004F881..1004F8C7 and vehicle taken1004F8CA..1004F91F.
+                // Each requires the affected Techno;68 and70 additionally
+                // compare the source's raw House+30. No persistence write.
+                // Original71F950 stays false for these kinds, so they never latch.
+                input.kind == condition.kind
+                    && input
+                        .actor
+                        .is_some_and(|id| self.substrate.entities.contains(id))
+                    && (matches!(condition.kind, 67 | 69)
+                        || input
+                            .source
+                            .and_then(|id| self.substrate.entities.get(id))
+                            .and_then(|source| self.base_reservation_house_index(source.owner()))
+                            .is_some_and(|index| index == condition.value))
+            }
+            #[cfg(feature = "ares")]
             62..=65 => {
                 // Installed HasOccurred71E949 ->100503E0/1004F7DC..870.
                 // The actor is the affected Techno. House-specific63/65
@@ -1520,6 +1541,13 @@ impl Simulation {
                 }
                 (actor.emp_remaining() > 0) == matches!(condition.kind, 62 | 63)
             }
+            // TEventClass::HasOccurred, original gamemd.exe:
+            // 0x0071E950/0x0071EC83 bypass the raised-kind/editor gates for
+            // negative or >=62 kinds; 0x0071F084 reaches AL1 at0x0071F1B4.
+            // No persistence or retained-House write. Keep Ares' replacement
+            // dispatcher and the known0..61 predicates separate.
+            #[cfg(not(feature = "ares"))]
+            kind if !(0..=61).contains(&kind) => true,
             53 => {
                 // HasOccurred71ECF5..71ED56, original gamemd: raised53
                 // and clear A8ED6B admit a forced GetDisplayOwner(+D0,1).
@@ -4971,25 +4999,30 @@ impl TriggerRuntime {
     pub(crate) fn mark_crate_pickup_event(&mut self) {
         self.dirty[3] = true;
     }
-    ///6E57C0 reads each linked LIVE Trigger's Type+A0, without enabled,
-    /// pending or difficulty tests.5F5B50 replaces refs, never moves the
-    /// Engineer's attachment and never deletes the old zero-ref Tag here.
-    pub(crate) fn transfer_engineer_tag_to_building(&mut self, engineer: u64, building: u64) {
-        let attachment = TagAttachment::Object(engineer);
-        let Some(&tag) = self.attachments.get(&attachment) else {
-            return;
-        };
-        let transfer = self.tag(tag).is_some_and(|tag| {
-            tag.triggers.iter().any(|&live| {
-                self.trigger(live).is_some_and(|trigger| {
-                    self.definitions.trigger_types[trigger.type_index].transfer_on_capture
+    /// TagClass::IsTransferable6E57C0 reads each linked LIVE Trigger's
+    /// Type+A0, without enabled, pending or difficulty tests (retail gamemd).
+    pub(crate) fn object_tag_is_transferable(&self, object: u64) -> bool {
+        self.attachments
+            .get(&TagAttachment::Object(object))
+            .and_then(|&tag| self.tag(tag))
+            .is_some_and(|tag| {
+                tag.triggers.iter().any(|&live| {
+                    self.trigger(live).is_some_and(|trigger| {
+                        self.definitions.trigger_types[trigger.type_index].transfer_on_capture
+                    })
                 })
             })
-        });
-        if transfer {
-            //519F66 re-reads after the gate; keep the native attachment owner.
+    }
+
+    /// ObjectClass::SetTag5F5B50 after IsTransferable6E57C0: engineer
+    /// capture519F66, thief capture520439 and vehicle crew738374 all copy
+    /// the attachment. The source keeps its reference; the old zero-ref Tag
+    /// is not deleted here. Source: retail gamemd.exe instructions.
+    pub(crate) fn transfer_object_tag(&mut self, source: u64, target: u64) {
+        if self.object_tag_is_transferable(source) {
+            let attachment = TagAttachment::Object(source);
             let tag = self.attachments.get(&attachment).copied();
-            self.replace_trigger_tag_attachment(TagAttachment::Object(building), tag);
+            self.replace_trigger_tag_attachment(TagAttachment::Object(target), tag);
         }
     }
 }

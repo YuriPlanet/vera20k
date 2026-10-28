@@ -403,8 +403,10 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // The native-speed migration (60da53f9c) hashes binary64 Foot/Drive fractions.
 // A temporary projection to the old fixed fields recovers the previous pin,
 // including Stop's rounded fixed0.3; gameplay and absolute RNG checks hold.
-// Previous Rust state pin: 0xAEA5_D31A_37FA_33F9.
-const SLICE6_BASELINE_HASH: u64 = 0x5725_6E95_8F9E_04F8;
+// #3099 adds the permanent-stealth grant byte for every entity, false here.
+// Omitting only that hash fold recovers 0x5725_6E95_8F9E_04F8; the unchanged
+// replay, gameplay and absolute RNG assertions pass with either composition.
+const SLICE6_BASELINE_HASH: u64 = 0x00C5_304C_C361_38CE;
 
 #[test]
 fn replay_hash_stable_through_slice6() {

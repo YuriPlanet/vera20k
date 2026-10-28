@@ -118,6 +118,9 @@ pub const INSTALLED_CLSID_KIND_TABLE: [(&str, LocomotorKind); 8] = [
 /// Braces are optional and ASCII case is ignored. Parse failure stays
 /// explicit; [`resolve_installed_kind`] owns the native silent/default
 /// fallback.
+///
+/// With the `phobos` feature, values that do not start with `{` may instead
+/// name a semantic alias (Phobos `Utilities/TemplateDef.h`, `read<CLSID>`).
 pub fn kind_from_clsid(text: &str) -> Option<LocomotorKind> {
     let normalized = text
         .trim()
@@ -125,10 +128,47 @@ pub fn kind_from_clsid(text: &str) -> Option<LocomotorKind> {
         .and_then(|text| text.strip_suffix('}'))
         .unwrap_or_else(|| text.trim());
 
-    INSTALLED_CLSID_KIND_TABLE
+    if let Some(kind) = INSTALLED_CLSID_KIND_TABLE
         .iter()
         .find(|(clsid, _)| clsid[1..clsid.len() - 1].eq_ignore_ascii_case(normalized))
         .map(|(_, kind)| *kind)
+    {
+        return Some(kind);
+    }
+
+    #[cfg(feature = "phobos")]
+    {
+        kind_from_alias(text)
+    }
+    #[cfg(not(feature = "phobos"))]
+    {
+        None
+    }
+}
+
+/// Phobos semantic locomotor aliases: a value without a leading `{` matched
+/// case-insensitively to a class name. The dormant Tiberian Sun classes
+/// (`Tunnel`, `Mech`, `DropPod`) have no VERA kind, so their aliases resolve
+/// like their CLSIDs — to `None` — rather than selecting a different movement
+/// system. `Chrono` is not an alias either; it falls back to the Teleport
+/// constructor seed.
+#[cfg(feature = "phobos")]
+fn kind_from_alias(text: &str) -> Option<LocomotorKind> {
+    let text = text.trim();
+    if text.starts_with('{') {
+        return None;
+    }
+    Some(match text.to_ascii_lowercase().as_str() {
+        "drive" => LocomotorKind::Drive,
+        "jumpjet" => LocomotorKind::Jumpjet,
+        "hover" => LocomotorKind::Hover,
+        "rocket" => LocomotorKind::Rocket,
+        "walk" => LocomotorKind::Walk,
+        "fly" => LocomotorKind::Fly,
+        "teleport" => LocomotorKind::Teleport,
+        "ship" => LocomotorKind::Ship,
+        _ => return None,
+    })
 }
 
 /// The kind a type installs when its `Locomotor=` value is absent or does not
@@ -586,5 +626,47 @@ mod tests {
     fn test_movement_zone_unknown_preserves_invalid_row() {
         assert_eq!(MovementZone::from_ini("invalid"), MovementZone::Invalid);
         assert_eq!(MovementZone::Invalid.matrix_row(), None);
+    }
+
+    /// Phobos `read<CLSID>` semantic aliases: braceless, ASCII
+    /// case-insensitive, and equivalent to the CLSID they abbreviate.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn phobos_locomotor_aliases_select_their_kinds() {
+        for (alias, kind) in [
+            ("Drive", LocomotorKind::Drive),
+            ("jumpJET", LocomotorKind::Jumpjet),
+            ("Hover", LocomotorKind::Hover),
+            ("Rocket", LocomotorKind::Rocket),
+            ("walk", LocomotorKind::Walk),
+            ("Fly", LocomotorKind::Fly),
+            ("Teleport", LocomotorKind::Teleport),
+            ("Ship", LocomotorKind::Ship),
+        ] {
+            assert_eq!(kind_from_clsid(alias), Some(kind), "alias {alias}");
+            assert_eq!(resolve_installed_kind(Some(alias)), kind, "alias {alias}");
+        }
+    }
+
+    /// `Chrono` is not an alias and the dormant classes have no VERA kind;
+    /// both keep the Teleport constructor seed, and a braced alias is not an
+    /// alias.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn phobos_dormant_and_unknown_aliases_keep_the_teleport_seed() {
+        for value in ["Chrono", "Tunnel", "Mech", "DropPod", "droppod", "{Drive}"] {
+            assert_eq!(kind_from_clsid(value), None, "{value}");
+            assert_eq!(resolve_installed_kind(Some(value)), DEFAULT_INSTALLED_KIND);
+        }
+    }
+
+    #[cfg(not(feature = "phobos"))]
+    #[test]
+    fn locomotor_aliases_require_the_phobos_feature() {
+        assert_eq!(kind_from_clsid("Drive"), None);
+        assert_eq!(
+            resolve_installed_kind(Some("Drive")),
+            DEFAULT_INSTALLED_KIND
+        );
     }
 }

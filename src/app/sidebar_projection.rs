@@ -636,6 +636,10 @@ impl SidebarProjectionState {
                     is_on_hold: !is_ready
                         && (factory.is_some() && !running
                             || request == Some(CameoRequestState::Held)),
+                    held_type: factory
+                        .as_ref()
+                        .and_then(|factory| factory.object)
+                        .map(|object| object.type_id),
                 })
             })
             .collect()

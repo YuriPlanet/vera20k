@@ -88,6 +88,13 @@ mod memory {
             Err(error) => Err(error),
         }
     }
+    // Network cache pins use the same normalized identity as stored bytes.
+    #[cfg(feature = "wasm-net")]
+    pub fn canonicalize(path: impl AsRef<Path>) -> io::Result<PathBuf> {
+        let path = key(path.as_ref());
+        metadata(&path)?;
+        Ok(path)
+    }
     fn missing() -> io::Error {
         io::Error::new(io::ErrorKind::NotFound, "file was not imported")
     }
@@ -299,6 +306,14 @@ mod tests {
         let first = memory::read_shared(format!("{root}/RA2MD.MIX")).unwrap();
         let second = memory::read_shared(format!("{root}/RA2MD.MIX")).unwrap();
         assert!(std::sync::Arc::ptr_eq(&first, &second));
+        #[cfg(feature = "wasm-net")]
+        {
+            assert_eq!(
+                memory::canonicalize(format!("{root}/Taunts/../RA2MD.MIX")).unwrap(),
+                std::path::PathBuf::from(format!("{root}/RA2MD.MIX"))
+            );
+            assert!(memory::canonicalize(format!("{root}/missing.map")).is_err());
+        }
     }
 
     #[test]

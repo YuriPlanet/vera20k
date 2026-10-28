@@ -52,7 +52,9 @@ operations retain the cursor barrier. Clients attempt logout with their existing
 bearer before discarding a session whose history expired.
 
 Channel: `{id,kind,max_users,users,tournament,flags,game_flags,ping,name,ex_info}`.
-`kind` is 0 for chat and 41 for a game. The other fields are presentation metadata,
+`kind` is 0 for chat and 41 for a game. The service sets `flags` from the room, never
+from the creator: 256 when a game has a password, which clients show as a lock and
+ask for before joining, otherwise 0. The other fields are presentation metadata,
 not authority. `name` identifies a channel uniquely for compatibility with the
 existing shell. Member: `{player_id,name,flags,squad,clan_name,clan_tag}`. Flags bit 0
 is the channel owner, bit 1 voice; the client adds its own local bit 32768. Servers
@@ -135,7 +137,8 @@ Event kinds and payloads:
 | `kicked` | `{channel:<Channel>,user:<Member>,by:<Member>}` |
 | `error` | `{code,message}` |
 
-RelayGrant is `{address,ticket,packet_key,payload_key,source_index,ordering_certificate}`. Address is `IPv4:port`;
+RelayGrant is `{address,ticket,packet_key,payload_key,source_index,ordering_certificate,federation?}`. Address is `IPv4:port`
+of the user's relay in the match. The service chooses it at start and every later grant for that match names it;
 ticket is the signed relay protocol ticket encoded base64url without padding and
 packet_key is 32 bytes encoded the same way. Credentials are unique to each user
 and each new match. `payload_key` is a random 32-byte match payload-encryption key
@@ -153,6 +156,16 @@ follows launch speed `[60,45,30,20,15,12,10]`. The certificate lasts24 hours;
 every UDP control still needs a live authenticated short-lived ticket. The relay
 binds the first matching startup agreement to this roster/clock and starts only
 when every signed source is ready. Renewals preserve the timeline and batch IDs.
+`federation`, present only in a federated match, is the same base64url roster
+in every grant: `VO1F`, room UUID16, relay count (2–6), then per relay IPv4,
+LE port and LE source mask, then per relay nonce16, wrapped32 and tag32. The
+masks partition the signed sources. `wrapped` is the match link key XORed with
+HMAC-SHA256(relay ticket key, `VERA20k relay federation wrap v1\0` ‖ room ‖
+nonce); `tag` is HMAC-SHA256(relay ticket key, `VERA20k relay federation roster
+v1\0` ‖ the table through the masks ‖ index byte ‖ nonce ‖ wrapped). The client
+appends it unchanged to every CONFIRM; the first relay coordinates the start.
+The lobby federates a match only when every human's sign-in request carried the
+header `Vera-Relay-Federation: 1`, which clients send once they forward the roster.
 
 The relay room uses the fresh `match_id`, including for rematches. The server sends
 `game_started` only after all current participants agree to revision, version,
@@ -281,3 +294,17 @@ short-lived ticket for the existing source/generation and the current shell curs
 This recovers an expired lobby event cursor without skipping gameplay: missed
 commands still come from the relay's complete journal. It shares the existing
 renewal action budget; it cannot create a membership or change match identity.
+
+`POST /v1/admin/notice` is for operators, not players: its bearer is the
+deployment's `ADMIN_KEY`. Without a key of at least 32 characters it returns 404
+`not_found`; a missing or different bearer returns 401 `unauthorized`. It shares
+the sign-in ingress limit of 120 requests a minute per address. `{text,minutes}`
+sets the one current notice, replacing any earlier one: non-blank text of at most
+2048 UTF-8 bytes, kept for 1–10080 minutes. `{minutes:0}` alone clears it. Both
+return `{notice,delivered}`: the notice `{id,text,expires_at}` or `null`, and how
+many sessions received it at once. A notice is an ordinary public `chat` event from
+`{player_id:"00000000-0000-0000-0000-000000000000",name:"VERA20k",flags:1,squad:0,clan_name:"",clan_tag:""}`.
+Sessions in German Bunker or a game room that has not started receive it when it is
+set; others receive it on their next German Bunker join until it expires. Each
+session receives a notice once. Sign-in refuses `VERA20k` without case with 409
+`name_unavailable`.

@@ -1411,8 +1411,18 @@ fn loading_scope_bridge_survives_lost_progress_before_both_peers_activate() {
     guest.set_lan_scope(scope).unwrap();
     host.service(tick + 1);
     assert_eq!(received(&mut guest).payload, b"first order");
-    host.service(tick + 2);
-    assert_eq!(host.connections().queued_send_count(1), Some(0));
+    // The guest's send_to can finish before the ACK is readable by the host.
+    // Keep the clock fixed while servicing its actual arrival.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let report = host.service(tick + 2);
+        assert!(report.first_io_error.is_none(), "{report:?}");
+        if host.connections().queued_send_count(1) == Some(0) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "private ACK did not arrive");
+        std::thread::yield_now();
+    }
 }
 
 #[test]

@@ -1678,39 +1678,6 @@ impl PathGrid {
         self.cell(x, y).and_then(PathCell::bridge_deck_level_if_any)
     }
 
-    /// Find nearest walkable cell on either layer, searching in expanding rings.
-    pub fn nearest_walkable_any_layer(
-        &self,
-        x: u16,
-        y: u16,
-        max_radius: u16,
-    ) -> Option<(u16, u16)> {
-        let check = |cx: u16, cy: u16| self.is_any_layer_walkable(cx, cy);
-        if check(x, y) {
-            return Some((x, y));
-        }
-        for radius in 1..=max_radius {
-            let r = radius as i32;
-            for d in -r..=r {
-                let candidates = [
-                    (x as i32 + d, y as i32 - r),
-                    (x as i32 + d, y as i32 + r),
-                    (x as i32 - r, y as i32 + d),
-                    (x as i32 + r, y as i32 + d),
-                ];
-                for (cx, cy) in candidates {
-                    if cx < 0 || cy < 0 || cx >= self.width as i32 || cy >= self.height as i32 {
-                        continue;
-                    }
-                    if check(cx as u16, cy as u16) {
-                        return Some((cx as u16, cy as u16));
-                    }
-                }
-            }
-        }
-        None
-    }
-
     /// Build from resolved terrain without a live overlay surface: a bridge
     /// deck without bit0x100 projects as collapsed.
     pub fn from_resolved_terrain(terrain: &ResolvedTerrainGrid) -> Self {

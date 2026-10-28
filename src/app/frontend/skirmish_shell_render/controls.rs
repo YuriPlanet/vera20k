@@ -75,37 +75,49 @@ pub(super) fn frame_segments(
     out
 }
 
-/// Original61E700's group window split: the frame starts half the drawn
-/// font cell below the window top, and the caption sits 10px in on that top
-/// line, one authored cell tall. Returns (frame, caption) for
-/// [`push_group_or_plain_frame`] and the caption text.
+/// Original61E700's group window split: the frame starts half a font cell
+/// below the window top, and the caption sits 10px in, one cell tall.
+/// Derive both rectangles in authored pixels before mapping them to the window,
+/// so the caption's clip and the frame grow together. `cell_height` is unscaled.
 pub(super) fn group_box_geometry(
     group: RectPx,
-    drawn_cell_height: i32,
     cell_height: i32,
+    scale: ShellScale,
 ) -> (RectPx, RectPx) {
-    let top = drawn_cell_height / 2;
+    let top = cell_height / 2;
     (
-        RectPx::new(group.x, group.y + top, group.w, group.h - top),
-        RectPx::new(group.x + 10, group.y, group.w - 10, cell_height),
+        scale.derive_rect(group, |group| {
+            RectPx::new(group.x, group.y + top, group.w, group.h - top)
+        }),
+        scale.derive_rect(group, |group| {
+            RectPx::new(group.x + 10, group.y, group.w - 10, cell_height)
+        }),
     )
 }
 
+/// Paint the shared61E700/6208F0 bevel from a window-space frame. Caption
+/// width is in authored pixels; map each ring and its gap to the window once.
 pub(super) fn push_group_or_plain_frame(
     out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
+    white_pixel: Option<SkirmishShellChromeEntry>,
     rect: RectPx,
     caption_width: Option<i32>,
     outer_light: bool,
+    scale: ShellScale,
 ) {
+    let rect = if scale.is_retail() {
+        rect
+    } else {
+        scale.base_rect(rect)
+    };
     for (index, (rect, rgb)) in frame_segments(rect, caption_width, outer_light)
         .into_iter()
         .enumerate()
     {
-        push_solid_rect(
+        push_solid_rect_px(
             out,
-            atlas,
-            rect,
+            white_pixel,
+            scale.scale_rect(rect),
             rgb.map(|c| f32::from(c) / 255.0),
             SHELL_CONTROL_DEPTH - index as f32 * 0.0000001,
         );

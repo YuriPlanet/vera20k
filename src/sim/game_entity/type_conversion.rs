@@ -16,6 +16,50 @@ use crate::sim::movement::{FacingClass, ground_pose};
 use crate::sim::world::{FrameEffects, LifecycleOutput, Simulation, UninitContext};
 
 impl Simulation {
+    /// Installed Ares TechnoClass_Update1004B320..1004B39C, hooked at6F9E50:
+    /// sample Object+8C before GetCell5F6960 and Cell+EC, then reuse the one
+    /// in-place conversion owner. A self pointer must not reset health,
+    /// attachments, spotlight or tracking on every AI visit.
+    pub(crate) fn update_ares_surface_conversion(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(actor) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(source) = self.entity_object_type(actor, rules) else {
+            return;
+        };
+        if source.surface_conversion(true).is_none() && source.surface_conversion(false).is_none() {
+            return;
+        }
+        let water = if actor.on_bridge() {
+            false
+        } else {
+            let Some(terrain) = self.resolved_terrain.as_ref() else {
+                // Map-less component scenes have no CellClass to sample.
+                return;
+            };
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            let location = ground_pose::object_location(actor, Some(terrain));
+            let cell = ground_pose::query_object_cell(&cells, location);
+            matches!(cells.land_type(cell), 2 | 6)
+        };
+        let Some(target) = source.surface_conversion(water) else {
+            return;
+        };
+        let Some(destination) = rules.object_in_category(target.category, &target.id) else {
+            return;
+        };
+        if std::ptr::eq(source, destination) {
+            return;
+        }
+        let target = target.clone();
+        self.convert_techno_type(id, &target, rules, effects);
+    }
+
     pub(crate) fn convert_techno_type(
         &mut self,
         id: u64,
@@ -78,9 +122,10 @@ impl Simulation {
         // nothing here refreshes it: passenger capacity (PassengerCargo from
         // Passengers=/SizeLimit=), the SHP vehicle Animation component, the
         // Phobos shield, the gunner weapon and voxel recoil. Trigger: an Ares
-        // Convert.Script between types that differ in them (retail sets none).
-        // Effect: the object keeps the old type's values; converting a
-        // transport is the visible case, keeping its old capacity.
+        // Convert.Script, Convert.Water or Convert.Land between types that
+        // differ in them (retail sets none); the surface keys fire on each
+        // shoreline crossing. Effect: the object keeps the old type's values;
+        // converting a transport is the visible case, keeping its old capacity.
         crate::sim::miner::Miner::change_type_binding(&mut actor.miner, destination);
         health.apply(actor);
         Self::update_house_tracking(

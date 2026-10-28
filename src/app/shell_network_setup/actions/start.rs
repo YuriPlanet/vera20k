@@ -299,6 +299,68 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A direct spawn host's start (docs/spawn.md): the launcher already
+/// validated the roster, teams and map, so only BC's tail runs: LAN start
+/// timing, then GO to every admitted guest. GO's replies, drain and
+/// completion are the ordinary LAN owners'.
+pub(crate) fn begin_external_lan_go(state: &mut AppState) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        super::super::external(state) && !super::super::dialog(state).wol(),
+        "no direct spawn setup"
+    );
+    anyhow::ensure!(
+        state.match_state.session.host(),
+        "only the direct host sends GO"
+    );
+    anyhow::ensure!(
+        state
+            .frontend
+            .network_setup_protocol
+            .as_ref()
+            .is_some_and(|protocol| !protocol.locked),
+        "setup is locked"
+    );
+    crate::app::lan_service::prepare_host_timing(state)?;
+    let max_ahead_frames = state
+        .match_state
+        .session
+        .network_max_ahead_frames()
+        .ok_or_else(|| anyhow::anyhow!("host start has no admitted LAN protocol timing"))?;
+    let agreed_seed = state
+        .match_state
+        .session
+        .network_start_seed()
+        .ok_or_else(|| anyhow::anyhow!("direct setup has no seed"))?;
+    let launch = state
+        .match_state
+        .session
+        .network_setup()
+        .ok_or_else(|| anyhow::anyhow!("no setup"))?;
+    let go_pending = (0..launch.humans.len())
+        .filter(|source| *source != launch.local_player_index)
+        .collect();
+    log::info!(
+        "Direct spawn: every guest answered; GO with MaxAhead {max_ahead_frames}, seed {agreed_seed}"
+    );
+    queue(
+        state,
+        NetworkSetupRequest::Go {
+            agreed_seed,
+            max_ahead_frames,
+        },
+    );
+    let protocol = state
+        .frontend
+        .network_setup_protocol
+        .as_mut()
+        .expect("checked setup");
+    protocol.locked = true;
+    protocol.lan_go = Some(super::super::LanGoWait::HostSending {
+        pending: go_pending,
+    });
+    Ok(())
+}
+
 /// VERA's shared LAN/online admission allows a human to play the ordinary
 /// skirmish AI without creating another network participant. Observers and
 /// a stale declared AI count cannot stand in for an actual opponent slot.

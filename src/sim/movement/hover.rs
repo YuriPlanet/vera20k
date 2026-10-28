@@ -118,6 +118,11 @@ impl HoverRuntime {
         self.head
     }
 
+    /// ILocomotion::Destination514CB0 reads +14, independently of the head.
+    pub(crate) fn destination(&self) -> Option<DriveCoord> {
+        self.destination
+    }
+
     /// Test fixtures only: ProcessMovement (`hover_process`) is the writer.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_head(&mut self, head: Option<DriveCoord>) {

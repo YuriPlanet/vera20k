@@ -182,7 +182,7 @@ pub(crate) fn apply(state: &mut AppState, command: ChronoScreenCommand) {
             }
             if !state
                 .match_state
-                .presentation_paused(&state.frontend.screen)
+                .elapsed_clock_paused(&state.frontend.screen)
             {
                 state.match_state.scenario_elapsed_clock.resume(wall_ms);
             }
@@ -206,7 +206,7 @@ pub(crate) fn retire(state: &mut AppState, wall_ms: u64) {
     }
     if !state
         .match_state
-        .presentation_paused(&state.frontend.screen)
+        .elapsed_clock_paused(&state.frontend.screen)
     {
         state.match_state.scenario_elapsed_clock.resume(wall_ms);
     }

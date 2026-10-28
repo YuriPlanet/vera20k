@@ -75,13 +75,86 @@ fn select_template(state: &AppState) -> PauseMenuTemplate {
 
 pub(crate) fn current_layout(state: &AppState) -> Option<PauseMenuLayout> {
     let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
-    Some(pause_menu_layout(
+    let mut layout = pause_menu_layout(
         shell.width,
         shell.height,
         shell.layout,
         shell.button_size,
         current_template(state),
-    ))
+    );
+    if multiplayer_control(state).is_some() {
+        layout.enable_shared_pause();
+    }
+    Some(layout)
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct MultiplayerPauseControl {
+    pub(crate) caption: &'static str,
+    pub(crate) enabled: bool,
+    pub(crate) status: Option<&'static str>,
+}
+
+fn multiplayer_control_for(
+    pause: crate::net::live_commands::MultiplayerPauseStatus,
+    stopped_here: bool,
+) -> Option<MultiplayerPauseControl> {
+    pause.available.then(|| {
+        let (caption, status) = if pause.pending {
+            if pause.paused {
+                (
+                    "Resuming...",
+                    Some("Resume requested - waiting for the relay"),
+                )
+            } else {
+                (
+                    "Pausing...",
+                    Some("Pause requested - waiting for the relay"),
+                )
+            }
+        } else if pause.paused && !stopped_here {
+            ("Pausing...", Some("Finishing the shared pause frame"))
+        } else if pause.paused {
+            (
+                "Resume All Players",
+                Some("Paused for all players - Pause or Options to resume"),
+            )
+        } else {
+            ("Pause All Players", None)
+        };
+        MultiplayerPauseControl {
+            caption,
+            enabled: !pause.pending && (!pause.paused || stopped_here),
+            status,
+        }
+    })
+}
+
+pub(crate) fn multiplayer_control(state: &AppState) -> Option<MultiplayerPauseControl> {
+    let pause = state
+        .match_state
+        .live_network
+        .as_ref()?
+        .multiplayer_pause()?;
+    multiplayer_control_for(pause, state.match_state.multiplayer_paused())
+}
+
+/// The explicit relay action is serviced without simulation ticks. Repeats
+/// while awaiting confirmation are consumed, never queued as toggles.
+pub(crate) fn toggle_multiplayer_pause(state: &mut AppState) -> bool {
+    let Some(control) = multiplayer_control(state) else {
+        return false;
+    };
+    if control.enabled
+        && state.match_state.scenario_exit.is_none()
+        && state.match_state.scenario_outcome.is_none()
+        && let Some(live) = state.match_state.live_network.as_mut()
+        && let Some(pause) = live.multiplayer_pause()
+    {
+        live.request_multiplayer_pause(!pause.paused);
+        state.platform.window.request_redraw();
+    }
+    true
 }
 
 /// The applied GameSpeed FF's init (4F1720) reads; a queued speed event
@@ -102,7 +175,7 @@ pub(crate) fn on_open(state: &mut AppState) {
     );
 }
 
-pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 6] {
+pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 7] {
     let interaction = state.match_state.match_presentation.pause_menu_interaction;
     // Native4F17D9..4F1832 applies559C20 eligibility to Load/Delete only, and
     // only in modes0/5; BBA/FF have neither control.
@@ -111,7 +184,11 @@ pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 6] {
         pressed: interaction.is_pressed(button),
         // C5 timer highlighting is separate from pointer hover.
         highlighted: false,
-        enabled: has_saves || !matches!(button, PauseMenuButton::Load | PauseMenuButton::Delete),
+        enabled: if button == PauseMenuButton::SharedPause {
+            multiplayer_control(state).is_some_and(|control| control.enabled)
+        } else {
+            has_saves || !matches!(button, PauseMenuButton::Load | PauseMenuButton::Delete)
+        },
     })
 }
 
@@ -247,6 +324,9 @@ fn activate(state: &mut AppState, button: PauseMenuButton) {
         PauseMenuButton::Load => App::open_saved_game_browser(state, SavedSeedMode::Load),
         PauseMenuButton::Save => App::open_saved_game_browser(state, SavedSeedMode::Save),
         PauseMenuButton::Delete => App::open_saved_game_browser(state, SavedSeedMode::Delete),
+        PauseMenuButton::SharedPause => {
+            toggle_multiplayer_pause(state);
+        }
     }
 }
 
@@ -340,6 +420,35 @@ fn resume_internet_events(state: &mut AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_pause_control_waits_for_confirmation_and_remains_resumable() {
+        let mut pause = crate::net::live_commands::MultiplayerPauseStatus {
+            available: true,
+            paused: false,
+            frame: 42,
+            epoch: 0,
+            pending: false,
+        };
+        let running = multiplayer_control_for(pause, false).unwrap();
+        assert!(running.enabled);
+        assert_eq!(running.caption, "Pause All Players");
+        pause.pending = true;
+        assert!(!multiplayer_control_for(pause, false).unwrap().enabled);
+        pause.paused = true;
+        pause.pending = false;
+        assert!(!multiplayer_control_for(pause, false).unwrap().enabled);
+        let stopped = multiplayer_control_for(pause, true).unwrap();
+        assert!(stopped.enabled);
+        assert_eq!(stopped.caption, "Resume All Players");
+        pause.pending = true;
+        assert_eq!(
+            multiplayer_control_for(pause, true).unwrap().caption,
+            "Resuming..."
+        );
+        pause.available = false;
+        assert!(multiplayer_control_for(pause, true).is_none());
+    }
 
     #[test]
     fn ff_init_projects_latency_and_speed_onto_the_trackbars() {

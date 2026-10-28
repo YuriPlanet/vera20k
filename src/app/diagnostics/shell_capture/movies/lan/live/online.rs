@@ -42,6 +42,9 @@ pub(super) struct LiveRoundFlow {
     phase: RoundPhase,
     rounds: Vec<Value>,
     current_round: Option<Value>,
+    // The first round whose latency measurement was incomplete. Its receipt is
+    // still written; the capture outcome then fails.
+    latency_failure: Option<String>,
     menu_return: Option<Value>,
     result_rows: Vec<[String; 5]>,
     abort: Option<super::super::super::abort_return::AbortReturnInput>,
@@ -88,6 +91,7 @@ impl LiveRoundFlow {
             phase,
             rounds: Vec::new(),
             current_round: None,
+            latency_failure: None,
             menu_return: None,
             result_rows: Vec::new(),
             abort: None,
@@ -668,9 +672,10 @@ impl LiveRoundFlow {
         match self.phase {
             RoundPhase::Main
                 if rendered == PresentedShell::MainMenu
-                    && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
-                        state,
-                    ))? =>
+                    && steady_main_menu_capture_ready_for(
+                        MainMenuCaptureSnapshot::from_state(state),
+                        self.config.as_ref().is_some_and(|config| config.latency),
+                    )? =>
             {
                 LanCapture::isolated_root(state)?;
                 ensure!(
@@ -1066,6 +1071,15 @@ impl LiveRoundFlow {
                     } else {
                         json!({"runtime":core.round_receipt(state)?})
                     });
+                    if self.latency_failure.is_none()
+                        && let Some(reason) = core
+                            .latency
+                            .as_ref()
+                            .and_then(super::latency::LatencyCapture::incomplete)
+                    {
+                        self.latency_failure =
+                            Some(format!("round {}: {reason}", self.rounds.len() + 1));
+                    }
                     self.result_rows.clear();
                     if let Some(failure) = &core.failure {
                         if failure.returned() {
@@ -1410,9 +1424,10 @@ impl LiveRoundFlow {
             }
             RoundPhase::MainReturn
                 if rendered == PresentedShell::MainMenu
-                    && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
-                        state,
-                    ))? =>
+                    && steady_main_menu_capture_ready_for(
+                        MainMenuCaptureSnapshot::from_state(state),
+                        self.config.as_ref().is_some_and(|config| config.latency),
+                    )? =>
             {
                 if !self.observe_exit_cleanup(state, frame)? {
                     return Ok(());
@@ -1466,6 +1481,10 @@ impl LiveRoundFlow {
             _ => {}
         }
         Ok(())
+    }
+
+    pub(super) fn latency_failure(&self) -> Option<&str> {
+        self.latency_failure.as_deref()
     }
 
     pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
@@ -1525,12 +1544,15 @@ fn reset_round(core: &mut LiveLanCapture) {
     core.actor_last_seen = None;
     core.origin = None;
     core.observed_movement = false;
-    core.stopped_position = None;
+    core.stop_observation = super::StopObservation::default();
     core.stopped = false;
     core.last_wait = None;
     core.kick_observed = false;
     core.entered_setup = false;
     core.country_selected = false;
+    if core.latency.is_some() {
+        core.latency = Some(super::latency::LatencyCapture::default());
+    }
     if core.mass.is_some() {
         core.mass = Some(mass::MassInput::default());
     }

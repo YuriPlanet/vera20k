@@ -1187,6 +1187,13 @@ pub(crate) fn commit_entities(
             }
         };
         #[cfg(feature = "phobos")]
+        #[cfg(feature = "ares")]
+        let ares_initially_positive = shield_receipt
+            .as_ref()
+            .map_or(event.damage > 0, |receipt| receipt.remaining > 0);
+        #[cfg(all(feature = "ares", not(feature = "phobos")))]
+        let ares_initially_positive = event.damage > 0;
+        #[cfg(feature = "phobos")]
         let receiver_outcome = match shield_receipt {
             Some(receipt) => resolve_receive_damage_with_input(
                 event,
@@ -1438,6 +1445,36 @@ pub(crate) fn commit_entities(
                 run.effects(),
             );
         }
+
+        // Installed Ares702819 ->1004AB50 is a receiver aftermath, after
+        // protected responses and before Uncloak. The early701914 hook
+        // records the sign before defenses; callbacks may alter a pointed
+        // damage field before the aftermath reads it again.
+        #[cfg(feature = "ares")]
+        {
+            let current_damage = event
+                .damage_writeback
+                .map(|writeback| writeback.read(world, rules))
+                .or_else(|| {
+                    receiver_outcome.and_then(|resolved| resolved.outcome.post_object_damage)
+                })
+                .unwrap_or(event.damage);
+            world.ares_driver_kill_aftermath(
+                event,
+                receive_state,
+                ares_initially_positive,
+                current_damage,
+                rules,
+                overlay_registry,
+                run.effects(),
+            );
+        }
+
+        //1004AB68..1004AB88 returns702823 for result0, skipping Uncloak
+        //even when no extension effect is configured or admitted.
+        #[cfg(feature = "ares")]
+        let uncloak_after_damage =
+            uncloak_after_damage && receive_state != damage::DamageState::Unaffected;
 
         // `0x0070281D`, in its native slot: after the `ToProtect` response
         // (`0x007027E9`); Object's Kill/Destroy have already returned. The
@@ -2249,11 +2286,14 @@ fn finish_concrete_death(
     // The killing call's concrete receiver booleans: IgnoreDefenses (arg5)
     // becomes the building's NoSurvivor and kills a unit's passengers, arg6
     // gates the vehicle crew.
-    let (ignore_defenses, prevent_crew_escape) = damage_events
+    let killing_flags = damage_events
         .iter()
         .rfind(|event| event.target_id == dead_id)
-        .map(|event| event.receiver_flags)
-        .map_or((false, false), |flags| (flags.ignore_defenses, flags.arg6));
+        .map(|event| event.receiver_flags);
+    let ignore_defenses = killing_flags.is_some_and(|flags| flags.ignore_defenses);
+    // Ares's survivor release (`0x100464C0`) reads only IgnoreDefenses.
+    #[cfg(not(feature = "ares"))]
+    let prevent_crew_escape = killing_flags.is_some_and(|flags| flags.arg6);
 
     // BuildingClass runs DestructionEffects/SpawnSurvivors only after
     // TechnoClass's synchronous death weapon has returned. Capture the
@@ -2301,15 +2341,32 @@ fn finish_concrete_death(
             ignore_defenses,
             selected_by_player,
         };
-        world.release_dying_unit_passengers(rules, overlay_registry, dead_id, dying, frame_effects);
-        world.spawn_vehicle_crew(
+        #[cfg(feature = "ares")]
+        world.release_ares_vehicle_survivors(
             rules,
             overlay_registry,
             dead_id,
-            prevent_crew_escape,
-            selected_by_player,
+            dying,
             frame_effects,
         );
+        #[cfg(not(feature = "ares"))]
+        {
+            world.release_dying_unit_passengers(
+                rules,
+                overlay_registry,
+                dead_id,
+                dying,
+                frame_effects,
+            );
+            world.spawn_vehicle_crew(
+                rules,
+                overlay_registry,
+                dead_id,
+                prevent_crew_escape,
+                selected_by_player,
+                frame_effects,
+            );
+        }
         world.drop_unit_cargo_crate(dead_id, rules, overlay_registry);
     }
 
@@ -2381,13 +2438,50 @@ fn finish_concrete_death(
         // released its dock slots.
         effects.despawned_ids.push(dead_id);
     } else if category == EntityCategory::Aircraft && callbacks_enabled(world) {
-        if !world.foot_crash(
-            dead_id,
-            killing_attacker(world, damage_events, dead_id),
-            rules,
-            overlay_registry,
-            frame_effects,
-        ) {
+        #[cfg(feature = "ares")]
+        {
+            //41668B ->10048C50 reads the live selected byte here (unlike
+            //Unit's entry snapshot), then calls shared survivors100464C0.
+            let selected = world
+                .substrate
+                .entities
+                .get(dead_id)
+                .is_some_and(|aircraft| {
+                    aircraft.selection.is_selected() && world.owner_is_human(aircraft.owner())
+                });
+            let dying = crate::sim::crew_survival::DyingTransport {
+                attacker: killing_attacker(world, damage_events, dead_id),
+                ignore_defenses,
+                selected_by_player: selected,
+            };
+            world.release_ares_vehicle_survivors(
+                rules,
+                overlay_registry,
+                dead_id,
+                dying,
+                frame_effects,
+            );
+        }
+        #[cfg(feature = "ares")]
+        let may_crash = world
+            .substrate
+            .entities
+            .get(dead_id)
+            .and_then(|aircraft| world.entity_object_type(aircraft, rules))
+            .is_none_or(|object| object.aircraft_crashable_override() != Some(false));
+        #[cfg(not(feature = "ares"))]
+        let may_crash = true;
+        //10048CB5..10048CDB skips the original Crash only for an explicit
+        //Crashable=no; absence still takes Aircraft416694's original call.
+        if !may_crash
+            || !world.foot_crash(
+                dead_id,
+                killing_attacker(world, damage_events, dead_id),
+                rules,
+                overlay_registry,
+                frame_effects,
+            )
+        {
             // AircraftClass::ReceiveDamage4166A3 UnInits a refused Crash
             // before returning. A later area receiver's passenger placement
             // must see its cell cleared, rather than wait for batch delivery.

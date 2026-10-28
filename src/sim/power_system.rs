@@ -490,6 +490,102 @@ pub(crate) fn is_operational_for_output(
         && facts.effective_mission != 0x13
 }
 
+/// Original44E85F calls5F5C60, then FIMUL and _ftol: the host's x87
+/// signed-health/live-Strength ratio times its output.
+fn health_scaled_output(power: i32, entity: &GameEntity, strength: i32) -> i32 {
+    use crate::util::native_x87::MaskedX87Chop53 as X87;
+    X87::ftol_i32_low_masked(X87::mul(
+        entity.health.ratio(strength),
+        X87::load_i32(power),
+    ))
+}
+
+/// Phobos `BuildingTypeExt::GetEnhancedPower` (`src/Ext/BuildingType/Body.cpp`)
+/// for one target type and raw output. Every active same-owner enhancer that
+/// names the target adds its `Amount` and multiplies the running binary32
+/// `Factor`; `PowerPlantEnhancer.MaxCount` limits how many enhancers of one
+/// type apply. A positive `Range` (leptons) rejects enhancers farther from the
+/// plant. The factored output is `std::round(output * factor)`.
+#[cfg(feature = "phobos")]
+fn enhanced_power(
+    target: &crate::rules::object_type::ObjectType,
+    output: i32,
+    plant: &GameEntity,
+    enhancers: &[(&GameEntity, &crate::rules::object_type::ObjectType)],
+) -> (i32, i32) {
+    let mut factor = 1.0f32;
+    let mut amount = 0i32;
+    let mut applied: std::collections::HashMap<InternedId, i32> = std::collections::HashMap::new();
+    for (enhancer, enhancer_type) in enhancers {
+        if enhancer.owner() != plant.owner()
+            || !enhancer_type.power_plant_enhancer_enhances(&target.id)
+        {
+            continue;
+        }
+        let range = enhancer_type.power_plant_enhancer_range();
+        if range > 0 && power_plant_enhancer_distance(enhancer, plant) > range {
+            continue;
+        }
+        let max = enhancer_type.power_plant_enhancer_max_count();
+        if max > 0 {
+            let count = applied.entry(enhancer.type_ref()).or_insert(0);
+            if *count >= max {
+                continue;
+            }
+            *count += 1;
+        }
+        factor *= enhancer_type.power_plant_enhancer_factor();
+        amount = amount.wrapping_add(enhancer_type.power_plant_enhancer_amount());
+    }
+    // `std::round` of the binary32 product; a factor of exactly 1 returns the
+    // output unchanged, as that product does below 2^24.
+    let power = if factor == 1.0 {
+        output
+    } else {
+        (output as f32 * factor).round() as i32
+    };
+    (power, amount)
+}
+
+/// `pEnhancer->DistanceFrom(pPowerPlant)`: `ObjectClass::Distance_To @
+/// 0x005F6440` from the enhancer's GetCoords to the plant's, less the plant's
+/// foundation.
+#[cfg(feature = "phobos")]
+fn power_plant_enhancer_distance(enhancer: &GameEntity, plant: &GameEntity) -> i32 {
+    use crate::sim::movement::ground_pose::object_center_xy;
+    let (width, height) = plant.type_facts.foundation().dimensions();
+    crate::util::native_x87::object_planar_distance(
+        object_center_xy(enhancer),
+        object_center_xy(plant),
+        Some((i32::from(width), i32::from(height))),
+    )
+}
+
+/// Phobos `PowerPlant.DamageFactor`: the health-driven output loss. The
+/// default 1.0 keeps the stock x87 product ([`health_scaled_output`]); 0.0
+/// ignores health; any other value follows the hook's binary64 formula and
+/// clamps at zero. Phobos is built with `/arch:SSE2` (`Phobos.props`), so its
+/// 1.0 product rounds to nearest where the stock product kept here chops; see
+/// the residuals in `docs/phobos-power-plant-enhancer.md`.
+#[cfg(feature = "phobos")]
+fn scaled_power_plant_output(
+    power: i32,
+    damage_factor: f64,
+    entity: &GameEntity,
+    strength: i32,
+) -> i32 {
+    use crate::util::native_x87::MaskedX87Chop53 as X87;
+    if damage_factor == 1.0 {
+        health_scaled_output(power, entity, strength)
+    } else if damage_factor == 0.0 {
+        power
+    } else {
+        let ratio = entity.health.ratio(strength);
+        let health = f64::from_bits(X87::store_f64_masked_chop(ratio).bits());
+        ((f64::from(power) * (1.0 - damage_factor + damage_factor * health)) as i32).max(0)
+    }
+}
+
 /// Recalculate power totals for a single owner from their buildings.
 ///
 /// Building44E85F..44E86A multiplies native signed-health/live-Strength x87
@@ -516,6 +612,23 @@ fn recalculate_power_for_owner(
     let mut produced: i32 = 0;
     let mut drained: i32 = 0;
     let mut has_drained_power_source = false;
+    // Phobos `HouseExt::PowerPlantEnhancers`: this owner's active registered
+    // enhancer buildings. The list is derived from the same building order the
+    // assessment scans, so destroyed, limboed and offline enhancers drop out.
+    #[cfg(feature = "phobos")]
+    let enhancers: Vec<(&GameEntity, &crate::rules::object_type::ObjectType)> = building_order
+        .iter()
+        .filter_map(|&id| {
+            let entity = entities.get(id)?;
+            if entity.category() != EntityCategory::Structure
+                || !entity.is_power_plant_enhancer_active()
+            {
+                return None;
+            }
+            let object = interner.object_type(entity.type_ref(), rules)?;
+            object.is_power_plant_enhancer().then_some((entity, object))
+        })
+        .collect();
     // House508C8B..508D3E scans the retained House+68 roster, not all stored
     // entities. Destroy/expiry4FBC1C removes a building before an Explodes
     // zero-fuse body necessarily leaves the map. It skips NULL, limbo(+81),
@@ -571,24 +684,57 @@ fn recalculate_power_for_owner(
         // sparse slots beyond the count. Sum before scaling the host's HP;
         // installed upgrades do not own independent power contributors.
         // Native controls: spatial_oracle/building_upgrades.json `power`.
-        let upgrades = entity.building_upgrades();
-        if upgrades.count() != 0 {
-            for type_ref in upgrades.types().iter().flatten() {
-                let Some(upgrade) = interner.object_type(*type_ref, rules) else {
-                    continue;
-                };
-                output_contribution = output_contribution.wrapping_add(upgrade.power.max(0));
+        // Phobos `BuildingClass_GetPowerOutput_Enhancer` (`0x44E826`) replaces
+        // that sum: a plant under EMP outputs nothing (its `HasPower` test is
+        // the Building+660 one above), and each enhancer naming the host's or
+        // an upgrade's type applies to that type's output.
+        #[cfg(feature = "phobos")]
+        let (power, extra_power) = if entity.emp_remaining() > 0 {
+            (0, 0)
+        } else {
+            let (mut power, mut extra) =
+                enhanced_power(obj, output_contribution, entity, &enhancers);
+            let upgrades = entity.building_upgrades();
+            if upgrades.count() != 0 {
+                for type_ref in upgrades.types().iter().flatten() {
+                    let Some(upgrade) = interner.object_type(*type_ref, rules) else {
+                        continue;
+                    };
+                    let (upgrade_power, upgrade_extra) =
+                        enhanced_power(upgrade, upgrade.power.max(0), entity, &enhancers);
+                    power = power.wrapping_add(upgrade_power);
+                    extra = extra.wrapping_add(upgrade_extra);
+                }
             }
-        }
-        if output_contribution > 0 {
+            (power, extra)
+        };
+        #[cfg(not(feature = "phobos"))]
+        let (power, extra_power) = {
+            let upgrades = entity.building_upgrades();
+            if upgrades.count() != 0 {
+                for type_ref in upgrades.types().iter().flatten() {
+                    let Some(upgrade) = interner.object_type(*type_ref, rules) else {
+                        continue;
+                    };
+                    output_contribution = output_contribution.wrapping_add(upgrade.power.max(0));
+                }
+            }
+            (output_contribution, 0)
+        };
+        if power.wrapping_add(extra_power) > 0 {
             // Original44E85F calls5F5C60, then FIMUL and _ftol; House508CFF
             // adds the signed returned dword with wrapping ADD. No max(1),
             // health clamp or integer product precedes the native division.
-            use crate::util::native_x87::MaskedX87Chop53 as X87;
-            let output = X87::ftol_i32_low_masked(X87::mul(
-                entity.health.ratio(obj.strength),
-                X87::load_i32(output_contribution),
-            ));
+            #[cfg(feature = "phobos")]
+            let output = scaled_power_plant_output(
+                power,
+                obj.power_plant_damage_factor(),
+                entity,
+                obj.strength,
+            )
+            .wrapping_add(extra_power);
+            #[cfg(not(feature = "phobos"))]
+            let output = health_scaled_output(power, entity, obj.strength);
             produced = produced.wrapping_add(output);
             //508D1E calls70FEC0 (DrainingMe != null), then repeats the
             // live GetPowerOutput getter and tests its signed result >0.
@@ -1280,4 +1426,122 @@ BuildSpeed=0.02
     }
 
     // -------- ExtraPower (Yuri Bio-Reactor) bonus tests -----------------
+
+    #[cfg(feature = "phobos")]
+    fn building_at(id: u64, type_ref: &str, owner: &str, rx: u16, ry: u16, hp: i32) -> GameEntity {
+        let mut e = GameEntity::test_default_of_category(
+            id,
+            type_ref,
+            owner,
+            rx,
+            ry,
+            EntityCategory::Structure,
+        );
+        e.health = Health::new(hp);
+        e.lifecycle.set_in_limbo_for_test(false);
+        e.lifecycle.set_cell_marked_for_test(true);
+        e.set_building_online_for_test(true);
+        e
+    }
+
+    #[cfg(feature = "phobos")]
+    fn output_for(rules: &RuleSet, buildings: Vec<GameEntity>) -> i32 {
+        let interner = test_interner();
+        let owner = buildings[0].owner();
+        let mut store = EntityStore::new();
+        for building in buildings {
+            store.insert(building);
+        }
+        let mut states = PowerStates::default();
+        tick_power_states(&mut states, &mut store, rules, &interner, 0);
+        states[&owner].total_output
+    }
+
+    /// Phobos `GetEnhancedPower`: a registered enhancer naming the plant adds
+    /// `Amount` and multiplies `Factor` (`round(output * factor)`), gated by
+    /// `IsActive` and `HasPower`, its `Range` in leptons and `MaxCount` per
+    /// enhancer type.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn power_plant_enhancers_apply_factor_amount_range_and_max_count() {
+        let rules = |max_count: &str| {
+            rules_from_ini(&format!(
+                "[BuildingTypes]\n0=PLANT\n1=ENH\n\
+                 [PLANT]\nPower=100\nStrength=100\n\
+                 [ENH]\nStrength=100\nPowerPlantEnhancer.PowerPlants=PLANT\n\
+                 PowerPlantEnhancer.Range=3\nPowerPlantEnhancer.Amount=10\n\
+                 PowerPlantEnhancer.Factor=1.5\nPowerPlantEnhancer.MaxCount={max_count}\n"
+            ))
+        };
+        let plant = |hp| building_at(1, "PLANT", "A", 10, 10, hp);
+        let enhancer = |id, rx, ry| building_at(id, "ENH", "A", rx, ry, 100);
+
+        // One enhancer in range: round(100 * 1.5) + 10.
+        assert_eq!(
+            output_for(&rules("-1"), vec![plant(100), enhancer(2, 11, 10)]),
+            160
+        );
+        // Outside Range=3 cells (768 leptons): Distance_To (0x5F6440) takes
+        // the plant's 1x1 foundation (128) off the 1024-lepton distance.
+        assert_eq!(
+            output_for(&rules("-1"), vec![plant(100), enhancer(2, 14, 10)]),
+            100
+        );
+        // Inside: the 809-lepton planar distance less 128.
+        assert_eq!(
+            output_for(&rules("-1"), vec![plant(100), enhancer(2, 13, 11)]),
+            160
+        );
+        // BuildingClass_GetPowerOutput_Enhancer (0x44E826): a plant under
+        // EMP outputs nothing.
+        let mut emp = plant(100);
+        emp.set_emp_remaining_for_test(10);
+        assert_eq!(output_for(&rules("-1"), vec![emp, enhancer(2, 11, 10)]), 0);
+        // An offline enhancer is not active.
+        let mut offline = enhancer(2, 11, 10);
+        offline.set_building_online_for_test(false);
+        assert_eq!(output_for(&rules("-1"), vec![plant(100), offline]), 100);
+        // Two same-type enhancers: MaxCount=1 applies only one of them.
+        assert_eq!(
+            output_for(
+                &rules("1"),
+                vec![plant(100), enhancer(2, 11, 10), enhancer(3, 12, 10)]
+            ),
+            160
+        );
+        let unlimited = output_for(
+            &rules("-1"),
+            vec![plant(100), enhancer(2, 11, 10), enhancer(3, 12, 10)],
+        );
+        assert_eq!(unlimited, 245, "100*1.5*1.5 + 10 + 10");
+
+        // Amount alone still applies with the default Factor.
+        let amount_only = rules_from_ini(
+            "[BuildingTypes]\n0=PLANT\n1=ENH\n\
+             [PLANT]\nPower=100\nStrength=100\n\
+             [ENH]\nStrength=100\nPowerPlantEnhancer.PowerPlants=PLANT\n\
+             PowerPlantEnhancer.Range=3\nPowerPlantEnhancer.Amount=10\n",
+        );
+        assert_eq!(
+            output_for(&amount_only, vec![plant(100), enhancer(2, 11, 10)]),
+            110
+        );
+    }
+
+    /// Phobos `PowerPlant.DamageFactor`: 1.0 keeps the native health curve,
+    /// 0.0 ignores health, and other values scale the health-driven loss.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn power_plant_damage_factor_scales_the_health_loss() {
+        let rules = |factor: &str| {
+            rules_from_ini(&format!(
+                "[BuildingTypes]\n0=PLANT\n\
+                 [PLANT]\nPower=100\nStrength=100\nPowerPlant.DamageFactor={factor}\n"
+            ))
+        };
+        let plant = |hp| building_at(1, "PLANT", "A", 10, 10, hp);
+        assert_eq!(output_for(&rules("1.0"), vec![plant(50)]), 50);
+        assert_eq!(output_for(&rules("0"), vec![plant(50)]), 100);
+        assert_eq!(output_for(&rules("0.5"), vec![plant(50)]), 75);
+    }
 }

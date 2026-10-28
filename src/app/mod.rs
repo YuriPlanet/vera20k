@@ -43,6 +43,7 @@ pub(crate) mod campaign_defeat;
 pub(crate) mod campaign_victory;
 pub(crate) mod chrono_screen;
 mod cncnet;
+pub(crate) use cncnet::{BrowserSpawnGate, BrowserSpawnStart, SpawnAction};
 mod cooperative_round;
 #[cfg(feature = "debug-tools")]
 pub(crate) mod debug_tools;
@@ -64,6 +65,7 @@ pub mod match_bootstrap;
 pub(crate) mod match_diagnostics;
 pub(crate) mod match_runtime;
 pub(crate) mod movie_playback;
+pub(crate) mod movie_subtitles;
 pub(crate) mod persistence;
 /// The build description's native version metadata (`Phobos.version.h`).
 pub(crate) mod phobos_version;
@@ -91,6 +93,7 @@ mod shell_wol;
 pub(crate) mod sidebar_projection;
 #[cfg(test)]
 mod sidebar_projection_tests;
+pub(crate) mod spawn_probe;
 mod state;
 #[cfg(feature = "telemetry-dashboard")]
 pub mod telemetry;
@@ -140,6 +143,8 @@ pub struct App {
     /// use the command-line screen fields as its current-value defaults.
     startup_options: crate::app::frontend::startup_options::RetailStartupOptions,
     spawn_request: Option<crate::app::frontend::cncnet_spawn::SpawnRequest>,
+    /// `-SPAWN`: where the launch result is written (docs/spawn.md).
+    spawn_result_path: Option<std::path::PathBuf>,
     replay_request: Option<crate::app::frontend::launch::ReplayLaunchRequest>,
     startup_failure: Option<String>,
     /// Make sure config.toml names a game folder before the window opens
@@ -196,6 +201,7 @@ impl App {
             capture_render_not_before: None,
             startup_options,
             spawn_request: None,
+            spawn_result_path: None,
             replay_request: None,
             startup_failure: None,
             ask_for_game_folder: false,
@@ -216,6 +222,7 @@ impl App {
             capture_render_not_before: None,
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
             spawn_request: None,
+            spawn_result_path: None,
             replay_request: None,
             startup_failure: None,
             ask_for_game_folder: false,
@@ -238,6 +245,7 @@ impl App {
             capture_render_not_before: None,
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
             spawn_request: None,
+            spawn_result_path: None,
             replay_request: None,
             startup_failure: None,
             ask_for_game_folder: false,

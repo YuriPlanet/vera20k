@@ -2,26 +2,217 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VERA20k — WebAssembly preview</title>
+<meta name="color-scheme" content="dark">
+<title>VERA20k</title>
 <style>
-  body { margin: 0; color: #ddd; background: #181818; font: 16px system-ui, sans-serif; }
-  header { padding: 16px 24px; }
-  h1 { font-size: 22px; }
-  button, input { font: inherit; margin: 4px 12px 4px 0; }
-  canvas { display: block; width: 100%; height: calc(100vh - 220px); min-height: 480px; outline: none; }
-  [hidden] { display: none; }
-  #storage, #license { font-size: 14px; }
-  a { color: #9cf; }
+  /* Colours follow the game's dialogs: yellow text, red action plates, grey bevels on black. */
+  :root {
+    --page: #000; --panel: #1b1b1b; --raised: #262626; --well: #0f0f0f;
+    --hi: #bdbdbd; --lo: #474747; --rule: #333;
+    --yellow: #ffff00; --yellow-dim: #8a8a1e; --red: #ff0000; --red-hi: #ff8080; --red-lo: #8c0000;
+    --text: #d4d4d4; --muted: #8a8a8a; --dim: #575757; --ok: #3cdc3c; --err: #ff4848;
+    --mono: Consolas, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; color: var(--text); background: var(--page); overflow: hidden;
+    font: 14px/1.5 "Microsoft YaHei", "PingFang SC", "Segoe UI", system-ui, sans-serif; }
+  [hidden] { display: none !important; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px dotted var(--yellow); outline-offset: 3px; }
+  a { color: var(--text); text-underline-offset: 3px; }
+  a:hover { color: var(--yellow); }
+  .bevel { border: 2px solid; border-color: var(--hi) var(--lo) var(--lo) var(--hi); }
+  .inset { border: 2px solid; border-color: var(--lo) var(--hi) var(--hi) var(--lo); }
+
+  canvas { position: fixed; inset: 0; display: block; width: 100vw; height: 100vh; outline: none; background: #000; }
+
+  #launcher { position: fixed; inset: 0; z-index: 2; overflow-y: auto; background: var(--page); padding: 40px 16px; transition: opacity .35s; }
+  #launcher.leaving { opacity: 0; pointer-events: none; }
+  .wrap { max-width: 980px; margin: 0 auto; }
+
+  /* Masthead */
+  .mast { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--rule); }
+  .mark { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  h1 { margin: 0; color: var(--yellow); font-size: 34px; font-weight: 900; line-height: 1; letter-spacing: .03em; }
+  .mark p { margin: 0; color: var(--muted); letter-spacing: .2em; }
+  .links { display: flex; gap: 6px; color: var(--dim); font-size: 13px; }
+  .links button { background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer; }
+  .links button:hover, .links button[aria-expanded="true"] { color: var(--yellow); }
+
+  /* Deployment track: where the player is, at a glance. */
+  ol.track { list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin: 22px 0 18px; padding: 0; counter-reset: step; }
+  .track li { position: relative; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 18px 0 30px; background: var(--raised); color: var(--dim);
+    clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 50%, calc(100% - 18px) 100%, 0 100%, 18px 50%); margin-right: -12px; }
+  .track li:last-child { margin-right: 0; }
+  .track li:first-child { padding-left: 16px; clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 50%, calc(100% - 18px) 100%, 0 100%); }
+  .track li::before { counter-increment: step; content: counter(step); flex: none; width: 28px; height: 28px; display: grid; place-items: center;
+    font: 900 15px var(--mono); border: 1px solid currentColor; }
+  .track b { font-weight: 800; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track li[data-state="active"] { background: var(--red); color: var(--yellow); }
+  .track li[data-state="done"] { background: #2e2e14; color: var(--yellow); }
+  .track li[data-state="done"]::before { content: "✓"; }
+  .track li[data-state="warn"] { background: #2e2e14; color: var(--yellow); }
+  .track li[data-state="warn"]::before { content: "!"; }
+  .track li[data-state="error"] { background: #3a1010; color: var(--err); }
+  .track li[data-state="error"]::before { content: "!"; }
+
+  /* Main console */
+  .console { background: var(--panel); padding: 22px; display: grid; grid-template-columns: 1.15fr 1fr; gap: 22px; }
+  #drop { position: relative; display: grid; place-content: center; justify-items: center; gap: 6px; min-height: 300px; padding: 24px; text-align: center;
+    background: var(--well); cursor: pointer; transition: background .15s; }
+  #drop::after { content: ""; position: absolute; inset: 10px; border: 1px dashed var(--lo); pointer-events: none; transition: border-color .15s; }
+  #drop:hover::after { border-color: var(--yellow-dim); }
+  #drop.over { background: #16160a; }
+  #drop.over::after { border: 2px solid var(--yellow); }
+  #drop[aria-disabled="true"] { cursor: default; }
+  #drop svg { width: 92px; height: 76px; color: var(--yellow); margin-bottom: 10px; }
+  #drop[aria-disabled="true"] svg { color: var(--dim); }
+  .drop-title { margin: 0; color: var(--text); font-size: 20px; font-weight: 800; }
+  .drop-sub { margin: 0; color: var(--muted); }
+
+  .side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .side h2 { margin: 0; color: var(--yellow); font-size: 15px; font-weight: 800; letter-spacing: .08em; }
+  .manifest { background: var(--well); padding: 6px 14px; font: 13px var(--mono); }
+  .manifest div { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid #222; }
+  .manifest div:last-child { border-bottom: 0; }
+  .manifest dt { color: var(--muted); }
+  .manifest dd { margin: 0; color: var(--text); text-align: right; overflow-wrap: anywhere; min-width: 0; }
+  .manifest dd.ok { color: var(--ok); }
+  .manifest dd.missing { color: var(--err); }
+  .manifest dd.idle { color: var(--dim); }
+  #folder-detail { margin: 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+  #folder-detail.warn { color: var(--yellow); }
+  #folder-detail.err { color: var(--err); }
+
+  .plate { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; height: 52px; padding: 0 18px;
+    font-size: 18px; font-weight: 900; letter-spacing: .04em; cursor: pointer; border: 2px solid; }
+  .plate svg { flex: none; width: 20px; height: 20px; }
+  .plate.primary { background: var(--red); color: var(--yellow); border-color: var(--red-hi) var(--red-lo) var(--red-lo) var(--red-hi); }
+  .plate.primary:hover:not(:disabled) { background: #ff2626; }
+  .plate.primary:active:not(:disabled) { border-color: var(--red-lo) var(--red-hi) var(--red-hi) var(--red-lo); }
+  .plate.secondary { background: var(--raised); color: var(--text); border-color: #6a6a6a #333 #333 #6a6a6a; }
+  .plate.secondary:hover:not(:disabled) { color: var(--yellow); }
+  .plate:disabled { background: #202020; color: var(--dim); border-color: #3a3a3a; cursor: not-allowed; }
+  .buttons { display: grid; gap: 10px; margin-top: auto; }
+  .note { margin: 0; color: var(--dim); font-size: 12.5px; }
+
+  .progress { grid-column: 1 / -1; height: 16px; padding: 3px; background: var(--well); }
+  /* Segmented like the game's loading bar. */
+  .progress div { height: 100%; width: 0; transition: width .15s; background: repeating-linear-gradient(90deg, var(--yellow) 0 9px, transparent 9px 12px); }
+
+  #status { margin: 12px 0 0; padding: 0 2px; font: 13px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+  #status::before { content: "> "; color: var(--yellow); }
+  #status[data-tone="ok"] { color: var(--text); }
+  #status[data-tone="err"] { color: var(--err); }
+  #status[data-tone="err"]::before { color: var(--err); }
+
+  #help { margin-top: 18px; padding: 16px 20px; background: var(--panel); }
+  #help h3 { margin: 0 0 8px; color: var(--yellow); font-size: 15px; }
+  #help ul { margin: 0; padding-left: 20px; }
+  #help li + li { margin-top: 5px; }
+  code { font: 13px var(--mono); color: var(--yellow); }
+
+  footer { margin-top: 36px; padding-top: 14px; border-top: 1px solid var(--rule); color: var(--dim); font-size: 12.5px;
+    display: flex; justify-content: space-between; gap: 6px 24px; flex-wrap: wrap; }
+  footer p { margin: 0; }
+
+  #hud { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 3; max-width: calc(100vw - 32px);
+    padding: 6px 14px; background: rgba(0, 0, 0, .85); border: 1px solid var(--lo); color: var(--yellow); font: 13px var(--mono);
+    transition: opacity .5s; pointer-events: none; }
+  #hud.fade { opacity: 0; }
+
+  @media (max-width: 760px) {
+    #launcher { padding-top: 20px; }
+    .console { grid-template-columns: 1fr; padding: 14px; }
+    #drop { min-height: 200px; }
+    .track li { height: 46px; padding: 0 12px 0 24px; gap: 8px; }
+    .track li::before { width: 22px; height: 22px; font-size: 13px; }
+    .track b { font-size: 13px; }
+  }
+  @media (max-width: 480px) { .track b { display: none; } .mast { flex-direction: column; align-items: flex-start; } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
-<header>
-  <h1>VERA20k — WebAssembly preview</h1>
-  <p>Single player. Select your extracted Yuri’s Revenge game folder. Files stay on this computer.</p>
-  <input id="files" type="file" webkitdirectory multiple aria-label="Game resource folder">
-  <button id="start" disabled>Start game</button>
-  <p id="status" role="status">Loading engine…</p>
-  <p id="storage" role="status">Settings and saves are stored in this browser for this site.</p>
-  <p id="license">VERA20k is free software under the <a href="https://github.com/YuriPlanet/vera20k/blob/main/LICENSE-GPL">GNU GPL version 3</a>. Source: <a href="https://github.com/YuriPlanet/vera20k">github.com/YuriPlanet/vera20k</a>.</p>
-</header>
+
 <canvas id="game" width="1024" height="768" tabindex="0" aria-label="Game"></canvas>
+
+<main id="launcher">
+  <div class="wrap">
+    <header class="mast">
+      <div class="mark">
+        <h1>VERA20k</h1>
+        <p data-i18n="tagline">Yuri’s Revenge · Web edition</p>
+      </div>
+      <nav class="links">
+        <button id="help-toggle" type="button" aria-expanded="false" aria-controls="help" data-i18n="helpTitle">Help</button>
+        <span aria-hidden="true">|</span>
+        <button id="lang" type="button">中文</button>
+      </nav>
+    </header>
+
+    <ol class="track" aria-label="Progress">
+      <li id="step-browser" data-state="active"><b data-i18n="browserTitle">Check browser</b></li>
+      <li id="step-folder" data-state="waiting"><b data-i18n="folderTitle">Import game files</b></li>
+      <li id="step-start" data-state="waiting"><b data-i18n="startTitle">Start game</b></li>
+    </ol>
+
+    <section class="console bevel">
+      <div id="drop" class="inset" role="button" tabindex="0" aria-disabled="true">
+        <svg viewBox="0 0 92 76" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3">
+          <path d="M3 9h28l7 8h51v56H3z"/>
+          <path d="M3 27h86"/>
+          <path d="M46 37v26M35 52l11 11 11-11"/>
+        </svg>
+        <p class="drop-title" data-i18n="dropHint">Drop your game folder here</p>
+        <p class="drop-sub" data-i18n="dropSub">or click to choose it</p>
+      </div>
+
+      <div class="side">
+        <h2 data-i18n="manifest">GAME FILES</h2>
+        <!-- A quick hint only; the engine's own install check reports what is really missing. -->
+        <dl class="manifest" id="checks">
+          <div><dt>ra2.mix</dt><dd class="idle" data-file="ra2.mix">—</dd></div>
+          <div><dt>ra2md.mix</dt><dd class="idle" data-file="ra2md.mix">—</dd></div>
+          <div><dt data-i18n="filesLabel">Files</dt><dd class="idle" id="file-total">—</dd></div>
+        </dl>
+        <p id="folder-detail" role="status" aria-live="polite"></p>
+        <p class="note" id="mode">Single player. Select your extracted Yuri’s Revenge game folder. Files stay on this computer.</p>
+        <div class="buttons">
+          <button class="plate primary" id="pick" type="button" disabled>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M1.5 4h6l2 2.5h9v11h-17z" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+            <span data-i18n="pick">Choose game folder</span>
+          </button>
+          <button class="plate" id="start" type="button" disabled>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 2l14 8-14 8z" fill="currentColor"/></svg>
+            <span data-i18n="start">Start game</span>
+          </button>
+        </div>
+        <input id="files" type="file" webkitdirectory multiple aria-label="Game resource folder" hidden disabled>
+      </div>
+
+      <div class="progress inset" id="progress" hidden><div></div></div>
+    </section>
+
+    <p id="status" role="status" aria-live="polite" data-i18n="engineLoading">Loading engine…</p>
+
+    <section id="help" class="bevel" hidden>
+      <h3 data-i18n="helpHeading">Where is my game folder?</h3>
+      <ul>
+        <li data-i18n-html="help1">Pick the Yuri’s Revenge install folder: the one that contains <code>ra2md.mix</code> and <code>ra2.mix</code>.</li>
+        <li data-i18n-html="help2">Steam / EA app installs usually live under <code>Command and Conquer Red Alert II</code> in the library folder.</li>
+        <li data-i18n="help3">Choosing a parent folder is fine — the game folder inside it is found automatically.</li>
+        <li data-i18n="help4">Nothing is uploaded. Game files are read into memory and must be chosen again after reloading.</li>
+        <li data-i18n="help5">Needs WebGPU: a recent Chrome or Edge works best. Large installs need plenty of memory.</li>
+      </ul>
+    </section>
+
+    <footer>
+      <p id="storage" role="status" data-i18n="storage">Settings and saves are stored in this browser for this site.</p>
+      <p id="license">VERA20k is free software under the <a href="https://github.com/YuriPlanet/vera20k/blob/main/LICENSE-GPL">GNU GPL version 3</a>. Source: <a href="https://github.com/YuriPlanet/vera20k">github.com/YuriPlanet/vera20k</a>.</p>
+    </footer>
+  </div>
+</main>
+
+<div id="hud" role="status" hidden></div>
 <script type="module" src="./host.js"></script>
 </html>

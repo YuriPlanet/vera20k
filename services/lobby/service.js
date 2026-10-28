@@ -7,6 +7,9 @@ const encoder = new TextEncoder();
 const LOBBY_PROTOCOL = 4;
 const RELAY_PROTOCOL = 2;
 const PUBLIC_LOBBY_NAME = 'Lob_41_2';
+// Channel flags bit 0x100 marks a game with a password: the client's game list
+// (0x00781480) shows its lock and Join (0x00789960) asks for the password first.
+const CHANNEL_KEYED = 0x100;
 const MAX_EVENTS = 1024;
 const MAX_EVENT_BYTES = 65536;
 const MAX_CRITICAL_BYTES = 2 * 1024 * 1024;
@@ -26,6 +29,11 @@ const MAX_PREVIEW_BYTES = 512 * 1024;
 const TRANSLATION_SECONDS = 24 * 60 * 60;
 // About $0.30/day of model time at most; cached repeats are free.
 const DAILY_TRANSLATIONS = 10000;
+// Operator notices last at most a week. They arrive as public chat from this
+// operator member, which every client already shows; nobody can sign in as it.
+const MAX_NOTICE_MINUTES = 7 * 24 * 60;
+const NOTICE_SENDER = { player_id: '00000000-0000-0000-0000-000000000000', name: 'VERA20k',
+  flags: 1, squad: 0, clan_name: '', clan_tag: '' };
 const copy = (value) => structuredClone(value);
 const pendingMatch = (value) => value?.phase === 'connecting' || value?.phase === 'probing';
 const softEvent = (kind) => ['chat', 'locales', 'buddies', 'located'].includes(kind);
@@ -113,13 +121,143 @@ function memberView(member, room) {
     flags: member.player_id === room.owner ? 1 : 0, squad: 0, clan_name: '', clan_tag: '' };
 }
 
+// The key bit comes from the room itself, never from the creator's channel.
 function channelView(room) {
-  return { ...room.channel, id: room.id, users: room.members.length, max_users: room.capacity };
+  return { ...room.channel, id: room.id, users: room.members.length, max_users: room.capacity,
+    flags: room.key ? CHANNEL_KEYED : 0 };
+}
+
+// The Worker sets this from Cloudflare's IP geolocation (`request.cf`), which
+// the Durable Object may not receive, and drops any copy a client sent.
+export const LOCATION_HEADER = 'vera-client-location';
+// A client that can confirm with a federation roster says so at sign-in.
+export const FEDERATION_HEADER = 'vera-relay-federation';
+
+export function locatedRequest(request) {
+  const forwarded = new Request(request);
+  forwarded.headers.delete(LOCATION_HEADER);
+  const { latitude, longitude } = request.cf ?? {};
+  if (latitude && longitude) forwarded.headers.set(LOCATION_HEADER, `${latitude},${longitude}`);
+  return forwarded;
+}
+
+// Whole degrees (about 110 km) are enough to tell regional relays apart.
+function requestLocation(request) {
+  const value = request.headers.get(LOCATION_HEADER) ?? '';
+  if (!/^-?\d{1,3}(\.\d+)?,-?\d{1,3}(\.\d+)?$/.test(value)) return null;
+  const [latitude, longitude] = value.split(',').map(Number);
+  return Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180 ? [Math.round(latitude), Math.round(longitude)] : null;
+}
+
+// RELAYS lists every relay as JSON [{address, key, latitude, longitude, federation?}],
+// where `key` names that relay's ticket-key secret and `federation` marks a relay
+// that can share a match with others. Without it, the single RELAY_ADDRESS
+// relay uses RELAY_TICKET_KEY.
+function relayFleet(env) {
+  if (!env.RELAYS) return [{ address: env.RELAY_ADDRESS, key: 'RELAY_TICKET_KEY' }];
+  let fleet = null;
+  try { fleet = JSON.parse(env.RELAYS); } catch { /* rejected below */ }
+  requireThat(Array.isArray(fleet) && fleet.length > 0 && fleet.length <= 16 && fleet.every((relay) =>
+    record(relay, ['address', 'key', 'latitude', 'longitude'], ['federation']) && /^RELAY_TICKET_KEY(_[A-Z0-9]+)*$/.test(relay.key) &&
+    Number.isFinite(relay.latitude) && Math.abs(relay.latitude) <= 90 && Number.isFinite(relay.longitude) && Math.abs(relay.longitude) <= 180 &&
+    [undefined, true, false].includes(relay.federation)),
+  'relay_unavailable', 'Gameplay service is unavailable.', 503);
+  return fleet.map(({ address, key, latitude, longitude, federation }) =>
+    ({ address, key, location: [latitude, longitude], federation: federation === true }));
+}
+
+function distanceKm([latitude1, longitude1], [latitude2, longitude2]) {
+  const radians = Math.PI / 180;
+  const a = Math.sin((latitude2 - latitude1) * radians / 2) ** 2 + Math.cos(latitude1 * radians) * Math.cos(latitude2 * radians) *
+    Math.sin((longitude2 - longitude1) * radians / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(a));
+}
+
+function nearest(relays, location) {
+  return relays.reduce((best, relay) => distanceKm(location, relay.location) < distanceKm(location, best.location) ? relay : best);
+}
+
+// Every own command waits one round trip to the match relay, so the relay
+// nearest the farthest player serves the match. Without every location, the
+// first relay does, as the single relay did before.
+function matchRelay(fleet, locations) {
+  if (fleet.length === 1 || locations.some((location) => !location)) return fleet[0];
+  const farthest = (relay) => Math.max(...locations.map((location) => distanceKm(location, relay.location)));
+  return fleet.reduce((best, relay) => farthest(relay) < farthest(best) ? relay : best);
+}
+
+// A federated match homes each player on their nearest federation relay. An
+// own command then waits that round trip plus one way to the farthest other
+// home instead of a round trip to one relay; it is chosen when that saves
+// about 25 ms (2500 km of fibre round trip).
+const FEDERATION_MARGIN_KM = 2500;
+const MAX_FEDERATED_RELAYS = 6;
+
+function matchRelays(fleet, humans) {
+  const players = humans.filter((human) => !human.observer);
+  const central = matchRelay(fleet, players.map((player) => player.location));
+  const single = { relay: { address: central.address, key: central.key } };
+  // Every human confirms at its home relay, so each client must carry the roster.
+  if (fleet.length === 1 || players.some((player) => !player.location) || humans.some((human) => !human.federation)) return single;
+  const candidates = fleet.filter((relay) => relay.federation);
+  const relays = candidates.filter((relay) => players.some((player) => nearest(candidates, player.location) === relay));
+  if (relays.length < 2 || relays.length > MAX_FEDERATED_RELAYS) return single;
+  const own = (location) => {
+    const home = nearest(relays, location);
+    return 2 * distanceKm(location, home.location) + Math.max(...relays.map((other) => distanceKm(home.location, other.location)));
+  };
+  const centralCost = 2 * Math.max(...players.map((player) => distanceKm(player.location, central.location)));
+  if (Math.max(...players.map((player) => own(player.location))) + FEDERATION_MARGIN_KM >= centralCost) return single;
+  // Observers send no commands; they join the nearest player home.
+  const homes = humans.map((human) => human.location ? nearest(relays, human.location) : relays[0]);
+  return { relays, homes: homes.map(({ address, key }) => ({ address, key })) };
+}
+
+async function hmac(secretHex, domain, ...parts) {
+  requireThat(/^[0-9a-f]{64}$/i.test(secretHex ?? ''), 'relay_unavailable', 'Gameplay service is unavailable.', 503);
+  const secret = Uint8Array.from(secretHex.match(/../g), (pair) => parseInt(pair, 16));
+  const key = await crypto.subtle.importKey('raw', secret, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const chunks = [encoder.encode(domain), ...parts.map((part) => Uint8Array.from(part))];
+  const input = new Uint8Array(chunks.reduce((length, chunk) => length + chunk.length, 0));
+  chunks.reduce((offset, chunk) => { input.set(chunk, offset); return offset + chunk.length; }, 0);
+  return new Uint8Array(await crypto.subtle.sign('HMAC', key, input));
+}
+
+// Layout shared with services/relay-protocol (sequenced/federation.rs): `VO1F`,
+// room UUID16, relay count, then per relay IPv4, LE port and LE source mask,
+// then per relay a nonce16, the match link key XORed with HMAC(relay key, wrap
+// domain, room, nonce) and HMAC(relay key, roster domain, table, index, nonce,
+// wrapped). Only the relays can recover the link key; the first coordinates.
+async function federationRoster(env, matchId, relays, homes) {
+  const count = relays.length;
+  const bytes = new Uint8Array(21 + count * 90);
+  const view = new DataView(bytes.buffer);
+  bytes.set(encoder.encode('VO1F'));
+  bytes.set(Uint8Array.from(matchId.replaceAll('-', '').match(/../g), (pair) => parseInt(pair, 16)), 4);
+  bytes[20] = count;
+  relays.forEach((relay, index) => {
+    const [ip, port] = relay.address.split(':');
+    bytes.set(ip.split('.').map(Number), 21 + index * 10);
+    view.setUint16(25 + index * 10, Number(port), true);
+    view.setUint32(27 + index * 10, homes.reduce((mask, home, source) => home.address === relay.address ? mask | 2 ** source : mask, 0), true);
+  });
+  const table = bytes.slice(0, 21 + count * 10);
+  const link = randomBytes(32);
+  for (const [index, relay] of relays.entries()) {
+    const nonce = randomBytes(16);
+    const stream = await hmac(env[relay.key], 'VERA20k relay federation wrap v1\0', bytes.subarray(4, 20), nonce);
+    const wrapped = link.map((byte, offset) => byte ^ stream[offset]);
+    const tag = await hmac(env[relay.key], 'VERA20k relay federation roster v1\0', table, [index], nonce, wrapped);
+    const at = table.length + index * 80;
+    bytes.set(nonce, at); bytes.set(wrapped, at + 16); bytes.set(tag, at + 48);
+  }
+  return base64url(bytes);
 }
 
 // This codec is shared with services/relay-protocol: fixed-width little-endian
 // ticket, domain-separated HMACs. The server key never leaves secret bindings.
-export async function relayGrant(secretHex, address, matchId, sourceIndex, now, playerId, generation, payloadKey, lifetime, ordering = null) {
+export async function relayGrant(secretHex, address, matchId, sourceIndex, now, playerId, generation, payloadKey, lifetime, ordering = null,
+  federation = null) {
   requireThat(/^[0-9a-f]{64}$/i.test(secretHex ?? ''), 'relay_unavailable', 'Gameplay service is unavailable.', 503);
   requireThat(/^\d{1,3}(\.\d{1,3}){3}:\d{1,5}$/.test(address ?? ''), 'relay_unavailable', 'Gameplay service is unavailable.', 503);
   const secret = Uint8Array.from(secretHex.match(/../g), (pair) => parseInt(pair, 16));
@@ -161,7 +299,8 @@ export async function relayGrant(secretHex, address, matchId, sourceIndex, now, 
     orderingCertificate = base64url(certificate);
   }
   return { address, ticket: base64url(ticket), packet_key: base64url(packetKey), payload_key: payloadKey,
-    source_index: sourceIndex, ...(orderingCertificate ? { ordering_certificate: orderingCertificate } : {}) };
+    source_index: sourceIndex, ...(orderingCertificate ? { ordering_certificate: orderingCertificate } : {}),
+    ...(federation ? { federation } : {}) };
 }
 
 export class SqlStore {
@@ -233,7 +372,7 @@ export class LobbyService {
     this.translations = new Map();
     if (!store.get('room:public')) store.put('room:public', {
       id: 'public', owner: null, capacity: 256, kind: 0,
-      channel: { name: PUBLIC_LOBBY_NAME, kind: 0, tournament: 0, flags: 0, game_flags: 0, ping: -1, ex_info: '' },
+      channel: { name: PUBLIC_LOBBY_NAME, kind: 0, tournament: 0, game_flags: 0, ping: -1, ex_info: '' },
       members: [], revision: 0, phase: 'lobby', ready: {}, maps: {}, agreements: {}, created: this.clock(),
     });
     const publicRoom = store.get('room:public');
@@ -252,9 +391,11 @@ export class LobbyService {
       // Ingress reads cannot hold the actor's mutation queue. A client that
       // never finishes its body loses only its own request at the deadline.
       if (request.method === 'POST') {
-        if (['/v1/accounts', '/v1/sessions'].includes(new URL(request.url).pathname)) {
+        const path = new URL(request.url).pathname;
+        if (['/v1/accounts', '/v1/sessions', '/v1/admin/notice'].includes(path)) {
           const key = await sha256(request.headers.get('CF-Connecting-IP') ?? 'local');
           this.store.transaction(() => this.rateLimit(`ingress-auth:${key}`, 120, 60));
+          if (path === '/v1/admin/notice') this.administrator(request);
         } else {
           const { session } = await this.authenticated(request);
           this.store.transaction(() => this.rateLimit(`ingress-account:${session.player_id}`, 900, 60));
@@ -345,6 +486,14 @@ export class LobbyService {
     return { sessionId, session };
   }
 
+  // Operators hold ADMIN_KEY, a deployment secret of at least 32 characters.
+  // Without one the notice endpoint does not exist.
+  administrator(request) {
+    const key = this.env.ADMIN_KEY;
+    requireThat(typeof key === 'string' && key.length >= 32, 'not_found', 'Endpoint not found.', 404);
+    requireThat(sameSecret(request.headers.get('authorization') ?? '', `Bearer ${key}`), 'unauthorized', 'Unauthorized.', 401);
+  }
+
   // The model takes about a second, so translation waits beside the mutation
   // queue. It owns only its rate and cache keys, each changed synchronously.
   // Readers of one message share one model call and its cached reply.
@@ -392,7 +541,11 @@ export class LobbyService {
       const address = await sha256(origin);
       this.rateLimit(`auth:${address}`, 60, 300);
       this.reap();
-      return this.authenticate(body, url.pathname === '/v1/accounts', address);
+      return this.authenticate(body, url.pathname === '/v1/accounts', address, request.headers.get(FEDERATION_HEADER) === '1');
+    }
+    if (url.pathname === '/v1/admin/notice' && request.method === 'POST') {
+      this.administrator(request);
+      return this.json(this.store.transaction(() => this.setNotice(body)));
     }
     const { sessionId, session } = await this.authenticated(request);
     requireThat(session.protocol === LOBBY_PROTOCOL || url.pathname === '/v1/events' ||
@@ -401,7 +554,8 @@ export class LobbyService {
     const mapRequest = url.pathname.startsWith('/v1/maps/') || body?.operation === 'map_upload';
     // A thirty-player host legitimately bursts options, pings and readiness as peers join.
     this.rateLimit(`${mapRequest ? 'map' : 'session'}:${session.player_id}`, 600, 60);
-    session.seen = this.clock(); this.store.put(`session:${sessionId}`, session);
+    session.seen = this.clock(); session.location = requestLocation(request) ?? session.location ?? null;
+    this.store.put(`session:${sessionId}`, session);
     this.reap();
     if (url.pathname === '/v1/match/resume' && request.method === 'GET') {
       const matchId = url.searchParams.get('match_id');
@@ -414,9 +568,7 @@ export class LobbyService {
       // The relay journal owns gameplay history. Rejoining the SAME active
       // match may skip stale shell callbacks, without creating membership,
       // advancing a generation, or accepting a different match's cursor.
-      const relay = await relayGrant(this.env.RELAY_TICKET_KEY, this.env.RELAY_ADDRESS,
-        match.id, user.source_index, this.clock(), user.player_id, user.admission_generation,
-        match.payload_key, GRANT_SECONDS, match.ordering);
+      const relay = await this.matchGrant(match, user, GRANT_SECONDS);
       session.ack = session.sequence;
       session.expires_at = this.clock() + SESSION_SECONDS;
       this.store.put(`session:${sessionId}`, session);
@@ -502,12 +654,14 @@ export class LobbyService {
     this.store.put('stats:games', games);
   }
 
-  async authenticate(body, create, address) {
+  async authenticate(body, create, address, federation) {
     requireThat(!create && !Object.hasOwn(body, 'password') && body.protocol === LOBBY_PROTOCOL,
       'upgrade_required', 'Update VERA20k to enter a username without a password.', 426);
     requireThat(record(body, ['nickname', 'protocol']), 'invalid_request', 'Invalid sign-in request.');
     const { nickname } = body;
     requireThat(playerName(nickname), 'invalid_name', 'Use 1–24 letters, digits, underscores or hyphens.');
+    requireThat(nickname.toLowerCase() !== NOTICE_SENDER.name.toLowerCase(),
+      'name_unavailable', 'That player name is reserved. Choose another username.', 409);
     this.rateLimit(`login:account:${nickname.toLowerCase()}`, 30, 300);
     const playerId = crypto.randomUUID();
     const profileKey = `guest:${playerId}`;
@@ -518,7 +672,7 @@ export class LobbyService {
     // Keep the existing preference/admission key for old sessions. Guest
     // profiles live only as long as this session and never read account: data.
     const session = { id, player_id: playerId, nickname, account_key: profileKey, protocol: LOBBY_PROTOCOL,
-      expires_at: now + SESSION_SECONDS, seen: now, channel_id: null, match_id: null, sequence: 0, ack: 0, critical_floor: 0, requests: [] };
+      ...(federation ? { federation: true } : {}), expires_at: now + SESSION_SECONDS, seen: now, channel_id: null, match_id: null, sequence: 0, ack: 0, critical_floor: 0, requests: [] };
     this.store.transaction(() => {
       requireThat(!this.store.list('session:').some((other) => other.nickname.toLowerCase() === nickname.toLowerCase()),
         'name_unavailable', 'That player name is already in use. Choose another username.', 409);
@@ -548,6 +702,34 @@ export class LobbyService {
 
   broadcast(room, kind, payload, except = null) {
     for (const member of room.members) if (member.session_id !== except) this.emit(member.session_id, kind, payload, room.id);
+  }
+
+  // One operator notice at a time: a new one replaces it and `minutes: 0`
+  // alone clears it. Each session receives it once, at once in a lobby-phase
+  // room, otherwise on its next German Bunker join; games drop chat in a match.
+  setNotice(body) {
+    if (record(body, ['minutes']) && body.minutes === 0) {
+      this.store.delete('notice');
+      return { notice: null, delivered: 0 };
+    }
+    requireThat(record(body, ['text', 'minutes']) && typeof body.text === 'string' && body.text.trim() !== '' &&
+      byteLength(body.text) <= 2048 && Number.isInteger(body.minutes) && body.minutes > 0 && body.minutes <= MAX_NOTICE_MINUTES,
+      'invalid_request', 'A notice needs text of at most 2048 bytes and 1–10080 minutes.');
+    const notice = { id: crypto.randomUUID(), text: body.text, expires_at: this.clock() + body.minutes * 60 };
+    this.store.put('notice', notice);
+    let delivered = 0;
+    for (const room of this.store.list('room:')) if (room.phase === 'lobby')
+      for (const member of room.members) if (this.deliverNotice(member.session_id)) delivered++;
+    return { notice, delivered };
+  }
+
+  deliverNotice(sessionId) {
+    const notice = this.store.get('notice');
+    const session = this.store.get(`session:${sessionId}`);
+    if (!notice || notice.expires_at <= this.clock() || !session || session.notice === notice.id) return false;
+    session.notice = notice.id; this.store.put(`session:${sessionId}`, session);
+    this.emit(sessionId, 'chat', { from: NOTICE_SENDER, text: notice.text, private: false, action: false });
+    return true;
   }
 
   events(sessionId, after) {
@@ -716,6 +898,14 @@ export class LobbyService {
     session.match_id = null; this.store.put(`session:${session.id}`, session);
   }
 
+  // Every grant of a match names the player's relay chosen at its start.
+  // Matches begun before relay choice existed stay on the first relay.
+  matchGrant(match, user, lifetime) {
+    const relay = match.homes?.[user.source_index] ?? match.relay ?? relayFleet(this.env)[0];
+    return relayGrant(this.env[relay.key], relay.address, match.id, user.source_index, this.clock(), user.player_id,
+      user.admission_generation, match.payload_key, lifetime, match.ordering ?? null, match.federation ?? null);
+  }
+
   async prepare(session, operation, payload) {
     if (operation === 'options') return { staging: await stagingDigest(payload.options?.random_map) };
     if (operation === 'renew_relay') {
@@ -723,15 +913,12 @@ export class LobbyService {
       const user = match?.users.find((user) => user.player_id === session.player_id);
       requireThat(match?.id === payload.match_id && match.phase === 'playing' && user &&
         !match.finished.includes(session.player_id), 'unknown_match', 'No matching active game.', 409);
-      return { relay: await relayGrant(this.env.RELAY_TICKET_KEY, this.env.RELAY_ADDRESS,
-        match.id, user.source_index, this.clock(), user.player_id, user.admission_generation, match.payload_key, GRANT_SECONDS, match.ordering ?? null) };
+      return { relay: await this.matchGrant(match, user, GRANT_SECONDS) };
     }
     if (operation === 'latency_ready') {
       const { match, canonical } = this.latencyReport(session, payload);
       const complete = Object.keys({ ...match.latencies, [session.player_id]: canonical }).length === match.users.length;
-      const grants = complete ? await Promise.all(match.users.map((user) => relayGrant(this.env.RELAY_TICKET_KEY,
-        this.env.RELAY_ADDRESS, match.id, user.source_index, this.clock(), user.player_id, user.admission_generation,
-        match.payload_key, GRANT_SECONDS, match.ordering ?? null))) : null;
+      const grants = complete ? await Promise.all(match.users.map((user) => this.matchGrant(match, user, GRANT_SECONDS))) : null;
       return { match, canonical, grants };
     }
     if (operation === 'map_upload') {
@@ -819,9 +1006,15 @@ export class LobbyService {
     });
     const ordering = { sources_mask: 2 ** users.length - 1,
       tick_hz: [60, 45, 30, 20, 15, 12, 10][room.options.launch.options.game_speed] ?? 10 };
-    const grants = await Promise.all(users.map((user) => relayGrant(this.env.RELAY_TICKET_KEY, this.env.RELAY_ADDRESS,
-      matchId, user.source_index, this.clock(), user.player_id, user.admission_generation, payloadKey, BOOTSTRAP_GRANT_SECONDS, ordering)));
-    return { matchId, seed, users, grants, payloadKey, ordering };
+    // Observers issue no commands, so only playing humans place the relays.
+    const { relay, relays, homes } = matchRelays(relayFleet(this.env), launch.humans.map((human) => {
+      const session = this.store.get(`session:${room.members.find((member) => member.name === human.name).session_id}`);
+      return { observer: human.role === 'Observer', location: session.location ?? null, federation: session.federation === true };
+    }));
+    const federation = homes ? await federationRoster(this.env, matchId, relays, homes) : undefined;
+    const pending = { id: matchId, relay, homes, federation, payload_key: payloadKey, ordering };
+    const grants = await Promise.all(users.map((user) => this.matchGrant(pending, user, BOOTSTRAP_GRANT_SECONDS)));
+    return { matchId, seed, users, grants, payloadKey, ordering, relay, homes, federation };
   }
 
   latencyReport(session, payload) {
@@ -863,7 +1056,7 @@ export class LobbyService {
         requireThat(this.store.count('room:') < MAX_SESSIONS, 'service_full', 'The lobby service is full.', 503);
         room = { id: crypto.randomUUID(), kind: 41, owner: session.player_id,
           capacity: Math.max(2, Math.min(MAX_PLAYERS, Number(channel.max_users) || 6)),
-          channel: { kind: 41, name: channel.name, tournament: 0, flags: Number(channel.flags) || 0,
+          channel: { kind: 41, name: channel.name, tournament: 0,
             game_flags: Number(channel.game_flags) || 0, ping: -1, ex_info: String(channel.ex_info ?? '').slice(0, 512) },
           key: prepared.key, members: [], revision: 0, options: null, ready: {}, maps: {}, agreements: {}, phase: 'lobby', created: this.clock() };
       } else {
@@ -885,6 +1078,7 @@ export class LobbyService {
       room.members.push(member); session.channel_id = room.id;
       this.store.put(`session:${sessionId}`, session);
       this.emit(sessionId, operation === 'create' ? 'created' : 'joined', { channel: channelView(room), members: room.members.map((member) => memberView(member, room)) });
+      if (room.id === 'public') this.deliverNotice(sessionId);
       if (room.kind === 41) this.invalidate(room);
       this.store.put(`room:${room.id}`, room); return;
     }
@@ -1042,9 +1236,9 @@ export class LobbyService {
         this.broadcast(room, 'map_status', { from: session.nickname, status: payload.status, revision: room.revision }, sessionId);
       }
     } else if (operation === 'start') {
-      const { matchId, seed, users, grants, payloadKey, ordering } = prepared;
+      const { matchId, seed, users, grants, payloadKey, ordering, relay, homes, federation } = prepared;
       const match = { id: matchId, room_id: room.id, users, finished: [], ready: [], latencies: {}, phase: 'connecting',
-        expires: this.clock() + 30, options: room.options, revision: room.revision, payload_key: payloadKey, ordering };
+        expires: this.clock() + 30, options: room.options, revision: room.revision, payload_key: payloadKey, ordering, relay, homes, federation };
       this.store.put(`match:${matchId}`, match);
       room.phase = 'connecting'; room.match_id = matchId;
       for (const user of users) {

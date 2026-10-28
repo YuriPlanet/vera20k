@@ -289,9 +289,18 @@ fn aircraft_body_anchor(
     );
     // MainTick renders before Logic55DC9E, then increments at55DE7E/81.
     // The next Draw_Point4CF8D8 reads that committed global frame directly.
+    // Original4CF8B1 tests TechnoType+0xC95; a Phobos build resolves
+    // FlyNoWobbles against [AudioVisual] instead.
+    #[cfg(feature = "phobos")]
+    let no_wobbles = rules.map_or_else(
+        || object.is_dropship(),
+        |rules| rules.fly_no_wobbles_for(object),
+    );
+    #[cfg(not(feature = "phobos"))]
+    let no_wobbles = object.is_dropship();
     let delta = crate::render::locomotor_visual::fly_draw_point_y(
         sim.session().binary_frame(),
-        object.is_dropship(),
+        no_wobbles,
         taking_off,
         landing,
         height,
@@ -792,7 +801,6 @@ pub(crate) fn build_unit_instances(
             atlas,
             entity,
             type_str,
-            anim_frame,
             [center_x, center_y],
             no_shadow,
             draw_state,
@@ -833,6 +841,15 @@ pub(crate) fn build_unit_instances(
                 crate::render::tactical_draw_plan::SpriteEncoding::Voxel,
             );
             if let Some(parent) = parent {
+                // Opt-in app measurement of an actually admitted draw-plan object.
+                state.match_state.match_diagnostics.record_actor_draw(
+                    sim,
+                    entity,
+                    sim.session().binary_frame(),
+                    render_pose.screen,
+                    render_pose.body,
+                    &state.match_state.match_presentation.interpolation,
+                );
                 let mut planned = PlannedObjectInstance::object(parent, pieces);
                 if let Some(rules) = state.rules() {
                     planned.tail_draws = crate::app::presentation::target_lines::target_laser_draws(
@@ -1406,15 +1423,18 @@ fn prepare_unit_shadow(
     if !native_shadow_caller_eligible(entity, no_shadow, slope, band) {
         return false;
     }
-    let key = UnitSpriteKey {
-        type_id: type_id.to_owned(),
-        turret_index: 0,
-        facing: canonical_unit_facing(body_facing),
-        layer: VxlLayer::Shadow,
-        frame: 0,
-        slope_type: 0,
-        barrel_pitch: 0,
-    };
+    let key = shadow_lookup_key(
+        UnitSpriteKey {
+            type_id: type_id.to_owned(),
+            turret_index: 0,
+            facing: canonical_unit_facing(body_facing),
+            layer: VxlLayer::Shadow,
+            frame: 0,
+            slope_type: 0,
+            barrel_pitch: 0,
+        },
+        true,
+    );
     atlas.prepare_native_shadow(&state.renderer.gpu.queue, &key, parts)
 }
 
@@ -1463,10 +1483,14 @@ fn techno_shadow_admitted(entity: &crate::sim::game_entity::GameEntity, no_shado
     !no_shadow && entity.cloak.as_ref().is_none_or(|cloak| cloak.state() == 0)
 }
 
+/// A native ground stencil is the grounded entry a Track/Wheel type keys
+/// at Unit73C468, apart from the flight template a lifted vehicle draws.
 fn shadow_lookup_key(mut key: UnitSpriteKey, native_shadow: bool) -> UnitSpriteKey {
-    if !native_shadow {
-        key.frame = crate::render::unit_atlas::LEGACY_SHADOW_FRAME;
-    }
+    key.frame = if native_shadow {
+        crate::render::unit_atlas::GROUNDED_SHADOW_FRAME_FLAG
+    } else {
+        crate::render::unit_atlas::LEGACY_SHADOW_FRAME
+    };
     key
 }
 
@@ -1562,7 +1586,6 @@ fn emit_jumpjet_unit_shadow(
     atlas: &crate::render::unit_atlas::UnitAtlas,
     entity: &crate::sim::game_entity::GameEntity,
     type_id: &str,
-    frame: u32,
     body_anchor: [f32; 2],
     no_shadow: bool,
     draw_state: DrawState,
@@ -1600,19 +1623,7 @@ fn emit_jumpjet_unit_shadow(
         return;
     };
     pose.anchor[1] -= f32::from(entity.ion_blast_lift_pixels());
-    let key = UnitSpriteKey {
-        type_id: type_id.to_owned(),
-        turret_index: 0,
-        facing: pose.facing,
-        layer: VxlLayer::Shadow,
-        frame: if pose.mask == UnitShadowMask::Retained {
-            frame | crate::render::unit_atlas::GROUNDED_SHADOW_FRAME_FLAG
-        } else {
-            frame
-        },
-        slope_type: pose.slope,
-        barrel_pitch: 0,
-    };
+    let key = pose.key(type_id);
     let Some(entry) = atlas
         .get(&key)
         .filter(|e| e.native_draw_bounds.is_some())
@@ -2590,7 +2601,11 @@ mod tests {
             barrel_pitch: 0,
         };
         for (kind, slope, expected_frame) in [
-            (LocomotorKind::Drive, 0, 0),
+            (
+                LocomotorKind::Drive,
+                0,
+                crate::render::unit_atlas::GROUNDED_SHADOW_FRAME_FLAG,
+            ),
             (
                 LocomotorKind::Teleport,
                 0,

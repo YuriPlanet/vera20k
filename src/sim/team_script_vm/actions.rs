@@ -178,7 +178,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 62
             | 63
             | 64
-    ) || (cfg!(feature = "ares") && action_id == 68)
+    ) || (cfg!(feature = "ares") && matches!(action_id, 67 | 68))
 }
 
 /// A member's NavCom as a team target, for `Distance`.
@@ -556,7 +556,7 @@ impl Simulation {
                     team.advance_pending = true;
                 }
             }
-            64 => {
+            64 | 67 if action.action_id == 64 || cfg!(feature = "ares") => {
                 //6E9F0D -> each member's vt34C/Foot4DFE00. Cache the next
                 //member before its seek callback; successful entrants leave
                 //the Team via the shared6EA870 owner with no_idle=true.
@@ -571,6 +571,12 @@ impl Simulation {
                         .teams
                         .get(&team_id)
                         .and_then(|team| team.next_member_after(current));
+                    // Installed Ares dispatcher1003A110 sets Ext+B0 for67,
+                    // clears it for64, then calls the same Foot vt+34C.
+                    #[cfg(feature = "ares")]
+                    if let Some(foot) = self.substrate.entities.get_mut(current) {
+                        foot.vehicle_driver.set_vehicle_seek(action.action_id != 64);
+                    }
                     if self.foot_enter_nearest_occupiable(current, rules, registry, frame_effects) {
                         self.team_remove_member(team_id, current, true, rules, frame_effects);
                     }

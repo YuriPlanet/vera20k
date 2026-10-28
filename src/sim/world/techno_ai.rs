@@ -199,8 +199,8 @@ impl Simulation {
     /// either side of the object's own locomotion, and both checkpoints are the
     /// same pair of virtuals — the readiness predicate at self-vtable `+0x200`
     /// followed by `Commence` at `+0x1ec` when it returns true. Our object-AI
-    /// stage is the first checkpoint (it runs immediately before Phase-1 ground
-    /// movement); this is the second.
+    /// stage is the first checkpoint (it runs immediately before the object's
+    /// own ground movement); this is the second.
     ///
     /// Without it a unit that came to rest during its own movement step could
     /// not commence until the next tick, so every mission commencement that
@@ -1470,13 +1470,21 @@ fn techno_common_steps(
     effects: FrameEffects<'_>,
     turret_rotate_sample: Option<bool>,
 ) -> bool {
+    // Ares TechnoClass_Update1004B348..1004B397 converts for the current
+    // surface before the same visit updates self-attached effects1004B434.
+    #[cfg(feature = "ares")]
+    sim.update_ares_surface_conversion(id, rules, effects);
     // Ares1004B434 updates attachments before1004B528 EMP recovery.
     #[cfg(feature = "ares")]
     sim.update_ares_attach_effects(id, rules);
+    #[cfg(feature = "ares")]
+    sim.update_ares_operator_operability(id, rules, effects);
     // Installed6F9E50 ->1004B320 owns delayed Building reactivation before
     //the stock head. EMP expiry itself must not invent a future-power sweep.
     #[cfg(feature = "ares")]
     sim.update_ares_emp_operability(id, rules, effects);
+    #[cfg(feature = "ares")]
+    sim.update_ares_driver_killed_mission(id, rules, overlay_registry, effects);
     // Techno6F9E70..6F9EA8 re-drives +4A4 at Location before mission
     // Stop/Release. A zero gain must stop a live loop before Guard can
     // release it to decay at the previous gain.
@@ -5786,3 +5794,7 @@ use super::bridge_test_evidence;
 #[cfg(test)]
 #[path = "techno_ai/promotion_sound_tests.rs"]
 mod promotion_sound_tests;
+
+#[cfg(test)]
+#[path = "techno_ai/surface_conversion_tests.rs"]
+mod surface_conversion_tests;

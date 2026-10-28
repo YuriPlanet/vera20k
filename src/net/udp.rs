@@ -9,12 +9,29 @@
 
 use std::collections::VecDeque;
 use std::io;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket};
+#[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+use std::net::UdpSocket;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle, Thread};
 use std::time::Duration;
+
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+#[path = "web_socket.rs"]
+mod web_socket;
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+use web_socket::UdpSocket;
+
+/// One compile-time proxy origin for both the browser datagram and HTTPS adapters.
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+pub fn browser_proxy_url() -> &'static str {
+    match option_env!("WS_PROXY_URL") {
+        Some(origin) => origin,
+        None => "wss://wss.vera20k.com",
+    }
+}
 
 use vera20k_relay_protocol::{ClientSession, RelayError, ServerEvent};
 pub use vera20k_relay_protocol::{
@@ -34,6 +51,14 @@ use super::global::{
 };
 use super::lan_messages::{SessionScope, ingame::LoadingProgressMessage};
 use super::reliable::{LanConnections, ReceiveError, ReceivedMessage, udp_checksum};
+use crate::util::time::Instant;
+
+/// Receipt metadata belongs to the socket owner, before rendering or Logic
+/// can delay consumption of the authenticated ordering event.
+pub(super) struct ReceivedOrderEvent {
+    pub event: vera20k_relay_protocol::OrderEvent,
+    pub received_at: Instant,
+}
 
 /// Original UDP port data at841F30/841F38. The alternate socket is a separate
 /// receive path; it does not change the default destination port.
@@ -360,6 +385,14 @@ impl LanUdpTransport {
     /// Logic/render/capture work. The App injects its existing native wall
     /// bucket function, and only this worker samples it after taking the lock.
     /// Thread creation is fallible; failure leaves a synchronous transport.
+    #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+    pub fn start_io_pump(&mut self, _: fn() -> u32) -> io::Result<()> {
+        // Browser callbacks only queue raw datagrams; App services the same
+        // protocol owner after returning to the event loop.
+        Ok(())
+    }
+
+    #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
     pub fn start_io_pump(&mut self, wall_bucket: fn() -> u32) -> io::Result<()> {
         if self.pump.is_some() {
             self.check_worker();
@@ -534,6 +567,18 @@ impl LanUdpTransport {
         Ok(())
     }
 
+    /// A federated match's lobby relay roster, carried in every admission of
+    /// this route. Set it before the pump answers the first challenge.
+    pub fn set_federation_roster(&mut self, roster: &[u8]) -> io::Result<()> {
+        let mut io = self.lock();
+        let route = io
+            .relay
+            .as_mut()
+            .filter(|route| route.retiring.is_none())
+            .ok_or_else(|| io::Error::other("no relay route"))?;
+        route.session.set_federation(roster).map_err(relay_io_error)
+    }
+
     pub fn ordering_certificate(&self) -> Option<Vec<u8>> {
         self.lock().relay.as_ref()?.ordering_certificate.clone()
     }
@@ -566,6 +611,30 @@ impl LanUdpTransport {
         })
     }
 
+    pub fn set_ordering_push(&mut self, enabled: bool, next_sequence: u64) -> io::Result<()> {
+        self.send_ordering(|route| {
+            route
+                .session
+                .set_ordering_push(enabled, next_sequence, &mut route.encoded)
+        })
+    }
+
+    pub fn control_ordering_pause(
+        &mut self,
+        request_id: u64,
+        expected_epoch: u64,
+        paused: bool,
+    ) -> io::Result<()> {
+        self.send_ordering(|route| {
+            route.session.control_ordering_pause(
+                request_id,
+                expected_epoch,
+                paused,
+                &mut route.encoded,
+            )
+        })
+    }
+
     pub fn leave_ordering(&mut self) -> io::Result<()> {
         self.send_ordering(|route| route.session.leave_ordering(&mut route.encoded))
     }
@@ -588,7 +657,20 @@ impl LanUdpTransport {
     }
 
     pub fn pop_ordering_received(&mut self) -> Option<vera20k_relay_protocol::OrderEvent> {
+        self.pop_ordering_received_with_time()
+            .map(|received| received.event)
+    }
+
+    pub(super) fn pop_ordering_received_with_time(&mut self) -> Option<ReceivedOrderEvent> {
         self.lock().relay.as_mut()?.ordering_inbox.pop_front()
+    }
+
+    /// READYs received on the current relay route, keepalive replies included.
+    pub(super) fn relay_confirmations(&self) -> u64 {
+        self.lock()
+            .relay
+            .as_ref()
+            .map_or(0, |route| route.confirmations)
     }
 
     pub fn renew_relay(
@@ -726,7 +808,10 @@ struct RelayRoute {
     ordering_certificate: Option<Vec<u8>>,
     // Dropped excess packets are recovered from the immutable stream cursor.
     // This bounds worker memory even while the UI/simulation thread is paused.
-    ordering_inbox: VecDeque<vera20k_relay_protocol::OrderEvent>,
+    ordering_inbox: VecDeque<ReceivedOrderEvent>,
+    // READYs on this route. Every keepalive PING gets one, and so does a renewed
+    // lease or new path, which the relay starts without its push subscription.
+    confirmations: u64,
     retiring: Option<RelayRetirement>,
 }
 
@@ -754,16 +839,33 @@ impl UdpIo {
     /// Explicit bind addresses allow independent clients/tests to select
     /// interfaces or ephemeral ports. A failure drops any socket already
     /// opened by this call; no partially open transport escapes.
-    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    #[cfg(all(
+        feature = "wasm",
+        not(feature = "wasm-net"),
+        target_arch = "wasm32",
+        target_os = "unknown"
+    ))]
     fn bind(_: UdpBindConfig, _: LanConnections) -> io::Result<Self> {
-        Err(io::Error::new(io::ErrorKind::Unsupported, "LAN play is unavailable in the single-player browser build"))
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "LAN play is unavailable in the single-player browser build",
+        ))
     }
 
-    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    #[cfg(any(
+        not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")),
+        all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")
+    ))]
     fn bind(config: UdpBindConfig, connections: LanConnections) -> io::Result<Self> {
+        #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
         let primary = UdpSocket::bind(config.primary)?;
+        #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+        let primary = UdpSocket::bind(config.primary, "primary")?;
         primary.set_nonblocking(true)?;
+        #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
         let alternate = UdpSocket::bind(config.alternate)?;
+        #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+        let alternate = UdpSocket::bind(config.alternate, "alternate")?;
         alternate.set_nonblocking(true)?;
         let global = GlobalChannel::new(
             GlobalConfig {
@@ -878,6 +980,11 @@ impl UdpIo {
         }
         let session =
             ClientSession::new(ticket, packet_key, payload_key).map_err(relay_io_error)?;
+        #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+        {
+            self.primary.set_relay(address)?;
+            self.alternate.set_relay(address)?;
+        }
         self.relay = Some(RelayRoute {
             address,
             session,
@@ -888,6 +995,7 @@ impl UdpIo {
             peer_probes: None,
             ordering_certificate: None,
             ordering_inbox: VecDeque::new(),
+            confirmations: 0,
             retiring: None,
         });
         self.global.require_authenticated_acknowledgments();
@@ -1116,6 +1224,19 @@ impl UdpIo {
     /// owner alone decides retries, sequence order and peer failure identity.
     fn service(&mut self, now_ticks: u32, receive_budget: usize) -> UdpServiceReport {
         let mut report = UdpServiceReport::default();
+        #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+        if self.primary.take_route_change() {
+            // A replacement WS owns a new UDP source port. Reuse the existing
+            // challenge and retry owners; physical loss never means Leave.
+            if let Some(route) = self.relay.as_mut() {
+                route.session.forget_readiness();
+                if let Some(renewing) = route.renewing.as_mut() {
+                    renewing.forget_readiness();
+                }
+                route.last_probe = None;
+                route.last_response = None;
+            }
+        }
         if let Some(route) = self.relay.as_mut() {
             if let Some(retiring) = route.retiring.as_mut() {
                 if retiring
@@ -1334,6 +1455,7 @@ fn drain_socket(
                 break;
             }
         };
+        let received_at = Instant::now();
         report.received_datagrams += 1;
         let SocketAddr::V4(source) = source else {
             report.malformed_datagrams += 1;
@@ -1369,6 +1491,7 @@ fn drain_socket(
                         }
                         route.session = next;
                         route.last_response = Some(now_ticks);
+                        route.confirmations += 1;
                         continue;
                     }
                     ServerEvent::Challenge(cookie) => {
@@ -1397,7 +1520,9 @@ fn drain_socket(
                 Ok(ServerEvent::Ordering(event)) => {
                     route.last_response = Some(now_ticks);
                     if route.ordering_inbox.len() < 256 {
-                        route.ordering_inbox.push_back(event);
+                        route
+                            .ordering_inbox
+                            .push_back(ReceivedOrderEvent { event, received_at });
                     }
                     continue;
                 }
@@ -1412,6 +1537,7 @@ fn drain_socket(
                 }
                 Ok(ServerEvent::Ready) => {
                     route.last_response = Some(now_ticks);
+                    route.confirmations += 1;
                     continue;
                 }
                 Ok(ServerEvent::Challenge(cookie)) => {
@@ -1663,6 +1789,15 @@ fn record_io_error(
     operation: UdpIoOperation,
     error: io::Error,
 ) {
+    #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+    if error.kind() == io::ErrorKind::WouldBlock {
+        // An asynchronous WS connection/backpressure is not an admission
+        // failure. The original protocol owners retain and retry their work.
+        if operation == UdpIoOperation::Send {
+            report.send_would_block += 1;
+        }
+        return;
+    }
     if report.first_io_error.is_none() {
         report.first_io_error = Some(UdpIoFailure {
             channel,

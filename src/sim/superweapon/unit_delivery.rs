@@ -120,18 +120,21 @@ fn delivery_owner(
     // Ares HouseExt::GetHouseKind delegates to the existing House finders.
     // FindCivilianSide scans House registration order, not country order.
     // Source: Ares 4f1d9299, src/Ext/House/Body.cpp, GetHouseKind.
-    match owner {
-        DeliveryOwner::Invoker => sim.houses.contains_key(&invoker).then_some(invoker),
-        DeliveryOwner::Civilian => sim.civilian_side_house(rules),
-        DeliveryOwner::Neutral | DeliveryOwner::Special => {
-            let name = if owner == DeliveryOwner::Neutral {
-                "Neutral"
-            } else {
-                "Special"
-            };
-            sim.house_by_country_index(rules.country_index(name)?, rules)
-        }
-    }
+    use crate::rules::ares_warhead::HouseSelector;
+    let selector = match owner {
+        DeliveryOwner::Invoker => HouseSelector::Invoker,
+        DeliveryOwner::Civilian => HouseSelector::Civilian,
+        DeliveryOwner::Neutral => HouseSelector::Neutral,
+        DeliveryOwner::Special => HouseSelector::Special,
+    };
+    sim.ares_nonrandom_house_kind(
+        selector,
+        None,
+        sim.houses.contains_key(&invoker).then_some(invoker),
+        None,
+        None,
+        rules,
+    )
 }
 
 /// Reject malformed extension requests before the common Fire_SW transaction.

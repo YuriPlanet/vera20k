@@ -438,8 +438,9 @@ impl NativeRulesProcessingFailure {
 /// Reproduce the Type-constructor portion of active YR's cold rules startup.
 ///
 /// This is deliberately not a `RulesClass::Process` call for the selected
-/// RULESMD root. `Load_Game_Rules @ 0x0052CD70` first runs only
-/// Colors, ColorAdd and `ReadAudioVisual(root)`, may then run one full Process for optional
+/// RULESMD root. `Load_Game_Rules @ 0x0052CD70` first runs only Colors,
+/// ColorAdd, `Read_Movies(ARTMD)`, `ReadAudioVisual(root)` and
+/// `ReadMultiplayerDialogSettings(root)`, may then run one full Process for optional
 /// `LANGRULE.INI`, and `Init_Game @ 0x0052BA60` follows with the root Anim and
 /// Building master/body sweeps. Both body loops reload their live family count.
 ///
@@ -1921,6 +1922,48 @@ impl ProcessedRulesLayers {
             })
     }
 
+    #[cfg(feature = "ares")]
+    pub(crate) fn driver_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            &crate::rules::ares_driver::DriverTypeRules,
+        ),
+    > {
+        let registry = self.native_type_construction_trace.registry_state();
+        registry.techno_type_order.iter().map(|&(family, index)| {
+            let member = &registry.families[&family][index];
+            (
+                family.object_category().expect("TechnoType category"),
+                member.native_stored_id.as_str(),
+                &member.driver,
+            )
+        })
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn crew_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            &crate::rules::ares_crew::CrewTypeRules,
+        ),
+    > {
+        let registry = self.native_type_construction_trace.registry_state();
+        registry.techno_type_order.iter().map(|&(family, index)| {
+            let member = &registry.families[&family][index];
+            (
+                family.object_category().expect("TechnoType category"),
+                member.native_stored_id.as_str(),
+                &member.crew,
+            )
+        })
+    }
+
     pub(crate) fn ares_techno_states(
         &self,
     ) -> impl Iterator<
@@ -1928,9 +1971,11 @@ impl ProcessedRulesLayers {
             ObjectCategory,
             &str,
             Option<&crate::rules::ares_emp::EmpTypeRules>,
+            Option<&crate::rules::ares_abilities::PromotionAbilities>,
             Option<&crate::rules::ares_warhead::AttachEffectRules>,
             bool,
             Option<i32>,
+            Option<bool>,
         ),
     > {
         self.native_type_construction_trace
@@ -1946,10 +1991,18 @@ impl ProcessedRulesLayers {
                         category,
                         member.native_stored_id.as_str(),
                         member.emp_type.as_ref(),
+                        #[cfg(feature = "ares")]
+                        member.promotion_abilities.as_ref(),
+                        #[cfg(not(feature = "ares"))]
+                        None,
                         member.self_attach_effect.as_ref(),
                         member.cloak_allowed,
                         #[cfg(feature = "ares")]
                         member.turret_rot_override,
+                        #[cfg(not(feature = "ares"))]
+                        None,
+                        #[cfg(feature = "ares")]
+                        member.aircraft_crashable,
                         #[cfg(not(feature = "ares"))]
                         None,
                     )
@@ -2178,6 +2231,25 @@ impl ProcessedRulesLayers {
             .registry_state()
             .rules_prism_type
             .as_deref()
+    }
+
+    /// Phobos `[AudioVisual] TimerBlinkColorScheme=`, the runtime ColorScheme
+    /// index the ordered passes resolved.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn timer_blink_color_scheme(&self) -> i32 {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_timer_blink_color_scheme
+    }
+
+    /// Phobos `[AudioVisual] MissingCameo=`, retained with the Rules scalars
+    /// rather than read from the compatibility projection.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn missing_cameo(&self) -> &str {
+        &self
+            .native_type_construction_trace
+            .registry_state()
+            .rules_missing_cameo
     }
 
     /// `[General] PrerequisiteProcAlternate=` (Rules `+0x400`), the stored ID
@@ -2972,6 +3044,11 @@ struct AresCountryState {
     presentation: crate::rules::ares_country_presentation::AresCountryPresentation,
     paradrop: crate::rules::ares_country_paradrop::AresCountryParadrop,
     power_plants: Vec<String>,
+    /// CountryExt+1BC/+1BD: ctor1001B8DA leaves it unset;
+    /// nullable CanBeDriven reader1001C70A..1001C71B. Parent copy
+    /// 1001BDC0..1001C0D6 deliberately does not copy this pair.
+    #[serde(default)]
+    can_be_driven: Option<bool>,
 }
 
 // GUI fields are process-retained and persisted, but do not enter simulation CRC.
@@ -2983,10 +3060,19 @@ impl Hash for AresCountryState {
         self.buildings.hash(state);
         self.paradrop.hash(state);
         self.power_plants.hash(state);
+        if let Some(value) = self.can_be_driven {
+            b"ares-country-driving-v1".hash(state);
+            value.hash(state);
+        }
     }
 }
 
 impl CountryVeterancyState {
+    #[cfg(feature = "ares")]
+    pub(crate) fn can_be_driven_override(&self) -> Option<bool> {
+        self.ares.can_be_driven
+    }
+
     #[cfg(feature = "ares")]
     pub(crate) fn loading(&self) -> &crate::rules::country_loading::AresCountryLoading {
         &self.ares.loading
@@ -3171,6 +3257,17 @@ pub(crate) struct NativeRulesRegistryState {
     rules_ion_blast_anim: String,
     rules_ion_beam_anim: String,
     rules_ion_cannon_warhead: String,
+    /// Phobos `RulesExt::TimerBlinkColorScheme`: the runtime ColorScheme the
+    /// blinking timer prints in, `[Colors]` entry `R / 2`, or -1 for `none`.
+    #[cfg(feature = "phobos")]
+    rules_timer_blink_color_scheme: i32,
+    /// Phobos `RulesExt::MissingCameo`: the file a type with no cameo art and
+    /// a superweapon with no icon take in place of the stock `XXICON.SHP`
+    /// (`Replace_XXICON_With_New` at `0x715A4D`, `0x716D13`, `0x6CE8AA` and
+    /// `0x6CEE31`); empty after `none`.
+    #[cfg(feature = "phobos")]
+    #[serde(default = "crate::rules::ruleset::default_missing_cameo")]
+    rules_missing_cameo: String,
     rules_mind_control_attack_line_frames: i32,
     rules_line_trail_override: [u8; 3],
     rules_chrono_beam_color: [u8; 3],
@@ -3253,6 +3350,12 @@ impl Default for NativeRulesRegistryState {
             rules_ion_blast_anim: String::new(),
             rules_ion_beam_anim: String::new(),
             rules_ion_cannon_warhead: String::new(),
+            // RulesExt::ExtData constructor `TimerBlinkColorScheme { 5 }`, the
+            // scheme the game blinks in.
+            #[cfg(feature = "phobos")]
+            rules_timer_blink_color_scheme: 5,
+            #[cfg(feature = "phobos")]
+            rules_missing_cameo: crate::rules::ruleset::DEFAULT_MISSING_CAMEO.to_owned(),
             // MindControlAttackLineFrames, Rules+310: constructor 0x00665ABE.
             rules_mind_control_attack_line_frames: 15,
             rules_line_trail_override: general.line_trail_color_override,
@@ -3619,6 +3722,11 @@ impl NativeRulesRegistryState {
             //686D35 precedes this TypeReset6876AC and its flags/phase survive.
             #[cfg(feature = "ares")]
             ares_global_controls: self.ares_global_controls,
+            // Phobos allocates RulesExt only with RulesClass (0x667A1D).
+            #[cfg(feature = "phobos")]
+            rules_timer_blink_color_scheme: self.rules_timer_blink_color_scheme,
+            #[cfg(feature = "phobos")]
+            rules_missing_cameo: self.rules_missing_cameo,
             rules_color_add: self.rules_color_add,
             rules_color_add_selectors: self.rules_color_add_selectors,
             rules_detail: self.rules_detail,
@@ -4022,6 +4130,9 @@ struct ProcessedType {
     ares_verses: Option<AresWarheadVerses>,
     ares_warhead: Option<crate::rules::ares_warhead::AresWarheadRules>,
     emp_type: Option<crate::rules::ares_emp::EmpTypeRules>,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    promotion_abilities: Option<crate::rules::ares_abilities::PromotionAbilities>,
     self_attach_effect: Option<crate::rules::ares_warhead::AttachEffectRules>,
     #[cfg(feature = "ares")]
     #[serde(default)]
@@ -4036,6 +4147,16 @@ struct ProcessedType {
     #[cfg(feature = "ares")]
     #[serde(default)]
     spotlight: crate::rules::ares_spotlight::SpotlightTypeRules,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    driver: crate::rules::ares_driver::DriverTypeRules,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    crew: crate::rules::ares_crew::CrewTypeRules,
+    ///1003CB5B leaves the Nullable<bool> presence byte+324 clear.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    aircraft_crashable: Option<bool>,
     /// ObjectType4753F0 -> Ares10006E10 binds at each reached body read.
     armor_id: ArmorId,
     /// ParticleSystemType+294, the bound ParticleType's index: constructor -1
@@ -4171,6 +4292,14 @@ pub(crate) struct TechnoTypeReferences {
     #[cfg(feature = "ares")]
     #[serde(default)]
     convert_script: Option<crate::rules::superweapon_type::DeliveryType>,
+    /// Installed Ares TypeExt+610/+614: constructor1003CF40/1003CF46 clears;
+    /// Convert.Water1003F3C7 and Convert.Land1003F3DD use lookup1003FA40.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    convert_water: Option<crate::rules::superweapon_type::DeliveryType>,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    convert_land: Option<crate::rules::superweapon_type::DeliveryType>,
 }
 
 impl TechnoTypeReferences {
@@ -4201,6 +4330,10 @@ impl TechnoTypeReferences {
             to_overlay: None,
             #[cfg(feature = "ares")]
             convert_script: None,
+            #[cfg(feature = "ares")]
+            convert_water: None,
+            #[cfg(feature = "ares")]
+            convert_land: None,
         }
     }
 
@@ -4242,6 +4375,8 @@ impl TechnoTypeReferences {
         object.to_overlay.clone_from(&self.to_overlay);
         #[cfg(feature = "ares")]
         object.bind_script_conversion(self.convert_script.as_ref());
+        #[cfg(feature = "ares")]
+        object.bind_surface_conversions(self.convert_water.as_ref(), self.convert_land.as_ref());
     }
 }
 
@@ -4494,6 +4629,8 @@ impl ProcessedType {
             ares_verses: None,
             ares_warhead: None,
             emp_type: None,
+            #[cfg(feature = "ares")]
+            promotion_abilities: None,
             self_attach_effect: None,
             #[cfg(feature = "ares")]
             super_weapon_techno: Default::default(),
@@ -4502,6 +4639,12 @@ impl ProcessedType {
             turret_rot_override: None,
             #[cfg(feature = "ares")]
             spotlight: Default::default(),
+            #[cfg(feature = "ares")]
+            driver: Default::default(),
+            #[cfg(feature = "ares")]
+            crew: Default::default(),
+            #[cfg(feature = "ares")]
+            aircraft_crashable: None,
             armor_id: ArmorId::NONE,
             holds_what: None,
             super_weapon_weapon: None,
@@ -4596,6 +4739,7 @@ fn find_or_construct_type(
         #[cfg(feature = "ares")]
         {
             members[index].emp_type = Some(Default::default());
+            members[index].promotion_abilities = Some(Default::default());
             members[index].self_attach_effect = Some(Default::default());
         }
         #[cfg(feature = "ares")]
@@ -4669,6 +4813,12 @@ struct RulesPassProcessor {
     rules_ion_blast_anim: String,
     rules_ion_beam_anim: String,
     rules_ion_cannon_warhead: String,
+    #[cfg(feature = "phobos")]
+    rules_timer_blink_color_scheme: i32,
+    /// Phobos `[AudioVisual] MissingCameo=`, retained with the other Rules
+    /// scalars for the pass.
+    #[cfg(feature = "phobos")]
+    rules_missing_cameo: String,
     rules_mind_control_attack_line_frames: i32,
     rules_line_trail_override: [u8; 3],
     rules_chrono_beam_color: [u8; 3],
@@ -4740,6 +4890,10 @@ impl RulesPassProcessor {
             rules_ion_blast_anim: registry_state.rules_ion_blast_anim,
             rules_ion_beam_anim: registry_state.rules_ion_beam_anim,
             rules_ion_cannon_warhead: registry_state.rules_ion_cannon_warhead,
+            #[cfg(feature = "phobos")]
+            rules_timer_blink_color_scheme: registry_state.rules_timer_blink_color_scheme,
+            #[cfg(feature = "phobos")]
+            rules_missing_cameo: registry_state.rules_missing_cameo,
             rules_mind_control_attack_line_frames: registry_state
                 .rules_mind_control_attack_line_frames,
             rules_line_trail_override: registry_state.rules_line_trail_override,
@@ -5174,8 +5328,9 @@ impl RulesPassProcessor {
         )
     }
 
-    /// Installed Ares typed pointers: Anim Parser1000C9C0/Find1000D3E0
-    /// and Unit Parser1002D970/Find1002DCF0 look up registered types only.
+    /// Installed Ares typed pointers: Anim Parser1000C9C0/Find1000D3E0,
+    /// Unit Parser1002D970/Find1002DCF0 and the Survivor.SideN Infantry
+    /// reads 1003E040..1003E070 look up registered types only.
     /// A successful none clears; absent/unknown retains.
     #[cfg(feature = "ares")]
     fn resolve_existing_type_from(
@@ -5738,6 +5893,29 @@ impl RulesPassProcessor {
             );
             self.ares_prerequisites = Some(catalog);
         }
+        // Phobos RulesData_LoadBeforeTypeData (0x679A15), before this pass's
+        // type bodies.
+        #[cfg(feature = "phobos")]
+        if let Some(section) = pass.section("AudioVisual") {
+            // `PhobosFixedString<32>`: an empty read keeps the earlier pass's
+            // name, and `none` or `<none>` clears it.
+            if let Some(name) = section.read_name("MissingCameo", 0x20) {
+                self.rules_missing_cameo =
+                    if crate::rules::ini_parser::is_native_none_type_name(name) {
+                        String::new()
+                    } else {
+                        name.to_owned()
+                    };
+            }
+            // `ValueableIdx<ColorScheme>` resolves the name against the
+            // [Colors] this pass has read (0x668BFE precedes 0x668EF0), so a
+            // later pass naming no entry keeps the index.
+            self.rules_timer_blink_color_scheme = section.read_ares_color_scheme_index(
+                "TimerBlinkColorScheme",
+                self.rules_timer_blink_color_scheme,
+                |name| self.loading_color_index(name),
+            );
+        }
         self.process_house_family(pass, primary_rules);
         self.process_super_weapon_family(pass, _fixed_eva);
         self.process_anim_family(fixed_art);
@@ -5947,6 +6125,14 @@ impl RulesPassProcessor {
                 .loading
                 .clone();
             loading.read_color(section, |name| self.loading_color_index(name));
+            let current = self.families[&RulesTypeFamily::Country][index]
+                .country_veterancy
+                .ares
+                .can_be_driven;
+            self.family_mut(RulesTypeFamily::Country)[index]
+                .country_veterancy
+                .ares
+                .can_be_driven = section.read_ares_nullable_bool("CanBeDriven", current);
             self.family_mut(RulesTypeFamily::Country)[index]
                 .country_veterancy
                 .ares
@@ -5982,7 +6168,8 @@ impl RulesPassProcessor {
 
     /// CountryExt1001BB30 finds the current kind1 runtime scheme. Each
     /// retained [Colors] entry contributes kind1 then kind53, in native order.
-    #[cfg(feature = "ares")]
+    /// Phobos's `ColorScheme::FindIndex(name, 1)` makes the same match.
+    #[cfg(any(feature = "ares", feature = "phobos"))]
     fn loading_color_index(&self, name: &str) -> Option<i32> {
         self.colors
             .iter()
@@ -6473,10 +6660,59 @@ impl RulesPassProcessor {
                 // Installed suffix hooks716123/716132 ->10040DF0 ->1003DEC0
                 // reach the common TechnoType extension before subclass reads.
                 #[cfg(feature = "ares")]
+                {
+                    //1003E01B sizes to the live Side array;1003E040..1003E070
+                    // reads each Survivor.Side%u through Infantry Find only.
+                    let side_count = self
+                        .families
+                        .get(&RulesTypeFamily::Side)
+                        .map_or(0, Vec::len);
+                    let pilots = (0..side_count)
+                        .map(|side| {
+                            self.resolve_existing_type_from(
+                                &raw,
+                                &format!("Survivor.Side{side}"),
+                                RulesTypeFamily::Infantry,
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    self.family_mut(family)[index].crew.read_pass(&raw, &pilots);
+                    // TypeExt ReadINI1003EADC..1003EAED, NullableBool1000E9B0.
+                    let member = &mut self.family_mut(family)[index];
+                    member.aircraft_crashable =
+                        raw.read_ares_nullable_bool("Crashable", member.aircraft_crashable);
+                }
+                #[cfg(feature = "ares")]
                 self.process_factory_owners(family, index, &raw);
                 #[cfg(feature = "ares")]
                 {
+                    use crate::rules::ares_driver::OperatorRequirement;
+                    let operator = raw.read_name("Operator", 2048).map(|name| {
+                        if name.eq_ignore_ascii_case("_ANY_") {
+                            OperatorRequirement::Any
+                        } else {
+                            let types = self
+                                .resolve_existing_techno_type_list_from(&raw, "Operator")
+                                .expect("same nonempty Operator read");
+                            if types.is_empty() {
+                                OperatorRequirement::None
+                            } else {
+                                OperatorRequirement::Types(types)
+                            }
+                        }
+                    });
+                    self.family_mut(family)[index]
+                        .driver
+                        .read_pass(&raw, operator);
+                }
+                #[cfg(feature = "ares")]
+                {
                     // Find only: this nullable Anim reader never allocates.
+                    self.family_mut(family)[index]
+                        .promotion_abilities
+                        .as_mut()
+                        .expect("TechnoType promotion abilities")
+                        .read_pass(&raw);
                     let sparkle = self.resolve_existing_type_from(
                         &raw,
                         "EMP.Sparkles",
@@ -6509,6 +6745,19 @@ impl RulesPassProcessor {
                         raw.read_ares_bool("HasSpotlight", member.building_has_spotlight);
                     member.spotlight.read_pass(&raw);
                     member.super_weapon_techno.read_pass(&raw);
+                }
+                #[cfg(feature = "ares")]
+                if let Some(target) = self.resolve_existing_techno_type_from(&raw, "Convert.Water")
+                {
+                    self.family_mut(family)[index]
+                        .techno_references
+                        .convert_water = target;
+                }
+                #[cfg(feature = "ares")]
+                if let Some(target) = self.resolve_existing_techno_type_from(&raw, "Convert.Land") {
+                    self.family_mut(family)[index]
+                        .techno_references
+                        .convert_land = target;
                 }
                 #[cfg(feature = "ares")]
                 if let Some(target) = self.resolve_existing_techno_type_from(&raw, "Convert.Script")
@@ -7782,6 +8031,10 @@ impl RulesPassProcessor {
                     rules_ion_blast_anim: self.rules_ion_blast_anim,
                     rules_ion_beam_anim: self.rules_ion_beam_anim,
                     rules_ion_cannon_warhead: self.rules_ion_cannon_warhead,
+                    #[cfg(feature = "phobos")]
+                    rules_timer_blink_color_scheme: self.rules_timer_blink_color_scheme,
+                    #[cfg(feature = "phobos")]
+                    rules_missing_cameo: self.rules_missing_cameo,
                     rules_mind_control_attack_line_frames: self
                         .rules_mind_control_attack_line_frames,
                     rules_line_trail_override: self.rules_line_trail_override,

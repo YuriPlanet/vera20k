@@ -26,6 +26,10 @@ impl GameEntity {
     pub(crate) fn emp_remaining(&self) -> i32 {
         self.emp.remaining
     }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_emp_remaining_for_test(&mut self, remaining: i32) {
+        self.emp.remaining = remaining;
+    }
     pub(crate) fn emp_sparkle(&self) -> Option<u64> {
         self.emp.sparkle
     }
@@ -355,7 +359,10 @@ mod receiver {
                 }
                 _ => return EmpDelivery::Unsupported,
             };
-            if kind.immune().unwrap_or(default_immune) || kind.rank_immune(victim.veterancy.rank())
+            if kind.immune().unwrap_or(default_immune)
+                || object
+                    .promotion_abilities()
+                    .is_some_and(|abilities| abilities.emp_immune(victim.veterancy.rank()))
             {
                 return EmpDelivery::Rejected;
             }
@@ -629,7 +636,21 @@ mod receiver {
             };
             //100628B2 tests AbstractFlags bit4 before Foot recovery. Buildings
             //never queue Hunt, even in a computer House.
-            if !entity.category().is_foot() || self.owner_is_human(entity.owner()) {
+            if !entity.category().is_foot() {
+                return;
+            }
+            // DisableEMP100628C2 precedes the human/AI recovery choice.
+            if entity.driver_killed() {
+                let _ = self.mission_queue_exact(
+                    target,
+                    crate::sim::mission::MissionId::from_known(MissionType::Harmless),
+                    1,
+                    self.session.binary_frame(),
+                    &crate::sim::mission::authority::LiveReadyInputProvider { rules },
+                );
+                return;
+            }
+            if self.owner_is_human(entity.owner()) {
                 return;
             }
             let mission = rules

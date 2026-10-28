@@ -2,7 +2,8 @@
 //! that read them: the game list `0x00781480` (with its filter `0x00781130`
 //! and ping comparators `0x00781380`/`0x007813B0`), the chat-lobby list
 //! `0x007806C0`, the player list `0x00783C80` with the membership inserts
-//! `0x00781FB0`/`0x00782320`/`0x00782BB0`, the sort buttons, admission
+//! `0x00781FB0`/`0x00782320`/`0x00782BB0` and the join sink's game-channel
+//! insert (`0x007A674B`), the sort buttons, admission
 //! `0x0079BA60`, the resolution limit of `0x00789960`, the `" ,;"` password
 //! gate of `0xC3`/`0xE1` and the chat-lobby picker `0x00788180`.
 //!
@@ -673,6 +674,26 @@ pub(crate) fn resort_members(
     for member in std::mem::take(members) {
         insert_member(members, member, sort, rank);
     }
+}
+
+/// The join sink's insert into a game channel (`0x007A674B..0x007A6944` in
+/// `0x007A5890`), whatever the sort mode: a user weighs 4 as an operator
+/// plus 2 with voice; the joiner goes before the first user who weighs
+/// less, or as much with a `_strcmpi` name after its own, otherwise last.
+pub(crate) fn insert_game_member(members: &mut Vec<WolMember>, member: WolMember) {
+    let weight = |m: &WolMember| {
+        4 * u32::from(m.flags & MEMBER_OPERATOR != 0) + 2 * u32::from(m.flags & MEMBER_VOICE != 0)
+    };
+    let key = weight(&member);
+    let at = members
+        .iter()
+        .position(|existing| match key.cmp(&weight(existing)) {
+            Ordering::Greater => true,
+            Ordering::Equal => crt_strcmpi(&member.name, &existing.name).is_lt(),
+            Ordering::Less => false,
+        })
+        .unwrap_or(members.len());
+    members.insert(at, member);
 }
 
 #[cfg(test)]

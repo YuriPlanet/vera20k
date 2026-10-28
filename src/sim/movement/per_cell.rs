@@ -793,6 +793,57 @@ impl Simulation {
             let at = position_world_coord(&entity.position);
             ((at.x / 256) as i16 as u16, (at.y / 256) as i16 as u16)
         });
+        #[cfg(feature = "ares")]
+        if reason == PerCellReason::Arrival {
+            //519675 ->10049820: Capture only; exact NavCom equality with
+            //the first Unit, then Aircraft, then vehicle-like Building.
+            let capture_target = self.substrate.entities.get(id).and_then(|actor| {
+                if actor.mission.current().known() != Some(MissionType::Capture) {
+                    return None;
+                }
+                let NavTargetRef::Object { id: target } = actor.navigation.nav_com()? else {
+                    return None;
+                };
+                let layer = if actor.on_bridge() {
+                    MovementLayer::Bridge
+                } else {
+                    MovementLayer::Ground
+                };
+                let candidate = self.enter_candidate(entry_cell?, layer, true)?;
+                if candidate != target {
+                    return None;
+                }
+                let entity = self.substrate.entities.get(candidate)?;
+                if entity.category() == EntityCategory::Structure
+                    && !self
+                        .entity_object_type(entity, rules)
+                        .is_some_and(|ty| ty.is_1x1_with_undeploy())
+                {
+                    return None;
+                }
+                Some(target)
+            });
+            if let Some(target) = capture_target {
+                let outcome = self
+                    .ares_capture_vehicle(id, target, rules, registry, effects)
+                    .map_err(|cause| {
+                        FrameAdvanceError::new(
+                            self.session.tick(),
+                            self.session.binary_frame(),
+                            id,
+                            cause,
+                        )
+                    })?;
+                if outcome.consumed {
+                    //True joins ORIGINAL51A010: the actor's own event48 then
+                    //UnInit. The separate AI hook raises no actor event48.
+                    let context = UninitContext::new(rules, registry).with_effects(effects);
+                    self.dispatch_object_tag_event(id, 48, Some(id), None, context);
+                    self.uninit_with_context(id, context);
+                }
+                return Ok(outcome.bridge_state_changed);
+            }
+        }
         if reason == PerCellReason::Arrival
             && self.infantry_per_cell_occupy(id, rules, registry, effects)?
         {

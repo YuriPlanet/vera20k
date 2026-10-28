@@ -130,7 +130,7 @@ fn collect_sidebar_cameos(
     // Ares1005E410 selects a surface owned by this SuperWeaponType's extension.
     // A shared invalid PCX filename may have a different SHP fallback per type.
     for sw in rules.super_weapons.values() {
-        if let Some(cameo) = render_superweapon_cameo(sw, asset_manager, palette) {
+        if let Some(cameo) = render_superweapon_cameo(sw, asset_manager, palette, rules) {
             rendered.push(cameo);
         }
     }
@@ -270,12 +270,25 @@ fn render_cameo(
         &resolved_cameo,
     ));
 
-    let (data, file_name) = candidates
+    if let Some((data, file_name)) = candidates
         .iter()
-        .find_map(|name| asset_manager.get_ref(name).map(|data| (data, name.clone())))?;
-    let cameo = render_shp_frame0(type_id, data, palette)?;
-    log::debug!("Sidebar cameo {} loaded from {}", type_id, file_name);
-    Some(cameo)
+        .find_map(|name| asset_manager.get_ref(name).map(|data| (data, name.clone())))
+    {
+        let cameo = render_shp_frame0(type_id, data, palette)?;
+        log::debug!("Sidebar cameo {} loaded from {}", type_id, file_name);
+        return Some(cameo);
+    }
+    // A cameo that does not load leaves the stock XXICON.SHP
+    // (`TechnoTypeClass::ReadINI`, `0x00715A4D`), which Phobos's
+    // `MissingCameo=` replaces.
+    #[cfg(feature = "phobos")]
+    {
+        render_missing_cameo(type_id, rules.missing_cameo(), asset_manager, palette)
+    }
+    #[cfg(not(feature = "phobos"))]
+    {
+        None
+    }
 }
 
 /// A type's `AltCameo=` image: `<AltCameo>.SHP`, read from the type's image
@@ -323,6 +336,7 @@ fn render_superweapon_cameo(
     sw: &crate::rules::superweapon_type::SuperWeaponType,
     asset_manager: &AssetManager,
     palette: &Palette,
+    rules: &RuleSet,
 ) -> Option<RenderedCameo> {
     let key = &sw.id;
     #[cfg(feature = "ares")]
@@ -332,12 +346,28 @@ fn render_superweapon_cameo(
         cameo.kind = CameoKind::SuperWeapon;
         return Some(cameo);
     }
-    let image_name = sw.sidebar_image.as_deref()?;
-    let shp_name = format!("{image_name}.SHP");
-    let mut cameo = render_shp_frame0(key, asset_manager.get_ref(&shp_name)?, palette)?;
-    cameo.kind = CameoKind::SuperWeapon;
-    log::debug!("SW sidebar cameo {} loaded from {}", image_name, shp_name);
-    Some(cameo)
+    if let Some(image_name) = sw.sidebar_image.as_deref() {
+        let shp_name = format!("{image_name}.SHP");
+        if let Some(data) = asset_manager.get_ref(&shp_name)
+            && let Some(mut cameo) = render_shp_frame0(key, data, palette)
+        {
+            cameo.kind = CameoKind::SuperWeapon;
+            log::debug!("SW sidebar cameo {} loaded from {}", image_name, shp_name);
+            return Some(cameo);
+        }
+    }
+    // `SWTypeClass::Load`/`ReadINI` take the same `MissingCameo` replacement,
+    // so a superweapon with no icon shows the placeholder too.
+    #[cfg(feature = "phobos")]
+    if let Some(mut cameo) =
+        render_missing_cameo(key, rules.missing_cameo(), asset_manager, palette)
+    {
+        cameo.kind = CameoKind::SuperWeapon;
+        return Some(cameo);
+    }
+    #[cfg(not(feature = "phobos"))]
+    let _ = rules;
+    None
 }
 
 /// One PCX as gamemd's PCX blit6BA580 draws it.
@@ -372,7 +402,8 @@ pub(crate) fn decode_native_pcx(bytes: &[u8]) -> Option<NativePcxImage> {
 /// promoted and superweapon consumers share this decoder. Ares supplies
 /// a60x48 destination canvas;6BA5EF..600 uses source dimensions without scaling.
 /// https://ares-developers.github.io/Ares-docs/new/pcxcameos.html
-#[cfg(feature = "ares")]
+/// Phobos `MissingCameo=` reaches the same blit when it names a `.pcx`.
+#[cfg(any(feature = "ares", feature = "phobos"))]
 fn render_pcx_cameo(
     key: &str,
     filename: &str,
@@ -411,6 +442,44 @@ fn render_shp_frame0(key: &str, data: &[u8], palette: &Palette) -> Option<Render
     let mut full_rgba = vec![0u8; (full_w * full_h * 4) as usize];
     blit_frame_into_full_bounds(&mut full_rgba, full_w, full_h, frame, &frame_rgba);
     rendered_cameo_from_canvas(key, full_rgba, full_w, full_h)
+}
+
+/// Phobos `[AudioVisual] MissingCameo=` for a type whose own cameo did not
+/// load, in place of the stock `XXICON.SHP` the game loads then.
+///
+/// `Replace_XXICON_With_New` (`0x715A4D` and `0x716D13` for TechnoTypes,
+/// `0x6CE8AA` and `0x6CEE31` for SuperWeaponTypes) loads a lowercased name
+/// other than `xxicon.shp` that contains `.shp` instead of the stock file.
+/// Over the stock handle, `StripClass_Draw_DrawMissing` (`0x6A99F3`) blits a
+/// name containing `.pcx` into the 60x48 cell. Otherwise, or when the
+/// configured file does not load, the stock `XXICON.SHP` draws.
+#[cfg(feature = "phobos")]
+fn render_missing_cameo(
+    key: &str,
+    name: &str,
+    asset_manager: &AssetManager,
+    palette: &Palette,
+) -> Option<RenderedCameo> {
+    let lower = name.to_ascii_lowercase();
+    if lower != "xxicon.shp"
+        && lower.contains(".shp")
+        && let Some(cameo) = asset_manager
+            .get_ref(name)
+            .and_then(|data| render_shp_frame0(key, data, palette))
+    {
+        log::debug!("Sidebar cameo {key} fell back to {name}");
+        return Some(cameo);
+    }
+    let stock = asset_manager.get_ref("XXICON.SHP")?;
+    if lower.contains(".pcx")
+        && let Some(cameo) = render_pcx_cameo(key, name, asset_manager)
+    {
+        log::debug!("Sidebar cameo {key} fell back to {name}");
+        return Some(cameo);
+    }
+    let cameo = render_shp_frame0(key, stock, palette)?;
+    log::debug!("Sidebar cameo {key} fell back to XXICON.SHP");
+    Some(cameo)
 }
 
 /// Repo-only fallback guesses kept out of `rules::art_data`.
@@ -697,6 +766,85 @@ mod tests {
         assert!(!candidates.contains(&"CIVICONICON.SHP".to_string()));
     }
 
+    #[cfg(feature = "phobos")]
+    fn missing_cameo_rules(name: &str, art: &str) -> crate::rules::ruleset::RuleSet {
+        use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+        let ini = IniFile::from_str(&format!(
+            "[AudioVisual]\nMissingCameo={name}\n[BuildingTypes]\n0=NOART\n[NOART]\n"
+        ));
+        let art = IniFile::from_str(art);
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+        rules
+    }
+
+    /// `Replace_XXICON_With_New` (`0x715A4D`) loads a configured `.shp` in
+    /// place of the stock `XXICON.SHP`; one that does not load leaves the
+    /// stock file.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn a_type_without_art_takes_the_configured_shp_else_the_stock_xxicon() {
+        use crate::{
+            assets::asset_manager::AssetManager, assets::pal_file::Palette,
+            map::source::test_support::TestDirectory,
+        };
+        let palette = Palette::from_rgb(|_| [1, 2, 3]);
+        let rules = missing_cameo_rules("PLACEHOLDER.SHP", "[NOART]\n");
+        assert_eq!(rules.missing_cameo(), "PLACEHOLDER.SHP");
+        let dir = TestDirectory::new("cameo-missing-shp");
+        write_small_shp(&dir, "placeholder.shp");
+        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        let cameo = super::render_cameo("NOART", &assets, &rules, &palette).unwrap();
+        assert_eq!([cameo.canvas_width, cameo.canvas_height], [2, 2]);
+
+        let stock = TestDirectory::new("cameo-missing-shp-stock");
+        write_small_shp(&stock, "xxicon.shp");
+        let assets = AssetManager::from_loose_root_for_test(stock.path());
+        assert!(super::render_cameo("NOART", &assets, &rules, &palette).is_some());
+    }
+
+    /// `StripClass_Draw_DrawMissing` (`0x6A99F3`) blits a configured `.pcx`
+    /// over the stock `XXICON.SHP` handle, so it needs that file to load.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn the_configured_pcx_draws_over_the_stock_xxicon() {
+        use crate::{
+            assets::asset_manager::AssetManager, assets::pal_file::Palette,
+            map::source::test_support::TestDirectory,
+        };
+        let palette = Palette::from_rgb(|_| [1, 2, 3]);
+        let rules = missing_cameo_rules("PLACEHOLDER.PCX", "[NOART]\n");
+        let dir = TestDirectory::new("cameo-missing-pcx");
+        write_pcx(&dir, "placeholder.pcx", [20, 40, 60]);
+        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        assert!(super::render_cameo("NOART", &assets, &rules, &palette).is_none());
+
+        write_small_shp(&dir, "xxicon.shp");
+        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        let cameo = super::render_cameo("NOART", &assets, &rules, &palette).unwrap();
+        assert_eq!([cameo.canvas_width, cameo.canvas_height], [60, 48]);
+        assert_eq!(&cameo.rgba[8..12], &[20, 40, 60, 255]);
+    }
+
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn declared_cameo_art_still_wins_over_the_missing_cameo() {
+        use crate::{
+            assets::asset_manager::AssetManager, assets::pal_file::Palette,
+            map::source::test_support::TestDirectory,
+        };
+        let dir = TestDirectory::new("cameo-missing-precedence");
+        write_old_cameos(&dir);
+        // A 60x48 placeholder would be unmistakable if it were selected.
+        write_small_shp(&dir, "xxicon.shp");
+        write_pcx(&dir, "placeholder.pcx", [20, 40, 60]);
+        let rules = missing_cameo_rules("PLACEHOLDER.PCX", "[NOART]\nCameo=OLDICON\n");
+        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        let palette = Palette::from_rgb(|_| [1, 2, 3]);
+        let cameo = super::render_cameo("NOART", &assets, &rules, &palette).unwrap();
+        assert_eq!([cameo.canvas_width, cameo.canvas_height], [2, 2]);
+    }
+
     #[test]
     fn test_rendered_cameo_retains_canvas_and_nonzero_crop_origin() {
         let canvas_width = 6;
@@ -739,7 +887,8 @@ mod tests {
         rules
     }
 
-    fn write_old_cameos(dir: &crate::map::source::test_support::TestDirectory) {
+    /// A 2x2, one-frame SHP whose four pixels are palette index 1.
+    fn write_small_shp(dir: &crate::map::source::test_support::TestDirectory, name: &str) {
         let mut shp = Vec::new();
         for word in [0u16, 2, 2, 1] {
             shp.extend_from_slice(&word.to_le_bytes());
@@ -751,8 +900,12 @@ mod tests {
         frame[20..24].copy_from_slice(&32u32.to_le_bytes());
         shp.extend_from_slice(&frame);
         shp.extend_from_slice(&[1; 4]);
+        dir.write(name, &shp);
+    }
+
+    fn write_old_cameos(dir: &crate::map::source::test_support::TestDirectory) {
         for name in ["oldicon.shp", "oldalt.shp", "body.shp"] {
-            dir.write(name, &shp);
+            write_small_shp(dir, name);
         }
     }
 
@@ -873,11 +1026,12 @@ mod tests {
         let sw = SuperWeaponType::from_ini_section("SW", ini.section("SW").unwrap());
         let assets = AssetManager::from_loose_root_for_test(dir.path());
         let palette = Palette::from_rgb(|_| [1, 2, 3]);
-        let fallback = super::render_superweapon_cameo(&sw, &assets, &palette).unwrap();
+        let rules = cameo_rules();
+        let fallback = super::render_superweapon_cameo(&sw, &assets, &palette, &rules).unwrap();
         assert_eq!([fallback.canvas_width, fallback.canvas_height], [2, 2]);
         write_pcx(&dir, "normal.pcx", [30, 50, 70]);
         let assets = AssetManager::from_loose_root_for_test(dir.path());
-        let selected = super::render_superweapon_cameo(&sw, &assets, &palette).unwrap();
+        let selected = super::render_superweapon_cameo(&sw, &assets, &palette, &rules).unwrap();
         #[cfg(feature = "ares")]
         {
             assert_eq!(fallback.type_id, "SW");
@@ -886,7 +1040,9 @@ mod tests {
             let ini = IniFile::from_str("[PCXONLY]\nType=PsychicReveal\nSidebarPCX=Normal.PCX\n");
             let pcx_only =
                 SuperWeaponType::from_ini_section("PCXONLY", ini.section("PCXONLY").unwrap());
-            assert!(super::render_superweapon_cameo(&pcx_only, &assets, &palette).is_some());
+            assert!(
+                super::render_superweapon_cameo(&pcx_only, &assets, &palette, &rules).is_some()
+            );
         }
         #[cfg(not(feature = "ares"))]
         {
@@ -1057,7 +1213,8 @@ mod tests {
             let sw = SuperWeaponType::from_ini_section("SW", ini.section("SW").unwrap());
             let assets = AssetManager::from_loose_root_for_test(dir.path());
             let palette = Palette::from_rgb(|_| [1, 2, 3]);
-            let selected = super::render_superweapon_cameo(&sw, &assets, &palette).unwrap();
+            let rules = cameo_rules();
+            let selected = super::render_superweapon_cameo(&sw, &assets, &palette, &rules).unwrap();
             let expected_width = if control["selected_surface"].as_u64().unwrap() == 0 {
                 2
             } else {

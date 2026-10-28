@@ -66,14 +66,17 @@ fn a_computer_team_recruits_forms_and_succeeds_in_the_master_frame() {
     sim.advance_tick(&[], Some(&rules), None, None, 67);
     let trace = sim.take_master_frame_test_trace();
     assert_eq!(
-        &trace[..4],
+        &trace[..6],
         &[
             MasterFrameTestRung::SessionCommands,
             MasterFrameTestRung::Triggers,
             MasterFrameTestRung::TeamScript,
+            MasterFrameTestRung::DiskLasers,
+            MasterFrameTestRung::LightningStorm,
             MasterFrameTestRung::LogicVector,
         ],
-        "native TeamClass AI must finish before any live LogicClass object visit"
+        "native TeamClass AI (0x0055B502) precedes the Disk walk (0x0055B5A1), \
+         LightningStorm::Process (0x0055B5C8) and every live LogicClass object visit"
     );
 
     let mut formed_with = None;

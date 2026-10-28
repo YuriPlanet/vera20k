@@ -892,6 +892,23 @@ pub(super) fn capability_cursor_for_hover(
             };
         }
 
+        #[cfg(feature = "ares")]
+        if rules.is_some_and(|rules| {
+            super::context_order::vehicle_capture_action(
+                sim,
+                rules,
+                best_id,
+                hover.stable_id,
+                modifier,
+                force_move_key,
+            )
+        }) {
+            // Ares100496EF selects TakeVehicle92. Its default constructor
+            //1000735C..10007370 copies native Enter25's complete descriptor.
+            // RESIDUAL: custom [MouseCursors] overrides are not bound yet.
+            return CursorFeedbackKind::Enter;
+        }
+
         // 5. Entry: a Unit's Select over a friendly building it may enter
         //    (refinery, Service Depot, Tank Bunker, Grinder), an Infantryman's
         //    over a Grinding= building, either's over a friendly passenger

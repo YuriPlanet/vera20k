@@ -61,6 +61,52 @@ fn retail_jumpjet_unit_demand_includes_native_shadow_stencils() {
     }
 }
 
+/// A Magnetron's `IsLocomotor=` Jumpjet lifts any vehicle, whose shadow
+/// Unit73C1D2's suffix then draws at the slope of the cell below (base
+/// Shadow_Matrix 0x0055A7D0): unmasked high above it, and in the grounded
+/// entry (73C468) on the ground. A Hover victim and a Drive victim over a
+/// ramp both need a resident native stencil for each.
+#[test]
+fn retail_lifted_vehicles_keep_native_shadow_stencils_on_their_cell_slope() {
+    use crate::render::foot_depth::DepthCell;
+    use crate::render::unit_shadow::{UnitShadowContext, pose};
+    use crate::rules::retail_ini_fixture::{retail_assets, retail_battle_rules};
+    let Some(battle) = retail_battle_rules() else {
+        return;
+    };
+    let (_, assets) = retail_assets().expect("retail assets for the loaded rules");
+    let [x, y] = [10 * 256 + 128; 2];
+    for (type_id, ramp) in [("ROBO", 0), ("HTNK", 1)] {
+        let demand = UnitAtlasDemand {
+            ground: BTreeSet::from([type_id.to_string()]),
+            ..Default::default()
+        };
+        let (keys, _) = needed_unit_keys(&demand, &assets, Some(&battle.rules));
+        let model = UnitModel::load(&assets, type_id, Some(&battle.rules)).unwrap();
+        let floor = crate::util::lepton::ground_height_leptons(0, ramp, x, y).unwrap();
+        for height in [0, 500] {
+            let key = pose(
+                UnitShadowContext {
+                    xyz: [x, y, floor + height],
+                    on_bridge: false,
+                    marked: true,
+                    primary_facing: 0x4000,
+                },
+                |coord| DepthCell {
+                    coord,
+                    ramp,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .key(type_id);
+            assert!(keys.contains(&key), "{key:?} resident");
+            let (_, bounds) = model.render(&key, None, None, &mut None).unwrap();
+            assert!(bounds.is_some(), "{key:?} native stencil");
+        }
+    }
+}
+
 /// Aircraft DrawIt4148A0 reaches the shared Foot shadow owner. An ordinary
 /// retail Harrier therefore needs a shadow resident alongside its body.
 #[test]
@@ -720,7 +766,8 @@ fn retail_ifv_atlas_covers_all_turrets_without_replicating_its_hull() {
     let (keys, _) = needed_unit_keys(&demand, &assets, Some(&battle.rules));
     let count = |layer| keys.iter().filter(|key| key.layer == layer).count();
     assert_eq!(count(VxlLayer::Body), 32 * 17);
-    assert_eq!(count(VxlLayer::Shadow), 32 * 17);
+    // Flight and grounded stencils for the Magnetron's lift.
+    assert_eq!(count(VxlLayer::Shadow), 2 * 32 * 17);
     assert_eq!(count(VxlLayer::Turret), 4 * 32 * 17);
     assert_eq!(
         keys.iter()

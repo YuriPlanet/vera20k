@@ -88,10 +88,6 @@
 //! - Original whole GAPOWR fatal/517A50/51DFF0 controls establish fresh E1
 //!   Doing=-1 and Scatter admission at51D1AA. Different preexisting passenger
 //!   Doing states remain bounded by their own Scatter controls.
-//! - HijackerType (Unit `+0x338`): VERA has no hijacking, so the always-exit
-//!   hijacker arm is unreachable.
-//! - The crewman takes the vehicle's tag (`0x006E57C0`/`0x005F5B50`): VERA
-//!   has no per-object tags.
 //! - A UnitAbsorb passenger (no stock building) leaves without its Scatter
 //!   in Phase A and with it in a sale; VERA scatters neither.
 //! - Nominal crew retain Infantry+6D9: death443127 sets it before Unlimbo
@@ -105,6 +101,9 @@
 //!   exit reads the off-map cell's bytes without stamping it. After Phase A
 //!   such a Bio Reactor (more infantry than foundation cells) starts Phase B
 //!   past the list (open native question); VERA skips Phase B's cells.
+
+#[cfg(feature = "ares")]
+mod ares_survivors;
 
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::FactoryType;
@@ -286,23 +285,41 @@ impl Simulation {
     ) -> Option<String> {
         let entity = substrate.entities.get(building_id)?;
         let object = interner.object_type(entity.type_ref(), rules)?;
+        #[cfg(not(feature = "ares"))]
         if !object.crewed {
             return None;
         }
         let captured = entity.has_been_captured.is_set();
-        let armed = crate::sim::combat::combat_weapon::is_armed(entity, object);
         let yard = object.factory_type() == Some(FactoryType::BuildingType);
-        let side = houses.get(&entity.owner())?.side_index();
-        if !captured && scenario_rng.next_range_u32_inclusive(0, 99) < 25 && yard {
-            // `BuildingClass::GetCrew` 0x44EB10 calls
-            // `HouseExt::GetEngineer`, whose Ares SideExt+1C override wins
-            // (`SideExt::GetEngineer @ 0x1002DEE0`).
-            return rules
-                .side_engineer(side)
-                .map(|value| value.map(str::to_owned))
-                .unwrap_or_else(|| rules.general.engineer_infantry.clone());
+        let house = houses.get(&entity.owner())?;
+        #[cfg(feature = "ares")]
+        {
+            // Installed Building GetCrew1004C650 replaces44EB10. Its optional
+            // Engineer chance is tested before Techno's Crewed gate; unlike
+            // retail it draws only with a positive admitted chance.
+            let chance = object
+                .crew_rules()
+                .engineer_chance()
+                .unwrap_or(if yard { 25 } else { 0 });
+            if !captured
+                && chance > 0
+                && scenario_rng.next_range_u32_inclusive(0, 99) < chance as u32
+            {
+                return rules
+                    .side_engineer(house.side_index())
+                    .map(|value| value.map(str::to_owned))
+                    .unwrap_or_else(|| rules.general.engineer_infantry.clone());
+            }
+            ares_techno_crew_type(scenario_rng, rules, entity, object, house, interner)
         }
-        techno_crew_type(scenario_rng, rules, side, armed)
+        #[cfg(not(feature = "ares"))]
+        {
+            let armed = crate::sim::combat::combat_weapon::is_armed(entity, object);
+            if !captured && scenario_rng.next_range_u32_inclusive(0, 99) < 25 && yard {
+                return rules.general.engineer_infantry.clone();
+            }
+            techno_crew_type(scenario_rng, rules, house.side_index(), armed)
+        }
     }
 
     /// `BuildingClass::How_Many_Survivors @ 0x00451330`: zero when
@@ -706,7 +723,9 @@ impl Simulation {
 
     /// The crew block of `UnitClass::ReceiveDamage` (`0x007381BC..0x0073838A`),
     /// after the dying unit's Mark(UP). `prevent_escape` is ReceiveDamage's
-    /// arg6. A crewed vehicle with no passenger capacity rolls CrewEscape; an
+    /// arg6. A retained captor type (+338 != -1) bypasses arg6, Crewed,
+    /// Passengers and CrewEscape (7381BC..738267), and exits as that infantry
+    /// type. Other crewed vehicles with no passenger capacity roll CrewEscape; an
     /// escaped crewman leaves from the vehicle's own coordinate with Health
     /// `RandomRanged(5, Strength/2)`, Guards for a human owner or Hunts for
     /// the computer, and is selected if the vehicle was
@@ -720,16 +739,14 @@ impl Simulation {
         selected_by_player: bool,
         effects: FrameEffects<'_>,
     ) {
-        if prevent_escape {
-            return;
-        }
         let Some(entity) = self.substrate.entities.get(unit_id) else {
             return;
         };
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        if !object.crewed || object.passengers != 0 {
+        let captor_type = entity.capture_infantry_type_index.get();
+        if captor_type == -1 && (prevent_escape || !object.crewed || object.passengers != 0) {
             return;
         }
         let owner = entity.owner();
@@ -776,11 +793,24 @@ impl Simulation {
             }
         };
 
-        let roll = self.scenario_rng.next_range_u32_inclusive(0, 0x7FFF_FFFE);
-        if !crew_escapes(roll, rules.general.crew_escape) {
-            return;
-        }
-        let Some(crew) = techno_crew_type(&mut self.scenario_rng, rules, side, armed) else {
+        // UnitClass::ReceiveDamage7381BC..73829C (retail gamemd.exe):
+        // the captor arm constructs its retained InfantryType directly,
+        // without either CrewEscape's draw or the GetCrew selection draw.
+        let crew = if captor_type != -1 {
+            rules
+                .type_array_at(
+                    crate::rules::object_type::ObjectCategory::Infantry,
+                    captor_type,
+                )
+                .map(|object| object.id.clone())
+        } else {
+            let roll = self.scenario_rng.next_range_u32_inclusive(0, 0x7FFF_FFFE);
+            if !crew_escapes(roll, rules.general.crew_escape) {
+                return;
+            }
+            techno_crew_type(&mut self.scenario_rng, rules, side, armed)
+        };
+        let Some(crew) = crew else {
             return;
         };
         let Some(id) = self.construct_crew(rules, &crew, owner, unlimbo, registry, effects) else {
@@ -806,6 +836,8 @@ impl Simulation {
                 UninitContext::new(rules, registry).with_effects(effects),
             );
         }
+        //738364..73837A, after Unlimbo, health, Scatter, mission and Select.
+        self.trigger_runtime.transfer_object_tag(unit_id, id);
     }
 
     /// The passenger block of `UnitClass::ReceiveDamage`
@@ -1375,6 +1407,56 @@ fn techno_crew_type(rng: &mut SimRng, rules: &RuleSet, side: i32, armed: bool) -
         return technician;
     }
     crew
+}
+
+/// Installed Ares GetCrew707D20 hook1004C780..1004C867. This is the optional
+/// replacement of the retail query above, shared by every Ares crew caller.
+/// Side readers10021230/10021520 and1002DE60/1002E170 preserve explicit NULL.
+#[cfg(feature = "ares")]
+fn ares_techno_crew_type(
+    rng: &mut SimRng,
+    rules: &RuleSet,
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+    house: &crate::sim::house_state::HouseState,
+    interner: &StringInterner,
+) -> Option<String> {
+    if !object.crewed {
+        return None;
+    }
+    let side_index = house.side_index();
+    let technician = rules
+        .side_technician(side_index)
+        .map(|value| value.map(str::to_owned))
+        .unwrap_or_else(|| rules.general.technician.clone());
+    // The HouseType's +BC guard and House's +1E8 selector are distinct reads.
+    //1004C7F0 precedes both the chance draw and per-side type override.
+    if rules
+        .country_side_index_raw(interner.resolve(house.house_type_id()))
+        .unwrap_or(-1)
+        < 0
+    {
+        return technician;
+    }
+    let chance = object.crew_rules().technician_chance().unwrap_or_else(|| {
+        if entity.category().is_foot() {
+            0
+        } else if crate::sim::combat::combat_weapon::is_armed(entity, object) {
+            15
+        } else {
+            0
+        }
+    });
+    if chance > 0 && rng.next_range_u32_inclusive(0, 99) < chance as u32 {
+        return technician;
+    }
+    if let Some(pilot) = object.crew_rules().pilot_for_side(side_index) {
+        return Some(pilot.to_owned());
+    }
+    rules
+        .side_crew(side_index)
+        .map(|value| value.map(str::to_owned))
+        .unwrap_or_else(|| rules.general.technician.clone())
 }
 
 impl crate::sim::world::ObjectSubstrate {

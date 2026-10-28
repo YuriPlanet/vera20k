@@ -13,6 +13,15 @@ pub(crate) struct AresWarheadRules {
     affects_enemies: bool,
     affects_owner: Option<bool>,
     attach_effect: AttachEffectRules,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    kill_driver: KillDriverRules,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    effects_require_damage: bool,
+    #[cfg(feature = "ares")]
+    #[serde(default = "default_effects_require_verses")]
+    effects_require_verses: bool,
 }
 impl Default for AresWarheadRules {
     fn default() -> Self {
@@ -23,6 +32,12 @@ impl Default for AresWarheadRules {
             affects_enemies: true,
             affects_owner: None,
             attach_effect: Default::default(),
+            #[cfg(feature = "ares")]
+            kill_driver: Default::default(),
+            #[cfg(feature = "ares")]
+            effects_require_damage: false,
+            #[cfg(feature = "ares")]
+            effects_require_verses: true,
         }
     }
 }
@@ -63,6 +78,18 @@ impl AresWarheadRules {
         self.affects_owner
     }
     #[cfg(feature = "ares")]
+    pub(crate) fn kill_driver(&self) -> &KillDriverRules {
+        &self.kill_driver
+    }
+    #[cfg(feature = "ares")]
+    pub(crate) fn effects_require_damage(&self) -> bool {
+        self.effects_require_damage
+    }
+    #[cfg(feature = "ares")]
+    pub(crate) fn effects_require_verses(&self) -> bool {
+        self.effects_require_verses
+    }
+    #[cfg(feature = "ares")]
     pub(crate) fn read_pass(
         &mut self,
         section: &IniSection,
@@ -76,7 +103,110 @@ impl AresWarheadRules {
         }
         self.affects_enemies = section.read_ares_bool("AffectsEnemies", self.affects_enemies);
         self.affects_owner = section.read_ares_nullable_bool("AffectsOwner", self.affects_owner);
+        self.kill_driver.read_pass(section);
+        // WarheadExt+130/+131, ctor10051A8E=false/true; reads1005231D/33.
+        self.effects_require_damage =
+            section.read_ares_bool("EffectsRequireDamage", self.effects_require_damage);
+        self.effects_require_verses =
+            section.read_ares_bool("EffectsRequireVerses", self.effects_require_verses);
         self.attach_effect.read_pass(section, animation);
+    }
+}
+
+#[cfg(feature = "ares")]
+fn default_effects_require_verses() -> bool {
+    true
+}
+
+/// Installed house-selector table10095264, reader1000A660 and shared
+/// resolver10021310. The selector's random permission is a consumer input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg(feature = "ares")]
+pub(crate) enum HouseSelector {
+    Default,
+    Invoker,
+    Killer,
+    Victim,
+    Civilian,
+    Special,
+    Neutral,
+    Random,
+}
+
+#[cfg(feature = "ares")]
+impl HouseSelector {
+    #[cfg(feature = "ares")]
+    fn read(self, section: &IniSection, key: &str) -> Self {
+        const VALUES: [(&str, HouseSelector); 8] = [
+            ("default", HouseSelector::Default),
+            ("invoker", HouseSelector::Invoker),
+            ("killer", HouseSelector::Killer),
+            ("victim", HouseSelector::Victim),
+            ("civilian", HouseSelector::Civilian),
+            ("special", HouseSelector::Special),
+            ("neutral", HouseSelector::Neutral),
+            ("random", HouseSelector::Random),
+        ];
+        section.read_string_with(key, 2048, self, |current, raw| {
+            VALUES
+                .iter()
+                .find_map(|(name, value)| name.eq_ignore_ascii_case(raw).then_some(*value))
+                .unwrap_or(current)
+        })
+    }
+}
+
+/// WarheadExt+5D..74, constructor1005194B/1005194E/10051A70/10051A77.
+/// ReadINI1005207E..100520D8 uses the exact full keys, without clamps.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg(feature = "ares")]
+pub(crate) struct KillDriverRules {
+    enabled: bool,
+    kill_below_percent: NativeF64Bits,
+    chance: NativeF64Bits,
+    owner: HouseSelector,
+    remove_veterancy: bool,
+}
+
+#[cfg(feature = "ares")]
+impl Default for KillDriverRules {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            kill_below_percent: NativeF64Bits::ONE,
+            chance: NativeF64Bits::ONE,
+            owner: HouseSelector::Special,
+            remove_veterancy: false,
+        }
+    }
+}
+
+#[cfg(feature = "ares")]
+impl KillDriverRules {
+    #[cfg(feature = "ares")]
+    fn read_pass(&mut self, section: &IniSection) {
+        self.enabled = section.read_ares_bool("KillDriver", self.enabled);
+        self.kill_below_percent =
+            section.read_ares_double_bits("KillDriver.KillBelowPercent", self.kill_below_percent);
+        self.chance = section.read_ares_double_bits("KillDriver.Chance", self.chance);
+        self.owner = self.owner.read(section, "KillDriver.Owner");
+        self.remove_veterancy =
+            section.read_ares_bool("KillDriver.RemoveVeterancy", self.remove_veterancy);
+    }
+    pub(crate) fn enabled(&self) -> bool {
+        self.enabled
+    }
+    pub(crate) fn kill_below_percent(&self) -> NativeF64Bits {
+        self.kill_below_percent
+    }
+    pub(crate) fn chance(&self) -> NativeF64Bits {
+        self.chance
+    }
+    pub(crate) fn owner(&self) -> HouseSelector {
+        self.owner
+    }
+    pub(crate) fn remove_veterancy(&self) -> bool {
+        self.remove_veterancy
     }
 }
 

@@ -38,6 +38,9 @@ pub(super) fn advance(
     entity: &mut GameEntity,
     adjusted_speed: SimFixed,
     prone_crawls: Option<bool>,
+    // Phobos `ProneSpeed`: the resolved multiplier, `None` for the retail
+    // integer arms.
+    prone_multiplier: Option<f64>,
     native_frame: u32,
     terrain: Option<&ResolvedTerrainGrid>,
     grid: Option<&PathGrid>,
@@ -53,7 +56,8 @@ pub(super) fn advance(
         entity.foot_speed.native_applied_fraction(),
     );
     let speed = prone_crawls.map_or(speed, |crawls| {
-        crate::sim::infantry::apply_prone_speed(SimFixed::from_num(speed), crawls).to_num::<i32>()
+        crate::sim::infantry::apply_prone_speed(SimFixed::from_num(speed), crawls, prone_multiplier)
+            .to_num::<i32>()
     });
     entity.navigation.path_runtime_mut().clear_blockage(); //75BFD1; retain grace timer.
     let current = super::ground_pose::position_world_xy(&entity.position);

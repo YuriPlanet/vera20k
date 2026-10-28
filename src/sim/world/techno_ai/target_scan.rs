@@ -519,6 +519,11 @@ pub(super) fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> 
     if entity.temporal.is_warping_someone() {
         return false;
     }
+    // Ares7091D6 ->10049F70 returns70927D before the remaining passive gates.
+    #[cfg(feature = "ares")]
+    if entity.driver_killed() {
+        return false;
+    }
     if entity.slave.owner().is_some() {
         return false;
     }

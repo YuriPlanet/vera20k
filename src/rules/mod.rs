@@ -119,8 +119,22 @@
 pub mod airstrike;
 pub mod digital_display;
 pub mod phobos_parallel_ai_queues;
+#[cfg(all(test, feature = "phobos"))]
+#[path = "phobos_infantry_deploy_tests.rs"]
+mod phobos_infantry_deploy_tests;
+#[cfg(all(test, feature = "phobos"))]
+#[path = "phobos_prone_speed_tests.rs"]
+mod phobos_prone_speed_tests;
+#[cfg(feature = "phobos")]
+pub mod phobos_fly_wobble;
+#[cfg(feature = "phobos")]
+pub mod phobos_pause_menu;
 #[cfg(feature = "phobos")]
 pub mod phobos_placement_preview;
+#[cfg(feature = "phobos")]
+pub mod phobos_power_plant_enhancer;
+#[cfg(feature = "phobos")]
+pub mod phobos_selection_flash;
 #[cfg(feature = "phobos")]
 pub mod phobos_sw_sidebar;
 pub mod phobos_radiation;
@@ -137,6 +151,7 @@ pub const VERAX_ENABLED: bool = cfg!(feature = "verax");
 pub(crate) mod ares_prerequisites;
 pub(crate) mod ares_armor;
 pub(crate) mod ares_emp;
+pub(crate) mod ares_abilities;
 #[cfg(feature = "ares")]
 pub(crate) mod ares_country_paradrop;
 #[cfg(feature = "ares")]
@@ -146,6 +161,10 @@ pub(crate) mod ares_side_extension;
 pub(crate) mod ares_warhead;
 #[cfg(feature = "ares")]
 pub(crate) mod ares_spotlight;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_driver;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_crew;
 pub mod armor;
 pub mod alpha_image_assets;
 pub mod country_loading;

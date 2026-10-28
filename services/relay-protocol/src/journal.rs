@@ -150,7 +150,17 @@ pub(super) struct Journal {
 
 impl Journal {
     pub(super) fn reserve_batch(&mut self, bytes: usize) -> bool {
-        let bytes = bytes as u64 + 12;
+        self.reserve_entries(&[bytes])
+    }
+
+    /// Reserve a whole control transaction before accepting its first marker;
+    /// a pause cannot consume the space needed for its eventual resume.
+    pub(super) fn reserve_entries(&mut self, lengths: &[usize]) -> bool {
+        let Some(bytes) = lengths.iter().try_fold(0u64, |total, &length| {
+            total.checked_add(u64::try_from(length).ok()?.checked_add(12)?)
+        }) else {
+            return false;
+        };
         if self.failed || self.used + self.reserved_tail + self.pending + bytes > ROOM_QUOTA {
             return false;
         }
@@ -158,7 +168,7 @@ impl Journal {
         true
     }
 
-    /// One checked append transaction per complete frame. A partial write is
+    /// One checked append transaction for a frame or canonical control barrier. A partial write is
     /// left intact for inspection, never truncated or treated as eviction.
     pub(super) fn commit(&mut self, records: &[Vec<u8>]) -> io::Result<()> {
         if self.failed {

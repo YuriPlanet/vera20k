@@ -22,6 +22,49 @@ use crate::sim::world::Simulation;
 
 const OWNER: &str = "Americans";
 
+/// Foot AddPassenger4DE630 selects the incoming gunner only when the
+/// committed cargo count is exactly one (4DE652), not on every boarding.
+#[test]
+fn multiple_passenger_gunner_keeps_the_first_boarded_weapon() {
+    use crate::sim::world::FrameEffects;
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let mut ini = (*retail.processed_rules).clone();
+    ini.merge(&crate::rules::ini_parser::IniFile::from_str(
+        "[FV]\nPassengers=2\n",
+    ));
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &retail.fixed_art).unwrap();
+    let (mut sim, _) = arena(&rules);
+    let ifv = sim.spawn_object("FV", OWNER, 16, 16, 64, &rules).unwrap();
+    let engineer = sim
+        .spawn_object("ENGINEER", OWNER, 16, 15, 64, &rules)
+        .unwrap();
+    let gi = sim.spawn_object("E1", OWNER, 15, 16, 64, &rules).unwrap();
+    assert!(super::board_passenger(
+        &mut sim,
+        &rules,
+        engineer,
+        ifv,
+        super::BoardingArm::InfantryTransport,
+        None,
+        FrameEffects::default()
+    ));
+    assert_selection(&sim, ifv, (1, 2));
+    assert!(super::board_passenger(
+        &mut sim,
+        &rules,
+        gi,
+        ifv,
+        super::BoardingArm::InfantryTransport,
+        None,
+        FrameEffects::default()
+    ));
+    assert_eq!(entity(&sim, ifv).passenger_role.passenger_count(), 2);
+    assert_selection(&sim, ifv, (1, 2));
+    assert_current_weapon(&sim, &rules, ifv, "RepairBullet");
+}
+
 fn arena(rules: &RuleSet) -> (Simulation, PathGrid) {
     let mut sim = Simulation::new();
     for (name, side) in [(OWNER, 0), ("Russians", 1)] {

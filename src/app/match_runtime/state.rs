@@ -102,9 +102,29 @@ impl MatchState {
             self.sim_runtime.as_ref().map(|rt| rt.simulation.session()),
         )
     }
-    /// True when the game is paused and the simulation frozen: an in-scenario
-    /// modal is open, or the debug pause is on.
+    /// Native elapsed-clock intent excludes the relay hold and network
+    /// menus: those menus never stop the score clock. Audio still combines
+    /// every physical pause through presentation_paused.
+    pub(crate) fn elapsed_clock_paused(&self, screen: &crate::ui::game_screen::GameScreen) -> bool {
+        elapsed_clock_pause_for_screen(
+            screen,
+            self.session_mode(),
+            self.match_presentation.in_game_menu.is_open(),
+            self.match_presentation
+                .radar_anim
+                .as_ref()
+                .is_some_and(|radar| radar.movie_pause()),
+            self.sim_runtime
+                .as_ref()
+                .is_some_and(|runtime| runtime.simulation.session().scenario_paused()),
+        )
+    }
+
     pub(crate) fn paused(&self) -> bool {
+        self.local_paused() || self.multiplayer_paused()
+    }
+
+    pub(crate) fn local_paused(&self) -> bool {
         self.match_presentation.in_game_menu.is_open()
             || self.debug_pause
             || self
@@ -112,6 +132,29 @@ impl MatchState {
                 .radar_anim
                 .as_ref()
                 .is_some_and(|radar| radar.movie_pause())
+    }
+
+    /// The relay's marker applies after the entire barrier frame, including a
+    /// retained post-Logic transaction. This is a view of network authority,
+    /// not an app-owned pause flag or a Scenario pause credit.
+    pub(crate) fn multiplayer_paused(&self) -> bool {
+        self.live_network
+            .as_ref()
+            .and_then(|live| live.multiplayer_pause())
+            .zip(self.sim_runtime.as_ref())
+            .is_some_and(|(pause, runtime)| {
+                multiplayer_pause_reached(
+                    pause,
+                    runtime.simulation.session().binary_frame(),
+                    runtime.simulation.pending_network_wait(),
+                )
+            })
+    }
+
+    pub(crate) fn sync_multiplayer_pause_clock(&mut self, wall_ms: u64) {
+        let paused = self.multiplayer_paused();
+        self.scenario_elapsed_clock
+            .set_multiplayer_paused(paused, wall_ms);
     }
 
     /// Main_Tick (`0x0055D360`) is not running. A LAN/WOL modal's pump
@@ -124,6 +167,7 @@ impl MatchState {
             .as_ref()
             .is_some_and(|rt| rt.simulation.pending_network_failure().is_some())
             || self.debug_pause
+            || self.multiplayer_paused()
             || super::scenario_pause::blocks_main_tick(
                 self.session_mode(),
                 self.sim_runtime
@@ -151,6 +195,27 @@ impl MatchState {
     }
 }
 
+fn multiplayer_pause_reached(
+    pause: crate::net::live_commands::MultiplayerPauseStatus,
+    next_frame: u32,
+    transaction_pending: bool,
+) -> bool {
+    pause.available && pause.paused && next_frame > pause.frame && !transaction_pending
+}
+
+fn elapsed_clock_pause_for_screen(
+    screen: &crate::ui::game_screen::GameScreen,
+    mode: super::session::SessionMode,
+    menu_open: bool,
+    movie_paused: bool,
+    scenario_paused: bool,
+) -> bool {
+    matches!(screen, crate::ui::game_screen::GameScreen::InGame)
+        && (movie_paused
+            || (menu_open && !mode.is_network())
+            || super::scenario_pause::blocks_main_tick(mode, scenario_paused))
+}
+
 /// A retained runtime can outlive its tactical screen. This is a physical
 /// audio/presentation query; it never retires saved simulation pause credits.
 fn presentation_pause_for_screen(
@@ -175,10 +240,31 @@ fn held_session_mode(
 
 #[cfg(test)]
 mod tests {
-    use super::{held_session_mode, presentation_pause_for_screen};
+    use super::{
+        elapsed_clock_pause_for_screen, held_session_mode, multiplayer_pause_reached,
+        presentation_pause_for_screen,
+    };
     use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext, SessionMode};
     use crate::sim::world::Simulation;
     use crate::ui::game_screen::GameScreen;
+
+    #[test]
+    fn shared_pause_waits_for_the_complete_barrier_and_survives_pending_resume() {
+        let mut pause = crate::net::live_commands::MultiplayerPauseStatus {
+            available: true,
+            paused: true,
+            frame: 42,
+            epoch: 1,
+            pending: false,
+        };
+        assert!(!multiplayer_pause_reached(pause, 42, false));
+        assert!(!multiplayer_pause_reached(pause, 43, true));
+        assert!(multiplayer_pause_reached(pause, 43, false));
+        pause.pending = true;
+        assert!(multiplayer_pause_reached(pause, 43, false));
+        pause.paused = false;
+        assert!(!multiplayer_pause_reached(pause, 43, false));
+    }
 
     #[test]
     fn game_mode_reads_from_its_one_holder() {
@@ -207,6 +293,27 @@ mod tests {
 
     #[test]
     fn retained_pause_does_not_leak_into_result_or_shell_audio() {
+        assert!(elapsed_clock_pause_for_screen(
+            &GameScreen::InGame,
+            SessionMode::Skirmish,
+            true,
+            false,
+            false
+        ));
+        assert!(!elapsed_clock_pause_for_screen(
+            &GameScreen::InGame,
+            SessionMode::Wol,
+            true,
+            false,
+            true
+        ));
+        assert!(elapsed_clock_pause_for_screen(
+            &GameScreen::InGame,
+            SessionMode::Wol,
+            true,
+            true,
+            false
+        ));
         let mut sim = Simulation::with_seed(0);
         sim.publish_scenario_started();
         sim.pause_scenario_for_test(2);

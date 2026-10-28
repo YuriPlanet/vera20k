@@ -3096,6 +3096,8 @@ fn master_frame_polls_triggers_before_logic_houses_commit_and_delete() {
             MasterFrameTestRung::SessionCommands,
             MasterFrameTestRung::Triggers,
             MasterFrameTestRung::TeamScript,
+            MasterFrameTestRung::DiskLasers,
+            MasterFrameTestRung::LightningStorm,
             MasterFrameTestRung::LogicVector,
             MasterFrameTestRung::Houses,
             MasterFrameTestRung::FrameCommit,
@@ -3964,4 +3966,13 @@ fn cell_tags_split_by_ini_format_and_keep_the_first_tag_per_cell() {
             "format {format}: the losing entry still allocates its TagType"
         );
     }
+}
+
+/// Test-support difficulty overrides stay out of saved trigger state.
+#[test]
+fn fixture_difficulty_is_not_serialized() {
+    let mut runtime = TriggerRuntime::default();
+    let unset = serde_json::to_value(&runtime).unwrap();
+    runtime.fixture_difficulty = Some(3);
+    assert_eq!(serde_json::to_value(&runtime).unwrap(), unset);
 }

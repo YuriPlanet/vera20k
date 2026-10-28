@@ -85,8 +85,14 @@ fn stock_cloak_tick_facts(
     let paralyzed = entity.parasite.is_paralyzed(sim.session.binary_frame());
     // Ares ShouldNotCloak10043A40 applies the same blockers to rank cloak
     // and raw ability, and rejects parachutes and deactivated self-cloakers.
+    #[cfg(feature = "ares")]
+    let driver_allows_self_cloak = !entity.driver_killed();
+    #[cfg(not(feature = "ares"))]
+    let driver_allows_self_cloak = true;
     let active_cloak = if crate::rules::ARES_ENABLED {
-        (is_cloakable || rank_cloak) && !entity.deactivated.is_offline()
+        // ShouldNotCloak10043A97 falls back to the generator-cell test at
+        //10043B04 when driverless; it does not reject generator cloak.
+        (is_cloakable || rank_cloak) && !entity.deactivated.is_offline() && driver_allows_self_cloak
     } else {
         is_cloakable || intrinsic_cloak || rank_cloak
     };

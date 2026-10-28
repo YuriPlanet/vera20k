@@ -30,8 +30,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZero;
 use std::sync::Arc;
 
+use rodio::Player;
 use rodio::buffer::SamplesBuffer;
-use rodio::{DeviceSinkBuilder, MixerDeviceSink, Player};
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+use rodio::{DeviceSinkBuilder, MixerDeviceSink};
+
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+type SfxOutput = MixerDeviceSink;
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+type SfxOutput = crate::audio::web_output::WebAudioSink;
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::aud_file;
@@ -1228,7 +1235,7 @@ impl PlaybackService for PendingSampleService<'_> {
 /// plus the separate EVA streaming output.
 pub struct SfxPlayer {
     /// rodio mixer device sink — must be kept alive or all audio stops.
-    _device: MixerDeviceSink,
+    _device: SfxOutput,
     /// The decision half: channel pool, `Priority=`, `Limit=`, pre-delay,
     /// looping leash, ramps and the many-sounds limiter.
     arbiter: SoundArbiter,
@@ -1324,6 +1331,7 @@ const MAX_COORDINATE_REQUESTS: usize = 200;
 /// device ever rendered them. DirectSound starts a secondary buffer as it is
 /// played, so native ticks are audible. A period below the pump interval lets
 /// each cue reach the device first. Clamped to the device's supported range.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 fn sfx_buffer_frames(sample_rate: u32, supported: &rodio::cpal::SupportedBufferSize) -> u32 {
     let target = (sample_rate / 100).max(1).next_power_of_two();
     match *supported {
@@ -1334,7 +1342,8 @@ fn sfx_buffer_frames(sample_rate: u32, supported: &rodio::cpal::SupportedBufferS
 
 /// Open the default output with [`sfx_buffer_frames`], falling back to
 /// rodio's own default sink when the device refuses that period.
-fn open_sfx_sink() -> Result<MixerDeviceSink, rodio::DeviceSinkError> {
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+fn open_sfx_sink() -> Result<SfxOutput, rodio::DeviceSinkError> {
     use rodio::cpal::traits::{DeviceTrait, HostTrait};
 
     let low_latency = rodio::cpal::default_host()
@@ -1359,6 +1368,13 @@ fn open_sfx_sink() -> Result<MixerDeviceSink, rodio::DeviceSinkError> {
         Some(sink) => Ok(sink),
         None => DeviceSinkBuilder::open_default_sink(),
     }
+}
+
+/// The browser keeps short blocks with a deeper queue; see
+/// [`crate::audio::web_output`].
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+fn open_sfx_sink() -> Result<SfxOutput, String> {
+    crate::audio::web_output::WebAudioSink::open().map_err(|error| format!("{error:?}"))
 }
 
 impl SfxPlayer {

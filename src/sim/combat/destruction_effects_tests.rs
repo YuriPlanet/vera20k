@@ -547,6 +547,8 @@ fn a_low_dropped_bomb_over_water_fires_no_death_weapon() {
             fires,
             "death weapon: {case}"
         );
+        // The +8F passenger kill (7380AF) is in the stock Unit tail Ares replaces.
+        #[cfg(not(feature = "ares"))]
         assert!(
             sim.substrate
                 .entities
@@ -832,6 +834,9 @@ fn a_custom_palette_building_gives_its_destroy_anim_the_palette_scheme() {
 /// The mapless fixture has no smudge candidates, so neither the centre mark
 /// nor the per-cell marks draw, and the survivor's Scatter stops after its
 /// first draw.
+// Stock Building GetCrew44EB10 always draws for the Engineer; Ares1004C650
+// draws only with a positive Engineer chance.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn a_killed_building_draws_its_death_anims_before_its_survivors() {
     let rules = rules();

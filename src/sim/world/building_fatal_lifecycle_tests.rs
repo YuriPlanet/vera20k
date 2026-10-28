@@ -1556,6 +1556,10 @@ impl Fixture {
 /// and without the stock smudges joined.
 #[test]
 fn original_ready_mtnk_shot_runs_building_fires_crew_and_deferred_cleanup() {
+    // Stock oracle; Ares replaces the Unit tail (737F97) and GetCrew (707D20).
+    if cfg!(feature = "ares") {
+        return;
+    }
     for path in [
         "tools/spatial_oracle/building_death_anims_joined.json",
         "tools/spatial_oracle/building_death_anims_joined_stock_smudges.json",

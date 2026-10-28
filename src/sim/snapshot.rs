@@ -2282,17 +2282,7 @@ impl Simulation {
             .overlay_grid
             .as_ref()
             .expect("validated overlay cache")
-            .iter_occupied()
-            .filter_map(|(rx, ry, cell)| {
-                cell.overlay_id
-                    .map(|overlay_id| crate::map::overlay::OverlayEntry {
-                        rx,
-                        ry,
-                        overlay_id,
-                        frame: cell.overlay_data,
-                    })
-            })
-            .collect();
+            .occupied_entries();
         let native_tiberium_stats =
             self.rebuild_native_tiberium_queues_after_snapshot_load(rules, overlay_registry)?;
         // CellTag identities are meaningful only after the canonical Cell

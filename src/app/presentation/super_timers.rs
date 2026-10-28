@@ -15,6 +15,7 @@ use crate::app::AppState;
 use crate::assets::csf_file::{CsfFile, type_ui_name};
 use crate::render::batch::SpriteInstance;
 use crate::rules::house_colors::{HouseColorIndex, NO_REMAP, house_text_rgb};
+use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::superweapon::SuperTimerView;
 use crate::ui::game_screen::GameScreen;
@@ -201,6 +202,21 @@ fn localized(csf: Option<&CsfFile>, key: &str) -> String {
     csf.map_or_else(|| key.to_string(), |csf| csf.text(key).into_owned())
 }
 
+/// The colour a blinking time prints in: [`BLINK_SCHEME`], or with Phobos
+/// `ColorScheme::Array[TimerBlinkColorScheme]` (`PrintTimerOnTactical_BlinkColor`
+/// at `0x006D4CD9`). A `none` (-1) keeps the native scheme where Phobos would
+/// read `Array[-1]`.
+fn blink_rgb(rules: &RuleSet) -> [u8; 3] {
+    #[cfg(feature = "phobos")]
+    let scheme = usize::try_from(rules.general.timer_blink_color_scheme)
+        .ok()
+        .and_then(|scheme| u8::try_from(scheme / 2).ok())
+        .map_or(BLINK_SCHEME, HouseColorIndex);
+    #[cfg(not(feature = "phobos"))]
+    let scheme = BLINK_SCHEME;
+    house_text_rgb(&rules.color_schemes, scheme)
+}
+
 /// The timer lines as UI sprites: the black boxes, drawn first, and the text.
 /// The tactical view starts at the screen's origin.
 pub(crate) fn build_super_timer_instances(
@@ -273,7 +289,7 @@ pub(crate) fn build_super_timer_instances(
             (line, label, house_rgb(house))
         })
         .collect();
-    let blink_rgb = house_text_rgb(schemes, BLINK_SCHEME);
+    let blink_rgb = blink_rgb(rules);
     let now_ms = crate::app::input::tooltips::now_ms(state);
     let (view_w, view_h) = crate::app::input::camera::tactical_viewport_size(state);
     // Screen-space lanes add back the world camera the UI shader subtracts.

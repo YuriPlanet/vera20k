@@ -571,6 +571,25 @@ pub fn object_distance(
     building_foundation: Option<(i32, i32)>,
 ) -> i32 {
     let distance = distance_3d_leptons([from[0], from[2], from[1]], [to[0], to[2], to[1]]);
+    less_target_foundation(distance, building_foundation)
+}
+
+/// `ObjectClass::Distance_To @ 0x005F6440` between two GetCoords XYs: the
+/// planar distance through [`distance_3d_leptons`] with Z zeroed, less the
+/// target building's foundation as in [`object_distance`]. The foundation
+/// height query (`0x0045ECA0`) receives false, so a Bib never adds to it.
+pub fn object_planar_distance(
+    from: [i32; 2],
+    to: [i32; 2],
+    building_foundation: Option<(i32, i32)>,
+) -> i32 {
+    let distance = distance_3d_leptons([from[0], from[1], 0], [to[0], to[1], 0]);
+    less_target_foundation(distance, building_foundation)
+}
+
+/// `(Width + Height) * 64` off a distance whose target is a building of that
+/// foundation, not below 0.
+fn less_target_foundation(distance: i32, building_foundation: Option<(i32, i32)>) -> i32 {
     match building_foundation {
         Some((width, height)) => distance.wrapping_sub((width + height) * 64).max(0),
         None => distance,

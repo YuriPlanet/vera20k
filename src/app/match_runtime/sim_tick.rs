@@ -6,10 +6,10 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use std::collections::HashSet;
-use std::path::Path;
 #[cfg(feature = "telemetry-dashboard")]
 use crate::util::time::Instant;
+use std::collections::HashSet;
+use std::path::Path;
 
 use crate::app::AppState;
 use crate::app::input::commands::{preferred_local_owner, preferred_local_owner_name};
@@ -121,6 +121,17 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
     log::info!(
         "Match end ready for local player '{owner}': {}",
         crate::app::match_runtime::scenario_exit::outcome_title(outcome)
+    );
+    crate::app::App::record_external_match_result(
+        state,
+        match outcome {
+            crate::sim::house_state::HouseOutcomeKind::Victory => {
+                crate::app::cncnet::ExternalMatchResult::Won
+            }
+            crate::sim::house_state::HouseOutcomeKind::Defeat => {
+                crate::app::cncnet::ExternalMatchResult::Lost
+            }
+        },
     );
     //685670/685DC0 clear5BF450 before either outcome fade.
     crate::app::radar_movie::retire(state, wall_ms);
@@ -473,11 +484,9 @@ pub(crate) enum ExactStepError {
 /// Pause is the explicit `GamePause::Enter @ 0x00406F00` path: suspend every
 /// event, stop the playing channels, and pause the EVA/speech stream.
 ///
-/// `MatchState::paused` **is** VERA's in-game-menu state: it reads
-/// `InGameMenuState::is_open()`, and apart from the `J` debug pause and the
-/// fullscreen movie below no other pause reaches the SFX player. That is not
-/// a divergence from gamemd; it is
-/// exactly gamemd's pause. `State_Machine @ 0x0048C8B0` brackets its entire
+/// `MatchState::paused` includes VERA's in-game-menu state, the developer
+/// pause and the synchronized online pause. The menu uses gamemd's pause:
+/// `State_Machine @ 0x0048C8B0` brackets its entire
 /// dialog switch — case 5 `OptionsClass::ShowInGameDialog`, case 8
 /// `Show_Diplomacy_Menu`, case 9 `ScenarioClass::ShowMissionRestateBriefing`
 /// — between `StateMachine::EnterPause @ 0x00683EB0`, whose first statement
@@ -809,6 +818,9 @@ fn advance_in_game_runtime_mode(
     main_tick_pumps_audio: bool,
 ) -> bool {
     let replaying = state.match_state.match_diagnostics.is_replay_playback();
+    state
+        .match_state
+        .sync_multiplayer_pause_clock(crate::app::match_runtime::frame_pacer::wall_clock_ms());
     // ExecuteDoList64CD0C is a blocking message box inside this frame. Even
     // exact-step diagnostics must not admit another Logic pass while it waits.
     if super::network_failure::pending(state) {
@@ -818,16 +830,28 @@ fn advance_in_game_runtime_mode(
     if crate::app::App::house_outcome_wait_pending(state) {
         // House4F8649/4F8772 services48D080 inside this Main_Tick;
         // it never re-enters55D7C2's timed-pause/Chrono/input prelude.
-        return advance_one_simulation_frame(
-            state,
-            TickLane::Ordinary,
-            None,
-            FrameResume::OutcomeWait,
-        );
+        let completed =
+            advance_one_simulation_frame(state, TickLane::Ordinary, None, FrameResume::OutcomeWait);
+        state
+            .match_state
+            .sync_multiplayer_pause_clock(crate::app::match_runtime::frame_pacer::wall_clock_ms());
+        return completed;
     }
     crate::app::input::commands::reconcile_paid_super_weapon_cursor(state);
+    // VERA's canonical pause barrier is authoritative even for diagnostic
+    // exact stepping. The derived predicate becomes true only after the
+    // entire barrier frame, including a retained network transaction, finishes.
+    // Transport and UI continue in the outer service loop.
+    if state.match_state.multiplayer_paused() {
+        return false;
+    }
     let frame_stepping = matches!(mode, RuntimeAdvanceMode::WallClock { .. })
         && state.diag.debug_frame_step_requested;
+    let resume_wait = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .is_some_and(|rt| rt.simulation.pending_network_wait());
     let pacer_timing_admits = match mode {
         RuntimeAdvanceMode::WallClock { now_ms } => {
             let game_speed = state
@@ -854,17 +878,37 @@ fn advance_in_game_runtime_mode(
                 .as_ref()
                 .filter(|live| live.uses_sequenced_lockstep())
             {
-                live.has_terminal_network_error()
-                    || state
-                        .match_state
-                        .sim_runtime
-                        .as_ref()
-                        .is_some_and(|runtime| {
-                            super::frame_pacer::LocalFramePacer::admits_canonical_frame(
-                                runtime.simulation.session().binary_frame(),
-                                live.committed_frontier(),
+                if live.has_terminal_network_error() {
+                    true
+                } else if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+                    let frame = runtime.simulation.session().binary_frame();
+                    let frontier = live.committed_frontier();
+                    if let Some(timing) = live.sequenced_timing().filter(|_| {
+                        !replaying
+                            && !frame_stepping
+                            && !state.match_state.paused()
+                            && !state.focus_freeze_active()
+                            && !runtime.simulation.session().scenario_paused()
+                    }) {
+                        let recovering = live.recovery_status(now_ms as u32, frame).is_some();
+                        state
+                            .platform
+                            .frame_pacer
+                            .online_frame_decision(
+                                crate::util::time::Instant::now(),
+                                frame,
+                                frontier,
+                                timing,
+                                resume_wait,
+                                recovering,
                             )
-                        })
+                            .admits()
+                    } else {
+                        super::frame_pacer::LocalFramePacer::admits_canonical_frame(frame, frontier)
+                    }
+                } else {
+                    false
+                }
             } else {
                 state
                     .platform
@@ -907,11 +951,6 @@ fn advance_in_game_runtime_mode(
         super::scenario_pause::apply_service(state, ScenarioServiceInput::StepChronoScreen);
         state.platform.frame_pacer.record_admitted_frame(wall_ms);
     }
-    let resume_wait = state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .is_some_and(|rt| rt.simulation.pending_network_wait());
     let mut decision = decide_runtime_pass(RuntimePassInputs {
         exact_step: matches!(mode, RuntimeAdvanceMode::ExactOneStep),
         window_active: state.platform.window_active,
@@ -971,6 +1010,9 @@ fn advance_in_game_runtime_mode(
             state.platform.frame_pacer.record_admitted_frame(wall_ms);
         }
         let frame_committed = advance_one_simulation_frame(state, tick_lane, mouse_scroll, resume);
+        state
+            .match_state
+            .sync_multiplayer_pause_clock(crate::app::match_runtime::frame_pacer::wall_clock_ms());
         if crate::app::App::house_outcome_wait_pending(state) {
             return false;
         }
@@ -1175,7 +1217,7 @@ fn advance_one_simulation_frame(
             .detail
             .borrow()
             .frame_rate();
-        let other_local_pause = state.match_state.paused();
+        let other_local_pause = state.match_state.local_paused();
         let rules_owner = state.process_assets.native_rules();
         let initial_save = if !resuming && tick_lane == TickLane::Ordinary {
             crate::app::persistence::commands::prepare_initial_campaign_save(state, rules_owner)
@@ -2312,23 +2354,6 @@ pub(crate) fn screen_point_to_world_cell(
             .sim_view()
             .and_then(|view| tactical_cells(view.simulation())),
     )
-}
-
-pub(crate) fn nearest_walkable_cell(
-    grid: &crate::sim::pathfinding::PathGrid,
-    start: (u16, u16),
-    max_radius: u16,
-) -> Option<(u16, u16)> {
-    grid.nearest_walkable_any_layer(start.0, start.1, max_radius)
-}
-
-pub(crate) fn clamp_cell_to_grid(
-    grid: &crate::sim::pathfinding::PathGrid,
-    cell: (u16, u16),
-) -> (u16, u16) {
-    let max_x = grid.width().saturating_sub(1);
-    let max_y = grid.height().saturating_sub(1);
-    (cell.0.min(max_x), cell.1.min(max_y))
 }
 
 #[cfg(test)]

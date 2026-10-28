@@ -745,35 +745,6 @@ fn flip_net_id_units(units: &[u16]) -> Vec<u16> {
         .collect()
 }
 
-/// CRT `wcstol(token, NULL, 10)`: leading wide whitespace, optional sign,
-/// decimal digits; no digits yields 0 and overflow saturates.
-fn wcstol_decimal(token: &[u16]) -> i32 {
-    let is_space = |unit: u16| matches!(unit, 0x09..=0x0D | 0x20);
-    let mut rest = token;
-    while let Some((&first, tail)) = rest.split_first() {
-        if !is_space(first) {
-            break;
-        }
-        rest = tail;
-    }
-    let negative = rest.first() == Some(&u16::from(b'-'));
-    if matches!(rest.first(), Some(&unit) if unit == u16::from(b'-') || unit == u16::from(b'+')) {
-        rest = &rest[1..];
-    }
-    let mut value: i64 = 0;
-    for &unit in rest {
-        if !(u16::from(b'0')..=u16::from(b'9')).contains(&unit) {
-            break;
-        }
-        value = value * 10 + i64::from(unit - u16::from(b'0'));
-        if value > i64::from(i32::MAX) + 1 {
-            break;
-        }
-    }
-    let value = if negative { -value } else { value };
-    value.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
-}
-
 /// Decode `[Network] NetID` into movie progress. Both fields start at -1, the
 /// first two `wcstok(L" ")` tokens are read with `wcstol` minus one, and a
 /// value outside -1..=7 falls back to -1.
@@ -785,9 +756,9 @@ fn decode_net_id(network: &IniSection) -> crate::ui::movies_credits_shell::Movie
         .filter(|token| !token.is_empty());
     let mut progress = crate::ui::movies_credits_shell::MovieProgress::default();
     if let Some(token) = tokens.next() {
-        progress.soviet = wcstol_decimal(token).wrapping_sub(1);
+        progress.soviet = crate::util::native_string::crt_wcstol(token, 10).wrapping_sub(1);
         if let Some(token) = tokens.next() {
-            progress.allied = wcstol_decimal(token).wrapping_sub(1);
+            progress.allied = crate::util::native_string::crt_wcstol(token, 10).wrapping_sub(1);
         }
     }
     let clamp = |value: i32| if (-1..8).contains(&value) { value } else { -1 };

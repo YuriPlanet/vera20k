@@ -44,6 +44,7 @@ use std::collections::{BTreeMap, BTreeSet};
 mod battle;
 mod cooperative;
 mod failure;
+mod latency;
 mod mass;
 mod online;
 mod profile;
@@ -53,6 +54,119 @@ const HOST_NAME: &str = "LiveHost";
 const GUEST_NAME: &str = "LiveGuest";
 const REQUIRED_FRAMES: u32 = 300;
 const SOLO_AI_INPUT_BOUND_FRAMES: u32 = 1;
+
+/// Diagnostic evidence only: a fixed local frame cannot prove that Stop has
+/// arrived from the relay. Retain the full Position after actual execution,
+/// cleared navigation and the same ten-frame quiet window as the mass capture.
+#[derive(Default)]
+struct StopObservation {
+    quiet: Option<(u32, Value)>,
+    settled: Option<(u32, Value)>,
+}
+
+impl StopObservation {
+    fn observe(&mut self, frame: u32, applied: bool, position: Value, navigation_clear: bool) {
+        if self.settled.is_some() {
+            return;
+        }
+        if !applied || !navigation_clear {
+            self.quiet = None;
+            return;
+        }
+        match self.quiet.as_ref() {
+            Some((since, previous)) if previous == &position => {
+                if frame.saturating_sub(*since) >= 10 {
+                    self.settled = Some((frame, position));
+                }
+            }
+            _ => self.quiet = Some((frame, position)),
+        }
+    }
+
+    fn position(&self) -> Option<&Value> {
+        self.settled.as_ref().map(|(_, position)| position)
+    }
+}
+
+#[cfg(test)]
+mod stop_observation_tests {
+    use super::{AiActivity, LanTarget, LiveLanCapture, StopObservation};
+    use crate::app::match_diagnostics::CommandExecutionObservation;
+    use crate::sim::command::{CommandRecord, IDLE_OPCODE, StopRecord};
+    use serde_json::json;
+
+    #[test]
+    fn waits_for_applied_stop_and_quiet_position_beyond_old_frame_160() {
+        let before = json!({"rx":10,"ry":10,"sub_x":128,"sub_y":128});
+        let stopped = json!({"rx":12,"ry":10,"sub_x":128,"sub_y":128});
+        let mut observation = StopObservation::default();
+        observation.observe(160, false, before.clone(), true);
+        assert_eq!(observation.position(), None);
+        observation.observe(220, true, before.clone(), false);
+        assert_eq!(observation.position(), None);
+        observation.observe(221, true, before.clone(), true);
+        observation.observe(225, true, stopped.clone(), true);
+        observation.observe(234, true, stopped.clone(), true);
+        assert_eq!(observation.position(), None);
+        observation.observe(235, true, stopped.clone(), true);
+        assert_eq!(observation.position(), Some(&stopped));
+        observation.observe(600, true, before.clone(), true);
+        assert_eq!(
+            observation.position(),
+            Some(&stopped),
+            "retain the settled baseline so later movement is detected"
+        );
+    }
+
+    #[test]
+    fn delayed_online_execution_is_recorded_without_relaxing_solo_ai_deadline() {
+        fn capture() -> LiveLanCapture {
+            let mut capture = LiveLanCapture::new_config(LanTarget::OnlineHost, None, None);
+            capture.actor = Some(7);
+            capture
+                .actions
+                .push(json!({"input":"Stop","native_frame":80,"actor":7}));
+            capture
+        }
+        fn execution(frame: u32) -> CommandExecutionObservation {
+            let mut record = CommandRecord::encode(IDLE_OPCODE, 0, frame as i32, &[]).unwrap();
+            StopRecord {
+                house_id: 0,
+                frame: frame as i32,
+                entity_id: 7,
+            }
+            .write_into(&mut record);
+            CommandExecutionObservation {
+                observed_at: crate::app::match_diagnostics::ObservationTime::now(),
+                frame,
+                record,
+                applied: true,
+                actor: Some(7),
+                motion: None,
+                timing: None,
+                destination: None,
+                cell: Some((12, 10)),
+                mission: Some((0, 0)),
+            }
+        }
+        let mut online = capture();
+        online
+            .observe_simple_input_application(221, execution(220))
+            .unwrap();
+        assert_eq!(online.actions[0]["application_frame"], 220);
+        assert_eq!(online.actions[0]["delay_frames"], 140);
+
+        let mut solo = capture();
+        solo.ai = Some(AiActivity::default());
+        assert!(
+            solo.observe_simple_input_application(221, execution(220))
+                .is_err()
+        );
+        solo.observe_simple_input_application(82, execution(81))
+            .unwrap();
+        assert_eq!(solo.actions[0]["application_frame"], 81);
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -253,7 +367,7 @@ pub(super) struct LiveLanCapture {
     actor_last_seen: Option<Value>,
     origin: Option<(u16, u16)>,
     observed_movement: bool,
-    stopped_position: Option<Value>,
+    stop_observation: StopObservation,
     stopped: bool,
     last_wait: Option<String>,
     kick_observed: bool,
@@ -262,6 +376,7 @@ pub(super) struct LiveLanCapture {
     country_selected: bool,
     battle: Option<battle::BattleOpening>,
     mass: Option<mass::MassInput>,
+    latency: Option<latency::LatencyCapture>,
     ai: Option<AiActivity>,
     failure: Option<failure::FailureCapture>,
     setup_crash: Option<setup_crash::SetupCrashCapture>,
@@ -292,6 +407,7 @@ impl LiveLanCapture {
         let players = config.players;
         let simple = config.simple_input;
         let mass = config.mass_input;
+        let latency = config.latency;
         let ai = config.ai.is_some();
         let mut capture = Self::new_config(target, None, Some(online::LiveRoundFlow::new(config)));
         if let Some(failure) = startup_failure {
@@ -302,6 +418,9 @@ impl LiveLanCapture {
         capture.ai = ai.then(AiActivity::default);
         if simple {
             capture.battle = None;
+        }
+        if latency {
+            capture.latency = Some(latency::LatencyCapture::default());
         }
         if mass {
             capture.mass = Some(mass::MassInput::default());
@@ -336,7 +455,7 @@ impl LiveLanCapture {
             actor_last_seen: None,
             origin: None,
             observed_movement: false,
-            stopped_position: None,
+            stop_observation: StopObservation::default(),
             stopped: false,
             last_wait: None,
             // Co-op skips the kick/rejoin pass: its rows follow the campaign.
@@ -369,6 +488,7 @@ impl LiveLanCapture {
             )
             .then(|| battle::BattleOpening::new(!target.online())),
             mass: None,
+            latency: None,
             ai: None,
             failure: match target {
                 LanTarget::LiveTimeoutHost | LanTarget::OnlineTimeoutHost => {
@@ -556,6 +676,9 @@ impl LiveLanCapture {
         rendered: PresentedShell,
         frame: u32,
     ) -> Result<()> {
+        if let Some(latency) = self.latency.as_mut() {
+            latency.observe_setup(state);
+        }
         ensure!(
             state.frontend.main_menu_shell_error.is_none(),
             "live LAN capture reached shell fallback"
@@ -672,9 +795,10 @@ impl LiveLanCapture {
         match self.phase {
             Phase::Main
                 if rendered == PresentedShell::MainMenu
-                    && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
-                        state,
-                    ))? =>
+                    && steady_main_menu_capture_ready_for(
+                        MainMenuCaptureSnapshot::from_state(state),
+                        self.latency.is_some(),
+                    )? =>
             {
                 // Hidden-window transcript captures suppress physical LAN.
                 // Live captures install the real owner before normal Network
@@ -1088,6 +1212,20 @@ impl LiveLanCapture {
             state.frontend.screen == GameScreen::InGame,
             "live LAN match left gameplay before completion"
         );
+        if self.battle.is_none() && self.mass.is_none() && self.latency.is_none() {
+            let simulation = &state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .context("live simulation")?
+                .simulation;
+            // A pending native frame may already have applied commands, but
+            // its post-logic position is not committed for observation yet.
+            if simulation.pending_network_wait() {
+                return Ok(());
+            }
+            self.observe_simple_input_applications(state, simulation.session().binary_frame())?;
+        }
         let simulation = &state
             .match_state
             .sim_runtime
@@ -1120,9 +1258,14 @@ impl LiveLanCapture {
             self.observed_movement |= self
                 .origin
                 .is_some_and(|origin| origin != (entity.position.rx(), entity.position.ry()));
-            if committed >= 160 && self.stopped_position.is_none() {
-                self.stopped_position = Some(serde_json::to_value(entity.position)?);
-            }
+            self.stop_observation.observe(
+                committed,
+                self.actions.iter().any(|action| {
+                    action["input"] == "Stop" && action.get("application_frame").is_some()
+                }),
+                serde_json::to_value(entity.position)?,
+                entity.navigation.nav_com().is_none() && entity.navigation.nav_queue().is_empty(),
+            );
         }
         ensure!(
             committed >= self.checksums.len() as u32,
@@ -1166,6 +1309,13 @@ impl LiveLanCapture {
             self.route
                 .push(json!({"render_frame":frame,"native_frame":committed,"wait":wait}));
             self.last_wait = Some(wait);
+        }
+        if let Some(latency) = self.latency.as_mut() {
+            if latency.step(state, required_frames)? {
+                MoviesCapture::restore_neutral_pointer(state);
+                self.phase = Phase::Finished;
+            }
+            return Ok(());
         }
         if let Some(mass) = self.mass.as_mut() {
             let complete = mass.step(state, committed)?;
@@ -1229,9 +1379,6 @@ impl LiveLanCapture {
             }
             return Ok(());
         }
-        if self.ai.is_some() {
-            self.observe_simple_input_applications(state, committed)?;
-        }
         if committed >= 10 && self.actor.is_none() {
             self.issue_move(state, committed)?;
         }
@@ -1249,6 +1396,8 @@ impl LiveLanCapture {
             .context("live transport")?;
         if self.checksums.len() >= self.required_frames() as usize
             && self.stopped
+            && self.simple_inputs_applied()
+            && self.stop_observation.position().is_some()
             // The survivor must arm from its own committed prefix: the
             // finishing guest may exit at300 before sending frame300's
             // advertisement. The pair receipt compares both300-frame rings.
@@ -1263,14 +1412,6 @@ impl LiveLanCapture {
                     .all(|peer| peer.frame() >= self.required_frames() as i32))
         {
             if let Some(ai) = &self.ai {
-                ensure!(
-                    self.actions.len() == 2
-                        && self
-                            .actions
-                            .iter()
-                            .all(|action| action.get("application_frame").is_some()),
-                    "solo AI Move/Stop did not both reach their actual receivers"
-                );
                 ensure!(
                     ai.activity.is_some(),
                     "AI House had no observed factory progress or new live entity; snapshot={}",
@@ -1291,7 +1432,9 @@ impl LiveLanCapture {
                 .get(self.actor.context("actor")?)
                 .context("actor")?;
             ensure!(
-                self.stopped_position.as_ref() == Some(&serde_json::to_value(entity.position)?),
+                self.stop_observation.position() == Some(&serde_json::to_value(entity.position)?)
+                    && entity.navigation.nav_com().is_none()
+                    && entity.navigation.nav_queue().is_empty(),
                 "Stop did not retain a stable position through the final frames"
             );
             MoviesCapture::restore_neutral_pointer(state);
@@ -1313,12 +1456,10 @@ impl LiveLanCapture {
     }
 
     fn issue_move(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        if self.ai.is_some() {
-            state
-                .match_state
-                .match_diagnostics
-                .begin_command_observation();
-        }
+        state
+            .match_state
+            .match_diagnostics
+            .begin_command_observation();
         let (actor, from, to) = battle::mobile_move_with_mouse(state)?;
         self.actor = Some(actor);
         self.origin = Some(from);
@@ -1326,10 +1467,52 @@ impl LiveLanCapture {
         Ok(())
     }
 
+    fn simple_inputs_applied(&self) -> bool {
+        self.actions.len() == 2
+            && self
+                .actions
+                .iter()
+                .all(|action| action.get("application_frame").is_some())
+    }
+
     fn observe_simple_input_applications(
         &mut self,
         state: &mut AppState,
         frame: u32,
+    ) -> Result<()> {
+        for execution in state
+            .match_state
+            .match_diagnostics
+            .take_command_observations()?
+        {
+            self.observe_simple_input_application(frame, execution)?;
+        }
+        if self.ai.is_some() {
+            for action in &self.actions {
+                let issued = action["native_frame"]
+                    .as_u64()
+                    .context("input issue frame")?;
+                ensure!(
+                    action.get("application_frame").is_some()
+                        || u64::from(frame) <= issued + u64::from(SOLO_AI_INPUT_BOUND_FRAMES),
+                    "solo AI {} has no receiver application within {SOLO_AI_INPUT_BOUND_FRAMES} native frame of click at {issued}; observed frame {frame}",
+                    action["input"]
+                );
+            }
+        }
+        if self.stopped && self.simple_inputs_applied() {
+            state
+                .match_state
+                .match_diagnostics
+                .end_command_observation();
+        }
+        Ok(())
+    }
+
+    fn observe_simple_input_application(
+        &mut self,
+        frame: u32,
+        execution: crate::app::match_diagnostics::CommandExecutionObservation,
     ) -> Result<()> {
         use crate::sim::command::{MegaMissionOrder, MegaMissionRecord, StopRecord};
         use crate::sim::components::NavTargetRef;
@@ -1337,115 +1520,100 @@ impl LiveLanCapture {
         let Some(actor) = self.actor else {
             return Ok(());
         };
-        for execution in state
-            .match_state
-            .match_diagnostics
-            .take_command_observations()?
-        {
-            if execution.actor != Some(actor) {
-                continue;
-            }
-            let (input, target) =
-                if let Some(command) = MegaMissionRecord::decode(&execution.record) {
-                    let MegaMissionOrder::Move { target_x, target_y } = command.order else {
-                        continue;
-                    };
-                    (
-                        "tactical Move",
-                        Some((u16::try_from(target_x)?, u16::try_from(target_y)?)),
-                    )
-                } else if StopRecord::decode(&execution.record).is_some() {
-                    ("Stop", None)
-                } else {
-                    continue;
-                };
-            let Some(action) = self
-                .actions
-                .iter_mut()
-                .find(|action| action["input"] == input)
-            else {
-                continue;
+        if execution.actor != Some(actor) {
+            return Ok(());
+        }
+        let (input, target) = if let Some(command) = MegaMissionRecord::decode(&execution.record) {
+            let MegaMissionOrder::Move { target_x, target_y } = command.order else {
+                return Ok(());
             };
-            let issued = u32::try_from(
-                action["native_frame"]
-                    .as_u64()
-                    .context("input issue frame")?,
-            )?;
-            ensure!(
-                execution.applied,
-                "solo AI {input} receiver rejected actor {actor}"
-            );
-            ensure!(
-                action.get("application_frame").is_none(),
-                "duplicate solo AI {input} application"
-            );
-            // The callback records the frame before its commit; the next
-            // presented frame is normally one higher. No render-frame or
-            // movement observation stands in for this actual dispatch.
-            let delay = execution
-                .frame
-                .checked_sub(issued)
-                .context("input applied before its click")?;
+            (
+                "tactical Move",
+                Some((u16::try_from(target_x)?, u16::try_from(target_y)?)),
+            )
+        } else if StopRecord::decode(&execution.record).is_some() {
+            ("Stop", None)
+        } else {
+            return Ok(());
+        };
+        let Some(action) = self
+            .actions
+            .iter_mut()
+            .find(|action| action["input"] == input)
+        else {
+            return Ok(());
+        };
+        let issued = u32::try_from(
+            action["native_frame"]
+                .as_u64()
+                .context("input issue frame")?,
+        )?;
+        ensure!(
+            execution.applied,
+            "simple {input} receiver rejected actor {actor}"
+        );
+        ensure!(
+            action.get("application_frame").is_none(),
+            "duplicate simple {input} application"
+        );
+        // The production callback records the dispatch frame, before commit.
+        // Online input is scheduled against the relay clock, so neither the
+        // local click frame nor MaxAhead bounds when a catching-up client sees it.
+        let delay = execution
+            .frame
+            .checked_sub(issued)
+            .context("input applied before its click")?;
+        if self.ai.is_some() {
             ensure!(
                 delay <= SOLO_AI_INPUT_BOUND_FRAMES,
                 "solo AI {input} applied {delay} native frames after click at {issued}; scheduled={}, applied={}",
                 execution.record.frame_stamp(),
                 execution.frame
             );
-            if let Some((x, y)) = target {
-                ensure!(
-                    action["target"] == json!([x, y]),
-                    "Move receiver target differs from tactical click"
-                );
-                let moving = MissionId::from_known(MissionType::Move).raw();
-                ensure!(
-                    (execution.destination == Some(NavTargetRef::cell(x, y))
-                        && execution
-                            .mission
-                            .is_some_and(|(current, queued)| current == moving || queued == moving))
-                        || (execution.cell == Some((x, y)) && execution.destination.is_none()),
-                    "solo AI Move receiver did not install or reach the clicked destination"
-                );
-            } else {
-                ensure!(
-                    execution.mission.is_some() && execution.destination.is_none(),
-                    "solo AI Stop receiver retained a destination"
-                );
-            }
-            action["application_frame"] = json!(execution.frame);
-            action["application_observed_at_frame"] = json!(frame);
-            action["scheduled_frame"] = json!(execution.record.frame_stamp());
-            action["delay_frames"] = json!(delay);
-            action["applied"] = json!(execution.applied);
-            action["receiver"] = json!({"destination":execution.destination,
-                "cell":execution.cell,"mission":execution.mission});
-            action["timing"] = json!(execution.timing.as_ref().map(|timing| json!({
-                "fps":timing.fps,"frame_send_rate":timing.frame_send_rate,"max_ahead":timing.max_ahead})));
         }
-        for action in &self.actions {
-            let issued = action["native_frame"]
-                .as_u64()
-                .context("input issue frame")?;
+        if let Some((x, y)) = target {
             ensure!(
-                action.get("application_frame").is_some()
-                    || u64::from(frame) <= issued + u64::from(SOLO_AI_INPUT_BOUND_FRAMES),
-                "solo AI {} has no receiver application within {SOLO_AI_INPUT_BOUND_FRAMES} native frame of click at {issued}; observed frame {frame}",
-                action["input"]
+                action["target"] == json!([x, y]),
+                "Move receiver target differs from tactical click"
+            );
+            let moving = MissionId::from_known(MissionType::Move).raw();
+            ensure!(
+                (execution.destination == Some(NavTargetRef::cell(x, y))
+                    && execution
+                        .mission
+                        .is_some_and(|(current, queued)| current == moving || queued == moving))
+                    || (execution.cell == Some((x, y)) && execution.destination.is_none()),
+                "Move receiver did not install or reach the clicked destination"
+            );
+        } else {
+            ensure!(
+                execution.mission.is_some() && execution.destination.is_none(),
+                "Stop receiver retained a destination"
             );
         }
-        if self.stopped
-            && self.actions.len() == 2
-            && self
-                .actions
-                .iter()
-                .all(|action| action.get("application_frame").is_some())
-        {
-            state
-                .match_state
-                .match_diagnostics
-                .end_command_observation();
-        }
+        action["application_frame"] = json!(execution.frame);
+        action["application_observed_at_frame"] = json!(frame);
+        action["scheduled_frame"] = json!(execution.record.frame_stamp());
+        action["delay_frames"] = json!(delay);
+        action["applied"] = json!(execution.applied);
+        action["receiver"] = json!({"destination":execution.destination,"cell":execution.cell,"mission":execution.mission});
+        action["timing"] = json!(execution.timing.as_ref().map(|timing| json!({
+            "fps":timing.fps,"frame_send_rate":timing.frame_send_rate,"max_ahead":timing.max_ahead})));
+        log::info!(
+            "Simple capture {input}: issued={issued}, scheduled={}, applied={}, observed={frame}",
+            execution.record.frame_stamp(),
+            execution.frame
+        );
         Ok(())
+    }
+
+    /// An incomplete opt-in latency round. Its partial receipt is still
+    /// written before the capture outcome fails.
+    pub(super) fn measurement_failure(&self) -> Option<String> {
+        self.rounds
+            .as_ref()?
+            .latency_failure()
+            .map(|failure| format!("online latency measurement incomplete in {failure}"))
     }
 
     pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
@@ -1506,8 +1674,7 @@ impl LiveLanCapture {
                     .is_some_and(|failure| failure.returned()),
             "finished live capture lost its transport"
         );
-        Ok(
-            json!({"target":format!("{:?}",self.target),"service_boundary":if self.ai.is_some() {"one App process; real HTTPS/UDP relay; ordinary frame boundary"} else if self.target.online() {"independent App processes; real HTTPS/UDP relay; ordinary frame boundary"} else {"two independent App processes; real UDP/global/private queues; ordinary frame boundary"},
+        let mut receipt = json!({"target":format!("{:?}",self.target),"service_boundary":if self.ai.is_some() {"one App process; real HTTPS/UDP relay; ordinary frame boundary"} else if self.target.online() {"independent App processes; real HTTPS/UDP relay; ordinary frame boundary"} else {"two independent App processes; real UDP/global/private queues; ordinary frame boundary"},
             "scope":if self.target.desync_failure() { "real300-frame CRC and strong-hash prefix followed by external scoped FRAMEINFO corruption, actual checksum CE Stop and ordinary LAN lobby cleanup" } else if self.failure.is_some() { "shared 300-frame prefix followed by real peer disappearance and ordinary wait recovery or Quit; bounded runtime validation, not whole-match/native parity" } else if self.target.online() {"observed production match before real outcome; tactical commands and simulation checksums"} else if self.battle.is_some() { "kick/rejoin, Battle opening, paid GI rally/combat, paid GAPILE repair and sale with an unfinished Infantry queue, natural crew, refunds and cleanup, then former-foundation Move; bounded runtime validation, not whole-match/native parity" } else { "kick/rejoin, 300 native frames and local Move/Stop; bounded runtime validation, not whole-match/native parity" },
             "process_id":std::process::id(),
             "loading_progress":crate::app::diagnostics::shell_capture::loading_runtime::progress_receipt(state)?,
@@ -1523,11 +1690,12 @@ impl LiveLanCapture {
             "bind":self.config.as_ref().and_then(|config|config.transport.explicit_endpoints()).map(|(bind,_)|bind.to_string()),"peer":self.config.as_ref().and_then(|config|config.transport.explicit_endpoints()).map(|(_,peer)|peer.to_string()),"startup":self.startup,"map_admission":self.map_admission,
             "native_checksums":checksums,"simulation_hashes":hashes,
             "simulation_hash_interval":crate::sim::replay::PLAY_HASH_INTERVAL.get(),
-            "actions":self.actions,"actor_last_seen":self.actor_last_seen,"observed_movement":self.observed_movement,"stopped_position":self.stopped_position,"route":self.route,
+            "actions":self.actions,"actor_last_seen":self.actor_last_seen,"observed_movement":self.observed_movement,"stopped_position":self.stop_observation.position(),"stop_settled_at_frame":self.stop_observation.settled.as_ref().map(|(frame,_)|frame),"route":self.route,
             "final_native_frame":sim.session().binary_frame(),"checksum_failure":format!("{:?}",sim.pending_network_failure()),
             "sent_commands":live.map(|live| live.sent_commands()),"peers":live.map(|live| live.peers().iter().map(|peer| json!({"house":peer.house_id(),"frame":peer.frame(),"advertised_commands":peer.advertised_commands(),"received_commands":peer.received_commands()})).collect::<Vec<_>>()),
-            "mobile_objects":sim.entities().values_sorted().filter(|entity| matches!(entity.category(), crate::map::entities::EntityCategory::Infantry | crate::map::entities::EntityCategory::Unit)).map(|entity| json!({"id":entity.stable_id(),"owner":sim.interner().resolve(entity.owner()),"position":entity.position,"alive":entity.is_alive()})).collect::<Vec<_>>() }),
-        )
+            "mobile_objects":sim.entities().values_sorted().filter(|entity| matches!(entity.category(), crate::map::entities::EntityCategory::Infantry | crate::map::entities::EntityCategory::Unit)).map(|entity| json!({"id":entity.stable_id(),"owner":sim.interner().resolve(entity.owner()),"position":entity.position,"alive":entity.is_alive()})).collect::<Vec<_>>() });
+        receipt["latency"] = json!(self.latency.as_ref().map(latency::LatencyCapture::receipt));
+        Ok(receipt)
     }
 }
 

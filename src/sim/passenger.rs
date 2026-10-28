@@ -412,6 +412,86 @@ impl Simulation {
         }
     }
 
+    /// Class AddPassenger: Techno710670 adds Cargo then plays its entry
+    /// sound. Foot4DE630..4DE668 receives a Gunner only when count==1.
+    /// This is not ordinary boarding admission: it writes neither Transporter
+    /// nor OpenTopped, and does not clear the incoming object's orders.
+    pub(crate) fn add_passenger_with_context(
+        &mut self,
+        carrier: u64,
+        head_first: &[(u64, f64)],
+        context: UninitContext<'_>,
+    ) -> bool {
+        if !self.add_cargo_passenger_chain(carrier, head_first, context) {
+            return false;
+        }
+        let Some(&(head, _)) = head_first.first() else {
+            return true;
+        };
+        let rules = context.rules();
+        if let Some(transport) = self.substrate.entities.get(carrier)
+            && let Some(sound_id) = self
+                .entity_object_type(transport, rules)
+                .and_then(|object| object.enter_transport_sound.clone())
+        {
+            let coordinate =
+                crate::sim::movement::ground_pose::position_world_coord(&transport.position);
+            self.sound_events.emit(SimSoundEvent::VocAtCoord {
+                sound_id,
+                coordinate,
+                flags: 0,
+            });
+            context.effects().flush_sound(self, rules);
+        }
+        if self
+            .substrate
+            .entities
+            .get(carrier)
+            .is_some_and(|transport| {
+                transport.category().is_foot()
+                    && transport.passenger_role.passenger_count() == 1
+                    && self
+                        .entity_object_type(transport, rules)
+                        .is_some_and(|object| object.gunner)
+            })
+        {
+            receive_gunner(
+                &self.interner,
+                &self.session,
+                &mut self.scenario_rng,
+                &mut self.substrate,
+                &self.houses,
+                rules,
+                carrier,
+                head,
+            );
+        }
+        true
+    }
+
+    /// Transporter and SetInOpenTransport710470 belong to the arrival
+    /// caller, outside AddPassenger. Infantry51A45E..51A46E runs them before
+    /// the class call; Unit73A740..73A768 runs them afterwards.
+    fn mark_boarded_transport_passenger(
+        &mut self,
+        passenger: u64,
+        carrier: u64,
+        open_topped: bool,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
+        if let Some(passenger) = self.substrate.entities.get_mut(passenger) {
+            passenger
+                .passenger_role
+                .set_inside_transport(carrier, open_topped);
+        }
+        if open_topped {
+            self.reset_orders_to_guard(passenger, rules, effects);
+            let registered = self.register_open_topped_passenger(passenger);
+            debug_assert!(registered, "accepted open-topped passenger remains active");
+        }
+    }
+
     /// CargoClass::AddPassenger4733A0: Limbo the supplied head, then attach
     /// its existing member chain without count/size admission. The caller
     /// owns transport/rider policy; this native leaf does not write +11C or
@@ -909,7 +989,6 @@ pub(crate) fn board_passenger(
             (
                 owner,
                 object.open_topped,
-                object.gunner,
                 object.infantry_absorb,
                 object.extra_power.output() > 0,
             )
@@ -917,7 +996,7 @@ pub(crate) fn board_passenger(
     else {
         return false;
     };
-    let (carrier_owner, open_topped, gunner, infantry_absorb, extra_power) = carrier;
+    let (carrier_owner, open_topped, infantry_absorb, extra_power) = carrier;
     // Infantry51A38A adds to every building that admitted DOCK_NOW, including
     // Hospital=yes with Passengers=0. The shared raw Cargo owner creates the
     // empty hold lazily; configured capacity remains an admission policy.
@@ -1012,7 +1091,14 @@ pub(crate) fn board_passenger(
     }
     //4733A0 repeats the head's virtual Limbo before its unconditional
     //prepend.
-    let boarded = sim.add_cargo_passenger_chain(carrier_id, &[(pax_id, pax_size)], context);
+    if arm == BoardingArm::InfantryTransport {
+        sim.mark_boarded_transport_passenger(pax_id, carrier_id, open_topped, rules, effects);
+    }
+    let boarded = if arm.building() {
+        sim.add_cargo_passenger_chain(carrier_id, &[(pax_id, pax_size)], context)
+    } else {
+        sim.add_passenger_with_context(carrier_id, &[(pax_id, pax_size)], context)
+    };
     // The admitted carrier survives Limbo; Cargo creates its hold if needed.
     debug_assert!(boarded, "boarding admission changed during one transaction");
     if !boarded {
@@ -1027,10 +1113,17 @@ pub(crate) fn board_passenger(
                 pax_id,
             );
         }
+        if arm == BoardingArm::InfantryTransport
+            && let Some(passenger) = sim.substrate.entities.get_mut(pax_id)
+        {
+            passenger.passenger_role.clear_carrier_relation();
+        }
         let _ = sim.reveal_entity_with_context(pax_id, context);
         return false;
     }
-    if let Some(pax) = sim.substrate.entities.get_mut(pax_id) {
+    if arm.building()
+        && let Some(pax) = sim.substrate.entities.get_mut(pax_id)
+    {
         // VERA's carrier relation stands for Transporter (`+0x11C`, written
         // by the transport arms at `0x0051A463` and `0x0073A768`) and for
         // membership of a building's cargo. Boarding keeps the passenger's
@@ -1050,24 +1143,6 @@ pub(crate) fn board_passenger(
                 false,
             );
         }
-    } else {
-        // `TechnoClass::AddPassenger @ 0x00710670` (Infantry `0x0051A46E`,
-        // Unit `0x0073A740`): the transport type's `EnterTransportSound=` at
-        // its Location (`VocClass::PlayAtCoord @ 0x00750E20`, flags 0).
-        if let Some(transport) = sim.substrate.entities.get(carrier_id)
-            && let Some(sound_id) = sim
-                .object_type(transport.type_ref(), rules)
-                .and_then(|object| object.enter_transport_sound.clone())
-        {
-            let coordinate =
-                crate::sim::movement::ground_pose::position_world_coord(&transport.position);
-            sim.sound_events.emit(SimSoundEvent::VocAtCoord {
-                sound_id,
-                coordinate,
-                flags: 0,
-            });
-            effects.flush_sound(sim, rules);
-        }
     }
     if let Some((sound_id, coordinate)) = bio_reactor_entry_sound {
         sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
@@ -1079,38 +1154,9 @@ pub(crate) fn board_passenger(
             },
         ));
     }
-    if open_topped && !arm.building() {
-        // `SetInOpenTransport @ 0x00710470` (Infantry `0x0051A45E`, before
-        // AddPassenger; Unit `0x0073A75D`, after): `+0x82` (the relation's
-        // flag above), then `ResetOrdersToGuard` (vt+0x3D0) and the
-        // LogicClass add, so the rider keeps an AI turn and guards from
-        // inside. Infantry Limbo51DF10 keeps TarCom: 51A441 ->51A45E ->710484
-        // reaches the class NULL setter with the former target intact.
-        sim.reset_orders_to_guard(pax_id, rules, effects);
-        let registered = sim.register_open_topped_passenger(pax_id);
-        debug_assert!(
-            registered,
-            "accepted open-topped passenger must remain active"
-        );
-        // The rider stands where its walk into the transport ended, and
-        // every later transport `SetLocation` copies the transport's
-        // coordinate onto it (`FootClass::SetLocation 0x004DB810` ->
-        // `0x007104F0`). Boarding itself preserves the arrival subcell.
-    }
     if arm == BoardingArm::UnitTransport {
+        sim.mark_boarded_transport_passenger(pax_id, carrier_id, open_topped, rules, effects);
         sim.open_topped_passengers_take_target(pax_id, None, rules, registry, effects);
-    }
-    if gunner && !arm.building() {
-        receive_gunner(
-            &sim.interner,
-            &sim.session,
-            &mut sim.scenario_rng,
-            &mut sim.substrate,
-            &sim.houses,
-            rules,
-            carrier_id,
-            pax_id,
-        );
     }
     true
 }
@@ -1253,6 +1299,73 @@ fn receive_gunner(
 
 /// Gunner caller dispatch to UnitClass +4D8 (7464E0). RemoveGunner always
 /// selects mode0 after optional temporal return/LetGo, even with no gunner.
+impl Simulation {
+    /// FootClass::RemovePassenger4DE670: the named Cargo4734B0 removal,
+    /// optional LeaveTransportSound and empty-hold virtual RemoveGunner.
+    /// The caller retains ownership of the passenger's carrier link until
+    /// its placement or UnInit; this operation only changes the Cargo list.
+    #[cfg(feature = "ares")]
+    pub(crate) fn remove_cargo_passenger(
+        &mut self,
+        transport_id: u64,
+        passenger: Option<u64>,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
+        if let Some(id) = passenger
+            && let Some(cargo) = self
+                .substrate
+                .entities
+                .get_mut(transport_id)
+                .and_then(|entity| entity.passenger_role.cargo_mut())
+        {
+            cargo.disembark(id);
+        }
+        if passenger.is_some()
+            && let Some(transport) = self.substrate.entities.get(transport_id)
+            && let Some(sound_id) = self
+                .entity_object_type(transport, rules)
+                .and_then(|kind| kind.leave_transport_sound.clone())
+        {
+            self.sound_events
+                .emit(crate::sim::world::SimSoundEvent::VocAtCoord {
+                    sound_id,
+                    coordinate: crate::sim::movement::ground_pose::position_world_coord(
+                        &transport.position,
+                    ),
+                    flags: 0,
+                });
+            effects.flush_sound(self, rules);
+        }
+        if self
+            .substrate
+            .entities
+            .get(transport_id)
+            .is_some_and(|entity| {
+                entity
+                    .passenger_role
+                    .cargo()
+                    .is_some_and(|cargo| cargo.is_empty())
+                    && self
+                        .entity_object_type(entity, rules)
+                        .is_some_and(|kind| kind.gunner)
+            })
+        {
+            remove_gunner(
+                &self.interner,
+                &self.session,
+                &mut self.scenario_rng,
+                &mut self.substrate,
+                &mut self.houses,
+                &mut self.power_states,
+                rules,
+                transport_id,
+                passenger,
+            );
+        }
+    }
+}
+
 fn remove_gunner(
     interner: &StringInterner,
     session: &ScenarioSession,

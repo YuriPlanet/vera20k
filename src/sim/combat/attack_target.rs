@@ -258,13 +258,13 @@ pub(crate) fn resolve_target_coords(
     }
 }
 
-/// ObjectClass::Distance_To5F6440: planar GetCoords distance, then the target
-/// building's (foundation width + height)*64 discount, clamped to zero. This
+/// ObjectClass::Distance_To5F6440 between live objects: their GetCoords XYs
+/// and the target building's stamped foundation, through the shared
+/// [`crate::util::native_x87::object_planar_distance`] arithmetic. This
 /// differs from the weapon CanFireAt/InRange gate and has no altitude bonus.
 /// Reuse the coordinate projection and deterministic native sqrt owner: exact
 /// integer sqrt changes observable lepton ties (1281 becomes1280 natively).
 /// Native comparisons: tools/spatial_oracle/aircraft_approach_range.{py,json}.
-/// The discount reads the same stamped foundation as the target's GetCoords.
 /// Source identity comes from the shared Abstract ID space: a live Techno/
 /// Terrain uses the existing coordinate resolver; a Bullet uses its retained
 /// position owner. All callers resolve the same live source they previously read.
@@ -277,7 +277,6 @@ pub(crate) fn object_distance_to(
         [
             i32::from(rx) * 256 + sx.to_num::<i32>(),
             i32::from(ry) * 256 + sy.to_num::<i32>(),
-            0,
         ]
     };
     // Bullet GetCoords inherits Object5F65A0's retained Location. Installed
@@ -285,25 +284,27 @@ pub(crate) fn object_distance_to(
     //the separate 3D Distance5F6360 or a Bullet's final impact argument.
     let from = if let Some(bullet) = world.projectiles.get(source) {
         let coord = bullet.position();
-        [coord.x, coord.y, 0]
+        [coord.x, coord.y]
     } else {
         planar(resolve_target_coords(&TargetKind::Entity(source), world)?)
     };
     let to = planar(resolve_target_coords(target, world)?);
-    let distance = crate::util::native_x87::distance_3d_leptons(from, to);
-    if let TargetKind::Entity(id) = *target
-        && let Some(building) = world.substrate.entities.get(id)
-        && building.category() == EntityCategory::Structure
-    {
-        let (width, height) = building.type_facts.foundation().dimensions();
-        // Height query45ECA0 receives false: Bib never adds to this discount.
-        return Some(
-            distance
-                .wrapping_sub((i32::from(width) + i32::from(height)) * 64)
-                .max(0),
-        );
-    }
-    Some(distance)
+    // The discount reads the same stamped foundation as the target's GetCoords.
+    let foundation = match *target {
+        TargetKind::Entity(id) => world
+            .substrate
+            .entities
+            .get(id)
+            .filter(|building| building.category() == EntityCategory::Structure)
+            .map(|building| {
+                let (width, height) = building.type_facts.foundation().dimensions();
+                (i32::from(width), i32::from(height))
+            }),
+        TargetKind::Cell(..) => None,
+    };
+    Some(crate::util::native_x87::object_planar_distance(
+        from, to, foundation,
+    ))
 }
 
 /// Install a bare combat fixture's entity target. Production commands use

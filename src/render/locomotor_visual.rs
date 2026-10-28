@@ -135,15 +135,19 @@ pub fn facing_step_screen_position(entity: &GameEntity, facing: u16, distance: i
 
 /// Fly Draw_Point4CF830 returns X0 and this screen-row delta. It is separate
 /// from physical XYZ projection; Aircraft414613 and Foot4DAF6D each add it.
+///
+/// `no_wobbles` is the value original 4CF8B1 branches on. Retail reads
+/// `TechnoType+C95` (`IsDropship`) there; a Phobos build feeds the resolved
+/// `FlyNoWobbles` value instead, so the flag and not the type field decides.
 pub(crate) fn fly_draw_point_y(
     frame: u32,
-    is_dropship: bool,
+    no_wobbles: bool,
     taking_off: bool,
     landing: bool,
     height: i32,
     landing_base: i32,
 ) -> i32 {
-    if is_dropship || taking_off || landing || height <= landing_base {
+    if no_wobbles || taking_off || landing || height <= landing_base {
         return 0;
     }
     use crate::util::native_x87::{NativeF64Bits, X87Chop53 as X};
@@ -270,7 +274,7 @@ mod tests {
                 expected
             );
         }
-        for (dropship, takeoff, landing, height, base, expected) in [
+        for (no_wobbles, takeoff, landing, height, base, expected) in [
             (true, false, false, 1500, 0, 0),
             (false, true, false, 1500, 0, 0),
             (false, false, true, 1500, 0, 0),
@@ -280,7 +284,7 @@ mod tests {
             (false, false, false, 101, 100, 2),
         ] {
             assert_eq!(
-                fly_draw_point_y(5, dropship, takeoff, landing, height, base),
+                fly_draw_point_y(5, no_wobbles, takeoff, landing, height, base),
                 expected
             );
         }

@@ -1,8 +1,8 @@
 import { DurableObject } from 'cloudflare:workers';
-import { LobbyService, SqlStore } from './service.js';
+import { LobbyService, SqlStore, locatedRequest } from './service.js';
 
 // SQLite state survives actor eviction. The account and room directory is one
-// authority; simulation packets go directly to the separately deployed relay.
+// authority; simulation packets go directly to each match's separately deployed relay.
 export class Lobby extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
@@ -23,6 +23,6 @@ export class Lobby extends DurableObject {
 export default {
   fetch(request, env) {
     if (request.method !== 'GET' && request.method !== 'POST') return new Response(null, { status: 405 });
-    return env.LOBBY.get(env.LOBBY.idFromName('directory-v1')).fetch(request);
+    return env.LOBBY.get(env.LOBBY.idFromName('directory-v1')).fetch(locatedRequest(request));
   },
 };

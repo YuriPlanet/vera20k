@@ -3,6 +3,7 @@
 //! Event priority and consumption order are player-visible contracts; this
 //! module keeps the original handler body intact.
 
+use super::frame::FrameRenderOutcome;
 use super::input::dispatch;
 use super::{
     ActiveEventLoop, App, AppState, ApplicationHandler, ControlFlow, GameScreen, Instant, KeyCode,
@@ -15,6 +16,15 @@ use super::{
 /// keyboard routing seam.
 fn launcher_options_consumes_escape<T>(dialog: &Option<T>, is_escape: bool) -> bool {
     is_escape && dialog.is_some()
+}
+
+fn capture_render_continues(deadline: &mut Option<Instant>, outcome: FrameRenderOutcome) -> bool {
+    if outcome == FrameRenderOutcome::Deferred {
+        *deadline = None;
+        true
+    } else {
+        false
+    }
 }
 
 impl App {
@@ -355,14 +365,30 @@ impl App {
                     );
                     crate::app::loading::pump::begin_loading(&mut state, loading);
                 }
+                #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+                let mut browser_spawn_failure = None;
                 if let Some(request) = self.spawn_request.take()
                     && let Err(error) = Self::start_spawn_session(&mut state, request)
                 {
                     let error = format!("CnCNet startup failed: {error:#}");
                     log::error!("{error}");
-                    self.startup_failure = Some(error);
-                    event_loop.exit();
-                    return;
+                    // docs/spawn.md: the page keeps its engine and may start
+                    // another launch; the report follows the Ready status.
+                    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+                    {
+                        crate::web::status(&error);
+                        browser_spawn_failure = Some(error);
+                    }
+                    #[cfg(not(all(
+                        feature = "wasm",
+                        target_arch = "wasm32",
+                        target_os = "unknown"
+                    )))]
+                    {
+                        self.startup_failure = Some(error);
+                        event_loop.exit();
+                        return;
+                    }
                 }
                 if let Some(session) = self.shell_capture.as_mut() {
                     session.prepare_state(&mut state);
@@ -386,7 +412,16 @@ impl App {
                     crate::app::input::cursor::apply_cursor_confinement(state);
                 }
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-                crate::web::status(self.state.as_ref().and_then(|state| state.frontend.main_menu_shell_error.as_deref()).unwrap_or("Ready"));
+                crate::web::status(
+                    self.state
+                        .as_ref()
+                        .and_then(|state| state.frontend.main_menu_shell_error.as_deref())
+                        .unwrap_or("Ready"),
+                );
+                #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+                if let (Some(error), Some(state)) = (browser_spawn_failure, self.state.as_mut()) {
+                    Self::finish_browser_external_launch(state, Some(&error));
+                }
                 log::info!("Initialization complete");
             }
             Err(err) => {
@@ -447,6 +482,7 @@ impl ApplicationHandler for App {
             self.replay_request
                 .as_ref()
                 .map(|request| request.retail_dir.as_path()),
+            self.spawn_request.is_some() && Self::spawn_hidden_window_requested(),
         );
         let result = if capture_dimensions.is_some() {
             result.and_then(super::initialize::InitializationStep::finish_synchronously)
@@ -887,8 +923,10 @@ impl ApplicationHandler for App {
             }
             WindowEvent::Occluded(occluded) => {
                 // Fully covered on the backends that report it. Windows does
-                // not; see the `Resized` arm above.
-                Self::set_window_hidden(state, occluded);
+                // not; see the `Resized` arm above. A spawn test run's
+                // deliberately invisible window keeps running as if shown.
+                let invisible_spawn = Self::invisible_spawn_window(state);
+                Self::set_window_hidden(state, occluded && !invisible_spawn);
             }
             WindowEvent::CursorEntered { .. } => {
                 state.match_state.input.reset_window_cursor_motion();
@@ -1060,8 +1098,26 @@ impl ApplicationHandler for App {
                         code == KeyCode::Escape && event.state.is_pressed() && !event.repeat;
                     let in_game: bool = state.frontend.screen == GameScreen::InGame;
                     let paused_at_event = in_game && state.match_state.paused();
+                    let locally_paused_at_event = in_game && state.match_state.local_paused();
 
                     if crate::app::frontend::shell_transition::blocks_shell_input(state) {
+                        return;
+                    }
+
+                    // A shared pause must be resumable without a simulation
+                    // tick, including while the local Options dialog is open.
+                    let modifiers = state.platform.live_modifiers;
+                    if in_game
+                        && code == KeyCode::Pause
+                        && !(modifiers.shift_key()
+                            || modifiers.control_key()
+                            || modifiers.alt_key()
+                            || modifiers.super_key())
+                        && crate::app::input::pause_menu::multiplayer_control(state).is_some()
+                    {
+                        if event.state.is_pressed() && !event.repeat {
+                            crate::app::input::pause_menu::toggle_multiplayer_pause(state);
+                        }
                         return;
                     }
 
@@ -1256,7 +1312,9 @@ impl ApplicationHandler for App {
                         return;
                     }
                     if !crate::app::input::hotkeys::input_admitted_while_paused(
-                        paused_at_event,
+                        // Shared pause still admits chat. The keyboard owner
+                        // consumes chat first, then blocks gameplay hotkeys.
+                        locally_paused_at_event,
                         &event.logical_key,
                     ) {
                         return;
@@ -1641,16 +1699,23 @@ impl ApplicationHandler for App {
             }
             WindowEvent::Ime(ime) => crate::app::input::ime::event(state, ime),
             WindowEvent::RedrawRequested => {
-                if let Err(err) = Self::render_frame(state, event_loop, None, None) {
-                    log::error!("Render: {:#}", err);
-                    if state
-                        .match_state
-                        .match_diagnostics
-                        .playback_capture_requested()
-                    {
-                        state.frontend.external_launch_error =
-                            Some(format!("Replay capture failed: {err:#}"));
-                        event_loop.exit();
+                match Self::render_frame(state, event_loop, None, None) {
+                    Ok(FrameRenderOutcome::Deferred) => {
+                        event_loop.set_control_flow(ControlFlow::Poll);
+                        state.platform.window.request_redraw();
+                    }
+                    Ok(_) => {}
+                    Err(err) => {
+                        log::error!("Render: {:#}", err);
+                        if state
+                            .match_state
+                            .match_diagnostics
+                            .playback_capture_requested()
+                        {
+                            state.frontend.external_launch_error =
+                                Some(format!("Replay capture failed: {err:#}"));
+                            event_loop.exit();
+                        }
                     }
                 }
             }
@@ -1677,6 +1742,9 @@ impl ApplicationHandler for App {
             return;
         }
         let shell_scroll_wake = if let Some(state) = self.state.as_mut() {
+            // docs/spawn.md: a browser page's next launch after the last ended.
+            #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+            Self::poll_queued_spawn(state);
             Self::follow_window_full_screen(state);
             // cursor lock: the OS drops the clip on focus loss /
             // Windows key, so re-assert the player's choice every frame while
@@ -1734,10 +1802,17 @@ impl ApplicationHandler for App {
         }
         if let (Some(state), Some(session)) = (self.state.as_mut(), self.tactical_capture.as_mut())
         {
-            if let Err(err) = Self::render_frame(state, event_loop, None, Some(&mut *session)) {
-                log::error!("Tactical capture render: {err:#}");
-                session.fail(format!("tactical capture render failed: {err:#}"));
-                event_loop.exit();
+            let outcome = match Self::render_frame(state, event_loop, None, Some(&mut *session)) {
+                Ok(outcome) => outcome,
+                Err(err) => {
+                    log::error!("Tactical capture render: {err:#}");
+                    session.fail(format!("tactical capture render failed: {err:#}"));
+                    event_loop.exit();
+                    return;
+                }
+            };
+            if capture_render_continues(&mut self.capture_render_not_before, outcome) {
+                event_loop.set_control_flow(ControlFlow::Poll);
                 return;
             }
             if !session.is_finished() {
@@ -1750,10 +1825,17 @@ impl ApplicationHandler for App {
         } else if let (Some(state), Some(session)) =
             (self.state.as_mut(), self.shell_capture.as_mut())
         {
-            if let Err(err) = Self::render_frame(state, event_loop, Some(&mut *session), None) {
-                log::error!("Shell capture render: {err:#}");
-                session.fail(format!("shell capture render failed: {err:#}"));
-                event_loop.exit();
+            let outcome = match Self::render_frame(state, event_loop, Some(&mut *session), None) {
+                Ok(outcome) => outcome,
+                Err(err) => {
+                    log::error!("Shell capture render: {err:#}");
+                    session.fail(format!("shell capture render failed: {err:#}"));
+                    event_loop.exit();
+                    return;
+                }
+            };
+            if capture_render_continues(&mut self.capture_render_not_before, outcome) {
+                event_loop.set_control_flow(ControlFlow::Poll);
                 return;
             }
             if !session.is_finished() {
@@ -1770,10 +1852,33 @@ impl ApplicationHandler for App {
                 if let Some(service) = shell_scroll_wake {
                     deadline = deadline.min(service);
                 }
-                event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+                event_loop.set_control_flow(if deadline <= Instant::now() {
+                    ControlFlow::Poll
+                } else {
+                    ControlFlow::WaitUntil(deadline)
+                });
             }
         } else if let Some(state) = self.state.as_mut() {
-            if crate::app::frontend::shell_transition::main_menu_presented_is_poisoned(state) {
+            if Self::next_online_render_frame(state).is_none() {
+                state.platform.frame_pacer.clear_render_continuation();
+            }
+            if Self::invisible_spawn_window(state) {
+                // An invisible window receives no RedrawRequested; drive the
+                // same frame directly, as the hidden capture drivers do.
+                let deferred = matches!(
+                    Self::render_frame(state, event_loop, None, None),
+                    Ok(FrameRenderOutcome::Deferred)
+                );
+                event_loop.set_control_flow(if deferred {
+                    ControlFlow::Poll
+                } else {
+                    ControlFlow::WaitUntil(Instant::now() + std::time::Duration::from_millis(8))
+                });
+            } else if state.platform.frame_pacer.render_deferred() {
+                event_loop.set_control_flow(ControlFlow::Poll);
+                state.platform.window.request_redraw();
+            } else if crate::app::frontend::shell_transition::main_menu_presented_is_poisoned(state)
+            {
                 event_loop.set_control_flow(ControlFlow::Wait);
             } else if let Some(deadline) =
                 crate::app::frontend::shell_transition::main_menu_presented_wake_deadline(state)
@@ -1827,6 +1932,26 @@ impl ApplicationHandler for App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deferred_capture_clears_render_delay_for_the_next_event_loop_pass() {
+        let deadline = Instant::now() + std::time::Duration::from_millis(8);
+        let mut not_before = Some(deadline);
+        assert!(!capture_render_continues(
+            &mut not_before,
+            FrameRenderOutcome::Unavailable
+        ));
+        assert_eq!(not_before, Some(deadline));
+        assert!(capture_render_continues(
+            &mut not_before,
+            FrameRenderOutcome::Deferred
+        ));
+        assert_eq!(not_before, None);
+        assert!(!capture_render_continues(
+            &mut not_before,
+            FrameRenderOutcome::Presented
+        ));
+    }
 
     #[test]
     fn capture_render_deadline_survives_early_service_wakes_and_admits_when_due() {

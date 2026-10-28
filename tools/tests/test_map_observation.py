@@ -3337,6 +3337,27 @@ class MapObservationTests(unittest.TestCase):
         self.assertEqual(report['status'], 'INVALID')
         self.assertTrue(any('fire' in error for error in report['errors']), report['errors'])
 
+    def test_comparison_reports_process_main_rng_apart_from_the_match(self):
+        self.scripted_profile()
+        self.profile.update(observe_electric_bolts=True)
+        self.profile_path.write_text(json.dumps(self.profile))
+        for actors in self.actor_frames.values():
+            actors[0].update(prism=None)
+        before = self.valid_capture('main-rng-before')
+        self.electric_frames[1] = self.electric_snapshot()
+        self.electric_frames[1]['rng']['main']['index_b'] = 105
+        report = observation.compare_runs(before, self.valid_capture('main-rng-after'))
+        self.assertEqual(report['status'], 'MATCH', report['errors'])
+        self.assertEqual([row['field'] for row in report['main_rng_differences']],
+                         ['observations.electric_bolt_draws.frames[0].effects.rng.main.index_b',
+                          'observations.frames[1].electric_bolts.rng.main.index_b'])
+        self.electric_frames[1]['rng']['scenario']['index_b'] = 105
+        report = observation.compare_runs(before, self.valid_capture('scenario-rng-after'))
+        self.assertEqual(report['status'], 'MISMATCH', report['errors'])
+        self.assertEqual([row['field'] for row in report['differences']],
+                         ['observations.electric_bolt_draws.frames[0].effects.rng.scenario.index_b',
+                          'observations.frames[1].electric_bolts.rng.scenario.index_b'])
+
     def test_bomb_snapshot_shape_identity_order_and_signed_values_are_strict(self):
         valid = {'carriers': [8], 'records': [self.bomb_record()]}
         self.assertEqual(observation._bombs(valid, 'bombs'), 3)

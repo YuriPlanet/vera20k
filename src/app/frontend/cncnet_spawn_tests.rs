@@ -410,3 +410,445 @@ fn cncnet_ares_country_indices_reach_house_side_and_mcv_selection() {
         );
     }
 }
+
+/// One participant's multiplayer file (docs/spawn.md): every human `P{s}`
+/// has SourceIndex `s`; this file is written by source `local`, so its
+/// `[OtherK]` lists the remaining sources in ascending order.
+fn network_spawn(count: usize, local: usize, extra: &str) -> String {
+    let color = |source: usize| if count <= 8 { source } else { source % 8 };
+    let mut text = format!(
+        "[Settings]\nName=P{local}\nSide={}\nColor={}\nPlayerCount={count}\nSourceIndex={local}\n\
+         Seed=77\nSpecialHouseIsAlly=No\nPort=1300\n",
+        local % 10,
+        color(local)
+    );
+    for (other, source) in (0..count).filter(|&source| source != local).enumerate() {
+        text.push_str(&format!(
+            "[Other{}]\nName=P{source}\nSide={}\nColor={}\nSourceIndex={source}\nIp=10.0.0.{}\n",
+            other + 1,
+            source % 10,
+            color(source),
+            source + 1
+        ));
+        if source != 1 {
+            text.push_str(&format!("Port={}\n", 1234 + source));
+        }
+    }
+    text + extra
+}
+
+/// `MultiN` key of `source` in the file written by `local`.
+fn house_key(local: usize, source: usize) -> String {
+    let house = match source.cmp(&local) {
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Less => source + 1,
+        std::cmp::Ordering::Greater => source,
+    };
+    format!("Multi{}", house + 1)
+}
+
+fn parse_network(text: &str) -> NetworkSpawn {
+    match SpawnRequest::parse(text).unwrap().game {
+        SpawnGame::Network(network) => *network,
+        other => panic!("expected a network spawn, got {other:?}"),
+    }
+}
+
+fn relay_section(source: u8, sources_mask: u32) -> String {
+    relay_section_at(source, sources_mask, 45)
+}
+
+/// A `[Relay]` section whose ordering certificate runs `tick_hz`.
+fn relay_section_at(source: u8, sources_mask: u32, tick_hz: u16) -> String {
+    use crate::net::udp::{OrderingCertificate, RelayTicket, test_support::SecretKey};
+    use base64::Engine;
+    let encode = |bytes: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+    let key = SecretKey::new([9; 32]);
+    let ticket = RelayTicket {
+        room: [0x11; 16],
+        player: [0x22; 16],
+        source,
+        generation: 1,
+        expires: 300,
+        nonce: [3; 16],
+    }
+    .sign(&key)
+    .unwrap();
+    let certificate = OrderingCertificate {
+        room: [0x11; 16],
+        sources_mask,
+        tick_hz,
+        expires: 86400,
+    }
+    .sign(&key)
+    .unwrap();
+    format!(
+        "[Relay]\nAddress=203.0.113.5:5000\nMatchId=11111111-1111-1111-1111-111111111111\n\
+         PlayerId=22222222-2222-2222-2222-222222222222\nTicket={}\nPacketKey={}\nPayloadKey={}\n\
+         OrderingCertificate={}\nServiceUrl=https://match.example.com/\nToken=bearer-secret\n",
+        encode(&ticket),
+        encode(&[5; 32]),
+        encode(&[7; 32]),
+        encode(&certificate)
+    )
+}
+
+#[test]
+fn two_player_relay_file_admits_the_grant_in_canonical_source_order() {
+    let text = network_spawn(2, 1, &relay_section(1, 0b11));
+    let request = SpawnRequest::parse(&text).unwrap();
+    assert_eq!(request.seed, Some(77));
+    let SpawnGame::Network(network) = request.game else {
+        panic!("network spawn")
+    };
+    let session = &network.session;
+    assert_eq!(session.local_player_index, 1);
+    assert_eq!(session.humans[0].name, "P0");
+    assert_eq!(session.humans[1].name, "P1");
+    assert_eq!(session.humans[0].raw_slot_index, Some(0));
+    assert_eq!(session.humans[1].slot.color_index, 1);
+    assert!(session.house_roster_is_consistent());
+    let SpawnTransport::Relay(relay) = &network.transport else {
+        panic!("relay transport")
+    };
+    assert_eq!(relay.address.to_string(), "203.0.113.5:5000");
+    assert_eq!(relay.grant.payload_key, [7; 32]);
+    assert_eq!(relay.grant.key, [5; 32]);
+    assert_eq!(relay.service_url, "https://match.example.com");
+    assert_eq!(relay.token, "bearer-secret");
+    let debug = format!("{network:?}");
+    assert!(!debug.contains("bearer-secret") && !debug.contains("Ticket"));
+
+    // The ticket names source 1; the roster must be exactly both humans.
+    let foreign = network_spawn(2, 0, &relay_section(1, 0b11));
+    assert!(SpawnRequest::parse(&foreign).is_err());
+    assert!(SpawnRequest::parse(&network_spawn(2, 1, &relay_section(1, 0b111))).is_err());
+    for (from, to) in [
+        ("https://match.example.com/", "http://match.example.com"),
+        ("https://match.example.com/", "https://match.example.com/v1"),
+        (
+            "https://match.example.com/",
+            "https://user@match.example.com",
+        ),
+        ("PayloadKey=", "PayloadKey=*"),
+        ("PayloadKey=", "PayloadKey=AAAA"),
+        ("Address=203.0.113.5:5000", "Address=match.example.com:5000"),
+        ("Token=bearer-secret", "Token=bearer secret"),
+        ("MatchId=11111111", "MatchId=33333333"),
+    ] {
+        let changed = if to == "PayloadKey=AAAA" {
+            let line = text.lines().find(|line| line.starts_with(from)).unwrap();
+            text.replacen(line, to, 1)
+        } else {
+            text.replacen(from, to, 1)
+        };
+        assert!(SpawnRequest::parse(&changed).is_err(), "{from} -> {to}");
+    }
+    let loopback = text.replacen("https://match.example.com/", "http://127.0.0.1:8080", 1);
+    let SpawnTransport::Relay(relay) = parse_network(&loopback).transport else {
+        panic!("relay transport")
+    };
+    assert_eq!(relay.service_url, "http://127.0.0.1:8080");
+}
+
+#[test]
+fn four_player_direct_files_agree_on_one_session_with_house_teams() {
+    // Sources 0+2 and 1+3 are teams; each file keys them by its own houses.
+    let file = |local: usize| {
+        let mut extra = String::from("[HouseTeams]\n");
+        for source in 0..4 {
+            extra.push_str(&format!(
+                "{}={}\n",
+                house_key(local, source),
+                5 + source % 2
+            ));
+        }
+        extra.push_str(&format!("[SpawnLocations]\n{}=9\n", house_key(local, 3)));
+        parse_network(&network_spawn(4, local, &extra))
+    };
+    let host = file(0);
+    let guest = file(2);
+    assert_eq!(host.session.local_player_index, 0);
+    assert_eq!(guest.session.local_player_index, 2);
+    let mut shared = guest.session.clone();
+    shared.local_player_index = 0;
+    assert_eq!(shared, host.session, "only the local index differs");
+    let teams: Vec<_> = host.session.humans.iter().map(|h| h.slot.team).collect();
+    assert_eq!(
+        teams,
+        [5, 6, 5, 6].map(LaunchTeam::Team),
+        "teams follow SourceIndex"
+    );
+    assert_eq!(
+        host.session.humans[3].slot.start_position,
+        LaunchStartPosition::Position(9)
+    );
+    let SpawnTransport::Direct(direct) = guest.transport else {
+        panic!("direct transport")
+    };
+    assert_eq!(direct.local_port, 1300);
+    assert_eq!(
+        direct.peers,
+        [
+            Some("10.0.0.1:1234".parse().unwrap()),
+            // [Other] Port defaults to the LAN port.
+            Some("10.0.0.2:1234".parse().unwrap()),
+            None,
+            Some("10.0.0.4:1237".parse().unwrap()),
+        ]
+    );
+    for broken in [
+        network_spawn(4, 0, "")
+            .replacen("Ip=10.0.0.2", "Ip=10.0.0.4", 1)
+            .replacen("Port=1237", "Port=1234", 1),
+        network_spawn(4, 0, "").replacen("Ip=10.0.0.2", "Ip=0.0.0.0", 1),
+        network_spawn(4, 0, "").replacen("Ip=10.0.0.2\n", "", 1),
+        network_spawn(4, 0, "[HouseTeams]\nMulti5=0\n"),
+        network_spawn(4, 0, "[HouseTeams]\nMulti1=30\n"),
+    ] {
+        assert!(SpawnRequest::parse(&broken).is_err(), "{broken}");
+    }
+}
+
+#[test]
+fn thirty_humans_fill_every_network_row_and_reuse_colours() {
+    let session = parse_network(&network_spawn(30, 17, "")).session;
+    assert_eq!(session.humans.len(), 30);
+    assert_eq!(session.local_player_index, 17);
+    assert_eq!(session.local_player().name, "P17");
+    assert_eq!(session.humans[29].raw_slot_index, Some(29));
+    assert_eq!(session.humans[9].slot.color_index, 1);
+    assert_eq!(session.required_start_count(), 30);
+    assert!(session.house_roster_is_consistent());
+    // No AI house remains and a 31st human has no row.
+    assert!(
+        SpawnRequest::parse(&network_spawn(30, 0, "").replacen(
+            "[Settings]\n",
+            "[Settings]\nAIPlayers=1\n",
+            1
+        ))
+        .is_err()
+    );
+    assert!(SpawnRequest::parse(&network_spawn(31, 0, "")).is_err());
+    // Up to eight houses colours stay distinct, as in single player.
+    let clash = network_spawn(3, 0, "").replacen("Color=1", "Color=0", 1);
+    assert!(SpawnRequest::parse(&clash).is_err());
+}
+
+#[test]
+fn network_ai_houses_follow_every_human() {
+    let session = parse_network(
+        &network_spawn(
+            3,
+            1,
+            "[HouseHandicaps]\nMulti4=1\nMulti6=0\n[HouseCountries]\nMulti4=3\nMulti6=4\n\
+         [HouseColors]\nMulti4=6\nMulti6=7\n[SpawnLocations]\nMulti6=20\n",
+        )
+        .replacen("[Settings]\n", "[Settings]\nAIPlayers=2\n", 1),
+    )
+    .session;
+    let rows: Vec<_> = session
+        .opponents
+        .iter()
+        .map(|ai| ai.raw_slot_index)
+        .collect();
+    assert_eq!(rows, [3, 5]);
+    assert_eq!(session.opponents[0].difficulty, AiDifficulty::Normal);
+    assert_eq!(
+        session.opponents[1].start_position,
+        LaunchStartPosition::Position(20)
+    );
+    assert_eq!(session.required_start_count(), 5);
+    assert!(session.house_roster_is_consistent());
+    // A human's house is never an AI slot.
+    let human_ai = network_spawn(3, 1, "[HouseHandicaps]\nMulti3=1\n").replacen(
+        "[Settings]\n",
+        "[Settings]\nAIPlayers=1\n",
+        1,
+    );
+    assert!(SpawnRequest::parse(&human_ai).is_err());
+}
+
+#[test]
+fn network_humans_need_a_complete_source_permutation_seed_and_one_team_form() {
+    let valid = network_spawn(3, 0, "");
+    assert!(SpawnRequest::parse(&valid).is_ok());
+    for (from, to) in [
+        ("SourceIndex=2", "SourceIndex=1"),
+        ("SourceIndex=2", "SourceIndex=3"),
+        ("SourceIndex=2", "SourceIndex=-1"),
+        ("SourceIndex=2\n", ""),
+        ("SourceIndex=0\n", ""),
+        ("Seed=77\n", ""),
+        ("Name=P2", "Name=p1"),
+        ("[Other2]", "[Other3]"),
+        ("PlayerCount=3", "PlayerCount=4"),
+        ("PlayerCount=3", "PlayerCount=2"),
+        ("[Settings]", "[Settings]\nIsSinglePlayer=Yes"),
+        ("[Settings]", "[Settings]\nIsSpectator=Yes"),
+    ] {
+        assert!(
+            SpawnRequest::parse(&valid.replacen(from, to, 1)).is_err(),
+            "{from} -> {to}"
+        );
+    }
+    let alliances = "[Multi1_Alliances]\nHouseAllyOne=1\n[Multi2_Alliances]\nHouseAllyOne=0\n";
+    let session = parse_network(&format!("{valid}{alliances}")).session;
+    assert_eq!(session.humans[0].slot.team, LaunchTeam::Team(0));
+    assert_eq!(session.humans[1].slot.team, LaunchTeam::Team(0));
+    assert_eq!(session.humans[2].slot.team, LaunchTeam::None);
+    assert!(
+        SpawnRequest::parse(&format!("{valid}{alliances}[HouseTeams]\nMulti3=0\n")).is_err(),
+        "a file may not mix team forms"
+    );
+}
+
+#[test]
+fn single_player_spawn_keeps_its_offline_admission() {
+    let SpawnGame::Skirmish(session) = SpawnRequest::parse(SKIRMISH).unwrap().game else {
+        panic!("single-player skirmish")
+    };
+    assert_eq!(session.humans.len(), 1);
+    assert_eq!(session.humans[0].raw_slot_index, Some(0));
+    let rows: Vec<_> = session
+        .opponents
+        .iter()
+        .map(|ai| ai.raw_slot_index)
+        .collect();
+    assert_eq!(rows, [1, 2]);
+    for append in [relay_section(0, 1), "[Other12]\nName=Remote\n".into()] {
+        assert!(SpawnRequest::parse(&format!("{SKIRMISH}\n{append}")).is_err());
+    }
+    // Retail's eight waypoints still bound a single-player start.
+    let far = SKIRMISH.replacen("Multi2=0\n[Multi1", "Multi2=8\n[Multi1", 1);
+    assert!(SpawnRequest::parse(&far).is_err());
+}
+
+#[test]
+fn relay_clock_names_the_game_speed_and_admission_is_bounded() {
+    let text = network_spawn(2, 1, &relay_section(1, 0b11));
+    let request = SpawnRequest::parse(&text).unwrap();
+    assert_eq!(request.game_speed, 1, "45 Hz is launch speed 1");
+    let network = parse_network(&text);
+    assert_eq!(network.session.options.game_speed, 1);
+    let SpawnTransport::Relay(relay) = network.transport else {
+        panic!("relay transport")
+    };
+    assert_eq!(relay.admission_timeout.as_secs(), 30);
+    let slowest = network_spawn(2, 1, &relay_section_at(1, 0b11, 10));
+    assert_eq!(SpawnRequest::parse(&slowest).unwrap().game_speed, 6);
+    let agreed = text.replacen("[Settings]\n", "[Settings]\nGameSpeed=1\n", 1);
+    assert_eq!(SpawnRequest::parse(&agreed).unwrap().game_speed, 1);
+    let longest = text.replacen("[Relay]\n", "[Relay]\nAdmissionTimeout=180\n", 1);
+    let SpawnTransport::Relay(relay) = parse_network(&longest).transport else {
+        panic!("relay transport")
+    };
+    assert_eq!(relay.admission_timeout.as_secs(), 180);
+    for broken in [
+        text.replacen("[Settings]\n", "[Settings]\nGameSpeed=2\n", 1),
+        text.replacen("[Relay]\n", "[Relay]\nAdmissionTimeout=29\n", 1),
+        text.replacen("[Relay]\n", "[Relay]\nAdmissionTimeout=181\n", 1),
+    ] {
+        assert!(SpawnRequest::parse(&broken).is_err(), "{broken}");
+    }
+}
+
+#[test]
+fn network_spectators_watch_without_ai_start_or_team() {
+    // Source 2 watches: source 0's file keys it Multi3, its own file Multi1.
+    let session = parse_network(&network_spawn(3, 0, "[IsSpectator]\nMulti3=Yes\n")).session;
+    let observers: Vec<_> = session.humans.iter().map(|h| h.is_observer()).collect();
+    assert_eq!(observers, [false, false, true]);
+    assert!(session.house_roster_is_consistent());
+    let own = parse_network(&network_spawn(3, 2, "[IsSpectator]\nMulti1=Yes\n")).session;
+    assert!(own.local_player().is_observer());
+    assert_eq!(
+        own.humans
+            .iter()
+            .map(|h| h.is_observer())
+            .collect::<Vec<_>>(),
+        observers
+    );
+    for broken in [
+        network_spawn(
+            3,
+            0,
+            "[IsSpectator]\nMulti3=Yes\n[HouseHandicaps]\nMulti4=1\n\
+             [HouseCountries]\nMulti4=3\n[HouseColors]\nMulti4=6\n",
+        )
+        .replacen("[Settings]\n", "[Settings]\nAIPlayers=1\n", 1),
+        network_spawn(2, 0, "[IsSpectator]\nMulti2=Yes\n"),
+        network_spawn(
+            3,
+            0,
+            "[IsSpectator]\nMulti3=Yes\n[SpawnLocations]\nMulti3=4\n",
+        ),
+        network_spawn(3, 0, "[IsSpectator]\nMulti3=Yes\n[HouseTeams]\nMulti3=1\n"),
+    ] {
+        assert!(SpawnRequest::parse(&broken).is_err(), "{broken}");
+    }
+    // Single player still refuses a spectator.
+    assert!(SpawnRequest::parse(&format!("{SKIRMISH}\n[IsSpectator]\nMulti1=Yes")).is_err());
+}
+
+#[test]
+fn expected_values_are_optional_validated_and_rejected_precisely() {
+    let request = SpawnRequest::parse(SKIRMISH).unwrap();
+    assert_eq!(request.expected, SpawnExpectations::default());
+    let digest = "AB".repeat(32);
+    let text = SKIRMISH.replace(
+        "[Settings]\n",
+        &format!(
+            "[Settings]\nExpectedVersion=1.0:x:000\nExpectedRulesDigest={digest}\nExpectedMapDigest={}\n",
+            "cd".repeat(32)
+        ),
+    );
+    let request = SpawnRequest::parse(&text).unwrap();
+    assert_eq!(request.expected.version.as_deref(), Some("1.0:x:000"));
+    assert_eq!(request.expected.rules_digest, Some("ab".repeat(32)));
+    let ok = || Ok::<_, anyhow::Error>("ab".repeat(32));
+    let map = || Ok::<_, anyhow::Error>("cd".repeat(32));
+    request.expected.mismatch("1.0:x:000", ok, map).unwrap();
+    let error = request
+        .expected
+        .mismatch("1.0:y:000", ok, map)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("ExpectedVersion") && error.contains("1.0:y:000"),
+        "{error}"
+    );
+    let error = request
+        .expected
+        .mismatch("1.0:x:000", || Ok("00".repeat(32)), map)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("ExpectedRulesDigest"), "{error}");
+    let error = request
+        .expected
+        .mismatch("1.0:x:000", ok, || Ok("11".repeat(32)))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("ExpectedMapDigest"), "{error}");
+    // Absent values are never computed.
+    SpawnExpectations::default()
+        .mismatch("v", || panic!("rules"), || panic!("map"))
+        .unwrap();
+    assert!(
+        SpawnRequest::parse(
+            &SKIRMISH.replace("[Settings]\n", "[Settings]\nExpectedMapDigest=xyz\n")
+        )
+        .is_err()
+    );
+    assert!(
+        SpawnRequest::parse(&format!(
+            "[Settings]\nIsSinglePlayer=Yes\nScenario=ALL01uMd.map\nExpectedMapDigest={digest}\n"
+        ))
+        .is_err()
+    );
+    // Campaigns may still pin the build.
+    SpawnRequest::parse(
+        "[Settings]\nIsSinglePlayer=Yes\nScenario=ALL01uMd.map\nExpectedVersion=v\n",
+    )
+    .unwrap();
+}

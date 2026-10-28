@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "phobos")]
+use crate::rules::ini_parser::IniFile;
 use crate::sim::command::Command;
 use crate::sim::world::{FrameEffects, TickLane};
 
@@ -60,6 +62,8 @@ fn query(sim: &Simulation, rules: &RuleSet, ids: &[u64], ms: u64) -> Vec<RadialI
         ids,
         None,
         None,
+        None,
+        false,
         &mut pulse,
         &HouseColorMap::new(),
         SurfaceLineViewport {
@@ -97,7 +101,9 @@ fn target_query(
         Some(rules),
         &[],
         armed_super_weapon,
+        None,
         Some((16, 16)),
+        false,
         pulse,
         &colors,
         SurfaceLineViewport {
@@ -506,7 +512,9 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
             Some(rules),
             &[],
             Some("NukeSpecial"),
+            None,
             Some(cell),
+            false,
             &mut SuperweaponRangePulse::default(),
             &HouseColorMap::new(),
             SurfaceLineViewport {
@@ -671,4 +679,138 @@ fn ordinary_temporal_warp_suppresses_gap_query_and_release_restores_it() {
     }
     assert!(sim.entities().get(gap).unwrap().building_online());
     assert_eq!(query(&sim, rules, &[gap], 0).len(), 1);
+}
+
+#[cfg(feature = "phobos")]
+fn enhancer_rules(range: &str, amount: &str, global: bool) -> RuleSet {
+    RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[BuildingTypes]\n0=ENH\n1=GAPOWR\n2=RADAR\n\
+         [ENH]\nStrength=100\nPowerPlantEnhancer.PowerPlants=GAPOWR\n\
+         PowerPlantEnhancer.Range={range}\nPowerPlantEnhancer.Amount={amount}\n\
+         [GAPOWR]\nStrength=100\n[RADAR]\nStrength=100\n\
+         [AudioVisual]\nShowPowerPlantEnhancerRange={}\n",
+        if global { "yes" } else { "no" }
+    )))
+    .expect("power plant enhancer rules")
+}
+
+/// Insert a finished Structure fixture with the simulation's own interned
+/// type and owner handles; unlimbo admission is not what these display tests
+/// measure.
+#[cfg(feature = "phobos")]
+fn insert_enhancer(
+    sim: &mut Simulation,
+    type_id: &str,
+    owner: &str,
+    cell: (u16, u16),
+    online: bool,
+) -> u64 {
+    let mut entity = crate::sim::game_entity::GameEntity::test_default_of_category(
+        1,
+        type_id,
+        owner,
+        cell.0,
+        cell.1,
+        crate::map::entities::EntityCategory::Structure,
+    );
+    entity.set_type_ref_for_test(sim.intern(type_id));
+    entity.set_owner_for_test(sim.intern(owner));
+    entity.lifecycle.set_in_limbo_for_test(false);
+    entity.lifecycle.set_object_alive_for_test(true);
+    entity.set_building_online_for_test(online);
+    sim.entities_mut_for_test().insert(entity);
+    1
+}
+
+#[cfg(feature = "phobos")]
+fn placement_query(
+    sim: &Simulation,
+    rules: &RuleSet,
+    armed: &str,
+    cursor: (u16, u16),
+    show: bool,
+) -> Vec<RadialIndicatorDraw> {
+    let mut pulse = SuperweaponRangePulse::default();
+    build(
+        Some(sim),
+        Some(rules),
+        &[],
+        None,
+        Some(armed),
+        Some(cursor),
+        show,
+        &mut pulse,
+        &HouseColorMap::new(),
+        SurfaceLineViewport {
+            camera: [0; 2],
+            clip: [0, 0, 1024, 768],
+            z_origin_y: 0,
+            zoom: 1.0,
+        },
+        0,
+    )
+}
+
+#[cfg(feature = "phobos")]
+#[test]
+fn placement_draws_an_active_enhancers_range_at_the_enhancer_cell() {
+    let rules = enhancer_rules("4", "10", true);
+    let mut sim = state(&rules);
+    insert_enhancer(&mut sim, "ENH", "Americans", (16, 16), true);
+    let draws = placement_query(&sim, &rules, "GAPOWR", (18, 16), true);
+    assert_eq!(draws.len(), 1);
+    let draw = draws[0];
+    assert_eq!(draw.radius, 4.0);
+    assert!(draw.truncate_radius && !draw.pixel_radius);
+    assert!(draw.fade && !draw.rays);
+    assert_eq!(draw.frame, sim.session().binary_frame() as i32);
+    assert_eq!(
+        draw.rgb,
+        crate::render::palette_light::house_color_rgb(
+            &rules.house_color_ramps,
+            crate::rules::house_colors::NO_REMAP
+        )
+    );
+
+    // Both switches are caller-side: no client switch, no ring.
+    assert!(placement_query(&sim, &rules, "GAPOWR", (18, 16), false).is_empty());
+    // A placing type the enhancer does not name.
+    assert!(placement_query(&sim, &rules, "RADAR", (18, 16), true).is_empty());
+    // Outside the native 1.5 * range cell prefilter (14 > 6).
+    assert!(placement_query(&sim, &rules, "GAPOWR", (30, 16), true).is_empty());
+}
+
+#[cfg(feature = "phobos")]
+#[test]
+fn placement_enhancer_rings_need_membership_range_and_the_current_player() {
+    // A list with the default Amount/Factor is not registered as an enhancer.
+    let inert = enhancer_rules("4", "0", true);
+    let mut sim = state(&inert);
+    insert_enhancer(&mut sim, "ENH", "Americans", (16, 16), true);
+    assert!(placement_query(&sim, &inert, "GAPOWR", (18, 16), true).is_empty());
+
+    // Range 0 disables the ring even for a registered enhancer.
+    let zero_range = enhancer_rules("0", "10", true);
+    let mut sim = state(&zero_range);
+    insert_enhancer(&mut sim, "ENH", "Americans", (16, 16), true);
+    assert!(placement_query(&sim, &zero_range, "GAPOWR", (18, 16), true).is_empty());
+
+    // The native loop only walks the current player's enhancers.
+    let rules = enhancer_rules("4", "10", true);
+    let mut sim = state(&rules);
+    insert_enhancer(&mut sim, "ENH", "British", (16, 16), true);
+    assert!(placement_query(&sim, &rules, "GAPOWR", (18, 16), true).is_empty());
+
+    // An offline enhancer is not drawn.
+    let mut sim = state(&rules);
+    insert_enhancer(&mut sim, "ENH", "Americans", (16, 16), false);
+    assert!(placement_query(&sim, &rules, "GAPOWR", (18, 16), true).is_empty());
+    sim.entities_mut_for_test()
+        .get_mut(1)
+        .unwrap()
+        .set_building_online_for_test(true);
+    assert_eq!(
+        placement_query(&sim, &rules, "GAPOWR", (18, 16), true).len(),
+        1
+    );
 }

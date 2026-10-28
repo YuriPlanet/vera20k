@@ -65,16 +65,58 @@ Modern ordering uses authenticated control kind4 and a lobby-signed `VO1C`
 certificate (see `../lobby/protocol.md`). All sources certify the same initial
 world; fixed FPS deadlines then commit encrypted batches sorted by source and
 batch ID, followed by an explicit frame end. An absent input contributes nothing.
-Late input goes at least two frames beyond the sealed head. Readers pull up to32
-entries from independent cursors, so one reader never gates another. Retries are
-idempotent; modified batch retries and source impersonation fail authentication.
+Input joins the open frame after the sealed head. New clients opt in
+to server-pushed updates through ordering request4 and its authenticated
+`PushState` acknowledgement. Older clients continue pulling the same history.
+The subscription is bound to the confirmed hop and expires after3seconds without
+a receive watermark; renewing or rebinding a hop requires a fresh subscription.
+Control-envelope ordering prevents a delayed enable from undoing a newer disable.
+Retries are idempotent; modified batch retries and source impersonation fail
+authentication.
+
+Each pushed reader has64entries of independent delivery credit. Receive
+watermarks acknowledge contiguous retained data, never simulation progress or
+another reader's input. Each socket-loop drain rotates recipients and emits at
+most128packets/96KiB total,32packets per room and8per reader, using the same
+authenticated output budgets as replies. A250ms status heartbeat exposes a lost
+tail. Clients use the existing Pull operation to repair gaps, reading at most32
+entries at a time; healthy pushed clients do not continually request frames.
+
+Synchronized pause is opt-in for every active match source. Ordering request5
+uses request ID0 to advertise support and query status; positive IDs carry an
+explicit desired state and expected epoch. Old clients and relays keep their
+existing behavior, and a mixed room cannot pause. Accepted transitions append
+an authenticated canonical pause marker after the current head's frame end.
+That frame remains the barrier until an explicit resume appends its marker and
+displaces the paused wall time; buffered input retains its assigned frames.
+Pause and resume share the existing journal/cache writer, with both marker
+reservations made before accepting pause. Retries and stale epochs never toggle
+state. Lost markers replay through Pull. Ticket loss does not resume a game;
+the last explicit Leave appends a resume marker so the departure tail can finish.
+
+A federated match spreads its sources over up to six relays, each serving the
+players nearest it. The lobby-signed `VO1F` roster (see `../lobby/protocol.md`)
+rides in every CONFIRM after the cookie; a relay admits only the sources its
+own roster entry homes and recovers the match link key with its ticket key. Each
+relay seals its own players' entries at the shared frame deadlines and sends
+them, authenticated with the link key, to every other relay as `VF1L` link
+packets at each new seal and otherwise every 50 ms. Entries are retained and
+resent until acknowledged, and a packet carrying entries goes out twice. A
+frame is emitted once every relay sealed it, in the same canonical order, so
+every relay delivers the same stream and sequence numbers. Player DATA to a remote source crosses one link to its relay. The
+first roster relay picks the start time from measured link round trips; the
+others follow its clock offset. Only it cancels a startup: another relay's Leave
+before the start asks it to, and becomes a frame-1 departure if the start was
+already on its way. Federated rooms cannot pause. Link packets go to the roster
+address on the relay's existing UDP port and are authenticated by their MAC,
+whatever address they arrive from.
 
 The RAM hot cache retains4,096 entries/2 MiB per room under a64 MiB global
 budget. Eviction from this cache does not evict match history: every complete
 canonical frame first appends to the encrypted full-match disk journal. The data
 file uses a length prefix per entry and the separate offset index is also on
-disk; no full-match index grows in RAM. Pull reads at most32 records from either
-the cache or journal, always from the requested independent sequence. Active
+disk; no full-match index grows in RAM. Push and Pull share one reader for the
+cache and journal, always from the recipient's independent sequence. Active
 journals therefore advertise oldest sequence1 throughout the match.
 
 Poor or disconnected internet never removes a player. Healthy players continue;

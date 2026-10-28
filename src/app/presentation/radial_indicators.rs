@@ -54,7 +54,9 @@ pub(crate) fn build(
     rules: Option<&RuleSet>,
     selected: &[u64],
     armed_super_weapon: Option<&str>,
+    armed_building: Option<&str>,
     cursor_cell: Option<(u16, u16)>,
+    show_power_plant_enhancer_range: bool,
     superweapon_pulse: &mut SuperweaponRangePulse,
     colors: &HouseColorMap,
     viewport: SurfaceLineViewport,
@@ -63,6 +65,8 @@ pub(crate) fn build(
     let (Some(sim), Some(rules)) = (sim, rules) else {
         return Vec::new();
     };
+    #[cfg(not(feature = "phobos"))]
+    let _ = (armed_building, show_power_plant_enhancer_range);
     let mut draws = Vec::new();
     //6DBE39..72 walks CurrentObjects FORWARD. Overlapping destination edits
     //must retain this order, independently of EntityStore allocation order.
@@ -146,6 +150,73 @@ pub(crate) fn build(
                 pixel_radius: true,
                 rgb,
                 ..outer
+            });
+        }
+    }
+    // Phobos "Show power plant enhancer range": while a building is being
+    // placed, the current player's active enhancers that name the placing type
+    // draw their own range ring. TacticalClass_DrawRadialIndicator_Building_
+    // Extras @ 0x6DBEA3 filters by 1.5 * range cells from the current
+    // foundation center cell, then calls Game::DrawRadialIndicator(false,
+    // true, coords, owner color, range, false, true).
+    #[cfg(feature = "phobos")]
+    if show_power_plant_enhancer_range
+        && let (Some(armed), Some(center_cell)) = (armed_building, cursor_cell)
+        && let Some(player) = sim.session().current_house()
+    {
+        let center = (i32::from(center_cell.0), i32::from(center_cell.1));
+        for (_, entity) in sim.entities().iter_sorted() {
+            if entity.category() != EntityCategory::Structure || entity.owner() != player {
+                continue;
+            }
+            let Some(object) = sim.interner().object_type(entity.type_ref(), rules) else {
+                continue;
+            };
+            if !object.is_power_plant_enhancer() || !object.power_plant_enhancer_enhances(armed) {
+                continue;
+            }
+            let range =
+                object.power_plant_enhancer_range() / crate::util::lepton::LEPTONS_PER_CELL_I32;
+            if range <= 0 || !entity.is_power_plant_enhancer_active() {
+                continue;
+            }
+            let coords = crate::sim::movement::ground_pose::object_get_coords(
+                entity,
+                sim.resolved_terrain(),
+            );
+            let enhancer_cell = (
+                coords.x / crate::util::lepton::LEPTONS_PER_CELL_I32,
+                coords.y / crate::util::lepton::LEPTONS_PER_CELL_I32,
+            );
+            let dx = i64::from(enhancer_cell.0) - i64::from(center.0);
+            let dy = i64::from(enhancer_cell.1) - i64::from(center.1);
+            // Native compares CellStruct::DistanceFromSquared against
+            // range * range * 2.25; 4 * d² > 9 * range² is the exact integer
+            // form of that 1.5 * range prefilter.
+            if 4 * (dx * dx + dy * dy) > 9 * i64::from(range) * i64::from(range) {
+                continue;
+            }
+            let (x, y) =
+                crate::util::lepton::absolute_leptons_to_screen(coords.x, coords.y, coords.z);
+            let center = [
+                x as i32 - viewport.camera[0] + viewport.clip[0],
+                y as i32 - viewport.camera[1] + viewport.clip[1],
+            ];
+            let index = colors
+                .get(sim.interner().resolve(entity.owner()))
+                .copied()
+                .unwrap_or(crate::rules::house_colors::NO_REMAP);
+            let rgb =
+                crate::render::palette_light::house_color_rgb(&rules.house_color_ramps, index);
+            draws.push(RadialIndicatorDraw {
+                center,
+                radius: range as f32,
+                truncate_radius: true,
+                pixel_radius: false,
+                rgb,
+                fade: true,
+                rays: false,
+                frame: sim.session().binary_frame() as i32,
             });
         }
     }

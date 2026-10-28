@@ -24,8 +24,6 @@
 //!   unit's override returns nothing (`0x00743193..0x007431B5`).
 //! - `TechnoType NoAutoFire=` (`+0xD20`): a human object's scan returns
 //!   nothing (`0x006F8E19..0x006F8E41`).
-//! - `InfantryType Thief=` (`+0xEC5`): the mask gains `0x240`
-//!   (`0x0051E37C..0x0051E38C`).
 //! - `VehicleThief=` (`+0xEC6`): its early return of the NavCom target
 //!   within `0xF00` leptons (`0x0051E21C..0x0051E285`, UNCHECKED).
 
@@ -79,6 +77,8 @@ pub(super) struct InfantryScanner<C, W, L> {
     pub(super) infiltrate: bool,
     /// `VehicleThief=` (`+0xEC6`).
     pub(super) vehicle_thief: bool,
+    /// `Thief=` (`+0xEC5`), the final mask rewrite51E37C..51E38C.
+    pub(super) thief: bool,
     /// `C4=` (`+0xEC2`) or `HasWeaponAbility(C4)` (`0x0070D0D0`).
     pub(super) c4: bool,
     /// Slots 0 and 1's class bits.
@@ -127,6 +127,10 @@ where
     // `0x0051E34D..0x0051E379`.
     if scanner.c4 && !scanner.human {
         mask |= 0x20;
+    }
+    // InfantryClass::GreatestThreat51E37C..51E38C, retail gamemd.exe.
+    if scanner.thief {
+        mask |= 0x240;
     }
     ControlFlow::Continue(mask)
 }
@@ -246,6 +250,7 @@ mod tests {
             armed,
             infiltrate: false,
             vehicle_thief: false,
+            thief: false,
             c4: false,
             class_bits: || 0xBC,
             primary_warhead_spares_medium_and_wood: move || spares,
@@ -304,6 +309,7 @@ mod tests {
             armed: false,
             infiltrate: false,
             vehicle_thief: false,
+            thief: false,
             c4: false,
             class_bits: || 0xBC,
             primary_warhead_spares_medium_and_wood: || false,

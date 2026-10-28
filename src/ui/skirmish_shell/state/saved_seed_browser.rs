@@ -217,18 +217,12 @@ impl SavedSeedDescriptionEdit {
     }
 
     pub fn description(&self) -> SeedDescription {
-        // Save driver727D60 trims wide units <=0x20 after reading at most79.
-        let start = self
-            .units
-            .iter()
-            .position(|u| *u > 0x20)
-            .unwrap_or(self.units.len());
-        let end = self
-            .units
-            .iter()
-            .rposition(|u| *u > 0x20)
-            .map_or(start, |i| i + 1);
-        SeedDescription::from_units(self.units[start..end].iter().copied())
+        // The save driver trims with wcstrim 727D60 after reading at most 79.
+        SeedDescription::from_units(
+            crate::util::native_string::wcstrim(&self.units)
+                .iter()
+                .copied(),
+        )
     }
 
     pub fn display_text(&self) -> String {

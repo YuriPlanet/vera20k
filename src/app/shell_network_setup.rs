@@ -17,7 +17,9 @@ pub(crate) use service::{
 };
 pub(crate) mod view;
 mod wol;
-pub(crate) use actions::{apply_action, commit_map_selection, commit_start, open_choose_map};
+pub(crate) use actions::{
+    apply_action, begin_external_lan_go, commit_map_selection, commit_start, open_choose_map,
+};
 pub(crate) use view::view;
 pub(crate) use wol::{
     WolStartUser, guest_users_listed, kicked_key, local_left, map_status, play_player_left,
@@ -125,6 +127,11 @@ pub(crate) struct NetworkSetupProtocol {
     /// run without C2/C9 (`0x007A6208..0x007A6229`, `0x0078A36C..0x0078A386`)
     /// under the runner's `0x117`.
     quick_match: bool,
+    /// An external launch (docs/spawn.md): a launcher formed the room, so
+    /// like Quick Match no setup dialog exists. The relay start handshake
+    /// runs unchanged and Negotiated(0) starts loading directly; a direct
+    /// (LAN) launch runs the LAN GO and its completion starts loading.
+    external: bool,
     /// WOL `00B77DEC`/`00B77E28` after the host's StartGame request, until
     /// the server's OnGameStart rejects it; a matching OnGameStart holds it
     /// (`[0xB77E28] = 2`) until the abort or the match.
@@ -334,6 +341,7 @@ impl NetworkSetupProtocol {
         Self {
             locked: false,
             quick_match,
+            external: false,
             wol_start_pending: false,
             online_start_preparing: false,
             ping_deadline: wol_host.then(|| Instant::now() + wol::PING_PERIOD),
@@ -499,6 +507,80 @@ pub(crate) fn quick_match(state: &AppState) -> bool {
         .network_setup_protocol
         .as_ref()
         .is_some_and(|protocol| protocol.quick_match)
+}
+
+/// The admitted setup belongs to an external launch, with no dialog.
+pub(crate) fn external(state: &AppState) -> bool {
+    state
+        .frontend
+        .network_setup_protocol
+        .as_ref()
+        .is_some_and(|protocol| protocol.external)
+}
+
+/// The network visit an external launch enters: GameMode 4 (relay) or 3
+/// (direct LAN) with the launcher's canonical session admitted as this
+/// client's setup. Source 0 is the room owner, as in the lobby's
+/// `game_started` users, and the direct host.
+pub(crate) fn accept_external_session(
+    session: &mut crate::app::match_runtime::session::MatchSession,
+    launch: SkirmishLaunchSession,
+    context: crate::app::match_runtime::session::NetworkReturnContext,
+) -> anyhow::Result<()> {
+    let host = launch.local_player_index == 0;
+    session.enter_network(context);
+    session.accept_network_setup(launch, host, None)
+}
+
+/// Install an external launch's setup without a dialog, its online start
+/// requests or pings: the launcher already agreed the room.
+pub(crate) fn install_external_setup(
+    state: &mut AppState,
+    launch: SkirmishLaunchSession,
+    context: crate::app::match_runtime::session::NetworkReturnContext,
+) -> anyhow::Result<()> {
+    // The parser resolved the launcher's map beside spawn.ini to a local
+    // path. Participants keep it in different directories, and the world
+    // hashes the map name, so load that file as this client's physical
+    // source under its shared logical name, as a LAN guest's download.
+    let mut launch = launch;
+    let path = launch
+        .selected_map_file
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("external launch has no map"))?;
+    let logical = std::path::Path::new(&path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| anyhow::anyhow!("external map has no file name"))?
+        .to_owned();
+    crate::map::source::validate_network_map_name(&logical)?;
+    let loaded = {
+        let root = &state
+            .platform
+            .game_config
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("no asset directory"))?
+            .paths
+            .ra2_dir;
+        let assets = state
+            .process_assets
+            .manager()
+            .ok_or_else(|| anyhow::anyhow!("retail assets are unavailable"))?;
+        crate::map::source::load_network_map_ini(root, &path, assets)?
+    };
+    let effective = crate::map::source::effective_network_map_digest(&loaded.ini, false);
+    launch.selected_map_file = Some(logical);
+    accept_external_session(&mut state.match_state.session, launch, context)?;
+    state
+        .match_state
+        .session
+        .accept_external_network_map_source(loaded.source, effective)?;
+    let mut protocol = NetworkSetupProtocol::new(dialog(state), false);
+    protocol.external = true;
+    protocol.ping_deadline = None;
+    protocol.requests.clear();
+    state.frontend.network_setup_protocol = Some(protocol);
+    Ok(())
 }
 
 /// The setup dialog the admitted session shows: GameMode4 is WOL C2/C9.
