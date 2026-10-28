@@ -213,7 +213,7 @@ fn retail_birth_fields_match_native_exact_flh() {
     );
     assert_eq!(weapon.range_leptons, int(&physical["range_leptons"]));
     assert_eq!(
-        <[i32; 3]>::from(retail.rules.object("NATSLA").unwrap().weapon_flh(0, false)),
+        <[i32; 3]>::from(retail.rules.object("TESLA").unwrap().weapon_flh(0, false)),
         xyz(&ordinary_birth()["input"]["primary_flh"])
     );
 
