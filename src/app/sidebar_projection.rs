@@ -842,7 +842,8 @@ impl SidebarProjectionState {
     /// the flash deadline. TAction115 6E4150 / Sidebar6AC5F0.
     pub(crate) fn flash_cameo(
         &mut self,
-        type_id: InternedId,
+        category: ProductionCategory,
+        type_index: i32,
         duration: i32,
         frame: i32,
         interner: &crate::sim::intern::StringInterner,
@@ -865,19 +866,10 @@ impl SidebarProjectionState {
                 }
             }
         };
-        let Some(object) = interner
-            .try_resolve(type_id)
-            .and_then(|id| rules.object(id))
-        else {
-            return;
-        };
-        let Some(index) = index_of(CameoId::Object(type_id)) else {
-            return;
-        };
-        let tab = crate::ui::sidebar::SidebarTab::for_category(
-            crate::sim::production::category_for_object(object),
-        );
-        strips.flash_type_index(tab, index, duration, frame, index_of);
+        //6AC5F0 dispatches the selected native pointer's tab/index. Do not
+        //resolve its name again: broad object lookup can select another kind.
+        let tab = crate::ui::sidebar::SidebarTab::for_category(category);
+        strips.flash_type_index(tab, type_index, duration, frame, index_of);
     }
 
     pub(crate) fn set_scroll_row(&mut self, tab: crate::ui::sidebar::SidebarTab, row: usize) {

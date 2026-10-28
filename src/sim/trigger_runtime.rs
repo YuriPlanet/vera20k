@@ -89,7 +89,8 @@ pub enum TriggerEffect {
     },
     /// Execute115's named TechnoType cameo pulse, on the native frame clock.
     FlashSidebarCameo {
-        type_id: crate::sim::intern::InternedId,
+        category: crate::sim::production::ProductionCategory,
+        type_index: i32,
         duration: i32,
         frame: i32,
     },
@@ -4228,20 +4229,19 @@ impl Simulation {
                 //out of deterministic simulation; the UI owns actual admission.
             }
             115 => {
-                //6E4150 scans the common TechnoType array A8EB04 in reverse,
-                //with byte-exact names, then6AC5F0 dispatches its own class.
-                //Retail SOV01 uses the unique SAPC identity; duplicate names
-                //across type classes retain the rules owner's existing order.
-                let Some(object) = rules
-                    .all_objects()
-                    .filter(|object| object.id == action.inline_type_name())
-                    .last()
-                else {
+                // TAction::FlashCameo6E4150, original instructions: reverse
+                // exact-name search of the global constructor chronology.
+                // Sidebar6AC5F0 consumes that selected type's class/index;
+                // retain those facts instead of resolving its name again.
+                let Some(object) = rules.native_techno_type_exact(action.inline_type_name()) else {
                     return false;
                 };
-                let type_id = self.interner.intern(&object.id);
+                let Some(type_index) = rules.type_array_index(object.category, &object.id) else {
+                    return true;
+                };
                 effects.push(TriggerEffect::FlashSidebarCameo {
-                    type_id,
+                    category: crate::sim::production::category_for_object(object),
+                    type_index,
                     duration: value.unwrap_or(0),
                     frame: self.session.binary_frame() as i32,
                 });

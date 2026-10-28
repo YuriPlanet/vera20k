@@ -6431,7 +6431,7 @@ impl RuleSet {
         }
     }
 
-    /// TAction106's active6DF5D1 body compares stored IDs with exact case,
+    /// TAction106's active6DF5D1 and FlashCameo115's6E4150 compare IDs with exact case,
     /// scanning TechnoType::Array A8EB04/countA8EB10 backwards. This has
     /// different semantics from broad `object()` and subtype lookup.
     ///

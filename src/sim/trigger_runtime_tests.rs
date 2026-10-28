@@ -732,7 +732,10 @@ fn retail_sov01_transport_hint_emits_the_named_cameo_on_the_native_clock() {
         [
             TriggerEffect::SelectSidebarTab { index: 3 },
             TriggerEffect::FlashSidebarCameo {
-                type_id: sim.interner.get("SAPC").unwrap(),
+                category: crate::sim::production::ProductionCategory::Ship,
+                type_index: rules
+                    .type_array_index(crate::rules::object_type::ObjectCategory::Vehicle, "SAPC")
+                    .unwrap(),
                 duration: 100,
                 frame: 0x7FFF_FFF0,
             }

@@ -2019,7 +2019,8 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                 }
             }
             TriggerEffect::FlashSidebarCameo {
-                type_id,
+                category,
+                type_index,
                 duration,
                 frame,
             } => {
@@ -2030,7 +2031,8 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                         .match_presentation
                         .sidebar_projection
                         .flash_cameo(
-                            *type_id,
+                            *category,
+                            *type_index,
                             *duration,
                             *frame,
                             runtime.simulation.interner(),
