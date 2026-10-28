@@ -15,7 +15,7 @@ use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::CellListInsertion;
 use crate::sim::superweapon::chronosphere_tests::{
-    charge_super, click, place, retail_rules_with_sequences, step, world_with,
+    charge_super, click, place, retail_rules_binding, step, world_with,
 };
 use crate::sim::world::{SimSoundEvent, Simulation};
 use serde_json::Value;
@@ -736,7 +736,7 @@ fn a_dog_dies_with_die1_instead_of_mutating() {
 
 /// Retail rules with the launch's anims and the infantry sequences bound.
 fn retail_rules() -> Option<RuleSet> {
-    retail_rules_with_sequences(&[("RING1", 15), ("GENDEATH", 20)])
+    retail_rules_binding(&[("RING1", 15), ("GENDEATH", 20)])
 }
 
 /// Steps until no GENDEATH anim is left, at most `frames` frames.

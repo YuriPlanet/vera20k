@@ -17,14 +17,7 @@ use crate::sim::movement::infantry_action::{DO_DEPLOY, DO_DEPLOYED, DO_DEPLOYED_
 use crate::sim::world::Simulation;
 
 fn retail_rules() -> Option<RuleSet> {
-    let art = crate::rules::retail_ini_fixture::retail_ini("artmd.ini")?;
-    let mut rules = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()?;
-    // The app's ART sequence binding, without which an infantryman's
-    // Do_Action refuses an action his sequence holds.
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
-    Some(rules)
+    crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()
 }
 
 /// The flat arena with the computer `Russians` and the human `Americans`.

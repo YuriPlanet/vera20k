@@ -209,14 +209,18 @@ pub fn retail_rulesmd_rules() -> Option<crate::rules::ruleset::RuleSet> {
     .map(crate::rules::ruleset::RuleSet::with_fresh_serial)
 }
 
-/// [`retail_unlayered_rules`] with `artmd.ini`'s art data installed, as the
-/// app installs it before a scenario starts.
+/// [`retail_unlayered_rules`] with `artmd.ini`'s art data installed and its
+/// infantry sequences bound, as the app does before a scenario starts.
+/// Without the sequences a killed infantryman's Die request has no frames,
+/// Do_Action refuses it (`0x0051D70F`) and he revives at Health 1.
 pub fn retail_unlayered_rules_with_art() -> Option<crate::rules::ruleset::RuleSet> {
     once_per_process("rulesmd.ini over artmd.ini, with art data", || {
         let mut rules = retail_unlayered_rules()?;
-        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&retail_ini(
-            "artmd.ini",
-        )?));
+        let art = retail_ini("artmd.ini")?;
+        rules.install_art_data(art_registry(&art));
+        rules.bind_animation_sequences(
+            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
+        );
         Some(rules)
     })
     .map(crate::rules::ruleset::RuleSet::with_fresh_serial)

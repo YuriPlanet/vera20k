@@ -10,7 +10,7 @@ use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
 use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::superweapon::chronosphere_tests::{
-    charge_super, click, place, retail_rules_with_sequences, world_with,
+    charge_super, click, place, retail_rules_binding, world_with,
 };
 use crate::sim::superweapon::invulnerability::InvulnKind;
 use crate::sim::world::{SimSoundEvent, Simulation};
@@ -774,7 +774,7 @@ fn curtained_infantry_die_and_announce_each_loss() {
 /// 750 frames; the conscript beside it killed by its Strength.
 #[test]
 fn retail_iron_curtain_through_production_frames() {
-    let Some(rules) = retail_rules_with_sequences(&[]) else {
+    let Some(rules) = retail_rules_binding(&[]) else {
         return;
     };
     assert_eq!(rules.general.iron_curtain_duration, 750);

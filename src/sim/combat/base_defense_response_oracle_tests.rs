@@ -71,16 +71,10 @@ fn native_base_response_dispatch_matches_14_represented_original_tails() {
     use crate::sim::combat::Health;
     use crate::sim::rng::{SimRng, trace_draws};
     use crate::sim::timer::CdTimer;
-    let Some(art) = crate::rules::retail_ini_fixture::retail_ini("artmd.ini") else {
-        return;
-    };
     let Some(mut rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()
     else {
         return;
     };
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     let base_delay = rules.general.base_defense_delay_minutes;
     let native = corpus();
     let mut compared = 0;
