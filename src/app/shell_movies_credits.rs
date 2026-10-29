@@ -5,7 +5,6 @@
 
 use crate::sim::trigger_runtime::ThemeRequest;
 use crate::ui::shell::list::ListMetrics;
-use std::sync::Arc;
 use std::time::Instant;
 
 use super::{App, AppState};
@@ -267,8 +266,8 @@ impl App {
         let file_name = format!("{stem}.BIK");
         let resolved = state.process_assets.manager().and_then(|assets| {
             assets
-                .get_with_source_ref(&file_name)
-                .map(|(bytes, source)| (Arc::<[u8]>::from(bytes), source.to_string()))
+                .get_shared_with_source(&file_name)
+                .map(|(bytes, source)| (bytes, source.to_string()))
         });
         let Some((bytes, source)) = resolved else {
             // No .BIK (and no VQA decoder is needed: retail YR ships none):
@@ -277,7 +276,7 @@ impl App {
             Self::return_from_fullscreen_movie(state, return_to);
             return;
         };
-        let surface = match crate::render::bink_movie::BinkMovieSurface::from_bytes(
+        let surface = match crate::render::bink_movie::BinkMovieSurface::from_shared(
             &state.renderer.gpu,
             &state.renderer.batch_renderer,
             bytes,

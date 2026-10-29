@@ -428,9 +428,10 @@ mod tests {
 
     #[test]
     fn invalid_header_start_count_disables_live_preview_markers() {
-        let ini = IniFile::from_str(
-            "[Header]\nStartX=0\nStartY=0\nWidth=100\nHeight=80\nNumberStartingPoints=9\n",
-        );
+        let invalid_count = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT + 1;
+        let ini = IniFile::from_str(&format!(
+            "[Header]\nStartX=0\nStartY=0\nWidth=100\nHeight=80\nNumberStartingPoints={invalid_count}\n"
+        ));
         let entry = read_map_menu_entry_from_ini(&ini, "test.map");
         assert_eq!(entry.preview_source_bounds, None);
     }

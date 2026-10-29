@@ -11,7 +11,6 @@
 //! full native copy/final-paint and saved raw Radar fields remain unproven.
 
 use std::collections::VecDeque;
-use std::sync::Arc;
 
 use crate::app::AppState;
 use crate::app::movie_playback::MoviePlayback;
@@ -169,13 +168,13 @@ pub(crate) fn enqueue(state: &mut AppState, index: i32, pause_simulation: bool) 
     let file_name = format!("{stem}.BIK");
     let Some((bytes, source)) = state.process_assets.manager().and_then(|assets| {
         assets
-            .get_with_source_ref(&file_name)
-            .map(|(bytes, source)| (Arc::<[u8]>::from(bytes), source.to_string()))
+            .get_shared_with_source(&file_name)
+            .map(|(bytes, source)| (bytes, source.to_string()))
     }) else {
         log::info!("Radar movie {file_name} is not installed");
         return;
     };
-    match BinkMovieSurface::from_bytes(
+    match BinkMovieSurface::from_shared(
         &state.renderer.gpu,
         &state.renderer.batch_renderer,
         bytes,

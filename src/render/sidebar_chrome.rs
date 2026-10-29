@@ -804,19 +804,17 @@ fn build_theme_atlas(
 
     let mut repair_frame_entries: [Option<RenderedChromeEntry>; 5] = Default::default();
     for (frame, slot) in repair_frame_entries.iter_mut().enumerate() {
-        let entry = render_side_entry(side_route, "repair.shp", &generic_palette, frame);
-        if entry.is_none() && frame > 0 {
-            log::warn!("repair.shp frame {frame} missing in MIX");
-        }
+        let (entry, outcome) =
+            render_side_entry_diagnosed(side_route, "repair.shp", &generic_palette, frame);
+        note_chrome_frame_outcome("repair.shp", frame, outcome);
         *slot = entry;
     }
 
     let mut sell_frame_entries: [Option<RenderedChromeEntry>; 5] = Default::default();
     for (frame, slot) in sell_frame_entries.iter_mut().enumerate() {
-        let entry = render_side_entry(side_route, "sell.shp", &generic_palette, frame);
-        if entry.is_none() && frame > 0 {
-            log::warn!("sell.shp frame {frame} missing in MIX");
-        }
+        let (entry, outcome) =
+            render_side_entry_diagnosed(side_route, "sell.shp", &generic_palette, frame);
+        note_chrome_frame_outcome("sell.shp", frame, outcome);
         *slot = entry;
     }
 
@@ -1365,9 +1363,63 @@ fn render_side_entry(
     palette: &Palette,
     frame_index: usize,
 ) -> Option<RenderedChromeEntry> {
-    let resolved = route.resolve_generic_shp(shp_name)?;
-    let shp = ShpFile::from_bytes(resolved.bytes).ok()?;
-    render_shp(&shp, palette, frame_index)
+    render_side_entry_diagnosed(route, shp_name, palette, frame_index).0
+}
+
+/// [`Self::render_side_entry`] plus why nothing rendered, so a short retail
+/// file can stay quiet while an unreadable one still warns.
+fn render_side_entry_diagnosed(
+    route: SidebarSideRoute<'_>,
+    shp_name: &str,
+    palette: &Palette,
+    frame_index: usize,
+) -> (Option<RenderedChromeEntry>, ChromeFrameOutcome) {
+    let Some(resolved) = route.resolve_generic_shp(shp_name) else {
+        return (None, ChromeFrameOutcome::Unreadable);
+    };
+    let Ok(shp) = ShpFile::from_bytes(resolved.bytes) else {
+        return (None, ChromeFrameOutcome::Unreadable);
+    };
+    let frames = shp.frames.len();
+    match render_shp(&shp, palette, frame_index) {
+        Some(entry) => (Some(entry), ChromeFrameOutcome::Rendered),
+        None => (None, ChromeFrameOutcome::BeyondFile { frames }),
+    }
+}
+
+/// Why a chrome frame did not render. Retail `repair.shp`/`sell.shp` ship only
+/// two of the five frames the tab convention uses, so a short file is expected
+/// for those and must not warn; an unreadable file or a missing idle frame is
+/// the case a device log actually needs.
+enum ChromeFrameOutcome {
+    Rendered,
+    /// The file is absent or undecodable: the gadget has no art at all.
+    Unreadable,
+    /// The file exists but stops before `frame_index` (`render_shp` clamps or
+    /// returns `None`). Retail ships such short files by design.
+    BeyondFile { frames: usize },
+}
+
+/// Log only the outcomes that need attention. A retail file with fewer frames
+/// than the five-state convention is normal for these two gadgets and the draw
+/// already falls back to the idle frame, so warning per frame per mission only
+/// buries real failures in the log.
+fn note_chrome_frame_outcome(shp_name: &str, frame: usize, outcome: ChromeFrameOutcome) {
+    match outcome {
+        ChromeFrameOutcome::Rendered => {}
+        ChromeFrameOutcome::Unreadable => {
+            log::warn!("{shp_name} frame {frame} unavailable in MIX — the gadget has no art");
+        }
+        ChromeFrameOutcome::BeyondFile { frames } => {
+            if frame == 0 {
+                log::warn!("{shp_name} has no frame 0 ({frames} frames) — the gadget is invisible");
+            } else {
+                log::debug!(
+                    "{shp_name} ships {frames} frame(s); state {frame} falls back to idle"
+                );
+            }
+        }
+    }
 }
 
 /// Preserve the existing theme-specific direct lookup domain for radar,
