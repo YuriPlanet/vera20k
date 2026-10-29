@@ -412,6 +412,13 @@ impl TerrainDrawRenderer {
         self.submission.closed_passes()
     }
 
+    #[cfg(feature = "horizon-frame-profile")]
+    pub(crate) fn submission_profile(
+        &self,
+    ) -> (usize, usize, std::time::Duration, std::time::Duration) {
+        self.submission.profile()
+    }
+
     /// Called after composition resize and after the optional upscale depth
     /// swap. Bindings track both concrete source handles, not only dimensions.
     pub(crate) fn prepare(

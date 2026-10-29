@@ -28,6 +28,10 @@ use winit::window::Window;
 #[path = "gpu_memory.rs"]
 mod memory;
 
+#[cfg(all(target_os = "horizon", feature = "horizon-frame-profile"))]
+#[path = "gpu_profile.rs"]
+mod profile;
+
 /// A platform window and logical drawable size for wgpu surface creation.
 ///
 /// `surface_handle` returns an owned handle. A native backend must keep the
@@ -158,6 +162,8 @@ pub struct GpuContext {
     /// Exact identity returned by the adapter that backs this context.
     adapter_info: wgpu::AdapterInfo,
     capture_target: Option<CaptureTarget>,
+    #[cfg(all(target_os = "horizon", feature = "horizon-frame-profile"))]
+    pub(crate) profile: Mutex<profile::GpuProfile>,
     #[cfg(target_os = "horizon")]
     _memory_monitor: Option<memory::Monitor>,
 }
@@ -244,11 +250,26 @@ impl GpuContext {
                 .min(MAX_USEFUL_TEXTURE_DIM),
             ..wgpu::Limits::default()
         };
+        let required_features = wgpu::Features::empty();
+        #[cfg(all(target_os = "horizon", feature = "horizon-frame-profile"))]
+        let required_features = {
+            let supported = adapter.features();
+            log::info!(
+                target: "switch::perf",
+                "GPU adapter timestamp_features={:?}",
+                supported & profile::FEATURES
+            );
+            if supported.contains(profile::FEATURES) {
+                profile::FEATURES
+            } else {
+                required_features
+            }
+        };
         log::info!("gpu_device_request_started");
         let (device, queue): (wgpu::Device, wgpu::Queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("RA2 Device"),
-                required_features: wgpu::Features::empty(),
+                required_features,
                 required_limits,
                 ..Default::default()
             })
@@ -352,6 +373,8 @@ impl GpuContext {
 
         #[cfg(target_os = "horizon")]
         let memory_monitor = memory::Monitor::start(&device);
+        #[cfg(all(target_os = "horizon", feature = "horizon-frame-profile"))]
+        let profile = Mutex::new(profile::GpuProfile::new(&device, &queue));
         Ok(Self {
             surface: Mutex::new(surface),
             instance,
@@ -362,6 +385,8 @@ impl GpuContext {
             surface_format,
             adapter_info,
             capture_target,
+            #[cfg(all(target_os = "horizon", feature = "horizon-frame-profile"))]
+            profile,
             #[cfg(target_os = "horizon")]
             _memory_monitor: memory_monitor,
         })

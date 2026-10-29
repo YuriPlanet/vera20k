@@ -4,6 +4,13 @@ use anyhow::{Context, Result};
 
 const DIRECTORY: &str = "sdmc:/switch/vera20k";
 
+#[cfg(feature = "horizon-frame-profile")]
+#[unsafe(no_mangle)]
+unsafe extern "C" fn platform_perf_log(message: *const std::ffi::c_char) {
+    let message = unsafe { std::ffi::CStr::from_ptr(message) };
+    log::info!(target: "switch::perf", "{}", message.to_string_lossy());
+}
+
 // C diagnostics use the same persistent logger as the client.
 #[unsafe(no_mangle)]
 unsafe extern "C" fn platform_fps_log(message: *const std::ffi::c_char) {
@@ -62,6 +69,13 @@ fn run_mounted(romfs_mounted: bool) -> Result<()> {
     // GPU, applet and audio initialization consume kernel sessions. Connect to
     // the optional SaltyNX reporter before them so its port gets a free slot.
     unsafe { platform_fps_start() };
+    #[cfg(feature = "horizon-frame-profile")]
+    log::info!(
+        target: "switch::perf",
+        "Hardware profiling build={} target=horizon profile=release; \
+         emulator timings are functional validation only",
+        option_env!("VERA_SWITCH_BUILD").unwrap_or("unspecified")
+    );
     install_worker_pool();
     log::info!("Starting shared VERA20k client on Horizon");
     log::info!("romfs_mounted={romfs_mounted}");
@@ -77,6 +91,19 @@ fn install_worker_pool() {
     let workers = vera20k::util::parallel::worker_count();
     match rayon::ThreadPoolBuilder::new()
         .num_threads(workers)
+        .thread_name(|index| format!("rayon-{index}"))
+        .start_handler(|index| {
+            #[cfg(feature = "horizon-frame-profile")]
+            {
+                unsafe extern "C" {
+                    fn platform_perf_thread_name(name: *const std::ffi::c_char);
+                }
+                let name = std::ffi::CString::new(format!("rayon-{index}")).unwrap();
+                unsafe { platform_perf_thread_name(name.as_ptr()) };
+            }
+            #[cfg(not(feature = "horizon-frame-profile"))]
+            let _ = index;
+        })
         .build_global()
     {
         Ok(()) => log::info!("Global worker pool: {workers} thread(s)"),

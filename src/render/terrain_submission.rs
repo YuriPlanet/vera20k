@@ -23,8 +23,12 @@ pub(super) struct PassSubmission {
     pending_passes: usize,
     submissions: usize,
     /// Every pass closed this frame, for replay pass-count tests.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "horizon-frame-profile"))]
     closed_passes: usize,
+    #[cfg(feature = "horizon-frame-profile")]
+    finish_time: std::time::Duration,
+    #[cfg(feature = "horizon-frame-profile")]
+    submit_time: std::time::Duration,
 }
 
 impl PassSubmission {
@@ -34,8 +38,12 @@ impl PassSubmission {
             queue: queue.clone(),
             pending_passes: 0,
             submissions: 0,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "horizon-frame-profile"))]
             closed_passes: 0,
+            #[cfg(feature = "horizon-frame-profile")]
+            finish_time: std::time::Duration::ZERO,
+            #[cfg(feature = "horizon-frame-profile")]
+            submit_time: std::time::Duration::ZERO,
         }
     }
 
@@ -45,7 +53,12 @@ impl PassSubmission {
     pub(super) fn reset_frame(&mut self) {
         self.pending_passes = 0;
         self.submissions = 0;
-        #[cfg(test)]
+        #[cfg(feature = "horizon-frame-profile")]
+        {
+            self.finish_time = std::time::Duration::ZERO;
+            self.submit_time = std::time::Duration::ZERO;
+        }
+        #[cfg(any(test, feature = "horizon-frame-profile"))]
         {
             self.closed_passes = 0;
         }
@@ -61,11 +74,21 @@ impl PassSubmission {
         self.closed_passes
     }
 
+    #[cfg(feature = "horizon-frame-profile")]
+    pub(super) fn profile(&self) -> (usize, usize, std::time::Duration, std::time::Duration) {
+        (
+            self.closed_passes,
+            self.submissions,
+            self.finish_time,
+            self.submit_time,
+        )
+    }
+
     /// The caller has ended every pass counted here. Account for each small
     /// replay group immediately, rather than after an unbounded list of waves.
     pub(super) fn note_closed_passes(&mut self, encoder: &mut wgpu::CommandEncoder, passes: usize) {
         self.pending_passes += passes;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "horizon-frame-profile"))]
         {
             self.closed_passes += passes;
         }
@@ -78,7 +101,17 @@ impl PassSubmission {
                 label: Some("Native object replay continuation"),
             });
         let completed = std::mem::replace(encoder, next);
-        self.queue.submit([completed.finish()]);
+        #[cfg(feature = "horizon-frame-profile")]
+        let started = std::time::Instant::now();
+        let commands = completed.finish();
+        #[cfg(feature = "horizon-frame-profile")]
+        let finished = std::time::Instant::now();
+        self.queue.submit([commands]);
+        #[cfg(feature = "horizon-frame-profile")]
+        {
+            self.finish_time += finished - started;
+            self.submit_time += finished.elapsed();
+        }
         self.pending_passes = 0;
         self.submissions += 1;
     }

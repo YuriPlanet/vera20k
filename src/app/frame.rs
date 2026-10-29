@@ -13,7 +13,13 @@ use super::{
 #[derive(Default)]
 struct HorizonFrameTiming {
     frames: u32,
-    sums: [std::time::Duration; 10],
+    sums: [std::time::Duration; 11],
+    intervals: Vec<std::time::Duration>,
+    service_calls: u32,
+    main_admitted: u32,
+    paced_returns: u32,
+    #[cfg(feature = "horizon-frame-profile")]
+    replay: (usize, usize, std::time::Duration, std::time::Duration),
     previous_complete: Option<Instant>,
     next_log: Option<Instant>,
 }
@@ -30,7 +36,12 @@ thread_local! {
 /// between completed iterations, so the row sum also exposes event-loop or
 /// driver time that is not owned by a named stage.
 #[cfg(target_os = "horizon")]
-fn record_horizon_frame(phases: [std::time::Duration; 9], active: bool) {
+fn record_horizon_frame(
+    phases: [std::time::Duration; 10],
+    active: bool,
+    resolution: [u32; 4],
+    render_budget: std::time::Duration,
+) {
     HORIZON_FRAME_TIMING.with_borrow_mut(|timing| {
         if !active {
             *timing = HorizonFrameTiming::default();
@@ -40,6 +51,9 @@ fn record_horizon_frame(phases: [std::time::Duration; 9], active: bool) {
         let total = timing
             .previous_complete
             .map_or(std::time::Duration::ZERO, |previous| now - previous);
+        if timing.previous_complete.is_some() {
+            timing.intervals.push(total);
+        }
         timing.previous_complete = Some(now);
         timing.frames = timing.frames.saturating_add(1);
         for (sum, phase) in timing
@@ -62,6 +76,7 @@ fn record_horizon_frame(phases: [std::time::Duration; 9], active: bool) {
             prepare,
             acquire,
             encode,
+            finish,
             submit,
             present,
             tail,
@@ -72,11 +87,65 @@ fn record_horizon_frame(phases: [std::time::Duration; 9], active: bool) {
             target: "switch::perf",
             "Frame CPU average over {} frames: service={service:.2}ms pace={pace:.2}ms \
              prepare={prepare:.2}ms acquire={acquire:.2}ms encode={encode:.2}ms \
-             submit={submit:.2}ms present={present:.2}ms tail={tail:.2}ms \
+             finish={finish:.2}ms submit={submit:.2}ms present={present:.2}ms tail={tail:.2}ms \
              catch_up={catch_up:.2}ms total={total:.2}ms",
             timing.frames,
         );
+        timing.intervals.sort_unstable();
+        let intervals = &timing.intervals;
+        let percentile = |fraction: f64| {
+            let index = (intervals.len() as f64 * fraction).ceil() as usize;
+            intervals
+                .get(index.saturating_sub(1))
+                .copied()
+                .unwrap_or_default()
+                .as_secs_f64()
+                * 1000.0
+        };
+        let over_budget = intervals
+            .iter()
+            .filter(|&&span| span > render_budget)
+            .count();
+        log::info!(
+            target: "switch::perf",
+            "Frame intervals samples={} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} \
+             over_budget={} budget_ms={:.2} surface={}x{} render={}x{} service_calls={} \
+             main_admitted={} paced_returns={}; stages=wall_time",
+            intervals.len(),
+            percentile(0.5),
+            percentile(0.95),
+            percentile(0.99),
+            intervals
+                .last()
+                .copied()
+                .unwrap_or_default()
+                .as_secs_f64()
+                * 1000.0,
+            over_budget,
+            render_budget.as_secs_f64() * 1000.0,
+            resolution[0],
+            resolution[1],
+            resolution[2],
+            resolution[3],
+            timing.service_calls,
+            timing.main_admitted,
+            timing.paced_returns,
+        );
+        #[cfg(feature = "horizon-frame-profile")]
+        {
+            let (passes, submits, finish, submit) = timing.replay;
+            log::info!(
+                target: "switch::perf",
+                "Replay per frame passes={:.2} internal_submits={:.2} finish_ms={:.3} \
+                 submit_ms={:.3}; included_in_encode=true",
+                passes as f64 / timing.frames.max(1) as f64,
+                submits as f64 / timing.frames.max(1) as f64,
+                finish.as_secs_f64() * scale as f64,
+                submit.as_secs_f64() * scale as f64,
+            );
+        }
         *timing = HorizonFrameTiming {
+            previous_complete: Some(now),
             next_log: Some(now + std::time::Duration::from_secs(10)),
             ..Default::default()
         };
@@ -548,6 +617,13 @@ impl App {
         );
         #[cfg(target_os = "horizon")]
         let horizon_after_service = Instant::now();
+        #[cfg(target_os = "horizon")]
+        if state.frontend.screen == GameScreen::InGame {
+            HORIZON_FRAME_TIMING.with_borrow_mut(|timing| {
+                timing.service_calls += 1;
+                timing.main_admitted += u32::from(runtime_pass.main_tick_admitted);
+            });
+        }
         if runtime_pass.quit_requested {
             return Ok(());
         }
@@ -586,6 +662,7 @@ impl App {
                     // present lands on the selected boundary instead of arriving
                     // up to one 4 ms slice late.
                     if remaining > slice {
+                        HORIZON_FRAME_TIMING.with_borrow_mut(|timing| timing.paced_returns += 1);
                         return Ok(());
                     }
                 }
@@ -659,6 +736,19 @@ impl App {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("Frame"),
                 });
+        #[cfg(all(target_os = "horizon", feature = "horizon-frame-profile"))]
+        let gpu_profile_sample = state
+            .renderer
+            .gpu
+            .profile
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .begin(
+                &state.renderer.gpu.device,
+                &mut encoder,
+                state.frontend.screen == GameScreen::InGame
+                    && !state.match_state.match_presentation.in_game_menu.is_open(),
+            );
         let mut pending_main_menu_entry_token = None;
         let mut pending_main_menu_title_receipt = None;
         use crate::app::diagnostics::shell_capture::PresentedShell;
@@ -1131,11 +1221,22 @@ impl App {
         };
         #[cfg(target_os = "horizon")]
         let horizon_before_submit = Instant::now();
-        let submission = state
-            .renderer
-            .gpu
-            .queue
-            .submit(std::iter::once(encoder.finish()));
+        #[cfg(all(target_os = "horizon", feature = "horizon-frame-profile"))]
+        if let Some(sample) = gpu_profile_sample
+            && game_render_output.is_some()
+        {
+            state
+                .renderer
+                .gpu
+                .profile
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .end(&mut encoder, sample);
+        }
+        let commands = encoder.finish();
+        #[cfg(target_os = "horizon")]
+        let horizon_after_finish = Instant::now();
+        let submission = state.renderer.gpu.queue.submit(std::iter::once(commands));
         #[cfg(target_os = "horizon")]
         let horizon_after_submit = Instant::now();
         crate::render::present::present(output);
@@ -1267,6 +1368,17 @@ impl App {
         if catch_up_allowed {
             Self::catch_up_match_runtime(state, event_loop);
         }
+        #[cfg(all(target_os = "horizon", feature = "horizon-frame-profile"))]
+        if game_render_output.is_some() {
+            let (passes, submits, finish, submit) =
+                state.renderer.terrain_draw_renderer.submission_profile();
+            HORIZON_FRAME_TIMING.with_borrow_mut(|timing| {
+                timing.replay.0 += passes;
+                timing.replay.1 += submits;
+                timing.replay.2 += finish;
+                timing.replay.3 += submit;
+            });
+        }
         #[cfg(target_os = "horizon")]
         record_horizon_frame(
             [
@@ -1275,12 +1387,22 @@ impl App {
                 horizon_before_acquire - horizon_after_pace,
                 horizon_after_acquire - horizon_before_acquire,
                 horizon_before_submit - horizon_after_acquire,
-                horizon_after_submit - horizon_before_submit,
+                horizon_after_finish - horizon_before_submit,
+                horizon_after_submit - horizon_after_finish,
                 horizon_after_present - horizon_after_submit,
                 horizon_before_catch_up - horizon_after_present,
                 Instant::now() - horizon_before_catch_up,
             ],
-            state.frontend.screen == GameScreen::InGame,
+            state.frontend.screen == GameScreen::InGame
+                && !state.match_state.match_presentation.in_game_menu.is_open()
+                && game_render_output.is_some(),
+            [
+                state.renderer.gpu.config.width,
+                state.renderer.gpu.config.height,
+                state.render_width(),
+                state.render_height(),
+            ],
+            state.persistence.options_profile.switch_render_interval(),
         );
 
         Ok(())
