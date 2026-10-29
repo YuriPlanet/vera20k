@@ -1,6 +1,5 @@
 //! Initial main-menu shell render glue for dialog 0xE2.
 
-use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Result;
@@ -320,16 +319,17 @@ pub(crate) fn ensure_movie_for_current_layout(
     };
     let asset_name = layout.movie_base.asset_name();
 
-    let Some((bytes, source)) = menu_movie_bytes(assets, asset_name, yr_original_style) else {
+    let Some((bytes, source)) = menu_movie_shared_bytes(assets, asset_name, yr_original_style)
+    else {
         log::warn!("Missing main-menu movie asset {asset_name}");
         state.frontend.main_menu_shell_error = Some(format!("Missing menu movie: {asset_name}"));
         return Ok(());
     };
 
-    let movie = match crate::render::bink_movie::BinkMovieSurface::from_bytes(
+    let movie = match crate::render::bink_movie::BinkMovieSurface::from_shared(
         &state.renderer.gpu,
         &state.renderer.batch_renderer,
-        Arc::<[u8]>::from(bytes),
+        bytes,
         source.to_string(),
         true,
         wgpu::FilterMode::Nearest,
@@ -363,18 +363,17 @@ pub(crate) fn ensure_movie_for_current_layout(
 /// lookup. The unchecked default requires the named member from
 /// [`RA2_MOVIE_ARCHIVE`]; a missing RA2 copy is reported instead of silently
 /// resolving the YR member with the same name.
-fn menu_movie_bytes<'a>(
+fn menu_movie_shared_bytes<'a>(
     assets: &'a crate::assets::asset_manager::AssetManager,
     asset_name: &str,
     yr_original_style: bool,
-) -> Option<(&'a [u8], &'a str)> {
+) -> Option<(crate::assets::mix_archive::SharedBytes, &'a str)> {
     let resolver = ShellUiAssetResolver::new(assets, yr_original_style);
     resolver
-        .resolve(ShellUiAssetPair::new(
+        .resolve_shared(ShellUiAssetPair::new(
             ShellUiAssetLocator::archive(asset_name, RA2_MOVIE_ARCHIVE),
             ShellUiAssetLocator::active(asset_name),
         ))
-        .map(|asset| (asset.bytes, asset.source))
         .map_err(|err| {
             log::warn!("Could not resolve {asset_name} for the selected shell style: {err:#}")
         })
@@ -931,18 +930,22 @@ mod tests {
         // The large loop ships in both games' archives: the default uses RA2,
         // while the option uses the active Yuri's Revenge copy.
         let large = MainMenuMovieBase::Ra2tsL.asset_name();
-        let (ra2, ra2_source) = menu_movie_bytes(&assets, large, false).expect("RA2 large loop");
-        let (yr, yr_source) = menu_movie_bytes(&assets, large, true).expect("YR large loop");
+        let (ra2, ra2_source) =
+            menu_movie_shared_bytes(&assets, large, false).expect("RA2 large loop");
+        let (yr, yr_source) =
+            menu_movie_shared_bytes(&assets, large, true).expect("YR large loop");
         assert_eq!((ra2_source, yr_source), (RA2_MOVIE_ARCHIVE, "langmd.mix"));
-        assert!(ra2 != yr, "both looks play the same large loop");
+        assert!(&*ra2 != &*yr, "both looks play the same large loop");
         // The 640-wide loop ships only in language.mix, so both looks play it.
         let small = MainMenuMovieBase::Ra2tsS.asset_name();
-        let (ra2, ra2_source) = menu_movie_bytes(&assets, small, false).expect("small loop");
-        let (yr, yr_source) = menu_movie_bytes(&assets, small, true).expect("small loop");
+        let (ra2, ra2_source) =
+            menu_movie_shared_bytes(&assets, small, false).expect("small loop");
+        let (yr, yr_source) =
+            menu_movie_shared_bytes(&assets, small, true).expect("small loop");
         assert_eq!(
             (yr_source, ra2_source),
             (RA2_MOVIE_ARCHIVE, RA2_MOVIE_ARCHIVE)
         );
-        assert!(yr == ra2, "the small loop differs between looks");
+        assert!(&*yr == &*ra2, "the small loop differs between looks");
     }
 }

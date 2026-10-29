@@ -8,6 +8,7 @@
 //! RA2 copy is diagnosable instead of silently resolving the active YR asset.
 
 use crate::assets::asset_manager::AssetManager;
+use crate::assets::mix_archive::SharedBytes;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ShellUiAssetSource {
@@ -104,6 +105,39 @@ impl<'a> ShellUiAssetResolver<'a> {
                     anyhow::anyhow!("missing shell style member {} in {source}", locator.member)
                 })?;
                 Ok(ShellUiAssetRef { bytes, source })
+            }
+        }
+    }
+
+    /// Resolve the same source-selection winner without copying its payload.
+    pub(crate) fn resolve_shared(
+        &self,
+        pair: ShellUiAssetPair<'_>,
+    ) -> anyhow::Result<(SharedBytes, &'a str)> {
+        let locator = if self.yr_original_style {
+            pair.yr
+        } else {
+            pair.ra2
+        };
+        match locator.source {
+            ShellUiAssetSource::Active => self
+                .assets
+                .get_shared_with_source(locator.member)
+                .ok_or_else(|| anyhow::anyhow!("missing active shell asset {}", locator.member)),
+            ShellUiAssetSource::Archive(archive_name) => {
+                let (source, archive) =
+                    self.assets
+                        .archive_with_source(archive_name)
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "missing shell style archive {archive_name} for {}",
+                                locator.member
+                            )
+                        })?;
+                let bytes = archive.get_shared_by_name(locator.member).ok_or_else(|| {
+                    anyhow::anyhow!("missing shell style member {} in {source}", locator.member)
+                })?;
+                Ok((bytes, source))
             }
         }
     }

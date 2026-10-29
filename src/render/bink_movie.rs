@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::assets::bink_decode::{BinkDecoder, BinkFrame, ColorRange};
 use crate::assets::bink_file::BinkFile;
+use crate::assets::mix_archive::SharedBytes;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::gpu::GpuContext;
 
@@ -35,7 +36,43 @@ impl BinkMovieSurface {
         looping: bool,
         filter: wgpu::FilterMode,
     ) -> Result<Self, crate::assets::error::AssetError> {
-        let file = BinkFile::parse(bytes)?;
+        Self::from_file(
+            gpu,
+            batch,
+            BinkFile::parse(bytes)?,
+            source_archive,
+            looping,
+            filter,
+        )
+    }
+
+    /// Create a movie whose compressed payload remains shared with its MIX.
+    pub fn from_shared(
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        bytes: SharedBytes,
+        source_archive: String,
+        looping: bool,
+        filter: wgpu::FilterMode,
+    ) -> Result<Self, crate::assets::error::AssetError> {
+        Self::from_file(
+            gpu,
+            batch,
+            BinkFile::parse_shared(bytes)?,
+            source_archive,
+            looping,
+            filter,
+        )
+    }
+
+    fn from_file(
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        file: BinkFile,
+        source_archive: String,
+        looping: bool,
+        filter: wgpu::FilterMode,
+    ) -> Result<Self, crate::assets::error::AssetError> {
         let mut decoder = BinkDecoder::new(&file.header)?;
         let first_packet = file.video_packet(0)?;
         let frame = decoder.decode_frame(first_packet)?;
@@ -126,7 +163,7 @@ impl BinkMovieSurface {
             }
             let pkt = self.file.video_packet(self.current_frame)?;
             let frame = self.decoder.decode_frame(pkt)?;
-            self.rgba = frame_to_rgba(frame);
+            frame_to_rgba_into(frame, &mut self.rgba);
             self.current_frame += 1;
             changed = true;
         }
@@ -164,7 +201,7 @@ impl BinkMovieSurface {
         self.decoder.flush();
         let pkt = self.file.video_packet(0)?;
         let frame = self.decoder.decode_frame(pkt)?;
-        self.rgba = frame_to_rgba(frame);
+        frame_to_rgba_into(frame, &mut self.rgba);
         self.current_frame = 1;
         self.accumulator_secs = 0.0;
         Ok(())
@@ -172,9 +209,15 @@ impl BinkMovieSurface {
 }
 
 pub fn frame_to_rgba(frame: &BinkFrame) -> Vec<u8> {
+    let mut out = Vec::new();
+    frame_to_rgba_into(frame, &mut out);
+    out
+}
+
+fn frame_to_rgba_into(frame: &BinkFrame, out: &mut Vec<u8>) {
     let w = frame.width as usize;
     let h = frame.height as usize;
-    let mut out = vec![0u8; w * h * 4];
+    out.resize(w * h * 4, 0);
 
     for y in 0..h {
         for x in 0..w {
@@ -193,7 +236,6 @@ pub fn frame_to_rgba(frame: &BinkFrame) -> Vec<u8> {
             out[base + 3] = 255;
         }
     }
-    out
 }
 
 fn frames_due(accumulator: &mut f64, elapsed: f64, fps: f64, max: usize) -> usize {
@@ -259,5 +301,25 @@ mod tests {
         let mut acc = 0.0;
         assert_eq!(frames_due(&mut acc, 0.034, 15.0, 4), 0);
         assert_eq!(frames_due(&mut acc, 0.033, 15.0, 4), 1);
+    }
+
+    #[test]
+    fn rgba_conversion_reuses_its_buffer() {
+        let frame = BinkFrame {
+            width: 2,
+            height: 2,
+            color_range: ColorRange::Mpeg,
+            y: vec![16; 4].into_boxed_slice(),
+            stride_y: 2,
+            u: vec![128].into_boxed_slice(),
+            stride_uv: 1,
+            v: vec![128].into_boxed_slice(),
+        };
+        let mut rgba = Vec::new();
+        frame_to_rgba_into(&frame, &mut rgba);
+        let ptr = rgba.as_ptr();
+        frame_to_rgba_into(&frame, &mut rgba);
+        assert_eq!(rgba.as_ptr(), ptr);
+        assert_eq!(rgba, [0, 0, 0, 255].repeat(4));
     }
 }

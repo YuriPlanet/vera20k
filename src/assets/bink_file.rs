@@ -18,6 +18,7 @@
 use std::sync::Arc;
 
 use crate::assets::error::AssetError;
+use crate::assets::mix_archive::SharedBytes;
 use crate::util::read_helpers::{read_u16_le, read_u32_le};
 
 /// Bink file revision byte.
@@ -329,20 +330,44 @@ pub struct AudioPacket<'a> {
     pub bytes: &'a [u8],
 }
 
-/// Parsed Bink file owning its source bytes via `Arc` for cheap shareability.
+enum BinkSource {
+    Owned(Arc<[u8]>),
+    Shared(SharedBytes),
+}
+
+impl BinkSource {
+    fn as_slice(&self) -> &[u8] {
+        match self {
+            Self::Owned(bytes) => bytes,
+            Self::Shared(bytes) => bytes,
+        }
+    }
+}
+
+/// Parsed Bink file owning either a copied payload or a shared MIX slice.
 pub struct BinkFile {
     pub header: BinkHeader,
     pub frame_index: Vec<FrameIndexEntry>,
-    data: Arc<[u8]>,
+    data: BinkSource,
 }
 
 impl BinkFile {
     /// Parse a full `.bik` file from owned bytes.
     pub fn parse(data: Arc<[u8]>) -> Result<Self, AssetError> {
-        let (mut header, next) = parse_fixed_header(&data)?;
-        let next = parse_audio_tracks(&data, &mut header, next)?;
+        Self::parse_source(BinkSource::Owned(data))
+    }
+
+    /// Parse a `.bik` directly from MIX storage without copying the payload.
+    pub fn parse_shared(data: SharedBytes) -> Result<Self, AssetError> {
+        Self::parse_source(BinkSource::Shared(data))
+    }
+
+    fn parse_source(data: BinkSource) -> Result<Self, AssetError> {
+        let bytes = data.as_slice();
+        let (mut header, next) = parse_fixed_header(bytes)?;
+        let next = parse_audio_tracks(bytes, &mut header, next)?;
         header.frame_index_offset = next;
-        let frame_index = parse_frame_index(&data, &header, next)?;
+        let frame_index = parse_frame_index(bytes, &header, next)?;
         Ok(Self {
             header,
             frame_index,
@@ -362,7 +387,8 @@ impl BinkFile {
 
         let start = entry.offset as usize;
         let end = start + entry.size as usize;
-        if end > self.data.len() {
+        let data = self.data.as_slice();
+        if end > data.len() {
             return Err(AssetError::BinkError {
                 reason: format!("frame {} packet extends past EOF", i),
             });
@@ -376,7 +402,7 @@ impl BinkFile {
                     reason: format!("frame {} audio header truncated", i),
                 });
             }
-            let audio_size = read_u32_le(&self.data, cur) as usize;
+            let audio_size = read_u32_le(data, cur) as usize;
             cur += 4;
             if audio_size > end - cur {
                 return Err(AssetError::BinkError {
@@ -386,7 +412,7 @@ impl BinkFile {
             cur += audio_size;
         }
 
-        Ok(&self.data[cur..end])
+        Ok(&data[cur..end])
     }
 
     /// Return all audio packets for frame `i`, one per track.
@@ -401,6 +427,7 @@ impl BinkFile {
 
         let start = entry.offset as usize;
         let end = start + entry.size as usize;
+        let data = self.data.as_slice();
         let mut cur = start;
         let mut out = Vec::with_capacity(self.header.num_audio_tracks as usize);
 
@@ -410,7 +437,7 @@ impl BinkFile {
                     reason: format!("frame {} audio header truncated", i),
                 });
             }
-            let audio_size = read_u32_le(&self.data, cur) as usize;
+            let audio_size = read_u32_le(data, cur) as usize;
             let packet_start = cur + 4;
             let packet_end = packet_start + audio_size;
             if packet_end > end {
@@ -418,7 +445,7 @@ impl BinkFile {
                     reason: format!("frame {} audio packet overflows", i),
                 });
             }
-            let bytes = &self.data[packet_start..packet_end];
+            let bytes = &data[packet_start..packet_end];
             #[cfg(test)]
             let sample_count = if bytes.len() >= 4 {
                 u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
@@ -607,5 +634,25 @@ mod tests {
         assert_eq!(audios.len(), 1);
         assert_eq!(audios[0].bytes, &[1u8, 2, 3, 4, 5, 6, 7, 8]);
         assert_eq!(audios[0].sample_count, 0x04030201);
+    }
+
+    #[test]
+    fn shared_source_keeps_packets_in_the_original_backing() {
+        let mut h = make_biki_header();
+        let frame_offset = h.len() + 4;
+        let packet = [0xAA, 0xBB, 0xCC, 0xDD, 0x11, 0x22, 0x33, 0x44];
+        let file_size = frame_offset + packet.len();
+        h[0x04..0x08].copy_from_slice(&((file_size - 8) as u32).to_le_bytes());
+        h[0x0C..0x10].copy_from_slice(&(packet.len() as u32).to_le_bytes());
+        h.extend_from_slice(&(frame_offset as u32).to_le_bytes());
+        h.extend_from_slice(&packet);
+
+        let original: Arc<[u8]> = h.into();
+        let file = BinkFile::parse_shared(SharedBytes::from(original.clone())).unwrap();
+        assert_eq!(file.data.as_slice().as_ptr(), original.as_ptr());
+
+        let video = file.video_packet(0).unwrap();
+        assert_eq!(video, packet);
+        assert_eq!(video.as_ptr(), original[frame_offset..].as_ptr());
     }
 }

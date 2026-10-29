@@ -465,6 +465,7 @@ impl AssetManager {
     /// archives are implicitly registered; the probe may explicitly use the
     /// existing load_all_disk_mixes widening. Not a gameplay constructor.
     pub fn from_ini_probe_root(ra2_dir: &Path) -> Result<Self, AssetError> {
+        log_asset_root_listing(ra2_dir);
         Ok(Self {
             archives: Vec::new(),
             archive_catalog: Vec::new(),
@@ -774,14 +775,19 @@ impl AssetManager {
     /// [`Self::get_ref`]'s file as a share of its storage, for a reader that
     /// outlives the borrow (a theme song the audio device streams).
     pub fn get_shared(&self, name: &str) -> Option<SharedBytes> {
-        if let Some(bytes) = self
-            .loose_asset(name)
-            .and_then(|loose| loose.snapshot().clone())
+        self.get_shared_with_source(name).map(|(bytes, _)| bytes)
+    }
+
+    /// [`Self::get_with_source_ref`] without copying the payload or the source.
+    pub fn get_shared_with_source(&self, name: &str) -> Option<(SharedBytes, &str)> {
+        if let Some(loose) = self.loose_asset(name)
+            && let Some(bytes) = loose.snapshot().clone()
         {
-            return Some(bytes.into());
+            return Some((bytes.into(), loose.source_name.as_str()));
         }
         let (named, entry_id) = self.lookup_asset_entry(name)?;
-        named.archive.get_shared_by_id(entry_id)
+        let bytes = named.archive.get_shared_by_id(entry_id)?;
+        Some((bytes, named.name.as_str()))
     }
 
     /// Registered archive fallback for mutable loose-file owners. These callers
@@ -1737,6 +1743,39 @@ pub(crate) fn retail_enumerated_file(path: &Path) -> bool {
     #[cfg(not(windows))]
     {
         true
+    }
+}
+
+/// Publish the asset root's top-level entries. A packaged ROMFS whose media
+/// was never installed is indistinguishable from a missing SD game folder
+/// without this: the startup code only reports archives it registered.
+fn log_asset_root_listing(ra2_dir: &Path) {
+    let entries = match std::fs::read_dir(ra2_dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            log::warn!("Asset root {} cannot be enumerated: {}", ra2_dir.display(), error);
+            return;
+        }
+    };
+    let mut names = Vec::new();
+    for entry in entries {
+        let Ok(entry) = entry else { continue };
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let size = std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
+        let name = path.file_name().and_then(OsStr::to_str).unwrap_or("?");
+        names.push(format!("{name}({size})"));
+    }
+    names.sort();
+    log::info!(
+        "Asset root {} holds {} top-level file(s)",
+        ra2_dir.display(),
+        names.len()
+    );
+    for chunk in names.chunks(12) {
+        log::info!("  {}", chunk.join(" "));
     }
 }
 

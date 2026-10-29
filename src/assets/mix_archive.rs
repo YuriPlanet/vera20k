@@ -191,6 +191,12 @@ impl SharedBytes {
     }
 }
 
+impl AsRef<[u8]> for SharedBytes {
+    fn as_ref(&self) -> &[u8] {
+        self
+    }
+}
+
 impl std::ops::Deref for SharedBytes {
     type Target = [u8];
 
@@ -332,6 +338,11 @@ impl MixArchive {
     pub fn get_shared_by_id(&self, id: i32) -> Option<SharedBytes> {
         let index: usize = self.entries.binary_search_by_key(&id, |e| e.id).ok()?;
         self.entry_view(&self.entries[index]).map(SharedBytes)
+    }
+
+    /// [`Self::get_by_name`] as a share of the archive storage.
+    pub fn get_shared_by_name(&self, name: &str) -> Option<SharedBytes> {
+        self.get_shared_by_id(mix_hash(name))
     }
 
     /// Parse a child MIX archive directly from an entry without copying its bytes.
