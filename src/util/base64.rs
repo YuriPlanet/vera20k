@@ -11,62 +11,73 @@
 /// Skips any whitespace/newline characters (map files store base64 data across
 /// multiple numbered INI lines). Returns an error if invalid characters are found.
 pub fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
-    // Build a flat buffer of 6-bit values, skipping whitespace.
-    let mut sextet_buf: Vec<u8> = Vec::with_capacity(input.len());
+    base64_decode_chunks(&[input])
+}
+
+/// Decode Base64 text split across consecutive source chunks.
+///
+/// Map packs store 127-byte values in separate INI entries. Treating the
+/// chunks as one byte stream preserves the native concatenation order without
+/// allocating a joined copy first.
+pub fn base64_decode_chunks(chunks: &[&str]) -> Result<Vec<u8>, String> {
+    let input_len = chunks
+        .iter()
+        .fold(0_usize, |total, chunk| total.saturating_add(chunk.len()));
+    let mut output: Vec<u8> = Vec::with_capacity(input_len.saturating_mul(3) / 4);
+    let mut group = [0_u8; 4];
+    let mut group_len = 0_usize;
     let mut padding: usize = 0;
 
-    for ch in input.chars() {
-        if ch.is_ascii_whitespace() {
-            continue;
+    for chunk in chunks {
+        for &byte in chunk.as_bytes() {
+            if byte.is_ascii_whitespace() {
+                continue;
+            }
+            if byte == b'=' {
+                padding += 1;
+                continue;
+            }
+            if padding > 0 {
+                return Err("Invalid base64: data after padding".into());
+            }
+            let value = BASE64_DECODE[usize::from(byte)];
+            if value == INVALID_BASE64 {
+                return Err(format!("Invalid base64 character: {:?}", byte as char));
+            }
+            group[group_len] = value;
+            group_len += 1;
+            if group_len == 4 {
+                let combined = (u32::from(group[0]) << 18)
+                    | (u32::from(group[1]) << 12)
+                    | (u32::from(group[2]) << 6)
+                    | u32::from(group[3]);
+                output.push((combined >> 16) as u8);
+                output.push((combined >> 8) as u8);
+                output.push(combined as u8);
+                group_len = 0;
+            }
         }
-        if ch == '=' {
-            padding += 1;
-            continue;
-        }
-        if padding > 0 {
-            return Err("Invalid base64: data after padding".into());
-        }
-        let val: u8 = decode_char(ch)?;
-        sextet_buf.push(val);
     }
 
-    if !(sextet_buf.len() + padding).is_multiple_of(4) {
+    if !(group_len + padding).is_multiple_of(4) {
         return Err(format!(
             "Invalid base64: length {} (+ {} padding) is not a multiple of 4",
-            sextet_buf.len(),
-            padding
+            group_len, padding
         ));
     }
 
-    // Each group of 4 sextets → 3 bytes. Final group may produce 1 or 2 bytes.
-    let full_groups: usize = sextet_buf.len() / 4;
-    let remainder: usize = sextet_buf.len() % 4;
-    let mut output: Vec<u8> = Vec::with_capacity(full_groups * 3 + 2);
-
-    for group in sextet_buf.chunks(4) {
-        if group.len() == 4 {
-            let combined: u32 = (group[0] as u32) << 18
-                | (group[1] as u32) << 12
-                | (group[2] as u32) << 6
-                | (group[3] as u32);
-            output.push((combined >> 16) as u8);
-            output.push((combined >> 8) as u8);
-            output.push(combined as u8);
-        } else if group.len() == 3 {
-            // 3 sextets → 2 bytes (1 padding char).
-            let combined: u32 =
-                (group[0] as u32) << 18 | (group[1] as u32) << 12 | (group[2] as u32) << 6;
-            output.push((combined >> 16) as u8);
-            output.push((combined >> 8) as u8);
-        } else if group.len() == 2 {
-            // 2 sextets → 1 byte (2 padding chars).
-            let combined: u32 = (group[0] as u32) << 18 | (group[1] as u32) << 12;
-            output.push((combined >> 16) as u8);
-        }
+    if group_len >= 2 {
+        let combined = (u32::from(group[0]) << 18) | (u32::from(group[1]) << 12);
+        output.push((combined >> 16) as u8);
+    }
+    if group_len == 3 {
+        let combined =
+            (u32::from(group[0]) << 18) | (u32::from(group[1]) << 12) | (u32::from(group[2]) << 6);
+        output.push((combined >> 8) as u8);
     }
 
     // If there was padding, trim the extra bytes from the last full group.
-    if remainder == 0 && padding > 0 {
+    if group_len == 0 && padding > 0 {
         let trim: usize = output.len().saturating_sub(padding);
         output.truncate(trim);
     }
@@ -74,17 +85,24 @@ pub fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     Ok(output)
 }
 
-/// Decode a single base64 character to its 6-bit value.
-fn decode_char(ch: char) -> Result<u8, String> {
-    match ch {
-        'A'..='Z' => Ok(ch as u8 - b'A'),
-        'a'..='z' => Ok(ch as u8 - b'a' + 26),
-        '0'..='9' => Ok(ch as u8 - b'0' + 52),
-        '+' => Ok(62),
-        '/' => Ok(63),
-        _ => Err(format!("Invalid base64 character: {:?}", ch)),
+const INVALID_BASE64: u8 = u8::MAX;
+const BASE64_DECODE: [u8; 256] = {
+    let mut table = [INVALID_BASE64; 256];
+    let mut index = 0;
+    while index < 26 {
+        table[b'A' as usize + index] = index as u8;
+        table[b'a' as usize + index] = index as u8 + 26;
+        index += 1;
     }
-}
+    index = 0;
+    while index < 10 {
+        table[b'0' as usize + index] = index as u8 + 52;
+        index += 1;
+    }
+    table[b'+' as usize] = 62;
+    table[b'/' as usize] = 63;
+    table
+};
 
 #[cfg(test)]
 mod tests {
@@ -114,5 +132,17 @@ mod tests {
         // [0x00, 0xFF, 0x80] = AP+A
         let result: Vec<u8> = base64_decode("AP+A").unwrap();
         assert_eq!(result, vec![0x00, 0xFF, 0x80]);
+    }
+
+    #[test]
+    fn chunks_share_one_base64_stream_and_group_state() {
+        assert_eq!(
+            base64_decode_chunks(&["SG", "Vs", "bG8="]).unwrap(),
+            b"Hello"
+        );
+        assert_eq!(
+            base64_decode_chunks(&["SGVs\n", "  bG8=\n"]).unwrap(),
+            b"Hello"
+        );
     }
 }

@@ -225,7 +225,7 @@ fn calc_center_matches_the_original() {
             .collect();
         let focus = (!row["focus"].is_null()).then(|| xy(&row["focus"]));
         let cell_at = events(row, "cell_at");
-        match center_of(&samples, focus) {
+        match center_of(samples.iter().copied(), focus) {
             None => {
                 assert!(cell_at.is_empty(), "center row {number}: no mean");
                 assert!(row["center"].is_null() && row["closest"].is_null());

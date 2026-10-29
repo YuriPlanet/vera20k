@@ -100,7 +100,7 @@ pub(super) fn center_sample(
 /// replaces the one kept, so without a focus the last sample is closest.
 /// `None` without samples.
 pub(super) fn center_of(
-    samples: &[CenterSample],
+    samples: impl IntoIterator<Item = CenterSample>,
     focus: Option<[i32; 2]>,
 ) -> Option<([i32; 2], Option<u64>)> {
     let mut sum = [0i32; 2];
@@ -151,12 +151,15 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let teams: Vec<u64> = self.team_script_vm.teams.keys().copied().collect();
-        for team_id in teams {
-            if self.team_script_vm.teams.contains_key(&team_id) {
-                self.team_ai(team_id, rules, registry, frame_effects);
-            }
+        let team_rules = TeamRules::new(&rules.general, self.session.game_mode_nonzero());
+        let mut teams = std::mem::take(&mut self.team_script_vm.team_ai_order);
+        teams.clear();
+        teams.extend(self.team_script_vm.teams.keys().copied());
+        for &team_id in &teams {
+            self.team_ai(team_id, rules, registry, frame_effects, &team_rules);
         }
+        teams.clear();
+        self.team_script_vm.team_ai_order = teams;
     }
 
     /// `TeamClass::AI @ 0x006E9140` up to its action dispatch.
@@ -166,6 +169,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
+        team_rules: &TeamRules,
     ) {
         let current_frame = self.session.binary_frame() as i32;
         let Some(team) = self.team_script_vm.teams.get_mut(&team_id) else {
@@ -218,8 +222,7 @@ impl Simulation {
         // `0x006E929B..0x006E9339`: an empty team that has been full, or
         // that could not fill before `DissolveUnfilledTeamDelay=` in a
         // multiplayer game, is destroyed.
-        let team_rules = TeamRules::new(&rules.general, self.session.game_mode_nonzero());
-        if team.dissolves(&team_rules, current_frame) {
+        if team.dissolves(team_rules, current_frame) {
             self.destroy_team(team_id, rules, frame_effects);
             return;
         }
@@ -383,25 +386,22 @@ impl Simulation {
             .and_then(|id| vm.team_type_ini.get(&id))
             .is_some_and(|metadata| metadata.guard_slower);
         let focus = team.focus.map(|focus| self.team_target_xy(focus));
-        let samples: Vec<CenterSample> = team
-            .members
-            .iter()
-            .filter_map(|member| {
-                let entity = self.substrate.entities.get(member.id)?;
-                let naval_transport = self
-                    .object_type(entity.type_ref(), rules)
-                    .is_some_and(|object| object.passengers > 0 && object.naval);
-                center_sample(
-                    entity,
-                    member.initiated,
-                    guard_slower && self.guard_slower_weight(entity, rules),
-                    naval_transport,
-                    self.object_placement_scope_active(),
-                )
-            })
-            .collect();
+        let placement_scope_active = self.object_placement_scope_active();
+        let samples = team.members.iter().filter_map(|member| {
+            let entity = self.substrate.entities.get(member.id)?;
+            let naval_transport = self
+                .object_type(entity.type_ref(), rules)
+                .is_some_and(|object| object.passengers > 0 && object.naval);
+            center_sample(
+                entity,
+                member.initiated,
+                guard_slower && self.guard_slower_weight(entity, rules),
+                naval_transport,
+                placement_scope_active,
+            )
+        });
         let head = team.members.first().map(|member| member.id);
-        let (zone, closest) = match center_of(&samples, focus) {
+        let (zone, closest) = match center_of(samples, focus) {
             None => (None, None),
             Some((mean, closest)) => {
                 let cell = TeamTarget::Cell {

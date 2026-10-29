@@ -261,29 +261,33 @@ pub fn parse_terrain_objects(ini: &IniFile, signed_new_ini_format: i32) -> Vec<T
 fn decode_pack_section(ini: &IniFile, section_name: &str) -> Option<Vec<u8>> {
     let section = ini.section(section_name)?;
 
-    let b64_data = section.read_packed_text();
+    let b64_data: Vec<&str> = section.packed_text_values().collect();
 
-    if b64_data.is_empty() {
+    if b64_data.iter().all(|chunk| chunk.is_empty()) {
         return None;
     }
 
-    let compressed: Vec<u8> = match base64::base64_decode(&b64_data) {
+    let compressed: Vec<u8> = match base64::base64_decode_chunks(&b64_data) {
         Ok(d) => d,
         Err(e) => {
             log::warn!("{} base64 decode failed: {}", section_name, e);
             return None;
         }
     };
+    drop(b64_data);
+    let compressed_len = compressed.len();
 
     // ReadMapOverlayPacks 0x005FD2E0 consumes one byte per fixed-grid cell.
     // Reject excess decoded data before allocating it; short packs retain the
     // existing failed-read semantics in OverlayIdentityPack/OverlayDataPack.
-    match lcw::decompress_chunks(&compressed, OVERLAY_TOTAL_CELLS) {
+    let decompressed = lcw::decompress_chunks(&compressed, OVERLAY_TOTAL_CELLS);
+    drop(compressed);
+    match decompressed {
         Ok(data) => {
             log::info!(
                 "{}: {} compressed → {} decompressed bytes",
                 section_name,
-                compressed.len(),
+                compressed_len,
                 data.len()
             );
             Some(data)

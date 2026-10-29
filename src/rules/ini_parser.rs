@@ -569,7 +569,10 @@ impl IniFile {
         let Some(position) = self.section_position("Digest") else {
             return;
         };
-        if self.sections[position].read_packed_text().is_empty() {
+        if !self.sections[position]
+            .packed_text_values()
+            .any(|chunk| !chunk.is_empty())
+        {
             return;
         }
         // Clear5257C0 -> RemoveKey52B2B0 compacts the sorted pair array and

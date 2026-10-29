@@ -6,7 +6,7 @@
 use std::fmt;
 
 use crate::rules::ini_parser::IniFile;
-use crate::util::base64::base64_decode;
+use crate::util::base64::base64_decode_chunks;
 use crate::util::lzo::{LzoError, decompress_chunks};
 
 /// Retained Scenario header input written by ReadStartPoints689D30. Map
@@ -380,7 +380,7 @@ impl From<LzoError> for PreviewDecodeError {
 pub fn parse_preview_section(ini: &IniFile) -> PreviewSection {
     let size = preview_size(ini);
 
-    let has_packed_preview = preview_pack_text(ini).is_some();
+    let has_packed_preview = preview_pack_has_data(ini);
 
     PreviewSection {
         start_header: ScenarioStartHeaderInput::from_ini(ini),
@@ -401,9 +401,14 @@ fn preview_size(ini: &IniFile) -> Option<(u32, u32)> {
     Some(size)
 }
 
-fn preview_pack_text(ini: &IniFile) -> Option<String> {
-    let text = ini.section("PreviewPack")?.read_packed_text();
-    (!text.is_empty()).then_some(text)
+fn preview_pack_has_data(ini: &IniFile) -> bool {
+    ini.section("PreviewPack")
+        .is_some_and(|section| section.packed_text_values().any(|chunk| !chunk.is_empty()))
+}
+
+fn preview_pack_values(ini: &IniFile) -> Option<Vec<&str>> {
+    let values: Vec<&str> = ini.section("PreviewPack")?.packed_text_values().collect();
+    (!values.iter().all(|chunk| chunk.is_empty())).then_some(values)
 }
 
 pub(crate) fn expected_preview_pixels(
@@ -439,14 +444,22 @@ pub fn decode_preview_pack(
     width: u32,
     height: u32,
 ) -> Result<DecodedPreview, PreviewDecodeError> {
-    let encoded = pack_text.trim();
-    if encoded.is_empty() {
+    decode_preview_pack_chunks(&[pack_text], width, height)
+}
+
+fn decode_preview_pack_chunks(
+    chunks: &[&str],
+    width: u32,
+    height: u32,
+) -> Result<DecodedPreview, PreviewDecodeError> {
+    if chunks.iter().all(|chunk| chunk.trim().is_empty()) {
         return Err(PreviewDecodeError::MissingPreviewPack);
     }
 
     let expected = expected_preview_rgb_len(width, height)?;
-    let compressed = base64_decode(encoded).map_err(PreviewDecodeError::InvalidBase64)?;
+    let compressed = base64_decode_chunks(chunks).map_err(PreviewDecodeError::InvalidBase64)?;
     let rgb = decompress_chunks(&compressed, expected)?;
+    drop(compressed);
     if rgb.len() != expected {
         return Err(PreviewDecodeError::PixelByteCount {
             expected,
@@ -476,10 +489,10 @@ pub fn decode_preview_image_from_ini(
     let Some((width, height)) = preview_size(ini) else {
         return Ok(None);
     };
-    let Some(pack_text) = preview_pack_text(ini) else {
+    let Some(pack_values) = preview_pack_values(ini) else {
         return Ok(None);
     };
-    decode_preview_pack(&pack_text, width, height).map(Some)
+    decode_preview_pack_chunks(&pack_values, width, height).map(Some)
 }
 
 #[cfg(test)]
@@ -505,9 +518,24 @@ mod tests {
     }
 
     #[test]
-    fn preview_pack_text_preserves_source_order() {
+    fn preview_pack_preserves_source_order() {
         let ini = IniFile::from_str("[PreviewPack]\n2=BBB\n10=CCC\n1=AAA\n");
-        assert_eq!(preview_pack_text(&ini).as_deref(), Some("BBBCCCAAA"));
+        assert!(preview_pack_has_data(&ini));
+        assert_eq!(
+            preview_pack_values(&ini).expect("pack values").join(""),
+            "BBBCCCAAA"
+        );
+    }
+
+    #[test]
+    fn preview_pack_chunks_may_split_base64_quartets() {
+        let chunks = ["Cg", "AG", "ABcB", "AgMEBQ", "YRAAA="];
+        let split = decode_preview_pack_chunks(&chunks, 2, 1).expect("decodes across chunks");
+        assert_eq!(split.rgba, vec![1, 2, 3, 255, 4, 5, 6, 255]);
+        assert_eq!(
+            split,
+            decode_preview_pack("CgAGABcBAgMEBQYRAAA=", 2, 1).unwrap()
+        );
     }
 
     #[test]

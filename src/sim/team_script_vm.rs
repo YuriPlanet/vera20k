@@ -775,6 +775,10 @@ pub struct TeamScriptVm {
     /// destructor, not its Limbo or UnInit.
     #[serde(default)]
     rejoin_team: BTreeMap<u64, u64>,
+    /// Reused team-order snapshot for one AI pass. Native walks a copy so
+    /// teams created by an earlier team's callbacks wait until the next frame.
+    #[serde(skip)]
+    team_ai_order: Vec<u64>,
 }
 
 impl TeamScriptVm {

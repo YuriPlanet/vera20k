@@ -662,17 +662,20 @@ fn parse_iso_map_pack(ini: &IniFile) -> Result<ParsedIsoMapPack, MapError> {
         .section("IsoMapPack5")
         .ok_or(MapError::MissingIsoMapPack)?;
 
-    let b64_data = section.read_packed_text();
+    let b64_data: Vec<&str> = section.packed_text_values().collect();
 
-    if b64_data.is_empty() {
+    if b64_data.iter().all(|chunk| chunk.is_empty()) {
         return Err(MapError::MissingIsoMapPack);
     }
 
     // Base64 decode → LZO decompress.
-    let compressed: Vec<u8> = base64::base64_decode(&b64_data).map_err(MapError::Base64)?;
+    let compressed: Vec<u8> = base64::base64_decode_chunks(&b64_data).map_err(MapError::Base64)?;
+    drop(b64_data);
     let decompressed: Vec<u8> = lzo::decompress_chunks(&compressed, ISO_MAP_MAX_BYTES)?;
+    drop(compressed);
 
     let parsed = parse_iso_map_pack_records(&decompressed)?;
+    drop(decompressed);
 
     // Diagnostic: tile_index distribution. Lets a reader of the load logs see
     // how high a map's IsoMapPack5 reaches vs. what the theater INI defines.
@@ -680,6 +683,7 @@ fn parse_iso_map_pack(ini: &IniFile) -> Result<ParsedIsoMapPack, MapError> {
     let mut max_idx: i32 = i32::MIN;
     let mut raw_negative: usize = 0;
     let mut no_tile_sentinel: usize = 0;
+    #[cfg(debug_assertions)]
     let mut distinct: std::collections::HashSet<i32> = std::collections::HashSet::new();
     for c in &parsed.cells {
         if c.tile_index < 0 {
@@ -690,16 +694,21 @@ fn parse_iso_map_pack(ini: &IniFile) -> Result<ParsedIsoMapPack, MapError> {
         }
         min_idx = min_idx.min(c.tile_index);
         max_idx = max_idx.max(c.tile_index);
+        #[cfg(debug_assertions)]
         distinct.insert(c.tile_index);
     }
+    #[cfg(debug_assertions)]
+    let distinct_count = distinct.len();
+    #[cfg(not(debug_assertions))]
+    let distinct_count = 0;
     log::info!(
-        "IsoMapPack5: {} cells, {} raw-negative, {} positive-0xFFFF no-tile, tile_index min={}, max={}, distinct={}",
+        "IsoMapPack5: {} cells, {} raw-negative, {} positive-0xFFFF no-tile, tile_index min={}, max={}, distinct={} (release distinct scan disabled)",
         parsed.cells.len(),
         raw_negative,
         no_tile_sentinel,
         if min_idx == i32::MAX { -1 } else { min_idx },
         if max_idx == i32::MIN { -1 } else { max_idx },
-        distinct.len()
+        distinct_count
     );
 
     Ok(parsed)

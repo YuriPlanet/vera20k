@@ -1193,10 +1193,16 @@ impl IniSection {
     /// Values are cut to 127 bytes and trimmed, then joined for Base64Pipe.
     /// Entry names are not parsed or sorted.
     pub fn read_packed_text(&self) -> String {
+        self.packed_text_values().collect()
+    }
+
+    /// The native packed-section entries in source order, without joining
+    /// them. Binary readers can decode straight across entry boundaries and
+    /// avoid allocating a second copy of large Base64 payloads.
+    pub fn packed_text_values(&self) -> impl Iterator<Item = &str> {
         self.physical_keys()
             .filter_map(|key| self.get(key))
             .map(|value| strtrim_ascii(truncate_native_bytes(value, 0x7F)))
-            .collect()
     }
 
     /// `INIClass::ReadCommaHexUTF16 @ 0x00528F00` on this section's `key`; see

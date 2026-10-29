@@ -206,8 +206,30 @@ pub fn lzo1x_decompress(src: &[u8], dst: &mut [u8]) -> Result<usize, LzoError> {
 /// Stops when all input bytes are consumed. The caller supplies the maximum
 /// total decoded size; every advertised chunk is checked before allocation.
 pub fn decompress_chunks(data: &[u8], maximum_output: usize) -> Result<Vec<u8>, LzoError> {
-    let mut output: Vec<u8> = Vec::new();
+    // Frame sizes are independent of decoder state. Validate and size the
+    // destination once instead of growing it for every 64 KiB block.
     let mut pos: usize = 0;
+    let mut total_output: usize = 0;
+    while pos + 4 <= data.len() {
+        let src_len: usize = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
+        let dst_len: usize = u16::from_le_bytes([data[pos + 2], data[pos + 3]]) as usize;
+        pos += 4;
+        if src_len == 0 && dst_len == 0 {
+            break;
+        }
+        if pos + src_len > data.len() {
+            return Err(LzoError::InputTruncated);
+        }
+        total_output = total_output
+            .checked_add(dst_len)
+            .filter(|&end| end <= maximum_output)
+            .ok_or(LzoError::OutputOverflow)?;
+        pos += src_len;
+    }
+
+    let mut output = vec![0_u8; total_output];
+    let mut pos: usize = 0;
+    let mut written_total: usize = 0;
 
     while pos + 4 <= data.len() {
         let src_len: usize = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
@@ -221,20 +243,20 @@ pub fn decompress_chunks(data: &[u8], maximum_output: usize) -> Result<Vec<u8>, 
             return Err(LzoError::InputTruncated);
         }
 
-        let start = output.len();
+        let start = written_total;
         let end = start
             .checked_add(dst_len)
             .filter(|&end| end <= maximum_output)
             .ok_or(LzoError::OutputOverflow)?;
-        output
-            .try_reserve_exact(dst_len)
-            .map_err(|_| LzoError::OutputOverflow)?;
-        output.resize(end, 0);
+        if end > output.len() {
+            return Err(LzoError::OutputOverflow);
+        }
         let written = lzo1x_decompress(&data[pos..pos + src_len], &mut output[start..end])?;
-        output.truncate(start + written);
+        written_total = start + written;
         pos += src_len;
     }
 
+    output.truncate(written_total);
     Ok(output)
 }
 

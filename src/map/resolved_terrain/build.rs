@@ -1696,7 +1696,18 @@ pub(super) fn materialize_map_load_cells(
         .and_then(|count| usize::try_from(count).ok())
         .unwrap_or(0);
     let mut cells = Vec::with_capacity(expected_count);
-    let mut index_by_coord = HashMap::with_capacity(expected_count);
+    let stride = usize::try_from(n + m).expect("validated Size diamond span fits usize");
+    let mut index_by_coord = vec![u32::MAX; stride * stride];
+    fn index_at(index_by_coord: &[u32], stride: usize, rx: u16, ry: u16) -> Option<usize> {
+        let slot = usize::from(ry)
+            .checked_mul(stride)?
+            .checked_add(usize::from(rx))?;
+        index_by_coord
+            .get(slot)
+            .copied()
+            .filter(|index| *index != u32::MAX)
+            .map(|index| index as usize)
+    }
     let last_sum = n + m * 2;
 
     // This sum-major form is the native iterator's anti-diagonal order: each
@@ -1717,7 +1728,8 @@ pub(super) fn materialize_map_load_cells(
                 sub_tile: 0,
                 z: 0u8.wrapping_add(map.header.level as u8),
             });
-            index_by_coord.insert((rx, ry), index);
+            index_by_coord[usize::from(ry) * stride + usize::from(rx)] =
+                u32::try_from(index).expect("validated Size diamond cell count fits u32");
         }
     }
     debug_assert_eq!(cells.len(), expected_count);
@@ -1732,7 +1744,7 @@ pub(super) fn materialize_map_load_cells(
         // established manual-cell behavior while giving canonical misses the
         // same dummy-coordinate side effect as a native lookup.
         for explicit in &map.cells {
-            if !index_by_coord.contains_key(&(explicit.rx, explicit.ry)) {
+            if index_at(&index_by_coord, stride, explicit.rx, explicit.ry).is_none() {
                 shared_cell_dummy.stamp_coord(i32::from(explicit.rx), i32::from(explicit.ry));
             }
         }
@@ -1740,7 +1752,7 @@ pub(super) fn materialize_map_load_cells(
         for lookup in &map.iso_map_pack_lookups {
             let misses_real_slot = lookup
                 .canonical
-                .is_none_or(|coord| !index_by_coord.contains_key(&coord));
+                .is_none_or(|(rx, ry)| index_at(&index_by_coord, stride, rx, ry).is_none());
             if misses_real_slot {
                 shared_cell_dummy.stamp_coord(i32::from(lookup.raw_x), i32::from(lookup.raw_y));
             }
@@ -1749,7 +1761,7 @@ pub(super) fn materialize_map_load_cells(
 
     let translate_raw_pack_cells = !map.iso_map_pack_lookups.is_empty();
     for explicit in &map.cells {
-        let Some(&index) = index_by_coord.get(&(explicit.rx, explicit.ry)) else {
+        let Some(index) = index_at(&index_by_coord, stride, explicit.rx, explicit.ry) else {
             continue;
         };
         let mut materialized = explicit.clone();
