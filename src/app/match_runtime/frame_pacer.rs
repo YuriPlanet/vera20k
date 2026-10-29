@@ -82,7 +82,15 @@ pub(crate) struct LocalFramePacer {
     render_deferred: bool,
     total_render_deferrals: u64,
     online: Option<OnlinePacer>,
+    /// DEBUG ONLY, not a gamemd feature: frames run per paced pass in an
+    /// offline Skirmish, 1 to `MAX_DEBUG_SPEED`, set by the Ctrl+Shift dev
+    /// chord. Every frame keeps its own transaction, so the simulation and its
+    /// replay log are unchanged.
+    debug_speed: u8,
 }
+
+#[cfg(feature = "dev-overlays")]
+const MAX_DEBUG_SPEED: u8 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OnlineFrameDecision {
@@ -486,7 +494,24 @@ impl LocalFramePacer {
             render_deferred: false,
             total_render_deferrals: 0,
             online: None,
+            debug_speed: 1,
         }
+    }
+
+    pub(crate) fn debug_speed(&self) -> u8 {
+        self.debug_speed
+    }
+
+    /// Step the debug speed by one within 1x..=10x.
+    #[cfg(feature = "dev-overlays")]
+    pub(crate) fn change_debug_speed(&mut self, faster: bool) -> u8 {
+        let speed = if faster {
+            self.debug_speed + 1
+        } else {
+            self.debug_speed - 1
+        };
+        self.debug_speed = speed.clamp(1, MAX_DEBUG_SPEED);
+        self.debug_speed
     }
 
     pub(crate) fn online_frame_decision(
@@ -559,6 +584,7 @@ impl LocalFramePacer {
     pub(crate) fn reset_for_new_world(&mut self) {
         self.reset_for_immediate_frame();
         self.online = None;
+        self.debug_speed = 1;
     }
 
     /// Clear a queued continuation on entry or loss of render eligibility.
@@ -725,6 +751,19 @@ mod tests {
             frames_per_second: 45,
             clock_epoch: 0,
         }
+    }
+
+    #[cfg(feature = "dev-overlays")]
+    #[test]
+    fn debug_speed_steps_within_1x_to_10x_and_resets_for_a_new_world() {
+        let mut pacer = LocalFramePacer::new();
+        assert_eq!(pacer.change_debug_speed(false), 1);
+        for _ in 0..12 {
+            pacer.change_debug_speed(true);
+        }
+        assert_eq!(pacer.debug_speed(), 10);
+        pacer.reset_for_new_world();
+        assert_eq!(pacer.debug_speed(), 1);
     }
 
     #[test]

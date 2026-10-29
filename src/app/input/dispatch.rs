@@ -2125,6 +2125,16 @@ fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCod
         KeyCode::Period if state.match_state.paused() => {
             request_debug_frame_step(state);
         }
+        KeyCode::Equal | KeyCode::NumpadAdd | KeyCode::Minus | KeyCode::NumpadSubtract
+            if crate::app::match_runtime::sim_tick::debug_speed_allowed(state) =>
+        {
+            let faster = matches!(code, KeyCode::Equal | KeyCode::NumpadAdd);
+            let speed = state.platform.frame_pacer.change_debug_speed(faster);
+            crate::app::input::messages::post_selection_navigation_text(
+                state,
+                &format!("Debug speed {speed}x"),
+            );
+        }
         _ => {}
     }
 }

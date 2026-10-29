@@ -1008,7 +1008,22 @@ fn advance_in_game_runtime_mode(
             // Wait_For_Players must not restart that interval on completion.
             state.platform.frame_pacer.record_admitted_frame(wall_ms);
         }
-        let frame_committed = advance_one_simulation_frame(state, tick_lane, mouse_scroll, resume);
+        let mut frame_committed =
+            advance_one_simulation_frame(state, tick_lane, mouse_scroll, resume);
+        // Debug speed runs further frames in this paced pass, each through
+        // the same frame transaction; the pacer interval is unchanged.
+        if !frame_stepping && !replaying && debug_speed_allowed(state) {
+            for _ in 1..state.platform.frame_pacer.debug_speed() {
+                if state.match_state.scenario_outcome.is_some()
+                    || state.match_state.scenario_exit.is_some()
+                    || crate::app::App::house_outcome_wait_pending(state)
+                {
+                    break;
+                }
+                frame_committed |=
+                    advance_one_simulation_frame(state, tick_lane, None, FrameResume::None);
+            }
+        }
         state
             .match_state
             .sync_multiplayer_pause_clock(crate::app::match_runtime::frame_pacer::wall_clock_ms());
@@ -1120,6 +1135,13 @@ fn advance_in_game_runtime_mode(
         update_building_placement_preview(state);
     }
     decision.run_sim
+}
+
+/// Debug speed is limited to an offline Skirmish; online, LAN and campaign
+/// play keep one frame per paced pass.
+pub(crate) fn debug_speed_allowed(state: &AppState) -> bool {
+    state.match_state.session_mode() == super::session::SessionMode::Skirmish
+        && state.match_state.live_network.is_none()
 }
 
 /// Tick simulation: advance movement and animation systems.
