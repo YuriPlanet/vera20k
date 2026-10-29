@@ -60,6 +60,10 @@ pub(crate) struct PlatformState {
     /// Live message-pump modifiers for focused shell controls. Gameplay keeps
     /// its separate paused-input admission snapshot.
     pub(crate) live_modifiers: winit::keyboard::ModifiersState,
+    /// Whether the OS text-input context is currently enabled for an editing
+    /// control, and the last caret approximation handed to it.
+    pub(crate) ime_allowed: bool,
+    pub(crate) ime_cursor: Option<(i32, i32)>,
     /// The physical modifier keys held, the source both modifier views are
     /// derived from (see `HeldModifierKeys`).
     pub(crate) held_modifier_keys: crate::app::input::hotkeys::HeldModifierKeys,
@@ -120,6 +124,8 @@ impl PlatformState {
             pointer_in_client: true,
             os_cursor_visible: None,
             live_modifiers: winit::keyboard::ModifiersState::empty(),
+            ime_allowed: false,
+            ime_cursor: None,
             held_modifier_keys: Default::default(),
             window_active: true,
             pause_on_focus_loss,

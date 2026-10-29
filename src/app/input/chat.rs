@@ -191,6 +191,16 @@ fn apply_input(state: &mut AppState, key: EditKey) {
     }
 }
 
+/// Commit an OS input-method string while the in-battle edit owns focus.
+pub(crate) fn commit_text(state: &mut AppState, text: &str) {
+    if !state.match_state.match_presentation.message_list.editing() {
+        return;
+    }
+    for unit in text.encode_utf16() {
+        apply_input(state, EditKey::Unit(unit));
+    }
+}
+
 /// The send block `0x0055EDBF..0x0055F110` for results 3 and 4.
 fn send(state: &mut AppState, text: &str) {
     if !state.match_state.session_mode().is_network() {

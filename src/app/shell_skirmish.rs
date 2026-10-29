@@ -1013,6 +1013,25 @@ impl App {
         true
     }
 
+    /// An input-method commit has no physical key edge. Reuse the same edit
+    /// owner and caret-scroll update as ordinary text events.
+    pub(super) fn handle_skirmish_shell_text_input(
+        state: &mut AppState,
+        text: &str,
+    ) -> bool {
+        if !state.frontend.skirmish_shell_state.player_name_edit.focused {
+            return false;
+        }
+        if crate::ui::skirmish_shell::insert_player_name_text(
+            &mut state.frontend.skirmish_shell_state,
+            text,
+        ) {
+            Self::sync_player_name_edit_scroll(state);
+            state.platform.window.request_redraw();
+        }
+        true
+    }
+
     fn close_validation_modal_from_controller(state: &mut AppState) {
         crate::ui::skirmish_shell::dismiss_validation_modal(
             &mut state.frontend.skirmish_shell_state,

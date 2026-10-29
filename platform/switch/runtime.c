@@ -5,6 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#ifdef VERA_PERF
+#include "perf.h"
+#endif
 #ifndef VERA_WGPU
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
@@ -50,10 +53,20 @@ int main(int argc, char **argv) {
     if (getenv("VERA_MESA_DEBUG")) {
         setenv("MESA_LOG_LEVEL", "debug", 1);
     } else {
+#ifdef VERA_PERF
+        setenv("MESA_LOG_LEVEL", "info", 1);
+#else
         unsetenv("MESA_LOG_LEVEL");
+#endif
     }
+#ifdef VERA_PERF
+    setenv("NVK_SWITCH_PERF_LOG", "true", 1);
+#endif
     // See third_party/mesa-switch-graphics-ubo.patch for the NVK/Eden path.
     setenv("NVK_SWITCH_GRAPHICS_UBO_CBUF", "true", 1);
+#endif
+#ifdef VERA_PERF
+    platform_perf_thread_enter("main");
 #endif
     return rust_main();
 }
@@ -64,7 +77,13 @@ static void rust_thread_start(void *argument) {
     setup_rust_tls();
     ThreadStart start = *(ThreadStart *)argument;
     free(argument);
+#ifdef VERA_PERF
+    platform_perf_thread_enter("runtime");
+#endif
     start.entry(start.argument);
+#ifdef VERA_PERF
+    platform_perf_thread_exit();
+#endif
 }
 
 Result __wrap_threadCreate(Thread *thread, ThreadFunc entry, void *argument,
@@ -199,6 +218,21 @@ uint64_t platform_keyboard(uint64_t *keys) {
         !hidGetKeyboardStates(&state, 1)) return 0;
     for (uint32_t index = 0; index < 4; ++index) keys[index] = state.keys[index];
     return state.modifiers;
+}
+Result platform_soft_keyboard_show(char *output, size_t output_size) {
+    if (!output || output_size < 2) return 1;
+    output[0] = '\0';
+    SwkbdConfig config;
+    Result result = swkbdCreate(&config, 0);
+    if (R_FAILED(result)) return result;
+    swkbdConfigMakePresetDefault(&config);
+    swkbdConfigSetType(&config, SwkbdType_All);
+    swkbdConfigSetStringLenMax(&config, 1024);
+    swkbdConfigSetHeaderText(&config, "VERA20k");
+    swkbdConfigSetGuideText(&config, "A 确定   B 取消");
+    result = swkbdShow(&config, output, output_size);
+    swkbdClose(&config);
+    return result;
 }
 bool platform_touch_finger(uint32_t finger_id, uint32_t *x, uint32_t *y) {
     HidTouchScreenState state = {0};

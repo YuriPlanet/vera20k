@@ -14,6 +14,7 @@ pub(crate) mod dispatch;
 pub(crate) mod entity_pick;
 pub(crate) mod gadget_input;
 pub(crate) mod hotkeys;
+pub(crate) mod ime;
 pub(crate) mod in_game_options;
 pub(crate) mod messages;
 pub(crate) mod page_user;

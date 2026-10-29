@@ -764,6 +764,14 @@ impl ApplicationHandler for App {
                 // Control on macOS (see `HeldModifierKeys`). The key edges
                 // recorded before screen-specific dispatch own this state.
             }
+            WindowEvent::Ime(winit::event::Ime::Commit(text)) => {
+                if crate::app::input::ime::commit(state, &text) {
+                    state.platform.window.request_redraw();
+                }
+            }
+            WindowEvent::Ime(_) => {
+                // Preedit belongs to the OS candidate window until commit.
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 if Self::house_outcome_wait_pending(state) {
                     if !event.state.is_pressed()
@@ -1503,6 +1511,7 @@ impl ApplicationHandler for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let shell_scroll_wake = if let Some(state) = self.state.as_mut() {
             Self::follow_window_full_screen(state);
+            crate::app::input::ime::sync_window(state);
             #[cfg(target_os = "horizon")]
             Self::apply_horizon_touch_pan(state);
             #[cfg(target_os = "horizon")]

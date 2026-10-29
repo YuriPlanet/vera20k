@@ -150,6 +150,62 @@ pub(crate) enum WolPage {
     AddBuddyQuery(Box<persona::AddBuddyQuery>),
 }
 
+/// Whether a WOL edit owns text focus right now.
+pub(crate) fn text_input_active(state: &AppState) -> bool {
+    let Some(visit) = state.frontend.wol.as_ref() else {
+        return false;
+    };
+    if let Some(page) = page::page_dialog(state) {
+        return page.name.focused || page.text.focused;
+    }
+    if let Some(received) = page::page_received(state) {
+        return received.reply.focused;
+    }
+    match &visit.page {
+        WolPage::Login(login) => login.nickname.focused || login.password.focused,
+        WolPage::Buddy(dialog) => dialog
+            .ui
+            .add
+            .as_ref()
+            .is_some_and(|add| add.edit.focused),
+        WolPage::Lobby => visit.lobby.as_deref().is_some_and(|lobby| {
+            lobby.interactive()
+                && lobby.ui.popup.as_ref().map_or(
+                    lobby.ui.chat.edit.focused,
+                    |popup| popup.edit().focused,
+                )
+        }),
+        _ => false,
+    }
+}
+
+/// Route an input-method commit to the active WOL edit.
+pub(crate) fn commit_text(state: &mut AppState, text: &str) -> bool {
+    if page::open(state) {
+        page::key_press(state, None, Some(text));
+        state.platform.window.request_redraw();
+        return true;
+    }
+    let Some(visit) = state.frontend.wol.as_ref() else {
+        return false;
+    };
+    match &visit.page {
+        WolPage::Login(_) => {
+            login::key_press(state, None, Some(text));
+            true
+        }
+        WolPage::Buddy(dialog) if dialog.ui.add.is_some() => {
+            buddy::key_press(state, None, Some(text));
+            true
+        }
+        WolPage::Lobby if text_input_active(state) => {
+            lobby::key_press(state, None, Some(text));
+            true
+        }
+        _ => false,
+    }
+}
+
 /// What follows a WOL message box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WolBoxThen {

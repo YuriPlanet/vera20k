@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+use std::ffi::c_char;
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
@@ -6,8 +8,8 @@ use std::time::{Duration, Instant};
 use crate::dpi::PhysicalPosition;
 use crate::error::EventLoopError;
 use crate::event::{
-    ElementState, Event, Force, KeyEvent, Modifiers, MouseButton, MouseScrollDelta, StartCause,
-    Touch, TouchPhase, WindowEvent,
+    ElementState, Event, Force, Ime, KeyEvent, Modifiers, MouseButton, MouseScrollDelta,
+    StartCause, Touch, TouchPhase, WindowEvent,
 };
 use crate::event_loop::{ControlFlow, DeviceEvents, EventLoopClosed};
 use crate::keyboard::{Key, KeyCode, KeyLocation, NamedKey, PhysicalKey};
@@ -34,6 +36,7 @@ unsafe extern "C" {
     fn platform_keyboard(keys: *mut u64) -> u64;
     fn platform_sticks(lx: *mut i32, ly: *mut i32, rx: *mut i32, ry: *mut i32);
     fn platform_focused() -> bool;
+    fn platform_soft_keyboard_show(output: *mut c_char, output_size: usize) -> u32;
 }
 
 #[repr(C)]
@@ -66,6 +69,8 @@ pub struct Shared {
     pub cursor_position: Mutex<PhysicalPosition<f64>>,
     pub touch_pan: Mutex<TouchPan>,
     pub camera_pan: Mutex<CameraPan>,
+    pub ime_allowed: AtomicBool,
+    pub pending_ime: Mutex<VecDeque<String>>,
     pub focused: AtomicBool,
     exiting: AtomicBool,
     alive: AtomicBool,
@@ -136,6 +141,8 @@ impl<T> EventLoop<T> {
             cursor_position: Mutex::new(PhysicalPosition::new(640.0, 360.0)),
             touch_pan: Mutex::new(TouchPan::default()),
             camera_pan: Mutex::new(CameraPan::default()),
+            ime_allowed: AtomicBool::new(false),
+            pending_ime: Mutex::new(VecDeque::new()),
             focused: AtomicBool::new(true),
             exiting: AtomicBool::new(false),
             alive: AtomicBool::new(true),
@@ -357,6 +364,25 @@ fn touch_midpoint(touches: &[(u64, PhysicalPosition<f64>)]) -> Option<PhysicalPo
     })
 }
 
+fn show_soft_keyboard() -> Option<String> {
+    // swkbd reports UTF-8 bytes; 1024 characters can occupy 4096 bytes plus
+    // the terminator, so leave another buffer's worth of headroom.
+    let mut output = [0_u8; 8192];
+    let result =
+        unsafe { platform_soft_keyboard_show(output.as_mut_ptr().cast::<c_char>(), output.len()) };
+    if result != 0 {
+        return None;
+    }
+    let length = output
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(output.len());
+    std::str::from_utf8(&output[..length])
+        .ok()
+        .filter(|text| !text.is_empty())
+        .map(str::to_owned)
+}
+
 struct Input {
     pointer_buttons: u32,
     keyboard: [u64; 4],
@@ -387,10 +413,21 @@ impl Input {
     fn poll(&mut self, shared: &Shared) -> Vec<WindowEvent> {
         let mut events = Vec::new();
         let device_id = crate::event::DeviceId(DeviceId(1));
+        let pending_ime = std::mem::take(
+            &mut *shared
+                .pending_ime
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+        for text in pending_ime {
+            events.push(WindowEvent::Ime(Ime::Commit(text)));
+        }
         let now = Instant::now();
         let dt = now.duration_since(self.last_sample).as_secs_f64().min(0.05);
         self.last_sample = now;
-        unsafe { platform_buttons() };
+        // `platform_buttons` updates the pad and returns this sample's new
+        // controller edges. Held state is queried separately after that.
+        let pressed_buttons = unsafe { platform_buttons() };
         let focused = unsafe { platform_focused() };
         shared.focused.store(focused, Ordering::Relaxed);
         let held = if focused {
@@ -408,6 +445,7 @@ impl Input {
         } else {
             0
         };
+        let ime_allowed = focused && shared.ime_allowed.load(Ordering::Acquire);
         // Merge physical keys before computing edges so releasing a controller
         // modifier cannot clear the same modifier still held on a USB keyboard.
         for (button, hid_key) in [
@@ -424,8 +462,18 @@ impl Input {
             (14, 29), // D-pad Right: Planning Mode (Z), held until release.
             (15, 31), // D-pad Down: Team 2.
         ] {
+            // An active edit owns controller Plus. Clearing only the edge
+            // frame would synthesize Escape on the next poll while it is held.
+            if ime_allowed && button == 10 {
+                continue;
+            }
             if held & (1 << button) != 0 {
                 keyboard[hid_key / 64] |= 1 << (hid_key % 64);
+            }
+        }
+        if ime_allowed && pressed_buttons & (1 << 10) != 0 {
+            if let Some(text) = show_soft_keyboard() {
+                events.push(WindowEvent::Ime(Ime::Commit(text)));
             }
         }
         // Modifiers precede ordinary keys and mouse edges in this poll, so
@@ -938,12 +986,15 @@ mod tests {
 
     #[derive(Default)]
     struct Devices {
+        buttons_down: u64,
         held: u64,
         touches: Vec<(u32, u32, u32)>,
         mouse: u32,
         pressed: u32,
         released: u32,
         unfocused: bool,
+        keyboard_text: Option<&'static str>,
+        keyboard_calls: u32,
     }
 
     thread_local! {
@@ -952,7 +1003,7 @@ mod tests {
 
     #[unsafe(no_mangle)]
     extern "C" fn platform_buttons() -> u64 {
-        0
+        DEVICES.with(|d| d.borrow().buttons_down)
     }
     #[unsafe(no_mangle)]
     extern "C" fn platform_buttons_held() -> u64 {
@@ -1008,6 +1059,28 @@ mod tests {
         0
     }
     #[unsafe(no_mangle)]
+    unsafe extern "C" fn platform_soft_keyboard_show(
+        output: *mut c_char,
+        output_size: usize,
+    ) -> u32 {
+        DEVICES.with(|d| {
+            let mut devices = d.borrow_mut();
+            devices.keyboard_calls += 1;
+            let Some(text) = devices.keyboard_text else {
+                return 1;
+            };
+            let bytes = text.as_bytes();
+            if bytes.len() + 1 > output_size {
+                return 1;
+            }
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), output.cast::<u8>(), bytes.len());
+                *output.add(bytes.len()) = 0;
+            }
+            0
+        })
+    }
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn platform_sticks(lx: *mut i32, ly: *mut i32, rx: *mut i32, ry: *mut i32) {
         unsafe {
             *lx = 0;
@@ -1057,6 +1130,41 @@ mod tests {
                 assert!(!keys[0].repeat);
             }
         }
+    }
+
+    #[test]
+    fn focused_ime_uses_plus_for_software_keyboard_without_sending_escape() {
+        DEVICES.with(|d| {
+            *d.borrow_mut() = Devices {
+                buttons_down: 1 << 10,
+                held: 1 << 10,
+                keyboard_text: Some("测试"),
+                ..Devices::default()
+            }
+        });
+        let event_loop = EventLoop::<()>::new(&mut PlatformSpecificEventLoopAttributes).unwrap();
+        let shared = &event_loop.active.p.shared;
+        shared.ime_allowed.store(true, Ordering::Release);
+        let mut input = Input::new();
+        let events = input.poll(shared);
+        assert!(!events.iter().any(|event| matches!(
+            event,
+            WindowEvent::KeyboardInput { event, .. }
+                if event.physical_key == PhysicalKey::Code(KeyCode::Escape)
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            WindowEvent::Ime(Ime::Commit(text)) if text == "测试"
+        )));
+        // A held Plus must not leak an Escape edge on subsequent polls.
+        DEVICES.with(|d| d.borrow_mut().buttons_down = 0);
+        let events = input.poll(shared);
+        assert!(!events.iter().any(|event| matches!(
+            event,
+            WindowEvent::KeyboardInput { event, .. }
+                if event.physical_key == PhysicalKey::Code(KeyCode::Escape)
+        )));
+        DEVICES.with(|d| assert_eq!(d.borrow().keyboard_calls, 1));
     }
 
     #[test]

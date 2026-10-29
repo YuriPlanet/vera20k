@@ -236,7 +236,11 @@ impl Window {
 
     pub fn set_ime_cursor_area(&self, _position: Position, _size: Size) {}
 
-    pub fn set_ime_allowed(&self, _allowed: bool) {}
+    pub fn set_ime_allowed(&self, allowed: bool) {
+        // Polling owns the blocking swkbd call so opening it cannot stall a
+        // state transition. While this is set, a fresh Plus edge opens it.
+        self.shared.ime_allowed.store(allowed, Ordering::Release);
+    }
 
     pub fn set_ime_purpose(&self, _purpose: ImePurpose) {}
 
