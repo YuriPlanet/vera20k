@@ -86,6 +86,52 @@ def verify_package(path: Path, keys: Path, sdk: Path, title_id: str, log_directo
     print(f"NSP verified: Program/Control/Meta{suffix}, encrypted headers, content hashes, NPDM, title ID {title_id}")
 
 
+def audit_packaged_romfs(path: Path, keys: Path, sdk: Path) -> None:
+    """Re-read the finished NSP's RomFS and reject empty retail media.
+
+    `verify_package` only proves the container's hashes; an asset directory
+    holding a zero-byte `movmd03.mix` placeholder still produces a valid NSP
+    that silently loses every in-game movie.
+    """
+    hactool = sdk / "tools/bin/hactool"
+    def inspect(nca: Path) -> str:
+        result = subprocess.run([str(hactool), "-k", str(keys), "--suppresskeys",
+                                 "--disablekeywarns", "-t", "nca", "-y", str(nca)],
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, check=True)
+        match = re.search(r"Content Type:\s+(\w+)", result.stdout)
+        return match.group(1) if match else ""
+
+    with tempfile.TemporaryDirectory(prefix="romfs-audit-") as temporary:
+        root = Path(temporary)
+        subprocess.run([str(hactool), "-k", str(keys), "--suppresskeys", "--disablekeywarns",
+                        "-t", "pfs0", "-x", f"--outdir={root}", str(path)],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        romfs = root / "romfs"
+        # Only the Program NCA carries RomFS. Extracting from the others first
+        # would reset the same output directory and leave a near-empty tree,
+        # which would audit the wrong tree and pass a broken package.
+        program = next((nca for nca in sorted(root.glob("*.nca"))
+                        if not nca.name.endswith(".cnmt.nca") and inspect(nca) == "Program"),
+                       None)
+        if program is None:
+            raise SystemExit("NSP has no Program NCA; cannot audit its RomFS")
+        subprocess.run([str(hactool), "-k", str(keys), "--suppresskeys", "--disablekeywarns",
+                        "-t", "nca", f"--romfsdir={romfs}", str(program)],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        if not romfs.is_dir() or not any(romfs.iterdir()):
+            raise SystemExit("Program NCA has no RomFS content to audit")
+        empty = sorted(item.name for item in romfs.rglob("*")
+                       if item.is_file() and item.stat().st_size == 0)
+        if empty:
+            raise SystemExit(
+                "Packaged RomFS contains empty files (retail media placeholders): "
+                + ", ".join(empty[:10]) + ("..." if len(empty) > 10 else "")
+            )
+        files = [item for item in romfs.rglob("*") if item.is_file()]
+        print(f"Packaged RomFS audited: {len(files)} files, no empty members")
+
+
 def verify_runtime_file(runtime: Path):
     """Reject an unexpectedly large runtime image before packaging."""
     size = runtime.stat().st_size
@@ -157,3 +203,5 @@ def package(root: Path, sdk: Path, elf: Path, nacp: Path, *,
     produced.replace(target)
     romfs_note = f", ROMFS {romfs}" if romfs is not None else ""
     print(f"Built standalone NSP: {target} (title ID {title_id}{romfs_note})")
+    if romfs is not None:
+        audit_packaged_romfs(target, keys, sdk)

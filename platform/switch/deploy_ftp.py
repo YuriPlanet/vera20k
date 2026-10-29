@@ -41,8 +41,12 @@ def main():
     parser.add_argument("--port", type=int, default=5000)
     parser.add_argument("--fetch-reports", action="store_true")
     parser.add_argument("--gpu", action="store_true", help="Deploy the live GPU NRO/NSP and retail resources")
+    parser.add_argument("--client", action="store_true",
+                        help="Deploy the resource-bundled client NSP (the build that carries movies)")
     parser.add_argument("--retail-dir", type=Path, help="Local retail install to stage for --gpu")
     args = parser.parse_args()
+    if args.client and args.gpu:
+        parser.error("--client and --gpu are mutually exclusive")
     evidence = ROOT / "target/hardware"
     evidence.mkdir(parents=True, exist_ok=True)
     ftp = FTP()
@@ -76,6 +80,22 @@ def main():
             (smoke / "dist/switch-rust-smoke.nro", "/switch/switch-rust-smoke/switch-rust-smoke.nro"),
             (smoke / "dist/switch-rust-smoke.nsp", "/nsp/switch-rust-smoke.nsp"),
         ]
+        if args.client:
+            # The client NSP is the artifact whose bundled retail media broke
+            # once; deploy it through the same byte-readback path as the rest
+            # instead of a manual copy that skips verification. Discover it by
+            # glob so a version bump cannot leave this list stale.
+            clients = sorted((ROOT / "dist").glob("vera20-client-*.nsp"))
+            if not clients:
+                raise SystemExit("No client NSP in dist; build it with build.py --client")
+            client = clients[-1]
+            digest = client.with_suffix(client.suffix + ".sha256")
+            digest.write_text(f"{hashlib.sha256(client.read_bytes()).hexdigest()}  {client.name}\n")
+            artifacts = [
+                (ROOT / "dist/vera20k-client.nro", "/switch/vera20k/vera20k-client.nro"),
+                (client, "/nsp/" + client.name),
+                (digest, "/nsp/" + digest.name),
+            ]
         if args.gpu:
             retail = args.retail_dir
             if retail is None or not all((retail / name).is_file() for name in ["ra2.mix", "ra2md.mix"]):

@@ -1,7 +1,7 @@
 # VERA20k Switch 移植
 
 这是原生 Horizon / 大气层移植入口，使用独立 Cargo workspace 构建。
-当前分支为 `feature/switch-port`，客户端版本为 `0.0.2`。本分支也调整了共享
+当前分支为 `feature/switch-wgpu29`，客户端版本为 `0.0.3 beta`。本分支也调整了共享
 渲染代码及桌面依赖；Horizon 专用依赖补丁通过生成的 Switch Cargo 配置启用。
 
 客户端包含菜单、战役、遭遇战、音频和账号 SaveData 支持，仍处于实验阶段。
@@ -27,9 +27,9 @@
 python3 build.py --client
 ```
 
-当前客户端版本为 `0.0.2`，NSP 命名格式为
+当前客户端版本为 `0.0.3 beta`，NSP 命名格式为
 `dist/vera20-client-v<VERSION>.nsp`，本版产物为
-`dist/vera20-client-v0.0.2.nsp`，标题 ID
+`dist/vera20-client-v0.0.3.nsp`，标题 ID
 `0100f52556458000`。运行日志在客体 `sdmc:/switch/vera20k/logs/client.log`，
 错误结果在 `sdmc:/switch/vera20k/client.last-error.txt`。资源优先从包内 RomFS
 读取，配置和日志目录为
@@ -58,8 +58,8 @@ python3 build.py --client --nsp \
 因此请只放需要随包携带的资源。原始资源留在本机，不加入 Git。
 
 客户端链接构建默认打入游戏资源，并按 `vera20-client-v<VERSION>.nsp` 命名。
-本版资源内置 NSP 为 1,986,971,864 字节，SHA256
-`d9b3e2e9e05bac5a8b515e347d881165f3903d2b666109bbd870937e675dc71f`。
+NSP 大小取决于实际资源目录，旧版固定大小和 SHA256 不再适用于 `0.0.3 beta`；
+每次构建后请以 `dist/vera20-client-v0.0.3.nsp` 的 `stat` / `sha256sum` 结果为准。
 构建也会生成诊断 NRO；NRO 本身不内置这些资源。
 
 客户端挂载 `romfs:/`；没有配置覆盖时优先从包内读取资源，找不到包内资源时
@@ -79,8 +79,10 @@ python3 build.py --client --nsp \
 USB 键盘、鼠标仅在底座/TV 模式启用；掌机模式使用手柄和触摸。
 切回掌机会释放 USB 按键状态。手柄 A/B、单指触摸和 USB 鼠标共用点击事件，
 任一来源释放时不会打断其他来源仍按住的按钮。双指拖图整段抑制触摸点击。
+编辑框获得文本焦点时，实体 Plus 改为打开系统软键盘，不再合成为 Escape；
+确认后的 UTF-8 文本提交给当前聊天、玩家名或联机输入框。USB 键盘本身仍可直接输入。
 
-`v0.0.2` 手柄映射：左摇杆移动指针，右摇杆平移镜头；十字键上／下选择
+`v0.0.3 beta` 手柄映射：左摇杆移动指针，右摇杆平移镜头；十字键上／下选择
 编队 1／2，左为警戒（G），右为路径点模式（Z）。选中单位后，按住 R 再按
 上／下可建立编队 1／2；按住十字键右并依次点击地面设置路径点，松开后执行。
 X 为部署（D），Y 为切换同盟（A），L／R 为 Shift／Ctrl，ZL／ZR 为 Tab／Space，
@@ -207,9 +209,11 @@ VERA_RETAIL_DIR=/path/to/retail bash run_eden.sh --gpu
 
 `dist/vera20k-gpu.nro` 通过 Switch 原生 `NWindow` 直接调用项目的
 `src/render/gpu.rs`，不复制 GPU 初始化和取帧实现。
-已在带补丁的 Eden master 中通过 wgpu 27 / NVK 使用生产 `BatchRenderer` 显示
-12 个合成 RGBA 精灵。像素回读覆盖透明边缘、纹理颜色、全部实例以及相机平移和
-2 倍缩放。同一 GPU 探针还从模拟器内的 `temperat.mix` 经生产
+当前分支已升级到 wgpu 29.0.4 / Vulkan-only；编译检查通过，仍需在 Eden 和真机
+复验最终 NSP。以下是 wgpu 27 阶段已建立的生产渲染路径回归证据：带补丁的
+Eden master 通过 NVK 使用生产 `BatchRenderer` 显示 12 个合成 RGBA 精灵。
+像素回读覆盖透明边缘、纹理颜色、全部实例以及相机平移和 2 倍缩放。
+同一 GPU 探针还从模拟器内的 `temperat.mix` 经生产
 `AssetManager`、`load_theater` 和 `load_tile_images` 加载 INI、三套 PAL 与
 5 个 TMP。地图 fixture 再通过生产 `MapFile` 解析 9 条 `IsoMapPack5` 记录，
 经 Size diamond 与 `ResolvedTerrainGrid` 物化 15 格，并由主循环以生产
@@ -284,6 +288,15 @@ python3 deploy_ftp.py --host "$SWITCH_FTP_HOST" --port 5000
 上传先写临时文件，再下载逐字节核对后更名；已有不同内容的目标文件会保留备份。
 传输清单为 `target/hardware/deployment.json`。
 
+上传完整客户端（自带零售资源的 NSP，即承载剧情影片的包）加 `--client`：
+
+```bash
+python3 deploy_ftp.py --host "$SWITCH_FTP_HOST" --port 5000 --client
+```
+
+它按 `dist/vera20-client-*.nsp` 取最新包，随包生成并上传 `.sha256`，
+同样走临时文件加逐字节回读；不要用手动复制绕过这道校验。
+
 分别从 hbmenu 启动 NRO、从主菜单启动已安装的 NSP，按 A 后按 `+` 退出。
 重开 FTP 后下载报告：
 
@@ -304,7 +317,7 @@ NRO 与 NSP 分别写 `sdmc:/switch/vera20k/core-probe-{nro,nsp}.txt`。
 | MIX、INI、模拟核心 / Rayon | 核心 NSP 已通过模拟器和真机验证；范围为合成资源与空场景 |
 | Switch SDL2 / EGL / GLES 库 | 早期核心图形探针需要对应 portlibs |
 | Switch 原生窗口 / EGL / GLES2 图形层 | 已在 NRO 和 NSP 的 Eden 运行中画出 1280×720 画面；尚不是 Vera 生产渲染器 |
-| wgpu 27 | 使用 Horizon 补丁、Vulkan-only 配置，已链接并通过生产 `GpuContext`、`BatchRenderer`、TMP 图集与可见地形实例显示合成场景；真实地图和游戏客户端未接入 |
+| wgpu 29.0.4 | 桌面使用 29；Switch 固定 29.0.4、Vulkan-only 并使用 Horizon 补丁。核心与客户端编译通过，真实地图和完整客户端仍需最终 NSP 真机复验 |
 | rodio 0.22 / cpal 0.17 | 使用 Horizon 补丁后依赖编译检查通过；尚未链接和播放声音 |
 | 桌面 winit / Wayland / rustix | 无法直接用于 Horizon；包含窗口栈的实际依赖检查在 rustix 0.38 报错，winit 本身也没有 Horizon backend |
 | Switch NVK 静态驱动 | 已从 Mesa `606441c90e` 交叉编译，生成本地化 `libvulkan_bh.a`；实例、能力枚举、Vi 表面和逻辑设备已通过 |
@@ -323,11 +336,13 @@ python3 build.py --check-client-deps --without-winit
 ```
 
 检查从桌面 Cargo.toml 读取依赖，并锁定桌面 Cargo.lock 中的对应版本。
-上游的 libc、memmap2、wgpu 27、raw-window-handle、cpal 补丁仅通过生成的 Switch
+上游的 libc、memmap2、wgpu 29.0.4、raw-window-handle、cpal 补丁仅通过生成的 Switch
 配置启用。当前分支的共享渲染 API 和桌面依赖也有调整，桌面平台兼容性需要单独验证。
 补丁源码和许可来源见 `UPSTREAM.md`。
 
-当前堆内存后备映射会把 MIX 整包读入内存；真实资源加载后还需要测量峰值内存。
+顶层 MIX 使用 mmap，影片解码直接使用 MIX 内的共享切片，不再复制整段 BIK；
+但进程 RSS 仍会计入实际访问过的文件映射页，释放影片对象不等于立即归还这些页。
+地图加载会复用 LZO 输出容量并避免拼接整段 Base64，仍需用真机日志测量峰值内存。
 此探针不验证大型纹理图集、所有文件操作或真实对局性能。
 
 下一阶段是接入生产地形与 SHP/VXL 渲染，并逐步接通客户端事件、菜单与音频。

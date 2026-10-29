@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Cross-build the VERA20k client or diagnostic probes with Horizon std/newlib."""
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -17,8 +18,40 @@ WORKSPACE = ROOT.parents[3]
 TOOLCHAIN = "nightly-2026-10-04"
 UPSTREAM_COMMIT = "3eac779b232ee47cd0eb957676c64386ac7b0f1d"
 DEFAULT_CLIENT_ASSETS = ROOT / "target/emulator/master-xdg-data/eden/sdmc/game"
-CLIENT_VERSION = "0.0.2"
+CLIENT_VERSION = "0.0.3 beta"
 PROFILE_FEATURES = "horizon-frame-profile,telemetry"
+# Media that the client cannot substitute: a zero-byte or absent member here
+# silently removes in-game movies, music or subtitles from the installed NSP
+# (a 0.0.3 build once shipped empty movmd03.mix/movies01.mix placeholders).
+REQUIRED_MEDIA_ASSETS = (
+    "movmd03.mix",
+    "movies01.mix",
+    "theme.mix",
+    "thememd.mix",
+    "subtitlemd.txt",
+)
+
+
+def check_asset_directory(assets: Path, require_media: bool) -> list[str]:
+    """Return warnings for media that is absent or empty in `assets`.
+
+    The two main MIX files are fatal; optional media only warns because some
+    installs legitimately lack it, but it must never be an empty placeholder.
+    """
+    for required in ("ra2.mix", "ra2md.mix"):
+        path = assets / required
+        if not path.is_file() or not path.stat().st_size:
+            return [f"NSP asset directory is missing {required}: {assets}"]
+    if not require_media:
+        return []
+    warnings = []
+    for name in REQUIRED_MEDIA_ASSETS:
+        path = assets / name
+        if not path.is_file():
+            warnings.append(f"{name} is absent from {assets}: movies/music/subtitles will be missing")
+        elif path.stat().st_size == 0:
+            warnings.append(f"{name} is empty in {assets}: it is a placeholder, not retail media")
+    return warnings
 
 
 def configure_client_savedata(nacp: Path, title_id: str):
@@ -129,10 +162,14 @@ def main():
         parser.error("--nsp-assets requires a linked client build")
     if args.nsp_assets:
         assets = Path(args.nsp_assets).expanduser().resolve()
-        for required in ("ra2.mix", "ra2md.mix"):
-            if not (assets / required).is_file() or not (assets / required).stat().st_size:
-                parser.error(f"NSP asset directory is missing {required}: {assets}")
+        media_warnings = check_asset_directory(assets, require_media=True)
+        if any("is missing" in warning for warning in media_warnings):
+            parser.error("\n".join(media_warnings))
         args.nsp_assets = str(assets)
+        if media_warnings:
+            print("NSP asset media warnings:", flush=True)
+            for warning in media_warnings:
+                print("  warning:", warning, flush=True)
     os.chdir(ROOT)
     rust_bin = Path.home() / ".cargo/bin"
     os.environ["PATH"] = str(rust_bin) + os.pathsep + os.environ["PATH"]
@@ -238,6 +275,13 @@ def main():
     selected_features = [selected_feature] if selected_feature else []
     if args.profile_sim:
         selected_features.extend(PROFILE_FEATURES.split(","))
+        source_revision = subprocess.check_output(
+            ["git", "-C", str(ROOT), "rev-parse", "--short=12", "HEAD"],
+            text=True,
+        ).strip()
+        os.environ["VERA_SWITCH_BUILD"] = (
+            source_revision + "@" + datetime.now(timezone.utc).isoformat()
+        )
     features = ["--features", ",".join(selected_features)] if selected_features else []
     run("cargo", f"+{TOOLCHAIN}", "check" if args.check or args.check_client_deps else "build", *manifest, *features,
         "--release", "--config", config, "--target", target,
@@ -259,19 +303,25 @@ def main():
     specs = work / "switch.specs"
     original = (sdk / "libnx/switch.specs").read_text()
     original = original.replace("%:getenv(DEVKITPRO /libnx/switch.ld)", str(linker_script))
-    original = original.replace("--nx-module-name", "--nx-module-name --wrap=threadCreate")
+    wrappers = "--wrap=threadCreate" + (" --wrap=threadClose" if args.profile_sim else "")
+    original = original.replace("--nx-module-name", "--nx-module-name " + wrappers)
     specs.write_text(original)
     cc = sdk / "devkitA64/bin/aarch64-none-elf-gcc"
     artifact = "vera20k-client" if args.client else "vera20k-gpu" if args.gpu else "vera20k-core"
     graphics = ["-DVERA_WGPU"] if args.gpu or args.client else []
     if args.client:
         graphics.append("-DVERA_CLIENT")
+    if args.profile_sim:
+        graphics.append("-DVERA_PERF")
     architecture = ["-march=armv8-a+crc+crypto", "-mtune=cortex-a57", "-mtp=soft", "-fPIE"]
     cflags = [*architecture, *graphics, "-O2", "-g", "-Wall", "-Wextra", "-Werror", "-D__SWITCH__",
         "-ffunction-sections", "-fdata-sections", "-I", sdk / "libnx/include",
         "-I", sdk / "portlibs/switch/include"]
     runtime_objects = [work / "runtime.o"]
     run(cc, *cflags, "-c", "runtime.c", "-o", runtime_objects[0])
+    if args.profile_sim:
+        runtime_objects.append(work / "perf.o")
+        run(cc, *cflags, "-c", "perf.c", "-o", runtime_objects[-1])
     if args.client:
         runtime_objects.append(work / "fps_report.o")
         run(cc, *cflags, "-c", "fps_report.c", "-o", runtime_objects[-1])
