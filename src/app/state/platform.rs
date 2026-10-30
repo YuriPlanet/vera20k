@@ -63,6 +63,10 @@ pub(crate) struct PlatformState {
     /// Whether the OS text-input context is currently enabled for an editing
     /// control, and the last caret approximation handed to it.
     pub(crate) ime_allowed: bool,
+    /// Which edit owns the IME context. The software keyboard is one-shot, so
+    /// moving focus between two edits must be visible as a change even though
+    /// IME stays enabled for both.
+    pub(crate) ime_focus: Option<crate::app::input::ime::FocusedEdit>,
     pub(crate) ime_cursor: Option<(i32, i32)>,
     /// The physical modifier keys held, the source both modifier views are
     /// derived from (see `HeldModifierKeys`).
@@ -125,6 +129,7 @@ impl PlatformState {
             os_cursor_visible: None,
             live_modifiers: winit::keyboard::ModifiersState::empty(),
             ime_allowed: false,
+            ime_focus: None,
             ime_cursor: None,
             held_modifier_keys: Default::default(),
             window_active: true,

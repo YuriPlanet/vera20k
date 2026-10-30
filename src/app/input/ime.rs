@@ -8,33 +8,50 @@ use crate::app::{App, AppState};
 use crate::ui::game_screen::GameScreen;
 use winit::dpi::{PhysicalPosition, PhysicalSize, Position, Size};
 
-/// Whether an edit that accepts text currently owns focus.
-pub(crate) fn text_input_active(state: &AppState) -> bool {
+/// Identifies the focused edit, so switching between two edits is visible as
+/// a change even though both keep IME enabled.
+///
+/// The address of the edit's focus flag is stable for as long as that control
+/// exists and needs no per-state label field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FocusedEdit(usize);
+
+/// The edit that accepts text and currently owns focus, if any.
+fn focused_edit(state: &AppState) -> Option<FocusedEdit> {
+    fn flag(edit: &impl EditFocus) -> Option<FocusedEdit> {
+        edit.focus_flag().then(|| FocusedEdit(edit as *const _ as usize))
+    }
     if crate::app::frontend::shell_transition::blocks_shell_input(state) {
-        return false;
+        return None;
     }
     if state.frontend.screen == GameScreen::InGame
         && state.match_state.match_presentation.message_list.editing()
     {
-        return true;
+        return Some(FocusedEdit(
+            &state.match_state.match_presentation.message_list as *const _ as usize,
+        ));
     }
     if crate::app::input::coop_score::active(state) {
         return state
             .frontend
             .coop_score_page
             .as_ref()
-            .is_some_and(|page| page.ui.chat.edit.focused);
+            .and_then(|page| flag(&page.ui.chat.edit));
     }
     if let Some(dialog) = state.frontend.network_options.as_ref() {
-        return dialog.pending_message().is_none()
-            && (dialog.socket.focused || dialog.destination.focused || dialog.port.focused);
+        if dialog.pending_message().is_some() {
+            return None;
+        }
+        return flag(&dialog.socket)
+            .or_else(|| flag(&dialog.destination))
+            .or_else(|| flag(&dialog.port));
     }
     if state.frontend.screen == GameScreen::MainMenu && state.frontend.shell_route.lan_lobby() {
-        return state.frontend.lan.as_ref().is_some_and(|runtime| {
-            runtime.modal.is_none()
-                && runtime.lobby.enabled
-                && (runtime.lobby.name.focused || runtime.lobby.chat.edit.focused)
-        });
+        let runtime = state.frontend.lan.as_ref()?;
+        if runtime.modal.is_some() || !runtime.lobby.enabled {
+            return None;
+        }
+        return flag(&runtime.lobby.name).or_else(|| flag(&runtime.lobby.chat.edit));
     }
     if state.frontend.screen == GameScreen::MainMenu
         && state.frontend.shell_route.network_setup()
@@ -44,9 +61,11 @@ pub(crate) fn text_input_active(state: &AppState) -> bool {
             .choose_map_modal
             .is_none()
     {
-        return state.frontend.multiplayer_setup.as_ref().is_some_and(|ui| {
-            ui.focused_control == crate::ui::multiplayer_setup::CHAT && ui.chat.edit.focused
-        });
+        let ui = state.frontend.multiplayer_setup.as_ref()?;
+        if ui.focused_control != crate::ui::multiplayer_setup::CHAT {
+            return None;
+        }
+        return flag(&ui.chat.edit);
     }
     if App::native_skirmish_shell_active(state) {
         if let Some(browser) = state
@@ -55,10 +74,13 @@ pub(crate) fn text_input_active(state: &AppState) -> bool {
             .saved_seed_browser
             .as_ref()
         {
-            return browser.prompt.is_none() && browser.description_edit.focused;
+            if browser.prompt.is_some() {
+                return None;
+            }
+            return flag(&browser.description_edit);
         }
         if state.frontend.skirmish_shell_state.player_name_edit.focused {
-            return true;
+            return flag(&state.frontend.skirmish_shell_state.player_name_edit);
         }
     }
     if state.frontend.screen == GameScreen::InGame
@@ -67,17 +89,43 @@ pub(crate) fn text_input_active(state: &AppState) -> bool {
             crate::ui::pause_menu::InGameMenuState::SavedGame(_)
         )
     {
-        return state
+        let browser = state
             .match_state
             .match_presentation
             .saved_game_browser
-            .as_ref()
-            .is_some_and(|browser| browser.prompt.is_none() && browser.description_edit.focused);
+            .as_ref()?;
+        if browser.prompt.is_some() {
+            return None;
+        }
+        return flag(&browser.description_edit);
     }
     if crate::app::shell_wol::text_input_active(state) {
-        return true;
+        return Some(FocusedEdit(
+            &state.frontend.wol as *const _ as usize,
+        ));
     }
-    false
+    None
+}
+
+pub(crate) trait EditFocus {
+    fn focus_flag(&self) -> bool;
+}
+
+impl EditFocus for crate::ui::skirmish_shell::PlayerNameEditState {
+    fn focus_flag(&self) -> bool {
+        self.focused
+    }
+}
+
+impl EditFocus for crate::ui::skirmish_shell::SavedSeedDescriptionEdit {
+    fn focus_flag(&self) -> bool {
+        self.focused
+    }
+}
+
+/// Whether an edit that accepts text currently owns focus.
+pub(crate) fn text_input_active(state: &AppState) -> bool {
+    focused_edit(state).is_some()
 }
 
 /// Insert one committed string into whichever edit owned focus when the IME
@@ -151,9 +199,21 @@ pub(crate) fn commit(state: &mut AppState, text: &str) -> bool {
 /// this to start/stop composition; Horizon uses the same signal to open its
 /// software keyboard once per focus acquisition.
 pub(crate) fn sync_window(state: &mut AppState) {
-    let active = state.platform.window_active && text_input_active(state);
-    if active != state.platform.ime_allowed {
+    let focused = if state.platform.window_active {
+        focused_edit(state)
+    } else {
+        None
+    };
+    let active = focused.is_some();
+    // Reopening when a *different* edit takes focus matters as much as the
+    // first one: the software keyboard is a one-shot modal, so a player who
+    // taps a second text field needs it raised again even though IME stayed
+    // enabled the whole time.
+    let changed = active != state.platform.ime_allowed
+        || focused != state.platform.ime_focus;
+    if changed {
         state.platform.ime_allowed = active;
+        state.platform.ime_focus = focused;
         state.platform.window.set_ime_allowed(active);
         if active {
             state.platform.ime_cursor = None;
