@@ -173,10 +173,15 @@ bool platform_mouse(int32_t *delta_x, int32_t *delta_y, int32_t *wheel_x,
                     uint32_t *released_buttons) {
     static uint64_t last_sample;
     static uint32_t last_buttons;
+    // Handheld mode allows a USB or Bluetooth mouse too, so the display mode
+    // no longer gates it. Instead the mouse stays authoritative only while it
+    // is actually being used: after this idle period the caller falls back to
+    // the sticks and the touch screen.
+    static uint64_t last_activity_tick;
+    const uint64_t idle_limit = armGetSystemTickFreq() * 10ULL; // 10 s
     HidMouseState states[17] = {0};
     size_t count = hidGetMouseStates(states, 17);
-    if (appletGetOperationMode() != AppletOperationMode_Console ||
-        !count || !(states[0].attributes & HidMouseAttribute_IsConnected)) {
+    if (!count || !(states[0].attributes & HidMouseAttribute_IsConnected)) {
         last_sample = 0;
         last_buttons = 0;
         return false;
@@ -192,22 +197,37 @@ bool platform_mouse(int32_t *delta_x, int32_t *delta_y, int32_t *wheel_x,
         wx += states[index].wheel_delta_x;
         wy += states[index].wheel_delta_y;
     }
+    uint64_t now = armGetSystemTick();
+    bool moved = dx != 0 || dy != 0 || wx != 0 || wy != 0;
+    // A button edge must also count: a click right after the idle limit would
+    // otherwise be dropped while the pointer sits where the sticks left it.
+    uint32_t pressed_now = 0, released_now = 0;
+    {
+        uint32_t previous = last_buttons;
+        for (size_t index = available; index-- > 0;) {
+            pressed_now |= states[index].buttons & ~previous;
+            released_now |= ~states[index].buttons & previous;
+            previous = states[index].buttons;
+        }
+    }
+    if (moved || pressed_now || released_now) {
+        last_activity_tick = now;
+    } else if (last_activity_tick
+               && now - last_activity_tick > idle_limit) {
+        last_sample = 0;
+        last_buttons = 0;
+        last_activity_tick = 0;
+        return false;
+    }
     if (delta_x) *delta_x = dx;
     if (delta_y) *delta_y = dy;
     if (wheel_x) *wheel_x = wx;
     if (wheel_y) *wheel_y = wy;
     if (buttons) *buttons = states[0].buttons;
-    uint32_t pressed = 0, released = 0;
-    uint32_t previous = last_buttons;
-    for (size_t index = available; index-- > 0;) {
-        pressed |= states[index].buttons & ~previous;
-        released |= ~states[index].buttons & previous;
-        previous = states[index].buttons;
-    }
     last_sample = states[0].sampling_number;
     last_buttons = states[0].buttons;
-    if (pressed_buttons) *pressed_buttons = pressed;
-    if (released_buttons) *released_buttons = released;
+    if (pressed_buttons) *pressed_buttons = pressed_now;
+    if (released_buttons) *released_buttons = released_now;
     return true;
 }
 uint64_t platform_keyboard(uint64_t *keys) {
