@@ -1907,6 +1907,7 @@ fn pump_loading_after_present(
                     shared_cell_dummy,
                     tile_variant_selector_cache,
                     &mut progress.sink,
+                    state.persistence.options_profile.house_color_strength,
                 )
                 .map(Some)
             } else {
@@ -1930,6 +1931,7 @@ fn pump_loading_after_present(
                     shared_cell_dummy,
                     tile_variant_selector_cache,
                     progress: &mut progress.sink,
+                    house_color_strength: state.persistence.options_profile.house_color_strength,
                 })?;
                 if result.is_none() {
                     continuing = Some(load);
@@ -2093,6 +2095,7 @@ fn pump_map_construction(
             shared_cell_dummy,
             tile_variant_selector_cache,
             progress: &mut progress.sink,
+            house_color_strength: state.persistence.options_profile.house_color_strength,
         })
     })();
     match step {

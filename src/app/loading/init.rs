@@ -2731,6 +2731,7 @@ pub(crate) fn load_map_from_initial(
     shared_cell_dummy: crate::map::resolved_terrain::SharedCellDummy,
     tile_variant_selector_cache: &mut crate::map::tile_variant_selector::TileVariantSelectorCache,
     progress: &mut dyn crate::app::loading::pump::LoadingProgressSink,
+    house_color_strength: u8,
 ) -> Result<MapLoadResult> {
     let mut job = FreshMapLoadJob::new(
         initial,
@@ -2753,6 +2754,7 @@ pub(crate) fn load_map_from_initial(
             shared_cell_dummy: shared_cell_dummy.clone(),
             tile_variant_selector_cache,
             progress,
+            house_color_strength,
         })? {
             return Ok(result);
         }
@@ -2987,6 +2989,12 @@ fn load_map_first_step(
                         .map_err(anyhow::Error::msg)?,
                     };
                     let mut rules = loaded_rules;
+                    // VERA's presentation strength applies before any colour
+                    // table is derived: the sprite atlas bakes its house remap
+                    // from this table, and the voxel ramp texture uploads it.
+                    rules
+                        .house_color_ramps
+                        .set_strength(services.house_color_strength);
                     crate::app::loading::init_helpers::bind_rules_art_metadata(
                         &mut rules,
                         &fixed_art_ini,

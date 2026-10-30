@@ -118,6 +118,7 @@ fn load_campaign(
         dummy,
         cache,
         &mut SilentProgress,
+        crate::rules::house_colors::STRENGTH_RETAIL,
     )
     .unwrap();
     crate::sim::runtime::SimRuntime {

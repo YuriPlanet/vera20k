@@ -19,6 +19,11 @@ pub(crate) struct FreshMapLoadServices<'a> {
     pub(crate) tile_variant_selector_cache:
         &'a mut crate::map::tile_variant_selector::TileVariantSelectorCache,
     pub(crate) progress: &'a mut dyn crate::app::loading::pump::LoadingProgressSink,
+    /// `[VERA] HouseColorStrength=`: how strongly this battle's `[Colors]`
+    /// team-color bands are boosted. Presentation only, read once while the
+    /// world's colours are built, so the atlas, the voxel ramp texture, the
+    /// radar dots and the target lines all share one table.
+    pub(crate) house_color_strength: u8,
 }
 
 pub(super) struct FreshMapLoadContinuation {

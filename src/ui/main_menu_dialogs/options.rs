@@ -87,6 +87,12 @@ pub(crate) const SHIFT_QUEUE_HELP: &str =
     "Shift-click an infantry, vehicle or aircraft cameo to queue several at once.";
 pub(crate) const DISPLAY_LABEL: &str = "Display";
 pub(crate) const DISPLAY_HELP: &str = "Which screen the game opens on. Auto follows the system.";
+/// VERA's Accessibility band on its page: the first accessibility control, the
+/// strength of the `[Colors]` team-colour bands. Retail's string table has
+/// nothing for either.
+pub(crate) const ACCESSIBILITY_LABEL: &str = "Accessibility";
+pub(crate) const HOUSE_COLOR_STRENGTH_LABEL: &str = "Team Color Strength";
+pub(crate) const HOUSE_COLOR_STRENGTH_HELP: &str = "How strongly team colours stand out, from 1 for the original bands to 10 for the boldest. The next battle uses it.";
 /// The Display list's first row: the window system's own choice.
 pub(crate) const DISPLAY_AUTO_LABEL: &str = "Auto";
 /// The main page's button to VERA's page, and that page's heading.
@@ -425,6 +431,11 @@ pub(crate) enum LauncherTrackbarId {
     Score,
     Sound,
     Voice,
+    /// VERA's own slider: how strongly the `[Colors]` team-colour bands are
+    /// boosted, on the [`crate::rules::house_colors`] scale. Its position is
+    /// the level minus [`crate::rules::house_colors::STRENGTH_MIN`], so the
+    /// retail strength is position 0 and the strongest is position 9.
+    HouseColorStrength,
 }
 
 impl LauncherTrackbarId {
@@ -434,6 +445,9 @@ impl LauncherTrackbarId {
             Self::Difficulty => 2,
             Self::Scroll => 6,
             Self::Score | Self::Sound | Self::Voice => 10,
+            Self::HouseColorStrength => {
+                crate::rules::house_colors::STRENGTH_MAX - crate::rules::house_colors::STRENGTH_MIN
+            }
         }
     }
 
@@ -442,7 +456,7 @@ impl LauncherTrackbarId {
     pub(crate) const fn plaque_reserve(self) -> i32 {
         match self {
             Self::Detail | Self::Difficulty | Self::Scroll => 0,
-            Self::Score | Self::Sound | Self::Voice => 50,
+            Self::Score | Self::Sound | Self::Voice | Self::HouseColorStrength => 50,
         }
     }
 
@@ -529,6 +543,8 @@ pub(crate) enum LauncherOptionsEvent {
     MouseWheelZoomChanged(bool),
     FpsCounterChanged(bool),
     SkipStartupLogoChanged(bool),
+    /// VERA's team-colour strength, as the level the profile stores.
+    HouseColorStrengthChanged(u8),
     ScorePreview(f32),
     SoundPreview(f32),
     VoicePreview(f32),
@@ -576,6 +592,10 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) skip_startup_logo: bool,
     /// The Sidebar list's choice; like Zoom, it applies at once.
     pub(crate) sidebar: SidebarSize,
+    /// VERA's team-colour strength as the slider's position,
+    /// [`crate::rules::house_colors::STRENGTH_MIN`] less than the level the
+    /// profile stores. Position 0 is gamemd's own bands.
+    pub(crate) house_color_position: u8,
     pub(crate) score_position: u8,
     pub(crate) sound_position: u8,
     pub(crate) voice_position: u8,
@@ -600,6 +620,7 @@ impl Default for LauncherOptionsValues {
             fps_counter: false,
             skip_startup_logo: false,
             sidebar: SidebarSize::Normal,
+            house_color_position: 0,
             score_position: 4,
             sound_position: 7,
             voice_position: 7,
@@ -732,6 +753,12 @@ impl OptionsDialogState {
         values.score_position = admitted_initial_position(i64::from(values.score_position), 10);
         values.sound_position = admitted_initial_position(i64::from(values.sound_position), 10);
         values.voice_position = admitted_initial_position(i64::from(values.voice_position), 10);
+        // VERA's own slider takes the top level for a position past its range:
+        // there is no boost above it to ask for, and the profile never holds
+        // one either.
+        values.house_color_position = values
+            .house_color_position
+            .min(LauncherTrackbarId::HouseColorStrength.maximum());
         // The 0x497 init sets each trackbar's range and position; every change
         // sends WM_HSCROLL (0x0061E609..0x0061E6AF), whose handler
         // (0x0055FF68) names the position (tables 0x0082A248 / 0x0082A254 /
@@ -803,6 +830,24 @@ impl OptionsDialogState {
             LauncherTrackbarId::Score => self.values.score_position,
             LauncherTrackbarId::Sound => self.values.sound_position,
             LauncherTrackbarId::Voice => self.values.voice_position,
+            LauncherTrackbarId::HouseColorStrength => self.values.house_color_position,
+        }
+    }
+
+    /// VERA's team-colour strength as the level the profile stores: the
+    /// slider's position lifted onto the
+    /// [`crate::rules::house_colors`] scale.
+    pub(crate) const fn house_color_strength(&self) -> u8 {
+        self.values.house_color_position + crate::rules::house_colors::STRENGTH_MIN
+    }
+
+    /// What a plaque trackbar's plaque reads. Retail's sliders show their
+    /// position; VERA's strength shows the level that position stands for, so
+    /// the player never sees a 0 for gamemd's own colours.
+    pub(crate) fn trackbar_plaque_text(&self, id: LauncherTrackbarId) -> String {
+        match id {
+            LauncherTrackbarId::HouseColorStrength => self.house_color_strength().to_string(),
+            _ => self.trackbar_position(id).to_string(),
         }
     }
 
@@ -820,6 +865,7 @@ impl OptionsDialogState {
             LauncherTrackbarId::Score => &mut self.values.score_position,
             LauncherTrackbarId::Sound => &mut self.values.sound_position,
             LauncherTrackbarId::Voice => &mut self.values.voice_position,
+            LauncherTrackbarId::HouseColorStrength => &mut self.values.house_color_position,
         };
         if *slot == position {
             return;
@@ -850,6 +896,19 @@ impl OptionsDialogState {
             LauncherTrackbarId::Voice => self.pending_events.push(
                 LauncherOptionsEvent::VoicePreview(f32::from(position) * 0.1),
             ),
+            // A once-per-drag setting rather than a live preview: the battle
+            // this applies to is loaded later, and the accept writes it out.
+            // With no audible preview to audition, the retail notch click is
+            // the drag's only feedback, as on the detail, difficulty and
+            // scroll sliders.
+            LauncherTrackbarId::HouseColorStrength => {
+                self.pending_events
+                    .push(LauncherOptionsEvent::Cue(LauncherCue::GenericClick));
+                self.pending_events
+                    .push(LauncherOptionsEvent::HouseColorStrengthChanged(
+                        position + crate::rules::house_colors::STRENGTH_MIN,
+                    ))
+            }
         }
     }
 
@@ -1152,6 +1211,40 @@ mod tests {
         assert_eq!(labels.options, "Localized Options");
         assert_eq!(labels.main_menu, "Main Menu");
         assert_eq!(csf.text("GUI:MainMenu"), "MISSING:'GUI:MainMenu'");
+    }
+
+    /// VERA's strength slider holds positions 0..=9 and nothing else, and the
+    /// level it publishes is the profile's own 1..=10 scale.
+    #[test]
+    fn house_color_strength_stays_on_the_supported_range() {
+        use crate::rules::house_colors::{STRENGTH_MAX, STRENGTH_RETAIL};
+        let mut state = OptionsDialogState::new(
+            labels(),
+            LauncherOptionsValues {
+                // A hand-edited profile or a stale caller can ask for more.
+                house_color_position: 200,
+                ..Default::default()
+            },
+            Zoom::Auto,
+            true,
+            Vec::new(),
+            DisplayTarget::Auto,
+        );
+        assert_eq!(state.house_color_strength(), STRENGTH_MAX);
+        state.set_trackbar_position(LauncherTrackbarId::HouseColorStrength, 4);
+        assert_eq!(state.house_color_strength(), STRENGTH_RETAIL + 4);
+        // Past the control's range the native guard rejects the set outright.
+        state.set_trackbar_position(LauncherTrackbarId::HouseColorStrength, 10);
+        assert_eq!(state.house_color_strength(), STRENGTH_RETAIL + 4);
+        // A real change publishes one notch click and one level: the click is
+        // the drag's only feedback, since a strength has nothing to audition.
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::GenericClick),
+                LauncherOptionsEvent::HouseColorStrengthChanged(STRENGTH_RETAIL + 4),
+            ]
+        );
     }
 
     #[test]

@@ -13,7 +13,7 @@ use crate::ui::main_menu_dialogs::options::shell::{
     LauncherLabelAlign, LauncherOptionsLayout, LauncherStatusHelp,
 };
 use crate::ui::main_menu_dialogs::options::{
-    LauncherCheckboxId, LauncherComboId, LauncherTrackbarId, OptionsDialogState, Zoom,
+    LauncherCheckboxId, LauncherComboId, OptionsDialogState, Zoom,
 };
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::util::time::Instant;
@@ -187,13 +187,10 @@ fn build_text(
         ));
     }
     for &(id, rect) in &layout.trackbars {
-        if matches!(
-            id,
-            LauncherTrackbarId::Score | LauncherTrackbarId::Sound | LauncherTrackbarId::Voice
-        ) {
+        if id.plaque_reserve() > 0 {
             out.push(text_draw(
                 font,
-                &dialog.trackbar_position(id).to_string(),
+                &dialog.trackbar_plaque_text(id),
                 crate::ui::shell::trackbar::value_text_rect(rect, scale),
                 ShellAlign::H_CENTER | ShellAlign::V_CENTER,
                 if dialog.trackbar_enabled(id) {

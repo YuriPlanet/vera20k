@@ -41,6 +41,11 @@ pub(crate) fn launcher_values_from_profile(
         fps_counter: false,
         skip_startup_logo: profile.skip_startup_logo,
         sidebar: profile.sidebar,
+        // The slider's position is the stored level less the retail strength,
+        // so gamemd's own bands sit at the left end.
+        house_color_position: profile
+            .house_color_strength
+            .saturating_sub(crate::rules::house_colors::STRENGTH_RETAIL),
         score_position: admitted_volume_position(profile.score_volume),
         sound_position: admitted_volume_position(profile.sound_volume),
         voice_position: admitted_volume_position(profile.voice_volume),
@@ -95,6 +100,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_wol_test_service(&mut self, wol_test_service: bool);
     fn set_fps_counter(&mut self, shown: bool);
     fn store_skip_startup_logo(&mut self, skip: bool);
+    /// VERA's team-colour strength, as the level the profile stores.
+    fn store_house_color_strength(&mut self, strength: u8);
 }
 
 /// Dispatch one already-ordered UI event without an INI write. The three audio
@@ -133,6 +140,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::FpsCounterChanged(shown) => operations.set_fps_counter(shown),
         LauncherOptionsEvent::SkipStartupLogoChanged(skip) => {
             operations.store_skip_startup_logo(skip);
+        }
+        LauncherOptionsEvent::HouseColorStrengthChanged(strength) => {
+            operations.store_house_color_strength(strength);
         }
         LauncherOptionsEvent::ScorePreview(volume) => {
             apply_volume(operations, AudioVolume::Score, volume, true)

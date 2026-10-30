@@ -140,6 +140,11 @@ pub(crate) struct RetailOptionsProfile {
     /// `[VERA] MouseWheelZoom=`: let the mouse wheel change the battle's
     /// view distance. Off by default; this is a local camera preference.
     pub(crate) mouse_wheel_zoom: bool,
+    /// `[VERA] HouseColorStrength=`: how strongly VERA boosts the `[Colors]`
+    /// team-color bands, 1 (gamemd's own ramps) through 10. Presentation only:
+    /// it never reaches simulation state, and a battle reads it when its
+    /// colours are built. Clamped by `STRENGTH_MIN..=STRENGTH_MAX`.
+    pub(crate) house_color_strength: u8,
     /// `[VERA] ShiftQueue=`: whether a Shift-click on a mobile strip queues
     /// [`Self::shift_queue_count`] builds: the Options page's Shift-Click
     /// Batch Queue. Off by default, so Shift + left click queues one copy as
@@ -233,6 +238,7 @@ impl Default for RetailOptionsProfile {
             skip_startup_logo: false,
             render_interpolation: false,
             mouse_wheel_zoom: false,
+            house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             wol_test_service: false,
@@ -256,7 +262,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 13],
+    pub(crate) vera: [(&'static str, String); 14],
 }
 
 impl RetailOptionsLoad {
@@ -459,6 +465,11 @@ impl RetailOptionsProfile {
             self.render_interpolation =
                 vera.read_bool("RenderInterpolation", self.render_interpolation);
             self.mouse_wheel_zoom = vera.read_bool("MouseWheelZoom", self.mouse_wheel_zoom);
+            // A non-numeric value answers 0, which the clamp lifts to the
+            // retail strength rather than to a negative boost.
+            self.house_color_strength = crate::rules::house_colors::clamped_strength(
+                vera.read_int("HouseColorStrength", i32::from(self.house_color_strength)),
+            );
             self.shift_queue = vera.read_bool("ShiftQueue", self.shift_queue);
             // Absent keeps the current value; present-but-nonnumeric answers 0,
             // which the range lifts to 1 rather than a click that queues nothing.
@@ -581,6 +592,7 @@ impl RetailOptionsProfile {
                     "MouseWheelZoom",
                     format_bool(self.mouse_wheel_zoom).to_string(),
                 ),
+                ("HouseColorStrength", self.house_color_strength.to_string()),
                 ("Display", self.display.ini_value().to_owned()),
             ],
         }

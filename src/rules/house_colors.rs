@@ -44,6 +44,15 @@ pub fn house_text_rgb(schemes: &[ColorSchemeEntry], color: HouseColorIndex) -> [
 /// Number of shades per house color band (matches palette indices 16–31).
 const RAMP_SIZE: usize = 16;
 
+/// VERA's house-colour strength range. gamemd has no such control; these are
+/// presentation only and never reach simulation state. [`STRENGTH_RETAIL`]
+/// reproduces every retail ramp byte for byte, and the top of the range is
+/// the strongest boost.
+pub const STRENGTH_MIN: u8 = 1;
+pub const STRENGTH_MAX: u8 = 10;
+/// The strength a table starts at: gamemd's own ramps.
+pub const STRENGTH_RETAIL: u8 = STRENGTH_MIN;
+
 /// Exact active-YR `f32` samples selected for the 16 saturation shades.
 #[rustfmt::skip]
 const SATURATION_FACTOR_BITS: [u32; RAMP_SIZE] = [
@@ -97,6 +106,74 @@ pub fn build_scheme_ramp(hsv: [u8; 3]) -> [Color; RAMP_SIZE] {
     ramp
 }
 
+/// The fractional strength: 0 at [`STRENGTH_MIN`], 1 at [`STRENGTH_MAX`].
+fn strength_fraction(strength: u8) -> f64 {
+    let level = strength.clamp(STRENGTH_MIN, STRENGTH_MAX);
+    f64::from(level - STRENGTH_MIN) / f64::from(STRENGTH_MAX - STRENGTH_MIN)
+}
+
+/// A profile's `[VERA] HouseColorStrength=` integer lifted into the supported
+/// range, so a hand-edited file cannot ask for a boost outside it.
+pub fn clamped_strength(value: i32) -> u8 {
+    value.clamp(i32::from(STRENGTH_MIN), i32::from(STRENGTH_MAX)) as u8
+}
+
+/// How far a shade's own saturation scales up at full strength.
+const SATURATION_GAIN: f64 = 0.90;
+/// How far a shade's own value rises toward white at full strength, as the
+/// gamma exponent `1 / (1 + VALUE_GAIN)`.
+const VALUE_GAIN: f64 = 0.35;
+
+/// One shade's saturation and value after a boost, in the same units
+/// [`modulated_sv`] returns.
+///
+/// Both scale from the shade's own figures rather than toward a fixed target,
+/// for reasons the band itself imposes. Saturation scales, so a saturated band
+/// reaches its pure hue while a near-grey scheme keeps the faint tint it had
+/// instead of being dragged to a hue it never had. Value follows a gamma curve
+/// toward white, so the mid and dark shades rise toward the bright end and the
+/// band reads bolder at battle zoom. The two cheaper alternatives both fail
+/// here: a symmetric stretch around mid grey only darkens the rest, because the
+/// bright end already sits at 255 and clamps, and a plain multiplication clamps
+/// the top few shades into one flat block, losing the highlight gradient. The
+/// gamma curve never clamps, so every shade keeps its own step. The hue is
+/// never touched: a boosted team colour is the same colour, only bolder.
+fn boosted_sv([saturation, value]: [u8; 2], fraction: f64) -> [u8; 2] {
+    if fraction <= 0.0 {
+        return [saturation, value];
+    }
+    let saturation = f64::from(saturation) * (1.0 + SATURATION_GAIN * fraction);
+    let ratio = f64::from(value) / 255.0;
+    let value = 255.0 * ratio.powf(1.0 / (1.0 + VALUE_GAIN * fraction));
+    [round_byte(saturation), round_byte(value)]
+}
+
+fn round_byte(value: f64) -> u8 {
+    value.round().clamp(0.0, 255.0) as u8
+}
+
+/// The same band as [`build_scheme_ramp`] at `strength`, which is the retail
+/// band itself at [`STRENGTH_RETAIL`].
+pub fn boosted_scheme_ramp(hsv: [u8; 3], strength: u8) -> [Color; RAMP_SIZE] {
+    let fraction = strength_fraction(strength);
+    if fraction <= 0.0 {
+        return build_scheme_ramp(hsv);
+    }
+    let hue = hsv[0];
+    let mut ramp = [Color {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 255,
+    }; RAMP_SIZE];
+    for (shade, slot) in ramp.iter_mut().enumerate() {
+        let [saturation, value] = boosted_sv(modulated_sv(hsv, shade), fraction);
+        let [r, g, b] = hsv_to_rgb([hue, saturation, value]);
+        *slot = Color { r, g, b, a: 255 };
+    }
+    ramp
+}
+
 /// `[Colors]` entry index used when a house has no resolvable color. gamemd `InitColor` forces a
 /// negative ColorSchemeIndex to 5 (runtime scheme 5 → `[Colors]` entry 2 = LightGrey / white-ish).
 pub const DEFAULT_SCHEME_ENTRY: usize = 2;
@@ -114,17 +191,57 @@ static FALLBACK_RAMP: [Color; RAMP_SIZE] = [Color {
 /// `HouseColorIndex.0`. Built once at load from the parsed `[Colors]` schemes and held on the
 /// `RuleSet`. `Default` (empty) is used only when rules are unavailable (headless tests, missing
 /// assets); `ramp()` then yields the flat fallback.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 #[cfg_attr(any(test, feature = "test-support"), derive(Clone))]
 pub struct HouseColorRamps {
+    /// Each `[Colors]` entry's HSV, kept so a strength change rebuilds gamemd's
+    /// sweep from the retail source instead of boosting an already boosted band.
+    schemes: Vec<[u8; 3]>,
+    /// The bands at [`Self::strength`].
     ramps: Vec<[Color; RAMP_SIZE]>,
+    /// VERA's presentation strength, [`STRENGTH_RETAIL`] until set.
+    strength: u8,
+}
+
+impl Default for HouseColorRamps {
+    fn default() -> Self {
+        Self {
+            schemes: Vec::new(),
+            ramps: Vec::new(),
+            strength: STRENGTH_RETAIL,
+        }
+    }
 }
 
 impl HouseColorRamps {
     /// Build one exact sampled-factor ramp per `[Colors]` scheme, in declaration order.
     pub fn from_schemes(schemes: &[ColorSchemeEntry]) -> Self {
+        let strength = STRENGTH_RETAIL;
         Self {
-            ramps: schemes.iter().map(|s| build_scheme_ramp(s.hsv)).collect(),
+            schemes: schemes.iter().map(|s| s.hsv).collect(),
+            ramps: schemes
+                .iter()
+                .map(|s| boosted_scheme_ramp(s.hsv, strength))
+                .collect(),
+            strength,
+        }
+    }
+
+    /// The current presentation strength, [`STRENGTH_MIN`]..=[`STRENGTH_MAX`].
+    pub fn strength(&self) -> u8 {
+        self.strength
+    }
+
+    /// Rebuild every band at `strength`, clamped into the supported range.
+    /// [`STRENGTH_RETAIL`] restores the exact retail bytes.
+    pub fn set_strength(&mut self, strength: u8) {
+        let strength = strength.clamp(STRENGTH_MIN, STRENGTH_MAX);
+        if strength == self.strength {
+            return;
+        }
+        self.strength = strength;
+        for (slot, hsv) in self.ramps.iter_mut().zip(&self.schemes) {
+            *slot = boosted_scheme_ramp(*hsv, strength);
         }
     }
 
@@ -230,5 +347,104 @@ mod tests {
                 assert_eq!([r[i].r, r[i].g, r[i].b], *exp, "{name} shade {i}");
             }
         }
+    }
+
+    fn ramp_luma(ramp: &[Color; RAMP_SIZE], shade: usize) -> f64 {
+        0.299 * f64::from(ramp[shade].r)
+            + 0.587 * f64::from(ramp[shade].g)
+            + 0.114 * f64::from(ramp[shade].b)
+    }
+
+    fn scheme(name: &str, hsv: [u8; 3]) -> ColorSchemeEntry {
+        ColorSchemeEntry {
+            name: name.into(),
+            hsv,
+        }
+    }
+
+    /// The retail strength is gamemd's band byte for byte, and returning to it
+    /// after a boost rebuilds the same bytes instead of boosting twice.
+    #[test]
+    fn retail_strength_reproduces_every_retail_shade() {
+        let mut table = HouseColorRamps::from_schemes(&[scheme("DarkRed", [0, 230, 255])]);
+        let retail = build_scheme_ramp([0, 230, 255]);
+        assert_eq!(table.strength(), STRENGTH_RETAIL);
+        assert_eq!(table.ramp(HouseColorIndex(0)), &retail);
+
+        table.set_strength(STRENGTH_MAX);
+        assert_ne!(table.ramp(HouseColorIndex(0)), &retail);
+
+        table.set_strength(STRENGTH_RETAIL);
+        assert_eq!(table.ramp(HouseColorIndex(0)), &retail);
+    }
+
+    /// The shade factors themselves: both rise from the shade's own figures,
+    /// and a near-grey shade keeps its faint tint instead of being dragged to
+    /// a hue it never had.
+    #[test]
+    fn boosted_sv_saturates_and_lifts_value() {
+        assert_eq!(boosted_sv([180, 140], 0.0), [180, 140]);
+        let [dark_saturation, dark_value] = boosted_sv([180, 100], 1.0);
+        assert!(dark_saturation > 180, "a dark shade grows more saturated");
+        assert!(dark_value > 100, "a dark shade rises toward the bright end");
+        let [light_saturation, light_value] = boosted_sv([180, 200], 1.0);
+        assert!(light_saturation > 180);
+        assert!(light_value > 200, "a light shade grows brighter still");
+        // A near-grey scheme stays near grey: the boost is proportional to the
+        // tint it already carries, so no house is handed a hue it never had.
+        let [grey_saturation, _] = boosted_sv([24, 200], 1.0);
+        assert!(
+            grey_saturation < 60,
+            "a faint tint stays faint, not {}",
+            grey_saturation
+        );
+    }
+
+    /// A boosted band keeps its 16-step falloff: no shade crosses its brighter
+    /// neighbour, the bright end keeps its peak, and the darkest shade stays
+    /// dark instead of lifting to a mid grey.
+    #[test]
+    fn strength_keeps_the_band_falloff() {
+        let retail = build_scheme_ramp([0, 230, 255]);
+        let boosted = boosted_scheme_ramp([0, 230, 255], STRENGTH_MAX);
+        for shade in 1..RAMP_SIZE {
+            assert!(
+                ramp_luma(&boosted, shade) <= ramp_luma(&boosted, shade - 1),
+                "shade {shade} stays at or below its brighter neighbour"
+            );
+        }
+        assert!(
+            boosted[0].r >= retail[0].r,
+            "the bright end keeps its strongest channel"
+        );
+        assert!(
+            ramp_luma(&boosted, RAMP_SIZE - 1) < 0.1 * ramp_luma(&boosted, 0),
+            "the darkest shade stays a shadow"
+        );
+    }
+
+    /// The hue never moves, so a red band reads as red at every strength.
+    #[test]
+    fn strength_never_moves_the_hue() {
+        let boosted = boosted_scheme_ramp([0, 230, 255], STRENGTH_MAX);
+        for (shade, color) in boosted.iter().enumerate().take(RAMP_SIZE - 1) {
+            assert!(
+                color.r >= color.g && color.g >= color.b,
+                "shade {shade} keeps the red band's channel order"
+            );
+        }
+    }
+
+    #[test]
+    fn strength_is_clamped_to_the_supported_range() {
+        let mut table = HouseColorRamps::from_schemes(&[scheme("DarkRed", [0, 230, 255])]);
+        table.set_strength(0);
+        assert_eq!(table.strength(), STRENGTH_MIN);
+        table.set_strength(u8::MAX);
+        assert_eq!(table.strength(), STRENGTH_MAX);
+        assert_eq!(
+            table.ramp(HouseColorIndex(0)),
+            &boosted_scheme_ramp([0, 230, 255], STRENGTH_MAX)
+        );
     }
 }
