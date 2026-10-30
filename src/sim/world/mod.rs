@@ -2112,30 +2112,22 @@ impl Simulation {
             crate::sim::combat::FatalLifecycleStage::MaintainDamageSmoke { state } => {
                 self.maintain_damage_smoke_after_receive(stable_id, state, rules);
             }
-            crate::sim::combat::FatalLifecycleStage::BeforeDeathEffects { attacker } => {
-                // A building's occupants. A unit's passengers stay for its own
-                // arms: an exploding unit kills them before its death weapon
-                // (`world_receiver::handle_death`), and the rest leave or die
-                // in its UnitClass arm
-                // (`crew_survival::release_dying_unit_passengers`).
-                //
-                // RESIDUAL: this runs before the Techno death arm (sounds,
-                // debris, death weapon). Natively that arm returns first, and
-                // the Building NowDead block then ejects the occupants
-                // (`0x00442625`) and turns the light off (`0x0044264C`) just
-                // before DestructionEffects (`0x00442665`), so an ejected
-                // garrison's Scatter draws follow the debris and death-weapon
-                // draws there and precede them here.
+            crate::sim::combat::FatalLifecycleStage::BeforeBuildingDestruction => {
+                // Building442625..44264C, after Techno701900 has completed
+                // its debris and synchronous death weapon. Garrison Scatter
+                // draws belong here, before DestructionEffects442665 and its
+                // foundation marks and survivors. True Cargo is independent:
+                // DestructionEffects441F27 kills it after SpawnSurvivors.
+                // Native execution: tools/spatial_oracle/building_garrison_fatal.json.
                 if category != EntityCategory::Structure {
                     return;
                 }
                 let garrison = self.substrate.entities.get(stable_id).and_then(|entity| {
                     let object = self.interner.object_type(entity.type_ref(), rules)?;
-                    if !object.can_be_occupied || entity.passenger_role.occupants().is_empty() {
+                    if !object.can_be_occupied {
                         return None;
                     }
-                    let (foundation_w, foundation_h) =
-                        object.foundation.dimensions();
+                    let (foundation_w, foundation_h) = object.foundation.dimensions();
                     Some(
                         crate::sim::passenger::garrison_eject::DestroyedGarrisonBuilding {
                             building_id: stable_id,
@@ -2146,19 +2138,6 @@ impl Simulation {
                         },
                     )
                 });
-                // An absorbing building's passengers leave through
-                // SpawnSurvivors' Phase A; its KillPassengers (`0x00441F27`,
-                // crediting the attacker) runs after that and finds the list
-                // empty.
-                let absorbs = self
-                    .substrate
-                    .entities
-                    .get(stable_id)
-                    .is_some_and(|entity| {
-                        self.interner
-                            .object_type(entity.type_ref(), rules)
-                            .is_some_and(|object| object.absorbs_passengers())
-                    });
                 if let Some(event) = garrison {
                     passenger::garrison_eject::eject_destruction_garrison_with_context(
                         self,
@@ -2166,8 +2145,6 @@ impl Simulation {
                         &event,
                         uninit_context,
                     );
-                } else if !absorbs {
-                    self.kill_passengers(stable_id, attacker, uninit_context);
                 }
                 //44264C precedes the recursive destruction effects.
                 self.lighting_sources

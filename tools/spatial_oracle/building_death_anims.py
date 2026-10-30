@@ -1070,7 +1070,7 @@ def joined_fixture(inputs, health, *, seed=31, building_ai=False, drive_startup=
     u.mem_write(coord, dwords(11 * 256 + 128, 8 * 256 + 128, 0))
     f.phase = 'setup_unit_unlimbo'
     before = f.rng()
-    result = bc.invoke(u, 0x737BA0, f.source, coord, 128)
+    result = bc.invoke(u, 0x737BA0, f.source, coord, 128, timeout_us=60_000_000)
     assert result & 255 == 1
     if building_ai:
         f.unit_unlimbo = dict(entry='0x00737BA0', result=result,
@@ -3618,8 +3618,222 @@ def suicide_fire_main(argv):
         argv=remaining,source_paths=sources)
 
 
+def garrison_fatal_inputs(root):
+    """Extend the existing joined readers with stock CAHSE01 and C4 inputs."""
+    from collections import deque
+    from types import SimpleNamespace
+    from unicorn import UC_HOOK_CODE
+    from unicorn.x86_const import UC_X86_REG_ESI, UC_X86_REG_EDI
+    from tools import native_oracle as native
+    from tools.spatial_oracle.anytown_damage.mission import Mission
+    from tools.spatial_oracle.building_body_rules import INI, SP
+    from tools.rules_oracle.bridge_child_sound import sections
+    from tools.rules_oracle.weapon_speed_order import RetailRulesInputs
+    from tools.sidebar_oracle.stock import mix, mix_hash
+
+    m = joined_inputs(root, layers=('RULESMD.INI', 'LANGRULE.INI',
+                                  'MPBattleMD.ini', 'Hills.map'))
+    m.reserve_arena(0x1000000)
+    u, read = m.u, m.read32
+    art = sections((root / 'ARTMD.INI').read_bytes())
+    catalog = RetailRulesInputs(native.configured_gamemd().parent)
+    # NewTheater/DemandLoad image bytes come from the actual temperate MIX;
+    # RetailRulesInputs deliberately excludes theater archive registration.
+    archive = mix((native.configured_gamemd().parent / 'ra2.mix').read_bytes())
+    theater = mix(archive[mix_hash('isotemp.mix')])
+    m.assets['CTHSE01.SHP'] = theater[mix_hash('CTHSE01.SHP')]
+    # Read back the native General vector, not the authored twenty-token CSV.
+    # ReadGeneral66DA90 uses ReadString capacity80h, producing fifteen entries
+    # ending in D. CAHSE01's singular DebrisAnim key is not DebrisAnims.
+    names = [m.string(read(read(m.rules + 0x140) + i * 4) + 0x24)
+             for i in range(read(m.rules + 0x14C))]
+    for name in names:
+        raw = catalog.lookup(name + '.SHP')
+        if raw is not None:
+            m.assets[name + '.SHP'] = raw
+    m.make_ini({name: art[name] for name in ('CAHSE01', *names) if name in art})
+    proxy = SimpleNamespace(m=m, trace=deque(maxlen=40), events=[], pending={},
+                            frame=0, phase='setup')
+
+    def transport(vm, pc, size, _):
+        if pc in JOINED_TRANSPORT - {0x527AF9, 0x527B0C}:
+            Mission.observe(proxy, vm, pc, size, None)
+
+    hook = u.hook_add(UC_HOOK_CODE, transport)
+    try:
+        for name in names:
+            pointer = m.invoke(0x428B80, m.cstring(name))
+            admitted = m.invoke(0x427D00, pointer, (INI,)) & 255
+            assert admitted == int(name in art), (name, admitted)
+        art_cache = bytes(u.mem_read(INI, 0x40))
+        typ = m.alloc(0x2000)
+        m.invoke(0x45DD90, typ, (m.cstring('CAHSE01'),))
+        m.types['CAHSE01'] = typ
+        physical_rules = sections((root / 'RULESMD.INI').read_bytes())
+        wh_name = physical_rules['CombatDamage']['C4Warhead']
+        for filename in m.input_rule_layers:
+            path = root / filename
+            if not path.exists():
+                assert filename == 'LANGRULE.INI'
+                continue
+            physical = sections(path.read_bytes())
+            m.make_ini({name: physical[name] for name in
+                        ('CAHSE01', 'CombatDamage', wh_name) if name in physical})
+            ini = m.alloc(0x40)
+            u.mem_write(ini, bytes(u.mem_read(INI, 0x40)))
+            u.mem_write(INI, art_cache)
+            m.invoke(0x45FE50, typ, (ini,))
+            if 'CombatDamage' in physical:
+                u.mem_write(SP, bytes(0x300))
+                for reg, value in ((UC_X86_REG_ESP, SP), (UC_X86_REG_ESI, m.rules),
+                                   (UC_X86_REG_EDI, ini)):
+                    u.reg_write(reg, value)
+                native.run_checked(u, 0x66C304, 0x66C34C)
+            warhead = read(m.rules + 0xFA8)
+            if warhead:
+                assert m.string(warhead + 0x24) == wh_name
+                m.invoke(0x75D3A0, warhead, (ini,))
+        # Both debris vectors are empty:7024BB takes General MetallicDebris.
+        assert read(typ + 0x5D4) == read(typ + 0x324) == 0
+        assert u.mem_read(typ + 0x157B, 1) == b'\1'
+        m.garrison_fatal_context = dict(seed=31, building_type='CAHSE01',
+            origin_cell=[18, 16], strength=read(typ + 0xA0),
+            min_debris=read(typ + 0x5C0), max_debris=read(typ + 0x5BC),
+            metallic_debris=names, warhead=m.string(warhead + 0x24))
+    finally:
+        u.hook_del(hook)
+    return m
+
+
+def garrison_fatal_execute(inputs, occupants):
+    """Whole442230 through Techno death and garrison release; stop at4415F0."""
+    from unicorn import UC_HOOK_CODE
+    from tools import native_oracle as native
+    from tools.spatial_oracle import building_construction as bc, engineer_repair_admission as er
+    from tools.spatial_oracle.building_body_rules import SP
+    from tools.spatial_oracle.refinery_dock import cell_xy
+    from tools.procedural_drawing_oracle.electric_bolt import RngTrace
+
+    context = inputs.garrison_fatal_context
+    f = joined_fixture(inputs, 374, seed=context['seed'], building_ai=True, unit_startup=True)
+    u, read = f.u, f.read32
+    # Explicit stock-skirmish scenario prior; the legacy shared fixture uses1.
+    u.mem_write(0xA8B238, dwords(5))
+    target = f.allocate(0x800)
+    f.building(context['building_type'], target, f.allocate(0x20), constructor_only=True)
+    position = f.allocate(12)
+    u.mem_write(position, dwords(*(c * 256 + 128 for c in context['origin_cell']), 0))
+    assert bc.invoke(u, 0x440580, target, position, 0) & 255 == 1
+    feet = []
+    for _ in range(occupants):
+        foot = f.allocate(0x800)
+        bc.invoke(u, 0x517A50, foot, f.types['E1'], er.HOUSE)
+        feet.append(foot)
+    # Declared already-garrisoned membership, not an admission comparison.
+    # Original vector resize45A560 owns storage; original constructors own Foot.
+    vector = target + 0x684
+    if read(target + 0x68C) < occupants:
+        assert bc.invoke(u, read(read(vector) + 8), vector, occupants, 0) & 255 == 1
+    if feet:
+        u.mem_write(read(target + 0x688), dwords(*feet))
+    u.mem_write(target + 0x694, dwords(occupants))
+    for foot in feet:
+        u.mem_write(foot + 0x9C, bytes(u.mem_read(target + 0x9C, 12)))
+        u.mem_write(foot + 0x11C, dwords(target))
+        u.mem_write(foot + 0xAC, dwords(5))  # prior Guard, still in constructor limbo.
+    assert read(bc.FRAME) == 0 and read(0xA8B238) == 5
+    assert read(0xA83D4C) == er.HOUSE
+    assert f.string(read(er.HOUSE + 0x34) + 0x24) == 'Americans'
+    assert bytes(u.mem_read(er.HOUSE + 0x1EC, 2)) == b'\1\1'
+    before_human_query = f.rng()
+    assert bc.invoke(u, 0x50B6F0, er.HOUSE) & 255 == 1
+    assert f.rng() == before_human_query
+    streams = {'main': 0x886B88, 'scenario': read(0xA8B230) + 0x218, 'mapgen': 0xABE890}
+    for pointer in streams.values():
+        bc.invoke(u, 0x65C6D0, pointer, context['seed'])
+    rng = RngTrace.__new__(RngTrace)
+    rng.u, rng.streams, rng.requests, rng.pending = u, streams, [], []
+    u.hook_add(UC_HOOK_CODE, rng.observe)
+    before = rng.states()
+    boundaries = []
+    watched = {0x442230: 'building_receive', 0x701900: 'techno_receive',
+        0x702281: 'debris', 0x44242A: 'techno_return', 0x457DE0: 'eject',
+        0x51D0D0: 'scatter', 0x442640: 'after_eject'}
+
+    def observe(_u, pc, _size, _data):
+        if pc in watched:
+            boundaries.append((watched[pc], sum(len(r['raw_draws']) for r in rng.requests)))
+
+    u.hook_add(UC_HOOK_CODE, observe)
+    damage = f.allocate(4)
+    u.mem_write(damage, dwords(read(target + 0x6C)))
+    u.mem_write(SP, dwords(native.RET_MAGIC, damage, 0, read(inputs.rules + 0xFA8), 0, 1, 0, 0))
+    u.reg_write(UC_X86_REG_ESP, SP)
+    u.reg_write(UC_X86_REG_ECX, target)
+    f.phase = 'garrison_fatal'
+    native.run_checked(u, 0x442230, 0x4415F0, count=10_000_000, timeout_us=60_000_000)
+    assert f.code_unchanged() and not rng.pending
+    assert [name for name, _ in boundaries] == ['building_receive', 'techno_receive',
+        'debris', 'techno_return', 'eject', *(['scatter'] if occupants else []), 'after_eject']
+    split = dict(boundaries)['techno_return']
+    assert dict(boundaries)['eject'] == split
+    if occupants:
+        assert dict(boundaries)['scatter'] == split
+    assert all(row['stream'] == 'scenario' for row in rng.requests)
+    after = rng.states()
+    assert all(before[name] == after[name] for name in ('main', 'mapgen'))
+    words = [word for row in rng.requests for word in row['raw_draws']]
+    return dict(occupants=occupants, debris_raw_words=words[:split],
+        garrison_raw_words=words[split:], released=[dict(
+            nav_com=cell_xy(read(foot + 0x5A4)),
+            limbo=bool(u.mem_read(foot + 0x81, 1)[0]),
+            alive=bool(u.mem_read(foot + 0x90, 1)[0])) for foot in feet])
+
+
+def garrison_fatal_generate():
+    import os
+    inputs = garrison_fatal_inputs(Path(os.environ['VERA20K_BUILDING_DEATH_ASSETS']))
+    return dict(input=inputs.garrison_fatal_context,
+                rows=[garrison_fatal_execute(inputs, count) for count in (0, 1)])
+
+
+def garrison_fatal_metadata():
+    return provenance(scope='Stock occupied CAHSE01 lethal C4 receiver: native Techno debris before SellBuilding/Infantry Scatter',
+        entry_points=dict(building_type=0x45FE50, anim_type=0x427D00,
+            metallic_debris_reader=0x66DA90, c4_warhead_reader=0x66C304,
+            building_ctor=0x43B740, building_unlimbo=0x440580,
+            infantry_ctor=0x517A50, occupant_vector_resize=0x45A560,
+            building_damage=0x442230, techno_damage=0x701900, debris=0x702281,
+            techno_return=0x44242A, sell_building=0x457DE0, infantry_scatter=0x51D0D0,
+            stop_before_destruction_effects=0x4415F0),
+        assumptions=[
+            'Existing joined_inputs/joined_fixture own the original selected readers, actual requested SHP bytes, admitted flat clear32-coordinate map, House priors, startup, navigation and locomotors. RULESMD, optional LANGRULE, Battle mode and Hills map read in their existing order; ARTMD is fixed. Whole physical INI/archive startup and map loading are excluded.',
+            'Whole original CAHSE01 constructor and Unlimbo at origin18,16 run alongside the shared background GAPOWR/MTNK. Original E1 constructors execute. Already-garrisoned vector membership, Guard mission, stored position and Transporter are explicit priors; entrance/ownership transfer is not claimed. Original resize owns storage. This selected control supplies runtime gameMode5 (Skirmish) before target/occupant construction, replacing the shared legacy mode1 prior. Actual frame0/mode5, HouseType Americans, House+1EC/+1ED both1 and CurrentHouse equality are asserted from the VM; original House IsHuman50B6F0 returns1 without changing RNG. All allocations succeed.',
+            'Actual native MetallicDebris vector is read back at Rules+140/+14C. ReadString capacity80h at66DA9A truncates retail twenty-token CSV to fifteen entries ending D. Actual fixed ART/SHP readers bind these entries; D has no ART/image and retains real constructor defaults. CAHSE01 singular DebrisAnim is ignored by the plural DebrisAnims reader; both actual per-type debris vectors are empty.',
+            'All three RNG streams reseed31 after setup. Whole Building442230 receives own health/Super C4Warhead/distance0/null source/null sourceHouse/ignoreDefenses1/arg6false. Original701900 completes debris before original457DE0 and51D0D0. Original RngTrace raw words are split at the actual44242A return boundary, including any Unlimbo draws in the garrison phase. Main/MapGen stay unchanged. Every executable PE section remains unchanged.',
+            'Observation ends at4415F0 entry before Building DestructionEffects. Later explosions, survivors, UnInit, deferred destruction, rendering and whole-match parity are excluded. Only Rust-consumed input, Scenario words and released Foot state are retained.'
+        ], substitutions=joined_metadata()['substitutions'])
+
+
+def garrison_fatal_main(argv):
+    sources = joined_source_paths()
+    repo = Path(__file__).resolve().parents[2]
+    for name in ('tools/procedural_drawing_oracle/electric_bolt.py',
+                 'tools/rules_oracle/weapon_speed_order.py', 'tools/sidebar_oracle/stock.py'):
+        sources[name] = repo / name
+    finish_vectors(garrison_fatal_generate,
+        Path(__file__).with_name('building_garrison_fatal.json'),
+        provenance=garrison_fatal_metadata, argv=argv, source_paths=sources)
+
+
 if __name__ == "__main__":
     import sys
+    if '--garrison-fatal' in sys.argv[1:]:
+        if {'--wall-autofill', '--suicide-fire', '--typed-debris', '--damage-sound-joined',
+                '--joined-stock-smudges', '--constructed-cancellation', '--joined'} & set(sys.argv[1:]):
+            raise SystemExit('Select one native corpus mode')
+        garrison_fatal_main([arg for arg in sys.argv[1:] if arg != '--garrison-fatal'])
+        raise SystemExit(0)
     if '--wall-autofill' in sys.argv[1:]:
         if {'--suicide-fire', '--typed-debris', '--damage-sound-joined',
                 '--joined-stock-smudges', '--constructed-cancellation', '--joined'} & set(sys.argv[1:]):

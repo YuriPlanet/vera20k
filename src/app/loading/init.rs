@@ -932,8 +932,8 @@ mod map_wall_owner_candidate_tests {
         );
         sim.lighting_sources_mut_for_test().discard_pending();
 
-        // Actual BeforeDeathEffects callback must publish disable before a
-        // later global operation; the frame transaction must retain both.
+        // The building's fatal callback must publish disable before a later
+        // global operation; the frame transaction must retain both.
         fatal_lamp_stage(&mut sim, &rules, 41);
         sim.session_mut_for_test()
             .lighting_mut()
@@ -1187,7 +1187,7 @@ mod map_wall_owner_candidate_tests {
     fn fatal_lamp_stage(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         sim.apply_fatal_lifecycle_stage(
             rules,
-            crate::sim::combat::FatalLifecycleStage::BeforeDeathEffects { attacker: None },
+            crate::sim::combat::FatalLifecycleStage::BeforeBuildingDestruction,
             id,
             EntityCategory::Structure,
             crate::sim::world::UninitContext::with_rules(rules),

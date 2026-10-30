@@ -1821,20 +1821,6 @@ pub(crate) fn commit_entities(
             {
                 crate::sim::docking::bunker_link::clear_bunker(world, bunker, rules, run.effects());
             }
-            {
-                if callbacks_enabled(world) {
-                    let attacker = killing_attacker(world, std::slice::from_ref(event), target_id);
-                    world.apply_fatal_lifecycle_stage(
-                        rules,
-                        FatalLifecycleStage::BeforeDeathEffects { attacker },
-                        target_id,
-                        fatal_category,
-                        crate::sim::world::UninitContext::with_rules(rules)
-                            .with_registry(overlay_registry)
-                            .with_effects(run.effects()),
-                    );
-                };
-            }
             let mut nested = handle_death(
                 world,
                 run,
@@ -2410,10 +2396,6 @@ pub(crate) fn handle_death(
                 under_attack_events.extend(pings);
                 blast_effects.append(effects);
             }
-
-            // The world fatal prelude already owns garrison ejection before
-            // the nested death weapon. Callback-disabled receiver fixtures
-            // leave the cargo attached for their UnInit assertions.
         }
     }
 
@@ -2437,16 +2419,18 @@ pub(crate) fn handle_death(
         // Techno702035 also forces result4 on an admitted Health0 re-entry. A
         // nested effect that cleared ObjectAlive skips the concrete wrapper
         // at44242C, and PostMortem never reaches this result4 continuation.
+        let Some(entity) = world.substrate.entities.get(dead_id) else {
+            continue;
+        };
+        let category = entity.category();
+        if category == EntityCategory::Structure && !entity.lifecycle.object_alive() {
+            continue;
+        }
+        // The admitted Building wrapper does not re-test Alive after its
+        // synchronous contacts:442601 continues through442625..442665.
         if callbacks_enabled(world)
             && let Some(contacts) = building_contacts
-            && world
-                .substrate
-                .entities
-                .get(dead_id)
-                .is_some_and(|building| {
-                    building.category() == EntityCategory::Structure
-                        && building.lifecycle.object_alive()
-                })
+            && category == EntityCategory::Structure
         {
             let (nested, pings) =
                 world.building_now_dead_contacts(dead_id, contacts, rules, overlay_registry, run);
@@ -2487,10 +2471,6 @@ fn finish_concrete_death(
         return;
     };
     let category = entity.category();
-    // Building442230 returns before its result dispatch when Alive is clear.
-    if category == EntityCategory::Structure && !entity.lifecycle.object_alive() {
-        return;
-    }
     let (type_id, owner, rx, ry, has_animation) = (
         entity.type_ref(),
         entity.owner(),
@@ -2537,6 +2517,18 @@ fn finish_concrete_death(
     // TechnoClass's synchronous death weapon has returned. Capture the
     // immutable plan now; placement and all RNG stay at that postlude.
     if category == EntityCategory::Structure {
+        // Building442625..44264C follows the completed Techno death arm
+        // and NowDead contact callbacks, before DestructionEffects442665.
+        if callbacks_enabled(world) {
+            world.apply_fatal_lifecycle_stage(
+                rules,
+                FatalLifecycleStage::BeforeBuildingDestruction,
+                dead_id,
+                category,
+                crate::sim::world::UninitContext::new(rules, overlay_registry)
+                    .with_effects(frame_effects),
+            );
+        }
         concrete_smudge_plans.push(ConcreteDeathSmudgePlan::Building);
     }
 
@@ -2804,6 +2796,16 @@ fn finish_concrete_death(
                             );
                         },
                         frame_effects,
+                    );
+                    // DestructionEffects441F1B completes SpawnSurvivors
+                    // before441F27 kills any cargo still attached. Garrison
+                    // occupants use their independent vector at44263B above.
+                    let attacker = killing_attacker(world, damage_events, dead_id);
+                    world.kill_passengers(
+                        dead_id,
+                        attacker,
+                        crate::sim::world::UninitContext::new(rules, overlay_registry)
+                            .with_effects(frame_effects),
                     );
                 }
             }

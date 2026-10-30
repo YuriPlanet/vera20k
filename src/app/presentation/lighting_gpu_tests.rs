@@ -143,7 +143,7 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
         .discard_pending();
     scenario.runtime.simulation.apply_fatal_lifecycle_stage(
         rules,
-        crate::sim::combat::FatalLifecycleStage::BeforeDeathEffects { attacker: None },
+        crate::sim::combat::FatalLifecycleStage::BeforeBuildingDestruction,
         id,
         crate::map::entities::EntityCategory::Structure,
         crate::sim::world::UninitContext::with_rules(rules),
