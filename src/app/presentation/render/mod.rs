@@ -134,6 +134,38 @@ impl RenderPhases {
     }
 }
 
+/// Average the pieces that the `other` row folds together, so a device log can
+/// show which prep step is responsible for its swings.
+///
+/// Span order: radar tick and camera clamp, viewport sizing, the selected
+/// structure scan, palette and bracket setup, `update_camera`, object light
+/// records, combat lights, and the remaining draw records.
+#[cfg(feature = "horizon-frame-profile")]
+fn record_other_breakdown(spans: [std::time::Duration; 8]) {
+    std::thread_local! {
+        static PROFILE: std::cell::RefCell<(u32, [std::time::Duration; 8])> =
+            const { std::cell::RefCell::new((0, [std::time::Duration::ZERO; 8])) };
+    }
+    PROFILE.with(|profile| {
+        let mut profile = profile.borrow_mut();
+        profile.0 += 1;
+        for (total, span) in profile.1.iter_mut().zip(spans) {
+            *total += span;
+        }
+        if profile.0 == 100 {
+            let millis = profile.1.map(|span| span.as_secs_f64() * 10.0);
+            log::info!(target: "switch::perf",
+                "Other CPU average: radar_camera={:.3}ms viewport={:.3}ms \
+                 selected={:.3}ms palette={:.3}ms update_camera={:.3}ms \
+                 light_records={:.3}ms combat_lights={:.3}ms draw_records={:.3}ms",
+                millis[0], millis[1], millis[2], millis[3], millis[4],
+                millis[5], millis[6], millis[7],
+            );
+            *profile = (0, [std::time::Duration::ZERO; 8]);
+        }
+    });
+}
+
 /// Output retained from one production game render.
 ///
 /// `sidebar_view` is the existing UI handoff. The counts are observation-only
@@ -190,6 +222,8 @@ pub(crate) fn render_game(
     // sim frame. Install and clamp it before constructing any world instances,
     // so contraction/expansion is visible in this very presentation frame.
     crate::app::input::camera::clamp_camera_to_playable_area(state, sw, sh);
+    #[cfg(feature = "horizon-frame-profile")]
+    let prep_after_camera = Instant::now();
     // Publish the final view once: world instances, CPU A admission and GPU
     // palette sampling must use this frame's clamped camera and zoom.
     state.renderer.batch_renderer.update_camera(
@@ -201,6 +235,8 @@ pub(crate) fn render_game(
         state.match_state.input.zoom_level,
         crate::app::presentation::instances::depth_axis(state),
     );
+    #[cfg(feature = "horizon-frame-profile")]
+    let prep_after_update_camera = Instant::now();
 
     let local_owner = preferred_local_owner_name(state);
     let translucent_fog = state.translucent_fog_enabled();
@@ -209,6 +245,8 @@ pub(crate) fn render_game(
     let z = state.match_state.input.zoom_level;
     let vsw = sw / z;
     let vsh = sh / z;
+    #[cfg(feature = "horizon-frame-profile")]
+    let prep_after_viewport = Instant::now();
 
     let selected_building = state
         .match_state
@@ -220,6 +258,8 @@ pub(crate) fn render_game(
                     && entity.selection.is_selected()
             })
         });
+    #[cfg(feature = "horizon-frame-profile")]
+    let prep_after_selected_building = Instant::now();
     // FileSystem52BE61..52BFCE's PALETTE.PAL plain N53 Convert is shared
     // by Bolt and the selected Building's15/12 bracket colors.
     let surface_palette = (selected_building
@@ -339,6 +379,8 @@ pub(crate) fn render_game(
         layer.light_record_base = combat_lights.len();
         combat_lights.extend_from_slice(&layer.light_records);
     }
+    #[cfg(feature = "horizon-frame-profile")]
+    let tail_after_light_records = Instant::now();
     let persistent_light_start = combat_lights.len();
     {
         let presentation = &state.match_state.match_presentation;
@@ -348,6 +390,8 @@ pub(crate) fn render_game(
                 .draw_records(&mut presentation.detail.borrow_mut()),
         );
     }
+    #[cfg(feature = "horizon-frame-profile")]
+    let tail_after_combat_lights = Instant::now();
     let persistent_lights = persistent_light_start..combat_lights.len();
     if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
         state.renderer.combat_light_renderer.set_spotlight_radius(
@@ -710,6 +754,28 @@ pub(crate) fn render_game(
         other: phase1_started.unwrap().duration_since(render_started)
             + finished.unwrap().duration_since(after_upload.unwrap()),
     });
+    // `other` mixes the render prep before phase 1 with the light records and
+    // draw records after phase 6, and it is the only row that swings by more
+    // than tenfold between samples. Attribute it under the profiling feature.
+    #[cfg(feature = "horizon-frame-profile")]
+    record_other_breakdown([
+        prep_after_camera.saturating_duration_since(
+            render_started.expect("horizon render timing"),
+        ),
+        prep_after_viewport.saturating_duration_since(prep_after_update_camera),
+        prep_after_selected_building.saturating_duration_since(prep_after_viewport),
+        phase1_started
+            .expect("horizon render timing")
+            .saturating_duration_since(prep_after_selected_building),
+        prep_after_update_camera.saturating_duration_since(prep_after_camera),
+        tail_after_light_records.saturating_duration_since(
+            after_upload.expect("horizon render timing"),
+        ),
+        tail_after_combat_lights.saturating_duration_since(tail_after_light_records),
+        finished
+            .expect("horizon render timing")
+            .saturating_duration_since(tail_after_combat_lights),
+    ]);
     Ok(GameRenderOutput {
         instance_counts: sidebar.emitted_instance_counts(),
         sidebar_view: sidebar.view,
