@@ -1102,6 +1102,7 @@ mod tests {
         cache.observe(&sim, 32, Some(32.), false);
         let source = PresentedWorld {
             sim: &sim,
+            rules: None,
             interpolation: &cache,
             translucent_viewer: None,
         };

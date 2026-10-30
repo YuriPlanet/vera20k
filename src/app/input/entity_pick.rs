@@ -20,6 +20,11 @@ use crate::sim::vision::FogState;
 /// mutation of authoritative entities. Native callers/tests retain raw geometry.
 pub(crate) trait PickSource: Copy {
     fn entities(&self) -> &EntityStore;
+    /// Type facts are supplied by the live presentation view. Bare stores used
+    /// for Tactical6DA380 fixtures have no rules and leave Display's gate open.
+    fn type_invisible(&self, _entity: &crate::sim::game_entity::GameEntity) -> bool {
+        false
+    }
     fn screen_position(&self, entity: &crate::sim::game_entity::GameEntity) -> (f32, f32) {
         crate::render::locomotor_visual::screen_position(entity)
     }
@@ -77,11 +82,17 @@ impl PickWorld for &crate::sim::world::Simulation {
 #[derive(Clone, Copy)]
 pub(crate) struct PresentedWorld<'a> {
     pub sim: &'a crate::sim::world::Simulation,
+    pub rules: Option<&'a RuleSet>,
     pub interpolation: &'a crate::app::presentation::interpolation::RenderInterpolation,
     /// [`crate::app::presentation::instances::translucent_fog_viewer`].
     pub translucent_viewer: Option<InternedId>,
 }
 impl PickSource for PresentedWorld<'_> {
+    fn type_invisible(&self, entity: &crate::sim::game_entity::GameEntity) -> bool {
+        self.rules
+            .and_then(|rules| self.sim.object_type(entity.type_ref(), rules))
+            .is_some_and(|object| object.invisible)
+    }
     fn entities(&self) -> &EntityStore {
         self.sim.entities()
     }
@@ -114,6 +125,7 @@ pub(crate) fn presented<'a>(
 ) -> PresentedWorld<'a> {
     PresentedWorld {
         sim,
+        rules: state.rules(),
         interpolation: &state.match_state.match_presentation.interpolation,
         translucent_viewer: crate::app::presentation::instances::translucent_fog_viewer(state, sim),
     }
@@ -477,8 +489,8 @@ pub(crate) fn band_rect_contains_drawn_object(
 /// Without fog (sandbox full visibility) or a known player, only the first
 /// part applies. ProcessClickCoords also drops its chosen nonlocal object's
 /// TypeInvisible (`+0xC9A`, `0x0069256B..0x0069257F`) after the scan; that
-/// producer gate remains open. Building's InvisibleInGame can derive this byte
-/// too. Display's tooltip owns its separately repeated postwinner gate.
+/// gate is applied after the winner below. Building's InvisibleInGame can
+/// derive this byte too. Tooltips retain their separately repeated gate.
 pub(crate) fn pick_admits_object(
     entity: &crate::sim::game_entity::GameEntity,
     fog: Option<&FogState>,
@@ -1266,15 +1278,30 @@ pub(crate) fn pick_object_at_point<'a>(
         }
     }
 
-    if let Some((stable_id, _)) = best {
-        return Some(CellObjectMember::Entity(stable_id));
-    }
-    match source.first_ground_cell_object(click_cell)? {
-        CellObjectMember::Entity(id) => entities
-            .get(id)
-            .filter(|entity| pick_admits_object(entity, fog, player) && !source.conceals(entity))
-            .map(|_| CellObjectMember::Entity(id)),
-        terrain => Some(terrain),
+    let picked = if let Some((stable_id, _)) = best {
+        Some(CellObjectMember::Entity(stable_id))
+    } else {
+        match source.first_ground_cell_object(click_cell)? {
+            CellObjectMember::Entity(id) => entities
+                .get(id)
+                .filter(|entity| {
+                    pick_admits_object(entity, fog, player) && !source.conceals(entity)
+                })
+                .map(|_| CellObjectMember::Entity(id)),
+            terrain => Some(terrain),
+        }
+    }?;
+    // DisplayClass::ProcessClickCoords @0x00692300, 0x0069252D..0x00692585:
+    // after Tactical::PickObjectAtScreenPoint6DA380 and its cell fallback,
+    // TypeInvisible+0xC9A clears the winner unless Techno+0x41A is set.
+    // Source: retail gamemd.exe instructions. Never retry objects behind it.
+    match picked {
+        CellObjectMember::Entity(id) => {
+            let entity = entities.get(id)?;
+            (entity.discovery.owned_by_current_house() || !source.type_invisible(entity))
+                .then_some(picked)
+        }
+        CellObjectMember::Terrain(_) => Some(picked),
     }
 }
 
@@ -1347,6 +1374,10 @@ mod building_type_select_tests;
 #[cfg(test)]
 #[path = "entity_pick_group_as_tests.rs"]
 mod group_as_tests;
+
+#[cfg(test)]
+#[path = "entity_pick_invisible_tests.rs"]
+mod invisible_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1611,6 +1642,7 @@ mod tests {
             for translucent_viewer in [None, Some(viewer)] {
                 let source = PresentedWorld {
                     sim: &sim,
+                    rules: None,
                     interpolation: &native,
                     translucent_viewer,
                 };
@@ -1720,6 +1752,7 @@ mod tests {
             for (translucent_viewer, shown) in [(None, retail), (Some(viewer), translucent)] {
                 let source = PresentedWorld {
                     sim: &sim,
+                    rules: None,
                     interpolation: &native,
                     translucent_viewer,
                 };

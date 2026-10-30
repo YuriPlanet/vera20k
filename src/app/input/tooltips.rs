@@ -233,6 +233,7 @@ fn tactical_world_tip_text_sampled(
     let picked = crate::app::input::entity_pick::pick_entity_at_point(
         crate::app::input::entity_pick::PresentedWorld {
             sim,
+            rules: Some(rules),
             interpolation: interpolation.unwrap_or(&native),
             translucent_viewer,
         },
