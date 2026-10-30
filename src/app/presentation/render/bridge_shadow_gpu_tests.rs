@@ -6,7 +6,7 @@ use super::draw_passes::draw_bridge_shadows;
 use crate::render::batch::{BatchRenderer, InstanceBufferPool};
 use crate::render::native_z::{DEFAULT_Z, stored_z};
 use crate::render::terrain_draw::TerrainDrawRenderer;
-use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, encoded, sprite};
+use crate::render::terrain_draw_gpu_tests::{Gpu, GpuFrameTimer, camera, clear, encoded, sprite};
 
 #[test]
 #[ignore = "requires GPU; actual bridge dispatch, native signed depth stores and repeated overlap"]
@@ -1187,9 +1187,9 @@ fn retail_bridge_shadow_workload_timing() {
     use std::time::{Duration, Instant};
     let packet = native_bridge_packet();
     let fixture = RetailBridgeFixture::load(&packet);
-    let gpu = Gpu::with_features(
-        wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS,
-    );
+    // Pass-boundary samples: wgpu 30 reports encoder timestamps on Metal only
+    // with blit-boundary sampling, which Apple GPUs lack.
+    let gpu = Gpu::with_features(wgpu::Features::TIMESTAMP_QUERY);
     let size = [800, 600];
     let format = wgpu::TextureFormat::Bgra8UnormSrgb;
     let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
@@ -1230,25 +1230,8 @@ fn retail_bridge_shadow_workload_timing() {
         height as u32,
         None,
     );
-    let queries = gpu.device.create_query_set(&wgpu::QuerySetDescriptor {
-        label: Some("Bridge shadow dispatch interval"),
-        ty: wgpu::QueryType::Timestamp,
-        count: 2,
-    });
-    let resolved = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: 256,
-        usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
-        mapped_at_creation: false,
-    });
-    let mapped = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: 16,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
+    let timer = GpuFrameTimer::new(&gpu);
     let mut pool = InstanceBufferPool::new();
-    let timestamp_period_ns = gpu.queue.get_timestamp_period() as f64;
     let mut results = Vec::new();
     for (count, layout) in [(1usize, "single"), (16, "adjacent"), (128, "repeated")] {
         let instances: Vec<_> = (0..count)
@@ -1286,88 +1269,45 @@ fn retail_bridge_shadow_workload_timing() {
             for sample in 0..4 {
                 let begin = Instant::now();
                 terrain.prepare(&gpu.device, &color, &dv, camera);
-                let mut encoder = gpu.device.create_command_encoder(&Default::default());
-                encoder.write_timestamp(&queries, 0);
-                clear(
-                    &mut encoder,
-                    &cv,
-                    &dv,
-                    65535,
-                    wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                );
-                let stats = if native {
-                    draw_bridge_shadows(
-                        &mut encoder,
+                let (stats, encode_ms, gpu_ms) = timer.measure(&gpu, |encoder| {
+                    clear(
+                        encoder,
                         &cv,
                         &dv,
-                        &mut terrain,
-                        [0, 0, size[0], size[1]],
-                        &batch,
-                        pool.get("bridge-perf"),
-                        &upload,
-                        Some(&atlas.texture),
-                    )
-                } else {
-                    let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
-                        &mut encoder,
-                        &cv,
-                        &dv,
+                        65535,
+                        wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                     );
-                    let (buffer, count) = pool.get("bridge-perf").unwrap();
-                    batch.draw_with_buffer_passthrough(&mut pass, &legacy, buffer, count);
-                    drop(pass);
-                    crate::render::terrain_draw::TerrainBatchStats {
-                        pieces: count as usize,
-                        passes: 1,
-                        ..Default::default()
-                    }
-                };
-                encoder.write_timestamp(&queries, 1);
-                let encode_ms = begin.elapsed().as_secs_f64() * 1000.0;
-                encoder.resolve_query_set(&queries, 0..2, &resolved, 0);
-                encoder.copy_buffer_to_buffer(&resolved, 0, &mapped, 0, 16);
-                let final_submit_begin = Instant::now();
-                let submission = gpu.queue.submit([encoder.finish()]);
-                let (tx, rx) = std::sync::mpsc::channel();
-                mapped
-                    .slice(..)
-                    .map_async(wgpu::MapMode::Read, move |result| tx.send(result).unwrap());
-                gpu.device
-                    .poll(wgpu::PollType::Wait {
-                        submission_index: Some(submission),
-                        timeout: Some(Duration::from_secs(60)),
-                    })
-                    .unwrap();
-                rx.recv().unwrap().unwrap();
-                let final_submit_to_completion_ms =
-                    final_submit_begin.elapsed().as_secs_f64() * 1000.0;
-                let wall_prepare_to_completion_ms = begin.elapsed().as_secs_f64() * 1000.0;
-                let data = mapped.slice(..).get_mapped_range();
-                let first = u64::from_le_bytes(data[0..8].try_into().unwrap());
-                let last = u64::from_le_bytes(data[8..16].try_into().unwrap());
-                // wgpu27 encoder timestamps can be reordered. The Metal HAL
-                // defers them to later encoders and documents empty-blit
-                // sampling limits; keep raw values, never invent a duration.
-                // https://docs.rs/wgpu/27.0.1/wgpu/struct.CommandEncoder.html#method.write_timestamp
-                // https://docs.rs/wgpu-hal/27.0.4/src/wgpu_hal/metal/command.rs.html
-                let (timestamp_status, encoder_timestamp_ms) =
-                    if first == 0 || last == 0 || first == u64::MAX || last == u64::MAX {
-                        ("unavailable_zero_or_max_sample", None)
-                    } else if last <= first {
-                        ("unavailable_nonincreasing_samples", None)
-                    } else if !timestamp_period_ns.is_finite() || timestamp_period_ns <= 0.0 {
-                        ("unavailable_timestamp_period", None)
-                    } else {
-                        (
-                            "limited_encoder_boundary",
-                            Some((last - first) as f64 * timestamp_period_ns / 1_000_000.0),
+                    if native {
+                        draw_bridge_shadows(
+                            encoder,
+                            &cv,
+                            &dv,
+                            &mut terrain,
+                            [0, 0, size[0], size[1]],
+                            &batch,
+                            pool.get("bridge-perf"),
+                            &upload,
+                            Some(&atlas.texture),
                         )
-                    };
+                    } else {
+                        let mut pass =
+                            crate::app::presentation::sidebar_render::begin_main_load_pass(
+                                encoder, &cv, &dv,
+                            );
+                        let (buffer, count) = pool.get("bridge-perf").unwrap();
+                        batch.draw_with_buffer_passthrough(&mut pass, &legacy, buffer, count);
+                        drop(pass);
+                        crate::render::terrain_draw::TerrainBatchStats {
+                            pieces: count as usize,
+                            passes: 1,
+                            ..Default::default()
+                        }
+                    }
+                });
+                let wall_prepare_to_completion_ms = begin.elapsed().as_secs_f64() * 1000.0;
                 eprintln!(
-                    "BRIDGE timing: count={count}, layout={layout}, native={native}, sample={sample}, timestamp_status={timestamp_status}, first={first}, last={last}, period_ns={timestamp_period_ns}, encoder_timestamp_ms={encoder_timestamp_ms:?}, cpu_prepare_encode_ms={encode_ms}, wall_prepare_to_completion_ms={wall_prepare_to_completion_ms}, final_submit_to_completion_ms={final_submit_to_completion_ms}"
+                    "BRIDGE timing: count={count}, layout={layout}, native={native}, sample={sample}, gpu_ms={gpu_ms}, cpu_encode_ms={encode_ms}, wall_prepare_to_completion_ms={wall_prepare_to_completion_ms}"
                 );
-                drop(data);
-                mapped.unmap();
                 if native && layout == "repeated" {
                     assert!(
                         terrain.submissions() > 0,
@@ -1378,11 +1318,8 @@ fn retail_bridge_shadow_workload_timing() {
                     results.push(serde_json::json!({"count":count,"layout":layout,"native":native,"sample":sample,
                         "pieces":stats.pieces,"waves":stats.waves,"passes":stats.passes,
                         "tile_dependencies":stats.tile_dependencies,"bounded_submissions":terrain.submissions(),
-                        "timestamp_status":timestamp_status,"timestamp_first":first,"timestamp_last":last,
-                        "timestamp_period_ns":timestamp_period_ns,"encoder_timestamp_ms":encoder_timestamp_ms,
-                        "cpu_prepare_encode_ms":encode_ms,
-                        "wall_prepare_to_completion_ms":wall_prepare_to_completion_ms,
-                        "final_submit_to_completion_ms":final_submit_to_completion_ms}));
+                        "gpu_ms":gpu_ms,"cpu_encode_ms":encode_ms,
+                        "wall_prepare_to_completion_ms":wall_prepare_to_completion_ms}));
                 }
             }
         }
@@ -1390,8 +1327,8 @@ fn retail_bridge_shadow_workload_timing() {
     let report = serde_json::json!({"target":size,"format":"Bgra8UnormSrgb",
         "source":"Physical BRIDGE.TEM frame18 through production atlas/builder/bridge dispatch; supplied adjacent and overlap workloads",
         "reference":"Former alpha128 passthrough dispatch with the same captured physical stencil; reference pixels are not parity expectations",
-        "interval":"CPU preparation/encoding includes terrain preparation, clear, draw scheduling and any bounded intermediate submissions; excludes setup uploads and the final resolve/finish/submit/wait. Wall preparation-to-completion includes that work plus query resolve/readback and the final submission completion fence. Final-submit-to-completion covers only the final finish/submit/map/wait tail. Warmup omitted. No whole-frame or 20000-unit performance claim.",
-        "gpu_timestamp_limit":"Encoder samples are diagnostic: wgpu27 permits backend/driver reordering, so a positive delta is a limited encoder interval, not an exact sum of GPU pass execution. Zero/max or nonincreasing values are reported with null duration; fence-completion wall measurements remain available.",
+        "interval":"CPU encoding covers the clear and draw scheduling, including any bounded intermediate submissions. Wall preparation-to-completion adds terrain preparation and the shared timer's submit, resolve and readback; setup uploads stay outside. Warmup omitted. No whole-frame or 20000-unit performance claim.",
+        "gpu_interval":"GpuFrameTimer pass-boundary samples bracket the encoded work and include its final one-workgroup marker.",
         "samples":results});
     eprintln!("{}", serde_json::to_string_pretty(&report).unwrap());
     if let Some(path) = std::env::var_os("VERA20K_BRIDGE_SHADOW_PERF_OUTPUT") {

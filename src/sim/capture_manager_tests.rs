@@ -489,6 +489,33 @@ fn a_single_link_controller_releases_its_victim_first() {
     assert_eq!(sim.scenario_rng.state(), replay.state());
 }
 
+/// Native CaptureUnit's single-link release (`0x00471D8A`) has no infinite
+/// test: an `InfiniteMindControl=yes` weapon with `Damage=1` still replaces.
+#[cfg(not(feature = "phobos"))]
+#[test]
+fn an_infinite_single_link_controller_still_replaces_its_victim() {
+    let rules = rules_from(&RULES.replacen(
+        "[MindControl]\nDamage=1\n",
+        "[MindControl]\nDamage=1\nInfiniteMindControl=yes\n",
+        1,
+    ));
+    let mut sim = sim(5);
+    let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
+    let first = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
+    let second = spawn(&mut sim, &rules, "E1", "Americans", 12, 12);
+    for target in [first, second] {
+        assert!(sim.capture_unit(
+            yuri,
+            target,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default()
+        ));
+    }
+    assert_eq!(victims(&sim, yuri), [second]);
+    assert_eq!(owner(&sim, first), "Americans");
+}
+
 /// CanCapture refuses the controller's own house, psionic immunity, a unit
 /// already controlled, an Iron-Curtained target, a Selling object and a full
 /// finite manager; a single-link manager always admits (it replaces).
@@ -563,7 +590,7 @@ fn can_capture_gates() {
         .capture_manager
         .as_ref()
         .unwrap();
-    assert!(manager.is_full());
+    assert!(manager.is_full(manager.count()));
     assert!(!sim.can_capture(tower, third, &rules), "full");
 
     let seller = spawn(&mut sim, &rules, "E1", "Americans", 19, 12);
@@ -987,7 +1014,7 @@ fn native_overload_update_corpus() {
         assert_eq!(manager.infinite, constructed["infinite"] != 0);
         if !infinite {
             assert_eq!(
-                manager.overload_pip_state(),
+                manager.overload_pip_state(manager.count()),
                 None,
                 "{name}: a finite manager above capacity has no overload pip"
             );
@@ -1514,7 +1541,11 @@ fn overload_pip_counter_obeys_finite_and_non_damaging_update_gates() {
             manager.overload_countdown, expected_countdown,
             "{kind} {counter}/{countdown}"
         );
-        assert_eq!(manager.overload_pip_state(), None, "no captive overload");
+        assert_eq!(
+            manager.overload_pip_state(manager.count()),
+            None,
+            "no captive overload"
+        );
         assert_eq!(
             (
                 sim.main_rng.native_state_hex(),
@@ -2445,5 +2476,337 @@ fn yuri_prime_building_capture_and_release_request_atlas_refresh() {
         !sim.advance_tick(&[], Some(&rules), None, None, 67)
             .ownership_changed,
         "a consumed ownership change must not refresh every frame"
+    );
+}
+
+// --- Phobos mind-control enhancements -------------------------------------
+// `MindControlSize=`, `MindControl.IgnoreSize=`, `MultiMindControl.ReleaseVictim=`,
+// `MindControlLink.VisibleToHouse=`, `MindControlRangeLimit=` and the warhead
+// `MindControl.Anim=` override. The stock fixture is patched only where a test
+// needs the key.
+
+#[cfg(feature = "phobos")]
+fn enhanced_rules(replacements: &[(&str, &str)]) -> RuleSet {
+    let mut text = RULES.to_owned();
+    for (from, to) in replacements {
+        assert!(text.contains(from), "fixture anchor {from:?}");
+        text = text.replace(from, to);
+    }
+    rules_from(&text)
+}
+
+#[cfg(feature = "phobos")]
+#[test]
+fn mind_control_size_limits_finite_capacity_and_release_victim() {
+    let rules = enhanced_rules(&[
+        (
+            "[HTNK]\nStrength=400\nSpeed=4\n",
+            "[HTNK]\nStrength=400\nSpeed=4\nMindControlSize=2\n",
+        ),
+        (
+            "[YAPSYT]\nStrength=1000\n",
+            "[YAPSYT]\nStrength=1000\nMindControl.IgnoreSize=no\n",
+        ),
+    ]);
+    {
+        let mut sim = sim(7);
+        let tower = spawn(&mut sim, &rules, "YAPSYT", "YuriCountry", 10, 10);
+        let first = spawn(&mut sim, &rules, "HTNK", "Americans", 11, 10);
+        let second = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+        let gi = spawn(&mut sim, &rules, "E1", "Americans", 13, 10);
+        assert!(sim.capture_unit(tower, first, &rules, None, FrameEffects::default()));
+        assert_eq!(sim.capture_effective_count(tower, &rules), Some(2));
+        assert!(!sim.can_capture(tower, second, &rules), "2 + 2 > 3");
+        assert!(sim.can_capture(tower, gi, &rules), "2 + 1 <= 3");
+        assert!(sim.capture_unit(tower, gi, &rules, None, FrameEffects::default()));
+        assert_eq!(sim.capture_effective_count(tower, &rules), Some(3));
+        assert!(!sim.can_capture(tower, second, &rules), "full at size 3");
+    }
+
+    let release = enhanced_rules(&[
+        (
+            "[HTNK]\nStrength=400\nSpeed=4\n",
+            "[HTNK]\nStrength=400\nSpeed=4\nMindControlSize=2\n",
+        ),
+        (
+            "[YAPSYT]\nStrength=1000\n",
+            "[YAPSYT]\nStrength=1000\nMindControl.IgnoreSize=no\n\
+             MultiMindControl.ReleaseVictim=yes\n",
+        ),
+    ]);
+    let mut sim = sim(7);
+    let tower = spawn(&mut sim, &rules, "YAPSYT", "YuriCountry", 10, 10);
+    let first = spawn(&mut sim, &rules, "HTNK", "Americans", 11, 10);
+    let second = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+    assert!(sim.capture_unit(tower, first, &rules, None, FrameEffects::default()));
+    assert!(sim.capture_unit(tower, second, &release, None, FrameEffects::default()));
+    assert_eq!(
+        victims(&sim, tower),
+        vec![second],
+        "ReleaseVictim frees the oldest node until the size fits"
+    );
+    assert_eq!(sim.capture_effective_count(tower, &release), Some(2));
+}
+
+#[cfg(feature = "phobos")]
+#[test]
+fn mind_control_ignore_size_true_keeps_node_count() {
+    let rules = enhanced_rules(&[(
+        "[HTNK]\nStrength=400\nSpeed=4\n",
+        "[HTNK]\nStrength=400\nSpeed=4\nMindControlSize=2\n",
+    )]);
+    let mut sim = sim(7);
+    let tower = spawn(&mut sim, &rules, "YAPSYT", "YuriCountry", 10, 10);
+    let tanks: Vec<u64> = (0..4_u16)
+        .map(|index| spawn(&mut sim, &rules, "HTNK", "Americans", 11 + index, 10))
+        .collect();
+    for &tank in &tanks[..3] {
+        assert!(sim.capture_unit(tower, tank, &rules, None, FrameEffects::default()));
+    }
+    assert_eq!(sim.capture_effective_count(tower, &rules), Some(3));
+    assert!(
+        !sim.can_capture(tower, tanks[3], &rules),
+        "IgnoreSize defaults to yes: the node count fills at 3"
+    );
+}
+
+#[cfg(feature = "phobos")]
+#[test]
+fn multi_mind_control_release_victim_frees_at_node_capacity() {
+    let base = enhanced_rules(&[]);
+    let release = enhanced_rules(&[(
+        "[YAPSYT]\nStrength=1000\n",
+        "[YAPSYT]\nStrength=1000\nMultiMindControl.ReleaseVictim=yes\n",
+    )]);
+    let mut sim = sim(7);
+    let tower = spawn(&mut sim, &base, "YAPSYT", "YuriCountry", 10, 10);
+    let tanks: Vec<u64> = (0..4_u16)
+        .map(|index| spawn(&mut sim, &base, "HTNK", "Americans", 11 + index, 10))
+        .collect();
+    for &tank in &tanks[..3] {
+        assert!(sim.capture_unit(tower, tank, &base, None, FrameEffects::default()));
+    }
+    assert!(sim.capture_unit(tower, tanks[3], &release, None, FrameEffects::default()));
+    assert_eq!(
+        victims(&sim, tower),
+        vec![tanks[1], tanks[2], tanks[3]],
+        "the oldest node is released at count capacity"
+    );
+}
+
+#[cfg(feature = "phobos")]
+#[test]
+fn mind_control_ignore_size_false_drives_the_overload_count() {
+    let rules = enhanced_rules(&[
+        (
+            "[HTNK]\nStrength=400\nSpeed=4\n",
+            "[HTNK]\nStrength=400\nSpeed=4\nMindControlSize=2\n",
+        ),
+        (
+            "[MIND]\nStrength=500\n",
+            "[MIND]\nStrength=500\nMindControl.IgnoreSize=no\n",
+        ),
+    ]);
+    {
+        let mut sim = sim(7);
+        let mind = spawn(&mut sim, &rules, "MIND", "YuriCountry", 10, 10);
+        let first = spawn(&mut sim, &rules, "HTNK", "Americans", 11, 10);
+        let second = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+        assert!(sim.capture_unit(mind, first, &rules, None, FrameEffects::default()));
+        assert!(sim.capture_unit(mind, second, &rules, None, FrameEffects::default()));
+        assert_eq!(sim.capture_effective_count(mind, &rules), Some(4));
+        let manager = sim
+            .substrate
+            .entities
+            .get(mind)
+            .unwrap()
+            .capture_manager
+            .as_ref()
+            .unwrap();
+        assert_eq!(manager.overload_pip_state(4), Some(false));
+    }
+
+    let nodes_only = enhanced_rules(&[(
+        "[HTNK]\nStrength=400\nSpeed=4\n",
+        "[HTNK]\nStrength=400\nSpeed=4\nMindControlSize=2\n",
+    )]);
+    let mut sim = sim(7);
+    let mind = spawn(&mut sim, &nodes_only, "MIND", "YuriCountry", 10, 10);
+    let first = spawn(&mut sim, &nodes_only, "HTNK", "Americans", 11, 10);
+    let second = spawn(&mut sim, &nodes_only, "HTNK", "Americans", 12, 10);
+    assert!(sim.capture_unit(mind, first, &nodes_only, None, FrameEffects::default()));
+    assert!(sim.capture_unit(mind, second, &nodes_only, None, FrameEffects::default()));
+    assert_eq!(sim.capture_effective_count(mind, &nodes_only), Some(2));
+}
+
+#[cfg(feature = "phobos")]
+#[test]
+fn mind_control_range_limit_frees_only_distant_victims() {
+    let rules = enhanced_rules(&[(
+        "[YAPSYT]\nStrength=1000\n",
+        "[YAPSYT]\nStrength=1000\nMindControlRangeLimit=1.5\n",
+    )]);
+    {
+        let mut sim = sim(7);
+        let tower = spawn(&mut sim, &rules, "YAPSYT", "YuriCountry", 5, 5);
+        let near = spawn(&mut sim, &rules, "HTNK", "Americans", 6, 5);
+        let far = spawn(&mut sim, &rules, "HTNK", "Americans", 20, 20);
+        assert!(sim.capture_unit(tower, near, &rules, None, FrameEffects::default()));
+        assert!(sim.capture_unit(tower, far, &rules, None, FrameEffects::default()));
+        sim.apply_mind_control_range_limit(near, &rules, None, FrameEffects::default());
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(near)
+                .unwrap()
+                .mind_control
+                .controller,
+            Some(tower),
+            "one cell stays inside 1.5 cells"
+        );
+        sim.apply_mind_control_range_limit(far, &rules, None, FrameEffects::default());
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(far)
+                .unwrap()
+                .mind_control
+                .controller,
+            None,
+            "fifteen cells leave the controller range"
+        );
+        assert_eq!(victims(&sim, tower), vec![near]);
+    }
+
+    // The victim's early AI visit runs the same check through
+    // `TechnoExt::OnEarlyUpdate`.
+    let mut sim = sim(7);
+    let tower = spawn(&mut sim, &rules, "YAPSYT", "YuriCountry", 5, 5);
+    let far = spawn(&mut sim, &rules, "HTNK", "Americans", 20, 20);
+    assert!(sim.capture_unit(tower, far, &rules, None, FrameEffects::default()));
+    sim.advance_tick(&[], Some(&rules), None, None, 67);
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(far)
+            .unwrap()
+            .mind_control
+            .controller,
+        None,
+        "the early update frees the out-of-range victim"
+    );
+}
+
+#[cfg(feature = "phobos")]
+#[test]
+fn mind_control_link_visibility_uses_type_then_global() {
+    let rules = enhanced_rules(&[(
+        "[YAPSYT]\nStrength=1000\n",
+        "[YAPSYT]\nStrength=1000\nMindControlLink.VisibleToHouse=team\n",
+    )]);
+    let mut sim = sim(7);
+    let tower = spawn(&mut sim, &rules, "YAPSYT", "YuriCountry", 10, 10);
+    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 11, 10);
+    assert!(sim.capture_unit(tower, tank, &rules, None, FrameEffects::default()));
+    let links = sim.capture_link_coordinates(tower, &rules);
+    assert_eq!(links.len(), 1);
+    assert_eq!(
+        links[0].visible_to.bits(),
+        crate::rules::phobos_shields::AffectedHouse::OWNER.bits()
+            | crate::rules::phobos_shields::AffectedHouse::ALLIES.bits()
+    );
+
+    let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 14, 10);
+    let other = spawn(&mut sim, &rules, "HTNK", "Americans", 15, 10);
+    assert!(sim.capture_unit(yuri, other, &rules, None, FrameEffects::default()));
+    let links = sim.capture_link_coordinates(yuri, &rules);
+    assert_eq!(
+        links[0].visible_to,
+        crate::rules::phobos_shields::AffectedHouse::ALL,
+        "an unset type inherits the global All"
+    );
+}
+
+#[cfg(feature = "phobos")]
+#[test]
+fn warhead_mind_control_anim_overrides_the_global_ring() {
+    let rules = enhanced_rules(&[
+        (
+            "ControlledAnimationType=MINDANIM\n",
+            "ControlledAnimationType=GLOBALANIM\n",
+        ),
+        (
+            "[InfantryTypes]",
+            "[Animations]\n0=MINDANIM\n[InfantryTypes]",
+        ),
+        (
+            "[Controller]\nMindControl=yes\n",
+            "[Controller]\nMindControl=yes\nMindControl.Anim=MINDANIM\n",
+        ),
+    ]);
+    {
+        let mut sim = sim(7);
+        let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
+        let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 11, 10);
+        let warhead = sim.interner.intern("Controller");
+        let detonation = crate::sim::projectile::ProjectileDetonation {
+            projectile_id: 0,
+            source_id: yuri,
+            target: crate::sim::projectile::ProjectileTarget::Entity(tank),
+            impact: crate::sim::projectile::ProjectileCoord::new(0, 0, 0),
+            payload: crate::sim::projectile::ProjectilePayload::new(1, warhead, None, false),
+            reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
+        };
+        sim.mind_control_detonation(detonation, &rules, None, FrameEffects::default());
+        let ring = sim
+            .substrate
+            .entities
+            .get(tank)
+            .unwrap()
+            .mind_control
+            .ring_anim
+            .expect("the warhead override constructs its ring");
+        assert_eq!(
+            sim.interner.resolve(sim.anim(ring).unwrap().type_id()),
+            "MINDANIM"
+        );
+    }
+
+    let fallback = enhanced_rules(&[
+        (
+            "[InfantryTypes]",
+            "[Animations]\n0=MINDANIM\n[InfantryTypes]",
+        ),
+        (
+            "[Controller]\nMindControl=yes\n",
+            "[Controller]\nMindControl=yes\nMindControl.Anim=UNKNOWN\n",
+        ),
+    ]);
+    let mut fallback_sim = sim(7);
+    let yuri = spawn(&mut fallback_sim, &fallback, "YURI", "YuriCountry", 10, 10);
+    let tank = spawn(&mut fallback_sim, &fallback, "HTNK", "Americans", 11, 10);
+    let warhead = fallback_sim.interner.intern("Controller");
+    let detonation = crate::sim::projectile::ProjectileDetonation {
+        projectile_id: 0,
+        source_id: yuri,
+        target: crate::sim::projectile::ProjectileTarget::Entity(tank),
+        impact: crate::sim::projectile::ProjectileCoord::new(0, 0, 0),
+        payload: crate::sim::projectile::ProjectilePayload::new(1, warhead, None, false),
+        reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
+    };
+    fallback_sim.mind_control_detonation(detonation, &fallback, None, FrameEffects::default());
+    let ring = fallback_sim
+        .substrate
+        .entities
+        .get(tank)
+        .unwrap()
+        .mind_control
+        .ring_anim
+        .expect("an unknown override falls back to the global ring");
+    assert_eq!(
+        fallback_sim
+            .interner
+            .resolve(fallback_sim.anim(ring).unwrap().type_id()),
+        "MINDANIM"
     );
 }

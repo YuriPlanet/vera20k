@@ -81,13 +81,15 @@ impl GpuFrame {
         }
     }
 
-    pub fn present(self) {
+    /// Hand the acquired surface texture to the queue. wgpu 30 moved
+    /// presentation off `SurfaceTexture`, so the caller passes its queue.
+    pub fn present(self, queue: &wgpu::Queue) {
         if let Some(surface) = self.surface {
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             if let Some(presenter) = self.web_present {
                 presenter.present(&surface);
             }
-            surface.present();
+            queue.present(surface);
         }
     }
 }
@@ -216,8 +218,8 @@ impl GpuContext {
     ) -> Result<Self> {
         // The standard override selects a backend for reproducible
         // shroud GPU comparisons while retaining primary backends by default.
-        // wgpu 29 requires the display at instance creation for Wayland EGL:
-        // https://docs.rs/wgpu-types/29.0.1/wgpu_types/struct.InstanceDescriptor.html
+        // wgpu requires the display at instance creation for Wayland EGL:
+        // https://docs.rs/wgpu-types/30.0.1/wgpu_types/struct.InstanceDescriptor.html
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let instance: wgpu::Instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY.with_env(),
@@ -239,6 +241,9 @@ impl GpuContext {
                     power_preference: wgpu::PowerPreference::HighPerformance,
                     compatible_surface: None,
                     force_fallback_adapter: false,
+                    // wgpu 30 can round reported limits into WebGPU buckets;
+                    // off keeps the probe asking for exact limits as in 29.x.
+                    apply_limit_buckets: false,
                 })
                 .await
                 .is_ok();
@@ -267,6 +272,9 @@ impl GpuContext {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
+                // wgpu 30 can round the adapter's reported limits down to the
+                // WebGPU bucket it belongs to; off keeps the exact 29.x limits.
+                apply_limit_buckets: false,
             })
             .await
             .context("No suitable GPU adapter found — is a GPU available?")?;
@@ -386,18 +394,22 @@ impl GpuContext {
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
+            // wgpu 30 selects an HDR colour space per surface format; Auto keeps
+            // the pre-30 sRGB behaviour for every desktop and WebGL2 backend.
+            color_space: wgpu::SurfaceColorSpace::Auto,
         };
         surface.configure(&device, &config);
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         let web_present = Arc::new(web_present::WebPresent::new(&device, &queue, &config));
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         let surface_format = surface_format.add_srgb_suffix();
-        // wgpu-hal 29.0.4 Metal acquire_texture refuses any macOS NSWindow
-        // without NSWindowOcclusionStateVisible, including deliberately hidden
-        // captures. Render those frames offscreen with the same format/usages;
-        // the normal render, loading, readback and capture-driver paths remain
-        // shared. Ordinary occluded windows retain swapchain skip/recovery.
-        // https://docs.rs/wgpu-hal/29.0.4/src/wgpu_hal/metal/surface.rs.html#126-151
+        // wgpu-hal 30.0.1 Metal acquire_texture returns SurfaceError::Occluded
+        // for any macOS NSWindow without NSWindowOcclusionStateVisible, including
+        // deliberately hidden captures. Render those frames offscreen with the
+        // same format/usages; the normal render, loading, readback and
+        // capture-driver paths remain shared. Ordinary occluded windows retain
+        // swapchain skip/recovery.
+        // https://docs.rs/wgpu-hal/30.0.1/src/wgpu_hal/metal/surface.rs.html#347-371
         let capture_target = hidden_capture.then(|| CaptureTarget::new(&device, &config));
 
         log::info!(
@@ -459,9 +471,9 @@ impl GpuContext {
     /// this time and the next redraw should try again.
     ///
     /// A stale or suboptimal swapchain is reconfigured once and asked again;
-    /// a lost surface is recreated first, as required by wgpu 29. Timeout and
+    /// a lost surface is recreated first, as wgpu requires. Timeout and
     /// occlusion skip this redraw. Validation failures remain errors.
-    /// https://docs.rs/wgpu/29.0.4/wgpu/enum.CurrentSurfaceTexture.html
+    /// https://docs.rs/wgpu/30.0.1/wgpu/enum.CurrentSurfaceTexture.html
     pub fn acquire_frame(&self) -> Result<Option<GpuFrame>> {
         if let Some(target) = &self.capture_target {
             return Ok(Some(target.frame()));
@@ -683,6 +695,7 @@ mod tests {
             alpha_mode: wgpu::CompositeAlphaMode::Opaque,
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
+            color_space: wgpu::SurfaceColorSpace::Auto,
         };
         let mut target = CaptureTarget::new(&device, &config);
         let render =
@@ -723,7 +736,7 @@ mod tests {
                 )
                 .expect("read back the actual capture frame");
                 let submission = queue.submit([encoder.finish()]);
-                frame.present();
+                frame.present(&queue);
                 pending
                     .finish(&device, submission, std::time::Duration::from_secs(10))
                     .expect("finish hidden frame readback")

@@ -520,6 +520,28 @@ fn shield_stage(
     ))
 }
 
+/// `GeneralUtils::GetWarheadVersusArmor(WH, Techno, Type)` for the split
+/// targeting check: the shield's armor while it is active and the warhead
+/// cannot penetrate it, else the TechnoType's.
+#[cfg(feature = "phobos")]
+pub(crate) fn warhead_armor_for_target(
+    sim: &Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    entity: &crate::sim::game_entity::GameEntity,
+    warhead: &crate::rules::warhead_type::WarheadType,
+) -> crate::rules::armor::ArmorId {
+    let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
+        return crate::rules::armor::ArmorId::NONE;
+    };
+    let Some(state) = entity.shield.as_ref() else {
+        return object.armor_id();
+    };
+    let Some(ty) = rules.shield_type(state.type_name()) else {
+        return object.armor_id();
+    };
+    restart_armor(state, ty, warhead, object)
+}
+
 /// Phobos `ShieldClass::CanBePenetrated`, used by the receive hook at
 /// `0x701900+0x6`: Psychedelic selects ImmuneToBerserk before Shield.Penetrate.
 /// Source: Phobos b90ab4bc, src/New/Entity/ShieldClass.cpp:379..394.

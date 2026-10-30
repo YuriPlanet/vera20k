@@ -151,11 +151,11 @@ impl PackedSpriteGpu {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[wgpu::VertexBufferLayout {
+                    buffers: &[Some(wgpu::VertexBufferLayout {
                         array_stride: std::mem::size_of::<SpriteInstance>() as u64,
                         step_mode: wgpu::VertexStepMode::Instance,
                         attributes: &SPRITE_INSTANCE_ATTRIBUTES,
-                    }],
+                    })],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -707,7 +707,7 @@ impl TerrainDrawRenderer {
         let bytes = u64::from(rect[2]) * u64::from(rect[3]) * 4;
         assert!(
             self.packed.compute.is_none()
-                || bytes <= u64::from(self.packed.device.limits().max_storage_buffer_binding_size),
+                || bytes <= self.packed.device.limits().max_storage_buffer_binding_size,
             "packed source rectangle fits storage binding"
         );
         let (params, results, uniform_offset) = self.packed.transaction_buffers(params, bytes);

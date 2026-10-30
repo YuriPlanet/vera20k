@@ -857,63 +857,7 @@ fn spawner_cell_spread(
 /// clamps it to Max in its initializer. Negative authored values therefore
 /// reach the same bounded maximum (Phobos b90ab4bc, YRpp d9795546).
 fn adjacent_cells_in_range(range: i32) -> Vec<(i16, i16)> {
-    /// `CellSpreadEnumerator::Max`.
-    const MAX_SPREAD: u32 = 0x100;
-    let spread = (range as u32).min(MAX_SPREAD);
-    // The constructor's `reset(0)`: the center, with both line flags set.
-    let mut curspread: u32 = 0;
-    let mut current = (0i16, 0i16);
-    let mut has_two = true;
-    let mut had_two = true;
-    let mut cells = Vec::with_capacity(spread as usize * 4 + 1);
-    loop {
-        // `operator bool`: `curspread <= spread`.
-        if curspread > spread {
-            return cells;
-        }
-        cells.push(current);
-        // `reset(curspread + 1)` at the center or the ring's top-right cell.
-        if current == (0, 0) || (current.0 == 1 && current.1 == curspread as i16) {
-            curspread += 1;
-            current = (-1, -(curspread as i16));
-            has_two = true;
-            had_two = true;
-            continue;
-        }
-        if has_two {
-            current.0 += 1;
-            has_two = current.0 == 0;
-            continue;
-        }
-        if current.0 < 0 {
-            current.0 = -current.0;
-            has_two = had_two;
-            continue;
-        }
-        current.1 += 1;
-        let change_sign = current.1 > 0;
-        if change_sign {
-            current.1 = -current.1;
-        }
-        current.0 = (curspread as i16 + current.1)
-            .wrapping_mul(-2)
-            .wrapping_sub(1);
-        let diff = current.0 - current.1;
-        has_two = diff >= 0;
-        had_two = has_two;
-        if diff == -1 {
-            current.0 += 1;
-        } else if diff < 0 {
-            current.0 = current
-                .1
-                .wrapping_neg()
-                .wrapping_div(2)
-                .wrapping_sub(curspread as i16);
-        }
-        if change_sign {
-            current.1 = -current.1;
-        }
-    }
+    crate::sim::cell_rect::cell_spread_offsets(range as u32 as usize)
 }
 
 /// Result of one `Reduce_Tiberium` call.

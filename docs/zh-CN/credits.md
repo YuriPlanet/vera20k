@@ -74,11 +74,43 @@ Phobos 由 Phobos Developers 开发。VERA20K 已移植功能对应的原作者�
 - 并行 AI 生产队列限制 — **Trsdy**、**NetsuNegi**（按类别）、
   **Starkku**（按 TechnoType）。
 - 遭遇战无限颜色 — **Morton**。
+- AttachEffect — **Starkku**（目标过滤 — **Flactine**，附加事件 606 — **FS-21**）。
+- 暴击系统 — **Starkku**（逻辑）、**AutoGavy**（弹头暴击）、**Trsdy**
+  （护盾 `ImmuneToCrit`）。
 
 完整贡献者名单见
 [Phobos CREDITS.md](https://github.com/Phobos-developers/Phobos/blob/develop/CREDITS.md)。
 VERA 的 include/inheritance 遍历还改编自 baixiong443 的 ra2-mono `IniFile`，
 见 [INI 指令文档](../ini-directives.md#source-mapping)。
+
+## VERA20K 移植署名
+
+各扩展功能的 Rust 移植由 VERA20K 贡献者以合并的 pull request 完成；下面用
+GitHub 用户名标注每个链条对应的合并 PR 作者：
+
+- **1372704087** — Phobos 侧的全部功能：护盾、自定义辐射类型、三条矿石
+  链、超武科技门槛、数字显示、放置预览、侧边栏 GDI/NOD 坐标、步兵自动
+  部署、`FlyNoWobbles`、暂停界面居中、建筑生产队列、遭遇战 AI 去硬编码、
+  并行 AI 队列限制、遭遇战无限颜色、超武侧边栏、匍匐速度、建筑类型选择、
+  计时器闪烁配色、缺省图标、电厂增强器、`Locomotor=` 语义别名、选中
+  闪烁、`AllowDamageOnSelf`、`DecloakDamagedTargets`、抛射体重力、空袭
+  标记颜色、AttachEffect 与暴击链、`$Include`/`$Inherits` 原生钩子；以及
+  Ares 的第四 Side 默认值（SideExt）、国家展示、国家空投覆盖与国家 AI
+  电厂。
+- **zzzzzzh123** — Ares 的 opt-in 构建能力本身、EMP、水陆类型转换与
+  脚本 68、自定义装甲、补充字符串表、按类型 SHP 建筑调色板、EVA 语音
+  标签、通用生产前置、`FactoryOwners`、载具驾驶员与 KillDriver、扩展 IFV
+  模式、类型选择编组、NoManualFire、Ares AttachEffect 链（地面弹头效果、
+  附带装甲/火力/速度/装填、自身附带潜影、强制显形、动画弹头与资源、弹头
+  阵营过滤）、HunterSeeker、阵营存续、零费与初始/虚拟充能超武、扩展 House
+  盟友列表、步兵装填与按武器弹药、按类型晋升音效、击杀赏金。
+- **baixiong443** — GenericWarhead、超武建筑门槛、单段/两段超武费用与
+  奖励、UnitDelivery、INI include 与继承（含 ra2-mono `IniFile` 改编）。
+- **hrusten** — Ares 超武掩码/AI 模式原生读取、赏金标签的原生槽位、
+  读档后的辐射衰减时钟修复。
+- **Krisztiaan** — 护盾伤害/恢复钩子顺序修复。
+- **CCDawn** — 战术视图右上角的 Phobos 构建描述文字。
+- **EncoreAlpha** — 保留的 `EMPulseWarhead` 规则状态。
 
 ## VeraX 与自有功能
 

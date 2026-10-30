@@ -93,6 +93,19 @@ pub(crate) fn create(
     let Some(to) = super::fire_coord::effect_target_coordinate(world, rules, target) else {
         return;
     };
+    create_endpoints(world, rules, from, to, z_adjust, mode);
+}
+
+/// Phobos `BulletExt::SimulatedFiringRadBeam`: the same copied modes0/1 with
+/// caller-supplied endpoints (the simulated child's source coordinate).
+pub(crate) fn create_endpoints(
+    world: &mut crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    from: ProjectileCoord,
+    to: ProjectileCoord,
+    z_adjust: i32,
+    mode: CopiedBeamMode,
+) {
     let color = match mode {
         CopiedBeamMode::Radiation => {
             let (r, g, b) = rules.radiation.color;

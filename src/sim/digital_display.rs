@@ -69,7 +69,10 @@ pub fn values_for_display(
         DigitalInfoType::Ammo => (entity.ammo()?.current(), object.ammo),
         DigitalInfoType::MindControl => {
             let manager = entity.capture_manager.as_ref()?;
-            (manager.count(), manager.max_control())
+            let count = sim
+                .capture_effective_count(entity.stable_id(), rules)
+                .unwrap_or_else(|| manager.count());
+            (count, manager.max_control())
         }
         DigitalInfoType::Spawns => {
             let manager = entity.spawn_manager.as_ref()?;

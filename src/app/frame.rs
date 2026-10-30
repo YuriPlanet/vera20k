@@ -1341,7 +1341,7 @@ impl App {
             .gpu
             .queue
             .submit(std::iter::once(encoder.finish()));
-        output.present();
+        output.present(&state.renderer.gpu.queue);
         state
             .platform
             .frame_pacer

@@ -3025,11 +3025,13 @@ fn read_ares_type_ref(
     }
 }
 
-/// Ares `NullableVector<T>::Read` (`0x1002EB60`): ReadString(0x800) returning
-/// 0 (absent or empty) retains; `<default>` returns to the getter fallback;
-/// any other value replaces the vector, skipping names that do not resolve.
-#[cfg(feature = "ares")]
-fn read_nullable_type_vector(
+/// Ares `NullableVector<T>::Read` (`0x1002EB60`), which Phobos
+/// `NullableVector<T>::Read` (`Utilities/TemplateDef.h`) repeats: ReadString(0x800)
+/// returning 0 (absent or empty) retains; `<default>` returns to the getter
+/// fallback; any other value replaces the vector with its comma-strtok tokens,
+/// skipping names that do not resolve.
+#[cfg(any(feature = "ares", feature = "phobos"))]
+pub(crate) fn read_nullable_type_vector(
     section: &IniSection,
     key: &str,
     current: Option<&Vec<String>>,

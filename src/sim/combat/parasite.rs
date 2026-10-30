@@ -1237,6 +1237,7 @@ impl Simulation {
                 Self::construct_bullet_scheme(
                     &self.interner,
                     &self.substrate,
+                    &self.houses,
                     &mut self.projectiles,
                     bullet,
                     rules,

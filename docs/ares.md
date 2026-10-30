@@ -52,6 +52,19 @@ Supported extensions:
   game loading and default `asset csf-get` / `csf-grep` queries.
 - [Per-type SHP building palettes](ares-building-palettes.md)
 - [EVA voice tags and Side selection](ares-eva.md)
+- [Per-type promotion sounds](ares-promotion-sounds.md)
+  (`Promote.VeteranSound`, `Promote.EliteSound`)
+- [Finite infantry ammo](../src/sim/ammo.rs): Ares' Infantry reload dispatch
+  runs through the shared Techno reload owner before the scatter/fire suffix,
+  and per-weapon `Ammo` shares one count across admission, debit and reload
+  (`Update_Reload 0x10047980`, `Fire_Ammo 0x10047910`, `CanFire_Ammo
+  0x100479B0`, debit `0x100441F0`).
+- Warhead house filtering: `AffectsOwner` (nullable) and `AffectsEnemies`
+  extend the shared receiver's ally gate to animation-only damage and
+  ordinary hits alike
+  ([reader](../src/rules/ares_warhead.rs), installed Ares
+  `TechnoClass_ReceiveDamage_Abilities 0x1004A950`, `CanTargetHouse
+  0x10051B70`).
 - [Fourth and later Side defaults](ares-side-defaults.md): crew, engineer,
   technician, disguise, survivor divisor, AI base defences and counts,
   paradrop lists/plane, parachute animation, tooltip and message colors, and
@@ -109,6 +122,34 @@ Supported extensions:
 - [INI Include and inheritance](ini-directives.md). The read-only `asset ini-expand` probe works
   in every build.
 - [Extended authored House ally lists](../tools/input_oracle/ares_allies_reader.md).
+
+## VERA20K porting credits
+
+The Rust ports are individual VERA20K contributions; GitHub usernames name
+the merged pull requests that carried each chain:
+
+- **zzzzzzh123** — the opt-in build capability itself, EMP (with its
+  powered-defence arm), water/land type conversion and script 68, custom
+  armor, supplemental string tables, per-type building palettes, EVA voice
+  tags, Country loading art and text, generic production prerequisites,
+  `FactoryOwners`, vehicle drivers and KillDriver, extended IFV modes, type
+  selection groups, NoManualFire, the Ares AttachEffect chain (ground
+  warhead effects, attached armor/firepower/speed/reload, self-attached
+  cloak effects, forced decloaking, animation warheads and assets, warhead
+  house filtering), HunterSeeker, House survival, zero-fee and
+  initial/virtual superweapon charge, extended House ally lists, infantry
+  reload and per-weapon ammo costs, per-type promotion sounds, and the kill
+  bounties.
+- **baixiong443** — GenericWarhead, the superweapon building gates,
+  single-stage and two-stage superweapon fees and rewards, UnitDelivery,
+  and INI include and inheritance (with ra2-mono's `IniFile` adaptation).
+- **1372704087** — fourth-Side defaults through SideExt, country
+  presentation, country paradrop overrides and country AI power plants, and
+  the inherited-INI expansion budget.
+- **hrusten** — the Ares superweapon mask/AI-mode native reader pass, the
+  bounty label's native slot, and the radiation decay-clock repair that
+  survives loading a game.
+- **EncoreAlpha** — the retained `EMPulseWarhead` rules state.
 
 ## Original project and authors
 

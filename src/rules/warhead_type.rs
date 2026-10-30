@@ -368,6 +368,15 @@ pub struct WarheadType {
     /// Phobos `WarheadTypeExt`'s `Crit.*` block, read in `LoadFromINI` order.
     #[cfg(feature = "phobos")]
     pub crit: crate::rules::phobos_crit::CritRules,
+    /// Phobos `WarheadTypeExt::Jumpjet*`: overrides for an `IsLocomotor=`
+    /// warhead whose installed locomotor is Jumpjet.
+    #[cfg(feature = "phobos")]
+    pub jumpjet_override: crate::rules::jumpjet_params::JumpjetOverride,
+    /// Phobos `WarheadTypeExt::MindControl_Anim` (`MindControl.Anim=`): the
+    /// ring animation this warhead gives a captured object; `None` uses
+    /// `[CombatDamage] ControlledAnimationType`.
+    #[cfg(feature = "phobos")]
+    pub mind_control_anim: Option<String>,
     /// Phobos AttachEffect attach/remove lists and the reflected-damage
     /// suppressor this warhead carries.
     #[cfg(feature = "phobos")]
@@ -386,6 +395,10 @@ pub struct WarheadType {
     /// `Nullable<bool>`); `None` inherits `[CombatDamage]`.
     #[cfg(feature = "phobos")]
     pub apply_per_target_effects_on_detonate: Option<bool>,
+    /// Phobos animation-list enhancement settings (`AnimList.*`,
+    /// `SplashList.*`, `CreateAnimsOnZeroDamage`, `Conventional.IgnoreUnits`).
+    #[cfg(feature = "phobos")]
+    pub phobos_anim: crate::rules::phobos_warhead_anim::PhobosWarheadAnimRules,
 }
 
 /// Phobos `AEAttachInfoTypeClass` as a warhead carries it: the AE lists a
@@ -686,6 +699,18 @@ impl WarheadType {
             #[cfg(feature = "phobos")]
             apply_per_target_effects_on_detonate: section
                 .read_phobos_nullable_bool("ApplyPerTargetEffectsOnDetonate", None),
+            #[cfg(feature = "phobos")]
+            phobos_anim: crate::rules::phobos_warhead_anim::PhobosWarheadAnimRules::from_section(
+                section,
+            ),
+            #[cfg(feature = "phobos")]
+            jumpjet_override: crate::rules::jumpjet_params::JumpjetOverride::from_section(section),
+            #[cfg(feature = "phobos")]
+            // The name resolves at the capture site; an unknown later-layer
+            // name replaces an earlier valid one, where Phobos keeps it.
+            mind_control_anim: section.read_phobos_nullable_with("MindControl.Anim", None, |raw| {
+                Some(raw.to_owned())
+            }),
         }
     }
 }
@@ -1032,6 +1057,26 @@ MaxDebris=2
         assert!(
             read(with_global, "On"),
             "per-warhead yes overrides global no"
+        );
+    }
+
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn mind_control_anim_reads_nullable_name() {
+        let ini = IniFile::from_str(
+            "[WH]\nMindControl.Anim=ALTANIM\n\
+             [RESET]\nKeep=1\nMindControl.Anim=<default>\n\
+             [EMPTY]\nKeep=1\n",
+        );
+        let warhead = WarheadType::from_ini_section("WH", ini.section("WH").unwrap());
+        assert_eq!(warhead.mind_control_anim.as_deref(), Some("ALTANIM"));
+        assert_eq!(
+            WarheadType::from_ini_section("RESET", ini.section("RESET").unwrap()).mind_control_anim,
+            None
+        );
+        assert_eq!(
+            WarheadType::from_ini_section("EMPTY", ini.section("EMPTY").unwrap()).mind_control_anim,
+            None
         );
     }
 }

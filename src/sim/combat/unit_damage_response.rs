@@ -214,7 +214,8 @@ impl Simulation {
             return;
         };
         if !(object.harvester || object.weeder)
-            || unit.techno_pip_fill_level(object, rules) <= 0
+            || unit.techno_pip_fill_level(object, rules, self.capture_effective_count(id, rules))
+                <= 0
             || unit
                 .health
                 .compare_ratio(object.strength, rules.general.condition_yellow)

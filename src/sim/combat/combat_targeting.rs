@@ -312,10 +312,7 @@ pub(crate) fn should_retaliate(
     // `0x0070882F` a full CaptureManager (being controlled is no gate);
     // `0x0070883C` a SpawnManager; `0x0070884A` a human's object that already
     // has a Target; `0x00708867` the mission's `Retaliate=`.
-    if victim
-        .capture_manager
-        .as_ref()
-        .is_some_and(|manager| manager.is_full())
+    if world.capture_manager_is_full(victim.stable_id(), rules)
         || victim.spawn_manager.is_some()
         || (human && victim.attack_target.target().is_some())
         || crate::sim::mission::control::current_control(rules, &victim.mission)

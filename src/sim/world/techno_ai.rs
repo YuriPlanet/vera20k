@@ -742,6 +742,11 @@ fn techno_ai_shell(
     if category == EntityCategory::Infantry {
         sim.substrate.infantry_health_reset(id);
     }
+    // `TechnoClass_AI @ 0x6F9E50+0x5 -> TechnoExt::OnEarlyUpdate ->
+    // ApplyMindControlRangeLimit`, after the leaf's own steps and before the
+    // common Techno body's estimated-health recover.
+    #[cfg(feature = "phobos")]
+    sim.apply_mind_control_range_limit(id, rules, ctx.overlay_registry, ctx.effects);
     // Techno6F9F6E..9F precedes veterancy promotion, missions and acquisition for every
     // Techno category. object_ai_visit_one excludes the entry-active Tube leaf
     // before this common owner. Actual health and this retained estimate differ.

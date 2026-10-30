@@ -1332,6 +1332,7 @@ fn retail_locomotor_arm_admission() {
             LocomotorShotTarget::Object(tank),
             strength,
             LocomotorKind::Jumpjet,
+            &crate::rules::jumpjet_params::JumpjetOverride::default(),
             &rules,
             None,
             FrameEffects::default(),
@@ -1360,6 +1361,7 @@ fn retail_locomotor_arm_admission() {
             target,
             5000,
             LocomotorKind::Jumpjet,
+            &crate::rules::jumpjet_params::JumpjetOverride::default(),
             &rules,
             None,
             FrameEffects::default(),
@@ -1410,6 +1412,7 @@ fn retail_lifted_team_member_commences_guard_at_once() {
         LocomotorShotTarget::Object(tank),
         4,
         LocomotorKind::Jumpjet,
+        &crate::rules::jumpjet_params::JumpjetOverride::default(),
         &rules,
         None,
         FrameEffects::default(),
@@ -1447,6 +1450,7 @@ fn retail_magnetron_admission_reads_fractional_type_size() {
             LocomotorShotTarget::Object(tank),
             strength,
             LocomotorKind::Jumpjet,
+            &crate::rules::jumpjet_params::JumpjetOverride::default(),
             rules,
             None,
             FrameEffects::default(),
@@ -1523,4 +1527,93 @@ fn lift_links_and_drop_credit_are_saved_and_hashed() {
     assert_eq!(held.drop_credit.manipulated_by(), Some(magnetron));
     assert_eq!(held.drop_credit.warped_by_house(), Some(house));
     assert_eq!(entity(&loaded, magnetron).lift.target(), Some(tank));
+}
+
+/// Phobos warhead `Jumpjet*` overrides apply while the Magnetron's new
+/// Jumpjet locomotor links; absent keys inherit the target type's block.
+#[cfg(feature = "phobos")]
+#[test]
+fn warhead_jumpjet_overrides_apply_to_the_installed_locomotor() {
+    let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        "[VehicleTypes]\n0=TANK\n\
+         [TANK]\nStrength=300\nSpeed=7\nSize=1\n\
+         JumpjetSpeed=30\nJumpjetClimb=5\nJumpjetCrash=5\nJumpjetHeight=500\n\
+         JumpjetAccel=2\nJumpjetWobbles=0.15\nJumpjetDeviation=40\n\
+         [Warheads]\n0=LIFT\n1=PLAIN\n\
+         [LIFT]\nIsLocomotor=yes\nLocomotor={92612C46-F71F-11D1-AC9F-006008055BB5}\n\
+         JumpjetTurnRate=9\nJumpjetSpeed=33\nJumpjetClimb=7.5\nJumpjetCrash=11\n\
+         JumpjetHeight=100\nJumpjetAccel=3.5\nJumpjetWobbles=.5\n\
+         JumpjetNoWobbles=yes\nJumpjetDeviation=77\n\
+         [PLAIN]\nIsLocomotor=yes\nLocomotor=Jumpjet\n",
+    ))
+    .unwrap();
+    let lift = |warhead_name: &str| {
+        let (mut sim, _) = arena(&rules);
+        let magnetron = spawn(&mut sim, &rules, "TANK", "Americans", 10, 16);
+        let tank = spawn(&mut sim, &rules, "TANK", "Russians", 16, 16);
+        let warhead = rules.warhead(warhead_name).unwrap();
+        sim.locomotor_detonation(
+            magnetron,
+            LocomotorShotTarget::Object(tank),
+            5000,
+            LocomotorKind::Jumpjet,
+            &warhead.jumpjet_override,
+            &rules,
+            None,
+            FrameEffects::default(),
+        );
+        let params = entity(&sim, tank)
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .jumpjet_runtime()
+            .unwrap()
+            .params();
+        params
+    };
+
+    let overridden = lift("LIFT");
+    assert_eq!(overridden.turn_rate(), 9);
+    assert_eq!(overridden.speed(), 33);
+    assert_eq!(f32::from_bits(overridden.climb_bits()), 7.5);
+    assert_eq!(f32::from_bits(overridden.crash_bits()), 11.0);
+    assert_eq!(
+        overridden.height(),
+        208,
+        "JumpjetHeight below the cell height floors at 208 leptons"
+    );
+    assert_eq!(f32::from_bits(overridden.accel_bits()), 3.5);
+    assert_eq!(f32::from_bits(overridden.wobbles_bits()), 0.5);
+    assert_eq!(overridden.deviation(), 77);
+    assert!(overridden.no_wobbles());
+
+    let inherited = lift("PLAIN");
+    assert_eq!(inherited.turn_rate(), 4);
+    assert_eq!(inherited.speed(), 30);
+    assert_eq!(inherited.height(), 500);
+    assert_eq!(inherited.deviation(), 40);
+    assert!(!inherited.no_wobbles());
+
+}
+
+/// The production attack path hands the fired warhead's Phobos `Jumpjet*`
+/// block to the lift (`run_special_detonation_arm` into Imbue `0x00710000`).
+#[cfg(feature = "phobos")]
+#[test]
+fn retail_magnetron_beam_carries_its_warhead_jumpjet_override() {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
+        &crate::rules::ini_parser::IniFile::from_str("[LocomotorBeam]\nJumpjetSpeed=33\n"),
+    )
+    .map(|fixture| fixture.rules) else {
+        return;
+    };
+    let (sim, _, _, tank) = lift(&rules);
+    let params = entity(&sim, tank)
+        .locomotor
+        .as_ref()
+        .unwrap()
+        .jumpjet_runtime()
+        .unwrap()
+        .params();
+    assert_eq!(params.speed(), 33);
 }

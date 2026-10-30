@@ -225,6 +225,7 @@ fn magnetron_aircraft_hit_and_release_match_original_composition() {
                 .unwrap_or(data["inputs"]["magnetic_beam_damage"].as_i64().unwrap())
                 as i32,
             LocomotorKind::Jumpjet,
+            &crate::rules::jumpjet_params::JumpjetOverride::default(),
             &rules,
             None,
             FrameEffects::default(),

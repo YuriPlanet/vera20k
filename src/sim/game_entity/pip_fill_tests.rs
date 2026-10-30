@@ -107,7 +107,7 @@ fn check_fill(row: &serde_json::Value, rules: &RuleSet) {
         slave_storage.miner = None;
         slave_storage.slave = SlaveLink::for_test(None, bales);
         assert_eq!(
-            slave_storage.techno_pip_fill_level(object, rules),
+            slave_storage.techno_pip_fill_level(object, rules, None),
             int(&row["result"]),
             "slave storage: {row}"
         );
@@ -121,7 +121,7 @@ fn check_fill(row: &serde_json::Value, rules: &RuleSet) {
     );
     assert_eq!(object.pip_max(rules), int(&row["pip_max"]), "{row}");
     assert_eq!(
-        entity.techno_pip_fill_level(object, rules),
+        entity.techno_pip_fill_level(object, rules, None),
         int(&row["result"]),
         "{row}"
     );

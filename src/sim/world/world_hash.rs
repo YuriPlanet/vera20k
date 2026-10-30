@@ -620,6 +620,8 @@ impl Simulation {
         self.session.binary_frame().hash(hasher);
         self.planning.hash_state(hasher);
         self.hash_ion_blasts(hasher);
+        #[cfg(feature = "phobos")]
+        self.warhead_anim_runtime.hash_state(hasher);
         // ScenarioClass owns the sole saved/synchronized RNG. Main and MapGen
         // are process globals and are deliberately absent from this hash.
         self.scenario_rng.hash_state(hasher);
@@ -942,6 +944,11 @@ impl Simulation {
             projectile.collision().flak_scatter.hash(hasher);
             projectile.collision().anti_air.hash(hasher);
             projectile.collision().airburst.hash(hasher);
+            // Phobos `Splits=` can arm the airburst tail without `Airburst=`;
+            // stock bullets never differ, so their hash is unchanged.
+            if projectile.collision().explodes_airburst() != projectile.collision().airburst {
+                b"bullet-explodes-airburst-v1".hash(hasher);
+            }
             projectile.collision().inaccurate.hash(hasher);
             projectile.collision().floater.hash(hasher);
             projectile.collision().elasticity_bits.hash(hasher);
@@ -950,6 +957,22 @@ impl Simulation {
             if let Some(house) = projectile.firer_house() {
                 b"bullet-firer-scheme-v1".hash(hasher);
                 house.index().hash(hasher);
+            }
+            #[cfg(feature = "phobos")]
+            if let Some(house) = projectile.phobos_firer_house() {
+                b"phobos-bullet-firer-house-v1".hash(hasher);
+                house.index().hash(hasher);
+            }
+            #[cfg(feature = "phobos")]
+            if projectile.payload().firepower_multiplier()
+                != crate::util::native_x87::NativeF64Bits::ONE
+            {
+                b"phobos-bullet-firepower-mult-v1".hash(hasher);
+                projectile
+                    .payload()
+                    .firepower_multiplier()
+                    .bits()
+                    .hash(hasher);
             }
             if projectile.awaiting_anim() {
                 b"bullet-awaited-anim-v1".hash(hasher);
@@ -1684,6 +1707,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         if let Some(shield) = &entity.shield {
             b"phobos-shield-v1".hash(hasher);
             shield.hash(hasher);
+        }
+        if entity.wh_anim_remaining_creation_interval != 0 {
+            b"phobos-warhead-anim-techno-interval-v1".hash(hasher);
+            entity.wh_anim_remaining_creation_interval.hash(hasher);
         }
     }
     if entity.tracking_facts.naval_combatant() {

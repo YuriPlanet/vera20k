@@ -681,11 +681,11 @@ impl BatchRenderer {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_depth"),
-                    buffers: &[wgpu::VertexBufferLayout {
+                    buffers: &[Some(wgpu::VertexBufferLayout {
                         array_stride: INSTANCE_STRIDE,
                         step_mode: wgpu::VertexStepMode::Instance,
                         attributes: &instance_attrs,
-                    }],
+                    })],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -725,11 +725,11 @@ impl BatchRenderer {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[wgpu::VertexBufferLayout {
+                    buffers: &[Some(wgpu::VertexBufferLayout {
                         array_stride: INSTANCE_STRIDE,
                         step_mode: wgpu::VertexStepMode::Instance,
                         attributes: &instance_attrs,
-                    }],
+                    })],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -771,11 +771,11 @@ impl BatchRenderer {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_depth"),
-                    buffers: &[wgpu::VertexBufferLayout {
+                    buffers: &[Some(wgpu::VertexBufferLayout {
                         array_stride: INSTANCE_STRIDE,
                         step_mode: wgpu::VertexStepMode::Instance,
                         attributes: &instance_attrs,
-                    }],
+                    })],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -816,11 +816,11 @@ impl BatchRenderer {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_depth"),
-                    buffers: &[wgpu::VertexBufferLayout {
+                    buffers: &[Some(wgpu::VertexBufferLayout {
                         array_stride: INSTANCE_STRIDE,
                         step_mode: wgpu::VertexStepMode::Instance,
                         attributes: &instance_attrs,
-                    }],
+                    })],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -911,11 +911,11 @@ impl BatchRenderer {
                 vertex: wgpu::VertexState {
                     module: &zdepth_shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[wgpu::VertexBufferLayout {
+                    buffers: &[Some(wgpu::VertexBufferLayout {
                         array_stride: INSTANCE_STRIDE,
                         step_mode: wgpu::VertexStepMode::Instance,
                         attributes: &instance_attrs,
-                    }],
+                    })],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -1007,11 +1007,11 @@ impl BatchRenderer {
                 vertex: wgpu::VertexState {
                     module: &zsprite_shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[wgpu::VertexBufferLayout {
+                    buffers: &[Some(wgpu::VertexBufferLayout {
                         array_stride: INSTANCE_STRIDE,
                         step_mode: wgpu::VertexStepMode::Instance,
                         attributes: &instance_attrs,
-                    }],
+                    })],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -1134,11 +1134,11 @@ impl BatchRenderer {
                 vertex: wgpu::VertexState {
                     module: &voxel_shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[wgpu::VertexBufferLayout {
+                    buffers: &[Some(wgpu::VertexBufferLayout {
                         array_stride: INSTANCE_STRIDE,
                         step_mode: wgpu::VertexStepMode::Instance,
                         attributes: &instance_attrs,
-                    }],
+                    })],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {

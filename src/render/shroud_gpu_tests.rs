@@ -665,7 +665,10 @@ fn production_a_blitter_workload_timing() {
                     })
                     .unwrap();
                 rx.recv().unwrap().unwrap();
-                let bytes = read.slice(..).get_mapped_range();
+                let bytes = read
+                    .slice(..)
+                    .get_mapped_range()
+                    .expect("map the GPU timestamp buffer");
                 let ticks = bytemuck::cast_slice::<u8, u64>(&bytes);
                 // Some Metal drivers expose timestamp queries but return an
                 // unsupported sentinel. Never report such values as zero cost;

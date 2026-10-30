@@ -37,6 +37,7 @@ pub(crate) fn bullet_land(
     coordinate: ProjectileCoord,
     on_bridge: bool,
     receiver_dispatched: bool,
+    ignore_units: bool,
 ) -> i32 {
     let floor = crate::sim::projectile::projectile_ground_z(
         world.resolved_terrain.as_ref(),
@@ -52,7 +53,7 @@ pub(crate) fn bullet_land(
         return -1;
     }
     let land = land_at(world, coordinate);
-    if land == 2 && receiver_dispatched {
+    if land == 2 && receiver_dispatched && !ignore_units {
         // 469B45..469B87 reads exactly the ground list's first object, not
         // any naval object in the cell and not the bridge deck's list.
         let first = match cell_at(world, coordinate) {
@@ -86,7 +87,7 @@ pub(crate) fn bullet_land(
     land
 }
 
-fn damage_band(list: &[String], damage: i32, step: i32) -> Option<&str> {
+fn damage_band<'a>(list: &'a [impl AsRef<str>], damage: i32, step: i32) -> Option<&'a str> {
     // Native uses signed division after an upper clamp. Negative indices read
     // before the vector allocation; Rust deterministically rejects that native
     // invalid-memory case rather than inventing an animation or an RNG draw.
@@ -95,7 +96,18 @@ fn damage_band(list: &[String], damage: i32, step: i32) -> Option<&str> {
         .checked_mul(step)?
         .checked_sub(1)?;
     let index = usize::try_from(damage.min(last) / step).ok()?;
-    list.get(index).map(String::as_str)
+    list.get(index).map(AsRef::as_ref)
+}
+
+/// The selected AnimList/SplashList entry and whether the water splash list
+/// supplied it. The Bullet tail needs `splashed` to choose the interval,
+/// scatter and CreateAll settings Phobos reads in its late hook.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SelectedAnim {
+    pub name: InternedId,
+    /// Only the Phobos Bullet tail reads this.
+    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
+    pub splashed: bool,
 }
 
 pub(crate) fn select(
@@ -107,13 +119,33 @@ pub(crate) fn select(
     coordinate: ProjectileCoord,
     crit_active: bool,
 ) -> Option<InternedId> {
-    if damage == 0 {
+    select_with_context(world, rules, warhead, damage, land, coordinate, crit_active)
+        .map(|selection| selection.name)
+}
+
+pub(crate) fn select_with_context(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    warhead: &WarheadType,
+    damage: i32,
+    land: i32,
+    coordinate: ProjectileCoord,
+    crit_active: bool,
+) -> Option<SelectedAnim> {
+    // Phobos `WarheadTypeExt::CreateAnimsOnZeroDamage` (`0x48A4F3`): a zero
+    // packet normally returns no animation; the key (or its `[General]`
+    // fallback) lets selection continue with damage 0.
+    #[cfg(feature = "phobos")]
+    let create_zero_damage = warhead
+        .phobos_anim
+        .create_anims_on_zero_damage(&rules.phobos_warhead_anim);
+    #[cfg(not(feature = "phobos"))]
+    let create_zero_damage = false;
+    if damage == 0 && !create_zero_damage {
         return None;
     }
     // Phobos `SelectDamageAnimation_NegativeZeroDamage` (`0x48A4F3`): a
-    // negative packet selects by its magnitude. RESIDUAL: its
-    // `CreateAnimsOnZeroDamage` key is unread, so a zero packet keeps
-    // stock's no-animation return (the key's default).
+    // negative packet selects by its magnitude.
     #[cfg(feature = "phobos")]
     let damage = if damage < 0 {
         damage.wrapping_neg()
@@ -134,18 +166,57 @@ pub(crate) fn select(
             coordinate,
         );
         if coordinate.z < floor.wrapping_add(2 * crate::util::lepton::LEPTONS_PER_LEVEL as i32) {
-            return damage_band(&rules.combat_damage.splash_list, damage, 35)
-                .map(|name| world.interner.intern(name));
+            // Phobos `WarheadTypeClass_AnimList_SplashList` (`0x48A551`): a
+            // present per-warhead list replaces the global list; a present
+            // empty list stays empty and selects nothing.
+            #[cfg(feature = "phobos")]
+            let splash_names = warhead.phobos_anim.splash_list_names(rules);
+            #[cfg(not(feature = "phobos"))]
+            let splash_names: Vec<&str> = rules
+                .combat_damage
+                .splash_list
+                .iter()
+                .map(String::as_str)
+                .collect();
+            #[cfg(feature = "phobos")]
+            let pick_random = warhead.phobos_anim.splash_list_pick_random;
+            #[cfg(not(feature = "phobos"))]
+            let pick_random = false;
+            // Phobos evaluates the PickRandom range before its `size() > 0`
+            // check, so an empty list still consumes the native
+            // `RandomRanged(0, -1)` (one swapped-bounds draw).
+            let random_index = pick_random.then(|| {
+                world.scenario_rng.next_range_i32_inclusive(
+                    0,
+                    i32::try_from(splash_names.len()).expect("native SplashList count fits i32")
+                        - 1,
+                )
+            });
+            if splash_names.is_empty() {
+                return None;
+            }
+            let name = match random_index {
+                Some(index) => splash_names[index as usize],
+                None => damage_band(&splash_names, damage, 35)?,
+            };
+            return Some(SelectedAnim {
+                name: world.interner.intern(name),
+                splashed: true,
+            });
         }
     }
     // 48A594..48A5A6 compares the retained LightningWarhead pointer, then
     // returns WeatherConBoltExplosion (including its null default).
     if !rules.general.lightning_warhead.is_empty() && warhead.id == rules.general.lightning_warhead
     {
-        return (!rules.general.weather_con_bolt_explosion.is_empty()).then(|| {
-            world
+        if rules.general.weather_con_bolt_explosion.is_empty() {
+            return None;
+        }
+        return Some(SelectedAnim {
+            name: world
                 .interner
-                .intern(&rules.general.weather_con_bolt_explosion)
+                .intern(&rules.general.weather_con_bolt_explosion),
+            splashed: false,
         });
     }
     // Phobos `SelectDamageAnimation_CritAnim` (`0x48A5B3`, ahead of the
@@ -158,7 +229,12 @@ pub(crate) fn select(
         && !warhead.crit.anim_on_affected_targets(rules.crit_globals())
     {
         let list = warhead.crit.anim_list();
-        let index = if warhead.em_effect || warhead.crit.anim_list_pick_random() {
+        // `Crit.AnimList.PickRandom.Get(AnimList.PickRandom)`.
+        let crit_pick_random = warhead
+            .crit
+            .anim_list_pick_random
+            .unwrap_or(warhead.phobos_anim.anim_list_pick_random);
+        let index = if warhead.em_effect || crit_pick_random {
             world.scenario_rng.next_range_i32_inclusive(
                 0,
                 i32::try_from(list.len() - 1).expect("native AnimList count fits i32"),
@@ -168,14 +244,21 @@ pub(crate) fn select(
             // cast sends a negative packet to the last entry.
             (list.len() * 25 - 1).min(damage as u32 as usize) / 25
         };
-        return Some(world.interner.intern(&list[index]));
+        return Some(SelectedAnim {
+            name: world.interner.intern(&list[index]),
+            splashed: false,
+        });
     }
     #[cfg(not(feature = "phobos"))]
     let _ = crit_active;
     if warhead.anim_list.is_empty() {
         return None;
     }
-    let name = if warhead.em_effect {
+    #[cfg(feature = "phobos")]
+    let pick_random = warhead.em_effect || warhead.phobos_anim.anim_list_pick_random;
+    #[cfg(not(feature = "phobos"))]
+    let pick_random = warhead.em_effect;
+    let name = if pick_random {
         let index = world.scenario_rng.next_range_i32_inclusive(
             0,
             i32::try_from(warhead.anim_list.len() - 1).expect("native AnimList count fits i32"),
@@ -184,7 +267,10 @@ pub(crate) fn select(
     } else {
         damage_band(&warhead.anim_list, damage, 25)?
     };
-    Some(world.interner.intern(name))
+    Some(SelectedAnim {
+        name: world.interner.intern(name),
+        splashed: false,
+    })
 }
 
 /// Build the selected animation's sole delivery packet. The caller decides
@@ -211,7 +297,167 @@ pub(crate) fn effect(
     Some(placed_effect(shp_name, placement))
 }
 
+/// Phobos' `BulletClass_Logics_DamageAnimSelected` (`0x469C46`) late tail:
+/// place the animation against the cell floor, expand CreateAll lists, gate
+/// on the shared creation interval, and scatter each constructed animation
+/// independently.
+#[cfg(feature = "phobos")]
+pub(crate) fn bullet_effects(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    warhead: &WarheadType,
+    warhead_ref: InternedId,
+    selection: SelectedAnim,
+    inviso: bool,
+    placement: ProjectileCoord,
+    source_id: u64,
+    crit_active: bool,
+    invoker_house: Option<InternedId>,
+) -> Vec<ExplosionEffect> {
+    // `MapClass::GetCellFloorHeight 0x00578080` runs before the interval
+    // queue. `PlayAnimAboveSurface` lifts the animation to the floor;
+    // `PlayAnimUnderground=no` then drops it when the floor is still above
+    // the result. Each constructed animation keeps `AnimZAdjust`.
+    let cell_height = crate::sim::projectile::projectile_ground_z(
+        world.resolved_terrain.as_ref(),
+        &world.effective_shared_cell_dummy(),
+        placement,
+    );
+    let base_z = if warhead.phobos_anim.play_anim_above_surface {
+        placement.z.max(cell_height)
+    } else {
+        placement.z
+    };
+    if cell_height > base_z && !warhead.phobos_anim.play_anim_underground {
+        return Vec::new();
+    }
+    let placement = ProjectileCoord::new(placement.x, placement.y, base_z);
+    let z_adjust = warhead
+        .phobos_anim
+        .anim_z_adjust(&rules.phobos_warhead_anim);
+    // Phobos' tail assigns `pOwner ? pOwner->Owner : BulletExt::FirerHouse`
+    // to each constructed animation; the caller supplies that house.
+
+    let interval = if selection.splashed {
+        warhead.phobos_anim.splash_list_creation_interval
+    } else {
+        warhead.phobos_anim.anim_list_creation_interval
+    };
+    // Phobos uses the Techno's shared counter only for a positive interval
+    // with a live owner; otherwise the warhead type owns it. The gate runs
+    // before any list expansion so a skipped detonation interns nothing.
+    let allowed = if interval > 0
+        && let Some(source) = world.substrate.entities.get_mut(source_id)
+    {
+        crate::sim::warhead_anim::interval_allows(
+            &mut source.wh_anim_remaining_creation_interval,
+            interval,
+        )
+    } else {
+        world
+            .warhead_anim_runtime
+            .interval_allows(warhead_ref, interval)
+    };
+    if !allowed {
+        return Vec::new();
+    }
+
+    // Phobos replaces its single selected type only when the relevant
+    // CreateAll key is on; an expansion whose list is empty then creates
+    // nothing (e.g. the lightning override with an empty AnimList) instead of
+    // falling back to the selected type.
+    let create_all_types = if selection.splashed {
+        warhead.phobos_anim.splash_list_create_all.then(|| {
+            warhead
+                .phobos_anim
+                .splash_list_names(rules)
+                .into_iter()
+                .map(|name| world.interner.intern(name))
+                .collect::<Vec<_>>()
+        })
+    } else {
+        let crit_replaces = crit_active
+            && !warhead.crit.anim_list().is_empty()
+            && !warhead.crit.anim_on_affected_targets(rules.crit_globals());
+        if crit_replaces {
+            warhead
+                .crit
+                .anim_list_create_all
+                .unwrap_or(warhead.phobos_anim.anim_list_create_all)
+                .then(|| {
+                    warhead
+                        .crit
+                        .anim_list()
+                        .iter()
+                        .map(|name| world.interner.intern(name))
+                        .collect::<Vec<_>>()
+                })
+        } else {
+            warhead.phobos_anim.anim_list_create_all.then(|| {
+                warhead
+                    .anim_list
+                    .iter()
+                    .map(|name| world.interner.intern(name))
+                    .collect::<Vec<_>>()
+            })
+        }
+    };
+    let types = create_all_types.unwrap_or_else(|| vec![selection.name]);
+
+    let (scatter_min, scatter_max) = if selection.splashed {
+        (
+            warhead.phobos_anim.splash_list_scatter_min,
+            warhead.phobos_anim.splash_list_scatter_max,
+        )
+    } else {
+        (
+            warhead.phobos_anim.anim_list_scatter_min,
+            warhead.phobos_anim.anim_list_scatter_max,
+        )
+    };
+    let allow_scatter = scatter_max >= 0 || scatter_min >= 0 || inviso;
+    let mut effects = Vec::with_capacity(types.len());
+    for type_id in types {
+        let coordinate = if allow_scatter {
+            let distance = if scatter_max >= 0 || scatter_min >= 0 {
+                world
+                    .scenario_rng
+                    .next_range_i32_inclusive(scatter_min, scatter_max)
+            } else {
+                32
+            };
+            let (x, y) = super::inviso_scatter::random_direction_coord(
+                world.cell_grid(),
+                &mut world.scenario_rng,
+                placement.x,
+                placement.y,
+                distance,
+                super::inviso_scatter::RandomDirectionSnap::Preserve,
+            );
+            ProjectileCoord::new(x, y, placement.z)
+        } else {
+            placement
+        };
+        let mut effect = placed_effect_with_z_adjust(type_id, coordinate, z_adjust);
+        effect.owner_house = invoker_house;
+        effects.push(effect);
+    }
+    effects
+}
+
 pub(crate) fn placed_effect(shp_name: InternedId, placement: ProjectileCoord) -> ExplosionEffect {
+    placed_effect_with_z_adjust(
+        shp_name,
+        placement,
+        crate::sim::anim_class::COMBAT_EXPLOSION_Z_ADJUST,
+    )
+}
+
+pub(crate) fn placed_effect_with_z_adjust(
+    shp_name: InternedId,
+    placement: ProjectileCoord,
+    z_adjust: i32,
+) -> ExplosionEffect {
     let (rx, ry, sub_x, sub_y, world_z) = projectile_impact_cell(placement);
     ExplosionEffect {
         shp_name,
@@ -221,6 +467,8 @@ pub(crate) fn placed_effect(shp_name: InternedId, placement: ProjectileCoord) ->
         sub_y,
         z: impact_z_byte(world_z.div_euclid(crate::util::lepton::LEPTONS_PER_LEVEL as i32)),
         world_z,
+        z_adjust,
+        owner_house: None,
         death: None,
     }
 }
@@ -398,7 +646,7 @@ mod tests {
             let coordinate = ProjectileCoord::new(2688, 5248, input["z"].as_i64().unwrap() as i32);
             let on_bridge = input["on_bridge"].as_bool().unwrap();
             let dispatched = input["direct"] == 0;
-            let land = bullet_land(&world, &rules, coordinate, on_bridge, dispatched);
+            let land = bullet_land(&world, &rules, coordinate, on_bridge, dispatched, false);
             assert_eq!(
                 land,
                 row["passed"]["land"].as_i64().unwrap() as i32,
@@ -454,7 +702,7 @@ mod tests {
                     .occupancy
                     .add(10, 20, 1, MovementLayer::Ground, None, insertion);
                 assert_eq!(
-                    bullet_land(&world, &rules, coordinate, on_bridge, dispatched),
+                    bullet_land(&world, &rules, coordinate, on_bridge, dispatched, false),
                     land,
                     "later naval member"
                 );
@@ -468,7 +716,7 @@ mod tests {
                     CellListInsertion::PrependNonBuilding,
                 );
                 assert_eq!(
-                    bullet_land(&world, &rules, coordinate, on_bridge, dispatched),
+                    bullet_land(&world, &rules, coordinate, on_bridge, dispatched, false),
                     land,
                     "naval deck member"
                 );
@@ -484,7 +732,7 @@ mod tests {
                         expected["input"]["z"].as_i64().unwrap() as i32,
                     );
                     assert_eq!(
-                        bullet_land(&world, &rules, probe, false, true),
+                        bullet_land(&world, &rules, probe, false, true, false),
                         expected["passed"]["land"].as_i64().unwrap() as i32,
                         "{height_name} with nonnaval head"
                     );
@@ -528,7 +776,8 @@ mod tests {
                         &rules,
                         coordinate,
                         input["on_bridge"].as_bool().unwrap(),
-                        input["direct"] == 0
+                        input["direct"] == 0,
+                        false
                     ),
                     land,
                     "{name} caller land"
@@ -576,5 +825,619 @@ mod tests {
                 "{name}"
             );
         }
+    }
+}
+
+#[cfg(all(test, feature = "phobos"))]
+mod phobos_enhancement_tests {
+    use super::*;
+    use crate::map::entities::EntityCategory;
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::game_entity::GameEntity;
+    use crate::sim::movement::locomotor::MovementLayer;
+    use crate::sim::occupancy::CellListInsertion;
+
+    fn animation_rules(keys: &str, splash_global: &str, general: &str) -> RuleSet {
+        let ini = IniFile::from_str(&format!(
+            "[General]\n{general}\n\
+             [CombatDamage]\nSplashList={splash_global}\n\
+             [Warheads]\n0=WH\n\
+             [Animations]\n0=A\n1=B\n2=C\n3=D\n4=G1\n5=G2\n\
+             [WH]\nAnimList=A,B\nConventional=yes\n{keys}\n"
+        ));
+        RuleSet::from_ini(&ini).unwrap()
+    }
+
+    fn name(world: &Simulation, id: InternedId) -> String {
+        world.interner.resolve(id).to_owned()
+    }
+
+    fn effect_abs(effect: &ExplosionEffect) -> (i32, i32) {
+        (
+            i32::from(effect.rx as i16) * 256 + effect.sub_x.to_num::<i32>(),
+            i32::from(effect.ry as i16) * 256 + effect.sub_y.to_num::<i32>(),
+        )
+    }
+
+    #[test]
+    fn zero_damage_pick_random_and_create_all() {
+        let plain = animation_rules("", "", "");
+        let mut world = Simulation::with_seed(7);
+        assert!(
+            select_with_context(
+                &mut world,
+                &plain,
+                plain.warhead("WH").unwrap(),
+                0,
+                0,
+                ProjectileCoord::new(0, 0, 0),
+                false,
+            )
+            .is_none(),
+            "zero damage is silent without CreateAnimsOnZeroDamage"
+        );
+
+        let zero = animation_rules("CreateAnimsOnZeroDamage=yes\n", "", "");
+        let mut world = Simulation::with_seed(7);
+        let selected = select_with_context(
+            &mut world,
+            &zero,
+            zero.warhead("WH").unwrap(),
+            0,
+            0,
+            ProjectileCoord::new(0, 0, 0),
+            false,
+        )
+        .expect("zero damage creates the first AnimList entry");
+        assert_eq!(name(&world, selected.name), "A");
+
+        let random = animation_rules(
+            "CreateAnimsOnZeroDamage=yes\nAnimList.PickRandom=yes\n",
+            "",
+            "",
+        );
+        let mut world = Simulation::with_seed(7);
+        let before = world.scenario_rng.native_state_hex();
+        let selected = select_with_context(
+            &mut world,
+            &random,
+            random.warhead("WH").unwrap(),
+            0,
+            0,
+            ProjectileCoord::new(0, 0, 0),
+            false,
+        )
+        .unwrap();
+        assert_ne!(world.scenario_rng.native_state_hex(), before);
+        assert!(matches!(name(&world, selected.name).as_str(), "A" | "B"));
+
+        let all = animation_rules("AnimList.CreateAll=yes\n", "", "");
+        let mut world = Simulation::with_seed(7);
+        let selection = select_with_context(
+            &mut world,
+            &all,
+            all.warhead("WH").unwrap(),
+            50,
+            0,
+            ProjectileCoord::new(0, 0, 0),
+            false,
+        )
+        .unwrap();
+        let warhead_ref = world.interner.intern("WH");
+        let effects = bullet_effects(
+            &mut world,
+            &all,
+            all.warhead("WH").unwrap(),
+            warhead_ref,
+            selection,
+            false,
+            ProjectileCoord::new(2_560, 5_120, 0),
+            0,
+            false,
+            None,
+        );
+        assert_eq!(
+            effects
+                .iter()
+                .map(|effect| name(&world, effect.shp_name))
+                .collect::<Vec<_>>(),
+            vec!["A", "B"]
+        );
+    }
+
+    #[test]
+    fn splash_list_overrides_global_and_create_all() {
+        let global = animation_rules("", "G1,G2", "");
+        let mut world = Simulation::with_seed(7);
+        let selected = select_with_context(
+            &mut world,
+            &global,
+            global.warhead("WH").unwrap(),
+            50,
+            2,
+            ProjectileCoord::new(0, 0, 0),
+            false,
+        )
+        .unwrap();
+        assert!(selected.splashed);
+        assert_eq!(name(&world, selected.name), "G2");
+
+        let override_list =
+            animation_rules("SplashList=C,D\nSplashList.CreateAll=yes\n", "G1,G2", "");
+        let mut world = Simulation::with_seed(7);
+        let selected = select_with_context(
+            &mut world,
+            &override_list,
+            override_list.warhead("WH").unwrap(),
+            50,
+            2,
+            ProjectileCoord::new(0, 0, 0),
+            false,
+        )
+        .unwrap();
+        let warhead_ref = world.interner.intern("WH");
+        let effects = bullet_effects(
+            &mut world,
+            &override_list,
+            override_list.warhead("WH").unwrap(),
+            warhead_ref,
+            selected,
+            false,
+            ProjectileCoord::new(2_560, 5_120, 0),
+            0,
+            false,
+            None,
+        );
+        assert_eq!(
+            effects
+                .iter()
+                .map(|effect| name(&world, effect.shp_name))
+                .collect::<Vec<_>>(),
+            vec!["C", "D"]
+        );
+    }
+
+    #[test]
+    fn splash_list_pick_random_consumes_a_draw() {
+        let deterministic = animation_rules("SplashList=C,D\n", "G1,G2", "");
+        let random = animation_rules("SplashList=C,D\nSplashList.PickRandom=yes\n", "G1,G2", "");
+        let mut first = Simulation::with_seed(7);
+        let selected = select_with_context(
+            &mut first,
+            &deterministic,
+            deterministic.warhead("WH").unwrap(),
+            50,
+            2,
+            ProjectileCoord::new(0, 0, 0),
+            false,
+        )
+        .unwrap();
+        let before = first.scenario_rng.native_state_hex();
+        assert_eq!(name(&first, selected.name), "D");
+        assert_eq!(first.scenario_rng.native_state_hex(), before);
+
+        let mut second = Simulation::with_seed(7);
+        let before = second.scenario_rng.native_state_hex();
+        let selected = select_with_context(
+            &mut second,
+            &random,
+            random.warhead("WH").unwrap(),
+            50,
+            2,
+            ProjectileCoord::new(0, 0, 0),
+            false,
+        )
+        .unwrap();
+        assert_ne!(second.scenario_rng.native_state_hex(), before);
+        assert!(matches!(name(&second, selected.name).as_str(), "C" | "D"));
+
+        // `SplashList=none` is a present list that resolves to nothing;
+        // Phobos evaluates `RandomRanged(0, -1)` before its `size() > 0`
+        // check, so the native stream still advances.
+        let empty = animation_rules("SplashList=none\nSplashList.PickRandom=yes\n", "G1,G2", "");
+        let mut third = Simulation::with_seed(7);
+        let before = third.scenario_rng.native_state_hex();
+        assert!(
+            select_with_context(
+                &mut third,
+                &empty,
+                empty.warhead("WH").unwrap(),
+                50,
+                2,
+                ProjectileCoord::new(0, 0, 0),
+                false,
+            )
+            .is_none(),
+            "a present list that resolves to no animation selects nothing"
+        );
+        assert_ne!(
+            third.scenario_rng.native_state_hex(),
+            before,
+            "native RandomRanged(0, -1) still consumes a draw"
+        );
+    }
+
+    #[test]
+    fn splash_interval_and_scatter_use_the_splash_keys() {
+        let rules = animation_rules(
+            "SplashList=C,D\nSplashList.CreationInterval=2\n\
+             SplashList.ScatterMin=1\nSplashList.ScatterMax=1\n",
+            "",
+            "",
+        );
+        let mut world = Simulation::with_seed(7);
+        let placement = ProjectileCoord::new(2_560, 5_120, 0);
+        let select = |world: &mut Simulation| {
+            select_with_context(
+                world,
+                &rules,
+                rules.warhead("WH").unwrap(),
+                50,
+                2,
+                placement,
+                false,
+            )
+            .unwrap()
+        };
+        let warhead_ref = world.interner.intern("WH");
+        let first = select(&mut world);
+        assert!(first.splashed);
+        let effects = bullet_effects(
+            &mut world,
+            &rules,
+            rules.warhead("WH").unwrap(),
+            warhead_ref,
+            first,
+            false,
+            placement,
+            0,
+            false,
+            None,
+        );
+        assert_eq!(effects.len(), 1);
+        let (x, y) = effect_abs(&effects[0]);
+        let distance = f64::from((x - placement.x).pow(2) + (y - placement.y).pow(2)).sqrt();
+        assert!((250.0..=260.0).contains(&distance), "{distance}");
+        let second = select(&mut world);
+        assert!(
+            bullet_effects(
+                &mut world,
+                &rules,
+                rules.warhead("WH").unwrap(),
+                warhead_ref,
+                second,
+                false,
+                placement,
+                0,
+                false,
+                None,
+            )
+            .is_empty(),
+            "the shared counter suppresses the next splash detonation"
+        );
+    }
+
+    #[test]
+    fn play_anim_floor_gate_and_z_adjust_follow_the_warhead() {
+        let below_floor = ProjectileCoord::new(2_560, 5_120, -100);
+        let run = |keys: &str, general: &str| {
+            let rules = animation_rules(keys, "", general);
+            let mut world = Simulation::with_seed(7);
+            let warhead = rules.warhead("WH").unwrap();
+            let selection =
+                select_with_context(&mut world, &rules, warhead, 50, 0, below_floor, false)
+                    .unwrap();
+            let warhead_ref = world.interner.intern("WH");
+            let effects = bullet_effects(
+                &mut world,
+                &rules,
+                warhead,
+                warhead_ref,
+                selection,
+                false,
+                below_floor,
+                0,
+                false,
+                None,
+            );
+            (world, effects)
+        };
+
+        let (_, effects) = run("", "");
+        assert_eq!(effects.len(), 1, "PlayAnimUnderground defaults to yes");
+        assert_eq!(effects[0].world_z, -100);
+        assert_eq!(
+            effects[0].z_adjust,
+            crate::sim::anim_class::COMBAT_EXPLOSION_Z_ADJUST
+        );
+
+        let (_, effects) = run("PlayAnimUnderground=no\n", "");
+        assert!(
+            effects.is_empty(),
+            "PlayAnimUnderground=no drops a below-floor animation"
+        );
+
+        let (_, effects) = run("PlayAnimAboveSurface=yes\n", "");
+        assert_eq!(effects.len(), 1);
+        assert_eq!(
+            effects[0].world_z, 0,
+            "PlayAnimAboveSurface lifts the animation to the cell floor"
+        );
+
+        let (world, effects) = run("AnimZAdjust=7\n", "");
+        assert_eq!(effects[0].z_adjust, 7);
+        assert_eq!(world.interner.resolve(effects[0].shp_name), "B");
+    }
+
+    #[test]
+    fn anim_z_adjust_inherits_the_audio_visual_global() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[AudioVisual]\nWarheadAnimZAdjust=-9\n\
+             [Warheads]\n0=WH\n[WH]\nAnimList=A\n\
+             [Animations]\n0=A\n",
+        ))
+        .unwrap();
+        let mut world = Simulation::with_seed(7);
+        let warhead = rules.warhead("WH").unwrap();
+        let placement = ProjectileCoord::new(2_560, 5_120, 0);
+        let selection =
+            select_with_context(&mut world, &rules, warhead, 50, 0, placement, false).unwrap();
+        let warhead_ref = world.interner.intern("WH");
+        let effects = bullet_effects(
+            &mut world,
+            &rules,
+            warhead,
+            warhead_ref,
+            selection,
+            false,
+            placement,
+            0,
+            false,
+            None,
+        );
+        assert_eq!(effects[0].z_adjust, -9);
+    }
+
+    #[test]
+    fn bullet_effects_assign_the_invoker_house() {
+        let rules = animation_rules("", "", "");
+        let mut world = Simulation::with_seed(7);
+        world
+            .substrate
+            .entities
+            .insert(GameEntity::test_default(1, "E1", "Americans", 5, 5));
+        let warhead = rules.warhead("WH").unwrap();
+        let placement = ProjectileCoord::new(2_560, 5_120, 0);
+        let selection =
+            select_with_context(&mut world, &rules, warhead, 50, 0, placement, false).unwrap();
+        let warhead_ref = world.interner.intern("WH");
+        let invoker = world.substrate.entities.get(1).unwrap().owner();
+        let effects = bullet_effects(
+            &mut world,
+            &rules,
+            warhead,
+            warhead_ref,
+            selection,
+            false,
+            placement,
+            1,
+            false,
+            Some(invoker),
+        );
+        assert_eq!(
+            effects[0].owner_house,
+            Some(invoker),
+            "pAnim->Owner = pInvoker"
+        );
+    }
+
+    #[test]
+    fn create_all_with_an_empty_anim_list_creates_nothing() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nLightningWarhead=WH\nWeatherConBoltExplosion=LIGHT\n\
+             [Warheads]\n0=WH\n[WH]\nAnimList.CreateAll=yes\n\
+             [Animations]\n0=LIGHT\n",
+        ))
+        .unwrap();
+        let mut world = Simulation::with_seed(7);
+        let selected = select_with_context(
+            &mut world,
+            &rules,
+            rules.warhead("WH").unwrap(),
+            10,
+            0,
+            ProjectileCoord::new(0, 0, 0),
+            false,
+        )
+        .unwrap();
+        assert_eq!(name(&world, selected.name), "LIGHT");
+        let warhead_ref = world.interner.intern("WH");
+        assert!(
+            bullet_effects(
+                &mut world,
+                &rules,
+                rules.warhead("WH").unwrap(),
+                warhead_ref,
+                selected,
+                false,
+                ProjectileCoord::new(0, 0, 0),
+                0,
+                false,
+                None,
+            )
+            .is_empty(),
+            "Phobos replaces the selected type with the empty AnimList"
+        );
+    }
+
+    #[test]
+    fn anim_scatter_uses_explicit_cells_and_inviso_default() {
+        let scattered = animation_rules("AnimList.ScatterMin=1\nAnimList.ScatterMax=1\n", "", "");
+        let mut world = Simulation::with_seed(7);
+        let placement = ProjectileCoord::new(2_560, 5_120, 0);
+        let selected = select_with_context(
+            &mut world,
+            &scattered,
+            scattered.warhead("WH").unwrap(),
+            50,
+            0,
+            placement,
+            false,
+        )
+        .unwrap();
+        let warhead_ref = world.interner.intern("WH");
+        let effects = bullet_effects(
+            &mut world,
+            &scattered,
+            scattered.warhead("WH").unwrap(),
+            warhead_ref,
+            selected,
+            false,
+            placement,
+            0,
+            false,
+            None,
+        );
+        let (x, y) = effect_abs(&effects[0]);
+        let distance = f64::from((x - placement.x).pow(2) + (y - placement.y).pow(2)).sqrt();
+        assert!((250.0..=260.0).contains(&distance), "{distance}");
+
+        let default = animation_rules("", "", "");
+        let mut world = Simulation::with_seed(7);
+        let selected = select_with_context(
+            &mut world,
+            &default,
+            default.warhead("WH").unwrap(),
+            50,
+            0,
+            placement,
+            false,
+        )
+        .unwrap();
+        let warhead_ref = world.interner.intern("WH");
+        let effects = bullet_effects(
+            &mut world,
+            &default,
+            default.warhead("WH").unwrap(),
+            warhead_ref,
+            selected,
+            true,
+            placement,
+            0,
+            false,
+            None,
+        );
+        let (x, y) = effect_abs(&effects[0]);
+        let distance = f64::from((x - placement.x).pow(2) + (y - placement.y).pow(2)).sqrt();
+        assert!((28.0..=36.0).contains(&distance), "{distance}");
+    }
+
+    #[test]
+    fn creation_interval_is_shared_per_warhead_and_per_techno() {
+        let rules = animation_rules("AnimList.CreationInterval=2\n", "", "");
+        let warhead = rules.warhead("WH").unwrap();
+        let mut world = Simulation::with_seed(7);
+        let selection = SelectedAnim {
+            name: world.interner.intern("A"),
+            splashed: false,
+        };
+        let warhead_ref = world.interner.intern("WH");
+        let mut counts = Vec::new();
+        for _ in 0..4 {
+            counts.push(
+                bullet_effects(
+                    &mut world,
+                    &rules,
+                    warhead,
+                    warhead_ref,
+                    selection,
+                    false,
+                    ProjectileCoord::new(2_560, 5_120, 0),
+                    0,
+                    false,
+                    None,
+                )
+                .len(),
+            );
+        }
+        assert_eq!(counts, vec![1, 0, 0, 1], "per-warhead counter");
+
+        let mut world = Simulation::with_seed(7);
+        world
+            .substrate
+            .entities
+            .insert(GameEntity::test_default(1, "E1", "Americans", 5, 5));
+        let warhead_ref = world.interner.intern("WH");
+        let mut counts = Vec::new();
+        for _ in 0..4 {
+            counts.push(
+                bullet_effects(
+                    &mut world,
+                    &rules,
+                    warhead,
+                    warhead_ref,
+                    selection,
+                    false,
+                    ProjectileCoord::new(2_560, 5_120, 0),
+                    1,
+                    false,
+                    None,
+                )
+                .len(),
+            );
+        }
+        assert_eq!(counts, vec![1, 0, 0, 1], "per-Techno counter");
+        assert_eq!(
+            world
+                .substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .wh_anim_remaining_creation_interval,
+            2
+        );
+    }
+
+    #[test]
+    fn conventional_ignore_units_keeps_the_water_land_type() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=SHIP\n[SHIP]\nNaval=yes\nUnderwater=no\n\
+             [CombatDamage]\nSplashList=G\n\
+             [Warheads]\n0=WH\n[WH]\nConventional=yes\nAnimList=A\n\
+             [Animations]\n0=A\n1=G\n",
+        ))
+        .unwrap();
+        let mut world = Simulation::with_seed(7);
+        world.intern_rule_type_ids(&rules);
+        world.resolve_type_handles(&rules);
+        let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(16);
+        terrain.cell_mut_for_test(5, 5).unwrap().land_type = 2;
+        world.install_resolved_terrain_for_new_map(terrain);
+        let mut entity = GameEntity::test_default(1, "SHIP", "Americans", 5, 5);
+        entity.set_type_ref_for_test(world.interner.intern("SHIP"));
+        entity.set_category_for_test(EntityCategory::Unit);
+        world.substrate.entities.insert(entity);
+        world.substrate.occupancy.add(
+            5,
+            5,
+            1,
+            MovementLayer::Ground,
+            None,
+            CellListInsertion::PrependNonBuilding,
+        );
+        let point = ProjectileCoord::new(5 * 256 + 128, 5 * 256 + 128, 0);
+        let warhead = rules.warhead("WH").unwrap();
+        let over_unit = bullet_land(&world, &rules, point, false, true, false);
+        let ignored = bullet_land(&world, &rules, point, false, true, true);
+        assert_eq!(over_unit, -1);
+        assert_eq!(ignored, 2);
+        let anim = select_with_context(&mut world, &rules, warhead, 10, over_unit, point, false)
+            .expect("the land type keeps the AnimList branch");
+        assert!(!anim.splashed);
+        assert_eq!(name(&world, anim.name), "A");
+        let splash = select_with_context(&mut world, &rules, warhead, 10, ignored, point, false)
+            .expect("IgnoreUnits selects the water splash list");
+        assert!(splash.splashed);
+        assert_eq!(name(&world, splash.name), "G");
     }
 }

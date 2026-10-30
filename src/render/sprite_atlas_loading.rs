@@ -157,7 +157,7 @@ impl SpriteAtlasLoadingJob {
     }
 
     /// At most one small queue write per event-loop pass, with no GPU wait.
-    /// wgpu29's completion callback is dispatched by Device::poll(Poll);
+    /// wgpu's completion callback is dispatched by Device::poll(Poll);
     /// unlike PollType::Wait this returns control to the window immediately.
     pub(crate) fn poll(
         &mut self,

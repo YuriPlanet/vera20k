@@ -7,13 +7,15 @@ use crate::sim::projectile::{ProjectileDetonation, ProjectilePayload, Projectile
 use crate::sim::world::Simulation;
 
 /// The shared tail calls this after damage/debris, using live Bullet fields.
+#[cfg_attr(feature = "phobos", allow(dead_code))]
 /// Eight native compass neighbors followed by the retained center identity;
 /// Cluster controls neither this count nor a second parent detonation.
 pub(super) fn emit(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDetonation) {
     // Installed Ares replaces this entire tail with1001A090, including when
-    // Splits=false. Its circular AirburstSpread consumer is a separate chain;
-    // never silently run the original fixed-nine implementation in that build.
-    if crate::rules::ARES_ENABLED {
+    // Splits=false. Installed Phobos NOPs the tail and owns both Airburst=
+    // and Splits= through its own hook, taking precedence over Ares. Never
+    // silently run the original fixed-nine implementation in either build.
+    if crate::rules::ARES_ENABLED || crate::rules::PHOBOS_ENABLED {
         return;
     }
     // Native always has an actual `this` Bullet. Receiver-only packets (for

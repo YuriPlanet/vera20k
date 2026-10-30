@@ -149,6 +149,10 @@ pub struct ProjectileType {
     pub shrapnel_weapon: Option<String>,
     /// Airburst child weapon (+2B0), retained by the ordered Rules reader.
     pub airburst_weapon: Option<String>,
+    /// Phobos `BulletTypeExt` airburst/splits settings. Absent keys keep the
+    /// Phobos constructor defaults; only Phobos builds read or consume them.
+    #[cfg(feature = "phobos")]
+    pub phobos_airburst: crate::rules::phobos_airburst::PhobosAirburstType,
     /// Current native Image25 text; SHP admission is separately retained below.
     pub image: Option<String>,
     /// Admitted native5F9070 requests, independently of later Image text.
@@ -348,6 +352,20 @@ pub(crate) fn read_phobos_gravity(section: &IniSection) -> Option<NativeF64Bits>
 }
 
 impl ProjectileType {
+    /// Phobos `Splits=`: the Phobos emitter replaces the native tail and the
+    /// parent's outer cluster loop, exactly as `BulletClass::Explodes`'s
+    /// airburst checks do with `Airburst || Splits`. False without the feature.
+    pub const fn splits(&self) -> bool {
+        #[cfg(feature = "phobos")]
+        {
+            self.phobos_airburst.splits
+        }
+        #[cfg(not(feature = "phobos"))]
+        {
+            false
+        }
+    }
+
     /// Phobos `BulletTypeExt::Gravity`, unset when the key is absent.
     #[cfg(feature = "phobos")]
     pub fn gravity(&self) -> Option<NativeF64Bits> {
@@ -358,6 +376,12 @@ impl ProjectileType {
     #[cfg(not(feature = "phobos"))]
     pub fn gravity(&self) -> Option<NativeF64Bits> {
         None
+    }
+
+    /// `Airburst=` or, in a Phobos build, `Splits=`: the BulletClass impact
+    /// and detonation arms Phobos' `BulletClass::Explodes` hooks select.
+    pub const fn airburst_arm(&self) -> bool {
+        self.airburst || self.splits()
     }
 
     /// Runtime ColorScheme index (two native shade variants per Colors entry).
@@ -439,6 +463,10 @@ impl ProjectileType {
             // Constructor null; only the ordered Process owner reads it.
             shrapnel_weapon: None,
             airburst_weapon: None,
+            #[cfg(feature = "phobos")]
+            phobos_airburst: crate::rules::phobos_airburst::PhobosAirburstType::from_section(
+                section,
+            ),
             image: None,
             image_loads: Vec::new(),
             voxel_image_load: None,

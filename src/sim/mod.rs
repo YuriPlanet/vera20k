@@ -138,6 +138,8 @@ pub mod house_eva; // HouseClass::Update EVA advice timers (funds nag, low power
 pub mod power_system;
 pub mod superweapon;
 pub mod vision;
+#[cfg(feature = "phobos")]
+pub mod warhead_anim;
 
 // --- Animation, building overlays, bridge state ---
 pub mod animation;

@@ -106,6 +106,36 @@ impl Simulation {
         )
     }
 
+    /// `CellClass::GetContent`: the deck list (`+0xE8`) when the cell has a
+    /// `BridgeHead` (`+0x140 & 0x100`), otherwise the ground list (`+0xE4`).
+    #[cfg(feature = "phobos")]
+    pub(crate) fn native_cell_content(
+        &self,
+        cell: (u16, u16),
+    ) -> impl Iterator<Item = CellObjectMember> + '_ {
+        let layer = if self.cell_has_bridge_head(cell) {
+            MovementLayer::Bridge
+        } else {
+            MovementLayer::Ground
+        };
+        self.cell_objects(cell, layer)
+    }
+
+    /// `CellClass::ContainsBridge`: the cell's `BridgeHead` flag.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn cell_has_bridge_head(&self, cell: (u16, u16)) -> bool {
+        self.resolved_terrain.as_ref().is_some_and(|terrain| {
+            crate::sim::cell_rect::get_cellclass_fallback(
+                Some(terrain),
+                i32::from(cell.0),
+                i32::from(cell.1),
+            )
+            .bridge_flags_0x1180()
+                & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
+                != 0
+        })
+    }
+
     /// The head of a cell's ground list (`CellClass+0xE4`), the object
     /// `Tactical::PickObjectAtScreenPoint @ 0x006DA380` falls back to when no
     /// registered object is near the point (`0x006DA4B8..0x006DA4FB`).

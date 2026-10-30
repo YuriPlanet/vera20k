@@ -231,6 +231,19 @@ fn decode_pcx_rle(
     expected_scan: usize,
     transferred: bool,
 ) -> Result<Vec<u8>, AssetError> {
+    // One input byte produces at most one literal, and a 2-byte run at most
+    // 63 pixels, so a stream of `n` bytes can never expand past
+    // `63 * n/2 + n%2` scan bytes. A header claiming more than that has no
+    // payload behind it: reject before the capacity reflects the claim.
+    let max_scan = 63 * (encoded.len() / 2) + encoded.len() % 2;
+    if expected_scan > max_scan {
+        return Err(pcx_error(format!(
+            "PCX scan needs {} bytes but {} encoded bytes cannot expand past {}",
+            expected_scan,
+            encoded.len(),
+            max_scan
+        )));
+    }
     let mut scan = Vec::with_capacity(expected_scan);
     let mut i = 0usize;
     while i < encoded.len() && scan.len() < expected_scan {
@@ -296,10 +309,10 @@ fn decode_direct_rgb_scanlines(
     pixels
 }
 
-fn pcx_error(detail: &str) -> AssetError {
+fn pcx_error(detail: impl Into<String>) -> AssetError {
     AssetError::ParseError {
         format: "PCX".to_string(),
-        detail: detail.to_string(),
+        detail: detail.into(),
     }
 }
 
@@ -326,6 +339,23 @@ mod tests {
         data[65] = planes;
         data[66..68].copy_from_slice(&bytes_per_line.to_le_bytes());
         data
+    }
+
+    #[test]
+    fn a_huge_header_scan_cannot_reserve_past_the_encoded_expansion() {
+        // 65535x65535 at three planes claims a 12.9 GB scan behind one encoded
+        // byte; the RLE expansion cap must reject before the capacity
+        // reflects the claim.
+        let mut bytes = pcx_header(0, 0, 65534, 65534, 3, 65535);
+        bytes.push(0xAA);
+        let err = PcxFile::from_bytes(&bytes).expect_err("no payload behind the scan");
+        let crate::assets::error::AssetError::ParseError { detail, .. } = err else {
+            panic!("expected a PCX parse error: {err:?}");
+        };
+        assert!(
+            detail.contains("cannot expand past"),
+            "unexpected detail: {detail}"
+        );
     }
 
     #[test]

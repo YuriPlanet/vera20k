@@ -274,7 +274,10 @@ fn operation_limit(device: &wgpu::Device) -> usize {
     if crate::render::gpu::webgl_fallback(device) {
         crate::render::webgl::table_capacity(device) / OPERATION_WORDS
     } else {
-        device.limits().max_storage_buffer_binding_size as usize / std::mem::size_of::<Operation>()
+        // wgpu 30 reports this limit as u64; 32-bit hosts clamp instead of
+        // truncating a binding size they cannot address anyway.
+        usize::try_from(device.limits().max_storage_buffer_binding_size).unwrap_or(usize::MAX)
+            / std::mem::size_of::<Operation>()
     }
 }
 
@@ -382,11 +385,11 @@ impl SurfaceLineGpu {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
+                buffers: &[Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<PixelInstance>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &attrs,
-                }],
+                })],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {

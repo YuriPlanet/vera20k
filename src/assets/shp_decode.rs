@@ -28,6 +28,17 @@ pub fn decode_rle_frame(data: &[u8], width: usize, height: usize) -> Result<Vec<
     let pixel_count = width
         .checked_mul(height)
         .ok_or_else(|| parse_error("RLE frame dimensions overflow addressable memory"))?;
+    // Every produced pixel costs input: a nonzero literal one byte, a zero run
+    // two bytes for up to 255 pixels. A frame claiming more pixels than
+    // `255 * data.len()/2` has no payload behind its header: reject before the
+    // capacity reflects the claim.
+    let max_pixels = 255 * (data.len() / 2);
+    if pixel_count > max_pixels {
+        return Err(parse_error(format!(
+            "RLE frame needs {pixel_count} pixels but {} frame bytes cannot produce past {max_pixels}",
+            data.len()
+        )));
+    }
     let mut pixels = Vec::with_capacity(pixel_count);
     let mut offset = 0usize;
 
@@ -108,6 +119,22 @@ mod tests {
         let data = [6, 0, 0, 1, 5, 3];
         let pixels = decode_rle_frame(&data, 3, 1).expect("decode");
         assert_eq!(pixels, vec![0, 5, 3]);
+    }
+
+    #[test]
+    fn a_huge_header_pixel_count_cannot_reserve_past_the_frame_payload() {
+        // 65535x65535 claims 4.3 billion pixels behind four frame bytes; the
+        // expansion cap must reject before the capacity reflects the claim.
+        let data = [8u8, 0, 0, 0];
+        let err =
+            decode_rle_frame(&data, 65535, 65535).expect_err("no payload behind the pixel count");
+        let AssetError::ParseError { detail, .. } = err else {
+            panic!("expected a SHP parse error: {err:?}");
+        };
+        assert!(
+            detail.contains("cannot produce past"),
+            "unexpected detail: {detail}"
+        );
     }
 
     #[test]

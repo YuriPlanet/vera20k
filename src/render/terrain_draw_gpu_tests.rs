@@ -157,7 +157,11 @@ impl GpuFrameTimer {
             })
             .unwrap();
         rx.recv().unwrap().unwrap();
-        let data = self.mapped.slice(..).get_mapped_range();
+        let data = self
+            .mapped
+            .slice(..)
+            .get_mapped_range()
+            .expect("map the GPU timestamp buffer");
         let first = u64::from_le_bytes(data[0..8].try_into().unwrap());
         let last = u64::from_le_bytes(data[8..16].try_into().unwrap());
         assert!(
@@ -318,7 +322,10 @@ impl Gpu {
             .poll(wgpu::PollType::wait_indefinitely())
             .unwrap();
         rx.recv().unwrap().unwrap();
-        let data = read.slice(..).get_mapped_range();
+        let data = read
+            .slice(..)
+            .get_mapped_range()
+            .expect("map the GPU timestamp buffer");
         data.as_chunks::<4>()
             .0
             .iter()
@@ -392,7 +399,10 @@ impl Gpu {
         reads
             .iter()
             .map(|(buffer, pitch)| {
-                let data = buffer.slice(..).get_mapped_range();
+                let data = buffer
+                    .slice(..)
+                    .get_mapped_range()
+                    .expect("map the readback buffer");
                 let bytes = data
                     .chunks_exact(*pitch as usize)
                     .flat_map(|row| row[..size[0] as usize * 4].iter().copied())

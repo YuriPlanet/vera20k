@@ -244,7 +244,7 @@ pub(crate) fn admit_explosion_effect(
             world.admit_death_anim(rules, fx.shp_name, spawn);
         }
         None => {
-            world.spawn_combat_explosion_anim(
+            world.spawn_combat_explosion_anim_with_z_adjust(
                 rules,
                 fx.shp_name,
                 fx.rx,
@@ -253,6 +253,8 @@ pub(crate) fn admit_explosion_effect(
                 fx.sub_y,
                 fx.z,
                 fx.world_z,
+                fx.z_adjust,
+                fx.owner_house,
             );
         }
     }

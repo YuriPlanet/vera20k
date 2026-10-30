@@ -235,12 +235,12 @@ harness, median prepare-to-completion wall times (three samples after warmup) we
 The last row deliberately stresses ordered overlaps and exercises two bounded
 intermediate submissions (128 waves, 256 passes). It is not a representative
 retail frame. These intervals include query readback and waiting for completion;
-they are not release-frame/FPS or 20,000-unit estimates. Every encoder timestamp
-pair returned zero on this backend, so GPU-only duration is unavailable. The test
-retains raw samples and explicitly reports the limitation rather than inventing
-a GPU time. `VERA20K_BRIDGE_SHADOW_PERF_OUTPUT` writes the reproducible receipt. The
-[recorded samples](bridge_shadow_render.timing.json) retain every timestamp and
-completion interval.
+they are not release-frame/FPS or 20,000-unit estimates. Encoder timestamp pairs
+returned zero on this backend, and wgpu 30 no longer offers them on Apple GPUs, so
+the test now reports GPU time from the shared `GpuFrameTimer` pass-boundary
+samples. `VERA20K_BRIDGE_SHADOW_PERF_OUTPUT` writes the reproducible receipt. The
+[recorded samples](bridge_shadow_render.timing.json) predate that change and keep
+the earlier encoder-timestamp fields.
 
 
 ### Live damage and repair

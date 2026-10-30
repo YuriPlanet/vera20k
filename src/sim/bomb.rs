@@ -607,7 +607,7 @@ impl Simulation {
         )?;
         let warhead = ivan_warhead(rules)?;
         let origin = blast.origin(&mut self.interner, warhead);
-        let (mut effects, pings, crit_active) = apply_area_damage_in_run(
+        let (mut effects, pings, crit_active, _area_result) = apply_area_damage_in_run(
             self,
             run,
             rules,

@@ -1603,6 +1603,27 @@ pub struct ObjectType {
     /// `0x0071395E`); FreeUnit prefers it to the global one. No stock type
     /// authors it.
     pub mind_cleared_sound: Option<String>,
+    /// Phobos `MindControlRangeLimit=` (`Valueable<Leptons>`): a controlled
+    /// unit farther than this planar distance from its controller is freed.
+    /// The constructor's `Leptons` value is 0, which disables the check.
+    #[cfg(feature = "phobos")]
+    pub mind_control_range_limit: i32,
+    /// Phobos `MindControl.IgnoreSize=` (`Nullable<bool>`); `None` inherits
+    /// `[General] MindControl.IgnoreSize` (constructor true).
+    #[cfg(feature = "phobos")]
+    pub mind_control_ignore_size: Option<bool>,
+    /// Phobos `MindControlSize=` (`Valueable<int>`, constructor 1): the
+    /// control slots this type consumes while controlled.
+    #[cfg(feature = "phobos")]
+    pub mind_control_size: i32,
+    /// Phobos `MindControlLink.VisibleToHouse=` (`Nullable<AffectedHouse>`);
+    /// `None` inherits `[General] MindControlLink.VisibleToHouse` (All).
+    #[cfg(feature = "phobos")]
+    pub mind_control_link_visible_to_house: Option<crate::rules::phobos_shields::AffectedHouse>,
+    /// Phobos `MultiMindControl.ReleaseVictim=` (`Nullable<bool>`); `None`
+    /// inherits `[General] MultiMindControl.ReleaseVictim` (constructor false).
+    #[cfg(feature = "phobos")]
+    pub multi_mind_control_release_victim: Option<bool>,
     /// PsychicDamage immunity. Buildings default true natively.
     pub immune_to_psionic_weapons: bool,
     /// Poison-warhead immunity.
@@ -4411,6 +4432,22 @@ impl ObjectType {
                 .read_name("MindClearedSound", 0x80)
                 .map(str::to_owned)
                 .filter(|sound| !sound.is_empty() && !sound.eq_ignore_ascii_case("none")),
+            #[cfg(feature = "phobos")]
+            mind_control_range_limit: section.read_phobos_leptons("MindControlRangeLimit", 0),
+            #[cfg(feature = "phobos")]
+            mind_control_ignore_size: section
+                .read_phobos_nullable_bool("MindControl.IgnoreSize", None),
+            #[cfg(feature = "phobos")]
+            mind_control_size: section.read_ares_int("MindControlSize", 1),
+            #[cfg(feature = "phobos")]
+            mind_control_link_visible_to_house: section.read_phobos_nullable_with(
+                "MindControlLink.VisibleToHouse",
+                None,
+                crate::rules::phobos_shields::AffectedHouse::parse,
+            ),
+            #[cfg(feature = "phobos")]
+            multi_mind_control_release_victim: section
+                .read_phobos_nullable_bool("MultiMindControl.ReleaseVictim", None),
             immune_to_psionic_weapons: section.read_bool(
                 "ImmuneToPsionicWeapons",
                 category == ObjectCategory::Building,

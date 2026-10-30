@@ -127,6 +127,8 @@ mod phobos_infantry_deploy_tests;
 #[path = "phobos_prone_speed_tests.rs"]
 mod phobos_prone_speed_tests;
 #[cfg(feature = "phobos")]
+pub mod phobos_airburst;
+#[cfg(feature = "phobos")]
 pub mod phobos_fly_wobble;
 #[cfg(feature = "phobos")]
 pub mod phobos_pause_menu;
@@ -140,6 +142,8 @@ pub mod phobos_power_plant_enhancer;
 pub mod phobos_selection_flash;
 #[cfg(feature = "phobos")]
 pub mod phobos_sw_sidebar;
+#[cfg(feature = "phobos")]
+pub mod phobos_warhead_anim;
 pub mod phobos_radiation;
 pub mod phobos_shields;
 /// Whether this binary includes the supported Ares extensions. INIs cannot change it.

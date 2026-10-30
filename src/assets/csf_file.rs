@@ -109,7 +109,14 @@ impl CsfFile {
             0
         };
 
-        let mut entries = HashMap::with_capacity(label_count as usize);
+        // The header counts are validated but are not the loop bound: retail
+        // walks records until the next read/magic check fails. Bound the map
+        // reservation by what the buffer could hold — one entry needs at least
+        // its 12-byte label header plus a 10-byte one-character string value —
+        // so a malformed count cannot steer the allocation before any record
+        // is parsed.
+        let possible_entries = (data.len() / 22) as u32;
+        let mut entries = HashMap::with_capacity(label_count.min(possible_entries) as usize);
         let mut offset: usize = 24;
 
         // Retail walks records until the next read/magic check fails;
@@ -608,6 +615,26 @@ pub fn test_csf(entries: &[(&str, &str)]) -> CsfFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_huge_header_label_count_cannot_steer_the_map_reservation() {
+        // 24-byte header claiming u32::MAX labels with no records behind it.
+        // The reservation must come from the file size, not the count: the
+        // count once asked for roughly 833 GB before the first read.
+        let mut data = Vec::with_capacity(25);
+        data.extend_from_slice(&HEADER_MAGIC.to_le_bytes());
+        data.extend_from_slice(&3u32.to_le_bytes());
+        data.extend_from_slice(&u32::MAX.to_le_bytes());
+        data.extend_from_slice(&u32::MAX.to_le_bytes());
+        data.extend_from_slice(&[0; 8]);
+        data.push(0);
+        let parsed = CsfFile::from_bytes(&data).expect("parse walks until reads fail");
+        match parsed.entries {
+            CsfEntries::Raw(entries) => assert!(entries.is_empty()),
+            #[cfg(feature = "ares")]
+            CsfEntries::Ares(entries) => assert!(entries.is_empty()),
+        }
+    }
 
     #[cfg(feature = "ares")]
     fn supplemental_fixture(

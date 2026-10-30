@@ -4532,6 +4532,10 @@ pub struct RuleSet {
     /// for the placement-time enhancer rings.
     #[cfg(feature = "phobos")]
     pub power_plant_enhancer: crate::rules::phobos_power_plant_enhancer::PowerPlantEnhancerGlobals,
+    /// Phobos `[CombatDamage]` airburst/splits defaults, consumed by the
+    /// projectile emitter's nullable type keys.
+    #[cfg(feature = "phobos")]
+    pub phobos_airburst: crate::rules::phobos_airburst::PhobosAirburstGlobals,
     /// Phobos `[SIDE] SuperWeaponSidebar.*PCX=` names, in `[Sides]` order.
     #[cfg(feature = "phobos")]
     side_sw_sidebar_art: Vec<crate::rules::phobos_sw_sidebar::SuperWeaponSidebarSideArt>,
@@ -4703,6 +4707,9 @@ pub struct RuleSet {
     /// VeteranCritChance`.
     #[cfg(feature = "phobos")]
     pub(crate) crit_globals: crate::rules::phobos_crit::CritGlobals,
+    /// Phobos `[General]` warhead animation defaults.
+    #[cfg(feature = "phobos")]
+    pub(crate) phobos_warhead_anim: crate::rules::phobos_warhead_anim::PhobosWarheadAnimGlobals,
     /// Phobos `[DigitalDisplayTypes]` catalog, read per Rules pass by the
     /// ordered Process owner. Empty in builds without the capability.
     #[cfg(feature = "phobos")]
@@ -6115,6 +6122,8 @@ impl RuleSet {
         let power_plant_enhancer =
             crate::rules::phobos_power_plant_enhancer::PowerPlantEnhancerGlobals::from_ini(ini);
         #[cfg(feature = "phobos")]
+        let phobos_airburst = crate::rules::phobos_airburst::PhobosAirburstGlobals::from_ini(ini);
+        #[cfg(feature = "phobos")]
         let side_sw_sidebar_art: Vec<
             crate::rules::phobos_sw_sidebar::SuperWeaponSidebarSideArt,
         > = country_side_registry
@@ -6416,6 +6425,8 @@ impl RuleSet {
             #[cfg(feature = "phobos")]
             power_plant_enhancer,
             #[cfg(feature = "phobos")]
+            phobos_airburst,
+            #[cfg(feature = "phobos")]
             side_sw_sidebar_art,
             #[cfg(feature = "ares")]
             side_extensions: country_side_registry.side_extensions,
@@ -6492,6 +6503,9 @@ impl RuleSet {
             shield_globals,
             #[cfg(feature = "phobos")]
             crit_globals: crate::rules::phobos_crit::CritGlobals::from_ini(ini),
+            #[cfg(feature = "phobos")]
+            phobos_warhead_anim:
+                crate::rules::phobos_warhead_anim::PhobosWarheadAnimGlobals::from_ini(ini),
             #[cfg(feature = "phobos")]
             digital_display_types,
             #[cfg(feature = "phobos")]
@@ -7865,6 +7879,87 @@ impl RuleSet {
             b"airburst-retained-flag-v1".hash(&mut hasher);
             airburst_flags.hash(&mut hasher);
         }
+        // Phobos airburst/splits inputs. Defaults leave the stock hash
+        // unchanged; any authored value must invalidate a save.
+        #[cfg(feature = "phobos")]
+        {
+            let phobos_projectiles =
+                Self::by_upper_id(self.projectiles.iter().filter_map(|(id, projectile)| {
+                        let value = &projectile.phobos_airburst;
+                        (value != &crate::rules::phobos_airburst::PhobosAirburstType::default())
+                            .then(|| {
+                                let fields = (
+                                    (
+                                        value.splits,
+                                        value.airburst_spread.to_bits(),
+                                        value.retarget_accuracy.to_bits(),
+                                        value.retarget_self,
+                                        value.retarget_self_probability.to_bits(),
+                                    ),
+                                    (
+                                        value.around_target,
+                                        value.airburst_use_cluster,
+                                        value.airburst_random_clusters,
+                                        value.airburst_target_as_source,
+                                        value.airburst_target_as_source_skip_height,
+                                    ),
+                                    (
+                                        value.splits_targeting_distance,
+                                        value.splits_targeting_distance_cylindrical,
+                                        value.splits_allow_repeat_targets,
+                                        value.splits_target_cell_range,
+                                        value.splits_use_weapon_targeting,
+                                        value.airburst_weapon_apply_firepower_mult,
+                                        value.airburst_weapon_source_scatter_min,
+                                        value.airburst_weapon_source_scatter_max,
+                                        value.airburst_weapon_use_firing_effects,
+                                        value.airburst_weapon_head_to_target,
+                                        value.airburst_weapon_radial_fire_segments,
+                                        value.aa_only,
+                                    ),
+                                );
+                                (id, fields)
+                            })
+                }));
+            if !phobos_projectiles.is_empty() {
+                b"phobos-airburst-splits-v1".hash(&mut hasher);
+                phobos_projectiles.hash(&mut hasher);
+            }
+            if self.phobos_airburst != Default::default() {
+                b"phobos-airburst-globals-v1".hash(&mut hasher);
+                self.phobos_airburst.hash(&mut hasher);
+            }
+            let can_target_houses = Self::by_upper_id(
+                self.weapons
+                    .iter()
+                    .filter(|(_, weapon)| {
+                        weapon.can_target_houses()
+                            != crate::rules::phobos_shields::AffectedHouse::ALL
+                    })
+                    .map(|(id, weapon)| (id, weapon.can_target_houses().bits())),
+            );
+            if !can_target_houses.is_empty() {
+                b"phobos-weapon-can-target-houses-v1".hash(&mut hasher);
+                can_target_houses.hash(&mut hasher);
+            }
+            let weapon_targeting = Self::by_upper_id(
+                self.weapons
+                    .iter()
+                    .filter(|(_, weapon)| {
+                        weapon.weapon_targeting()
+                            != crate::rules::phobos_airburst::PhobosWeaponTargeting::default()
+                    })
+                    .map(|(id, weapon)| (id, weapon.weapon_targeting())),
+            );
+            if !weapon_targeting.is_empty() {
+                b"phobos-weapon-targeting-v1".hash(&mut hasher);
+                weapon_targeting.len().hash(&mut hasher);
+                for (id, targeting) in &weapon_targeting {
+                    id.hash(&mut hasher);
+                    targeting.hash_state(&mut hasher);
+                }
+            }
+        }
         Self::by_upper_id(self.super_weapons.iter().map(|(id, super_weapon)| {
             (id, (&super_weapon.weapon_type, &super_weapon.aux_building))
         }))
@@ -7954,6 +8049,23 @@ impl RuleSet {
                 .map(|(id, warhead)| (id, &warhead.debris_types)),
         )
         .hash(&mut hasher);
+        #[cfg(feature = "phobos")]
+        {
+            let jumpjet_overrides = Self::by_upper_id(
+                self.warheads
+                    .iter()
+                    .filter(|(_, warhead)| !warhead.jumpjet_override.is_empty())
+                    .map(|(id, warhead)| (id, warhead.jumpjet_override)),
+            );
+            if !jumpjet_overrides.is_empty() {
+                b"phobos-warhead-jumpjet-override-v1".hash(&mut hasher);
+                jumpjet_overrides.len().hash(&mut hasher);
+                for (id, overrides) in &jumpjet_overrides {
+                    id.hash(&mut hasher);
+                    overrides.hash_state(&mut hasher);
+                }
+            }
+        }
         for particle in &self.particle_types {
             (&particle.name, &particle.warhead).hash(&mut hasher);
         }
@@ -8004,6 +8116,40 @@ impl RuleSet {
             &self.general.empulse_warhead,
         )
             .hash(&mut hasher);
+        #[cfg(feature = "phobos")]
+        {
+            if !self.mind_control.mind_control_ignore_size
+                || self.mind_control.mind_control_link_visible_to_house
+                    != crate::rules::phobos_shields::AffectedHouse::ALL
+                || self.mind_control.multi_mind_control_release_victim
+            {
+                b"phobos-mind-control-globals-v1".hash(&mut hasher);
+                self.mind_control.mind_control_ignore_size.hash(&mut hasher);
+                self.mind_control
+                    .mind_control_link_visible_to_house
+                    .bits()
+                    .hash(&mut hasher);
+                self.mind_control
+                    .multi_mind_control_release_victim
+                    .hash(&mut hasher);
+            }
+            let control_sizes = Self::by_upper_id(self.object_list.iter().filter_map(|object| {
+                    let value = (
+                        object.mind_control_range_limit,
+                        object.mind_control_ignore_size,
+                        object.mind_control_size,
+                        object
+                            .mind_control_link_visible_to_house
+                            .map(|house| house.bits()),
+                        object.multi_mind_control_release_victim,
+                    );
+                (value != (0, None, 1, None, None)).then_some((&object.id, value))
+            }));
+            if !control_sizes.is_empty() {
+                b"phobos-mind-control-size-v1".hash(&mut hasher);
+                control_sizes.hash(&mut hasher);
+            }
+        }
         let general = &self.general;
         if crate::rules::NPATCH_ENABLED {
             general.vehicle_parachute.hash(&mut hasher);
@@ -8125,6 +8271,34 @@ impl RuleSet {
             )
         }))
         .hash(&mut hasher);
+        #[cfg(feature = "phobos")]
+        {
+            let warhead_anims = Self::by_upper_id(self.warheads.iter().filter_map(|(name, warhead)| {
+                (warhead.phobos_anim
+                    != crate::rules::phobos_warhead_anim::PhobosWarheadAnimRules::default())
+                .then_some((name, &warhead.phobos_anim))
+            }));
+            if !warhead_anims.is_empty() {
+                b"phobos-warhead-anim-v1".hash(&mut hasher);
+                warhead_anims.hash(&mut hasher);
+            }
+            if self.phobos_warhead_anim != Default::default() {
+                b"phobos-warhead-anim-globals-v1".hash(&mut hasher);
+                self.phobos_warhead_anim.hash(&mut hasher);
+            }
+        }
+        #[cfg(feature = "phobos")]
+        {
+            let control_anims = Self::by_upper_id(self.warheads.iter().filter_map(|(name, wh)| {
+                wh.mind_control_anim
+                    .as_ref()
+                    .map(|anim| (name, anim.to_ascii_uppercase()))
+            }));
+            if !control_anims.is_empty() {
+                b"phobos-warhead-mind-control-anim-v1".hash(&mut hasher);
+                control_anims.hash(&mut hasher);
+            }
+        }
         Self::by_upper_id(self.weapons.iter().map(|(id, weapon)| {
             (
                 id,
@@ -9004,6 +9178,33 @@ impl RuleSet {
         } else {
             self.general.prone_speed_no_crawls
         })
+    }
+
+    /// Phobos `MindControl.IgnoreSize`: the type's own nullable, then
+    /// `[General]`, constructor default true.
+    #[cfg(feature = "phobos")]
+    pub fn mind_control_ignore_size_for(&self, ty: &ObjectType) -> bool {
+        ty.mind_control_ignore_size
+            .unwrap_or(self.mind_control.mind_control_ignore_size)
+    }
+
+    /// Phobos `MultiMindControl.ReleaseVictim`: the type's own nullable, then
+    /// `[General]`, constructor default false.
+    #[cfg(feature = "phobos")]
+    pub fn multi_mind_control_release_victim_for(&self, ty: &ObjectType) -> bool {
+        ty.multi_mind_control_release_victim
+            .unwrap_or(self.mind_control.multi_mind_control_release_victim)
+    }
+
+    /// Phobos `MindControlLink.VisibleToHouse`: the type's own nullable, then
+    /// `[General]`, constructor default All.
+    #[cfg(feature = "phobos")]
+    pub fn mind_control_link_visible_to_house_for(
+        &self,
+        ty: &ObjectType,
+    ) -> crate::rules::phobos_shields::AffectedHouse {
+        ty.mind_control_link_visible_to_house
+            .unwrap_or(self.mind_control.mind_control_link_visible_to_house)
     }
 
     /// Type-select admission for a structure.
@@ -15028,6 +15229,86 @@ Projectile=Invisible
                 Err(SnapshotError::RulesMismatch { .. })
             ));
         }
+    }
+
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn simulation_config_hash_covers_phobos_warhead_animation_rules() {
+        let make = |keys: &str, general: &str| {
+            RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[General]\n{general}\n[Warheads]\n0=WH\n[WH]\nAnimList=A\n{keys}\n\
+                 [Animations]\n0=A\n"
+            )))
+            .unwrap()
+        };
+        let base = make("", "");
+        let mut per_warhead = make("AnimList.CreateAll=yes\n", "");
+        let mut global = make("", "Conventional.IgnoreUnits=yes\n");
+        per_warhead.source_ini_hash = base.source_ini_hash;
+        global.source_ini_hash = base.source_ini_hash;
+        assert_ne!(
+            base.simulation_config_hash(),
+            per_warhead.simulation_config_hash(),
+            "a per-warhead animation key changes the simulation config"
+        );
+        assert_ne!(
+            base.simulation_config_hash(),
+            global.simulation_config_hash(),
+            "a [General] animation default changes the simulation config"
+        );
+    }
+
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn simulation_config_hash_covers_warhead_jumpjet_overrides() {
+        let make = |keys: &str| {
+            RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[Warheads]\n0=LIFT\n[LIFT]\nIsLocomotor=yes\nLocomotor=Jumpjet\n{keys}\n"
+            )))
+            .unwrap()
+        };
+        let base = make("");
+        let mut changed = make("JumpjetSpeed=33\n");
+        changed.source_ini_hash = base.source_ini_hash;
+        assert_ne!(
+            base.simulation_config_hash(),
+            changed.simulation_config_hash(),
+            "a warhead Jumpjet override changes the simulation config"
+        );
+    }
+
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn simulation_config_hash_covers_mind_control_enhancements() {
+        let make = |general: &str, unit: &str, warhead: &str| {
+            RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[General]\n{general}\n[VehicleTypes]\n0=UNIT\n[UNIT]\n{unit}\n\
+                 [Warheads]\n0=WH\n[WH]\n{warhead}\n[Animations]\n0=MIND\n"
+            )))
+            .unwrap()
+        };
+        let base = make("", "", "");
+        let mut size = make("", "MindControlSize=2\n", "");
+        let mut globals = make("MindControl.IgnoreSize=no\n", "", "");
+        let mut anim = make("", "", "MindControl.Anim=MIND\n");
+        size.source_ini_hash = base.source_ini_hash;
+        globals.source_ini_hash = base.source_ini_hash;
+        anim.source_ini_hash = base.source_ini_hash;
+        assert_ne!(
+            base.simulation_config_hash(),
+            size.simulation_config_hash(),
+            "a per-type MindControlSize changes the simulation config"
+        );
+        assert_ne!(
+            base.simulation_config_hash(),
+            globals.simulation_config_hash(),
+            "a [General] IgnoreSize default changes the simulation config"
+        );
+        assert_ne!(
+            base.simulation_config_hash(),
+            anim.simulation_config_hash(),
+            "a warhead MindControl.Anim changes the simulation config"
+        );
     }
 
     #[test]

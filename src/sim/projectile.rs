@@ -361,7 +361,13 @@ pub struct ProjectileCollisionPolicy {
     pub subject_to_cliffs: bool,
     pub flak_scatter: bool,
     pub anti_air: bool,
+    /// `BulletType+294 Airburst=`: the Bullet AI homing/closing/fuse arms.
     pub airburst: bool,
+    /// `BulletClass::Explodes`'s airburst gate: native `Airburst=`, or
+    /// `Airburst || Splits` in a Phobos build. A manually constructed policy
+    /// that leaves it `None` falls back to [`Self::airburst`].
+    #[serde(default)]
+    pub explodes_airburst: Option<bool>,
     pub inaccurate: bool,
     /// BulletType +295: 48ACF0 multiplies live Rules gravity by binary64 0.5.
     pub floater: bool,
@@ -388,6 +394,7 @@ impl ProjectileCollisionPolicy {
         flak_scatter: false,
         anti_air: false,
         airburst: false,
+        explodes_airburst: None,
         inaccurate: false,
         floater: false,
         #[cfg(feature = "phobos")]
@@ -395,6 +402,14 @@ impl ProjectileCollisionPolicy {
         elasticity_bits: 0x3fe8_0000_0000_0000,
         arcing: false,
     };
+
+    /// `0x468D80`'s airburst gate, with the pre-feature fallback.
+    pub const fn explodes_airburst(&self) -> bool {
+        match self.explodes_airburst {
+            Some(value) => value,
+            None => self.airburst,
+        }
+    }
 
     /// Phobos `[Projectile] Gravity=` bits, or `None` on the stock path.
     #[cfg(feature = "phobos")]
@@ -947,6 +962,12 @@ pub struct ProjectilePayload {
     installed_weapon: Option<InternedId>,
     /// Construct4664E6's byte argument, independent of installed Weapon.
     bright: bool,
+    /// Phobos `BulletExt::FirepowerMult`, the firer's firepower multiplier at
+    /// construction. `AirburstWeapon.ApplyFirepowerMult` scales child damage
+    /// with it, and airburst children carry it onward.
+    #[cfg(feature = "phobos")]
+    #[serde(default = "default_firepower_multiplier")]
+    firepower_multiplier: crate::util::native_x87::NativeF64Bits,
     /// `BulletClass+0x150`, 1/256 units: `BulletClass::Construct` writes
     /// [`Self::UNSCALED`] (`0x00466546`) and only a Prism master's supported
     /// shot writes another value (`BuildingClass::ProcessDelayedFire`,
@@ -955,6 +976,11 @@ pub struct ProjectilePayload {
     /// (`0x004697FC..0x0046980C`, not ported: dormant in retail, see
     /// [`SpecialDetonationAction::DirectRocker`]).
     damage_multiplier: i32,
+}
+
+#[cfg(feature = "phobos")]
+fn default_firepower_multiplier() -> crate::util::native_x87::NativeF64Bits {
+    crate::util::native_x87::NativeF64Bits::ONE
 }
 
 impl ProjectilePayload {
@@ -975,6 +1001,8 @@ impl ProjectilePayload {
             installed_weapon: None,
             bright,
             damage_multiplier: Self::UNSCALED,
+            #[cfg(feature = "phobos")]
+            firepower_multiplier: crate::util::native_x87::NativeF64Bits::ONE,
         }
     }
 
@@ -1008,6 +1036,23 @@ impl ProjectilePayload {
 
     pub fn damage_multiplier(&self) -> i32 {
         self.damage_multiplier
+    }
+
+    /// The firer's firepower multiplier captured at construction.
+    #[cfg(feature = "phobos")]
+    pub const fn firepower_multiplier(&self) -> crate::util::native_x87::NativeF64Bits {
+        self.firepower_multiplier
+    }
+
+    /// Carry another bullet's captured firepower multiplier, as Phobos's
+    /// airburst children do.
+    #[cfg(feature = "phobos")]
+    pub fn with_firepower_multiplier(
+        mut self,
+        firepower_multiplier: crate::util::native_x87::NativeF64Bits,
+    ) -> Self {
+        self.firepower_multiplier = firepower_multiplier;
+        self
     }
 
     /// `BulletClass::DetonateAtCoord @ 0x004690B0` hands
@@ -1143,6 +1188,15 @@ pub struct Projectile {
     /// [`Simulation::construct_bullet_scheme`]: crate::sim::world::Simulation::construct_bullet_scheme
     #[serde(default)]
     firer_house: Option<InternedId>,
+    /// Phobos `BulletExt::FirerHouse`, set by `BulletExt::InitializeState`
+    /// (`0x466556`): the Owner Techno's House at construction, kept after the
+    /// owner expires. Independent of the palette-only `firer_house` above.
+    /// Written by [`Simulation::construct_bullet_scheme`].
+    ///
+    /// [`Simulation::construct_bullet_scheme`]: crate::sim::world::Simulation::construct_bullet_scheme
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    phobos_firer_house: Option<InternedId>,
     /// Bullet `+0x158`: set at a `NUKE` impact (`0x00467F3C`), cleared when
     /// the wait ends (`0x0046676A`).
     #[serde(default)]
@@ -1359,6 +1413,13 @@ impl Projectile {
         self.firer_house
     }
 
+    /// Phobos `BulletExt::FirerHouse`: the owner's House retained at
+    /// construction, independent of the palette-only `firer_house`.
+    #[cfg(feature = "phobos")]
+    pub fn phobos_firer_house(&self) -> Option<InternedId> {
+        self.phobos_firer_house
+    }
+
     /// Waiting on its anim after a `NUKE` impact (`+0x158`); the draw skips
     /// such a bullet (`BulletClass::DrawSHPOrVoxel`, `0x004680F6`).
     pub fn awaiting_anim(&self) -> bool {
@@ -1406,13 +1467,13 @@ impl Projectile {
 
     /// The facts [`resolve_impact_coord`] reads, with the bullet at its
     /// committed Location.
-    fn impact_ladder_bullet(&self, impact_flag: bool) -> ImpactLadderBullet {
+    pub(crate) fn impact_ladder_bullet(&self, impact_flag: bool) -> ImpactLadderBullet {
         ImpactLadderBullet {
             location: self.position,
             reference: self.proximity_reference,
             impact_flag,
             inaccurate: self.collision.inaccurate,
-            airburst: self.collision.airburst,
+            airburst: self.collision.explodes_airburst(),
             arcing: self.collision.arcing,
             homing: self.tracks_target,
         }
@@ -1873,6 +1934,8 @@ impl ProjectileStore {
                 collision: ProjectileCollisionPolicy::NONE,
                 on_bridge: false,
                 firer_house: None,
+                #[cfg(feature = "phobos")]
+                phobos_firer_house: None,
                 awaiting_anim: false,
                 awaited_anim: None,
             },
@@ -1934,6 +1997,30 @@ impl ProjectileStore {
     pub(crate) fn set_firer_house(&mut self, id: u64, house: Option<InternedId>) {
         if let Some(projectile) = self.get_mut(id) {
             projectile.firer_house = house;
+        }
+    }
+
+    /// Phobos `BulletExt::FirerHouse` at bullet initialization.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn set_phobos_firer_house(&mut self, id: u64, house: Option<InternedId>) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.phobos_firer_house = house;
+        }
+    }
+
+    /// Phobos `BulletExt::InitializeState`'s `FirepowerMult`. A payload value
+    /// other than 1.0 came from FireAt's launch capture and is kept.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn set_phobos_firepower_multiplier_if_default(
+        &mut self,
+        id: u64,
+        value: crate::util::native_x87::NativeF64Bits,
+    ) {
+        if let Some(projectile) = self.get_mut(id)
+            && projectile.payload.firepower_multiplier
+                == crate::util::native_x87::NativeF64Bits::ONE
+        {
+            projectile.payload.firepower_multiplier = value;
         }
     }
 

@@ -57,6 +57,10 @@ Supported extensions:
 - [Projectile gravity](phobos-projectile-gravity.md) (`[Projectile] Gravity=` per projectile type)
 - [Warhead decloaking](phobos-decloak-damaged-targets.md) (`DecloakDamagedTargets` per warhead and globally)
 - [Airstrike flare](phobos-airstrike-flare.md) (`LaserTargetColor` and `AirstrikeLineColor` per TechnoType, and the line depth fix)
+- [AttachEffect](phobos-attach-effect.md) (`[AttachEffectTypes]` catalog, warhead and TechnoType attach lists, stat multipliers, tint, discard conditions, expire/revenge/reflect weapons and the weapon-side gates)
+- [Critical hits](phobos-critical-hit.md) (per-warhead `Crit.*` chance, extra damage, second warhead and animations, `ImmuneToCrit`, rank abilities)
+- [Selection flash](phobos-selection-flash.md) (`[AudioVisual] SelectionFlashDuration` behind `[Phobos] ShowFlashOnSelecting`)
+- [Semantic locomotor aliases](phobos-locomotor-aliases.md) (`Locomotor=Drive` and friends beside the braced CLSIDs)
 
 ## Original project and authors
 
@@ -107,6 +111,30 @@ originate with:
 - Custom gravity for projectiles - **secsome**.
 - Warhead decloaking toggle (`DecloakDamagedTargets`) - **Starkku**.
 - Airstrike flare visual customizations and fixes - **Starkku**.
+- AttachEffect - **Starkku**, with target filtering **Flactine** and
+  attach-event 606 **FS-21**.
+- Critical hits - **Starkku** (logic), **AutoGavy** (warhead crit), and
+  **Trsdy** (shield `ImmuneToCrit`).
+
+## VERA20K porting credits
+
+The Rust ports are individual VERA20K contributions; GitHub usernames name
+the merged pull requests that carried each chain:
+
+- **1372704087** — every Phobos chain listed above: shields, custom
+  radiation types, the three ore chains, superweapon techno gates, digital
+  display, placement preview, sidebar GDI/NOD positions, infantry auto
+  deploy, `FlyNoWobbles`, the centred pause-menu background, building
+  production queue, skirmish AI dehardcoding, parallel AI queue forbids,
+  unlimited skirmish colours, the superweapon sidebar, prone speed, type
+  select for buildings, timer blink colour, missing cameo, power plant
+  enhancers, semantic locomotor aliases, selection flash,
+  `AllowDamageOnSelf`, `DecloakDamagedTargets`, projectile gravity, the
+  airstrike flare colours, AttachEffect with the critical-hit chain, and
+  the `$Include`/`$Inherits` native hooks.
+- **Krisztiaan** — the shield damage/recovery hook-ordering fix.
+- **CCDawn** — the Phobos build description drawn at the tactical view's
+  top right.
 
 The project's full contributor list is in
 [Phobos CREDITS.md](https://github.com/Phobos-developers/Phobos/blob/develop/CREDITS.md).

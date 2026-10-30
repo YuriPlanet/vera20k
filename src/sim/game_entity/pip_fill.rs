@@ -37,7 +37,18 @@ impl GameEntity {
     /// ammo, Cargo count, capture-manager and miner authorities; it creates
     /// no derived status state. The result is signed and is not capped at
     /// Type.GetPipMax716290.
-    pub fn techno_pip_fill_level(&self, object: &ObjectType, rules: &RuleSet) -> i32 {
+    ///
+    /// `controlled_count` is this controller's `GetControlledCount`
+    /// (0x004722D0, the PipScale=MindControl arm's only native caller at
+    /// 0x00708C88): [`crate::sim::world::Simulation::capture_effective_count`],
+    /// which Phobos makes the sum of `MindControlSize=` when
+    /// `MindControl.IgnoreSize=` is false. `None` reads the node count.
+    pub fn techno_pip_fill_level(
+        &self,
+        object: &ObjectType,
+        rules: &RuleSet,
+        controlled_count: Option<i32>,
+    ) -> i32 {
         let maximum = object.pip_max(rules);
         let (amount, denominator) = match object.pip_scale {
             PipScale::Ammo => (self.ammo().map_or(0, |ammo| ammo.current()), maximum),
@@ -51,7 +62,10 @@ impl GameEntity {
                 let Some(manager) = self.capture_manager.as_ref() else {
                     return 0;
                 };
-                (manager.count(), maximum)
+                (
+                    controlled_count.unwrap_or_else(|| manager.count()),
+                    maximum,
+                )
             }
             PipScale::Tiberium => {
                 // Storage6C9650 repeatedly truncates its four float slots to

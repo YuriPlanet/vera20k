@@ -5,6 +5,9 @@
 //! The per-type keys (`ImmuneToPsionics=`, `MindControlRingOffset=`, a type's
 //! own `MindClearedSound=`) live on `ObjectType`; the per-weapon ones
 //! (`InfiniteMindControl=`) on `WeaponType`; `MindControl=` on `WarheadType`.
+//! Phobos adds `[General] MindControl.IgnoreSize=`,
+//! `MindControlLink.VisibleToHouse=` and `MultiMindControl.ReleaseVictim=`,
+//! resolved per type with these constructor defaults.
 //!
 //! ## Dependency rules
 //! - Part of rules/ — no dependencies on sim/, render/, ui/, etc.
@@ -25,7 +28,7 @@ pub enum CaptureReason {
     Normal,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct MindControlRules {
     /// Rules+310; native ordered CombatDamage reader66C914..66C92E.
     pub attack_line_frames: i32,
@@ -61,6 +64,40 @@ pub struct MindControlRules {
     /// `0x006704FE`). The constructor leaves both marks unset; stock authors
     /// every key of this struct.
     pub ai_capture_wounded_mark: f32,
+    /// Phobos `[General] MindControl.IgnoreSize=` (`Valueable<bool>`,
+    /// constructor true): when false, a non-infinite manager counts victim
+    /// `MindControlSize=` instead of node count.
+    pub mind_control_ignore_size: bool,
+    /// Phobos `[General] MindControlLink.VisibleToHouse=`
+    /// (`Valueable<AffectedHouse>`, constructor All): which houses may draw
+    /// a controller's link lines.
+    pub mind_control_link_visible_to_house: crate::rules::phobos_shields::AffectedHouse,
+    /// Phobos `[General] MultiMindControl.ReleaseVictim=`
+    /// (`Valueable<bool>`, constructor false): a multi-slot manager releases
+    /// its oldest victim when a capture would exceed its size.
+    pub multi_mind_control_release_victim: bool,
+}
+
+impl Default for MindControlRules {
+    fn default() -> Self {
+        Self {
+            attack_line_frames: 0,
+            controlled_anim: None,
+            perma_controlled_anim: None,
+            overload_count: Vec::new(),
+            overload_damage: Vec::new(),
+            overload_frames: Vec::new(),
+            mind_control_sound: None,
+            mind_cleared_sound: None,
+            overload_sound: None,
+            ai_capture: Default::default(),
+            ai_capture_low_money_mark: 0,
+            ai_capture_wounded_mark: 0.0,
+            mind_control_ignore_size: true,
+            mind_control_link_visible_to_house: crate::rules::phobos_shields::AffectedHouse::ALL,
+            multi_mind_control_release_victim: false,
+        }
+    }
 }
 
 impl MindControlRules {
@@ -99,6 +136,23 @@ impl MindControlRules {
             ai_capture_low_money_mark: general.read_int("AICaptureLowMoneyMark", 0),
             // ReadDouble -> `FSTP dword [ESI+0xEC0]` (`0x00670509`).
             ai_capture_wounded_mark: general.read_float("AICaptureWoundedMark", 0.0),
+            #[cfg(feature = "phobos")]
+            mind_control_ignore_size: general.read_ares_bool("MindControl.IgnoreSize", true),
+            #[cfg(not(feature = "phobos"))]
+            mind_control_ignore_size: true,
+            #[cfg(feature = "phobos")]
+            mind_control_link_visible_to_house: crate::rules::phobos_shields::read_affected_house(
+                &general,
+                "MindControlLink.VisibleToHouse",
+                crate::rules::phobos_shields::AffectedHouse::ALL,
+            ),
+            #[cfg(not(feature = "phobos"))]
+            mind_control_link_visible_to_house: crate::rules::phobos_shields::AffectedHouse::ALL,
+            #[cfg(feature = "phobos")]
+            multi_mind_control_release_victim: general
+                .read_ares_bool("MultiMindControl.ReleaseVictim", false),
+            #[cfg(not(feature = "phobos"))]
+            multi_mind_control_release_victim: false,
         }
     }
 
@@ -147,5 +201,71 @@ mod tests {
         assert_eq!(rules.ai_capture_low_money_mark, 2000);
         assert_eq!(rules.ai_capture_wounded_mark, 0.25);
         assert_eq!(rules.mind_cleared_sound.as_deref(), Some("MindCleared"));
+    }
+
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn phobos_globals_read_and_default() {
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nMindControl.IgnoreSize=no\n\
+             MindControlLink.VisibleToHouse=team\nMultiMindControl.ReleaseVictim=yes\n\
+             [VehicleTypes]\n0=UNIT\n1=HEX\n2=BAD\n3=CLEAR\n[UNIT]\nMindControlRangeLimit=1.5\n\
+             MindControl.IgnoreSize=yes\nMindControlSize=3\n\
+             MindControlLink.VisibleToHouse=enemies\nMultiMindControl.ReleaseVictim=no\n\
+             [HEX]\nMindControlSize=$10\n[BAD]\nMindControlSize=oops\n\
+             [CLEAR]\nMindControlLink.VisibleToHouse=none\n",
+        ))
+        .unwrap();
+        assert!(!rules.mind_control.mind_control_ignore_size);
+        assert_eq!(
+            rules.mind_control.mind_control_link_visible_to_house.bits(),
+            crate::rules::phobos_shields::AffectedHouse::OWNER.bits()
+                | crate::rules::phobos_shields::AffectedHouse::ALLIES.bits()
+        );
+        assert!(rules.mind_control.multi_mind_control_release_victim);
+        let unit = rules.object("UNIT").unwrap();
+        assert_eq!(unit.mind_control_range_limit, 384);
+        assert_eq!(unit.mind_control_ignore_size, Some(true));
+        assert_eq!(unit.mind_control_size, 3);
+        assert_eq!(
+            unit.mind_control_link_visible_to_house,
+            Some(crate::rules::phobos_shields::AffectedHouse::ENEMIES)
+        );
+        assert_eq!(unit.multi_mind_control_release_victim, Some(false));
+        assert!(rules.mind_control_ignore_size_for(unit));
+        assert!(!rules.multi_mind_control_release_victim_for(unit));
+        assert_eq!(
+            rules.mind_control_link_visible_to_house_for(unit),
+            crate::rules::phobos_shields::AffectedHouse::ENEMIES
+        );
+        // Phobos `Nullable::Read` resets on `none`, so the type inherits
+        // `[General]` instead of hiding every link.
+        assert_eq!(
+            rules.mind_control_link_visible_to_house_for(rules.object("CLEAR").unwrap()),
+            rules.mind_control.mind_control_link_visible_to_house
+        );
+        assert_eq!(rules.object("HEX").unwrap().mind_control_size, 10);
+        assert_eq!(
+            rules.object("BAD").unwrap().mind_control_size,
+            1,
+            "Parser<int> keeps the constructor default on rejected text"
+        );
+
+        let defaults = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=UNIT\n[UNIT]\n",
+        ))
+        .unwrap();
+        assert!(defaults.mind_control.mind_control_ignore_size);
+        assert_eq!(
+            defaults.mind_control.mind_control_link_visible_to_house,
+            crate::rules::phobos_shields::AffectedHouse::ALL
+        );
+        assert!(!defaults.mind_control.multi_mind_control_release_victim);
+        let unit = defaults.object("UNIT").unwrap();
+        assert_eq!(
+            (unit.mind_control_range_limit, unit.mind_control_size),
+            (0, 1)
+        );
+        assert!(defaults.mind_control_ignore_size_for(unit));
     }
 }

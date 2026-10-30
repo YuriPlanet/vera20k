@@ -1743,7 +1743,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                         );
                     let result = &row["actor_results"][index];
                     assert_eq!(
-                        i64::from(entity.techno_pip_fill_level(object, rules)),
+                        i64::from(entity.techno_pip_fill_level(object, rules, None)),
                         result["fill_count"].as_i64().unwrap(),
                     );
                     assert_eq!(

@@ -1277,11 +1277,41 @@ impl Simulation {
         z: u8,
         world_z: i32,
     ) -> Option<AnimId> {
+        self.spawn_combat_explosion_anim_with_z_adjust(
+            rules,
+            type_name,
+            rx,
+            ry,
+            sub_x,
+            sub_y,
+            z,
+            world_z,
+            COMBAT_EXPLOSION_Z_ADJUST,
+            None,
+        )
+    }
+
+    /// [`Self::spawn_combat_explosion_anim`] with the Phobos warhead
+    /// `AnimZAdjust` substituted for the stock combat row's -15 and the
+    /// tail's invoker House installed after construction.
+    pub(crate) fn spawn_combat_explosion_anim_with_z_adjust(
+        &mut self,
+        rules: &RuleSet,
+        type_name: InternedId,
+        rx: u16,
+        ry: u16,
+        sub_x: crate::util::fixed_math::SimFixed,
+        sub_y: crate::util::fixed_math::SimFixed,
+        z: u8,
+        world_z: i32,
+        z_adjust: i32,
+        owner_house: Option<InternedId>,
+    ) -> Option<AnimId> {
         let descriptor = AnimClassSpawnDescriptor {
             delay: 0,
             loop_count: 1,
             draw_flags: COMBAT_EXPLOSION_DRAW_FLAGS,
-            z_adjust: COMBAT_EXPLOSION_Z_ADJUST,
+            z_adjust,
             reverse: false,
             ..AnimClassSpawnDescriptor::new(type_name, rx, ry, sub_x, sub_y, z)
         };
@@ -1290,7 +1320,12 @@ impl Simulation {
             ..AnimWorldCoord::from_cell_sub_z(rx, ry, sub_x, sub_y, z)
         };
         match self.spawn_anim_at_world(rules, descriptor, world_coord) {
-            Ok(id) => Some(id),
+            Ok(id) => {
+                if let Some(house) = owner_house {
+                    self.substrate.set_anim_owner_house(id, house);
+                }
+                Some(id)
+            }
             Err(error) => {
                 log::debug!(
                     "combat explosion [{}] did not construct: {error}",
@@ -5066,6 +5101,31 @@ mod tests {
             let (rx, ry, sub_x, sub_y, _) = coord.to_cell_sub_z();
             assert_eq!((rx, ry, sub_x, sub_y), packed);
         }
+    }
+
+    #[test]
+    fn combat_explosion_z_adjust_and_owner_reach_the_anim() {
+        let rules = runtime_rules("[TWLT036]\nEnd=8\n", &[("TWLT036", 8)]);
+        let mut sim = Simulation::new();
+        let type_id = sim.interner.intern("TWLT036");
+        let house = sim.interner.intern("Americans");
+        let id = sim
+            .spawn_combat_explosion_anim_with_z_adjust(
+                &rules,
+                type_id,
+                1,
+                1,
+                crate::util::fixed_math::SIM_ZERO,
+                crate::util::fixed_math::SIM_ZERO,
+                0,
+                0,
+                7,
+                Some(house),
+            )
+            .unwrap();
+        let anim = sim.anim(id).unwrap();
+        assert_eq!(anim.z_adjust, 7);
+        assert_eq!(anim.owner_house(), Some(house));
     }
 
     #[test]

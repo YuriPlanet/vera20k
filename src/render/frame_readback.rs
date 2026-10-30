@@ -24,6 +24,8 @@ pub enum FrameReadbackError {
     BufferSizeOverflow { width: u32, height: u32 },
     #[error("frame readback map callback was dropped: {0}")]
     MapCallbackDropped(#[from] std::sync::mpsc::RecvError),
+    #[error("frame readback mapped range failed: {0}")]
+    MapRange(#[from] wgpu::MapRangeError),
     #[error("frame readback map failed: {0}")]
     MapFailed(#[from] wgpu::BufferAsyncError),
     #[error("frame readback device poll failed: {0}")]
@@ -137,7 +139,7 @@ impl PendingBgra8Readback {
             })?;
             rx.recv()??;
 
-            let mapped = slice.get_mapped_range();
+            let mapped = slice.get_mapped_range()?;
             let tight = strip_row_padding(
                 &mapped,
                 self.width,

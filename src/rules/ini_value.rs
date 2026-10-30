@@ -656,7 +656,11 @@ impl IniSection {
     /// `<none>` clear the value; absent, empty and rejected reads retain it.
     /// Source: Phobos b90ab4bc, Utilities/TemplateDef.h:1878..1892,
     /// Utilities/Template.h (`allowNone=false`) and Phobos.h (`readLength`).
-    /// `read_string_with` retains the ordered passes in a projected section.
+    /// `none`/`<none>` are exactly what `INIClass::IsBlank` accepts (YRpp
+    /// `CCINIClass.h`: case-insensitive equality with those two literals, the
+    /// tokens the type factories also answer null for); empty text never
+    /// reaches it because `ReadString` returns zero. `read_string_with`
+    /// retains the ordered passes in a projected section.
     pub(crate) fn read_phobos_nullable_with<T>(
         &self,
         key: &str,
@@ -747,6 +751,19 @@ impl IniSection {
     pub fn read_phobos_double(&self, key: &str, current: f64) -> f64 {
         self.read_string_with(key, 2048, current, |current, raw| {
             parse_phobos_double(raw).unwrap_or(current)
+        })
+    }
+
+    /// Phobos `read<Leptons>` (`Utilities/TemplateDef.h`): `ReadDouble` in
+    /// cells, then `Game::F2I(cells * Unsorted::LeptonsPerCell)`. The
+    /// `Valueable<Leptons>` field keeps its current leptons on a failed read.
+    pub fn read_phobos_leptons(&self, key: &str, current: i32) -> i32 {
+        self.read_string_with(key, 2048, current, |current, raw| {
+            parse_phobos_double(raw).map_or(current, |cells| {
+                crate::util::native_x87::X87Chop53::ftol_f64_low_masked(
+                    cells * f64::from(crate::util::lepton::LEPTONS_PER_CELL_I32),
+                )
+            })
         })
     }
 

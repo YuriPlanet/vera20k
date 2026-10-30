@@ -7,6 +7,13 @@
 //!   `0x004694CB..0x00469700` ([`Simulation::locomotor_detonation`]);
 //! - `TechnoClass::ImbueLocomotor @ 0x00710000`
 //!   ([`Simulation::imbue_locomotor`]);
+//! - Phobos warhead `Jumpjet*` overrides: while Imbue links the new locomotor
+//!   (`JumpjetLocomotionClass::Link_To_Object @ 0x0054AD30`, Phobos hook
+//!   at `0x0054AD41`,
+//!   `src/Ext/Unit/Hooks.Jumpjet.cpp:461`), the warhead's nullable
+//!   `JumpjetTurnRate/Speed/Climb/Crash/Height/Accel/Wobbles/NoWobbles/
+//!   Deviation` replace the target type's block; the link still floors
+//!   `JumpjetHeight` at 208 leptons;
 //! - `TechnoClass::ReleaseLocomotor @ 0x0070FEE0`
 //!   ([`Simulation::release_locomotor`]) and its callers: the held object's
 //!   Jumpjet arrival (`0x0054C1CB`), the firer's own non-null destination
@@ -290,6 +297,7 @@ impl Simulation {
         target: LocomotorShotTarget,
         strength: i32,
         kind: LocomotorKind,
+        jumpjet_override: &crate::rules::jumpjet_params::JumpjetOverride,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
@@ -342,7 +350,15 @@ impl Simulation {
                 .object_type(victim.type_ref(), rules)
                 .is_some_and(|object| shot_strength_exceeds_size(strength, object.size));
         if admitted {
-            self.imbue_locomotor(owner, victim_id, kind, rules, registry, effects);
+            self.imbue_locomotor(
+                owner,
+                victim_id,
+                kind,
+                jumpjet_override,
+                rules,
+                registry,
+                effects,
+            );
         }
     }
 
@@ -380,6 +396,7 @@ impl Simulation {
         firer: u64,
         target: u64,
         kind: LocomotorKind,
+        jumpjet_override: &crate::rules::jumpjet_params::JumpjetOverride,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
@@ -491,13 +508,21 @@ impl Simulation {
         {
             self.release_locomotor(target, true, rules, registry, effects);
         }
+        // Phobos applies the warhead's Jumpjet overrides while the new
+        // Jumpjet locomotor links (`Link_To_Object @ 0x54AD30`, hook
+        // `0x54AD41`); another installed kind never
+        // reads them.
+        let jumpjet_params = (kind == LocomotorKind::Jumpjet).then(|| {
+            let mut params = object.jumpjet_params.clone();
+            jumpjet_override.apply_to(&mut params);
+            params
+        });
         let Some(entity) = self.substrate.entities.get_mut(target) else {
             return;
         };
-        let installed = entity
-            .locomotor
-            .as_mut()
-            .is_some_and(|locomotor| locomotor.begin_piggyback_linked(kind, object, now));
+        let installed = entity.locomotor.as_mut().is_some_and(|locomotor| {
+            locomotor.begin_piggyback_linked(kind, object, now, jumpjet_params.as_ref())
+        });
         if !installed {
             return;
         }

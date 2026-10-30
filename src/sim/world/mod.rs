@@ -1441,6 +1441,10 @@ pub struct Simulation {
     /// the render-side fire-event approximation.
     #[serde(default)]
     pub(crate) projectiles: crate::sim::projectile::ProjectileStore,
+    /// Phobos per-warhead-type animation creation counters.
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    pub(crate) warhead_anim_runtime: crate::sim::warhead_anim::WarheadAnimRuntime,
     /// Persistent WaveClass registrations. They have their own logic lifetime;
     /// this is not a one-frame weapon-fire presentation list.
     pub(crate) waves: crate::sim::wave::WaveStore,
@@ -4448,6 +4452,8 @@ impl Simulation {
             combat_light_requests: FrameChannel::default(),
             screen_shake_updates: FrameChannel::default(),
             projectiles: crate::sim::projectile::ProjectileStore::new(),
+            #[cfg(feature = "phobos")]
+            warhead_anim_runtime: Default::default(),
             waves: crate::sim::wave::WaveStore::new(),
             active_wave_links: BTreeMap::new(),
             object_custom_sounds: BTreeMap::new(),
@@ -5235,6 +5241,7 @@ impl Simulation {
         Self::construct_bullet_scheme(
             &self.interner,
             &self.substrate,
+            &self.houses,
             &mut self.projectiles,
             id,
             rules,
@@ -5289,6 +5296,7 @@ impl Simulation {
     pub(crate) fn construct_bullet_scheme(
         interner: &StringInterner,
         substrate: &ObjectSubstrate,
+        houses: &crate::sim::houses::Houses,
         projectiles: &mut ProjectileStore,
         bullet: u64,
         rules: &RuleSet,
@@ -5296,16 +5304,37 @@ impl Simulation {
         let Some(projectile) = projectiles.get(bullet) else {
             return;
         };
+        #[cfg(not(feature = "phobos"))]
+        let _ = houses;
+        let source_id = projectile.source_id();
         let firers_palette = projectile
             .payload()
             .projectile_type()
             .and_then(|id| rules.projectile(interner.resolve(id)))
             .is_some_and(|kind| kind.firers_palette);
         let house = firers_palette
-            .then(|| substrate.entities.get(projectile.source_id()))
+            .then(|| substrate.entities.get(source_id))
             .flatten()
             .map(|owner| owner.owner());
         projectiles.set_firer_house(bullet, house);
+        #[cfg(feature = "phobos")]
+        {
+            // `BulletExt::InitializeState` retains the Owner's House for
+            // every bullet, not only a `FirersPalette=` one. A re-Construct
+            // with no live owner keeps the saved value (native only writes
+            // inside `if (pThis->Owner)`).
+            let retained = substrate.entities.get(source_id).map(|owner| owner.owner());
+            if retained.is_some() {
+                projectiles.set_phobos_firer_house(bullet, retained);
+            }
+            if let Some(multiplier) =
+                crate::sim::combat::world_fire::bullet_init_firepower_multiplier(
+                    interner, substrate, houses, rules, source_id,
+                )
+            {
+                projectiles.set_phobos_firepower_multiplier_if_default(bullet, multiplier);
+            }
+        }
     }
 
     /// Admit the bullets a detonation spawned (`BulletClass::SpawnShrapnel
@@ -5343,6 +5372,7 @@ impl Simulation {
             Self::construct_bullet_scheme(
                 &self.interner,
                 &self.substrate,
+                &self.houses,
                 &mut self.projectiles,
                 stable_id,
                 rules,

@@ -289,6 +289,11 @@ pub struct GameEntity {
     #[cfg(feature = "phobos")]
     #[serde(default)]
     pub(crate) phobos_placement: crate::sim::house_tracking::PhobosPlacement,
+    /// Phobos `TechnoExt::WHAnimRemainingCreationInterval`: shared by every
+    /// interval-bearing warhead this Techno fires.
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    pub(crate) wh_anim_remaining_creation_interval: i32,
     /// The raw signed type `Sight=`, a [`SightFacts`] that
     /// `sim::vision` owns.
     ///
@@ -1906,6 +1911,8 @@ impl GameEntity {
             house_tracking_latches: Default::default(),
             #[cfg(feature = "phobos")]
             phobos_placement: Default::default(),
+            #[cfg(feature = "phobos")]
+            wh_anim_remaining_creation_interval: 0,
             #[cfg(feature = "debug-tools")]
             debug_log: None,
             stable_id,

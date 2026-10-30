@@ -148,6 +148,7 @@ fn classify_projectile_type(
             flak_scatter: projectile.flak_scatter,
             anti_air: projectile.aa,
             airburst: projectile.airburst,
+            explodes_airburst: Some(projectile.airburst_arm()),
             inaccurate: projectile.inaccurate,
             floater: projectile.floater,
             #[cfg(feature = "phobos")]
@@ -384,6 +385,7 @@ pub(crate) fn admit_fired_bullet(
     Simulation::construct_bullet_scheme(
         &world.interner,
         &world.substrate,
+        &world.houses,
         &mut world.projectiles,
         bullet_id,
         rules,

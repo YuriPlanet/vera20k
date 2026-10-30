@@ -35,10 +35,6 @@
 //!   `Projectile=` type, so the default bullet type's `Cluster` is not read.
 //! - `Crit.ExtraDamage.ApplyFirepowerMult` reads the owner's live multiplier;
 //!   native uses the bullet's firepower captured at launch.
-//! - A bullet does not retain its firing house (VERA's `firer_house` only
-//!   serves `FirersPalette`), so a round whose firer expired loses the house
-//!   gates and the crit animations' house; native falls back to
-//!   `BulletExt::FirerHouse`.
 //! - Crit animations set the owner house but no invoker (VERA stores no anim
 //!   invoker on this branch).
 //! - `Crit.SuppressWhenIntercepted` is read but VERA tracks no intercepted
@@ -418,7 +414,8 @@ fn apply_one(
             .cell(target.position.rx(), target.position.ry())
             .and_then(|cell| LandType::from_index(cell.land_type))
     });
-    if !cell_eligible(land, crit.affects_target()) {
+    // `explicitEmptyCells = false`, no bridge consideration.
+    if !cell_eligible(land, crit.affects_target(), None, false) {
         return false;
     }
     if !techno_eligible(target.category(), crit.affects_target()) {
@@ -543,18 +540,19 @@ fn crit_effects(
             // `DamageAreaTarget` when the crit warhead does not spread.
             let crit_ref = world.interner.intern(name);
             let impact = ProjectileCoord::new(coord.x, coord.y, coord.z);
-            let (nested, mut pings, _crit_active) = apply_area_damage_in_run_with_target(
-                world,
-                run,
-                rules,
-                overlay_registry,
-                impact,
-                damage,
-                crit_warhead,
-                true,
-                (source_id, source_house, crit_ref),
-                Some(target_id),
-            );
+            let (nested, mut pings, _crit_active, _area_result) =
+                apply_area_damage_in_run_with_target(
+                    world,
+                    run,
+                    rules,
+                    overlay_registry,
+                    impact,
+                    damage,
+                    crit_warhead,
+                    true,
+                    (source_id, source_house, crit_ref),
+                    Some(target_id),
+                );
             effects.append(nested);
             effects.under_attack_events.append(&mut pings);
         }
@@ -604,16 +602,28 @@ fn current_firepower_multiplier(
     multiplier
 }
 
-/// `EnumFunctions::IsCellEligible` with `explicitEmptyCells = false`: the
-/// AllCells pair follows the target cell's water flag; any other flag passes
-/// as long as it is not empty. A fixture without terrain reads as land.
+/// `EnumFunctions::IsCellEligible`: the AllCells pair follows the target
+/// cell's water flag; any other flag passes as long as it is not empty. A
+/// fixture without terrain reads as land. `techno_content` is whether
+/// `CellClass::GetContent` is a Techno when the caller passes
+/// `explicitEmptyCells = true`, `None` when it does not; `bridge_land` is
+/// `considerBridgesLand && ContainsBridge()`, which reads a bridged water cell
+/// as land.
 #[cfg(feature = "phobos")]
-fn cell_eligible(land: Option<LandType>, allowed: AffectedTarget) -> bool {
+pub(crate) fn cell_eligible(
+    land: Option<LandType>,
+    allowed: AffectedTarget,
+    techno_content: Option<bool>,
+    bridge_land: bool,
+) -> bool {
     if allowed == AffectedTarget::ALL {
         return true;
     }
+    if techno_content == Some(false) && !allowed.contains(AffectedTarget::NO_CONTENT) {
+        return false;
+    }
     if allowed.contains(AffectedTarget::ALL_CELLS) {
-        if land == Some(LandType::Water) {
+        if land == Some(LandType::Water) && !bridge_land {
             allowed.contains(AffectedTarget::WATER)
         } else {
             allowed.contains(AffectedTarget::LAND)
@@ -627,7 +637,7 @@ fn cell_eligible(land: Option<LandType>, allowed: AffectedTarget) -> bool {
 /// false`: the content flags split by class, aircraft under the Unit bit and
 /// buildings under the Building bit.
 #[cfg(feature = "phobos")]
-fn techno_eligible(category: EntityCategory, allowed: AffectedTarget) -> bool {
+pub(crate) fn techno_eligible(category: EntityCategory, allowed: AffectedTarget) -> bool {
     if allowed == AffectedTarget::ALL {
         return true;
     }

@@ -753,7 +753,10 @@ fn production_rally_workload_timing() {
             .unwrap();
         rx.recv().unwrap().unwrap();
         let completed_ms = submitted.elapsed().as_secs_f64() * 1000.;
-        let data = mapped.slice(..).get_mapped_range();
+        let data = mapped
+            .slice(..)
+            .get_mapped_range()
+            .expect("map the GPU timestamp buffer");
         let first = u64::from_le_bytes(data[..8].try_into().unwrap());
         let last = u64::from_le_bytes(data[8..].try_into().unwrap());
         // Retain unsupported samples explicitly, never report zero as a

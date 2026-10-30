@@ -81,7 +81,7 @@ getrandom = { version = "=0.3.4" }
 sha1 = { version = "=0.10.6", optional = true }
 
 # --- GPU rendering ---
-wgpu = "29.0.4"
+wgpu = "30.0.1"
 # winit 0.30 is the latest stable. 0.31 is still in beta.
 # Uses the ApplicationHandler trait pattern (deferred window creation).
 # The supported no-title CSD keeps Wayland borders/buttons and window title
@@ -145,7 +145,7 @@ web-sys = { version = "0.3", optional = true, features = ["Window", "Document", 
 console_log = { version = "1", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
 # Browser WebGL2 fallback for pages without WebGPU; desktop backends are unchanged.
-wgpu = { version = "29.0.4", features = ["webgl"] }
+wgpu = { version = "30.0.1", features = ["webgl"] }
 
 [target.'cfg(unix)'.dependencies]
 # Continuing presentation uptime across saved-game process restarts. The
@@ -177,7 +177,7 @@ winresource = { version = "0.1.34", default-features = false }
 vera20k-core = { path = "src", features = ["test-support"] }
 # wgpu's own naga, with the GLSL ES writer its WebGL2 backend uses, so the
 # browser fallback's shaders are translated in ordinary test runs.
-naga = { version = "29.0.4", features = ["wgsl-in", "glsl-out"] }
+naga = { version = "30.0.1", features = ["wgsl-in", "glsl-out"] }
 
 # Dependencies both crates use, declared once so they cannot drift apart.
 [workspace.dependencies]

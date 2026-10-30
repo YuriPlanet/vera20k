@@ -2244,7 +2244,7 @@ fn full_harvester_reinforcement_fills_its_hold_with_slot_zero_before_placement()
             .all(|bale| bale.tiberium_type == TiberiumTypeId(0))
     );
     assert_eq!(
-        entity.techno_pip_fill_level(object, rules),
+        entity.techno_pip_fill_level(object, rules, None),
         object.pip_max(rules)
     );
     assert_eq!(

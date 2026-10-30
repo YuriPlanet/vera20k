@@ -539,11 +539,7 @@ pub(super) fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> 
     {
         return false;
     }
-    if entity
-        .capture_manager
-        .as_ref()
-        .is_some_and(|manager| manager.is_full())
-    {
+    if sim.capture_manager_is_full(entity.stable_id(), rules) {
         return false;
     }
     if entity.category() == EntityCategory::Infantry

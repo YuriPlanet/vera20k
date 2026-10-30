@@ -27,6 +27,8 @@
 pub mod aim_coord;
 mod attack_target;
 mod airburst;
+#[cfg(feature = "phobos")]
+mod phobos_airburst;
 pub(crate) mod base_defense_response;
 pub mod burst;
 pub(crate) mod cell_spread;

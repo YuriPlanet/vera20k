@@ -84,6 +84,18 @@ impl Default for AffectedHouse {
     }
 }
 
+/// `Valueable<AffectedHouse>` read: absent or rejected text keeps `current`.
+#[cfg(feature = "phobos")]
+pub(crate) fn read_affected_house(
+    section: &crate::rules::ini_parser::IniSection,
+    key: &str,
+    current: AffectedHouse,
+) -> AffectedHouse {
+    section.read_string_with(key, 2048, current, |current, raw| {
+        AffectedHouse::parse(raw).unwrap_or(current)
+    })
+}
+
 /// `ShieldTypeClass`'s constructor values. Every field keeps the current value
 /// when its key is absent, so one `apply_pass` may replace or retain each value.
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]

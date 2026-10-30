@@ -122,7 +122,7 @@ impl LocomotorState {
             obj.speed_type,
             obj.movement_zone,
         );
-        state.link_to_object(obj);
+        state.link_to_object(obj, None);
         state
     }
 
@@ -158,9 +158,15 @@ impl LocomotorState {
     /// (`0x00513CB0`) builds the steering facing at the type's `ROT=`; Fly
     /// (`FlyLocomotionClass::Link_To_Object @ 0x004CCA20`) keeps whether the
     /// type is an `AirportBound=` aircraft (`0x004CCA5B`, `0x004CCA64`).
-    fn link_to_object(&mut self, obj: &ObjectType) {
+    fn link_to_object(
+        &mut self,
+        obj: &ObjectType,
+        jumpjet_params: Option<&crate::rules::jumpjet_params::JumpjetParams>,
+    ) {
         match &mut self.runtime_payload {
-            LocomotorRuntimePayload::Jumpjet(runtime) => runtime.link(&obj.jumpjet_params),
+            LocomotorRuntimePayload::Jumpjet(runtime) => {
+                runtime.link(jumpjet_params.unwrap_or(&obj.jumpjet_params))
+            }
             LocomotorRuntimePayload::Hover(runtime) => runtime.link(obj.turret_rot),
             LocomotorRuntimePayload::Fly(runtime) => runtime.link(
                 obj.category == crate::rules::object_type::ObjectCategory::Aircraft
@@ -626,10 +632,11 @@ impl LocomotorState {
         kind: LocomotorKind,
         obj: &ObjectType,
         binary_frame: u32,
+        jumpjet_params: Option<&crate::rules::jumpjet_params::JumpjetParams>,
     ) -> bool {
         let installed = self.begin_piggyback(kind, binary_frame);
         if installed {
-            self.link_to_object(obj);
+            self.link_to_object(obj, jumpjet_params);
         }
         installed
     }

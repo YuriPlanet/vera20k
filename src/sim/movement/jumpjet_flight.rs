@@ -180,6 +180,24 @@ impl JumpjetFlightParams {
     pub(crate) const fn accel_bits(&self) -> u32 {
         self.accel_bits
     }
+
+    /// See the field.
+    #[cfg(all(feature = "phobos", any(test, feature = "test-support")))]
+    pub(crate) const fn wobbles_bits(&self) -> u32 {
+        self.wobbles_bits
+    }
+
+    /// See the field.
+    #[cfg(all(feature = "phobos", any(test, feature = "test-support")))]
+    pub(crate) const fn deviation(&self) -> i32 {
+        self.deviation
+    }
+
+    /// See the field.
+    #[cfg(all(feature = "phobos", any(test, feature = "test-support")))]
+    pub(crate) const fn no_wobbles(&self) -> bool {
+        self.no_wobbles
+    }
 }
 
 impl Default for JumpjetFlightParams {

@@ -18,6 +18,14 @@ pub struct ExplosionEffect {
     /// Exact absolute Z in leptons; the anim is constructed there (its Middle
     /// height gate reads it). `z` is the level byte of the same point.
     pub world_z: i32,
+    /// `AnimClass +0x100` draw Z adjust passed to the constructor. The stock
+    /// combat row uses [`crate::sim::anim_class::COMBAT_EXPLOSION_Z_ADJUST`];
+    /// the Phobos Bullet tail substitutes the warhead's `AnimZAdjust`.
+    pub z_adjust: i32,
+    /// Phobos' `0x469C46` tail assigns the invoker House to every animation it
+    /// constructs (`pAnim->Owner = pInvoker`). `None` keeps the constructor's
+    /// unowned state.
+    pub owner_house: Option<InternedId>,
     /// A death producer's own constructor call (`Death_Explosion`, the
     /// Aircraft death arm, `DestructionEffects`, the infantry InfDeath arms):
     /// `AnimClass(type, coord, delay, 1, 0x600, 0, 0)` at an exact

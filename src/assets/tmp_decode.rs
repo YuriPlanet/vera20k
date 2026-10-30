@@ -9,6 +9,13 @@ use crate::util::read_helpers::{read_i32_le, read_u32_le};
 /// Size of the per-tile cell header in bytes (before pixel data).
 const TILE_HEADER_SIZE: usize = 52;
 
+/// Decode budget for one tile's pixel plane. Retail and custom terrain tiles
+/// measure in kilobytes; anything larger is a malformed header whose
+/// dimensions must not steer the allocation (issue: asset header counts and
+/// dimensions trigger oversized allocations). The diamond accumulator checks
+/// the same budget, which also bounds its per-row loop on absurd heights.
+const MAX_DECODED_TILE_BYTES: usize = 64 * 1024 * 1024;
+
 /// Bit flag: tile has extra pixel data (cliff faces, shadows).
 const FLAG_HAS_EXTRA_DATA: u32 = 0x01;
 
@@ -118,6 +125,68 @@ pub(crate) fn parse_tile_cell(
         (tile_width, tile_height, 0, 0)
     };
 
+    // Validate every payload slice before reserving the decoded planes: a
+    // malformed header's dimensions and offsets must prove the bytes they
+    // promise exist in the file before any allocation reflects them.
+    let diamond_bytes: usize = diamond_byte_count(tile_width, tile_height)?;
+    let diamond_data: &[u8] = checked_cell_slice(
+        data,
+        offset,
+        TILE_HEADER_SIZE as u32,
+        diamond_bytes,
+        "diamond color",
+    )?;
+    let z_data: Option<&[u8]> = if has_z_data {
+        Some(checked_cell_slice(
+            data,
+            offset,
+            z_data_offset,
+            diamond_bytes,
+            "diamond depth",
+        )?)
+    } else {
+        None
+    };
+    let extra_pixel_count: usize = if has_extra {
+        usize::try_from(extra_width)
+            .ok()
+            .and_then(|width| {
+                usize::try_from(extra_height)
+                    .ok()
+                    .and_then(|height| width.checked_mul(height))
+            })
+            .ok_or_else(|| {
+                invalid_tmp(format!(
+                    "Extra dimensions {}x{} overflow their plane size",
+                    extra_width, extra_height
+                ))
+            })?
+    } else {
+        0
+    };
+    let extra_data: &[u8] = if has_extra {
+        checked_cell_slice(
+            data,
+            offset,
+            extra_data_offset,
+            extra_pixel_count,
+            "extra color",
+        )?
+    } else {
+        &[]
+    };
+    let extra_z_data: Option<&[u8]> = if has_extra && has_z_data {
+        Some(checked_cell_slice(
+            data,
+            offset,
+            extra_z_data_offset,
+            extra_pixel_count,
+            "extra depth",
+        )?)
+    } else {
+        None
+    };
+
     let buf_size: usize = usize::try_from(pixel_width)
         .ok()
         .and_then(|width| {
@@ -131,17 +200,14 @@ pub(crate) fn parse_tile_cell(
                 pixel_width, pixel_height
             ))
         })?;
+    if buf_size > MAX_DECODED_TILE_BYTES {
+        return Err(invalid_tmp(format!(
+            "Decoded tile dimensions {}x{} exceed the {}-byte tile budget",
+            pixel_width, pixel_height, MAX_DECODED_TILE_BYTES
+        )));
+    }
     let mut pixels: Vec<u8> = zeroed_plane(buf_size, "color")?;
     let mut depth: Vec<u8> = zeroed_plane(buf_size, "depth")?;
-
-    let diamond_bytes: usize = diamond_byte_count(tile_width, tile_height)?;
-    let diamond_data: &[u8] = checked_cell_slice(
-        data,
-        offset,
-        TILE_HEADER_SIZE as u32,
-        diamond_bytes,
-        "diamond color",
-    )?;
 
     // The color diamond is the only fixed section: it starts immediately after
     // the cell header. All optional planes use their stored cell-relative offsets.
@@ -158,9 +224,7 @@ pub(crate) fn parse_tile_cell(
     // ZData (per-pixel depth) only exists when HasZData flag (bit 1) is set.
     // Without this check, we'd consume bytes belonging to ExtraData, corrupting
     // cliff face graphics. See ra2_yr_map_terrain.md §1.4.
-    if has_z_data {
-        let z_data: &[u8] =
-            checked_cell_slice(data, offset, z_data_offset, diamond_bytes, "diamond depth")?;
+    if let Some(z_data) = z_data {
         unpack_diamond(
             z_data,
             tile_width,
@@ -174,41 +238,6 @@ pub(crate) fn parse_tile_cell(
 
     // Handle extra data (cliff faces, etc.) if present.
     if has_extra {
-        let extra_pixel_count: usize = usize::try_from(extra_width)
-            .ok()
-            .and_then(|width| {
-                usize::try_from(extra_height)
-                    .ok()
-                    .and_then(|height| width.checked_mul(height))
-            })
-            .ok_or_else(|| {
-                invalid_tmp(format!(
-                    "Extra dimensions {}x{} overflow their plane size",
-                    extra_width, extra_height
-                ))
-            })?;
-
-        // ExtraZData only exists when BOTH HasExtraData AND HasZData are set
-        // (ra2_yr_map_terrain.md §1.5).
-        let extra_data: &[u8] = checked_cell_slice(
-            data,
-            offset,
-            extra_data_offset,
-            extra_pixel_count,
-            "extra color",
-        )?;
-        let extra_z_data: Option<&[u8]> = if has_z_data {
-            Some(checked_cell_slice(
-                data,
-                offset,
-                extra_z_data_offset,
-                extra_pixel_count,
-                "extra depth",
-            )?)
-        } else {
-            None
-        };
-
         // Native draws covered (nonzero) extra colors after the diamond. The
         // flattened handoff therefore overwrites diamond color and carries the
         // matching ExtraZ byte verbatim, including values at or above 32.
@@ -317,6 +346,12 @@ fn diamond_byte_count(tile_width: u32, tile_height: u32) -> Result<usize, AssetE
         total = total
             .checked_add(row_width as usize)
             .ok_or_else(|| invalid_tmp("Diamond byte count overflow".to_string()))?;
+        if total > MAX_DECODED_TILE_BYTES {
+            return Err(invalid_tmp(format!(
+                "Tile {}x{} exceeds the {}-byte tile budget",
+                tile_width, tile_height, MAX_DECODED_TILE_BYTES
+            )));
+        }
         if j < half_minus_one {
             row_width = row_width
                 .checked_add(DIAMOND_WIDTH_STEP)
@@ -439,4 +474,29 @@ fn overlay_extra(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A 52-byte cell header with no pixel payload behind it.
+    fn header_only_cell(extra: u32) -> Vec<u8> {
+        let mut data = vec![0u8; TILE_HEADER_SIZE];
+        data[36..40].copy_from_slice(&extra.to_le_bytes());
+        data
+    }
+
+    #[test]
+    fn oversized_header_dimensions_reject_on_the_budget_not_an_allocation() {
+        // 65536x65536 would ask for 8 GiB of zeroed planes; the diamond
+        // accumulator must hit the tile budget before any plane is reserved.
+        let data = header_only_cell(0);
+        let err = parse_tile_cell(&data, 0, 0x1_0000, 0x1_0000)
+            .expect_err("dimensions without payload must not decode");
+        let AssetError::InvalidTmpFile { reason } = err else {
+            panic!("expected a TMP parse error: {err:?}");
+        };
+        assert!(reason.contains("budget"), "unexpected reason: {reason}");
+    }
 }

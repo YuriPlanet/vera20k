@@ -10,8 +10,8 @@
 //! - Fragment atomics and compute become ordered render-target passes in the
 //!   owning renderer.
 //!
-//! wgpu-hal 29 GLES reports no VIEW_FORMATS, storage or compute on WebGL:
-//! https://docs.rs/crate/wgpu-hal/29.0.4/source/src/gles/adapter.rs
+//! wgpu-hal 30 GLES reports no VIEW_FORMATS, storage or compute on WebGL:
+//! https://docs.rs/crate/wgpu-hal/30.0.1/source/src/gles/adapter.rs
 
 use super::gpu::webgl_fallback;
 

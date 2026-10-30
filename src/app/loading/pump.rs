@@ -3344,7 +3344,7 @@ pub(crate) fn present_saved_game_loading(state: &mut AppState) {
             .gpu
             .queue
             .submit(std::iter::once(encoder.finish()));
-        output.present();
+        output.present(&state.renderer.gpu.queue);
         Ok(())
     })();
     if let Err(error) = result {

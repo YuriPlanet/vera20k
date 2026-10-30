@@ -243,7 +243,7 @@ pub struct CritRules {
     pub(crate) affects_house: crate::rules::phobos_shields::AffectedHouse,
     pub(crate) anim_list: Vec<String>,
     /// `Crit.AnimList.PickRandom`; `None` falls back to the warhead's
-    /// `AnimList_PickRandom` (unported, false).
+    /// `AnimList.PickRandom`.
     pub(crate) anim_list_pick_random: Option<bool>,
     pub(crate) anim_list_create_all: Option<bool>,
     pub(crate) active_chance_anims: Vec<String>,

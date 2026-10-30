@@ -900,33 +900,56 @@ fn fireat_launch_aim(
 /// A passenger of an `OpenTopped=` transport (retail: `[BFRT]`) fires with
 /// `+0x82` set (`PerCellProcess 0x0051A45E`/`0x0073A75D` ->
 /// `SetInOpenTransport 0x00710470`), which takes the open-topped stage.
-fn fireat_damage(
+fn fire_damage_stages(
     world: &Simulation,
     rules: &RuleSet,
     snap: &AttackerSnapshot,
     obj: &ObjectType,
-    weapon: &crate::rules::weapon_type::WeaponType,
     is_garrison: bool,
-) -> i32 {
+) -> damage::attacker::FireDamageStages {
+    firepower_stages(
+        world.substrate.entities.get(snap.stable_id),
+        &world.houses,
+        rules,
+        Some(obj),
+        self::veterancy::rank_from_u16(snap.veterancy),
+        is_garrison,
+    )
+}
+
+/// The firepower stages shared by FireAt's damage build and Phobos'
+/// Bullet-init capture. `obj` is absent only when the bullet-init caller
+/// cannot resolve the owner's type, which skips the rank stage.
+fn firepower_stages(
+    firer: Option<&crate::sim::game_entity::GameEntity>,
+    houses: &crate::sim::houses::Houses,
+    rules: &RuleSet,
+    obj: Option<&ObjectType>,
+    rank: self::veterancy::VeterancyRank,
+    is_garrison: bool,
+) -> damage::attacker::FireDamageStages {
     use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
-    let firer = world.substrate.entities.get(snap.stable_id);
     let f32_bits = |value: f32| NativeF32Bits::from_bits(value.to_bits());
     let multipliers = &rules.garrison_rules;
-    let stages = damage::attacker::FireDamageStages {
+    damage::attacker::FireDamageStages {
         house_firepower: firer
-            .and_then(|firer| world.houses.get(&firer.owner()))
+            .and_then(|firer| houses.get(&firer.owner()))
             .map_or(NativeF64Bits::ONE, |house| house.firepower_bias()),
         unit_firepower: firer.map_or(NativeF64Bits::ONE, |firer| {
             firer.crate_multipliers.firepower()
         }),
-        rank_firepower: self::veterancy::has_weapon_ability(
-            self::veterancy::rank_from_u16(snap.veterancy),
-            obj,
-            crate::rules::object_type::Ability::Firepower,
-        )
-        .then(|| NativeF64Bits::from_bits(rules.general.veteran_combat.to_bits())),
+        rank_firepower: obj
+            .filter(|obj| {
+                self::veterancy::has_weapon_ability(
+                    rank,
+                    obj,
+                    crate::rules::object_type::Ability::Firepower,
+                )
+            })
+            .map(|_| NativeF64Bits::from_bits(rules.general.veteran_combat.to_bits())),
         // `vt+0x400`: BuildingClass `0x00458DD0`, CanBeOccupied &&
-        // CanOccupyFire && an occupant; false for every other class.
+        // CanOccupyFire && an occupant for FireAt; Phobos' Bullet-init
+        // helper applies the same type flags without requiring an occupant.
         occupied: is_garrison.then(|| f32_bits(multipliers.occupy_damage_multiplier)),
         // `+0x2E4` on a non-building: a unit installed in a Tank Bunker.
         bunkered: firer
@@ -940,12 +963,83 @@ fn fireat_damage(
         ae_firepower: firer.map_or(1.0, |firer| firer.phobos_stat_multipliers().firepower),
         #[cfg(not(feature = "phobos"))]
         ae_firepower: 1.0,
-    };
+    }
+}
+
+#[cfg(test)]
+fn fireat_damage(
+    world: &Simulation,
+    rules: &RuleSet,
+    snap: &AttackerSnapshot,
+    obj: &ObjectType,
+    weapon: &crate::rules::weapon_type::WeaponType,
+    is_garrison: bool,
+) -> i32 {
+    let stages = fire_damage_stages(world, rules, snap, obj, is_garrison);
     damage::attacker::fire_damage(
         weapon.damage,
         weapon.is_sonic || weapon.use_fire_particles,
         &stages,
     )
+}
+
+/// Phobos `BulletExt`'s construction-time `TechnoExt::GetCurrentFirepowerMultiplier`:
+/// unit (Techno+160, including Ares attachment), House, veteran FIREPOWER,
+/// then the occupied/bunker/open-topped stages, in the hook's order.
+#[cfg(feature = "phobos")]
+pub(crate) fn phobos_firepower_multiplier(
+    stages: &damage::attacker::FireDamageStages,
+) -> crate::util::native_x87::NativeF64Bits {
+    use crate::util::native_x87::MaskedX87Chop53 as X;
+    let mut value = X::load_f64(stages.unit_firepower);
+    value = X::mul(value, X::load_f64(stages.house_firepower));
+    value = X::mul(
+        value,
+        X::load_f64(crate::util::native_x87::NativeF64Bits::from_bits(
+            stages.ae_firepower.to_bits(),
+        )),
+    );
+    if let Some(rank) = stages.rank_firepower {
+        value = X::mul(value, X::load_f64(rank));
+    }
+    for multiplier in [stages.occupied, stages.bunkered, stages.open_topped]
+        .into_iter()
+        .flatten()
+    {
+        value = X::mul(value, X::load_f32(multiplier));
+    }
+    X::store_f64_masked_chop(value)
+}
+
+/// Phobos `BulletExt::InitializeState` (`0x466556`) through
+/// `TechnoExt::GetCurrentFirepowerMultiplier`: the multiplier a newly
+/// constructed Bullet captures from its Owner Techno. FireAt overwrites the
+/// payload at launch, so its already-set value wins.
+#[cfg(feature = "phobos")]
+pub(crate) fn bullet_init_firepower_multiplier(
+    interner: &crate::sim::intern::StringInterner,
+    substrate: &crate::sim::world::ObjectSubstrate,
+    houses: &crate::sim::houses::Houses,
+    rules: &RuleSet,
+    source_id: u64,
+) -> Option<crate::util::native_x87::NativeF64Bits> {
+    let firer = substrate.entities.get(source_id)?;
+    let object = interner.object_type(firer.type_ref(), rules);
+    // Phobos' helper applies the occupancy multiplier from the building
+    // type's flags, not from whether an occupant is present.
+    let occupied = firer.category() == EntityCategory::Structure
+        && object.is_some_and(|object| {
+            object.can_be_occupied && object.can_occupy_fire && object.max_number_occupants > 0
+        });
+    let stages = firepower_stages(
+        Some(firer),
+        houses,
+        rules,
+        object,
+        firer.veterancy.rank_kind(),
+        occupied,
+    );
+    Some(phobos_firepower_multiplier(&stages))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1423,7 +1517,12 @@ pub(super) fn emit_admitted_fire(
         .get(snap.stable_id)
         .map_or(0, |entity| entity.prism_support_count.count());
     let warhead = selected.warhead;
-    let base_damage = fireat_damage(world, rules, snap, obj, weapon, is_garrison);
+    let damage_stages = fire_damage_stages(world, rules, snap, obj, is_garrison);
+    let base_damage = damage::attacker::fire_damage(
+        weapon.damage,
+        weapon.is_sonic || weapon.use_fire_particles,
+        &damage_stages,
+    );
     // FireAt6FE460..6FE4EF constructs a retained DiskLaser before GetROF,
     // advances the burst, stores the unhalved rearm, then calls Fire4A71A0
     // and returns NULL. Disk AI owns the later range/crash gate, discharge
@@ -1736,6 +1835,9 @@ pub(super) fn emit_admitted_fire(
             )
             .with_installed_weapon(Some(world.interner.intern(selected.weapon_id)))
             .with_damage_multiplier(damage_multiplier);
+            #[cfg(feature = "phobos")]
+            let payload =
+                payload.with_firepower_multiplier(phobos_firepower_multiplier(&damage_stages));
             // `BulletClass::Fire` (`0x006FF014`) at the launch source.
             super::admit_fired_bullet(
                 world,

@@ -383,7 +383,8 @@ fn aircraft_drop_landing_uses_original_wheel_controls() {
         assert!(locomotor.begin_piggyback_linked(
             LocomotorKind::Jumpjet,
             rules.object("DROP_AIR").unwrap(),
-            frame
+            frame,
+            None
         ));
         let runtime = locomotor.jumpjet_runtime_mut().unwrap();
         *runtime = runtime
@@ -579,6 +580,9 @@ fn magnetron_temporary_bullet_state_matches_original_construction() {
 /// real constructor -> scatter/light/Anim -> Release, without claiming the
 /// full Unit-death callback is represented by an empty cell. The actual TELE
 /// integration test above that boundary covers damage, credit and expiry.
+// Vanilla goldens: Phobos skips the Inviso scatter (`0x469AC1` ->
+// `0x469AF0`) and scatters each animation itself, which shifts the stream.
+#[cfg(not(feature = "phobos"))]
 #[test]
 fn magnetron_temporary_bullet_tails_match_original_rng_lights_and_ids() {
     use crate::sim::combat::{CombatLightRequest, RAD_NO_ATTACKER};

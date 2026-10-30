@@ -11,6 +11,15 @@
 //! (`TechnoClass+0x2C0` MindControlledBy, `+0x2C8` its ring anim); the
 //! controller owns the ordered nodes and every state change.
 //!
+//! Phobos extends this owner with `MindControlSize=`,
+//! `MindControl.IgnoreSize=`, `MultiMindControl.ReleaseVictim=`,
+//! `MindControlLink.VisibleToHouse=`, `MindControlRangeLimit=` and the
+//! warhead `MindControl.Anim=`. Its `GetControlledCount` (`0x4722D0`)
+//! replacement sums victim sizes when `IgnoreSize=` is off;
+//! `CanCapture`/`CaptureUnit` (`src/Ext/CaptureManager/Body.cpp`) use that
+//! size for the capacity gate and release-first block, and
+//! `TechnoExt::OnEarlyUpdate` frees a victim outside the controller's range.
+//!
 //! Releases (`FreeUnit @ 0x00471FF0`, through `FreeAll @ 0x00472140`): the
 //! controller's death arm (`TechnoClass::ReceiveDamage @ 0x00702112`; the
 //! later `BuildingClass::ReceiveDamage` FreeAll at `0x004424F9` finds the
@@ -138,8 +147,10 @@ impl CaptureManagerState {
 
     /// `IsFull @ 0x004722A0`: a finite manager at its limit. Gates
     /// `ShouldRetaliate` (`0x0070882F`) and `CanAcquireTarget` (`0x00709230`).
-    pub fn is_full(&self) -> bool {
-        !self.infinite && self.count() >= self.max_control
+    /// Phobos replaces the native count with `GetControlledCount`: the sum of
+    /// `MindControlSize=` when `MindControl.IgnoreSize=` is false.
+    pub fn is_full(&self, effective_count: i32) -> bool {
+        !self.infinite && effective_count >= self.max_control
     }
 
     /// `HasAny @ 0x004722C0`.
@@ -147,7 +158,9 @@ impl CaptureManagerState {
         !self.nodes.is_empty()
     }
 
-    /// `GetControlledCount @ 0x004722D0`.
+    /// The raw `ControlNodes` count. Phobos' `GetControlledCount` (`0x004722D0`)
+    /// replacement lives in [`Simulation::capture_effective_count`], which
+    /// sums `MindControlSize=` when `MindControl.IgnoreSize=` is false.
     pub fn count(&self) -> i32 {
         i32::try_from(self.nodes.len()).unwrap_or(i32::MAX)
     }
@@ -161,17 +174,20 @@ impl CaptureManagerState {
     /// manager exceeds its retained capacity. The returned bool is the
     /// native out-parameter (`+0x44 > 0`), which selects the active frame.
     /// The base strip's maximum comes from the current type's weapon;
-    /// this method owns only the manager's overload decision.
-    pub fn overload_pip_state(&self) -> Option<bool> {
-        (self.infinite && self.count() > self.max_control)
+    /// this method owns only the manager's overload decision. Phobos'
+    /// `GetControlledCount` replacement supplies `effective_count`.
+    pub fn overload_pip_state(&self, effective_count: i32) -> Option<bool> {
+        (self.infinite && effective_count > self.max_control)
             .then_some(self.overload_pip_countdown > 0)
     }
 
-    /// CanCapture's capacity gate (`0x00471C90`, gate 8): a finite manager
-    /// below its limit, or one limited to a single victim, which CaptureUnit
-    /// replaces.
-    fn admits_another(&self) -> bool {
-        self.infinite || self.count() < self.max_control || self.max_control == 1
+    /// Phobos `GetControlledTotalSize`: the sum of the live nodes'
+    /// `MindControlSize=`. A missing victim contributes 0, like a null node.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn controlled_total_size(&self, mut size_of: impl FnMut(u64) -> i32) -> i32 {
+        self.nodes.iter().fold(0_i32, |total, node| {
+            total.wrapping_add(size_of(node.victim))
+        })
     }
 
     /// The controlled objects, in node order.
@@ -254,6 +270,10 @@ pub struct CaptureLinkCoordinates {
     pub from: crate::sim::components::DriveCoord,
     pub to: crate::sim::components::DriveCoord,
     pub owner: InternedId,
+    /// Phobos `MindControlLink.VisibleToHouse=` resolved for the controller
+    /// type; presentation compares it with the local viewer.
+    #[cfg(feature = "phobos")]
+    pub visible_to: crate::rules::phobos_shields::AffectedHouse,
 }
 
 impl Simulation {
@@ -278,6 +298,8 @@ impl Simulation {
             return Vec::new();
         };
         let selected = controller.selection.is_selected();
+        #[cfg(feature = "phobos")]
+        let visible_to = rules.mind_control_link_visible_to_house_for(object);
         // Rendering queries isolate the canonical fallback CellClass.
         self.effective_shared_cell_dummy().detached(|| {
             manager
@@ -318,6 +340,8 @@ impl Simulation {
                         },
                         to,
                         owner: controller.owner(),
+                        #[cfg(feature = "phobos")]
+                        visible_to,
                     })
                 })
                 .collect()
@@ -439,6 +463,9 @@ impl MindControlLink {
 pub(crate) struct CaptureVictimFacts {
     owner: InternedId,
     capturable: bool,
+    /// Phobos `MindControlSize=`; 1 in non-Phobos builds.
+    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
+    mind_control_size: i32,
 }
 
 impl CaptureVictimFacts {
@@ -467,30 +494,74 @@ impl CaptureVictimFacts {
         // Ares CanCapture10048FB8 refuses a killed driver for every consumer.
         #[cfg(feature = "ares")]
         let refused = refused || target.driver_killed();
+        #[cfg(feature = "phobos")]
+        let mind_control_size = target_obj.mind_control_size;
+        #[cfg(not(feature = "phobos"))]
+        let mind_control_size = 1;
         Self {
             owner: target.owner(),
             capturable: !refused,
+            mind_control_size,
         }
     }
 }
 
-/// CanCapture's manager side: the controller's house and whether its
-/// capacity admits another victim.
+/// CanCapture's manager side: the controller's house and the effective
+/// capacity facts Phobos reads for `MindControl.IgnoreSize=` and
+/// `MultiMindControl.ReleaseVictim=`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CaptureControllerFacts {
     owner: InternedId,
-    admits_another: bool,
+    max_control: i32,
+    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
+    count: i32,
+    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
+    total_size: i32,
+    infinite: bool,
+    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
+    ignore_size: bool,
+    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
+    release_victim: bool,
 }
 
 impl CaptureControllerFacts {
-    /// `None` without a manager. GetFireError dereferences the manager
-    /// unconditionally for a MindControl warhead (`0x006FCB3B`); a type whose
-    /// weapon 0 is not MindControl but whose other weapon is would crash
-    /// there, which no stock type authors.
-    pub(crate) fn of(controller: &GameEntity) -> Option<Self> {
-        controller.capture_manager.as_ref().map(|manager| Self {
+    /// `None` without a manager or resolvable owner type. GetFireError
+    /// dereferences the manager unconditionally for a MindControl warhead
+    /// (`0x006FCB3B`); a type whose weapon 0 is not MindControl but whose
+    /// other weapon is would crash there, which no stock type authors.
+    pub(crate) fn of(world: &Simulation, controller: &GameEntity, rules: &RuleSet) -> Option<Self> {
+        let manager = controller.capture_manager.as_ref()?;
+        #[cfg(feature = "phobos")]
+        let (ignore_size, release_victim) = {
+            let object = world.object_type(controller.type_ref(), rules)?;
+            (
+                rules.mind_control_ignore_size_for(object),
+                rules.multi_mind_control_release_victim_for(object),
+            )
+        };
+        #[cfg(not(feature = "phobos"))]
+        let (ignore_size, release_victim) = {
+            let _ = (world, rules);
+            (true, false)
+        };
+        // Phobos sums sizes only in CanCapture's finite multi-slot
+        // `IgnoreSize=no` branch.
+        #[cfg(feature = "phobos")]
+        let total_size = if manager.infinite || manager.max_control == 1 || ignore_size {
+            0
+        } else {
+            manager.controlled_total_size(|victim| world.mind_control_size_of(victim, rules))
+        };
+        #[cfg(not(feature = "phobos"))]
+        let total_size = 0;
+        Some(Self {
             owner: controller.owner(),
-            admits_another: manager.admits_another(),
+            max_control: manager.max_control,
+            count: manager.count(),
+            total_size,
+            infinite: manager.infinite,
+            ignore_size,
+            release_victim,
         })
     }
 }
@@ -498,7 +569,37 @@ impl CaptureControllerFacts {
 /// `CaptureManagerClass::CanCapture @ 0x00471C90` (gate 1, a null target, is
 /// the caller's). Allies are not refused: only the controller's own house is.
 pub(crate) fn can_capture(controller: CaptureControllerFacts, victim: CaptureVictimFacts) -> bool {
-    victim.owner != controller.owner && victim.capturable && controller.admits_another
+    victim.owner != controller.owner && victim.capturable && capacity_admits(controller, victim)
+}
+
+/// Phobos `CanCapture`'s capacity gate: `MaxControlNodes <= 0` refuses;
+/// infinite or single-slot managers skip it; otherwise `MindControlSize=`
+/// decides when `IgnoreSize=false`, and node count otherwise.
+#[cfg(feature = "phobos")]
+fn capacity_admits(controller: CaptureControllerFacts, victim: CaptureVictimFacts) -> bool {
+    if controller.max_control <= 0 {
+        return false;
+    }
+    if controller.infinite || controller.max_control == 1 {
+        return true;
+    }
+    if controller.ignore_size {
+        !(controller.count >= controller.max_control && !controller.release_victim)
+    } else {
+        let available = if controller.release_victim {
+            controller.max_control
+        } else {
+            controller.max_control - controller.total_size
+        };
+        victim.mind_control_size <= available
+    }
+}
+
+/// Stock capacity gate: a finite manager below its limit, or one limited to a
+/// single victim, which CaptureUnit replaces.
+#[cfg(not(feature = "phobos"))]
+fn capacity_admits(controller: CaptureControllerFacts, _victim: CaptureVictimFacts) -> bool {
+    controller.infinite || controller.count < controller.max_control || controller.max_control == 1
 }
 
 /// `TechnoClass::Init_Managers @ 0x006F3F40` (`0x006F4090..0x006F40F2`): a
@@ -568,14 +669,104 @@ impl Simulation {
         }
     }
 
-    /// CanCapture for the live pair.
-    pub(crate) fn can_capture(&self, controller_id: u64, target_id: u64, rules: &RuleSet) -> bool {
-        let Some(controller) = self
+    /// Phobos `GetControlledTotalSize` for one live victim.
+    #[cfg(feature = "phobos")]
+    fn mind_control_size_of(&self, victim: u64, rules: &RuleSet) -> i32 {
+        self.substrate
+            .entities
+            .get(victim)
+            .and_then(|entity| self.object_type(entity.type_ref(), rules))
+            .map_or(0, |object| object.mind_control_size)
+    }
+
+    /// Phobos `GetControlledCount` (`0x004722D0`): node count unless the
+    /// controller type's `MindControl.IgnoreSize=` is false, then the sum of
+    /// the victims' `MindControlSize=`.
+    #[cfg(feature = "phobos")]
+    pub fn capture_effective_count(&self, controller_id: u64, rules: &RuleSet) -> Option<i32> {
+        let controller = self.substrate.entities.get(controller_id)?;
+        let object = self.object_type(controller.type_ref(), rules)?;
+        let manager = controller.capture_manager.as_ref()?;
+        Some(if rules.mind_control_ignore_size_for(object) {
+            manager.count()
+        } else {
+            manager.controlled_total_size(|victim| self.mind_control_size_of(victim, rules))
+        })
+    }
+
+    /// Non-Phobos builds keep the stock node count for shared callers.
+    #[cfg(not(feature = "phobos"))]
+    pub fn capture_effective_count(&self, controller_id: u64, _rules: &RuleSet) -> Option<i32> {
+        self.substrate
+            .entities
+            .get(controller_id)?
+            .capture_manager
+            .as_ref()
+            .map(CaptureManagerState::count)
+    }
+
+    /// `IsFull`/`CannotControlAnyMore` over the effective count.
+    pub(crate) fn capture_manager_is_full(&self, controller_id: u64, rules: &RuleSet) -> bool {
+        let Some(manager) = self
             .substrate
             .entities
             .get(controller_id)
-            .and_then(CaptureControllerFacts::of)
+            .and_then(|controller| controller.capture_manager.as_ref())
         else {
+            return false;
+        };
+        let count = self
+            .capture_effective_count(controller_id, rules)
+            .unwrap_or_else(|| manager.count());
+        manager.is_full(count)
+    }
+
+    /// Phobos `TechnoExt::ApplyMindControlRangeLimit` (`OnEarlyUpdate`): a
+    /// victim farther than its controller's type's `MindControlRangeLimit=`
+    /// is freed. The distance is `ObjectClass::Distance_To` (`0x005F6440`),
+    /// which has no altitude term.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn apply_mind_control_range_limit(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        let Some(controller_id) = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|victim| victim.mind_control.controller)
+        else {
+            return;
+        };
+        let Some(controller) = self.substrate.entities.get(controller_id) else {
+            return;
+        };
+        let Some(object) = self.object_type(controller.type_ref(), rules) else {
+            return;
+        };
+        let limit = object.mind_control_range_limit;
+        if limit <= 0 {
+            return;
+        }
+        let distance = crate::sim::combat::object_distance_to(
+            controller_id,
+            &crate::sim::combat::TargetKind::Entity(id),
+            self,
+        );
+        if distance.is_some_and(|distance| distance > limit) {
+            self.free_unit(controller_id, id, rules, registry, frame_effects);
+        }
+    }
+
+    /// CanCapture for the live pair.
+    pub(crate) fn can_capture(&self, controller_id: u64, target_id: u64, rules: &RuleSet) -> bool {
+        let Some(controller) = self.substrate.entities.get(controller_id) else {
+            return false;
+        };
+        let Some(controller) = CaptureControllerFacts::of(self, controller, rules) else {
             return false;
         };
         let Some(target) = self.substrate.entities.get(target_id) else {
@@ -599,20 +790,127 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
+        self.capture_unit_with_ring(
+            controller_id,
+            target_id,
+            None,
+            rules,
+            registry,
+            frame_effects,
+        )
+    }
+
+    /// Phobos `CaptureUnit`'s release-first block
+    /// (`src/Ext/CaptureManager/Body.cpp`): only a finite manager releases.
+    /// A single-slot one replaces its victim; a multi-slot one frees the
+    /// oldest node only with `MultiMindControl.ReleaseVictim=`, and with
+    /// `MindControl.IgnoreSize=no` keeps freeing until the target's
+    /// `MindControlSize=` fits. `false` when the pair cannot be resolved.
+    #[cfg(feature = "phobos")]
+    fn phobos_release_before_capture(
+        &mut self,
+        controller_id: u64,
+        target_id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> bool {
+        let Some(controller) = self.substrate.entities.get(controller_id) else {
+            return false;
+        };
+        let (Some(controller_object), Some(manager)) = (
+            self.object_type(controller.type_ref(), rules),
+            controller.capture_manager.as_ref(),
+        ) else {
+            return false;
+        };
+        let ignore_size = rules.mind_control_ignore_size_for(controller_object);
+        let release_victim = rules.multi_mind_control_release_victim_for(controller_object);
+        let (max_control, infinite) = (manager.max_control, manager.infinite);
+        let Some(target_size) = self
+            .substrate
+            .entities
+            .get(target_id)
+            .and_then(|target| self.object_type(target.type_ref(), rules))
+            .map(|object| object.mind_control_size)
+        else {
+            return false;
+        };
+        if infinite {
+            return true;
+        }
+        loop {
+            let Some(manager) = self
+                .substrate
+                .entities
+                .get(controller_id)
+                .and_then(|controller| controller.capture_manager.as_ref())
+            else {
+                break;
+            };
+            let count = manager.count();
+            let Some(first) = manager.nodes.first().map(|node| node.victim) else {
+                break;
+            };
+            let should_release = if max_control == 1 {
+                count == 1
+            } else if !release_victim {
+                false
+            } else if ignore_size {
+                count == max_control
+            } else {
+                let total = manager
+                    .controlled_total_size(|victim| self.mind_control_size_of(victim, rules));
+                target_size > max_control - total
+            };
+            if !should_release
+                || !self.free_unit(controller_id, first, rules, registry, frame_effects)
+            {
+                break;
+            }
+        }
+        true
+    }
+
+    /// [`Self::capture_unit`] with the warhead's `MindControl.Anim` override;
+    /// a missing or unknown name falls back to `ControlledAnimationType=`.
+    pub(crate) fn capture_unit_with_ring(
+        &mut self,
+        controller_id: u64,
+        target_id: u64,
+        ring_anim: Option<&str>,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> bool {
         if !self.can_capture(controller_id, target_id, rules) {
             return false;
         }
-        // 0x00471D8A: a single-victim manager releases its victim first.
-        let released: Vec<u64> = self
-            .substrate
-            .entities
-            .get(controller_id)
-            .and_then(|controller| controller.capture_manager.as_ref())
-            .filter(|manager| manager.max_control == 1)
-            .map(|manager| manager.victims().rev().collect())
-            .unwrap_or_default();
-        for victim in released {
-            self.free_unit(controller_id, victim, rules, registry, frame_effects);
+        #[cfg(feature = "phobos")]
+        if !self.phobos_release_before_capture(
+            controller_id,
+            target_id,
+            rules,
+            registry,
+            frame_effects,
+        ) {
+            return false;
+        }
+        // 0x00471D8A: a single-victim manager releases its victim first,
+        // infinite or not.
+        #[cfg(not(feature = "phobos"))]
+        {
+            let released: Vec<u64> = self
+                .substrate
+                .entities
+                .get(controller_id)
+                .and_then(|controller| controller.capture_manager.as_ref())
+                .filter(|manager| manager.max_control == 1)
+                .map(|manager| manager.victims().rev().collect())
+                .unwrap_or_default();
+            for victim in released {
+                self.free_unit(controller_id, victim, rules, registry, frame_effects);
+            }
         }
         let (Some(controller_owner), Some(original_owner)) = (
             self.substrate
@@ -649,7 +947,13 @@ impl Simulation {
         }
         self.reset_captured_orders(target_id, rules, frame_effects);
         self.decide_unit_fate(controller_id, target_id, rules, registry, frame_effects);
-        if let Some(ring) = rules.mind_control.controlled_anim.as_deref() {
+        let ring = ring_anim
+            .filter(|name| {
+                let upper = name.to_ascii_uppercase();
+                rules.anim_type_names.contains(&upper)
+            })
+            .or(rules.mind_control.controlled_anim.as_deref());
+        if let Some(ring) = ring {
             self.attach_control_ring(target_id, ring, rules);
         }
         true
@@ -809,7 +1113,22 @@ impl Simulation {
         let ProjectileTarget::Entity(target_id) = current.target else {
             return;
         };
-        if !self.capture_unit(current.source_id, target_id, rules, registry, frame_effects) {
+        // Phobos `BulletClass_Detonate` uses
+        // `pWHExt->MindControl_Anim.Get(ControlledAnimationType)`.
+        #[cfg(feature = "phobos")]
+        let ring_anim = rules
+            .warhead(self.interner.resolve(current.payload.warhead))
+            .and_then(|warhead| warhead.mind_control_anim.as_deref());
+        #[cfg(not(feature = "phobos"))]
+        let ring_anim: Option<&str> = None;
+        if !self.capture_unit_with_ring(
+            current.source_id,
+            target_id,
+            ring_anim,
+            rules,
+            registry,
+            frame_effects,
+        ) {
             return;
         }
         let Some(sound) = rules.mind_control.mind_control_sound.clone() else {
@@ -1246,15 +1565,28 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) {
         let table = &rules.mind_control;
+        // Only an infinite manager overloads; checking it before the
+        // effective-count lookup keeps finite managers off the size scan.
+        let Some(infinite) = self
+            .substrate
+            .entities
+            .get(controller_id)
+            .and_then(|controller| controller.capture_manager.as_ref())
+            .map(|manager| manager.infinite)
+        else {
+            return;
+        };
+        if !infinite {
+            return;
+        }
+        // Phobos `GetControlledCount`: size-aware when IgnoreSize=false.
+        let effective_count = self.capture_effective_count(controller_id, rules);
         let Some(entity) = self.substrate.entities.get_mut(controller_id) else {
             return;
         };
         let Some(manager) = entity.capture_manager.as_mut() else {
             return;
         };
-        if !manager.infinite {
-            return;
-        }
         // `0x00471A64..0x00471A6C`: this precedes the overload-check
         // countdown's early return, so the pip also expires on quiet visits.
         if manager.overload_pip_countdown > 0 {
@@ -1269,7 +1601,7 @@ impl Simulation {
         let Some(&first) = table.overload_count.first() else {
             return;
         };
-        let count = manager.count();
+        let count = effective_count.unwrap_or_else(|| manager.count());
         let mut index = 0;
         if count > first {
             while index + 1 < table.overload_count.len() {

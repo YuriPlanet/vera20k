@@ -264,11 +264,11 @@ impl TerrainDrawRenderer {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[wgpu::VertexBufferLayout {
+                    buffers: &[Some(wgpu::VertexBufferLayout {
                         array_stride: std::mem::size_of::<SpriteInstance>() as u64,
                         step_mode: wgpu::VertexStepMode::Instance,
                         attributes: &SPRITE_INSTANCE_ATTRIBUTES,
-                    }],
+                    })],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -325,11 +325,11 @@ impl TerrainDrawRenderer {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_read_only"),
-                    buffers: &[wgpu::VertexBufferLayout {
+                    buffers: &[Some(wgpu::VertexBufferLayout {
                         array_stride: std::mem::size_of::<SpriteInstance>() as u64,
                         step_mode: wgpu::VertexStepMode::Instance,
                         attributes: &SPRITE_INSTANCE_ATTRIBUTES,
-                    }],
+                    })],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -610,9 +610,8 @@ impl TerrainDrawRenderer {
             };
         }
         let read_only_rows = color.height().min(
-            (u64::from(device.limits().max_storage_buffer_binding_size)
-                / 8
-                / u64::from(color.width())) as u32,
+            (device.limits().max_storage_buffer_binding_size / 8 / u64::from(color.width()))
+                as u32,
         );
         assert!(
             read_only_rows > 0,
