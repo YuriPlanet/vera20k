@@ -301,10 +301,17 @@ pub(crate) struct LoadingRequest {
 }
 
 impl LoadingRequest {
-    pub(crate) fn replay(startup: &crate::sim::replay::ReplayStartup) -> Self {
+    pub(crate) fn replay(
+        startup: &crate::sim::replay::ReplayStartup,
+        map_beside: Option<&str>,
+    ) -> Self {
+        let mut session = startup.launch_session().clone();
+        if let Some(map) = map_beside {
+            session.selected_map_file = Some(map.to_owned());
+        }
         Self {
             startup: LoadingStartup::Replay {
-                session: startup.launch_session().clone(),
+                session,
                 game_mode: startup.game_mode(),
                 native_id_prefix: startup
                     .native_id_prefix()

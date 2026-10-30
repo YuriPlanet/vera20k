@@ -770,6 +770,10 @@ pub struct ReplayStartup {
 }
 
 impl ReplayStartup {
+    pub fn map_sha256(&self) -> &str {
+        &self.map_sha256
+    }
+
     pub fn launch_session(&self) -> &crate::skirmish_launch::SkirmishLaunchSession {
         &self.launch
     }
@@ -814,6 +818,7 @@ impl ReplayStartup {
             .selected_map_file
             .as_deref()
             .context("replay launch map")?;
+        let map_name = crate::map::source::portable_map_name(map_name);
         crate::map::source::validate_network_map_name(map_name)?;
         anyhow::ensure!(
             map_name == sim.session().map_name(),
@@ -840,6 +845,8 @@ impl ReplayStartup {
         );
         crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(launch.clone())
             .map_err(|error| anyhow::anyhow!("{error}"))?;
+        let mut launch = launch.clone();
+        launch.selected_map_file = Some(map_name.to_owned());
         Ok(Self {
             version: 2,
             native_id_prefix: Some(
@@ -850,7 +857,7 @@ impl ReplayStartup {
             map_hash,
             map_payload_len,
             map_sha256: map_sha256.to_owned(),
-            launch: launch.clone(),
+            launch,
             session: sim.session().clone(),
             scenario_rng: sim.scenario_rng().clone(),
             main_rng: sim.main_rng().checkpoint(),
@@ -1256,15 +1263,20 @@ impl ReplayPlayback {
 
 impl ReplayRunner {
     /// Reconstruct with the same authored loader and playback cursor as the client.
-    pub fn verify(retail_dir: &Path, replay: &ReplayLog) -> Result<ReplayVerification> {
+    pub fn verify(
+        retail_dir: &Path,
+        replay: &ReplayLog,
+        map_beside: Option<&str>,
+    ) -> Result<ReplayVerification> {
         let startup = replay.standalone_startup()?;
-        let launch = crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(
-            startup.launch.clone(),
-        )
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
+        let map_file = map_beside.unwrap_or(&replay.header.map_name);
+        let mut session = startup.launch.clone();
+        session.selected_map_file = Some(map_file.to_owned());
+        let launch = crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(session)
+            .map_err(|error| anyhow::anyhow!("{error}"))?;
         let mut loaded = crate::headless_scenario::load_with_launch_and_ini(
             retail_dir,
-            &replay.header.map_name,
+            map_file,
             startup.seed(),
             launch,
             &Default::default(),
@@ -1651,14 +1663,25 @@ mod tests {
                 .to_string()
                 .contains("native-ID startup prefix")
         );
-        let verified = ReplayRunner::verify(&root, &decoded).unwrap();
+        let verified = ReplayRunner::verify(&root, &decoded, None).unwrap();
         assert_eq!(verified.checked_hashes, 33);
         assert_eq!(verified.final_tick, 32);
         assert_eq!(verified.final_state_hash, scene.sim().state_hash());
+        // A -SPAWN replay's map exists only beside the replay file.
+        let beside = std::env::temp_dir().join(format!("vera20k-replay-{}", std::process::id()));
+        std::fs::create_dir_all(&beside).unwrap();
+        let map = beside.join("XMP03T4.MAP");
+        std::fs::write(&map, assets.get("XMP03T4.MAP").unwrap()).unwrap();
+        let verified = ReplayRunner::verify(&root, &decoded, map.to_str());
+        std::fs::remove_dir_all(&beside).unwrap();
+        assert_eq!(
+            verified.unwrap().final_state_hash,
+            scene.sim().state_hash()
+        );
         let mut corrupted = decoded;
         corrupted.ticks[10].state_hash = Some(1);
         assert!(
-            ReplayRunner::verify(&root, &corrupted)
+            ReplayRunner::verify(&root, &corrupted, None)
                 .unwrap_err()
                 .to_string()
                 .contains("state hash mismatch")
@@ -1676,7 +1699,7 @@ mod tests {
             pixel_conversion_bounds: Default::default(),
         });
         assert!(
-            ReplayRunner::verify(Path::new("absent-retail"), &replay)
+            ReplayRunner::verify(Path::new("absent-retail"), &replay, None)
                 .unwrap_err()
                 .to_string()
                 .contains("no standalone startup")

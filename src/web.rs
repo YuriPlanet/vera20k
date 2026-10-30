@@ -151,7 +151,8 @@ pub fn initialize() {
     crate::util::file_system::set_persistence_callbacks(
         |path, bytes, modified_ms| {
             WRITE.with(|slot| {
-                if !path.starts_with("/saves/") {
+                // Saves persist; a finished match's replay goes to the host to keep or share.
+                if !path.starts_with("/saves/") && !path.contains("replays/") {
                     return;
                 }
                 if let Some(callback) = slot.borrow().as_ref() {

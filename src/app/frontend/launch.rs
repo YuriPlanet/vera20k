@@ -46,7 +46,10 @@ where
             "unexpected replay verification argument"
         );
         let replay = crate::sim::replay::ReplayLog::load(&path)?;
-        let receipt = crate::sim::replay::ReplayRunner::verify(&retail_dir, &replay)?;
+        let map_sha256 = replay.standalone_startup()?.map_sha256();
+        let map_beside = map_beside_replay(&path, &replay.header.map_name, map_sha256)?;
+        let receipt =
+            crate::sim::replay::ReplayRunner::verify(&retail_dir, &replay, map_beside.as_deref())?;
         println!("{}", serde_json::to_string(&receipt)?);
         Ok(0)
     })())
@@ -142,6 +145,24 @@ pub struct ReplayLaunchRequest {
     pub(crate) retail_dir: PathBuf,
     pub(crate) capture_output: Option<PathBuf>,
     pub(crate) replay_sha256: String,
+    /// The recorded map beside the replay file: a -SPAWN game's map exists in
+    /// no game folder. A file with other bytes is ignored.
+    pub(crate) map_beside: Option<String>,
+}
+
+fn map_beside_replay(replay: &Path, map_name: &str, map_sha256: &str) -> Result<Option<String>> {
+    Ok(replay
+        .canonicalize()?
+        .parent()
+        // A rooted path's scenario name is only its file name, so a logical
+        // name with a directory must keep resolving through the game folder.
+        .filter(|_| !map_name.contains(['/', '\\']))
+        .map(|directory| directory.join(map_name))
+        .filter(|map| {
+            std::fs::read(map)
+                .is_ok_and(|bytes| crate::util::sha256::sha256_hex(&bytes) == map_sha256)
+        })
+        .and_then(|map| map.to_str().map(str::to_owned)))
 }
 
 fn parse_replay_args(args: Vec<OsString>) -> Result<AppLaunchMode> {
@@ -192,8 +213,10 @@ fn parse_replay_args(args: Vec<OsString>) -> Result<AppLaunchMode> {
     };
     ensure!(args.next().is_none(), "unexpected replay argument");
     let (replay, replay_sha256) = crate::sim::replay::ReplayLog::load_bound(&path)?;
-    replay.standalone_startup()?;
+    let map_sha256 = replay.standalone_startup()?.map_sha256();
+    let map_beside = map_beside_replay(&path, &replay.header.map_name, map_sha256)?;
     Ok(AppLaunchMode::Replay(ReplayLaunchRequest {
+        map_beside,
         replay: std::sync::Arc::new(replay),
         retail_dir,
         capture_output,
@@ -569,6 +592,36 @@ mod tests {
         );
         assert_eq!(std::fs::read(output).unwrap(), b"preserve");
         assert!(parse_launch_args([OsString::from("--replay-capture")]).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_replay_uses_the_map_beside_it_only_when_present() {
+        let root = test_directory("replay-map-beside");
+        let replay = root.join("replay.json");
+        std::fs::write(&replay, b"{}").unwrap();
+        let sha256 = crate::util::sha256::sha256_hex(b"map");
+        assert_eq!(
+            map_beside_replay(&replay, "spawnmap.ini", &sha256).unwrap(),
+            None
+        );
+        std::fs::create_dir(root.join("Maps")).unwrap();
+        std::fs::write(root.join("Maps/spawnmap.ini"), b"map").unwrap();
+        assert_eq!(
+            map_beside_replay(&replay, "Maps/spawnmap.ini", &sha256).unwrap(),
+            None
+        );
+        let map = root.join("spawnmap.ini");
+        std::fs::write(&map, b"other").unwrap();
+        assert_eq!(
+            map_beside_replay(&replay, "spawnmap.ini", &sha256).unwrap(),
+            None
+        );
+        std::fs::write(&map, b"map").unwrap();
+        let found = map_beside_replay(&replay, "spawnmap.ini", &sha256)
+            .unwrap()
+            .unwrap();
+        assert_eq!(PathBuf::from(found), map.canonicalize().unwrap());
         std::fs::remove_dir_all(root).unwrap();
     }
 

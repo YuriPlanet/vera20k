@@ -82,6 +82,21 @@ pub fn valid_source_sha256(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
+/// The scenario's name for a map a launch resolved to a rooted path beside its
+/// launch file (`-SPAWN`). That path names a temporary directory, and the name
+/// is hashed state: recording and playback must agree wherever the map lives.
+/// `has_root`, since `is_absolute` rejects the browser's `/spawn/...` paths.
+pub fn portable_map_name(name: &str) -> &str {
+    let path = Path::new(name);
+    if path.has_root() {
+        path.file_name()
+            .and_then(|file| file.to_str())
+            .unwrap_or(name)
+    } else {
+        name
+    }
+}
+
 /// A multiplayer map name is a VFS-relative logical identity, never a peer's
 /// host path. Check both separator spellings independently of the local OS so
 /// a LAN/online name has the same admission on every client. Absolute cache

@@ -1870,7 +1870,7 @@ impl ScenarioSession {
     pub fn from_descriptor(desc: &ScenarioDescriptor) -> Self {
         Self {
             seed: u64::from(desc.seed),
-            map_name: desc.map_name.clone(),
+            map_name: crate::map::source::portable_map_name(&desc.map_name).to_owned(),
             theater: desc.theater.clone(),
             game_mode: ScenarioGameMode::from_legacy_nonzero(desc.game_mode_nonzero),
             multiplayer_mode_class: None,
@@ -2239,6 +2239,25 @@ mod tests {
 
     /// AT-4: scenario identity (map name, theater) is sim-resident and
     /// survives a snapshot round-trip.
+    /// A -SPAWN map's rooted path differs per launch; the hash must not.
+    #[test]
+    fn rooted_map_paths_share_the_scenario_name_and_hash() {
+        let hash = |map_name: &str| {
+            let sim = Simulation::from_descriptor(&ScenarioDescriptor {
+                map_name: map_name.into(),
+                ..Default::default()
+            });
+            assert_eq!(sim.session().map_name(), "spawnmap.ini");
+            sim.state_hash()
+        };
+        let rooted = if cfg!(windows) {
+            "C:\\a\\spawnmap.ini"
+        } else {
+            "/a/spawnmap.ini"
+        };
+        assert_eq!(hash(rooted), hash("spawnmap.ini"));
+    }
+
     #[test]
     fn scenario_identity_is_sim_resident() {
         let desc = ScenarioDescriptor {

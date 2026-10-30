@@ -357,6 +357,7 @@ impl App {
                             .replay
                             .standalone_startup()
                             .expect("validated replay request"),
+                        request.map_beside.as_deref(),
                     );
                     state.match_state.match_diagnostics.begin_playback(
                         request.replay,
