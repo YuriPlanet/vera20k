@@ -566,7 +566,8 @@ impl MatchDiagnosticsState {
         unix_secs: u64,
     ) -> anyhow::Result<Option<ReplayLogFlush>> {
         // The browser has no std::fs: the segment goes to the engine's own file
-        // system, whose persistence callback hands it to the host.
+        // system, whose persistence callback hands it to the host. Nothing reads
+        // it back, so the memory copy goes at once.
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         {
             let Some(log) = self.replay_log.take() else {
@@ -580,13 +581,17 @@ impl MatchDiagnosticsState {
             let written = log.write_json(&mut bytes).and_then(|()| {
                 crate::util::file_system::create_dir_all(replays_dir)?;
                 crate::util::file_system::write(&path, &bytes)?;
+                crate::util::file_system::remove_file(&path)?;
                 Ok(())
             });
             if let Err(error) = written {
                 self.replay_log = Some(log);
                 return Err(error);
             }
-            return Ok(Some(ReplayLogFlush { path, tick_count: log.ticks.len() }));
+            return Ok(Some(ReplayLogFlush {
+                path,
+                tick_count: log.ticks.len(),
+            }));
         }
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         self.flush_to_with_writer(session_tick, replays_dir, unix_secs, |log, file| {

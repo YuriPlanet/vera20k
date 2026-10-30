@@ -152,7 +152,7 @@ pub fn initialize() {
         |path, bytes, modified_ms| {
             WRITE.with(|slot| {
                 // Saves persist; a finished match's replay goes to the host to keep or share.
-                if !path.starts_with("/saves/") && !path.contains("replays/") {
+                if !path.starts_with("/saves/") && !path.starts_with("/replays/") {
                     return;
                 }
                 if let Some(callback) = slot.borrow().as_ref() {
