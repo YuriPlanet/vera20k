@@ -410,8 +410,6 @@ try {
     await init();
     try { await restore(); } catch (error) { storageError(error); }
     set_persistence_callbacks((path, bytes, modified) => {
-        // Only /saves/ can be restored; this page keeps no replays.
-        if (path.startsWith('/replays/')) return;
         // Copy before returning: the source may refer to transient Wasm memory.
         const copy = bytes.slice();
         persist(store => store.put({ path, bytes: copy, modified }));

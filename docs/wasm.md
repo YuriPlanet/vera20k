@@ -73,10 +73,12 @@ substantial browser memory.
 The host restores and queues settings/save writes in IndexedDB for this origin.
 The page shows storage failures and pending writes. Engine writes complete in
 memory before the asynchronous storage transaction completes; wait for the
-saved status before closing. Clearing site data removes these copies. A finished
-match's replay goes to the persistence callback under `/replays/`; the engine keeps
-no copy and the supplied host discards it. Another host may keep it. Imported
-retail resources are not persisted; they are read again on every visit. Where the
+saved status before closing. Clearing site data removes these copies. Persistence
+callbacks report only `/saves/`, which is what `restore_user_file` accepts. A host
+that wants replays registers `set_replay_callback((name, bytes) => ...)` before
+starting; it receives each segment a match or in-scenario load closes, and the
+engine keeps no copy. Without that callback, as on the supplied page, replays are
+discarded. Imported retail resources are not persisted; they are read again on every visit. Where the
 browser has the File System Access API (Chrome, Edge), the launcher keeps a read
 handle to the chosen folder in a separate `vera20k-wasm-launcher` database and
 offers one-click Continue on the next visit; other browsers ask for the folder again.
