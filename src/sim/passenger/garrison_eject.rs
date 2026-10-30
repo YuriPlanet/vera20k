@@ -406,7 +406,13 @@ pub(crate) fn eject_destruction_garrison_with_context(
     let Some(building) = sim.substrate.entities.get_mut(event.building_id) else {
         return 0;
     };
-    building.passenger_role.occupants_mut().reset_fire_index();
+    // SellBuilding457DEB resets +69C before vt+408 (4581F0) reads +694.
+    // An empty vector returns at4581DB, before the closing threat refresh.
+    let occupants = building.passenger_role.occupants_mut();
+    occupants.reset_fire_index();
+    if occupants.is_empty() {
+        return 0;
+    }
 
     let ejected = eject_garrison_passengers_at_edges(
         sim,
