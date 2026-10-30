@@ -239,7 +239,14 @@ impl Window {
     pub fn set_ime_allowed(&self, allowed: bool) {
         // Polling owns the blocking swkbd call so opening it cannot stall a
         // state transition. While this is set, a fresh Plus edge opens it.
+        // Tapping an edit control should also open it, so clearing to false
+        // and then back to true (one focus acquisition) queues one open.
         self.shared.ime_allowed.store(allowed, Ordering::Release);
+        if allowed {
+            self.shared
+                .ime_open_requested
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
     }
 
     pub fn set_ime_purpose(&self, _purpose: ImePurpose) {}

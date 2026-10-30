@@ -71,6 +71,9 @@ pub struct Shared {
     pub camera_pan: Mutex<CameraPan>,
     pub ime_allowed: AtomicBool,
     pub pending_ime: Mutex<VecDeque<String>>,
+    /// Set once when an edit gains focus. The polling thread performs the
+    /// blocking swkbd call, so focus acquisition never stalls a transition.
+    pub ime_open_requested: AtomicBool,
     pub focused: AtomicBool,
     exiting: AtomicBool,
     alive: AtomicBool,
@@ -143,6 +146,7 @@ impl<T> EventLoop<T> {
             camera_pan: Mutex::new(CameraPan::default()),
             ime_allowed: AtomicBool::new(false),
             pending_ime: Mutex::new(VecDeque::new()),
+            ime_open_requested: AtomicBool::new(false),
             focused: AtomicBool::new(true),
             exiting: AtomicBool::new(false),
             alive: AtomicBool::new(true),
@@ -471,11 +475,6 @@ impl Input {
                 keyboard[hid_key / 64] |= 1 << (hid_key % 64);
             }
         }
-        if ime_allowed && pressed_buttons & (1 << 10) != 0 {
-            if let Some(text) = show_soft_keyboard() {
-                events.push(WindowEvent::Ime(Ime::Commit(text)));
-            }
-        }
         // Modifiers precede ordinary keys and mouse edges in this poll, so
         // Ctrl+click and Shift+hotkey also work when pressed in the same sample.
         let caps_lock = keyboard_modifiers & (1 << 8) != 0;
@@ -616,6 +615,22 @@ impl Input {
             });
         }
         self.pointer_buttons = synthetic_buttons | mouse_buttons;
+        // Opening the keyboard blocks, so both triggers run here, after the
+        // click that may have focused an edit has been delivered: an explicit
+        // Plus edge, and the one-shot request raised when focus was acquired.
+        // A panning gesture never focuses a text field, so it cancels the
+        // automatic request instead of deferring it to a later poll.
+        if touch_pan.active {
+            shared.ime_open_requested.store(false, Ordering::Release);
+        }
+        let auto_open = ime_allowed
+            && !touch_pan.active
+            && shared.ime_open_requested.swap(false, Ordering::AcqRel);
+        if ime_allowed && (auto_open || pressed_buttons & (1 << 10) != 0) {
+            if let Some(text) = show_soft_keyboard() {
+                events.push(WindowEvent::Ime(Ime::Commit(text)));
+            }
+        }
         if wheel_x != 0 || wheel_y != 0 {
             events.push(WindowEvent::MouseWheel {
                 device_id,
@@ -1165,6 +1180,64 @@ mod tests {
                 if event.physical_key == PhysicalKey::Code(KeyCode::Escape)
         )));
         DEVICES.with(|d| assert_eq!(d.borrow().keyboard_calls, 1));
+    }
+
+    #[test]
+    fn focusing_an_edit_opens_the_software_keyboard_once() {
+        DEVICES.with(|d| {
+            *d.borrow_mut() = Devices {
+                keyboard_text: Some("玩家"),
+                ..Devices::default()
+            }
+        });
+        let event_loop = EventLoop::<()>::new(&mut PlatformSpecificEventLoopAttributes).unwrap();
+        let shared = &event_loop.active.p.shared;
+        let mut input = Input::new();
+        // No focus yet: an idle edit must not raise the keyboard.
+        let events = input.poll(shared);
+        assert!(!events.iter().any(|e| matches!(e, WindowEvent::Ime(_))));
+        DEVICES.with(|d| assert_eq!(d.borrow().keyboard_calls, 0));
+
+        // The app toggles IME on when an edit takes focus.
+        shared.ime_allowed.store(true, Ordering::Release);
+        shared.ime_open_requested.store(true, Ordering::Release);
+        let events = input.poll(shared);
+        assert!(events.iter().any(|event| matches!(
+            event,
+            WindowEvent::Ime(Ime::Commit(text)) if text == "玩家"
+        )));
+        DEVICES.with(|d| assert_eq!(d.borrow().keyboard_calls, 1));
+
+        // Staying focused must not reopen it on later polls.
+        for _ in 0..3 {
+            let events = input.poll(shared);
+            assert!(!events.iter().any(|e| matches!(e, WindowEvent::Ime(_))));
+        }
+        DEVICES.with(|d| assert_eq!(d.borrow().keyboard_calls, 1));
+    }
+
+    #[test]
+    fn a_panning_gesture_cancels_the_pending_keyboard_open() {
+        DEVICES.with(|d| {
+            *d.borrow_mut() = Devices {
+                keyboard_text: Some("玩家"),
+                touches: vec![(1, 400, 300), (2, 500, 360)],
+                ..Devices::default()
+            }
+        });
+        let event_loop = EventLoop::<()>::new(&mut PlatformSpecificEventLoopAttributes).unwrap();
+        let shared = &event_loop.active.p.shared;
+        let mut input = Input::new();
+        shared.ime_allowed.store(true, Ordering::Release);
+        shared.ime_open_requested.store(true, Ordering::Release);
+        let events = input.poll(shared);
+        assert!(!events.iter().any(|e| matches!(e, WindowEvent::Ime(_))));
+        DEVICES.with(|d| assert_eq!(d.borrow().keyboard_calls, 0));
+        // Lifting the fingers must not resurrect the cancelled request.
+        DEVICES.with(|d| d.borrow_mut().touches.clear());
+        let events = input.poll(shared);
+        assert!(!events.iter().any(|e| matches!(e, WindowEvent::Ime(_))));
+        DEVICES.with(|d| assert_eq!(d.borrow().keyboard_calls, 0));
     }
 
     #[test]
