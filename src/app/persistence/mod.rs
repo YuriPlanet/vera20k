@@ -397,41 +397,61 @@ pub(crate) struct SaveEntry {
     pub(crate) header: GameSnapshotHeader,
 }
 
-/// Filesystem stage that failed while writing a named save. Only the
-/// `dev-overlays` save log reads it.
-#[cfg(any(feature = "dev-overlays", test))]
+/// Filesystem stage that failed while writing a named save. The save log and
+/// the error message both read it, so it exists in every build.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SaveWriteStage {
     CreateDirectory,
     WriteFile,
+    Commit,
 }
 
 /// Save write failure retaining the old caller-visible stage distinction.
 #[derive(Debug)]
 pub(crate) struct SaveWriteError {
-    #[cfg(any(feature = "dev-overlays", test))]
     stage: SaveWriteStage,
     source: std::io::Error,
+    /// The path the failing step operated on. A device log that only shows
+    /// `I/O error (os error 5)` cannot tell a bad save directory from a bad
+    /// file or a failed storage commit.
+    path: PathBuf,
 }
 
 impl SaveWriteError {
-    fn write_file(source: std::io::Error) -> Self {
+    fn write_file(source: std::io::Error, path: &Path) -> Self {
         Self {
-            #[cfg(any(feature = "dev-overlays", test))]
             stage: SaveWriteStage::WriteFile,
             source,
+            path: path.to_path_buf(),
         }
     }
 
-    #[cfg(any(feature = "dev-overlays", test))]
     pub(crate) fn stage(&self) -> SaveWriteStage {
         self.stage
+    }
+
+    fn new(stage: SaveWriteStage, source: std::io::Error, path: &Path) -> Self {
+        Self {
+            stage,
+            source,
+            path: path.to_path_buf(),
+        }
     }
 }
 
 impl std::fmt::Display for SaveWriteError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.source.fmt(formatter)
+        write!(
+            formatter,
+            "{} on {}: {}",
+            match self.stage {
+                SaveWriteStage::CreateDirectory => "creating the save directory",
+                SaveWriteStage::WriteFile => "writing the save file",
+                SaveWriteStage::Commit => "committing the save to storage",
+            },
+            self.path.display(),
+            self.source
+        )
     }
 }
 
@@ -473,10 +493,8 @@ impl SaveRepository {
         file_name: &str,
         bytes: &[u8],
     ) -> Result<PathBuf, SaveWriteError> {
-        std::fs::create_dir_all(&self.directory).map_err(|source| SaveWriteError {
-            #[cfg(any(feature = "dev-overlays", test))]
-            stage: SaveWriteStage::CreateDirectory,
-            source,
+        std::fs::create_dir_all(&self.directory).map_err(|source| {
+            SaveWriteError::new(SaveWriteStage::CreateDirectory, source, &self.directory)
         })?;
         let path = self.directory.join(file_name);
         self.create_new_file(&path, bytes)?;
@@ -491,14 +509,15 @@ impl SaveRepository {
             .write(true)
             .create_new(true)
             .open(path)
-            .map_err(SaveWriteError::write_file)?;
+            .map_err(|source| SaveWriteError::write_file(source, path))?;
         let result = file.write_all(bytes).and_then(|()| file.sync_all());
         drop(file);
         if let Err(source) = result {
             let _ = std::fs::remove_file(path);
-            return Err(SaveWriteError::write_file(source));
+            return Err(SaveWriteError::write_file(source, path));
         }
-        commit_save_storage(path).map_err(SaveWriteError::write_file)
+        commit_save_storage(path)
+            .map_err(|source| SaveWriteError::new(SaveWriteStage::Commit, source, path))
     }
 
     /// Only an explicit existing repository row can be replaced. Stage the
@@ -510,19 +529,27 @@ impl SaveRepository {
         bytes: &[u8],
     ) -> Result<(), SaveWriteError> {
         if path.parent() != Some(self.directory.as_path()) || !Self::is_save_file(path) {
-            return Err(SaveWriteError::write_file(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "overwrite target is not a save in this repository",
-            )));
+            return Err(SaveWriteError::write_file(
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "overwrite target is not a save in this repository",
+                ),
+                path,
+            ));
         }
         self.validate_existing_save(path)?;
         self.replace_file(path, bytes)
     }
 
     fn validate_existing_save(&self, path: &Path) -> Result<(), SaveWriteError> {
-        let previous = self.read(path).map_err(SaveWriteError::write_file)?;
+        let previous = self
+            .read(path)
+            .map_err(|source| SaveWriteError::write_file(source, path))?;
         GameSnapshot::read_header(&previous).map_err(|error| {
-            SaveWriteError::write_file(std::io::Error::new(std::io::ErrorKind::InvalidData, error))
+            SaveWriteError::write_file(
+                std::io::Error::new(std::io::ErrorKind::InvalidData, error),
+                path,
+            )
         })?;
         Ok(())
     }
@@ -548,7 +575,7 @@ impl SaveRepository {
         }
         result
             .and_then(|()| commit_save_storage(path))
-            .map_err(SaveWriteError::write_file)
+            .map_err(|source| SaveWriteError::new(SaveWriteStage::Commit, source, path))
     }
 
     /// The game's one retained initial save per mission. Native67CF13..67CF42
@@ -571,13 +598,11 @@ impl SaveRepository {
             return Err(SaveWriteError::write_file(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "initial campaign save must name a .sav file",
-            )));
+            ), file));
         }
         if file.is_relative() {
-            std::fs::create_dir_all(&self.directory).map_err(|source| SaveWriteError {
-                #[cfg(any(feature = "dev-overlays", test))]
-                stage: SaveWriteStage::CreateDirectory,
-                source,
+            std::fs::create_dir_all(&self.directory).map_err(|source| {
+                SaveWriteError::new(SaveWriteStage::CreateDirectory, source, &self.directory)
             })?;
         }
         let path = self.directory.join(file);

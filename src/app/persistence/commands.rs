@@ -340,6 +340,9 @@ fn log_save_result(label: &str, result: Result<PathBuf, SaveCommandError>) {
             crate::app::persistence::SaveWriteStage::WriteFile => {
                 log::error!("{label}: write failed: {error}")
             }
+            crate::app::persistence::SaveWriteStage::Commit => {
+                log::error!("{label}: storage commit failed: {error}")
+            }
         },
         Err(error) => log::warn!("{label}: {error}"),
     }
