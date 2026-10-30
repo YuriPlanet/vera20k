@@ -24,8 +24,9 @@
 //! ones, sending their armies at the nearest bases in squads until those
 //! fall. Objects fight, die, are rebuilt and harvest, so it measures a
 //! battle. `--houses` counts both kinds and defaults to every start but the
-//! local house's; `--ticks` defaults to 1800, and `after_orders_mean_ms`
-//! skips the first 150. Every `PROGRESS_EVERY` ticks it prints what the
+//! local house's. An explicit `--houses` filling every start also plays the
+//! local house, so `--houses 30` uses all 30 starts. `--ticks` defaults to 1800,
+//! and `after_orders_mean_ms` skips the first 150. Every `PROGRESS_EVERY` ticks it prints what the
 //! houses have and have done.
 //!
 //! `--scenario skirmish` plays a whole skirmish from its start: the map loads
@@ -39,7 +40,10 @@
 //! The run is deterministic for a given map, seed and arguments: the final
 //! `Simulation::state_hash` (and the optional periodic hashes, taken outside
 //! the timed region) identify the simulation result, so two builds can be
-//! compared for identical behavior as well as for speed. The periodic hashes
+//! compared for identical behavior as well as for speed. `--client-timing` uses
+//! the client's step duration (1000 / fixed_math::SIM_TICK_HZ, currently 22 ms)
+//! instead of the headless default 66 ms; the chosen duration is printed.
+//! The periodic hashes
 //! are timed on their own, which measures what each hashing frame also takes.
 //! The scenarios' own work (choosing each frame's commands) is not timed.
 //! A frame that fails ends the run with its error, after the CSV, summary and
@@ -51,7 +55,8 @@
 //!
 //! `--map` also takes a loose map file; `python -m tools.scale_map` writes the
 //! flat 500x500-cell map used for 20,000-unit, 30-house march runs, and with
-//! `--starts 30` the match map with ore and trees.
+//! `--starts 30` the match map with ore and trees. Add `--size 500` for a
+//! literal `Size=0,0,500,500` map using the extended cell array.
 //!
 //! The simulation batches its path searches as a real match does;
 //! `--serial-paths` searches in native order instead. Target scans run at
@@ -131,9 +136,24 @@ struct Args {
     frame_profile: bool,
     lan: bool,
     frame_hashes: Option<PathBuf>,
+    client_timing: bool,
+}
+
+impl Args {
+    fn tick_ms(&self) -> u32 {
+        if self.client_timing {
+            1000 / vera20k_core::util::fixed_math::SIM_TICK_HZ
+        } else {
+            SIM_TICK_MS
+        }
+    }
 }
 
 fn parse_args() -> Result<Args, String> {
+    parse_args_from(std::env::args().skip(1))
+}
+
+fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut args = Args {
         ra2_dir: std::env::var_os("RA2_DIR")
             .map(PathBuf::from)
@@ -155,9 +175,9 @@ fn parse_args() -> Result<Args, String> {
         frame_profile: false,
         lan: false,
         frame_hashes: None,
+        client_timing: false,
     };
     let mut march_flag = None;
-    let mut argv = std::env::args().skip(1);
     while let Some(flag) = argv.next() {
         if ["--types", "--order-spread", "--return-at"].contains(&flag.as_str()) {
             march_flag.get_or_insert_with(|| flag.clone());
@@ -208,6 +228,7 @@ fn parse_args() -> Result<Args, String> {
             "--frame-profile" => args.frame_profile = true,
             "--lan" => args.lan = true,
             "--frame-hashes" => args.frame_hashes = Some(PathBuf::from(value()?)),
+            "--client-timing" => args.client_timing = true,
             "--serial-scans" => {} // All target scans already run at their object turn.
             other => return Err(format!("unrecognised argument {other}")),
         }
@@ -378,6 +399,7 @@ fn march(
             id
         })
         .collect();
+    let grid = scenario.map.header.cell_grid();
     let runtime = &mut scenario.runtime;
     let homes = home_cells(&map_cells(runtime), houses);
     let spawned = spawn_armies(runtime, args, &owners, &homes);
@@ -389,7 +411,6 @@ fn march(
     // --return-at later marches back to its own.
     let first_tick = runtime.simulation.session().tick() + 1;
     let mut orders: Vec<Vec<CommandEnvelope>> = Vec::new();
-    let clamp = |base: u16, delta: i32| (i32::from(base) + delta).clamp(0, 511) as u16;
     let waves = [(0, houses / 2)]
         .into_iter()
         .chain(args.return_at.map(|at| (at, 0)));
@@ -400,16 +421,14 @@ fn march(
             if orders.len() <= slot as usize {
                 orders.resize(slot as usize + 1, Vec::new());
             }
+            let (x, y) = sim_bench_match::offset_cell(target_home, unit.offset, grid);
             orders[slot as usize].push(CommandEnvelope::new(
                 owner_ids[unit.house],
                 first_tick + slot,
                 Command::AttackMove {
                     entity_id: unit.id,
                     target: None,
-                    destination: Some(vera20k_core::sim::combat::TargetKind::Cell(
-                        clamp(target_home.0, unit.offset.0),
-                        clamp(target_home.1, unit.offset.1),
-                    )),
+                    destination: Some(vera20k_core::sim::combat::TargetKind::Cell(x, y)),
                 },
             ));
         }
@@ -457,6 +476,7 @@ trait Frames {
 struct Bench<'a> {
     runtime: &'a mut SimRuntime,
     plan: &'a mut Plan,
+    tick_ms: u32,
 }
 
 impl Frames for Bench<'_> {
@@ -470,7 +490,7 @@ impl Frames for Bench<'_> {
 
     fn advance(&mut self, commands: &[CommandEnvelope]) -> Result<Option<u32>, String> {
         self.runtime
-            .advance_frame_for_tooling(commands, SIM_TICK_MS)
+            .advance_frame_for_tooling(commands, self.tick_ms)
             .map_err(|error| error.to_string())
     }
 
@@ -636,7 +656,7 @@ fn main() -> Result<(), String> {
                  [--ticks 300 (match: 1800, skirmish: 9000)] \
                  [--types E1,E2,MTNK,HTNK] [--order-spread 30] [--return-at T] (march) \
                  [--hash-every N] [--frame-hash-every 15] [--csv <path>] [--serial-paths] [--serial-scans] \
-                 [--frame-profile] [--lan] [--frame-hashes <path>]"
+                 [--frame-profile] [--lan] [--frame-hashes <path>] [--client-timing]"
             );
             std::process::exit(2);
         }
@@ -712,6 +732,7 @@ fn main() -> Result<(), String> {
         Plan::Match(script) => script.computers(),
         Plan::Skirmish => computers,
     };
+    let tick_ms = args.tick_ms();
     let runtime = &mut scenario.runtime;
     let live_at_start = runtime.simulation.entities().len();
     println!(
@@ -724,6 +745,7 @@ fn main() -> Result<(), String> {
         spawned,
         live_at_start
     );
+    println!("simulation_tick_ms={tick_ms}");
     if let Plan::Match(script) = &plan {
         println!("progress tick=0 {}", script.progress(runtime));
     }
@@ -735,6 +757,7 @@ fn main() -> Result<(), String> {
         &mut Bench {
             runtime: &mut *runtime,
             plan: &mut plan,
+            tick_ms,
         },
         ticks,
         args.hash_every,
