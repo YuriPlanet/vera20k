@@ -107,6 +107,105 @@ fn cached_border_geometry_keeps_height_ring_and_viewer_inputs() {
 }
 
 #[test]
+fn interior_map_receivers_match_general_lookups_after_the_ground_store() {
+    let viewer = crate::sim::intern::test_intern("Player");
+    let terrain = test_grid(12, 12, test_clear_cell);
+    let general = {
+        let mut cells = terrain.cells().to_vec();
+        cells.swap(130, 131); // Far from the receiver; disables the interior proof.
+        ResolvedTerrainGrid::from_cells(12, 12, cells)
+    };
+    let fast_query = NativeCellQuery::canonical(&terrain);
+    let general_query = NativeCellQuery::canonical(&general);
+    let center = (5, 5);
+    let mut fast = FogState::new(12, 12);
+    let mut vis = OwnerVisibility::new(12, 12);
+    vis.ground_flags.fill(GROUND_VISIBLE | GROUND_OPEN);
+    let index = vis.index(center.0, center.1).unwrap();
+    vis.ground_flags[index] = GROUND_VISIBLE;
+    vis.shroud_knowledge[index].set_counter_for_test(7);
+    vis.map_cell_edge_cache[index - 1].initialized = true;
+    assert!(vis.interior_index(center, Some(&fast_query)).is_some());
+    assert!(vis.interior_index(center, Some(&general_query)).is_none());
+    fast.by_owner.insert(viewer, vis);
+    let mut general = fast.clone();
+    for final_pass in [false, true, false] {
+        let notify = |fog: &mut FogState, query| {
+            fog.reveal_map_cell(
+                viewer,
+                center,
+                final_pass,
+                Some(query),
+                MapRevealProjection::Source,
+            )
+            .map(|n| (n.cell, n.fresh, n.clean_fog))
+        };
+        assert_eq!(
+            notify(&mut fast, &fast_query),
+            notify(&mut general, &general_query)
+        );
+        assert_eq!(
+            save_codec::serialize(&fast).unwrap(),
+            save_codec::serialize(&general).unwrap()
+        );
+    }
+    let notify = |fog: &mut FogState, query| {
+        fog.reveal_forced_map_cell(viewer, center, Some(query))
+            .map(|n| (n.cell, n.fresh, n.clean_fog))
+    };
+    assert_eq!(
+        notify(&mut fast, &fast_query),
+        notify(&mut general, &general_query)
+    );
+    assert_eq!(
+        save_codec::serialize(&fast).unwrap(),
+        save_codec::serialize(&general).unwrap()
+    );
+    assert_eq!(
+        fast.by_owner[&viewer].map_cell_edge_cache[index].frames[0],
+        -1
+    );
+}
+
+#[test]
+fn real_map_receiver_with_missing_neighbours_reads_the_retained_dummy() {
+    let viewer = crate::sim::intern::test_intern("Player");
+    let center = (5, 5);
+    let mut terrain = test_grid(12, 12, test_clear_cell);
+    terrain.test_set_native_allocated_cells(&[center]);
+    let query = NativeCellQuery::canonical(&terrain);
+    let mut initial = FogState::new(12, 12);
+    let mut vis = OwnerVisibility::new(12, 12);
+    vis.dummy_visibility.ground = GROUND_VISIBLE | GROUND_OPEN;
+    vis.dummy_visibility.cache.initialized = true;
+    vis.dummy_visibility.cache.fog_open = true;
+    assert!(vis.interior_index(center, Some(&query)).is_none());
+    initial.by_owner.insert(viewer, vis);
+    for forced in [false, true] {
+        let mut fog = initial.clone();
+        if forced {
+            fog.reveal_forced_map_cell(viewer, center, Some(&query));
+        } else {
+            fog.reveal_map_cell(
+                viewer,
+                center,
+                false,
+                Some(&query),
+                MapRevealProjection::Source,
+            );
+        }
+        assert_eq!(
+            fog.by_owner[&viewer].map_cell_edge_cache_for_test(center).0,
+            [-1, -1]
+        );
+        assert_eq!(
+            fog.by_owner[&viewer].dummy_visibility,
+            initial.by_owner[&viewer].dummy_visibility
+        );
+    }
+}
+
+#[test]
 fn counter_updates_preserve_ground_bits_independently_of_projected_sight() {
     // Display::MapCell4A9CA0 calls Cell487630/487690 before its edge queries.
     // Positive reveal counters and final releases preserve a prior partial12C.

@@ -85,6 +85,24 @@ enum VisibilityCell {
     Dummy,
 }
 
+/// A resolved receiver, retaining the proof that its eight neighbours also
+/// use their own grid indices. This is visit-local, not another cell cache.
+#[derive(Clone, Copy)]
+enum MapCellLookup {
+    Interior(usize),
+    Real(usize),
+    Dummy,
+}
+
+impl MapCellLookup {
+    fn key(self) -> VisibilityCell {
+        match self {
+            Self::Interior(index) | Self::Real(index) => VisibilityCell::Real(index),
+            Self::Dummy => VisibilityCell::Dummy,
+        }
+    }
+}
+
 /// VERA's derived current-sight projection; the original Cell counter/cache
 /// operation is shared. Sustained sources already have an indexed lifetime,
 /// while action/weapon reveal pairs retain a transient visible observation.
@@ -168,6 +186,21 @@ fn edge_frame_gates(ground: u8, cache: MapCellEdgeCache, fog_channel: bool) -> (
             ground & GROUND_VISIBLE != 0,
         )
     }
+}
+
+/// Tactical::6D8700 (0x006D8700), original executable: read neighbour flags
+/// only when the center gate admits that channel.
+fn edge_frame(
+    ground: u8,
+    cache: MapCellEdgeCache,
+    fog_channel: bool,
+    mask: impl FnOnce() -> u8,
+) -> i8 {
+    let (any, eligible) = edge_frame_gates(ground, cache, fog_channel);
+    if !eligible {
+        return if any { -1 } else { -2 };
+    }
+    SHROUD_EDGE_LUT[usize::from(mask())] as i8
 }
 
 /// Whether a neighbour with these ground bits and cache sets its
@@ -313,8 +346,16 @@ impl OwnerVisibility {
         cell: (u16, u16),
         cells: Option<&NativeCellQuery<'_>>,
     ) -> VisibilityCell {
+        self.lookup_map_cell(cell, cells).key()
+    }
+
+    fn lookup_map_cell(
+        &self,
+        cell: (u16, u16),
+        cells: Option<&NativeCellQuery<'_>>,
+    ) -> MapCellLookup {
         if let Some(index) = self.interior_index(cell, cells) {
-            return VisibilityCell::Real(index);
+            return MapCellLookup::Interior(index);
         }
         let coord = match cells {
             Some(cells) => match cells.lookup((cell.0 as i16, cell.1 as i16)) {
@@ -322,12 +363,12 @@ impl OwnerVisibility {
                     let source = &cells.terrain().cells()[identity];
                     (source.rx, source.ry)
                 }
-                NativeCellIdentity::Dummy => return VisibilityCell::Dummy,
+                NativeCellIdentity::Dummy => return MapCellLookup::Dummy,
             },
             None => cell,
         };
         self.index(coord.0, coord.1)
-            .map_or(VisibilityCell::Dummy, VisibilityCell::Real)
+            .map_or(MapCellLookup::Dummy, MapCellLookup::Real)
     }
 
     /// Original6D8700..6D8ADA: center lookup/gates, eight signed WORD
@@ -381,11 +422,16 @@ impl OwnerVisibility {
         mask: impl FnOnce() -> u8,
     ) -> i8 {
         let (ground, cache) = self.map_cell_parts(center);
-        let (any, eligible) = edge_frame_gates(ground, cache, fog_channel);
-        if !eligible {
-            return if any { -1 } else { -2 };
-        }
-        SHROUD_EDGE_LUT[usize::from(mask())] as i8
+        edge_frame(ground, cache, fog_channel, mask)
+    }
+
+    fn interior_map_cell_frames(&self, index: usize) -> [i8; 2] {
+        let masks = self.interior_edge_masks(index);
+        let (ground, cache) = self.map_cell_parts(VisibilityCell::Real(index));
+        [
+            edge_frame(ground, cache, false, || masks[0]),
+            edge_frame(ground, cache, true, || masks[1]),
+        ]
     }
 
     /// The `[ground, fog]` neighbour bits of interior cell `index` that
@@ -444,23 +490,24 @@ impl OwnerVisibility {
     /// `0x004A9890` (`0x004A98FD..0x004A9935`) store after a reveal changes
     /// `key` (`cell`): the ground frame and its open bit, the edge-input
     /// note, then the fog frame and its open bit. The ground store writes
-    /// only the cell's own frame and open bit, so an interior cell's
-    /// neighbours are read once for both frames, the fog frame's before the
-    /// ground store rather than after it.
+    /// only the cell's own ground frame and ground-open bit. The fog gate
+    /// reads neither (6D8724..6D873A), so a proven interior receiver can read
+    /// its center and neighbours once for both frames before either store.
+    /// General lookups retain their shared-Dummy side effects and ordering.
     fn store_map_cell_frames(
         &mut self,
-        key: VisibilityCell,
+        lookup: MapCellLookup,
         cell: (u16, u16),
         before: (u8, i8),
         native_cells: Option<&NativeCellQuery<'_>>,
     ) -> [i8; 2] {
-        let masks = self
-            .interior_index(cell, native_cells)
-            .map(|index| self.interior_edge_masks(index));
-        let frame = |vis: &Self, fog_channel: bool| match masks {
-            Some(masks) => {
-                vis.center_edge_frame(key, fog_channel, || masks[usize::from(fog_channel)])
-            }
+        let key = lookup.key();
+        let frames = match lookup {
+            MapCellLookup::Interior(index) => Some(self.interior_map_cell_frames(index)),
+            _ => None,
+        };
+        let frame = |vis: &Self, fog_channel: bool| match frames {
+            Some(frames) => frames[usize::from(fog_channel)],
             None => vis.map_cell_edge_frame(cell, fog_channel, native_cells),
         };
         let ground = frame(self, false);
@@ -471,9 +518,13 @@ impl OwnerVisibility {
         }
         self.note_edge_inputs(key, before);
         debug_assert!(
-            self.interior_index(cell, native_cells)
-                .is_none_or(|index| masks == Some(self.interior_edge_masks(index))),
-            "the ground store changed a neighbour of {cell:?}"
+            match lookup {
+                MapCellLookup::Interior(index) => {
+                    frames == Some(self.interior_map_cell_frames(index))
+                }
+                _ => true,
+            },
+            "the ground store changed edge-query inputs of {cell:?}"
         );
         let fog = frame(self, true);
         let (_, _, cache) = self.map_cell_parts_mut(key);
@@ -493,7 +544,8 @@ impl OwnerVisibility {
         projection: MapRevealProjection,
     ) -> Option<MapCellNotification> {
         //4A9CA9 is distinct from each6D8713 center lookup below.
-        let key = self.visibility_cell(cell, native_cells);
+        let lookup = self.lookup_map_cell(cell, native_cells);
+        let key = lookup.key();
         let before = self.edge_inputs(key);
         // Map5673A0/5678E0 clear bit40 before their skipReveal branch.
         self.map_cell_parts_mut(key).2.pending_fog = false;
@@ -542,7 +594,7 @@ impl OwnerVisibility {
             }
             self.publish_knowledge(index);
         }
-        let frames = self.store_map_cell_frames(key, cell, before, native_cells);
+        let frames = self.store_map_cell_frames(lookup, cell, before, native_cells);
         if !fresh && old.frames == frames {
             return None;
         }
@@ -1110,7 +1162,8 @@ impl FogState {
         let vis = self
             .by_owner
             .get_or_insert_with(viewer, || OwnerVisibility::new(self.width, self.height));
-        let key = vis.visibility_cell(cell, native_cells);
+        let lookup = vis.lookup_map_cell(cell, native_cells);
+        let key = lookup.key();
         let before = vis.edge_inputs(key);
         let (ground, old) = vis.map_cell_parts(key);
         let fresh = !(old.initialized && ground & GROUND_VISIBLE != 0);
@@ -1122,7 +1175,7 @@ impl FogState {
         if let VisibilityCell::Real(index) = key {
             vis.publish_knowledge(index);
         }
-        let frames = vis.store_map_cell_frames(key, cell, before, native_cells);
+        let frames = vis.store_map_cell_frames(lookup, cell, before, native_cells);
         //4A9981..4A9C48 interleaves the two channels for each neighbor.
         // The guarded recursive +90 arms cannot occur: a neighbor without
         // its eligible or open bit returns-2 in6D8700, not another frame.
