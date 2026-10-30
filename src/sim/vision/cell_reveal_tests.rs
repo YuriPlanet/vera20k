@@ -792,3 +792,42 @@ fn explored_frontier_keeps_pending_conceal_until_the_sweep() {
         assert_eq!(swept.ground_flags[index], if frontier { 0 } else { 24 });
     }
 }
+
+#[test]
+fn border_refresh_interior_matches_native_lookup_fallback() {
+    let terrain = test_grid(12, 12, test_clear_cell);
+    // A distant stored-coordinate alias disables the interior fast path,
+    // without changing any of the queried cells or their neighbours.
+    let mut cells = terrain.cells().to_vec();
+    cells.swap(130, 131);
+    let fallback = ResolvedTerrainGrid::from_cells(12, 12, cells);
+    let mut interior = OwnerVisibility::new(12, 12);
+    seed_cell(
+        &mut interior,
+        VisibilityCell::Real(65),
+        &json!({"counter": -3, "gap": 2, "alt": 8, "flags": 3, "cache": [77, 62]}),
+    );
+    let mut looked_up = interior.clone();
+    assert!(
+        interior
+            .interior_index((5, 5), Some(&NativeCellQuery::canonical(&terrain)))
+            .is_some()
+    );
+    assert!(
+        looked_up
+            .interior_index((5, 5), Some(&NativeCellQuery::canonical(&fallback)))
+            .is_none()
+    );
+    let border = [(5, 5), (6, 5), (5, 5)];
+    interior.refresh_ground_frames(&border, Some(&NativeCellQuery::canonical(&terrain)));
+    looked_up.refresh_ground_frames(&border, Some(&NativeCellQuery::canonical(&fallback)));
+    assert_eq!(
+        save_codec::serialize(&interior).unwrap(),
+        save_codec::serialize(&looked_up).unwrap()
+    );
+    assert_ne!(interior.map_cell_edge_cache[65].frames[0], 77);
+    assert_eq!(interior.map_cell_edge_cache[65].frames[1], 62);
+    assert_eq!(interior.ground_flags[65], 8);
+    assert_eq!(interior.shroud_knowledge[65].counter(), -3);
+    assert_eq!(interior.shroud_knowledge[65].gap_counter(), 2);
+}

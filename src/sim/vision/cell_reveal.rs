@@ -305,9 +305,7 @@ impl OwnerVisibility {
     ) -> i8 {
         let channel = usize::from(fog_channel);
         if let Some(index) = self.interior_index(cell, native_cells) {
-            return self.center_edge_frame(VisibilityCell::Real(index), fog_channel, || {
-                self.interior_edge_masks(index)[channel]
-            });
+            return self.interior_edge_frame(index, fog_channel);
         }
         let center = self.visibility_cell(cell, native_cells);
         self.center_edge_frame(center, fog_channel, || {
@@ -326,6 +324,14 @@ impl OwnerVisibility {
                 }
             }
             mask
+        })
+    }
+
+    /// The same `Tactical::6D8700` query with an already resolved interior
+    /// index; it cannot read or restamp the shared Dummy.
+    fn interior_edge_frame(&self, index: usize, fog_channel: bool) -> i8 {
+        self.center_edge_frame(VisibilityCell::Real(index), fog_channel, || {
+            self.interior_edge_masks(index)[usize::from(fog_channel)]
         })
     }
 
@@ -507,27 +513,30 @@ impl OwnerVisibility {
         cells: &[(u16, u16)],
         native_cells: Option<&NativeCellQuery<'_>>,
     ) {
+        // Original Map::567DA0 retains the resolved cell across Tactical::6D8700
+        // and stores only Cell+0x120 (0x00567F27..0x00567F34). Reuse an interior
+        // index for that store without borrowing the counter and ground grids.
+        // Native resolves the center first (0x00567EE6..0x00567F15); VERA's
+        // fallback still computes the frame before resolving the store. Residual:
+        // an off-map border with an off-map neighbour leaves the shared Dummy on
+        // the border, visible only to a Dummy read before the next missing lookup.
         for &cell in cells {
-            let frame = self.map_cell_edge_frame(cell, false, native_cells);
-            self.store_ground_frame(cell, frame, native_cells);
+            let (key, frame) = match self.interior_index(cell, native_cells) {
+                Some(index) => (
+                    VisibilityCell::Real(index),
+                    self.interior_edge_frame(index, false),
+                ),
+                None => {
+                    let frame = self.map_cell_edge_frame(cell, false, native_cells);
+                    (self.visibility_cell(cell, native_cells), frame)
+                }
+            };
+            let cache = match key {
+                VisibilityCell::Real(index) => &mut self.map_cell_edge_cache[index],
+                VisibilityCell::Dummy => &mut self.dummy_visibility.cache,
+            };
+            cache.frames[0] = frame;
         }
-    }
-
-    /// Store `frame` as `cell`'s ground frame (`Cell+0x120`), `0x00567DA0`'s
-    /// store (`0x00567F34`). Native looks the cell up before its 6D8700 call
-    /// (`0x00567EE6..0x00567F15`); VERA computes the frame first and looks the
-    /// cell up here. Residual: both reach the same cell, but for an off-map
-    /// border cell with an off-map neighbour the shared Dummy is left on the
-    /// border cell rather than on that neighbour, which only a Dummy read
-    /// before the next missing lookup could see.
-    fn store_ground_frame(
-        &mut self,
-        cell: (u16, u16),
-        frame: i8,
-        native_cells: Option<&NativeCellQuery<'_>>,
-    ) {
-        let key = self.visibility_cell(cell, native_cells);
-        self.map_cell_parts_mut(key).2.frames[0] = frame;
     }
 
     fn map_cell_parts(&self, key: VisibilityCell) -> (u8, MapCellEdgeCache) {
