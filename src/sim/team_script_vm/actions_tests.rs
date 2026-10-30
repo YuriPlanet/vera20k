@@ -1916,3 +1916,46 @@ fn deploy_refused_for_a_computer_owner_clears_the_site() {
         assert_eq!(team.yards(), yards, "human {human}");
     }
 }
+
+#[test]
+fn script_action_51_plays_an_animation_and_finishes_the_step() {
+    // TeamClass action 51 (`0x006EF610`): a team that reaches it must not be
+    // refused; without the port the whole script froze on an unported action.
+    // The argument's high 16 bits are the AnimClass constructor's loop count,
+    // which multiplies ELECTRO's retail LoopCount.
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let index = (0..)
+        .find(|&index| retail.rules.anim_type_name_by_index(index) == Some("ELECTRO"))
+        .unwrap();
+    let script = format!("0=51,{}\n1=51,{index}\n2=5,300", (3 << 16) | index);
+    let Some((mut scene, team, member)) =
+        crate::sim::team_script_vm::packed_cell_tests::scene(&script, "E2", false, |_| {})
+    else {
+        return;
+    };
+    crate::sim::team_script_vm::packed_cell_tests::frame(&mut scene);
+    let sim = scene.sim();
+    let state = sim.team_script_vm.team(team).unwrap();
+    assert!(state.cursor() >= 1, "action 51 advances the cursor");
+    assert!(
+        state.refusal().is_none(),
+        "action 51 is ported, got {:?}",
+        state.refusal()
+    );
+    let mut loops: Vec<_> = sim
+        .anims()
+        .filter(|(_, anim)| {
+            anim.owner_entity() == Some(member)
+                && sim.interner.resolve(anim.type_id()) == "ELECTRO"
+        })
+        .map(|(_, anim)| (anim.native_unique_id(), anim.runtime().loop_remaining))
+        .collect();
+    loops.sort_unstable();
+    let loops: Vec<u8> = loops.into_iter().map(|(_, loops)| loops).collect();
+    assert_eq!(loops.len(), 2, "one Anim per visit, attached to the member");
+    assert!(loops[1] > 1);
+    assert_eq!(u16::from(loops[0]), u16::from(loops[1]) * 3);
+}

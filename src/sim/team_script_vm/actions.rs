@@ -166,6 +166,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 47
             | 49
             | 50
+            | 51
             | 53
             | 54
             | 55
@@ -869,6 +870,7 @@ impl Simulation {
                     }
                 }
             }
+            51 => self.team_action_play_animation(team_id, first, action.argument, rules),
             53 => self.team_action_gather_at_enemy_base(
                 team_id,
                 first,
@@ -963,6 +965,56 @@ impl Simulation {
                 debug_assert!(!action_is_ported(action_id));
                 self.refuse_team_script_action(team_id, action_id);
             }
+        }
+    }
+
+    /// Team script action 51: play an animation at every team member.
+    ///
+    /// gamemd `TeamClass` action 51 at `0x006EF610`, reached from the action
+    /// chain at `0x006E9D29..0x006E9D3E`. The argument's low 16 bits select a
+    /// registered AnimType (pointer table `0x008B4154`, count `0x008B4160`) and
+    /// an index outside that table finishes without spawning. Head first, every
+    /// member gets its own `AnimClass` (`0x00421EA0`: delay 0, the argument's
+    /// high 16 bits as its loop count, draw flags `0x600`) at the member's
+    /// GetCoords (vtable `+0x48`), attached to the member (`0x00424B50`), and
+    /// the action finishes on the same visit. A non-first visit only finishes.
+    fn team_action_play_animation(
+        &mut self,
+        team_id: u64,
+        first: bool,
+        argument: i32,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
+        if first {
+            let index = argument & 0xffff;
+            let type_name = rules.anim_type_name_by_index(index).map(str::to_owned);
+            if let Some(type_name) = type_name {
+                let type_id = self.interner.intern(&type_name);
+                let members: Vec<u64> = self
+                    .team_script_vm
+                    .teams
+                    .get(&team_id)
+                    .map(|team| team.members().collect())
+                    .unwrap_or_default();
+                for member in members {
+                    let Some(world) = self.anim_owner_coords(member) else {
+                        continue;
+                    };
+                    let (rx, ry, sub_x, sub_y, level) = world.to_cell_sub_z();
+                    let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
+                        loop_count: (argument >> 16) & 0xffff,
+                        draw_flags: 0x600,
+                        owner: Some(member),
+                        ..crate::sim::components::AnimClassSpawnDescriptor::new(
+                            type_id, rx, ry, sub_x, sub_y, level,
+                        )
+                    };
+                    let _ = self.spawn_anim_at_world(rules, descriptor, world);
+                }
+            }
+        }
+        if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+            team.advance_pending = true;
         }
     }
 
