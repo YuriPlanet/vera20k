@@ -2122,28 +2122,20 @@ impl Simulation {
                 if category != EntityCategory::Structure {
                     return;
                 }
-                let garrison = self.substrate.entities.get(stable_id).and_then(|entity| {
-                    let object = self.interner.object_type(entity.type_ref(), rules)?;
-                    if !object.can_be_occupied {
-                        return None;
-                    }
-                    let (foundation_w, foundation_h) = object.foundation.dimensions();
-                    Some(
-                        crate::sim::passenger::garrison_eject::DestroyedGarrisonBuilding {
-                            building_id: stable_id,
-                            rx: entity.position.rx(),
-                            ry: entity.position.ry(),
-                            foundation_w,
-                            foundation_h,
-                        },
-                    )
-                });
-                if let Some(event) = garrison {
-                    passenger::garrison_eject::eject_destruction_garrison_with_context(
+                // 442625 gates SellBuilding(0,0) at 44263B on CanBeOccupied.
+                let object = self
+                    .substrate
+                    .entities
+                    .get(stable_id)
+                    .and_then(|entity| self.interner.object_type(entity.type_ref(), rules));
+                if object.is_some_and(|object| object.can_be_occupied) {
+                    passenger::garrison_eject::sell_building_occupants(
                         self,
                         rules,
-                        &event,
-                        uninit_context,
+                        uninit_context.registry(),
+                        stable_id,
+                        passenger::garrison_eject::GarrisonEjectMode::Release,
+                        uninit_context.effects(),
                     );
                 }
                 //44264C precedes the recursive destruction effects.
