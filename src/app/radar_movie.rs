@@ -168,6 +168,18 @@ pub(crate) fn enqueue(state: &mut AppState, index: i32, pause_simulation: bool) 
         .options_profile
         .movie_progress
         .note_played(stem);
+    enqueue_file(state, stem, pause_simulation);
+}
+
+/// The tail of [`enqueue`], for a caller that already knows the clip's file
+/// name: resolve the media, resolve the cues, append to the FIFO. Everything
+/// after admission — the IncomingTransmission prelude, the housing, the movie
+/// audio, the HUD cue rows and the closing — is [`service`]'s, so a clip added
+/// here plays exactly the way a campaign transmission does.
+///
+/// Returns whether the clip was admitted. `false` means it is missing or
+/// undecodable; the caller decides what to do with the failed request.
+pub(crate) fn enqueue_file(state: &mut AppState, stem: &str, pause_simulation: bool) -> bool {
     let file_name = format!("{stem}.BIK");
     let Some((bytes, source)) = state.process_assets.manager().and_then(|assets| {
         assets
@@ -175,7 +187,7 @@ pub(crate) fn enqueue(state: &mut AppState, index: i32, pause_simulation: bool) 
             .map(|(bytes, source)| (Arc::<[u8]>::from(bytes), source.to_string()))
     }) else {
         log::info!("Radar movie {file_name} is not installed");
-        return;
+        return false;
     };
     match BinkMovieSurface::from_bytes(
         &state.renderer.gpu,
@@ -208,9 +220,25 @@ pub(crate) fn enqueue(state: &mut AppState, index: i32, pause_simulation: bool) 
                     subtitles,
                     pause_simulation,
                 });
+            true
         }
-        Err(error) => log::warn!("Radar movie {file_name} decode unavailable: {error}"),
+        Err(error) => {
+            log::warn!("Radar movie {file_name} decode unavailable: {error}");
+            false
+        }
     }
+}
+
+/// Whether the retail aperture still owes the player a clip: one is queued or
+/// running. A caller that adds its own clips waits for this to clear so it
+/// never stacks behind a transmission.
+pub(crate) fn has_pending(state: &AppState) -> bool {
+    !state
+        .match_state
+        .match_presentation
+        .radar_movies
+        .queue
+        .is_empty()
 }
 
 /// Reconcile117's pause with an open modal. The existing clock is idempotent;

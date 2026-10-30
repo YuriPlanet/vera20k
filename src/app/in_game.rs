@@ -88,6 +88,7 @@ impl App {
         state.match_state.input.planning.reset();
         let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         crate::app::radar_movie::retire(state, wall_ms);
+        crate::app::commander_feedback::retire(state);
         crate::app::chrono_screen::retire(state, wall_ms);
         if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
             // Main_Game48CCC0 clears ScenarioStarted[A8ED5C] at48CEBF
@@ -655,6 +656,7 @@ impl App {
         Self::record_external_match_result(state, super::cncnet::ExternalMatchResult::Quit);
         //686570 clears the movie queue before its independent audio fade.
         crate::app::radar_movie::retire(state, wall_ms);
+        crate::app::commander_feedback::retire(state);
         crate::app::chrono_screen::retire(state, wall_ms);
         let _ = state.match_state.scenario_elapsed_clock.stop(wall_ms);
         // gamemd provenance: battle abort teardown; verified
@@ -694,6 +696,7 @@ impl App {
     pub(super) fn start_quit_cascade(state: &mut AppState) {
         let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         crate::app::radar_movie::retire(state, wall_ms);
+        crate::app::commander_feedback::retire(state);
         crate::app::chrono_screen::retire(state, wall_ms);
         state.audio.fade_out_theme(wall_ms);
         state.frontend.quit_cascade = Some(crate::app::frontend::quit_cascade::QuitCascade::start(

@@ -4504,6 +4504,14 @@ pub struct RuleSet {
     /// Side identities in native `[Sides]` registration order, including
     /// sides allocated later by a per-country `Side=` override.
     side_ids: Vec<String>,
+    /// Commander personalities from `[AIPersonalities]`, in registration order.
+    ///
+    /// Empty for every rules set without that section — which is all retail
+    /// data — and an empty catalog is what keeps the feature entirely inert.
+    personalities: crate::rules::personality::PersonalityCatalog,
+    /// `[CommanderFeedback]`: the talking-head layer's own switches, next to
+    /// the personalities they govern.
+    commander_feedback: crate::rules::personality::CommanderFeedbackRules,
     /// Read-only projection of the live SideExt owner, in the same native
     /// array order as side_ids. Rebuilt after every Process/reset/save restore.
     #[cfg(feature = "ares")]
@@ -6404,6 +6412,20 @@ impl RuleSet {
             check_unique_ci("super_weapons", super_weapons.keys().collect());
         }
 
+        // Product extension: commander personalities ([AIPersonalities]). The
+        // registry walk stays here so the stored-ID projection has one owner;
+        // without the section the catalog is empty and nothing else changes.
+        //
+        // `Country=` is the only filter a personality is written with, at
+        // `rules.ini`'s `Owner=` granularity: exact `[Countries]` keys, matched
+        // against the house's own country name. Nothing here needs the country
+        // or side tables, which is what lets a mod's own country take part
+        // without registering anything.
+        let personalities = crate::rules::personality::parse_personalities(
+            ini,
+            &parse_registry(ini, "AIPersonalities"),
+        );
+
         let mut rules = RuleSet {
             object_list,
             object_index,
@@ -6419,6 +6441,8 @@ impl RuleSet {
             country_ids: country_side_registry.country_ids,
             country_indices: country_side_registry.country_indices,
             side_ids: country_side_registry.side_ids,
+            personalities,
+            commander_feedback: crate::rules::personality::parse_commander_feedback(ini),
             #[cfg(feature = "phobos")]
             side_gdi_positions,
             #[cfg(feature = "phobos")]
@@ -9137,6 +9161,17 @@ impl RuleSet {
     /// Resolve a side name to its stable `[Sides]` registration index.
     pub fn side_index(&self, id: &str) -> Option<SideIdx> {
         self.side_indices.get(&id.to_ascii_uppercase()).copied()
+    }
+
+    /// Commander personalities from `[AIPersonalities]`. Empty for retail data.
+    pub fn personalities(&self) -> &crate::rules::personality::PersonalityCatalog {
+        &self.personalities
+    }
+
+    /// `[CommanderFeedback]`: whether the talking-head layer runs at all, and
+    /// how easily a house is considered to be in trouble.
+    pub fn commander_feedback(&self) -> crate::rules::personality::CommanderFeedbackRules {
+        self.commander_feedback.clone()
     }
 
     /// Phobos `WarheadTypeExt::AllowDamageOnSelf.Get([General] ...)`: the

@@ -936,6 +936,7 @@ impl App {
                     minimap: None,
                     radar_anim: None,
                     radar_movies: Default::default(),
+                    commander_feedback: Default::default(),
                     chrono_screen: Default::default(),
                     scenario_pause: Default::default(),
                     radar_animation_source: None,

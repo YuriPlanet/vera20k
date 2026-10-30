@@ -568,6 +568,16 @@ pub struct HouseState {
     /// game-mode initializer explicitly assigns another native value.
     #[serde(default)]
     difficulty: HouseDifficulty,
+    /// Registration index into `Rules.personalities`, assigned once when a
+    /// skirmish computer house is created.
+    ///
+    /// Product extension (no native counterpart). Persisted because it decides
+    /// which AI triggers this house suppresses or reweights, so a save that
+    /// dropped it would reload as a different opponent. `None` — every human
+    /// house, every campaign house, and every rules set without
+    /// `[AIPersonalities]` — leaves the trigger table exactly as retail has it.
+    #[serde(default)]
+    personality: Option<u16>,
     /// Original House scalar difficulty fields. All seven biases begin at1.0
     /// and both delays at0.0; the shared SetDifficulty owner replaces them.
     #[serde(default)]
@@ -1407,6 +1417,50 @@ impl HouseState {
 
     pub const fn difficulty(&self) -> HouseDifficulty {
         self.difficulty
+    }
+
+    /// The commander personality driving this house, if `[AIPersonalities]`
+    /// registered one for it. See [`crate::rules::personality`].
+    pub const fn personality(&self) -> Option<u16> {
+        self.personality
+    }
+
+    /// Installed once by the skirmish launch (`crate::rules::personality`) when
+    /// the slot asked for a commander. Nothing else writes it: a house keeps
+    /// its commander for the match, and the talking-head layer only reads it.
+    pub const fn set_personality(&mut self, personality: Option<u16>) {
+        self.personality = personality;
+    }
+
+    /// The strategy half of a commander, applied once right after
+    /// [`Self::set_personality`] — the person who talks also fights
+    /// differently.
+    ///
+    /// `TriggerRatio=` becomes the `+0x565C` starting value, so a map's
+    /// `RatioAITriggerTeam=` (read after the launch houses are built) and
+    /// trigger op 76 still overwrite it. `TeamDelayPercent=` re-paces the first
+    /// team timer here; every later one is scaled at its restart
+    /// (`ai_team_creation::update_team_creation`), which keeps the personality
+    /// in rules instead of duplicating it into the house's saved state.
+    pub(crate) fn apply_commander_strategy(
+        &mut self,
+        definition: &crate::rules::personality::PersonalityDef,
+        general: &crate::rules::ruleset::GeneralRules,
+        array_index: i32,
+        frame: i32,
+    ) {
+        use crate::rules::personality::{NEUTRAL_WEIGHT_PERCENT, scale_team_delay};
+        self.team_creation
+            .set_trigger_ratio(definition.trigger_ratio);
+        if definition.team_delay_percent == NEUTRAL_WEIGHT_PERCENT {
+            return;
+        }
+        // Only the difficulty row is scaled; `175 * HouseIndex` stays as the
+        // per-house phase offset, or every house would restart on one frame.
+        let delay = self.difficulty_value(&general.team_delays);
+        let delay = scale_team_delay(delay, definition.team_delay_percent)
+            .wrapping_add(array_index.wrapping_mul(175));
+        self.team_creation.restart(frame, delay);
     }
 
     pub const fn multiplay_passive(&self) -> bool {
@@ -2592,6 +2646,7 @@ impl HouseState {
             player_control: is_human,
             difficulty: HouseDifficulty::Normal,
             difficulty_biases: HouseDifficultyBiases::default(),
+            personality: None,
             multiplay_passive: false,
             country_cost_mults: CountryCostMults::default(),
             country_speed_mults: CountrySpeedMults::default(),

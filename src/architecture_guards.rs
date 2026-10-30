@@ -1781,6 +1781,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "TActions 74/75 store only House+1F2 (0x006DF2FA, 0x006DF339)",
         ),
         (
+            "sim/house_state.rs",
+            "set_personality",
+            "VERA's skirmish launch draw (`crate::rules::personality`): the one write of a \
+             computer house's commander, installed by scenario bootstrap before the match starts",
+        ),
+        (
             "sim/mission/state.rs",
             "set_handler_state",
             "the handler-state dword native mission handlers write while executing",

@@ -426,6 +426,7 @@ impl App {
             crate::app::match_runtime::sim_tick::pump_audio_service(state, scenario_now_ms);
         }
         crate::app::radar_movie::service(state, scenario_now_ms);
+        crate::app::commander_feedback::service(state, scenario_now_ms);
 
         // Deactivated windows do not simulate when `pause_on_focus_loss` is
         // configured. gamemd parks its main tick in a sleep-and-network-only

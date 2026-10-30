@@ -148,6 +148,16 @@ pub(crate) fn update_team_creation(
     }
     if let Some(house) = sim.houses.get_mut(&owner) {
         let delay = house.difficulty_value(&rules.general.team_delays);
+        // A commander's `TeamDelayPercent=` re-paces every round after the
+        // first. Reading it here instead of caching it on the house keeps the
+        // personality in rules, where every client already agrees on it, and
+        // leaves `HouseTeamCreation` unchanged (no save-schema bump).
+        let delay = house
+            .personality()
+            .and_then(|index| rules.personalities().get(index))
+            .map_or(delay, |definition| {
+                crate::rules::personality::scale_team_delay(delay, definition.team_delay_percent)
+            });
         house.team_creation_mut().restart(frame, delay);
     }
 }
@@ -223,7 +233,7 @@ pub(crate) fn select_team_types_with(
             sim.destroy_team(oldest, rules, frame_effects);
         }
         if teams < team_cap {
-            picked = draw_ai_trigger(sim, enemy, defense_full, eligible, draw);
+            picked = draw_ai_trigger(sim, rules, owner, enemy, defense_full, eligible, draw);
         }
     }
     let vm = &sim.team_script_vm;
@@ -281,13 +291,26 @@ fn oldest_defense_team(sim: &Simulation, owner: InternedId) -> Option<u64> {
 
 /// The weighted draw among the qualifying AI triggers (`0x006F0C3E..
 /// 0x006F0DC2`).
+///
+/// Product extension: when the house carries a commander personality, that
+/// personality's `TriggerDeny` entries leave the draw and its
+/// `TriggerWeight.<id>=` percentages scale the surviving weights. Without one
+/// — every retail rules set — `personality` is `None` and this is the native
+/// draw field for field.
 fn draw_ai_trigger(
     sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
     enemy: Option<InternedId>,
     defense_full: bool,
     mut eligible: impl FnMut(&Simulation, &TeamAiTriggerDefinition, Option<InternedId>, bool) -> bool,
     mut draw: impl FnMut(&mut Simulation, i32, i32) -> i32,
 ) -> Vec<InternedId> {
+    let personality = sim
+        .houses
+        .get(&owner)
+        .and_then(|house| house.personality())
+        .and_then(|index| rules.personalities().get(index));
     let mut entries: Vec<(Option<InternedId>, Option<InternedId>, i32)> = Vec::new();
     let mut priority = false;
     let mut total: i32 = 0;
@@ -295,9 +318,23 @@ fn draw_ai_trigger(
         if !eligible(sim, trigger, enemy, defense_full) {
             continue;
         }
-        let weight = X87Chop53::ftol_i32_low_masked(
+        let native = X87Chop53::ftol_i32_low_masked(
             X87Chop53::load_f64(record.weight()).expect("an AI trigger weight is finite"),
         );
+        let weight = match personality {
+            Some(personality) => {
+                match personality.effective_weight(
+                    sim.interner.resolve(trigger.id),
+                    native,
+                    PRIORITY_WEIGHT,
+                ) {
+                    Some(weight) => weight,
+                    // A denied trigger leaves the draw entirely.
+                    None => continue,
+                }
+            }
+            None => native,
+        };
         if weight == PRIORITY_WEIGHT {
             if !priority {
                 priority = true;

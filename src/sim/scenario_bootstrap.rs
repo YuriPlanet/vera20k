@@ -1144,6 +1144,14 @@ pub struct NormalizedSkirmishSlot {
     /// A human node's handle, CreateHouses' source for House+0x1602A.
     pub handle: Option<String>,
     pub(crate) difficulty: HouseDifficulty,
+    /// The commander this house must get, if any.
+    ///
+    /// Reserved seam: no UI offers it yet, so every launch path passes `None`
+    /// and no house gets a commander at all. A selector, `spawn.ini`, or a map
+    /// with preset AI sets it to a `[AIPersonalities]` name, to `Standard`
+    /// (native behaviour, no clips) or to `none`, and
+    /// [`crate::rules::personality::personality_for_house`] does the rest.
+    pub commander: Option<String>,
 }
 
 /// Sim-owned behavioral launch descriptor (F09).
@@ -1730,6 +1738,7 @@ pub fn normalized_launch_slots(session: &SkirmishLaunchSession) -> Vec<Normalize
             source_human_index: Some(index),
             handle: Some(human.name.clone()),
             difficulty: HouseDifficulty::Normal,
+            commander: None,
         });
     }
     for (index, opponent) in session.opponents.iter().enumerate() {
@@ -1745,6 +1754,7 @@ pub fn normalized_launch_slots(session: &SkirmishLaunchSession) -> Vec<Normalize
             handle: None,
             difficulty: HouseDifficulty::from_native(opponent.difficulty.as_i32())
                 .expect("native AI difficulty"),
+            commander: None,
         });
     }
     slots
@@ -1806,6 +1816,9 @@ pub fn populate_launch_houses(
     rules: &RuleSet,
 ) {
     let human_count = slots.iter().filter(|slot| slot.is_human).count();
+    // Resolved once: the catalog and these switches are the same for every
+    // slot, and the base plan is built before the loop.
+    let feedback = rules.commander_feedback();
     for slot in slots {
         let name_id = sim.interner.intern(&slot.owner_name);
         let country_name = rules
@@ -1890,6 +1903,40 @@ pub fn populate_launch_houses(
         }
         house.resolve_multiplay_passive(rules, Some(country_name));
         house.project_country_mults(rules, &sim.interner);
+        // Product extension: a computer house may carry a commander
+        // personality, but only when something asked for one. The launch slot's
+        // own `commander` wins; `[CommanderFeedback] Assign.<owner_name>=` is
+        // the test seam underneath it. With neither, the house stays `None` and
+        // its AI is retail's own — no trigger deny, no weights, no re-pacing.
+        //
+        // `[CommanderFeedback] Personalities=no` removes the feature for every
+        // house at once: a map that ships preset AI (tower defence, a scripted
+        // mission) writes it and keeps the native skirmish brain.
+        if !slot.is_human && feedback.personalities {
+            let requested = slot
+                .commander
+                .as_deref()
+                .or_else(|| feedback.assigned(&slot.owner_name));
+            let personality = crate::rules::personality::personality_for_house(
+                rules.personalities(),
+                country_name,
+                requested,
+            );
+            house.set_personality(personality);
+            if let Some(definition) = personality
+                .and_then(|index| rules.personalities().get(index))
+                .filter(|definition| !definition.reserved)
+            {
+                // The strategy tilt is the second half of a commander: the
+                // same person who talks must also fight differently.
+                house.apply_commander_strategy(
+                    definition,
+                    &rules.general,
+                    sim.houses.order().len() as i32,
+                    sim.session.binary_frame() as i32,
+                );
+            }
+        }
         sim.houses.register(house);
     }
 }
@@ -5119,6 +5166,7 @@ mod tests {
             source_human_index: Some(0),
             handle: None,
             difficulty: HouseDifficulty::Normal,
+            commander: None,
         }];
         let mut expected = SimRng::new(seed);
         let blocker_word = (expected.next_u32() & 0xFFFF) as u16;

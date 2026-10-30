@@ -46,6 +46,7 @@ mod cncnet;
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 mod browser_lifecycle;
 pub(crate) use cncnet::SpawnAction;
+pub(crate) mod commander_feedback;
 mod cooperative_round;
 #[cfg(feature = "debug-tools")]
 pub(crate) mod debug_tools;

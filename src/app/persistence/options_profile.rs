@@ -164,6 +164,12 @@ pub(crate) struct RetailOptionsProfile {
     /// enabled AI on the local player's own explicit team. Off by default, so
     /// retail's "at least two players" and "more than one team" gates stay.
     pub(crate) solo_skirmish: bool,
+    /// `[VERA] CommanderFeedback=`: draw the computer opponents' skirmish
+    /// talking-head clips and their subtitles. On by default so a stock
+    /// profile shows them; it is a presentation switch only — the house keeps
+    /// its personality and its trigger weights either way, and the simulation
+    /// never reads it.
+    pub(crate) commander_feedback: bool,
     /// `[VERA] TranslateChat=`: the language received online chat is
     /// translated into, or `None`, the default, for off. Only the `/translate`
     /// chat command changes it ([`Self::commit_chat_translation`]).
@@ -243,6 +249,7 @@ impl Default for RetailOptionsProfile {
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             wol_test_service: false,
             solo_skirmish: false,
+            commander_feedback: true,
             translate_chat: None,
             skipped_update: String::new(),
             display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
@@ -262,7 +269,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 14],
+    pub(crate) vera: [(&'static str, String); 15],
 }
 
 impl RetailOptionsLoad {
@@ -478,6 +485,7 @@ impl RetailOptionsProfile {
             );
             self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
+            self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
             if let Some(value) = vera.read_name("TranslateChat", 16) {
                 self.translate_chat = crate::ui::chat_translation::ChatLanguage::from_tag(value);
             }
@@ -584,6 +592,10 @@ impl RetailOptionsProfile {
                     format_bool(self.wol_test_service).to_string(),
                 ),
                 ("SoloSkirmish", format_bool(self.solo_skirmish).to_string()),
+                (
+                    "CommanderFeedback",
+                    format_bool(self.commander_feedback).to_string(),
+                ),
                 (
                     "RenderInterpolation",
                     format_bool(self.render_interpolation).to_string(),
@@ -1572,6 +1584,33 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                 load_snapshot(&startup, &written)
                     .retained_profile
                     .render_interpolation,
+                expected
+            );
+        }
+    }
+
+    /// `[VERA] CommanderFeedback=` is the talking-head switch. It defaults to
+    /// on and lives in the existing profile transaction, so a player can turn
+    /// the layer off without touching the personality data.
+    #[test]
+    fn commander_feedback_switch_defaults_on_and_round_trips() {
+        let startup = RetailStartupOptions::default();
+        assert!(
+            load_snapshot(&startup, b"")
+                .retained_profile
+                .commander_feedback,
+            "a stock profile shows the clips"
+        );
+        for (value, expected) in [("no", false), ("yes", true)] {
+            let input = format!("[VERA]\nCommanderFeedback={value}\nUnowned=keep\n");
+            let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
+            assert_eq!(profile.commander_feedback, expected);
+            let written = profile.transform_settings(input.as_bytes());
+            assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
+            assert_eq!(
+                load_snapshot(&startup, &written)
+                    .retained_profile
+                    .commander_feedback,
                 expected
             );
         }

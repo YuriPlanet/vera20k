@@ -115,6 +115,7 @@ impl HeadlessScenario {
             source_human_index: None,
             handle: None,
             difficulty: crate::sim::house_state::HouseDifficulty::Normal,
+            commander: None,
         };
         let runtime = &mut self.runtime;
         crate::sim::scenario_bootstrap::populate_launch_houses(
