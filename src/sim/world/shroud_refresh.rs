@@ -2065,17 +2065,17 @@ impl Simulation {
                 trace.border_scans.push((origin, radius));
             }
         });
-        let border = vision::sight_border_cells(origin, radius, inner);
         let cells = context
             .terrain()
             .or(resolved_terrain.as_ref())
             .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-        fog.refresh_sight_border_cells(viewer, &border, cells.as_ref());
+        fog.refresh_sight_border(viewer, origin, radius, inner, cells.as_ref());
         // Each refresh writes only its own cell's frame, so every frame
         // read after the whole border is the one its refresh stored.
         #[cfg(any(test, feature = "test-support"))]
         REVEAL_CALLS.with_borrow_mut(|trace| {
             if let Some(trace) = trace {
+                let border = vision::sight_border_cells(origin, radius, inner);
                 for &cell in &border {
                     trace.border_receivers.push(cell);
                     if cell.0 < fog.width() && cell.1 < fog.height() {
@@ -2487,6 +2487,10 @@ impl Simulation {
             only_viewer.map_or_else(|| self.houses.order().to_vec(), |viewer| vec![viewer]);
         let clients = self.fog_clients_current_first();
         let config = self.sight_reveal_config(context.rules());
+        // Map4ADEE0/4ADCD0 retain registration and viewer order. Scratch is
+        // local to this invocation: callbacks may reenter the same walk.
+        let mut callback_viewers = Vec::with_capacity(viewers.len());
+        let mut followups = Vec::with_capacity(viewers.len());
         for ordinal in 0..count {
             let Some(id) = self.substrate.entities.techno_registry_at(ordinal) else {
                 break;
@@ -2501,8 +2505,8 @@ impl Simulation {
                 RevealToAll,
                 Gap,
             }
-            let mut callback_viewers = Vec::new();
-            let mut followups = Vec::new();
+            callback_viewers.clear();
+            followups.clear();
             for &viewer in &viewers {
                 let Some(entity) = self.substrate.entities.get(id) else {
                     break;
@@ -2568,7 +2572,7 @@ impl Simulation {
                     );
                 }
             }
-            for (viewer, followup) in followups {
+            for (viewer, followup) in followups.drain(..) {
                 match followup {
                     Followup::SightAndGap | Followup::AlliedSight => {
                         if !release {

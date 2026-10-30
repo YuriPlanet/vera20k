@@ -177,6 +177,12 @@ fn edge_neighbor_clear(ground: u8, cache: MapCellEdgeCache) -> [bool; 2] {
     [ground & GROUND_VISIBLE == 0, !cache.initialized]
 }
 
+/// Independent clear inputs in bits 0 and 8, before a neighbour's bit weight.
+fn packed_edge_input(ground: u8, cache: MapCellEdgeCache) -> u16 {
+    let [ground, fog] = edge_neighbor_clear(ground, cache);
+    u16::from(ground) | (u16::from(fog) << 8)
+}
+
 /// The neighbour bits of [`SHROUD_EDGE_LUT`]'s index, for [`ROW_NEIGHBORS`].
 const EDGE_FRAME_BITS: [u8; 8] = [0x40, 0x80, 0x01, 0x20, 0x02, 0x10, 0x08, 0x04];
 
@@ -185,9 +191,36 @@ impl OwnerVisibility {
     /// refresh when they change.
     pub(super) fn set_ground_bits(&mut self, index: usize, bits: u8) {
         if self.ground_flags[index] != bits {
+            let changed = (self.ground_flags[index] ^ bits) & GROUND_VISIBLE != 0;
             self.ground_flags[index] = bits;
+            if changed {
+                self.update_edge_input(VisibilityCell::Real(index));
+            }
             self.edge_cells.changed.push(index as u32);
         }
+    }
+
+    /// Cell140 bit2 is the fog neighbour input of Tactical6D8700. All its
+    /// writers update the packed inputs before another cell can read them.
+    fn set_cell_initialized(&mut self, key: VisibilityCell, initialized: bool) {
+        let cache = self.map_cell_parts_mut(key).2;
+        if cache.initialized != initialized {
+            cache.initialized = initialized;
+            self.update_edge_input(key);
+        }
+    }
+
+    /// Pack only 6D8700's neighbour inputs: ground12C bit8 and cache140
+    /// bit2. A source change updates one packed cell, not its neighbours.
+    /// Dummy neighbours keep the original lookup path.
+    fn update_edge_input(&mut self, key: VisibilityCell) {
+        let VisibilityCell::Real(index) = key else {
+            return;
+        };
+        if let Some(inputs) = self.edge_inputs_cache.get_mut() {
+            inputs[index] =
+                packed_edge_input(self.ground_flags[index], self.map_cell_edge_cache[index]);
+        } // First read rebuilds from the authoritative grids.
     }
 
     /// What the ground channel of `Tactical::6D8700` reads of `key`, and the
@@ -200,7 +233,11 @@ impl OwnerVisibility {
     /// List `key` for the next shroud-edge refresh when its edge inputs
     /// differ from `before`.
     fn note_edge_inputs(&mut self, key: VisibilityCell, before: (u8, i8)) {
-        if self.edge_inputs(key) == before {
+        let after = self.edge_inputs(key);
+        if (before.0 ^ after.0) & GROUND_VISIBLE != 0 {
+            self.update_edge_input(key);
+        }
+        if after == before {
             return;
         }
         match key {
@@ -222,7 +259,7 @@ impl OwnerVisibility {
                 index,
                 self.ground_flags[index] & !(GROUND_VISIBLE | GROUND_OPEN),
             );
-            self.map_cell_edge_cache[index].initialized = false;
+            self.set_cell_initialized(VisibilityCell::Real(index), false);
             self.map_cell_edge_cache[index].fog_open = false;
         }
         self.publish_knowledge(index);
@@ -242,9 +279,8 @@ impl OwnerVisibility {
             self.ground_flags[index] | GROUND_VISIBLE | GROUND_OPEN
         };
         self.set_ground_bits(index, ground);
-        let cache = &mut self.map_cell_edge_cache[index];
-        cache.initialized = !reset;
-        cache.fog_open = !reset;
+        self.set_cell_initialized(VisibilityCell::Real(index), !reset);
+        self.map_cell_edge_cache[index].fog_open = !reset;
         self.publish_knowledge(index);
     }
 
@@ -350,6 +386,37 @@ impl OwnerVisibility {
     /// [`Self::map_cell_edge_frame`] sets. An interior cell's neighbours are
     /// the cells beside it in the grid, so reading them looks nothing up.
     fn interior_edge_masks(&self, index: usize) -> [u8; 2] {
+        let inputs = self.edge_inputs_cache.get_or_init(|| {
+            self.ground_flags
+                .iter()
+                .zip(&self.map_cell_edge_cache)
+                .map(|(&ground, &cache)| packed_edge_input(ground, cache))
+                .collect()
+        });
+        let width = usize::from(self.width);
+        // Bits 0 and 8 hold the two clear inputs. Multiplying by the
+        // native bit weight places both channels without cross-byte carries.
+        let neighbours = [
+            inputs[index - width - 1],
+            inputs[index - width],
+            inputs[index - width + 1],
+            inputs[index - 1],
+            inputs[index + 1],
+            inputs[index + width - 1],
+            inputs[index + width],
+            inputs[index + width + 1],
+        ];
+        let packed = neighbours
+            .into_iter()
+            .zip(EDGE_FRAME_BITS)
+            .fold(0u16, |mask, (input, bit)| mask | input * u16::from(bit));
+        let answer = [packed as u8, (packed >> 8) as u8];
+        debug_assert_eq!(answer, self.read_interior_edge_masks(index));
+        answer
+    }
+
+    /// Direct source read for checking the packed inputs in debug builds.
+    fn read_interior_edge_masks(&self, index: usize) -> [u8; 2] {
         let width = self.width as isize;
         let mut masks = [0u8; 2];
         for ((dx, dy), bit) in ROW_NEIGHBORS.into_iter().zip(EDGE_FRAME_BITS) {
@@ -442,8 +509,8 @@ impl OwnerVisibility {
         }
         let (ground, old) = self.map_cell_parts(key);
         let fresh = !(old.initialized && ground & GROUND_VISIBLE != 0);
-        let (state, ground, cache) = self.map_cell_parts_mut(key);
-        cache.initialized = true;
+        self.set_cell_initialized(key, true);
+        let (state, ground, _) = self.map_cell_parts_mut(key);
         if final_pass {
             state.leave();
         } else {
@@ -501,7 +568,7 @@ impl OwnerVisibility {
     }
 
     /// Recompute and store each of `cells`' ground frame in turn
-    /// ([`FogState::refresh_sight_border_cells`]).
+    /// ([`FogState::refresh_sight_border`]).
     pub(super) fn refresh_ground_frames(
         &mut self,
         cells: &[(u16, u16)],
@@ -738,10 +805,9 @@ impl FogState {
             .by_owner
             .get_or_insert_with(viewer, || OwnerVisibility::new(self.width, self.height));
         let key = vis.visibility_cell(cell, native_cells);
-        let cache = vis.map_cell_parts_mut(key).2;
-        let old = *cache;
-        cache.initialized = true;
-        cache.pending_fog = false;
+        let old = vis.map_cell_parts(key).1;
+        vis.set_cell_initialized(key, true);
+        vis.map_cell_parts_mut(key).2.pending_fog = false;
         let frame = vis.map_cell_edge_frame(cell, true, native_cells);
         let cache = vis.map_cell_parts_mut(key).2;
         cache.frames[1] = frame;
@@ -811,9 +877,10 @@ impl FogState {
             .by_owner
             .get_or_insert_with(viewer, || OwnerVisibility::new(self.width, self.height));
         let key = vis.visibility_cell(cell, native_cells);
+        let old = vis.map_cell_parts(key).1;
+        let was_known = old.initialized || old.fog_open;
+        vis.set_cell_initialized(key, false);
         let cache = vis.map_cell_parts_mut(key).2;
-        let was_known = cache.initialized || cache.fog_open;
-        cache.initialized = false;
         cache.fog_open = false;
         cache.frames[1] = -2;
         was_known
@@ -846,7 +913,7 @@ impl FogState {
         if (cache.fog_open || frame != cache.frames[1]) && frame >= 0 && cache.frames[1] >= -1 {
             cache.frames[1] = frame;
             cache.fog_open = false;
-            cache.initialized = true;
+            vis.set_cell_initialized(key, true);
         }
         false
     }
@@ -922,9 +989,9 @@ impl FogState {
         }
         state.sweep();
         *ground &= !(GROUND_VISIBLE | GROUND_OPEN);
-        cache.initialized = false;
-        cache.fog_open = false;
         let notify = cache.frames[0] == -2;
+        vis.set_cell_initialized(key, false);
+        vis.map_cell_parts_mut(key).2.fog_open = false;
         vis.note_edge_inputs(key, before);
         if let VisibilityCell::Real(index) = key {
             vis.tracked.cleared.push(index as u32);
@@ -990,12 +1057,20 @@ impl FogState {
     /// dirty138/6DA7D0. The stored frame remains authoritative for later Cell
     /// change/notification decisions. A viewer without a plane gets one,
     /// whose cells read -2 as a missing plane does.
-    pub(crate) fn refresh_sight_border_cells(
+    pub(crate) fn refresh_sight_border(
         &mut self,
         viewer: InternedId,
-        cells: &[(u16, u16)],
+        origin: (u16, u16, i32),
+        radius: i32,
+        inner: i32,
         native_cells: Option<&NativeCellQuery<'_>>,
     ) {
+        let inputs = (origin, radius, inner);
+        if self.border_geometry.inputs != Some(inputs) {
+            self.border_geometry.cells = super::sight_border_cells(origin, radius, inner);
+            self.border_geometry.inputs = Some(inputs);
+        }
+        let cells = &self.border_geometry.cells;
         if cells.is_empty() {
             return;
         }
@@ -1030,8 +1105,8 @@ impl FogState {
         let before = vis.edge_inputs(key);
         let (ground, old) = vis.map_cell_parts(key);
         let fresh = !(old.initialized && ground & GROUND_VISIBLE != 0);
+        vis.set_cell_initialized(key, true);
         let (state, ground, cache) = vis.map_cell_parts_mut(key);
-        cache.initialized = true;
         cache.pending_fog = false;
         *ground |= GROUND_VISIBLE;
         state.open_mapped();

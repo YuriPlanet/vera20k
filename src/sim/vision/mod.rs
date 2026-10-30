@@ -206,6 +206,9 @@ pub struct OwnerVisibility {
     ground_flags: Vec<u8>,
     shroud_knowledge: Vec<ShroudKnowledge>,
     map_cell_edge_cache: Vec<MapCellEdgeCache>,
+    /// Packed ground/fog inputs for Tactical6D8700; rebuilt after loading.
+    #[serde(skip)]
+    edge_inputs_cache: std::sync::OnceLock<Vec<u16>>,
     dummy_visibility: DummyVisibility,
     /// The cells the per-frame passes must visit; never saved or hashed.
     #[serde(skip)]
@@ -266,6 +269,7 @@ impl OwnerVisibility {
             ground_flags: vec![0; len],
             shroud_knowledge: vec![ShroudKnowledge::default(); len],
             map_cell_edge_cache: vec![MapCellEdgeCache::default(); len],
+            edge_inputs_cache: std::sync::OnceLock::new(),
             dummy_visibility: DummyVisibility::default(),
             // Every zeroed cell already matches its default knowledge.
             tracked: TrackedCells {
@@ -694,6 +698,11 @@ pub struct FogState {
     width: u16,
     height: u16,
     by_owner: Planes,
+    /// Pure geometry only; keyed by every argument and never saved/hashed.
+    #[serde(skip)]
+    border_geometry: BorderGeometry,
+    #[serde(skip)]
+    gap_geometry: GapGeometry,
     /// A derived per-viewer active contribution index. Its serialized
     /// `latched` bit indicates that this viewer's cell counts are still held;
     /// this logical client's native +250/+254/+260 authority is
@@ -2565,6 +2574,13 @@ pub(crate) fn sight_border_cells(
         .collect()
 }
 
+/// One Map567DA0 disc, in its original spiral order (duplicates included).
+#[derive(Debug, Clone, Default)]
+struct BorderGeometry {
+    inputs: Option<((u16, u16, i32), i32, i32)>,
+    cells: Vec<(u16, u16)>,
+}
+
 /// Reveal spiral table extracted from the original engine.
 /// Each (dx, dy) is a cell offset from the revealing unit's position.
 /// Entries are ordered in expanding rings by sight radius.
@@ -3095,6 +3111,24 @@ fn gap_footprint(generator: GapGeneratorSource, width: usize, height: usize) -> 
     cells
 }
 
+/// CreateGap6FB170/DestroyGap6FB470 share geometry, not cell state or gates.
+#[derive(Debug, Clone, Default)]
+struct GapGeometry {
+    inputs: Option<(u16, u16, i32, usize, usize)>,
+    cells: Vec<usize>,
+}
+
+impl GapGeometry {
+    fn cells(&mut self, source: GapGeneratorSource, width: usize, height: usize) -> &[usize] {
+        let inputs = (source.rx, source.ry, source.radius, width, height);
+        if self.inputs != Some(inputs) {
+            self.cells = gap_footprint(source, width, height);
+            self.inputs = Some(inputs);
+        }
+        &self.cells
+    }
+}
+
 /// One admitted CreateGap6FB170/DestroyGap6FB470 event. Building owns +269;
 /// this owner writes hostile +134 receipts or friendly signed Cell+13C counts.
 /// The current alliance/defeat gate selects the leaf independently for each
@@ -3126,14 +3160,14 @@ pub(crate) fn publish_gap_generator_event(
                 interner.resolve(viewer),
             );
         if friendly {
-            for index in gap_footprint(source, width, height) {
+            for &index in fog.gap_geometry.cells(source, width, height) {
                 vis.count_friendly_gap_cell(index, active);
             }
             return;
         }
         if active {
             if receipts.insert(source) {
-                for index in gap_footprint(source, width, height) {
+                for &index in fog.gap_geometry.cells(source, width, height) {
                     vis.add_gap_cell(index);
                 }
             }
@@ -3155,7 +3189,7 @@ pub(crate) fn publish_gap_generator_event(
                 .collect();
             for old in removed {
                 receipts.remove(&old);
-                for index in gap_footprint(old, width, height) {
+                for &index in fog.gap_geometry.cells(old, width, height) {
                     vis.remove_gap_cell(index, spy_sat_active_owners.contains(&viewer));
                 }
             }
