@@ -115,6 +115,17 @@ fn map_select_stages(mapsel: &IniFile, side: &str) -> Vec<String> {
         .collect()
 }
 
+/// The index of `side`'s MAPSELMD stage whose `Scenario=` is `scenario`, as
+/// `0x005CF760` finds the current stage.
+pub(crate) fn map_select_stage_of(mapsel: &IniFile, side: &str, scenario: &str) -> Option<u16> {
+    map_select_stages(mapsel, side)
+        .iter()
+        .position(|stage| {
+            map_select_value(mapsel, stage, "Scenario").eq_ignore_ascii_case(scenario)
+        })
+        .and_then(|index| u16::try_from(index).ok())
+}
+
 fn map_select_value(mapsel: &IniFile, section: &str, key: &str) -> String {
     mapsel
         .section(section)

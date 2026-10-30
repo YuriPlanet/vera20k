@@ -92,6 +92,11 @@ impl CampaignRegistry {
         self.entries.get(index)
     }
 
+    /// The definitions in `[Battles]` list order.
+    pub fn iter(&self) -> impl Iterator<Item = &CampaignDefinition> {
+        self.entries.iter()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
