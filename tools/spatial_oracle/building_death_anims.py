@@ -3723,7 +3723,8 @@ def garrison_fatal_execute(inputs, occupants):
     f.building(context['building_type'], target, f.allocate(0x20), constructor_only=True)
     position = f.allocate(12)
     u.mem_write(position, dwords(*(c * 256 + 128 for c in context['origin_cell']), 0))
-    assert bc.invoke(u, 0x440580, target, position, 0) & 255 == 1
+    require(bc.invoke(u, 0x440580, target, position, 0) & 255 == 1,
+            'native CAHSE01 Unlimbo failed')
     feet = []
     for _ in range(occupants):
         foot = f.allocate(0x800)
@@ -3733,7 +3734,8 @@ def garrison_fatal_execute(inputs, occupants):
     # Original vector resize45A560 owns storage; original constructors own Foot.
     vector = target + 0x684
     if read(target + 0x68C) < occupants:
-        assert bc.invoke(u, read(read(vector) + 8), vector, occupants, 0) & 255 == 1
+        require(bc.invoke(u, read(read(vector) + 8), vector, occupants, 0) & 255 == 1,
+                'native occupant vector resize failed')
     if feet:
         u.mem_write(read(target + 0x688), dwords(*feet))
     u.mem_write(target + 0x694, dwords(occupants))
@@ -3746,7 +3748,8 @@ def garrison_fatal_execute(inputs, occupants):
     assert f.string(read(er.HOUSE + 0x34) + 0x24) == 'Americans'
     assert bytes(u.mem_read(er.HOUSE + 0x1EC, 2)) == b'\1\1'
     before_human_query = f.rng()
-    assert bc.invoke(u, 0x50B6F0, er.HOUSE) & 255 == 1
+    require(bc.invoke(u, 0x50B6F0, er.HOUSE) & 255 == 1,
+            'native current House is not human')
     assert f.rng() == before_human_query
     streams = {'main': 0x886B88, 'scenario': read(0xA8B230) + 0x218, 'mapgen': 0xABE890}
     for pointer in streams.values():
