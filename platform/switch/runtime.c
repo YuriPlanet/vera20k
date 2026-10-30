@@ -239,7 +239,7 @@ uint64_t platform_keyboard(uint64_t *keys) {
     for (uint32_t index = 0; index < 4; ++index) keys[index] = state.keys[index];
     return state.modifiers;
 }
-Result platform_soft_keyboard_show(char *output, size_t output_size) {
+Result platform_soft_keyboard_show(const char *initial_text, char *output, size_t output_size) {
     if (!output || output_size < 2) return 1;
     output[0] = '\0';
     SwkbdConfig config;
@@ -250,6 +250,13 @@ Result platform_soft_keyboard_show(char *output, size_t output_size) {
     swkbdConfigSetStringLenMax(&config, 1024);
     swkbdConfigSetHeaderText(&config, "VERA20k");
     swkbdConfigSetGuideText(&config, "A 确定   B 取消");
+    // Show what the edit already holds, so confirming returns the whole
+    // value and the caller can replace it instead of appending.
+    if (initial_text && *initial_text) {
+        swkbdConfigSetInitialText(&config, initial_text);
+        // Put the caret after the existing text.
+        swkbdConfigSetInitialCursorPos(&config, 1);
+    }
     result = swkbdShow(&config, output, output_size);
     swkbdClose(&config);
     return result;

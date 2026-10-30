@@ -16,20 +16,33 @@ use winit::dpi::{PhysicalPosition, PhysicalSize, Position, Size};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FocusedEdit(usize);
 
+/// The focused edit plus the text the OS keyboard should start from.
+struct ActiveEdit {
+    identity: FocusedEdit,
+    text: String,
+}
+
+fn flag(edit: &impl EditFocus) -> Option<ActiveEdit> {
+    edit.focus_flag().then(|| ActiveEdit {
+        identity: FocusedEdit(edit as *const _ as usize),
+        text: edit.text(),
+    })
+}
+
 /// The edit that accepts text and currently owns focus, if any.
-fn focused_edit(state: &AppState) -> Option<FocusedEdit> {
-    fn flag(edit: &impl EditFocus) -> Option<FocusedEdit> {
-        edit.focus_flag().then(|| FocusedEdit(edit as *const _ as usize))
-    }
+fn focused_edit(state: &AppState) -> Option<ActiveEdit> {
     if crate::app::frontend::shell_transition::blocks_shell_input(state) {
         return None;
     }
     if state.frontend.screen == GameScreen::InGame
         && state.match_state.match_presentation.message_list.editing()
     {
-        return Some(FocusedEdit(
-            &state.match_state.match_presentation.message_list as *const _ as usize,
-        ));
+        return Some(ActiveEdit {
+            identity: FocusedEdit(
+                &state.match_state.match_presentation.message_list as *const _ as usize,
+            ),
+            text: String::new(),
+        });
     }
     if crate::app::input::coop_score::active(state) {
         return state
@@ -100,26 +113,73 @@ fn focused_edit(state: &AppState) -> Option<FocusedEdit> {
         return flag(&browser.description_edit);
     }
     if crate::app::shell_wol::text_input_active(state) {
-        return Some(FocusedEdit(
-            &state.frontend.wol as *const _ as usize,
-        ));
+        return Some(ActiveEdit {
+            identity: FocusedEdit(&state.frontend.wol as *const _ as usize),
+            text: String::new(),
+        });
     }
     None
 }
 
+/// Empty the focused edit before the ordinary insertion path runs, so the
+/// keyboard's fully edited value replaces the old text.
+///
+/// Only the fields the software keyboard is opened for are listed. These edits
+/// have no selection range, so they are cleared outright; an edit that does
+/// support selection keeps that mechanism instead.
+#[cfg(target_os = "horizon")]
+fn select_focused_edit_for_replacement(state: &mut AppState) {
+    fn clear(edit: &mut crate::ui::skirmish_shell::SavedSeedDescriptionEdit) {
+        if edit.focused {
+            edit.set_units_limited(std::iter::empty::<u16>(), 0);
+        }
+    }
+    if App::native_skirmish_shell_active(state) {
+        let shell = &mut state.frontend.skirmish_shell_state;
+        if let Some(browser) = shell.saved_seed_browser.as_mut() {
+            if browser.prompt.is_none() {
+                clear(&mut browser.description_edit);
+                if browser.description_edit.focused {
+                    return;
+                }
+            }
+        }
+        if shell.player_name_edit.focused {
+            shell.player_name_edit.focus_select_all();
+            return;
+        }
+    }
+    if let Some(dialog) = state.frontend.network_options.as_mut() {
+        if dialog.pending_message().is_none() {
+            for edit in [&mut dialog.socket, &mut dialog.destination, &mut dialog.port] {
+                clear(edit);
+            }
+        }
+    }
+}
+
 pub(crate) trait EditFocus {
     fn focus_flag(&self) -> bool;
+    /// The edit's current content, so the OS keyboard can start from it
+    /// instead of appending to whatever the player typed last time.
+    fn text(&self) -> String;
 }
 
 impl EditFocus for crate::ui::skirmish_shell::PlayerNameEditState {
     fn focus_flag(&self) -> bool {
         self.focused
     }
+    fn text(&self) -> String {
+        self.text.clone()
+    }
 }
 
 impl EditFocus for crate::ui::skirmish_shell::SavedSeedDescriptionEdit {
     fn focus_flag(&self) -> bool {
         self.focused
+    }
+    fn text(&self) -> String {
+        self.display_text()
     }
 }
 
@@ -134,6 +194,14 @@ pub(crate) fn commit(state: &mut AppState, text: &str) -> bool {
     if text.is_empty() || !text_input_active(state) {
         return false;
     }
+
+    // Horizon: the software keyboard opens pre-filled with the edit's content
+    // and returns the whole edited value. Select everything before handing it
+    // to the ordinary insertion path, which then consumes the selection and
+    // replaces the old text instead of appending to it. Desktop keeps plain
+    // per-character insertion because it has physical keys.
+    #[cfg(target_os = "horizon")]
+    select_focused_edit_for_replacement(state);
 
     if state.frontend.screen == GameScreen::InGame
         && state.match_state.match_presentation.message_list.editing()
@@ -209,11 +277,19 @@ pub(crate) fn sync_window(state: &mut AppState) {
     // first one: the software keyboard is a one-shot modal, so a player who
     // taps a second text field needs it raised again even though IME stayed
     // enabled the whole time.
-    let changed = active != state.platform.ime_allowed
-        || focused != state.platform.ime_focus;
+    let identity = focused.as_ref().map(|edit| edit.identity);
+    let changed =
+        active != state.platform.ime_allowed || identity != state.platform.ime_focus;
     if changed {
         state.platform.ime_allowed = active;
-        state.platform.ime_focus = focused;
+        state.platform.ime_focus = identity;
+        // A focused edit opens the keyboard pre-filled with its own content,
+        // so confirming replaces the value instead of appending to it. The
+        // setter is a Horizon-backend extension, absent from desktop winit.
+        #[cfg(target_os = "horizon")]
+        state.platform.window.set_ime_initial_text(
+            focused.as_ref().map_or("", |edit| edit.text.as_str()),
+        );
         state.platform.window.set_ime_allowed(active);
         if active {
             state.platform.ime_cursor = None;

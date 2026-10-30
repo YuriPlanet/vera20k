@@ -236,6 +236,16 @@ impl Window {
 
     pub fn set_ime_cursor_area(&self, _position: Position, _size: Size) {}
 
+    /// Text the software keyboard should start from. Not part of the winit
+    /// IME surface, so it is a Horizon-backend extension the app sets when an
+    /// edit takes focus.
+    pub fn set_ime_initial_text(&self, text: &str) {
+        if let Ok(mut slot) = self.shared.ime_initial_text.lock() {
+            slot.clear();
+            slot.push_str(text);
+        }
+    }
+
     pub fn set_ime_allowed(&self, allowed: bool) {
         // Polling owns the blocking swkbd call so opening it cannot stall a
         // state transition. While this is set, a fresh Plus edge opens it.

@@ -36,7 +36,11 @@ unsafe extern "C" {
     fn platform_keyboard(keys: *mut u64) -> u64;
     fn platform_sticks(lx: *mut i32, ly: *mut i32, rx: *mut i32, ry: *mut i32);
     fn platform_focused() -> bool;
-    fn platform_soft_keyboard_show(output: *mut c_char, output_size: usize) -> u32;
+    fn platform_soft_keyboard_show(
+        initial_text: *const c_char,
+        output: *mut c_char,
+        output_size: usize,
+    ) -> u32;
 }
 
 #[repr(C)]
@@ -74,6 +78,9 @@ pub struct Shared {
     /// Set once when an edit gains focus. The polling thread performs the
     /// blocking swkbd call, so focus acquisition never stalls a transition.
     pub ime_open_requested: AtomicBool,
+    /// Content of the edit that owns focus. The software keyboard opens with
+    /// it selected so confirming replaces the value instead of appending.
+    pub ime_initial_text: Mutex<String>,
     pub focused: AtomicBool,
     exiting: AtomicBool,
     alive: AtomicBool,
@@ -147,6 +154,7 @@ impl<T> EventLoop<T> {
             ime_allowed: AtomicBool::new(false),
             pending_ime: Mutex::new(VecDeque::new()),
             ime_open_requested: AtomicBool::new(false),
+            ime_initial_text: Mutex::new(String::new()),
             focused: AtomicBool::new(true),
             exiting: AtomicBool::new(false),
             alive: AtomicBool::new(true),
@@ -368,12 +376,27 @@ fn touch_midpoint(touches: &[(u64, PhysicalPosition<f64>)]) -> Option<PhysicalPo
     })
 }
 
-fn show_soft_keyboard() -> Option<String> {
+fn show_soft_keyboard(shared: &Shared) -> Option<String> {
     // swkbd reports UTF-8 bytes; 1024 characters can occupy 4096 bytes plus
     // the terminator, so leave another buffer's worth of headroom.
     let mut output = [0_u8; 8192];
-    let result =
-        unsafe { platform_soft_keyboard_show(output.as_mut_ptr().cast::<c_char>(), output.len()) };
+    let initial = std::ffi::CString::new(
+        shared
+            .ime_initial_text
+            .lock()
+            .map(|slot| slot.clone())
+            .unwrap_or_default(),
+    )
+    .ok();
+    let result = unsafe {
+        platform_soft_keyboard_show(
+            initial
+                .as_ref()
+                .map_or(std::ptr::null(), |text| text.as_ptr()),
+            output.as_mut_ptr().cast::<c_char>(),
+            output.len(),
+        )
+    };
     if result != 0 {
         return None;
     }
@@ -627,7 +650,7 @@ impl Input {
             && !touch_pan.active
             && shared.ime_open_requested.swap(false, Ordering::AcqRel);
         if ime_allowed && (auto_open || pressed_buttons & (1 << 10) != 0) {
-            if let Some(text) = show_soft_keyboard() {
+            if let Some(text) = show_soft_keyboard(shared) {
                 events.push(WindowEvent::Ime(Ime::Commit(text)));
             }
         }
