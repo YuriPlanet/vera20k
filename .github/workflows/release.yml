@@ -416,7 +416,13 @@ jobs:
             throw 'config.toml starts with a byte order mark'
           }
 
-          # Uninstalling removes the program and keeps what the player made.
+          # Uninstalling removes the program and the installers the game's
+          # updater downloaded, and keeps what the player made: config.toml
+          # here, and a profile beside those installers.
+          $shared = Join-Path $env:LOCALAPPDATA 'VERA20k'
+          New-Item -ItemType Directory -Force (Join-Path $shared 'update') | Out-Null
+          Set-Content (Join-Path $shared 'update\vera20k-setup.exe') 'a downloaded installer'
+          Set-Content (Join-Path $shared 'VERA.INI') 'a profile'
           $p = Start-Process (Join-Path $app 'unins000.exe') -Wait -PassThru `
             -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
           if ($p.ExitCode -ne 0) { throw "uninstall failed with exit code $($p.ExitCode)" }
@@ -430,6 +436,9 @@ jobs:
           if (Test-Path (Join-Path $app 'unins000.exe')) { throw 'uninstall did not finish' }
           if (Test-Path (Join-Path $app 'vera20k.exe')) { throw 'uninstall left vera20k.exe behind' }
           if (-not (Test-Path (Join-Path $app 'config.toml'))) { throw 'uninstall removed config.toml' }
+          if (Test-Path (Join-Path $shared 'update')) { throw 'uninstall left the downloaded installers behind' }
+          if (-not (Test-Path (Join-Path $shared 'VERA.INI'))) { throw "uninstall removed $shared\VERA.INI" }
+          Remove-Item -Recurse -Force $shared
 
           # With nothing from before, setup finds the game: in a Steam library
           # before the EA app's default folder. Steam records its folder with

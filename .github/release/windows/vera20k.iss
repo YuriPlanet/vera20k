@@ -187,6 +187,15 @@ Name: "{autodesktop}\VERA"; Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; 
 Type: files; Name: "{autoprograms}\VERA20K.lnk"
 Type: files; Name: "{autodesktop}\VERA20K.lnk"
 
+[UninstallDelete]
+; The installers the game's updater downloaded (download_folder in
+; src/app/updater/install.rs) go with the program. Entries run in this order:
+; their parent folder goes too, unless it holds something else, such as a
+; profile (default_settings_dir in src/util/config.rs). What the player made
+; stays in {app}. Updates never run the uninstaller.
+Type: filesandordirs; Name: "{localappdata}\VERA20k\update"
+Type: dirifempty; Name: "{localappdata}\VERA20k"
+
 [Run]
 Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,VERA}"; Flags: nowait postinstall skipifsilent
 ; An update the game started returns the player to the game.
