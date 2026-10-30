@@ -58,7 +58,10 @@ idle expiry and is answered with a frame, empty when nothing is new. A newer str
 the session closes the older with 4000 `replaced`; a stream whose request would now fail
 closes with 4000 plus that status (4401, 4409, ...) and the error code as its reason.
 Games from 0.2.4 stream on native builds, poll whenever no stream is up and reconnect
-after 5 seconds, doubling to 5 minutes; older games and the browser build poll. Critical history is bounded to 1,024 events/2 MiB per session;
+after 5 seconds, doubling to 5 minutes; older games and the browser build poll.
+A game an external launcher started never streams and polls once a minute after
+`timing_confirmed`, so its service answers `renew_relay` with `relay_renewed` in the reply.
+Critical history is bounded to 1,024 events/2 MiB per session;
 expired cursors fail explicitly rather than silently dropping state.
 Chat, locale and buddy observations have a separate best-effort 64-event/128 KiB
 retention budget and cannot evict critical events. Options and per-player

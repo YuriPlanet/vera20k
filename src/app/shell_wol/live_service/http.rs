@@ -222,6 +222,9 @@ const USER_AGENT: &str = concat!("VERA20k/", env!("CARGO_PKG_VERSION"), " multip
 // The server retains1024 events and returns at most256 at a time. Permit
 // concurrent arrivals too, but never release cleanup on a partial history.
 const MAX_CLEANUP_DRAIN_BATCHES: usize = 8;
+// After `timing_confirmed` a spawned match's only event is `relay_renewed`, in
+// the reply to its own `renew_relay`. This poll recovers a reply that was lost.
+const SPAWNED_MATCH_POLL: Duration = Duration::from_secs(60);
 // About three lines of the 0xD0 box body, which also holds the download link.
 const MAX_UPGRADE_MESSAGE_CHARS: usize = 160;
 
@@ -321,6 +324,8 @@ struct Client {
     token: Option<String>,
     cursor: u64,
     active_match: Option<String>,
+    /// The bearer came from an external launcher, not `/v1/sessions`.
+    spawned: bool,
 }
 
 fn decode_session(value: Value, requested_nickname: &str) -> Result<Session, RequestFailure> {
@@ -347,6 +352,13 @@ fn decode_session(value: Value, requested_nickname: &str) -> Result<Session, Req
 }
 
 impl Client {
+    fn adopt_session(&mut self, token: String) {
+        self.token = Some(token);
+        self.cursor = 0;
+        self.active_match = None;
+        self.spawned = true;
+    }
+
     fn accept_match_resume(
         &mut self,
         value: Value,
@@ -407,6 +419,12 @@ impl Client {
 
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 impl Client {
+    /// The bearer a new stream opens with. A spawned match only needs events
+    /// during its start barrier, which polls cover, so it opens none.
+    fn stream_bearer(&self) -> Option<&str> {
+        self.token.as_deref().filter(|_| !self.spawned)
+    }
+
     /// A stream frame starts at the stream's own cursor, which command
     /// replies and polls may have passed: a stale frame is dropped, and
     /// `batch` drops the events this worker already delivered.
@@ -490,6 +508,7 @@ fn spawn_translator(
         token: None,
         cursor: 0,
         active_match: None,
+        spawned: false,
     };
     let output = output.clone();
     std::thread::Builder::new()
@@ -529,6 +548,7 @@ pub(super) fn run(
         token: None,
         cursor: 0,
         active_match: None,
+        spawned: false,
     };
     let translator = spawn_translator(&client, &output);
     run_loop(client, input, output, translator);
@@ -617,7 +637,11 @@ macro_rules! serial_driver {
                     let _ = output.send(Response::LobbyReachable);
                 }
                 *failed_polls = 0;
-                Duration::from_secs(1)
+                if self.spawned && self.active_match.is_some() {
+                    SPAWNED_MATCH_POLL
+                } else {
+                    Duration::from_secs(1)
+                }
             }
             Err(error) if platform_await!(self.session_failed(error.clone(), output)) => Duration::from_secs(30),
             Err(_) => {
@@ -880,9 +904,7 @@ macro_rules! serial_driver {
             }
             Some(Request::AdoptSession { token }) => {
                 if client.token.is_none() {
-                    client.token = Some(token);
-                    client.cursor = 0;
-                    client.active_match = None;
+                    client.adopt_session(token);
                     failed_polls = 0;
                 }
             }
@@ -1004,7 +1026,7 @@ macro_rules! serial_driver {
                     streams.close();
                 }
             }
-            streams.open(client.token.as_deref(), client.cursor, &stopping);
+            streams.open(client.stream_bearer(), client.cursor, &stopping);
             // A stream that is up is a lobby that answers.
             if streams.live() && failed_polls > 0 {
                 client.poll_finished(Ok(()), &mut failed_polls, &output);
@@ -1146,6 +1168,7 @@ mod tests {
             token: Some("synthetic-test-session".to_owned()),
             cursor: 19,
             active_match: None,
+            spawned: false,
         };
         let mut failures = 0;
         assert_eq!(
@@ -1225,6 +1248,7 @@ mod tests {
             token: Some("synthetic-test-session".to_owned()),
             cursor: 19,
             active_match: None,
+            spawned: false,
         };
         let conflict = RequestFailure::response(
             409,
@@ -1278,6 +1302,7 @@ mod tests {
             token: Some("synthetic-test-session".to_owned()),
             cursor: 19,
             active_match: None,
+            spawned: false,
         };
         assert!(!client.session_failed(refused(reason), &output));
         assert!(client.token.is_some());
@@ -1297,6 +1322,7 @@ mod tests {
             token: None,
             cursor: 0,
             active_match: None,
+            spawned: false,
         };
         let response = json!({"cursor":2,"events":[
             {"sequence":1,"kind":"created","payload":{}},
@@ -1334,6 +1360,7 @@ mod tests {
             token: None,
             cursor: 5,
             active_match: None,
+            spawned: false,
         };
         let event = |sequence| json!({"sequence":sequence,"kind":"chat","payload":{}});
         client
@@ -1357,6 +1384,49 @@ mod tests {
     }
 
     #[test]
+    fn a_spawned_match_polls_slowly_and_never_streams_once_timing_is_confirmed() {
+        let (output, _input) = std::sync::mpsc::channel();
+        let timing = || {
+            json!({"cursor":1,"events":[{"sequence":1,"kind":"timing_confirmed",
+                "payload":{"match_id":"11111111-1111-1111-1111-111111111111"}}]})
+        };
+        let client = || Client {
+            stopping: Arc::new(AtomicBool::new(false)),
+            agent: ureq::Agent::new_with_defaults(),
+            base: String::new(),
+            token: None,
+            cursor: 0,
+            active_match: None,
+            spawned: false,
+        };
+        let mut failures = 0;
+
+        let mut spawned = client();
+        spawned.adopt_session("synthetic-test-session".to_owned());
+        assert_eq!(spawned.stream_bearer(), None);
+        // The start barrier waits on the other players' events.
+        assert_eq!(
+            spawned.poll_finished(Ok(()), &mut failures, &output),
+            Duration::from_secs(1)
+        );
+        spawned.batch(timing(), &output).unwrap();
+        assert_eq!(
+            spawned.poll_finished(Ok(()), &mut failures, &output),
+            Duration::from_secs(60)
+        );
+
+        // A lobby session's match keeps its stream and its pace.
+        let mut lobby = client();
+        lobby.token = Some("synthetic-test-session".to_owned());
+        assert_eq!(lobby.stream_bearer(), Some("synthetic-test-session"));
+        lobby.batch(timing(), &output).unwrap();
+        assert_eq!(
+            lobby.poll_finished(Ok(()), &mut failures, &output),
+            Duration::from_secs(1)
+        );
+    }
+
+    #[test]
     fn active_match_resume_preserves_identity_and_rejects_another_match_or_old_cursor() {
         let (output, input) = std::sync::mpsc::channel();
         let id = "11111111-1111-1111-1111-111111111111";
@@ -1367,6 +1437,7 @@ mod tests {
             token: Some("synthetic-test-session".to_owned()),
             cursor: 19,
             active_match: None,
+            spawned: false,
         };
         client
             .batch(
