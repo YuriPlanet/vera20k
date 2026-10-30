@@ -128,6 +128,15 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
     if current_sidebar_view_hit(state) {
         return None;
     }
+    let (x, y) = state.match_state.input.cursor_px();
+    if state
+        .match_state
+        .match_presentation
+        .super_timer_dock
+        .over_toggle(x, y)
+    {
+        return Some(CursorFeedbackKind::Default);
+    }
     let selected = crate::app::input::dispatch::selected_stable_ids_in_order(
         state
             .match_state

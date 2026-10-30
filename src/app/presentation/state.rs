@@ -82,6 +82,8 @@ pub(crate) struct MatchPresentationState {
     /// The Supers' timer blinks (`SuperClass+0x40`, `+0x48`), by owner and
     /// type (`presentation::super_timers`).
     pub(crate) super_timer_blinks: crate::app::presentation::super_timers::TimerBlinks,
+    /// Local timer-list folding and scroll state, independent of simulation.
+    pub(crate) super_timer_dock: crate::app::presentation::super_timers::TimerDock,
     pub(crate) combat_lights: crate::app::presentation::combat_lights::CombatLightRuntime,
     /// The sole client owner of native GScreenClass shake offsets; input
     /// events decay it and Simulation only sends ordered axis writes.

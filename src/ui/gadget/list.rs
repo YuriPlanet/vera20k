@@ -186,7 +186,6 @@ impl GadgetList {
     }
 
     /// G2 — Add_Head: prepend.
-    #[cfg(test)]
     pub fn add_head(&mut self, spec: GadgetSpec) -> GadgetHandle {
         let g = self.alloc(spec);
         let h = g.handle;

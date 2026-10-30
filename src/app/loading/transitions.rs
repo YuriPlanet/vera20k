@@ -196,6 +196,11 @@ pub(crate) fn install_world_presentation(
         .match_presentation
         .super_timer_blinks
         .clear();
+    state
+        .match_state
+        .match_presentation
+        .super_timer_dock
+        .reset();
     sync_in_game_options_speed_from_sim(state);
 
     state.match_state.match_presentation.tile_atlas = assets.tile_atlas;

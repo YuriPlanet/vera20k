@@ -196,6 +196,158 @@ impl TimerBlink {
 /// The Supers' timer blinks, by owner and type.
 pub(crate) type TimerBlinks = HashMap<(InternedId, InternedId), TimerBlink>;
 
+/// VERA presentation extension. No timer, grant, visibility or command state
+/// belongs here: this only chooses which existing DrawTimer rows are shown.
+#[derive(Debug, Default)]
+pub(crate) struct TimerDock {
+    expanded: bool,
+    offset: usize,
+    max_offset: usize,
+    toggle_rect: Option<crate::ui::gadget::GadgetRect>,
+    scroll_rows: Vec<crate::ui::gadget::GadgetRect>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DockRow {
+    Line(usize),
+    Toggle,
+}
+
+impl TimerDock {
+    pub(crate) fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    fn clear_hits(&mut self) {
+        self.toggle_rect = None;
+        self.scroll_rows.clear();
+    }
+
+    pub(crate) fn toggle_rect(&self) -> Option<crate::ui::gadget::GadgetRect> {
+        self.toggle_rect
+    }
+
+    pub(crate) fn toggle(&mut self) {
+        self.expanded = !self.expanded;
+        self.offset = 0;
+    }
+
+    pub(crate) fn over_toggle(&self, x: i32, y: i32) -> bool {
+        self.toggle_rect.is_some_and(|rect| rect.contains(x, y))
+    }
+
+    pub(crate) fn wheel(&mut self, x: i32, y: i32, delta: f32) -> bool {
+        if !self.expanded
+            || !delta.is_finite()
+            || delta == 0.0
+            || !self.scroll_rows.iter().any(|rect| rect.contains(x, y))
+        {
+            return false;
+        }
+        self.offset = if delta > 0.0 {
+            self.offset.saturating_sub(1)
+        } else {
+            self.offset.saturating_add(1).min(self.max_offset)
+        };
+        true
+    }
+
+    /// Native line order and placement remain untouched through six Supers.
+    /// Beyond that, keep local Supers first and page the remaining ready-first
+    /// rows. Scenario/blackout lines retain their original relative order.
+    fn rows(
+        &mut self,
+        lines: &[TimerLine],
+        local: Option<InternedId>,
+        view: [i32; 2],
+        font_height: i32,
+    ) -> Vec<DockRow> {
+        self.clear_hits();
+        let supers: Vec<_> = lines
+            .iter()
+            .enumerate()
+            .filter_map(|(i, line)| matches!(line.source, TimerSource::Super(_)).then_some(i))
+            .collect();
+        if supers.len() <= 6 {
+            self.expanded = false;
+            self.offset = 0;
+            self.max_offset = 0;
+            return (0..lines.len()).map(DockRow::Line).collect();
+        }
+        let available = (view[1].max(0) / (font_height + 2).max(1)) as usize;
+        let room = available.saturating_sub(lines.len() - supers.len() + 1);
+        let limit = room.min(if self.expanded { 10 } else { 6 });
+        let mut local_rows: Vec<_> = supers
+            .iter()
+            .copied()
+            .filter(
+                |&i| matches!(lines[i].source, TimerSource::Super(sw) if Some(sw.owner()) == local),
+            )
+            .collect();
+        local_rows.sort_by_key(|&i| (lines[i].seconds, i));
+        local_rows.truncate(limit.min(6));
+        local_rows.sort_unstable();
+        let mut others: Vec<_> = supers
+            .into_iter()
+            .filter(|i| !local_rows.contains(i))
+            .collect();
+        others.sort_by_key(|&i| (lines[i].seconds, i));
+        let page_size = limit.saturating_sub(local_rows.len());
+        self.max_offset = others.len().saturating_sub(page_size);
+        self.offset = if self.expanded {
+            self.offset.min(self.max_offset)
+        } else {
+            0
+        };
+        let mut block: Vec<_> = others
+            .iter()
+            .skip(self.offset)
+            .take(page_size)
+            .rev()
+            .map(|&i| DockRow::Line(i))
+            .chain(local_rows.iter().rev().map(|&i| DockRow::Line(i)))
+            .collect();
+        if self.expanded {
+            block.insert(0, DockRow::Toggle);
+        } else {
+            block.push(DockRow::Toggle);
+        }
+        let mut rows = Vec::new();
+        let mut inserted = false;
+        for (i, line) in lines.iter().enumerate() {
+            if matches!(line.source, TimerSource::Super(_)) {
+                if !inserted {
+                    rows.append(&mut block);
+                    inserted = true;
+                }
+            } else {
+                rows.push(DockRow::Line(i));
+            }
+        }
+        if let Some(index) = rows.iter().position(|row| *row == DockRow::Toggle) {
+            let y = place_line(index, view, font_height, 0, 0).1.y;
+            self.toggle_rect = Some(crate::ui::gadget::GadgetRect::new(
+                view[0] - RIGHT_MARGIN - 16,
+                y - 1,
+                16,
+                font_height + 2,
+            ));
+        }
+        rows
+    }
+}
+
+/// Consume wheel messages only over the expanded timer ink, before world zoom
+/// or sidebar scrolling. Empty space around the rows stays interactive terrain.
+pub(crate) fn wheel(state: &mut AppState, delta: f32) -> bool {
+    let (x, y) = state.match_state.input.cursor_px();
+    state
+        .match_state
+        .match_presentation
+        .super_timer_dock
+        .wheel(x, y, delta)
+}
+
 /// The string table's text for `key` (`0x00734E60`); the key itself only
 /// without a string table (an assetless run).
 fn localized(csf: Option<&CsfFile>, key: &str) -> String {
@@ -222,6 +374,11 @@ fn blink_rgb(rules: &RuleSet) -> [u8; 3] {
 pub(crate) fn build_super_timer_instances(
     state: &mut AppState,
 ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+    state
+        .match_state
+        .match_presentation
+        .super_timer_dock
+        .clear_hits();
     if state.frontend.screen != GameScreen::InGame {
         return (Vec::new(), Vec::new());
     }
@@ -298,8 +455,23 @@ pub(crate) fn build_super_timer_instances(
         state.match_state.input.camera_y,
     ];
 
-    let blinks = &mut state.match_state.match_presentation.super_timer_blinks;
     let font = &state.renderer.bit_font;
+    let local = sim.session().current_house();
+    let timer_lines: Vec<_> = lines.iter().map(|(line, _, _)| *line).collect();
+    let dock = &mut state.match_state.match_presentation.super_timer_dock;
+    let rows = dock.rows(
+        &timer_lines,
+        local,
+        [view_w as i32, view_h as i32],
+        font.cell_height() as i32,
+    );
+    let mut positions = vec![None; lines.len()];
+    for (position, row) in rows.iter().enumerate() {
+        if let DockRow::Line(i) = row {
+            positions[*i] = Some(position);
+        }
+    }
+    let blinks = &mut state.match_state.match_presentation.super_timer_blinks;
     let tint = |rgb: [u8; 3]| rgb.map(|channel| f32::from(channel) / 255.0);
     let fill = |[x, y, w, h]: [i32; 4]| SpriteInstance {
         position: [x as f32 + camera[0], y as f32 + camera[1]],
@@ -317,16 +489,28 @@ pub(crate) fn build_super_timer_instances(
             TimerSource::Super(view) => TimerBlink::of(blinks, &view).step(line.seconds, now_ms),
             TimerSource::Scenario | TimerSource::Blackout(_) => false,
         };
+        // Hidden rows still step the existing wall-clock blink owner.
+        let Some(position) = positions[index] else {
+            continue;
+        };
         let label = label_text(label);
         let time = time_text(line.seconds);
         let (label_at, time_at) = place_line(
-            index,
+            position,
             [view_w as i32, view_h as i32],
             font.cell_height() as i32,
             font.text_width(&label) as i32,
             font.text_width(&time) as i32,
         );
         let time_rgb = if blinking { blink_rgb } else { *rgb };
+        if dock.expanded && matches!(line.source, TimerSource::Super(_)) {
+            dock.scroll_rows.push(crate::ui::gadget::GadgetRect::new(
+                label_at.fill[0],
+                label_at.fill[1],
+                time_at.fill[0] + time_at.fill[2] - label_at.fill[0],
+                label_at.fill[3],
+            ));
+        }
         for (text, at, rgb) in [(&label, label_at, *rgb), (&time, time_at, time_rgb)] {
             fills.push(fill(at.fill));
             texts.extend(font.build_text(
@@ -338,6 +522,24 @@ pub(crate) fn build_super_timer_instances(
                 tint(rgb),
                 camera,
             ));
+        }
+    }
+    if let Some(rect) = dock.toggle_rect {
+        // Solid 7x4 pixel triangles, no font substitution, frame or backing box.
+        for row in 0..4 {
+            let width = if dock.expanded {
+                7 - row * 2
+            } else {
+                1 + row * 2
+            };
+            let mut triangle = fill([
+                rect.x + (rect.w - width) / 2,
+                rect.y + (rect.h - 4) / 2 + row,
+                width,
+                1,
+            ]);
+            triangle.tint = [0.0, 0.0, 0.0];
+            fills.push(triangle);
         }
     }
     (fills, texts)

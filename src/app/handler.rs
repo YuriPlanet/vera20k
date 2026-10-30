@@ -1636,6 +1636,10 @@ impl ApplicationHandler for App {
                     && !state.match_state.paused()
                     && !crate::app::input::campaign_input::is_locked(state)
                 {
+                    if crate::app::presentation::super_timers::wheel(state, lines) {
+                        state.platform.window.request_redraw();
+                        return;
+                    }
                     // Optional player setting: over the battlefield the wheel changes the view
                     // distance tier, anchored on the tactical centre. Over the
                     // sidebar and the bottom strip it keeps gamemd's native
