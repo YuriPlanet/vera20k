@@ -46,7 +46,7 @@ timing continue through the same timing owner. Games originally admitted with
 multiple human sources, including observers, retain synchronized scheduling even
 after other players leave. AI players never acquire network identities.
 
-Online matches with two or more human sources use a lobby-certified fixed clock
+Online matches with two or more human sources use a lobby-certified relay clock
 and one immutable relay command stream. Every originally admitted client that
 finishes loading must agree to the initial world before it starts. A player who
 never finishes loading leaves in the first frame once silent for 60 seconds, or 3
@@ -88,14 +88,31 @@ Pushed clients use a local adaptive playout schedule based on socket receipt
 timestamps. It starts with no added buffer and can reserve at most 20 ms or one
 frame, whichever is smaller, to absorb jitter. An early receipt moves the
 schedule earlier, so no hold exceeds that reserve. Stable delivery gradually
-reduces the reserve. The relay still owns the fixed clock; local pacing never changes
+reduces the reserve. The relay still owns the clock; local pacing never changes
 commands, simulation order or another player's progress. A stalled or slow client
 catches up through at most eight ordinary simulation transactions or eight
 milliseconds per service wake, then yields to input/rendering. It never skips
 simulation ticks, and pacing never interrupts an already-started frame transaction.
 An agreed resume resets the local playout clock so paused time creates no catch-up debt.
-Peer lag, acknowledgements and CPU reports cannot slow the shared clock. The
-initial speed stays fixed for the match. The relay keeps a bounded RAM cache and the full encrypted match journal on
+
+A player whose PC cannot keep up slows the match, within limits. Each client
+reports about once a second whether it is behind: frames have waited on it for
+three seconds and, two seconds in a row, it ran some but fewer than the relay
+sealed. A hidden window, a paused or rejoining match and a world that ran no
+frames never count. The relay then seals at the fastest Game Speed rate that
+player ran at, at least one row slower but never more than two rows below the
+match's own speed (60 frames a second goes no lower than 30), with at least five
+seconds between changes. After 30 seconds with nobody behind it tries one row
+faster; a slowdown within 30 seconds of that doubles the wait, up to five
+minutes. Every client shows "<player> is slowing the game down." and, once the
+match is back at its own speed, "Game speed is back to normal." A rate change is
+a marker in the stream, so only playout pacing changes: the simulation, its
+saves and replays keep the match's own frame rate, and a replay plays at that
+speed. It needs every active client to report; a room with an older client or
+one spread over several relays keeps its speed. Native lockstep instead slows
+every match to its slowest player (ProcessNetwork `0x00647BF4..0x00647E6D`).
+
+The relay keeps a bounded RAM cache and the full encrypted match journal on
 disk. Temporary connection loss keeps the player's identity, units, input cursor
 and world in the match; the client renews its ticket and reads missed frames when
 connectivity returns. The UI shows Reconnecting or Catching up while healthy

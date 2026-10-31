@@ -5885,6 +5885,7 @@ mod tests {
 
 fn service_transport(state: &mut AppState, now: u32) -> bool {
     if let Some(live) = state.match_state.live_network.as_mut() {
+        live.set_presentation_hidden(state.platform.window_hidden);
         if let Some(service) = state.match_state.lan_service.as_mut() {
             LanService::flush_setup_queue(&mut service.pending_setup, &mut *live.global_mut());
         }

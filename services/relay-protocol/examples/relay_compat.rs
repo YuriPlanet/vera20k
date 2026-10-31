@@ -135,7 +135,8 @@ fn record(entry: &OrderEntry) -> Option<(u64, Record)> {
             source,
             ..
         } => Some((sequence, Record::Departure(frame, source))),
-        // Kinds newer than the oldest supported release (Pause) never occur here.
+        // Kinds newer than the oldest supported release (Pause, Rate) never
+        // occur here.
         #[allow(unreachable_patterns)]
         _ => None,
     }

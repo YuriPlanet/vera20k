@@ -685,6 +685,14 @@ impl LanUdpTransport {
         })
     }
 
+    pub fn report_ordering_pace(&mut self, behind: bool, frames_per_second: u16) -> io::Result<()> {
+        self.send_ordering(|route| {
+            route
+                .session
+                .report_ordering_pace(behind, frames_per_second, &mut route.encoded)
+        })
+    }
+
     pub fn leave_ordering(&mut self) -> io::Result<()> {
         self.send_ordering(|route| route.session.leave_ordering(&mut route.encoded))
     }

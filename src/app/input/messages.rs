@@ -683,6 +683,12 @@ fn post_grey_row(state: &mut AppState, text: &str, localize: bool, silent: bool)
     );
 }
 
+/// A relay speed change (`network_match::post_speed_changes`). gamemd has
+/// no such line, so `text` is VERA's own, not a CSF key.
+pub(crate) fn post_match_speed(state: &mut AppState, text: &str) {
+    post_grey_row(state, text, false, false);
+}
+
 pub(super) fn post_command_backpressure(state: &mut AppState) {
     post_grey_row(
         state,
