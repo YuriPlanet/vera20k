@@ -408,8 +408,13 @@ pub(crate) fn accept_transfer_asset(
                 "downloaded map differs"
             );
             let effective = expected.effective_digest.clone();
+            let keep = (resource == TransferResource::Map && !expected.official)
+                .then(|| (file.to_owned(), expected.source_sha256.clone()));
             if resource == TransferResource::Map {
                 install_authored_preview(state, &loaded)?;
+            }
+            if let Some((file, digest)) = keep {
+                keep_for_choose_map(state, &file, &loaded.source, &digest);
             }
             state
                 .match_state
@@ -418,6 +423,59 @@ pub(crate) fn accept_transfer_asset(
         }
     }
     Ok(())
+}
+
+/// A received custom map stays for later: it is saved into the game folder
+/// and listed in Choose Map, so the player can host it. Best effort; the room
+/// never waits on it, and a file the player already has is left alone.
+fn keep_for_choose_map(
+    state: &mut AppState,
+    host_file: &str,
+    source: &crate::map::source::LoadedMapSource,
+    digest: &str,
+) {
+    let crate::map::source::LoadedMapSource::Loose { path, .. } = source else {
+        return;
+    };
+    let Some(ra2_dir) = state
+        .platform
+        .game_config
+        .as_ref()
+        .map(|config| config.paths.ra2_dir.clone())
+    else {
+        return;
+    };
+    let kept = crate::util::file_system::read(path)
+        .map_err(anyhow::Error::from)
+        .and_then(|bytes| {
+            ensure!(
+                crate::util::sha256::sha256_hex(&bytes) == digest,
+                "received map changed"
+            );
+            crate::map::source::keep_received_map(&ra2_dir, host_file, &bytes)
+        });
+    let name = match kept {
+        Ok(Some(name)) => name,
+        Ok(None) => return,
+        Err(error) => {
+            log::warn!("Could not keep the received map {host_file}: {error:#}");
+            return;
+        }
+    };
+    let mut records = state.frontend.scenario_catalog.records_mut();
+    if records
+        .iter()
+        .any(|record| record.file_name.eq_ignore_ascii_case(&name))
+    {
+        return;
+    }
+    let ordinal = records.len();
+    if let Some(record) =
+        crate::map::scenario_sources::loose_yrm_record(&ra2_dir.join(&name), name.clone(), ordinal)
+    {
+        log::info!("Kept the received map {host_file} as {name} for Choose Map");
+        records.push(record);
+    }
 }
 
 /// A transferred authored map keeps derived marker bounds with its received

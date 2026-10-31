@@ -662,6 +662,40 @@ fn install_received_asset_with_limits(
     Ok(LoadedTransferAsset { source, content })
 }
 
+/// Keeps a map received in a room in the game folder as `<stem>.yrm`, where
+/// Choose Map lists loose `.yrm` files, so the player can host it later.
+/// `host_file` is the host's logical map name and `bytes` the verified file.
+/// Returns the new file's name, or `None` when a file of that name is
+/// already there: a player's own file is never replaced.
+pub fn keep_received_map(ra2_dir: &Path, host_file: &str, bytes: &[u8]) -> Result<Option<String>> {
+    validate_network_map_name(host_file)?;
+    let stem = host_file
+        .rsplit(['/', '\\'])
+        .next()
+        .and_then(|name| Path::new(name).file_stem())
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty() && !stem.starts_with('.'))
+        .ok_or_else(|| anyhow::anyhow!("received map has no file name"))?;
+    let name = format!("{stem}.yrm");
+    if crate::util::case_insensitive_path::find(ra2_dir, &name).is_some() {
+        return Ok(None);
+    }
+    #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+    crate::util::file_system::write_new(ra2_dir.join(&name), bytes)?;
+    #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
+    {
+        // Written beside it first, so Choose Map never reads half a file.
+        let stage = ra2_dir.join(format!(".{name}.part"));
+        let result = std::fs::write(&stage, bytes)
+            .and_then(|()| std::fs::rename(&stage, ra2_dir.join(&name)));
+        if result.is_err() {
+            let _ = std::fs::remove_file(&stage);
+        }
+        result?;
+    }
+    Ok(Some(name))
+}
+
 pub fn load_received_asset(
     directory: &Path,
     digest: &str,
@@ -829,6 +863,34 @@ pub mod test_support {
 #[cfg(test)]
 mod tests {
     use super::test_support::{TestDirectory, make_new_format_mix_bytes};
+
+    #[test]
+    fn a_received_map_is_kept_as_a_choose_map_yrm_without_replacing_the_players_file() {
+        let game = TestDirectory::new("keep-received");
+        let map = b"[Basic]\nName=Frozen Lakes\nGameMode=standard\n";
+        assert_eq!(
+            keep_received_map(game.path(), "Custom/FrozenLakes.map", map).unwrap(),
+            Some("FrozenLakes.yrm".to_owned())
+        );
+        let record = crate::map::scenario_sources::loose_yrm_record(
+            &game.path().join("FrozenLakes.yrm"),
+            "FrozenLakes.yrm".to_owned(),
+            0,
+        )
+        .expect("Choose Map reads the kept map");
+        assert_eq!(record.display_name, "Frozen Lakes");
+        // The player's own file of that name, in any case, stays as it is.
+        game.write("lakes.YRM", b"[Basic]\nName=Mine\n");
+        assert_eq!(
+            keep_received_map(game.path(), "Lakes.yrm", map).unwrap(),
+            None
+        );
+        assert_eq!(
+            std::fs::read(game.path().join("lakes.YRM")).unwrap(),
+            b"[Basic]\nName=Mine\n"
+        );
+        assert!(keep_received_map(game.path(), "../Escape.yrm", map).is_err());
+    }
     use super::*;
     use crate::assets::mix_hash::mix_hash;
 
