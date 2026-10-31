@@ -3232,6 +3232,133 @@ mod item83_selection_order_tests {
     /// selected enemy is current-objects `[0]`, so the first Select runs
     /// Unselect_All (`0x005F45F8`), whose Deselect also releases Follow.
     #[test]
+    fn undeployable_building_band_commits_and_tracks_bunker_occupancy() {
+        use super::resolve_selection_mutation;
+        use crate::app::input::entity_pick::compute_box_selection_snapshot;
+        use crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch;
+        use crate::sim::command::Command;
+        use crate::sim::docking::bunker_link::{can_auto_deploy_here, install_bunker_link};
+
+        let Some(retail) = retail_battle_rules_for_map_with_patch(
+            "Hills.mmx",
+            &IniFile::from_str(
+                "[GAPILL]\nUndeploysInto=AMCV\nBunker=yes\nNumberImpassableRows=0\n",
+            ),
+        ) else {
+            return;
+        };
+        let rules = &retail.rules;
+        assert!(rules.object("GAPILL").unwrap().is_1x1_with_undeploy());
+        let mut sim = crate::sim::arena_fixture::rival_arena(rules, 1);
+        let owner = sim.interner().get("Americans").unwrap();
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        let pill = sim
+            .spawn_object("GAPILL", "Americans", 16, 16, 0, rules)
+            .unwrap();
+        let tank = sim
+            .spawn_object("MTNK", "Americans", 12, 16, 0, rules)
+            .unwrap();
+        assert!(can_auto_deploy_here(&sim, tank, rules));
+        assert_eq!(
+            sim.unit_building_click_action(tank, pill, rules),
+            Some(crate::sim::world::EntryClickAction::Enter)
+        );
+        // Encounter order is supplied here; helpers' companion regression
+        // obtains it from the production Display/screen-registration owner.
+        let band = |sim: &Simulation, prior: &[u64]| {
+            compute_box_selection_snapshot(
+                sim.entities(),
+                &[pill],
+                &[pill],
+                prior,
+                None,
+                Some("Americans"),
+                -1.0e6,
+                -1.0e6,
+                1.0e6,
+                1.0e6,
+                false,
+                Some(rules),
+                Some(sim.houses()),
+                Some(sim.interner()),
+            )
+            .unwrap()
+        };
+        let mut prior = Vec::new();
+        for (phase, admitted) in [(0, true), (1, false), (2, true)] {
+            if phase == 1 {
+                // Production install-end seam, after real CAN_LOAD admission;
+                // this control does not claim the custom tank's walk to the pad.
+                install_bunker_link(&mut sim, pill, tank, rules);
+                let building = sim.entities().get(pill).unwrap();
+                assert_eq!(building.bunker.occupant(), Some(tank));
+                assert_eq!(building.bunker.link().installed_in(), None);
+                assert_eq!(
+                    sim.entities()
+                        .get(tank)
+                        .unwrap()
+                        .bunker
+                        .link()
+                        .installed_in(),
+                    Some(pill)
+                );
+            } else if phase == 2 {
+                assert!(sim.apply_command(
+                    "Americans",
+                    &Command::EjectBunker { bunker_id: pill },
+                    Some(rules)
+                ));
+                assert_eq!(sim.entities().get(pill).unwrap().bunker.occupant(), None);
+                assert_eq!(
+                    sim.entities()
+                        .get(tank)
+                        .unwrap()
+                        .bunker
+                        .link()
+                        .installed_in(),
+                    None
+                );
+            }
+            let mutation = band(&sim, &prior);
+            assert_eq!(mutation.select.contains(&pill), admitted, "phase {phase}");
+            if phase == 0 {
+                let refused = resolve_selection_mutation(
+                    &sim,
+                    Some(rules),
+                    vec![],
+                    None,
+                    true,
+                    false,
+                    &mutation,
+                );
+                assert!(
+                    refused.ordered.is_empty(),
+                    "pending placement retains final refusal"
+                );
+            }
+            let effects =
+                resolve_selection_mutation(&sim, Some(rules), prior, None, false, false, &mutation);
+            prior = effects.ordered;
+            assert_eq!(prior.contains(&pill), admitted);
+            sim.apply_command(
+                "Americans",
+                &Command::Select {
+                    entity_ids: prior.clone(),
+                    additive: false,
+                },
+                Some(rules),
+            );
+            assert_eq!(
+                sim.entities().get(pill).unwrap().selection.is_selected(),
+                admitted
+            );
+        }
+    }
+
+    #[test]
     fn a_shift_band_over_own_units_drains_a_selected_enemy() {
         use super::{SelectionMutation, resolve_selection_mutation};
         let (sim, rules) = two_house_fixture(&[50]);

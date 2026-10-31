@@ -853,9 +853,8 @@ fn type_select_candidates(
             let dynamic = selection_dynamic_prefix(entity, entities, rules, interner)
                 && type_is_selectable(type_id, rules)
                 && (!require_playfield_membership || entity.in_playfield());
-            // A structure answers false on the ordinary dynamic virtual; the ID
-            // match's building arm (`0x00732C61..0x00732C83`) admits it
-            // through `RuleSet::structure_type_selectable` instead.
+            // The ID match's independent building arm (732C61..732C83)
+            // admits UndeploysInto even when the dynamic virtual refuses it.
             let structure_admission = entity.category() == EntityCategory::Structure
                 && rules.is_some_and(|rules| rules.structure_type_selectable(type_id));
             (dynamic || structure_admission).then_some(*id)
@@ -1098,10 +1097,8 @@ fn entities_in_rect(
 /// mind-controlled unit is a different field in the original and is
 /// deliberately not tested here.
 ///
-/// One native clause is approximated rather than reproduced, because VERA has
-/// no matching state: the native bunker test reads one link field. VERA splits
-/// the link into an approach marker and an installed link, and only the
-/// installed link is treated as linked.
+/// Native +2E4 is the occupant on a Building and the installed-in link on a
+/// Foot. The Foot approach marker remains separate from its installed link.
 ///
 /// The powered-down clause reads byte `+0x1C8` (`0x006FC041`), and it is NOT a
 /// deploy-transition flag. An exhaustive instruction search finds exactly three
@@ -1120,16 +1117,26 @@ pub(crate) fn selection_dynamic_prefix(
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
 ) -> bool {
-    // BuildingClass answers false on the ordinary dynamic selection virtual.
-    // TypeSelect owns the separate building admission
-    // (`RuleSet::structure_type_selectable`) instead.
-    if entity.category() == EntityCategory::Structure {
+    // BuildingClass::CanBeSelectedNow459C00 calls the existing type query
+    // Is1x1WithUndeploy465D40 before the shared Techno6FC030 prefix below.
+    let building = entity.category() == EntityCategory::Structure;
+    if building
+        && !rules
+            .zip(interner)
+            .and_then(|(rules, interner)| rules.object(interner.resolve(entity.type_ref())))
+            .is_some_and(|object| object.is_1x1_with_undeploy())
+    {
         return false;
     }
     if entity.slave.owner().is_some() || entity.deactivated.is_offline() {
         return false;
     }
-    if entity.bunker.link().installed_in().is_some() {
+    let bunker_linked = if building {
+        entity.bunker.occupant().is_some()
+    } else {
+        entity.bunker.link().installed_in().is_some()
+    };
+    if bunker_linked {
         return false;
     }
     if entity.tether.partner().is_some()

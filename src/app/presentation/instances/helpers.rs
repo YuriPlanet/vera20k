@@ -950,6 +950,79 @@ mod tests {
     }
 
     #[test]
+    fn undeployable_building_band_uses_registered_screen_candidates() {
+        use crate::app::input::entity_pick::compute_box_selection_snapshot;
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch;
+
+        let Some(retail) = retail_battle_rules_for_map_with_patch(
+            "Hills.mmx",
+            &IniFile::from_str("[GAPILL]\nUndeploysInto=AMCV\n[GAPOWR]\nUndeploysInto=AMCV\n"),
+        ) else {
+            return;
+        };
+        let rules = &retail.rules;
+        assert!(rules.object("GAPILL").unwrap().is_1x1_with_undeploy());
+        assert!(!rules.object("GAPOWR").unwrap().is_1x1_with_undeploy());
+        let mut sim = crate::sim::arena_fixture::rival_arena(rules, 1);
+        let owner = sim.interner().get("Americans").unwrap();
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        let pill = sim
+            .spawn_object("GAPILL", "Americans", 16, 16, 0, rules)
+            .unwrap();
+        let power = sim
+            .spawn_object("GAPOWR", "Americans", 20, 16, 0, rules)
+            .unwrap();
+        for id in [pill, power] {
+            assert!(sim.display_layers().layer_of(id).is_some());
+        }
+        let bounds = (-1.0e6, -1.0e6, 1.0e6, 1.0e6);
+        let order = |bulk| {
+            compose_tactical_screen_entity_encounter_order(
+                &sim,
+                bounds,
+                Some("Americans"),
+                Some(owner),
+                sim.fog(),
+                false,
+                0,
+                bulk,
+                Some(rules),
+            )
+        };
+        let ordinary = order(false);
+        let preflight = order(true);
+        for id in [pill, power] {
+            assert!(ordinary.contains(&id), "registered local building {id}");
+            assert!(preflight.contains(&id));
+        }
+        let mutation = compute_box_selection_snapshot(
+            sim.entities(),
+            &preflight,
+            &ordinary,
+            &[],
+            Some((sim.fog(), sim.house_alliances())),
+            Some("Americans"),
+            bounds.0,
+            bounds.1,
+            bounds.2,
+            bounds.3,
+            false,
+            Some(rules),
+            Some(sim.houses()),
+            Some(sim.interner()),
+        )
+        .expect("registered buildings consume the band");
+        // Building459C00 calls465D40 before Techno6FC030: Undeploy alone
+        // does not admit the larger power plant's fixed-ART foundation.
+        assert_eq!(mutation.select, [pill]);
+        assert!(mutation.clear);
+    }
+
+    #[test]
     fn item83_band_preflight_source_bulk_registers_hidden_live_building_only() {
         use crate::app::input::entity_pick::compute_box_selection_snapshot;
         use crate::sim::combat::Health;
