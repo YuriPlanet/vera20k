@@ -41,6 +41,11 @@
 //! Bloom.Threshold=0.5
 //! Bloom.Intensity=0.4
 //! Bloom.Radius=1
+//! WaterRipple=no
+//! WaterRipple.Amplitude=2
+//! WaterRipple.Wavelength=32
+//! WaterRipple.Speed=0.4
+//! WaterRipple.Debug=no
 //! ```
 
 use crate::rules::ini_parser::IniFile;
@@ -60,6 +65,8 @@ pub struct PostProcessRules {
     pub fxaa: Option<FxaaRules>,
     /// The multi-pass bloom; `None` leaves it out.
     pub bloom: Option<BloomRules>,
+    /// Mask-gated water displacement; `None` leaves it out.
+    pub water_ripple: Option<WaterRippleRules>,
 }
 
 /// Linear-space colour grading applied to the composed match frame.
@@ -169,6 +176,30 @@ impl Default for BloomRules {
     }
 }
 
+/// ReShade `Displace_Map`-style refraction over the engine's water mask.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WaterRippleRules {
+    /// Peak sampling offset in frame pixels.
+    pub amplitude: f32,
+    /// Wavelength in frame pixels.
+    pub wavelength: f32,
+    /// Animation speed, in cycles per second.
+    pub speed: f32,
+    /// Tint masked texels magenta instead of refracting, to verify alignment.
+    pub debug: bool,
+}
+
+impl Default for WaterRippleRules {
+    fn default() -> Self {
+        Self {
+            amplitude: 2.0,
+            wavelength: 32.0,
+            speed: 0.4,
+            debug: false,
+        }
+    }
+}
+
 impl PostProcessRules {
     /// Read `[PostProcess]`. Each `Effect=` key is that effect's own switch;
     /// when it is `no` (the default) the effect's other keys are not read.
@@ -234,6 +265,16 @@ impl PostProcessRules {
                     radius: section.read_float("Bloom.Radius", defaults.radius),
                 }
             }),
+            water_ripple: section.read_bool("WaterRipple", false).then(|| {
+                let defaults = WaterRippleRules::default();
+                WaterRippleRules {
+                    amplitude: section.read_float("WaterRipple.Amplitude", defaults.amplitude),
+                    wavelength: section
+                        .read_float("WaterRipple.Wavelength", defaults.wavelength),
+                    speed: section.read_float("WaterRipple.Speed", defaults.speed),
+                    debug: section.read_bool("WaterRipple.Debug", defaults.debug),
+                }
+            }),
         }
     }
 }
@@ -285,7 +326,8 @@ mod tests {
     #[test]
     fn reshade_ports_read_their_switches_defaults_and_values() {
         let defaults = PostProcessRules::from_ini(&IniFile::from_str(
-            "[PostProcess]\nFilmicPass=yes\nColourfulness=yes\nSepia=yes\nFXAA=yes\nBloom=yes\n",
+            "[PostProcess]\nFilmicPass=yes\nColourfulness=yes\nSepia=yes\nFXAA=yes\n\
+             Bloom=yes\nWaterRipple=yes\n",
         ));
         assert_eq!(defaults.filmic_pass, Some(FilmicPassRules::default()));
         assert_eq!(
@@ -295,11 +337,16 @@ mod tests {
         assert_eq!(defaults.sepia, Some(SepiaRules::default()));
         assert_eq!(defaults.fxaa, Some(FxaaRules::default()));
         assert_eq!(defaults.bloom, Some(BloomRules::default()));
+        assert_eq!(
+            defaults.water_ripple,
+            Some(WaterRippleRules::default())
+        );
 
         let off = PostProcessRules::from_ini(&IniFile::from_str(
             "[PostProcess]\nFilmicPass=no\nFilmicPass.Strength=0\n\
              Colourfulness=no\nColourfulness.Amount=0\nSepia=no\nSepia.Strength=0\n\
-             FXAA=no\nFXAA.Subpix=1\nBloom=no\nBloom.Intensity=1\n",
+             FXAA=no\nFXAA.Subpix=1\nBloom=no\nBloom.Intensity=1\n\
+             WaterRipple=no\nWaterRipple.Amplitude=9\n",
         ));
         assert_eq!(off, PostProcessRules::default(), "switches gate every key");
 
@@ -310,7 +357,9 @@ mod tests {
              Colourfulness.LimLuma=0.5\nSepia=yes\nSepia.Strength=0.3\n\
              Sepia.TintR=0.2\nSepia.TintG=0.3\nSepia.TintB=0.4\n\
              FXAA=yes\nFXAA.Subpix=0.6\nFXAA.EdgeThreshold=0.2\nFXAA.EdgeThresholdMin=0.05\n\
-             Bloom=yes\nBloom.Threshold=0.3\nBloom.Intensity=0.6\nBloom.Radius=1.5\n",
+             Bloom=yes\nBloom.Threshold=0.3\nBloom.Intensity=0.6\nBloom.Radius=1.5\n\
+             WaterRipple=yes\nWaterRipple.Amplitude=3\nWaterRipple.Wavelength=24\n\
+             WaterRipple.Speed=0.8\nWaterRipple.Debug=yes\n",
         ));
         let filmic = authored.filmic_pass.expect("authored filmic pass");
         assert!((filmic.strength - 0.5).abs() < 1e-6);
@@ -335,6 +384,11 @@ mod tests {
         assert!((bloom.threshold - 0.3).abs() < 1e-6);
         assert!((bloom.intensity - 0.6).abs() < 1e-6);
         assert!((bloom.radius - 1.5).abs() < 1e-6);
+        let ripple = authored.water_ripple.expect("authored water ripple");
+        assert!((ripple.amplitude - 3.0).abs() < 1e-6);
+        assert!((ripple.wavelength - 24.0).abs() < 1e-6);
+        assert!((ripple.speed - 0.8).abs() < 1e-6);
+        assert!(ripple.debug);
     }
 
     /// The production `RuleSet` publishes the section; an empty INI leaves the
@@ -346,7 +400,7 @@ mod tests {
 
         let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
             "[PostProcess]\nColorGrade=yes\nColorGrade.Saturation=0.5\n\
-             FilmicPass=yes\nFXAA=yes\nBloom=yes\n",
+             FilmicPass=yes\nFXAA=yes\nBloom=yes\nWaterRipple=yes\n",
         ))
         .unwrap();
         assert_eq!(
@@ -363,5 +417,9 @@ mod tests {
         );
         assert_eq!(rules.post_process.fxaa, Some(FxaaRules::default()));
         assert_eq!(rules.post_process.bloom, Some(BloomRules::default()));
+        assert_eq!(
+            rules.post_process.water_ripple,
+            Some(WaterRippleRules::default())
+        );
     }
 }

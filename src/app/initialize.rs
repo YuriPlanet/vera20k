@@ -1228,6 +1228,7 @@ impl App {
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),
                 post_chain: None,
+                water_mask: None,
             },
             process_assets,
             audio: startup_audio_runtime,

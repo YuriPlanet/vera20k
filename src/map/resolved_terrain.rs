@@ -312,6 +312,13 @@ pub struct ResolvedTerrainCell {
 }
 
 impl ResolvedTerrainCell {
+    /// Whether Recalc stored `LandType::Water` for this cell. Presentation
+    /// consumers (the post-process water mask) ask this instead of reading the
+    /// private `LandType` enum.
+    pub fn is_water(&self) -> bool {
+        self.land_type == LandType::Water.as_index()
+    }
+
     /// Refresh byte-encoded height views of the current Cell, independently of
     /// its Recalc-owned class, flags and cached topology. Preserve the encoded
     /// signed-level +4 result: raw252 (-4) has a structural deck at level0.
@@ -844,6 +851,16 @@ pub const TEST_OPEN_SPEED_COSTS: SpeedCostProfile = SpeedCostProfile {
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn test_clear_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     test_flat_cell(rx, ry)
+}
+
+/// [`test_clear_cell`] with `LandType::Water` stored, for presentation tests
+/// that need the engine-side water predicate without exposing `LandType`.
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_water_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
+    ResolvedTerrainCell {
+        land_type: LandType::Water.as_index(),
+        ..test_clear_cell(rx, ry)
+    }
 }
 
 /// [`test_clear_cell`] that accepts smudges.

@@ -19,6 +19,10 @@ const CULL_MARGIN: f32 = 120.0;
 pub struct TerrainInstances {
     /// Normal terrain — drawn in the base terrain pass.
     pub normal: Vec<SpriteInstance>,
+    /// Frame-space diamonds `[x, y, width, height]` of visible water cells.
+    /// The post-process water mask rasterizes these; cells whose land type is
+    /// not `Water` are omitted.
+    pub water: Vec<[f32; 4]>,
 }
 
 fn visible_cell_slice(grid: &TerrainGrid, view_top: f32, view_bottom: f32) -> &[TerrainCell] {
@@ -54,7 +58,12 @@ pub fn build_visible_instances(
 
     let mut instances = TerrainInstances {
         normal: Vec::with_capacity(grid.cells.len() / 2),
+        water: Vec::new(),
     };
+    // `TerrainCell::screen_x/y` are world pixels; the sprite shader subtracts
+    // the rounded camera before clip conversion, and the post-process mask has
+    // no camera uniform, so diamonds are emitted in frame pixels.
+    let cam = [camera_x.round(), camera_y.round()];
 
     for cell in visible_cell_slice(grid, view_top, view_bottom) {
         // AABB visibility test against viewport.
@@ -94,13 +103,14 @@ pub fn build_visible_instances(
                 draw_offset: [0.0, 0.0],
             }),
         };
-        let live = live_terrain.and_then(|terrain| {
-            let live = terrain.cell(cell.rx, cell.ry)?;
-            let (tile_id, sub_tile) = terrain.presentation_tile(live);
+        let live_cell = live_terrain.and_then(|terrain| terrain.cell(cell.rx, cell.ry));
+        let live = live_cell.and_then(|live_cell| {
+            let terrain = live_terrain?;
+            let (tile_id, sub_tile) = terrain.presentation_tile(live_cell);
             let variant = terrain
                 .tactical_draw_variant(cell.rx, cell.ry)
-                .unwrap_or(live.variant);
-            Some((place(tile_id, sub_tile, variant)?, live.level))
+                .unwrap_or(live_cell.variant);
+            Some((place(tile_id, sub_tile, variant)?, live_cell.level))
         });
         let Some((p, level)) =
             live.or_else(|| Some((place(cell.tile_id, cell.sub_tile, cell.variant)?, cell.z)))
@@ -118,6 +128,16 @@ pub fn build_visible_instances(
         // (extra-data tiles start above the diamond by `draw_offset.y`).
         let iso_row: f32 = cell.screen_y + f32::from(cell.z as i8) * HEIGHT_STEP;
         let screen_y = iso_row - level as f32 * HEIGHT_STEP;
+        if live_cell.is_some_and(|live| live.is_water()) {
+            // The mask covers the cell's iso diamond, not an extra-data tile's
+            // full canvas: water tiles carry no elevated art.
+            instances.water.push([
+                cell.screen_x - cam[0],
+                screen_y - cam[1],
+                TILE_WIDTH,
+                TILE_HEIGHT,
+            ]);
+        }
         let depth: f32 = native_z::depth_for_row(iso_row, grid.origin_y, grid.world_height);
         let z_adjust = p.draw_offset[1]
             - (native_z::TILE_HEIGHT_ROWS as f32)
@@ -160,3 +180,70 @@ pub fn build_visible_instances(
 #[cfg(test)]
 #[path = "bridge_pavement_caller_tests.rs"]
 mod pavement_caller_tests;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::map::resolved_terrain;
+    use crate::map::terrain::{TerrainCell, TerrainGrid, TilePlacement};
+
+    fn cell(rx: u16, ry: u16, screen_x: f32, screen_y: f32) -> TerrainCell {
+        TerrainCell {
+            screen_x,
+            screen_y,
+            tile_id: 0,
+            sub_tile: 0,
+            z: 0,
+            rx,
+            ry,
+            variant: 0,
+            tint: [1.0; 3],
+            radar_left: [0; 3],
+            radar_right: [0; 3],
+        }
+    }
+
+    /// The water mask diamonds come from the engine's own `LandType::Water`
+    /// predicate and are emitted in frame pixels (camera subtracted).
+    #[test]
+    fn only_water_cells_emit_mask_diamonds() {
+        let grid = TerrainGrid {
+            cells: vec![cell(0, 0, 0.0, 0.0), cell(1, 0, 30.0, 15.0)],
+            world_width: 120.0,
+            world_height: 60.0,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            bridge_middle_tiles: None,
+        };
+        let live = resolved_terrain::test_grid(2, 1, |rx, ry| {
+            if rx == 0 {
+                resolved_terrain::test_water_cell(rx, ry)
+            } else {
+                resolved_terrain::test_flat_cell(rx, ry)
+            }
+        });
+        let lookup = |_, _, _| {
+            Some(TilePlacement {
+                uv_origin: [0.0; 2],
+                uv_size: [1.0; 2],
+                pixel_size: [TILE_WIDTH, TILE_HEIGHT],
+                draw_offset: [0.0, 0.0],
+            })
+        };
+        let instances = build_visible_instances(
+            &grid,
+            None,
+            30.0,
+            15.0,
+            100.0,
+            100.0,
+            Some(&lookup),
+            Some(&live),
+        );
+        assert_eq!(
+            instances.water,
+            vec![[-30.0, -15.0, TILE_WIDTH, TILE_HEIGHT]],
+            "only the water cell becomes a mask diamond, in frame pixels"
+        );
+    }
+}

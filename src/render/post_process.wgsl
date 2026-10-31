@@ -54,11 +54,33 @@ struct Params {
     fxaa_edge_threshold_min: f32,
     // 0 = no FXAA, 1 = FXAA.
     fxaa_enabled: f32,
+
+    // Bloom is applied by its own passes; these keep the layout in step with
+    // the shared uniform.
+    bloom_threshold: f32,
+    bloom_intensity: f32,
+    bloom_radius: f32,
+    bloom_enabled: f32,
+
+    ripple_amplitude: f32,
+    ripple_wavelength: f32,
+    ripple_speed: f32,
+    // Seconds since presentation started.
+    ripple_time: f32,
+
+    // 0 = no displacement, 1 = displacement over the water mask.
+    ripple_enabled: f32,
+    // 1 tints masked texels magenta instead of refracting them.
+    mask_debug: f32,
+    pad1: f32,
+    pad2: f32,
 };
 
 @group(0) @binding(0) var t_source: texture_2d<f32>;
 @group(0) @binding(1) var<uniform> params: Params;
 @group(0) @binding(2) var s_linear: sampler;
+// Engine-built water mask: 1 where the cell's land type is Water.
+@group(0) @binding(3) var t_mask: texture_2d<f32>;
 
 // ReShade `FilmicPass.fx` luminance coefficients.
 const FILMIC_LUMA = vec3f(0.212656, 0.715158, 0.072186);
@@ -350,7 +372,9 @@ fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
         && params.fxaa_enabled == 0.0
         && params.filmic_enabled == 0.0
         && params.colour_enabled == 0.0
-        && params.sepia_enabled == 0.0) {
+        && params.sepia_enabled == 0.0
+        && params.ripple_enabled == 0.0
+        && params.mask_debug == 0.0) {
         return source;
     }
 
@@ -360,11 +384,30 @@ fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
         return source;
     }
 
+    let mask = textureLoad(t_mask, vec2i(p), 0).r;
+    if (params.mask_debug != 0.0 && mask > 0.5) {
+        return vec4f(1.0, 0.0, 1.0, source.a);
+    }
+
     var color = source;
     if (params.fxaa_enabled != 0.0) {
         let dims = vec2f(textureDimensions(t_source));
         let blended = fxaa_pass(linear_to_srgb(color.rgb), p / dims);
         color = vec4f(srgb_to_linear(blended), color.a);
+    }
+    if (params.ripple_enabled != 0.0 && mask > 0.5) {
+        // ReShade Displace_Map-style refraction, gated by the engine's mask.
+        let dims = vec2f(textureDimensions(t_source));
+        let w = 6.2831853 / max(params.ripple_wavelength, 1.0);
+        let t = params.ripple_time * params.ripple_speed * 6.2831853;
+        let offset = vec2f(
+            sin(p.y * w + t) * params.ripple_amplitude,
+            cos(p.x * w * 1.3 + t * 1.1) * params.ripple_amplitude,
+        );
+        color = vec4f(
+            textureSampleLevel(t_source, s_linear, (p + offset) / dims, 0.0).rgb,
+            color.a,
+        );
     }
 
     if (params.color_grade != 0.0) {

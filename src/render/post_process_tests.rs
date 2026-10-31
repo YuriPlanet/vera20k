@@ -14,6 +14,7 @@ use std::time::Duration;
 use crate::render::frame_readback::PendingBgra8Readback;
 use crate::render::gpu::block_on;
 use crate::render::post_process::PostChain;
+use crate::render::water_mask::WaterMask;
 
 /// The format the window's surface reports once `add_srgb_suffix` is applied.
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
@@ -81,6 +82,50 @@ impl Gpu {
         );
     }
 
+    /// An `R8Unorm` mask with the left `water_width` columns set to 1.
+    fn mask(&self, size: [u32; 2], water_width: u32) -> wgpu::Texture {
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Post process water mask"),
+            size: wgpu::Extent3d {
+                width: size[0],
+                height: size[1],
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let mut bytes = vec![0u8; (size[0] * size[1]) as usize];
+        for y in 0..size[1] {
+            for x in 0..water_width.min(size[0]) {
+                bytes[(y * size[0] + x) as usize] = 255;
+            }
+        }
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &bytes,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(size[0]),
+                rows_per_image: Some(size[1]),
+            },
+            wgpu::Extent3d {
+                width: size[0],
+                height: size[1],
+                depth_or_array_layers: 1,
+            },
+        );
+        texture
+    }
+
     fn read(&self, texture: &wgpu::Texture, size: [u32; 2]) -> Vec<u8> {
         let mut encoder = self
             .device
@@ -100,6 +145,60 @@ impl Gpu {
         readback
             .finish(&self.device, submission, Duration::from_secs(10))
             .expect("read GPU pixels")
+    }
+
+    /// Read a single-channel `R8Unorm` texture, dropping the row padding.
+    fn read_r8(&self, texture: &wgpu::Texture, size: [u32; 2]) -> Vec<u8> {
+        let padded_row = size[0].div_ceil(256) * 256;
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Water mask readback"),
+            size: u64::from(padded_row) * u64::from(size[1]),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Water mask readback"),
+            });
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_row),
+                    rows_per_image: Some(size[1]),
+                },
+            },
+            wgpu::Extent3d {
+                width: size[0],
+                height: size[1],
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit([encoder.finish()]);
+        buffer.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("wait for mask readback");
+        let mapped = buffer
+            .slice(..)
+            .get_mapped_range()
+            .expect("map mask readback");
+        let mut out = Vec::with_capacity((size[0] * size[1]) as usize);
+        for y in 0..size[1] as usize {
+            let start = y * padded_row as usize;
+            out.extend_from_slice(&mapped[start..start + size[0] as usize]);
+        }
+        drop(mapped);
+        buffer.unmap();
+        out
     }
 }
 
@@ -179,11 +278,14 @@ fn the_identity_chain_reproduces_the_frame_copy_byte_for_byte() {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Post process chain"),
             });
+        let mask = gpu.mask(size, 0);
+        let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
         chain.draw(
             &gpu.device,
             &gpu.queue,
             &mut encoder,
             &source_view,
+            &mask_view,
             &chained_view,
             (size[0], size[1]),
         );
@@ -236,11 +338,14 @@ fn the_colour_grade_pass_reads_its_uniform() {
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Post process colour grade"),
         });
+    let mask = gpu.mask(size, 0);
+    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
     chain.draw(
         &gpu.device,
         &gpu.queue,
         &mut encoder,
         &source_view,
+        &mask_view,
         &target_view,
         (size[0], size[1]),
     );
@@ -290,11 +395,14 @@ fn the_viewport_mask_excludes_the_ui_column() {
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Post process viewport mask"),
         });
+    let mask = gpu.mask(size, 0);
+    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
     chain.draw(
         &gpu.device,
         &gpu.queue,
         &mut encoder,
         &source_view,
+        &mask_view,
         &target_view,
         (size[0], size[1]),
     );
@@ -341,11 +449,14 @@ fn the_filmic_pass_moves_mid_grey() {
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Post process filmic"),
         });
+    let mask = gpu.mask(size, 0);
+    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
     chain.draw(
         &gpu.device,
         &gpu.queue,
         &mut encoder,
         &source_view,
+        &mask_view,
         &target_view,
         (size[0], size[1]),
     );
@@ -390,11 +501,14 @@ fn the_sepia_pass_warms_mid_grey() {
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Post process sepia"),
         });
+    let mask = gpu.mask(size, 0);
+    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
     chain.draw(
         &gpu.device,
         &gpu.queue,
         &mut encoder,
         &source_view,
+        &mask_view,
         &target_view,
         (size[0], size[1]),
     );
@@ -445,11 +559,14 @@ fn the_fxaa_pass_blends_only_the_edge() {
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Post process fxaa"),
         });
+    let mask = gpu.mask(size, 0);
+    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
     chain.draw(
         &gpu.device,
         &gpu.queue,
         &mut encoder,
         &source_view,
+        &mask_view,
         &target_view,
         (size[0], size[1]),
     );
@@ -524,11 +641,14 @@ fn the_bloom_chain_spills_a_local_halo() {
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Post process bloom"),
         });
+    let mask = gpu.mask(size, 0);
+    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
     chain.draw(
         &gpu.device,
         &gpu.queue,
         &mut encoder,
         &source_view,
+        &mask_view,
         &target_view,
         (size[0], size[1]),
     );
@@ -555,4 +675,126 @@ fn the_bloom_chain_spills_a_local_halo() {
         corner[2] <= 48,
         "the far corner stays dim: {corner:?}"
     );
+}
+
+/// The mask rasterizer covers exactly the diamond it is given, in frame
+/// pixels: the shape the displacement later trusts for alignment.
+#[test]
+#[ignore = "needs a wgpu adapter; run explicitly"]
+fn the_water_mask_covers_the_rasterized_diamond() {
+    let gpu = Gpu::new();
+    let size = [16, 16];
+    let mut mask = WaterMask::new(&gpu.device, &gpu.queue, (size[0], size[1]));
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Water mask raster"),
+        });
+    // One iso diamond from x 0..8, y 0..8: centre (4,4), vertices on the axes.
+    mask.draw(&gpu.queue, &mut encoder, &[[0.0, 0.0, 8.0, 8.0]]);
+    gpu.queue.submit([encoder.finish()]);
+
+    let bytes = gpu.read_r8(mask.test_texture(), size);
+    let at = |x: usize, y: usize| bytes[y * size[0] as usize + x];
+    assert_eq!(at(4, 4), 255, "the diamond centre is water");
+    assert_eq!(at(4, 1), 255, "just below the top vertex is water");
+    assert_eq!(at(0, 0), 0, "the diamond bounding-box corner is dry");
+    assert_eq!(at(12, 12), 0, "outside the diamond stays dry");
+}
+
+/// The displacement refetches only texels the mask marks as water; land keeps
+/// the byte copy.
+#[test]
+#[ignore = "needs a wgpu adapter; run explicitly"]
+fn the_ripple_arm_only_refracts_masked_water() {
+    let gpu = Gpu::new();
+    let size = [8, 4];
+    let source = gpu.texture(
+        size,
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+    );
+    gpu.upload(&source, &pattern(size), size);
+
+    let copied = gpu.texture(
+        size,
+        wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC,
+    );
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Water ripple reference copy"),
+        });
+    encoder.copy_texture_to_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyTextureInfo {
+            texture: &copied,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::Extent3d {
+            width: size[0],
+            height: size[1],
+            depth_or_array_layers: 1,
+        },
+    );
+    gpu.queue.submit([encoder.finish()]);
+
+    let target = gpu.texture(
+        size,
+        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+    );
+    let mut chain = PostChain::new(
+        &gpu.device,
+        &gpu.queue,
+        FORMAT,
+        super::PostParams::ripple(2.0, 8.0, 0.0, 0.0, [0.0, 0.0, 8.0, 4.0]),
+    );
+    let mask = gpu.mask(size, 4);
+    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
+    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Water ripple"),
+        });
+    chain.draw(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &source_view,
+        &mask_view,
+        &target_view,
+        (size[0], size[1]),
+    );
+    gpu.queue.submit([encoder.finish()]);
+
+    let rippled = gpu.read(&target, size);
+    let copy = gpu.read(&copied, size);
+    let stride = size[0] as usize * 4;
+    for y in 0..size[1] as usize {
+        for x in 4..size[0] as usize {
+            let start = y * stride + x * 4;
+            assert_eq!(
+                &rippled[start..start + 4],
+                &copy[start..start + 4],
+                "land texel ({x}, {y}) must stay a byte copy"
+            );
+        }
+    }
+    let water_changed = (0..size[1] as usize).any(|y| {
+        (0..4).any(|x| {
+            let start = y * stride + x * 4;
+            rippled[start..start + 4] != copy[start..start + 4]
+        })
+    });
+    assert!(water_changed, "water texels must be refracted by the ripple");
 }

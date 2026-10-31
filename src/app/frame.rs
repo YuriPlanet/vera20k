@@ -1246,6 +1246,14 @@ impl App {
                         .rules()
                         .and_then(|rules| rules.post_process.bloom)
                         .map(|bloom| [bloom.threshold, bloom.intensity, bloom.radius]);
+                    let water_ripple = state
+                        .rules()
+                        .and_then(|rules| rules.post_process.water_ripple);
+                    let ripple = water_ripple.map(|ripple| {
+                        [ripple.amplitude, ripple.wavelength, ripple.speed]
+                    });
+                    let ripple_debug = water_ripple.is_some_and(|ripple| ripple.debug);
+                    let ripple_time = times.radar_ms as f32 / 1000.0;
                     let post_params = crate::render::post_process::PostParams::from_effects(
                         color_grade,
                         filmic,
@@ -1253,8 +1261,15 @@ impl App {
                         sepia,
                         fxaa,
                         bloom,
+                        ripple,
+                        ripple_time,
+                        ripple_debug,
                         viewport,
                     );
+                    let frame_size = {
+                        let size = output.texture.size();
+                        (size.width, size.height)
+                    };
                     if let Some(params) = post_params {
                         if let Some(chain) = state.renderer.post_chain.as_mut() {
                             chain.set_params(&state.renderer.gpu.queue, params);
@@ -1267,8 +1282,24 @@ impl App {
                                     params,
                                 ));
                         }
+                        if state.renderer.water_mask.is_none() {
+                            state.renderer.water_mask =
+                                Some(crate::render::water_mask::WaterMask::new(
+                                    &state.renderer.gpu.device,
+                                    &state.renderer.gpu.queue,
+                                    frame_size,
+                                ));
+                        }
+                        if let Some(mask) = state.renderer.water_mask.as_mut() {
+                            mask.resize(
+                                &state.renderer.gpu.device,
+                                &state.renderer.gpu.queue,
+                                frame_size,
+                            );
+                        }
                     } else {
                         state.renderer.post_chain = None;
+                        state.renderer.water_mask = None;
                     }
                     let render_output = render::render_game(state, &mut encoder, times)?;
                     state

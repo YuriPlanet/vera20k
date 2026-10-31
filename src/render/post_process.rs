@@ -89,6 +89,19 @@ pub(crate) struct PostParams {
     bloom_radius: f32,
     /// 1 runs the bloom chain; 0 composites nothing.
     bloom_enabled: f32,
+
+    ripple_amplitude: f32,
+    ripple_wavelength: f32,
+    ripple_speed: f32,
+    /// Seconds since presentation started.
+    ripple_time: f32,
+
+    /// 1 runs the mask-gated displacement; 0 leaves water untouched.
+    ripple_enabled: f32,
+    /// 1 tints masked texels magenta instead of refracting them.
+    mask_debug: f32,
+    _pad1: f32,
+    _pad2: f32,
 }
 
 impl PostParams {
@@ -124,6 +137,14 @@ impl PostParams {
             bloom_intensity: 0.0,
             bloom_radius: 1.0,
             bloom_enabled: 0.0,
+            ripple_amplitude: 0.0,
+            ripple_wavelength: 1.0,
+            ripple_speed: 0.0,
+            ripple_time: 0.0,
+            ripple_enabled: 0.0,
+            mask_debug: 0.0,
+            _pad1: 0.0,
+            _pad2: 0.0,
         }
     }
 
@@ -135,6 +156,7 @@ impl PostParams {
     /// - `sepia`: strength, tint red, tint green, tint blue.
     /// - `fxaa`: subpix, edge threshold, edge threshold minimum.
     /// - `bloom`: threshold, intensity, radius multiplier.
+    /// - `ripple`: amplitude, wavelength, speed.
     pub(crate) fn from_effects(
         color_grade: Option<[f32; 3]>,
         filmic: Option<[f32; 6]>,
@@ -142,6 +164,9 @@ impl PostParams {
         sepia: Option<[f32; 4]>,
         fxaa: Option<[f32; 3]>,
         bloom: Option<[f32; 3]>,
+        ripple: Option<[f32; 3]>,
+        ripple_time: f32,
+        mask_debug: bool,
         viewport: [f32; 4],
     ) -> Option<Self> {
         if color_grade.is_none()
@@ -150,6 +175,8 @@ impl PostParams {
             && sepia.is_none()
             && fxaa.is_none()
             && bloom.is_none()
+            && ripple.is_none()
+            && !mask_debug
         {
             return None;
         }
@@ -172,6 +199,8 @@ impl PostParams {
             fxaa.unwrap_or([0.0, 0.125, 0.0]);
         let [bloom_threshold, bloom_intensity, bloom_radius] =
             bloom.unwrap_or([0.0, 0.0, 1.0]);
+        let [ripple_amplitude, ripple_wavelength, ripple_speed] =
+            ripple.unwrap_or([0.0, 1.0, 0.0]);
         Some(Self {
             brightness,
             contrast,
@@ -202,6 +231,14 @@ impl PostParams {
             bloom_intensity,
             bloom_radius,
             bloom_enabled: bloom.is_some() as u8 as f32,
+            ripple_amplitude,
+            ripple_wavelength,
+            ripple_speed,
+            ripple_time,
+            ripple_enabled: ripple.is_some() as u8 as f32,
+            mask_debug: mask_debug as u8 as f32,
+            _pad1: 0.0,
+            _pad2: 0.0,
         })
     }
 
@@ -220,6 +257,9 @@ impl PostParams {
             None,
             None,
             None,
+            None,
+            0.0,
+            false,
             viewport,
         )
         .expect("colour grade enables the chain")
@@ -235,6 +275,9 @@ impl PostParams {
             None,
             None,
             None,
+            None,
+            0.0,
+            false,
             viewport,
         )
         .expect("filmic pass enables the chain")
@@ -250,6 +293,9 @@ impl PostParams {
             Some([0.58, 0.55, 0.43, 0.42]),
             None,
             None,
+            None,
+            0.0,
+            false,
             viewport,
         )
         .expect("sepia enables the chain")
@@ -265,6 +311,9 @@ impl PostParams {
             None,
             Some([0.25, 0.125, 0.0]),
             None,
+            None,
+            0.0,
+            false,
             viewport,
         )
         .expect("fxaa enables the chain")
@@ -280,9 +329,43 @@ impl PostParams {
             None,
             None,
             Some([threshold, intensity, 1.0]),
+            None,
+            0.0,
+            false,
             viewport,
         )
         .expect("bloom enables the chain")
+    }
+
+    /// Water displacement at explicit tuning; the tests build chains this way.
+    #[cfg(test)]
+    pub(crate) fn ripple(
+        amplitude: f32,
+        wavelength: f32,
+        speed: f32,
+        time: f32,
+        viewport: [f32; 4],
+    ) -> Self {
+        Self::from_effects(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some([amplitude, wavelength, speed]),
+            time,
+            false,
+            viewport,
+        )
+        .expect("water ripple enables the chain")
+    }
+
+    /// Mask debug tint; the tests build chains this way.
+    #[cfg(test)]
+    pub(crate) fn mask_debug(viewport: [f32; 4]) -> Self {
+        Self::from_effects(None, None, None, None, None, None, None, 0.0, true, viewport)
+            .expect("mask debug enables the chain")
     }
 }
 
@@ -351,6 +434,7 @@ impl PostChain {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                texture_entry(3, false),
             ],
         });
         let composite_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -526,11 +610,12 @@ impl PostChain {
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         source: &wgpu::TextureView,
+        mask: &wgpu::TextureView,
         destination: &wgpu::TextureView,
         size: (u32, u32),
     ) {
         if !self.bloom_enabled {
-            let bind_group = self.source_bind_group(device, source);
+            let bind_group = self.source_bind_group(device, source, mask);
             self.run_pass(
                 encoder,
                 &self.pipeline,
@@ -546,7 +631,7 @@ impl PostChain {
             .intermediate_view
             .as_ref()
             .expect("bloom targets exist after ensure_targets");
-        let bind_group = self.source_bind_group(device, source);
+        let bind_group = self.source_bind_group(device, source, mask);
         self.run_pass(
             encoder,
             &self.pipeline,
@@ -556,7 +641,7 @@ impl PostChain {
         );
 
         let threshold_group =
-            self.bloom_bind_group(device, intermediate, &self.bloom_level_params[0]);
+            self.bloom_bind_group(device, intermediate, mask, &self.bloom_level_params[0]);
         self.run_pass(
             encoder,
             &self.down_threshold_pipeline,
@@ -566,7 +651,8 @@ impl PostChain {
         );
         for index in 0..BLOOM_LEVELS - 1 {
             let params = &self.bloom_level_params[index + 1];
-            let bind_group = self.bloom_bind_group(device, &self.levels[index].view, params);
+            let bind_group =
+                self.bloom_bind_group(device, &self.levels[index].view, mask, params);
             self.run_pass(
                 encoder,
                 &self.down_pipeline,
@@ -577,7 +663,8 @@ impl PostChain {
         }
         for index in (1..BLOOM_LEVELS).rev() {
             let params = &self.bloom_level_params[index - 1];
-            let bind_group = self.bloom_bind_group(device, &self.levels[index].view, params);
+            let bind_group =
+                self.bloom_bind_group(device, &self.levels[index].view, mask, params);
             // Additive: keep this level's downsample content and add the smaller
             // level's tent-filtered contribution on top.
             self.run_pass(
@@ -620,7 +707,12 @@ impl PostChain {
         );
     }
 
-    fn source_bind_group(&self, device: &wgpu::Device, source: &wgpu::TextureView) -> wgpu::BindGroup {
+    fn source_bind_group(
+        &self,
+        device: &wgpu::Device,
+        source: &wgpu::TextureView,
+        mask: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Post process source"),
             layout: &self.bind_group_layout,
@@ -637,6 +729,10 @@ impl PostChain {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&self.sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(mask),
+                },
             ],
         })
     }
@@ -645,6 +741,7 @@ impl PostChain {
         &self,
         device: &wgpu::Device,
         source: &wgpu::TextureView,
+        mask: &wgpu::TextureView,
         params: &wgpu::Buffer,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -662,6 +759,10 @@ impl PostChain {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(mask),
                 },
             ],
         })
@@ -866,10 +967,11 @@ mod tests {
     fn the_identity_params_disable_every_effect() {
         let params = super::PostParams::identity();
         assert_eq!(
-            bytemuck::cast::<_, [f32; 32]>(params),
+            bytemuck::cast::<_, [f32; 40]>(params),
             [
                 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-                0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.125, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0
+                0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.125, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+                0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
             ]
         );
     }
@@ -877,9 +979,10 @@ mod tests {
     #[test]
     fn from_effects_enables_only_the_configured_arms() {
         // Every part disabled: the caller keeps the texture copy.
-        assert!(
-            super::PostParams::from_effects(None, None, None, None, None, None, [0.0; 4]).is_none()
-        );
+        assert!(super::PostParams::from_effects(
+            None, None, None, None, None, None, None, 0.0, false, [0.0; 4]
+        )
+        .is_none());
 
         let grade = super::PostParams::from_effects(
             Some([0.1, 1.2, 0.5]),
@@ -888,14 +991,18 @@ mod tests {
             None,
             None,
             None,
+            None,
+            0.0,
+            false,
             [0.0; 4],
         )
         .expect("colour grade configures the chain");
         assert_eq!(
-            bytemuck::cast::<_, [f32; 32]>(grade),
+            bytemuck::cast::<_, [f32; 40]>(grade),
             [
                 0.1, 1.2, 0.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-                0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.125, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0
+                0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.125, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+                0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
             ],
             "grade-only leaves the ReShade arms disabled"
         );
@@ -907,15 +1014,18 @@ mod tests {
             Some([0.58, 0.55, 0.43, 0.42]),
             Some([0.25, 0.125, 0.0]),
             Some([0.5, 0.4, 1.0]),
+            Some([2.0, 32.0, 0.4]),
+            4.0,
+            false,
             [0.0, 0.0, 800.0, 600.0],
         )
         .expect("ReShade arms configure the chain");
         assert_eq!(
-            bytemuck::cast::<_, [f32; 32]>(all),
+            bytemuck::cast::<_, [f32; 40]>(all),
             [
                 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 800.0, 600.0, 0.85, 0.4, 1.0, 0.5, 0.0, -0.15,
                 1.0, 0.0, 0.4, 0.7, 1.0, 1.0, 0.58, 0.55, 0.43, 0.42, 0.25, 0.125, 0.0, 1.0, 0.5,
-                0.4, 1.0, 1.0
+                0.4, 1.0, 1.0, 2.0, 32.0, 0.4, 4.0, 1.0, 0.0, 0.0, 0.0
             ]
         );
     }

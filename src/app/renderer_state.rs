@@ -56,6 +56,9 @@ pub(crate) struct RendererState {
     /// Full-frame post-processing at the presentation boundary. `None` keeps
     /// the 1:1 texture copy (`present_game_frame`), which is the retail path.
     pub(crate) post_chain: Option<crate::render::post_process::PostChain>,
+    /// Water mask the post chain samples for displacement. Created and dropped
+    /// together with `post_chain`.
+    pub(crate) water_mask: Option<crate::render::water_mask::WaterMask>,
 }
 
 impl RendererState {
@@ -93,12 +96,17 @@ impl RendererState {
             self.copy_game_frame_to(encoder, destination);
             return;
         };
+        let Some(mask) = self.water_mask.as_ref() else {
+            self.copy_game_frame_to(encoder, destination);
+            return;
+        };
         debug_assert_eq!(chain.format(), format);
         chain.draw(
             &self.gpu.device,
             &self.gpu.queue,
             encoder,
             &source_view,
+            mask.view(),
             &destination_view,
             size,
         );

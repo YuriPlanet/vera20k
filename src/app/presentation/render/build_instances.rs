@@ -191,7 +191,10 @@ pub(super) fn build_world_instances(
                 .and_then(|rt| rt.view().resolved_terrain()),
         )
     } else {
-        crate::render::terrain_instances::TerrainInstances { normal: Vec::new() }
+        crate::render::terrain_instances::TerrainInstances {
+            normal: Vec::new(),
+            water: Vec::new(),
+        }
     };
 
     // Map overlays and walls remain in the fixed per-cell draw plan. Terrain

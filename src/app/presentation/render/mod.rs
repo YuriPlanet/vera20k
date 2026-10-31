@@ -278,6 +278,15 @@ pub(crate) fn render_game(
     #[cfg(feature = "telemetry-dashboard")]
     let phase1_started = render_started.map(|_| Instant::now());
     let mut world = build_instances::build_world_instances(state, vsw, vsh, bracket_palette);
+    // Water mask for `[PostProcess] WaterRipple`: the same visible-cell sweep
+    // that built the terrain instances also collected the water diamonds.
+    if let Some(mask) = state.renderer.water_mask.as_mut() {
+        mask.draw(
+            &state.renderer.gpu.queue,
+            encoder,
+            &world.terrain.water,
+        );
+    }
     for layer in &mut world.object_layers {
         object_extras::defer_health_to_frame(layer, world_camera.camera_pos, z);
     }
