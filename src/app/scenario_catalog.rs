@@ -209,13 +209,20 @@ impl ScenarioCatalog {
         assets: &AssetManager,
     ) -> Option<crate::map::source::LoadedMapIni> {
         crate::map::source::validate_network_map_name(file).ok()?;
-        let loaded = crate::map::source::load_network_map_ini(root, file, assets).ok()?;
-        Self::verify_transferred_network_map(
-            &loaded,
-            metadata,
-            crate::map::rmg::is_seed_selection(file),
-        )
-        .then_some(loaded)
+        let seed = crate::map::rmg::is_seed_selection(file);
+        let verified = |name: &str| {
+            let loaded = crate::map::source::load_network_map_ini(root, name, assets).ok()?;
+            Self::verify_transferred_network_map(&loaded, metadata, seed).then_some(loaded)
+        };
+        verified(file).or_else(|| {
+            // VERA: a map received or downloaded earlier is kept as
+            // `<stem>.yrm` in VERA's Maps folder, a name the host's
+            // `<stem>.map` does not reach. The bytes still decide.
+            let kept = crate::map::source::kept_map_file_name(file).ok()?;
+            (!seed && !kept.eq_ignore_ascii_case(file))
+                .then(|| verified(&kept))
+                .flatten()
+        })
     }
 
     /// Mutable access to the records. The guard re-projects the shell map
@@ -340,6 +347,40 @@ mod tests {
             catalog
                 .verify_network_map_input("RandMap.Sed", &wrong, root.path(), &assets)
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn a_guest_finds_its_kept_copy_of_a_map_the_host_names_otherwise() {
+        let map: &[u8] = b"[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n[IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n";
+        let host = TestDirectory::new("kept-name-host");
+        host.write("Lakes.map", map);
+        let host_assets = AssetManager::from_loose_root_for_test(host.path());
+        let record = SkirmishScenarioRecord::concrete_from_ini(
+            0,
+            SkirmishScenarioSource::Synthetic,
+            "Lakes.map",
+            &IniFile::from_bytes(map).unwrap(),
+        );
+        let metadata = ScenarioCatalog::from_records(vec![record])
+            .network_map_metadata("Lakes.map", host.path(), &host_assets)
+            .unwrap();
+
+        let guest = TestDirectory::new("kept-name-guest");
+        let guest_assets = AssetManager::from_loose_root_for_test(guest.path());
+        let catalog = ScenarioCatalog::from_records(Vec::new());
+        guest.write("Lakes.yrm", b"[Map]\nTheater=SNOW\n");
+        assert!(
+            catalog
+                .verify_network_map_input("Lakes.map", &metadata, guest.path(), &guest_assets)
+                .is_none(),
+            "another map under the kept name is not the host's"
+        );
+        guest.write("Lakes.yrm", map);
+        assert!(
+            catalog
+                .verify_network_map_input("Lakes.map", &metadata, guest.path(), &guest_assets)
+                .is_some()
         );
     }
 

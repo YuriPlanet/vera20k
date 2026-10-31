@@ -682,7 +682,7 @@ fn install_received_asset_with_limits(
     Ok(LoadedTransferAsset { source, content })
 }
 
-/// The game-folder name a received or downloaded map is kept under: the
+/// The name a received or downloaded map is kept under in VERA's Maps folder: the
 /// last part of `host_file` with `.yrm` for its extension. Refused when that
 /// would be hidden (a leading dot) or a name Windows reserves, so a name that
 /// passes is one every platform can save.

@@ -1,8 +1,8 @@
 //! The online map library (docs/lobby-protocol.md): in an online room,
 //! Choose Map lists the lobby's curated maps under its Online Maps row, and
-//! Use Map on one asks to download it. The download is saved in the game
-//! folder as a loose `.yrm`, where it is an ordinary map from then on, in
-//! every game type's list. Players star maps they like; the stars are kept in
+//! Use Map on one asks to download it. The download is saved in VERA's own
+//! Maps folder (never the game folder) as a loose `.yrm`, where it is an
+//! ordinary map from then on, in every game type's list. Players star maps they like; the stars are kept in
 //! `MapFavorites.txt` in the settings folder. VERA-only; gamemd has no map
 //! library.
 //!
