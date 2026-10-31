@@ -591,7 +591,8 @@ jobs:
     needs: [prepare, build]
     if: inputs.promote == '' && github.ref == 'refs/heads/main'
     runs-on: macos-latest
-    timeout-minutes: 45
+    # Apple's two-hour wait (notarize.py) plus signing, upload and stapling.
+    timeout-minutes: 150
     environment: macos-signing
     permissions:
       contents: read

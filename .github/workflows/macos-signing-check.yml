@@ -16,7 +16,8 @@ jobs:
   check:
     if: github.ref == 'refs/heads/main'
     runs-on: macos-latest
-    timeout-minutes: 45
+    # Apple's two-hour wait (notarize.py) plus signing, upload and stapling.
+    timeout-minutes: 150
     environment: macos-signing
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -202,7 +202,7 @@ def main():
     signing.add_argument("--records", type=Path, required=True)
     signing.add_argument("--identity", required=True)
     signing.add_argument("--team", required=True)
-    signing.add_argument("--timeout", default="30m")
+    signing.add_argument("--timeout", default="2h")
     verify = operations.add_parser("verify", help="Verify an existing image without signing credentials")
     verify.add_argument("image", type=Path)
     verify.add_argument("--smoke-test", action="store_true", help="Run the verified app's help command")
