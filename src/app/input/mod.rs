@@ -43,6 +43,8 @@ mod bridge_click_tests;
 pub(crate) mod sound;
 
 pub(crate) mod keyboard;
+#[cfg(target_os = "macos")]
+pub(crate) mod mac_pointer;
 pub(crate) mod network_options;
 pub(crate) mod multiplayer_setup;
 pub(crate) mod campaign_input;
