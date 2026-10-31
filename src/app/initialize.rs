@@ -1175,6 +1175,7 @@ impl App {
                 lan: None,
                 multiplayer_setup: None,
                 room_limits: Default::default(),
+                lan_rematch: None,
                 network_setup_protocol: None,
                 wol_welcome_art: None,
                 wol_login_art: None,

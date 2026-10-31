@@ -1073,7 +1073,7 @@ pub(crate) fn return_after_match(state: &mut AppState) {
         crate::app::shell_wol::reenter_after_match(state);
     } else {
         crate::app::lan_service::restart_lobby_visit(state);
-        App::open_lan_lobby(state);
+        App::reopen_lan_room(state);
     }
 }
 
