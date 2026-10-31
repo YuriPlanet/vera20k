@@ -3,9 +3,11 @@
 //! endpoint refresh, through the production FireAt laser path.
 
 use super::TargetKind;
+use super::fire_coord::{FireSource, fire_coordinate};
 use super::laser::{self, LaserBirth};
 use crate::map::entities::EntityCategory;
 use crate::rules::art_data::ArtRegistry;
+use crate::rules::flh::Flh;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
@@ -36,7 +38,11 @@ fn weapon_section(mode: Option<&str>, stop: Option<bool>) -> String {
 }
 
 fn build(rules_ini: &str) -> RuleSet {
-    let art_ini = IniFile::from_str(ART);
+    build_with_art(rules_ini, ART)
+}
+
+fn build_with_art(rules_ini: &str, art: &str) -> RuleSet {
+    let art_ini = IniFile::from_str(art);
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
         &crate::sim::arena_fixture::clear_ground_ini(rules_ini),
         &art_ini,
@@ -44,6 +50,66 @@ fn build(rules_ini: &str) -> RuleSet {
     .unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art_ini));
     rules
+}
+
+const BURST_ART: &str = "[UNITART]
+PrimaryFireFLH=100,20,30
+                        PrimaryFireFLH.Burst0=200,40,50
+                        PrimaryFireFLH.Burst1=300,60,70
+                        [CONTROLART]
+PrimaryFireFLH=300,60,70
+                        [BASEART]
+PrimaryFireFLH=100,20,30
+                        [CHASERART]
+PrimaryFireFLH=0,0,0
+";
+
+fn burst_scene() -> (Simulation, RuleSet) {
+    let rules = build_with_art(
+        &format!(
+            "[VehicleTypes]
+0=UNIT
+1=CHASER
+2=CONTROL
+3=BASE
+             [UNIT]
+Image=UNITART
+Strength=600
+Primary=GUN
+             [CHASER]
+Image=CHASERART
+Strength=1000
+             [CONTROL]
+Image=CONTROLART
+Strength=600
+Primary=GUN
+             [BASE]
+Image=BASEART
+Strength=600
+Primary=GUN
+{}",
+            weapon_section(Some("Firer"), None)
+        ),
+        BURST_ART,
+    );
+    let mut sim = Simulation::new();
+    place(&mut sim, 1, "UNIT", EntityCategory::Unit, [2560, 2560, 0]);
+    place(&mut sim, 2, "CHASER", EntityCategory::Unit, [5120, 5120, 0]);
+    (sim, rules)
+}
+
+fn coordinate_of(sim: &Simulation, rules: &RuleSet, kind: &str, burst: u8) -> ProjectileCoord {
+    let source = sim.substrate.entities.get(1).unwrap();
+    fire_coordinate(
+        sim,
+        rules,
+        &FireSource::of_entity(source),
+        rules.object(kind).unwrap(),
+        0,
+        burst,
+        Flh::default(),
+    )
+    .coord
 }
 
 fn unit_scene(mode: Option<&str>, stop: Option<bool>, global_stop: bool) -> (Simulation, RuleSet) {
@@ -283,6 +349,73 @@ fn an_ignoring_caller_keeps_the_source_but_still_tracks_the_target() {
     birth.update_tracking(&sim, &rules);
     assert_eq!(birth.from, from, "shrapnel's CreateLaser ignores the firer");
     assert_eq!(birth.to, ProjectileCoord::new(5120, 5376, 0));
+}
+
+#[test]
+fn a_burst_art_offset_replaces_the_slot_flh_without_a_lateral_shift() {
+    let (mut sim, rules) = burst_scene();
+    // Odd burst index: the authored offset is absolute and keeps its lateral.
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .weapon_burst
+        .advance();
+    let birth = fire(&mut sim, &rules);
+    let burst = coordinate_of(&sim, &rules, "UNIT", 1);
+    assert_eq!(birth.from, burst);
+    assert_eq!(
+        birth.from,
+        coordinate_of(&sim, &rules, "CONTROL", 0),
+        "an absolute burst offset takes no odd-burst lateral shift"
+    );
+}
+
+#[test]
+fn a_tracked_laser_keeps_the_frozen_burst_offset() {
+    let (mut sim, rules) = burst_scene();
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .weapon_burst
+        .advance();
+    let mut birth = fire(&mut sim, &rules);
+    assert_eq!(
+        birth.track.map(|track| track.local_flh()),
+        Some(Flh::from([300, 60, 70])),
+        "GetBurstFLH freezes the authored burst offset"
+    );
+    let initial = birth.from;
+    birth.update_tracking(&sim, &rules);
+    assert_eq!(
+        birth.from, initial,
+        "the tracked GetFLH sample keeps the same burst offset"
+    );
+    move_to(&mut sim, 1, 11, 10);
+    birth.update_tracking(&sim, &rules);
+    assert_eq!(birth.from.x, initial.x + 256);
+    assert_eq!(birth.from.y, initial.y);
+}
+
+#[test]
+fn a_burst_index_past_the_run_falls_back_to_the_slot_offset() {
+    let (mut sim, rules) = burst_scene();
+    let burst = &mut sim.substrate.entities.get_mut(1).unwrap().weapon_burst;
+    burst.advance();
+    burst.advance();
+    let birth = fire(&mut sim, &rules);
+    assert_eq!(
+        birth.track.map(|track| track.local_flh()),
+        Some(Flh::from([100, 20, 30])),
+        "past the run GetBurstFLH falls back to the slot FLH"
+    );
+    assert_eq!(birth.from, coordinate_of(&sim, &rules, "UNIT", 2));
+    assert_eq!(
+        birth.from,
+        coordinate_of(&sim, &rules, "BASE", 0),
+        "the authored run stops at index 2"
+    );
 }
 
 #[test]

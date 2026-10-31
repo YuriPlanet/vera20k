@@ -312,6 +312,11 @@ pub fn turret_pivot_coordinate(
 /// (`0x006F3C1A`): identity, world-X TurretOffset, then one turn by vt+0x2A8
 /// ([`building_fire_facings`]) less a quarter. The authored body heading does
 /// not supply a second matrix rotation.
+///
+/// `burst_index` is the signed `CurrentBurstIndex` narrowed to its byte. It
+/// selects a Phobos burst ART offset when one is authored; otherwise only its
+/// low bit reaches GetFLH, which mirrors the lateral FLH on odd shots. A
+/// selected burst offset is absolute and keeps its lateral component.
 pub(crate) fn fire_coordinate(
     world: &Simulation,
     rules: &RuleSet,
@@ -339,9 +344,22 @@ pub(crate) fn fire_coordinate(
     let aim_facing16 = base.fire_facing;
     let art = base.art;
 
+    // Phobos `TechnoClass::GetFLH @ 0x006F3AEB`: a burst-index-specific ART
+    // offset replaces the slot's FLH and takes no lateral burst shift, while
+    // the fallback keeps the GetWeapon record and that shift.
+    #[cfg(feature = "phobos")]
+    let burst_flh = obj.burst_flh(
+        weapon_index,
+        snap.veterancy >= super::veterancy::RANK_ELITE_U16,
+        burst_index,
+    );
+    #[cfg(not(feature = "phobos"))]
+    let burst_flh: Option<Flh> = None;
     // GetFLH6F3B28 reads virtual GetWeapon's complete record, including an
     // installed upgrade's normal FLH (Building4526F0), at this query point.
-    let flh = if weapon_index < 0 {
+    let flh = if let Some(burst) = burst_flh {
+        burst
+    } else if weapon_index < 0 {
         obj.alternate_fire_flh((-i64::from(weapon_index) - 1) as usize)
     } else {
         let record = if let Some(entity) = world.substrate.entities.get(snap.stable_id) {
@@ -367,7 +385,12 @@ pub(crate) fn fire_coordinate(
         art.map_or(0, |art| art.turret_offset),
         flh,
         base.facings,
-        burst_index,
+        if burst_flh.is_some() {
+            // Even parity: an absolute burst offset is not shifted.
+            0
+        } else {
+            burst_index
+        },
         base.locomotor_basis,
     )
     .unwrap_or((0, 0, 0));
@@ -823,7 +846,7 @@ fn open_topped_port_coordinate(
     let source = FireSource::of_entity(transport);
     let base = fire_coordinate_base(world, rules, &source, transport_obj);
     let flh = transport_obj.alternate_fire_flh(port);
-    let burst_index = (transport.weapon_burst.index() & 1) as u8;
+    let burst_index = transport.weapon_burst.index() as u8;
     let delta = flh_world_delta(
         base.art.map_or(0, |art| art.turret_offset),
         flh,

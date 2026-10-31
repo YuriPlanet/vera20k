@@ -44,16 +44,26 @@ pub struct LaserTrack {
     /// never tracked.
     target: Option<ProjectileTarget>,
     weapon_index: i32,
-    /// `CurrentBurstIndex` frozen at creation; `GetFLH` mirrors the lateral
-    /// FLH by its parity.
-    burst_parity: u8,
-    /// `GetBurstFLH`'s fallback: the weapon slot's ART FLH read at creation.
-    /// `GetFLH6F3B28` adds this base to the stored weapon FLH again.
+    /// `CurrentBurstIndex` frozen at creation: it selects the Phobos burst ART
+    /// offset and `GetFLH`'s lateral parity shift.
+    burst_index: u8,
+    /// `GetBurstFLH`'s answer at creation: the burst offset when the frozen
+    /// index has one, else the weapon record's ART FLH. `GetFLH6F3B28` adds
+    /// this base to the selected FLH again.
     base_flh: Flh,
     /// `initial source - tracked world FLH` at creation.
     saved_offset: ProjectileCoord,
     stop_on_firer_convert: bool,
     original_type: Option<InternedId>,
+}
+
+impl LaserTrack {
+    /// `TrackingData::LocalFLH`, the FLH frozen at creation. Reading it does
+    /// not refresh anything.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn local_flh(self) -> Flh {
+        self.base_flh
+    }
 }
 
 impl LaserBirth {
@@ -86,7 +96,7 @@ impl LaserBirth {
                     &super::fire_coord::FireSource::of_entity(source),
                     object,
                     track.weapon_index,
-                    track.burst_parity,
+                    track.burst_index,
                     track.base_flh,
                 )
                 .coord;
@@ -239,7 +249,7 @@ pub(crate) fn create<'w>(
                 &super::fire_coord::FireSource::of_entity(source),
                 object,
                 weapon_index,
-                (source.weapon_burst.index() & 1) as u8,
+                source.weapon_burst.index() as u8,
                 Default::default(),
             )
             .coord;
@@ -308,7 +318,7 @@ pub(crate) fn build_track(
     }
     let source = world.substrate.entities.get(source_id);
     let object = source.and_then(|source| world.interner.object_type(source.type_ref(), rules));
-    let burst_parity = source.map_or(0, |source| (source.weapon_burst.index() & 1) as u8);
+    let burst_index = source.map_or(0, |source| source.weapon_burst.index() as u8);
     let mut firer = None;
     let mut base_flh = Flh::default();
     let mut saved_offset = ProjectileCoord::new(0, 0, 0);
@@ -322,17 +332,40 @@ pub(crate) fn build_track(
         && let Some(object) = object
         && !(source.category() == EntityCategory::Structure && object.max_number_occupants > 0)
     {
-        let use_elite = usize::try_from(weapon_index).is_ok_and(|index| {
-            super::combat_weapon::uses_elite_weapon(object, source.veterancy.rank(), index)
-        });
-        base_flh = object.weapon_flh(weapon_index, use_elite);
+        // `GetBurstFLH`, then `GetWeapon(weaponIdx)->FLH`: the installed
+        // record's ART coordinate, elite-qualified by live veterancy.
+        let record_flh = || {
+            super::combat_weapon::get_weapon_record(
+                source,
+                object,
+                weapon_index,
+                &world.substrate.entities,
+                rules,
+                &world.interner,
+            )
+            .map_or_else(Flh::default, |record| record.flh)
+        };
+        #[cfg(feature = "phobos")]
+        {
+            base_flh = object
+                .burst_flh(
+                    weapon_index,
+                    source.veterancy.rank() >= super::veterancy::RANK_ELITE_U16,
+                    burst_index,
+                )
+                .unwrap_or_else(record_flh);
+        }
+        #[cfg(not(feature = "phobos"))]
+        {
+            base_flh = record_flh();
+        }
         let world_flh = super::fire_coord::fire_coordinate(
             world,
             rules,
             &super::fire_coord::FireSource::of_entity(source),
             object,
             weapon_index,
-            burst_parity,
+            burst_index,
             base_flh,
         )
         .coord;
@@ -359,7 +392,7 @@ pub(crate) fn build_track(
         firer,
         target,
         weapon_index,
-        burst_parity,
+        burst_index,
         base_flh,
         saved_offset,
         stop_on_firer_convert,
@@ -467,7 +500,7 @@ pub(crate) fn support(
         &super::fire_coord::FireSource::of_entity(source),
         obj,
         0,
-        (source.weapon_burst.index() & 1) as u8,
+        source.weapon_burst.index() as u8,
         Default::default(),
     )
     .coord;

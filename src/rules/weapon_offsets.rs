@@ -10,13 +10,26 @@
 
 use super::{flh::Flh, ini_parser::IniSection, object_type::WEAPON_SLOT_COUNT};
 
+#[cfg(all(test, feature = "phobos"))]
+#[path = "weapon_offsets_tests.rs"]
+mod tests;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(not(feature = "ares"), derive(Copy))]
 pub(crate) struct WeaponOffsets {
     // TechnoType710AF0, clears7116E6..71173A: both WeaponStruct arrays.
     base: [[i32; 3]; WEAPON_SLOT_COUNT],
     elite: [[i32; 3]; WEAPON_SLOT_COUNT],
     alternate: [[i32; 3]; 5],
+    /// Phobos `TechnoTypeExt::ParseBurstFLHs` rows, one per weapon slot:
+    /// `(Elite)(PrimaryFire|SecondaryFire|WeaponN)FLH.BurstN`. Each reached
+    /// ART read appends that pass's contiguous run; an authored elite value
+    /// defaults to the normal one.
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    burst: Vec<Vec<[i32; 3]>>,
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    elite_burst: Vec<Vec<[i32; 3]>>,
     #[cfg(feature = "ares")]
     extra_base: Vec<[i32; 3]>,
     #[cfg(feature = "ares")]
@@ -67,6 +80,81 @@ impl WeaponOffsets {
         for (port, offset) in self.alternate.iter_mut().enumerate() {
             *offset = art.read_coord3(&format!("AlternateFLH{port}"), self.base[0]);
         }
+        #[cfg(feature = "phobos")]
+        self.read_burst_pass(art, turret_count, weapon_count);
+    }
+
+    /// Phobos `TechnoTypeExt::ParseBurstFLHs` (`src/Ext/TechnoType/Body.cpp`):
+    /// `(Elite)` + `PrimaryFire`/`SecondaryFire` when the type is not a
+    /// multi-weapon turret, else `(Elite)WeaponN` with the live WeaponCount.
+    /// The run stops at the first index whose two keys are both absent; a
+    /// missing elite coordinate copies the normal one, and a normal key that
+    /// is absent while the elite key is present reads as zero (the null
+    /// `Nullable::Get`). Rows are append-only, as the native owner never
+    /// clears them between reads.
+    #[cfg(feature = "phobos")]
+    fn read_burst_pass(&mut self, art: &IniSection, turret_count: i32, weapon_count: i32) {
+        let multi_weapon = turret_count > 0 && weapon_count > 0;
+        let slots = if multi_weapon {
+            usize::try_from(weapon_count).unwrap_or(0)
+        } else {
+            2
+        };
+        self.burst.resize(slots, Vec::new());
+        self.elite_burst.resize(slots, Vec::new());
+        for slot in 0..slots {
+            let (key, elite_key) = if multi_weapon {
+                (
+                    format!("Weapon{}FLH", slot + 1),
+                    format!("EliteWeapon{}FLH", slot + 1),
+                )
+            } else if slot == 0 {
+                (
+                    "PrimaryFireFLH".to_owned(),
+                    "ElitePrimaryFireFLH".to_owned(),
+                )
+            } else {
+                (
+                    "SecondaryFireFLH".to_owned(),
+                    "EliteSecondaryFireFLH".to_owned(),
+                )
+            };
+            let mut burst = 0usize;
+            loop {
+                let base = art.read_int_fields_complete::<3>(&format!("{key}.Burst{burst}"), 2048);
+                let elite =
+                    art.read_int_fields_complete::<3>(&format!("{elite_key}.Burst{burst}"), 2048);
+                if base.is_none() && elite.is_none() {
+                    break;
+                }
+                let base = base.unwrap_or([0; 3]);
+                self.burst[slot].push(base);
+                self.elite_burst[slot].push(elite.unwrap_or(base));
+                burst += 1;
+            }
+        }
+    }
+
+    /// The authored rows, for the rules identity fold.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn burst_rows(&self) -> (&[Vec<[i32; 3]>], &[Vec<[i32; 3]>]) {
+        (&self.burst, &self.elite_burst)
+    }
+
+    /// Phobos `GetBurstFLH`: the frozen `CurrentBurstIndex` selects within the
+    /// authored run; `None` past it, where `GetFLH` keeps the slot's FLH.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn burst(&self, index: i32, elite: bool, burst_index: u8) -> Option<Flh> {
+        let slot = usize::try_from(index).ok()?;
+        let rows = if elite {
+            &self.elite_burst
+        } else {
+            &self.burst
+        };
+        rows.get(slot)?
+            .get(usize::from(burst_index))
+            .copied()
+            .map(Flh::from)
     }
 
     fn read_numbered(art: &IniSection, slot: usize, base: &mut [i32; 3], elite: &mut [i32; 3]) {
