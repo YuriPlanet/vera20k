@@ -44,7 +44,7 @@ pub(crate) enum WolPopupAction {
         clan: bool,
         limit: bool,
         observe: bool,
-        /// VERA's online popup's Players and Allow spectators.
+        /// VERA's online popup's Max players and Allow spectators.
         room: Option<RoomLimits>,
     },
     CreateCancelled,
@@ -141,7 +141,7 @@ impl WolLobbyPopup {
         }
     }
 
-    /// VERA's online Create Game's Players and Allow spectators.
+    /// VERA's online Create Game's Max players and Allow spectators.
     pub(crate) fn room_mut(&mut self) -> Option<&mut RoomLimitsPicker> {
         match &mut self.kind {
             WolPopupKind::Create(create) => create.room.as_mut(),
@@ -253,7 +253,10 @@ mod tests {
         };
         assert!(!create.limit);
         // VERA's online popup carries its room's limits to OK.
-        let limits = RoomLimits { spectators: false };
+        let limits = RoomLimits {
+            players: 5,
+            spectators: false,
+        };
         let mut modern = WolLobbyPopup::create(1024, false, 0, false, Some(limits));
         assert!(matches!(
             modern.activate(POPUP_OK),

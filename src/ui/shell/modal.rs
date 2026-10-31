@@ -456,7 +456,7 @@ pub struct WolCreateGameLayout {
     pub clan: Option<RectPx>,
     pub limit: RectPx,
     pub observe: Option<RectPx>,
-    /// VERA's online popup's Allow spectators.
+    /// VERA's online popup's Max players and Allow spectators.
     pub room: Option<crate::ui::room_limits::RoomLimitsLayout>,
     pub ok: RectPx,
     pub cancel: RectPx,
@@ -475,8 +475,8 @@ const ONLINE_STATUS_INSET: i32 = 10;
 /// `online` is VERA's online lobby on Red Alert 2's box art: no clan or
 /// observer box (the lobby's own Observe box still seats an observer), Limit
 /// Screen Resolution in the clan row under the password field, clear of the
-/// art's Tesla Trooper, then Allow spectators in the limit row, and the
-/// status line inside the frame.
+/// art's Tesla Trooper, then Max players and Allow spectators in the limit and
+/// observer rows, and the status line inside the frame.
 pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> WolCreateGameLayout {
     let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
@@ -504,7 +504,12 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
         clan: None,
         observe: None,
         limit: RectPx::new(field.x, clan.y, field.w, clan.h),
-        room: Some(room_limits_layout(field, limit)),
+        room: Some(room_limits_layout(
+            layout.password_label,
+            field,
+            limit.y,
+            observe,
+        )),
         status: RectPx::new(
             dialog.x + ONLINE_STATUS_INSET,
             status.y,
@@ -516,7 +521,7 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
 }
 
 /// VERA's Create Game box in the LAN lobby, the online box's art and
-/// buttons: Allow spectators in the clan row.
+/// buttons: Max players in the password row, Allow spectators in the clan row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LanCreateGameLayout {
     pub dialog: RectPx,
@@ -531,18 +536,24 @@ pub fn lan_create_game_layout(screen_w: i32, screen_h: i32) -> LanCreateGameLayo
     let clan = native.clan.expect("the native box has its clan row");
     LanCreateGameLayout {
         dialog: native.dialog,
-        room: room_limits_layout(field, clan),
+        room: room_limits_layout(native.password_label, field, field.y, clan),
         ok: native.ok,
         cancel: native.cancel,
     }
 }
 
-/// Allow spectators in `checkbox_row` from `field`'s left edge.
+/// Max players beside its caption at `players_y`, the trackbar under `field`'s
+/// left edge, and Allow spectators in `checkbox_row` from the same edge.
 fn room_limits_layout(
+    caption: RectPx,
     field: RectPx,
+    players_y: i32,
     checkbox_row: RectPx,
 ) -> crate::ui::room_limits::RoomLimitsLayout {
+    let players = RectPx::new(field.x, players_y, 129, 22);
     crate::ui::room_limits::RoomLimitsLayout {
+        players_label: RectPx::new(caption.x, players.y, caption.w, players.h),
+        players,
         spectators: RectPx::new(field.x, checkbox_row.y, field.w, checkbox_row.h),
     }
 }

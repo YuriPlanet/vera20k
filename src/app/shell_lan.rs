@@ -810,11 +810,14 @@ pub(crate) fn update_geometry(state: &mut AppState) {
 pub(crate) fn cursor_moved(state: &mut AppState) {
     let control = pointer_control(state);
     let layout = layout(state);
+    let create_layout = create_box_layout(state);
     let (x, y) = state.match_state.input.cursor_px();
     if let Some(runtime) = state.frontend.lan.as_mut() {
         let lobby = &mut runtime.lobby;
         lobby.buttons.hovered = control;
-        if runtime.create.is_none() && runtime.modal.is_none() && lobby.enabled {
+        if let Some(picker) = runtime.create.as_mut() {
+            picker.drag(&create_layout.room, ShellScale::RETAIL, x);
+        } else if runtime.modal.is_none() && lobby.enabled {
             for (list, rect, count) in [
                 (&mut lobby.game_list, layout.games, lobby.games.len() + 1),
                 (&mut lobby.player_list, layout.players, lobby.players.len()),
@@ -850,6 +853,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         let buttons = &mut runtime.lobby.buttons;
         if pressed {
             let cue = match picker.press(&create_layout.room, ShellScale::RETAIL, x, y) {
+                RoomLimitsPress::Players => None,
                 RoomLimitsPress::Spectators => Some(LauncherCue::Checkbox),
                 RoomLimitsPress::Missed => {
                     buttons.press(control);
@@ -860,6 +864,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 App::play_launcher_options_cue(state, cue);
             }
         } else {
+            picker.release();
             match buttons.release(control) {
                 Some(OK) => close_create_box(state, true),
                 Some(CANCEL) => close_create_box(state, false),

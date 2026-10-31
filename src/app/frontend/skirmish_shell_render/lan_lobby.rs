@@ -59,7 +59,14 @@ fn paint_create_box(
         });
     }
     let mut controls = Vec::new();
-    super::wol_lobby::paint_room_limits(atlas, &mut controls, &mut labels, picker, &layout.room);
+    super::wol_lobby::paint_room_limits(
+        state,
+        atlas,
+        &mut controls,
+        &mut labels,
+        picker,
+        &layout.room,
+    );
     let draw = shell_paint::paint_modal_shp(
         &state.renderer.bit_font,
         atlas
