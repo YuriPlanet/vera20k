@@ -260,8 +260,6 @@ enum RequestFailure {
     /// 503 `service_full` or `network_full`: the lobby has no room for this
     /// sign-in, with the same kind of message.
     Full(Option<String>),
-    /// 403 `map_blocked`: settings that select a map the operator removed.
-    MapBlocked,
 }
 
 /// What a lobby refusal of a sign-in tells the player: its own plain
@@ -296,8 +294,6 @@ pub(super) enum CommandFailure {
     Retryable,
     Rejected(u32),
     AlreadyFinished,
-    /// 403 `map_blocked`: the operator removed the selected map.
-    MapBlocked,
 }
 
 impl CommandFailure {
@@ -335,7 +331,6 @@ impl RequestFailure {
                 code: 0x8004_0070,
             },
             Some("unknown_match") if status == 409 => Self::AlreadyFinished,
-            Some("map_blocked") if status == 403 => Self::MapBlocked,
             Some("maintenance") if status == 503 => {
                 Self::Maintenance(plain_message(value.as_ref()))
             }
@@ -350,7 +345,6 @@ impl RequestFailure {
     fn command_failure(&self, operation: &str) -> CommandFailure {
         match self {
             Self::AlreadyFinished if operation == "finish" => CommandFailure::AlreadyFinished,
-            Self::MapBlocked => CommandFailure::MapBlocked,
             Self::ChannelRejected { code, .. } => CommandFailure::Rejected(*code),
             _ if matches!(self.status(), 0 | 429 | 500..=599) => CommandFailure::Retryable,
             _ => CommandFailure::Rejected(0x8000_4005),
@@ -363,7 +357,6 @@ impl RequestFailure {
             Self::LostCursor | Self::AlreadyFinished => 409,
             Self::UpgradeRequired(_) => 426,
             Self::Maintenance(_) | Self::Full(_) => 503,
-            Self::MapBlocked => 403,
         }
     }
 }
@@ -1259,11 +1252,6 @@ mod tests {
         assert_eq!(
             RequestFailure::Status(503).command_failure("finish"),
             CommandFailure::Retryable
-        );
-        let blocked = RequestFailure::response(403, br#"{"error":{"code":"map_blocked"}}"#);
-        assert_eq!(
-            blocked.command_failure("options"),
-            CommandFailure::MapBlocked
         );
         let finished = RequestFailure::response(409, br#"{"error":{"code":"unknown_match"}}"#);
         assert_eq!(

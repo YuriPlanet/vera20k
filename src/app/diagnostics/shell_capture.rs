@@ -329,7 +329,7 @@ pub enum ShellCaptureCheckpoint {
     Skirmish0x105ListOpen,
     /// Use Map on `0x105` asks to eject AI players; the answer's dialog
     /// settles (`CHECKPOINT_SKIRMISH_0X105_EJECT_*`).
-    Skirmish0x105Eject(crate::ui::skirmish_shell::EjectPromptButton),
+    Skirmish0x105Eject(crate::ui::skirmish_shell::ChooseMapPromptButton),
     /// The same route's eject box, unanswered.
     Skirmish0x105EjectBox,
     /// Choose Map `0x6B` settled after Skirmish's Choose Map.
@@ -562,10 +562,10 @@ impl ShellCaptureCheckpoint {
                 Ok(Self::Skirmish0x105SeedBrowserReturn)
             }
             CHECKPOINT_SKIRMISH_0X105_EJECT_CANCEL => Ok(Self::Skirmish0x105Eject(
-                crate::ui::skirmish_shell::EjectPromptButton::Cancel,
+                crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel,
             )),
             CHECKPOINT_SKIRMISH_0X105_EJECT_OK => Ok(Self::Skirmish0x105Eject(
-                crate::ui::skirmish_shell::EjectPromptButton::Ok,
+                crate::ui::skirmish_shell::ChooseMapPromptButton::Ok,
             )),
             CHECKPOINT_SKIRMISH_0X102_CHOOSE_MAP_RETURN => Ok(Self::Skirmish0x102ChooseMapReturn),
             CHECKPOINT_SKIRMISH_START_BLANK => Ok(Self::SkirmishStartBlank),
@@ -958,10 +958,10 @@ impl ShellCaptureCheckpoint {
             Self::Skirmish0x105SeedBrowserReturn => CHECKPOINT_SKIRMISH_0X105_SEED_BROWSER_RETURN,
             Self::Skirmish0x105ListOpen => CHECKPOINT_SKIRMISH_0X105_LIST_OPEN,
             Self::Skirmish0x105EjectBox => CHECKPOINT_SKIRMISH_0X105_EJECT_BOX,
-            Self::Skirmish0x105Eject(crate::ui::skirmish_shell::EjectPromptButton::Cancel) => {
+            Self::Skirmish0x105Eject(crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel) => {
                 CHECKPOINT_SKIRMISH_0X105_EJECT_CANCEL
             }
-            Self::Skirmish0x105Eject(crate::ui::skirmish_shell::EjectPromptButton::Ok) => {
+            Self::Skirmish0x105Eject(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok) => {
                 CHECKPOINT_SKIRMISH_0X105_EJECT_OK
             }
             Self::Skirmish0x6BSteady => CHECKPOINT_SKIRMISH_0X6B_STEADY,

@@ -1493,10 +1493,10 @@ pub(super) fn exclude_text_under(out: &mut Vec<ShellTextDraw>, dialog: RectPx) {
 
 /// Use Map's eject box over the chooser: body `GUI:EjectAIPlayers`, OK and
 /// Cancel.
-pub(super) fn push_choose_map_eject_prompt_text(
+pub(super) fn push_choose_map_prompt_text(
     out: &mut Vec<ShellTextDraw>,
     state: &AppState,
-    prompt: &crate::ui::skirmish_shell::EjectPrompt,
+    prompt: &crate::ui::skirmish_shell::ChooseMapPrompt,
 ) {
     let layout = crate::ui::shell::modal::quit_confirm_layout(
         state.render_width() as i32,
@@ -1504,22 +1504,28 @@ pub(super) fn push_choose_map_eject_prompt_text(
     );
     exclude_text_under(out, layout.dialog);
     let pressed = |button| prompt.pressed == Some(button);
+    let (body, ok) = choose_map_prompt_labels(state, prompt);
+    let ok_rgb = if prompt.button_enabled(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok) {
+        SHELL_LABEL_TEXT_RGB
+    } else {
+        SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
+    };
     let labels = [
         PaintLabel {
-            text: localized_label(state, "GUI:EjectAIPlayers", "GUI:EjectAIPlayers").into(),
+            text: body.into(),
             rect: layout.body,
             rgb: SHELL_LABEL_TEXT_RGB,
             align: validation_modal_body_text_align(),
             path_a_reveal: None,
         },
         PaintLabel {
-            text: localized_label(state, "GUI:Ok", "OK").into(),
+            text: ok.into(),
             rect: button_label_rect_px(
                 layout.ok,
-                pressed(crate::ui::skirmish_shell::EjectPromptButton::Ok),
+                pressed(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok),
                 ShellScale::RETAIL,
             ),
-            rgb: SHELL_LABEL_TEXT_RGB,
+            rgb: ok_rgb,
             align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
             path_a_reveal: None,
         },
@@ -1527,7 +1533,7 @@ pub(super) fn push_choose_map_eject_prompt_text(
             text: localized_label(state, "GUI:Cancel", "Cancel").into(),
             rect: button_label_rect_px(
                 layout.cancel,
-                pressed(crate::ui::skirmish_shell::EjectPromptButton::Cancel),
+                pressed(crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel),
                 ShellScale::RETAIL,
             ),
             rgb: SHELL_LABEL_TEXT_RGB,
@@ -1540,6 +1546,39 @@ pub(super) fn push_choose_map_eject_prompt_text(
         &labels,
         SHELL_DROPDOWN_TEXT_DEPTH - 0.00013,
     ));
+}
+
+/// The body and first button of Use Map's box. The download texts are
+/// VERA's own; the retail string table has none.
+fn choose_map_prompt_labels(
+    state: &AppState,
+    prompt: &crate::ui::skirmish_shell::ChooseMapPrompt,
+) -> (String, String) {
+    use crate::ui::skirmish_shell::ChooseMapPromptKind;
+    let online = prompt
+        .selection
+        .record_index
+        .and_then(|index| state.frontend.scenario_catalog.records().get(index))
+        .and_then(|record| {
+            let map = state.frontend.map_library.online_map(record)?;
+            Some((map.name.as_str(), record.player_capacity, map.byte_length))
+        });
+    let body = match (prompt.kind, online) {
+        (ChooseMapPromptKind::Download, Some((name, players, bytes))) => format!(
+            "Download {name} ({players} players, {} KB)? It is saved in your game folder.",
+            bytes.div_ceil(1024)
+        ),
+        (ChooseMapPromptKind::Downloading, Some((name, ..))) => format!("Downloading {name}..."),
+        (ChooseMapPromptKind::DownloadFailed, Some((name, ..))) => {
+            format!("{name} could not be downloaded. Check your internet connection and try again.")
+        }
+        _ => localized_label(state, "GUI:EjectAIPlayers", "GUI:EjectAIPlayers"),
+    };
+    let ok = match prompt.kind {
+        ChooseMapPromptKind::EjectAi => localized_label(state, "GUI:Ok", "OK"),
+        _ => "Download".to_owned(),
+    };
+    (body, ok)
 }
 
 pub(super) fn push_saved_browser_prompt_text<I>(

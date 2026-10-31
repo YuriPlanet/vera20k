@@ -38,6 +38,10 @@ pub enum SkirmishScenarioSource {
     LoosePkt(String),
     LooseYro(String),
     LooseYrm(String),
+    /// VERA: a map only in the lobby's online map library, by SHA-256. Its
+    /// row comes from the library's copy of the map's header; Choose Map
+    /// downloads the map into the game folder before using it.
+    Online(String),
     Synthetic,
 }
 
@@ -66,6 +70,11 @@ pub struct SkirmishScenarioRecord {
 }
 
 impl SkirmishScenarioRecord {
+    /// Whether this row is a map only in the online library, with no file here.
+    pub fn is_online(&self) -> bool {
+        matches!(self.source, SkirmishScenarioSource::Online(_))
+    }
+
     pub fn concrete_from_ini(
         source_ordinal: usize,
         source: SkirmishScenarioSource,

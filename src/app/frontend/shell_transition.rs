@@ -1377,7 +1377,7 @@ mod tests {
     #[test]
     fn the_skirmish_stack_slides_only_the_dialog_that_shows() {
         use crate::ui::skirmish_shell::{
-            ChooseMapModalState, ChooseMapSelection, EjectPrompt, RandomMapSetupModalState,
+            ChooseMapModalState, ChooseMapPrompt, ChooseMapSelection, RandomMapSetupModalState,
             SavedSeedBrowserState, SavedSeedMode, SkirmishShellState,
             compute_choose_map_modal_layout,
         };
@@ -1431,12 +1431,13 @@ mod tests {
         // and OK closes the chooser at once.
         shell.random_map_setup_modal = None;
         let chooser = shell.choose_map_modal.as_mut().unwrap();
-        chooser.eject_prompt = Some(EjectPrompt {
+        chooser.message_box = Some(ChooseMapPrompt {
             selection: ChooseMapSelection {
                 mode_id: 1,
                 record_index: Some(0),
             },
             pressed: None,
+            kind: crate::ui::skirmish_shell::ChooseMapPromptKind::EjectAi,
         });
         assert_eq!(skirmish_slide_target(&shell), None);
         assert_eq!(
@@ -1445,7 +1446,7 @@ mod tests {
         );
         // Cancel shows the chooser again; its first paint slides it in
         // (`0x005E6B47`, `0x005E6B51`).
-        assert!(shell.choose_map_modal.as_mut().unwrap().decline_eject());
+        assert!(shell.choose_map_modal.as_mut().unwrap().close_prompt());
         assert_eq!(
             skirmish_slide_target(&shell),
             Some(ShellSlideKind::ChooseMap)

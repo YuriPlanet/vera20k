@@ -305,24 +305,24 @@ pub(super) fn push_message_box_backdrop_instances(
     push_lower_strip_instance(out, atlas, layout);
 }
 
-/// Use Map's two-button eject box.
-pub(super) fn push_eject_box_instances(
+/// Use Map's two-button box.
+pub(super) fn push_choose_map_prompt_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
     screen: RectPx,
-    prompt: crate::ui::skirmish_shell::EjectPrompt,
+    prompt: crate::ui::skirmish_shell::ChooseMapPrompt,
 ) {
     let boxed = crate::ui::shell::modal::quit_confirm_layout(screen.w, screen.h);
     let pressed = |button| prompt.pressed == Some(button);
     let buttons = [
         shell_paint::ModalButton {
             rect: boxed.ok,
-            pressed: pressed(crate::ui::skirmish_shell::EjectPromptButton::Ok),
-            enabled: true,
+            pressed: pressed(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok),
+            enabled: prompt.button_enabled(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok),
         },
         shell_paint::ModalButton {
             rect: boxed.cancel,
-            pressed: pressed(crate::ui::skirmish_shell::EjectPromptButton::Cancel),
+            pressed: pressed(crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel),
             enabled: true,
         },
     ];

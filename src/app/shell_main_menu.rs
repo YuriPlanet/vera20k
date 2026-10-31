@@ -984,6 +984,18 @@ impl App {
             state.frontend.scenario_catalog.shell_maps(),
             &state.frontend.skirmish_modes,
         );
+        // VERA: a saved index on an Online row (the list grew since it was
+        // saved) names no file here; it falls back like an index past the end.
+        let shell = &mut state.frontend.skirmish_shell_state;
+        if state
+            .frontend
+            .scenario_catalog
+            .records()
+            .get(shell.selected_map_idx)
+            .is_some_and(|record| record.is_online())
+        {
+            shell.selected_map_idx = 0;
+        }
         crate::ui::skirmish_shell::repair_teams_for_selected_mode(
             &mut state.frontend.skirmish_shell_state,
             &state.frontend.skirmish_modes,

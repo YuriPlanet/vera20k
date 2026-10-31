@@ -324,21 +324,27 @@ Generated capacity equals the staged start count (2–8); observers consume only
 transport slots. Start admission also compares the canonical staging digest, so clients cannot
 agree on seed bytes while using different generated start cells.
 
-The service may keep a map library: each custom map whose upload completes is kept
-once under its `source_sha256`, unless `map_metadata.official` is true or the room
-plays a generated map. When the host selects a map the library holds (same SHA-256
-and length), the service sends `map_available` with the settings, before any upload,
-and members download it through the same `GET /v1/maps/…` chunks. When the
-service cannot read a correct copy, it sends no `map_available` and the host uploads
-as usual.
-A host that hears `map_available` for its current map stops uploading; an upload
-sent anyway is accepted without being kept. Anyone can search the library with
-`GET /v1/library/maps?search=<text>&players=<n>&page=<n>` (newest first, 50 a page:
-`{maps:[{sha256,name,players,byte_length,added_at,downloads}],more}`) and download
-a map with `GET /v1/library/maps/<sha256>`; both are limited per network. The name
-is the map's `[Basic] Name=`. The service keeps no player, session or address with
-a map. A map the operator blocks is deleted, stops being served to rooms, and
-settings that select it are refused with `map_blocked` (403).
+The service may keep a map library: custom maps its operator adds, each kept once under
+its SHA-256. Players never add maps; room uploads stay out of it. When the host selects
+a map the library holds (same `source_sha256` and length, not `map_metadata.official`,
+not a generated map), the service sends `map_available` with the settings, before any
+upload, and members download it through the same `GET /v1/maps/…` chunks. When the
+service cannot read a correct copy, it sends no `map_available` and the host uploads as
+usual. A host that hears `map_available` for its current map stops uploading; an upload
+sent anyway is accepted. Other custom maps go from host to members as before.
+
+`GET /v1/library/catalog` lists every library map:
+`{revision,maps:[{sha256,name,file_name,players,byte_length,header}]}`, where `name` is
+the map's `[Basic] Name=`, `file_name` the `.yrm` name to save it under, and `header`
+the base64 of the map's own `[Basic]`, `[Preview]`, `[PreviewPack]`, `[Waypoints]`,
+`[Header]` and `[RandomMap]` lines, byte for byte. It carries `ETag: "lib-<revision>"`
+and answers 304 to a matching `If-None-Match`. `GET /v1/library/maps/<sha256>`
+downloads one map, and `GET /v1/library/maps?search=<text>&players=<n>&page=<n>`
+searches them (newest first, 50 a page). All three are public and limited per network;
+the service keeps no player, session or address with a map. The game reads the catalog
+once a run and lists each map whose file name its folder does not hold in Choose Map,
+marked Online. Use Map on one asks to download it, checks its length and SHA-256, and
+saves it in the game folder, where it is an ordinary map.
 
 The existing shell leaves its game channel during the successful start. The service
 therefore retains the match admission independently of channel membership until

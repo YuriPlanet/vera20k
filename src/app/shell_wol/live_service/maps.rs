@@ -196,6 +196,7 @@ impl Transfers {
             "invalid map transfer identity"
         );
         if self.key.as_ref() != Some(&key) {
+            self.forget_other_available(&key);
             self.generation = self.generation.wrapping_add(1);
             self.transfer = None;
             self.complete = false;
@@ -352,6 +353,20 @@ impl Transfers {
                         && key.total == *total
                 },
             )
+    }
+    /// A `map_available` for an earlier map says nothing about `key`'s: after
+    /// L, another map, then L again, the lobby may not copy L this time, and
+    /// its guests would wait for an upload. One for `key` that came first stays.
+    fn forget_other_available(&mut self, key: &Key) {
+        if self
+            .available
+            .as_ref()
+            .is_some_and(|(room, digest, total)| {
+                (room, digest, *total) != (&key.room, &key.digest, key.total)
+            })
+        {
+            self.available = None;
+        }
     }
     /// A `map_available` for the host's own upload ends it: the lobby has
     /// the map, so the rest need not be sent.
@@ -600,8 +615,24 @@ mod tests {
         assert!(!maps.lobby_holds(TransferResource::Preview));
         maps.available = Some(("another room".into(), digest.clone(), 9));
         assert!(!maps.lobby_holds(TransferResource::Map));
-        maps.available = Some(("room".into(), digest, 10));
+        maps.available = Some(("room".into(), digest.clone(), 10));
         assert!(!maps.lobby_holds(TransferResource::Map));
+        // Another map's settings drop it, so choosing this map again uploads
+        // unless the lobby says again that it holds it.
+        let key = maps.key.take().unwrap();
+        maps.available = Some(("room".into(), digest, 9));
+        maps.forget_other_available(&key);
+        maps.key = Some(key);
+        assert!(maps.lobby_holds(TransferResource::Map));
+        let other = Key {
+            room: "room".into(),
+            digest: "c".repeat(64),
+            total: 9,
+            effective_digest: "b".repeat(64),
+            random: None,
+        };
+        maps.forget_other_available(&other);
+        assert!(maps.available.is_none());
     }
     #[test]
     fn a_dropped_connection_keeps_a_map_transfer_retrying() {

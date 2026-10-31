@@ -35,20 +35,42 @@ pub enum ChooseMapListPress {
     RowClicked { rebuilt: bool },
 }
 
-/// The buttons of Use Map's eject box.
+/// The buttons of Use Map's two-button box: OK (or Download) and Cancel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EjectPromptButton {
+pub enum ChooseMapPromptButton {
     Ok,
     Cancel,
 }
 
-/// Use Map's box when occupied AI rows would not fit the chosen map
-/// (`0x005E7285..0x005E7336`): `GUI:EjectAIPlayers` with OK and Cancel. OK
-/// goes on with the selection; Cancel keeps the chooser.
+/// What Use Map's box asks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EjectPrompt {
+pub enum ChooseMapPromptKind {
+    /// Occupied AI rows would not fit the chosen map
+    /// (`0x005E7285..0x005E7336`): `GUI:EjectAIPlayers` with OK and Cancel.
+    /// OK goes on with the selection; Cancel keeps the chooser.
+    EjectAi,
+    /// VERA: the chosen map is only in the online map library. Download
+    /// saves it in the game folder and goes on with the selection.
+    Download,
+    /// Its download is running; only Cancel works.
+    Downloading,
+    /// Its download failed; Download tries again.
+    DownloadFailed,
+}
+
+/// Use Map's two-button box over the chooser.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChooseMapPrompt {
     pub selection: ChooseMapSelection,
-    pub pressed: Option<EjectPromptButton>,
+    pub pressed: Option<ChooseMapPromptButton>,
+    pub kind: ChooseMapPromptKind,
+}
+
+impl ChooseMapPrompt {
+    /// Whether a button takes presses: Download waits while one runs.
+    pub fn button_enabled(&self, button: ChooseMapPromptButton) -> bool {
+        button == ChooseMapPromptButton::Cancel || self.kind != ChooseMapPromptKind::Downloading
+    }
 }
 
 /// Whether any AI row at or past the map's player limit is occupied
@@ -104,8 +126,8 @@ pub struct ChooseMapModalState {
     /// `0x6B` has no dialog hit test that clears it, so it keeps the last
     /// text over the background (`0x00611CBA..0x00611E8B`).
     pub(crate) statics: DialogStatics,
-    /// Use Map's eject box while it shows.
-    pub eject_prompt: Option<EjectPrompt>,
+    /// Use Map's two-button box while it shows.
+    pub message_box: Option<ChooseMapPrompt>,
     /// Create Random Map hides the chooser (`0x005E6A0B`) until the
     /// random-map run returns. It then shows again (`0x005E6B51`) unless its
     /// Use Map closes it; it stays hidden while that Use Map's eject box asks.
@@ -211,7 +233,7 @@ impl ChooseMapModalState {
             map_scroll: ListScrollInteraction::default(),
             pressed_button: None,
             statics: DialogStatics::default(),
-            eject_prompt: None,
+            message_box: None,
             hidden: false,
             last_list: None,
             last_press: None,
@@ -547,11 +569,11 @@ impl ChooseMapModalState {
         self.hidden
     }
 
-    /// Cancel on Use Map's eject box: Use Map returns false and the chooser
+    /// Cancel on Use Map's box: Use Map returns false and the chooser
     /// stays (`0x005E733B..0x005E7348`). A chooser the random-map run hid
     /// shows again (`0x005E6B47`). False when no box was up.
-    pub fn decline_eject(&mut self) -> bool {
-        if self.eject_prompt.take().is_none() {
+    pub fn close_prompt(&mut self) -> bool {
+        if self.message_box.take().is_none() {
             return false;
         }
         self.show();

@@ -463,18 +463,26 @@ fn keep_for_choose_map(
         }
     };
     let mut records = state.frontend.scenario_catalog.records_mut();
-    if records
+    // A library map's Online row becomes the kept file's row.
+    let online = records
         .iter()
-        .any(|record| record.file_name.eq_ignore_ascii_case(&name))
+        .position(|record| record.is_online() && record.file_name.eq_ignore_ascii_case(&name));
+    if online.is_none()
+        && records
+            .iter()
+            .any(|record| record.file_name.eq_ignore_ascii_case(&name))
     {
         return;
     }
-    let ordinal = records.len();
+    let ordinal = online.map_or(records.len(), |index| records[index].source_ordinal);
     if let Some(record) =
         crate::map::scenario_sources::loose_yrm_record(&ra2_dir.join(&name), name.clone(), ordinal)
     {
         log::info!("Kept the received map {host_file} as {name} for Choose Map");
-        records.push(record);
+        match online {
+            Some(index) => records[index] = record,
+            None => records.push(record),
+        }
     }
 }
 

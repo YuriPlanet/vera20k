@@ -662,21 +662,40 @@ fn install_received_asset_with_limits(
     Ok(LoadedTransferAsset { source, content })
 }
 
-/// Keeps a map received in a room in the game folder as `<stem>.yrm`, where
-/// Choose Map lists loose `.yrm` files, so the player can host it later.
-/// `host_file` is the host's logical map name and `bytes` the verified file.
-/// Returns the new file's name, or `None` when a file of that name is
-/// already there: a player's own file is never replaced.
-pub fn keep_received_map(ra2_dir: &Path, host_file: &str, bytes: &[u8]) -> Result<Option<String>> {
+/// The game-folder name a received or downloaded map is kept under: the
+/// last part of `host_file` with `.yrm` for its extension. Refused when that
+/// would be hidden (a leading dot) or a name Windows reserves, so a name that
+/// passes is one every platform can save.
+pub fn kept_map_file_name(host_file: &str) -> Result<String> {
     validate_network_map_name(host_file)?;
     let stem = host_file
         .rsplit(['/', '\\'])
         .next()
         .and_then(|name| Path::new(name).file_stem())
         .and_then(|stem| stem.to_str())
-        .filter(|stem| !stem.is_empty() && !stem.starts_with('.'))
+        .filter(|stem| !stem.is_empty() && !stem.starts_with('.') && !stem.ends_with([' ', '.']))
         .ok_or_else(|| anyhow::anyhow!("received map has no file name"))?;
-    let name = format!("{stem}.yrm");
+    let device = stem
+        .split('.')
+        .next()
+        .unwrap_or(stem)
+        .trim_end()
+        .to_ascii_uppercase();
+    let reserved = matches!(device.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (device.len() == 4
+            && (device.starts_with("COM") || device.starts_with("LPT"))
+            && device.as_bytes()[3].is_ascii_digit());
+    anyhow::ensure!(!reserved, "received map has a reserved file name");
+    Ok(format!("{stem}.yrm"))
+}
+
+/// Keeps a map received in a room in the game folder as `<stem>.yrm`, where
+/// Choose Map lists loose `.yrm` files, so the player can host it later.
+/// `host_file` is the host's logical map name and `bytes` the verified file.
+/// Returns the new file's name, or `None` when a file of that name is
+/// already there: a player's own file is never replaced.
+pub fn keep_received_map(ra2_dir: &Path, host_file: &str, bytes: &[u8]) -> Result<Option<String>> {
+    let name = kept_map_file_name(host_file)?;
     if crate::util::case_insensitive_path::find(ra2_dir, &name).is_some() {
         return Ok(None);
     }

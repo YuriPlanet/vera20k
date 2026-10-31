@@ -53,6 +53,18 @@ const RELAY_GRANT_LIFETIME: Duration = Duration::from_secs(300);
 const RELAY_RENEWAL_MARGIN: Duration = Duration::from_secs(150);
 const RELAY_RENEWAL_RETRY_MS: u32 = 10_000;
 
+/// The configured lobby's HTTPS origin: the build's, or `VERA20K_LOBBY_URL`
+/// for staging.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) fn lobby_base_url() -> Result<String> {
+    let base = std::env::var("VERA20K_LOBBY_URL").unwrap_or_else(|_| DEFAULT_LOBBY_URL.to_owned());
+    ensure!(
+        base.starts_with("https://") && !base[8..].chars().any(|ch| matches!(ch, '@' | '?' | '#')),
+        "the online lobby needs its configured HTTPS service"
+    );
+    Ok(base)
+}
+
 /// The departing visit's same HTTP/cleanup owner survives the menu teardown.
 /// Native WOL_Main77B532 releases WOLAPI786080 after logout785EA0. VERA's
 /// HTTPS retries are asynchronous: no retired callback may enter a new visit,
@@ -507,16 +519,7 @@ impl LiveService {
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let base = match service_url {
             Some(url) => url.to_owned(),
-            None => {
-                let base = std::env::var("VERA20K_LOBBY_URL")
-                    .unwrap_or_else(|_| DEFAULT_LOBBY_URL.to_owned());
-                ensure!(
-                    base.starts_with("https://")
-                        && !base[8..].chars().any(|ch| matches!(ch, '@' | '?' | '#')),
-                    "the online lobby needs its configured HTTPS service"
-                );
-                base
-            }
+            None => lobby_base_url()?,
         };
         let (requests, input) = mpsc::channel();
         let (output, responses) = mpsc::channel();
@@ -1835,10 +1838,6 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                     "The final settings could not be published. Try Start again.",
                 );
             }
-            "options" if failure == http::CommandFailure::MapBlocked => notice(
-                state,
-                "This map was removed from VERA20k Online. Choose another map.",
-            ),
             "choices"
                 if service
                     .pending_choices
