@@ -130,6 +130,26 @@ pub(crate) fn centered_outer_position(
     )
 }
 
+/// Whether a window whose outer top-left corner sits at `corner` would show
+/// its title bar on one of `screens` (each an origin and size in the desktop's
+/// physical pixels): the corner plus a small grab margin must land inside a
+/// screen, so a saved placement on a screen since unplugged or rearranged
+/// opens where the system puts it instead of off the desktop.
+pub(crate) fn title_bar_on_a_screen(
+    corner: PhysicalPosition<i32>,
+    screens: impl IntoIterator<Item = (PhysicalPosition<i32>, winit::dpi::PhysicalSize<u32>)>,
+) -> bool {
+    const GRAB: i32 = 32;
+    let (x, y) = (
+        corner.x.saturating_add(GRAB),
+        corner.y.saturating_add(GRAB / 2),
+    );
+    screens.into_iter().any(|(origin, size)| {
+        (origin.x..origin.x.saturating_add(size.width as i32)).contains(&x)
+            && (origin.y..origin.y.saturating_add(size.height as i32)).contains(&y)
+    })
+}
+
 /// Move the windowed window onto `target`'s screen, centred.
 ///
 /// The windowed half of [`apply`], for callers that already know the window is
@@ -201,6 +221,28 @@ mod tests {
 
     fn ids() -> [&'static str; 3] {
         ["\\\\.\\DISPLAY1", "\\\\.\\DISPLAY2", "\\\\.\\DISPLAY3"]
+    }
+
+    #[test]
+    fn a_saved_corner_opens_only_where_its_title_bar_shows() {
+        use winit::dpi::PhysicalSize;
+        // A main screen and a second one to its left.
+        let screens = [
+            (PhysicalPosition::new(0, 0), PhysicalSize::new(1920, 1080)),
+            (
+                PhysicalPosition::new(-1280, 0),
+                PhysicalSize::new(1280, 1024),
+            ),
+        ];
+        let on = |x, y| title_bar_on_a_screen(PhysicalPosition::new(x, y), screens);
+        assert!(on(100, 100));
+        assert!(on(-1280, 0), "the left screen's own corner");
+        // Past the right edge, or above the top, nothing can grab it.
+        assert!(!on(1920 - 32, 100));
+        assert!(on(100, -16));
+        assert!(!on(100, -17));
+        // The left screen is shorter than the main one.
+        assert!(!on(-600, 1024 - 8));
     }
 
     #[test]

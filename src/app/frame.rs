@@ -584,11 +584,12 @@ impl App {
     /// developer overlay takes the pointer, or a missing mouse.sha) while
     /// WWMouse's depth is visible; wherever the pointer left the client area,
     /// because `DefWindowProc` answers a non-client `WM_SETCURSOR` with the
-    /// system arrow and mouse.shp has no title-bar art; and elsewhere only
+    /// system arrow and mouse.shp has no title-bar art, or the window is not
+    /// active (see `PlatformState::owns_pointer`); and elsewhere only
     /// without mouse.sha, which the shell pages draw whenever it loaded.
     fn show_os_cursor_only_without_game_cursor(state: &mut AppState, battlefield_drawn: bool) {
         let status_screen_drawn = std::mem::take(&mut state.frontend.status_screen_drawn);
-        let visible = !state.platform.pointer_in_client
+        let visible = !state.platform.owns_pointer()
             || if state.platform.cursor_confined {
                 // Confined: the game owns the pointer through its
                 // software cursor, so keep the OS cursor hidden everywhere the game
@@ -623,8 +624,7 @@ impl App {
         if state.platform.os_cursor_visible == Some(visible) {
             return;
         }
-        state.platform.os_cursor_visible = Some(visible);
-        state.platform.window.set_cursor_visible(visible);
+        crate::app::input::cursor::set_os_cursor_visible(state, visible);
         crate::app::input::cursor::reassert_cursor_confinement(state);
     }
 

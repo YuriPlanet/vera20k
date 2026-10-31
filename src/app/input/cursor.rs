@@ -2003,11 +2003,22 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
             state.platform.pointer_held.set(wanted.is_some() && ok != 0);
         }
     }
-    // Other platforms: use winit's Confined grab. On X11/macOS this confines the
+    // macOS: winit 0.30 refuses a Confined grab there, so the lock is VERA's
+    // own: `hold_pointer_in_window` puts the pointer back each time it
+    // leaves the client area of the active window.
+    #[cfg(target_os = "macos")]
+    {
+        let _ = verbose;
+        state.platform.pointer_held.set(cursor_clip_wanted(
+            state.platform.cursor_confined,
+            state.platform.window_active,
+        ));
+    }
+    // Other platforms: use winit's Confined grab. On X11 this confines the
     // pointer to the window; on pure Wayland cursor confinement is unsupported
     // and set_cursor_grab returns an error, which we log and tolerate so the
     // frame is never blocked.
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         use winit::window::CursorGrabMode;
         // Other backends expose focus through winit's activation edges; a
@@ -2027,6 +2038,62 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
         }
         state.platform.pointer_held.set(wanted && grabbed.is_ok());
     }
+}
+
+/// Show or hide the system arrow over the window. On macOS winit hides it
+/// only through the window's cursor rectangle, which AppKit applies while the
+/// window is key and the pointer has moved since, so after a focus change, a
+/// full-screen switch or a visit to the title bar the arrow can stand next to
+/// mouse.shp; the app-wide `NSCursor` hide holds it hidden regardless.
+/// Presentation-only.
+pub(crate) fn set_os_cursor_visible(state: &mut AppState, visible: bool) {
+    state.platform.os_cursor_visible = Some(visible);
+    state.platform.window.set_cursor_visible(visible);
+    #[cfg(target_os = "macos")]
+    super::mac_pointer::set_arrow_hidden(!visible);
+}
+
+/// The macOS half of the cursor lock, for a pointer that just left the client
+/// area: put it back on the nearest point inside and move the game's cursor
+/// there, so edge scrolling keeps reading the edge. True when it did; false
+/// when the lock is not holding the pointer (it is off, the window is not
+/// active, or the platform clips the pointer itself). Presentation-only.
+pub(crate) fn hold_pointer_in_window(state: &mut AppState) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        if !state.platform.pointer_held.get() {
+            return false;
+        }
+        let Some(pointer) = super::mac_pointer::pointer_in_view(&state.platform.window) else {
+            return false;
+        };
+        let (x, y) = pointer.nearest_inside();
+        let position = winit::dpi::LogicalPosition::new(x, y);
+        if state.platform.window.set_cursor_position(position).is_err() {
+            return false;
+        }
+        let physical = position.to_physical::<f64>(state.platform.window.scale_factor());
+        state.set_cursor_from_window(physical.x as f32, physical.y as f32);
+        true
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = state;
+        false
+    }
+}
+
+/// Re-read whether the pointer is over the client area when the window
+/// becomes active. macOS reports leaving and entering only on movement, so a
+/// window activated with the pointer elsewhere (a Dock click, Cmd-Tab) would
+/// otherwise keep the last answer and hide the arrow away from the game.
+pub(crate) fn refresh_pointer_in_client(state: &mut AppState) {
+    #[cfg(target_os = "macos")]
+    if let Some(pointer) = super::mac_pointer::pointer_in_view(&state.platform.window) {
+        state.platform.pointer_in_client = pointer.inside();
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = state;
 }
 
 /// Drop the OS cursor clip entirely. Called on focus loss so alt-tab releases
@@ -2050,6 +2117,19 @@ pub(crate) fn release_cursor_confinement(state: &AppState) {
             .platform
             .window
             .set_cursor_grab(winit::window::CursorGrabMode::None);
+    }
+}
+
+/// Lock the cursor again on a click over the active window's client area,
+/// when the player's Lock Cursor choice is on but the lock key freed it.
+/// Presentation-only.
+pub(crate) fn relock_cursor_on_click(state: &mut AppState) {
+    if state.persistence.options_profile.lock_cursor
+        && !state.platform.cursor_confined
+        && state.platform.owns_pointer()
+    {
+        state.platform.cursor_confined = true;
+        apply_cursor_confinement(state);
     }
 }
 
