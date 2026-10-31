@@ -83,16 +83,19 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
             };
             state.frontend.map_library.phase = phase;
         }
-        Phase::Fetching(result) => match result.try_recv() {
-            Ok(Ok(maps)) => {
-                log::info!("The online map library lists {} maps", maps.len());
-                state.frontend.map_library.maps = maps;
-                append_online_records(state);
+        Phase::Fetching(result) => {
+            let (phase, read) = take_catalog(result);
+            state.frontend.map_library.phase = phase;
+            match read {
+                Some(Ok(maps)) => {
+                    log::info!("The online map library lists {} maps", maps.len());
+                    state.frontend.map_library.maps = maps;
+                    append_online_records(state);
+                }
+                Some(Err(error)) => log::info!("The online map library is unavailable: {error:#}"),
+                None => {}
             }
-            Ok(Err(error)) => log::info!("The online map library is unavailable: {error:#}"),
-            Err(TryRecvError::Empty) => state.frontend.map_library.phase = Phase::Fetching(result),
-            Err(TryRecvError::Disconnected) => {}
-        },
+        }
         Phase::Ready => state.frontend.map_library.phase = Phase::Ready,
     }
     let library = &mut state.frontend.map_library;
@@ -116,6 +119,19 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     let library = &state.frontend.map_library;
     (matches!(library.phase, Phase::NotStarted | Phase::Fetching(_)) || library.download.is_some())
         .then(|| Instant::now() + POLL_INTERVAL)
+}
+
+/// One look at a running catalog read: the phase after it, and the read's
+/// result once it ended. Only an unanswered read stays Fetching; every other
+/// outcome is final for this run, so the catalog is read once.
+fn take_catalog(
+    result: Receiver<Result<Vec<OnlineMap>>>,
+) -> (Phase, Option<Result<Vec<OnlineMap>>>) {
+    match result.try_recv() {
+        Ok(read) => (Phase::Ready, Some(read)),
+        Err(TryRecvError::Empty) => (Phase::Fetching(result), None),
+        Err(TryRecvError::Disconnected) => (Phase::Ready, None),
+    }
 }
 
 /// Adds a Choose Map row for each library map the game folder does not hold
@@ -598,6 +614,22 @@ mod tests {
         assert_eq!(record.display_name, "Frozen Lakes");
         assert_eq!(record.player_capacity, 4);
         assert_eq!(maps[0].file_name, "Frozen_Lakes.yrm");
+    }
+
+    #[test]
+    fn a_finished_or_failed_catalog_read_is_not_started_again() {
+        let (send, read) = std::sync::mpsc::channel();
+        let (phase, result) = take_catalog(read);
+        assert!(matches!(phase, Phase::Fetching(_)) && result.is_none());
+        let Phase::Fetching(read) = phase else {
+            unreachable!()
+        };
+        send.send(Err(anyhow::anyhow!("answered 404"))).unwrap();
+        let (phase, result) = take_catalog(read);
+        assert!(matches!(phase, Phase::Ready) && result.is_some_and(|read| read.is_err()));
+        let (send, read) = std::sync::mpsc::channel::<Result<Vec<OnlineMap>>>();
+        drop(send);
+        assert!(matches!(take_catalog(read).0, Phase::Ready));
     }
 
     #[test]
