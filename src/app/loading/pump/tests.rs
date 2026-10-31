@@ -2494,3 +2494,15 @@ fn cancelled_admission_cannot_release_a_ready_result_and_returns_the_same_asset_
         "no second lease return"
     );
 }
+
+#[test]
+fn a_loaded_network_screen_holds_until_its_install_time() {
+    let mut session = LoadingSession::from_request(LoadingRequest::generic_map_load("hold"));
+    assert!(
+        !session.holds_loaded_screen(0),
+        "no hold before every player loads"
+    );
+    session.install_after_ms = Some(1_000 + NETWORK_LOADED_HOLD_MS);
+    assert!(session.holds_loaded_screen(1_000 + NETWORK_LOADED_HOLD_MS - 1));
+    assert!(!session.holds_loaded_screen(1_000 + NETWORK_LOADED_HOLD_MS));
+}

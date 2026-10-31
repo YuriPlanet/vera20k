@@ -945,9 +945,22 @@ pub(crate) struct LoadingSession {
     /// nothing else reaches the screen until the loading screen's first
     /// repaint. Generic sessions start at their first frame.
     next_frame: NextLoadingFrame,
+    /// VERA-only: once every player has loaded, a network match keeps its
+    /// loading screen up until this wall-clock time
+    /// ([`NETWORK_LOADED_HOLD_MS`]) before installing the scenario.
+    install_after_ms: Option<u64>,
 }
 
+/// How long a network match's loading screen stays up after every player
+/// has loaded. Presentation only: the match starts from the same state.
+const NETWORK_LOADED_HOLD_MS: u64 = 2_000;
+
 impl LoadingSession {
+    /// Whether the loaded screen still holds at `now_ms`.
+    fn holds_loaded_screen(&self, now_ms: u64) -> bool {
+        self.install_after_ms.is_some_and(|after| now_ms < after)
+    }
+
     fn retire(mut self, assets: &mut crate::app::process_assets::ProcessAssets) {
         #[cfg(feature = "ares")]
         if let LoadingStage::Prepared(prepared) = &mut self.stage {
@@ -1033,6 +1046,7 @@ impl LoadingSession {
             },
             native,
             job: LoadingJob::new(),
+            install_after_ms: None,
         }
     }
 }
@@ -1993,6 +2007,7 @@ fn pump_loading_after_present(
                 native,
                 job,
                 next_frame: NextLoadingFrame::Later,
+                install_after_ms: None,
             });
             LoadingPump::Pending
         }
@@ -2005,6 +2020,7 @@ fn pump_loading_after_present(
                     native,
                     job,
                     next_frame: NextLoadingFrame::Later,
+                    install_after_ms: None,
                 });
                 return Ok(LoadingPump::Pending);
             }
@@ -2029,6 +2045,7 @@ fn pump_loading_after_present(
                         native: Some(native),
                         job,
                         next_frame: NextLoadingFrame::Later,
+                        install_after_ms: None,
                     },
                     observer,
                 );
@@ -2397,6 +2414,12 @@ fn poll_network_load_wait(
             unreachable!()
         };
         session.stage = LoadingStage::ReadyToInstall { result };
+        // Captures keep their timing; players see the full bar a moment.
+        if state.platform.capture_client_size.is_none() {
+            session.install_after_ms = Some(
+                crate::app::match_runtime::frame_pacer::wall_clock_ms() + NETWORK_LOADED_HOLD_MS,
+            );
+        }
         return finish_network_load(state, session, observer);
     }
     if poll == NetworkLoadPoll::TimedOut {
@@ -2424,6 +2447,10 @@ fn finish_network_load(
     let Some(session) = service_network_loading_boundary(state, session) else {
         return Ok(LoadingPump::Pending);
     };
+    if session.holds_loaded_screen(crate::app::match_runtime::frame_pacer::wall_clock_ms()) {
+        state.frontend.loading_session = Some(session);
+        return Ok(LoadingPump::Pending);
+    }
     if let Some(observer) = observer
         && let Some(view) = session.network_observation(
             "ready_to_install",
@@ -2480,6 +2507,7 @@ fn prepare_loading_session(
         mut native,
         mut job,
         next_frame,
+        install_after_ms,
     } = session;
     let stage = match stage {
         stage @ (LoadingStage::ConstructingScenario(_)
@@ -2583,6 +2611,7 @@ fn prepare_loading_session(
         native,
         job,
         next_frame,
+        install_after_ms,
     })
 }
 
