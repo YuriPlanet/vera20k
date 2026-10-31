@@ -1997,7 +1997,11 @@ fn pump_loading_after_present(
                 });
                 return Ok(LoadingPump::Pending);
             }
-            if matches!(result.scenario.startup, LoadingStartup::Network(_)) {
+            // VERA adaptation: a returning process has nobody to wait for, the
+            // others left their own loading long ago and report nothing more.
+            if matches!(result.scenario.startup, LoadingStartup::Network(_))
+                && !crate::app::lan_service::online_restore(state)
+            {
                 let native = native.expect("network load retains its source progress rows");
                 let now = (crate::app::match_runtime::frame_pacer::wall_clock_ms() >> 4) as i32;
                 let wait =

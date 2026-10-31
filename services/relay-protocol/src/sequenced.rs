@@ -274,11 +274,18 @@ pub(super) struct ClientOrdering {
     sealed: VecDeque<SealedBatch>,
     next_batch: u64,
     accepted_through: u64,
+    // This process replaces one that left the match: batches it finds of its
+    // own source are that one's, and they set the counter instead of being
+    // receipts of what this process sent.
+    restoring: bool,
     leave: Option<(u64, Vec<u8>)>,
 }
 
 impl ClientOrdering {
     fn accept_through(&mut self, id: u64) -> Result<(), RelayError> {
+        if self.restoring {
+            self.next_batch = self.next_batch.max(id.saturating_add(1));
+        }
         if id >= self.next_batch {
             return Err(RelayError::Authentication);
         }
@@ -325,6 +332,15 @@ impl ClientSession {
         Ok(())
     }
 
+    /// While set, this source's batches in the stream belong to the process
+    /// this one replaces. The stream must have been read past its last one
+    /// before this is cleared and a batch submitted.
+    pub fn set_ordering_restore(&mut self, restoring: bool) {
+        if let Some(ordering) = self.ordering.as_mut() {
+            ordering.restoring = restoring;
+        }
+    }
+
     pub fn configure_ordering(
         &mut self,
         certificate: &[u8],
@@ -358,6 +374,7 @@ impl ClientSession {
                 sealed: VecDeque::new(),
                 next_batch: 1,
                 accepted_through: 0,
+                restoring: false,
                 leave: None,
             });
         }
@@ -2063,6 +2080,39 @@ mod tests {
                 .drain_ordering_push(120_000, unix(120_000))
                 .is_empty()
         );
+    }
+
+    /// A new process meets the batches of the one it replaces in the stream.
+    /// As receipts of its own they would be refused, and its cursor stay on the
+    /// first of them for good. tests/real/rejoin.mjs in the lobby plays this.
+    #[test]
+    fn a_replacing_process_takes_its_batch_counter_from_the_stream() {
+        let key = SecretKey::new([74; 32]);
+        let mut server = RelayServer::new(key.clone(), 2);
+        let mut back = client(&key, 0);
+        connect(&mut server, &mut back, 0);
+        configure(&mut server, &mut back, &certificate(&key, 3, 1400), 0);
+        let ordering = back.ordering.as_mut().unwrap();
+        assert!(matches!(
+            ordering.accept_through(5),
+            Err(RelayError::Authentication)
+        ));
+
+        back.set_ordering_restore(true);
+        back.ordering.as_mut().unwrap().accept_through(5).unwrap();
+        back.set_ordering_restore(false);
+
+        let mut bytes = Vec::new();
+        assert!(matches!(
+            back.submit_ordering(5, b"late", &mut bytes),
+            Err(RelayError::Replay)
+        ));
+        back.submit_ordering(6, b"next", &mut bytes).unwrap();
+        // Once restored, a batch this process did not send is refused again.
+        assert!(matches!(
+            back.ordering.as_mut().unwrap().accept_through(7),
+            Err(RelayError::Authentication)
+        ));
     }
 
     #[test]

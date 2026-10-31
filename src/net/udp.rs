@@ -638,6 +638,13 @@ impl LanUdpTransport {
         })
     }
 
+    /// See `ClientSession::set_ordering_restore`.
+    pub(super) fn set_ordering_restore(&mut self, restoring: bool) {
+        if let Some(route) = self.lock().relay.as_mut() {
+            route.session.set_ordering_restore(restoring);
+        }
+    }
+
     pub fn submit_ordering(&mut self, batch_id: u64, bytes: &[u8]) -> io::Result<()> {
         self.send_ordering(|route| {
             route

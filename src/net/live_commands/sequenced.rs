@@ -199,6 +199,7 @@ pub(super) struct SequencedSession {
     // This process replaces one that left a match under way. Its batch counter
     // lies in the history it is reading, so it submits nothing until caught up.
     restoring: bool,
+    last_restore_log: Option<u32>,
     accepted_batch: u64,
     submissions: VecDeque<Submission>,
     sample_sent: Option<u32>,
@@ -296,6 +297,7 @@ impl SequencedSession {
             refused: 0,
             next_batch: 1,
             restoring: false,
+            last_restore_log: None,
             accepted_batch: 0,
             submissions: VecDeque::new(),
             sample_sent: None,
@@ -327,6 +329,10 @@ impl SequencedSession {
             self.next_batch = last.checked_add(1).ok_or(SequencedError::InvalidTimeline)?;
             self.accepted_batch = last;
             self.restoring = false;
+            log::info!(
+                "Rejoined the match at frame {frame}; next batch {}",
+                self.next_batch
+            );
         }
         Ok(())
     }
@@ -424,6 +430,21 @@ impl SequencedSession {
 
     pub(super) fn service(&mut self, transport: &mut LanUdpTransport, now: u32) {
         self.first_service.get_or_insert(now);
+        if self.restoring && service_due(self.last_restore_log, now, 5000) {
+            self.last_restore_log = Some(now);
+            log::info!(
+                "Rejoin: frame {:?}, frontier {}, head {}, next sequence {} of {}, buffered {}, started {}, statuses {}, push {:?}",
+                self.current.map(|(context, done)| (context.frame, done)),
+                self.frontier(),
+                self.head_frame,
+                self.next_sequence,
+                self.remote_next_sequence,
+                self.frames.len(),
+                self.started,
+                self.statuses,
+                self.push,
+            );
+        }
         while let Some(received) = transport.pop_ordering_received_with_time() {
             self.last_response = Some(now);
             if matches!(received.event, OrderEvent::Unrecognized) {
@@ -599,6 +620,8 @@ impl SequencedSession {
         if pull_needed && service_due(self.last_control, now, interval) {
             if !self.started {
                 let _ = transport.configure_ordering(self.agreement);
+                // Before the first request that can bring back an entry.
+                transport.set_ordering_restore(self.restoring);
             }
             if transport.pull_ordering(self.next_sequence).is_ok() {
                 self.last_control = Some(now);
@@ -739,7 +762,9 @@ impl SequencedSession {
                         frame,
                         ..
                     } => {
-                        if *source == self.local_source {
+                        // A returning process's own source in the stream is
+                        // the process it replaces.
+                        if *source == self.local_source && !self.restoring {
                             self.accept_through(*batch_id)?;
                             self.trace_assignment(*batch_id, *frame, received_at);
                         }
@@ -1011,6 +1036,9 @@ impl SequencedSession {
     ) -> Result<(), LiveCommandError> {
         if self.restoring {
             self.settle_restore(context.frame)?;
+            if !self.restoring {
+                transport.set_ordering_restore(false);
+            }
         }
         if self.restoring {
             // Orders given to a world still replaying the past are dropped

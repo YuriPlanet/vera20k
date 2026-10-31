@@ -1588,6 +1588,15 @@ pub(crate) fn mark_online_restore(state: &mut AppState) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Whether this process is returning to a match the others are already playing.
+pub(crate) fn online_restore(state: &AppState) -> bool {
+    state
+        .match_state
+        .lan_service
+        .as_ref()
+        .is_some_and(|service| service.online_restore)
+}
+
 /// Apply the same agreed timing vector on every client before freezing the
 /// start. Native794F6F's outputs stay with their existing session/transport
 /// owners; construction of private channels later inherits this retry policy.
