@@ -264,6 +264,7 @@ pub(super) fn dispatch_draw_passes(
         &state.renderer.batch_renderer,
         pool,
         state.match_state.match_presentation.tile_atlas.as_ref(),
+        state.renderer.water_distortion_bind_group.as_ref(),
         "terrain",
     );
 
@@ -1208,10 +1209,11 @@ fn draw_pooled_zdepth<'a>(
     batch: &'a BatchRenderer,
     pool: &'a InstanceBufferPool,
     atlas: Option<&'a TileAtlas>,
+    distortion: Option<&'a wgpu::BindGroup>,
     key: &'static str,
 ) {
     if let (Some(a), Some((buf, count))) = (atlas, pool.get(key)) {
-        batch.draw_with_buffer_zdepth(pass, &a.zdepth_bind_group, buf, count);
+        batch.draw_with_buffer_zdepth(pass, &a.zdepth_bind_group, distortion, buf, count);
     }
 }
 

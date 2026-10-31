@@ -196,16 +196,18 @@ impl WaterDistortion {
         })
     }
 
-    /// Follow a new game-frame size.
-    pub(crate) fn resize(&mut self, device: &wgpu::Device, size: (u32, u32)) {
+    /// Follow a new game-frame size. Returns whether the view changed, so
+    /// callers can rebuild bind groups that hold it.
+    pub(crate) fn resize(&mut self, device: &wgpu::Device, size: (u32, u32)) -> bool {
         let size = (size.0.max(1), size.1.max(1));
         if size == self.size {
-            return;
+            return false;
         }
         let texture = create_field_texture(device, size);
         self.view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         self.texture = texture;
         self.size = size;
+        true
     }
 
     #[cfg(test)]
@@ -248,5 +250,23 @@ mod tests {
         )
         .validate(&module)
         .expect("the distortion shader validates");
+    }
+
+    /// The terrain (Z-depth) shader is assembled from shared sources, so its
+    /// WGSL is never checked at compile time; parse the composed module here.
+    #[test]
+    fn terrain_zdepth_shader_compiles() {
+        use wgpu::naga;
+        let source = crate::render::tactical_shader::world_source(
+            crate::render::batch::ZDEPTH_SHADER,
+        );
+        let module = naga::front::wgsl::parse_str(&source)
+            .expect("the terrain depth shader parses");
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("the terrain depth shader validates");
     }
 }

@@ -1230,6 +1230,7 @@ impl App {
                 post_chain: None,
                 water_mask: None,
                 water_distortion: None,
+                water_distortion_bind_group: None,
             },
             process_assets,
             audio: startup_audio_runtime,

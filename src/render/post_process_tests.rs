@@ -346,7 +346,6 @@ fn the_identity_chain_reproduces_the_frame_copy_byte_for_byte() {
             &mut encoder,
             &source_view,
             &mask_view,
-            None,
             &chained_view,
             (size[0], size[1]),
         );
@@ -407,7 +406,6 @@ fn the_colour_grade_pass_reads_its_uniform() {
         &mut encoder,
         &source_view,
         &mask_view,
-        None,
         &target_view,
         (size[0], size[1]),
     );
@@ -465,7 +463,6 @@ fn the_viewport_mask_excludes_the_ui_column() {
         &mut encoder,
         &source_view,
         &mask_view,
-        None,
         &target_view,
         (size[0], size[1]),
     );
@@ -520,7 +517,6 @@ fn the_filmic_pass_moves_mid_grey() {
         &mut encoder,
         &source_view,
         &mask_view,
-        None,
         &target_view,
         (size[0], size[1]),
     );
@@ -573,7 +569,6 @@ fn the_sepia_pass_warms_mid_grey() {
         &mut encoder,
         &source_view,
         &mask_view,
-        None,
         &target_view,
         (size[0], size[1]),
     );
@@ -632,7 +627,6 @@ fn the_fxaa_pass_blends_only_the_edge() {
         &mut encoder,
         &source_view,
         &mask_view,
-        None,
         &target_view,
         (size[0], size[1]),
     );
@@ -715,7 +709,6 @@ fn the_bloom_chain_spills_a_local_halo() {
         &mut encoder,
         &source_view,
         &mask_view,
-        None,
         &target_view,
         (size[0], size[1]),
     );
@@ -767,6 +760,74 @@ fn the_water_mask_covers_the_rasterized_diamond() {
     assert_eq!(at(4, 1), 255, "just below the top vertex is water");
     assert_eq!(at(0, 0), 0, "the diamond bounding-box corner is dry");
     assert_eq!(at(12, 12), 0, "outside the diamond stays dry");
+}
+
+/// The debug tint covers exactly the water mask, which is how the engine's
+/// mask alignment is checked against the rendered water.
+#[test]
+#[ignore = "needs a wgpu adapter; run explicitly"]
+fn the_mask_debug_tint_covers_water() {
+    let gpu = Gpu::new();
+    let size = [8, 4];
+    let source = gpu.texture(
+        size,
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+    );
+    let source_bytes = pattern(size);
+    gpu.upload(&source, &source_bytes, size);
+
+    let target = gpu.texture(
+        size,
+        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+    );
+    let mut chain = PostChain::new(
+        &gpu.device,
+        &gpu.queue,
+        FORMAT,
+        super::PostParams::mask_debug([0.0, 0.0, 8.0, 4.0]),
+    );
+    let mask = gpu.mask(size, 4);
+    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
+    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Mask debug tint"),
+        });
+    chain.draw(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &source_view,
+        &mask_view,
+        &target_view,
+        (size[0], size[1]),
+    );
+    gpu.queue.submit([encoder.finish()]);
+
+    let out = gpu.read(&target, size);
+    let stride = size[0] as usize * 4;
+    for y in 0..size[1] as usize {
+        for x in 0..4 {
+            let start = y * stride + x * 4;
+            assert_eq!(
+                &out[start..start + 4],
+                &[255, 0, 255, 255],
+                "water texel ({x}, {y}) must be magenta"
+            );
+        }
+        for x in 4..size[0] as usize {
+            let start = y * stride + x * 4;
+            assert_eq!(
+                &out[start..start + 4],
+                &source_bytes[start..start + 4],
+                "land texel ({x}, {y}) must stay a byte copy"
+            );
+        }
+    }
 }
 
 /// The distortion generator writes the scrolling field inside water and the
@@ -845,292 +906,4 @@ fn the_distortion_field_scrolls_with_time() {
         readings[0], readings[1],
         "the water field must scroll with time"
     );
-}
-
-/// FullRectMask ignores the water mask: every viewport texel takes the field's
-/// offset, which is the mode a scripted full-screen distortion uses.
-#[test]
-#[ignore = "needs a wgpu adapter; run explicitly"]
-fn the_full_rect_mask_displaces_the_whole_viewport() {
-    let gpu = Gpu::new();
-    let size = [8, 4];
-    let source = gpu.texture(
-        size,
-        wgpu::TextureUsages::TEXTURE_BINDING
-            | wgpu::TextureUsages::COPY_DST
-            | wgpu::TextureUsages::COPY_SRC,
-    );
-    gpu.upload(&source, &pattern(size), size);
-
-    let copied = gpu.texture(
-        size,
-        wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC,
-    );
-    let mut encoder = gpu
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Full rect reference copy"),
-        });
-    encoder.copy_texture_to_texture(
-        wgpu::TexelCopyTextureInfo {
-            texture: &source,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::TexelCopyTextureInfo {
-            texture: &copied,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::Extent3d {
-            width: size[0],
-            height: size[1],
-            depth_or_array_layers: 1,
-        },
-    );
-    gpu.queue.submit([encoder.finish()]);
-
-    let target = gpu.texture(
-        size,
-        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-    );
-    let mut chain = PostChain::new(
-        &gpu.device,
-        &gpu.queue,
-        FORMAT,
-        super::PostParams::ripple_full_rect(2.0, [0.0, 0.0, 8.0, 4.0]),
-    );
-    // No water in the mask at all: only FullRectMask can displace anything.
-    let mask = gpu.mask(size, 0);
-    let field = gpu.distortion(size, 8);
-    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
-    let field_view = field.create_view(&wgpu::TextureViewDescriptor::default());
-    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
-    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
-    let mut encoder = gpu
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Full rect ripple"),
-        });
-    chain.draw(
-        &gpu.device,
-        &gpu.queue,
-        &mut encoder,
-        &source_view,
-        &mask_view,
-        Some(&field_view),
-        &target_view,
-        (size[0], size[1]),
-    );
-    gpu.queue.submit([encoder.finish()]);
-
-    let rippled = gpu.read(&target, size);
-    let copy = gpu.read(&copied, size);
-    let stride = size[0] as usize * 4;
-    // Every texel reads two columns to the right; the last column clamps onto
-    // itself, so it stays a byte copy.
-    for y in 0..size[1] as usize {
-        for x in 0..6 {
-            let start = y * stride + x * 4;
-            assert_ne!(
-                &rippled[start..start + 4],
-                &copy[start..start + 4],
-                "full-rect texel ({x}, {y}) must be displaced"
-            );
-        }
-    }
-}
-
-/// MaskValue above every mask texel turns the displacement off even with the
-/// water mask fully covered.
-#[test]
-#[ignore = "needs a wgpu adapter; run explicitly"]
-fn the_mask_threshold_gates_the_displacement() {
-    let gpu = Gpu::new();
-    let size = [8, 4];
-    let source = gpu.texture(
-        size,
-        wgpu::TextureUsages::TEXTURE_BINDING
-            | wgpu::TextureUsages::COPY_DST
-            | wgpu::TextureUsages::COPY_SRC,
-    );
-    gpu.upload(&source, &pattern(size), size);
-    let copied = gpu.texture(
-        size,
-        wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC,
-    );
-    let mut encoder = gpu
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Mask threshold reference copy"),
-        });
-    encoder.copy_texture_to_texture(
-        wgpu::TexelCopyTextureInfo {
-            texture: &source,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::TexelCopyTextureInfo {
-            texture: &copied,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::Extent3d {
-            width: size[0],
-            height: size[1],
-            depth_or_array_layers: 1,
-        },
-    );
-    gpu.queue.submit([encoder.finish()]);
-
-    let params = super::PostParams::from_effects(
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some([2.0, 2.0, 2.0, 0.0]),
-        false,
-        [0.0, 0.0, 8.0, 4.0],
-    )
-    .expect("thresholded ripple configures the chain");
-    let target = gpu.texture(
-        size,
-        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-    );
-    let mut chain = PostChain::new(&gpu.device, &gpu.queue, FORMAT, params);
-    let mask = gpu.mask(size, 8);
-    let field = gpu.distortion(size, 8);
-    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
-    let field_view = field.create_view(&wgpu::TextureViewDescriptor::default());
-    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
-    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
-    let mut encoder = gpu
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Mask threshold ripple"),
-        });
-    chain.draw(
-        &gpu.device,
-        &gpu.queue,
-        &mut encoder,
-        &source_view,
-        &mask_view,
-        Some(&field_view),
-        &target_view,
-        (size[0], size[1]),
-    );
-    gpu.queue.submit([encoder.finish()]);
-
-    let out = gpu.read(&target, size);
-    assert_eq!(
-        out,
-        gpu.read(&copied, size),
-        "a mask below MaskValue must leave the frame untouched"
-    );
-}
-
-/// The displacement refetches only texels the mask marks as water, using the
-/// engine-built distortion field's offset; land keeps the byte copy.
-#[test]
-#[ignore = "needs a wgpu adapter; run explicitly"]
-fn the_ripple_arm_only_refracts_masked_water() {
-    let gpu = Gpu::new();
-    let size = [8, 4];
-    let source = gpu.texture(
-        size,
-        wgpu::TextureUsages::TEXTURE_BINDING
-            | wgpu::TextureUsages::COPY_DST
-            | wgpu::TextureUsages::COPY_SRC,
-    );
-    gpu.upload(&source, &pattern(size), size);
-
-    let copied = gpu.texture(
-        size,
-        wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC,
-    );
-    let mut encoder = gpu
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Water ripple reference copy"),
-        });
-    encoder.copy_texture_to_texture(
-        wgpu::TexelCopyTextureInfo {
-            texture: &source,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::TexelCopyTextureInfo {
-            texture: &copied,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::Extent3d {
-            width: size[0],
-            height: size[1],
-            depth_or_array_layers: 1,
-        },
-    );
-    gpu.queue.submit([encoder.finish()]);
-
-    let target = gpu.texture(
-        size,
-        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-    );
-    let mut chain = PostChain::new(
-        &gpu.device,
-        &gpu.queue,
-        FORMAT,
-        super::PostParams::ripple(2.0, [0.0, 0.0, 8.0, 4.0]),
-    );
-    let mask = gpu.mask(size, 4);
-    let field = gpu.distortion(size, 4);
-    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
-    let field_view = field.create_view(&wgpu::TextureViewDescriptor::default());
-    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
-    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
-    let mut encoder = gpu
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Water ripple"),
-        });
-    chain.draw(
-        &gpu.device,
-        &gpu.queue,
-        &mut encoder,
-        &source_view,
-        &mask_view,
-        Some(&field_view),
-        &target_view,
-        (size[0], size[1]),
-    );
-    gpu.queue.submit([encoder.finish()]);
-
-    let rippled = gpu.read(&target, size);
-    let copy = gpu.read(&copied, size);
-    let stride = size[0] as usize * 4;
-    for y in 0..size[1] as usize {
-        for x in 4..size[0] as usize {
-            let start = y * stride + x * 4;
-            assert_eq!(
-                &rippled[start..start + 4],
-                &copy[start..start + 4],
-                "land texel ({x}, {y}) must stay a byte copy"
-            );
-        }
-    }
-    let water_changed = (0..size[1] as usize).any(|y| {
-        (0..4).any(|x| {
-            let start = y * stride + x * 4;
-            rippled[start..start + 4] != copy[start..start + 4]
-        })
-    });
-    assert!(water_changed, "water texels must be refracted by the ripple");
 }

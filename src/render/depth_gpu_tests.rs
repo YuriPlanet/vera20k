@@ -1,4 +1,4 @@
-//! Offscreen regression coverage for the actual tactical depth shaders.
+﻿//! Offscreen regression coverage for the actual tactical depth shaders.
 //!
 //! These tests upload production `SpriteInstance`/`CameraUniform` data and
 //! execute the checked-in WGSL. They do not replace shader math with a CPU
@@ -173,7 +173,7 @@ impl Gpu {
                     _pad: 0.0,
 
                     native_z_origin_y: 0.0,
-                    _native_z_pad: 0.0,
+                    water_amplitude: 0.0,
                 }),
                 usage: wgpu::BufferUsages::UNIFORM,
             });
@@ -390,6 +390,53 @@ impl Gpu {
                         }],
                     })
                 });
+            // The terrain shader now expects the frame-sized water field at
+            // group 2. This harness draws no water, so a neutral 1x1 field
+            // reproduces the unwarped baseline the other cases expect.
+            let neutral_water = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Neutral water field"),
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rg16Float,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &neutral_water,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &[0x00, 0x38, 0x00, 0x38],
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4),
+                    rows_per_image: Some(1),
+                },
+                wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+            );
+            let neutral_water_view = neutral_water.create_view(&Default::default());
+            let water_group = matches!(layer.shader, Shader::Terrain).then(|| {
+                self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("Depth test water field group"),
+                    layout: &pipeline.get_bind_group_layout(2),
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&neutral_water_view),
+                    }],
+                })
+            });
             let instances = self
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -432,6 +479,9 @@ impl Gpu {
             pass.set_bind_group(0, &camera_group, &[]);
             pass.set_bind_group(1, &texture_group, &[]);
             if let Some(group) = &zshape_group {
+                pass.set_bind_group(2, group, &[]);
+            }
+            if let Some(group) = &water_group {
                 pass.set_bind_group(2, group, &[]);
             }
             if let Some(group) = &voxel_palette_group {

@@ -13,13 +13,18 @@ struct Camera {
     world_height: f32,
     pad1: f32,
     native_z_origin_y: f32,
-    native_z_pad: f32,
+    // Water displacement amplitude in screen pixels (0 disables it).
+    water_amplitude: f32,
 };
 @group(0) @binding(0) var<uniform> camera: Camera;
 
 @group(1) @binding(0) var t_sprite: texture_2d<f32>;
 @group(1) @binding(1) var s_sprite: sampler;
 @group(1) @binding(2) var t_zdepth: texture_2d<f32>;
+// Frame-sized water displacement field (RG around 0.5, neutral on land and
+// under fog). Only this terrain shader reads it, so sprites drawn later are
+// never displaced.
+@group(2) @binding(0) var t_distortion: texture_2d<f32>;
 
 struct Instance {
     @location(0) position: vec2f,
@@ -39,6 +44,11 @@ struct VertexOutput {
     @location(1) tint: vec3f,
     @location(2) @interpolate(flat) canvas_top: f32,
     @location(3) @interpolate(flat) z_adjust: f32,
+    @location(4) @interpolate(flat) uv_min: vec2f,
+    @location(5) @interpolate(flat) uv_max: vec2f,
+    // UV delta per screen pixel, so the fragment can convert the field's
+    // pixel offset back into this tile's atlas space.
+    @location(6) @interpolate(flat) uv_per_px: vec2f,
     @location(11) @interpolate(flat) palette_light: vec4u,
 };
 
@@ -72,6 +82,10 @@ fn vs_main(
     output.tint = instance.tint;
     output.canvas_top = instance.position.y;
     output.z_adjust = instance.z_adjust;
+    output.uv_min = instance.uv_origin;
+    output.uv_max = instance.uv_origin + instance.uv_size;
+    let screen_size = instance.size * camera.zoom;
+    output.uv_per_px = instance.uv_size / max(screen_size, vec2f(1.0, 1.0));
     output.palette_light = instance.palette_light;
     return output;
 }
@@ -95,12 +109,29 @@ struct FragOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> FragOutput {
-    let color: vec4f = textureSample(t_sprite, s_sprite, input.uv);
+    // Water refraction: the engine's field is neutral (0.5, 0.5) on every
+    // non-water tile, so sampling it for the whole terrain pass displaces
+    // water only. The offset stays inside the tile's own atlas rect so a
+    // warped water tile never bleeds into a neighbouring entry.
+    let field = textureSampleLevel(
+        t_distortion,
+        s_sprite,
+        input.position.xy / camera.screen_size,
+        0.0,
+    ).rg;
+    let offset_px = (field - vec2f(0.5)) * 2.0 * camera.water_amplitude;
+    let warped_uv = clamp(
+        input.uv + offset_px * input.uv_per_px,
+        input.uv_min,
+        input.uv_max,
+    );
+    let color: vec4f = textureSample(t_sprite, s_sprite, warped_uv);
     if (color.a < 0.01) {
         discard;
     }
 
-    // R8 depth atlas: byte 0..255 stored as 0..1.
+    // R8 depth atlas: byte 0..255 stored as 0..1. Depth stays on the unwarped
+    // UV so the tiles' occlusion does not move with the ripple.
     let z_byte: f32 = round(textureSample(t_zdepth, s_sprite, input.uv).r * 255.0);
     let ground_row: f32 = input.canvas_top - (input.z_adjust + z_byte);
     let frag_depth: f32 = stored_native_depth(32768 + i32(round(camera.camera_pos.y + camera.native_z_origin_y)) - i32(round(ground_row)));

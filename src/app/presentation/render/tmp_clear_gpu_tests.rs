@@ -837,7 +837,7 @@ fn assert_tmp_pass(
         let clip: [u32; 4] = std::array::from_fn(|i| input["clip"][i].as_u64().unwrap() as u32);
         pass.set_scissor_rect(clip[0], clip[1], clip[2], clip[3]);
         for _ in 0..input["repeat"].as_u64().unwrap() {
-            draw_pooled_zdepth(&mut pass, batch, pool, Some(atlas), "tmp-clear-native");
+            draw_pooled_zdepth(&mut pass, batch, pool, Some(atlas), None, "tmp-clear-native");
         }
     }
     let reads = [gpu.read(&mut encoder, color), gpu.read(&mut encoder, depth)];

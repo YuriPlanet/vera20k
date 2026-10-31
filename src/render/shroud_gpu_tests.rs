@@ -498,7 +498,7 @@ fn production_world_a_sampling_matches_cpu_source_at_fractional_scroll_and_zoom(
                             "batch" => {
                                 batch.draw_passthrough_range(&mut pass, &texture, &data, 0, 1)
                             }
-                            "tmp" => batch.draw_with_buffer_zdepth(&mut pass, &tmp, &data, 1),
+                            "tmp" => batch.draw_with_buffer_zdepth(&mut pass, &tmp, None, &data, 1),
                             "voxel" => batch.draw_voxel_sprites_range(
                                 &mut pass,
                                 &voxel,

@@ -1,4 +1,4 @@
-//! Headless checks of the production Batch upload, TerrainDrawRenderer snapshot,
+﻿//! Headless checks of the production Batch upload, TerrainDrawRenderer snapshot,
 //! piece edit, and shared camera/instance ABI. Synthetic native leaf goldens are
 //! produced by tools/terrain_draw_oracle/leaf.py, not by the Rust implementation.
 
@@ -430,7 +430,7 @@ pub(crate) fn camera(size: [u32; 2]) -> CameraUniform {
         world_height: 1000.0,
         _pad: 0.0,
         native_z_origin_y: 0.0,
-        _native_z_pad: 0.0,
+        water_amplitude: 0.0,
     }
 }
 pub(crate) fn encoded(word: u16, format: wgpu::TextureFormat) -> [u8; 4] {

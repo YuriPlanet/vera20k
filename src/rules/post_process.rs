@@ -45,9 +45,6 @@
 //! WaterRipple.Amplitude=2
 //! WaterRipple.Wavelength=32
 //! WaterRipple.Speed=0.4
-//! WaterRipple.MaskValue=0.5
-//! WaterRipple.MaskValueHigh=1
-//! WaterRipple.FullRectMask=no
 //! WaterRipple.AnimInterval=0
 //! WaterRipple.Debug=no
 //! ```
@@ -180,13 +177,12 @@ impl Default for BloomRules {
     }
 }
 
-/// `Displace_Map`-style refraction over the engine's water mask.
+/// Water-tile refraction driven by the engine water mask.
 ///
-/// The mask/rect knobs keep the names the TC2 extension uses for its
-/// displacement animations (`MaskValue`, `MaskValueHigh`, `FullRectMask`), so
-/// a map that ships those values can be translated without guessing what each
-/// one means. The amplitude/wavelength/speed pair drives our own distortion
-/// field, which stands in for the animated distortion texture TC2 loads.
+/// The terrain (Z-depth) shader offsets water-tile UVs by the field this
+/// generates, so bridges, units, overlays and UI drawn later are never
+/// displaced. The amplitude/wavelength/speed pair drives the field itself;
+/// `anim_interval_ms` keeps TC2's stepped `DistortionAnimInterval` cadence.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WaterRippleRules {
     /// Peak sampling offset in frame pixels.
@@ -195,18 +191,10 @@ pub struct WaterRippleRules {
     pub wavelength: f32,
     /// Animation speed, in cells per second.
     pub speed: f32,
-    /// Mask luminance at which displacement starts (TC2 `MaskValue`).
-    pub mask_value: f32,
-    /// Mask luminance at which displacement reaches full strength (TC2
-    /// `MaskValueHigh`).
-    pub mask_value_high: f32,
-    /// Displace the whole tactical viewport instead of following the water
-    /// mask (TC2 `FullRectMask`).
-    pub full_rect_mask: bool,
     /// Step the distortion animation this many milliseconds per frame; 0
     /// scrolls continuously (TC2 `DistortionAnimInterval`).
     pub anim_interval_ms: f32,
-    /// Tint masked texels magenta instead of refracting, to verify alignment.
+    /// Tint masked texels magenta, to verify mask alignment.
     pub debug: bool,
 }
 
@@ -216,9 +204,6 @@ impl Default for WaterRippleRules {
             amplitude: 2.0,
             wavelength: 32.0,
             speed: 0.4,
-            mask_value: 0.5,
-            mask_value_high: 1.0,
-            full_rect_mask: false,
             anim_interval_ms: 0.0,
             debug: false,
         }
@@ -297,11 +282,6 @@ impl PostProcessRules {
                     wavelength: section
                         .read_float("WaterRipple.Wavelength", defaults.wavelength),
                     speed: section.read_float("WaterRipple.Speed", defaults.speed),
-                    mask_value: section.read_float("WaterRipple.MaskValue", defaults.mask_value),
-                    mask_value_high: section
-                        .read_float("WaterRipple.MaskValueHigh", defaults.mask_value_high),
-                    full_rect_mask: section
-                        .read_bool("WaterRipple.FullRectMask", defaults.full_rect_mask),
                     anim_interval_ms: section
                         .read_float("WaterRipple.AnimInterval", defaults.anim_interval_ms),
                     debug: section.read_bool("WaterRipple.Debug", defaults.debug),
@@ -378,8 +358,7 @@ mod tests {
             "[PostProcess]\nFilmicPass=no\nFilmicPass.Strength=0\n\
              Colourfulness=no\nColourfulness.Amount=0\nSepia=no\nSepia.Strength=0\n\
              FXAA=no\nFXAA.Subpix=1\nBloom=no\nBloom.Intensity=1\n\
-             WaterRipple=no\nWaterRipple.Amplitude=9\n\
-             WaterRipple.MaskValue=0.1\nWaterRipple.FullRectMask=yes\n",
+             WaterRipple=no\nWaterRipple.Amplitude=9\n",
         ));
         assert_eq!(off, PostProcessRules::default(), "switches gate every key");
 
@@ -392,9 +371,8 @@ mod tests {
              FXAA=yes\nFXAA.Subpix=0.6\nFXAA.EdgeThreshold=0.2\nFXAA.EdgeThresholdMin=0.05\n\
              Bloom=yes\nBloom.Threshold=0.3\nBloom.Intensity=0.6\nBloom.Radius=1.5\n\
              WaterRipple=yes\nWaterRipple.Amplitude=3\nWaterRipple.Wavelength=24\n\
-             WaterRipple.Speed=0.8\nWaterRipple.MaskValue=0.35\n\
-             WaterRipple.MaskValueHigh=0.9\nWaterRipple.FullRectMask=yes\n\
-             WaterRipple.AnimInterval=66\nWaterRipple.Debug=yes\n",
+             WaterRipple.Speed=0.8\nWaterRipple.AnimInterval=66\n\
+             WaterRipple.Debug=yes\n",
         ));
         let filmic = authored.filmic_pass.expect("authored filmic pass");
         assert!((filmic.strength - 0.5).abs() < 1e-6);
@@ -423,9 +401,6 @@ mod tests {
         assert!((ripple.amplitude - 3.0).abs() < 1e-6);
         assert!((ripple.wavelength - 24.0).abs() < 1e-6);
         assert!((ripple.speed - 0.8).abs() < 1e-6);
-        assert!((ripple.mask_value - 0.35).abs() < 1e-6);
-        assert!((ripple.mask_value_high - 0.9).abs() < 1e-6);
-        assert!(ripple.full_rect_mask);
         assert!((ripple.anim_interval_ms - 66.0).abs() < 1e-6);
         assert!(ripple.debug);
     }

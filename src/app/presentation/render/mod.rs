@@ -287,6 +287,42 @@ pub(crate) fn render_game(
             &world.terrain.water,
         );
     }
+    // The terrain pass samples this field from its own shader, so it must be
+    // ready before the world draws. Only revealed water is in the mask; fog
+    // stays neutral and therefore never moves.
+    let water_ripple = state
+        .rules()
+        .and_then(|rules| rules.post_process.water_ripple);
+    if let (Some(field), Some(mask), Some(ripple)) = (
+        state.renderer.water_distortion.as_mut(),
+        state.renderer.water_mask.as_ref(),
+        water_ripple,
+    ) {
+        let step = ripple.anim_interval_ms.max(0.0) as u64;
+        let time_ms = if step > 0 {
+            (times.radar_ms / step) * step
+        } else {
+            times.radar_ms
+        };
+        field.generate(
+            &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
+            encoder,
+            mask.view(),
+            crate::render::water_distortion::DistortionParams::new(
+                ripple.wavelength,
+                ripple.speed,
+                time_ms as f32 / 1000.0,
+            ),
+        );
+    }
+    // Feed the terrain shader's amplitude lane after the camera owner wrote
+    // the rest of the uniform.
+    let water_amplitude = water_ripple.map_or(0.0, |ripple| ripple.amplitude);
+    state
+        .renderer
+        .batch_renderer
+        .set_water_amplitude(&state.renderer.gpu.queue, water_amplitude);
     for layer in &mut world.object_layers {
         object_extras::defer_health_to_frame(layer, world_camera.camera_pos, z);
     }

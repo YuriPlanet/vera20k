@@ -1,4 +1,4 @@
-//! Native transient tactical combat-light presentation.
+﻿//! Native transient tactical combat-light presentation.
 //!
 //! gamemd does not create an animation, particle, or map light for an
 //! IronCurtain/ForceShield impact. It appends a small record to a dedicated
@@ -107,7 +107,7 @@ impl CombatLightRenderer {
                     _pad: 0.0,
 
                     native_z_origin_y: 0.0,
-                    _native_z_pad: 0.0,
+                    water_amplitude: 0.0,
                 }),
             ),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
@@ -321,7 +321,7 @@ impl CombatLightRenderer {
             _pad: 0.0,
 
             native_z_origin_y: 0.0,
-            _native_z_pad: 0.0,
+            water_amplitude: 0.0,
         };
         queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
         self.prepared_indices.clear();

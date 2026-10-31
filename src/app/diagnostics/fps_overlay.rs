@@ -1,4 +1,4 @@
-//! Final-window FPS readout, hidden at every launch until Ctrl+Alt+F or the
+﻿//! Final-window FPS readout, hidden at every launch until Ctrl+Alt+F or the
 //! Options page's FPS Counter box shows it.
 //! Independent of tactical cameras, optional dev overlays, retail fonts, and
 //! shell/offscreen composition.
@@ -149,7 +149,7 @@ impl FpsOverlay {
             world_height: 1.0,
             _pad: 0.0,
             native_z_origin_y: 0.0,
-            _native_z_pad: 0.0,
+            water_amplitude: 0.0,
         };
         gpu.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));

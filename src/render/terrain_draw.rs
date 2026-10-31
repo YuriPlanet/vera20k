@@ -1,4 +1,4 @@
-//! Shared destination-dependent Terrain, Bullet and bridge SHP drawing.
+﻿//! Shared destination-dependent Terrain, Bullet and bridge SHP drawing.
 //!
 //! Terrain DrawIt 0071C304/0071C34E reaches 004990E0/00497390: signed Z
 //! comparison precedes the u16 store, and shadow pixels halve the packed
@@ -456,7 +456,7 @@ impl TerrainDrawRenderer {
                 _pad: 0.0,
 
                 native_z_origin_y: 0.0,
-                _native_z_pad: 0.0,
+                water_amplitude: 0.0,
             },
         }
     }

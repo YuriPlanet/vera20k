@@ -62,20 +62,18 @@ struct Params {
     bloom_radius: f32,
     bloom_enabled: f32,
 
-    ripple_amplitude: f32,
-    // Mask luminance where displacement starts (TC2 MaskValue).
-    mask_value: f32,
-    // Mask luminance where displacement is at full strength (MaskValueHigh).
-    mask_value_high: f32,
-    // 1 displaces the whole tactical viewport, ignoring the water mask.
-    full_rect_mask: f32,
+    // Unused lanes: water displacement lives in the terrain shader now, so the
+    // post chain only needs the mask for its debug tint.
+    pad1_a: f32,
+    pad1_b: f32,
+    pad1_c: f32,
+    pad1_d: f32,
 
-    // 0 = no displacement, 1 = displacement over the water mask.
-    ripple_enabled: f32,
-    // 1 tints masked texels magenta instead of refracting them.
+    // 1 tints masked texels magenta, to verify the engine's mask alignment.
     mask_debug: f32,
-    pad6: f32,
-    pad7: f32,
+    pad2_a: f32,
+    pad2_b: f32,
+    pad2_c: f32,
 };
 
 @group(0) @binding(0) var t_source: texture_2d<f32>;
@@ -83,8 +81,6 @@ struct Params {
 @group(0) @binding(2) var s_linear: sampler;
 // Engine-built water mask: 1 where the cell's land type is Water.
 @group(0) @binding(3) var t_mask: texture_2d<f32>;
-// Engine-built water distortion field: RG hold a sampling offset around 0.5.
-@group(0) @binding(4) var t_distortion: texture_2d<f32>;
 
 // ReShade `FilmicPass.fx` luminance coefficients.
 const FILMIC_LUMA = vec3f(0.212656, 0.715158, 0.072186);
@@ -360,18 +356,6 @@ fn fxaa_pass(center: vec3f, uv: vec2f) -> vec3f {
     return fxaa_sample(posM);
 }
 
-// TC2's mask ramp: MaskValue starts the displacement and MaskValueHigh is
-// full strength. FullRectMask replaces the per-cell mask with the whole
-// tactical viewport, so every sampled texel takes the full offset.
-fn mask_weight(mask: f32) -> f32 {
-    if (params.full_rect_mask != 0.0) {
-        return 1.0;
-    }
-    let lo = params.mask_value;
-    let hi = max(params.mask_value_high, lo + 1e-4);
-    return clamp((mask - lo) / (hi - lo), 0.0, 1.0);
-}
-
 @vertex
 fn vs_main(@builtin(vertex_index) idx: u32) -> @builtin(position) vec4f {
     // One triangle that covers the whole target.
@@ -389,7 +373,6 @@ fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
         && params.filmic_enabled == 0.0
         && params.colour_enabled == 0.0
         && params.sepia_enabled == 0.0
-        && params.ripple_enabled == 0.0
         && params.mask_debug == 0.0) {
         return source;
     }
@@ -411,18 +394,6 @@ fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
         let blended = fxaa_pass(linear_to_srgb(color.rgb), p / dims);
         color = vec4f(srgb_to_linear(blended), color.a);
     }
-    let gate = mask_weight(mask);
-    if (params.ripple_enabled != 0.0 && gate > 0.0) {
-        // The engine built a displacement field for the water it marked: a
-        // smooth scrolling offset encoded around 0.5 in RG. Offset the frame
-        // by it; no analytic wave or highlight is added here.
-        let dims = vec2f(textureDimensions(t_source));
-        let field = textureSampleLevel(t_distortion, s_linear, (p + vec2f(0.5)) / dims, 0.0).rg;
-        let offset = (field - vec2f(0.5)) * 2.0 * params.ripple_amplitude * gate;
-        let displaced = textureSampleLevel(t_source, s_linear, (p + offset) / dims, 0.0).rgb;
-        color = vec4f(displaced, color.a);
-    }
-
     if (params.color_grade != 0.0) {
         var rgb = color.rgb;
         let luma = dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
