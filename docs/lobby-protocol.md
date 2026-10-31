@@ -340,8 +340,8 @@ the base64 of the map's own `[Basic]`, `[Preview]`, `[PreviewPack]`, `[Waypoints
 `[Header]` and `[RandomMap]` lines, byte for byte. It carries `ETag: "lib-<revision>"`
 and answers 304 to a matching `If-None-Match`. `GET /v1/library/maps/<sha256>`
 downloads one map, and `GET /v1/library/maps?search=<text>&players=<n>&page=<n>`
-searches them (newest first, 50 a page). All three are public and limited per network;
-the service keeps no player, session or address with a map. The game reads the catalog
+searches them (newest first, 50 a page). All three are public, and the search is
+limited per network; the service keeps no player, session or address with a map. The game reads the catalog
 once a run. In an online room, Choose Map lists each map whose file name the game
 folder does not hold under its Online Maps row, starred maps first. Use Map on one asks
 to download it, checks its length and SHA-256, and saves it in the game folder, where
