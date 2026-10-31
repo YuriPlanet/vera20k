@@ -510,3 +510,29 @@ fn shield_tint_uses_the_viewers_bucket_and_rgb565_word() {
     assert!(!AffectedHouse::ENEMIES.contains(AffectedHouse::OWNER));
     assert!(AffectedHouse::ALL.contains(AffectedHouse::ENEMIES));
 }
+
+/// Phobos `TechnoClass_InvulnerabilityIntensity_Adjust` (`0x70E475`): the
+/// configured extra intensity scales by 1000 and is added by kind.
+#[test]
+fn curtain_extra_tint_reads_the_audio_visual_globals() {
+    use crate::sim::superweapon::invulnerability::InvulnKind;
+    let rules =
+        crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            "[AudioVisual]\nIronCurtain.ExtraTintIntensity=0.4\n\
+             ForceShield.ExtraTintIntensity=-0.25\n",
+        ))
+        .expect("rules");
+    assert_eq!(
+        super::curtain_extra_tint(Some(&rules), Some(InvulnKind::IronCurtain)),
+        400
+    );
+    assert_eq!(
+        super::curtain_extra_tint(Some(&rules), Some(InvulnKind::ForceShield)),
+        -250
+    );
+    assert_eq!(
+        super::curtain_extra_tint(None, Some(InvulnKind::IronCurtain)),
+        0
+    );
+    assert_eq!(super::curtain_extra_tint(Some(&rules), None), 0);
+}

@@ -57,6 +57,9 @@ pub struct SelectionOverlay {
     /// Phobos then draws that display with the game font.
     #[cfg(feature = "phobos")]
     digital_shapes: Vec<Option<CenteredShapeStrip>>,
+    /// Phobos custom insignia SHPs keyed by their normalized file name.
+    #[cfg(feature = "phobos")]
+    insignia_shapes: std::collections::HashMap<String, CenteredShapeStrip>,
 }
 
 /// Every frame of one SHP packed side by side at its stored size, each with
@@ -444,6 +447,8 @@ impl SelectionOverlay {
             pips,
             #[cfg(feature = "phobos")]
             digital_shapes: Vec::new(),
+            #[cfg(feature = "phobos")]
+            insignia_shapes: std::collections::HashMap::new(),
         }
     }
 
@@ -484,11 +489,57 @@ impl SelectionOverlay {
 
     /// One catalog entry's custom SHP, when loaded.
     #[cfg(feature = "phobos")]
-    pub(crate) fn digital_shape(
-        &self,
-        index: usize,
-    ) -> Option<&CenteredShapeStrip> {
+    pub(crate) fn digital_shape(&self, index: usize) -> Option<&CenteredShapeStrip> {
         self.digital_shapes.get(index)?.as_ref()
+    }
+
+    /// Load every TechnoType/`[InsigniaTypes]` insignia SHP once per match.
+    /// Phobos loads each `Promotable<SHPStruct*>` through the SHP reader with
+    /// `PALETTE.PAL` and retains the pointer for the match.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn load_insignia_shapes(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        assets: &AssetManager,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
+        let mut names = std::collections::BTreeSet::new();
+        for object in rules.all_objects() {
+            let insignia = &object.phobos_insignia;
+            for variant in std::iter::once(&insignia.base)
+                .chain(insignia.weapons.iter())
+                .chain(insignia.passengers.iter())
+            {
+                names.extend(variant.images.iter().flatten().cloned());
+            }
+        }
+        for entry in rules.insignia_types().entries() {
+            names.extend(entry.images.iter().flatten().cloned());
+        }
+        for name in names {
+            let strip = CenteredShapeStrip::from_assets_on_device(
+                device,
+                queue,
+                batch,
+                assets,
+                &name,
+                "palette.pal",
+            );
+            if strip.is_none() {
+                log::warn!("Phobos insignia: cannot load {name}");
+            }
+            if let Some(strip) = strip {
+                self.insignia_shapes.insert(name, strip);
+            }
+        }
+    }
+
+    /// One custom insignia SHP by normalized file name, when loaded.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn insignia_shape(&self, name: &str) -> Option<&CenteredShapeStrip> {
+        self.insignia_shapes.get(name)
     }
 
     /// The Crazy Ivan bomb clock art (BOMBCURS.SHP), when the assets have it.

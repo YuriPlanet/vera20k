@@ -26,9 +26,9 @@ use crate::map::entities::EntityCategory;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::render::selection_overlay::SelectionOverlay;
+use crate::rules::building_select_bracket::BuildingSelectBracketPosition;
 use crate::rules::digital_display::{
-    DigitalBuildingAnchor, DigitalDisplayType, DigitalInfoType, DigitalTextAlign,
-    DigitalVerticalAnchor,
+    DigitalDisplayType, DigitalInfoType, DigitalTextAlign, DigitalVerticalAnchor,
 };
 use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
@@ -200,8 +200,9 @@ pub(crate) fn digital_display_instances(
         }
         if is_building {
             match display.anchor_building {
-                DigitalBuildingAnchor::Top => position.1 -= 4.0,
-                DigitalBuildingAnchor::LeftTop | DigitalBuildingAnchor::LeftBottom => {
+                BuildingSelectBracketPosition::Top => position.1 -= 4.0,
+                BuildingSelectBracketPosition::LeftTop
+                | BuildingSelectBracketPosition::LeftBottom => {
                     position.0 -= 8.0;
                 }
                 _ => {}
@@ -266,12 +267,12 @@ fn foot_bracket(sx: f32, sy: f32, is_infantry: bool, display: &DigitalDisplayTyp
 
 /// `TechnoExt::GetBuildingSelectBracketPosition`: project `Dimension2`
 /// (foundation edge plus ART Height), then apply the hexagon vertex.
-fn building_bracket(
+pub(crate) fn building_bracket(
     sim: &Simulation,
     entity: &GameEntity,
     object: &crate::rules::object_type::ObjectType,
     rules: &RuleSet,
-    anchor: DigitalBuildingAnchor,
+    anchor: BuildingSelectBracketPosition,
 ) -> (f32, f32) {
     let (sx, sy) = screen_point(sim, entity);
     let geometry = BuildingBarGeometry::new(rules, object);
@@ -282,23 +283,23 @@ fn building_bracket(
     let height_px = art_height * 12;
     let (mut x, mut y) = geometry.first_pip(sx, sy);
     match anchor {
-        DigitalBuildingAnchor::Top => {}
-        DigitalBuildingAnchor::LeftTop => {
+        BuildingSelectBracketPosition::Top => {}
+        BuildingSelectBracketPosition::LeftTop => {
             x -= (length_h * 4) as f32;
             y += (length_h * 2) as f32;
         }
-        DigitalBuildingAnchor::LeftBottom => {
+        BuildingSelectBracketPosition::LeftBottom => {
             x -= (length_h * 4) as f32;
             y += (length_h * 2 + height_px) as f32;
         }
-        DigitalBuildingAnchor::Bottom => {
+        BuildingSelectBracketPosition::Bottom => {
             y += (length_w * 2 + length_h * 2 + height_px) as f32;
         }
-        DigitalBuildingAnchor::RightBottom => {
+        BuildingSelectBracketPosition::RightBottom => {
             x += (length_w * 4) as f32;
             y += (length_w * 2 + height_px) as f32;
         }
-        DigitalBuildingAnchor::RightTop => {
+        BuildingSelectBracketPosition::RightTop => {
             x += (length_w * 4) as f32;
             y += (length_w * 2) as f32;
         }
@@ -557,7 +558,7 @@ mod tests {
             align: DigitalTextAlign::Right,
             anchor_horizontal: DigitalHorizontalAnchor::Right,
             anchor_vertical: DigitalVerticalAnchor::Top,
-            anchor_building: DigitalBuildingAnchor::Top,
+            anchor_building: BuildingSelectBracketPosition::Top,
             shape: None,
             palette: None,
             shape_spacing: None,

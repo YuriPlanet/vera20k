@@ -1829,7 +1829,7 @@ fn parse_ares_double_bits(value: &str) -> Option<NativeF64Bits> {
 }
 
 /// The single Ares Parser<int> core, also used by compound int/bool readers.
-fn parse_ares_int(value: &str) -> Option<i32> {
+pub(crate) fn parse_ares_int(value: &str) -> Option<i32> {
     if let Some(decimal) = value.strip_prefix('$') {
         scan_decimal_i32(&mut decimal.as_bytes())
     } else if value

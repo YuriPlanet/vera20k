@@ -1175,6 +1175,38 @@ enum FrameResume {
     OutcomeWait,
 }
 
+/// House+56FC, the laser color a `LaserColor::House` or `Beam.IsHouseColor`
+/// birth resolves through.
+fn house_laser_rgb(
+    runtime: Option<&crate::sim::runtime::SimRuntime>,
+    colors: &crate::map::houses::HouseColorMap,
+    owner: crate::sim::intern::InternedId,
+) -> [u8; 3] {
+    let Some(runtime) = runtime else {
+        return [0; 3];
+    };
+    let name = runtime.simulation.interner().resolve(owner);
+    // CreateHouses initializes the two literal special houses without
+    // ComputeRemap; their +56FC stays0.
+    if runtime.simulation.session().game_mode_nonzero()
+        && (name.eq_ignore_ascii_case("Neutral") || name.eq_ignore_ascii_case("Special"))
+    {
+        return [0; 3];
+    }
+    let index = colors.get(name).copied().or_else(|| {
+        colors
+            .iter()
+            .find(|(candidate, _)| candidate.eq_ignore_ascii_case(name))
+            .map(|(_, &color)| color)
+    });
+    index.map_or([0; 3], |index| {
+        crate::render::palette_light::house_laser_rgb(
+            &runtime.resources.rules.house_color_ramps,
+            index,
+        )
+    })
+}
+
 fn advance_one_simulation_frame(
     state: &mut AppState,
     tick_lane: TickLane,
@@ -1795,32 +1827,9 @@ fn advance_one_simulation_frame(
                     let runtime = state.match_state.sim_runtime.as_ref();
                     let presentation = &mut state.match_state.match_presentation;
                     let colors = &presentation.house_color_map;
-                    presentation.lasers.create(birth, |owner| {
-                        let Some(runtime) = runtime else {
-                            return [0; 3];
-                        };
-                        let name = runtime.simulation.interner().resolve(owner);
-                        // CreateHouses initializes the two literal special
-                        // houses without ComputeRemap; their +56FC stays0.
-                        if runtime.simulation.session().game_mode_nonzero()
-                            && (name.eq_ignore_ascii_case("Neutral")
-                                || name.eq_ignore_ascii_case("Special"))
-                        {
-                            return [0; 3];
-                        }
-                        let index = colors.get(name).copied().or_else(|| {
-                            colors
-                                .iter()
-                                .find(|(candidate, _)| candidate.eq_ignore_ascii_case(name))
-                                .map(|(_, &color)| color)
-                        });
-                        index.map_or([0; 3], |index| {
-                            crate::render::palette_light::house_laser_rgb(
-                                &runtime.resources.rules.house_color_ramps,
-                                index,
-                            )
-                        })
-                    });
+                    presentation
+                        .lasers
+                        .create(birth, |owner| house_laser_rgb(runtime, colors, owner));
                 }
                 LifecycleOutput::ElectricBoltCreated(birth) => {
                     state
@@ -1830,11 +1839,12 @@ fn advance_one_simulation_frame(
                         .create(birth);
                 }
                 LifecycleOutput::RadiationBeamCreated(birth) => {
-                    state
-                        .match_state
-                        .match_presentation
+                    let runtime = state.match_state.sim_runtime.as_ref();
+                    let presentation = &mut state.match_state.match_presentation;
+                    let colors = &presentation.house_color_map;
+                    presentation
                         .radiation_beams
-                        .create(birth);
+                        .create(birth, |owner| house_laser_rgb(runtime, colors, owner));
                 }
                 LifecycleOutput::LineTrailConstructed { stable_id, style } => {
                     let presentation = &mut state.match_state.match_presentation;

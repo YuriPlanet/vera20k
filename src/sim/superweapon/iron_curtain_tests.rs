@@ -767,6 +767,112 @@ fn curtained_infantry_die_and_announce_each_loss() {
     assert!(curtain(&sim, tank).is_some());
 }
 
+/// Phobos `IronCurtain.EffectOnOrganics`: the retail default kills an
+/// infantryman and an Organic Foot with the curtain's kill warhead;
+/// `invulnerable` curtains both; `ignore` leaves both untouched.
+#[test]
+fn iron_curtain_effect_on_organics_selects_kill_invulnerable_or_ignore() {
+    for (effect, behaviour) in [
+        ("", "kill"),
+        ("invulnerable", "invulnerable"),
+        ("ignore", "ignore"),
+    ] {
+        let extra = if effect.is_empty() {
+            String::new()
+        } else {
+            format!("[CombatDamage]\nIronCurtain.EffectOnOrganics={effect}\n")
+        };
+        let (rules, mut sim, owner) = world_with(rules(&extra), 64, &[]);
+        let spawn = |sim: &mut Simulation, kind: &str, x: u16| {
+            sim.spawn_object_at_height(kind, "Americans", x, 10, 0, 0, &rules)
+                .unwrap()
+        };
+        let infantry = spawn(&mut sim, "E1", 10);
+        let dolphin = spawn(&mut sim, "DLPH", 11);
+        let sw_type = charge_super(&mut sim, owner, IRON_CURTAIN);
+        assert!(launch(
+            &mut sim,
+            &rules,
+            owner,
+            10,
+            10,
+            sw_type,
+            None,
+            crate::sim::world::FrameEffects::default()
+        ));
+        for id in [infantry, dolphin] {
+            let entity = sim.substrate.entities.get(id).unwrap();
+            match behaviour {
+                "kill" => {
+                    assert_eq!(entity.health.current(), 0, "{effect}: killed");
+                    assert!(entity.invulnerability.is_none(), "{effect}: not curtained");
+                }
+                "invulnerable" => {
+                    assert!(entity.health.current() > 0, "{effect}: survived");
+                    assert!(entity.invulnerability.is_some(), "{effect}: curtained");
+                }
+                _ => {
+                    assert!(entity.health.current() > 0, "ignore: survived");
+                    assert!(entity.invulnerability.is_none(), "ignore: untouched");
+                }
+            }
+        }
+    }
+}
+
+/// Phobos `TechnoTypeExt`: `IronCurtain.Effect` overrides the global per
+/// type, and `IronCurtain.KillWarhead`/`KillOrganicsWarhead` choose the
+/// killing warhead (the type's wins).
+#[test]
+fn type_effect_and_kill_warheads_override_the_globals() {
+    let extra = "[CombatDamage]\nIronCurtain.KillOrganicsWarhead=GlobalWH\n\
+                 [Warheads]\n2=GlobalWH\n3=TypeWH\n\
+                 [GlobalWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+                 [TypeWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+                 [DLPH]\nIronCurtain.KillWarhead=TypeWH\n";
+    let (rules, mut sim, owner) = world_with(rules(extra), 64, &[]);
+    let infantry = sim
+        .spawn_object_at_height("E1", "Americans", 10, 10, 0, 0, &rules)
+        .unwrap();
+    let dolphin = sim
+        .spawn_object_at_height("DLPH", "Americans", 11, 10, 0, 0, &rules)
+        .unwrap();
+    let sw_type = charge_super(&mut sim, owner, IRON_CURTAIN);
+    let (_, observed) = observed_launch(&mut sim, &rules, owner, (10, 10), sw_type);
+    let warheads: Vec<String> = observed
+        .iter()
+        .filter_map(|call| match call {
+            Observed::ReceiveDamage(event) => {
+                Some(sim.interner.resolve(event.warhead_ref).to_owned())
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(warheads.len(), 2, "both organics are killed");
+    assert!(warheads.iter().any(|name| name == "GlobalWH"));
+    assert!(warheads.iter().any(|name| name == "TypeWH"));
+    for id in [infantry, dolphin] {
+        assert_eq!(sim.substrate.entities.get(id).unwrap().health.current(), 0);
+    }
+
+    // The type's Invulnerable effect suppresses its kill entirely.
+    let invulnerable_rules = self::rules("[E1]\nIronCurtain.Effect=invulnerable\n");
+    let (invulnerable_rules, mut sim, owner) = world_with(invulnerable_rules, 64, &[]);
+    let infantry = sim
+        .spawn_object_at_height("E1", "Americans", 10, 10, 0, 0, &invulnerable_rules)
+        .unwrap();
+    let sw_type = charge_super(&mut sim, owner, IRON_CURTAIN);
+    let (_, observed) = observed_launch(&mut sim, &invulnerable_rules, owner, (10, 10), sw_type);
+    assert!(
+        !observed
+            .iter()
+            .any(|call| matches!(call, Observed::ReceiveDamage(_))),
+        "the invulnerable type takes no kill"
+    );
+    let entity = sim.substrate.entities.get(infantry).unwrap();
+    assert!(entity.health.current() > 0 && entity.invulnerability.is_some());
+}
+
 /// Retail rules through the production reader and frames:
 /// `IronCurtainDuration=750`, `IronCurtainInvokeAnim=IRONBLST` (its `;`
 /// comment dropped) and `C4Warhead=Super`. A click launches on the next

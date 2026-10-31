@@ -1,7 +1,7 @@
 //! Retained WarheadExt configuration shared by the Ares EMP and AttachEffect
 //! receivers. Installed 10051890 owns defaults; 10051B70 owns House admission.
 //! The retained processing registry reads it; RuleSet projects an immutable view.
-#[cfg(feature = "ares")]
+#[cfg(any(feature = "ares", feature = "phobos"))]
 use crate::rules::ini_parser::IniSection;
 use crate::util::native_x87::NativeF64Bits;
 
@@ -119,9 +119,11 @@ fn default_effects_require_verses() -> bool {
 }
 
 /// Installed house-selector table10095264, reader1000A660 and shared
-/// resolver10021310. The selector's random permission is a consumer input.
+/// resolver10021310. Phobos' `read<OwnerHouseKind>` (`Utilities/TemplateDef.h`)
+/// matches the same eight names. The selector's random permission is a
+/// consumer input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg(feature = "ares")]
+#[cfg(any(feature = "ares", feature = "phobos"))]
 pub(crate) enum HouseSelector {
     Default,
     Invoker,
@@ -133,10 +135,9 @@ pub(crate) enum HouseSelector {
     Random,
 }
 
-#[cfg(feature = "ares")]
+#[cfg(any(feature = "ares", feature = "phobos"))]
 impl HouseSelector {
-    #[cfg(feature = "ares")]
-    fn read(self, section: &IniSection, key: &str) -> Self {
+    pub(crate) fn read(self, section: &IniSection, key: &str) -> Self {
         const VALUES: [(&str, HouseSelector); 8] = [
             ("default", HouseSelector::Default),
             ("invoker", HouseSelector::Invoker),

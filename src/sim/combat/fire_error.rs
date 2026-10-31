@@ -45,6 +45,8 @@
 //! paradrop's descent, its one VERA producer; no other fall is represented.
 
 use crate::map::entities::EntityCategory;
+#[cfg(feature = "phobos")]
+use crate::rules::airstrike_targets::AirstrikeKind;
 use crate::sim::combat::Health;
 
 /// The codes, as every producer returns them (`MOV EAX, imm32`).
@@ -222,6 +224,12 @@ pub(crate) struct WarheadFacts {
     pub is_locomotor: bool, // +0x15B
     pub psychedelic: bool,  // +0x16D
     pub bomb_disarm: bool,  // +0x16E
+    /// `+0x16C`. Phobos' `AirstrikeTargets` gate reads it with the target's
+    /// `AllowAirstrike`.
+    #[cfg(feature = "phobos")]
+    pub airstrike: bool,
+    #[cfg(feature = "phobos")]
+    pub airstrike_targets: crate::rules::airstrike_targets::AirstrikeTargets,
     /// Rule-owned armor interaction refuses this target. Vanilla T54 uses
     /// `FCOMP` zero/unordered; Ares100542A0 uses its independent fire flag.
     pub armor_rejects_fire: bool,
@@ -483,6 +491,23 @@ pub(crate) struct TargetTypeFacts {
     pub non_vehicle: bool,
     /// [`ObjectType::is_1x1_with_undeploy`], a Building's vt+0x80 answer.
     pub is_1x1_with_undeploy: bool,
+    /// Phobos `AllowAirstrike=`, `None` when the key is absent.
+    #[cfg(feature = "phobos")]
+    pub allow_airstrike: Option<bool>,
+    /// Phobos `AllowAirstrike=`'s unset default for a building.
+    #[cfg(feature = "phobos")]
+    pub can_c4: bool,
+}
+
+#[cfg(feature = "phobos")]
+impl TargetTypeFacts {
+    /// Phobos `AllowAirstrike` as the `CanFire` gate reads it: an explicit
+    /// value wins, a building otherwise follows `CanC4`, every other kind is
+    /// targetable.
+    pub(crate) fn allows_airstrike(&self, building: bool) -> bool {
+        self.allow_airstrike
+            .unwrap_or(if building { self.can_c4 } else { true })
+    }
 }
 
 impl Default for TargetTypeFacts {
@@ -500,6 +525,10 @@ impl Default for TargetTypeFacts {
             is_simple_deployer: false,
             non_vehicle: false,
             is_1x1_with_undeploy: false,
+            #[cfg(feature = "phobos")]
+            allow_airstrike: None,
+            #[cfg(feature = "phobos")]
+            can_c4: false,
         }
     }
 }
@@ -1113,6 +1142,26 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
             || target.sinking
         {
             return Illegal;
+        }
+        // Phobos `TechnoClass_CanFire` airstrike gate
+        // (`src/Ext/Techno/Hooks.Firing.cpp`): an `Airstrike=` warhead may
+        // fire only at a kind its `AirstrikeTargets` admits and a type its
+        // `AllowAirstrike` permits. The weapon-choice arm at `0x6F3477` only
+        // reaches this for a secondary airstrike weapon; a primary one is
+        // gated here alone.
+        #[cfg(feature = "phobos")]
+        if warhead.airstrike {
+            let target_kind = match kind {
+                FireTargetKind::Infantry => AirstrikeKind::Infantry,
+                FireTargetKind::Unit => AirstrikeKind::Unit,
+                FireTargetKind::Aircraft => AirstrikeKind::Aircraft,
+                _ => AirstrikeKind::Building,
+            };
+            if !warhead.airstrike_targets.allows(target_kind)
+                || !target_type.allows_airstrike(kind == FireTargetKind::Building)
+            {
+                return Illegal;
+            }
         }
         // T58/T59 `0x006FCBE6..0x006FCCAE`: a bridge deck between them.
         if firer.on_bridge != target.on_bridge {

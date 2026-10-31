@@ -4707,6 +4707,12 @@ pub struct RuleSet {
     /// Process owner. Empty in builds without the capability.
     #[cfg(feature = "phobos")]
     pub(crate) shield_types: crate::rules::phobos_shields::ShieldTypeCatalog,
+    /// Phobos `[InsigniaTypes]` catalog.
+    #[cfg(feature = "phobos")]
+    pub(crate) insignia_types: crate::rules::insignia_type::InsigniaTypeCatalog,
+    /// Phobos `[General]`/`[AudioVisual]` insignia settings.
+    #[cfg(feature = "phobos")]
+    pub(crate) phobos_draw_globals: crate::rules::insignia_type::PhobosDrawGlobals,
     /// Phobos shield globals: `[CombatDamage] ShieldApplyArmorMult` and
     /// `[AudioVisual] Shield.ConditionYellow/ConditionRed`.
     #[cfg(feature = "phobos")]
@@ -4715,6 +4721,9 @@ pub struct RuleSet {
     /// VeteranCritChance`.
     #[cfg(feature = "phobos")]
     pub(crate) crit_globals: crate::rules::phobos_crit::CritGlobals,
+    /// Phobos Iron Curtain / Force Shield organics, tint and deploy settings.
+    #[cfg(feature = "phobos")]
+    pub(crate) invulnerability_globals: crate::rules::invulnerability_rules::InvulnerabilityGlobals,
     /// Phobos `[General]` warhead animation defaults.
     #[cfg(feature = "phobos")]
     pub(crate) phobos_warhead_anim: crate::rules::phobos_warhead_anim::PhobosWarheadAnimGlobals,
@@ -4967,6 +4976,19 @@ impl RuleSet {
                 object.weapon_list = slots.base();
                 object.elite_weapon_list = slots.elite();
                 object.bind_weapon_offsets(slots.offsets());
+            }
+        }
+        // Phobos TechnoTypeExt reads insignia keys on every reached pass, so
+        // the processor's accumulated state is the owner, not a projection of
+        // the final merged section.
+        #[cfg(feature = "phobos")]
+        for (category, name, insignia) in processed.techno_insignia_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == category && object.id == name)
+            {
+                object.phobos_insignia = insignia.clone();
             }
         }
         rules.crate_rules = processed.crate_rules().clone();
@@ -6049,6 +6071,10 @@ impl RuleSet {
         let elevation_model = ElevationModel::from_ini(ini);
         let radiation: RadiationRules = RadiationRules::from_ini(ini);
         #[cfg(feature = "phobos")]
+        let insignia_types = processed.insignia_types().cloned().unwrap_or_default();
+        #[cfg(feature = "phobos")]
+        let phobos_draw_globals = crate::rules::insignia_type::PhobosDrawGlobals::from_ini(ini);
+        #[cfg(feature = "phobos")]
         let (shield_types, shield_globals) = {
             let shield_types = processed.shield_types().cloned().unwrap_or_default();
             log::info!(
@@ -6529,9 +6555,16 @@ impl RuleSet {
             #[cfg(feature = "phobos")]
             shield_types,
             #[cfg(feature = "phobos")]
+            insignia_types,
+            #[cfg(feature = "phobos")]
+            phobos_draw_globals,
+            #[cfg(feature = "phobos")]
             shield_globals,
             #[cfg(feature = "phobos")]
             crit_globals: crate::rules::phobos_crit::CritGlobals::from_ini(ini),
+            #[cfg(feature = "phobos")]
+            invulnerability_globals:
+                crate::rules::invulnerability_rules::InvulnerabilityGlobals::from_ini(ini),
             #[cfg(feature = "phobos")]
             phobos_warhead_anim:
                 crate::rules::phobos_warhead_anim::PhobosWarheadAnimGlobals::from_ini(ini),
@@ -6975,6 +7008,18 @@ impl RuleSet {
         Self::lookup_ci(&self.warheads, id)
     }
 
+    /// Phobos `[InsigniaTypes]` catalog.
+    #[cfg(feature = "phobos")]
+    pub fn insignia_types(&self) -> &crate::rules::insignia_type::InsigniaTypeCatalog {
+        &self.insignia_types
+    }
+
+    /// Phobos `[General]`/`[AudioVisual]` insignia settings.
+    #[cfg(feature = "phobos")]
+    pub fn phobos_draw_globals(&self) -> &crate::rules::insignia_type::PhobosDrawGlobals {
+        &self.phobos_draw_globals
+    }
+
     /// Phobos `[ShieldTypes]` entry by name (case-insensitive, first spelling
     /// retained). No entry in a build without the capability.
     #[cfg(feature = "phobos")]
@@ -6986,6 +7031,14 @@ impl RuleSet {
     #[cfg(feature = "phobos")]
     pub fn shield_globals(&self) -> &crate::rules::phobos_shields::ShieldGlobals {
         &self.shield_globals
+    }
+
+    /// Phobos Iron Curtain / Force Shield organics, tint and deploy settings.
+    #[cfg(feature = "phobos")]
+    pub fn invulnerability_globals(
+        &self,
+    ) -> &crate::rules::invulnerability_rules::InvulnerabilityGlobals {
+        &self.invulnerability_globals
     }
 
     /// Phobos crit defaults (`[CombatDamage]`/`[General]`).
@@ -7914,41 +7967,42 @@ impl RuleSet {
         {
             let phobos_projectiles =
                 Self::by_upper_id(self.projectiles.iter().filter_map(|(id, projectile)| {
-                        let value = &projectile.phobos_airburst;
-                        (value != &crate::rules::phobos_airburst::PhobosAirburstType::default())
-                            .then(|| {
-                                let fields = (
-                                    (
-                                        value.splits,
-                                        value.airburst_spread.to_bits(),
-                                        value.retarget_accuracy.to_bits(),
-                                        value.retarget_self,
-                                        value.retarget_self_probability.to_bits(),
-                                    ),
-                                    (
-                                        value.around_target,
-                                        value.airburst_use_cluster,
-                                        value.airburst_random_clusters,
-                                        value.airburst_target_as_source,
-                                        value.airburst_target_as_source_skip_height,
-                                    ),
-                                    (
-                                        value.splits_targeting_distance,
-                                        value.splits_targeting_distance_cylindrical,
-                                        value.splits_allow_repeat_targets,
-                                        value.splits_target_cell_range,
-                                        value.splits_use_weapon_targeting,
-                                        value.airburst_weapon_apply_firepower_mult,
-                                        value.airburst_weapon_source_scatter_min,
-                                        value.airburst_weapon_source_scatter_max,
-                                        value.airburst_weapon_use_firing_effects,
-                                        value.airburst_weapon_head_to_target,
-                                        value.airburst_weapon_radial_fire_segments,
-                                        value.aa_only,
-                                    ),
-                                );
-                                (id, fields)
-                            })
+                    let value = &projectile.phobos_airburst;
+                    (value != &crate::rules::phobos_airburst::PhobosAirburstType::default()).then(
+                        || {
+                            let fields = (
+                                (
+                                    value.splits,
+                                    value.airburst_spread.to_bits(),
+                                    value.retarget_accuracy.to_bits(),
+                                    value.retarget_self,
+                                    value.retarget_self_probability.to_bits(),
+                                ),
+                                (
+                                    value.around_target,
+                                    value.airburst_use_cluster,
+                                    value.airburst_random_clusters,
+                                    value.airburst_target_as_source,
+                                    value.airburst_target_as_source_skip_height,
+                                ),
+                                (
+                                    value.splits_targeting_distance,
+                                    value.splits_targeting_distance_cylindrical,
+                                    value.splits_allow_repeat_targets,
+                                    value.splits_target_cell_range,
+                                    value.splits_use_weapon_targeting,
+                                    value.airburst_weapon_apply_firepower_mult,
+                                    value.airburst_weapon_source_scatter_min,
+                                    value.airburst_weapon_source_scatter_max,
+                                    value.airburst_weapon_use_firing_effects,
+                                    value.airburst_weapon_head_to_target,
+                                    value.airburst_weapon_radial_fire_segments,
+                                    value.aa_only,
+                                ),
+                            );
+                            (id, fields)
+                        },
+                    )
                 }));
             if !phobos_projectiles.is_empty() {
                 b"phobos-airburst-splits-v1".hash(&mut hasher);
@@ -8163,15 +8217,15 @@ impl RuleSet {
                     .hash(&mut hasher);
             }
             let control_sizes = Self::by_upper_id(self.object_list.iter().filter_map(|object| {
-                    let value = (
-                        object.mind_control_range_limit,
-                        object.mind_control_ignore_size,
-                        object.mind_control_size,
-                        object
-                            .mind_control_link_visible_to_house
-                            .map(|house| house.bits()),
-                        object.multi_mind_control_release_victim,
-                    );
+                let value = (
+                    object.mind_control_range_limit,
+                    object.mind_control_ignore_size,
+                    object.mind_control_size,
+                    object
+                        .mind_control_link_visible_to_house
+                        .map(|house| house.bits()),
+                    object.multi_mind_control_release_victim,
+                );
                 (value != (0, None, 1, None, None)).then_some((&object.id, value))
             }));
             if !control_sizes.is_empty() {
@@ -8302,11 +8356,12 @@ impl RuleSet {
         .hash(&mut hasher);
         #[cfg(feature = "phobos")]
         {
-            let warhead_anims = Self::by_upper_id(self.warheads.iter().filter_map(|(name, warhead)| {
-                (warhead.phobos_anim
-                    != crate::rules::phobos_warhead_anim::PhobosWarheadAnimRules::default())
-                .then_some((name, &warhead.phobos_anim))
-            }));
+            let warhead_anims =
+                Self::by_upper_id(self.warheads.iter().filter_map(|(name, warhead)| {
+                    (warhead.phobos_anim
+                        != crate::rules::phobos_warhead_anim::PhobosWarheadAnimRules::default())
+                    .then_some((name, &warhead.phobos_anim))
+                }));
             if !warhead_anims.is_empty() {
                 b"phobos-warhead-anim-v1".hash(&mut hasher);
                 warhead_anims.hash(&mut hasher);

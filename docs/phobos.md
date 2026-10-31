@@ -61,6 +61,7 @@ Supported extensions:
 - [Critical hits](phobos-critical-hit.md) (per-warhead `Crit.*` chance, extra damage, second warhead and animations, `ImmuneToCrit`, rank abilities)
 - [Selection flash](phobos-selection-flash.md) (`[AudioVisual] SelectionFlashDuration` behind `[Phobos] ShowFlashOnSelecting`)
 - [Semantic locomotor aliases](phobos-locomotor-aliases.md) (`Locomotor=Drive` and friends beside the braced CLSIDs)
+- [Airstrike target eligibility](phobos-airstrike-targets.md) (`AllowAirstrike` per TechnoType, `AirstrikeTargets` per warhead, and object targets for non-buildings)
 
 ## Original project and authors
 

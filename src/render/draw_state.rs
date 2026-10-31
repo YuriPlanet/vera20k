@@ -21,6 +21,11 @@ pub struct ObserverDrawContext {
     pub is_campaign: bool,
     /// Original House50B6F0, distinct from either alliance direction.
     pub owner_is_current_player: bool,
+    /// Phobos `IsControlledByCurrentPlayer_Wrapper` (`0x70EE5D`/`0x70EE70`,
+    /// `0x7062FB`): whether this viewer sees through the disguise owner for
+    /// the blur/real-type decision. Without Phobos it equals
+    /// `owner_is_current_player`.
+    pub disguise_owner_visible: bool,
     /// Object+1BC returned a Cell for the disguise observer query.
     pub disguise_cell_present: bool,
     /// Original Cell4870F0 for this viewer at that Cell.
@@ -43,6 +48,7 @@ impl Default for ObserverDrawContext {
             invisible: false,
             is_campaign: false,
             owner_is_current_player: false,
+            disguise_owner_visible: false,
             disguise_cell_present: false,
             detects_disguise: false,
             drawn_voxel: None,
@@ -80,6 +86,10 @@ pub struct CloakDrawInput {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DisguiseDrawInput {
     pub active: bool,
+    /// The viewer half of the real-type decision: Phobos'
+    /// `IsControlledByCurrentPlayer_Wrapper` answer when the capability is
+    /// compiled in, else the original House50B6F0 flag. Named for the stock
+    /// input it replaces.
     pub owner_is_current_player: bool,
     pub cell_present: bool,
     pub detected: bool,
@@ -347,7 +357,7 @@ impl DrawState {
     ) -> Option<DisguiseDrawInput> {
         entity.disguise.as_ref().map(|disguise| DisguiseDrawInput {
             active: disguise.is_disguised(),
-            owner_is_current_player: observer.owner_is_current_player,
+            owner_is_current_player: observer.disguise_owner_visible,
             cell_present: observer.disguise_cell_present,
             detected: observer.detects_disguise,
             // +1EC/+1F4, which a DisguiseWhenStill= Unit's shot starts

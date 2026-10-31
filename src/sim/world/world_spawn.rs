@@ -2441,6 +2441,39 @@ impl Simulation {
     /// (`+0x34`, `0x007399EE`), its looping sound handles (`+0x4DC..+0x4F4`,
     /// `0x00739971`), `DiscoveredBy(owner)` (vt+0x198, `0x00739848`) and the
     /// turret facing a `+0x16CA`/`+0x16C4` type starts at (`0x007397FB`).
+    /// Phobos `TechnoExt::SyncInvulnerability` (`Techno/Body.cpp:156`): a
+    /// deploy or undeploy conversion carries an active curtain to the new
+    /// object when the source type's `KeptOnDeploy` (else its global) allows
+    /// it. The copied state keeps the timer, kind and tint stage;
+    /// `IronTintTimer` restarts, as Phobos copies only those fields.
+    #[cfg(feature = "phobos")]
+    fn curtain_to_carry(
+        &self,
+        from: u64,
+        rules: &RuleSet,
+    ) -> Option<crate::sim::superweapon::invulnerability::InvulnerabilityState> {
+        use crate::sim::superweapon::invulnerability::InvulnKind;
+        let source = self.substrate.entities.get(from)?;
+        let frame = self.session.binary_frame() as i32;
+        let state = source
+            .invulnerability
+            .as_ref()
+            .filter(|state| state.is_active(frame))?;
+        let object = self.interner.object_type(source.type_ref(), rules)?;
+        let globals = rules.invulnerability_globals();
+        let (kept, fallback) = match state.kind() {
+            InvulnKind::IronCurtain => (
+                object.phobos_invulnerability.iron_curtain.kept_on_deploy,
+                globals.iron_curtain.kept_on_deploy,
+            ),
+            InvulnKind::ForceShield => (
+                object.phobos_invulnerability.force_shield.kept_on_deploy,
+                globals.force_shield.kept_on_deploy,
+            ),
+        };
+        kept.unwrap_or(fallback).then(|| state.synced())
+    }
+
     pub(crate) fn deploy_mcv(
         &mut self,
         stable_id: u64,
@@ -2705,6 +2738,10 @@ impl Simulation {
         // slot initialization. Otherwise full-health animations consume IDs/RNG
         // here and ActuallyPlaced suppresses the real completion callback.
         converted_health.apply(&mut destination);
+        #[cfg(feature = "phobos")]
+        {
+            destination.invulnerability = self.curtain_to_carry(stable_id, rules);
+        }
         // RESIDUAL: native Selects the placed building (vt+0x14C,
         // `0x007399D4`) after its Unlimbo with the voice latch cleared
         // (`0x007399BD`) and before the MCV's tag moves over (`0x007399F8`),
@@ -3011,6 +3048,12 @@ impl Simulation {
                 super::UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
             );
             return;
+        };
+        #[cfg(feature = "phobos")]
+        let unit = {
+            let mut unit = unit;
+            unit.invulnerability = self.curtain_to_carry(sid, rules);
+            unit
         };
         let (new_sid, position) = self.store_with_constructor_managers(unit, rules, frame_effects);
         // Selling449E74/449E80 caches the building's refund before its Limbo

@@ -220,6 +220,10 @@ impl<'a> FireSubject<'a> {
                 is_locomotor: warhead.is_locomotor,
                 psychedelic: warhead.psychedelic,
                 bomb_disarm: warhead.bomb_disarm,
+                #[cfg(feature = "phobos")]
+                airstrike: warhead.airstrike,
+                #[cfg(feature = "phobos")]
+                airstrike_targets: warhead.airstrike_targets,
                 armor_rejects_fire: armor.is_some_and(|armor| {
                     // Ares 3.0 hook100542A0 admits ForceFire OR nonzero
                     // multiplier; this is the shared GetFireError gate, not
@@ -457,6 +461,10 @@ impl<'a> FireSubject<'a> {
                         is_simple_deployer: target_obj.is_simple_deployer,
                         non_vehicle: target_obj.non_vehicle,
                         is_1x1_with_undeploy: target_obj.is_1x1_with_undeploy(),
+                        #[cfg(feature = "phobos")]
+                        allow_airstrike: target_obj.allow_airstrike,
+                        #[cfg(feature = "phobos")]
+                        can_c4: target_obj.can_c4,
                     },
                 ),
                 // GetFireError6FC177 preserves the original Object receiver

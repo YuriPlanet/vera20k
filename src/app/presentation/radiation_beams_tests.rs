@@ -17,7 +17,7 @@ fn original_manager_histories_match_without_logic_ticks_or_rng() {
             .collect::<Vec<_>>();
         let mut beams = RadiationBeams::default();
         for &birth in &births {
-            beams.create(birth);
+            beams.create(birth, |_| [0; 3]);
         }
         let mut viewport = native::viewport(&native::corpus()["geometry_rows"][0]);
         if row["name"] == "clipped_lifetime" {

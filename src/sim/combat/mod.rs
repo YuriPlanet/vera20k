@@ -78,6 +78,8 @@ pub(crate) mod receiver_fixture;
 
 #[cfg(test)]
 mod aegis_launch_tests;
+#[cfg(all(test, feature = "phobos"))]
+mod airstrike_target_tests;
 #[cfg(all(test, feature = "ares"))]
 mod ares_armor_tests;
 #[cfg(test)]

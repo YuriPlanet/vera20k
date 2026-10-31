@@ -317,6 +317,181 @@ fn airburst_use_cluster_selects_even_and_random_cells() {
 }
 
 #[test]
+fn airburst_spread_beyond_the_old_cap_covers_the_map() {
+    let ini = rules_ini(
+        "Airburst=yes\nAirburstWeapon=CHILD_GUN\nCluster=1\nAirburstSpread=300\n",
+        "",
+        "",
+        "",
+        "",
+        "",
+    );
+    let mut scene = build_scene(
+        &ini,
+        (6, 20),
+        (10, 20),
+        0,
+        TargetChoice::Cell(10, 20),
+        &[],
+        1.0,
+    );
+    detonate(&mut scene);
+    assert_eq!(
+        child_targets(&scene).len(),
+        32 * 32,
+        "a spread above 256 cells still enumerates every real map cell"
+    );
+}
+
+#[test]
+fn random_clusters_skips_the_one_past_draw_like_the_null_vector_slot() {
+    let ini = rules_ini(
+        "Airburst=yes\nAirburstWeapon=CHILD_GUN\nCluster=4\nAirburstSpread=0\n\
+         Airburst.UseCluster=yes\nAirburst.RandomClusters=yes\n",
+        "",
+        "",
+        "",
+        "",
+        "",
+    );
+    let mut scene = build_scene(
+        &ini,
+        (6, 20),
+        (10, 20),
+        0,
+        TargetChoice::Cell(10, 20),
+        &[],
+        1.0,
+    );
+    detonate(&mut scene);
+    let children = child_ids(&scene).len();
+    assert!(
+        (1..=3).contains(&children),
+        "one draw lands on the null one-past slot and fires nothing: {children}"
+    );
+}
+
+#[test]
+fn child_laser_draws_with_the_retained_house_and_phobos_thickness() {
+    let ini = rules_ini(
+        "Airburst=yes\nAirburstWeapon=CHILD_GUN\nCluster=1\nAirburstSpread=0\n",
+        "IsLaser=yes\nIsHouseColor=yes\nIsSingleColor=yes\nLaserThickness=5\n",
+        "",
+        "",
+        "",
+        "",
+    );
+    let mut scene = build_scene(
+        &ini,
+        (6, 20),
+        (10, 20),
+        600,
+        TargetChoice::Cell(10, 20),
+        &[],
+        1.0,
+    );
+    let americans = scene.world.interner.intern("Americans");
+    scene.world.substrate.entities.remove(scene.source);
+    detonate(&mut scene);
+    let births: Vec<_> = scene
+        .world
+        .lifecycle_outputs
+        .as_slice()
+        .iter()
+        .filter_map(|output| match output {
+            crate::sim::world::LifecycleOutput::LaserCreated(birth) => Some(*birth),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(births.len(), 1, "the expired firer no longer blocks it");
+    assert_eq!(births[0].width, 5, "LaserThickness");
+    assert!(births[0].supported, "IsSupported follows Thickness > 3");
+    assert_eq!(
+        births[0].color,
+        crate::sim::combat::laser::LaserColor::House(americans),
+        "IsHouseColor takes the retained firing House"
+    );
+}
+
+#[test]
+fn child_rad_beam_takes_the_house_color_and_the_scattered_source_coords() {
+    let ini = rules_ini(
+        "Airburst=yes\nAirburstWeapon=CHILD_GUN\nCluster=1\nAirburstSpread=0\n",
+        "IsRadBeam=yes\nBeam.IsHouseColor=yes\n",
+        "Inviso=yes\nFlakScatter=yes\n",
+        "",
+        "",
+        "",
+    );
+    let mut scene = build_scene(
+        &ini,
+        (6, 20),
+        (10, 20),
+        600,
+        TargetChoice::Cell(10, 20),
+        &[],
+        1.0,
+    );
+    let americans = scene.world.interner.intern("Americans");
+    scene.world.substrate.entities.remove(scene.source);
+    detonate(&mut scene);
+    let births: Vec<_> = scene
+        .world
+        .lifecycle_outputs
+        .as_slice()
+        .iter()
+        .filter_map(|output| match output {
+            crate::sim::world::LifecycleOutput::RadiationBeamCreated(birth) => Some(*birth),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(births.len(), 1, "the expired firer no longer blocks it");
+    assert_eq!(births[0].house, Some(americans));
+    assert!(births[0].house_color);
+    assert_eq!(
+        births[0].to, births[0].from,
+        "GetTargetCoordsForFiring: Inviso + FlakScatter uses the bullet's own location"
+    );
+    assert_eq!(births[0].from.z, 600, "the child's unlimbo source z");
+}
+
+#[test]
+fn child_electric_bolt_draws_after_the_firer_expires() {
+    let ini = rules_ini(
+        "Airburst=yes\nAirburstWeapon=CHILD_GUN\nCluster=1\nAirburstSpread=0\n",
+        "IsElectricBolt=yes\n",
+        "",
+        "",
+        "",
+        "",
+    );
+    let mut scene = build_scene(
+        &ini,
+        (6, 20),
+        (10, 20),
+        0,
+        TargetChoice::Cell(10, 20),
+        &[],
+        1.0,
+    );
+    scene.world.substrate.entities.remove(scene.source);
+    detonate(&mut scene);
+    let bolts = scene
+        .world
+        .lifecycle_outputs
+        .as_slice()
+        .iter()
+        .filter(|output| {
+            matches!(
+                output,
+                crate::sim::world::LifecycleOutput::ElectricBoltCreated(_)
+            )
+        })
+        .count();
+    assert_eq!(bolts, 1, "the expired firer no longer blocks it");
+}
+
+#[test]
 fn target_as_source_moves_the_origin_and_skip_height_keeps_the_bullet_z() {
     let ini = rules_ini(
         "Airburst=yes\nAirburstWeapon=CHILD_GUN\nCluster=1\n\

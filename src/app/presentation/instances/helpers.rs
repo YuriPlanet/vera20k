@@ -34,6 +34,49 @@ pub(crate) enum TacticalEntityPurpose {
     ScreenSelection,
 }
 
+/// Phobos `IsControlledByCurrentPlayer_Wrapper` (`Ext/Techno/Hooks.cpp:626`):
+/// in campaign, a human or player-controlled owner answers from the
+/// `DisguiseBlinkingVisibility` flags; every other viewer uses
+/// `CanTargetHouse` against the current player (observers answer true, which
+/// VERA approximates with the absence of a local House). Without the
+/// capability the original House50B6F0 flag stands.
+fn disguise_owner_visible(
+    sim: &crate::sim::world::Simulation,
+    entity: &GameEntity,
+    local_owner_id: Option<InternedId>,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    owner_is_allied: bool,
+) -> bool {
+    #[cfg(feature = "phobos")]
+    if let Some(rules) = rules {
+        use crate::rules::phobos_shields::AffectedHouse;
+        let flags = rules.phobos_draw_globals().disguise_blinking_visibility;
+        let campaign = !sim.session().game_mode_nonzero();
+        let player_controlled = campaign
+            && sim
+                .houses()
+                .get(&entity.owner())
+                .is_some_and(|house| house.is_human() || house.player_control());
+        return if player_controlled {
+            (flags.contains(AffectedHouse::ALLIES) && owner_is_allied)
+                || flags.contains(AffectedHouse::OWNER)
+        } else {
+            local_owner_id.is_none_or(|observer| {
+                crate::sim::combat::can_target_house(
+                    flags,
+                    observer,
+                    entity.owner(),
+                    sim.houses(),
+                    sim.house_alliances(),
+                    sim.interner(),
+                )
+            })
+        };
+    }
+    let _ = (sim, entity, local_owner_id, rules, owner_is_allied);
+    sim.house_is_human_player(entity.owner())
+}
+
 /// Gather facts for the simulation-owned visual-character query without
 /// retaining a second ownership, alliance, sensor or Rules state in rendering.
 pub(crate) fn observer_draw_context(
@@ -62,6 +105,7 @@ pub(crate) fn observer_draw_context(
             );
             cells.coord(cell)
         });
+    let disguise_owner_visible = disguise_owner_visible(sim, entity, local_owner_id, rules, allied);
     crate::render::draw_state::ObserverDrawContext {
         owner_is_allied: allied,
         owner_is_mutually_allied: allied
@@ -83,6 +127,7 @@ pub(crate) fn observer_draw_context(
         }),
         is_campaign: !sim.session().game_mode_nonzero(),
         owner_is_current_player: sim.house_is_human_player(entity.owner()),
+        disguise_owner_visible,
         disguise_cell_present: disguise_cell.is_some(),
         detects_disguise: local_owner_id
             .zip(disguise_cell)

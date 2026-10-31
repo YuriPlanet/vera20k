@@ -4080,7 +4080,9 @@ pub(super) fn radiation_enabled(_world: &Simulation) -> bool {
 
 /// Phobos `BulletExt::FirerHouse` fallback: the House a bullet retained at
 /// construction stands in for an Owner Techno that expired before this round
-/// detonated (`WarheadType/Hooks.cpp:17`).
+/// detonated (`WarheadType/Hooks.cpp:17`). A simulated detonation never has a
+/// projectile, so `BulletExt::Detonate`'s `pFiringHouse` travels on its
+/// payload instead.
 fn detonation_source_house(
     world: &Simulation,
     detonation: &ProjectileDetonation,
@@ -4093,11 +4095,13 @@ fn detonation_source_house(
         .or_else(|| {
             #[cfg(feature = "phobos")]
             {
-                world
-                    .projectiles
-                    .get(detonation.projectile_id)
-                    .filter(|projectile| projectile.source_id() == detonation.source_id)
-                    .and_then(|projectile| projectile.phobos_firer_house())
+                detonation.payload.source_house().or_else(|| {
+                    world
+                        .projectiles
+                        .get(detonation.projectile_id)
+                        .filter(|projectile| projectile.source_id() == detonation.source_id)
+                        .and_then(|projectile| projectile.phobos_firer_house())
+                })
             }
             #[cfg(not(feature = "phobos"))]
             {

@@ -942,13 +942,14 @@ impl Simulation {
             .find(|&owner| self.house_type_is_civilian(owner, rules))
     }
 
-    /// Installed Ares HouseExt::GetHouseKind10021310 with random_allowed=0.
-    /// KillDriver10052C31 passes this flag clear; UnitDelivery's represented
-    /// owner kinds also require no draw. Keep its native distinction between
-    /// a missing invoker/killer/victim (fallback) and missing named houses
-    /// (NULL). A future random-enabled caller must provide the Scenario draw.
-    #[cfg(feature = "ares")]
-    pub(crate) fn ares_nonrandom_house_kind(
+    /// Installed Ares `HouseExt::GetHouseKind`10021310, the resolver Phobos'
+    /// `HouseExt::GetHouseKind` shares. The random permission is the consumer's:
+    /// KillDriver10052C31 and UnitDelivery pass it clear (`random_house` None),
+    /// while Phobos' animation-owner tail supplies its Scenario draw. Keep the
+    /// native distinction between a missing invoker/killer/victim (fallback)
+    /// and missing named houses (NULL).
+    #[cfg(any(feature = "ares", feature = "phobos"))]
+    pub(crate) fn house_kind(
         &self,
         selector: crate::rules::ares_warhead::HouseSelector,
         fallback: Option<InternedId>,
@@ -956,10 +957,12 @@ impl Simulation {
         killer: Option<InternedId>,
         victim: Option<InternedId>,
         rules: &RuleSet,
+        random_house: Option<InternedId>,
     ) -> Option<InternedId> {
         use crate::rules::ares_warhead::HouseSelector;
         match selector {
-            HouseSelector::Default | HouseSelector::Random => fallback,
+            HouseSelector::Default => fallback,
+            HouseSelector::Random => random_house.or(fallback),
             HouseSelector::Invoker => invoker.or(fallback),
             HouseSelector::Killer => killer.or(fallback),
             HouseSelector::Victim => victim.or(fallback),

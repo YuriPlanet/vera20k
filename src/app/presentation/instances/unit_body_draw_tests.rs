@@ -970,6 +970,7 @@ fn retail_mirage_unit_route_matches_original_observer_dispatch() {
         }
         let observer = crate::render::draw_state::ObserverDrawContext {
             owner_is_current_player: input["owner"].as_bool().unwrap(),
+            disguise_owner_visible: input["owner"].as_bool().unwrap(),
             disguise_cell_present: input["cell_present"].as_bool().unwrap(),
             detects_disguise: input["sensor_count"].as_i64().unwrap() > 0,
             ..Default::default()
@@ -1094,4 +1095,56 @@ fn indexed_turret_animation_uses_its_selected_hva_count() {
     ]);
     assert_eq!(unit_animation_frames(&entity, "FV", 0, &frames), (0, 0));
     assert_eq!(unit_animation_frames(&entity, "FV", 1, &frames), (0, 1));
+}
+
+/// Phobos `IsControlledByCurrentPlayer_Wrapper` (`0x70EE5D`/`0x70EE70`,
+/// `0x7062FB`): `DisguiseBlinkingVisibility` decides whether the viewer sees
+/// through a disguise. The campaign arm of a human owner reads Owner and
+/// Allies; an AI owner takes the `CanTargetHouse` arm.
+#[test]
+fn disguise_viewer_sees_through_per_disguise_blinking_visibility() {
+    use crate::rules::ini_parser::IniFile;
+    let rules_for = |flags: &str| {
+        crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[General]\n{flags}\
+         [VehicleTypes]\n0=E1\n[E1]\nStrength=100\n"
+        )))
+        .expect("disguise visibility rules")
+    };
+    let visible = |rules: &crate::rules::ruleset::RuleSet, owner: &str| {
+        let mut sim = crate::sim::arena_fixture::rival_arena(rules, 7);
+        let americans = sim.intern("Americans");
+        let id = sim.spawn_object("E1", owner, 5, 5, 0, rules).unwrap();
+        let entity = sim.entities().get(id).unwrap();
+        super::super::helpers::observer_draw_context(
+            &sim,
+            entity,
+            Some("Americans"),
+            Some(americans),
+            Some(rules),
+        )
+        .disguise_owner_visible
+    };
+
+    let default = rules_for("");
+    assert!(
+        visible(&default, "Americans"),
+        "Owner sees its own disguise"
+    );
+    assert!(!visible(&default, "Russians"), "an enemy does not");
+
+    let enemies = rules_for("DisguiseBlinkingVisibility=enemies\n");
+    assert!(
+        !visible(&enemies, "Americans"),
+        "a human owner's campaign arm ignores Enemies"
+    );
+    assert!(visible(&enemies, "Russians"), "an AI enemy is visible");
+
+    let all = rules_for("DisguiseBlinkingVisibility=all\n");
+    assert!(visible(&all, "Americans"));
+    assert!(visible(&all, "Russians"));
+
+    let none = rules_for("DisguiseBlinkingVisibility=none\n");
+    assert!(!visible(&none, "Americans"));
+    assert!(!visible(&none, "Russians"));
 }

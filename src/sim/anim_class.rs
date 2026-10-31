@@ -1323,6 +1323,29 @@ impl Simulation {
             Ok(id) => {
                 if let Some(house) = owner_house {
                     self.substrate.set_anim_owner_house(id, house);
+                    // `SetAnimOwnerHouseKind` updates LightConvert only for a
+                    // `MakeInfantry=` type or a `CreateUnit=` type with
+                    // `CreateUnit.RemapAnim=`, and not for a defeated House.
+                    #[cfg(feature = "phobos")]
+                    {
+                        let (make_infantry, create_unit) = {
+                            let name = self.interner.resolve(type_name);
+                            rules
+                                .art()
+                                .anim_runtime_config(name)
+                                .map_or((false, None), |config| {
+                                    (config.make_infantry > -1, config.phobos_create_unit)
+                                })
+                        };
+                        let remaps = make_infantry || create_unit.is_some_and(|(_, remap)| remap);
+                        let defeated = self
+                            .houses
+                            .get(&house)
+                            .is_some_and(|state| state.is_defeated());
+                        if remaps && !defeated {
+                            self.substrate.anims.set_anim_house_remap(id, house);
+                        }
+                    }
                 }
                 Some(id)
             }

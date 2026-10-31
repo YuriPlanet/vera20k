@@ -119,6 +119,109 @@ fn the_cell_the_mcv_stood_on_ends_as_a_yard_cell() {
 /// control. The conversion removes the current Logic object; the compacting
 /// cursor skips its appended yard that frame. Its first visit at D+1 promotes
 /// Construction after the body; the first handler at D+2 begins the raw clock.
+
+/// Phobos `IronCurtain.KeptOnDeploy` / `ForceShield.KeptOnDeploy`: a
+/// converting MCV carries an active curtain when the type's key (else the
+/// `[CombatDamage]` global) allows it. Force Shield's global default is
+/// false and Iron Curtain's is true.
+#[test]
+fn deploy_carries_the_curtain_only_when_kept_on_deploy_allows_it() {
+    use crate::sim::superweapon::invulnerability::{
+        InvulnKind, apply_invulnerability, is_invulnerable,
+    };
+
+    let fixture = |vehicle_extra: &str, extra: &str| {
+        let text = format!(
+            "[InfantryTypes]\n[AircraftTypes]\n[VehicleTypes]\n0=MCV\n[BuildingTypes]\n0=YARD\n\
+             [MCV]\nStrength=1000\nSpeed=5\nROT=5\n\
+             Locomotor={{4A582741-9839-11d1-B709-00A024DDAFD1}}\nDeploysInto=YARD\n{vehicle_extra}\
+             [YARD]\nStrength=1000\nConstructionYard=yes\nDeployFacing=0\n\
+             [Unload]\nRate=0.016\n[Clear]\nBuildable=yes\n{extra}"
+        );
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(&text),
+            &IniFile::from_str("[YARD]\nFoundation=4x3\n"),
+        )
+        .unwrap();
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        let id = sim
+            .spawn_object("MCV", "Americans", 20, 22, 0, &rules)
+            .unwrap();
+        (sim, rules, id)
+    };
+
+    for (kind, vehicle_extra, combat_extra, carried) in [
+        ("IronCurtain", "", "", true),
+        (
+            "IronCurtain",
+            "",
+            "[CombatDamage]\nIronCurtain.KeptOnDeploy=no\n",
+            false,
+        ),
+        (
+            "IronCurtain",
+            "IronCurtain.KeptOnDeploy=yes\n",
+            "[CombatDamage]\nIronCurtain.KeptOnDeploy=no\n",
+            true,
+        ),
+        ("ForceShield", "", "", false),
+        ("ForceShield", "ForceShield.KeptOnDeploy=yes\n", "", true),
+    ] {
+        let (mut sim, rules, id) = fixture(vehicle_extra, combat_extra);
+        let kind = match kind {
+            "IronCurtain" => InvulnKind::IronCurtain,
+            _ => InvulnKind::ForceShield,
+        };
+        let frame = sim.session.binary_frame();
+        apply_invulnerability(
+            sim.substrate.entities.get_mut(id).unwrap(),
+            frame,
+            1000,
+            kind,
+        );
+        assert!(is_invulnerable(
+            sim.substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .invulnerability
+                .as_ref(),
+            frame
+        ));
+        tick(&mut sim, &rules, Some(Command::DeployMcv { entity_id: id }));
+        let mut yard = None;
+        for _ in 0..200 {
+            tick(&mut sim, &rules, None);
+            yard = sim
+                .substrate
+                .entities
+                .values()
+                .find(|e| !e.death.is_dying() && e.category() == EntityCategory::Structure)
+                .map(|e| e.stable_id());
+            if yard.is_some() {
+                break;
+            }
+        }
+        let yard = yard.expect("the MCV converts");
+        let carried_state = sim
+            .substrate
+            .entities
+            .get(yard)
+            .unwrap()
+            .invulnerability
+            .clone();
+        assert_eq!(
+            carried_state.is_some(),
+            carried,
+            "{kind:?} {vehicle_extra:?} {combat_extra:?}"
+        );
+        if let Some(state) = carried_state {
+            assert_eq!(state.kind(), kind);
+        }
+    }
+}
+
 /// Original construction route rows pin the subsequent 29x1 completion.
 #[test]
 fn a_deployed_yard_completes_its_buildup_after_the_conversion_frame() {

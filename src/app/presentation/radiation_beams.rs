@@ -49,7 +49,18 @@ pub(crate) struct RadiationBeams {
 }
 
 impl RadiationBeams {
-    pub(crate) fn create(&mut self, birth: RadiationBeamBirth) {
+    /// `house_rgb` resolves Phobos `Beam.IsHouseColor` to the firing House's
+    /// laser color before the copied birth is stored.
+    pub(crate) fn create(
+        &mut self,
+        mut birth: RadiationBeamBirth,
+        house_rgb: impl FnOnce(crate::sim::intern::InternedId) -> [u8; 3],
+    ) {
+        if birth.house_color
+            && let Some(owner) = birth.house
+        {
+            birth.color = house_rgb(owner);
+        }
         self.live.push(Beam {
             birth,
             progress: 0,

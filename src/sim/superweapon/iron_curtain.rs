@@ -274,7 +274,51 @@ fn curtain_object(
     let duration = rules.general.iron_curtain_duration;
     match category {
         EntityCategory::Infantry => {
-            receive_strength_as_c4(sim, rules, overlay_registry, id, house, true, frame_effects)
+            // Phobos redirects `InfantryClass::IronCurtain` to the Foot path
+            // and lets `IronCurtain.Effect` decide: kill, curtain or nothing.
+            #[cfg(feature = "phobos")]
+            {
+                let Some(object) = sim
+                    .substrate
+                    .entities
+                    .get(id)
+                    .and_then(|entity| sim.interner.object_type(entity.type_ref(), rules))
+                else {
+                    return;
+                };
+                match organic_curtain_outcome(rules, object, InvulnKind::IronCurtain) {
+                    (crate::rules::invulnerability_rules::IronCurtainEffect::Ignore, _) => {}
+                    (crate::rules::invulnerability_rules::IronCurtainEffect::Invulnerable, _) => {
+                        let frame = sim.session.binary_frame();
+                        if let Some(entity) = sim.substrate.entities.get_mut(id) {
+                            apply_invulnerability(entity, frame, duration, InvulnKind::IronCurtain);
+                        }
+                    }
+                    (crate::rules::invulnerability_rules::IronCurtainEffect::Kill, warhead) => {
+                        receive_strength_as_c4(
+                            sim,
+                            rules,
+                            overlay_registry,
+                            id,
+                            warhead.as_deref(),
+                            house,
+                            true,
+                            frame_effects,
+                        )
+                    }
+                }
+            }
+            #[cfg(not(feature = "phobos"))]
+            receive_strength_as_c4(
+                sim,
+                rules,
+                overlay_registry,
+                id,
+                None,
+                house,
+                true,
+                frame_effects,
+            )
         }
         EntityCategory::Unit | EntityCategory::Aircraft => {
             foot_iron_curtain(sim, rules, overlay_registry, id, duration, frame_effects)
@@ -315,8 +359,50 @@ fn foot_iron_curtain(
         return;
     };
     if organic {
-        receive_strength_as_c4(sim, rules, overlay_registry, id, None, false, frame_effects);
-        return;
+        #[cfg(feature = "phobos")]
+        {
+            let Some(object) = sim
+                .substrate
+                .entities
+                .get(id)
+                .and_then(|entity| sim.interner.object_type(entity.type_ref(), rules))
+            else {
+                return;
+            };
+            match organic_curtain_outcome(rules, object, InvulnKind::IronCurtain) {
+                (crate::rules::invulnerability_rules::IronCurtainEffect::Ignore, _) => return,
+                (crate::rules::invulnerability_rules::IronCurtainEffect::Kill, warhead) => {
+                    receive_strength_as_c4(
+                        sim,
+                        rules,
+                        overlay_registry,
+                        id,
+                        warhead.as_deref(),
+                        None,
+                        false,
+                        frame_effects,
+                    );
+                    return;
+                }
+                // Invulnerable falls through to the parasite/paralysis/curtain
+                // block below, as the hook's MakeInvulnerable arm does.
+                (crate::rules::invulnerability_rules::IronCurtainEffect::Invulnerable, _) => {}
+            }
+        }
+        #[cfg(not(feature = "phobos"))]
+        {
+            receive_strength_as_c4(
+                sim,
+                rules,
+                overlay_registry,
+                id,
+                None,
+                None,
+                false,
+                frame_effects,
+            );
+            return;
+        }
     }
     if let Some(eater) = sim
         .substrate
@@ -340,6 +426,41 @@ fn foot_iron_curtain(
     }
 }
 
+/// Phobos `FootClass_IronCurtain_Organics` (`0x4DEAEE`): the TechnoType's
+/// `IronCurtain.Effect`/`ForceShield.Effect` override, else the
+/// `[CombatDamage]` default, and the kill warhead the type/global pair
+/// supplies (else `C4Warhead=`).
+#[cfg(feature = "phobos")]
+fn organic_curtain_outcome(
+    rules: &RuleSet,
+    object: &crate::rules::object_type::ObjectType,
+    kind: InvulnKind,
+) -> (
+    crate::rules::invulnerability_rules::IronCurtainEffect,
+    Option<String>,
+) {
+    let globals = rules.invulnerability_globals();
+    let (options, curtain) = match kind {
+        InvulnKind::IronCurtain => (
+            &object.phobos_invulnerability.iron_curtain,
+            &globals.iron_curtain,
+        ),
+        InvulnKind::ForceShield => (
+            &object.phobos_invulnerability.force_shield,
+            &globals.force_shield,
+        ),
+    };
+    (
+        options
+            .effect_on_organics
+            .unwrap_or(curtain.effect_on_organics),
+        options
+            .kill_warhead
+            .clone()
+            .or_else(|| curtain.kill_organics_warhead.clone()),
+    )
+}
+
 /// The overrides' ReceiveDamage (vt+0x16C): the type's Strength as
 /// `[CombatDamage] C4Warhead=` (`Rules+0xFA8`)
 /// ([`super::strength_receiver_event`]). InfantryClass::IronCurtain
@@ -351,16 +472,18 @@ fn receive_strength_as_c4(
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
+    warhead: Option<&str>,
     house: Option<InternedId>,
     ignore_defenses: bool,
     frame_effects: FrameEffects<'_>,
 ) {
+    let warhead = warhead.unwrap_or(&rules.bridge_warheads.c4_name);
     let Some(event) = super::strength_receiver_event(
         &mut sim.interner,
         &sim.substrate,
         rules,
         id,
-        &rules.bridge_warheads.c4_name,
+        warhead,
         house,
         ignore_defenses,
     ) else {

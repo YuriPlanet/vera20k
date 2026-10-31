@@ -138,23 +138,17 @@ impl Simulation {
             return;
         }
         let owner = self
-            .ares_nonrandom_house_kind(
+            .house_kind(
                 settings.kill_driver().owner(),
                 None,
                 source_owner,
                 source_owner,
                 target_owner,
                 rules,
+                None,
             )
             .or_else(|| {
-                self.ares_nonrandom_house_kind(
-                    HouseSelector::Special,
-                    None,
-                    None,
-                    None,
-                    None,
-                    rules,
-                )
+                self.house_kind(HouseSelector::Special, None, None, None, None, rules, None)
             });
         if let Some(owner) = owner {
             self.ares_replace_driver(

@@ -18,6 +18,7 @@ use crate::rules::digital_display::DigitalDisplayTypeCatalog;
 use crate::rules::error::RulesError;
 use crate::rules::gunner_turrets::GunnerTurrets;
 use crate::rules::ini_parser::{IniFile, IniSection, is_native_none_type_name};
+use crate::rules::insignia_type::InsigniaTypeCatalog;
 use crate::rules::locomotor_type::SpeedType;
 use crate::rules::phobos_radiation::RadiationTypeCatalog;
 use crate::rules::phobos_shields::ShieldTypeCatalog;
@@ -703,6 +704,16 @@ impl ProcessedRulesLayers {
         self.native_type_construction_trace
             .registry_state
             .phobos_radiation_types
+            .as_ref()
+    }
+
+    /// Phobos `[InsigniaTypes]` catalog with the same retained process
+    /// lifetime as Types.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn insignia_types(&self) -> Option<&InsigniaTypeCatalog> {
+        self.native_type_construction_trace
+            .registry_state
+            .phobos_insignia_types
             .as_ref()
     }
 
@@ -1501,6 +1512,35 @@ impl ProcessedRulesLayers {
                         category,
                         member.native_stored_id.as_str(),
                         &member.weapon_slots,
+                    )
+                })
+            })
+    }
+
+    /// Phobos insignia state after every reached TechnoType ReadINI pass.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn techno_insignia_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            &crate::rules::insignia_type::PhobosInsignia,
+        ),
+    > {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        &member.phobos_insignia,
                     )
                 })
             })
@@ -3359,6 +3399,8 @@ pub(crate) struct NativeRulesRegistryState {
     phobos_radiation_types: Option<RadiationTypeCatalog>,
     /// Phobos `[ShieldTypes]` catalog; Process retains it per pass.
     phobos_shield_types: Option<ShieldTypeCatalog>,
+    /// Phobos `[InsigniaTypes]` catalog; Process retains it per pass.
+    phobos_insignia_types: Option<InsigniaTypeCatalog>,
     /// Phobos `[DigitalDisplayTypes]` catalog; Process retains it per pass.
     phobos_digital_display_types: Option<DigitalDisplayTypeCatalog>,
     /// Phobos `[AttachEffectTypes]` catalog; Process retains it per pass.
@@ -3462,6 +3504,7 @@ impl Default for NativeRulesRegistryState {
             phobos_radiation_types: crate::rules::PHOBOS_ENABLED
                 .then(RadiationTypeCatalog::with_default),
             phobos_shield_types: crate::rules::PHOBOS_ENABLED.then(ShieldTypeCatalog::default),
+            phobos_insignia_types: crate::rules::PHOBOS_ENABLED.then(InsigniaTypeCatalog::default),
             phobos_digital_display_types: crate::rules::PHOBOS_ENABLED
                 .then(DigitalDisplayTypeCatalog::default),
             phobos_attach_effect_types: crate::rules::PHOBOS_ENABLED
@@ -4373,6 +4416,13 @@ struct ProcessedType {
     #[cfg(feature = "phobos")]
     #[serde(default)]
     ore_gathering: crate::rules::object_type::PhobosOreGathering,
+    /// Phobos `TechnoTypeExt::LoadFromINIFile`'s insignia block. Its
+    /// `InsigniaType=` resolution and direct keys are read per reached pass on
+    /// the same live TechnoType, so this accumulates instead of projecting a
+    /// final merged section.
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    phobos_insignia: crate::rules::insignia_type::PhobosInsignia,
     /// Ares `SW.Warhead=`, read only for Type=GenericWarhead.
     generic_super_weapon_warhead: Option<String>,
     unit_delivery: Option<UnitDeliveryRules>,
@@ -4872,6 +4922,8 @@ impl ProcessedType {
             additional_super_weapons: Vec::new(),
             #[cfg(feature = "phobos")]
             ore_gathering: crate::rules::object_type::PhobosOreGathering::default(),
+            #[cfg(feature = "phobos")]
+            phobos_insignia: Default::default(),
             generic_super_weapon_warhead: None,
             particle_warhead: None,
             voxel_anim_references: VoxelAnimTypeReferences::default(),
@@ -4974,6 +5026,8 @@ struct RulesPassProcessor {
     phobos_radiation_types: Option<RadiationTypeCatalog>,
     /// Phobos `[ShieldTypes]` catalog; Process retains it per pass.
     phobos_shield_types: Option<ShieldTypeCatalog>,
+    /// Phobos `[InsigniaTypes]` catalog; Process retains it per pass.
+    phobos_insignia_types: Option<InsigniaTypeCatalog>,
     /// Phobos `[DigitalDisplayTypes]` catalog; Process retains it per pass.
     phobos_digital_display_types: Option<DigitalDisplayTypeCatalog>,
     /// Phobos `[AttachEffectTypes]` catalog; Process retains it per pass.
@@ -5061,6 +5115,7 @@ impl RulesPassProcessor {
             ares_armors: registry_state.ares_armors,
             phobos_radiation_types: registry_state.phobos_radiation_types,
             phobos_shield_types: registry_state.phobos_shield_types,
+            phobos_insignia_types: registry_state.phobos_insignia_types,
             phobos_digital_display_types: registry_state.phobos_digital_display_types,
             phobos_attach_effect_types: registry_state.phobos_attach_effect_types,
             #[cfg(feature = "ares")]
@@ -5169,6 +5224,11 @@ impl RulesPassProcessor {
         // WarheadType only an AttachEffect key names is read in this pass.
         #[cfg(feature = "phobos")]
         self.allocate_attach_effect_references(pass);
+        // Phobos `RulesExt::LoadBeforeTypeData` runs
+        // `InsigniaTypeClass::LoadFromINIList` before this pass's type bodies,
+        // so a same-pass `InsigniaType=` resolves against it.
+        #[cfg(feature = "phobos")]
+        self.allocate_insignia_types(pass);
         self.process_type_data(pass, fixed_art, fixed_eva, primary_rules);
         // RulesExt LoadAfterTypeData: installed679CAF ->1002C9B0 ->1002AAF0
         // ->1002A800 reads HSBuilding at1002A8DD with the BuildingType
@@ -6845,6 +6905,22 @@ impl RulesPassProcessor {
                         family.object_category().expect("TechnoType family"),
                         weapon_count,
                     );
+                // Phobos `TechnoTypeExt::LoadFromINIFile`'s insignia block
+                // runs later in the same type read: `InsigniaType=` resolves
+                // against the `[InsigniaTypes]` state this pass allocated, and
+                // its weapon loop uses this pass's native `WeaponCount` and
+                // `Gunner` values.
+                #[cfg(feature = "phobos")]
+                if self.phobos_insignia_types.is_some() {
+                    let catalog = self.phobos_insignia_types.take();
+                    let member = &self.families[&family][index];
+                    let weapon_count = member.weapon_slots.weapon_count;
+                    let gunner = member.gunner_turrets.is_gunner();
+                    self.families.get_mut(&family).unwrap()[index]
+                        .phobos_insignia
+                        .apply_pass(&raw, catalog.as_ref(), weapon_count, gunner);
+                    self.phobos_insignia_types = catalog;
+                }
                 if family == RulesTypeFamily::Infantry {
                     let member = &mut self.families.get_mut(&family).unwrap()[index];
                     member.infantry_pips.apply_pass(&raw);
@@ -8111,6 +8187,15 @@ impl RulesPassProcessor {
         }
     }
 
+    /// Phobos `InsigniaTypeClass::LoadFromINIList` + each type's
+    /// `LoadFromINI`, reached on every Rules pass.
+    #[cfg(feature = "phobos")]
+    fn allocate_insignia_types(&mut self, pass: &IniFile) {
+        if let Some(catalog) = self.phobos_insignia_types.as_mut() {
+            catalog.apply_pass(pass);
+        }
+    }
+
     /// Phobos `DigitalDisplayTypeClass::LoadFromINIList` + each type's
     /// `LoadFromINI`, reached on every Rules pass.
     #[cfg(feature = "phobos")]
@@ -8376,6 +8461,7 @@ impl RulesPassProcessor {
                     ares_armors: self.ares_armors,
                     phobos_radiation_types: self.phobos_radiation_types,
                     phobos_shield_types: self.phobos_shield_types,
+                    phobos_insignia_types: self.phobos_insignia_types,
                     phobos_digital_display_types: self.phobos_digital_display_types,
                     phobos_attach_effect_types: self.phobos_attach_effect_types,
                     #[cfg(feature = "ares")]

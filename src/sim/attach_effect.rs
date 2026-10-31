@@ -2606,7 +2606,8 @@ impl Simulation {
                 projectile,
                 weapon.bright,
             )
-            .with_installed_weapon(Some(weapon_ref)),
+            .with_installed_weapon(Some(weapon_ref))
+            .with_source_house(shot.house),
             reason: crate::sim::projectile::ProjectileDetonationReason::AttachEffectShot,
         })
     }
@@ -2619,6 +2620,7 @@ impl Simulation {
         damage: i32,
         target_id: u64,
         invoker: Option<u64>,
+        house: Option<crate::sim::intern::InternedId>,
         rules: &crate::rules::ruleset::RuleSet,
     ) -> Option<(
         crate::sim::projectile::ProjectileDetonation,
@@ -2644,7 +2646,8 @@ impl Simulation {
                     warhead_ref,
                     None,
                     warhead.bright,
-                ),
+                )
+                .with_source_house(house),
                 reason: crate::sim::projectile::ProjectileDetonationReason::AttachEffectShot,
             },
             warhead_ref,
@@ -2865,6 +2868,7 @@ impl Simulation {
                     reflected,
                     attacker_id,
                     invoker,
+                    house,
                     rules,
                 ) {
                     self.commit_attach_effect_detonations(
@@ -5309,6 +5313,62 @@ AttachEffect.InitialDelays=3
             health(&sim, target),
             995,
             "the expire weapon detonated at the owner"
+        );
+    }
+
+    /// Phobos `BulletExt::Detonate`'s `pFiringHouse`: an expire shot whose
+    /// invoker Techno is gone keeps the House that attached the effect, so
+    /// the detonation's `AffectsAllies` gate still sees it.
+    #[test]
+    fn an_expired_invokers_shot_keeps_the_attaching_house() {
+        let run = |attacker_house: &str, remove_attacker: bool| -> i32 {
+            let (mut sim, rules) = arena_scene(
+                &format!(
+                    "[Countries]\n0=Americans\n1=Russians\n\
+                     [VehicleTypes]\n0=SOURCE\n1=TARGET\n\
+                     [SOURCE]\nStrength=1000\nSpeed=6\nArmor=none\n\
+                     [TARGET]\nStrength=1000\nSpeed=6\nArmor=none\n\
+                     [Warheads]\n0=DROP\n1=GATE\n\
+                     [DROP]\nAttachEffect.AttachTypes=EXPIRES\n{ALL_HIT}\
+                     [GATE]\nAffectsAllies=no\n{ALL_HIT}\
+                     [EXPW]\nDamage=5\nRange=1\nWarhead=GATE\n\
+                     [AttachEffectTypes]\n0=EXPIRES\n\
+                     [EXPIRES]\nDuration=1\nExpireWeapon=EXPW\n\
+                     ExpireWeapon.UseInvokerAsOwner=yes\n"
+                ),
+                41,
+            );
+            let target = spawn(&mut sim, &rules, "TARGET", "Americans", 21, 20);
+            let attacker = spawn(&mut sim, &rules, "SOURCE", attacker_house, 20, 20);
+            let house = sim.interner.intern(attacker_house);
+            let warhead = sim.interner.intern("DROP");
+            sim.apply_warhead_attach_effects(
+                target,
+                warhead,
+                Some(attacker),
+                Some(house),
+                &rules,
+                crate::sim::world::FrameEffects::empty(),
+                None,
+            );
+            assert_eq!(attach_count(&sim, target), 1, "{attacker_house}: attached");
+            if remove_attacker {
+                sim.substrate.entities.remove(attacker);
+            }
+            sim.update_phobos_attach_effects(target, &rules);
+            assert_eq!(attach_count(&sim, target), 0, "{attacker_house}: expired");
+            health(&sim, target)
+        };
+
+        assert_eq!(
+            run("Russians", false),
+            995,
+            "a live enemy invoker's house passes the gate"
+        );
+        assert_eq!(
+            run("Americans", true),
+            1000,
+            "the house retained for the expired invoker still blocks the shot"
         );
     }
 
