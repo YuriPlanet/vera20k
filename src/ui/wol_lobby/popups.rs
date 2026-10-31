@@ -253,10 +253,7 @@ mod tests {
         };
         assert!(!create.limit);
         // VERA's online popup carries its room's limits to OK.
-        let limits = RoomLimits {
-            players: 5,
-            spectators: false,
-        };
+        let limits = RoomLimits { spectators: false };
         let mut modern = WolLobbyPopup::create(1024, false, 0, false, Some(limits));
         assert!(matches!(
             modern.activate(POPUP_OK),

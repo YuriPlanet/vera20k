@@ -879,14 +879,14 @@ fn install_setup(
                     .set_network_vacancy(row as u8, vacancy)?;
             }
         }
-        // A VERA room seats the players its host allowed at Create Game and
-        // opens its spectator row if spectators may join, but for Quick
-        // Match's matchbot game.
+        // A VERA room opens its spectator row if spectators may join, but
+        // for Quick Match's matchbot game.
         if dialog.modern && !quick_match {
-            let limits = state.frontend.room_limits;
-            let session = &mut state.match_state.session;
-            session.set_network_player_limit(limits.players)?;
-            session.set_network_spectators(limits.spectators)?;
+            let spectators = state.frontend.room_limits.spectators;
+            state
+                .match_state
+                .session
+                .set_network_spectators(spectators)?;
         }
         if let Some(file) = state
             .match_state

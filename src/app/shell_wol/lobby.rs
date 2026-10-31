@@ -3457,15 +3457,11 @@ pub(super) fn cursor_moved(state: &mut AppState) {
     let popup_over = lobby(state)
         .and_then(|lobby| lobby.ui.popup.as_ref())
         .map(|popup| popup_control(state, popup));
-    let room = popup_room_layout(state);
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
     if let (Some(over), Some(popup)) = (popup_over, lobby.ui.popup.as_mut()) {
         popup.buttons.hovered = over;
-        if let (Some(picker), Some(room)) = (popup.room_mut(), room) {
-            picker.drag(&room, ShellScale::RETAIL, x);
-        }
         state.platform.window.request_redraw();
         return;
     }
@@ -3514,9 +3510,6 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         let modern = lobby.ui.is_modern();
         let popup = lobby.ui.popup.as_mut().expect("checked");
         if !pressed {
-            if let Some(picker) = popup.room_mut() {
-                picker.release();
-            }
             let action = popup
                 .buttons
                 .release(over)
@@ -3532,7 +3525,6 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
             .zip(room)
             .map(|(picker, room)| picker.press(&room, ShellScale::RETAIL, x, y));
         let press = match (picked, over) {
-            (Some(RoomLimitsPress::Players), _) => Press::Nothing,
             (Some(RoomLimitsPress::Spectators), _) => Press::Cue(LauncherCue::Checkbox),
             (_, Some(control @ (CREATE_CLAN | CREATE_LIMIT | CREATE_OBSERVE))) => {
                 let rect = crate::ui::shell::modal::wol_create_game_layout(width, height, modern);

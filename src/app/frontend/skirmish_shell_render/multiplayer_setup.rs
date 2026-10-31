@@ -253,31 +253,43 @@ pub(crate) fn render_multiplayer_setup(
         }
         let page_rows = view.dialog.rows_per_page();
         if view.row_count > page_rows {
+            // Ordinary MNBTTN buttons, as Game Options' OK; one with no page
+            // to go to is hidden.
+            let mut buttons = Vec::new();
             for (id, caption) in [(PREVIOUS_ROWS, "Previous"), (NEXT_ROWS, "Next")] {
+                if !view.enabled(id) {
+                    continue;
+                }
                 let rect = layout.control_rect(id).expect("roster navigation rect");
                 let pressed = ui.buttons.is_pressed(id);
-                push_right_panel_button_shp(
-                    &mut controls,
-                    atlas,
+                buttons.push(ModalButton {
                     rect,
-                    crate::ui::shell::button::ButtonVisual {
-                        pressed,
-                        highlighted: false,
-                    },
-                    false,
-                    SHELL_CONTROL_DEPTH,
-                );
+                    pressed,
+                    enabled: true,
+                });
                 texts.push(text(
                     caption,
-                    rect,
+                    crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed),
                     ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-                    super::text::button_label_color_for_disabled(!view.enabled(id)),
+                    SHELL_LABEL_TEXT_RGB,
                     SHELL_CONTROL_TEXT_DEPTH,
                 ));
             }
+            controls.extend(shell_paint::paint_modal_sprites(
+                None,
+                type3_button_frames(atlas),
+                layout.roster_page_label,
+                &buttons,
+                scale,
+                shell_paint::ModalDepths {
+                    background: SHELL_CONTROL_DEPTH,
+                    button: SHELL_CONTROL_DEPTH,
+                    text: SHELL_CONTROL_TEXT_DEPTH,
+                },
+            ));
             texts.push(text(
                 &format!(
-                    "Players {}–{} / {}",
+                    "Players {}-{} of {}",
                     view.first_row + 1,
                     (view.first_row + page_rows).min(view.row_count),
                     view.row_count
