@@ -54,7 +54,8 @@ uses the same signing script, and produces an artifact without publishing a rele
 
 ## A submission that takes longer than the job
 
-The job waits up to 30 minutes. A timeout or rejection stops publication and saves
+The job waits up to 2 hours: a team's first submissions took Apple 30 minutes to
+several hours on 2026-10-31. A timeout or rejection stops publication and saves
 the signed image and its submission/status JSON in the `macos-notarization`
 workflow artifact. No keychain or password is included. Resume the recorded
 submission instead of repeatedly uploading the same image:
