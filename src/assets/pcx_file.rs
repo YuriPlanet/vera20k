@@ -1,8 +1,11 @@
 //! Minimal PCX parser for RA2 shell owner-draw art.
 //!
 //! Supports the retail 8-bit, one-plane, RLE-compressed PCX files used by
-//! shell controls, plus the runtime-written 3-plane direct RGB preview form.
-//! The parser keeps embedded VGA palettes in 8-bit RGB.
+//! shell controls, the runtime-written 3-plane direct RGB preview form, and
+//! the sub-8-bit indexed forms a mod's cameo may use. The parser keeps
+//! embedded VGA palettes in 8-bit RGB; a sub-8-bit file addresses its
+//! header's sixteen-colour palette instead, as Phobos' `RGB_PCX_Loader`
+//! (`0x6B9D9C`) lets the retail loader accept non-8-bit PCX everywhere.
 
 use crate::assets::error::AssetError;
 
@@ -31,7 +34,8 @@ impl PcxFile {
         if data.len() < 128 {
             return Err(pcx_error("PCX too short"));
         }
-        if data[0] != 0x0A || data[2] != 1 || data[3] != 8 {
+        let bits = data[3];
+        if data[0] != 0x0A || data[2] != 1 || !matches!(bits, 1 | 2 | 4 | 8) {
             return Err(pcx_error("Unsupported PCX header"));
         }
         let x_min = u16::from_le_bytes([data[4], data[5]]);
@@ -39,8 +43,17 @@ impl PcxFile {
         let x_max = u16::from_le_bytes([data[8], data[9]]);
         let y_max = u16::from_le_bytes([data[10], data[11]]);
         let planes = data[65];
-        if planes != 1 && planes != 3 {
-            return Err(pcx_error("Only 1-plane or 3-plane PCX is supported"));
+        // Phobos `RGB_PCX_Loader` (`0x6B9D9C`) gives the retail loader a
+        // non-paletted path for every surface depth, so a mod's cameo may be
+        // any plain colour PCX rather than an 8-bit indexed one. These are the
+        // layouts the format defines for that: packed indices at 1, 2 and 4
+        // bits, one bit per plane up to four, and 8-bit RGB in three planes.
+        let indexed_8 = bits == 8 && planes == 1;
+        let direct_rgb = bits == 8 && planes == 3;
+        let packed = matches!(bits, 1 | 2 | 4) && planes == 1;
+        let planar = bits == 1 && (2..=4).contains(&planes);
+        if !(indexed_8 || direct_rgb || packed || planar) {
+            return Err(pcx_error("Unsupported PCX plane layout"));
         }
         let bytes_per_line = u16::from_le_bytes([data[66], data[67]]) as usize;
         let width = x_max
@@ -51,10 +64,13 @@ impl PcxFile {
             .checked_sub(y_min)
             .and_then(|v| v.checked_add(1))
             .ok_or_else(|| pcx_error("Invalid PCX height"))?;
-        if bytes_per_line < width as usize {
+        if bytes_per_line < (width as usize * bits as usize).div_ceil(8) {
             return Err(pcx_error("Invalid PCX bytes per line"));
         }
-        if transferred && bytes_per_line > usize::from(width).next_multiple_of(2) {
+        if transferred
+            && bits == 8
+            && bytes_per_line > usize::from(width).next_multiple_of(2)
+        {
             return Err(pcx_error("Unreferenced transfer PCX row data"));
         }
 
@@ -64,7 +80,14 @@ impl PcxFile {
             .ok_or_else(|| pcx_error("PCX scan data too large"))?;
         let mut palette = [[0u8; 3]; 256];
         let has_trailing_palette = data.len() >= 128 + 769 && data[data.len() - 769] == 0x0C;
-        let encoded = if planes == 1 {
+        if bits < 8 {
+            // A sub-8-bit file addresses the header's sixteen colours; a
+            // trailing VGA block is legal but unused.
+            for (index, rgb) in palette.iter_mut().take(16).enumerate() {
+                rgb.copy_from_slice(&data[16 + index * 3..16 + index * 3 + 3]);
+            }
+        }
+        if indexed_8 {
             if !has_trailing_palette {
                 return Err(pcx_error("Missing PCX VGA palette"));
             }
@@ -72,22 +95,33 @@ impl PcxFile {
             for (idx, rgb) in palette.iter_mut().enumerate() {
                 rgb.copy_from_slice(&pal[idx * 3..idx * 3 + 3]);
             }
-            &data[128..data.len() - 769]
-        } else if has_trailing_palette {
+        }
+        let encoded = if has_trailing_palette {
             &data[128..data.len() - 769]
         } else {
             &data[128..]
         };
         let scan = decode_pcx_rle(encoded, expected_scan, transferred)?;
-        if transferred
-            && bytes_per_line != usize::from(width)
-            && scan
-                .chunks_exact(bytes_per_line)
-                .any(|row| row[usize::from(width)] != 0)
-        {
-            return Err(pcx_error("Nonzero transfer PCX row padding"));
+        // A transfer preview must not carry row padding a reader would ignore:
+        // every 8-bit plane row ends at `width`.
+        if transferred && bits == 8 && bytes_per_line != usize::from(width) {
+            let unused_from = usize::from(width);
+            let rows = scan.chunks_exact(bytes_per_line * planes as usize);
+            if rows.take(height as usize).any(|row| {
+                (0..planes as usize).any(|plane| {
+                    row[plane * bytes_per_line + unused_from..(plane + 1) * bytes_per_line]
+                        .iter()
+                        .any(|&byte| byte != 0)
+                })
+            }) {
+                return Err(pcx_error("Nonzero transfer PCX row padding"));
+            }
         }
-        let pixels = if planes == 1 {
+        let pixels = if packed {
+            unpack_packed_indices(&scan, width, height, bytes_per_line, bits)
+        } else if planar {
+            unpack_planar_indices(&scan, width, height, bytes_per_line, planes)
+        } else if indexed_8 {
             trim_paletted_scanlines(&scan, width, height, bytes_per_line)
         } else {
             decode_direct_rgb_scanlines(&scan, width, height, bytes_per_line)
@@ -98,7 +132,7 @@ impl PcxFile {
             height,
             pixels,
             palette,
-            direct_rgb: planes == 3,
+            direct_rgb,
         })
     }
 
@@ -283,6 +317,54 @@ fn trim_paletted_scanlines(scan: &[u8], width: u16, height: u16, bytes_per_line:
     pixels
 }
 
+/// Unpack a one-plane sub-8-bit row into one index per pixel, most
+/// significant bit first within each byte.
+fn unpack_packed_indices(
+    scan: &[u8],
+    width: u16,
+    height: u16,
+    bytes_per_line: usize,
+    bits: u8,
+) -> Vec<u8> {
+    let width = width as usize;
+    let bits = bits as usize;
+    let mask = ((1u16 << bits) - 1) as u8;
+    let mut pixels = Vec::with_capacity(width * height as usize);
+    for row in scan.chunks_exact(bytes_per_line).take(height as usize) {
+        for column in 0..width {
+            let bit = column * bits;
+            let shift = 8 - bits - bit % 8;
+            pixels.push((row[bit / 8] >> shift) & mask);
+        }
+    }
+    pixels
+}
+
+/// Compose an index from one bit per plane, most significant bit first; plane
+/// zero is the low bit, as the format orders them.
+fn unpack_planar_indices(
+    scan: &[u8],
+    width: u16,
+    height: u16,
+    bytes_per_line: usize,
+    planes: u8,
+) -> Vec<u8> {
+    let width = width as usize;
+    let planes = planes as usize;
+    let mut pixels = Vec::with_capacity(width * height as usize);
+    for row in scan.chunks_exact(bytes_per_line * planes).take(height as usize) {
+        for column in 0..width {
+            let mut index = 0u8;
+            for plane in 0..planes {
+                let byte = row[plane * bytes_per_line + column / 8];
+                index |= ((byte >> (7 - column % 8)) & 1) << plane;
+            }
+            pixels.push(index);
+        }
+    }
+    pixels
+}
+
 fn decode_direct_rgb_scanlines(
     scan: &[u8],
     width: u16,
@@ -328,10 +410,22 @@ mod tests {
         planes: u8,
         bytes_per_line: u16,
     ) -> Vec<u8> {
+        pcx_header_bits(x_min, y_min, x_max, y_max, planes, bytes_per_line, 8)
+    }
+
+    fn pcx_header_bits(
+        x_min: u16,
+        y_min: u16,
+        x_max: u16,
+        y_max: u16,
+        planes: u8,
+        bytes_per_line: u16,
+        bits: u8,
+    ) -> Vec<u8> {
         let mut data = vec![0u8; 128];
         data[0] = 0x0A;
         data[2] = 1;
-        data[3] = 8;
+        data[3] = bits;
         data[4..6].copy_from_slice(&x_min.to_le_bytes());
         data[6..8].copy_from_slice(&y_min.to_le_bytes());
         data[8..10].copy_from_slice(&x_max.to_le_bytes());
@@ -339,6 +433,59 @@ mod tests {
         data[65] = planes;
         data[66..68].copy_from_slice(&bytes_per_line.to_le_bytes());
         data
+    }
+
+    /// A four-colour header palette whose entry `index` is `(index, 2*index,
+    /// 3*index)`, so a decoded index names its source.
+    fn ega_palette(header: &mut [u8]) {
+        for index in 0..16u8 {
+            header[16 + index as usize * 3..16 + index as usize * 3 + 3]
+                .copy_from_slice(&[index, index.wrapping_mul(2), index.wrapping_mul(3)]);
+        }
+    }
+
+    #[test]
+    fn packed_four_bit_rows_unpack_nibbles_and_read_the_header_palette() {
+        let mut bytes = pcx_header_bits(0, 0, 3, 0, 1, 2, 4);
+        ega_palette(&mut bytes);
+        bytes.extend_from_slice(&[0x12, 0x34]);
+        let pcx = PcxFile::from_bytes(&bytes).unwrap();
+        assert_eq!((pcx.width, pcx.height), (4, 1));
+        assert!(pcx.is_indexed());
+        assert_eq!(pcx.pixels, [1, 2, 3, 4]);
+        assert_eq!(&pcx.to_rgba(None)[..4], &[1, 2, 3, 255]);
+    }
+
+    #[test]
+    fn packed_one_bit_rows_unpack_most_significant_first() {
+        let mut bytes = pcx_header_bits(0, 0, 7, 0, 1, 2, 1);
+        ega_palette(&mut bytes);
+        bytes.extend_from_slice(&[0b1011_0001, 0]);
+        let pcx = PcxFile::from_bytes(&bytes).unwrap();
+        assert_eq!(pcx.pixels, [1, 0, 1, 1, 0, 0, 0, 1]);
+    }
+
+    #[test]
+    fn planar_one_bit_planes_compose_the_index_and_zero_is_the_low_bit() {
+        // One row, eight pixels, four planes: only the first pixel has every
+        // plane's bit set, so its index is 0b1111.
+        let mut bytes = pcx_header_bits(0, 0, 7, 0, 4, 2, 1);
+        ega_palette(&mut bytes);
+        bytes.extend_from_slice(&[0b1000_0000, 0]); // plane 0: bit 0
+        bytes.extend_from_slice(&[0b1000_0000, 0]); // plane 1: bit 1
+        bytes.extend_from_slice(&[0b1000_0000, 0]); // plane 2: bit 2
+        bytes.extend_from_slice(&[0b1000_0000, 0]); // plane 3: bit 3
+        let pcx = PcxFile::from_bytes(&bytes).unwrap();
+        assert_eq!(pcx.pixels, [0b1111, 0, 0, 0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn a_layout_the_format_does_not_define_is_refused() {
+        // Two planes at four bits each name no index the format defines.
+        let mut bytes = pcx_header_bits(0, 0, 3, 0, 2, 2, 4);
+        ega_palette(&mut bytes);
+        bytes.extend_from_slice(&[0x12, 0x34, 0x56, 0x78]);
+        assert!(PcxFile::from_bytes(&bytes).is_err());
     }
 
     #[test]

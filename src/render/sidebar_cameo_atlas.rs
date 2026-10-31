@@ -901,9 +901,47 @@ mod tests {
         dir.write(name, &bytes);
     }
 
+    /// A four-bit cameo: 60x48 pixels, one nibble each, coloured from the
+    /// header's sixteen-colour palette rather than a trailing VGA block.
+    fn write_four_bit_pcx(
+        dir: &crate::map::source::test_support::TestDirectory,
+        name: &str,
+        color: [u8; 3],
+    ) {
+        let mut bytes = vec![0u8; 128];
+        bytes[0] = 0x0a;
+        bytes[2] = 1;
+        bytes[3] = 4;
+        bytes[8..10].copy_from_slice(&59u16.to_le_bytes());
+        bytes[10..12].copy_from_slice(&47u16.to_le_bytes());
+        bytes[65] = 1;
+        bytes[66..68].copy_from_slice(&30u16.to_le_bytes());
+        bytes[16 + 3..16 + 6].copy_from_slice(&color);
+        for _ in 0..48 {
+            bytes.extend(std::iter::repeat_n(0x11u8, 30));
+        }
+        dir.write(name, &bytes);
+    }
+
+    #[cfg(feature = "ares")]
     #[test]
-    fn cameo_pcx_feature_gate_embedded_palette_and_packed_key() {
+    fn a_four_bit_pcx_cameo_reads_the_header_palette() {
         use crate::{
+            assets::asset_manager::AssetManager, assets::pal_file::Palette,
+            map::source::test_support::TestDirectory,
+        };
+        let dir = TestDirectory::new("cameo-pcx-4bit");
+        write_old_cameos(&dir);
+        write_four_bit_pcx(&dir, "normal.pcx", [17, 41, 83]);
+        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        let wrong_palette = Palette::from_rgb(|_| [200, 10, 180]);
+        let cameo = super::render_cameo("TEST", &assets, &cameo_rules(), &wrong_palette).unwrap();
+        assert_eq!([cameo.canvas_width, cameo.canvas_height], [60, 48]);
+        assert_eq!(&cameo.rgba[0..4], &[17, 41, 83, 255]);
+    }
+
+    #[test]
+    fn cameo_pcx_feature_gate_embedded_palette_and_packed_key() {        use crate::{
             assets::asset_manager::AssetManager, assets::pal_file::Palette,
             map::source::test_support::TestDirectory,
         };

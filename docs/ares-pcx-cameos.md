@@ -8,10 +8,16 @@ not redirect these reads. A present name is lowercased and limited to 31 bytes.
 `none` and `<none>` are literal attempted filenames, not clear tokens.
 
 The existing asset manager and PCX decoder supply indexed pixels and their
-embedded palette. A promoted loaded PCX takes precedence over the normal PCX;
-the normal PCX takes precedence over a promoted SHP. A failed PCX load falls
-back to the existing SHP path. Successfully loaded transparent PCXs stay
-selected. RGB565-packed magenta is transparent; black is opaque. The destination
+embedded palette. The decoder accepts every layout the format defines —
+packed indices at 1, 2 and 4 bits, one bit per plane up to four, 8-bit
+indexed, and 8-bit RGB in three planes — as Phobos' `RGB_PCX_Loader`
+(`0x6B9D9C`) lets the retail loader take non-8-bit PCX everywhere. A
+sub-8-bit file reads the header's sixteen-colour palette; an 8-bit indexed
+file reads its trailing VGA block. A promoted loaded PCX takes precedence
+over the normal PCX; the normal PCX takes precedence over a promoted SHP. A
+failed PCX load falls back to the existing SHP path. Successfully loaded
+transparent PCXs stay selected. RGB565-packed magenta is transparent; black is
+opaque. The destination
 canvas is 60x48, while the source pixel extent is retained without stretching.
 
 The atlas is derived presentation state. Object, promoted and superweapon
@@ -25,6 +31,6 @@ establishes bounded filename reading, selection, palette packing and word
 transparency. Renderer regressions consume these goldens and pass synthetic
 PCX files through the production decoder and collector. The controls supply
 some runtime services; they do not execute the complete native file decoder,
-GPU presentation or DLL startup. 24-bit PCXs and whole-mod visual parity are
-not established. Existing guessed SHP fallback filenames remain a separate
+GPU presentation or DLL startup. Whole-mod visual parity is not established.
+Existing guessed SHP fallback filenames remain a separate
 pre-existing limitation. No mod assets or resource adapters are included.
