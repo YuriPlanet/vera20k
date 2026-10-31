@@ -33,7 +33,7 @@
 //! - Dormant in retail: T44 (FiringSyncFrame), U1 (DeathFrames),
 //!   U3 (DirectRocker), U4 (DeployToFire), U7 (MobileFire=no), I3 (Pushy).
 //! - B3: EMPulseCannon, whose cannon fires only through its superweapon.
-//! - B7: the upgrade turret (`0x004527D0`'s upgrade walk; `turret_upgrade`).
+//! - B7: Building HasTurret (`0x004527D0`), read through the installed-type owner.
 //! - A1: a paradrop plane's payload (`+0x6C9`, `paradrop_payload`).
 //!
 //! U6 asks the target's vt+0x80 through [`super::vehicle_like`]. A Building's
@@ -312,10 +312,10 @@ pub(crate) struct FirerFacts {
     pub paradrop_payload: bool,
     pub has_passenger: bool,
     /// Building: vt+0x184 effective mission, `+0x714` delayed-fire counter,
-    /// an upgrade with `Turret=yes` (HasTurret `0x004527D0`).
+    /// and the resolved HasTurret query (`0x004527D0`, host or installed type).
     pub effective_mission: i32,
     pub delayed_fire_counter: i32,
-    pub turret_upgrade: bool,
+    pub building_has_turret: bool,
 }
 
 impl Default for FirerFacts {
@@ -368,7 +368,7 @@ impl Default for FirerFacts {
             has_passenger: false,
             effective_mission: 0,
             delayed_fire_counter: 0,
-            turret_upgrade: false,
+            building_has_turret: false,
         }
     }
 }
@@ -803,7 +803,7 @@ fn building(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) ->
     }
     // B7 `0x00447FDF..0x00448045`: HasTurret (`0x004527D0`); a voxel turret
     // must point exactly.
-    if firer_type.turret || firer.turret_upgrade {
+    if firer.building_has_turret {
         let direction = query.turret_direction();
         let tolerance = if firer_type.turret_anim_is_voxel {
             0

@@ -1937,10 +1937,17 @@ pub(super) fn emit_admitted_fire(
         building.passenger_role.occupants_mut().advance_fire_index();
     }
     // Techno6FF0B7..6FF15B: only a successfully launched shot arms recoil.
-    // Stock recoil buildings have their own Turret=yes. Building4527D0's
-    // upgrade-provided turret remains part of the separate upgrade mechanism.
+    // FireAt6FF0BB dispatches HasTurret; Building4527D0 includes upgrades,
+    // while recoil configuration and state still belong to the host.
     if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
-        entity.fire_voxel_recoil(obj.has_turret);
+        let has_turret = if entity.category() == EntityCategory::Structure {
+            entity
+                .building_upgrades()
+                .has_turret(obj, rules, &world.interner)
+        } else {
+            obj.has_turret
+        };
+        entity.fire_voxel_recoil(has_turret);
     }
     // FireAt6FF1AD..6FF1F5: after successful Bullet::Fire and recoil, before
     // burst/GetROF/rearm. The coordinate is the retained launch-source local

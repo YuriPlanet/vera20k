@@ -276,7 +276,9 @@ fn facts(input: &Value) -> FireFacts {
             has_passenger: flag(&f["has_passenger"]),
             effective_mission: effective_mission(&f["mission"], &f["queued_mission"]),
             delayed_fire_counter: int(&f["delayed_fire_counter"]),
-            turret_upgrade: flag(&f["turret_upgrade"]),
+            // The native corpus supplies the host flag and installed-turret
+            // input separately; the production fact now carries the query result.
+            building_has_turret: flag(&ft["turret"]) || flag(&f["turret_upgrade"]),
         },
         firer_type: FirerTypeFacts {
             natural: flag(&ft["natural"]),
