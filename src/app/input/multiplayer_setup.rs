@@ -157,6 +157,8 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     // or Enter.
     let action = if let Some(offer) = &ui.map_offer {
         match code {
+            // Keys meant for the chat just before it opened do not answer it.
+            _ if !offer.takes_keys(Instant::now()) => None,
             Some(KeyCode::Enter | KeyCode::NumpadEnter) if !offer.downloading => {
                 Some(SetupAction::MapOffer { download: true })
             }

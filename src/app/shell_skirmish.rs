@@ -995,8 +995,10 @@ impl App {
         true
     }
 
-    /// Enter or Escape on Use Map's box answer Cancel (`0x005D370D`).
-    pub(super) fn cancel_choose_map_prompt(state: &mut AppState) -> bool {
+    /// Enter or Escape on Use Map's box answer Cancel (`0x005D370D`). VERA's
+    /// download box takes Enter as Download, as the room's missing-map offer
+    /// does; while the download runs, Enter does nothing and Escape cancels.
+    pub(super) fn answer_choose_map_prompt_key(state: &mut AppState, enter: bool) -> bool {
         let Some(modal) = state
             .frontend
             .skirmish_shell_state
@@ -1005,6 +1007,17 @@ impl App {
         else {
             return false;
         };
+        use crate::ui::skirmish_shell::ChooseMapPromptKind as Kind;
+        if enter
+            && let Some(prompt) = modal.message_box
+            && prompt.kind != Kind::EjectAi
+        {
+            if prompt.kind != Kind::Downloading {
+                crate::app::map_library::start_download(state, prompt.selection);
+                state.platform.window.request_redraw();
+            }
+            return true;
+        }
         if !modal.close_prompt() {
             return false;
         }

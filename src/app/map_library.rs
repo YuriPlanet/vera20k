@@ -6,8 +6,9 @@
 //! `MapFavorites.txt` in the settings folder. VERA-only; gamemd has no map
 //! library.
 //!
-//! The catalog is read once a run, in the background, when the game reaches
-//! its menus. Each entry carries the map's own `[Basic]`, `[Preview]`,
+//! The catalog is read in the background when the player goes online, and
+//! kept for the rest of the run once it arrives. A failed read is tried once
+//! more during that visit, and again on the next. Each entry carries the map's own `[Basic]`, `[Preview]`,
 //! `[PreviewPack]`, `[Waypoints]`, `[Header]` and `[RandomMap]` sections, so
 //! its row is read by the same record reader as a local map's.
 
@@ -37,15 +38,27 @@ pub(crate) struct OnlineMap {
     pub(crate) byte_length: usize,
     /// Its Choose Map row, read from the header (source ordinal unset).
     record: SkirmishScenarioRecord,
+    /// The catalog's copy of the map's header lines, for its preview.
+    header: Arc<[u8]>,
 }
 
 #[derive(Default)]
 enum Phase {
+    /// Not read during this online visit: read on going online.
     #[default]
     NotStarted,
-    Fetching(Receiver<Result<Vec<OnlineMap>>>),
+    Fetching {
+        result: Receiver<Result<Vec<OnlineMap>>>,
+        retried: bool,
+    },
+    /// The read failed; `retry_at` is the visit's one more try.
+    Failed { retry_at: Option<Instant> },
+    /// The catalog arrived, or this run needs none: final.
     Ready,
 }
+
+/// How long a failed catalog read waits before its one retry in a visit.
+const CATALOG_RETRY: Duration = Duration::from_secs(30);
 
 struct Download {
     sha256: String,
@@ -82,33 +95,53 @@ impl MapLibrary {
     }
 }
 
-/// Starts the catalog read, then takes the catalog and a finished download.
+/// Starts the catalog read once the player is online, then takes the
+/// catalog and a finished download.
 pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
-    match std::mem::take(&mut state.frontend.map_library.phase) {
-        Phase::NotStarted => {
-            // A launcher-started match has no Choose Map to fill.
-            let phase = if state.frontend.external_launch {
+    let online = in_online_play(state);
+    let taken = std::mem::take(&mut state.frontend.map_library.phase);
+    let was_fetching = matches!(taken, Phase::Fetching { .. });
+    let phase = match taken {
+        // A launcher-started match has no Choose Map to fill.
+        Phase::NotStarted if state.frontend.external_launch => Phase::Ready,
+        Phase::NotStarted if online => {
+            state.frontend.map_library.favorites = read_favorites(state);
+            fetch_catalog(state, false)
+        }
+        Phase::Fetching { result, retried } => match result.try_recv() {
+            Ok(Ok(maps)) => {
+                log::info!("The online map library lists {} maps", maps.len());
+                state.frontend.map_library.maps = maps;
+                append_online_records(state);
                 Phase::Ready
-            } else {
-                state.frontend.map_library.favorites = read_favorites(state);
-                start_catalog(state).map_or(Phase::Ready, Phase::Fetching)
-            };
-            state.frontend.map_library.phase = phase;
-        }
-        Phase::Fetching(result) => {
-            let (phase, read) = take_catalog(result);
-            state.frontend.map_library.phase = phase;
-            match read {
-                Some(Ok(maps)) => {
-                    log::info!("The online map library lists {} maps", maps.len());
-                    state.frontend.map_library.maps = maps;
-                    append_online_records(state);
-                }
-                Some(Err(error)) => log::info!("The online map library is unavailable: {error:#}"),
-                None => {}
             }
-        }
-        Phase::Ready => state.frontend.map_library.phase = Phase::Ready,
+            Ok(Err(error)) => {
+                log::info!("The online map library is unavailable: {error:#}");
+                failed(retried)
+            }
+            Err(TryRecvError::Empty) => Phase::Fetching { result, retried },
+            Err(TryRecvError::Disconnected) => failed(retried),
+        },
+        // Each online visit tries again.
+        Phase::Failed { .. } if !online => Phase::NotStarted,
+        Phase::Failed { retry_at: Some(at) } if Instant::now() >= at => fetch_catalog(state, true),
+        phase => phase,
+    };
+    let ended = was_fetching && !matches!(phase, Phase::Fetching { .. });
+    state.frontend.map_library.phase = phase;
+    if ended {
+        // An open Choose Map shows the library's rows, or why it has none.
+        refresh_choose_map(state);
+    }
+    // A download belongs to Choose Map's box: it stops when the chooser
+    // goes, however it went.
+    if state
+        .frontend
+        .skirmish_shell_state
+        .choose_map_modal
+        .is_none()
+    {
+        cancel_download(state);
     }
     let library = &mut state.frontend.map_library;
     if let Some(download) = library.download.as_ref() {
@@ -133,26 +166,59 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
         state.platform.window.request_redraw();
     }
     let library = &state.frontend.map_library;
-    (matches!(library.phase, Phase::NotStarted | Phase::Fetching(_)) || library.download.is_some())
-        .then(|| Instant::now() + POLL_INTERVAL)
-}
-
-/// One look at a running catalog read: the phase after it, and the read's
-/// result once it ended. Only an unanswered read stays Fetching; every other
-/// outcome is final for this run, so the catalog is read once.
-fn take_catalog(
-    result: Receiver<Result<Vec<OnlineMap>>>,
-) -> (Phase, Option<Result<Vec<OnlineMap>>>) {
-    match result.try_recv() {
-        Ok(read) => (Phase::Ready, Some(read)),
-        Err(TryRecvError::Empty) => (Phase::Fetching(result), None),
-        Err(TryRecvError::Disconnected) => (Phase::Ready, None),
+    let next = Instant::now() + POLL_INTERVAL;
+    match library.phase {
+        _ if library.download.is_some() => Some(next),
+        Phase::Fetching { .. } => Some(next),
+        Phase::NotStarted if online => Some(next),
+        Phase::Failed { retry_at } => retry_at.filter(|_| online),
+        _ => None,
     }
 }
 
-/// Adds a Choose Map row for each library map that neither the game folder
-/// nor VERA's maps folder holds a file of that name for. Also run after the
-/// catalog is rebuilt.
+/// A failed read: one more try this visit, unless this was it.
+fn failed(retried: bool) -> Phase {
+    Phase::Failed {
+        retry_at: (!retried).then(|| Instant::now() + CATALOG_RETRY),
+    }
+}
+
+fn fetch_catalog(state: &AppState, retried: bool) -> Phase {
+    match start_catalog(state) {
+        Some(result) => Phase::Fetching { result, retried },
+        // No worker threads (the browser build): no library this run.
+        None => Phase::Ready,
+    }
+}
+
+/// What an empty Online Maps list says.
+pub(crate) fn empty_online_maps_text(state: &AppState) -> &'static str {
+    match state.frontend.map_library.phase {
+        Phase::NotStarted | Phase::Fetching { .. } => "Loading the online map library...",
+        Phase::Failed { .. } => {
+            "The online map library is unavailable. Check your internet connection."
+        }
+        Phase::Ready => "No maps found.",
+    }
+}
+
+/// An open Choose Map shows the catalog's rows as they are now.
+fn refresh_choose_map(state: &mut AppState) {
+    let layout = crate::app::frontend::shell_layout::choose_map_layout(state);
+    let frontend = &mut state.frontend;
+    if let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() {
+        modal.refresh(
+            &frontend.skirmish_modes,
+            frontend.scenario_catalog.records(),
+            &layout,
+        );
+    }
+    state.platform.window.request_redraw();
+}
+
+/// Adds a Choose Map row for each library map the player does not have: no
+/// file in the game folder or VERA's Maps folder holds its bytes under its
+/// name ([`row_file_name`]). Also run after the catalog is rebuilt.
 pub(crate) fn append_online_records(state: &mut AppState) {
     let Some((ra2_dir, maps_dir)) = state.platform.game_config.as_ref().map(|config| {
         (
@@ -178,27 +244,79 @@ fn append_rows(
     maps: &[OnlineMap],
     folders: &[&std::path::Path],
 ) {
-    // Each folder is listed once; names compare without case, as `find` does.
-    let listed: Vec<std::path::PathBuf> = folders
-        .iter()
-        .flat_map(|folder| {
-            crate::util::case_insensitive_path::native_listing(folder).unwrap_or_default()
-        })
-        .collect();
-    let mut taken: std::collections::HashSet<String> = listed
-        .iter()
-        .filter_map(|path| path.file_name()?.to_str())
-        .chain(records.iter().map(|record| record.file_name.as_str()))
-        .map(str::to_ascii_lowercase)
+    // Each folder is listed once, the game folder first; names compare
+    // without case, as macOS and Windows file systems do.
+    let mut files = std::collections::HashMap::new();
+    for path in folders.iter().flat_map(|folder| {
+        crate::util::case_insensitive_path::native_listing(folder).unwrap_or_default()
+    }) {
+        if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+            files.entry(name.to_lowercase()).or_insert(path);
+        }
+    }
+    let mut taken: std::collections::HashSet<String> = files
+        .keys()
+        .cloned()
+        .chain(records.iter().map(|record| record.file_name.to_lowercase()))
         .collect();
     for map in maps {
-        if !taken.insert(map.file_name.to_ascii_lowercase()) {
+        let Some(name) = row_file_name(map, &files, &taken) else {
             continue;
-        }
+        };
+        taken.insert(name.to_lowercase());
         let mut record = map.record.clone();
+        record.file_name = name;
         record.source_ordinal = records.len();
         records.push(record);
     }
+}
+
+/// The file name a library map's row goes by: its own, or
+/// `<stem>-<sha8>.yrm` when another map has that name, as
+/// `keep_received_map` saves it. `None` when a file of either name already
+/// holds this map, so the player has it, or both names are taken.
+fn row_file_name(
+    map: &OnlineMap,
+    files: &std::collections::HashMap<String, std::path::PathBuf>,
+    taken: &std::collections::HashSet<String>,
+) -> Option<String> {
+    let stem = map.file_name.strip_suffix(".yrm").unwrap_or(&map.file_name);
+    let suffixed = format!("{stem}-{}.yrm", map.sha256.get(..8)?);
+    for name in [map.file_name.clone(), suffixed] {
+        let key = name.to_lowercase();
+        match files.get(&key) {
+            Some(path) if holds_map(path, map) => return None,
+            Some(_) => {}
+            None if taken.contains(&key) => {}
+            None => return Some(name),
+        }
+    }
+    None
+}
+
+/// Whether the file at `path` is `map`, byte for byte.
+fn holds_map(path: &std::path::Path, map: &OnlineMap) -> bool {
+    std::fs::metadata(path).is_ok_and(|meta| meta.len() == map.byte_length as u64)
+        && crate::util::file_system::read(path)
+            .is_ok_and(|bytes| crate::util::sha256::sha256_hex(&bytes) == map.sha256)
+}
+
+/// The preview of an online row (`record_index` into the scenario catalog),
+/// decoded from its catalog header.
+pub(crate) fn online_preview(
+    state: &AppState,
+    record_index: usize,
+) -> Option<crate::map::preview::DecodedPreview> {
+    let record = state
+        .frontend
+        .scenario_catalog
+        .records()
+        .get(record_index)?;
+    let map = state.frontend.map_library.online_map(record)?;
+    let ini = crate::rules::ini_parser::IniFile::from_bytes(&map.header).ok()?;
+    crate::map::preview::decode_preview_image_from_ini(&ini)
+        .ok()
+        .flatten()
 }
 
 /// The running download's bytes received and its length.
@@ -214,9 +332,16 @@ pub(crate) fn download_progress(state: &AppState) -> Option<(u64, u64)> {
         })
 }
 
-/// Whether this Choose Map shows the Online Maps row: online rooms only.
+/// Whether this Choose Map shows the Online Maps row: online game rooms
+/// only, which are network setup routes of a Westwood Online session.
 pub(crate) fn listed_in_choose_map(state: &AppState) -> bool {
-    state.frontend.shell_route.wol()
+    state.frontend.shell_route.network_setup()
+        && state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol
+}
+
+/// Whether the player is in VERA20k Online: its pages, lobby or a room.
+fn in_online_play(state: &AppState) -> bool {
+    state.frontend.wol.is_some()
 }
 
 /// Star or unstar a map, and keep the stars for later runs.
@@ -365,7 +490,12 @@ fn finish_download(state: &mut AppState, sha256: String, result: Result<Vec<u8>>
         return;
     };
     let selection = prompt.selection;
-    match result.and_then(|bytes| keep_download(state, selection, &bytes)) {
+    let kept = match result {
+        Ok(bytes) => keep_download(state, selection, &bytes)
+            .map_err(|error| (ChooseMapPromptKind::SaveFailed, error)),
+        Err(error) => Err((ChooseMapPromptKind::DownloadFailed, error)),
+    };
+    match kept {
         Ok(()) => {
             if let Some(modal) = state
                 .frontend
@@ -384,16 +514,53 @@ fn finish_download(state: &mut AppState, sha256: String, result: Result<Vec<u8>>
                 crate::app::frontend::shell_transition::ShellExitThen::ChooseMapUse(selection),
             );
         }
-        Err(error) => {
+        Err((kind, error)) => {
             log::warn!("Could not download the online map {sha256}: {error:#}");
-            set_prompt(state, selection, ChooseMapPromptKind::DownloadFailed);
+            set_prompt(state, selection, kind);
         }
     }
 }
 
-/// Saves a downloaded map in VERA's maps folder and turns its Online row
-/// into the ordinary row of that file.
+/// Saves a downloaded map in VERA's maps folder; its Online row becomes the
+/// ordinary row of that file.
 fn keep_download(state: &mut AppState, selection: ChooseMapSelection, bytes: &[u8]) -> Result<()> {
+    let index = selection.record_index.context("no map selected")?;
+    let record = state
+        .frontend
+        .scenario_catalog
+        .records()
+        .get(index)
+        .context("the map left the list")?;
+    let name = state
+        .frontend
+        .map_library
+        .online_map(record)
+        .map(|map| map.name.clone())
+        .context("the map left the library")?;
+    let file_name = record.file_name.clone();
+    let path = keep_map(state, &file_name, bytes)?;
+    ensure!(
+        state
+            .frontend
+            .scenario_catalog
+            .records()
+            .get(index)
+            .is_some_and(|record| !record.is_online()),
+        "the saved map took no row"
+    );
+    log::info!("Downloaded the online map {name} as {}", path.display());
+    Ok(())
+}
+
+/// Keeps a downloaded or received map in VERA's Maps folder
+/// ([`crate::map::source::keep_received_map`]) and lists it in Choose Map:
+/// the library row for these bytes becomes the kept file's row, and a file
+/// that no row names yet gets one. Returns the kept file's path.
+pub(crate) fn keep_map(
+    state: &mut AppState,
+    host_file: &str,
+    bytes: &[u8],
+) -> Result<std::path::PathBuf> {
     let (ra2_dir, maps_dir) = state
         .platform
         .game_config
@@ -405,43 +572,28 @@ fn keep_download(state: &mut AppState, selection: ChooseMapSelection, bytes: &[u
             )
         })
         .context("no game folder")?;
-    let index = selection.record_index.context("no map selected")?;
-    let map = state
-        .frontend
-        .scenario_catalog
-        .records()
-        .get(index)
-        .and_then(|record| state.frontend.map_library.online_map(record))
-        .cloned()
-        .context("the map left the library")?;
-    let path =
-        match crate::map::source::keep_received_map(&maps_dir, &ra2_dir, &map.file_name, bytes)? {
-            Some(name) => maps_dir.join(name),
-            // A file of that name arrived meanwhile: use it only if it is this map.
-            None => {
-                let path = crate::map::source::local_map_path(&ra2_dir, &map.file_name)
-                    .context("the saved map is gone")?;
-                let existing = crate::util::file_system::read(&path)?;
-                ensure!(
-                    crate::util::sha256::sha256_hex(&existing) == map.sha256,
-                    "another map named {} is already saved",
-                    map.file_name
-                );
-                path
-            }
-        };
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .context("the saved map has no file name")?
-        .to_owned();
+    let kept = crate::map::source::keep_received_map(&maps_dir, &ra2_dir, host_file, bytes)?;
+    let sha256 = crate::util::sha256::sha256_hex(bytes);
     let mut records = state.frontend.scenario_catalog.records_mut();
-    let ordinal = records[index].source_ordinal;
-    let record = crate::map::scenario_sources::loose_yrm_record(&path, name.clone(), ordinal)
-        .context("the saved map does not read as a map")?;
-    records[index] = record;
-    log::info!("Downloaded the online map {} as {name}", map.name);
-    Ok(())
+    let online = records.iter().position(
+        |record| matches!(&record.source, SkirmishScenarioSource::Online(sha) if *sha == sha256),
+    );
+    let listed = records.iter().any(|record| {
+        !record.is_online() && record.file_name.to_lowercase() == kept.name.to_lowercase()
+    });
+    if online.is_some() || !listed {
+        let ordinal = online.map_or(records.len(), |index| records[index].source_ordinal);
+        let record =
+            crate::map::scenario_sources::loose_yrm_record(&kept.path, kept.name.clone(), ordinal)
+                .context("the kept map does not read as a map")?;
+        match online {
+            Some(index) => records[index] = record,
+            None => records.push(record),
+        }
+    }
+    drop(records);
+    refresh_choose_map(state);
+    Ok(kept.path)
 }
 
 /// Reads the catalog in the background.
@@ -532,6 +684,7 @@ fn read_catalog(body: &[u8]) -> Result<Vec<OnlineMap>> {
                     file_name: entry.file_name,
                     byte_length: entry.byte_length,
                     record,
+                    header: header.into(),
                 }
             })
         })
@@ -749,39 +902,45 @@ mod tests {
     }
 
     #[test]
-    fn a_finished_or_failed_catalog_read_is_not_started_again() {
-        let (send, read) = std::sync::mpsc::channel();
-        let (phase, result) = take_catalog(read);
-        assert!(matches!(phase, Phase::Fetching(_)) && result.is_none());
-        let Phase::Fetching(read) = phase else {
-            unreachable!()
-        };
-        send.send(Err(anyhow::anyhow!("answered 404"))).unwrap();
-        let (phase, result) = take_catalog(read);
-        assert!(matches!(phase, Phase::Ready) && result.is_some_and(|read| read.is_err()));
-        let (send, read) = std::sync::mpsc::channel::<Result<Vec<OnlineMap>>>();
-        drop(send);
-        assert!(matches!(take_catalog(read).0, Phase::Ready));
+    fn a_failed_catalog_read_tries_once_more_in_the_visit() {
+        assert!(matches!(failed(false), Phase::Failed { retry_at: Some(_) }));
+        assert!(matches!(failed(true), Phase::Failed { retry_at: None }));
     }
 
     #[test]
-    fn an_online_row_is_added_only_for_a_map_the_game_folder_does_not_hold() {
+    fn an_online_row_is_added_for_each_map_the_player_does_not_have() {
         let dir = std::env::temp_dir().join(format!("vera-map-library-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("frozen_lakes.YRM"), b"[Basic]\n").unwrap();
-        let header = "[Basic]\nName=Frozen Lakes\n";
+        // Another map under Frozen Lakes' name, and Twin Rivers itself.
+        std::fs::write(dir.join("frozen_lakes.YRM"), b"[Basic]\nName=Mine\n").unwrap();
+        let twin = b"[Basic]\nName=Twin Rivers\n";
+        std::fs::write(dir.join("Twin_Rivers.yrm"), twin).unwrap();
+        let mut have = entry('b', "Twin_Rivers.yrm", "[Basic]\nName=Twin Rivers\n");
+        have["sha256"] = crate::util::sha256::sha256_hex(twin).into();
+        have["byte_length"] = twin.len().into();
         let body = serde_json::json!({ "maps": [
-            entry('a', "Frozen_Lakes.yrm", header),
-            entry('b', "Twin_Rivers.yrm", "[Basic]\nName=Twin Rivers\n"),
+            entry('a', "Frozen_Lakes.yrm", "[Basic]\nName=Frozen Lakes\n"),
+            have,
+            entry('c', "Arctic.yrm", "[Basic]\nName=Arctic\n"),
         ]});
         let maps = read_catalog(body.to_string().as_bytes()).unwrap();
+        // A row that is no file, as a MIX map's is, holds Arctic's name.
         let mut records = vec![maps[0].record.clone()];
         records[0].source = SkirmishScenarioSource::Synthetic;
-        records[0].file_name = "Other.yrm".into();
+        records[0].file_name = "Arctic.yrm".into();
         append_rows(&mut records, &maps, &[&dir]);
         std::fs::remove_dir_all(&dir).unwrap();
-        assert_eq!(records.len(), 2);
-        assert_eq!(records[1].display_name, "Twin Rivers");
+        let rows: Vec<_> = records[1..]
+            .iter()
+            .map(|record| (record.display_name.as_str(), record.file_name.as_str()))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                ("Frozen Lakes", "Frozen_Lakes-aaaaaaaa.yrm"),
+                ("Arctic", "Arctic-cccccccc.yrm"),
+            ]
+        );
         assert_eq!(records[1].source_ordinal, 1);
     }
 }

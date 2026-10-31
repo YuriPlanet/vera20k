@@ -1247,6 +1247,25 @@ pub(super) fn push_choose_map_modal_text_draws(
             scale.factor(),
         );
     }
+    // VERA: an empty Online Maps list says why.
+    if modal.online_maps_selected() && modal.filtered_record_indices.is_empty() {
+        let row = geometry.row(0);
+        push_text_draw(
+            out,
+            state,
+            crate::app::map_library::empty_online_maps_text(state),
+            rect_to_text_rect(RectPx::new(
+                row.x + list_text_inset(scale),
+                row.y,
+                row.w - list_text_inset(scale),
+                row.h,
+            )),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
+            scale.factor(),
+        );
+    }
     // VERA: the search line under the map list; typing anywhere fills it.
     let search = if modal.search.is_empty() {
         "Search: type a map name".to_owned()
@@ -1623,6 +1642,9 @@ fn choose_map_prompt_labels(
         }
         (ChooseMapPromptKind::DownloadFailed, Some((name, ..))) => {
             format!("{name} could not be downloaded. Check your internet connection and try again.")
+        }
+        (ChooseMapPromptKind::SaveFailed, Some((name, ..))) => {
+            format!("{name} was downloaded but could not be saved in VERA20k's Maps folder.")
         }
         _ => localized_label(state, "GUI:EjectAIPlayers", "GUI:EjectAIPlayers"),
     };

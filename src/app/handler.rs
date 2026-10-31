@@ -1212,7 +1212,7 @@ impl ApplicationHandler for App {
                                 code,
                                 KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter
                             ) {
-                                Self::cancel_choose_map_prompt(state);
+                                Self::answer_choose_map_prompt_key(state, code != KeyCode::Escape);
                             }
                         }
                     }
@@ -1309,7 +1309,7 @@ impl ApplicationHandler for App {
                             code,
                             KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter
                         )
-                        && Self::cancel_choose_map_prompt(state)
+                        && Self::answer_choose_map_prompt_key(state, code != KeyCode::Escape)
                     {
                         return;
                     }

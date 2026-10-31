@@ -189,7 +189,12 @@ fn append_loose_yrm_records(
     if let Some(downloaded) = crate::map::source::downloaded_maps_dir()
         && crate::util::file_system::exists(downloaded)
     {
-        for (path, file_name) in loose_files_with_extension(downloaded, "yrm")? {
+        // An unreadable Maps folder lists nothing, not a failed scan.
+        let kept = loose_files_with_extension(downloaded, "yrm").unwrap_or_else(|error| {
+            log::warn!("Could not list {}: {error}", downloaded.display());
+            Vec::new()
+        });
+        for (path, file_name) in kept {
             if !files
                 .iter()
                 .any(|(_, name)| name.eq_ignore_ascii_case(&file_name))

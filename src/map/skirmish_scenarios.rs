@@ -40,7 +40,7 @@ pub enum SkirmishScenarioSource {
     LooseYrm(String),
     /// VERA: a map only in the lobby's online map library, by SHA-256. Its
     /// row comes from the library's copy of the map's header; Choose Map
-    /// downloads the map into the game folder before using it.
+    /// downloads the map into VERA's own Maps folder before using it.
     Online(String),
     Synthetic,
 }

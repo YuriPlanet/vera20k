@@ -1132,8 +1132,11 @@ pub(crate) fn offer_missing_map(state: &mut AppState, name: String, message: Str
             name,
             message,
             downloading: false,
+            opened: Instant::now(),
         });
+        // The offer takes the pointer from a row's open list too.
         ui.cancel_pointer();
+        ui.popup.close();
     }
     state.platform.window.request_redraw();
 }

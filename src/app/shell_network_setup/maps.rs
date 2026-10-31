@@ -437,14 +437,6 @@ fn keep_for_choose_map(
     let crate::map::source::LoadedMapSource::Loose { path, .. } = source else {
         return;
     };
-    let Some((ra2_dir, maps_dir)) = state.platform.game_config.as_ref().map(|config| {
-        (
-            config.paths.ra2_dir.clone(),
-            config.paths.downloaded_maps_dir(),
-        )
-    }) else {
-        return;
-    };
     let kept = crate::util::file_system::read(path)
         .map_err(anyhow::Error::from)
         .and_then(|bytes| {
@@ -452,37 +444,11 @@ fn keep_for_choose_map(
                 crate::util::sha256::sha256_hex(&bytes) == digest,
                 "received map changed"
             );
-            crate::map::source::keep_received_map(&maps_dir, &ra2_dir, host_file, &bytes)
+            crate::app::map_library::keep_map(state, host_file, &bytes)
         });
-    let name = match kept {
-        Ok(Some(name)) => name,
-        Ok(None) => return,
-        Err(error) => {
-            log::warn!("Could not keep the received map {host_file}: {error:#}");
-            return;
-        }
-    };
-    let mut records = state.frontend.scenario_catalog.records_mut();
-    // A library map's Online row becomes the kept file's row.
-    let online = records
-        .iter()
-        .position(|record| record.is_online() && record.file_name.eq_ignore_ascii_case(&name));
-    if online.is_none()
-        && records
-            .iter()
-            .any(|record| record.file_name.eq_ignore_ascii_case(&name))
-    {
-        return;
-    }
-    let ordinal = online.map_or(records.len(), |index| records[index].source_ordinal);
-    if let Some(record) =
-        crate::map::scenario_sources::loose_yrm_record(&maps_dir.join(&name), name.clone(), ordinal)
-    {
-        log::info!("Kept the received map {host_file} as {name} for Choose Map");
-        match online {
-            Some(index) => records[index] = record,
-            None => records.push(record),
-        }
+    match kept {
+        Ok(path) => log::info!("Kept the received map {host_file} as {}", path.display()),
+        Err(error) => log::warn!("Could not keep the received map {host_file}: {error:#}"),
     }
 }
 

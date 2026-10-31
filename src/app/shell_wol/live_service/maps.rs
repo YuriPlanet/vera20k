@@ -162,9 +162,9 @@ impl Transfers {
         self.complete = false;
         self.transfer = None;
         self.next_resource = None;
-        if std::mem::take(&mut self.asking) {
-            crate::app::shell_network_setup::close_missing_map_offer(state);
-        }
+        // The offer closes whether it still asks or shows the download.
+        self.asking = false;
+        crate::app::shell_network_setup::close_missing_map_offer(state);
         set_network_map_progress(state, None);
     }
     fn poll(&mut self, state: &mut AppState, service: &mut LiveService) -> Result<()> {
@@ -205,9 +205,9 @@ impl Transfers {
         );
         if self.key.as_ref() != Some(&key) {
             self.forget_other_available(&key);
-            if std::mem::take(&mut self.asking) {
-                crate::app::shell_network_setup::close_missing_map_offer(state);
-            }
+            // An offer for the previous map closes, asking or downloading.
+            self.asking = false;
+            crate::app::shell_network_setup::close_missing_map_offer(state);
             self.generation = self.generation.wrapping_add(1);
             self.transfer = None;
             self.complete = false;
@@ -492,15 +492,24 @@ impl Transfers {
             }
             http::Response::CachedMap { loaded: None, .. } => {
                 self.transfer.as_mut().unwrap().in_flight = false;
-                if self.ask_before_download() {
+                // Quick Match and launcher-started games show no room to ask in.
+                let dialog = !crate::app::shell_network_setup::quick_match(state)
+                    && !crate::app::shell_network_setup::external(state);
+                if dialog && self.ask_before_download() {
                     set_network_map_progress(state, None);
                     let metadata = state
                         .match_state
                         .session
                         .network_map_metadata()
                         .expect("transfer metadata");
+                    // Only custom maps are kept (`keep_for_choose_map`).
+                    let kept = if metadata.official {
+                        ""
+                    } else {
+                        " It is saved in VERA20k's Maps folder."
+                    };
                     let message = format!(
-                        "You don't have the map {} ({} players, {} KB). Download it to play in this game? It is saved in VERA20k's Maps folder.",
+                        "You don't have the map {} ({} players, {} KB). Download it to play in this game?{kept}",
                         metadata.display_name,
                         metadata.player_capacity,
                         (metadata.byte_length.max(0) as u32).div_ceil(1024)

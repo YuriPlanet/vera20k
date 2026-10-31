@@ -215,13 +215,25 @@ impl ScenarioCatalog {
             Self::verify_transferred_network_map(&loaded, metadata, seed).then_some(loaded)
         };
         verified(file).or_else(|| {
-            // VERA: a map received or downloaded earlier is kept as
-            // `<stem>.yrm` in VERA's Maps folder, a name the host's
-            // `<stem>.map` does not reach. The bytes still decide.
-            let kept = crate::map::source::kept_map_file_name(file).ok()?;
-            (!seed && !kept.eq_ignore_ascii_case(file))
-                .then(|| verified(&kept))
+            // VERA: the same map under another name or case, as a map received
+            // or downloaded earlier is kept (`keep_received_map`): a loose map
+            // in the game folder or VERA's Maps folder whose bytes verify.
+            // Only files of the host's length are read.
+            if seed {
+                return None;
+            }
+            let length = u64::try_from(metadata.byte_length).ok()?;
+            std::iter::once(root)
+                .chain(crate::map::source::downloaded_maps_dir())
+                .filter_map(|dir| crate::util::file_system::read_dir(dir).ok())
                 .flatten()
+                .filter_map(|entry| Some(entry.ok()?.path()))
+                .filter(|path| {
+                    crate::map::source::is_loose_map_name(path)
+                        && crate::util::file_system::metadata(path)
+                            .is_ok_and(|meta| meta.is_file() && meta.len() == length)
+                })
+                .find_map(|path| verified(path.to_str()?))
         })
     }
 
@@ -351,7 +363,7 @@ mod tests {
     }
 
     #[test]
-    fn a_guest_finds_its_kept_copy_of_a_map_the_host_names_otherwise() {
+    fn a_guest_finds_its_copy_of_the_hosts_map_under_another_name() {
         let map: &[u8] = b"[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n[IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n";
         let host = TestDirectory::new("kept-name-host");
         host.write("Lakes.map", map);
@@ -376,7 +388,9 @@ mod tests {
                 .is_none(),
             "another map under the kept name is not the host's"
         );
-        guest.write("Lakes.yrm", map);
+        // Kept under another name and case, as a copy beside another map of
+        // its name is.
+        guest.write("lakes-1A2B.YRM", map);
         assert!(
             catalog
                 .verify_network_map_input("Lakes.map", &metadata, guest.path(), &guest_assets)

@@ -346,10 +346,15 @@ and answers 304 to a matching `If-None-Match`. `GET /v1/library/maps/<sha256>`
 downloads one map, and `GET /v1/library/maps?search=<text>&players=<n>&page=<n>`
 searches them (newest first, 50 a page). All three are public, and the search is
 limited per network; the service keeps no player, session or address with a map. The game reads the catalog
-once a run. In an online room, Choose Map lists each map whose file name neither the
-game folder nor VERA's `Maps` folder holds under its Online Maps row, starred maps
-first. Use Map on one asks to download it, checks its length and SHA-256, and saves it
-in VERA's `Maps` folder, where it is an ordinary map in every game type's list.
+when the player goes online and keeps it for the run once it arrives; a failed read is
+tried once more in that visit, and again on the next. In an online room (not one that
+takes only official maps), Choose Map lists under its Online Maps row each map the
+player does not have, starred maps first: a file of its name in the game folder or
+VERA's `Maps` folder that holds its bytes means the player has it. Use Map on one asks
+to download it, checks its length and SHA-256, and saves it in VERA's `Maps` folder,
+where it is an ordinary map in every game type's list. A map whose name another map
+already holds is saved as `<stem>-<first 8 hex of its SHA-256>.yrm`; no file is ever
+replaced.
 
 The match admission is retained independently of channel membership until
 finish/timeout. The original-style shell leaves its game room at the start and

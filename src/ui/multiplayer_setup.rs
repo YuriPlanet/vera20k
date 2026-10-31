@@ -513,6 +513,19 @@ pub(crate) struct MapOffer {
     pub(crate) message: String,
     /// Download was pressed; the map transfer takes it from here.
     pub(crate) downloading: bool,
+    /// When it opened: keys typed for the chat just before do not answer it.
+    pub(crate) opened: Instant,
+}
+
+impl MapOffer {
+    /// How long after opening the offer ignores Enter and Escape.
+    pub(crate) const KEY_DELAY: crate::util::time::Duration =
+        crate::util::time::Duration::from_millis(750);
+
+    /// Whether a key now answers it.
+    pub(crate) fn takes_keys(&self, now: Instant) -> bool {
+        now.saturating_duration_since(self.opened) >= Self::KEY_DELAY
+    }
 }
 
 #[derive(Debug, Clone)]
