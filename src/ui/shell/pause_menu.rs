@@ -5,6 +5,9 @@
 //! buttons enrol in60B000 (B5609253, BBA609291, FF60954B); Resume686/675
 //! uses60B350 (FF609A25). FF's group box, trackbars and statics take the
 //! ordinary60B7A0 placement. App owns action dispatch.
+//!
+//! VERA adds a Display group to every template, with Zoom and Full Screen,
+//! so they change mid-match from the menu Escape opens.
 
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
@@ -320,6 +323,44 @@ impl InternetControlsLayout {
     }
 }
 
+/// One of the Display group's two lists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DisplayList {
+    Zoom,
+    Sidebar,
+}
+
+/// VERA's Display group: the main menu's Zoom and Sidebar lists with their
+/// captions, and its Full Screen and Original 4:3 Shape boxes. gamemd's
+/// menus have none of them. It sits where FF's Internet Game Controls group
+/// does, or under it in FF, and takes the same ordinary placement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DisplayControlsLayout {
+    pub group: RectPx,
+    /// Each list's caption and combo face, in [`DisplayList`] order. The
+    /// faces are 180 pixels wide, as on the main menu's Options pages.
+    pub captions: [RectPx; 2],
+    pub lists: [RectPx; 2],
+    pub full_screen: RectPx,
+    pub original_shape: RectPx,
+}
+
+impl DisplayControlsLayout {
+    pub fn face(&self, list: DisplayList) -> RectPx {
+        self.lists[list as usize]
+    }
+
+    /// The list whose face is under the pointer.
+    pub fn face_at(&self, x: i32, y: i32) -> Option<DisplayList> {
+        [DisplayList::Zoom, DisplayList::Sidebar]
+            .into_iter()
+            .find(|list| self.face(*list).contains(x, y))
+    }
+}
+
+pub const DISPLAY_GROUP_CAPTION: &str = "Display";
+const DISPLAY_COMBO_W: i32 = 180;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PauseMenuLayout {
     pub template: PauseMenuTemplate,
@@ -327,11 +368,37 @@ pub struct PauseMenuLayout {
     pub title: RectPx,
     pub footer: RectPx,
     pub internet: Option<InternetControlsLayout>,
+    pub display: DisplayControlsLayout,
 }
 
 impl PauseMenuLayout {
     pub fn button(&self, button: PauseMenuButton) -> Option<RectPx> {
         self.buttons[button as usize]
+    }
+
+    /// An open Display list of `rows` choices: under its face, or over it
+    /// when the status line leaves no room below. It grows with the choices,
+    /// as on the main menu's Options pages, so it never scrolls.
+    pub fn display_list(&self, list: DisplayList, rows: usize) -> RectPx {
+        let face = self.display.face(list);
+        let row_h = crate::ui::skirmish_shell::COMBO_DROPDOWN_ROW_H;
+        let h = rows as i32 * row_h;
+        let below = face.y + face.h + 1;
+        let y = if below + h <= self.footer.y {
+            below
+        } else {
+            (face.y - 1 - h).max(0)
+        };
+        RectPx::new(face.x, y, face.w, h)
+    }
+
+    /// The open list's row under the pointer.
+    pub fn display_row_at(&self, list: DisplayList, rows: usize, x: i32, y: i32) -> Option<usize> {
+        let list = self.display_list(list, rows);
+        let row_h = crate::ui::skirmish_shell::COMBO_DROPDOWN_ROW_H;
+        list.contains(x, y)
+            .then(|| ((y - list.y) / row_h) as usize)
+            .filter(|row| *row < rows)
     }
 
     /// The template's buttons with their rectangles.
@@ -387,12 +454,35 @@ pub fn pause_menu_layout(
         captions: [ordinary(61, 136, 67, 13), ordinary(61, 158, 67, 13)],
         values: [ordinary(278, 136, 78, 13), ordinary(278, 158, 78, 13)],
     });
+    // FF's group spans DLU y118..186; the Display group takes its place, or
+    // the space under it.
+    let top = if internet.is_some() { 196 } else { 118 };
+    let face = |y| {
+        let row = ordinary(134, y, 120, 15);
+        RectPx::new(
+            row.x,
+            row.y,
+            DISPLAY_COMBO_W,
+            crate::ui::skirmish_shell::COMBO_FACE_H,
+        )
+    };
+    let display = DisplayControlsLayout {
+        group: ordinary(58, top, 301, 74),
+        captions: [
+            ordinary(61, top + 14, 67, 15),
+            ordinary(61, top + 33, 67, 15),
+        ],
+        lists: [face(top + 14), face(top + 33)],
+        full_screen: ordinary(134, top + 56, 80, 10),
+        original_shape: ordinary(222, top + 56, 130, 10),
+    };
     PauseMenuLayout {
         template,
         buttons,
         title: in_game_shell::right_panel_title_rect(width),
         footer: in_game_shell::status_line_rect(height),
         internet,
+        display,
     }
 }
 
@@ -592,5 +682,50 @@ mod tests {
             };
             assert_eq!(ours, native, "{case}");
         }
+    }
+
+    #[test]
+    fn display_group_takes_ff_s_group_place_or_sits_under_it() {
+        let shell = crate::ui::shell::in_game_shell::allied_fixture_layout(800, 600);
+        let layout = |template| pause_menu_layout(800, 600, shell, [125, 25], template);
+        let ff = layout(PauseMenuTemplate::Internet);
+        let internet = ff.internet.unwrap();
+        for template in [PauseMenuTemplate::Offline, PauseMenuTemplate::Network] {
+            let group = layout(template).display.group;
+            assert_eq!(
+                (group.x, group.y, group.w),
+                (internet.group.x, internet.group.y, internet.group.w)
+            );
+        }
+        let display = ff.display;
+        assert!(display.group.y > internet.group.y + internet.group.h);
+        // The main menu's 180-pixel combos beside their captions, one under
+        // the other, then the two boxes side by side inside the group.
+        let (zoom, sidebar) = (
+            display.face(DisplayList::Zoom),
+            display.face(DisplayList::Sidebar),
+        );
+        assert_eq!((zoom.w, zoom.h), (180, 24));
+        assert_eq!(display.captions[1].y, sidebar.y);
+        assert!(zoom.y + zoom.h < sidebar.y && sidebar.y + sidebar.h < display.full_screen.y);
+        assert_eq!(display.full_screen.y, display.original_shape.y);
+        assert!(display.full_screen.x + display.full_screen.w <= display.original_shape.x);
+        let group = display.group;
+        assert!(display.original_shape.x + display.original_shape.w <= group.x + group.w);
+        assert!(display.full_screen.y + display.full_screen.h < group.y + group.h);
+        assert_eq!(
+            display.face_at(sidebar.x + 5, sidebar.y + 5),
+            Some(DisplayList::Sidebar)
+        );
+        // Two rows fit under a face; a list too tall for the space above
+        // the status line opens over its face instead.
+        let list = ff.display_list(DisplayList::Zoom, 2);
+        assert_eq!(list.y, zoom.y + zoom.h + 1);
+        assert_eq!(
+            ff.display_row_at(DisplayList::Zoom, 2, list.x + 4, list.y + 30),
+            Some(1)
+        );
+        let tall = ff.display_list(DisplayList::Zoom, 10);
+        assert_eq!(tall.y + tall.h, zoom.y - 1);
     }
 }

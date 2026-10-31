@@ -987,6 +987,7 @@ impl App {
                     pause_menu_interaction: Default::default(),
                     pause_menu_template: Default::default(),
                     internet_pause: Default::default(),
+                    display_pause: Default::default(),
                     abort_secondary: Default::default(),
                     sound_dialog: None,
                     abort_buttons: Default::default(),
