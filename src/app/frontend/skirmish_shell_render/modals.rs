@@ -305,7 +305,9 @@ pub(super) fn push_message_box_backdrop_instances(
     push_lower_strip_instance(out, atlas, layout);
 }
 
-/// Use Map's two-button box.
+/// Use Map's two-button box. gamemd's eject-AI question draws gamemd's art;
+/// VERA's map-library download boxes draw Red Alert 2's, like its other
+/// online-service boxes.
 pub(super) fn push_choose_map_prompt_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
@@ -326,8 +328,13 @@ pub(super) fn push_choose_map_prompt_instances(
             enabled: true,
         },
     ];
+    let background = match prompt.kind {
+        crate::ui::skirmish_shell::ChooseMapPromptKind::EjectAi => None,
+        _ => atlas.ra2_dialog_background,
+    }
+    .or_else(|| atlas.mode_two_dialog_background(None));
     out.extend(shell_paint::paint_modal_sprites(
-        atlas.mode_two_dialog_background(None),
+        background,
         super::chrome::type3_button_frames(atlas),
         boxed.dialog,
         &buttons,
