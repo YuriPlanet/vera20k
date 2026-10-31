@@ -2657,7 +2657,7 @@ fn ares_fatal_aircraft_parachutes_crew_and_honors_explicit_no_crash() {
     assert_eq!(escaped.len(), 1);
     let pilot = sim.entities().get(escaped[0]).unwrap();
     assert_eq!(sim.interner.resolve(pilot.type_ref()), "CREW");
-    assert!(pilot.is_object_alive() && pilot.is_parachuted());
+    assert!(pilot.is_object_alive() && pilot.is_falling_down());
     assert_eq!(pilot.health.current(), 50);
     assert!(
         sim.entities()

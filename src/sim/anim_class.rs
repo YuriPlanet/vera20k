@@ -1788,24 +1788,9 @@ impl Simulation {
                 index += 1;
                 continue;
             }
-            let start_sound_active = self
-                .substrate
-                .anims
-                .get(id)
-                .is_some_and(|anim| anim.start_sound_active);
-            self.notify_anim_pointer_expired(id);
-            self.substrate.clear_damage_fire_anim_reference(id);
-            self.substrate.release_anim_owner_reference(id);
-            if start_sound_active {
-                // `MapClass::InitCellAttributes @ 0x00568BB0` reaches the
-                // scalar destructor4228E0: Release406060, no StopSound.
-                self.sound_events
-                    .emit(SimSoundEvent::ObjectSoundReleased { owner: id });
-            }
-            self.conceal_anim(id);
-            self.substrate.pending_delete.remove_object(id);
-            let removed_anim = self.substrate.anims.remove(id);
-            debug_assert!(removed_anim.is_some());
+            // MapClass::InitCellAttributes568BB0 uses the same scalar
+            // destructor4228E0: Release406060, without StopSound.
+            self.scalar_delete_anim(id);
             removed += 1;
         }
         removed
@@ -2411,28 +2396,10 @@ impl Simulation {
         else {
             return;
         };
-        if let Some(building_slot) = self
-            .anim(id)
-            .and_then(|anim| anim.owner_entity.map(|_| anim.building_slot.is_some()))
-        {
-            if building_slot {
-                // A Building slot Anim's expiry below can construct its
-                // successor, which reads and changes Display.
-                self.detach_anim_from_owner(id, rules);
-            } else {
-                // SetOwner(NULL)'s resolved coordinates and pointer
-                // callback, without its temporary Display resubmission:
-                // until this operation's conceal below, nothing reads or
-                // changes Display (the expiry reaches Bullets and
-                // damage-fire slots only), so it is unobservable.
-                self.substrate.release_anim_owner_reference(id);
-                self.substrate
-                    .anims
-                    .get_mut(id)
-                    .expect("the retiring animation still exists")
-                    .world_coord = world;
-            }
-        }
+        // UnInit4255C3 calls owner+60 before SetOwner(NULL)4255CA. Keep
+        // the shared attachment flag and every matching owner link in that
+        // operation, including the ordinary non-Building path.
+        self.detach_anim_from_owner(id, rules);
         if let Some(anim) = self.substrate.anims.get_mut(id) {
             anim.start_sound_active = false;
         }
@@ -2483,6 +2450,7 @@ impl Simulation {
         let sound_active = self.anim(id).is_some_and(|anim| anim.start_sound_active);
         self.notify_anim_pointer_expired(id);
         self.substrate.clear_damage_fire_anim_reference(id);
+        self.substrate.release_last_anim_owner_flag(id);
         self.substrate.release_anim_owner_reference(id);
         self.substrate.clear_building_anim_reference(id);
         if sound_active {
@@ -2500,8 +2468,8 @@ impl Simulation {
     /// AnimClass::SetOwnerObject424B50. Normal detach preserves absolute
     /// coordinates and gates Remove/Submit on the entry Object+74 mark. Attach
     /// always removes, stores owner-relative coordinates, then submits Ground.
-    /// The owner+17C callback is a bare RET for all currently supported Techno
-    /// owners; Object+84's shared-owner flag has no consumer here.
+    /// The owner+17C callback is a bare RET5F43C0 for supported Techno owners.
+    /// Last detach clears Object+84; every attach sets it before publishing CC.
     pub(crate) fn set_anim_owner_object(
         &mut self,
         id: AnimId,
@@ -2516,6 +2484,7 @@ impl Simulation {
             if marked {
                 self.substrate.display.remove(id);
             }
+            self.substrate.release_last_anim_owner_flag(id);
             let absolute = self.anim_absolute_coord(id).expect("live Anim");
             let anim = self.substrate.anims.get_mut(id).expect("live Anim");
             anim.owner_entity = None;
@@ -2529,6 +2498,11 @@ impl Simulation {
                 return false;
             };
             self.substrate.display.remove(id);
+            self.substrate
+                .entities
+                .get_mut(owner_id)
+                .expect("the resolved Anim owner remains stored")
+                .set_attached_anim_flag(true);
             let anim = self.substrate.anims.get_mut(id).expect("live Anim");
             anim.world_coord = AnimWorldCoord {
                 x: anim.world_coord.x.wrapping_sub(owner_coord.x),
@@ -2621,11 +2595,7 @@ impl Simulation {
     pub(crate) fn detach_anim_from_owner(&mut self, id: AnimId, rules: &RuleSet) -> Option<u64> {
         let owner = self.anim(id)?.owner_entity?;
         if let Some(entity) = self.substrate.entities.get_mut(owner) {
-            // TechnoClass::Detach710415/71042F/710443 clear the matching
-            // Techno+0x12C, +0x1D4 and +0x130.
-            entity.expire_behind_anim(id);
-            entity.drain.expire_anim(id);
-            entity.expire_deploy_anim(id);
+            entity.attached_anim_expired(id);
         }
         self.set_anim_owner_object(id, None, rules);
         Some(owner)
@@ -2654,6 +2624,9 @@ impl Simulation {
             self.lifecycle_outputs
                 .emit(LifecycleOutput::DisplayRemove { stable_id: id });
             self.substrate.display.remove(id);
+            if let Some(entity) = self.substrate.entities.get_mut(expired_id) {
+                entity.attached_anim_expired(id);
+            }
             self.substrate.release_anim_owner_reference(id);
             self.substrate.mark_anim_display(id, false);
             if let Some(anim) = self.substrate.anims.get_mut(id) {
@@ -3665,16 +3638,31 @@ impl crate::sim::world::ObjectSubstrate {
             anim.display.marked_on_map = marked;
         }
     }
-    /// Destruction/expiry clear the reference without SetOwner's coordinate
-    /// conversion or intermediate display submission (422961 / 425190).
-    pub(crate) fn release_anim_owner_reference(&mut self, id: AnimId) -> Option<u64> {
-        let owner = self.anims.get_mut(id)?.owner_entity.take()?;
-        if let Some(entity) = self.entities.get_mut(owner) {
-            entity.expire_behind_anim(id);
-            entity.drain.expire_anim(id);
-            entity.expire_deploy_anim(id);
+    /// Retail gamemd.exe SetOwnerObject424B79..424BB6 and active-scenario
+    /// destructor42291A..42295B clear Object+84 only for the last attached
+    /// Anim. Scan the whole retained array, excluding only this Anim: inactive,
+    /// concealed and pending-delete entries still count while CC names owner.
+    /// Owner+17C is bare RET5F43C0 for supported Techno owners. Rust world
+    /// disposal drops the stores; it does not simulate native gate0 exit teardown.
+    pub(crate) fn release_last_anim_owner_flag(&mut self, id: AnimId) {
+        let Some(owner) = self.anims.get(id).and_then(|anim| anim.owner_entity) else {
+            return;
+        };
+        if !self
+            .anims
+            .iter()
+            .any(|(other, anim)| *other != id && anim.owner_entity == Some(owner))
+            && let Some(entity) = self.entities.get_mut(owner)
+        {
+            entity.set_attached_anim_flag(false);
         }
-        Some(owner)
+    }
+
+    /// Clear only CC, without SetOwner's coordinate conversion or display
+    /// submission (422961 / 425190). Callers own the distinct +60 and +84
+    /// effects: PointerExpired clears CC without releasing the retained flag.
+    pub(crate) fn release_anim_owner_reference(&mut self, id: AnimId) -> Option<u64> {
+        self.anims.get_mut(id)?.owner_entity.take()
     }
     pub(crate) fn set_anim_frame_and_z_adjust(&mut self, id: AnimId, frame: i32, z_adjust: i32) {
         if let Some(anim) = self.anims.get_mut(id) {
@@ -4636,9 +4624,8 @@ mod tests {
     }
 
     /// A producer's `owner` attaches inside the constructor without Reveal's
-    /// own Display submit, and Destroy conceals the attached Anim without
-    /// SetOwner(NULL)'s temporary resubmission: Display ends as the native
-    /// constructor, SetOwnerObject, detach and conceal sequence leaves it.
+    /// own Display submit. Destroy follows the shared SetOwner(NULL) detach
+    /// and conceal sequence, leaving Display as those native calls do.
     #[test]
     fn an_owned_anim_leaves_display_as_construct_then_attach_does() {
         let rules = runtime_rules("[A]\nLayer=Ground\n", &[("A", 10)]);
@@ -4763,12 +4750,11 @@ mod tests {
                 .unwrap()
                 .retain_deploy_anim(retained);
             for (id, expected) in [(other, Some(retained)), (retained, None)] {
-                let cleared = if detach_with_coords {
-                    sim.detach_anim_from_owner(id, &rules)
+                if detach_with_coords {
+                    assert_eq!(sim.detach_anim_from_owner(id, &rules), Some(owner_id));
                 } else {
-                    sim.substrate.release_anim_owner_reference(id)
-                };
-                assert_eq!(cleared, Some(owner_id));
+                    assert!(sim.anim_pointer_expired(id, owner_id, &rules));
+                }
                 assert_eq!(sim.anim(id).unwrap().owner_entity, None);
                 let entity = sim.substrate.entities.get(owner_id).unwrap();
                 assert_eq!(entity.deploy_anim(), expected);
@@ -4776,6 +4762,69 @@ mod tests {
                 assert!(!entity.is_fully_deployed());
             }
         }
+    }
+
+    /// SetOwnerObject424B50, destructor4228E0 and PointerExpired425150 have
+    /// distinct effects on the retained Object+84 byte and owner+60 links.
+    #[test]
+    fn attached_animation_transfer_and_expiry_preserve_shared_owner_state() {
+        let rules = runtime_rules("[A]\nEnd=3\n", &[("A", 3)]);
+        let mut sim = Simulation::new();
+        sim.interner = crate::sim::intern::test_interner();
+        for owner in [100, 101] {
+            sim.substrate.entities.insert(GameEntity::test_default(
+                owner,
+                "UNIT",
+                "Americans",
+                10,
+                10,
+            ));
+        }
+        let type_id = sim.interner.intern("A");
+        let first = sim
+            .spawn_anim_object(&rules, runtime_descriptor(type_id, 0))
+            .unwrap();
+        let second = sim
+            .spawn_anim_object(&rules, runtime_descriptor(type_id, 0))
+            .unwrap();
+        for anim in [first, second] {
+            assert!(sim.set_anim_owner_object(anim, Some(100), &rules));
+        }
+        // The native scan includes an inactive Anim while its CC still names
+        // this owner; filtering to Logic/Display/live entries clears too early.
+        sim.substrate
+            .anims
+            .get_mut(second)
+            .unwrap()
+            .runtime
+            .inactive = true;
+        assert!(sim.set_anim_owner_object(first, Some(101), &rules));
+        assert!(sim.substrate.entities.get(100).unwrap().is_parachuted());
+        assert!(sim.substrate.entities.get(101).unwrap().is_parachuted());
+
+        sim.scalar_delete_anim(second);
+        assert!(sim.anim(second).is_none());
+        assert!(!sim.substrate.entities.get(100).unwrap().is_parachuted());
+        sim.substrate
+            .entities
+            .get_mut(101)
+            .unwrap()
+            .set_parachute_animation(Some(first));
+        assert!(sim.anim_pointer_expired(first, 101, &rules));
+        assert_eq!(sim.anim(first).unwrap().owner_entity, None);
+        let owner = sim.substrate.entities.get(101).unwrap();
+        assert_eq!(
+            owner.parachute_animation(),
+            None,
+            "owner+60 ran before unlink"
+        );
+        assert!(owner.is_parachuted(), "PointerExpired retains Object+84");
+        sim.scalar_delete_anim(first);
+        assert!(sim.anim(first).is_none());
+        assert!(
+            sim.substrate.entities.get(101).unwrap().is_parachuted(),
+            "a later destructor cannot reconstruct the already-cleared owner"
+        );
     }
 
     #[test]

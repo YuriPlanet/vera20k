@@ -4,15 +4,17 @@
 //! (`position.exact_z_leptons`). `ObjectClass::AI`'s falling block moves it
 //! ([`Simulation::advance_fall`](crate::sim::world::Simulation::advance_fall)):
 //! - each frame the Z moves by the FallRate: `Location.Z = GetZ() + FallRate`
-//! - the FallRate starts at 0 and drops by one a frame (integer DEC) to
-//!   `Rules.ParachuteMaxFallRate` (default `-3`), so it ramps 0,-1,-2,-3,-3,...
+//! - an attached Anim's retained Object+84 flag selects integer DEC, capped
+//!   by `Rules.ParachuteMaxFallRate` (default `-3`); a new Object starts at 0
 //! - the fall grounds when GetHeight is at most 0, and SetHeight(0) puts the
 //!   object on the ground or deck
 //! - the infantry keeps its base locomotor and body sequence during descent
 //!
 //! Free fall uses trunc(FallRate - 1.4), capped by NoParachuteMaxFallRate.
-//! Landing retains the rate and parachute/bomb bytes; a bomb then enters
-//! the synchronous C4 receiver with its current Health and both force flags.
+//! Landing retains the rate and attached-Anim/bomb bytes. The last normal
+//! Anim detach clears +84; a later fall then uses free-fall acceleration.
+//! A grounded bomb enters the synchronous C4 receiver with its current Health
+//! and both force flags.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on sim/game_entity, sim/entity_store, sim/locomotor.
@@ -27,8 +29,9 @@ use crate::sim::world::ObjectSubstrate;
 ///
 /// `ObjectClass::Paradrop @ 0x005F5940` raises the falling byte (`+0x8D`,
 /// `0x005F5965`) and places the object at the drop coordinate: Unlimbo
-/// (`vt+0xD8`), then SetLocation (`vt+0x1B4`, `0x005F5A50`). The FallRate
-/// starts at 0, so the ramp begins on the first frame.
+/// (`vt+0xD8`), then SetLocation (`vt+0x1B4`, `0x005F5A50`). It preserves
+/// the FallRate; only a new Object starts at 0. The caller's subsequent Anim
+/// attachment owns the +84 acceleration flag.
 ///
 /// The caller positions the entity's XY. Reveal keeps this Z as the Unlimbo
 /// coordinate's.
