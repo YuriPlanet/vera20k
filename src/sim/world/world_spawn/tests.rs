@@ -2415,6 +2415,61 @@ fn authored_retail_upgrade_scene(
 }
 
 #[test]
+fn authored_retail_wall_tower_zero_capacity_upgrade_is_retained() {
+    // ReadScenarioBuildings44FD50 -> Unlimbo4408DF -> PowerUp451400:
+    // Rules.WallTower bypasses the ordinary equal-capacity rejection, so
+    // a first upgrade increments count0 to1 even when Upgrades defaults to0.
+    let map = IniFile::from_str(
+        "[GAPILL]\nPowersUpBuilding=GADUMY\n[Structures]\n\
+         0=Americans,GADUMY,256,10,12,0,None,1,0,1,1,0,GAPILL,None,None,0,1\n",
+    );
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&map)
+    else {
+        return;
+    };
+    let rules = retail.rules;
+    assert_eq!(
+        rules.general.building_types.wall_tower.as_deref(),
+        Some("GADUMY")
+    );
+    let host_type = rules.object("GADUMY").unwrap();
+    assert_eq!(host_type.building_upgrade().slots(), 0);
+    assert_eq!(
+        rules.object("GAPILL").unwrap().building_upgrade().level(),
+        -1
+    );
+
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4514_0000);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    sim.session
+        .set_current_house_for_test(sim.interner.get("Americans"));
+    sim.session.game_options_mut_for_test().short_game = false;
+    let placements = crate::map::entities::parse_map_entities(&map);
+    assert_eq!(sim.spawn_from_map(&placements, Some(&rules)), 2);
+
+    let host = sim.substrate.entities.get(1).unwrap();
+    assert!(host.is_object_alive());
+    assert!(!host.lifecycle.in_limbo());
+    assert_eq!(sim.interner.resolve(host.type_ref()), "GADUMY");
+    assert_eq!((host.position.rx(), host.position.ry()), (10, 12));
+    assert_eq!(host.health.current(), host_type.strength);
+    assert!(
+        !sim.substrate.entities.get(2).unwrap().is_object_alive(),
+        "the admitted map upgrade must be consumed before checking its host count"
+    );
+    assert_eq!(
+        host.building_upgrades().count(),
+        1,
+        "451400 WallTower must retain its first upgrade despite zero ordinary capacity"
+    );
+    assert_eq!(
+        host.building_upgrades().types()[0],
+        sim.interner.get("GAPILL")
+    );
+}
+
+#[test]
 fn authored_retail_upgrade_lends_its_weapon_and_fire_offset() {
     let Some((mut sim, rules, target)) = authored_retail_upgrade_scene("", "") else {
         return;
