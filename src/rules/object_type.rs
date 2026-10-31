@@ -2533,20 +2533,34 @@ impl ObjectType {
     }
 
     /// Phobos `GetBurstFLH`: a burst-index-specific ART offset for this slot,
-    /// selected by live veterancy. `None` leaves the slot's FLH in force.
+    /// selected by live veterancy and the infantry state. `None` leaves the
+    /// slot's FLH in force.
     #[cfg(feature = "phobos")]
     pub(crate) fn burst_flh(
         &self,
         index: i32,
         elite: bool,
+        state: crate::rules::weapon_offsets::InfantryFlhState,
         burst_index: u8,
     ) -> Option<crate::rules::flh::Flh> {
-        self.weapon_offsets.burst(index, elite, burst_index)
+        self.weapon_offsets.burst(index, elite, state, burst_index)
+    }
+
+    /// Phobos `InfantryExt::GetSimpleFLH`: the deployed or prone override of
+    /// the primary/secondary firing offset.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn infantry_state_flh(
+        &self,
+        index: i32,
+        deployed: bool,
+        crawling: bool,
+    ) -> Option<crate::rules::flh::Flh> {
+        self.weapon_offsets.state_flh(index, deployed, crawling)
     }
 
     #[cfg(feature = "phobos")]
-    pub(crate) fn burst_flh_rows(&self) -> (&[Vec<[i32; 3]>], &[Vec<[i32; 3]>]) {
-        self.weapon_offsets.burst_rows()
+    pub(crate) fn burst_flh_rows(&self) -> [&crate::rules::weapon_offsets::BurstFlhRows; 3] {
+        self.weapon_offsets.burst_row_sets()
     }
 
     /// GetFLH6F3AF5: an open transport lends its zero-based cargo port.

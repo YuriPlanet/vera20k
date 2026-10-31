@@ -6967,6 +6967,16 @@ impl RulesPassProcessor {
                     slots.turret_count,
                     slots.weapon_count,
                 );
+                // Phobos `InfantryTypeExt::LoadFromINIFile` adds the deployed
+                // and prone firing-offset reads to an InfantryType.
+                #[cfg(feature = "phobos")]
+                if family == RulesTypeFamily::Infantry {
+                    slots.offsets.read_infantry_state_pass(
+                        &fixed_art.section_or_empty(&image),
+                        slots.turret_count,
+                        slots.weapon_count,
+                    );
+                }
                 // TechnoRead716090..7160A4 reaches LoadVoxel5F8110 only
                 // with the retained Voxel byte. Later Image changes cannot
                 // rename a resource whose load was skipped.
