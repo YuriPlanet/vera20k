@@ -56,13 +56,14 @@ mod tests {
             sim.interner = crate::sim::intern::test_interner();
             let mut entity = GameEntity::test_default(1, "E1", "Americans", 10, 10);
             let z = int(input, "z", 416);
+            entity.set_fall_rate_for_test(int(input, "rate", 0));
             if input["parachuted"].as_i64() == Some(1) {
                 entity.begin_parachute_fall(z);
+                entity.set_attached_anim_flag(true);
             } else {
                 entity.position.set_exact_z_leptons_for_test(Some(z));
                 entity.begin_bomb_fall();
             }
-            entity.set_fall_rate_for_test(int(input, "rate", 0));
             if int(input, "falling", 1) == 0 {
                 entity.finish_fall();
             }

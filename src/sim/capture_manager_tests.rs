@@ -395,6 +395,54 @@ fn capture_takes_the_target_and_records_its_house() {
     assert_eq!(sim.scenario_rng.state(), replay.state());
 }
 
+/// Owner+60's Techno::Detach71043D releases only the matching ring, without
+/// freeing the captive. A different Anim of the same type is independent.
+#[test]
+fn attached_animation_retirement_clears_only_the_matching_control_ring() {
+    let rules = rules();
+    let mut sim = sim(3);
+    let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
+    let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
+    assert!(sim.capture_unit(
+        yuri,
+        gi,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default()
+    ));
+    let first = sim
+        .substrate
+        .entities
+        .get(gi)
+        .unwrap()
+        .mind_control
+        .ring_anim
+        .unwrap();
+    sim.attach_control_ring(gi, "MINDANIM", &rules);
+    let current = sim
+        .substrate
+        .entities
+        .get(gi)
+        .unwrap()
+        .mind_control
+        .ring_anim
+        .unwrap();
+    assert_ne!(first, current);
+    sim.destroy_anim(first, &rules);
+    let captive = sim.substrate.entities.get(gi).unwrap();
+    assert_eq!(captive.mind_control.ring_anim, Some(current));
+    assert!(
+        captive.is_parachuted(),
+        "the other attached Anim still counts"
+    );
+    sim.destroy_anim(current, &rules);
+    let captive = sim.substrate.entities.get(gi).unwrap();
+    assert_eq!(captive.mind_control.ring_anim, None);
+    assert_eq!(captive.mind_control.controller(), Some(yuri));
+    assert!(!captive.is_parachuted());
+    assert_eq!(victims(&sim, yuri), [gi]);
+}
+
 /// A captured building wears its ring at its GetCoords (`0x00447AC0`, the
 /// foundation centre), `Height=` levels up at the level height the original
 /// static initializer computes (`capture_ring_height.json`), sorted 1024

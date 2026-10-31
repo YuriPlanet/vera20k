@@ -2192,8 +2192,13 @@ impl GameEntity {
         self.fall.rate()
     }
 
+    /// Object+84: the retained attached-Anim flag consumed by ObjectAI5F3FB2.
     pub(crate) fn is_parachuted(&self) -> bool {
         self.fall.parachuted()
+    }
+
+    pub(crate) fn set_attached_anim_flag(&mut self, attached: bool) {
+        self.fall.set_attached_anim_flag(attached);
     }
 
     pub(crate) fn parachute_animation(&self) -> Option<u64> {
@@ -2208,10 +2213,22 @@ impl GameEntity {
         self.fall.parachute_animation_expired(animation);
     }
 
-    /// Paradrop5F5940 raises +84/+8D and resets +2C before placement.
+    /// Retail gamemd.exe TechnoClass::Detach710410, then
+    /// ObjectClass::DetachParachute5F6DA0: owner+60 clears only matching
+    /// retained Anim identities, before the child's owner reference clears.
+    pub(crate) fn attached_anim_expired(&mut self, animation: u64) {
+        self.expire_behind_anim(animation);
+        self.drain.expire_anim(animation);
+        self.mind_control.anim_pointer_expired(animation);
+        self.expire_deploy_anim(animation);
+        self.parachute_animation_expired(animation);
+    }
+
+    /// Paradrop5F5965 raises +8D. SetOwnerObject424C30 owns +84; Paradrop
+    /// preserves the rate retained from any preceding fall.
     pub(crate) fn begin_parachute_fall(&mut self, z: i32) {
         self.position.put_z(z);
-        self.fall.begin_parachute();
+        self.fall.begin_fall();
     }
 
     /// DropAsBomb5F416A/71 writes neither Location nor FallRate nor +84.

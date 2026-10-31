@@ -65,11 +65,6 @@
 //! state. Tactical presentation consumes the shared GetFLH/live coordinates.
 //!
 //! RESIDUALS:
-//! - An expired ring anim clears the victim's `+0x2C8` natively
-//!   (`TechnoClass::PointerExpired @ 0x00707946`, `0x0071043D`); VERA clears
-//!   the link only in FreeUnit, so a ring that ran out of loops leaves a
-//!   stale anim id in the persisted and hashed link. Harmless while stable
-//!   ids are never reused.
 //! - A type's `MindClearedSound=` naming an unknown sound is -1 natively and
 //!   FreeUnit falls back to the global (`0x00472057`); VERA keeps the name
 //!   and plays nothing. No stock type authors the key.
@@ -389,6 +384,14 @@ impl std::hash::Hash for MindControlLink {
 }
 
 impl MindControlLink {
+    /// Retail gamemd.exe TechnoClass::Detach710435..71043D clears only the
+    /// matching ring; the controller and permanent-control flag survive.
+    pub(crate) fn anim_pointer_expired(&mut self, animation: AnimId) {
+        if self.ring_anim == Some(animation) {
+            self.ring_anim = None;
+        }
+    }
+
     /// `TechnoClass::IsMindControlled @ 0x007105E0`: a controller (`+0x2C0`)
     /// or the Dominator's permanent control (`+0x2C4`).
     pub fn is_mind_controlled(&self) -> bool {

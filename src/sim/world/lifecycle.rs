@@ -6859,9 +6859,10 @@ impl Simulation {
         if kind == Some(ObjectKind::Anim) {
             self.notify_anim_pointer_expired(stable_id);
             self.substrate.clear_damage_fire_anim_reference(stable_id);
-            self.conceal_anim(stable_id);
+            self.substrate.release_last_anim_owner_flag(stable_id);
             self.substrate.release_anim_owner_reference(stable_id);
             self.substrate.clear_building_anim_reference(stable_id);
+            self.conceal_anim(stable_id);
         }
         // The native Object field+34 disappears with storage. This is not
         // SetTag(nullptr): the shared Tag owner preserves its native counter.
