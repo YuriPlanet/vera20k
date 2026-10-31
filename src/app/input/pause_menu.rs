@@ -4,11 +4,12 @@
 
 use crate::app::match_runtime::session::{PauseEventLimiters, SessionMode, WallBucketTimer};
 use crate::app::{App, AppState};
+use crate::ui::main_menu_dialogs::options::{SidebarSize, Zoom};
 use crate::ui::pause_menu::InGameMenuState;
-use crate::ui::shell::geom::ShellScale;
+use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::pause_menu::{
-    InternetSlider, PauseMenuButton, PauseMenuButtonState, PauseMenuLayout, PauseMenuTemplate,
-    pause_menu_layout,
+    DisplayList, InternetSlider, PauseMenuButton, PauseMenuButtonState, PauseMenuLayout,
+    PauseMenuTemplate, pause_menu_layout,
 };
 use crate::ui::shell::trackbar::{TrackbarHold, TrackbarPress};
 use crate::ui::skirmish_shell::SavedSeedMode;
@@ -51,6 +52,167 @@ impl InternetPauseControls {
         *stored = position;
         true
     }
+}
+
+/// VERA's Display group. The Options profile owns the zoom, sidebar size and
+/// shape, and the window owns full screen; the group copies them each frame.
+/// Each applies at once, as on the main menu's Options pages, and the
+/// profile saves them with the rest of its values.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct DisplayPauseControls {
+    /// The window's `Zoom::choices`, one list row each.
+    pub(crate) zoom_choices: Vec<Zoom>,
+    pub(crate) zoom: Zoom,
+    /// The main menu's Zoom text for each choice, in list order.
+    pub(crate) zoom_labels: Vec<String>,
+    /// The sizes the battle frame has room for, one list row each.
+    pub(crate) sidebar_choices: Vec<SidebarSize>,
+    /// The size in effect, the one the face shows.
+    pub(crate) sidebar: SidebarSize,
+    pub(crate) full_screen: bool,
+    pub(crate) original_shape: bool,
+    /// The open list, if any, and its row under the pointer.
+    pub(crate) open: Option<DisplayList>,
+    pub(crate) hovered: Option<usize>,
+}
+
+/// A row picked from a Display list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DisplayPick {
+    Zoom(Zoom),
+    Sidebar(SidebarSize),
+}
+
+impl DisplayPauseControls {
+    pub(crate) fn rows(&self, list: DisplayList) -> usize {
+        match list {
+            DisplayList::Zoom => self.zoom_choices.len(),
+            DisplayList::Sidebar => self.sidebar_choices.len(),
+        }
+    }
+
+    /// The row the face shows. A fixed zoom this window can't reach shows
+    /// as the largest step, the one it gives way to.
+    pub(crate) fn selected(&self, list: DisplayList) -> usize {
+        let found = match list {
+            DisplayList::Zoom => self.zoom_choices.iter().position(|&z| z == self.zoom),
+            DisplayList::Sidebar => self.sidebar_choices.iter().position(|&s| s == self.sidebar),
+        };
+        found.unwrap_or(self.rows(list).saturating_sub(1))
+    }
+
+    /// A row's text.
+    pub(crate) fn row_label(&self, list: DisplayList, row: usize) -> &str {
+        match list {
+            DisplayList::Zoom => self.zoom_labels.get(row).map_or("", String::as_str),
+            DisplayList::Sidebar => self.sidebar_choices.get(row).map_or("", |s| s.label()),
+        }
+    }
+
+    /// A left press while a list is open picks the row under it, if any,
+    /// and closes the list either way. Returns the pick when it differs
+    /// from the shown row.
+    fn pick(&mut self, row: Option<usize>) -> Option<DisplayPick> {
+        self.hovered = None;
+        let list = self.open.take()?;
+        let row = row.filter(|&row| row != self.selected(list))?;
+        match list {
+            DisplayList::Zoom => self.zoom_choices.get(row).map(|&z| DisplayPick::Zoom(z)),
+            DisplayList::Sidebar => self
+                .sidebar_choices
+                .get(row)
+                .map(|&s| DisplayPick::Sidebar(s)),
+        }
+    }
+}
+
+/// Copy the profile's display choices and the window's full screen into the
+/// Display group, with the choices this window and battle frame offer.
+pub(crate) fn sync_display_controls(state: &mut AppState) {
+    let window = (
+        state.renderer.gpu.config.width,
+        state.renderer.gpu.config.height,
+    );
+    let battle = App::match_zoom_geometry(state);
+    let profile = &state.persistence.options_profile;
+    let display = &mut state.match_state.match_presentation.display_pause;
+    display.zoom_choices = Zoom::choices(window.0, window.1);
+    display.zoom_labels = display
+        .zoom_choices
+        .iter()
+        .map(|&zoom| {
+            crate::app::frontend::skirmish_shell_render::zoom_label(
+                zoom,
+                window,
+                profile.original_shape,
+            )
+        })
+        .collect();
+    display.zoom = profile.zoom;
+    display.sidebar_choices = SidebarSize::choices(battle.src_width, battle.src_height);
+    display.sidebar = profile
+        .sidebar
+        .in_effect(battle.src_width, battle.src_height);
+    display.full_screen = profile.full_screen;
+    display.original_shape = profile.original_shape;
+}
+
+/// Fit the match to changed display choices, as a window resize does: the
+/// zoom pass, then the sidebar laid out again for the new frame.
+fn refit_match(state: &mut AppState) {
+    App::sync_zoom_pass(state);
+    crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+}
+
+fn play_checkbox_sound(state: &mut AppState) {
+    let sound = state
+        .rules()
+        .and_then(|rules| rules.general.gui_checkbox_sound.clone());
+    App::play_shell_ui_sound_by_id(state, sound.as_deref());
+}
+
+/// The Display group's share of a left press; true when it took it. An open
+/// list takes every press, as a combo's list holds the capture.
+fn display_press(state: &mut AppState, layout: &PauseMenuLayout) -> bool {
+    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
+    let controls = layout.display;
+    let display = &mut state.match_state.match_presentation.display_pause;
+    if let Some(list) = display.open {
+        let row = layout.display_row_at(list, display.rows(list), x, y);
+        if let Some(pick) = display.pick(row) {
+            App::play_skirmish_shell_generic_click_sound(state);
+            let profile = &mut state.persistence.options_profile;
+            match pick {
+                DisplayPick::Zoom(zoom) => profile.zoom = zoom,
+                DisplayPick::Sidebar(size) => profile.sidebar = size,
+            }
+            refit_match(state);
+        }
+        return true;
+    }
+    if let Some(list) = controls.face_at(x, y) {
+        display.open = Some(list);
+        display.hovered = None;
+        App::play_skirmish_shell_generic_click_sound(state);
+        return true;
+    }
+    // Owner6163A0, 6166EE..616708: only the box, not the caption, clicks.
+    let box_at = |rect: RectPx| RectPx::new(rect.x, rect.y, 18, 18).contains(x, y);
+    if box_at(controls.full_screen) {
+        display.full_screen = !display.full_screen;
+        let checked = display.full_screen;
+        App::set_full_screen(state, checked);
+        play_checkbox_sound(state);
+        return true;
+    }
+    if box_at(controls.original_shape) {
+        display.original_shape = !display.original_shape;
+        state.persistence.options_profile.original_shape = display.original_shape;
+        refit_match(state);
+        play_checkbox_sound(state);
+        return true;
+    }
+    false
 }
 
 /// The template the open in-game menu was created from.
@@ -173,6 +335,10 @@ pub(crate) fn on_open(state: &mut AppState) {
         state.match_state.session.latency_fudge(),
         current_game_speed(state),
     );
+    let display = &mut state.match_state.match_presentation.display_pause;
+    display.open = None;
+    display.hovered = None;
+    sync_display_controls(state);
 }
 
 pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 7] {
@@ -218,6 +384,11 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         return;
     };
     let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
+    let display = &mut state.match_state.match_presentation.display_pause;
+    if let Some(list) = display.open {
+        display.hovered = layout.display_row_at(list, display.rows(list), x, y);
+        return;
+    }
     let over = hit(state, &layout);
     let pause = &mut state.match_state.match_presentation.internet_pause;
     // A held trackbar owns the capture (`0x0061E4DF`): nothing else sees the
@@ -252,6 +423,9 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         return;
     };
     let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
+    if pressed && display_press(state, &layout) {
+        return;
+    }
     if !pressed
         && state
             .match_state
@@ -420,6 +594,39 @@ fn resume_internet_events(state: &mut AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn display_lists_pick_a_choice_and_close() {
+        // A 1920x1080 window offers Auto, 100%, 150% and 200%; a battle frame
+        // that size has room for all three sidebar sizes.
+        let mut display = DisplayPauseControls {
+            zoom_choices: Zoom::choices(1920, 1080),
+            sidebar_choices: SidebarSize::choices(1920, 1080),
+            open: Some(DisplayList::Zoom),
+            hovered: Some(3),
+            ..Default::default()
+        };
+        assert_eq!(
+            display.pick(Some(3)),
+            Some(DisplayPick::Zoom(Zoom::Percent(200)))
+        );
+        assert_eq!((display.open, display.hovered), (None, None));
+        // Picking the shown row, or pressing off the list, changes nothing.
+        display.open = Some(DisplayList::Zoom);
+        assert_eq!(display.pick(Some(0)), None);
+        display.open = Some(DisplayList::Sidebar);
+        assert_eq!(display.pick(None), None);
+        assert_eq!(display.open, None);
+        display.open = Some(DisplayList::Sidebar);
+        assert_eq!(
+            display.pick(Some(2)),
+            Some(DisplayPick::Sidebar(SidebarSize::ExtraLarge))
+        );
+        assert_eq!(display.row_label(DisplayList::Sidebar, 2), "XL");
+        // A fixed zoom past this window's largest step shows that step.
+        display.zoom = Zoom::Percent(300);
+        assert_eq!(display.selected(DisplayList::Zoom), 3);
+    }
 
     #[test]
     fn shared_pause_control_waits_for_confirmation_and_remains_resumable() {

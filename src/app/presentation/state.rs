@@ -205,6 +205,8 @@ pub(crate) struct MatchPresentationState {
     pub(crate) pause_menu_template: crate::ui::shell::pause_menu::PauseMenuTemplate,
     /// FF's trackbars (WOL in-game menu), recreated on every state-1 entry.
     pub(crate) internet_pause: crate::app::input::pause_menu::InternetPauseControls,
+    /// VERA's Display group (Zoom, Full Screen) in every in-game menu.
+    pub(crate) display_pause: crate::app::input::pause_menu::DisplayPauseControls,
     /// What B6 init (4F1840) made of control712 when the dialog last opened;
     /// its stored results stay for that dialog's lifetime.
     pub(crate) abort_secondary: crate::ui::shell::abort::AbortSecondary,

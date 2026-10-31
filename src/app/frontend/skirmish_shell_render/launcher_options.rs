@@ -20,7 +20,7 @@ use crate::util::time::Instant;
 
 /// A Zoom row: the zoom and the battle's size in game pixels in this window,
 /// what `App::sync_zoom_pass` will give the match.
-fn zoom_label(zoom: Zoom, (width, height): (u32, u32), original_shape: bool) -> String {
+pub(crate) fn zoom_label(zoom: Zoom, (width, height): (u32, u32), original_shape: bool) -> String {
     use crate::render::upscale_pass::{FrameShape, ZoomGeometry};
     let shape = if original_shape {
         FrameShape::Original
