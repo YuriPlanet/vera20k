@@ -96,21 +96,23 @@ simulation ticks, and pacing never interrupts an already-started frame transacti
 An agreed resume resets the local playout clock so paused time creates no catch-up debt.
 
 A player whose PC cannot keep up slows the match, within limits. Each client
-reports about once a second whether it is behind: frames have waited on it for
-three seconds and, two seconds in a row, it ran some but fewer than the relay
-sealed. A hidden window, a paused or rejoining match and a world that ran no
-frames never count. The relay then seals at the fastest Game Speed rate that
-player ran at, at least one row slower but never more than two rows below the
-match's own speed (60 frames a second goes no lower than 30), with at least five
-seconds between changes. After 30 seconds with nobody behind it tries one row
-faster; a slowdown within 30 seconds of that doubles the wait, up to five
-minutes. Every client shows "<player> is slowing the game down." and, once the
-match is back at its own speed, "Game speed is back to normal." A rate change is
-a marker in the stream, so only playout pacing changes: the simulation, its
-saves and replays keep the match's own frame rate, and a replay plays at that
-speed. It needs every active client to report; a room with an older client or
-one spread over several relays keeps its speed. Native lockstep instead slows
-every match to its slowest player (ProcessNetwork `0x00647BF4..0x00647E6D`).
+reports about once a second whether it is catching up (frames have waited on it
+for two seconds) or behind (also, two seconds in a row, it ran some but fewer
+than the relay sealed). A hidden window, a paused or rejoining match and a world
+that ran no frames never count as behind. The relay then seals at the fastest
+Game Speed rate at most nine tenths of what that player ran, so it also drains
+the frames waiting on it: at least one row slower but never more than two rows
+below the match's own speed (60 frames a second goes no lower than 30), with at
+least five seconds between changes. After 30 seconds with nobody behind or
+catching up, not counting paused time, it tries one row faster; a slowdown
+within 30 seconds of that doubles the wait, up to five minutes. Every client
+shows "<player> is slowing the game down." and, once the match is back at its
+own speed, "Game speed is back to normal." A rate change is a marker in the
+stream, so only playout pacing changes: the simulation, its saves and replays
+keep the match's own frame rate, and a replay plays at that speed. It needs
+every active client to report; a room with an older client or one spread over
+several relays keeps its speed. Native lockstep instead slows every match to its
+slowest player (ProcessNetwork `0x00647BF4..0x00647E6D`).
 
 The relay keeps a bounded RAM cache and the full encrypted match journal on
 disk. Temporary connection loss keeps the player's identity, units, input cursor

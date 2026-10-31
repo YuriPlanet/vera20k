@@ -685,11 +685,15 @@ impl LanUdpTransport {
         })
     }
 
-    pub fn report_ordering_pace(&mut self, behind: bool, frames_per_second: u16) -> io::Result<()> {
+    pub fn report_ordering_pace(
+        &mut self,
+        pace: vera20k_relay_protocol::OrderPace,
+        frames_per_second: u16,
+    ) -> io::Result<()> {
         self.send_ordering(|route| {
             route
                 .session
-                .report_ordering_pace(behind, frames_per_second, &mut route.encoded)
+                .report_ordering_pace(pace, frames_per_second, &mut route.encoded)
         })
     }
 

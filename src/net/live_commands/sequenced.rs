@@ -6,7 +6,8 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use vera20k_relay_protocol::{
-    ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent, OrderingCertificate, paced_rates,
+    ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent, OrderPace, OrderingCertificate,
+    paced_rates,
 };
 
 use super::{LiveCommandError, StartupAgreement, StartupError};
@@ -36,8 +37,8 @@ const COMMAND_TRACE_HISTORY: usize = 256;
 const UNREADABLE_LIMIT_MS: u32 = 5_000;
 const UNREADABLE_REPEAT_MS: u32 = 1_000;
 const PACE_REPORT_INTERVAL_MS: i32 = 1_000;
-// Frames must wait here this long before this PC counts as behind.
-const PACE_BACKLOG_MS: u32 = 3_000;
+// Frames must wait here this long before this PC counts as lagging.
+const PACE_BACKLOG_MS: u32 = 2_000;
 
 /// App diagnostics for one local command batch: its first transmission, the
 /// relay's frame assignment and the contiguous receipt of that sealed frame.
@@ -86,9 +87,10 @@ pub enum MatchSpeedChange {
 }
 
 /// This PC's progress against the relay's clock, reported about once a
-/// second. Behind means frames waited here for `PACE_BACKLOG_MS` and two
-/// report windows in a row ran fewer than the clock sealed, but some: a
-/// world that ran none was held by something other than speed.
+/// second. Lagging means frames waited here for `PACE_BACKLOG_MS`; behind
+/// also means two report windows in a row with frames waiting ran fewer
+/// than the clock sealed, but some: a world that ran none was held by
+/// something other than speed.
 #[derive(Debug, Default)]
 struct PaceMeter {
     backlog_since: Option<u32>,
@@ -100,16 +102,15 @@ struct PaceMeter {
 }
 
 impl PaceMeter {
-    /// Samples the frames waiting here and returns the report due now:
-    /// whether this PC is behind, and the frames it ran per second since the
-    /// last report.
+    /// Samples the frames waiting here and returns the report due now, with
+    /// the frames run per second since the last report.
     fn report(
         &mut self,
         now: u32,
         buffered: usize,
         pace_fps: u16,
         measured: bool,
-    ) -> Option<(bool, u16)> {
+    ) -> Option<(OrderPace, u16)> {
         if measured && !self.hidden && buffered >= usize::from(pace_fps / 8).max(4) {
             self.backlog_since.get_or_insert(now);
         } else {
@@ -122,19 +123,24 @@ impl PaceMeter {
             (u64::from(self.dispatched) * 1000 / u64::from(now.wrapping_sub(last).max(1)))
                 .min(u64::from(u16::MAX)) as u16
         });
-        let slow = ran > 0
-            && ran < pace_fps
-            && self
-                .backlog_since
-                .is_some_and(|since| now.wrapping_sub(since) >= PACE_BACKLOG_MS);
-        self.slow_windows = if slow {
+        self.slow_windows = if ran > 0 && ran < pace_fps && self.backlog_since.is_some() {
             self.slow_windows.saturating_add(1)
         } else {
             0
         };
         self.last_report = Some(now);
         self.dispatched = 0;
-        Some((self.slow_windows >= 2, ran))
+        let lagging = self
+            .backlog_since
+            .is_some_and(|since| now.wrapping_sub(since) >= PACE_BACKLOG_MS);
+        Some((
+            match (lagging, self.slow_windows >= 2) {
+                (false, _) => OrderPace::KeepingUp,
+                (true, true) => OrderPace::Behind,
+                (true, false) => OrderPace::CatchingUp,
+            },
+            ran,
+        ))
     }
 }
 
@@ -635,12 +641,12 @@ impl SequencedSession {
             return;
         }
         let measured = !self.restoring && !self.pause.paused && !self.keep_running_for_exit;
-        if let Some((behind, ran)) =
+        if let Some((pace, ran)) =
             self.pace_meter
                 .report(now, self.frames.len(), self.pace_fps, measured)
         {
             // A lost report only goes stale at the relay.
-            let _ = transport.report_ordering_pace(behind, ran);
+            let _ = transport.report_ordering_pace(pace, ran);
         }
     }
 
@@ -1815,29 +1821,28 @@ mod departure_tests {
 mod pace_tests {
     use super::*;
 
-    /// Behind needs frames waiting three seconds and then two report windows
-    /// that ran some frames but fewer than the clock sealed. A world that
-    /// ran none, or a hidden window, starts over.
+    /// Lagging needs frames waiting two seconds; behind also needs two report
+    /// windows in a row that ran some frames but fewer than the clock sealed.
+    /// A world that ran none, or one running faster, only catches up; a
+    /// hidden window starts over.
     #[test]
     fn a_pc_is_behind_only_while_frames_wait_and_it_runs_some_but_too_few() {
+        use OrderPace::*;
         let mut meter = PaceMeter::default();
         let window = |meter: &mut PaceMeter, now: u32, ran: u32| {
             meter.dispatched = ran;
             meter.report(now, 10, 30, true)
         };
-        assert_eq!(meter.report(0, 10, 30, true), Some((false, 30)));
+        assert_eq!(meter.report(0, 10, 30, true), Some((KeepingUp, 30)));
         assert_eq!(meter.report(500, 3, 30, true), None);
-        assert_eq!(window(&mut meter, 1000, 20), Some((false, 20)));
-        assert_eq!(window(&mut meter, 4000, 60), Some((false, 20)));
-        assert_eq!(window(&mut meter, 5000, 20), Some((true, 20)));
-        assert_eq!(window(&mut meter, 6000, 0), Some((false, 0)));
-        assert_eq!(window(&mut meter, 7000, 20), Some((false, 20)));
+        assert_eq!(window(&mut meter, 1000, 20), Some((KeepingUp, 20)));
+        assert_eq!(window(&mut meter, 2000, 20), Some((KeepingUp, 20)));
+        assert_eq!(window(&mut meter, 3000, 20), Some((Behind, 20)));
+        assert_eq!(window(&mut meter, 4000, 0), Some((CatchingUp, 0)));
+        assert_eq!(window(&mut meter, 5000, 20), Some((CatchingUp, 20)));
+        assert_eq!(window(&mut meter, 6000, 60), Some((CatchingUp, 60)));
         meter.hidden = true;
-        assert_eq!(window(&mut meter, 8000, 20), Some((false, 20)));
-        meter.hidden = false;
-        assert_eq!(window(&mut meter, 9000, 20), Some((false, 20)));
-        assert_eq!(window(&mut meter, 12_000, 60), Some((false, 20)));
-        assert_eq!(window(&mut meter, 13_000, 20), Some((true, 20)));
+        assert_eq!(window(&mut meter, 7000, 20), Some((KeepingUp, 20)));
     }
 
     /// A rate marker paces the frames after it, keeps the simulation's

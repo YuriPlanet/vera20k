@@ -3703,11 +3703,12 @@ fn sequenced_push_is_probed_again_after_three_lost_replies() {
     );
 }
 
-/// A client that runs fewer frames than the relay seals slows the match to
-/// the next Game Speed rate. Both clients pace at it and get one line naming
-/// the slow player; the simulation keeps the certificate's rate.
+/// A client that runs fewer frames than the relay seals slows the match to a
+/// Game Speed rate it can drain its waiting frames at. Both clients pace at
+/// it and get one line naming the slow player, the slow one catches up, and
+/// the simulation keeps the certificate's rate.
 #[test]
-fn a_client_that_cannot_keep_up_slows_both_clients_to_the_next_rate() {
+fn a_client_that_cannot_keep_up_slows_both_clients_until_it_catches_up() {
     use crate::net::live_commands::MatchSpeedChange;
     use crate::net::udp::test_support::MAX_DATAGRAM;
 
@@ -3749,10 +3750,19 @@ fn a_client_that_cannot_keep_up_slows_both_clients_to_the_next_rate() {
             seen.extend(boundary.live.borrow_mut().take_speed_changes());
         }
     }
+    // 21 a second leaves 15 the only rate with a tenth to spare.
     for (seen, boundary) in changes.iter().zip(&boundaries) {
-        assert_eq!(boundary.live.borrow().relay_frames_per_second(), Some(20));
+        assert_eq!(boundary.live.borrow().relay_frames_per_second(), Some(15));
         assert_eq!(seen, &[MatchSpeedChange::SlowedBy(1)]);
     }
+    let [fast, slow] = worlds
+        .each_ref()
+        .map(|world| world.session().binary_frame());
+    assert!(
+        fast - slow <= 2,
+        "the slow client is {} frames behind",
+        fast - slow
+    );
     for world in &worlds {
         assert_eq!(
             world

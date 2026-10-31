@@ -126,17 +126,18 @@ resume a game;
 the last explicit Leave appends a resume marker so the departure tail can finish.
 
 Pace: clients send ordering request6 about once a second with no reply,
-`[behind][frames run per second, LE u16]`; the first one advertises reading rate
-markers. Once every active source has reported, a fresh behind report (at most
-3 seconds old) slows the clock to the fastest Game Speed rate that source ran
-at, at least one row slower and at most two rows below the certificate's rate.
-Each change appends an authenticated rate marker after the current head's frame
-end, `[10][seq][frame][rate LE u16][source]`, source 255 for a raise; later
-frames are due at the new rate from that moment, and pauses displace it like the
-start. Changes are at least 5 seconds apart. After 30 seconds with nobody
-behind the clock tries one row faster; a slowdown within 30 seconds of a raise
-doubles that wait, up to 5 minutes. Status keeps the certificate's rate.
-Federated rooms keep the certificate's rate.
+`[pace][frames run per second, LE u16]`, pace 0 keeping up, 1 behind, 2 catching
+up; the first one advertises reading rate markers. Once every active source has
+reported, a fresh behind report (at most 3 seconds old) slows the clock to the
+fastest Game Speed rate at most nine tenths of what that source ran, at least
+one row slower and at most two rows below the certificate's rate. Each change
+appends an authenticated rate marker after the current head's frame end,
+`[10][seq][frame][rate LE u16][source]`, source 255 for a raise; later frames are
+due at the new rate from that moment. Changes are at least 5 seconds apart.
+After 30 seconds with no fresh behind or catching-up report the clock tries one
+row faster; a slowdown within 30 seconds of a raise doubles that wait, up to 5
+minutes. Pauses displace these times like the start. Status keeps the
+certificate's rate. Federated rooms keep the certificate's rate.
 
 A federated match spreads its sources over up to six relays, each serving the
 players nearest it. The lobby-signed `VO1F` roster (see `../../docs/lobby-protocol.md`)
