@@ -21,7 +21,7 @@ function fixture() {
         window: {close() { closes++; }, addEventListener() {}},
         setTimeout, clearTimeout,
     });
-    let source = readFileSync(path.join(__dirname, '../host.js'), 'utf8').replace(/\r\n/g, '\n').replace(/^import .*\n/, '');
+    let source = readFileSync(path.join(__dirname, '../host.js'), 'utf8').replace(/\r\n/g, '\n').replace(/^import .*\n/gm, '');
     source = source.slice(0, source.indexOf('try {\n    await init();'));
     vm.runInContext(source + '\nglobalThis.api = {finishExit, show, persist, setDatabase(db) {database = db;}};', context);
     context.api.setDatabase({transaction() {

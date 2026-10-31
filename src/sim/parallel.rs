@@ -106,11 +106,22 @@ pub(crate) fn any_index(len: usize, test: impl Fn(usize) -> bool + Sync) -> bool
 /// return once both are done. Only `pooled` crosses threads, so `here` may
 /// hold this thread's `&mut` borrows and read its thread-locals. A panic in
 /// either resumes on the caller.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
     rayon::in_place_scope(|scope| {
         scope.spawn(move |_| pooled());
         here();
     });
+}
+
+/// The browser's main thread traps if it waits on a contended lock, so it runs
+/// no engine work while the pool does: `pooled` (whose own parallel work runs
+/// on the pool) finishes before `here` starts. The two share only reads, so
+/// their order changes no result.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
+    pooled();
+    here();
 }
 
 #[cfg(test)]
