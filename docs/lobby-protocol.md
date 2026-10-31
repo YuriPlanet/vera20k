@@ -328,7 +328,9 @@ The service may keep a map library: each custom map whose upload completes is ke
 once under its `source_sha256`, unless `map_metadata.official` is true or the room
 plays a generated map. When the host selects a map the library holds (same SHA-256
 and length), the service sends `map_available` with the settings, before any upload,
-and members download it from the library through the same `GET /v1/maps/…` chunks.
+and members download it through the same `GET /v1/maps/…` chunks. When the
+service cannot read a correct copy, it sends no `map_available` and the host uploads
+as usual.
 A host that hears `map_available` for its current map stops uploading; an upload
 sent anyway is accepted without being kept. Anyone can search the library with
 `GET /v1/library/maps?search=<text>&players=<n>&page=<n>` (newest first, 50 a page:
