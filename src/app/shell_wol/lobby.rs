@@ -960,6 +960,9 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         for line in crate::rules::ini_value::strtok(&motd, &['\n']) {
             message_line(state, line.to_owned());
         }
+        if modern_lobby(state) {
+            message_line(state, JOINED_LOBBY_LINE.to_owned());
+        }
         message_line(state, "\n".to_owned());
     }
     show_wait(state, "GUI:LoginComplete");
@@ -1459,6 +1462,19 @@ fn left_channel(state: &mut AppState) {
         &[crate::assets::csf_file::CsfArg::Str(&room)],
     );
     message_line(state, text);
+}
+
+/// VERA's line after the MOTD, once per sign-in, in its chat lobby, which
+/// has no `TXT_JOINED_S` line (VERA's own addition; gamemd's reads "You
+/// joined channel %s").
+const JOINED_LOBBY_LINE: &str = "You have joined VERA lobby.";
+
+/// VERA's line for a guest entering a modern-lobby game room (gamemd's C9
+/// prints none): it names the room's operator, its host. `users` is the
+/// room's user list without the local player, as `(name, operator)`.
+fn joined_game_line(users: &[(String, bool)]) -> Option<String> {
+    let (host, _) = users.iter().find(|(_, operator)| *operator)?;
+    Some(format!("You have joined {host}'s game."))
 }
 
 fn modern_lobby(state: &AppState) -> bool {
@@ -2455,11 +2471,15 @@ fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
                     .collect()
             })
             .unwrap_or_default();
+        let modern = modern_lobby(state) && !quick_match_runner(state);
         if setup::guest_users_listed(state, &users) {
             super::persona::take_side_and_color(state, &me);
             setup::send_first_choices(state);
             if quick_match_runner(state) {
                 super::quick_match::game_joined(state, true);
+            }
+            if modern && let Some(line) = joined_game_line(&users) {
+                message_line(state, line);
             }
         } else {
             // 0x7A782A..0x7A788D: no operator, the local tail 0x785740.
@@ -2468,9 +2488,9 @@ fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
         return;
     }
     // A chat lobby: its number (0x7A5EFD, any type-0 name), the
-    // TXT_JOINED_S line (not in the modern lobby, which never names its one
-    // chat lobby), the controls back with Join as the selected game admits
-    // for either role.
+    // TXT_JOINED_S line (not in the modern lobby, which prints its own
+    // line once with the MOTD), the controls back with Join as the selected
+    // game admits for either role.
     state.frontend.wol_lobby_globals.lobby_number = joined.channel.joined_lobby_number();
     if quick_match_runner(state) {
         // 0x7A5E86..0x7A5EC8: no TXT_JOINED_S in modes 1-3; the wait closes
@@ -4001,6 +4021,16 @@ mod tests {
         assert_eq!(republished_limit(&session, false), Some(4));
         assert_eq!(republished_limit(&session, true), Some(5));
         assert_eq!(slot_ex_info(&session), (0, 0, 1));
+    }
+
+    #[test]
+    fn a_joined_game_line_names_the_operator_not_the_first_user() {
+        let users = [("Guest".to_owned(), false), ("Host".to_owned(), true)];
+        assert_eq!(
+            joined_game_line(&users).as_deref(),
+            Some("You have joined Host's game.")
+        );
+        assert_eq!(joined_game_line(&users[..1]), None);
     }
 
     #[test]
