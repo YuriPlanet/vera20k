@@ -44,7 +44,7 @@ pub(crate) enum WolPopupAction {
         clan: bool,
         limit: bool,
         observe: bool,
-        /// VERA's online popup's Players and Allow spectators.
+        /// VERA's online popup's Max players and Allow spectators.
         room: Option<RoomLimits>,
     },
     CreateCancelled,
@@ -141,7 +141,7 @@ impl WolLobbyPopup {
         }
     }
 
-    /// VERA's online Create Game's Players and Allow spectators.
+    /// VERA's online Create Game's Max players and Allow spectators.
     pub(crate) fn room_mut(&mut self) -> Option<&mut RoomLimitsPicker> {
         match &mut self.kind {
             WolPopupKind::Create(create) => create.room.as_mut(),

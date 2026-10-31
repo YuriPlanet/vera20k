@@ -2038,15 +2038,15 @@ impl WolCapture {
                             == Some(lobby_ui::CREATE_DIALOG),
                         "Create did not open 0xC3"
                     );
-                    // VERA's Create Game offers its room's limits, from 8
-                    // players with spectators.
+                    // VERA's Create Game offers its room's limits, from 30
+                    // people with spectators.
                     ensure!(
                         Self::lobby(state)?.ui.popup.as_ref().is_some_and(|popup| matches!(
                             &popup.kind,
                             lobby_ui::WolPopupKind::Create(create) if create.room.as_ref().map(|room| room.limits)
                                 == Some(crate::ui::room_limits::RoomLimits::default())
                         )),
-                        "the modern 0xC3 has no Players or Allow spectators"
+                        "the modern 0xC3 has no Max players or Allow spectators"
                     );
                     self.event(frame, "0xC3 opened (modern)");
                     // The help under Limit Screen Resolution, moved to the

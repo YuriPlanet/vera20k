@@ -140,6 +140,12 @@ pub(crate) struct RetailOptionsProfile {
     /// `[VERA] MouseWheelZoom=`: let the mouse wheel change the battle's
     /// view distance. Off by default; this is a local camera preference.
     pub(crate) mouse_wheel_zoom: bool,
+    /// `[VERA] LockCursor=`: keep the pointer inside the game window. On
+    /// unless the player turns it off.
+    pub(crate) lock_cursor: bool,
+    /// `[VERA] WindowMaximized=`: whether the window was last left maximised.
+    /// [`Self::window_placement`] keeps the size it returns to.
+    pub(crate) window_maximized: bool,
     /// `[VERA] HouseColorStrength=`: how strongly VERA boosts the `[Colors]`
     /// team-color bands, 1 (gamemd's own ramps) through 10. Presentation only:
     /// it never reaches simulation state, and a battle reads it when its
@@ -184,6 +190,22 @@ pub(crate) struct RetailOptionsProfile {
     /// stays here and opens on the system's choice, like [`Self::zoom`]'s
     /// unknown steps.
     pub(crate) display: crate::ui::main_menu_dialogs::options::DisplayTarget,
+    /// `[VERA] WindowX/WindowY/WindowWidth/WindowHeight`: where the windowed
+    /// game last sat, so the next launch opens there. `None` until the player
+    /// moves or resizes the window; a zero width reads as unset.
+    pub(crate) window_placement: Option<WindowPlacement>,
+}
+
+/// The windowed game's last placement: the outer top-left corner in the
+/// desktop's physical pixels (the frame monitors report theirs in) and the
+/// drawable size in logical units, so a screen of another scale opens it as
+/// large as it looked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WindowPlacement {
+    pub(crate) x: i32,
+    pub(crate) y: i32,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
 }
 
 /// The two process-start products obtained from one physical `VERA.INI`
@@ -244,6 +266,8 @@ impl Default for RetailOptionsProfile {
             skip_startup_logo: false,
             render_interpolation: false,
             mouse_wheel_zoom: false,
+            lock_cursor: true,
+            window_maximized: false,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
@@ -253,6 +277,7 @@ impl Default for RetailOptionsProfile {
             translate_chat: None,
             skipped_update: String::new(),
             display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
+            window_placement: None,
         }
     }
 }
@@ -269,7 +294,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 15],
+    pub(crate) vera: [(&'static str, String); 21],
 }
 
 impl RetailOptionsLoad {
@@ -472,6 +497,8 @@ impl RetailOptionsProfile {
             self.render_interpolation =
                 vera.read_bool("RenderInterpolation", self.render_interpolation);
             self.mouse_wheel_zoom = vera.read_bool("MouseWheelZoom", self.mouse_wheel_zoom);
+            self.lock_cursor = vera.read_bool("LockCursor", self.lock_cursor);
+            self.window_maximized = vera.read_bool("WindowMaximized", self.window_maximized);
             // A non-numeric value answers 0, which the clamp lifts to the
             // retail strength rather than to a negative boost.
             self.house_color_strength = crate::rules::house_colors::clamped_strength(
@@ -495,6 +522,16 @@ impl RetailOptionsProfile {
             if let Some(value) = vera.read_name("Display", DISPLAY_CAPACITY) {
                 self.display =
                     crate::ui::main_menu_dialogs::options::DisplayTarget::from_ini_value(value);
+            }
+            let width = vera.read_int("WindowWidth", 0);
+            let height = vera.read_int("WindowHeight", 0);
+            if width > 0 && height > 0 {
+                self.window_placement = Some(WindowPlacement {
+                    x: vera.read_int("WindowX", 0),
+                    y: vera.read_int("WindowY", 0),
+                    width: width as u32,
+                    height: height as u32,
+                });
             }
         }
     }
@@ -520,6 +557,7 @@ impl RetailOptionsProfile {
         // Retail provenance: Options/Video/Audio write set, order, and lexical
         // forms — `OptionsClass__WriteToINI` @ `0x005FAD10`, helpers
         // `0x005275C0`, `0x00529560`, and `0x005285B0`.
+        let placement = self.window_placement;
         FormattedProfileSections {
             options: [
                 ("GameSpeed", self.game_speed.to_string()),
@@ -606,6 +644,18 @@ impl RetailOptionsProfile {
                 ),
                 ("HouseColorStrength", self.house_color_strength.to_string()),
                 ("Display", self.display.ini_value().to_owned()),
+                ("WindowX", placement.map_or(0, |p| p.x).to_string()),
+                ("WindowY", placement.map_or(0, |p| p.y).to_string()),
+                ("WindowWidth", placement.map_or(0, |p| p.width).to_string()),
+                (
+                    "WindowHeight",
+                    placement.map_or(0, |p| p.height).to_string(),
+                ),
+                (
+                    "WindowMaximized",
+                    format_bool(self.window_maximized).to_string(),
+                ),
+                ("LockCursor", format_bool(self.lock_cursor).to_string()),
             ],
         }
     }
@@ -1471,6 +1521,40 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                 .translate_chat,
             None
         );
+    }
+
+    #[test]
+    fn window_state_round_trips_and_a_zero_width_reads_unset() {
+        let startup = RetailStartupOptions::default();
+        let placed = RetailOptionsProfile {
+            window_placement: Some(WindowPlacement {
+                x: -1200,
+                y: 40,
+                width: 1280,
+                height: 720,
+            }),
+            ..RetailOptionsProfile::default()
+        };
+        let output = placed.transform_settings(b"");
+        assert_eq!(
+            load_snapshot(&startup, &output)
+                .retained_profile
+                .window_placement,
+            placed.window_placement
+        );
+        let unset = RetailOptionsProfile::default().transform_settings(b"");
+        let unset = load_snapshot(&startup, &unset).retained_profile;
+        assert_eq!(unset.window_placement, None);
+        // The lock starts on and a window starts unmaximised; both round-trip.
+        assert!(unset.lock_cursor && !unset.window_maximized);
+        let changed = RetailOptionsProfile {
+            lock_cursor: false,
+            window_maximized: true,
+            ..RetailOptionsProfile::default()
+        }
+        .transform_settings(b"");
+        let changed = load_snapshot(&startup, &changed).retained_profile;
+        assert!(!changed.lock_cursor && changed.window_maximized);
     }
 
     #[test]

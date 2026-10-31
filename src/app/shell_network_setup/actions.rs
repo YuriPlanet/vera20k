@@ -454,6 +454,14 @@ pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
             crate::app::shell_random_map::AcceptedRmgStartStaging::from_scenario_staging(&staging),
         );
     }
+    // VERA's LAN room comes back after the match; the original one does not.
+    let dialog = super::dialog(state);
+    state.frontend.lan_rematch = match (dialog.wol() || !dialog.modern, dialog.host) {
+        (true, _) => None,
+        (false, true) => Some(crate::app::shell_lan::LanRematch::Host),
+        (false, false) => crate::app::lan_service::admitted_host_name(state)
+            .map(|host| crate::app::shell_lan::LanRematch::Guest { host }),
+    };
     match state.match_state.session.freeze_network_start(agreed_seed) {
         Ok(startup) => {
             if state.match_state.session_mode()

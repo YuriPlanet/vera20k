@@ -200,7 +200,9 @@ impl OnlineCleanup {
                     operation,
                     failure,
                 } => match operation {
-                    "finish" => retired.service.finish_failed(id, failure, now),
+                    "finish" => {
+                        retired.service.finish_failed(id, failure, now);
+                    }
                     "leave" => retired.service.leave_failed(id, now),
                     "logout" => retired.service.logout_failed(id, now),
                     _ => {}
@@ -279,6 +281,9 @@ pub(super) struct LiveService {
     /// no lobby pages, and `finish` carries the local result.
     spawned: bool,
     /// The spawned match's `finish` result (`ExternalMatchResult`).
+    /// VERA: the finish asks the lobby to give this player's game room back
+    /// (`back_to_room`), set from the visit when the match returns.
+    back_to_room: bool,
     finish_result: Option<&'static str>,
     /// docs/spawn.md: every opponent left before the local player did.
     finish_opponents_left: bool,
@@ -564,6 +569,7 @@ impl LiveService {
             maps: Default::default(),
             translations: Translations::default(),
             spawned: false,
+            back_to_room: false,
             finish_result: None,
             finish_opponents_left: false,
             relay_timeout: RELAY_TIMEOUT,
@@ -624,10 +630,14 @@ impl LiveService {
         self.command("finish", payload);
     }
 
-    /// The lobby's `finish` is exactly `{match_id}`; a spawned match adds
-    /// its local result for the launcher (docs/spawn.md).
+    /// The lobby's `finish` is `{match_id}`, with `back_to_room` when the
+    /// player returns to the room it kept; a spawned match adds its local
+    /// result for the launcher (docs/spawn.md).
     fn finish_payload(&self, match_id: &str) -> Value {
         let mut payload = json!({"match_id":match_id});
+        if self.back_to_room {
+            payload["back_to_room"] = json!(true);
+        }
         if self.spawned {
             payload["result"] = json!(self.finish_result.unwrap_or("quit"));
             payload["opponents_left"] = json!(self.finish_opponents_left);
@@ -646,18 +656,26 @@ impl LiveService {
         }
     }
 
-    fn finish_failed(&mut self, id: u64, failure: http::CommandFailure, now: Instant) {
+    /// True when the lobby refused `back_to_room` (a lobby from before rooms
+    /// came back): the finish retries without it and the room is not kept.
+    fn finish_failed(&mut self, id: u64, failure: http::CommandFailure, now: Instant) -> bool {
         if failure == http::CommandFailure::AlreadyFinished {
             self.finish_completed(id);
-            return;
+            return false;
         }
-        if let Some(finish) = self
+        let Some(finish) = self
             .finishing
             .as_mut()
             .filter(|finish| finish.request_id == id)
-        {
-            finish.failed(now);
+        else {
+            return false;
+        };
+        finish.failed(now);
+        let refused = self.back_to_room && matches!(failure, http::CommandFailure::Rejected(_));
+        if refused {
+            self.back_to_room = false;
         }
+        refused
     }
 
     fn begin_leave(&mut self, now: Instant) {
@@ -1136,6 +1154,7 @@ impl super::WolVisit {
             return;
         }
         if let Some(service) = self.live_service.as_mut() {
+            service.back_to_room = self.back_to_room;
             service.begin_finish(now);
         } else if !self.requests.contains(&WolServiceRequest::MatchReturned) {
             //poll holds the SAME service across HTTP callbacks. Loading abort
@@ -1243,7 +1262,14 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             cancel_pending(state, service);
             service.begin_leave(Instant::now());
         }
-        WolServiceRequest::MatchReturned => service.begin_finish(Instant::now()),
+        WolServiceRequest::MatchReturned => {
+            service.back_to_room = state
+                .frontend
+                .wol
+                .as_ref()
+                .is_some_and(|visit| visit.back_to_room);
+            service.begin_finish(Instant::now());
+        }
         WolServiceRequest::Logout => {
             maps::cancel(state, service);
             cancel_pending(state, service);
@@ -1878,8 +1904,10 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                     .finishing
                     .as_ref()
                     .is_some_and(|finish| finish.request_id == id && finish.failures == 0);
-                service.finish_failed(id, failure, Instant::now());
-                if first_failure && failure != http::CommandFailure::AlreadyFinished {
+                if service.finish_failed(id, failure, Instant::now()) {
+                    // No room comes back: the waiting runner goes to the lobby.
+                    super::lobby::room_refused(state);
+                } else if first_failure && failure != http::CommandFailure::AlreadyFinished {
                     notice(
                         state,
                         "Reconnecting to finish the previous match before rematch.",
@@ -2122,7 +2150,7 @@ fn apply_event(
             )?;
             service.relay_granted(crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32);
         }
-        "joined" | "created" => {
+        "joined" | "created" | "room_reopened" => {
             let joined: wire::Joined = decode(payload)?;
             service.revision = 0;
             service.accepted_options = None;
@@ -2139,13 +2167,14 @@ fn apply_event(
                 .into_iter()
                 .map(|member| member.into_member(&local))
                 .collect();
-            let event = if kind == "created" {
-                WolServiceEvent::Created(Ok(members))
-            } else {
-                WolServiceEvent::Joined(Ok(super::lobby::WolJoined {
-                    channel: joined.channel.into(),
-                    members,
-                }))
+            let joined = super::lobby::WolJoined {
+                channel: joined.channel.into(),
+                members,
+            };
+            let event = match kind {
+                "created" => WolServiceEvent::Created(Ok(joined.members)),
+                "room_reopened" => WolServiceEvent::RoomReopened(joined),
+                _ => WolServiceEvent::Joined(Ok(joined)),
             };
             service_event(state, event);
         }
@@ -2172,6 +2201,12 @@ fn apply_event(
             service.pending_choices = None;
             maps::cancel(state, service);
             cancel_pending(state, service);
+            if let Some(visit) = state.frontend.wol.as_mut()
+                && visit.in_game
+            {
+                // The kept room closed during the match: nothing to return to.
+                visit.back_to_room = false;
+            }
             service_event(state, WolServiceEvent::ChannelLeft);
         }
         "member_joined" => {
@@ -2978,6 +3013,7 @@ mod completion_tests {
             maps: Default::default(),
             translations: Translations::default(),
             spawned: false,
+            back_to_room: false,
             finish_result: None,
             finish_opponents_left: false,
             relay_timeout: RELAY_TIMEOUT,
@@ -3390,6 +3426,40 @@ mod completion_tests {
             input.try_recv().is_err(),
             "expired authority cannot issue finish"
         );
+    }
+
+    #[test]
+    fn a_match_from_a_kept_room_asks_for_the_room_back_on_finish() {
+        let (service, input, _output) = control_service(Some("room-match"));
+        let mut visit = super::super::WolVisit::open(false);
+        visit.provider = WolProvider::Online;
+        visit.back_to_room = true;
+        visit.live_service = Some(service);
+        let now = Instant::now();
+        visit.match_returned(now);
+        let sent = |input: &Receiver<http::Request>| {
+            let http::Request::Command {
+                id,
+                operation,
+                payload,
+            } = input.try_recv().unwrap()
+            else {
+                panic!("finish command");
+            };
+            assert_eq!(operation, "finish");
+            (id, payload)
+        };
+        let (id, payload) = sent(&input);
+        assert_eq!(
+            payload,
+            json!({"match_id":"room-match","back_to_room":true})
+        );
+        // A lobby from before rooms came back refuses the field: the room is
+        // not kept and the finish goes again without it.
+        let service = visit.live_service.as_mut().unwrap();
+        assert!(service.finish_failed(id, http::CommandFailure::Rejected(0x8000_4005), now));
+        service.poll_cleanup(now + Duration::from_secs(2));
+        assert_eq!(sent(&input).1, json!({"match_id":"room-match"}));
     }
 
     #[test]

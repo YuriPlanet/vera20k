@@ -504,7 +504,7 @@ pub(super) fn paint_room_limits(
     };
     labels.extend([
         caption(
-            label(state, "GUI:Players"),
+            "Max players".to_owned(),
             layout.players_label,
             ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
         ),

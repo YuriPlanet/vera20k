@@ -602,11 +602,17 @@ impl MultiplayerSetupState {
             .combo(id)
             .filter(|combo| combo.visible && combo.enabled)?;
         let (column, _) = SetupColumn::decode(id)?;
+        // VERA's room shows its Player menu whole, with no scrollbar.
+        let cap = if view.dialog.modern && column == SetupColumn::Player {
+            0
+        } else {
+            column.visible_rows()
+        };
         Some(ComboPopup::new(
             layout.control_rect(id)?,
             layout.page.scale,
             combo.choices.len(),
-            column.visible_rows(),
+            cap,
             self.popup.top_index,
         ))
     }
@@ -636,6 +642,11 @@ pub(crate) struct GameOptionsLayout {
     pub(crate) dialog: RectPx,
     pub(crate) ok: RectPx,
 }
+
+/// Previous and Next under the roster: the size of the MNBTTN art the
+/// shell's ordinary buttons draw, as Game Options' OK.
+const ROSTER_BUTTON_W: i32 = 124;
+const ROSTER_BUTTON_H: i32 = 24;
 
 /// Where VERA's room puts Game Options: the 800x600 shell's centred box, at
 /// resource coordinates like the room's other body controls.
@@ -765,8 +776,12 @@ impl MultiplayerSetupLayout {
         let mut layout = Self {
             page,
             combos,
-            roster_navigation: [rect(74, 230, 90, 18), rect(521, 230, 90, 18)],
-            roster_page_label: rect(174, 230, 337, 18),
+            // The native dialogs' rows leave 18 px above their options.
+            roster_navigation: [
+                rect(74, 230, ROSTER_BUTTON_W, 18),
+                rect(611 - ROSTER_BUTTON_W, 230, ROSTER_BUTTON_W, 18),
+            ],
+            roster_page_label: rect(208, 230, 269, 18),
             flags: std::array::from_fn(|row| rect(240, 36 + row as i32 * 26, 49, 21)),
             acceptance: std::array::from_fn(|row| {
                 if dialog.wol() {
@@ -853,8 +868,11 @@ impl MultiplayerSetupLayout {
         });
         // Under the last row once [`Self::arrange_extended_rows`] packs them.
         let y = 36 + MODERN_SETUP_ROWS as i32 * 24 + 2;
-        self.roster_navigation = [base(74, y, 90, 18), base(521, y, 90, 18)];
-        self.roster_page_label = base(174, y, 337, 18);
+        self.roster_navigation = [
+            base(74, y, ROSTER_BUTTON_W, ROSTER_BUTTON_H),
+            base(611 - ROSTER_BUTTON_W, y, ROSTER_BUTTON_W, ROSTER_BUTTON_H),
+        ];
+        self.roster_page_label = base(208, y, 269, ROSTER_BUTTON_H);
     }
     /// Make room for navigation only on an extended roster. Resource placement
     /// of all ordinary <=8-player dialogs remains unchanged.
@@ -946,8 +964,11 @@ impl MultiplayerSetupLayout {
                     .filter(|_| self.game_options.is_none()),
             )
             .chain([CHAT, CHAT_LOG])
-            .chain(paged.then_some(PREVIOUS_ROWS))
-            .chain(paged.then_some(NEXT_ROWS))
+            .chain(
+                [PREVIOUS_ROWS, NEXT_ROWS]
+                    .into_iter()
+                    .filter(|id| paged && view.enabled(*id)),
+            )
             .chain(self.emote.map(|_| EMOTE))
             .chain(self.page.buttons.iter().map(|button| button.id))
             .find(hit)

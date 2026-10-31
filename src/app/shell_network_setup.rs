@@ -879,13 +879,13 @@ fn install_setup(
                     .set_network_vacancy(row as u8, vacancy)?;
             }
         }
-        // A VERA room seats the players its host allowed at Create Game and
+        // A VERA room holds the people its host allowed at Create Game and
         // opens its spectator row if spectators may join, but for Quick
         // Match's matchbot game.
         if dialog.modern && !quick_match {
             let limits = state.frontend.room_limits;
             let session = &mut state.match_state.session;
-            session.set_network_player_limit(limits.players)?;
+            session.set_network_people_limit(limits.players)?;
             session.set_network_spectators(limits.spectators)?;
         }
         if let Some(file) = state
@@ -1073,7 +1073,7 @@ pub(crate) fn return_after_match(state: &mut AppState) {
         crate::app::shell_wol::reenter_after_match(state);
     } else {
         crate::app::lan_service::restart_lobby_visit(state);
-        App::open_lan_lobby(state);
+        App::reopen_lan_room(state);
     }
 }
 

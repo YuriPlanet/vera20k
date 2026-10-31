@@ -1,18 +1,23 @@
 //! Native in-game menu B5/BBA/FF, sharing72F540 composition with Game
 //! Controls.
 
+use super::chrome::{push_ownerdraw_two_pixel_bevel_frame_px, push_solid_rect_px};
 use super::controls::{ControlPaint, group_box_geometry, paint_control, push_group_or_plain_frame};
 use super::in_game_shell::{self, InGameShellFrame};
 use super::{SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::assets::csf_file::CsfFile;
+use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw, TextRect};
+use crate::ui::main_menu_dialogs::options::{
+    FULL_SCREEN_LABEL, ORIGINAL_SHAPE_LABEL, SIDEBAR_LABEL, ZOOM_LABEL,
+};
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::pause_menu::{
-    InternetSlider, PAUSE_MENU_FOOTER, PauseMenuButton, PauseMenuButtonState, PauseMenuLayout,
-    PauseMenuTemplate,
+    DISPLAY_GROUP_CAPTION, DisplayList, InternetSlider, PAUSE_MENU_FOOTER, PauseMenuButton,
+    PauseMenuButtonState, PauseMenuLayout, PauseMenuTemplate,
 };
 use crate::ui::shell::trackbar::value_text_rect;
 use crate::ui::sidebar::SidebarTheme;
@@ -160,6 +165,7 @@ pub(crate) fn render_pause_menu_shell(
         ..
     } = in_game_shell::current_in_game_shell_layout(state).expect("active shell geometry");
     let layout = crate::app::input::pause_menu::current_layout(state).expect("active shell");
+    crate::app::input::pause_menu::sync_display_controls(state);
     let atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
         .expect("active side art");
     let mut art = in_game_shell::background_instances(atlas, shell, width, height);
@@ -184,33 +190,147 @@ pub(crate) fn render_pause_menu_shell(
         shared_pause_caption,
     );
     let mut controls = Vec::new();
-    if let Some(internet) = layout.internet {
-        // FF's group box, both plaque trackbars and their statics (60B7A0).
-        let chrome_atlas = state
-            .frontend
-            .skirmish_shell_chrome
-            .as_ref()
-            .expect("active FF controls");
-        let group_caption = caption(csf, "GUI:InternetGameControls");
-        let cell = font.cell_height() as i32;
-        let (frame, caption_rect) = group_box_geometry(internet.group, cell, ShellScale::RETAIL);
+    let chrome_atlas = state
+        .frontend
+        .skirmish_shell_chrome
+        .as_ref()
+        .expect("active menu controls");
+    let chrome = chrome_atlas.control_chrome();
+    let cell = font.cell_height() as i32;
+    let group_box = |controls: &mut Vec<SpriteInstance>,
+                     texts: &mut Vec<ShellTextDraw>,
+                     rect: RectPx,
+                     text: &str| {
+        let (frame, caption_rect) = group_box_geometry(rect, cell, ShellScale::RETAIL);
         push_group_or_plain_frame(
-            &mut controls,
+            controls,
             chrome_atlas.white_pixel,
             frame,
-            Some(font.text_width(&group_caption) as i32),
+            Some(font.text_width(text) as i32),
             false,
             ShellScale::RETAIL,
         );
         texts.push(text_draw(
             font,
-            &group_caption,
+            text,
             caption_rect,
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::NONE,
         ));
+    };
+    // VERA's Display group: the main menu's Zoom and Sidebar lists, Full
+    // Screen and Original 4:3 Shape.
+    let display_layout = layout.display;
+    let display = &state.match_state.match_presentation.display_pause;
+    group_box(
+        &mut controls,
+        &mut texts,
+        display_layout.group,
+        DISPLAY_GROUP_CAPTION,
+    );
+    for (list, caption_text) in [
+        (DisplayList::Zoom, ZOOM_LABEL),
+        (DisplayList::Sidebar, SIDEBAR_LABEL),
+    ] {
+        let face = display_layout.face(list);
+        paint_control(
+            &mut controls,
+            &chrome,
+            ControlPaint::Combo {
+                rect: face,
+                swatch: None,
+                open: display.open == Some(list),
+                disabled: false,
+            },
+            ShellScale::RETAIL,
+        );
+        texts.push(text_draw(
+            font,
+            caption_text,
+            display_layout.captions[list as usize],
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
+        ));
+        // The face's text clears the arrow, as on the main menu's Options page.
+        texts.push(text_draw(
+            font,
+            display.row_label(list, display.selected(list)),
+            RectPx::new(face.x + 3, face.y, face.w - 23, face.h),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+        ));
+    }
+    for (rect, checked, caption_text) in [
+        (
+            display_layout.full_screen,
+            display.full_screen,
+            FULL_SCREEN_LABEL,
+        ),
+        (
+            display_layout.original_shape,
+            display.original_shape,
+            ORIGINAL_SHAPE_LABEL,
+        ),
+    ] {
+        paint_control(
+            &mut controls,
+            &chrome,
+            ControlPaint::Checkbox { checked, rect },
+            ShellScale::RETAIL,
+        );
+        // 61663A..616674: the caption starts 26 pixels into the box's window.
+        texts.push(text_draw(
+            font,
+            caption_text,
+            RectPx::new(rect.x + 26, rect.y, rect.w - 26, rect.h),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+        ));
+    }
+    // The open list paints after every control and text, in the popup layer.
+    let mut overlay = in_game_shell::ShellFrameOverlay::default();
+    if let Some(open) = display.open {
+        let rows = display.rows(open);
+        let list = layout.display_list(open, rows);
+        push_solid_rect_px(
+            &mut overlay.controls,
+            chrome_atlas.white_pixel,
+            list,
+            super::SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
+            super::SHELL_DROPDOWN_DEPTH,
+        );
+        let row_h = crate::ui::skirmish_shell::COMBO_DROPDOWN_ROW_H;
+        for row in 0..rows {
+            let rect = RectPx::new(list.x, list.y + row as i32 * row_h, list.w, row_h);
+            if display.hovered.unwrap_or(display.selected(open)) == row {
+                push_solid_rect_px(
+                    &mut overlay.controls,
+                    chrome_atlas.white_pixel,
+                    rect,
+                    super::OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
+                    super::SHELL_DROPDOWN_DEPTH,
+                );
+            }
+            overlay.texts.push(text_draw(
+                font,
+                display.row_label(open, row),
+                RectPx::new(rect.x + 3, rect.y, rect.w - 6, rect.h),
+                SHELL_LABEL_TEXT_RGB,
+                ShellAlign::V_CENTER,
+            ));
+        }
+        push_ownerdraw_two_pixel_bevel_frame_px(
+            &mut overlay.controls,
+            chrome_atlas.white_pixel,
+            list,
+            super::SHELL_DROPDOWN_DEPTH,
+        );
+    }
+    if let Some(internet) = layout.internet {
+        // FF's group box, both plaque trackbars and their statics (60B7A0).
+        let group_caption = caption(csf, "GUI:InternetGameControls");
+        group_box(&mut controls, &mut texts, internet.group, &group_caption);
         let pause = &state.match_state.match_presentation.internet_pause;
-        let chrome = chrome_atlas.control_chrome();
         for slider in InternetSlider::ALL {
             let index = slider as usize;
             let rect = internet.sliders[index];
@@ -260,7 +380,7 @@ pub(crate) fn render_pause_menu_shell(
         PauseMenuTemplate::Network => "Active Pause Menu BBA",
         PauseMenuTemplate::Internet => "Active Pause Menu FF",
     };
-    in_game_shell::render_in_game_shell_frame(
+    in_game_shell::render_shell_frame(
         state,
         encoder,
         destination,
@@ -270,6 +390,9 @@ pub(crate) fn render_pause_menu_shell(
             texts,
             label,
         },
+        in_game_shell::ShellFrameArt::Sidebar,
+        overlay,
+        in_game_shell::ShellFrameCursor::Visible,
     )
 }
 

@@ -10,14 +10,15 @@ use super::{
     ACCESSIBILITY_LABEL, CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL, DEVELOPER_OPTIONS_LABEL,
     DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayChoice, DisplayTarget,
     FPS_COUNTER_HELP, FPS_COUNTER_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL,
-    HAS_CHECK_FOR_UPDATES, HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL, LauncherButton,
-    LauncherCheckboxId, LauncherComboId, LauncherCue, LauncherOptionsEvent, LauncherParentResult,
-    LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP,
-    ORIGINAL_SHAPE_LABEL, OptionsDialogState, OptionsPage, PhysicalControlFrame,
-    RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL,
-    SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_STARTUP_LOGO_HELP, SKIP_STARTUP_LOGO_LABEL, SidebarSize,
-    VERA_OPTIONS_HELP, VERA_OPTIONS_LABEL, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL,
-    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    HAS_CHECK_FOR_UPDATES, HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL, LOCK_CURSOR_HELP,
+    LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue,
+    LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP,
+    MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
+    OptionsPage, PhysicalControlFrame, RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL,
+    SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_STARTUP_LOGO_HELP,
+    SKIP_STARTUP_LOGO_LABEL, SidebarSize, VERA_OPTIONS_HELP, VERA_OPTIONS_LABEL,
+    WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL,
+    ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale, center_offset, child_window, dlu_rect};
@@ -204,7 +205,7 @@ impl LauncherOptionsLayout {
         let display_combo = px(RectPx::new(351, 110, 180, COMBO_FACE_H));
         // VERA's Accessibility band takes the main page's Audio Options place:
         // its heading, then one caption row over one slider. The trackbar's
-        // border art is only authored for the nine windows in
+        // border art is only authored for the windows in
         // `skirmish_shell_chrome::TRACKBAR_FRAMES`, and a plaque slider is one
         // of the 50-reserve ones, so this row takes the 226x22 window the main
         // page's Generate Map slider uses rather than the plain 181x22 one:
@@ -265,6 +266,7 @@ impl LauncherOptionsLayout {
                     (LauncherCheckboxId::YrOriginalStyle, dlu(93, 113, 130, 10)),
                     (LauncherCheckboxId::ShiftQueue, dlu(93, 128, 130, 10)),
                     (LauncherCheckboxId::MouseWheelZoom, dlu(93, 143, 130, 10)),
+                    (LauncherCheckboxId::LockCursor, dlu(93, 158, 130, 10)),
                     // Developer Options, in the main page's UI Options band.
                     (LauncherCheckboxId::FpsCounter, dlu(93, 188, 130, 10)),
                     (LauncherCheckboxId::SkipStartupLogo, dlu(93, 203, 130, 10)),
@@ -476,6 +478,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::YrOriginalStyle => YR_ORIGINAL_STYLE_LABEL,
             LauncherCheckboxId::RenderInterpolation => RENDER_INTERPOLATION_LABEL,
             LauncherCheckboxId::MouseWheelZoom => MOUSE_WHEEL_ZOOM_LABEL,
+            LauncherCheckboxId::LockCursor => LOCK_CURSOR_LABEL,
             LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
             LauncherCheckboxId::WolTestService => WOL_TEST_SERVICE_LABEL,
             LauncherCheckboxId::FpsCounter => FPS_COUNTER_LABEL,
@@ -528,6 +531,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::YrOriginalStyle => self.values.yr_original_style,
             LauncherCheckboxId::RenderInterpolation => self.values.render_interpolation,
             LauncherCheckboxId::MouseWheelZoom => self.values.mouse_wheel_zoom,
+            LauncherCheckboxId::LockCursor => self.values.lock_cursor,
             LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
             LauncherCheckboxId::WolTestService => self.values.wol_test_service,
             LauncherCheckboxId::FpsCounter => self.values.fps_counter,
@@ -728,6 +732,7 @@ impl OptionsDialogState {
                 LauncherCheckboxId::MouseWheelZoom => {
                     LauncherStatusHelp::Text(MOUSE_WHEEL_ZOOM_HELP)
                 }
+                LauncherCheckboxId::LockCursor => LauncherStatusHelp::Text(LOCK_CURSOR_HELP),
                 LauncherCheckboxId::ShiftQueue => LauncherStatusHelp::Text(SHIFT_QUEUE_HELP),
                 LauncherCheckboxId::WolTestService => {
                     LauncherStatusHelp::Text(WOL_TEST_SERVICE_HELP)
@@ -1092,7 +1097,7 @@ mod tests {
             .chain(&layout.checkboxes)
             .map(|(id, _)| *id)
             .collect();
-        assert_eq!(all.len(), 11);
+        assert_eq!(all.len(), 12);
         for id in &all {
             assert_eq!(all.iter().filter(|other| *other == id).count(), 1, "{id:?}");
         }
@@ -1131,6 +1136,7 @@ mod tests {
             (YrOriginalStyle, ui, developer),
             (ShiftQueue, ui, developer),
             (MouseWheelZoom, ui, developer),
+            (LockCursor, ui, developer),
             (FpsCounter, developer, accessibility),
             (SkipStartupLogo, developer, accessibility),
         ] {
@@ -1291,6 +1297,7 @@ mod tests {
             (YrOriginalStyle, YR_ORIGINAL_STYLE_HELP),
             (ShiftQueue, SHIFT_QUEUE_HELP),
             (MouseWheelZoom, MOUSE_WHEEL_ZOOM_HELP),
+            (LockCursor, LOCK_CURSOR_HELP),
             (FpsCounter, FPS_COUNTER_HELP),
             (SkipStartupLogo, SKIP_STARTUP_LOGO_HELP),
         ] {
@@ -1635,6 +1642,11 @@ mod tests {
                 LauncherOptionsEvent::MouseWheelZoomChanged,
             ),
             (
+                LockCursor,
+                LOCK_CURSOR_LABEL,
+                LauncherOptionsEvent::LockCursorChanged,
+            ),
+            (
                 FpsCounter,
                 FPS_COUNTER_LABEL,
                 LauncherOptionsEvent::FpsCounterChanged,
@@ -1648,15 +1660,16 @@ mod tests {
             let mut state = vera_state();
             let rect = checkbox(&layout, id);
             assert_eq!(state.shell_checkbox_label(id), label);
-            // Off until the player ticks it.
-            assert!(!state.shell_checkbox_checked(id), "{id:?}");
+            // Off until the player ticks it; the cursor lock starts on.
+            let initially = id == LockCursor;
+            assert_eq!(state.shell_checkbox_checked(id), initially, "{id:?}");
             state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
-            assert!(state.shell_checkbox_checked(id), "{id:?}");
+            assert_eq!(state.shell_checkbox_checked(id), !initially, "{id:?}");
             assert_eq!(
                 state.drain_output().events,
                 [
                     LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
-                    event(true)
+                    event(!initially)
                 ],
                 "{id:?}"
             );

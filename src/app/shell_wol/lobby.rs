@@ -134,6 +134,9 @@ enum Step {
         name: String,
         deadline: Instant,
     },
+    /// VERA: after a match from VERA's own room, behind a wait box until the
+    /// lobby gives the room back or closes it.
+    ReturningToRoom,
 }
 
 /// Correlation for the online provider only. The lobby step continues to own
@@ -899,6 +902,8 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         // 0x007879B6: after a lost connection the runner logs in again
         // first, and a failed login ends it (the welcome).
         visit.relogin = Some(postmatch);
+        // The lost connection took the kept game room with it.
+        visit.back_to_room = false;
         visit.lobby = None;
         visit.page = WolPage::Backdrop { wait: None };
         state.frontend.wol_lobby_art = None;
@@ -921,6 +926,7 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         .shell_controller
         .reset_to(super::WOL_LOBBY_DIALOG, false);
     let now = Instant::now();
+    let returning = postmatch && visit.back_to_room;
     let resume = !postmatch && visit.lobby.is_some();
     if resume {
         let lobby = visit.lobby.as_deref_mut().expect("checked");
@@ -960,6 +966,9 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         for line in crate::rules::ini_value::strtok(&motd, &['\n']) {
             message_line(state, line.to_owned());
         }
+        if modern_lobby(state) {
+            message_line(state, JOINED_LOBBY_LINE.to_owned());
+        }
         message_line(state, "\n".to_owned());
     }
     show_wait(state, "GUI:LoginComplete");
@@ -968,9 +977,119 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
     // 0x00787B33..0x00787B53: the user's own squad.
     request_squad(state, 0);
     super::buddies::restart(state);
+    if returning {
+        await_room(state);
+    } else {
+        list_lobbies(state);
+    }
+    state.platform.window.request_redraw();
+}
+
+/// The runner's first list (`ListChannels(0, 0)`) behind `TXT_REQ_CHANLIST`.
+fn list_lobbies(state: &mut AppState) {
     show_wait(state, "TXT_REQ_CHANLIST");
     request(state, WolServiceRequest::ListChannels { kind: 0, flags: 0 });
-    state.platform.window.request_redraw();
+}
+
+/// VERA: the match came from VERA's own room, which stayed joined. The
+/// lobby gives it back once every player has finished; until then a wait
+/// box shows, whose button gives up the room for the chat lobby.
+fn await_room(state: &mut AppState) {
+    if let Some(lobby) = lobby_mut(state) {
+        lobby.step = Step::ReturningToRoom;
+    }
+    // The chat lobbies still come, so leaving the room later finds one.
+    request(state, WolServiceRequest::ListChannels { kind: 0, flags: 0 });
+    show_wait(state, "TXT_REQ_CHANLIST");
+    let cancel = service::resolve(state, "GUI:Cancel");
+    if let Some(wait) = lobby_mut(state).and_then(|lobby| lobby.wait.as_mut()) {
+        wait.text = "Returning to the game room...".to_owned();
+        wait.disconnect = cancel;
+    }
+}
+
+/// VERA: the lobby refused to keep the room (one from before rooms came
+/// back), so a runner waiting for it goes on to the chat lobby.
+pub(super) fn room_refused(state: &mut AppState) {
+    if awaiting_room(state) {
+        room_not_returned(state, false);
+    }
+}
+
+fn awaiting_room(state: &AppState) -> bool {
+    lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::ReturningToRoom))
+}
+
+/// VERA: the kept room is gone (it closed, or the player gave up waiting).
+/// The runner goes on as after any match: the chat-lobby list, then a join.
+/// The join itself leaves the room on the lobby if it is still there.
+fn room_not_returned(state: &mut AppState, closed: bool) {
+    if let Some(visit) = state.frontend.wol.as_mut() {
+        visit.back_to_room = false;
+    }
+    let Some(lobby) = lobby_mut(state) else {
+        return;
+    };
+    lobby.current = None;
+    lobby.members.clear();
+    // The next waits take their own box, with its Disconnect again.
+    lobby.wait = None;
+    lobby.step = Step::ListingLobbies {
+        deadline: Instant::now() + LIST_WAIT,
+    };
+    if closed {
+        message_line(state, "The game room closed.".to_owned());
+    }
+    list_lobbies(state);
+}
+
+/// VERA: the lobby gave back the room this player stayed in, owner first.
+/// Its owner opens the host's setup again from the settings it started
+/// with; the others enter it as after a join.
+fn room_reopened(state: &mut AppState, joined: WolJoined) {
+    if !awaiting_room(state) {
+        // The player gave up waiting; the chat-lobby join leaves the room.
+        log::debug!("WOL room reopened after the wait ended");
+        return;
+    }
+    if let Some(visit) = state.frontend.wol.as_mut() {
+        visit.back_to_room = false;
+    }
+    let me = nickname(state);
+    let host = joined
+        .members
+        .iter()
+        .any(|member| member.flags & MEMBER_OPERATOR != 0 && member.name.eq_ignore_ascii_case(&me));
+    let listed = joined.members.clone();
+    let channel = joined.channel.clone();
+    if let Some(lobby) = lobby_mut(state) {
+        lobby.step = Step::Ready;
+    }
+    sort_lobby(state, |lobby, sort, rank| {
+        lobby.users_listed(channel, joined.members, sort, rank);
+    });
+    request_listed(state, &listed);
+    close_wait(state);
+    if host {
+        let observe = state
+            .frontend
+            .multiplayer_shell_runtime
+            .lan_create_observer();
+        commit_create(state, observe);
+        // The players who came back take rows as joiners would, in the
+        // lobby's order, so the host's options name them all.
+        for name in listed
+            .iter()
+            .map(|member| member.name.clone())
+            .filter(|name| !name.eq_ignore_ascii_case(&me))
+        {
+            if let Err(error) = setup::user_joined(state, name) {
+                log::warn!("WOL reopened room: {error:#}");
+            }
+        }
+    } else {
+        enter_game_as_guest(state);
+    }
 }
 
 fn new_runner(
@@ -1459,6 +1578,19 @@ fn left_channel(state: &mut AppState) {
         &[crate::assets::csf_file::CsfArg::Str(&room)],
     );
     message_line(state, text);
+}
+
+/// VERA's line after the MOTD, once per sign-in, in its chat lobby, which
+/// has no `TXT_JOINED_S` line (VERA's own addition; gamemd's reads "You
+/// joined channel %s").
+const JOINED_LOBBY_LINE: &str = "You have joined VERA lobby.";
+
+/// VERA's line for a guest entering a modern-lobby game room (gamemd's C9
+/// prints none): it names the room's operator, its host. `users` is the
+/// room's user list without the local player, as `(name, operator)`.
+fn joined_game_line(users: &[(String, bool)]) -> Option<String> {
+    let (host, _) = users.iter().find(|(_, operator)| *operator)?;
+    Some(format!("You have joined {host}'s game."))
 }
 
 fn modern_lobby(state: &AppState) -> bool {
@@ -2295,6 +2427,12 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
         }
         WAIT_DISCONNECT
             if lobby.wait.as_ref().is_some_and(|wait| wait.shown)
+                && matches!(lobby.step, Step::ReturningToRoom) =>
+        {
+            room_not_returned(state, false);
+        }
+        WAIT_DISCONNECT
+            if lobby.wait.as_ref().is_some_and(|wait| wait.shown)
                 && lobby.runner == Runner::QuickMatch =>
         {
             // Event 0: the runner's exit.
@@ -2431,46 +2569,14 @@ fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
     });
     request_listed(state, &listed);
     if joined.channel.kind == GAME_CHANNEL {
-        // The guest dialog C9 over a hidden 0x113; the observer preference
-        // [0xAC10C8] makes the local node an observer.
         close_wait(state);
-        let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
-        let mut local = state.frontend.multiplayer_shell_runtime.local_participant();
-        if observer {
-            local.role = crate::skirmish_launch::LaunchHumanRole::Observer;
-        }
-        // [0x8316A4] = 7 until the host's "O<n>" arrives.
-        App::open_wol_joined_setup(state, local, Some(7));
-        // The user-list sink 0x7A7110: the others as nodes, then the
-        // persona's Country and Color as the MultiPlayer picks
-        // (0x69B760/0x69B7E0) and the first R.
-        let me = nickname(state);
-        let users: Vec<(String, bool)> = lobby(state)
-            .map(|lobby| {
-                lobby
-                    .members
-                    .iter()
-                    .filter(|member| !member.name.eq_ignore_ascii_case(&me))
-                    .map(|member| (member.name.clone(), member.flags & MEMBER_OPERATOR != 0))
-                    .collect()
-            })
-            .unwrap_or_default();
-        if setup::guest_users_listed(state, &users) {
-            super::persona::take_side_and_color(state, &me);
-            setup::send_first_choices(state);
-            if quick_match_runner(state) {
-                super::quick_match::game_joined(state, true);
-            }
-        } else {
-            // 0x7A782A..0x7A788D: no operator, the local tail 0x785740.
-            setup_channel_left(state);
-        }
+        enter_game_as_guest(state);
         return;
     }
     // A chat lobby: its number (0x7A5EFD, any type-0 name), the
-    // TXT_JOINED_S line (not in the modern lobby, which never names its one
-    // chat lobby), the controls back with Join as the selected game admits
-    // for either role.
+    // TXT_JOINED_S line (not in the modern lobby, which prints its own
+    // line once with the MOTD), the controls back with Join as the selected
+    // game admits for either role.
     state.frontend.wol_lobby_globals.lobby_number = joined.channel.joined_lobby_number();
     if quick_match_runner(state) {
         // 0x7A5E86..0x7A5EC8: no TXT_JOINED_S in modes 1-3; the wait closes
@@ -2503,6 +2609,46 @@ fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
         entry_shown(state);
     } else {
         close_wait(state);
+    }
+}
+
+/// A joined game channel: the guest dialog C9 over a hidden 0x113; the
+/// observer preference [0xAC10C8] makes the local node an observer.
+fn enter_game_as_guest(state: &mut AppState) {
+    let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
+    let mut local = state.frontend.multiplayer_shell_runtime.local_participant();
+    if observer {
+        local.role = crate::skirmish_launch::LaunchHumanRole::Observer;
+    }
+    // [0x8316A4] = 7 until the host's "O<n>" arrives.
+    App::open_wol_joined_setup(state, local, Some(7));
+    // The user-list sink 0x7A7110: the others as nodes, then the
+    // persona's Country and Color as the MultiPlayer picks
+    // (0x69B760/0x69B7E0) and the first R.
+    let me = nickname(state);
+    let users: Vec<(String, bool)> = lobby(state)
+        .map(|lobby| {
+            lobby
+                .members
+                .iter()
+                .filter(|member| !member.name.eq_ignore_ascii_case(&me))
+                .map(|member| (member.name.clone(), member.flags & MEMBER_OPERATOR != 0))
+                .collect()
+        })
+        .unwrap_or_default();
+    let modern = modern_lobby(state) && !quick_match_runner(state);
+    if setup::guest_users_listed(state, &users) {
+        super::persona::take_side_and_color(state, &me);
+        setup::send_first_choices(state);
+        if quick_match_runner(state) {
+            super::quick_match::game_joined(state, true);
+        }
+        if modern && let Some(line) = joined_game_line(&users) {
+            message_line(state, line);
+        }
+    } else {
+        // 0x7A782A..0x7A788D: no operator, the local tail 0x785740.
+        setup_channel_left(state);
     }
 }
 
@@ -2790,6 +2936,8 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                 log::warn!("WOL game-channel leave: {error:#}");
             }
         }
+        WolServiceEvent::RoomReopened(joined) => room_reopened(state, joined),
+        WolServiceEvent::ChannelLeft if awaiting_room(state) => room_not_returned(state, true),
         WolServiceEvent::ChannelLeft if in_setup_channel(state) => setup_channel_left(state),
         WolServiceEvent::ChannelLeft => leave_finished(state, true),
         WolServiceEvent::PlayerChoices {
@@ -4001,6 +4149,16 @@ mod tests {
         assert_eq!(republished_limit(&session, false), Some(4));
         assert_eq!(republished_limit(&session, true), Some(5));
         assert_eq!(slot_ex_info(&session), (0, 0, 1));
+    }
+
+    #[test]
+    fn a_joined_game_line_names_the_operator_not_the_first_user() {
+        let users = [("Guest".to_owned(), false), ("Host".to_owned(), true)];
+        assert_eq!(
+            joined_game_line(&users).as_deref(),
+            Some("You have joined Host's game.")
+        );
+        assert_eq!(joined_game_line(&users[..1]), None);
     }
 
     #[test]

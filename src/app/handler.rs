@@ -225,6 +225,47 @@ impl App {
         )));
     }
 
+    /// Note where the windowed window sits for the next launch, and whether it
+    /// is maximised. Full screen, maximised and minimised windows keep the last
+    /// ordinary placement, so leaving those states restores it. winit reports full screen until the
+    /// exit animation's last resize, so the animation's sizes are skipped too.
+    fn remember_window_placement(state: &mut AppState) {
+        let window = &state.platform.window;
+        if state.platform.capture_client_size.is_some()
+            || window.fullscreen().is_some()
+            || window.is_minimized().unwrap_or(false)
+        {
+            return;
+        }
+        let maximized = window.is_maximized();
+        if state.persistence.options_profile.window_maximized != maximized {
+            state.persistence.options_profile.window_maximized = maximized;
+            state.platform.window_placement_unsaved = true;
+        }
+        if maximized {
+            return;
+        }
+        let window = &state.platform.window;
+        let Ok(corner) = window.outer_position() else {
+            return;
+        };
+        let size = window.inner_size().to_logical::<u32>(window.scale_factor());
+        if size.width == 0 || size.height == 0 {
+            return;
+        }
+        let placement = crate::app::persistence::options_profile::WindowPlacement {
+            x: corner.x,
+            y: corner.y,
+            width: size.width,
+            height: size.height,
+        };
+        let profile = &mut state.persistence.options_profile;
+        if profile.window_placement != Some(placement) {
+            profile.window_placement = Some(placement);
+            state.platform.window_placement_unsaved = true;
+        }
+    }
+
     /// The window owns full screen while the game runs, and can change it by
     /// itself (its title-bar button, the system shortcut). Each event-loop pass
     /// copies its state into the profile and the Options box, so they and the
@@ -535,6 +576,12 @@ impl ApplicationHandler for App {
             .is_some_and(|state| state.frontend.network_goodbye_deadline.is_some())
         {
             return;
+        }
+        // Every screen remembers where the player puts the window.
+        if matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_))
+            && let Some(state) = self.state.as_mut()
+        {
+            Self::remember_window_placement(state);
         }
         let shell_capture_active = self.shell_capture.is_some();
         let tactical_capture_active = self.tactical_capture.is_some();
@@ -908,9 +955,13 @@ impl ApplicationHandler for App {
                 // The OS drops the cursor clip on alt-tab, so re-apply the
                 // player's confinement choice whenever the window returns.
                 if active {
+                    crate::app::input::cursor::refresh_pointer_in_client(state);
                     crate::app::input::cursor::apply_cursor_confinement(state);
                 }
                 if !active {
+                    // Give the arrow back at once: a backgrounded window may
+                    // draw no frame that would.
+                    crate::app::input::cursor::set_os_cursor_visible(state, true);
                     // `release_in_game_pointer_state` also drops a touch stream
                     // that ended without an `Ended`, so no phantom finger turns
                     // the next tap into a two-finger pan.
@@ -982,6 +1033,11 @@ impl ApplicationHandler for App {
                 state.platform.window.request_redraw();
             }
             WindowEvent::CursorLeft { .. } => {
+                // macOS's cursor lock: the pointer goes straight back in.
+                if crate::app::input::cursor::hold_pointer_in_window(state) {
+                    state.platform.window.request_redraw();
+                    return;
+                }
                 state.match_state.input.reset_window_cursor_motion();
                 // winit raises this from `WM_MOUSELEAVE`, which it arms on the
                 // matching enter and which fires when the pointer crosses onto the
@@ -1037,15 +1093,44 @@ impl ApplicationHandler for App {
                     state.match_state.input.keys_held.remove(&code);
                     return;
                 }
-                // cursor lock toggle: flip the window cursor
-                // clip so the pointer cannot leave the game (and back). Works
-                // on every screen, like the rest of the lock feature.
-                if let PhysicalKey::Code(KeyCode::ScrollLock) = event.physical_key
-                    && event.state.is_pressed()
-                    && !event.repeat
-                {
-                    crate::app::input::cursor::toggle_cursor_confinement(state);
-                    state.platform.window.request_redraw();
+                // Cursor lock toggle: flip the window cursor clip so the
+                // pointer cannot leave the game (and back). Works on every
+                // screen, like the rest of the lock feature. Scroll Lock, or
+                // Ctrl+Alt+L for keyboards without one (every Mac's).
+                let modifiers = state.platform.live_modifiers;
+                let lock_key = match event.physical_key {
+                    PhysicalKey::Code(KeyCode::ScrollLock) => true,
+                    PhysicalKey::Code(KeyCode::KeyL) => {
+                        modifiers.control_key() && modifiers.alt_key()
+                    }
+                    _ => false,
+                };
+                if lock_key {
+                    if event.state.is_pressed() && !event.repeat {
+                        crate::app::input::cursor::toggle_cursor_confinement(state);
+                        state.platform.window.request_redraw();
+                    }
+                    return;
+                }
+                // Full screen toggle: Alt+Enter, and on macOS also the
+                // system's own Ctrl+Cmd+F. A capture keeps its fixed surface.
+                let full_screen_key = match event.physical_key {
+                    PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter) => {
+                        modifiers.alt_key() && !modifiers.control_key()
+                    }
+                    PhysicalKey::Code(KeyCode::KeyF) => {
+                        cfg!(target_os = "macos")
+                            && modifiers.control_key()
+                            && modifiers.super_key()
+                            && !modifiers.alt_key()
+                    }
+                    _ => false,
+                };
+                if full_screen_key && state.platform.capture_client_size.is_none() {
+                    if event.state.is_pressed() && !event.repeat {
+                        let full_screen = state.platform.window.fullscreen().is_none();
+                        Self::set_full_screen(state, full_screen);
+                    }
                     return;
                 }
                 // VERA's FPS readout toggle. Like the cursor lock it works on
@@ -1497,6 +1582,12 @@ impl ApplicationHandler for App {
                 button,
                 ..
             } => {
+                // A click in the game locks the cursor again after Ctrl+Alt+L
+                // freed it, when the Options box keeps it locked. The click
+                // still reaches the game.
+                if btn_state.is_pressed() {
+                    crate::app::input::cursor::relock_cursor_on_click(state);
+                }
                 let layer = crate::app::input::precedence::input_layer(state);
                 match layer {
                     InputLayer::HouseOutcomeWait => {
@@ -1956,6 +2047,11 @@ impl ApplicationHandler for App {
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         if let Some(state) = self.state.as_mut() {
             crate::app::match_runtime::sim_tick::flush_replay_log(state);
+            // However the game ends (Exit, the close button, Cmd-Q), the
+            // next launch opens the window where the player left it.
+            if std::mem::take(&mut state.platform.window_placement_unsaved) {
+                crate::app::persistence::options::persist_options_profile(state);
+            }
         }
         log::logger().flush();
         // A confirmed quit (its cascade's Theme Stop(0), 0x0052E7EC, has run)

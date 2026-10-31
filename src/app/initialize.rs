@@ -388,8 +388,12 @@ impl App {
         // and the match zoom follows it. A sealed capture keeps its exact,
         // fixed, hidden physical surface.
         let capture = capture_dimensions.is_some();
+        // A player window reopens at the size it was last left at.
+        let placement = options_profile.window_placement.filter(|_| !capture);
         let inner_size: winit::dpi::Size = if capture {
             PhysicalSize::new(window_width, window_height).into()
+        } else if let Some(placement) = placement {
+            winit::dpi::LogicalSize::new(placement.width, placement.height).into()
         } else {
             winit::dpi::LogicalSize::new(window_width, window_height).into()
         };
@@ -412,8 +416,17 @@ impl App {
             .with_inner_size(inner_size)
             .with_resizable(!capture)
             .with_fullscreen(fullscreen)
+            // A player window reopens maximised when it was left so.
+            .with_maximized(
+                window_visible && !options_profile.full_screen && options_profile.window_maximized,
+            )
             .with_visible(window_visible)
             .with_active(window_visible);
+        // A player window shrinks no further than gamemd's smallest mode,
+        // 640x480, the view every zoom step keeps.
+        if !capture {
+            window_attrs = window_attrs.with_min_inner_size(winit::dpi::LogicalSize::new(640, 480));
+        }
         // The Wayland app ID and X11 class, which the AppImage's desktop entry
         // names (StartupWMClass), so docks show its icon for the window.
         // Unset, Wayland has none and X11 takes the name the program was
@@ -446,15 +459,31 @@ impl App {
             window_attrs = window_attrs.with_canvas(Some(crate::web::canvas()));
         }
         let window: Arc<Window> = Arc::new(event_loop.create_window(window_attrs)?);
-        // A windowed launch on a saved screen: the window opens centred there.
-        // Full screen already covers it from the attributes above.
-        if let Some(monitor) = wanted_display
-            .as_ref()
-            .filter(|_| !options_profile.full_screen)
-        {
-            window.set_outer_position(super::display_target::centered_outer_position(
-                &window, monitor,
-            ));
+        // A windowed launch opens where the player last left the window, while
+        // that spot still shows its title bar on the chosen screen (any screen
+        // when none is chosen); otherwise it opens centred on the chosen
+        // screen. Full screen already covers it from the attributes above.
+        if !options_profile.full_screen {
+            let saved_corner = placement
+                .map(|placement| winit::dpi::PhysicalPosition::new(placement.x, placement.y))
+                .filter(|corner| {
+                    let screens = displays
+                        .iter()
+                        .map(|display| &display.handle)
+                        .filter(|screen| match &wanted_display {
+                            Some(wanted) => wanted == *screen,
+                            None => true,
+                        })
+                        .map(|screen| (screen.position(), screen.size()));
+                    super::display_target::title_bar_on_a_screen(*corner, screens)
+                });
+            if let Some(corner) = saved_corner {
+                window.set_outer_position(corner);
+            } else if let Some(monitor) = wanted_display.as_ref() {
+                window.set_outer_position(super::display_target::centered_outer_position(
+                    &window, monitor,
+                ));
+            }
         }
         // gamemd's WinMain builds WWMouse (`0x006BDF1C`), whose constructor hides
         // the cursor, before the startup splash; from the first frame after it,
@@ -961,6 +990,7 @@ impl App {
                     pause_menu_interaction: Default::default(),
                     pause_menu_template: Default::default(),
                     internet_pause: Default::default(),
+                    display_pause: Default::default(),
                     abort_secondary: Default::default(),
                     sound_dialog: None,
                     abort_buttons: Default::default(),
@@ -1149,6 +1179,7 @@ impl App {
                 lan: None,
                 multiplayer_setup: None,
                 room_limits: Default::default(),
+                lan_rematch: None,
                 network_setup_protocol: None,
                 wol_welcome_art: None,
                 wol_login_art: None,
@@ -1214,6 +1245,8 @@ impl App {
             ),
         };
 
+                // The saved cursor-lock choice; the first focus applies it.
+                state.platform.cursor_confined = state.persistence.options_profile.lock_cursor;
                 // Project all three retained profile gains before any player can start
                 // an audible source. Score also initializes Theme's native +0xC gate,
                 // even without a music device. The profile keeps native negative values

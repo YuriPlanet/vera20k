@@ -45,9 +45,23 @@ const SUBMIT_REQUEST: u8 = 1;
 const PULL_REQUEST: u8 = 2;
 const PUSH_REQUEST: u8 = 4;
 const PAUSE_REQUEST: u8 = 5;
+const PACE_REQUEST: u8 = 6;
 const PAUSE_STATUS_EVENT: u8 = 8;
 const PAUSE_EVENT: u8 = 9;
 const PAUSE_ENTRY_BYTES: usize = 23;
+const RATE_EVENT: u8 = 10;
+const RATE_ENTRY_BYTES: usize = 16;
+// Game Speed's frame rates, fastest first: the rates a certificate may name.
+const FRAME_RATES: [u16; 7] = [60, 45, 30, 20, 15, 12, 10];
+// A player's report counts this long; a silent client slows nobody.
+const PACE_REPORT_MS: u64 = 3_000;
+// Rate changes are at least this far apart, so reports show a step's effect
+// before the next one.
+const PACE_STEP_MS: u64 = 5_000;
+// With nobody behind this long the clock tries the next faster rate. A
+// slowdown this soon after a raise doubles the wait, up to the cap.
+const PACE_RAISE_MS: u64 = 30_000;
+const PACE_RAISE_MAX_MS: u64 = 300_000;
 const PUSH_EVENT: u8 = 7;
 const PUSH_WINDOW: u64 = 64;
 const PUSH_LEASE_MS: u64 = 3_000;
@@ -62,8 +76,15 @@ const PUSH_DRAIN_BYTES: usize = 96 * 1024;
 // reader's one-frame gap grace.
 const PUSH_REPEAT_MS: u64 = 8;
 // Repeats per second relay-wide. They spend no fresh budget, so they add at
-// most one room's packet budget to the relay's ordering output.
+// most half the relay's fresh total to its ordering output.
 const PUSH_REPEAT_PACKETS: u64 = 8192;
+// One room's fresh ordering packets per second. Every entry goes to every
+// reader as its own packet, so a full 30-source room at 60 Hz needs about
+// 8,200 at 150 actions a minute and 10,600 at 300, before repairs. The cap
+// stays below the
+// relay-wide total so a flooding room's asks leave the rest unreserved for
+// matches that start or repair.
+const ROOM_ORDER_PACKETS: u64 = 12_288;
 pub(super) const LEAVE_REQUEST: u8 = 3;
 const READY_EVENT: u8 = 0;
 const STATUS_EVENT: u8 = 1;
@@ -100,7 +121,7 @@ impl OrderingCertificate {
         if self.room == [0; 16]
             || self.sources_mask == 0
             || self.sources_mask >> MAX_PEERS != 0
-            || !matches!(self.tick_hz, 60 | 45 | 30 | 20 | 15 | 12 | 10)
+            || !FRAME_RATES.contains(&self.tick_hz)
         {
             return Err(RelayError::Malformed);
         }
@@ -136,6 +157,29 @@ impl OrderingCertificate {
         }
         Ok(certificate)
     }
+}
+
+/// A client's pace against the sealed frames, reported about once a second.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum OrderPace {
+    /// It runs the frames as they are sealed.
+    KeepingUp = 0,
+    /// Frames wait on it, and it runs fewer than are sealed.
+    Behind = 1,
+    /// Frames wait on it, but it runs at least as many as are sealed.
+    CatchingUp = 2,
+}
+
+/// The rates a match certified at `tick_hz` may be sealed at, fastest first:
+/// its own and at most two Game Speed rows slower. A player whose PC cannot
+/// keep up slows the match this far and no further.
+pub fn paced_rates(tick_hz: u16) -> &'static [u16] {
+    let fastest = FRAME_RATES
+        .iter()
+        .position(|&rate| rate == tick_hz)
+        .unwrap_or(FRAME_RATES.len() - 1);
+    &FRAME_RATES[fastest..(fastest + 3).min(FRAME_RATES.len())]
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,6 +259,15 @@ pub enum OrderEntry {
         /// match lifetime. On the wire, a 15th byte 1 is DestroyConnection's
         /// connection-lost error code.
         lost: bool,
+    },
+    /// A barrier after `frame`: later frames are sealed `frames_per_second`
+    /// apart, one of `paced_rates` of the certificate's rate. `source` is the
+    /// player who could not keep up; `None` steps back up.
+    Rate {
+        sequence: u64,
+        frame: u32,
+        frames_per_second: u16,
+        source: Option<u8>,
     },
 }
 
@@ -504,6 +557,24 @@ impl ClientSession {
         self.encode(CONTROL, BROADCAST, &payload, out)
     }
 
+    /// Tells the relay whether this PC keeps up with the sealed frames, and
+    /// how many it ran in the last second. Sent about once a second with no
+    /// reply; the first one also advertises reading rate markers. Older
+    /// relays drop it as malformed.
+    pub fn report_ordering_pace(
+        &mut self,
+        pace: OrderPace,
+        frames_per_second: u16,
+        out: &mut Vec<u8>,
+    ) -> Result<(), RelayError> {
+        if !self.ready || self.ordering.is_none() {
+            return Err(RelayError::Unregistered);
+        }
+        let mut payload = vec![PACE_REQUEST, pace as u8];
+        payload.extend_from_slice(&frames_per_second.to_le_bytes());
+        self.encode(CONTROL, BROADCAST, &payload, out)
+    }
+
     pub fn leave_ordering(&mut self, out: &mut Vec<u8>) -> Result<(), RelayError> {
         let Some(ordering) = self.ordering.as_ref() else {
             return Err(RelayError::Unregistered);
@@ -552,6 +623,17 @@ impl ClientSession {
                     epoch: read_u64(payload, 13),
                     paused: payload[21] != 0,
                     source: payload[22],
+                })
+            }
+            (RATE_EVENT, RATE_ENTRY_BYTES)
+                if FRAME_RATES.contains(&u16::from_le_bytes([payload[13], payload[14]]))
+                    && (payload[15] < MAX_PEERS || payload[15] == u8::MAX) =>
+            {
+                OrderEvent::Entry(OrderEntry::Rate {
+                    sequence: read_u64(payload, 1),
+                    frame: read_u32(payload, 9),
+                    frames_per_second: u16::from_le_bytes([payload[13], payload[14]]),
+                    source: (payload[15] != u8::MAX).then_some(payload[15]),
                 })
             }
             (PUSH_EVENT, 10..) if payload[1] <= 1 && read_u64(payload, 2) != 0 => {
@@ -710,6 +792,14 @@ struct PauseRequest {
     paused: bool,
 }
 
+/// A player's latest pace report, with the frames it ran in its last second.
+#[derive(Clone, Copy)]
+struct PaceReport {
+    pace: OrderPace,
+    frames_per_second: u16,
+    at_ms: u64,
+}
+
 #[derive(Default)]
 struct Source {
     principal: Option<([u8; 16], u64)>,
@@ -718,8 +808,37 @@ struct Source {
     leave_packets: RateBudget,
     pause_supported: bool,
     pause_request: Option<PauseRequest>,
+    // Also its capability: a source that reported reads rate markers.
+    pace: Option<PaceReport>,
     // Last authenticated packet from this source, keepalives included.
     heard_ms: u64,
+}
+
+/// The sealing clock's slowdown for players whose PCs cannot keep up. This
+/// is a relay adaptation of native lockstep, where every match runs as slow
+/// as its slowest player (ProcessNetwork 0x00647BF4..0x00647E6D, TIMING):
+/// here it slows at most two Game Speed rows and tries to speed up again.
+struct Pace {
+    rate: u16,
+    // The head at the last rate change, and when. Pauses displace these
+    // times like the start.
+    anchor: Option<(u32, u64)>,
+    raised_at: Option<u64>,
+    raise_wait: u64,
+    // When a player last reported being behind or catching up.
+    lagging_at: u64,
+}
+
+impl Pace {
+    fn displace(&mut self, paused_for: u64) {
+        if let Some((_, at)) = self.anchor.as_mut() {
+            *at = at.saturating_add(paused_for);
+        }
+        if let Some(at) = self.raised_at.as_mut() {
+            *at = at.saturating_add(paused_for);
+        }
+        self.lagging_at = self.lagging_at.saturating_add(paused_for);
+    }
 }
 
 struct Pending {
@@ -742,6 +861,7 @@ pub(super) struct OrderingRoom {
     paused_at: Option<u64>,
     resumed_at: Option<u64>,
     pause_epoch: u64,
+    pace: Pace,
     // Merged stream head. A federated relay seals its own sources first, at
     // `sealed`, and merges a frame once every relay has sealed it.
     head: u32,
@@ -783,6 +903,13 @@ impl OrderingRoom {
             paused_at: None,
             resumed_at: None,
             pause_epoch: 0,
+            pace: Pace {
+                rate: certificate.tick_hz,
+                anchor: None,
+                raised_at: None,
+                raise_wait: PACE_RAISE_MS,
+                lagging_at: 0,
+            },
             head: 0,
             sealed: 0,
             local,
@@ -934,11 +1061,138 @@ impl OrderingRoom {
             self.resumed_at = Some(now_ms);
             // Displace wall time instead of generating catch-up frames for the
             // paused interval. The next frame retains its fractional remainder.
+            let paused_for = now_ms.saturating_sub(paused_at);
             if let Some(start) = self.starts_at.as_mut() {
-                *start = start.saturating_add(now_ms.saturating_sub(paused_at));
+                *start = start.saturating_add(paused_for);
             }
+            self.pace.displace(paused_for);
         }
         Ok(())
+    }
+
+    /// Stores a player's pace report; `adjust_pace` acts on it.
+    fn report_pace(
+        &mut self,
+        ticket: Ticket,
+        payload: &[u8],
+        now_ms: u64,
+    ) -> Result<(), RelayError> {
+        let pace = match payload.get(1) {
+            Some(0) => OrderPace::KeepingUp,
+            Some(1) => OrderPace::Behind,
+            Some(2) => OrderPace::CatchingUp,
+            _ => return Err(RelayError::Malformed),
+        };
+        if payload.len() != 4 {
+            return Err(RelayError::Malformed);
+        }
+        self.authenticate_reader(ticket)?;
+        self.sources[usize::from(ticket.source)].pace = Some(PaceReport {
+            pace,
+            frames_per_second: u16::from_le_bytes([payload[2], payload[3]]),
+            at_ms: now_ms,
+        });
+        Ok(())
+    }
+
+    /// Slows the clock while a player reports it cannot keep up: to the
+    /// fastest paced rate at most nine tenths of what it ran, at least one
+    /// row slower, at most two. Catch-up skips drawing, so what it ran
+    /// overstates what it keeps up with, and the margin drains the frames
+    /// waiting on it. Once nobody has been behind or catching up for the
+    /// raise wait it tries one row faster. Every active source must have
+    /// reported, so no client meets a marker it cannot read. Each change is a
+    /// marker after the head's frame end; later frames are due at the new
+    /// rate from its append time.
+    fn adjust_pace(&mut self, now_ms: u64) {
+        let mut slowest: Option<(u16, u8)> = None;
+        let mut lagging = false;
+        for (index, source) in self.sources.iter().enumerate() {
+            if self.active & (1 << index) == 0 {
+                continue;
+            }
+            let Some(report) = source.pace else {
+                return;
+            };
+            if now_ms.saturating_sub(report.at_ms) > PACE_REPORT_MS {
+                continue;
+            }
+            lagging |= report.pace != OrderPace::KeepingUp;
+            if report.pace == OrderPace::Behind
+                && slowest.is_none_or(|(rate, _)| report.frames_per_second < rate)
+            {
+                slowest = Some((report.frames_per_second, index as u8));
+            }
+        }
+        if lagging {
+            self.pace.lagging_at = now_ms;
+        }
+        let changed_at = self.pace.anchor.map_or(0, |(_, at)| at);
+        if self.pace.anchor.is_some() && now_ms.saturating_sub(changed_at) < PACE_STEP_MS {
+            return;
+        }
+        let rates = paced_rates(self.certificate.tick_hz);
+        let step = rates
+            .iter()
+            .position(|&rate| rate == self.pace.rate)
+            .expect("the clock runs at a paced rate");
+        let (rate, source) = match slowest {
+            Some((ran, source)) if step + 1 < rates.len() => (
+                rates[step + 1..]
+                    .iter()
+                    .copied()
+                    .find(|&rate| u32::from(rate) * 10 <= u32::from(ran) * 9)
+                    .unwrap_or(rates[rates.len() - 1]),
+                source,
+            ),
+            None if step > 0
+                && now_ms.saturating_sub(self.pace.lagging_at.max(changed_at))
+                    >= self.pace.raise_wait =>
+            {
+                (rates[step - 1], u8::MAX)
+            }
+            _ => return,
+        };
+        if let Some(journal) = self.journal.as_mut()
+            && !journal.reserve_entries(&[RATE_ENTRY_BYTES])
+        {
+            return;
+        }
+        let mut tail = rate.to_le_bytes().to_vec();
+        tail.push(source);
+        let record = Self::encoded_entry(self.next_seq, self.head, RATE_EVENT, &tail);
+        if !self.append_records(self.head, vec![record]) {
+            return;
+        }
+        let pace = &mut self.pace;
+        if source == u8::MAX {
+            pace.raised_at = Some(now_ms);
+        } else {
+            pace.raise_wait = if pace
+                .raised_at
+                .is_some_and(|at| now_ms.saturating_sub(at) < PACE_RAISE_MS)
+            {
+                (pace.raise_wait * 2).min(PACE_RAISE_MAX_MS)
+            } else {
+                PACE_RAISE_MS
+            };
+        }
+        pace.rate = rate;
+        pace.anchor = Some((self.head, now_ms));
+    }
+
+    /// About when `frame` was due: exact from the last rate change on, at
+    /// the certificate's rate from the start before it.
+    fn frame_due_ms(&self, frame: u32) -> u64 {
+        match self.pace.anchor {
+            Some((anchor, at)) if frame >= anchor => {
+                at.saturating_add(u64::from(frame - anchor) * 1000 / u64::from(self.pace.rate))
+            }
+            _ => self
+                .starts_at
+                .unwrap_or(0)
+                .saturating_add(u64::from(frame) * 1000 / u64::from(self.certificate.tick_hz)),
+        }
     }
 
     fn supported_pause_sources(&self) -> u32 {
@@ -1167,10 +1421,12 @@ impl OrderingRoom {
         let Some(start) = self.starts_at else {
             return;
         };
-        let target = (now_ms
-            .saturating_sub(start)
-            .saturating_mul(u64::from(self.certificate.tick_hz))
-            / 1000)
+        let (anchor, anchor_ms) = self.pace.anchor.unwrap_or((0, start));
+        let target = (u64::from(anchor)
+            + now_ms
+                .saturating_sub(anchor_ms)
+                .saturating_mul(u64::from(self.pace.rate))
+                / 1000)
             .min(MAX_MATCH_SECONDS * u64::from(self.certificate.tick_hz))
             as u32;
         let final_frame = (MAX_MATCH_SECONDS * u64::from(self.certificate.tick_hz)) as u32;
@@ -1288,6 +1544,15 @@ impl OrderingRoom {
                 }
             }
             self.head = frame;
+        }
+        // A federated relay seals from the shared start alone, so its rooms
+        // keep the certificate's rate.
+        if self.local == self.certificate.sources_mask
+            && self.active != 0
+            && start <= now_ms
+            && self.head < final_frame
+        {
+            self.adjust_pace(now_ms);
         }
         // Every source has departed, by Leave, silence past its limit or the
         // agreed full-match lifetime; the archive ends after its replay grace.
@@ -1619,6 +1884,123 @@ mod tests {
             .control_ordering_pause(id, epoch, paused, &mut bytes)
             .unwrap();
         events(server, client, &bytes, now_ms).remove(0)
+    }
+
+    fn pace_report(
+        server: &mut RelayServer,
+        client: &mut ClientSession,
+        pace: OrderPace,
+        frames_per_second: u16,
+        now_ms: u64,
+    ) {
+        let mut bytes = Vec::new();
+        client
+            .report_ordering_pace(pace, frames_per_second, &mut bytes)
+            .unwrap();
+        assert!(events(server, client, &bytes, now_ms).is_empty());
+    }
+
+    fn paced_room(key: &SecretKey) -> (RelayServer, ClientSession, ClientSession) {
+        let mut server = RelayServer::new(key.clone(), 2);
+        let (mut first, mut second) = (client(key, 0), client(key, 1));
+        let cert = certificate(key, 3, 1400);
+        for peer in [&mut first, &mut second] {
+            connect(&mut server, peer, 0);
+            configure(&mut server, peer, &cert, 0);
+        }
+        (server, first, second)
+    }
+
+    #[test]
+    fn a_player_who_cannot_keep_up_slows_the_clock_at_most_two_rows() {
+        use OrderPace::*;
+        let key = SecretKey::new([73; 32]);
+        let (mut server, mut first, mut second) = paced_room(&key);
+        pace_report(&mut server, &mut second, Behind, 40, 1000);
+        server.advance_clock(1000, unix(1000));
+        assert_eq!(
+            ordering(&server).pace.rate,
+            45,
+            "a player who has not reported may not read a rate marker"
+        );
+        pace_report(&mut server, &mut first, KeepingUp, 45, 1000);
+        server.advance_clock(1000, unix(1000));
+        server.advance_clock(2000, unix(2000));
+        assert_eq!(ordering(&server).head, 36 + 30);
+        pace_report(&mut server, &mut second, Behind, 25, 3000);
+        server.advance_clock(3000, unix(3000));
+        assert_eq!(
+            ordering(&server).pace.rate,
+            30,
+            "one change per five seconds"
+        );
+        pace_report(&mut server, &mut second, Behind, 25, 6000);
+        pace_report(&mut server, &mut second, Behind, 5, 11_000);
+        server.advance_clock(11_000, unix(11_000));
+        let markers: Vec<_> = ordering(&server)
+            .history
+            .iter()
+            .filter(|entry| entry.bytes[0] == RATE_EVENT)
+            .map(
+                |entry| match first.receive_ordering(&entry.bytes).unwrap() {
+                    OrderEvent::Entry(OrderEntry::Rate {
+                        frame,
+                        frames_per_second,
+                        source,
+                        ..
+                    }) => (frame, frames_per_second, source),
+                    _ => panic!("rate marker"),
+                },
+            )
+            .collect();
+        // 40 a second leaves 30 a tenth of slack; 25 leaves 20 none to spare.
+        assert_eq!(markers, [(36, 30, Some(1)), (186, 20, Some(1))]);
+    }
+
+    #[test]
+    fn the_clock_speeds_up_once_nobody_lags_and_waits_twice_as_long_after_a_relapse() {
+        use OrderPace::*;
+        let key = SecretKey::new([73; 32]);
+        let (mut server, mut first, mut second) = paced_room(&key);
+        pace_report(&mut server, &mut first, KeepingUp, 45, 1000);
+        pace_report(&mut server, &mut second, Behind, 40, 1000);
+        server.advance_clock(1000, unix(1000));
+        // Frames still wait on the slow player: the wait starts once they don't.
+        pace_report(&mut server, &mut second, CatchingUp, 33, 2000);
+        pace_report(&mut server, &mut second, CatchingUp, 33, 5000);
+        pace_report(&mut server, &mut second, KeepingUp, 30, 8000);
+        server.advance_clock(37_999, unix(37_999));
+        assert_eq!(ordering(&server).pace.rate, 30);
+        server.advance_clock(38_000, unix(38_000));
+        assert_eq!(ordering(&server).pace.rate, 45);
+        pace_report(&mut server, &mut second, Behind, 40, 46_000);
+        server.advance_clock(46_000, unix(46_000));
+        pace_report(&mut server, &mut second, KeepingUp, 30, 47_000);
+        server.advance_clock(106_999, unix(106_999));
+        assert_eq!(ordering(&server).pace.rate, 30);
+        server.advance_clock(107_000, unix(107_000));
+        assert_eq!(ordering(&server).pace.rate, 45);
+    }
+
+    #[test]
+    fn a_pause_holds_the_wait_before_speeding_up() {
+        use OrderPace::*;
+        let key = SecretKey::new([73; 32]);
+        let (mut server, mut first, mut second) = paced_room(&key);
+        for peer in [&mut first, &mut second] {
+            pause_control(&mut server, peer, 0, 0, false, 500);
+        }
+        pace_report(&mut server, &mut first, KeepingUp, 45, 1000);
+        pace_report(&mut server, &mut second, Behind, 40, 1000);
+        server.advance_clock(1000, unix(1000));
+        pace_report(&mut server, &mut second, CatchingUp, 35, 20_000);
+        server.advance_clock(20_000, unix(20_000));
+        pause_control(&mut server, &mut first, 1, 0, true, 40_000);
+        pause_control(&mut server, &mut second, 1, 1, false, 140_000);
+        server.advance_clock(149_999, unix(149_999));
+        assert_eq!(ordering(&server).pace.rate, 30);
+        server.advance_clock(150_000, unix(150_000));
+        assert_eq!(ordering(&server).pace.rate, 45);
     }
 
     /// Released clients cannot be changed, so a newer relay may only append
@@ -2307,6 +2689,49 @@ mod tests {
             server.rooms[&[5; 16]].order_packets.spent - spent,
             5,
             "repeats spend no fresh budget"
+        );
+    }
+
+    #[test]
+    fn one_room_may_spend_past_half_the_relay_ordering_output() {
+        fn spend(server: &mut RelayServer, packets: u64) {
+            let room = server.rooms.get_mut(&[5; 16]).unwrap();
+            assert!(server.order_packets.admit_part(
+                &mut room.order_packets,
+                unix(0),
+                packets,
+                INGRESS_PER_SECOND
+            ));
+            server
+                .order_packets
+                .charge_part(&mut room.order_packets, packets);
+        }
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 2);
+        let (mut reader, mut other) = (client(&key, 0), client(&key, 1));
+        let cert = certificate(&key, 3, 1400);
+        for peer in [&mut reader, &mut other] {
+            connect(&mut server, peer, 0);
+            configure(&mut server, peer, &cert, 0);
+        }
+        // A full 30-source room at 60 Hz pushes more than half the total.
+        spend(&mut server, INGRESS_PER_SECOND / 2);
+        let mut bytes = Vec::new();
+        reader.pull_ordering(1, &mut bytes).unwrap();
+        assert!(
+            server
+                .process_at(endpoint(&reader), &bytes, unix(0), 0)
+                .is_ok()
+        );
+        let left = ROOM_ORDER_PACKETS - server.rooms[&[5; 16]].order_packets.spent;
+        spend(&mut server, left);
+        reader.pull_ordering(1, &mut bytes).unwrap();
+        assert!(
+            matches!(
+                server.process_at(endpoint(&reader), &bytes, unix(0), 0),
+                Err(RelayError::RateLimited)
+            ),
+            "a room leaves the rest of the total to other matches"
         );
     }
 
@@ -4023,12 +4448,7 @@ impl RelayServer {
                 .filter_map(|(id, room)| {
                     let ordering = room.ordering.as_ref()?;
                     let entry = ordering.history.front()?;
-                    Some((
-                        *id,
-                        ordering.starts_at.unwrap_or(0).saturating_add(
-                            u64::from(entry.frame) * 1000 / u64::from(ordering.certificate.tick_hz),
-                        ),
-                    ))
+                    Some((*id, ordering.frame_due_ms(entry.frame)))
                 })
                 .min_by_key(|(id, time)| (*time, *id));
             let Some((id, _)) = oldest else {
@@ -4051,6 +4471,16 @@ impl RelayServer {
         let payload = message.payload;
         if payload.first() == Some(&PUSH_REQUEST) {
             return self.ordering_push_request(message, now, now_ms);
+        }
+        if payload.first() == Some(&PACE_REQUEST) {
+            let room = self
+                .rooms
+                .get_mut(&message.ticket.room)
+                .ok_or(RelayError::Unregistered)?;
+            if let Some(ordering) = room.ordering.as_mut() {
+                ordering.report_pace(message.ticket, payload, now_ms)?;
+            }
+            return Ok(Vec::new());
         }
         if payload.first() == Some(&PAUSE_REQUEST) {
             if !self.reserve_ordering(2 * (PAUSE_ENTRY_BYTES + ENTRY_OVERHEAD)) {
@@ -4490,7 +4920,7 @@ impl RelayServer {
             .permits(now, cost, PLAYER_BYTES_PER_SECOND)
             || !room.outgoing.permits(now, cost, ROOM_BYTES_PER_SECOND)
             || !admission.order_packets.permits(now, packets, 2048)
-            || !room.order_packets.permits(now, packets, 8192)
+            || !room.order_packets.permits(now, packets, ROOM_ORDER_PACKETS)
         {
             return Err(RelayError::RateLimited);
         }

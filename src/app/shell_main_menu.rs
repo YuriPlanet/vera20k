@@ -93,6 +93,12 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
             .interpolation
             .set_enabled(enabled);
     }
+    fn store_lock_cursor(&mut self, locked: bool) {
+        // Saved, and applied at once: the window holds or frees the pointer.
+        self.persistence.options_profile.lock_cursor = locked;
+        self.platform.cursor_confined = locked;
+        crate::app::input::cursor::apply_cursor_confinement(self);
+    }
     fn store_mouse_wheel_zoom(&mut self, enabled: bool) {
         self.persistence.options_profile.mouse_wheel_zoom = enabled;
         if !enabled {

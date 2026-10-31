@@ -114,7 +114,7 @@ Commands and their payloads:
 | `map_status` | `{status,revision,version,rules_digest,map_digest,effective_map_digest,staging_digest}` |
 | `advertise` | `{channel:<Channel>}` |
 | `start` | `{users:[name],revision,version,rules_digest,effective_map_digest,staging_digest}` |
-| `finish` | `{match_id}` |
+| `finish` | `{match_id,back_to_room?}` |
 | `relay_ready` | `{match_id}` |
 | `latency_ready` | `{match_id,pings:[{source_index,round_trip_ms}]}` |
 | `renew_relay` | `{match_id}` |
@@ -154,6 +154,7 @@ Event kinds and payloads:
 | --- | --- |
 | `joined` / `created` | `{channel:<Channel>,members:[Member]}` |
 | `channel_left` | `{}` |
+| `room_reopened` | `{channel:<Channel>,members:[Member]}` |
 | `member_joined` | `{member:<Member>}` |
 | `member_left` | `{name}` |
 | `options` | `{revision,options:<HostOptions>}` |
@@ -350,10 +351,17 @@ game folder nor VERA's `Maps` folder holds under its Online Maps row, starred ma
 first. Use Map on one asks to download it, checks its length and SHA-256, and saves it
 in VERA's `Maps` folder, where it is an ordinary map in every game type's list.
 
-The existing shell leaves its game channel during the successful start. The service
-therefore retains the match admission independently of channel membership until
-finish/timeout. Postmatch the shell rejoins chat and may create or join another game;
-this is a fresh match with fresh relay credentials. A channel owner leaving before
+The match admission is retained independently of channel membership until
+finish/timeout. The original-style shell leaves its game room at the start and
+postmatch rejoins chat, where it may create or join another game. VERA's own room
+stays joined through the match, and its `finish` sets `back_to_room: true`. When
+the last player finishes, the players still in the room who asked for it get it
+back: `room_reopened` (owner first) and then `options` with the host's settings
+and every readiness cleared. Players who finished without asking are dropped from
+it silently. If the owner is not among them, or a newer room took its name, the
+room closes for them with `error` `host_left` and `channel_left`; an expired match
+closes it with `channel_left`. Each rematch is a fresh match with fresh relay
+credentials. A channel owner leaving before
 start closes the room and emits a failure/leave event to the guests. Membership,
 authorization, readiness, sequence history and idle expiration are server-owned.
 Idle lobby visits expire after 120 seconds. An unfinished v4 playing membership
