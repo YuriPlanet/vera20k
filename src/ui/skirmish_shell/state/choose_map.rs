@@ -9,7 +9,8 @@
 use crate::util::time::{Duration, Instant};
 
 use crate::map::skirmish_scenarios::{
-    SkirmishScenarioRecord, filter_records_for_mode, upsert_random_map_sentinel,
+    SkirmishScenarioRecord, SkirmishScenarioSource, filter_records_for_mode, is_valid_map,
+    upsert_random_map_sentinel,
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
 use crate::ui::shell::list::{ListMetrics, ListScrollInteraction, ShellListGeometry};
@@ -91,6 +92,13 @@ pub fn ai_rows_beyond_limit_occupied(
 
 /// A list's paint surface: one pixel wider and taller than its window, like
 /// every family list.
+/// VERA: the game-type list's Online Maps row, after the game types. It
+/// lists the online map library's maps, which no game type lists.
+pub const ONLINE_MAPS_ROW: i32 = i32::MIN;
+
+/// Longest search text the chooser takes.
+pub const SEARCH_MAX_CHARS: usize = 32;
+
 fn list_surface(window: RectPx) -> RectPx {
     RectPx::new(window.x, window.y, window.w + 1, window.h + 1)
 }
@@ -109,6 +117,13 @@ pub struct ChooseMapModalState {
     /// [`ChooseMapContext::official_only`].
     official_only: bool,
     pub filtered_record_indices: Vec<usize>,
+    /// Online Maps only: the game type each row's map is played with, the
+    /// first listed one that admits it.
+    online_modes: Vec<i32>,
+    /// VERA: typed text; every list shows only maps whose name holds it.
+    pub search: String,
+    /// VERA: the online maps the player starred, by SHA-256; listed first.
+    pub favorites: std::collections::BTreeSet<String>,
     /// The rows' text when the mode fills its own list (Cooperative's
     /// `+0x4C`: `"%d. %s"` per campaign); otherwise each record's name.
     pub row_labels: Option<Vec<String>>,
@@ -224,6 +239,9 @@ impl ChooseMapModalState {
             random_maps_allowed: false,
             official_only: context.official_only(),
             filtered_record_indices: Vec::new(),
+            online_modes: Vec::new(),
+            search: String::new(),
+            favorites: Default::default(),
             row_labels: None,
             reselect_name: String::new(),
             highlighted_filtered_index: None,
@@ -254,6 +272,33 @@ impl ChooseMapModalState {
     /// The ids of the listed game types, top row first.
     pub fn mode_rows(&self) -> &[i32] {
         &self.mode_rows
+    }
+
+    /// VERA: list the Online Maps row after the game types, with the
+    /// player's starred maps.
+    pub fn add_online_maps_row(&mut self, favorites: std::collections::BTreeSet<String>) {
+        if !self.mode_rows.contains(&ONLINE_MAPS_ROW) {
+            self.mode_rows.push(ONLINE_MAPS_ROW);
+        }
+        self.favorites = favorites;
+    }
+
+    /// Whether the Online Maps row is the selected one.
+    pub fn online_maps_selected(&self) -> bool {
+        self.selected_mode_id == ONLINE_MAPS_ROW
+    }
+
+    fn matches_search(&self, record: &SkirmishScenarioRecord) -> bool {
+        self.search.is_empty()
+            || record
+                .display_name
+                .to_lowercase()
+                .contains(&self.search.to_lowercase())
+    }
+
+    /// Whether `record` is an online map the player starred.
+    pub fn is_favorite(&self, record: &SkirmishScenarioRecord) -> bool {
+        matches!(&record.source, SkirmishScenarioSource::Online(sha) if self.favorites.contains(sha))
     }
 
     pub fn mode_geometry(&self, layout: &ChooseMapModalLayout) -> ShellListGeometry {
@@ -287,11 +332,44 @@ impl ChooseMapModalState {
     }
 
     fn build_map_list(&mut self, modes: &[SkirmishGameMode], records: &[SkirmishScenarioRecord]) {
+        self.row_labels = None;
+        self.online_modes.clear();
+        if self.online_maps_selected() {
+            // Starred maps first, each group in catalog order.
+            let mut rows: Vec<usize> = (0..records.len())
+                .filter(|index| {
+                    records[*index].is_online() && self.matches_search(&records[*index])
+                })
+                .collect();
+            rows.sort_by_key(|index| !self.is_favorite(&records[*index]));
+            let listed: Vec<&SkirmishGameMode> = self
+                .mode_rows
+                .iter()
+                .filter_map(|id| mode_by_id(modes, *id))
+                .collect();
+            self.online_modes = rows
+                .iter()
+                .map(|index| {
+                    listed
+                        .iter()
+                        .find(|mode| is_valid_map(&records[*index], mode, self.official_only))
+                        .or(listed.first())
+                        .map_or(ONLINE_MAPS_ROW, |mode| mode.id)
+                })
+                .collect();
+            self.filtered_record_indices = rows;
+            self.random_maps_allowed = false;
+            self.map_scroll.cancel();
+            return;
+        }
         let mode = mode_by_id(modes, self.selected_mode_id);
+        // Online maps list only under Online Maps.
         self.filtered_record_indices = mode
             .map(|mode| filter_records_for_mode(records, mode, self.official_only))
-            .unwrap_or_default();
-        self.row_labels = None;
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|index| !records[*index].is_online() && self.matches_search(&records[*index]))
+            .collect();
         self.random_maps_allowed = mode.is_some_and(|mode| mode.random_maps_allowed);
         self.map_scroll.cancel();
     }
@@ -312,7 +390,7 @@ impl ChooseMapModalState {
         records: &[SkirmishScenarioRecord],
         layout: &ChooseMapModalLayout,
     ) -> bool {
-        if mode_by_id(modes, mode_id).is_none() {
+        if mode_id != ONLINE_MAPS_ROW && mode_by_id(modes, mode_id).is_none() {
             return false;
         }
         self.reselect_name = self
@@ -336,6 +414,72 @@ impl ChooseMapModalState {
         self.highlighted_filtered_index =
             matched.or_else(|| (!self.filtered_record_indices.is_empty()).then_some(0));
         self.scroll_map_selection_to_top(layout);
+    }
+
+    /// VERA: new search text rebuilds the list, keeping the highlighted map
+    /// when it still shows. A list the mode fills itself (Cooperative) stays.
+    pub fn set_search(
+        &mut self,
+        text: String,
+        modes: &[SkirmishGameMode],
+        records: &[SkirmishScenarioRecord],
+        layout: &ChooseMapModalLayout,
+    ) {
+        self.search = text.chars().take(SEARCH_MAX_CHARS).collect();
+        if self.row_labels.is_none() {
+            self.rebuild_keeping_highlight(modes, records, layout);
+        }
+    }
+
+    /// VERA: star or unstar the highlighted online map. Returns its SHA-256
+    /// and whether it is now starred.
+    pub fn toggle_favorite(
+        &mut self,
+        modes: &[SkirmishGameMode],
+        records: &[SkirmishScenarioRecord],
+        layout: &ChooseMapModalLayout,
+    ) -> Option<(String, bool)> {
+        let SkirmishScenarioSource::Online(sha) =
+            &records.get(self.selected_record_index()?)?.source
+        else {
+            return None;
+        };
+        let starred = !self.favorites.remove(sha);
+        if starred {
+            self.favorites.insert(sha.clone());
+        }
+        let sha = sha.clone();
+        self.rebuild_keeping_highlight(modes, records, layout);
+        Some((sha, starred))
+    }
+
+    /// The favorite button's state: `Some(starred)` while Online Maps
+    /// shows a highlighted map.
+    pub fn favorite_button(&self, records: &[SkirmishScenarioRecord]) -> Option<bool> {
+        if !self.online_maps_selected() {
+            return None;
+        }
+        let record = records.get(self.selected_record_index()?)?;
+        Some(self.is_favorite(record))
+    }
+
+    fn rebuild_keeping_highlight(
+        &mut self,
+        modes: &[SkirmishGameMode],
+        records: &[SkirmishScenarioRecord],
+        layout: &ChooseMapModalLayout,
+    ) {
+        let highlighted = self.selected_record_index();
+        self.build_map_list(modes, records);
+        self.highlighted_filtered_index = highlighted
+            .and_then(|record| {
+                self.filtered_record_indices
+                    .iter()
+                    .position(|row| *row == record)
+            })
+            .or_else(|| (!self.filtered_record_indices.is_empty()).then_some(0));
+        let max_top = self.map_geometry(layout).max_top;
+        self.map_top_index = self.map_top_index.min(max_top);
     }
 
     /// A mode that fills its own list (Cooperative's `+0x4C`) replaces the
@@ -511,8 +655,13 @@ impl ChooseMapModalState {
     }
 
     pub fn accept_selection(&self) -> Option<ChooseMapSelection> {
+        let mode_id = if self.online_maps_selected() {
+            *self.online_modes.get(self.highlighted_filtered_index?)?
+        } else {
+            self.selected_mode_id
+        };
         Some(ChooseMapSelection {
-            mode_id: self.selected_mode_id,
+            mode_id,
             record_index: Some(self.selected_record_index()?),
         })
     }
@@ -524,8 +673,16 @@ impl ChooseMapModalState {
         self.random_maps_allowed
     }
 
+    /// Under Online Maps, Create Random Map's place holds the favorite
+    /// button, enabled while a map is highlighted.
     pub fn button_enabled(&self, button: ChooseMapModalButton) -> bool {
-        button != ChooseMapModalButton::CreateRandomMap0x583 || self.random_map_button_enabled()
+        if button != ChooseMapModalButton::CreateRandomMap0x583 {
+            return true;
+        }
+        if self.online_maps_selected() {
+            return self.highlighted_filtered_index.is_some();
+        }
+        self.random_map_button_enabled()
     }
 
     /// Arm an enabled owner-draw button. Disabled controls consume the hit but
@@ -731,6 +888,49 @@ mod tests {
             Some(0),
             "case-sensitive: \"alpha\" is not \"Alpha\""
         );
+    }
+
+    #[test]
+    fn online_maps_list_only_under_their_row_starred_first_and_search_filters_every_list() {
+        let modes = stock_skirmish_modes();
+        let layout = compute_choose_map_modal_layout(800, 600);
+        let online = |name: &str, sha: char, game_modes: &[&str]| {
+            let mut record = record_for(name, game_modes);
+            record.source = SkirmishScenarioSource::Online(sha.to_string().repeat(64));
+            record
+        };
+        let all = vec![
+            record_for("Alpha", &["standard"]),
+            online("Frozen Lakes", 'a', &["teamgame"]),
+            online("Arctic Pass", 'b', &["standard"]),
+        ];
+        let mut modal = ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            1,
+            Some(0),
+            &modes,
+            &all,
+            &layout,
+        );
+        modal.add_online_maps_row(["b".repeat(64)].into());
+        assert_eq!(
+            modal.filtered_record_indices,
+            [0],
+            "no game type lists them"
+        );
+        assert!(modal.select_mode(ONLINE_MAPS_ROW, &modes, &all, &layout));
+        assert_eq!(modal.filtered_record_indices, [2, 1], "starred first");
+        assert_eq!(modal.accept_selection().unwrap().mode_id, 1);
+        modal.highlighted_filtered_index = Some(1);
+        assert_eq!(
+            modal.accept_selection().unwrap().mode_id,
+            9,
+            "its own game type"
+        );
+        modal.set_search("FROZ".into(), &modes, &all, &layout);
+        assert_eq!(modal.filtered_record_indices, [1]);
+        assert!(modal.select_mode(1, &modes, &all, &layout));
+        assert!(modal.filtered_record_indices.is_empty(), "the search stays");
     }
 
     #[test]

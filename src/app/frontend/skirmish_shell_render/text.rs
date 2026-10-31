@@ -1145,7 +1145,13 @@ pub(super) fn push_choose_map_modal_text_draws(
                 ChooseMapModalButton::Cancel0x5c0,
             ),
             (
-                localized_label(state, "GUI:CreateRandomMap", "Create Random Map"),
+                // VERA: under Online Maps this button stars the map.
+                match modal.favorite_button(state.frontend.scenario_catalog.records()) {
+                    Some(true) => "Remove Favorite".to_owned(),
+                    Some(false) => "Add Favorite".to_owned(),
+                    None if modal.online_maps_selected() => "Add Favorite".to_owned(),
+                    None => localized_label(state, "GUI:CreateRandomMap", "Create Random Map"),
+                },
                 layout.create_random_map_button,
                 ChooseMapModalButton::CreateRandomMap0x583,
             ),
@@ -1171,10 +1177,14 @@ pub(super) fn push_choose_map_modal_text_draws(
         .take(geometry.visible_rows)
         .enumerate()
     {
-        let Some(mode) = mode_by_id(&state.frontend.skirmish_modes, *mode_id) else {
-            continue;
+        let label = if *mode_id == crate::ui::skirmish_shell::ONLINE_MAPS_ROW {
+            "Online Maps".to_owned()
+        } else {
+            let Some(mode) = mode_by_id(&state.frontend.skirmish_modes, *mode_id) else {
+                continue;
+            };
+            localized_label(state, &mode.ui_name_key, &mode.ui_name_key)
         };
-        let label = localized_label(state, &mode.ui_name_key, &mode.ui_name_key);
         let row = geometry.row(visible);
         push_text_draw(
             out,
@@ -1202,13 +1212,20 @@ pub(super) fn push_choose_map_modal_text_draws(
         .enumerate()
     {
         let label = match &modal.row_labels {
-            Some(labels) => labels.get(index).map(String::as_str),
+            Some(labels) => labels.get(index).cloned(),
             None => state
                 .frontend
                 .scenario_catalog
                 .records()
                 .get(*record_idx)
-                .map(|record| record.display_name.as_str()),
+                .map(|record| {
+                    // Starred online maps carry a star.
+                    if modal.is_favorite(record) {
+                        format!("* {}", record.display_name)
+                    } else {
+                        record.display_name.clone()
+                    }
+                }),
         };
         let Some(label) = label else {
             continue;
@@ -1217,7 +1234,7 @@ pub(super) fn push_choose_map_modal_text_draws(
         push_text_draw(
             out,
             state,
-            label,
+            &label,
             rect_to_text_rect(RectPx::new(
                 row.x + list_text_inset(scale),
                 row.y,
@@ -1230,6 +1247,33 @@ pub(super) fn push_choose_map_modal_text_draws(
             scale.factor(),
         );
     }
+    // VERA: the search line under the map list; typing anywhere fills it.
+    let search = if modal.search.is_empty() {
+        "Search: type a map name".to_owned()
+    } else {
+        format!("Search: {}_", modal.search)
+    };
+    let list = layout.map_list;
+    let px = |value: f32| (value * scale.factor()).round() as i32;
+    push_text_draw(
+        out,
+        state,
+        &search,
+        rect_to_text_rect(RectPx::new(
+            list.x,
+            list.y + list.h + px(10.0),
+            list.w,
+            px(20.0),
+        )),
+        if modal.search.is_empty() {
+            SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
+        } else {
+            SHELL_LABEL_TEXT_RGB
+        },
+        ShellAlign::V_CENTER,
+        SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
+        scale.factor(),
+    );
 }
 
 pub(super) fn push_validation_modal_text_draws(

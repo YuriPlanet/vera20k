@@ -342,9 +342,10 @@ and answers 304 to a matching `If-None-Match`. `GET /v1/library/maps/<sha256>`
 downloads one map, and `GET /v1/library/maps?search=<text>&players=<n>&page=<n>`
 searches them (newest first, 50 a page). All three are public and limited per network;
 the service keeps no player, session or address with a map. The game reads the catalog
-once a run and lists each map whose file name its folder does not hold in Choose Map,
-marked Online. Use Map on one asks to download it, checks its length and SHA-256, and
-saves it in the game folder, where it is an ordinary map.
+once a run. In an online room, Choose Map lists each map whose file name the game
+folder does not hold under its Online Maps row, starred maps first. Use Map on one asks
+to download it, checks its length and SHA-256, and saves it in the game folder, where
+it is an ordinary map in every game type's list.
 
 The existing shell leaves its game channel during the successful start. The service
 therefore retains the match admission independently of channel membership until

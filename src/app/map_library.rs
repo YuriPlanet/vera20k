@@ -1,7 +1,10 @@
-//! The online map library (docs/lobby-protocol.md): Choose Map lists the
-//! lobby's curated maps as Online rows, and Use Map on one asks to download
-//! it. The download is saved in the game folder as a loose `.yrm`, where it
-//! is an ordinary map from then on. VERA-only; gamemd has no map library.
+//! The online map library (docs/lobby-protocol.md): in an online room,
+//! Choose Map lists the lobby's curated maps under its Online Maps row, and
+//! Use Map on one asks to download it. The download is saved in the game
+//! folder as a loose `.yrm`, where it is an ordinary map from then on, in
+//! every game type's list. Players star maps they like; the stars are kept in
+//! `MapFavorites.txt` in the settings folder. VERA-only; gamemd has no map
+//! library.
 //!
 //! The catalog is read once a run, in the background, when the game reaches
 //! its menus. Each entry carries the map's own `[Basic]`, `[Preview]`,
@@ -21,16 +24,13 @@ use crate::map::skirmish_scenarios::{
 use crate::ui::skirmish_shell::{ChooseMapPrompt, ChooseMapPromptKind, ChooseMapSelection};
 use crate::util::time::{Duration, Instant};
 
-/// Appended to an online map's Choose Map name until it is downloaded.
-pub(crate) const ONLINE_MARK: &str = " (Online)";
-
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 /// One map the library offers.
 #[derive(Debug, Clone)]
 pub(crate) struct OnlineMap {
     pub(crate) sha256: String,
-    /// `[Basic] Name=`, without the Online mark.
+    /// `[Basic] Name=`.
     pub(crate) name: String,
     /// The `.yrm` name it is saved under.
     pub(crate) file_name: String,
@@ -59,9 +59,17 @@ pub(crate) struct MapLibrary {
     phase: Phase,
     maps: Vec<OnlineMap>,
     download: Option<Download>,
+    /// Starred maps by SHA-256, read when the catalog read starts.
+    favorites: std::collections::BTreeSet<String>,
 }
 
+const FAVORITES_FILE: &str = "MapFavorites.txt";
+
 impl MapLibrary {
+    pub(crate) fn favorites(&self) -> &std::collections::BTreeSet<String> {
+        &self.favorites
+    }
+
     /// The library entry behind an Online Choose Map row.
     pub(crate) fn online_map(&self, record: &SkirmishScenarioRecord) -> Option<&OnlineMap> {
         let SkirmishScenarioSource::Online(sha256) = &record.source else {
@@ -79,6 +87,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
             let phase = if state.frontend.external_launch {
                 Phase::Ready
             } else {
+                state.frontend.map_library.favorites = read_favorites(state);
                 start_catalog(state).map_or(Phase::Ready, Phase::Fetching)
             };
             state.frontend.map_library.phase = phase;
@@ -176,9 +185,61 @@ fn append_rows(
         }
         let mut record = map.record.clone();
         record.source_ordinal = records.len();
-        record.display_name = format!("{}{ONLINE_MARK}", record.display_name);
         records.push(record);
     }
+}
+
+/// Whether this Choose Map shows the Online Maps row: online rooms only.
+pub(crate) fn listed_in_choose_map(state: &AppState) -> bool {
+    state.frontend.shell_route.wol()
+}
+
+/// Star or unstar a map, and keep the stars for later runs.
+pub(crate) fn set_favorite(state: &mut AppState, sha256: String, starred: bool) {
+    let favorites = &mut state.frontend.map_library.favorites;
+    if starred {
+        favorites.insert(sha256);
+    } else {
+        favorites.remove(&sha256);
+    }
+    let Some(path) = favorites_path(state) else {
+        return;
+    };
+    let text: String = state
+        .frontend
+        .map_library
+        .favorites
+        .iter()
+        .map(|sha| format!("{sha}\n"))
+        .collect();
+    if let Err(error) = std::fs::create_dir_all(path.parent().unwrap_or(&path))
+        .and_then(|()| std::fs::write(&path, text))
+    {
+        log::warn!("Could not save the map favorites: {error}");
+    }
+}
+
+fn favorites_path(state: &AppState) -> Option<std::path::PathBuf> {
+    state
+        .platform
+        .game_config
+        .as_ref()
+        .map(|config| config.paths.settings_dir().join(FAVORITES_FILE))
+}
+
+/// The stars from earlier runs; a missing or unreadable file stars nothing.
+fn read_favorites(state: &AppState) -> std::collections::BTreeSet<String> {
+    favorites_path(state)
+        .and_then(|path| crate::util::file_system::read(path).ok())
+        .map(|bytes| {
+            String::from_utf8_lossy(&bytes)
+                .lines()
+                .map(str::trim)
+                .filter(|sha| crate::map::source::valid_source_sha256(sha))
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Use Map on an Online row: ask to download it first. False for a map the
@@ -649,7 +710,7 @@ mod tests {
         append_rows(&mut records, &maps, &dir);
         std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!(records.len(), 2);
-        assert_eq!(records[1].display_name, "Twin Rivers (Online)");
+        assert_eq!(records[1].display_name, "Twin Rivers");
         assert_eq!(records[1].source_ordinal, 1);
     }
 }

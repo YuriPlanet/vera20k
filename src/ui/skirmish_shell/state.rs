@@ -32,7 +32,8 @@ pub use launch::{launch_session, pack_launch_session_without_start_validation};
 
 pub use choose_map::{
     ChooseMapContext, ChooseMapListPress, ChooseMapModalState, ChooseMapPrompt,
-    ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection, ai_rows_beyond_limit_occupied,
+    ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection, ONLINE_MAPS_ROW,
+    SEARCH_MAX_CHARS, ai_rows_beyond_limit_occupied,
 };
 pub(crate) use player_name::CountryMenuCatalog;
 pub use player_name::{

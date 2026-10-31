@@ -1100,6 +1100,12 @@ impl ApplicationHandler for App {
                     crate::app::shell_lan::key(state, &event);
                     return;
                 }
+                // VERA: typing in Choose Map fills its search line.
+                if matches!(screen, ScreenPage::NetworkSetup | ScreenPage::Skirmish)
+                    && Self::choose_map_search_key(state, &event)
+                {
+                    return;
+                }
                 if screen == ScreenPage::NetworkSetup {
                     if state
                         .frontend

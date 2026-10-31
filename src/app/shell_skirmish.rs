@@ -422,6 +422,18 @@ impl App {
                 state.frontend.scenario_catalog.records(),
                 &layout,
             ));
+        // VERA: online rooms list the online map library under its own row.
+        if crate::app::map_library::listed_in_choose_map(state) {
+            let favorites = state.frontend.map_library.favorites().clone();
+            if let Some(modal) = state
+                .frontend
+                .skirmish_shell_state
+                .choose_map_modal
+                .as_mut()
+            {
+                modal.add_online_maps_row(favorites);
+            }
+        }
         Self::list_cooperative_campaigns(state, false);
     }
 
@@ -766,6 +778,20 @@ impl App {
             crate::ui::skirmish_shell::ChooseMapModalButton::Cancel0x5c0 => {
                 crate::app::frontend::shell_transition::ShellExitThen::ChooseMapCancel
             }
+            // Under Online Maps this button stars or unstars the map.
+            crate::ui::skirmish_shell::ChooseMapModalButton::CreateRandomMap0x583
+                if modal.online_maps_selected() =>
+            {
+                if let Some((sha256, starred)) = modal.toggle_favorite(
+                    &state.frontend.skirmish_modes,
+                    state.frontend.scenario_catalog.records(),
+                    &layout,
+                ) {
+                    crate::app::map_library::set_favorite(state, sha256, starred);
+                }
+                state.platform.window.request_redraw();
+                return true;
+            }
             crate::ui::skirmish_shell::ChooseMapModalButton::CreateRandomMap0x583 => {
                 crate::app::frontend::shell_transition::ShellExitThen::ChooseMapRandomMap
             }
@@ -917,6 +943,54 @@ impl App {
         } else {
             modal.close_prompt();
         }
+        state.platform.window.request_redraw();
+        true
+    }
+
+    /// VERA: a printable key or Backspace while Choose Map shows edits its
+    /// search line. False for other keys, and while a box or the random-map
+    /// run is over the chooser.
+    pub(super) fn choose_map_search_key(
+        state: &mut AppState,
+        event: &winit::event::KeyEvent,
+    ) -> bool {
+        if !event.state.is_pressed() {
+            return false;
+        }
+        let layout = Self::skirmish_choose_map_layout(state);
+        let frontend = &mut state.frontend;
+        let Some(modal) = frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_mut()
+            .filter(|modal| modal.message_box.is_none() && !modal.is_hidden())
+        else {
+            return false;
+        };
+        let mut text = modal.search.clone();
+        if event.physical_key
+            == winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Backspace)
+        {
+            text.pop();
+        } else {
+            let typed: String = event
+                .text
+                .as_deref()
+                .unwrap_or_default()
+                .chars()
+                .filter(|ch| !ch.is_control())
+                .collect();
+            if typed.is_empty() {
+                return false;
+            }
+            text.push_str(&typed);
+        }
+        modal.set_search(
+            text,
+            &frontend.skirmish_modes,
+            frontend.scenario_catalog.records(),
+            &layout,
+        );
         state.platform.window.request_redraw();
         true
     }
