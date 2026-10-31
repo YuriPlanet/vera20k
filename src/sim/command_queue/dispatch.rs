@@ -12,6 +12,12 @@ use crate::sim::intern::InternedId;
 pub const DO_LIST_CAPACITY: usize = 0x4000;
 const FRAMEINFO_OPCODE: u8 = 0x1c;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DoListInsertion {
+    Back,
+    Front,
+}
+
 /// Derived occupancy of the one DoList, including a temporarily moved scan.
 /// Source counts bound authenticated multiplayer traffic without rescanning
 /// the complete FIFO for every actor in a large input batch.
@@ -391,6 +397,7 @@ impl<T: DoListEvent, const CAPACITY: usize> DoList<T, CAPACITY> {
             },
             CAPACITY,
             usize::MAX,
+            DoListInsertion::Back,
         )
     }
 
@@ -400,6 +407,7 @@ impl<T: DoListEvent, const CAPACITY: usize> DoList<T, CAPACITY> {
         reserved: NativeCommandOccupancy,
         maximum: usize,
         maximum_per_house: usize,
+        insertion: DoListInsertion,
     ) -> bool {
         let native = entry.consumes_native_dolist_slot();
         let native_count = self.refresh_native_count();
@@ -417,7 +425,10 @@ impl<T: DoListEvent, const CAPACITY: usize> DoList<T, CAPACITY> {
         }
         entry.clear_processed();
         self.native_count.as_mut().unwrap().add(&entry);
-        self.entries.push_back(entry);
+        match insertion {
+            DoListInsertion::Back => self.entries.push_back(entry),
+            DoListInsertion::Front => self.entries.push_front(entry),
+        }
         true
     }
 

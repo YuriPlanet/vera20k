@@ -859,6 +859,16 @@ fn show_box(state: &mut AppState, key: &str, yes_no: bool, then: BoxThen) {
     put_box(state, message, then);
 }
 
+/// Replace the open lobby box's text, for a VERA-specific reason.
+pub(super) fn replace_box_body(state: &mut AppState, body: &str) -> bool {
+    let Some((message, _)) = lobby_mut(state).and_then(|lobby| lobby.message.as_mut()) else {
+        return false;
+    };
+    message.body = body.to_owned();
+    state.platform.window.request_redraw();
+    true
+}
+
 fn put_box(state: &mut AppState, message: WolMessageBox, then: BoxThen) {
     let dialog = message.dialog();
     let Some(lobby) = lobby_mut(state) else {
@@ -2516,6 +2526,11 @@ enum JoinErrorReply {
     Chat,
 }
 
+/// VERA's lobby refused a join because the host kicked this player within
+/// five minutes: 0x80040072 with the HRESULT customer bit, so it shows the
+/// join ban's text without the channel ban's exit from the lobby.
+pub(crate) const KEPT_OUT_JOIN_ERROR: u32 = 0xA004_0072;
+
 fn join_error_reply(code: u32, pending: bool) -> JoinErrorReply {
     let reply = |key, close, forget, next_lobby| JoinErrorReply::Box {
         key,
@@ -2529,6 +2544,7 @@ fn join_error_reply(code: u32, pending: bool) -> JoinErrorReply {
         0x8004_0071 => reply("TXT_BADPASS", false, false, false),
         0x8004_006E => reply("TXT_CHANNEL_FULL", !pending, false, false),
         0x8004_0072 => reply("TXT_JOINBAN", true, false, true),
+        KEPT_OUT_JOIN_ERROR => reply("TXT_JOINBAN", false, false, false),
         _ => JoinErrorReply::Chat,
     }
 }
@@ -4154,6 +4170,15 @@ mod tests {
                 close: true,
                 forget: false,
                 next_lobby: true
+            }
+        );
+        assert_eq!(
+            join_error_reply(KEPT_OUT_JOIN_ERROR, true),
+            JoinErrorReply::Box {
+                key: "TXT_JOINBAN",
+                close: false,
+                forget: false,
+                next_lobby: false
             }
         );
         assert_eq!(join_error_reply(0x8000_4005, true), JoinErrorReply::Chat);

@@ -27,6 +27,7 @@ use crate::ui::main_menu_shell::{
     MainMenuControlId, MainMenuMovieBase, MainMenuShellLayout, csf_key_for_control,
     tooltip_csf_key_for_control,
 };
+use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::geom::{SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW};
 use crate::ui::shell::static_reveal::{Kind1PaintWindow, Kind1RevealReceipt, Kind1RevealWindow};
 
@@ -217,9 +218,15 @@ fn main_menu_paint_labels<'a>(
             path_a_reveal: Some(shell_reveal_path_a(window)),
         });
     }
+    // VERA difference: the release sits on the status line's baseline rather
+    // than gamemd's version-line top, so the two bottom texts line up.
+    let version_rect = RectPx {
+        y: layout.tooltip_line.y,
+        ..layout.version_line
+    };
     out.extend(version_text.map(|text| PaintLabel {
         text: text.into(),
-        rect: layout.version_line,
+        rect: version_rect,
         align: ShellAlign::H_CENTER,
         rgb: SHELL_TEXT_RGB_ENABLED,
         path_a_reveal: None,
@@ -536,11 +543,9 @@ fn render_main_menu_shell_to_target_inner(
         None
     } else {
         let hovered = crate::ui::main_menu_shell::hovered_control(&state.frontend.shell_controller);
-        // VERA difference: with no button hovered, gamemd leaves this line
-        // empty; VERA names its release here, the version players report.
         let status_text = main_menu_status_csf_key(hovered)
             .map(|key| resolve_csf(state, key).into_owned())
-            .unwrap_or_else(|| BUILD_STAMP.to_owned());
+            .unwrap_or_default();
         crate::app::frontend::menu_page_render::paint_shell_status_line(
             state,
             status_text,
@@ -605,11 +610,6 @@ fn render_main_menu_shell_to_target_inner(
         Instant::now(),
         None,
     );
-    let version_text = format!(
-        "{} {}",
-        resolve_csf(state, "GUI:Version"),
-        state.frontend.version_txt
-    );
     let pressed = crate::ui::main_menu_shell::pressed_control(&state.frontend.shell_controller);
     let mut labels = if backdrop {
         Vec::new()
@@ -618,7 +618,10 @@ fn render_main_menu_shell_to_target_inner(
             state,
             &layout,
             pressed,
-            (!leaving).then_some(version_text.as_str()),
+            // VERA difference: gamemd prints "<GUI:Version> <VERSION.TXT>" here,
+            // a fixed "1.001TUC" in every build; this line names the VERA20K
+            // release instead, the version players report and updates compare.
+            (!leaving).then_some(BUILD_STAMP),
             title_window,
             !sliding,
         )

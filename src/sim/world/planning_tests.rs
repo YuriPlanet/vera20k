@@ -149,6 +149,8 @@ fn apply(sim: &mut Simulation, rules: &RuleSet, record: CommandRecord) {
         .decode_native_command_record(&record, sim.session.tick())
         .unwrap();
     assert!(sim.apply_command("Americans", &envelope.payload, Some(rules)));
+    // This component fixture closes the post-DoList publication rung.
+    sim.publish_planning_commands();
 }
 
 fn append(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, actor: u64, cell: (u16, u16)) {
@@ -397,6 +399,8 @@ fn guard_commit_consumes_first_node_stages_deliberate_and_retains_next_node() {
             crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard),
             0,
         );
+    // Default rate5 makes the following frame a real publication boundary.
+    sim.session.set_binary_frame_for_test(4);
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     apply(&mut sim, &rules, commit);
     let path = &sim.planning.paths[&1];
@@ -472,16 +476,21 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
             .mission
             .set_current_for_test(MissionId::from_known(mission), 0);
     }
+    sim.session.set_binary_frame_for_test(4);
     let commit = sim.encode_plan_commit_record(owner).unwrap();
-    apply(&mut sim, &rules, commit);
-    let generated = sim.pending_command_snapshot();
-    assert_eq!(generated.len(), 1);
+    let envelope = sim
+        .decode_native_command_record(&commit, sim.session.tick())
+        .unwrap();
+    assert!(sim.apply_command("Americans", &envelope.payload, Some(&rules)));
+    let pending = sim.planning.pending_publication.clone();
+    assert_eq!(pending.len(), 1);
+    assert!(sim.pending_command_snapshot().is_empty());
     let new_owner = sim.interner.intern("Russians");
     sim.houses
         .register(crate::sim::house_state::HouseState::new(
             new_owner, 1, None, false, 0, 10,
         ));
-    // Techno701585 ->638840 clears the path, not the published DoList event.
+    // Techno701585 ->638840 clears the path, not PlanMgr's independent copy.
     sim.change_owner(1, new_owner);
     assert_eq!(sim.substrate.entities.get(1).unwrap().owner(), new_owner);
     assert!(sim.planning.paths[&1].nodes.is_empty());
@@ -494,7 +503,7 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
             .all(|node| !node.orders.contains_key(&1))
     );
     assert_eq!(sim.planning_paths(owner)[0].cells, vec![(20, 15)]);
-    assert_eq!(sim.pending_command_snapshot(), generated);
+    assert_eq!(sim.planning.pending_publication, pending);
     let hash = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "planning", 0);
     let mut restored = save_codec::deserialize::<GameSnapshot>(&bytes).unwrap().sim;
@@ -503,6 +512,14 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
     assert!(restored.planning.paths[&1].nodes.is_empty());
     assert!(restored.planning.paths[&1].executing);
     assert_eq!(restored.planning_paths(owner)[0].cells, vec![(20, 15)]);
+    assert_eq!(restored.planning.pending_publication, pending);
+    sim.publish_planning_commands();
+    restored.publish_planning_commands();
+    let generated = sim.pending_command_snapshot();
+    assert_eq!(generated.len(), 1);
+    assert_eq!(restored.pending_command_snapshot(), generated);
+    assert!(sim.planning.pending_publication.is_empty());
+    assert_eq!(restored.state_hash(), sim.state_hash());
     sim.session.set_tick_for_test(sim.session.tick() + 1);
     sim.session
         .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
@@ -530,6 +547,7 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
     use crate::sim::command::CommandEnvelope;
     use crate::sim::world::FrameEffects;
     let (mut sim, rules, owner) = fixture();
+    sim.session.set_binary_frame_for_test(4);
     sim.substrate
         .entities
         .get_mut(1)
@@ -554,6 +572,7 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
     let batch = [edit, commit]
         .map(|record| CommandEnvelope::new(owner, 1, Command::PlanningRecord { record }));
     sim.apply_due_commands(&batch, &rules, 1, None, FrameEffects::default());
+    sim.publish_planning_commands();
     assert_eq!(
         sim.planning.paths[&1].pending, 0,
         "commit runs before staged flag1 even when flag1 was inserted first"
@@ -568,6 +587,7 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
     )];
     sim.session.set_tick_for_test(1);
     sim.apply_due_commands(&batch, &rules, 2, None, FrameEffects::default());
+    sim.publish_planning_commands();
     assert_eq!(sim.planning.paths[&1].pending, -1);
     assert!(sim.planning.paths[&1].executing);
     assert!(sim.take_due_commands().is_empty());
@@ -1053,6 +1073,7 @@ fn planned_force_attack_preserves_admitted_friendly_target_through_native_dispat
         .unwrap();
     apply(&mut sim, &rules, record);
     append(&mut sim, &rules, owner, 1, (16, 15));
+    sim.session.set_binary_frame_for_test(4);
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     apply(&mut sim, &rules, commit);
     sim.session.set_tick_for_test(sim.session.tick() + 1);
@@ -1120,11 +1141,13 @@ fn captured_actor_path_commits_for_current_house_and_preserves_original_issuer()
             crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard),
             0,
         );
+    sim.session.set_binary_frame_for_test(4);
     let record = sim.encode_plan_commit_record(new_owner).unwrap();
     let envelope = sim
         .decode_native_command_record(&record, sim.session.tick())
         .unwrap();
     assert!(sim.apply_command("Russians", &envelope.payload, Some(&rules)));
+    sim.publish_planning_commands();
     let generated = sim.pending_command_snapshot();
     assert_eq!(generated.len(), 1);
     assert_eq!(generated[0].owner, owner);

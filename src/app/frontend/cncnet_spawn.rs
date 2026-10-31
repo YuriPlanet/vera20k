@@ -149,6 +149,17 @@ pub(crate) struct RelaySpawn {
     pub(crate) game_speed: i32,
     /// `[Relay] AdmissionTimeout`: each admission barrier's client deadline.
     pub(crate) admission_timeout: crate::util::time::Duration,
+    /// `[Relay] ResumePings`/`ResumeCursor`: this process replaces one that
+    /// left a match already under way.
+    pub(crate) resume: Option<RelayResume>,
+}
+
+/// What a returning player's new process cannot measure or read again: the
+/// agreed timing every client started with, and where its event history ends.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RelayResume {
+    pub(crate) pings: Vec<i32>,
+    pub(crate) cursor: u64,
 }
 
 // The grant and bearer are credentials; never let a launch log print them.
@@ -162,6 +173,7 @@ impl std::fmt::Debug for RelaySpawn {
             .field("gateway_url", &self.gateway_url)
             .field("game_speed", &self.game_speed)
             .field("admission_timeout", &self.admission_timeout)
+            .field("resume", &self.resume)
             .finish_non_exhaustive()
     }
 }
@@ -900,6 +912,10 @@ fn transport(
             "[Relay] Token must be visible ASCII"
         );
         let admission_timeout = ranged(relay, "AdmissionTimeout", 30, 30, 180)?;
+        let resume = relay
+            .is_present("ResumePings")
+            .then(|| relay_resume(relay, player_count))
+            .transpose()?;
         return Ok(SpawnTransport::Relay(RelaySpawn {
             address,
             match_id,
@@ -913,6 +929,7 @@ fn transport(
             token,
             game_speed,
             admission_timeout: crate::util::time::Duration::from_secs(admission_timeout as u64),
+            resume,
         }));
     }
     let mut peers = vec![None; player_count];
@@ -944,6 +961,22 @@ fn transport(
 fn port(section: &IniSection) -> Result<u16> {
     let default = i32::from(crate::net::udp::DEFAULT_LAN_PORT);
     Ok(ranged(section, "Port", default, 1, i32::from(u16::MAX))? as u16)
+}
+
+fn relay_resume(relay: &IniSection, player_count: usize) -> Result<RelayResume> {
+    let pings = text(relay, "ResumePings")?
+        .split(',')
+        .map(|ping| ping.trim().parse::<i32>())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| anyhow!("[Relay] ResumePings must list whole numbers"))?;
+    ensure!(
+        pings.len() == player_count,
+        "[Relay] ResumePings does not match PlayerCount={player_count}"
+    );
+    let cursor = text(relay, "ResumeCursor")?
+        .parse::<u64>()
+        .map_err(|_| anyhow!("[Relay] ResumeCursor must be a whole number"))?;
+    Ok(RelayResume { pings, cursor })
 }
 
 /// `ServiceUrl` is an origin: HTTPS, or HTTP to a loopback host for

@@ -248,7 +248,14 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
             .session
             .choose_network_row_kind(row as u8, kind)?
         {
-            queue(state, NetworkSetupRequest::Kick { name: peer.name });
+            let keep_out = state.match_state.session.network_several_observers();
+            queue(
+                state,
+                NetworkSetupRequest::Kick {
+                    name: peer.name,
+                    keep_out,
+                },
+            );
         }
         // Then online ([0xAC116C]) the advertisement 0x78F000: the game
         // record and user limit count Open Observer rows.
@@ -546,7 +553,13 @@ pub(crate) fn commit_map_selection(
         .session
         .accept_network_map_metadata(metadata, None, true)?;
     for human in removed {
-        queue(state, NetworkSetupRequest::Kick { name: human.name });
+        queue(
+            state,
+            NetworkSetupRequest::Kick {
+                name: human.name,
+                keep_out: false,
+            },
+        );
     }
     state.frontend.random_map_retention.select_map(&file);
     state

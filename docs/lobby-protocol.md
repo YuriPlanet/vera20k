@@ -30,6 +30,13 @@ Failed requests return `{error:{code,message}}`; messages must not echo credenti
 Clients show a 426 `message` (plain text, at most 160 characters) to the player with
 the releases link, so it should name the version players need; older clients show a
 fixed line.
+While the operator has closed sign-ins for maintenance, `POST /v1/sessions` returns 503
+`maintenance` with the operator's one-line `message` (at most 160 characters), which
+clients show in place of their "could not connect" text; other 503s mean the lobby is
+unavailable. Players already signed in keep their sessions.
+A client in the lobby, outside a match, whose event polls fail for about a minute tells
+its player the connection was lost and stops polling; its next sign-in logs the old
+session out first.
 The HTTP paths retain `/v1`; `protocol:4` is the required client capability.
 Older/missing capabilities cannot enter new games. Existing v3 sessions may poll, renew an active lease and finish/leave/logout; their active match is preserved.
 Lobby capability4 adds the signed fixed-clock ordering capability.
@@ -81,7 +88,9 @@ Channel: `{id,kind,max_users,users,tournament,flags,game_flags,ping,name,ex_info
 from the creator: 256 when a game has a password, which clients show as a lock and
 ask for before joining, otherwise 0. `max_users` (1–30) from `create` and the host's
 `advertise` is the room's join limit, never below its current members; a join past
-it fails with `room_full`. The other fields are presentation metadata, not authority. `name` identifies a channel uniquely for compatibility with the
+it fails with `room_full`. A host `kick` with `keep_out:true` keeps that player out of
+the room for five minutes, by account and by name without case: their `join` fails
+with 403 `room_kept_out`, which clients show with the join ban's text while staying in the lobby. The other fields are presentation metadata, not authority. `name` identifies a channel uniquely for compatibility with the
 existing shell. Member: `{player_id,name,flags,squad,clan_name,clan_tag}`. Flags bit 0
 is the channel owner, bit 1 voice; the client adds its own local bit 32768. Servers
 set identity and flags from the authenticated membership, never from user payloads.
@@ -116,7 +125,7 @@ Commands and their payloads:
 | `set_locale` | `{locale}` |
 | `buddies` | `{}` |
 | `add_buddy` / `remove_buddy` / `locate` | `{name}` |
-| `kick` | `{name}` |
+| `kick` | `{name,keep_out?}` |
 
 HostOptions is `{launch,map_metadata,vacancies,observer_row,cooperative_difficulty,seed}`.
 Generated maps add `random_map:{start_staging,preview:{source_sha256,byte_length}}`.
@@ -326,9 +335,14 @@ survives that idle interval while another unfinished player of the match is onli
 (a request or stream ack in the last 120 seconds), and otherwise through 10 minutes of silence, until
 explicit finish/leave or the match/session lifetime; lost internet does not remove
 its gameplay source. Names held by crashed clients therefore free once nobody else
-in their match is online. A lobby outage or overload is not player silence: these
+in their match is online. Sooner, a sign-in from the session's own network takes its
+name back once the session has made no request for 30 seconds and has no open
+stream: a running game reaches the lobby at least every 15 seconds, so that session
+belongs to a game that closed or crashed. Its match is finished for it and its bearer
+answers 401. A lobby outage or overload is not player silence: these
 intervals count from the later of the player's last request and the lobby's first
-request after 30 seconds without any or its latest 429 `busy` refusal.
+request after 90 seconds in which it neither served a request nor ran its
+once-a-minute alarm, or its latest 429 `busy` refusal.
 
 `POST /v1/translate` accepts exactly `{text,target}` from a v4 bearer and returns
 `{text}`: `text` translated into `target`, a language tag such as `en` or `zh-Hans`.

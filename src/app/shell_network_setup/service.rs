@@ -127,6 +127,9 @@ pub(crate) enum NetworkSetupEvent {
     },
 }
 
+/// A LAN guest's room closed because its host left or stopped answering.
+pub(crate) const HOST_LEFT_TEXT: &str = "The host left the game, so the room closed.";
+
 pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> anyhow::Result<()> {
     // The route stays NetworkSetup until the match returns, but GO's handoff
     // drops the setup protocol: later setup packets have no receiver.
@@ -875,6 +878,10 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                     .frontend
                     .multiplayer_shell_runtime
                     .clear_network_cooperative_partners();
+            }
+            // Native leaves without a word; VERA says why the room closed.
+            if !state.frontend.native_shell_ui {
+                crate::app::shell_lan::report_error(state, HOST_LEFT_TEXT);
             }
             App::leave_shell_dialog(
                 state,

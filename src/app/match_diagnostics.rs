@@ -506,7 +506,7 @@ impl MatchDiagnosticsState {
             let sim = &runtime.simulation;
             ReplayLog::new(crate::sim::replay::ReplayHeader {
                 pixel_conversion_bounds: sim.session().pixel_conversion_bounds(),
-                version: 2,
+                version: crate::sim::replay::REPLAY_VERSION,
                 tick_hz: crate::app::types::SIM_TICK_HZ,
                 seed: sim.session().seed(),
                 map_name: sim.session().map_name().to_owned(),

@@ -1246,6 +1246,17 @@ pub(crate) fn cancel_network_loading(state: &mut AppState, text: &str) -> bool {
         LoadingFailurePolicy::RetryNetworkShell,
         anyhow::anyhow!(text.to_owned()),
     );
+    // The failure has reopened the lobby. Native returns without a word;
+    // VERA's lobbies say why the load stopped.
+    if !state.frontend.native_shell_ui && !state.frontend.external_launch {
+        crate::app::shell_lan::append_chat(
+            state,
+            crate::ui::lan_shell::LanChatLine {
+                text: text.encode_utf16().collect(),
+                color: u32::MAX,
+            },
+        );
+    }
     true
 }
 
@@ -1997,7 +2008,11 @@ fn pump_loading_after_present(
                 });
                 return Ok(LoadingPump::Pending);
             }
-            if matches!(result.scenario.startup, LoadingStartup::Network(_)) {
+            // VERA adaptation: a returning process has nobody to wait for, the
+            // others left their own loading long ago and report nothing more.
+            if matches!(result.scenario.startup, LoadingStartup::Network(_))
+                && !crate::app::lan_service::online_restore(state)
+            {
                 let native = native.expect("network load retains its source progress rows");
                 let now = (crate::app::match_runtime::frame_pacer::wall_clock_ms() >> 4) as i32;
                 let wait =

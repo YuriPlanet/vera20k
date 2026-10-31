@@ -80,6 +80,9 @@ pub(crate) enum NetworkSetupRequest {
     RequestAcceptance,
     Kick {
         name: String,
+        /// VERA's rooms: the host's own kick, which keeps the player out of
+        /// the room for five minutes. Joins the host turns away do not.
+        keep_out: bool,
     },
     Leave,
     Chat(Vec<u16>),

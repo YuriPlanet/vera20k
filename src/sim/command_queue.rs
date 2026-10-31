@@ -10,8 +10,8 @@ mod dispatch;
 mod timing;
 pub use dispatch::{
     CommandDispatchClock, CommandDispatchHouse, CommandDispatchMode, DO_LIST_CAPACITY,
-    DispatchSummary, DoList, DoListEvent, DoListHost, DoListRetimeWindow, NativeCommandOccupancy,
-    SemanticEventHeader,
+    DispatchSummary, DoList, DoListEvent, DoListHost, DoListInsertion, DoListRetimeWindow,
+    NativeCommandOccupancy, SemanticEventHeader,
 };
 pub use timing::NetworkCommandTiming;
 

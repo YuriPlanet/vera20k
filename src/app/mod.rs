@@ -68,6 +68,8 @@ pub mod match_bootstrap;
 pub(crate) mod match_diagnostics;
 pub(crate) mod match_runtime;
 pub(crate) mod movie_playback;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+mod network_goodbye;
 pub(crate) mod movie_subtitles;
 pub(crate) mod persistence;
 /// The build description's native version metadata (`Phobos.version.h`).
@@ -98,6 +100,8 @@ pub(crate) mod sidebar_projection;
 mod sidebar_projection_tests;
 pub(crate) mod spawn_probe;
 mod state;
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub mod system_dialog;
 #[cfg(feature = "telemetry-dashboard")]
 pub mod telemetry;
 #[cfg(feature = "telemetry-dashboard")]

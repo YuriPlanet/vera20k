@@ -187,6 +187,18 @@ pub struct GpuContext {
     web_present: Arc<web_present::WebPresent>,
 }
 
+/// The context of every [`GpuContext::new`] failure: this computer has no
+/// graphics adapter, driver or surface the renderer can use. Startup tells the
+/// player about the graphics driver when it finds this in an error.
+#[derive(Debug)]
+pub struct GraphicsUnavailable;
+
+impl std::fmt::Display for GraphicsUnavailable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("No usable graphics adapter or driver")
+    }
+}
+
 impl GpuContext {
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     pub(crate) async fn new_browser(
@@ -207,7 +219,7 @@ impl GpuContext {
         display: OwnedDisplayHandle,
         hidden_capture: bool,
     ) -> Result<Self> {
-        block_on(Self::new_async(window, display, hidden_capture))
+        block_on(Self::new_async(window, display, hidden_capture)).context(GraphicsUnavailable)
     }
 
     /// Async initialization — called by new() via block_on().

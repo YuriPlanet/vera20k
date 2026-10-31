@@ -906,3 +906,32 @@ fn expected_values_are_optional_validated_and_rejected_precisely() {
     )
     .unwrap();
 }
+
+#[test]
+fn a_resume_names_the_agreed_timing_of_every_player() {
+    let text = network_spawn(2, 1, &relay_section(1, 0b11));
+    let relay = |text: &str| {
+        let SpawnGame::Network(network) = SpawnRequest::parse(text)?.game else {
+            panic!("network spawn")
+        };
+        let SpawnTransport::Relay(relay) = network.transport else {
+            panic!("relay transport")
+        };
+        Ok::<_, anyhow::Error>(relay)
+    };
+    assert_eq!(relay(&text).unwrap().resume, None);
+    let resumed = text.replacen(
+        "[Relay]\n",
+        "[Relay]\nResumePings=12,30\nResumeCursor=2\n",
+        1,
+    );
+    assert_eq!(
+        relay(&resumed).unwrap().resume,
+        Some(RelayResume {
+            pings: vec![12, 30],
+            cursor: 2
+        })
+    );
+    let short = text.replacen("[Relay]\n", "[Relay]\nResumePings=12\nResumeCursor=2\n", 1);
+    assert!(relay(&short).is_err());
+}

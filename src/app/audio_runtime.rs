@@ -67,6 +67,8 @@ fn apply_theme_action_to_output(
 
 pub(crate) struct AppAudioRuntime {
     pub(crate) master_groups: AudioMasterGroups,
+    /// `mute_for_restore`'s current state.
+    pub(crate) restore_muted: bool,
     /// Always-present device-independent Theme owner.
     pub(crate) theme: ThemeRuntime,
     /// One process cadence for Sound, Vox and Theme; device callbacks run
@@ -257,6 +259,17 @@ impl AppAudioRuntime {
         if let Some(player) = self.sfx_player.as_mut() {
             player.set_voice_volume(volume);
         }
+    }
+
+    /// A rejoining process replays the past at speed: VERA adaptation, its
+    /// effects and voices stay silent until the world reaches the present.
+    /// The profile's volumes come back unchanged.
+    pub(crate) fn mute_for_restore(&mut self, muted: bool, sound_volume: f64, voice_volume: f64) {
+        if std::mem::replace(&mut self.restore_muted, muted) == muted {
+            return;
+        }
+        self.set_sound_volume(if muted { 0.0 } else { sound_volume });
+        self.set_voice_volume(if muted { 0.0 } else { voice_volume });
     }
 
     /// `OptionsClass::Set_Score_Volume` at `0x005FA4A0` publishes the stored
@@ -711,6 +724,7 @@ mod tests {
                 launcher_audio_available: true,
                 theme_startup_suppressed: false,
                 master_groups: Default::default(),
+                restore_muted: false,
             };
             runtime.initialize_theme(&assets);
             let stored = f32::from_bits(options["stored_f32_bits"].as_u64().unwrap() as u32);
@@ -750,6 +764,7 @@ mod tests {
             launcher_audio_available: true,
             theme_startup_suppressed: false,
             master_groups: Default::default(),
+            restore_muted: false,
         };
         let mut frontend = crate::sim::rng::MainRng::new(1);
         let mut main = crate::app::state::process_main_draws(None, &mut frontend);
@@ -790,6 +805,7 @@ mod tests {
             launcher_audio_available: true,
             theme_startup_suppressed: false,
             master_groups: Default::default(),
+            restore_muted: false,
         };
         runtime.initialize_theme(&assets);
         // Restore through the production Theme owner with an admitted stream;
@@ -878,6 +894,7 @@ mod tests {
             launcher_audio_available: true,
             theme_startup_suppressed: false,
             master_groups: Default::default(),
+            restore_muted: false,
         };
         runtime.initialize_theme(&assets);
         let gates = runtime.theme_gates();
@@ -915,6 +932,7 @@ mod tests {
             launcher_audio_available: false,
             theme_startup_suppressed: false,
             master_groups: Default::default(),
+            restore_muted: false,
         };
         let stream_target = |runtime: &AppAudioRuntime| {
             runtime
@@ -951,6 +969,7 @@ mod tests {
             launcher_audio_available: false,
             theme_startup_suppressed: false,
             master_groups: Default::default(),
+            restore_muted: false,
         };
         runtime.set_movie_audio_held(true, 0);
         runtime.service_master_groups(100);

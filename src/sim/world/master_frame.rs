@@ -548,6 +548,9 @@ impl Simulation {
             Err(cursor) => return Ok(FrameTailResult::OutcomeWait(cursor)),
         };
         self.issue_generated_frame_commands(generated);
+        // MainTick55DD9B -> PlanMgr637550 publishes Logic-generated plan
+        // events before Queue_AI's CRC and network exchange, even if it waits.
+        self.publish_planning_commands();
         #[cfg(any(test, feature = "test-support"))]
         if self.session.tick() > 0 {
             self.trace_house_ai_activation_order(HouseAiActivationOrderTestEvent::DefeatProcessed);
@@ -693,6 +696,10 @@ impl Simulation {
             tick_ms,
             effects,
         } = inputs;
+        // MainTick55DE45 -> PlanMgr637550 publishes command-generated plans
+        // after Queue_AI, using any TIMING change it just applied. Native
+        // publishes before checking the terminal flags55DE4F..55DE71 too.
+        self.publish_planning_commands();
         // Main_Tick returns immediately on a terminal result. The wrapping
         // frame commit, pacing tail, and pending-delete drain are all skipped
         // on that same terminating call.

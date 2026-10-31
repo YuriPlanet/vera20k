@@ -434,6 +434,16 @@ impl App {
                 log::error!("Failed to initialize: {:#}", err);
                 if self.spawn_request.is_some() || self.replay_request.is_some() {
                     self.startup_failure = Some(format!("CnCNet initialization failed: {err:#}"));
+                } else if cfg!(not(all(target_arch = "wasm32", target_os = "unknown")))
+                    && self.shell_capture.is_none()
+                    && self.tactical_capture.is_none()
+                {
+                    // A player's launch: say why before the process exits with
+                    // a failure status (`finish_capture`). The browser page
+                    // reports it above.
+                    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                    crate::app::system_dialog::report_startup_failure(&err);
+                    self.startup_failure = Some(format!("Startup failed: {err:#}"));
                 }
                 if let Some(session) = self.shell_capture.as_mut() {
                     session.fail(format!("shell capture initialization failed: {err:#}"));
@@ -516,6 +526,14 @@ impl ApplicationHandler for App {
                     job.defer_window_event(event);
                 }
             }
+            return;
+        }
+        // The hidden window only waits for its network goodbyes to finish.
+        if self
+            .state
+            .as_ref()
+            .is_some_and(|state| state.frontend.network_goodbye_deadline.is_some())
+        {
             return;
         }
         let shell_capture_active = self.shell_capture.is_some();
@@ -855,6 +873,10 @@ impl ApplicationHandler for App {
                     );
                     Self::teardown_skirmish_shell_for_start(state);
                     state.frontend.multiplayer_shell_runtime.persist_snapshot();
+                }
+                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+                if Self::begin_network_goodbye(state) {
+                    return;
                 }
                 event_loop.exit();
             }
@@ -1734,6 +1756,10 @@ impl ApplicationHandler for App {
         let shell_scroll_wake = if let Some(state) = self.state.as_mut() {
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             if Self::poll_browser_exit(state, event_loop) {
+                return;
+            }
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+            if Self::poll_network_goodbye(state, event_loop) {
                 return;
             }
             Self::follow_window_full_screen(state);

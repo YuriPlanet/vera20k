@@ -34,6 +34,8 @@ pub(crate) use live_service::OnlineCleanup;
 pub(crate) use live_service::RELEASES_URL;
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 pub(crate) use live_service::discard_spawned_visit;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) use live_service::retire_visit_for_exit;
 pub(crate) use live_service::{
     DecodedRelayGrant, begin_spawned_match, decode_external_relay_grant, end_spawned_match,
 };

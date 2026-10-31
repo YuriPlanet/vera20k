@@ -48,7 +48,8 @@ pub struct MainMenuShellLayout {
     pub movie_base: MainMenuMovieBase,
     pub movie: RectPx,
     pub title: RectPx,
-    /// Bottom-right version/status static. Text is `"<GUI:Version> <VERSION.TXT>"`.
+    /// Bottom-right version static. Retail text is `"<GUI:Version> <VERSION.TXT>"`;
+    /// VERA shows its own release there (`BUILD_STAMP`).
     /// Sits inside the SDBTM cap, sidebar-inset from the right edge.
     pub version_line: RectPx,
     /// Bottom-left hover tooltip/status static. Receives the CSF tooltip for the

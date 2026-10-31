@@ -96,10 +96,10 @@ fn retail_local_defeat_leaves_planning_in_the_same_house_frame() {
         return;
     };
     let mut recorded = ReplayLog::new(ReplayHeader {
-        version: 1,
+        version: crate::sim::replay::REPLAY_VERSION,
         tick_hz: 15,
         seed: rt.simulation.session().seed(),
-        map_name: "retail-local-defeat".into(),
+        map_name: rt.simulation.session().map_name().to_owned(),
         rules_hash: rt.resources.rules.simulation_config_hash(),
         pixel_conversion_bounds: rt.simulation.session().pixel_conversion_bounds(),
     });

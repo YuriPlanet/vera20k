@@ -235,21 +235,55 @@ impl GameConfig {
         Ok(self)
     }
 
+    /// The config.toml this process reads, or where a new one belongs: for
+    /// messages that tell the player which file to edit.
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    pub fn path() -> Option<PathBuf> {
+        Some(PathBuf::from("/config.toml"))
+    }
+
+    /// The config.toml this process reads, or where a new one belongs: for
+    /// messages that tell the player which file to edit.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    pub fn path() -> Option<PathBuf> {
+        let working_dir = std::env::current_dir().ok()?;
+        let executable = std::env::current_exe().ok()?;
+        Self::path_for(&working_dir, &executable).ok()
+    }
+
+    /// [`GameConfig::path`] for a process with this working directory and
+    /// executable: the first file [`GameConfig::load_from`] would read, else
+    /// the working directory's.
+    pub fn path_for(working_dir: &Path, executable: &Path) -> Result<PathBuf> {
+        let candidates = config_candidates(working_dir, executable)?;
+        Ok(candidates
+            .iter()
+            .find(|path| !matches!(crate::util::file_system::try_exists(path), Ok(false)))
+            .unwrap_or(&candidates[0])
+            .clone())
+    }
+
     /// [`GameConfig::load`] for a process with this working directory and executable.
     pub fn load_from(working_dir: &Path, executable: &Path) -> Result<Self> {
-        let root = retail_asset_root_from_executable(executable)?;
-        for directory in [working_dir, root.as_path()] {
-            let path = directory.join(CONFIG_FILE_NAME);
-            match crate::util::file_system::read_to_string(&path) {
-                Ok(contents) => return Self::parse_from(&contents, &path),
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                Err(err) => {
-                    return Err(err).with_context(|| {
-                        format!("Failed to read config file: {}", path.display())
-                    });
+        for path in config_candidates(working_dir, executable)? {
+            match crate::util::file_system::read(&path) {
+                Ok(bytes) => {
+                    let contents = String::from_utf8(bytes)
+                        .map_err(|error| {
+                            anyhow::anyhow!(
+                                "the file is not UTF-8 text (invalid byte at offset {}); \
+                                 save it as UTF-8",
+                                error.utf8_error().valid_up_to()
+                            )
+                        })
+                        .context(ConfigFileError::read(&path))?;
+                    return Self::parse_from(&contents, &path);
                 }
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => return Err(err).context(ConfigFileError::read(&path)),
             }
         }
+        let root = retail_asset_root_from_executable(executable)?;
         log::info!(
             "No {}; using retail executable directory: {}",
             CONFIG_FILE_NAME,
@@ -259,8 +293,10 @@ impl GameConfig {
     }
 
     fn parse_from(contents: &str, path: &Path) -> Result<Self> {
-        let mut config = Self::parse(contents)
-            .with_context(|| format!("Failed to parse config file: {}", path.display()))?;
+        let mut config = Self::parse(contents).context(ConfigFileError {
+            path: path.to_owned(),
+            parse: true,
+        })?;
 
         // A packaged config must mean the same thing after Finder changes cwd.
         let directory = path.parent().unwrap_or_else(|| Path::new("."));
@@ -539,6 +575,40 @@ fn expect_value_end(rest: &str) -> Result<()> {
     Ok(())
 }
 
+/// config.toml could not be read or parsed. The context of those failures, so
+/// a caller can tell them from the settings folder's and name the file.
+#[derive(Debug)]
+pub struct ConfigFileError {
+    pub path: PathBuf,
+    parse: bool,
+}
+
+impl ConfigFileError {
+    fn read(path: &Path) -> Self {
+        Self {
+            path: path.to_owned(),
+            parse: false,
+        }
+    }
+}
+
+impl std::fmt::Display for ConfigFileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let verb = if self.parse { "parse" } else { "read" };
+        write!(f, "Failed to {verb} config file: {}", self.path.display())
+    }
+}
+
+/// Where [`GameConfig::load_from`] looks for config.toml, in order: the
+/// working directory, then beside the executable.
+fn config_candidates(working_dir: &Path, executable: &Path) -> Result<[PathBuf; 2]> {
+    let root = retail_asset_root_from_executable(executable)?;
+    Ok([
+        working_dir.join(CONFIG_FILE_NAME),
+        root.join(CONFIG_FILE_NAME),
+    ])
+}
+
 /// Return the directory that retail `WinMain` makes its file-search root.
 fn retail_asset_root_from_executable(executable: &Path) -> Result<PathBuf> {
     executable
@@ -697,6 +767,25 @@ mod tests {
         let message = format!("{:#}", fixture.load().unwrap_err());
         assert!(message.contains(override_path.to_str().unwrap()));
         assert!(message.contains("Failed to parse config"));
+    }
+
+    #[test]
+    fn a_config_that_is_not_utf8_is_named_as_such_and_as_the_file_to_edit() {
+        let fixture = ConfigFixture::new();
+        let path = fixture.0.join("launch/config.toml");
+        // A path with a German umlaut, saved as Windows-1252 rather than UTF-8.
+        std::fs::write(&path, b"[paths]\nra2_dir = 'C:/Gr\xfcn'\n").unwrap();
+        let error = fixture.load().unwrap_err();
+        let file = error
+            .downcast_ref::<ConfigFileError>()
+            .expect("a config.toml failure, not a settings or game-files one");
+        assert_eq!(file.path, path);
+        assert!(format!("{error:#}").contains("not UTF-8 text"));
+        assert_eq!(
+            GameConfig::path_for(&fixture.0.join("launch"), &fixture.0.join("app/vera20k"))
+                .unwrap(),
+            path
+        );
     }
 
     #[test]
