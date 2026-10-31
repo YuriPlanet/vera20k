@@ -1328,8 +1328,12 @@ impl GameEntity {
         &self.building_upgrades
     }
 
-    pub(crate) fn advance_building_upgrade_level(&mut self, capacity: i32) -> bool {
-        self.building_upgrades.power_up(capacity)
+    pub(crate) fn advance_building_upgrade_level(
+        &mut self,
+        capacity: i32,
+        wall_tower: bool,
+    ) -> bool {
+        self.building_upgrades.power_up(capacity, wall_tower)
     }
 
     pub(crate) fn commit_building_upgrade_type(&mut self, type_id: InternedId) {

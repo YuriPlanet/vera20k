@@ -58,8 +58,15 @@ mod tests {
         let requested = inputs["requested"].as_str().unwrap_or("POWER");
         let slots = inputs["slots"].as_i64().unwrap_or(3);
         let level = inputs["level"].as_i64().unwrap_or(-1);
+        let tower = if inputs["wall_tower"] == true {
+            format!("[General]\nWallTower={host}\n")
+        } else {
+            String::new()
+        };
+        let image = inputs["host_image"].as_str().unwrap_or(host);
+        let voxel = inputs["voxel"] == true;
         let text = format!(
-            "[BuildingTypes]\n0={host}\n1=UPGRADE\n[{host}]\nStrength=100\nUpgrades={slots}\n[UPGRADE]\nStrength=100\nPowersUpBuilding={requested}\nPowersUpToLevel={level}\n"
+            "{tower}[BuildingTypes]\n0={host}\n1=UPGRADE\n[{host}]\nStrength=100\nImage={image}\nTurretAnimIsVoxel={voxel}\nUpgrades={slots}\n[UPGRADE]\nStrength=100\nPowersUpBuilding={requested}\nPowersUpToLevel={level}\n"
         );
         let rules =
             RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(&text), &IniFile::empty())
@@ -101,6 +108,43 @@ mod tests {
         sim.substrate.entities.insert(host);
         sim.substrate.entities.insert(upgrade);
         (sim, rules, host_id, upgrade_id)
+    }
+
+    #[test]
+    fn wall_tower_identity_bypasses_only_the_ordinary_power_up_capacity_check() {
+        // Original452670 ->4408DF ->451400 controls, including the
+        // zero-capacity WallTower and ordinary contrasts. See the native
+        // reproduction and allocator boundary in building_upgrades.md.
+        for (tower, capacity, voxel, count, variant) in [
+            (false, 0, false, 0, -1),
+            (true, 0, false, 1, 0),
+            (true, 2, false, 1, 0),
+            (true, 0, true, 1, -1),
+            (false, 2, false, 1, -1),
+        ] {
+            let (mut sim, rules, host, upgrade) = fixture(&serde_json::json!({
+                "host": "GADUMY", "requested": "GADUMY", "host_image": "NTIRON",
+                "wall_tower": tower, "slots": capacity, "voxel": voxel,
+            }));
+            assert!(sim.try_install_building_upgrade(
+                upgrade,
+                host,
+                &rules,
+                UninitContext::with_rules(&rules),
+            ));
+            let actual = sim.substrate.entities.get(host).unwrap();
+            assert_eq!(actual.building_upgrades().count(), count);
+            assert_eq!(actual.building_art.wall_tower_variant(), variant);
+            assert_eq!(actual.building_upgrades().types()[0].is_some(), count == 1);
+            assert!(actual.building_art.anim_slots()[9].is_none());
+            assert!(
+                !sim.substrate
+                    .entities
+                    .get(upgrade)
+                    .unwrap()
+                    .is_object_alive()
+            );
+        }
     }
 
     #[test]
@@ -222,11 +266,12 @@ impl BuildingUpgrades {
         &self.types
     }
 
-    /// Native4515E9 checks equality, then increments the signed byte. The
-    /// caller has already admitted a normal three-slot host. Reject unsafe
+    /// Native4515E9 checks ordinary capacity equality;4515D1 increments a
+    /// WallTower without that gate. The caller has already admitted a
+    /// three-slot host. Reject unsafe
     /// configurations instead of emulating native out-of-array writes.
-    pub(crate) fn power_up(&mut self, capacity: i32) -> bool {
-        if i32::from(self.count) == capacity || !(0..3).contains(&self.count) {
+    pub(crate) fn power_up(&mut self, capacity: i32, wall_tower: bool) -> bool {
+        if (!wall_tower && i32::from(self.count) == capacity) || !(0..3).contains(&self.count) {
             return false;
         }
         self.count += 1;
@@ -388,8 +433,10 @@ impl Simulation {
         true
     }
 
-    /// Original451400 ordinary (non-WallTower) PowerUp. HP and occupied art
-    /// recovery precede the equality capacity check, including failed calls.
+    /// Original451400 PowerUp. HP and occupied art recovery precede both
+    /// branches.4514F3 checks Rules.WallTower's retained type identity; that
+    /// branch updates its art then increments without the ordinary capacity
+    /// rejection (4515E9). See tools/spatial_oracle/building_upgrades.md.
     fn power_up_building_upgrade(&mut self, id: u64, rules: &RuleSet) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -398,6 +445,12 @@ impl Simulation {
             return false;
         };
         let (strength, capacity) = (object.strength, object.building_upgrade().slots());
+        let wall_tower = rules
+            .general
+            .building_types
+            .wall_tower
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case(&object.id));
         if entity.health.current() != strength {
             self.substrate
                 .entities
@@ -407,9 +460,15 @@ impl Simulation {
                 .set(strength);
             self.restore_building_art_after_power_up(id, rules);
         }
+        if wall_tower {
+            self.advance_wall_tower_upgrade_art(id, rules);
+        }
         let entity = self.substrate.entities.get_mut(id).unwrap();
-        if !entity.advance_building_upgrade_level(capacity) {
+        if !entity.advance_building_upgrade_level(capacity, wall_tower) {
             return false;
+        }
+        if wall_tower {
+            return true;
         }
         let slot = (entity.building_upgrades().count() - 1) as u8;
         let damaged = crate::sim::building_art::requested_damage_state(

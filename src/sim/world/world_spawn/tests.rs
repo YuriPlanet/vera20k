@@ -2433,6 +2433,14 @@ fn authored_retail_wall_tower_zero_capacity_upgrade_is_retained() {
         Some("GADUMY")
     );
     let host_type = rules.object("GADUMY").unwrap();
+    assert_eq!(host_type.image, "NTIRON");
+    assert!(!host_type.turret_anim_is_voxel);
+    assert!(host_type.turret_anim.is_none());
+    assert_eq!((host_type.turret_anim_x, host_type.turret_anim_y), (0, 0));
+    //451890 ->427CB0 fails the actual retail registry lookup. Neither an
+    // ART section alone nor this failed lookup may skip retained6E6 sync.
+    assert!(!rules.anim_type_names.contains("NTIRON_B"));
+    assert!(rules.art().get("NTIRON_B").is_none());
     assert_eq!(host_type.building_upgrade().slots(), 0);
     assert_eq!(
         rules.object("GAPILL").unwrap().building_upgrade().level(),
@@ -2467,6 +2475,30 @@ fn authored_retail_wall_tower_zero_capacity_upgrade_is_retained() {
         host.building_upgrades().types()[0],
         sim.interner.get("GAPILL")
     );
+    assert_eq!(host.building_art.wall_tower_variant(), 0);
+    assert!(!host.building_art.damage_state_active());
+    assert!(host.building_art.anim_slots()[9].is_none());
+    // The retained pointer must feed the existing shared weapon receiver,
+    // not merely change the count on an otherwise unarmed dummy host.
+    let weapon = crate::sim::combat::combat_weapon::get_weapon(
+        host,
+        host_type,
+        0,
+        &sim.substrate.entities,
+        &rules,
+        &sim.interner,
+    );
+    assert_eq!(
+        weapon.map(|weapon| weapon.id.as_str()),
+        rules.object("GAPILL").unwrap().primary(),
+    );
+    assert!(crate::sim::combat::combat_weapon::is_armed(
+        host,
+        host_type,
+        &sim.substrate.entities,
+        &rules,
+        &sim.interner,
+    ));
 }
 
 #[test]
