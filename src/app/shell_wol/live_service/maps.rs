@@ -82,6 +82,10 @@ pub(super) struct Transfers {
     complete: bool,
     failed: bool,
     generated: Option<GeneratedMapManifest>,
+    /// The room and map of the lobby's latest `map_available`. The lobby's
+    /// map library sends it with the host's settings when it already holds
+    /// the map, before the host's upload has begun.
+    available: Option<(String, String, usize)>,
 }
 
 pub(super) fn received_options(
@@ -106,6 +110,7 @@ pub(super) fn cancel(state: &mut AppState, service: &mut LiveService) {
     service.maps.transfer = None;
     service.maps.generated = None;
     service.maps.next_resource = None;
+    service.maps.available = None;
     service.maps.failed = false;
     service.maps.complete = false;
     set_network_map_progress(state, None);
@@ -296,7 +301,7 @@ impl Transfers {
                 .match_state
                 .session
                 .accept_verified_network_map_source(source, effective)?;
-            if !host {
+            if !host || self.lobby_holds(resource) {
                 return self.finish_resource(state, resource);
             }
         }
@@ -334,6 +339,42 @@ impl Transfers {
             })?;
         }
         Ok(())
+    }
+    /// Whether the lobby already has this room's map, so the host need not
+    /// upload it. Generated maps and their previews always come from the host.
+    fn lobby_holds(&self, resource: TransferResource) -> bool {
+        resource == TransferResource::Map
+            && self.key.as_ref().zip(self.available.as_ref()).is_some_and(
+                |(key, (room, digest, total))| {
+                    key.random.is_none()
+                        && &key.room == room
+                        && &key.digest == digest
+                        && key.total == *total
+                },
+            )
+    }
+    /// A `map_available` for the host's own upload ends it: the lobby has
+    /// the map, so the rest need not be sent.
+    fn heard_available(
+        &mut self,
+        state: &mut AppState,
+        room: Option<String>,
+        digest: &str,
+        total: usize,
+    ) -> Result<()> {
+        self.available = room.map(|room| (room, digest.to_owned(), total));
+        let uploading = self
+            .transfer
+            .as_ref()
+            .filter(|transfer| matches!(transfer.direction, Direction::Upload))
+            .map(|transfer| transfer.resource);
+        match uploading {
+            Some(resource) if self.lobby_holds(resource) => {
+                set_network_map_progress(state, Some((total as u32, total as u32)));
+                self.finish_resource(state, resource)
+            }
+            _ => Ok(()),
+        }
     }
     fn finish_resource(&mut self, state: &mut AppState, resource: TransferResource) -> Result<()> {
         self.transfer = None;
@@ -502,6 +543,12 @@ pub(super) fn available(
     digest: &str,
     total: usize,
 ) {
+    let room = super::super::lobby::current_channel(state).map(|channel| channel.name.clone());
+    let mut maps = std::mem::take(&mut service.maps);
+    if maps.heard_available(state, room, digest, total).is_err() {
+        maps.fail(state);
+    }
+    service.maps = maps;
     if service.maps.key.as_ref().is_some_and(|key| {
         key.digest == digest && key.total == total
             || key.random.as_ref().is_some_and(|r| {
@@ -533,6 +580,29 @@ impl Transfer {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_map_the_lobby_already_holds_spares_only_that_rooms_upload() {
+        let digest = "a".repeat(64);
+        let mut maps = Transfers {
+            key: Some(Key {
+                room: "room".into(),
+                digest: digest.clone(),
+                total: 9,
+                effective_digest: "b".repeat(64),
+                random: None,
+            }),
+            ..Default::default()
+        };
+        assert!(!maps.lobby_holds(TransferResource::Map));
+        // Heard with the host's settings, before its upload began.
+        maps.available = Some(("room".into(), digest.clone(), 9));
+        assert!(maps.lobby_holds(TransferResource::Map));
+        assert!(!maps.lobby_holds(TransferResource::Preview));
+        maps.available = Some(("another room".into(), digest.clone(), 9));
+        assert!(!maps.lobby_holds(TransferResource::Map));
+        maps.available = Some(("room".into(), digest, 10));
+        assert!(!maps.lobby_holds(TransferResource::Map));
+    }
     #[test]
     fn a_dropped_connection_keeps_a_map_transfer_retrying() {
         let now = Instant::now();

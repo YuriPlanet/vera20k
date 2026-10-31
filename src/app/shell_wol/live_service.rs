@@ -1835,6 +1835,10 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                     "The final settings could not be published. Try Start again.",
                 );
             }
+            "options" if failure == http::CommandFailure::MapBlocked => notice(
+                state,
+                "This map was removed from VERA20k Online. Choose another map.",
+            ),
             "choices"
                 if service
                     .pending_choices

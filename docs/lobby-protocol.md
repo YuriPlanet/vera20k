@@ -324,6 +324,20 @@ Generated capacity equals the staged start count (2–8); observers consume only
 transport slots. Start admission also compares the canonical staging digest, so clients cannot
 agree on seed bytes while using different generated start cells.
 
+The service may keep a map library: each custom map whose upload completes is kept
+once under its `source_sha256`, unless `map_metadata.official` is true or the room
+plays a generated map. When the host selects a map the library holds (same SHA-256
+and length), the service sends `map_available` with the settings, before any upload,
+and members download it from the library through the same `GET /v1/maps/…` chunks.
+A host that hears `map_available` for its current map stops uploading; an upload
+sent anyway is accepted without being kept. Anyone can search the library with
+`GET /v1/library/maps?search=<text>&players=<n>&page=<n>` (newest first, 50 a page:
+`{maps:[{sha256,name,players,byte_length,added_at,downloads}],more}`) and download
+a map with `GET /v1/library/maps/<sha256>`; both are limited per network. The name
+is the map's `[Basic] Name=`. The service keeps no player, session or address with
+a map. A map the operator blocks is deleted, stops being served to rooms, and
+settings that select it are refused with `map_blocked` (403).
+
 The existing shell leaves its game channel during the successful start. The service
 therefore retains the match admission independently of channel membership until
 finish/timeout. Postmatch the shell rejoins chat and may create or join another game;
