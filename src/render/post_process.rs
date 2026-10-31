@@ -13,17 +13,22 @@
 //! format; the shader also has a CPU-side parse test so the checked-in WGSL is
 //! validated without a GPU.
 //!
+//! ## Effects
+//! - `ColorGrade` runs in linear RGB on the decoded texel.
+//! - `FilmicPass`, `Colourfulness` and `Sepia` are ports of the ReShade
+//!   community shaders of those names. They are authored in gamma space, so
+//!   the shader encodes to sRGB before running them and decodes back for the
+//!   sRGB target.
+//!
 //! ## Colour space
 //! The frame target carries the surface's sRGB suffix, so `textureLoad` decodes
-//! to linear and the target re-encodes on write. Grading therefore works in
-//! linear RGB; contrast pivots on linear 0.5, which is perceptually darker than
-//! a display-referred 0.5.
+//! to linear and the target re-encodes on write.
 //!
 //! Depends on: `render/gpu.rs` (through the caller) and wgpu only.
 
 const SHADER_SRC: &str = include_str!("post_process.wgsl");
 
-/// Uniform payload for [`PostChain`]; two vec4s keep std140 alignment trivial.
+/// Uniform payload for [`PostChain`]; six vec4s keep std140 alignment trivial.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct PostParams {
@@ -32,10 +37,34 @@ pub(crate) struct PostParams {
     saturation: f32,
     /// 1 runs the colour-grade arm; 0 leaves the texel untouched.
     color_grade: f32,
+
     /// `(x, y, width, height)` of the tactical viewport in frame pixels. Every
     /// texel outside it — the sidebar column and the bottom strip — returns
     /// unchanged, so UI keeps its retail colours.
     viewport: [f32; 4],
+
+    filmic_strength: f32,
+    filmic_fade: f32,
+    filmic_contrast: f32,
+    filmic_linearization: f32,
+
+    filmic_bleach: f32,
+    filmic_saturation: f32,
+    /// 1 runs the FilmicPass arm; 0 skips it.
+    filmic_enabled: f32,
+    _pad0: f32,
+
+    colour_amount: f32,
+    colour_lim_luma: f32,
+    /// 1 runs the Colourfulness arm; 0 skips it.
+    colour_enabled: f32,
+    /// 1 runs the Sepia arm; 0 skips it.
+    sepia_enabled: f32,
+
+    sepia_strength: f32,
+    sepia_tint_r: f32,
+    sepia_tint_g: f32,
+    sepia_tint_b: f32,
 }
 
 impl PostParams {
@@ -47,25 +76,82 @@ impl PostParams {
             saturation: 1.0,
             color_grade: 0.0,
             viewport: [0.0; 4],
+            filmic_strength: 0.0,
+            filmic_fade: 0.0,
+            filmic_contrast: 1.0,
+            filmic_linearization: 1.0,
+            filmic_bleach: 0.0,
+            filmic_saturation: 0.0,
+            filmic_enabled: 0.0,
+            _pad0: 0.0,
+            colour_amount: 0.0,
+            colour_lim_luma: 1.0,
+            colour_enabled: 0.0,
+            sepia_enabled: 0.0,
+            sepia_strength: 0.0,
+            sepia_tint_r: 1.0,
+            sepia_tint_g: 1.0,
+            sepia_tint_b: 1.0,
         }
     }
 
     /// Build the uniform from the configured effects; `None` means the chain
     /// has nothing to do and the caller should keep the texture copy.
+    ///
+    /// - `filmic`: strength, fade, contrast, linearization, bleach, saturation.
+    /// - `colourfulness`: amount, lim_luma.
+    /// - `sepia`: strength, tint red, tint green, tint blue.
     pub(crate) fn from_effects(
         color_grade: Option<[f32; 3]>,
+        filmic: Option<[f32; 6]>,
+        colourfulness: Option<[f32; 2]>,
+        sepia: Option<[f32; 4]>,
         viewport: [f32; 4],
     ) -> Option<Self> {
+        if color_grade.is_none()
+            && filmic.is_none()
+            && colourfulness.is_none()
+            && sepia.is_none()
+        {
+            return None;
+        }
         let (brightness, contrast, saturation, color_grade) = match color_grade {
             Some([brightness, contrast, saturation]) => (brightness, contrast, saturation, 1.0),
-            None => return None,
+            None => (0.0, 1.0, 1.0, 0.0),
         };
+        let [
+            filmic_strength,
+            filmic_fade,
+            filmic_contrast,
+            filmic_linearization,
+            filmic_bleach,
+            filmic_saturation,
+        ] = filmic.unwrap_or([0.0, 0.0, 1.0, 1.0, 0.0, 0.0]);
+        let [colour_amount, colour_lim_luma] = colourfulness.unwrap_or([0.0, 1.0]);
+        let [sepia_strength, sepia_tint_r, sepia_tint_g, sepia_tint_b] =
+            sepia.unwrap_or([0.0, 1.0, 1.0, 1.0]);
         Some(Self {
             brightness,
             contrast,
             saturation,
             color_grade,
             viewport,
+            filmic_strength,
+            filmic_fade,
+            filmic_contrast,
+            filmic_linearization,
+            filmic_bleach,
+            filmic_saturation,
+            filmic_enabled: filmic.is_some() as u8 as f32,
+            _pad0: 0.0,
+            colour_amount,
+            colour_lim_luma,
+            colour_enabled: colourfulness.is_some() as u8 as f32,
+            sepia_enabled: sepia.is_some() as u8 as f32,
+            sepia_strength,
+            sepia_tint_r,
+            sepia_tint_g,
+            sepia_tint_b,
         })
     }
 
@@ -77,8 +163,28 @@ impl PostParams {
         saturation: f32,
         viewport: [f32; 4],
     ) -> Self {
-        Self::from_effects(Some([brightness, contrast, saturation]), viewport)
+        Self::from_effects(Some([brightness, contrast, saturation]), None, None, None, viewport)
             .expect("colour grade enables the chain")
+    }
+
+    /// FilmicPass at its authored defaults; the tests build chains this way.
+    #[cfg(test)]
+    pub(crate) fn filmic(viewport: [f32; 4]) -> Self {
+        Self::from_effects(
+            None,
+            Some([0.85, 0.4, 1.0, 0.5, 0.0, -0.15]),
+            None,
+            None,
+            viewport,
+        )
+        .expect("filmic pass enables the chain")
+    }
+
+    /// Sepia at its authored defaults; the tests build chains this way.
+    #[cfg(test)]
+    pub(crate) fn sepia(viewport: [f32; 4]) -> Self {
+        Self::from_effects(None, None, None, Some([0.58, 0.55, 0.43, 0.42]), viewport)
+            .expect("sepia enables the chain")
     }
 }
 
@@ -251,16 +357,48 @@ mod tests {
     fn the_identity_params_disable_every_effect() {
         let params = super::PostParams::identity();
         assert_eq!(
-            bytemuck::cast::<_, [f32; 8]>(params),
-            [0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            bytemuck::cast::<_, [f32; 24]>(params),
+            [
+                0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0
+            ]
         );
-        let grade = super::PostParams::from_effects(Some([0.1, 1.2, 0.5]), [0.0, 0.0, 800.0, 600.0])
-            .expect("colour grade configures the chain");
+    }
+
+    #[test]
+    fn from_effects_enables_only_the_configured_arms() {
+        // Every part disabled: the caller keeps the texture copy.
+        assert!(
+            super::PostParams::from_effects(None, None, None, None, [0.0; 4]).is_none()
+        );
+
+        let grade =
+            super::PostParams::from_effects(Some([0.1, 1.2, 0.5]), None, None, None, [0.0; 4])
+                .expect("colour grade configures the chain");
         assert_eq!(
-            bytemuck::cast::<_, [f32; 8]>(grade),
-            [0.1, 1.2, 0.5, 1.0, 0.0, 0.0, 800.0, 600.0]
+            bytemuck::cast::<_, [f32; 24]>(grade),
+            [
+                0.1, 1.2, 0.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0
+            ],
+            "grade-only leaves the ReShade arms disabled"
         );
-        assert!(super::PostParams::from_effects(None, [0.0; 4]).is_none());
+
+        let filmic = super::PostParams::from_effects(
+            None,
+            Some([0.85, 0.4, 1.0, 0.5, 0.0, -0.15]),
+            Some([0.4, 0.7]),
+            Some([0.58, 0.55, 0.43, 0.42]),
+            [0.0, 0.0, 800.0, 600.0],
+        )
+        .expect("ReShade arms configure the chain");
+        assert_eq!(
+            bytemuck::cast::<_, [f32; 24]>(filmic),
+            [
+                0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 800.0, 600.0, 0.85, 0.4, 1.0, 0.5, 0.0, -0.15,
+                1.0, 0.0, 0.4, 0.7, 1.0, 1.0, 0.58, 0.55, 0.43, 0.42
+            ]
+        );
     }
 }
 

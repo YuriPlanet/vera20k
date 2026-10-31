@@ -1208,8 +1208,39 @@ impl App {
                         .rules()
                         .and_then(|rules| rules.post_process.color_grade)
                         .map(|grade| [grade.brightness, grade.contrast, grade.saturation]);
+                    let filmic = state
+                        .rules()
+                        .and_then(|rules| rules.post_process.filmic_pass)
+                        .map(|filmic| {
+                            [
+                                filmic.strength,
+                                filmic.fade,
+                                filmic.contrast,
+                                filmic.linearization,
+                                filmic.bleach,
+                                filmic.saturation,
+                            ]
+                        });
+                    let colourfulness = state
+                        .rules()
+                        .and_then(|rules| rules.post_process.colourfulness)
+                        .map(|colour| [colour.amount, colour.lim_luma]);
+                    let sepia = state
+                        .rules()
+                        .and_then(|rules| rules.post_process.sepia)
+                        .map(|sepia| {
+                            [
+                                sepia.strength,
+                                sepia.tint[0],
+                                sepia.tint[1],
+                                sepia.tint[2],
+                            ]
+                        });
                     let post_params = crate::render::post_process::PostParams::from_effects(
                         color_grade,
+                        filmic,
+                        colourfulness,
+                        sepia,
                         viewport,
                     );
                     if let Some(params) = post_params {

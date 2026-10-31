@@ -6,6 +6,11 @@
 //! Every effect is off by default, so an unedited rules set keeps the retail
 //! presentation path and its cost.
 //!
+//! The effect mathematics follow the ReShade community shaders of the same
+//! names (`FilmicPass.fx`, `Colourfulness.fx`, `Sepia.fx`), which run in gamma
+//! space; curve and gamma constants that those shaders expose are kept at their
+//! authored defaults here so the INI surface stays small.
+//!
 //! ## INI format
 //! ```ini
 //! [PostProcess]
@@ -13,6 +18,21 @@
 //! ColorGrade.Brightness=0
 //! ColorGrade.Contrast=1
 //! ColorGrade.Saturation=1
+//! FilmicPass=no
+//! FilmicPass.Strength=0.85
+//! FilmicPass.Fade=0.4
+//! FilmicPass.Contrast=1
+//! FilmicPass.Linearization=0.5
+//! FilmicPass.Bleach=0
+//! FilmicPass.Saturation=-0.15
+//! Colourfulness=no
+//! Colourfulness.Amount=0.4
+//! Colourfulness.LimLuma=0.7
+//! Sepia=no
+//! Sepia.Strength=0.58
+//! Sepia.TintR=0.55
+//! Sepia.TintG=0.43
+//! Sepia.TintB=0.42
 //! ```
 
 use crate::rules::ini_parser::IniFile;
@@ -22,6 +42,12 @@ use crate::rules::ini_parser::IniFile;
 pub struct PostProcessRules {
     /// The colour-grade pass; `None` keeps the frame on the copy path.
     pub color_grade: Option<ColorGradeRules>,
+    /// The ReShade `FilmicPass` port; `None` leaves it out.
+    pub filmic_pass: Option<FilmicPassRules>,
+    /// The ReShade `Colourfulness` port; `None` leaves it out.
+    pub colourfulness: Option<ColourfulnessRules>,
+    /// The ReShade `Sepia`/`Tint` port; `None` leaves it out.
+    pub sepia: Option<SepiaRules>,
 }
 
 /// Linear-space colour grading applied to the composed match frame.
@@ -35,9 +61,66 @@ pub struct ColorGradeRules {
     pub saturation: f32,
 }
 
+/// ReShade `FilmicPass.fx`: cinema-like curve, fade, bleach and saturation.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FilmicPassRules {
+    pub strength: f32,
+    pub fade: f32,
+    pub contrast: f32,
+    pub linearization: f32,
+    pub bleach: f32,
+    pub saturation: f32,
+}
+
+impl Default for FilmicPassRules {
+    fn default() -> Self {
+        Self {
+            strength: 0.85,
+            fade: 0.4,
+            contrast: 1.0,
+            linearization: 0.5,
+            bleach: 0.0,
+            saturation: -0.15,
+        }
+    }
+}
+
+/// ReShade `Colourfulness.fx`: saturation raise that soft-limits at the
+/// display gamut rather than clipping channel ratios.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ColourfulnessRules {
+    pub amount: f32,
+    pub lim_luma: f32,
+}
+
+impl Default for ColourfulnessRules {
+    fn default() -> Self {
+        Self {
+            amount: 0.4,
+            lim_luma: 0.7,
+        }
+    }
+}
+
+/// ReShade `Sepia.fx` (`technique Tint`): multiply toward a warm tint.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SepiaRules {
+    pub strength: f32,
+    pub tint: [f32; 3],
+}
+
+impl Default for SepiaRules {
+    fn default() -> Self {
+        Self {
+            strength: 0.58,
+            tint: [0.55, 0.43, 0.42],
+        }
+    }
+}
+
 impl PostProcessRules {
-    /// Read `[PostProcess]`. `ColorGrade=` is that effect's own switch; when it
-    /// is `no` (the default) the section's other keys are not read.
+    /// Read `[PostProcess]`. Each `Effect=` key is that effect's own switch;
+    /// when it is `no` (the default) the effect's other keys are not read.
     pub fn from_ini(ini: &IniFile) -> Self {
         let section = ini.section_or_empty("PostProcess");
         // The shader consumes binary32, so read each key through the native
@@ -47,6 +130,40 @@ impl PostProcessRules {
                 brightness: section.read_float("ColorGrade.Brightness", 0.0),
                 contrast: section.read_float("ColorGrade.Contrast", 1.0),
                 saturation: section.read_float("ColorGrade.Saturation", 1.0),
+            }),
+            filmic_pass: section.read_bool("FilmicPass", false).then(|| {
+                let defaults = FilmicPassRules::default();
+                FilmicPassRules {
+                    strength: section.read_float("FilmicPass.Strength", defaults.strength),
+                    fade: section.read_float("FilmicPass.Fade", defaults.fade),
+                    contrast: section.read_float("FilmicPass.Contrast", defaults.contrast),
+                    linearization: section
+                        .read_float("FilmicPass.Linearization", defaults.linearization),
+                    bleach: section.read_float("FilmicPass.Bleach", defaults.bleach),
+                    saturation: section
+                        .read_float("FilmicPass.Saturation", defaults.saturation),
+                }
+            }),
+            colourfulness: section
+                .read_bool("Colourfulness", false)
+                .then(|| {
+                    let defaults = ColourfulnessRules::default();
+                    ColourfulnessRules {
+                        amount: section.read_float("Colourfulness.Amount", defaults.amount),
+                        lim_luma: section
+                            .read_float("Colourfulness.LimLuma", defaults.lim_luma),
+                    }
+                }),
+            sepia: section.read_bool("Sepia", false).then(|| {
+                let defaults = SepiaRules::default();
+                SepiaRules {
+                    strength: section.read_float("Sepia.Strength", defaults.strength),
+                    tint: [
+                        section.read_float("Sepia.TintR", defaults.tint[0]),
+                        section.read_float("Sepia.TintG", defaults.tint[1]),
+                        section.read_float("Sepia.TintB", defaults.tint[2]),
+                    ],
+                }
             }),
         }
     }
@@ -94,6 +211,50 @@ mod tests {
         assert!((grade.saturation - 0.8).abs() < 1e-6);
     }
 
+    /// The ReShade ports default to their authored values and read authored
+    /// overrides; a `no` switch keeps the whole effect out.
+    #[test]
+    fn reshade_ports_read_their_switches_defaults_and_values() {
+        let defaults = PostProcessRules::from_ini(&IniFile::from_str(
+            "[PostProcess]\nFilmicPass=yes\nColourfulness=yes\nSepia=yes\n",
+        ));
+        assert_eq!(defaults.filmic_pass, Some(FilmicPassRules::default()));
+        assert_eq!(
+            defaults.colourfulness,
+            Some(ColourfulnessRules::default())
+        );
+        assert_eq!(defaults.sepia, Some(SepiaRules::default()));
+
+        let off = PostProcessRules::from_ini(&IniFile::from_str(
+            "[PostProcess]\nFilmicPass=no\nFilmicPass.Strength=0\n\
+             Colourfulness=no\nColourfulness.Amount=0\nSepia=no\nSepia.Strength=0\n",
+        ));
+        assert_eq!(off, PostProcessRules::default(), "switches gate every key");
+
+        let authored = PostProcessRules::from_ini(&IniFile::from_str(
+            "[PostProcess]\nFilmicPass=yes\nFilmicPass.Strength=0.5\nFilmicPass.Fade=0.2\n\
+             FilmicPass.Contrast=1.4\nFilmicPass.Linearization=0.8\nFilmicPass.Bleach=0.3\n\
+             FilmicPass.Saturation=0.1\nColourfulness=yes\nColourfulness.Amount=0.2\n\
+             Colourfulness.LimLuma=0.5\nSepia=yes\nSepia.Strength=0.3\n\
+             Sepia.TintR=0.2\nSepia.TintG=0.3\nSepia.TintB=0.4\n",
+        ));
+        let filmic = authored.filmic_pass.expect("authored filmic pass");
+        assert!((filmic.strength - 0.5).abs() < 1e-6);
+        assert!((filmic.fade - 0.2).abs() < 1e-6);
+        assert!((filmic.contrast - 1.4).abs() < 1e-6);
+        assert!((filmic.linearization - 0.8).abs() < 1e-6);
+        assert!((filmic.bleach - 0.3).abs() < 1e-6);
+        assert!((filmic.saturation - 0.1).abs() < 1e-6);
+        let colour = authored.colourfulness.expect("authored colourfulness");
+        assert!((colour.amount - 0.2).abs() < 1e-6);
+        assert!((colour.lim_luma - 0.5).abs() < 1e-6);
+        let sepia = authored.sepia.expect("authored sepia");
+        assert!((sepia.strength - 0.3).abs() < 1e-6);
+        assert!((sepia.tint[0] - 0.2).abs() < 1e-6);
+        assert!((sepia.tint[1] - 0.3).abs() < 1e-6);
+        assert!((sepia.tint[2] - 0.4).abs() < 1e-6);
+    }
+
     /// The production `RuleSet` publishes the section; an empty INI leaves the
     /// presentation on the copy path.
     #[test]
@@ -102,7 +263,8 @@ mod tests {
         assert_eq!(empty.post_process, PostProcessRules::default());
 
         let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
-            "[PostProcess]\nColorGrade=yes\nColorGrade.Saturation=0.5\n",
+            "[PostProcess]\nColorGrade=yes\nColorGrade.Saturation=0.5\n\
+             FilmicPass=yes\n",
         ))
         .unwrap();
         assert_eq!(
@@ -112,6 +274,10 @@ mod tests {
                 contrast: 1.0,
                 saturation: 0.5,
             })
+        );
+        assert_eq!(
+            rules.post_process.filmic_pass,
+            Some(FilmicPassRules::default())
         );
     }
 }

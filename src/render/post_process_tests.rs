@@ -286,3 +286,87 @@ fn the_viewport_mask_excludes_the_ui_column() {
     assert!(graded[2] < 200, "inside: red dropped: {graded:?}");
     assert_eq!(&bytes[4..8], &[0, 0, 255, 255], "outside: byte copy");
 }
+
+/// FilmicPass runs in gamma space: a neutral mid-grey moves off its input while
+/// alpha and channel balance survive.
+#[test]
+#[ignore = "needs a wgpu adapter; run explicitly"]
+fn the_filmic_pass_moves_mid_grey() {
+    let gpu = Gpu::new();
+    let size = [1, 1];
+    let source = gpu.texture(
+        size,
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+    );
+    // Opaque mid-grey in BGRA byte order.
+    gpu.upload(&source, &[128, 128, 128, 255], size);
+
+    let target = gpu.texture(
+        size,
+        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+    );
+    let chain = PostChain::new(
+        &gpu.device,
+        &gpu.queue,
+        FORMAT,
+        super::PostParams::filmic([0.0, 0.0, 1.0, 1.0]),
+    );
+    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Post process filmic"),
+        });
+    chain.draw(&gpu.device, &mut encoder, &source_view, &target_view);
+    gpu.queue.submit([encoder.finish()]);
+
+    let bytes = gpu.read(&target, size);
+    assert_eq!(bytes[3], 255, "alpha passes through: {bytes:?}");
+    assert_ne!(bytes[0], 128, "filmic must move mid grey: {bytes:?}");
+    assert_eq!(bytes[0], bytes[1], "neutral tint keeps B/G equal: {bytes:?}");
+    assert_eq!(bytes[1], bytes[2], "neutral tint keeps G/R equal: {bytes:?}");
+}
+
+/// Sepia multiplies toward its warm tint: a mid-grey gains a red bias while
+/// alpha stays opaque.
+#[test]
+#[ignore = "needs a wgpu adapter; run explicitly"]
+fn the_sepia_pass_warms_mid_grey() {
+    let gpu = Gpu::new();
+    let size = [1, 1];
+    let source = gpu.texture(
+        size,
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+    );
+    gpu.upload(&source, &[128, 128, 128, 255], size);
+
+    let target = gpu.texture(
+        size,
+        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+    );
+    let chain = PostChain::new(
+        &gpu.device,
+        &gpu.queue,
+        FORMAT,
+        super::PostParams::sepia([0.0, 0.0, 1.0, 1.0]),
+    );
+    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Post process sepia"),
+        });
+    chain.draw(&gpu.device, &mut encoder, &source_view, &target_view);
+    gpu.queue.submit([encoder.finish()]);
+
+    let bytes = gpu.read(&target, size);
+    assert_eq!(bytes[3], 255, "alpha passes through: {bytes:?}");
+    assert!(bytes[2] > bytes[1], "red outruns green: {bytes:?}");
+    assert!(bytes[1] > bytes[0], "green outruns blue: {bytes:?}");
+}
