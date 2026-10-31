@@ -164,8 +164,11 @@ Registering a dynamic turret animation in a map/mod reaches the separate
 Rules slot9/SHP-turret reader and asset-binding residual. Its placement or
 recreation can still be wrong or absent; the selected unregistered NTIRON_B
 does not consume those coordinates. The full WallTower/SHP-turret mechanism
-and whole451400 remain open. PowerDown451690 integration must reset the same
-BuildingArt variant through its owner, rather than duplicate upgrade state.
+and whole451400 remain open. PowerDown451690 resets the variant only when
+the final upgrade type has `Turret=true`; its ordinary branch preserves it.
+GAPILL's native-default `Turret=false` does not require that reset. Integration
+of the separately owned turret-removal mechanism must keep its conditional
+reset through this same BuildingArt owner, rather than duplicate upgrade state.
 
 ## Coverage limits
 
