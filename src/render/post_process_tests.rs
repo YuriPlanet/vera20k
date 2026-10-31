@@ -370,3 +370,70 @@ fn the_sepia_pass_warms_mid_grey() {
     assert!(bytes[2] > bytes[1], "red outruns green: {bytes:?}");
     assert!(bytes[1] > bytes[0], "green outruns blue: {bytes:?}");
 }
+
+/// FXAA blends texels across a hard edge while flat interiors stay byte copies.
+#[test]
+#[ignore = "needs a wgpu adapter; run explicitly"]
+fn the_fxaa_pass_blends_only_the_edge() {
+    let gpu = Gpu::new();
+    let size = [8, 8];
+    let mut source_bytes = Vec::new();
+    for _ in 0..size[1] {
+        for x in 0..size[0] {
+            let value = if x < 4 { 0 } else { 255 };
+            source_bytes.extend_from_slice(&[value, value, value, 255]);
+        }
+    }
+
+    let source = gpu.texture(
+        size,
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+    );
+    gpu.upload(&source, &source_bytes, size);
+
+    let target = gpu.texture(
+        size,
+        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+    );
+    let chain = PostChain::new(
+        &gpu.device,
+        &gpu.queue,
+        FORMAT,
+        super::PostParams::fxaa([0.0, 0.0, 8.0, 8.0]),
+    );
+    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Post process fxaa"),
+        });
+    chain.draw(&gpu.device, &mut encoder, &source_view, &target_view);
+    gpu.queue.submit([encoder.finish()]);
+
+    let out = gpu.read(&target, size);
+    let stride = size[0] as usize * 4;
+    for y in 0..size[1] as usize {
+        let left = y * stride;
+        let right = y * stride + 7 * 4;
+        assert_eq!(
+            &out[left..left + 4],
+            &source_bytes[left..left + 4],
+            "row {y}: the left interior must stay a byte copy"
+        );
+        assert_eq!(
+            &out[right..right + 4],
+            &source_bytes[right..right + 4],
+            "row {y}: the right interior must stay a byte copy"
+        );
+    }
+    let edge_changed = (0..size[1] as usize).any(|y| {
+        (2..=5).any(|x| {
+            let start = y * stride + x * 4;
+            out[start..start + 4] != source_bytes[start..start + 4]
+        })
+    });
+    assert!(edge_changed, "FXAA must reshape the hard edge");
+}

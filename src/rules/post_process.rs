@@ -33,6 +33,10 @@
 //! Sepia.TintR=0.55
 //! Sepia.TintG=0.43
 //! Sepia.TintB=0.42
+//! FXAA=no
+//! FXAA.Subpix=0.25
+//! FXAA.EdgeThreshold=0.125
+//! FXAA.EdgeThresholdMin=0
 //! ```
 
 use crate::rules::ini_parser::IniFile;
@@ -48,6 +52,8 @@ pub struct PostProcessRules {
     pub colourfulness: Option<ColourfulnessRules>,
     /// The ReShade `Sepia`/`Tint` port; `None` leaves it out.
     pub sepia: Option<SepiaRules>,
+    /// The ReShade `FXAA` port; `None` leaves it out.
+    pub fxaa: Option<FxaaRules>,
 }
 
 /// Linear-space colour grading applied to the composed match frame.
@@ -118,6 +124,24 @@ impl Default for SepiaRules {
     }
 }
 
+/// ReShade `FXAA.fx` (FXAA 3.11 quality): sub-pixel blend and edge gates.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FxaaRules {
+    pub subpix: f32,
+    pub edge_threshold: f32,
+    pub edge_threshold_min: f32,
+}
+
+impl Default for FxaaRules {
+    fn default() -> Self {
+        Self {
+            subpix: 0.25,
+            edge_threshold: 0.125,
+            edge_threshold_min: 0.0,
+        }
+    }
+}
+
 impl PostProcessRules {
     /// Read `[PostProcess]`. Each `Effect=` key is that effect's own switch;
     /// when it is `no` (the default) the effect's other keys are not read.
@@ -163,6 +187,16 @@ impl PostProcessRules {
                         section.read_float("Sepia.TintG", defaults.tint[1]),
                         section.read_float("Sepia.TintB", defaults.tint[2]),
                     ],
+                }
+            }),
+            fxaa: section.read_bool("FXAA", false).then(|| {
+                let defaults = FxaaRules::default();
+                FxaaRules {
+                    subpix: section.read_float("FXAA.Subpix", defaults.subpix),
+                    edge_threshold: section
+                        .read_float("FXAA.EdgeThreshold", defaults.edge_threshold),
+                    edge_threshold_min: section
+                        .read_float("FXAA.EdgeThresholdMin", defaults.edge_threshold_min),
                 }
             }),
         }
@@ -216,7 +250,7 @@ mod tests {
     #[test]
     fn reshade_ports_read_their_switches_defaults_and_values() {
         let defaults = PostProcessRules::from_ini(&IniFile::from_str(
-            "[PostProcess]\nFilmicPass=yes\nColourfulness=yes\nSepia=yes\n",
+            "[PostProcess]\nFilmicPass=yes\nColourfulness=yes\nSepia=yes\nFXAA=yes\n",
         ));
         assert_eq!(defaults.filmic_pass, Some(FilmicPassRules::default()));
         assert_eq!(
@@ -224,10 +258,12 @@ mod tests {
             Some(ColourfulnessRules::default())
         );
         assert_eq!(defaults.sepia, Some(SepiaRules::default()));
+        assert_eq!(defaults.fxaa, Some(FxaaRules::default()));
 
         let off = PostProcessRules::from_ini(&IniFile::from_str(
             "[PostProcess]\nFilmicPass=no\nFilmicPass.Strength=0\n\
-             Colourfulness=no\nColourfulness.Amount=0\nSepia=no\nSepia.Strength=0\n",
+             Colourfulness=no\nColourfulness.Amount=0\nSepia=no\nSepia.Strength=0\n\
+             FXAA=no\nFXAA.Subpix=1\n",
         ));
         assert_eq!(off, PostProcessRules::default(), "switches gate every key");
 
@@ -236,7 +272,8 @@ mod tests {
              FilmicPass.Contrast=1.4\nFilmicPass.Linearization=0.8\nFilmicPass.Bleach=0.3\n\
              FilmicPass.Saturation=0.1\nColourfulness=yes\nColourfulness.Amount=0.2\n\
              Colourfulness.LimLuma=0.5\nSepia=yes\nSepia.Strength=0.3\n\
-             Sepia.TintR=0.2\nSepia.TintG=0.3\nSepia.TintB=0.4\n",
+             Sepia.TintR=0.2\nSepia.TintG=0.3\nSepia.TintB=0.4\n\
+             FXAA=yes\nFXAA.Subpix=0.6\nFXAA.EdgeThreshold=0.2\nFXAA.EdgeThresholdMin=0.05\n",
         ));
         let filmic = authored.filmic_pass.expect("authored filmic pass");
         assert!((filmic.strength - 0.5).abs() < 1e-6);
@@ -253,6 +290,10 @@ mod tests {
         assert!((sepia.tint[0] - 0.2).abs() < 1e-6);
         assert!((sepia.tint[1] - 0.3).abs() < 1e-6);
         assert!((sepia.tint[2] - 0.4).abs() < 1e-6);
+        let fxaa = authored.fxaa.expect("authored fxaa");
+        assert!((fxaa.subpix - 0.6).abs() < 1e-6);
+        assert!((fxaa.edge_threshold - 0.2).abs() < 1e-6);
+        assert!((fxaa.edge_threshold_min - 0.05).abs() < 1e-6);
     }
 
     /// The production `RuleSet` publishes the section; an empty INI leaves the
@@ -264,7 +305,7 @@ mod tests {
 
         let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
             "[PostProcess]\nColorGrade=yes\nColorGrade.Saturation=0.5\n\
-             FilmicPass=yes\n",
+             FilmicPass=yes\nFXAA=yes\n",
         ))
         .unwrap();
         assert_eq!(
@@ -279,5 +320,6 @@ mod tests {
             rules.post_process.filmic_pass,
             Some(FilmicPassRules::default())
         );
+        assert_eq!(rules.post_process.fxaa, Some(FxaaRules::default()));
     }
 }

@@ -7,6 +7,8 @@
 //
 // The optional arms:
 //   - ColorGrade runs in linear RGB on the decoded texel;
+//   - FXAA refetches neighbours through the filtering sampler and blends edge
+//     texels first, so the graded result already has its antialiasing applied;
 //   - FilmicPass, Colourfulness and Sepia are ports of the ReShade community
 //     shaders of those names, which are authored in gamma space. They run after
 //     an explicit linear-to-sRGB encode and the result is decoded back for the
@@ -46,10 +48,17 @@ struct Params {
     sepia_tint_r: f32,
     sepia_tint_g: f32,
     sepia_tint_b: f32,
+
+    fxaa_subpix: f32,
+    fxaa_edge_threshold: f32,
+    fxaa_edge_threshold_min: f32,
+    // 0 = no FXAA, 1 = FXAA.
+    fxaa_enabled: f32,
 };
 
 @group(0) @binding(0) var t_source: texture_2d<f32>;
 @group(0) @binding(1) var<uniform> params: Params;
+@group(0) @binding(2) var s_linear: sampler;
 
 // ReShade `FilmicPass.fx` luminance coefficients.
 const FILMIC_LUMA = vec3f(0.212656, 0.715158, 0.072186);
@@ -179,6 +188,152 @@ fn sepia_pass(c: vec3f) -> vec3f {
     return mix(c, c * tint * 2.55, params.sepia_strength);
 }
 
+// ReShade `FXAA.fx` luma, computed in gamma space.
+fn fxaa_luma(c: vec3f) -> f32 {
+    return sqrt(dot(c * c, vec3f(0.299, 0.587, 0.114)));
+}
+
+fn fxaa_sample(uv: vec2f) -> vec3f {
+    return linear_to_srgb(textureSampleLevel(t_source, s_linear, uv, 0.0).rgb);
+}
+
+// Port of ReShade `FXAA.fx` (FXAA 3.11 quality, preset 15) with the dither
+// gather path replaced by plain samples, as the 32-bit Direct3D 9 path uses.
+fn fxaa_pass(center: vec3f, uv: vec2f) -> vec3f {
+    let dims = vec2f(textureDimensions(t_source));
+    let rcp = vec2f(1.0 / dims.x, 1.0 / dims.y);
+
+    let south = fxaa_sample(uv + vec2f(0.0, rcp.y));
+    let east = fxaa_sample(uv + vec2f(rcp.x, 0.0));
+    let north = fxaa_sample(uv + vec2f(0.0, -rcp.y));
+    let west = fxaa_sample(uv + vec2f(-rcp.x, 0.0));
+
+    let lumaM = fxaa_luma(center);
+    let lumaS = fxaa_luma(south);
+    let lumaE = fxaa_luma(east);
+    let lumaN = fxaa_luma(north);
+    let lumaW = fxaa_luma(west);
+
+    let rangeMax = max(max(lumaN, lumaW), max(lumaE, max(lumaS, lumaM)));
+    let rangeMin = min(min(lumaN, lumaW), min(lumaE, min(lumaS, lumaM)));
+    let range = rangeMax - rangeMin;
+    if (range < max(params.fxaa_edge_threshold_min, rangeMax * params.fxaa_edge_threshold)) {
+        return center;
+    }
+
+    let lumaNW = fxaa_luma(fxaa_sample(uv + vec2f(-rcp.x, -rcp.y)));
+    let lumaNE = fxaa_luma(fxaa_sample(uv + vec2f(rcp.x, -rcp.y)));
+    let lumaSW = fxaa_luma(fxaa_sample(uv + vec2f(-rcp.x, rcp.y)));
+    let lumaSE = fxaa_luma(fxaa_sample(uv + vec2f(rcp.x, rcp.y)));
+
+    let edgeHorz1 = (-2.0 * lumaM) + (lumaN + lumaS);
+    let edgeVert1 = (-2.0 * lumaM) + (lumaW + lumaE);
+    let edgeHorz2 = (-2.0 * lumaE) + (lumaNE + lumaSE);
+    let edgeVert2 = (-2.0 * lumaN) + (lumaNW + lumaNE);
+    let edgeHorz3 = (-2.0 * lumaW) + (lumaNW + lumaSW);
+    let edgeVert3 = (-2.0 * lumaS) + (lumaSW + lumaSE);
+    let edgeHorz = abs(edgeHorz3) + abs(edgeHorz1) * 2.0 + abs(edgeHorz2);
+    let edgeVert = abs(edgeVert3) + abs(edgeVert1) * 2.0 + abs(edgeVert2);
+
+    let subpixNSWE = lumaN + lumaS + lumaW + lumaE;
+    let subpixNWSWNESE = (lumaNW + lumaSW) + (lumaNE + lumaSE);
+    var horzSpan = edgeHorz >= edgeVert;
+    var lumaNv = lumaN;
+    var lumaSv = lumaS;
+    var lengthSign = rcp.x;
+    if (!horzSpan) {
+        lumaNv = lumaW;
+        lumaSv = lumaE;
+    }
+    if (horzSpan) {
+        lengthSign = rcp.y;
+    }
+
+    let subpixB = (subpixNSWE * 2.0 + subpixNWSWNESE) * (1.0 / 12.0) - lumaM;
+    let gradientN = lumaNv - lumaM;
+    let gradientS = lumaSv - lumaM;
+    var lumaNN = lumaNv + lumaM;
+    let lumaSS = lumaSv + lumaM;
+    let pairN = abs(gradientN) >= abs(gradientS);
+    let gradient = max(abs(gradientN), abs(gradientS));
+    if (pairN) {
+        lengthSign = -lengthSign;
+    }
+    let subpixC = clamp(abs(subpixB) * (1.0 / range), 0.0, 1.0);
+
+    var posB = uv;
+    let offNP = select(vec2f(0.0, rcp.y), vec2f(rcp.x, 0.0), horzSpan);
+    if (horzSpan) {
+        posB.y += lengthSign * 0.5;
+    } else {
+        posB.x += lengthSign * 0.5;
+    }
+
+    var offsets = array<f32, 8>(1.0, 1.5, 2.0, 2.0, 2.0, 2.0, 4.0, 12.0);
+    var posN = posB - offNP * offsets[0];
+    var posP = posB + offNP * offsets[0];
+    var lumaEndN = fxaa_luma(fxaa_sample(posN));
+    var lumaEndP = fxaa_luma(fxaa_sample(posP));
+    if (!pairN) {
+        lumaNN = lumaSS;
+    }
+    let gradientScaled = gradient * 0.25;
+    let lumaMM = lumaM - lumaNN * 0.5;
+    let subpixD = (-2.0) * subpixC + 3.0;
+    let subpixE = subpixC * subpixC;
+    let subpixF = subpixD * subpixE;
+    let lumaMLTZero = lumaMM < 0.0;
+
+    lumaEndN -= lumaNN * 0.5;
+    lumaEndP -= lumaNN * 0.5;
+    var doneN = abs(lumaEndN) >= gradientScaled;
+    var doneP = abs(lumaEndP) >= gradientScaled;
+
+    var i = 1u;
+    loop {
+        if ((doneN && doneP) || i >= 8u) {
+            break;
+        }
+        let step = offsets[i];
+        if (!doneN) {
+            posN = posN - offNP * step;
+            lumaEndN = fxaa_luma(fxaa_sample(posN)) - lumaNN * 0.5;
+            doneN = abs(lumaEndN) >= gradientScaled;
+        }
+        if (!doneP) {
+            posP = posP + offNP * step;
+            lumaEndP = fxaa_luma(fxaa_sample(posP)) - lumaNN * 0.5;
+            doneP = abs(lumaEndP) >= gradientScaled;
+        }
+        i = i + 1u;
+    }
+
+    let dstN = select(uv.y - posN.y, uv.x - posN.x, horzSpan);
+    let dstP = select(posP.y - uv.y, posP.x - uv.x, horzSpan);
+    let goodSpanN = (lumaEndN < 0.0) != lumaMLTZero;
+    let spanLength = dstP + dstN;
+    let goodSpanP = (lumaEndP < 0.0) != lumaMLTZero;
+    if (spanLength <= 0.0) {
+        return center;
+    }
+    let directionN = dstN < dstP;
+    let dst = min(dstN, dstP);
+    let goodSpan = select(goodSpanP, goodSpanN, directionN);
+    let subpixG = subpixF * subpixF;
+    let pixelOffset = (dst * (-1.0 / spanLength)) + 0.5;
+    let subpixH = subpixG * params.fxaa_subpix;
+    let pixelOffsetGood = select(0.0, pixelOffset, goodSpan);
+    let pixelOffsetSubpix = max(pixelOffsetGood, subpixH);
+
+    var posM = uv;
+    if (horzSpan) {
+        posM.y += pixelOffsetSubpix * lengthSign;
+    } else {
+        posM.x += pixelOffsetSubpix * lengthSign;
+    }
+    return fxaa_sample(posM);
+}
+
 @vertex
 fn vs_main(@builtin(vertex_index) idx: u32) -> @builtin(position) vec4f {
     // One triangle that covers the whole target.
@@ -192,6 +347,7 @@ fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let source = textureLoad(t_source, vec2i(position.xy), 0);
 
     if (params.color_grade == 0.0
+        && params.fxaa_enabled == 0.0
         && params.filmic_enabled == 0.0
         && params.colour_enabled == 0.0
         && params.sepia_enabled == 0.0) {
@@ -205,6 +361,12 @@ fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
     }
 
     var color = source;
+    if (params.fxaa_enabled != 0.0) {
+        let dims = vec2f(textureDimensions(t_source));
+        let blended = fxaa_pass(linear_to_srgb(color.rgb), p / dims);
+        color = vec4f(srgb_to_linear(blended), color.a);
+    }
+
     if (params.color_grade != 0.0) {
         var rgb = color.rgb;
         let luma = dot(rgb, vec3f(0.2126, 0.7152, 0.0722));

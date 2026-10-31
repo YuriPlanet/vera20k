@@ -1236,11 +1236,18 @@ impl App {
                                 sepia.tint[2],
                             ]
                         });
+                    let fxaa = state
+                        .rules()
+                        .and_then(|rules| rules.post_process.fxaa)
+                        .map(|fxaa| {
+                            [fxaa.subpix, fxaa.edge_threshold, fxaa.edge_threshold_min]
+                        });
                     let post_params = crate::render::post_process::PostParams::from_effects(
                         color_grade,
                         filmic,
                         colourfulness,
                         sepia,
+                        fxaa,
                         viewport,
                     );
                     if let Some(params) = post_params {

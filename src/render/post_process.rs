@@ -19,6 +19,9 @@
 //!   community shaders of those names. They are authored in gamma space, so
 //!   the shader encodes to sRGB before running them and decodes back for the
 //!   sRGB target.
+//! - `FXAA` ports the ReShade FXAA 3.11 quality pass; it samples the source
+//!   through a filtering sampler and blends edge texels before the other
+//!   effects run.
 //!
 //! ## Colour space
 //! The frame target carries the surface's sRGB suffix, so `textureLoad` decodes
@@ -65,6 +68,12 @@ pub(crate) struct PostParams {
     sepia_tint_r: f32,
     sepia_tint_g: f32,
     sepia_tint_b: f32,
+
+    fxaa_subpix: f32,
+    fxaa_edge_threshold: f32,
+    fxaa_edge_threshold_min: f32,
+    /// 1 runs the FXAA arm; 0 skips it.
+    fxaa_enabled: f32,
 }
 
 impl PostParams {
@@ -92,6 +101,10 @@ impl PostParams {
             sepia_tint_r: 1.0,
             sepia_tint_g: 1.0,
             sepia_tint_b: 1.0,
+            fxaa_subpix: 0.0,
+            fxaa_edge_threshold: 0.125,
+            fxaa_edge_threshold_min: 0.0,
+            fxaa_enabled: 0.0,
         }
     }
 
@@ -101,17 +114,20 @@ impl PostParams {
     /// - `filmic`: strength, fade, contrast, linearization, bleach, saturation.
     /// - `colourfulness`: amount, lim_luma.
     /// - `sepia`: strength, tint red, tint green, tint blue.
+    /// - `fxaa`: subpix, edge threshold, edge threshold minimum.
     pub(crate) fn from_effects(
         color_grade: Option<[f32; 3]>,
         filmic: Option<[f32; 6]>,
         colourfulness: Option<[f32; 2]>,
         sepia: Option<[f32; 4]>,
+        fxaa: Option<[f32; 3]>,
         viewport: [f32; 4],
     ) -> Option<Self> {
         if color_grade.is_none()
             && filmic.is_none()
             && colourfulness.is_none()
             && sepia.is_none()
+            && fxaa.is_none()
         {
             return None;
         }
@@ -130,6 +146,8 @@ impl PostParams {
         let [colour_amount, colour_lim_luma] = colourfulness.unwrap_or([0.0, 1.0]);
         let [sepia_strength, sepia_tint_r, sepia_tint_g, sepia_tint_b] =
             sepia.unwrap_or([0.0, 1.0, 1.0, 1.0]);
+        let [fxaa_subpix, fxaa_edge_threshold, fxaa_edge_threshold_min] =
+            fxaa.unwrap_or([0.0, 0.125, 0.0]);
         Some(Self {
             brightness,
             contrast,
@@ -152,6 +170,10 @@ impl PostParams {
             sepia_tint_r,
             sepia_tint_g,
             sepia_tint_b,
+            fxaa_subpix,
+            fxaa_edge_threshold,
+            fxaa_edge_threshold_min,
+            fxaa_enabled: fxaa.is_some() as u8 as f32,
         })
     }
 
@@ -163,8 +185,15 @@ impl PostParams {
         saturation: f32,
         viewport: [f32; 4],
     ) -> Self {
-        Self::from_effects(Some([brightness, contrast, saturation]), None, None, None, viewport)
-            .expect("colour grade enables the chain")
+        Self::from_effects(
+            Some([brightness, contrast, saturation]),
+            None,
+            None,
+            None,
+            None,
+            viewport,
+        )
+        .expect("colour grade enables the chain")
     }
 
     /// FilmicPass at its authored defaults; the tests build chains this way.
@@ -175,6 +204,7 @@ impl PostParams {
             Some([0.85, 0.4, 1.0, 0.5, 0.0, -0.15]),
             None,
             None,
+            None,
             viewport,
         )
         .expect("filmic pass enables the chain")
@@ -183,8 +213,22 @@ impl PostParams {
     /// Sepia at its authored defaults; the tests build chains this way.
     #[cfg(test)]
     pub(crate) fn sepia(viewport: [f32; 4]) -> Self {
-        Self::from_effects(None, None, None, Some([0.58, 0.55, 0.43, 0.42]), viewport)
-            .expect("sepia enables the chain")
+        Self::from_effects(
+            None,
+            None,
+            None,
+            Some([0.58, 0.55, 0.43, 0.42]),
+            None,
+            viewport,
+        )
+        .expect("sepia enables the chain")
+    }
+
+    /// FXAA at its authored defaults; the tests build chains this way.
+    #[cfg(test)]
+    pub(crate) fn fxaa(viewport: [f32; 4]) -> Self {
+        Self::from_effects(None, None, None, None, Some([0.25, 0.125, 0.0]), viewport)
+            .expect("fxaa enables the chain")
     }
 }
 
@@ -193,6 +237,7 @@ pub(crate) struct PostChain {
     format: wgpu::TextureFormat,
     bind_group_layout: wgpu::BindGroupLayout,
     params_buffer: wgpu::Buffer,
+    sampler: wgpu::Sampler,
     pipeline: wgpu::RenderPipeline,
 }
 
@@ -230,6 +275,12 @@ impl PostChain {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
             ],
         });
         let params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -239,6 +290,15 @@ impl PostChain {
             mapped_at_creation: false,
         });
         queue.write_buffer(&params_buffer, 0, bytemuck::bytes_of(&params));
+        // Linear filtering, clamped: the FXAA arm refetches neighbouring texels.
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Post process sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Post process"),
             bind_group_layouts: &[Some(&bind_group_layout)],
@@ -276,6 +336,7 @@ impl PostChain {
             format,
             bind_group_layout,
             params_buffer,
+            sampler,
             pipeline,
         }
     }
@@ -309,6 +370,10 @@ impl PostChain {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: self.params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
                 },
             ],
         });
@@ -357,10 +422,10 @@ mod tests {
     fn the_identity_params_disable_every_effect() {
         let params = super::PostParams::identity();
         assert_eq!(
-            bytemuck::cast::<_, [f32; 24]>(params),
+            bytemuck::cast::<_, [f32; 28]>(params),
             [
                 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-                0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0
+                0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.125, 0.0, 0.0
             ]
         );
     }
@@ -369,34 +434,41 @@ mod tests {
     fn from_effects_enables_only_the_configured_arms() {
         // Every part disabled: the caller keeps the texture copy.
         assert!(
-            super::PostParams::from_effects(None, None, None, None, [0.0; 4]).is_none()
+            super::PostParams::from_effects(None, None, None, None, None, [0.0; 4]).is_none()
         );
 
-        let grade =
-            super::PostParams::from_effects(Some([0.1, 1.2, 0.5]), None, None, None, [0.0; 4])
-                .expect("colour grade configures the chain");
+        let grade = super::PostParams::from_effects(
+            Some([0.1, 1.2, 0.5]),
+            None,
+            None,
+            None,
+            None,
+            [0.0; 4],
+        )
+        .expect("colour grade configures the chain");
         assert_eq!(
-            bytemuck::cast::<_, [f32; 24]>(grade),
+            bytemuck::cast::<_, [f32; 28]>(grade),
             [
                 0.1, 1.2, 0.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-                0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0
+                0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.125, 0.0, 0.0
             ],
             "grade-only leaves the ReShade arms disabled"
         );
 
-        let filmic = super::PostParams::from_effects(
+        let all = super::PostParams::from_effects(
             None,
             Some([0.85, 0.4, 1.0, 0.5, 0.0, -0.15]),
             Some([0.4, 0.7]),
             Some([0.58, 0.55, 0.43, 0.42]),
+            Some([0.25, 0.125, 0.0]),
             [0.0, 0.0, 800.0, 600.0],
         )
         .expect("ReShade arms configure the chain");
         assert_eq!(
-            bytemuck::cast::<_, [f32; 24]>(filmic),
+            bytemuck::cast::<_, [f32; 28]>(all),
             [
                 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 800.0, 600.0, 0.85, 0.4, 1.0, 0.5, 0.0, -0.15,
-                1.0, 0.0, 0.4, 0.7, 1.0, 1.0, 0.58, 0.55, 0.43, 0.42
+                1.0, 0.0, 0.4, 0.7, 1.0, 1.0, 0.58, 0.55, 0.43, 0.42, 0.25, 0.125, 0.0, 1.0
             ]
         );
     }
