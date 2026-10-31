@@ -339,6 +339,15 @@ pub struct AnimTypeRuntimeConfig {
     /// Raw `MakeInfantry=` index. Native defaults to -1 and treats every
     /// other value as enabling the AnimClass cell-occupation lifecycle.
     pub make_infantry: i32,
+    /// Phobos `AnimTypeExt::MakeInfantryOwner` (`OwnerHouseKind`, default
+    /// `Victim`): the House a `MakeInfantry=` animation takes.
+    #[cfg(feature = "phobos")]
+    pub(crate) phobos_make_infantry_owner: crate::rules::ares_warhead::HouseSelector,
+    /// Phobos `CreateUnit=` + `CreateUnit.Owner` (default `Victim`) +
+    /// `CreateUnit.RemapAnim` (default no): `Some` when the animation names a
+    /// unit type, which overrides the owner kind and permits remap.
+    #[cfg(feature = "phobos")]
+    pub(crate) phobos_create_unit: Option<(crate::rules::ares_warhead::HouseSelector, bool)>,
     pub bouncer: bool,
     pub spawns: Option<String>,
     pub spawn_count: i32,
@@ -752,6 +761,23 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         // [`ArtRegistry::apply_anim_type_references`].
         tiberium_spawn_type: None,
         make_infantry: section.read_int("MakeInfantry", -1),
+        #[cfg(feature = "phobos")]
+        phobos_make_infantry_owner: crate::rules::ares_warhead::HouseSelector::Victim
+            .read(section, "MakeInfantryOwner"),
+        // `CreateUnit` is a `Nullable<TechnoTypeClass*>`: `none` clears it and
+        // an authored name is a presence signal here. A name no factory
+        // resolves is treated as present (the type itself is not modeled).
+        #[cfg(feature = "phobos")]
+        phobos_create_unit: section
+            .read_name("CreateUnit", 0x80)
+            .filter(|name| !crate::rules::ini_parser::is_native_none_type_name(name))
+            .map(|_| {
+                (
+                    crate::rules::ares_warhead::HouseSelector::Victim
+                        .read(section, "CreateUnit.Owner"),
+                    section.read_ares_bool("CreateUnit.RemapAnim", false),
+                )
+            }),
         bouncer: section.read_bool("Bouncer", false),
         spawns: None,
         spawn_count: section.read_int("SpawnCount", 0),

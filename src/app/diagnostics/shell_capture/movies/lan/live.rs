@@ -6,33 +6,35 @@ use super::*;
 
 /// Navigate with the normal buttons before resolving a resource control. Its
 /// visible slot is never the participant's absolute row on an extended roster.
+/// `row`'s control on the roster pages, paged to through normal input. A
+/// VERA room lists only who is in it, so a row's place there is not its
+/// index; the search starts from the first page.
 fn setup_control_at_row(
     state: &mut AppState,
     column: SetupColumn,
     row: usize,
 ) -> Result<Option<u16>> {
     use crate::ui::multiplayer_setup::{NEXT_ROWS, PREVIOUS_ROWS, VISIBLE_SETUP_ROWS};
-    for _ in 0..=crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT / VISIBLE_SETUP_ROWS {
+    let pages = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT / VISIBLE_SETUP_ROWS + 1;
+    for _ in 0..pages {
+        if setup::view(state).context("setup view")?.first_row == 0 {
+            break;
+        }
+        setup_button(state, PREVIOUS_ROWS)?;
+    }
+    for _ in 0..pages {
         let view = setup::view(state).context("setup view")?;
-        if row >= view.row_count {
+        if let Some(combo) = view.combos.iter().find(|combo| {
+            combo.row as usize == row
+                && combo.visible
+                && SetupColumn::decode(combo.id).is_some_and(|(candidate, _)| candidate == column)
+        }) {
+            return Ok(Some(combo.id));
+        }
+        if view.first_row + view.dialog.rows_per_page() >= view.row_count {
             return Ok(None);
         }
-        if row < view.first_row {
-            setup_button(state, PREVIOUS_ROWS)?;
-        } else if row >= view.first_row + view.dialog.rows_per_page() {
-            setup_button(state, NEXT_ROWS)?;
-        } else {
-            return Ok(view
-                .combos
-                .iter()
-                .find(|combo| {
-                    combo.row as usize == row
-                        && combo.visible
-                        && SetupColumn::decode(combo.id)
-                            .is_some_and(|(candidate, _)| candidate == column)
-                })
-                .map(|combo| combo.id));
-        }
+        setup_button(state, NEXT_ROWS)?;
     }
     anyhow::bail!("setup page navigation did not reach the participant")
 }
@@ -371,6 +373,10 @@ pub(super) struct LiveLanCapture {
     stopped: bool,
     last_wait: Option<String>,
     kick_observed: bool,
+    /// The guest watched from a spectator row (`switch_sides`).
+    guest_watched: bool,
+    /// The guest's Side list steps: Observer asked, a side asked, playing.
+    sides: u8,
     entered_setup: bool,
     cooperative: Option<cooperative::CooperativeRun>,
     country_selected: bool,
@@ -460,6 +466,8 @@ impl LiveLanCapture {
             last_wait: None,
             // Co-op skips the kick/rejoin pass: its rows follow the campaign.
             kick_observed: target.live_cooperative(),
+            guest_watched: false,
+            sides: 0,
             entered_setup: false,
             cooperative: target.live_cooperative().then(|| {
                 cooperative::CooperativeRun::new(
@@ -595,6 +603,69 @@ impl LiveLanCapture {
                         == crate::skirmish_launch::LaunchStartPosition::Position(start)
                 })
         })
+    }
+
+    /// The hosts paired with `lan-live-guest` start only once it watched
+    /// and plays again.
+    fn waits_for_spectator(&self) -> bool {
+        matches!(
+            self.target,
+            LanTarget::LiveHost | LanTarget::LiveTimeoutHost | LanTarget::LiveQuitHost
+        )
+    }
+
+    /// After its rejoin the guest picks Observer in its Side list: VERA's
+    /// room moves it to the open spectator row. Then it picks a side, and
+    /// the room seats it again.
+    fn switch_sides(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        if self.target != LanTarget::LiveGuest || !self.kick_observed {
+            return Ok(());
+        }
+        let Some(local) = state
+            .match_state
+            .session
+            .network_setup()
+            .map(|launch| launch.local_player().clone())
+        else {
+            return Ok(());
+        };
+        let Some(row) = local.raw_slot_index else {
+            return Ok(());
+        };
+        match (self.sides, local.is_observer()) {
+            (0, false) | (1, true) => {}
+            (2, false) => {
+                self.sides = 3;
+                self.event(frame, &format!("guest plays again from row {row}"));
+                return Ok(());
+            }
+            _ => return Ok(()),
+        }
+        let control = setup_control_at_row(state, SetupColumn::Country, usize::from(row))?
+            .context("visible local Side list")?;
+        let view = setup::view(state).context("Side list view")?;
+        let value = view
+            .combo(control)
+            .context("local Side list")?
+            .choices
+            .iter()
+            .map(|item| item.value)
+            .find(|value| (*value == -3) != local.is_observer())
+            .filter(|_| view.enabled(control));
+        let Some(value) = value else {
+            return Ok(());
+        };
+        setup::apply_action(state, SetupAction::Select { control, value });
+        self.sides += 1;
+        self.event(
+            frame,
+            &if local.is_observer() {
+                format!("guest watches from row {row}; picks side {value}")
+            } else {
+                format!("guest picks Observer from row {row}")
+            },
+        );
+        Ok(())
     }
 
     /// A guest's game accepts by itself, so readiness no longer says the guest
@@ -759,6 +830,21 @@ impl LiveLanCapture {
             }
         }
         self.entered_setup |= state.match_state.session.network_setup().is_some();
+        if !self.guest_watched
+            && state
+                .match_state
+                .session
+                .network_setup()
+                .is_some_and(|launch| {
+                    launch
+                        .humans
+                        .iter()
+                        .any(|human| human.name == GUEST_NAME && human.is_observer())
+                })
+        {
+            self.guest_watched = true;
+            self.event(frame, "the guest watches from a spectator row");
+        }
         if !self.host()
             && self.entered_setup
             && !self.kick_observed
@@ -872,7 +958,7 @@ impl LiveLanCapture {
                 }
                 self.event(frame, "BB name entered through normal input");
                 if self.host() {
-                    lobby_button(state, crate::ui::lan_shell::CREATE)?;
+                    create_lan_game(state)?;
                     self.phase = Phase::HostSetup;
                 } else {
                     self.phase = Phase::Discover;
@@ -976,6 +1062,9 @@ impl LiveLanCapture {
                             && session.network_map_status(index) == Some(1)
                     })
                     && self.choices_made(state, false)
+                    && (!self.waits_for_spectator()
+                        || self.guest_watched
+                            && launch.humans.iter().all(|human| !human.is_observer()))
                 {
                     setup_button(state, crate::ui::multiplayer_setup::START)?;
                     self.event(frame, "all real acknowledgements present; Start clicked");
@@ -1006,6 +1095,7 @@ impl LiveLanCapture {
                 // itself, and again after each host change, so the run stays
                 // in editable setup until the host starts.
                 self.select_country(state)?;
+                self.switch_sides(state, frame)?;
             }
             Phase::Loading | Phase::GuestSetup if state.frontend.screen == GameScreen::InGame => {
                 ensure!(
@@ -1148,9 +1238,8 @@ impl LiveLanCapture {
     ) -> Result<()> {
         // Use the existing action admission, including current control
         // availability. The isolated profile must allow one open peer.
-        let row_count = setup::view(state).context("host setup view")?.row_count;
         let mut retained_ai = false;
-        for row in 1..row_count {
+        for row in 1..crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT {
             if state
                 .match_state
                 .session

@@ -9,8 +9,8 @@ On Windows, the installer sets everything up: it wrote config.toml in the
 install folder, where VERA20k also keeps its settings, logs, saves and
 replays. To use another game folder, run the installer again.
 
-On macOS, drag VERA20k from the disk image into Applications and open it (the
-first time, see REQUIREMENTS). It looks for Yuri's Revenge in Porting Kit,
+On macOS, drag VERA20k from the disk image into Applications and open it.
+It looks for Yuri's Revenge in Porting Kit,
 Wineskin and CrossOver installs and offers the one it finds, or asks you to
 choose the folder. It keeps config.toml, its settings, logs, saves and replays
 in ~/Library/Application Support/VERA20k (in Finder, choose Go > Go to
@@ -31,11 +31,8 @@ REQUIREMENTS
     some Windows 11 PCs have on, blocks unsigned programs outright: there,
     VERA20k runs only with it turned off, in Windows Security > App & browser
     control > Smart App Control settings.
-  macOS: VERA20k is not notarized by Apple yet, so macOS blocks it the first
-    time you open it. Click Done, open System Settings > Privacy & Security,
-    scroll down, click Open Anyway, enter your password and confirm. The
-    button stays for about an hour after the block; if it is gone, open
-    VERA20k again. Each new version asks once.
+  macOS: requires an Apple Silicon Mac running macOS 11 or later. Published
+    Mac builds are signed with Developer ID and notarized by Apple.
   Linux: needs ALSA (libasound2), a Vulkan driver, and libxkbcommon-x11-0
     for X11 keyboard support. The AppImage mounts itself with FUSE (fusermount, from the fuse3 or fuse package), which most
     desktops have; without it, start it with --appimage-extract-and-run.

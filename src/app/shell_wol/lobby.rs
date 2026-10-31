@@ -32,6 +32,8 @@ use crate::app::shell_network_setup as setup;
 use crate::app::{App, AppState};
 use crate::ui::lan_shell::{LanChatLine, LanEditKey};
 use crate::ui::main_menu_dialogs::options::LauncherCue;
+use crate::ui::room_limits::RoomLimitsPress;
+use crate::ui::shell::geom::ShellScale;
 use crate::ui::wol_chat::{self, WolChatFilter, WolChatLine, WolLobbyChatLine};
 use crate::ui::wol_lobby::*;
 use crate::ui::wol_shell::{BOX_NO, BOX_OK, BOX_YES, WAIT_CHECK_STATUS, WAIT_DISCONNECT};
@@ -1704,7 +1706,8 @@ fn ex_info(state: &AppState) -> String {
 
 /// The slot words of [`ex_info`]: the AI rows (`0x005E94D0`), a human
 /// observer on the observer row `[0x8316A4]` (`0x005E9580`) and an open
-/// observer row (`!0x005E9560`).
+/// observer row (`!0x005E9560`). A VERA room with several observers counts
+/// its observers and its open observer rows instead.
 fn slot_ex_info(session: &crate::app::match_runtime::session::MatchSession) -> (i32, i32, i32) {
     use crate::app::match_runtime::session::NetworkVacancy;
     let Some(launch) = session.network_setup() else {
@@ -1715,16 +1718,20 @@ fn slot_ex_info(session: &crate::app::match_runtime::session::MatchSession) -> (
         .clone()
         .filter(|row| session.network_display_ai(*row).is_some())
         .count();
-    let observer_row = session.network_observer_row();
-    let taken = observer_row.is_some()
-        && launch
-            .humans
-            .iter()
-            .any(|human| human.is_observer() && human.raw_slot_index == observer_row);
     let open = rows
         .clone()
-        .any(|row| session.network_vacancy(row) == Some(NetworkVacancy::OpenObserver));
-    (ai as i32, i32::from(taken), i32::from(open))
+        .filter(|row| session.network_vacancy(*row) == Some(NetworkVacancy::OpenObserver))
+        .count();
+    let observers = launch.humans.iter().filter(|human| human.is_observer());
+    if session.network_several_observers() {
+        return (ai as i32, observers.count() as i32, open as i32);
+    }
+    let observer_row = session.network_observer_row();
+    let taken = observer_row.is_some()
+        && observers
+            .clone()
+            .any(|human| human.raw_slot_index == observer_row);
+    (ai as i32, i32::from(taken), i32::from(open != 0))
 }
 
 /// `0x0078F000`'s channel limit (`"mode #%s +l %d"`, API+0x9C): the host,
@@ -1927,7 +1934,13 @@ fn popup_action(state: &mut AppState, action: WolPopupAction) {
             clan,
             limit,
             observe,
-        } => create_confirmed(state, password, clan, limit, observe),
+            room,
+        } => {
+            if let Some(room) = room {
+                state.frontend.room_limits = room;
+            }
+            create_confirmed(state, password, clan, limit, observe)
+        }
         WolPopupAction::CreateCancelled => {
             if let Some(lobby) = lobby_mut(state) {
                 lobby.ui.popup = None;
@@ -2093,14 +2106,17 @@ pub(super) fn begin_create(state: &mut AppState) {
     }
     let limit = globals.limit_resolution;
     let squad = squad_id(state);
+    let room = state.frontend.room_limits;
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
     lobby.ui.disable_commands();
     lobby.ui.game_list.selected = None;
     lobby.covered = true;
-    // +0x13 starts as [0xAC10C8] == 1.
-    lobby.ui.popup = Some(WolLobbyPopup::create(width, limit, squad, observer));
+    // +0x13 starts as [0xAC10C8] == 1. VERA's lobby also offers its room's
+    // limits, from the host's last choice.
+    let room = lobby.ui.is_modern().then_some(room);
+    lobby.ui.popup = Some(WolLobbyPopup::create(width, limit, squad, observer, room));
     state
         .frontend
         .shell_controller
@@ -2876,6 +2892,7 @@ pub(super) struct ReceivedMessage {
     pub(super) action: bool,
     pub(super) ansi: bool,
     pub(super) options: Option<Box<setup::HostOptions>>,
+    pub(super) sent_at: Option<u64>,
 }
 
 /// The chat sinks (`0x007A8DA0`, `0x007A8FC0`, `0x007AB170`, `0x007AAFB0`
@@ -2894,6 +2911,7 @@ pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
         action,
         ansi,
         options,
+        sent_at,
     } = message;
     let in_game = state
         .frontend
@@ -2916,7 +2934,7 @@ pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
         return;
     }
     let (line, color) = wol_chat::received_line(&sender(&from), &text, private, action);
-    echo(state, line, color);
+    crate::app::shell_lan::append_chat_sent_at(state, LanChatLine { text: line, color }, sent_at);
     let (prefix, _) = wol_chat::received_line(&sender(&from), &[], private, action);
     super::translation::received(
         state,
@@ -3408,17 +3426,30 @@ fn popup_control(state: &AppState, popup: &WolLobbyPopup) -> Option<u16> {
         .map(|(id, _)| id)
 }
 
+/// Where VERA's online Create Game has its room's limits.
+fn popup_room_layout(state: &AppState) -> Option<crate::ui::room_limits::RoomLimitsLayout> {
+    let (width, height) = (
+        state.renderer.gpu.config.width as i32,
+        state.renderer.gpu.config.height as i32,
+    );
+    crate::ui::shell::modal::wol_create_game_layout(width, height, modern_lobby(state)).room
+}
+
 pub(super) fn cursor_moved(state: &mut AppState) {
     let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
     let popup_over = lobby(state)
         .and_then(|lobby| lobby.ui.popup.as_ref())
         .map(|popup| popup_control(state, popup));
+    let room = popup_room_layout(state);
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
     if let (Some(over), Some(popup)) = (popup_over, lobby.ui.popup.as_mut()) {
         popup.buttons.hovered = over;
+        if let (Some(picker), Some(room)) = (popup.room_mut(), room) {
+            picker.drag(&room, ShellScale::RETAIL, x);
+        }
         state.platform.window.request_redraw();
         return;
     }
@@ -3462,10 +3493,14 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
             state.renderer.gpu.config.width as i32,
             state.renderer.gpu.config.height as i32,
         );
+        let room = popup_room_layout(state);
         let lobby = lobby_mut(state).expect("checked");
         let modern = lobby.ui.is_modern();
         let popup = lobby.ui.popup.as_mut().expect("checked");
         if !pressed {
+            if let Some(picker) = popup.room_mut() {
+                picker.release();
+            }
             let action = popup
                 .buttons
                 .release(over)
@@ -3476,8 +3511,14 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
             state.platform.window.request_redraw();
             return;
         }
-        let press = match over {
-            Some(control @ (CREATE_CLAN | CREATE_LIMIT | CREATE_OBSERVE)) => {
+        let picked = popup
+            .room_mut()
+            .zip(room)
+            .map(|(picker, room)| picker.press(&room, ShellScale::RETAIL, x, y));
+        let press = match (picked, over) {
+            (Some(RoomLimitsPress::Players), _) => Press::Nothing,
+            (Some(RoomLimitsPress::Spectators), _) => Press::Cue(LauncherCue::Checkbox),
+            (_, Some(control @ (CREATE_CLAN | CREATE_LIMIT | CREATE_OBSERVE))) => {
                 let rect = crate::ui::shell::modal::wol_create_game_layout(width, height, modern);
                 let window = match control {
                     CREATE_CLAN => rect.clan,
@@ -3497,7 +3538,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                     Press::Nothing
                 }
             }
-            Some(control @ (POPUP_OK | POPUP_CANCEL)) if popup.enabled(control) => {
+            (_, Some(control @ (POPUP_OK | POPUP_CANCEL))) if popup.enabled(control) => {
                 popup.buttons.press(Some(control));
                 Press::Button
             }
@@ -3934,7 +3975,7 @@ mod tests {
         let mut session = MatchSession::default();
         session.enter_network(NetworkReturnContext::Wol);
         session
-            .accept_network_setup(launch.clone(), false, None)
+            .accept_network_setup(launch.clone(), false, None, false)
             .unwrap();
         session
             .accept_network_host_setup(launch, vacancies, 3, None, false)

@@ -28,6 +28,8 @@ pub(crate) fn birth(v: &Value) -> RadiationBeamBirth {
         to: coord(&v["target"]),
         z_adjust: integer(&v["z_adjust"]),
         color: array::<3>(&v["rgb"]).map(|v| v.try_into().unwrap()),
+        house: None,
+        house_color: false,
         duration: integer(&v["duration"]),
         amplitude: NativeF64Bits::from_bits(bits(&v["amplitude_f64_le_hex"])),
     }

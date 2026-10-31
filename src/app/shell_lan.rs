@@ -8,13 +8,16 @@ use crate::app::match_runtime::session::NetworkReturnContext;
 use crate::skirmish_launch::SkirmishHumanSlot;
 use crate::ui::lan_shell::*;
 use crate::ui::main_menu_dialogs::options::LauncherCue;
+use crate::ui::room_limits::{RoomLimitsPicker, RoomLimitsPress};
 use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::geom::ShellScale;
 use crate::util::time::{Duration, Instant};
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
 const MODAL: DialogId = DialogId(0xCE);
 const OK: u16 = 1;
+const CANCEL: u16 = 2;
 // Native CDTimerClass uses timeGetTime()/16, including the 600-bucket join
 // timer AC0230/AC0238 armed by005DF410. It is independent of simulation ticks.
 const JOIN_TIMEOUT: Duration = Duration::from_millis(600 * 16);
@@ -86,6 +89,8 @@ struct PendingJoin {
 pub(crate) struct LanShellRuntime {
     pub(crate) lobby: LanLobbyState,
     pub(crate) modal: Option<&'static str>,
+    /// VERA's Create Game box while it is up: the room's limits.
+    pub(crate) create: Option<RoomLimitsPicker>,
     pending_join: Option<PendingJoin>,
     requests: Vec<LanServiceRequest>,
 }
@@ -95,6 +100,7 @@ impl LanShellRuntime {
         Self {
             lobby: LanLobbyState::new(name, observer),
             modal: None,
+            create: None,
             pending_join: None,
             requests: vec![LanServiceRequest::Refresh],
         }
@@ -272,6 +278,12 @@ fn show_modal(state: &mut AppState, key: &'static str) {
 /// Select the active LAN dialog's transcript; the shared chat owner retains
 /// all wrapping, row retention and scroll behavior for BB, BC and BD.
 pub(crate) fn append_chat(state: &mut AppState, line: LanChatLine) {
+    append_chat_sent_at(state, line, None);
+}
+
+/// [`append_chat`] for a line the WOL service sent at `sent_at` (Unix
+/// seconds): VERA20K Online's chat lobby shows that time, not the current one.
+pub(crate) fn append_chat_sent_at(state: &mut AppState, line: LanChatLine, sent_at: Option<u64>) {
     let route = state.frontend.shell_route;
     // WOL Quick Match's 0x117 is the top dialog with a 0x53F.
     if route.wol() && crate::app::shell_wol::quick_match::page_open(state) {
@@ -279,16 +291,37 @@ pub(crate) fn append_chat(state: &mut AppState, line: LanChatLine) {
         return;
     }
     let setup = route == crate::app::shell_route::ShellRoute::NetworkSetup;
-    append_chat_to(state, setup, !setup && route.wol_lobby(), line);
+    append_chat_to(state, setup, !setup && route.wol_lobby(), line, sent_at);
 }
 
 /// The WOL lobby `0x113`'s transcript even while C2/C9 cover it: native
 /// keeps it in the shell stack, hidden, and its sinks still write to it.
 pub(crate) fn append_wol_lobby_chat(state: &mut AppState, line: LanChatLine) {
-    append_chat_to(state, false, true, line);
+    append_chat_to(state, false, true, line, None);
 }
 
-fn append_chat_to(state: &mut AppState, setup: bool, wol_lobby: bool, line: LanChatLine) {
+fn append_chat_to(
+    state: &mut AppState,
+    setup: bool,
+    wol_lobby: bool,
+    mut line: LanChatLine,
+    sent_at: Option<u64>,
+) {
+    // Only the modern chat lobby's lines show a time (the native shell UI
+    // stays as gamemd draws it).
+    if wol_lobby
+        && state
+            .frontend
+            .wol
+            .as_ref()
+            .is_some_and(|visit| visit.modern_ui())
+    {
+        let now = crate::util::time::SystemTime::now()
+            .duration_since(crate::util::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        line.text = crate::ui::wol_chat::timed_line(line.text, sent_at, now);
+    }
     let (rect, scale) = if setup {
         let layout = crate::app::input::multiplayer_setup::layout(state);
         (layout.chat_log, layout.page.scale)
@@ -357,25 +390,15 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
         .local_participant()
         .name;
     match action {
-        LanLobbyAction::Create { observe: _ } => {
-            let observe = state
-                .frontend
-                .multiplayer_shell_runtime
-                .lan_create_observer();
-            let error = create_error(
-                &state.frontend.lan.as_ref().expect("active BB").lobby,
-                &name,
-            );
-            if let Some(key) = error {
-                state.frontend.lan.as_mut().unwrap().lobby.set_enabled(true);
-                show_modal(state, key);
-            } else {
-                App::leave_shell_dialog(
-                    state,
-                    shell_transition::ShellExitThen::LanCreate { observe },
-                );
-            }
+        // VERA's lobby asks for its room's limits first.
+        LanLobbyAction::Create { observe: _ } if !state.frontend.native_shell_ui => {
+            let limits = state.frontend.room_limits;
+            let runtime = state.frontend.lan.as_mut().expect("active BB");
+            runtime.create = Some(RoomLimitsPicker::new(limits));
+            runtime.lobby.cancel_pointer();
+            state.frontend.shell_controller.push(MODAL, true);
         }
+        LanLobbyAction::Create { observe: _ } => create(state, &name),
         LanLobbyAction::Join { game_id, observe } => {
             let reserved = reserved_names(state);
             let error = join_error(
@@ -580,6 +603,59 @@ fn discovery_notice(state: &mut AppState, name: &str, open: bool, new_record: bo
     }
 }
 
+fn create(state: &mut AppState, name: &str) {
+    let observe = state
+        .frontend
+        .multiplayer_shell_runtime
+        .lan_create_observer();
+    let error = create_error(&state.frontend.lan.as_ref().expect("active BB").lobby, name);
+    if let Some(key) = error {
+        state.frontend.lan.as_mut().unwrap().lobby.set_enabled(true);
+        show_modal(state, key);
+    } else {
+        App::leave_shell_dialog(
+            state,
+            shell_transition::ShellExitThen::LanCreate { observe },
+        );
+    }
+}
+
+/// The Create Game box's OK keeps its limits for the room and creates it;
+/// Cancel returns to the lobby.
+fn close_create_box(state: &mut AppState, confirmed: bool) {
+    let Some(picker) = state
+        .frontend
+        .lan
+        .as_mut()
+        .and_then(|runtime| runtime.create.take())
+    else {
+        return;
+    };
+    state.frontend.shell_controller.pop();
+    let lobby = &mut state.frontend.lan.as_mut().expect("active BB").lobby;
+    lobby.cancel_pointer();
+    if confirmed {
+        state.frontend.room_limits = picker.limits;
+        let name = state
+            .frontend
+            .multiplayer_shell_runtime
+            .local_participant()
+            .name;
+        create(state, &name);
+    } else {
+        lobby.set_enabled(true);
+    }
+    state.platform.window.request_redraw();
+}
+
+/// VERA's Create Game box, centred as the online one.
+fn create_box_layout(state: &AppState) -> crate::ui::shell::modal::LanCreateGameLayout {
+    crate::ui::shell::modal::lan_create_game_layout(
+        state.render_width() as i32,
+        state.render_height() as i32,
+    )
+}
+
 fn acknowledge(state: &mut AppState) {
     if let Some(runtime) = state.frontend.lan.as_mut() {
         runtime.modal = None;
@@ -613,6 +689,7 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
         .filter(|runtime| {
             routed
                 && runtime.modal.is_none()
+                && runtime.create.is_none()
                 && runtime.lobby.enabled
                 && runtime.lobby.focused_control == CHAT
         })
@@ -623,6 +700,14 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     let Some(runtime) = state.frontend.lan.as_mut() else {
         return;
     };
+    if runtime.create.is_some() {
+        match code {
+            Some(KeyCode::Enter | KeyCode::NumpadEnter) => close_create_box(state, true),
+            Some(KeyCode::Escape) => close_create_box(state, false),
+            _ => {}
+        }
+        return;
+    }
     if runtime.modal.is_some() {
         if matches!(
             code,
@@ -658,6 +743,13 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
 
 fn pointer_control(state: &AppState) -> Option<u16> {
     let (x, y) = state.match_state.input.cursor_px();
+    if state.frontend.lan.as_ref()?.create.is_some() {
+        let layout = create_box_layout(state);
+        return [(OK, layout.ok), (CANCEL, layout.cancel)]
+            .into_iter()
+            .find(|(_, rect)| rect.contains(x, y))
+            .map(|(id, _)| id);
+    }
     if state.frontend.lan.as_ref()?.modal.is_some() {
         return crate::ui::shell::modal::body_ok_layout(
             state.render_width() as i32,
@@ -700,11 +792,14 @@ pub(crate) fn update_geometry(state: &mut AppState) {
 pub(crate) fn cursor_moved(state: &mut AppState) {
     let control = pointer_control(state);
     let layout = layout(state);
+    let create_layout = create_box_layout(state);
     let (x, y) = state.match_state.input.cursor_px();
     if let Some(runtime) = state.frontend.lan.as_mut() {
         let lobby = &mut runtime.lobby;
         lobby.buttons.hovered = control;
-        if runtime.modal.is_none() && lobby.enabled {
+        if let Some(picker) = runtime.create.as_mut() {
+            picker.drag(&create_layout.room, ShellScale::RETAIL, x);
+        } else if runtime.modal.is_none() && lobby.enabled {
             for (list, rect, count) in [
                 (&mut lobby.game_list, layout.games, lobby.games.len() + 1),
                 (&mut lobby.player_list, layout.players, lobby.players.len()),
@@ -731,10 +826,36 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     update_geometry(state);
     let control = pointer_control(state);
     let layout = layout(state);
+    let create_layout = create_box_layout(state);
     let (x, y) = state.match_state.input.cursor_px();
     let Some(runtime) = state.frontend.lan.as_mut() else {
         return;
     };
+    if let Some(picker) = runtime.create.as_mut() {
+        let buttons = &mut runtime.lobby.buttons;
+        if pressed {
+            let cue = match picker.press(&create_layout.room, ShellScale::RETAIL, x, y) {
+                RoomLimitsPress::Players => None,
+                RoomLimitsPress::Spectators => Some(LauncherCue::Checkbox),
+                RoomLimitsPress::Missed => {
+                    buttons.press(control);
+                    control.map(|_| LauncherCue::MainButton)
+                }
+            };
+            if let Some(cue) = cue {
+                App::play_launcher_options_cue(state, cue);
+            }
+        } else {
+            picker.release();
+            match buttons.release(control) {
+                Some(OK) => close_create_box(state, true),
+                Some(CANCEL) => close_create_box(state, false),
+                _ => {}
+            }
+        }
+        state.platform.window.request_redraw();
+        return;
+    }
     if runtime.modal.is_some() {
         if pressed {
             runtime.lobby.buttons.press(control);

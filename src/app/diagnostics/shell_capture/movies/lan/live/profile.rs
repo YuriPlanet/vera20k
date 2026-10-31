@@ -88,7 +88,6 @@ impl ProfileCheck {
                         .as_array()
                         .zip(before["rows"].as_array())
                         .is_some_and(|(after, before)| after[..8] == before[..8]
-                            && after[24] == before[24]
                             && after[29]["vacancy"] == before[29]["vacancy"]),
                 "Back/Create lost extended or native setup choices"
             );
@@ -101,11 +100,12 @@ impl ProfileCheck {
         if self.before.is_some() {
             return Ok(ProfileStep::Waiting);
         }
+        // VERA's room lists only who is in it: the host adds an AI from its
+        // Add AI row, the first open seat, and picks the AI's side.
         let choices = [
-            (SetupColumn::Player, 29, 3),
-            (SetupColumn::Player, 24, 6),
-            (SetupColumn::Country, 24, 0),
-            (SetupColumn::Color, 24, 1),
+            (SetupColumn::Player, 1, 6),
+            (SetupColumn::Country, 1, 0),
+            (SetupColumn::Color, 1, 1),
         ];
         if let Some(&(column, row, value)) = choices.get(self.choice) {
             if self.popup.select(state, column, row, value)? {
@@ -115,16 +115,13 @@ impl ProfileCheck {
         }
         let session = &state.match_state.session;
         ensure!(
-            session.network_vacancy(29)
-                == Some(crate::app::match_runtime::session::NetworkVacancy::Closed)
-                && session.network_display_ai(24)
-                    == Some(crate::skirmish_launch::AiDifficulty::Hard)
+            session.network_display_ai(1) == Some(crate::skirmish_launch::AiDifficulty::Hard)
                 && session
-                    .network_row_choices(24)
+                    .network_row_choices(1)
                     .is_some_and(|slot| !slot.country_random
                         && !slot.color_random
                         && slot.color_index == 1),
-            "actual extended combo choices were not applied"
+            "actual combo choices were not applied"
         );
         self.before = Some(snapshot(state, frame)?);
         setup_button(state, crate::ui::multiplayer_setup::BACK)?;

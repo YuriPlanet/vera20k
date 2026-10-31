@@ -78,3 +78,7 @@ pub mod web;
 #[cfg(all(feature = "wasm", any(test, all(target_arch = "wasm32", target_os = "unknown"))))]
 #[path = "web/lifecycle.rs"]
 mod browser_lifecycle;
+
+#[cfg(all(feature = "wasm", any(test, all(target_arch = "wasm32", target_os = "unknown"))))]
+#[path = "web/ime_protocol.rs"]
+mod browser_ime;

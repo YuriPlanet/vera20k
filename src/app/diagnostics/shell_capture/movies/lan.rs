@@ -4740,6 +4740,24 @@ fn setup_click(state: &mut AppState, rect: RectPx) {
     setup_input::mouse(state, MouseButton::Left, true);
     setup_input::mouse(state, MouseButton::Left, false);
 }
+/// New, then OK in VERA's Create Game box, keeping the host's last limits.
+fn create_lan_game(state: &mut AppState) -> Result<()> {
+    lobby_button(state, crate::ui::lan_shell::CREATE)?;
+    if state
+        .frontend
+        .lan
+        .as_ref()
+        .is_some_and(|runtime| runtime.create.is_some())
+    {
+        let ok = crate::ui::shell::modal::lan_create_game_layout(
+            state.render_width() as i32,
+            state.render_height() as i32,
+        )
+        .ok;
+        lobby_click(state, ok);
+    }
+    Ok(())
+}
 fn lobby_button(state: &mut AppState, id: u16) -> Result<()> {
     let rect = lobby::layout(state)
         .page

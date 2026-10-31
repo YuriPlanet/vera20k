@@ -1094,6 +1094,7 @@ impl App {
                 network_options: None,
                 lan: None,
                 multiplayer_setup: None,
+                room_limits: Default::default(),
                 network_setup_protocol: None,
                 wol_welcome_art: None,
                 wol_login_art: None,

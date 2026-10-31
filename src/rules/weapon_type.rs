@@ -258,6 +258,18 @@ pub struct WeaponType {
     /// `CanTargetVeterancy`, read for `Splits.UseWeaponTargeting`.
     #[cfg(feature = "phobos")]
     pub(crate) phobos_weapon_targeting: crate::rules::phobos_airburst::PhobosWeaponTargeting,
+    /// Phobos `WeaponTypeExt::Laser_IsSingleColor` (`IsSingleColor=`): a
+    /// simulated child laser draws one color instead of the inner/outer pair.
+    #[cfg(feature = "phobos")]
+    pub phobos_laser_is_single_color: bool,
+    /// Phobos `WeaponTypeExt::LaserThickness` (`LaserThickness=`,
+    /// constructor default 3): a simulated child laser's line count.
+    #[cfg(feature = "phobos")]
+    pub phobos_laser_thickness: i32,
+    /// Phobos `WeaponTypeExt::Beam_IsHouseColor` (`Beam.IsHouseColor=`): a
+    /// simulated child radiation beam takes the firing House's laser color.
+    #[cfg(feature = "phobos")]
+    pub phobos_beam_is_house_color: bool,
 }
 
 impl WeaponType {
@@ -459,6 +471,14 @@ impl WeaponType {
             ),
             #[cfg(feature = "phobos")]
             phobos_weapon_targeting: crate::rules::phobos_airburst::read_weapon_targeting(section),
+            // Phobos `Valueable<T>` reads through the shared Ares parser: a
+            // failed conversion keeps the constructor's value.
+            #[cfg(feature = "phobos")]
+            phobos_laser_is_single_color: section.read_ares_bool("IsSingleColor", false),
+            #[cfg(feature = "phobos")]
+            phobos_laser_thickness: section.read_ares_int("LaserThickness", 3),
+            #[cfg(feature = "phobos")]
+            phobos_beam_is_house_color: section.read_ares_bool("Beam.IsHouseColor", false),
 
             // The constructor's nulls and empty list (`0x00771C70`); the
             // ordered Process owner reads the Animation references.

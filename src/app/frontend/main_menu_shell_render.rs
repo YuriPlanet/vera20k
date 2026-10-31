@@ -1,16 +1,16 @@
 //! Initial main-menu shell render glue for dialog 0xE2.
 
-use std::sync::Arc;
 use crate::util::time::Instant;
+use std::sync::Arc;
 
 use anyhow::Result;
 
-use crate::app::AppState;
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_pass::{owner_draw_button_label_rect, resolve_csf};
 use crate::app::frontend::shell_transition::{
     ColumnDraw, MainMenuEntryPaintFrame, MainMenuEntryPresentToken, ShellFrameWave,
 };
+use crate::app::{AppState, BUILD_STAMP};
 use crate::render::batch::SpriteInstance;
 use crate::render::main_menu_shell_chrome::{MainMenuShellChromeAtlas, MainMenuShellChromeEntry};
 use crate::render::shell_paint::{
@@ -536,9 +536,11 @@ fn render_main_menu_shell_to_target_inner(
         None
     } else {
         let hovered = crate::ui::main_menu_shell::hovered_control(&state.frontend.shell_controller);
+        // VERA difference: with no button hovered, gamemd leaves this line
+        // empty; VERA names its release here, the version players report.
         let status_text = main_menu_status_csf_key(hovered)
             .map(|key| resolve_csf(state, key).into_owned())
-            .unwrap_or_default();
+            .unwrap_or_else(|| BUILD_STAMP.to_owned());
         crate::app::frontend::menu_page_render::paint_shell_status_line(
             state,
             status_text,

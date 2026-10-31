@@ -207,7 +207,7 @@ mod tests {
         let mut session = MatchSession::default();
         session.enter_network(NetworkReturnContext::Wol);
         session
-            .accept_network_setup(launch.clone(), true, None)
+            .accept_network_setup(launch.clone(), true, None, false)
             .unwrap();
         let mut metadata = NetworkMapMetadata {
             display_name: "Authored map".into(),

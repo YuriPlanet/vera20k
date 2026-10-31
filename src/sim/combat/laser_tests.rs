@@ -43,13 +43,14 @@ fn values_or(value: &Value, fallback: [i32; 3]) -> [i32; 3] {
 fn weapon_ini(name: &str, input: &Value) -> String {
     let is_laser = input["is_laser"].as_bool().unwrap_or(true);
     let house = input["house_color"].as_bool().unwrap_or(true);
+    let single = input["single_color"].as_bool().unwrap_or(false);
     let big = input["big_laser"].as_bool().unwrap_or(false);
     let duration = input["duration_byte"].as_i64().unwrap_or(15);
     let [r, g, b] = values_or(&input["inner"], [100, 120, 140]);
     let [or, og, ob] = values_or(&input["outer"], [10, 20, 30]);
     let [sr, sg, sb] = values_or(&input["spread"], [0, 0, 0]);
     format!(
-        "[{name}]\nIsLaser={is_laser}\nIsHouseColor={house}\nIsBigLaser={big}\n\
+        "[{name}]\nIsLaser={is_laser}\nIsHouseColor={house}\nIsSingleColor={single}\nIsBigLaser={big}\n\
          LaserDuration={duration}\nLaserInnerColor={r},{g},{b}\n\
          LaserOuterColor={or},{og},{ob}\nLaserOuterSpread={sr},{sg},{sb}\n"
     )
@@ -302,6 +303,61 @@ fn an_infantry_house_color_laser_is_two_wide() {
             .collect::<Vec<_>>();
         assert_eq!(widths, [width], "house colour {house_color}");
     }
+}
+
+/// Phobos `TechnoClass_LaserZap_IsSingleColor` (`0x6FD446`): a stock FireAt
+/// laser with `IsSingleColor=` and no house colour keeps only its
+/// `LaserInnerColor=`; `IsHouseColor=` still wins, and an ordinary laser
+/// keeps the full inner/outer/spread triple.
+#[cfg(feature = "phobos")]
+#[test]
+fn stock_single_color_laser_keeps_only_the_inner_colour() {
+    fn birth(
+        house_color: bool,
+        single_color: bool,
+    ) -> (LaserColor, crate::sim::intern::InternedId) {
+        let rules = fixture_rules(&json!({
+            "house_color": house_color,
+            "single_color": single_color,
+            "inner": [11, 22, 33],
+            "outer": [44, 55, 66],
+            "spread": [7, 8, 9],
+        }));
+        let mut sim = Simulation::new();
+        place(&mut sim, 1, "UNIT", EntityCategory::Unit, [1280, 1280, 0]);
+        place(&mut sim, 2, "TARGET", EntityCategory::Unit, [1536, 1280, 0]);
+        let owner = sim.substrate.entities.get(1).unwrap().owner();
+        let birth = *laser::create(
+            &mut sim,
+            &rules,
+            1,
+            crate::sim::projectile::ProjectileTarget::Entity(2),
+            0,
+            rules.weapon("LaserProbe").unwrap(),
+            Some(ProjectileCoord::new(1280, 1280, 0)),
+        )
+        .unwrap();
+        (birth.color, owner)
+    }
+
+    assert_eq!(
+        birth(false, true).0,
+        LaserColor::Explicit {
+            inner: [11, 22, 33],
+            outer: [0; 3],
+            spread: [0; 3]
+        }
+    );
+    assert_eq!(
+        birth(false, false).0,
+        LaserColor::Explicit {
+            inner: [11, 22, 33],
+            outer: [44, 55, 66],
+            spread: [7, 8, 9]
+        }
+    );
+    let (color, owner) = birth(true, true);
+    assert_eq!(color, LaserColor::House(owner));
 }
 
 #[test]

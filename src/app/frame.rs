@@ -110,6 +110,9 @@ impl App {
         event_loop: &ActiveEventLoop,
         simulation_allowed: bool,
     ) -> RuntimeServiceResult {
+        if state.persistence.pending_load.is_some() {
+            return RuntimeServiceResult::default();
+        }
         let started = Instant::now();
         let mut result = RuntimeServiceResult::default();
         let mut attempts = 0;
@@ -613,6 +616,13 @@ impl App {
             &mut crate::app::diagnostics::tactical_capture::session::TacticalCaptureSession,
         >,
     ) -> Result<FrameRenderOutcome> {
+        if let Some(presented) = crate::app::persistence::commands::pump_saved_game_load(state) {
+            return Ok(if presented {
+                FrameRenderOutcome::Presented
+            } else {
+                FrameRenderOutcome::Deferred
+            });
+        }
         anyhow::ensure!(
             shell_capture.is_none() || tactical_capture.is_none(),
             "shell and tactical capture cannot share a render"

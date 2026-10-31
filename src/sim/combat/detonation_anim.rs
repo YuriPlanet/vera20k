@@ -297,6 +297,51 @@ pub(crate) fn effect(
     Some(placed_effect(shp_name, placement))
 }
 
+/// `AnimExt::SetAnimOwnerHouseKind(pAnim, pHouse, nullptr, false, true)` for
+/// this tail: a `MakeInfantry=` type uses `MakeInfantryOwner`, a
+/// `CreateUnit=` type overrides it with `CreateUnit.Owner`, and anything else
+/// keeps the invoker House. `Random` draws one House in native array order.
+#[cfg(feature = "phobos")]
+fn anim_owner_house(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    type_id: InternedId,
+    invoker: Option<InternedId>,
+) -> Option<InternedId> {
+    use crate::rules::ares_warhead::HouseSelector;
+    let (make_owner, create_unit) = {
+        let name = world.interner.resolve(type_id);
+        rules
+            .art()
+            .anim_runtime_config(name)
+            .map_or((None, None), |config| {
+                (
+                    (config.make_infantry > -1).then_some(config.phobos_make_infantry_owner),
+                    config.phobos_create_unit,
+                )
+            })
+    };
+    let kind = create_unit
+        .map(|(owner, _)| owner)
+        .or(make_owner)
+        .unwrap_or(HouseSelector::Default);
+    let random_house = if kind == HouseSelector::Random {
+        let order = world.houses.order();
+        if order.is_empty() {
+            None
+        } else {
+            let index = world
+                .scenario_rng
+                .next_range_i32_inclusive(0, order.len() as i32 - 1)
+                as usize;
+            order.get(index).copied()
+        }
+    } else {
+        None
+    };
+    world.house_kind(kind, invoker, invoker, invoker, None, rules, random_house)
+}
+
 /// Phobos' `BulletClass_Logics_DamageAnimSelected` (`0x469C46`) late tail:
 /// place the animation against the cell floor, expand CreateAll lists, gate
 /// on the shared creation interval, and scatter each constructed animation
@@ -438,7 +483,7 @@ pub(crate) fn bullet_effects(
             placement
         };
         let mut effect = placed_effect_with_z_adjust(type_id, coordinate, z_adjust);
-        effect.owner_house = invoker_house;
+        effect.owner_house = anim_owner_house(world, rules, type_id, invoker_house);
         effects.push(effect);
     }
     effects
@@ -1227,6 +1272,142 @@ mod phobos_enhancement_tests {
             effects[0].owner_house,
             Some(invoker),
             "pAnim->Owner = pInvoker"
+        );
+    }
+
+    #[test]
+    fn make_infantry_and_create_unit_types_take_their_owner_kinds() {
+        use crate::sim::anim_class::AnimRemap;
+        let rules_text = "[Countries]
+0=Americans
+1=Neutral
+2=Special
+             [Americans]
+[Neutral]
+[Special]
+             [Sides]
+Allied=Americans
+Civilian=Neutral
+             [General]
+DamageFireTypes=
+             [AudioVisual]
+ConditionYellow=50%
+ConditionRed=25%
+             [Animations]
+0=A
+1=B
+             [CombatDamage]
+             [Warheads]
+0=WH
+             [WH]
+AnimList=A,B
+AnimList.CreateAll=yes
+Conventional=yes
+";
+        let art_text = "[A]
+MakeInfantry=0
+MakeInfantryOwner=civilian
+             [B]
+CreateUnit=MTNK
+CreateUnit.Owner=special
+";
+        let art_ini = IniFile::from_str(art_text);
+        let mut rules =
+            RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(rules_text), &art_ini)
+                .unwrap();
+        let mut art = crate::rules::art_data::ArtRegistry::from_ini(&art_ini);
+        art.bind_anim_frame_count_for_test("A", 1);
+        art.bind_anim_frame_count_for_test("B", 1);
+        rules.install_art_fixture(art);
+
+        let mut world = Simulation::with_seed(7);
+        let register = |world: &mut Simulation, rules: &RuleSet, name: &str| {
+            let side = crate::sim::house_state::resolve_house_side_index(
+                rules,
+                Some(name),
+                Some("Civilian"),
+                0,
+            );
+            let id = world.interner.intern(name);
+            let country = world.interner.intern(name);
+            world
+                .houses
+                .register(crate::sim::house_state::HouseState::new(
+                    id,
+                    side,
+                    Some(country),
+                    false,
+                    0,
+                    10,
+                ));
+            id
+        };
+        let _americans = register(&mut world, &rules, "Americans");
+        let neutral = register(&mut world, &rules, "Neutral");
+        let special = register(&mut world, &rules, "Special");
+        world
+            .substrate
+            .entities
+            .insert(GameEntity::test_default(1, "E1", "Americans", 5, 5));
+
+        let warhead = rules.warhead("WH").unwrap();
+        let placement = ProjectileCoord::new(2_560, 5_120, 0);
+        let selection =
+            select_with_context(&mut world, &rules, warhead, 50, 0, placement, false).unwrap();
+        let warhead_ref = world.interner.intern("WH");
+        let invoker_house = world.interner.intern("Americans");
+        let effects = bullet_effects(
+            &mut world,
+            &rules,
+            warhead,
+            warhead_ref,
+            selection,
+            false,
+            placement,
+            1,
+            false,
+            Some(invoker_house),
+        );
+        assert_eq!(effects.len(), 2, "CreateAll expands both list entries");
+        assert_eq!(
+            effects[0].owner_house,
+            Some(neutral),
+            "MakeInfantryOwner=civilian overrides the invoker House"
+        );
+        assert_eq!(
+            effects[1].owner_house,
+            Some(special),
+            "CreateUnit.Owner=special overrides MakeInfantryOwner"
+        );
+
+        // SetAnimOwnerHouseKind's LightConvert gate: MakeInfantry types always
+        // remap; CreateUnit types only with CreateUnit.RemapAnim.
+        let spawn = |world: &mut Simulation, effect: &ExplosionEffect| {
+            world
+                .spawn_combat_explosion_anim_with_z_adjust(
+                    &rules,
+                    effect.shp_name,
+                    effect.rx,
+                    effect.ry,
+                    effect.sub_x,
+                    effect.sub_y,
+                    effect.z,
+                    effect.world_z,
+                    effect.z_adjust,
+                    effect.owner_house,
+                )
+                .unwrap()
+        };
+        let make_infantry = spawn(&mut world, &effects[0]);
+        assert_eq!(
+            world.anim(make_infantry).unwrap().remap(),
+            Some(AnimRemap::House(neutral))
+        );
+        let create_unit = spawn(&mut world, &effects[1]);
+        assert_eq!(
+            world.anim(create_unit).unwrap().remap(),
+            None,
+            "CreateUnit.RemapAnim defaults to no"
         );
     }
 

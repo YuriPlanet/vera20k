@@ -134,7 +134,6 @@ pub(crate) fn resolve_rows(
     let Some(player_index) = sim.houses().index_of(local) else {
         return empty;
     };
-    let observer = sim.session().observer_house();
     let allied = |asker, other| {
         crate::sim::combat::combat_weapon::is_ally_by_object(
             Some(sim.house_alliances()),
@@ -150,7 +149,8 @@ pub(crate) fn resolve_rows(
             .is_some_and(|country| rules.country_multiplay(sim.interner().resolve(country)))
     };
     let house_for_row = |row| house_for_row(row, player_index);
-    let allies_shown = switches.allies_allowed && observer != Some(local) && !switches.quick_coop;
+    let allies_shown =
+        switches.allies_allowed && !sim.session().is_observer_house(local) && !switches.quick_coop;
     let mut allies_header = false;
     let mut chat_header = false;
     // VERA extends the native eight rows using the same House-order swap.
@@ -200,7 +200,7 @@ pub(crate) fn resolve_rows(
                     chat,
                 });
             }
-            let is_observer = observer == Some(house);
+            let is_observer = sim.session().is_observer_house(house);
             // 0x00658393..0x006583CF: "LightGrey" for the observer, "Grey" once
             // defeated, else the House's own scheme.
             let named = |name| sources.named_scheme_rgb(name).unwrap_or([0xFF; 3]);

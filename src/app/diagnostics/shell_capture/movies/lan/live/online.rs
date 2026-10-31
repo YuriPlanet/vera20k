@@ -611,7 +611,7 @@ impl LiveRoundFlow {
                         if online {
                             self.phase = RoundPhase::Lobby;
                         } else {
-                            lobby_button(state, crate::ui::lan_shell::CREATE)?;
+                            create_lan_game(state)?;
                         }
                         self.record(frame,"Host profile Back returned to lobby; ordinary Create repeats the same profile");
                         return Ok(());

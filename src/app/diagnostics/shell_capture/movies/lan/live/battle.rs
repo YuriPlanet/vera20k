@@ -3837,7 +3837,9 @@ mod identity_tests {
         } else {
             NetworkReturnContext::Wol
         });
-        session.accept_network_setup(launch, false, None).unwrap();
+        session
+            .accept_network_setup(launch, false, None, false)
+            .unwrap();
         let mut sim = Simulation::new();
         let host = sim.intern("VH1a2b3c4d5e");
         let guest = sim.intern("VG6f7a8b9c0d");
@@ -3884,7 +3886,7 @@ mod identity_tests {
         let mut launch = host_session.network_setup().unwrap().clone();
         launch.local_player_index = 0;
         host_session
-            .accept_network_setup(launch, true, None)
+            .accept_network_setup(launch, true, None, false)
             .unwrap();
         assert_eq!(battle_owners(&host_session, &sim).unwrap(), owners);
     }

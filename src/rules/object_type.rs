@@ -765,6 +765,21 @@ pub struct ObjectType {
     /// Negative values shift the bar UP (above taller sprites). Default 0.
     /// Parsed from `PixelSelectionBracketDelta` in rules.ini.
     pub pixel_selection_bracket_delta: i32,
+    /// Phobos `TechnoTypeExt` insignia block (`Insignia*`, `InsigniaType*`,
+    /// `Insignia.ShowEnemy`), accumulated over every reached Rules pass by
+    /// the ordered TechnoType reader.
+    #[cfg(feature = "phobos")]
+    pub phobos_insignia: crate::rules::insignia_type::PhobosInsignia,
+    /// Phobos `Passengers.BySize` (`Valueable<bool>`, default yes): the
+    /// passenger-count key `DrawInsignia` indexes `Insignia.PassengersN`
+    /// with. Its other consumer, the NoQueueUpToEnter admission rewrite, is
+    /// not ported.
+    #[cfg(feature = "phobos")]
+    pub phobos_passengers_by_size: bool,
+    /// Phobos `TechnoTypeExt` Iron Curtain / Force Shield overrides
+    /// (`IronCurtain.*`, `ForceShield.*`).
+    #[cfg(feature = "phobos")]
+    pub phobos_invulnerability: crate::rules::invulnerability_rules::PhobosInvulnerability,
     /// Rules LeptonMindControlOffset: Type+3DC ctor710D28=70, read714145.
     pub lepton_mind_control_offset: i32,
     /// Sidebar/build tab grouping for structures.
@@ -2125,6 +2140,12 @@ pub struct ObjectType {
     /// AMMOCRAT (Ammo Crate).
     pub can_c4: bool,
 
+    /// Phobos `AllowAirstrike=`: whether an `Airstrike=` warhead may designate
+    /// this type. Unset keeps the vanilla rule at each call site — buildings
+    /// follow `CanC4`, every other kind is targetable.
+    #[cfg(feature = "phobos")]
+    pub allow_airstrike: Option<bool>,
+
     /// BuildingTypeClass `EligibleForDelayKill` (`+0x1551`). Native default
     /// false; only eligible buildings can convert a fatal result to PostMortem.
     pub eligible_for_delay_kill: bool,
@@ -2478,6 +2499,27 @@ fn native_minutes_to_ticks(value: f64) -> u32 {
 }
 
 impl ObjectType {
+    /// Phobos `AllowAirstrike` as the cursor and `CanFire` tests read it: an
+    /// explicit value wins, a building otherwise follows `CanC4`, and every
+    /// other kind is targetable by default.
+    #[cfg(feature = "phobos")]
+    pub fn allows_airstrike(&self, is_building: bool) -> bool {
+        self.allow_airstrike
+            .unwrap_or(if is_building { self.can_c4 } else { true })
+    }
+
+    /// The weapon-choice reading of `AllowAirstrike`. Its vanilla default also
+    /// refuses a building that is both a resource destination and a resource
+    /// gatherer (`0x6F3477`), which the cursor test above does not apply.
+    #[cfg(feature = "phobos")]
+    pub fn allows_airstrike_weapon(&self, is_building: bool) -> bool {
+        self.allow_airstrike.unwrap_or(if is_building {
+            self.can_c4 && (!self.resource_destination || !self.resource_gatherer)
+        } else {
+            true
+        })
+    }
+
     pub(crate) fn bind_weapon_offsets(
         &mut self,
         offsets: &crate::rules::weapon_offsets::WeaponOffsets,
@@ -4061,6 +4103,15 @@ impl ObjectType {
             // Pass processing projects the shared reader; ART binding does not.
             foundation: crate::rules::foundation::Foundation::default(),
             pixel_selection_bracket_delta: section.read_int("PixelSelectionBracketDelta", 0),
+            // Constructor default; the ordered retained TechnoType reader
+            // accumulates these keys over every reached pass.
+            #[cfg(feature = "phobos")]
+            phobos_insignia: crate::rules::insignia_type::PhobosInsignia::default(),
+            #[cfg(feature = "phobos")]
+            phobos_passengers_by_size: section.read_ares_bool("Passengers.BySize", true),
+            #[cfg(feature = "phobos")]
+            phobos_invulnerability:
+                crate::rules::invulnerability_rules::PhobosInvulnerability::parse(section),
             // Replaced by the ordered retained Type reader in RuleSet.
             lepton_mind_control_offset: DEFAULT_LEPTON_MIND_CONTROL_OFFSET,
             build_cat: section
@@ -4634,6 +4685,8 @@ impl ObjectType {
             sabotage_cursor: section.read_bool("SabotageCursor", false),
             c4: category != ObjectCategory::Infantry && section.read_bool("C4", false),
             can_c4: section.read_bool("CanC4", category == ObjectCategory::Building),
+            #[cfg(feature = "phobos")]
+            allow_airstrike: section.read_bool_value("AllowAirstrike"),
             eligible_for_delay_kill: section.read_bool("EligibleForDelayKill", false),
             invisible: section.read_bool("Invisible", false),
             legal_target: section.read_bool("LegalTarget", true),

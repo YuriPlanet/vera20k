@@ -181,23 +181,7 @@ impl App {
                 }
             }
             SavedSeedOutcome::Load(path) => {
-                match crate::app::persistence::commands::try_load_save_file(state, &path) {
-                    Ok(()) => {
-                        state.match_state.match_presentation.saved_game_browser = None;
-                        Self::enter_in_game_menu_state(state, InGameMenuState::Closed);
-                    }
-                    Err(error) => {
-                        log::warn!("Load browser: {}: {error}", path.display());
-                        let body =
-                            Self::csf_label(state, "TXT_ERROR_LOADING_GAME", "Error loading game.");
-                        Self::show_saved_game_prompt(
-                            state,
-                            SavedSeedPromptPurpose::Error,
-                            body,
-                            false,
-                        );
-                    }
-                }
+                crate::app::persistence::commands::request_saved_game_load(state, path);
             }
             SavedSeedOutcome::Delete(file_name) => {
                 let prefix = Self::csf_label(state, "TXT_DELETE_FILE_QUERY", "Delete this file?");
@@ -215,6 +199,24 @@ impl App {
                     format!("{prefix}\n\n{description}"),
                     true,
                 );
+            }
+        }
+    }
+
+    pub(crate) fn finish_saved_game_load(
+        state: &mut AppState,
+        path: &std::path::Path,
+        result: Result<(), crate::app::persistence::PreparedLoadError>,
+    ) {
+        match result {
+            Ok(()) => {
+                state.match_state.match_presentation.saved_game_browser = None;
+                Self::enter_in_game_menu_state(state, InGameMenuState::Closed);
+            }
+            Err(error) => {
+                log::warn!("Load browser: {}: {error}", path.display());
+                let body = Self::csf_label(state, "TXT_ERROR_LOADING_GAME", "Error loading game.");
+                Self::show_saved_game_prompt(state, SavedSeedPromptPurpose::Error, body, false);
             }
         }
     }

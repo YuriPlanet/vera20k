@@ -21,6 +21,7 @@ pub mod movies_credits_shell;
 pub(crate) mod multiplayer_setup;
 pub mod network_options;
 pub mod pause_menu;
+pub mod room_limits;
 pub mod score_shell;
 pub mod shell;
 pub mod sidebar;

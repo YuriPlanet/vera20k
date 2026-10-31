@@ -7,9 +7,9 @@
 #
 # The app keeps its files in ~/Library/Application Support/VERA20k and finds or
 # asks for the Yuri's Revenge folder on its first launch (src/app/app_bundle.rs).
-# It is signed ad hoc, not notarized, so macOS asks the player to allow it once
-# (README.txt). The signature seals the whole bundle; without that, Gatekeeper
-# calls a downloaded app damaged instead of offering to open it. The image
+# This build stage seals the app with an ad-hoc signature. A separate, protected
+# Release job applies Developer ID signing and notarization before publishing.
+# The image
 # window shows only the app, an arrow and Applications (dmg_settings.py);
 # README.txt and the licenses are in the app's Resources.
 set -euo pipefail

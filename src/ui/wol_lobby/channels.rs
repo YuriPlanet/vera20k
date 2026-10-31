@@ -74,9 +74,11 @@ pub(crate) struct ExInfo {
     pub(crate) hash: i32,
     /// `0x005E94D0`: AI players.
     pub(crate) ai_players: i32,
-    /// `0x005E9580`: a human occupies the observer slot.
+    /// `0x005E9580`: a human occupies the observer slot; in a VERA room
+    /// with several observers, how many observers there are.
     pub(crate) observer_taken: i32,
-    /// `!0x005E9560`: an open observer slot exists.
+    /// `!0x005E9560`: an open observer slot exists; in a VERA room with
+    /// several observers, how many there are.
     pub(crate) observer_open: i32,
     pub(crate) scenario: String,
 }
@@ -121,14 +123,19 @@ impl ExInfo {
         text
     }
 
-    /// `f4 || f5`: one of the max users is the observer slot.
-    fn observer_slot(&self) -> bool {
-        self.observer_taken != 0 || self.observer_open != 0
+    /// `f4 || f5`: how many of the max users are observer slots. A native
+    /// room's two flags never both hold: f5 is an Open Observer item
+    /// `[0xAC11B4]` among the row pointers (`0x005E9560`), f4 an observer
+    /// node on `[0x8316A4]` (`0x005E9580`), the only row offered that item.
+    /// So their sum is its one slot.
+    fn observer_slots(&self) -> i32 {
+        self.observer_taken + self.observer_open
     }
 
-    /// The observer slot is open and empty.
+    /// An observer slot is open and empty (`f5 && !f4` for a native room's
+    /// one slot).
     fn observer_free(&self) -> bool {
-        self.observer_open != 0 && self.observer_taken == 0
+        self.observer_open > 0
     }
 }
 
@@ -158,7 +165,7 @@ impl WolChannel {
         let info = self.ex_info();
         (
             self.users - info.observer_taken + info.ai_players,
-            self.max_users - i32::from(info.observer_slot()),
+            self.max_users - info.observer_slots(),
         )
     }
 
@@ -341,7 +348,7 @@ fn filter_skips(channel: &WolChannel, info: &ExInfo, sort: GameSort, pass: usize
     let clan = channel.game_flags & GAME_CLAN != 0;
     let marked = match sort {
         2 | 3 => channel.keyed(),
-        4 | 5 => info.observer_slot(),
+        4 | 5 => info.observer_slots() != 0,
         6 | 7 => channel.game_flags & (GAME_LIMIT_640 | GAME_LIMIT_800) != 0,
         8 | 9 => channel.tournament != 0,
         10 | 11 => clan,
@@ -786,6 +793,18 @@ mod tests {
         assert!(!rows[0].greyed && rows[1].greyed);
     }
 
+    /// A VERA room with several observers writes counts: one watching and
+    /// one open observer row leave both player rows taken, and the open row
+    /// free.
+    #[test]
+    fn several_observer_slots_leave_the_shown_capacity() {
+        let channels = [game("Watched", 3, 4, "25,0,0,1,1,c.map")];
+        let rows = game_rows(&channels, 0, false);
+        assert_eq!(rows[0].text, "Watched 2/2");
+        assert!(rows[0].greyed);
+        assert!(!game_rows(&channels, 0, true)[0].greyed);
+    }
+
     #[test]
     fn game_icons_follow_flags_and_ranked_games_are_hidden() {
         let mut clan = game("c", 1, 4, "25,0,0,0,0,x");
@@ -924,7 +943,7 @@ mod tests {
         // 3 humans of 4 with the observer slot counted: full.
         let full = game("g", 3, 4, "25,0,0,0,1,x");
         assert_eq!(admit(&full, false, context), Err(Some("WOL:GameFull")));
-        let taken = game("g", 2, 4, "25,0,0,1,1,x");
+        let taken = game("g", 2, 4, "25,0,0,1,0,x");
         assert_eq!(admit(&taken, true, context), Err(Some("TXT_OBSERVER_FULL")));
     }
 

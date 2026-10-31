@@ -638,15 +638,9 @@ impl LocalFramePacer {
         self.render_deferred = false;
     }
 
-    /// Read the same bucket interval used by `should_admit`, for diagnostics.
+    /// Read the same interval used by `should_admit`, for diagnostics.
     pub(crate) fn budget_ms(&self, game_speed: u8, network_fps: Option<(u16, u32)>) -> Option<f32> {
-        if let Some((fps, delay)) = network_fps {
-            return Some(network_interval_ms(fps).saturating_add(delay) as f32);
-        }
-        (game_speed != 0).then(|| {
-            f32::from(game_speed.clamp(MIN_TIMED_GAME_SPEED, MAX_TIMED_GAME_SPEED))
-                * FRAME_BUCKET_MS as f32
-        })
+        pacing_timer(game_speed, network_fps).map(|timer| timer.length_ms() as f32)
     }
 
     /// Read-only presentation phase of the existing bucket-paced frame.
@@ -671,22 +665,43 @@ impl LocalFramePacer {
         // MainTick55D4FB chooses 1000/FPS for network games, and
         // MainThrottle55E1BC consumes that millisecond timer. Offline pacing
         // retains its distinct 16ms bucket clock (55E2B4).
-        if let Some((fps, delay)) = network_fps {
-            return self.last_frame_start_ms.is_none_or(|last| {
-                (now_ms as u32).wrapping_sub(last) as i32
-                    >= network_interval_ms(fps).saturating_add(delay) as i32
-            });
-        }
-        if game_speed == 0 {
-            return true;
-        }
-        let Some(last_bucket) = self.last_frame_start_ms.map(|ms| ms >> FRAME_BUCKET_SHIFT) else {
-            return true;
+        pacing_timer(game_speed, network_fps)
+            .zip(self.last_frame_start_ms)
+            .is_none_or(|(timer, start)| timer.elapsed(now_ms, start) >= timer.length as i32)
+    }
+
+    /// Start to record for a frame `should_admit` admitted at `now_ms`.
+    ///
+    /// Main__ThrottleFrame (`0x0055E2B4` buckets, `0x0055E1BC` milliseconds)
+    /// waits until the interval elapses, so the next Main_Tick arms its timer
+    /// (`0x0055D7A8` buckets, `0x0055D568` milliseconds) at the due moment.
+    /// VERA checks only once per presented pass: a frame found late by less
+    /// than one interval keeps its due time, so the display refresh cannot
+    /// stretch the cadence. Later frames restart from now, as native does.
+    ///
+    /// Residuals: native restarts from now after any overrun, so a hitch
+    /// shorter than one interval here leaves the next frame due up to one
+    /// interval earlier than native. Native also runs input and rendering
+    /// inside the millisecond wait (55E23F..55E271) and keeps that overshoot.
+    /// Intervals shorter than one refresh still run once per pass.
+    pub(crate) fn admitted_frame_start_ms(
+        &self,
+        now_ms: u64,
+        game_speed: u8,
+        network_fps: Option<(u16, u32)>,
+    ) -> u64 {
+        let Some((timer, start)) =
+            pacing_timer(game_speed, network_fps).zip(self.last_frame_start_ms)
+        else {
+            return now_ms;
         };
-        let required_buckets =
-            u32::from(game_speed.clamp(MIN_TIMED_GAME_SPEED, MAX_TIMED_GAME_SPEED));
-        let elapsed = frame_bucket(now_ms).wrapping_sub(last_bucket) as i32;
-        elapsed >= required_buckets as i32
+        let late = i64::from(timer.elapsed(now_ms, start)) - i64::from(timer.length);
+        if !(0..i64::from(timer.length)).contains(&late) {
+            return now_ms;
+        }
+        // Only the low 32-bit millisecond word is recorded, as natively.
+        let due = timer.due_ms(start);
+        now_ms.wrapping_sub(u64::from((now_ms as u32).wrapping_sub(due)))
     }
 
     pub(crate) fn record_admitted_frame(&mut self, frame_start_ms: u64) {
@@ -708,18 +723,60 @@ impl LocalFramePacer {
 
     #[cfg(test)]
     fn next_deadline_ms(&self, game_speed: u8) -> Option<u64> {
-        if game_speed == 0 {
-            return None;
-        }
-        let last_bucket = self.last_frame_start_ms? >> FRAME_BUCKET_SHIFT;
-        let required_buckets =
-            u32::from(game_speed.clamp(MIN_TIMED_GAME_SPEED, MAX_TIMED_GAME_SPEED));
-        Some(
-            u64::from(last_bucket)
-                .saturating_add(u64::from(required_buckets))
-                .saturating_mul(FRAME_BUCKET_MS),
-        )
+        let timer = pacing_timer(game_speed, None)?;
+        let start_bucket = self.last_frame_start_ms? >> FRAME_BUCKET_SHIFT;
+        Some((u64::from(start_bucket) + u64::from(timer.length)) * FRAME_BUCKET_MS)
     }
+}
+
+/// The timer Main_Tick arms for the next frame: network FPS arms
+/// milliseconds (`0x0055D55E`, plus the lag delay), offline GameSpeed arms
+/// 16 ms buckets (`0x0055D7BC`). GameSpeed 0 never waits.
+#[derive(Debug, Clone, Copy)]
+struct PacingTimer {
+    buckets: bool,
+    length: u32,
+}
+
+impl PacingTimer {
+    /// Signed wrapping time since `start` in the timer's unit, as
+    /// Main__ThrottleFrame subtracts it (`0x0055E1DB`, `0x0055E2C8`).
+    fn elapsed(self, now_ms: u64, start: u32) -> i32 {
+        if self.buckets {
+            frame_bucket(now_ms).wrapping_sub(start >> FRAME_BUCKET_SHIFT) as i32
+        } else {
+            (now_ms as u32).wrapping_sub(start) as i32
+        }
+    }
+
+    fn due_ms(self, start: u32) -> u32 {
+        if self.buckets {
+            ((start >> FRAME_BUCKET_SHIFT).wrapping_add(self.length)) << FRAME_BUCKET_SHIFT
+        } else {
+            start.wrapping_add(self.length)
+        }
+    }
+
+    fn length_ms(self) -> u32 {
+        if self.buckets {
+            self.length << FRAME_BUCKET_SHIFT
+        } else {
+            self.length
+        }
+    }
+}
+
+fn pacing_timer(game_speed: u8, network_fps: Option<(u16, u32)>) -> Option<PacingTimer> {
+    if let Some((fps, delay)) = network_fps {
+        return Some(PacingTimer {
+            buckets: false,
+            length: network_interval_ms(fps).saturating_add(delay),
+        });
+    }
+    (game_speed != 0).then(|| PacingTimer {
+        buckets: true,
+        length: u32::from(game_speed.clamp(MIN_TIMED_GAME_SPEED, MAX_TIMED_GAME_SPEED)),
+    })
 }
 
 fn network_interval_ms(frames_per_second: u16) -> u32 {
@@ -1055,6 +1112,55 @@ mod tests {
         assert!(pacer.should_admit(8, 6, Some((60, 0)), false));
         pacer.reset_for_immediate_frame();
         assert!(pacer.should_admit(8, 6, Some((30, 0)), false));
+    }
+
+    /// Frames admitted over `duration_ms` by one pass per display refresh.
+    fn frames_at_refresh(
+        hz: u64,
+        duration_ms: u64,
+        game_speed: u8,
+        network_fps: Option<(u16, u32)>,
+    ) -> u32 {
+        let mut pacer = LocalFramePacer::new();
+        let mut frames = 0;
+        for pass in 0..=duration_ms * hz / 1000 {
+            let now = 1_000 + pass * 1000 / hz;
+            if pacer.should_admit(now, game_speed, network_fps, false) {
+                let start = pacer.admitted_frame_start_ms(now, game_speed, network_fps);
+                pacer.record_admitted_frame(start);
+                frames += 1;
+            }
+        }
+        frames
+    }
+
+    #[test]
+    fn a_60_hz_refresh_keeps_the_native_timer_cadence() {
+        // 45 FPS arms 22 ms (55D55E): frames start at 1000 + 22k up to 4000.
+        assert_eq!(frames_at_refresh(60, 3_000, 0, Some((45, 0))), 137);
+        // GameSpeed 2 waits two buckets (55D7BC): buckets 62, 64, ..., 250.
+        assert_eq!(frames_at_refresh(60, 3_000, 2, None), 95);
+    }
+
+    #[test]
+    fn a_frame_late_by_a_whole_interval_restarts_from_now() {
+        let mut pacer = LocalFramePacer::new();
+        pacer.record_admitted_frame(1_000);
+        assert_eq!(
+            pacer.admitted_frame_start_ms(1_030, 0, Some((45, 0))),
+            1_022
+        );
+        assert_eq!(
+            pacer.admitted_frame_start_ms(1_044, 0, Some((45, 0))),
+            1_044
+        );
+        assert_eq!(pacer.admitted_frame_start_ms(1_050, 3, None), 1_040);
+        assert_eq!(pacer.admitted_frame_start_ms(1_090, 3, None), 1_090);
+        pacer.record_admitted_frame(u64::from(u32::MAX - 7));
+        assert_eq!(
+            pacer.admitted_frame_start_ms(20, 0, Some((45, 0))) as u32,
+            14
+        );
     }
 
     #[test]

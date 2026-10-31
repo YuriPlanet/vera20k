@@ -478,6 +478,10 @@ pub(crate) fn techno_effect_light(
     draw: TechnoDraw,
 ) -> ([f32; 3], crate::render::palette_light::PaletteLight) {
     let custom = rules.map_or(0, |rules| custom_tint(entity, sim, rules).1);
+    let curtain_extra = curtain_extra_tint(
+        rules,
+        entity.invulnerability.as_ref().map(|state| state.kind()),
+    );
     techno_effect_light_at(
         entity,
         tint,
@@ -485,6 +489,7 @@ pub(crate) fn techno_effect_light(
         sim.session().binary_frame(),
         sim.airstrike_tint_active(entity.stable_id()),
         custom,
+        curtain_extra,
         draw,
     )
 }
@@ -516,6 +521,10 @@ pub(crate) fn building_anim_light(
                 custom_before_effects: false,
                 flashed: sample.flashed(),
                 curtain: sample.invulnerability(),
+                curtain_extra: curtain_extra_tint(
+                    rules,
+                    sample.invulnerability().map(|state| state.kind()),
+                ),
                 airstrike: sample.airstrike(),
                 airstrike_active: sample.airstrike_active(),
                 frame: sample.frame(),
@@ -523,6 +532,10 @@ pub(crate) fn building_anim_light(
             },
         )
     } else {
+        let curtain_extra = curtain_extra_tint(
+            rules,
+            building.invulnerability.as_ref().map(|state| state.kind()),
+        );
         techno_effect_light_at(
             building,
             tint,
@@ -530,6 +543,7 @@ pub(crate) fn building_anim_light(
             sim.session().binary_frame().wrapping_sub(1),
             sim.airstrike_tint_active(building.stable_id()),
             custom,
+            curtain_extra,
             TechnoDraw::Shape,
         )
     };
@@ -543,6 +557,7 @@ fn techno_effect_light_at(
     frame: u32,
     airstrike_active: bool,
     custom_intensity: i32,
+    curtain_extra: i32,
     draw: TechnoDraw,
 ) -> ([f32; 3], crate::render::palette_light::PaletteLight) {
     effect_light(
@@ -554,12 +569,37 @@ fn techno_effect_light_at(
                 && entity.category() != crate::map::entities::EntityCategory::Unit,
             flashed: entity.flashing.flashed(),
             curtain: entity.invulnerability.as_ref(),
+            curtain_extra,
             airstrike: &entity.airstrike_tint,
             airstrike_active,
             frame,
             custom_intensity,
         },
     )
+}
+
+/// Phobos `TechnoClass_InvulnerabilityIntensity_Adjust` (`0x70E475`): after
+/// the native clamp, a curtained object adds its curtain kind's configured
+/// `ExtraTintIntensity` × 1000 (truncated toward zero).
+fn curtain_extra_tint(
+    rules: Option<&RuleSet>,
+    kind: Option<crate::sim::superweapon::invulnerability::InvulnKind>,
+) -> i32 {
+    #[cfg(feature = "phobos")]
+    if let (Some(rules), Some(kind)) = (rules, kind) {
+        let globals = rules.invulnerability_globals();
+        let extra = match kind {
+            crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain => {
+                globals.iron_curtain_extra_tint
+            }
+            crate::sim::superweapon::invulnerability::InvulnKind::ForceShield => {
+                globals.force_shield_extra_tint
+            }
+        };
+        return (extra * 1000.0) as i32;
+    }
+    let _ = (rules, kind);
+    0
 }
 
 struct TintLightState<'a> {
@@ -571,6 +611,8 @@ struct TintLightState<'a> {
     custom_before_effects: bool,
     flashed: bool,
     curtain: Option<&'a crate::sim::superweapon::invulnerability::InvulnerabilityState>,
+    /// Phobos `ExtraTintIntensity` × 1000 added to the curtain's clamp.
+    curtain_extra: i32,
     airstrike: &'a crate::sim::superweapon::airstrike_tint::AirstrikeTintState,
     airstrike_active: bool,
     frame: u32,
@@ -605,7 +647,9 @@ fn effect_light(
         crate::sim::superweapon::invulnerability::is_invulnerable(state.curtain, state.frame);
     let tinted = if curtained || (state.building && state.airstrike_active) {
         let iron = state.curtain.map_or(flashed, |curtain| {
-            curtain.effect_tint_intensity(flashed, state.frame as i32)
+            curtain
+                .effect_tint_intensity(flashed, state.frame as i32)
+                .wrapping_add(state.curtain_extra)
         });
         state
             .airstrike

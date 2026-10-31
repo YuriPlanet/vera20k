@@ -3945,9 +3945,24 @@ pub(super) fn infantry_attack_action(
             },
         );
     }
-    // Infantry51EAD2..51EB21: anything but a C4-able building keeps Attack
-    // and returns before the tail below.
+    // Infantry51EAD2..51EB21: anything the airstrike arm accepts keeps Attack
+    // and returns before the tail below. Phobos
+    // `TechnoClass_WhatAction_AllowAirstrike` (`0x51EAE0`) replaces the
+    // building-only `CanC4` test: `AllowAirstrike` decides, defaulting to
+    // `CanC4` for a building and to targetable for every other kind, while
+    // `InvisibleInGame` still refuses a building.
     if weapon.mig_attack_cursor {
+        #[cfg(feature = "phobos")]
+        let air_strike = target.is_some_and(|target| {
+            sim.interner()
+                .object_type(target.type_ref(), rules)
+                .is_some_and(|object| {
+                    let building = target.category() == EntityCategory::Structure;
+                    object.allows_airstrike(building)
+                        && !(building && object.invisible_in_game)
+                })
+        });
+        #[cfg(not(feature = "phobos"))]
         let air_strike = target.is_some_and(|target| {
             target.category() == EntityCategory::Structure
                 && sim

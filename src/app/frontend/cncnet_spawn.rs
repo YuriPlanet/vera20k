@@ -571,7 +571,8 @@ fn skirmish(
         opponents.len()
     );
     // The lobby's start admission (docs/lobby-protocol.md): spectators
-    // exclude AI, and at least two participants play.
+    // exclude AI, and at least two participants play. Each spectator takes
+    // an observer House (`ScenarioSession::observer_houses`).
     let spectators = humans.iter().filter(|human| human.is_observer()).count();
     ensure!(
         spectators == 0 || ai_count == 0,

@@ -363,9 +363,50 @@ pub(crate) fn received_line(
     (line, color)
 }
 
+/// VERA20K Online's chat lobby starts each line with its local time,
+/// `HH:MM `: when the service sent it (`sent_at`, Unix seconds), else `now`.
+/// Not native: `0x113` lines carry no time. Blank rows stay blank, and a
+/// local time the platform cannot give adds nothing.
+pub(crate) fn timed_line(text: Vec<u16>, sent_at: Option<u64>, now: u64) -> Vec<u16> {
+    if text.iter().all(|unit| matches!(unit, 0 | 9 | 10 | 13 | 32)) {
+        return text;
+    }
+    let Some((hour, minute)) =
+        crate::util::native_file_time::local_hour_minute(sent_at.unwrap_or(now))
+    else {
+        return text;
+    };
+    let mut line: Vec<u16> = format!("{hour:02}:{minute:02} ").encode_utf16().collect();
+    line.extend(text);
+    line
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lobby_lines_start_with_the_local_time_the_service_sent_them() {
+        let clock = |seconds| {
+            let (hour, minute) =
+                crate::util::native_file_time::local_hour_minute(seconds).expect("local time");
+            format!("{hour:02}:{minute:02}")
+        };
+        // 2026-07-30 13:45:12 UTC, and a notice set two hours earlier.
+        let now = 1_785_419_112;
+        let set = now - 2 * 60 * 60;
+        let line =
+            |text: &str, sent_at| String::from_utf16_lossy(&timed_line(w(text), sent_at, now));
+        assert_eq!(
+            line("[VERA20k] : Restart soon.", Some(set)),
+            format!("{} [VERA20k] : Restart soon.", clock(set))
+        );
+        assert_eq!(
+            line("[Boris] : hi", None),
+            format!("{} [Boris] : hi", clock(now))
+        );
+        assert_eq!(line("\n", None), "\n", "the welcome's blank row");
+    }
 
     fn w(text: &str) -> Vec<u16> {
         text.encode_utf16().collect()

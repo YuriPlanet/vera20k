@@ -93,6 +93,7 @@ fn ini_roots_process_diagnostics_freeze_selected_names_and_hashes() {
                 rules: Some("r.ini".into()),
                 art: Some("a.ini".into()),
                 ai: Some("i.ini".into()),
+                ..Default::default()
             },
             "r.ini",
             "a.ini",
@@ -209,6 +210,7 @@ fn ini_roots_custom_sources_use_the_same_physical_selector() {
         rules: Some("r.ini".into()),
         art: Some("a.ini".into()),
         ai: Some("i.ini".into()),
+        ..Default::default()
     };
     let assets = AssetManager::from_loose_root_for_test(dir.path())
         .with_ini_roots(&config)

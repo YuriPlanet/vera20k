@@ -6,6 +6,7 @@
 
 use super::password_accepted;
 use crate::ui::lan_shell::LanEditKey;
+use crate::ui::room_limits::{RoomLimits, RoomLimitsPicker};
 use crate::ui::shell::button::ShellButtonInteraction;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::skirmish_shell::SavedSeedDescriptionEdit;
@@ -43,6 +44,8 @@ pub(crate) enum WolPopupAction {
         clan: bool,
         limit: bool,
         observe: bool,
+        /// VERA's online popup's Players and Allow spectators.
+        room: Option<RoomLimits>,
     },
     CreateCancelled,
     PasswordConfirmed(String),
@@ -59,7 +62,7 @@ fn password_edit() -> SavedSeedDescriptionEdit {
 
 /// `CreateGameDialogControl` (vtable `0x7F788C`): +0x11 clan, +0x12 limit,
 /// +0x13 observe; +0x10 belongs to control `0x629`, absent from the
-/// template, and stays 0.
+/// template, and stays 0. VERA's online popup adds its room's limits.
 #[derive(Debug, Clone)]
 pub(crate) struct WolCreateGame {
     pub(crate) password: SavedSeedDescriptionEdit,
@@ -68,6 +71,7 @@ pub(crate) struct WolCreateGame {
     pub(crate) limit: bool,
     pub(crate) limit_enabled: bool,
     pub(crate) observe: bool,
+    pub(crate) room: Option<RoomLimitsPicker>,
 }
 
 #[derive(Debug, Clone)]
@@ -85,8 +89,15 @@ pub(crate) struct WolLobbyPopup {
 impl WolLobbyPopup {
     /// `0x0078DB70`'s `0x497`. `screen_width` is Options' ScreenWidth
     /// (`[0xA8EB84]`); `limit` the process byte `[0xA8B540]`, already cleared
-    /// by `0x00789B60` at 1024 or wider; `clan_id` `[0xB77DE4]`.
-    pub(crate) fn create(screen_width: i32, limit: bool, clan_id: i32, observe: bool) -> Self {
+    /// by `0x00789B60` at 1024 or wider; `clan_id` `[0xB77DE4]`; `room` the
+    /// host's last limits in VERA's online lobby.
+    pub(crate) fn create(
+        screen_width: i32,
+        limit: bool,
+        clan_id: i32,
+        observe: bool,
+        room: Option<RoomLimits>,
+    ) -> Self {
         let narrow = screen_width < 1024;
         Self {
             kind: WolPopupKind::Create(WolCreateGame {
@@ -96,6 +107,7 @@ impl WolLobbyPopup {
                 limit: limit && narrow,
                 limit_enabled: narrow,
                 observe,
+                room: room.map(RoomLimitsPicker::new),
             }),
             buttons: ShellButtonInteraction::default(),
         }
@@ -126,6 +138,14 @@ impl WolLobbyPopup {
         match &mut self.kind {
             WolPopupKind::Create(create) => &mut create.password,
             WolPopupKind::Password(edit) => edit,
+        }
+    }
+
+    /// VERA's online Create Game's Players and Allow spectators.
+    pub(crate) fn room_mut(&mut self) -> Option<&mut RoomLimitsPicker> {
+        match &mut self.kind {
+            WolPopupKind::Create(create) => create.room.as_mut(),
+            WolPopupKind::Password(_) => None,
         }
     }
 
@@ -181,6 +201,7 @@ impl WolLobbyPopup {
                 clan: create.clan,
                 limit: create.limit,
                 observe: create.observe,
+                room: create.room.as_ref().map(|room| room.limits),
             },
             (WolPopupKind::Create(_), POPUP_CANCEL) => WolPopupAction::CreateCancelled,
             (WolPopupKind::Password(_), POPUP_OK) => WolPopupAction::PasswordConfirmed(password),
@@ -219,23 +240,33 @@ mod tests {
 
     #[test]
     fn create_popup_initializes_from_width_clan_and_preferences() {
-        let popup = WolLobbyPopup::create(800, true, 0, true);
+        let popup = WolLobbyPopup::create(800, true, 0, true, None);
         let WolPopupKind::Create(create) = &popup.kind else {
             panic!()
         };
         assert!(create.limit && create.limit_enabled && create.observe);
         assert!(!create.clan && !create.clan_enabled);
-        let wide = WolLobbyPopup::create(1024, true, 3, false);
+        let wide = WolLobbyPopup::create(1024, true, 3, false, None);
         assert!(!wide.enabled(CREATE_LIMIT) && wide.enabled(CREATE_CLAN));
         let WolPopupKind::Create(create) = &wide.kind else {
             panic!()
         };
         assert!(!create.limit);
+        // VERA's online popup carries its room's limits to OK.
+        let limits = RoomLimits {
+            players: 5,
+            spectators: false,
+        };
+        let mut modern = WolLobbyPopup::create(1024, false, 0, false, Some(limits));
+        assert!(matches!(
+            modern.activate(POPUP_OK),
+            Some(WolPopupAction::CreateConfirmed { room: Some(room), .. }) if room == limits
+        ));
     }
 
     #[test]
     fn the_password_gates_ok_and_enter_clicks_it() {
-        let mut popup = WolLobbyPopup::create(800, false, 0, false);
+        let mut popup = WolLobbyPopup::create(800, false, 0, false, None);
         assert!(popup.toggle(CREATE_LIMIT) && !popup.toggle(CREATE_CLAN));
         popup.insert_text("ab c");
         assert!(!popup.ok_enabled());
@@ -251,6 +282,7 @@ mod tests {
                 clan: false,
                 limit: true,
                 observe: false,
+                room: None,
             })
         );
         let mut password = WolLobbyPopup::password();

@@ -529,7 +529,7 @@ pub(crate) fn accept_external_session(
 ) -> anyhow::Result<()> {
     let host = launch.local_player_index == 0;
     session.enter_network(context);
-    session.accept_network_setup(launch, host, None)
+    session.accept_network_setup(launch, host, None, false)
 }
 
 /// Install an external launch's setup without a dialog, its online start
@@ -796,7 +796,7 @@ fn install_setup(
     state
         .match_state
         .session
-        .accept_network_setup(launch, host, observer_row)?;
+        .accept_network_setup(launch, host, observer_row, dialog.modern)?;
     let quick_match = dialog.wol() && crate::app::shell_wol::quick_match::mode_active(state);
     if dialog.wol() {
         let room = crate::app::shell_wol::lobby::room(state);
@@ -876,6 +876,15 @@ fn install_setup(
                     .set_network_vacancy(row as u8, vacancy)?;
             }
         }
+        // A VERA room seats the players its host allowed at Create Game and
+        // opens its spectator row if spectators may join, but for Quick
+        // Match's matchbot game.
+        if dialog.modern && !quick_match {
+            let limits = state.frontend.room_limits;
+            let session = &mut state.match_state.session;
+            session.set_network_player_limit(limits.players)?;
+            session.set_network_spectators(limits.spectators)?;
+        }
         if let Some(file) = state
             .match_state
             .session
@@ -891,11 +900,13 @@ fn install_setup(
     }
     state.frontend.lan = None;
     let mut setup_ui = MultiplayerSetupState::default();
-    if let Some(row) = state
-        .match_state
-        .session
-        .network_setup()
-        .and_then(|launch| launch.local_player().raw_slot_index)
+    // VERA's rooms list their players first, from the first page.
+    if !dialog.modern
+        && let Some(row) = state
+            .match_state
+            .session
+            .network_setup()
+            .and_then(|launch| launch.local_player().raw_slot_index)
     {
         setup_ui.show_row(usize::from(row), dialog.rows_per_page());
     }
@@ -968,7 +979,7 @@ pub(crate) fn remember_setup(state: &mut AppState) {
     if session.host()
         && let Some(launch) = session.network_setup()
     {
-        let vacancies = std::array::from_fn(|row| session.network_vacancy(row as u8));
+        let vacancies = session.network_remembered_vacancies();
         let choices = std::array::from_fn(|row| session.network_row_choices(row as u8));
         state
             .frontend

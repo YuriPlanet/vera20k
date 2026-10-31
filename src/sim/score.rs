@@ -137,11 +137,10 @@ impl Simulation {
             return false;
         }
 
-        // Houses[] order, without passive types or the observer House.
-        let observer = session.observer_house();
+        // Houses[] order, without passive types or observer Houses.
         let contenders: Vec<InternedId> = houses
             .in_order()
-            .filter(|house| !house.multiplay_passive() && Some(house.name()) != observer)
+            .filter(|house| !house.multiplay_passive() && !session.is_observer_house(house.name()))
             .map(|house| house.name())
             .collect();
         let mut rows = Vec::with_capacity(contenders.len());
@@ -384,12 +383,13 @@ mod tests {
         assert_eq!(sim.clone_scenario_rng().state(), cursor);
     }
 
-    /// 0x005C98E5: the observer House takes no row and draws nothing.
+    /// 0x005C98E5: an observer House takes no row and draws nothing, and a
+    /// VERA room's every observer is one.
     #[test]
-    fn the_observer_house_takes_no_score_row() {
+    fn observer_houses_take_no_score_row() {
         let mut sim = Simulation::with_seed(0x51C0_0B5E);
         let mut owners = Vec::new();
-        for name in ["Player", "Observer"] {
+        for name in ["Player", "Observer", "Spectator"] {
             owners.push(insert_house(
                 &mut sim,
                 HouseFixture {
@@ -408,7 +408,7 @@ mod tests {
         sim.houses.reorder_for_test(&owners);
         sim.session.install_multiplayer_house_identity(
             crate::skirmish_modes::MpModeClass::Battle,
-            Some(owners[1]),
+            vec![owners[1], owners[2]],
         );
         let mut one_draw = sim.clone_scenario_rng();
         one_draw.next_range_u32_inclusive(25, 50);
@@ -650,7 +650,7 @@ mod tests {
         let mut sim = Simulation::with_seed(0x5C4E_F000);
         sim.session.install_multiplayer_house_identity(
             crate::skirmish_modes::MpModeClass::Cooperative,
-            None,
+            Vec::new(),
         );
         insert_house(
             &mut sim,

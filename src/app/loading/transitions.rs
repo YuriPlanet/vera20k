@@ -355,6 +355,13 @@ pub(crate) fn install_world_presentation(
             assets,
             rules.digital_display_types().types(),
         );
+        overlay.load_insignia_shapes(
+            &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
+            &state.renderer.batch_renderer,
+            assets,
+            rules,
+        );
     }
     // Phobos placement preview strips embed the active theater's palette and
     // the local house colour; a map load invalidates them.

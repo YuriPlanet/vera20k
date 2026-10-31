@@ -154,6 +154,33 @@ pub(crate) fn create(
     let Some(to) = super::fire_coord::effect_target_coordinate(world, rules, target) else {
         return;
     };
+    emit(world, rules, from, to, z_adjust, weapon, owner);
+}
+
+/// Phobos `BulletExt::SimulatedFiringElectricBolt`: explicit endpoints and no
+/// live source Techno, so an airburst/split child still draws after its firer
+/// expired.
+#[cfg(feature = "phobos")]
+pub(crate) fn create_effect(
+    world: &mut crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    from: ProjectileCoord,
+    to: ProjectileCoord,
+    weapon: &crate::rules::weapon_type::WeaponType,
+    owner: Option<ElectricBoltOwner>,
+) {
+    emit(world, rules, from, to, 0, weapon, owner);
+}
+
+fn emit(
+    world: &mut crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    from: ProjectileCoord,
+    to: ProjectileCoord,
+    z_adjust: i32,
+    weapon: &crate::rules::weapon_type::WeaponType,
+    owner: Option<ElectricBoltOwner>,
+) {
     let alternate_color = weapon.is_alternate_color;
     // Init4C2AA3 draws from process Main, before constructing SparkSys. The
     // shared RNG owns every rejection retry. EBolt itself allocates no ID.

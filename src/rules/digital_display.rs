@@ -20,6 +20,7 @@
 //! `VERA.INI` (seeded from `RA2MD.INI`) by
 //! `app::persistence::phobos_settings`.
 
+use crate::rules::building_select_bracket::BuildingSelectBracketPosition;
 #[cfg(feature = "phobos")]
 use crate::rules::ini_parser::IniFile;
 #[cfg(feature = "phobos")]
@@ -180,35 +181,6 @@ impl DigitalVerticalAnchor {
     }
 }
 
-/// Phobos `BuildingSelectBracketPosition` (`Enum.h:310..318`).
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
-)]
-pub enum DigitalBuildingAnchor {
-    #[default]
-    Top,
-    LeftTop,
-    LeftBottom,
-    Bottom,
-    RightBottom,
-    RightTop,
-}
-
-impl DigitalBuildingAnchor {
-    #[cfg(feature = "phobos")]
-    fn parse(raw: &str) -> Option<Self> {
-        Some(match raw.to_ascii_lowercase().as_str() {
-            "top" => Self::Top,
-            "lefttop" => Self::LeftTop,
-            "leftbottom" => Self::LeftBottom,
-            "bottom" => Self::Bottom,
-            "rightbottom" => Self::RightBottom,
-            "righttop" => Self::RightTop,
-            _ => return None,
-        })
-    }
-}
-
 /// Phobos `DisplayShowType` flags (`Enum.h:345..354`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct DigitalShowType(u8);
@@ -273,7 +245,7 @@ pub struct DigitalDisplayType {
     pub align: DigitalTextAlign,
     pub anchor_horizontal: DigitalHorizontalAnchor,
     pub anchor_vertical: DigitalVerticalAnchor,
-    pub anchor_building: DigitalBuildingAnchor,
+    pub anchor_building: BuildingSelectBracketPosition,
     pub shape: Option<String>,
     pub palette: Option<String>,
     pub shape_spacing: Option<[i32; 2]>,
@@ -301,7 +273,7 @@ impl DigitalDisplayType {
             align: DigitalTextAlign::Right,
             anchor_horizontal: DigitalHorizontalAnchor::Right,
             anchor_vertical: DigitalVerticalAnchor::Top,
-            anchor_building: DigitalBuildingAnchor::Top,
+            anchor_building: BuildingSelectBracketPosition::Top,
             shape: None,
             palette: None,
             shape_spacing: None,
@@ -445,7 +417,7 @@ impl DigitalDisplayTypeCatalog {
                 "Anchor.Building",
                 0x40,
                 entry.anchor_building,
-                |current, raw| DigitalBuildingAnchor::parse(raw).unwrap_or(current),
+                |current, raw| BuildingSelectBracketPosition::parse(raw).unwrap_or(current),
             );
             // `Valueable<SHPStruct*>` retains the loaded pointer when the key
             // is absent; only a present key can set or clear it.
@@ -573,7 +545,10 @@ mod tests {
         assert_eq!(entry.info_index, 2);
         assert_eq!(entry.align, DigitalTextAlign::Center);
         assert_eq!(entry.anchor_horizontal, DigitalHorizontalAnchor::Center);
-        assert_eq!(entry.anchor_building, DigitalBuildingAnchor::RightBottom);
+        assert_eq!(
+            entry.anchor_building,
+            BuildingSelectBracketPosition::RightBottom
+        );
         assert_eq!(entry.hide_max_value, Some(false));
         assert_eq!(entry.divisor(), 20);
         assert!(entry.show_type.contains(DigitalShowType::CURSOR_HOVER));

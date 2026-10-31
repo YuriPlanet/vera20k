@@ -968,6 +968,13 @@ pub struct ProjectilePayload {
     #[cfg(feature = "phobos")]
     #[serde(default = "default_firepower_multiplier")]
     firepower_multiplier: crate::util::native_x87::NativeF64Bits,
+    /// Phobos `BulletExt::Detonate`'s `pFiringHouse`: the House a simulated
+    /// detonation keeps when the shot's invoker Techno is already gone
+    /// (`WarheadTypeExt::DetonateAt`). Real bullets leave it unset and keep
+    /// [`crate::sim::projectile::Projectile::phobos_firer_house`].
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    source_house: Option<InternedId>,
     /// `BulletClass+0x150`, 1/256 units: `BulletClass::Construct` writes
     /// [`Self::UNSCALED`] (`0x00466546`) and only a Prism master's supported
     /// shot writes another value (`BuildingClass::ProcessDelayedFire`,
@@ -1003,6 +1010,8 @@ impl ProjectilePayload {
             damage_multiplier: Self::UNSCALED,
             #[cfg(feature = "phobos")]
             firepower_multiplier: crate::util::native_x87::NativeF64Bits::ONE,
+            #[cfg(feature = "phobos")]
+            source_house: None,
         }
     }
 
@@ -1052,6 +1061,19 @@ impl ProjectilePayload {
         firepower_multiplier: crate::util::native_x87::NativeF64Bits,
     ) -> Self {
         self.firepower_multiplier = firepower_multiplier;
+        self
+    }
+
+    /// The House a simulated detonation retains for its source-House
+    /// fallback (`BulletExt::Detonate`'s `pFiringHouse`).
+    #[cfg(feature = "phobos")]
+    pub fn source_house(&self) -> Option<InternedId> {
+        self.source_house
+    }
+
+    #[cfg(feature = "phobos")]
+    pub fn with_source_house(mut self, house: Option<InternedId>) -> Self {
+        self.source_house = house;
         self
     }
 

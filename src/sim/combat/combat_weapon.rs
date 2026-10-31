@@ -737,6 +737,40 @@ pub(crate) fn what_weapon_should_i_use<'r>(
     techno_what_weapon_should_i_use(rules, obj, attacker, target, get_weapon)
 }
 
+/// Whether the airstrike secondary is selected for a techno target.
+///
+/// Phobos gates it twice (`TechnoClass_WhatWeaponShouldIUse_Airstrike`,
+/// `0x6F348F`): the warhead's `AirstrikeTargets` must admit the kind, and the
+/// target type's `AllowAirstrike` must permit the type, defaulting to `CanC4`
+/// for a building and to targetable for every other kind. Without the feature
+/// this is the vanilla arm: a C4-able building that is not both a resource
+/// destination and a resource gatherer.
+fn airstrike_secondary_selected(
+    warhead: &WarheadType,
+    target_obj: &ObjectType,
+    kind: TechnoKind,
+) -> bool {
+    #[cfg(feature = "phobos")]
+    {
+        use crate::rules::airstrike_targets::AirstrikeKind;
+        let target_kind = match kind {
+            TechnoKind::Infantry => AirstrikeKind::Infantry,
+            TechnoKind::Unit => AirstrikeKind::Unit,
+            TechnoKind::Aircraft => AirstrikeKind::Aircraft,
+            TechnoKind::Building => AirstrikeKind::Building,
+        };
+        warhead.airstrike_targets.allows(target_kind)
+            && target_obj.allows_airstrike_weapon(kind == TechnoKind::Building)
+    }
+    #[cfg(not(feature = "phobos"))]
+    {
+        let _ = warhead;
+        kind == TechnoKind::Building
+            && target_obj.can_c4
+            && (!target_obj.resource_destination || !target_obj.resource_gatherer)
+    }
+}
+
 /// `TechnoClass::What_Weapon_Should_I_Use @ 0x006F3330`, arm by arm in native
 /// order. Addresses name the first instruction of each arm.
 fn techno_what_weapon_should_i_use<'r>(
@@ -793,27 +827,18 @@ fn techno_what_weapon_should_i_use<'r>(
         }
         return stage.wrapping_mul(2);
     }
-    // I @ 0x006F3477: Airstrike secondary — only against a C4-able building
-    // that is not BOTH a resource gatherer and a resource destination.
-    if secondary_warhead.is_some_and(|warhead| warhead.airstrike) {
+    // I @ 0x006F3477: Airstrike secondary. Phobos adds two gates here
+    // (`TechnoClass_WhatWeaponShouldIUse_Airstrike`, `0x6F348F`).
+    if let Some(warhead) = secondary_warhead.filter(|warhead| warhead.airstrike) {
         let TargetFacts::Techno {
             obj: target_obj,
-            kind: TechnoKind::Building,
+            kind,
             ..
         } = target
         else {
             return 0;
         };
-        if !target_obj.can_c4 {
-            return 0;
-        }
-        if !target_obj.resource_destination {
-            return 1;
-        }
-        if !target_obj.resource_gatherer {
-            return 1;
-        }
-        return 0;
+        return i32::from(airstrike_secondary_selected(warhead, target_obj, *kind));
     }
     // J @ 0x006F3528: IsLocomotor primary (Magnetron) vs a building.
     if primary_warhead.is_some_and(|warhead| warhead.is_locomotor)

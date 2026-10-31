@@ -458,6 +458,69 @@ pub(crate) fn paint_wol_lobby_children(
     paint
 }
 
+/// VERA's Players trackbar and Allow spectators box in a Create Game box,
+/// painted after the box as its other checkboxes are.
+pub(super) fn paint_room_limits(
+    state: &AppState,
+    atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
+    controls: &mut Vec<SpriteInstance>,
+    labels: &mut Vec<PaintLabel<'_>>,
+    picker: &crate::ui::room_limits::RoomLimitsPicker,
+    layout: &crate::ui::room_limits::RoomLimitsLayout,
+) {
+    let scale = ShellScale::RETAIL;
+    let chrome = atlas.control_chrome();
+    let players = i32::from(picker.limits.players);
+    paint_control(
+        controls,
+        &chrome,
+        ControlPaint::Trackbar {
+            rect: layout.players,
+            thumb_left: crate::ui::room_limits::PLAYERS.thumb_left_in(
+                players,
+                layout.players,
+                scale,
+            ),
+            plaque: true,
+            disabled: false,
+        },
+        scale,
+    );
+    paint_control(
+        controls,
+        &chrome,
+        ControlPaint::Checkbox {
+            rect: layout.spectators,
+            checked: picker.limits.spectators,
+        },
+        scale,
+    );
+    let caption = |text: String, rect: RectPx, align: ShellAlign| PaintLabel {
+        text: text.into(),
+        rect,
+        align,
+        rgb: SHELL_LABEL_TEXT_RGB,
+        path_a_reveal: None,
+    };
+    labels.extend([
+        caption(
+            label(state, "GUI:Players"),
+            layout.players_label,
+            ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
+        ),
+        caption(
+            players.to_string(),
+            crate::ui::shell::trackbar::value_text_rect(layout.players, scale),
+            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+        ),
+        caption(
+            "Allow spectators".to_owned(),
+            crate::ui::skirmish_shell::checkbox_text_rect(layout.spectators, scale),
+            ShellAlign::V_CENTER,
+        ),
+    ]);
+}
+
 /// `0xC3` or `0xE1` over the covered dialog; `status` is `0xC3`'s own
 /// status line text. The `modern` lobby draws them on Red Alert 2's box art,
 /// as VERA's updater boxes do; the native lobby keeps gamemd's mode-2 art.
@@ -546,6 +609,9 @@ pub(crate) fn paint_wol_lobby_popup(
                     ShellAlign::V_CENTER,
                     enabled,
                 ));
+            }
+            if let (Some(picker), Some(room)) = (&create.room, &layout.room) {
+                paint_room_limits(state, atlas, &mut paint.controls, &mut labels, picker, room);
             }
             labels.push(caption(
                 "GUI:OK",

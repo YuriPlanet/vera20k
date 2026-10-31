@@ -141,7 +141,7 @@ ring = "0.17"
 wasm-bindgen = { version = "0.2", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 js-sys = { version = "0.3", optional = true }
-web-sys = { version = "0.3", optional = true, features = ["Window", "Document", "HtmlCanvasElement", "Element", "HtmlElement", "AudioBuffer", "AudioBufferSourceNode", "AudioContext", "AudioDestinationNode", "AudioNode", "AudioScheduledSourceNode", "BaseAudioContext"] }
+web-sys = { version = "0.3", optional = true, features = ["Window", "Document", "HtmlCanvasElement", "Element", "HtmlElement", "AudioBuffer", "AudioBufferSourceNode", "AudioContext", "AudioDestinationNode", "AudioNode", "AudioScheduledSourceNode", "BaseAudioContext", "CompositionEvent", "CssStyleDeclaration", "DomRect", "Event", "EventTarget", "FocusEvent", "HtmlTextAreaElement", "KeyboardEvent", "KeyboardEventInit", "Node", "UiEvent"] }
 console_log = { version = "1", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
 # Browser WebGL2 fallback for pages without WebGPU; desktop backends are unchanged.

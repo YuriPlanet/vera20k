@@ -1805,8 +1805,11 @@ impl Simulation {
         }
         self.validate_frame_continuation_for_restore()
             .map_err(|reason| SnapshotRestoreError::InvalidFrameContinuation { reason })?;
-        if let Some(observer) = self.session.observer_house()
-            && !self.houses.contains_key(&observer)
+        if self
+            .session
+            .observer_houses()
+            .iter()
+            .any(|observer| !self.houses.contains_key(observer))
         {
             return Err(SnapshotRestoreError::InvalidMultiplayerSession {
                 reason: "observer House is absent",
@@ -3780,7 +3783,7 @@ mod tests {
             sim.session.install_network_timing(73);
             sim.session.install_multiplayer_house_identity(
                 crate::skirmish_modes::MpModeClass::Battle,
-                Some(owner),
+                vec![owner],
             );
             let mut header = crate::map::preview::ScenarioStartHeader::default();
             header.read_ini(&crate::rules::ini_parser::IniFile::from_str(
@@ -3793,7 +3796,7 @@ mod tests {
             assert_eq!(restored.session.game_mode(), mode);
             assert_eq!(restored.session.start_header().coop_human_start_spots(), 2);
             assert_eq!(restored.session.network_max_ahead_frames(), Some(73));
-            assert_eq!(restored.session.observer_house(), Some(owner));
+            assert_eq!(restored.session.observer_houses(), [owner]);
             assert_eq!(
                 restored.session.multiplayer_mode_class(),
                 Some(crate::skirmish_modes::MpModeClass::Battle)

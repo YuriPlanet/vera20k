@@ -113,9 +113,56 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             .multiplayer_shell_runtime
             .cooperative_setup_view()
     });
-    let row_count = visible_limit
-        .max(observer_row.map_or(0, |row| row + 1))
-        .min(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT);
+    // VERA's rooms list only who is in them: the players and AI, then the
+    // spectators. Their Open and Closed rows stay hidden; a joiner takes
+    // one and shows up.
+    let several = session.network_several_observers() && observer_row.is_some();
+    let visible_limit = if several {
+        usize::from(session.network_player_row_limit())
+    } else {
+        visible_limit
+    };
+    // No AI plays in a VERA room while anyone watches (`0x5EC9F0`'s
+    // TXT_NO_AI_WITH_OBSERVER).
+    let watched = several && launch.humans.iter().any(|human| human.is_observer());
+    // The host adds an AI from an Add AI row after the players, which is
+    // the first open player row.
+    let add_ai = (several && host && !watched && mode.class.lists_in_skirmish())
+        .then(|| session.network_free_row(false))
+        .flatten();
+    let mut listed = Vec::new();
+    if several {
+        let rows = 0..crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as u8;
+        let watching = |row: u8| match launch
+            .humans
+            .iter()
+            .find(|human| human.raw_slot_index == Some(row))
+        {
+            Some(human) => Some(human.is_observer()),
+            None if session.network_display_ai(row).is_some() => Some(false),
+            None if session.network_vacancy(row) == Some(NetworkVacancy::Waiting) => {
+                Some(usize::from(row) >= visible_limit)
+            }
+            None => None,
+        };
+        listed.extend(rows.clone().filter(|row| watching(*row) == Some(false)));
+        listed.extend(add_ai);
+        listed.extend(rows.filter(|row| watching(*row) == Some(true)));
+    }
+    let row_count = if several {
+        listed.len()
+    } else {
+        visible_limit
+            .max(observer_row.map_or(0, |row| row + 1))
+            .min(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT)
+    };
+    let row_at = |position: usize| {
+        if several {
+            listed.get(position).copied()
+        } else {
+            (position < crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT).then_some(position as u8)
+        }
+    };
     let dialog = super::dialog(state);
     let rows = dialog.rows_per_page();
     let first_row = state
@@ -126,10 +173,9 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let mut combos = Vec::with_capacity(5 * rows);
     let mut row_icons = std::array::from_fn(|_| None);
     for visible_row in 0..rows {
-        let row = (first_row + visible_row) as u8;
-        if usize::from(row) >= crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT {
+        let Some(row) = row_at(first_row + visible_row) else {
             break;
-        }
+        };
         let human = launch
             .humans
             .iter()
@@ -140,11 +186,18 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         let is_local = local.raw_slot_index == Some(row);
         let observer = human.is_some_and(|(_, human)| human.is_observer())
             || vacancy == Some(NetworkVacancy::OpenObserver);
-        let visible = usize::from(row) < visible_limit || observer_row == Some(usize::from(row));
-        let editable = ((is_local
-            && (host || !session.network_player_ready(launch.local_player_index)))
-            || host && ai.is_some())
-            && !observer;
+        let visible =
+            several || usize::from(row) < visible_limit || observer_row == Some(usize::from(row));
+        // A VERA room's Add AI and Waiting rows show only their Player combo.
+        let adding = Some(row) == add_ai;
+        let bare = several && human.is_none() && ai.is_none();
+        // VERA's room accepts for its guest (`service::auto_accept`), so the
+        // guest's row stays open: the host's next options take it back.
+        let accepted = !dialog.modern && session.network_player_ready(launch.local_player_index);
+        let editable = ((is_local && (host || !accepted)) || host && ai.is_some()) && !observer;
+        // A VERA room's guest picks Observer in its Side list to watch while
+        // a spectator row is open, and a side to play while a player row is.
+        let switching = several && is_local && !host && !accepted;
         let choices = session.network_row_choices(row)?;
         let country = if observer {
             -3
@@ -192,46 +245,82 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     },
                 )
             });
+        let ai_choices = [(4, "GUI:AIEasy"), (5, "GUI:AINormal"), (6, "GUI:AIHard")];
         let mut players = Vec::new();
-        if human.is_some() || !host {
-            players.push(SetupChoice {
-                value: slot_value,
-                text: slot_label.clone(),
-                swatch: None,
-            });
-        }
-        if host && !is_local {
-            let observer_only = observer_row == Some(usize::from(row))
-                && usize::from(row) > capacity
-                && ai.is_none()
-                && vacancy != Some(NetworkVacancy::Open);
-            if !observer_only {
+        if several {
+            // VERA's host kicks a person, removes or retunes an AI, and adds
+            // one from the Add AI row; each opens its row (2), which leaves
+            // the list.
+            if adding {
                 players.push(SetupChoice {
                     value: 2,
-                    text: label(state, "GUI:Open"),
+                    text: "Add AI".to_owned(),
                     swatch: None,
                 });
             }
-            if observer_row == Some(usize::from(row)) {
-                players.push(SetupChoice {
-                    value: 7,
-                    text: label(state, "GUI:OpenObserver"),
-                    swatch: None,
-                });
-            }
-            players.push(SetupChoice {
-                value: 3,
-                text: label(state, "GUI:Closed"),
-                swatch: None,
-            });
-            //5EB060 asks the same vtable+40 used by the Skirmish mode list.
-            if mode.class.lists_in_skirmish() && !observer_only {
-                for (value, key) in [(4, "GUI:AIEasy"), (5, "GUI:AINormal"), (6, "GUI:AIHard")] {
+            if host && (adding || ai.is_some()) {
+                for (value, key) in ai_choices {
                     players.push(SetupChoice {
                         value,
                         text: label(state, key),
                         swatch: None,
                     });
+                }
+            } else {
+                players.push(SetupChoice {
+                    value: slot_value,
+                    text: slot_label.clone(),
+                    swatch: None,
+                });
+            }
+            if host && !is_local && !adding {
+                players.push(SetupChoice {
+                    value: 2,
+                    text: if ai.is_some() { "Remove" } else { "Kick" }.to_owned(),
+                    swatch: None,
+                });
+            }
+        } else {
+            if human.is_some() || !host {
+                players.push(SetupChoice {
+                    value: slot_value,
+                    text: slot_label.clone(),
+                    swatch: None,
+                });
+            }
+            if host && !is_local {
+                let observer_only = observer_row == Some(usize::from(row))
+                    && usize::from(row) > capacity
+                    && ai.is_none()
+                    && vacancy != Some(NetworkVacancy::Open);
+                if !observer_only {
+                    players.push(SetupChoice {
+                        value: 2,
+                        text: label(state, "GUI:Open"),
+                        swatch: None,
+                    });
+                }
+                if observer_row == Some(usize::from(row)) {
+                    players.push(SetupChoice {
+                        value: 7,
+                        text: label(state, "GUI:OpenObserver"),
+                        swatch: None,
+                    });
+                }
+                players.push(SetupChoice {
+                    value: 3,
+                    text: label(state, "GUI:Closed"),
+                    swatch: None,
+                });
+                //5EB060 asks the same vtable+40 used by the Skirmish mode list.
+                if mode.class.lists_in_skirmish() && !observer_only {
+                    for (value, key) in ai_choices {
+                        players.push(SetupChoice {
+                            value,
+                            text: label(state, key),
+                            swatch: None,
+                        });
+                    }
                 }
             }
         }
@@ -274,12 +363,20 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             }
             countries = allowed;
         }
-        if observer {
-            countries = vec![SetupChoice {
+        let sides = if switching && observer {
+            !session.network_no_open_player_row()
+        } else {
+            !observer
+        };
+        if !sides {
+            countries.clear();
+        }
+        if observer || switching && session.network_free_row(true).is_some() {
+            countries.push(SetupChoice {
                 value: -3,
                 text: label(state, "GUI:Observer"),
                 swatch: None,
-            }];
+            });
         }
         let color_claims = launch
             .humans
@@ -348,15 +445,17 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             combos.push(SetupCombo {
                 id: column.control(visible_row),
                 row,
-                enabled: editable && (column != SetupColumn::Team || mode.allies_allowed),
+                enabled: (editable || switching && column == SetupColumn::Country)
+                    && (column != SetupColumn::Team || mode.allies_allowed),
                 visible: visible
+                    && !bare
                     && (column == SetupColumn::Country || !observer)
                     && !(column == SetupColumn::Team && clan_room),
                 selected,
                 choices,
             });
         }
-        if visible {
+        if visible && !bare {
             let flag = match u16::try_from(country)
                 .ok()
                 .and_then(|index| state.process_assets.country_flag_surface(index))
@@ -411,12 +510,13 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         },
     ];
     // 7A0E50 from 5EA3E0: rows without a node show no ping image.
-    let ping_icons = std::array::from_fn(|row| {
-        (dialog.wol() && row < rows).then_some(())?;
+    let ping_icons = std::array::from_fn(|position| {
+        (dialog.wol() && position < rows).then_some(())?;
+        let row = row_at(first_row + position)?;
         let human = launch
             .humans
             .iter()
-            .find(|human| human.raw_slot_index == Some((first_row + row) as u8))?;
+            .find(|human| human.raw_slot_index == Some(row))?;
         ping_icon(protocol.ping(&human.name)?)
     });
     Some(SetupView {

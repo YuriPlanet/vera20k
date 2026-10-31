@@ -57,6 +57,29 @@ fn bullet_retains_its_firers_house_after_the_owner_expires() {
     );
 }
 
+/// A simulated detonation has no projectile to read `FirerHouse` from, so
+/// `BulletExt::Detonate`'s `pFiringHouse` rides on its payload instead.
+#[test]
+fn simulated_detonation_keeps_the_shots_firing_house() {
+    let (mut world, _rules, source, _bullet, warhead) = scene();
+    let americans = world.interner.intern("Americans");
+    world.substrate.entities.remove(source);
+    let detonation = ProjectileDetonation {
+        projectile_id: u64::MAX,
+        source_id: source,
+        target: ProjectileTarget::None,
+        impact: ProjectileCoord::new(0, 0, 0),
+        payload: ProjectilePayload::new(10, warhead, None, false)
+            .with_source_house(Some(americans)),
+        reason: ProjectileDetonationReason::AttachEffectShot,
+    };
+    assert_eq!(
+        detonation_source_house(&world, &detonation),
+        Some(americans),
+        "the retained firing House stands in for the expired invoker"
+    );
+}
+
 #[test]
 fn reconstruct_without_a_live_owner_keeps_the_saved_house() {
     let (mut world, rules, source, bullet, _) = scene();

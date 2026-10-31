@@ -371,7 +371,7 @@ fn engine_platform_and_process_reads_have_pinned_files() {
 }
 
 /// Engine reads of what differs per client: PlayerPtr (`current_house`), the
-/// observer House, IsHumanPlayer (`0x0050B6F0`, `is_human_player` and its
+/// observer Houses, IsHumanPlayer (`0x0050B6F0`, `is_human_player` and its
 /// `house_is_human_player` wrapper), Techno+0x41A and +0x41B
 /// (`owned_by_current_house`, `discovered_by_current_house`) and the local
 /// player's name and defeat. In a network game no decision every peer shares
@@ -430,11 +430,14 @@ fn engine_per_client_reads_have_pinned_callers() {
             ],
         ),
         (
-            "observer_house",
+            "observer_houses",
+            &[("sim/scenario_session.rs", 6), ("sim/snapshot.rs", 1)],
+        ),
+        (
+            "is_observer_house",
             &[
-                ("sim/scenario_session.rs", 5),
+                ("sim/scenario_session.rs", 1),
                 ("sim/score.rs", 1),
-                ("sim/snapshot.rs", 1),
                 ("sim/world/house_defeat.rs", 2),
             ],
         ),

@@ -19,12 +19,20 @@
 //! (C2/C9, BC/BD) and the LAN lobby (BB). Finished text goes through each
 //! screen's own text path, as WM_IME_CHAR does.
 //!
+//! Player-name edits stay Latin as native: NewEdit `0x00614B30` drops units
+//! at or above 0x100 from them (`0x00615226..0x0061527A`, the byte-only filter),
+//! and the LAN messages carry a name's low bytes.
+//!
 //! RESIDUAL: native's other NewEdits (login, page, buddy, saved-game
 //! descriptions) also take IME input; here they keep plain key text. In
 //! battle, native leaves the composition to the system's default IME window
 //! (OwnerDraw__ServiceIMEMessage `0x00778030` passes the composition messages
 //! to DefWindowProc). winit hides that window, so VERA20k draws the
 //! composition after the typed text in the NewEdit composition colour.
+//!
+//! winit's web backend has no input-method support; in the browser `web::ime`
+//! supplies these same events. RESIDUAL: there the candidate window opens at
+//! the edit's left end plus the composition, not after the typed text.
 //!
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
@@ -117,6 +125,10 @@ fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
 /// (`0x00778180` / `0x007781A0`), and keep the system's candidate window at
 /// that edit.
 pub(crate) fn sync(state: &mut AppState) {
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    for ime in crate::web::ime::take_events() {
+        event(state, ime);
+    }
     let found = target(state);
     let target = found.map(|(target, _)| target);
     let platform = &mut state.platform;
@@ -129,6 +141,8 @@ pub(crate) fn sync(state: &mut AppState) {
         ime.allowed = target.is_some();
         ime.area = None;
         platform.window.set_ime_allowed(ime.allowed);
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        crate::web::ime::set_allowed(ime.allowed);
     }
     if let Some((_, rect)) = found
         && ime.area != Some(rect)
@@ -138,6 +152,12 @@ pub(crate) fn sync(state: &mut AppState) {
             PhysicalPosition::new(rect.x, rect.y),
             PhysicalSize::new(rect.w.max(1) as u32, rect.h.max(1) as u32),
         );
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        crate::web::ime::set_area(rect.x, rect.y, rect.w.max(1) as u32, rect.h.max(1) as u32);
+    }
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    if ime.allowed {
+        crate::web::ime::keep_focus();
     }
 }
 

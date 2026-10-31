@@ -1319,13 +1319,13 @@ pub fn initialize_skirmish_launch_houses(
         })
         .unwrap_or(0);
     sim.session.install_scenario_side(scenario_side);
-    let observer = slots
+    let observers = slots
         .iter()
-        .rev()
-        .find(|slot| slot.observer)
-        .and_then(|slot| sim.interner.get(&slot.owner_name));
+        .filter(|slot| slot.observer)
+        .filter_map(|slot| sim.interner.get(&slot.owner_name))
+        .collect();
     sim.session
-        .install_multiplayer_house_identity(session.mode.class, observer);
+        .install_multiplayer_house_identity(session.mode.class, observers);
     // 688109..10F sets player-control only for the local source node;
     // remote human Houses remain human without acquiring local control.
     for slot in &slots {
@@ -3852,7 +3852,7 @@ mod tests {
             (viewers.len(), viewers[28], viewers[29]),
             (30, last, observer)
         );
-        assert_eq!(left.simulation.session.observer_house(), Some(observer));
+        assert_eq!(left.simulation.session.observer_houses(), [observer]);
         let ids = [&mut left, &mut right].map(|runtime| {
             runtime
                 .simulation
@@ -4379,6 +4379,43 @@ mod tests {
         let mut unresolved_remote = session;
         unresolved_remote.humans[0].slot.country_random = true;
         assert!(MatchLaunchDescriptor::from_resolved(unresolved_remote).is_err());
+    }
+
+    /// `[0xAC1198]` holds the last observer; a VERA room's every observer
+    /// House gets its treatment.
+    #[test]
+    fn every_observer_house_takes_the_observer_identity() {
+        let mut session = one_player_battle_launch("multiplayer.map")
+            .session()
+            .clone();
+        session.humans[0].name = "Host".into();
+        let mut guest = session.humans[0].clone();
+        guest.name = "Guest".into();
+        guest.raw_slot_index = Some(1);
+        guest.slot.color_index = 1;
+        session.humans.push(guest);
+        for (row, name) in [(2, "Observer"), (3, "Spectator")] {
+            let mut observer = session.humans[0].clone();
+            observer.name = name.into();
+            observer.raw_slot_index = Some(row);
+            observer.set_observer(true);
+            observer.slot.color_index = 8;
+            observer.slot.start_position = LaunchStartPosition::Auto;
+            session.humans.push(observer);
+        }
+        session.rebuild_house_roster();
+        let descriptor = MatchLaunchDescriptor::from_resolved(session).unwrap();
+        let mut sim = Simulation::new();
+        initialize_skirmish_launch_houses(
+            &mut sim,
+            &HouseRoster::default(),
+            &techno_constructor_start_rules(),
+            &descriptor,
+        );
+        let [host, guest, observer, spectator] =
+            ["Host", "Guest", "Observer", "Spectator"].map(|name| sim.interner.get(name).unwrap());
+        assert_eq!(sim.session.observer_houses(), [observer, spectator]);
+        assert!(!sim.session.is_observer_house(host) && !sim.session.is_observer_house(guest));
     }
 
     #[test]

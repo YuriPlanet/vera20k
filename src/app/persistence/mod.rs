@@ -17,9 +17,9 @@ pub(crate) mod rules_profile;
 pub(crate) mod wol_profile;
 pub(crate) use resource_load::{PreparedSavedGame, SavedGamePreparationView};
 
-use std::path::{Path, PathBuf};
 #[cfg(any(feature = "dev-overlays", test))]
 use crate::util::time::SystemTime;
+use std::path::{Path, PathBuf};
 
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -39,6 +39,8 @@ pub(crate) struct PersistenceState {
     /// MainTick55DBCD's process-global ABCE08. It is deliberately outside
     /// the saved Scenario and survives a same-mission restart.
     initial_campaign_save_attempted: bool,
+    /// The one UI load awaiting its loading frame and subsequent redraw.
+    pub(crate) pending_load: Option<commands::PendingSavedGameLoad>,
     /// The process-lifetime retail Options/Video/Audio profile. UI, window,
     /// render, and audio state are projections of this single retained value.
     pub(crate) options_profile: options_profile::RetailOptionsProfile,
@@ -49,6 +51,7 @@ impl PersistenceState {
     pub(crate) fn new(options_profile: options_profile::RetailOptionsProfile) -> Self {
         Self {
             initial_campaign_save_attempted: false,
+            pending_load: None,
             options_profile,
             repository: SaveRepository::new(),
         }
@@ -535,7 +538,9 @@ impl SaveRepository {
 
     fn validate_existing_save(&self, path: &Path) -> Result<(), SaveWriteError> {
         let previous = self.read(path).map_err(SaveWriteError::write_file)?;
-        GameSnapshot::read_header(&previous).map_err(|error| {
+        // SaveGame67CF42 replaces the slot; an old VERA body's load layout
+        // must not prevent replacement of its recognizable product metadata.
+        GameSnapshot::read_metadata(&previous).map_err(|error| {
             SaveWriteError::write_file(std::io::Error::new(std::io::ErrorKind::InvalidData, error))
         })?;
         Ok(())

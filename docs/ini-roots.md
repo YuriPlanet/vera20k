@@ -2,9 +2,10 @@
 
 I adapted configurable root-file selection from my ra2-mono
 `GameConfig.cs` / `GameIniLoader.cs` into VERA's existing source owners.
-This selects one Rules, fixed Art and standalone AI root as a unit. It does
-not replace the parser, ordered Rules processing, AI registry/map passes,
-archive mounting or simulation authority.
+This selects one Rules, fixed Art and standalone AI root as a unit, plus
+optional SOUNDMD and EVAMD roots. It does not replace the parser, ordered
+Rules processing, AI registry/map passes, archive mounting or simulation
+authority.
 
 ## Configuration
 
@@ -33,13 +34,30 @@ art = "my-art.ini"
 ai = "my-ai.ini"
 ```
 
-Custom mode requires all three logical INI basenames. Paths and wildcards are
-rejected; these names are resolved through the existing VFS, not arbitrary host
-file access. Overrides cannot be mixed with a preset. Explicit `mo` and `custom`
-require all three nonempty readable winners before consumers build data, and
-never fall back to YR when a selected root is missing. `yr` preserves legacy
-admission: individual consumers still report unavailable files at their original
-stage, without eagerly requiring gameplay INIs in asset-only tools.
+SOUNDMD and EVAMD take optional roots for any profile:
+
+```toml
+[ini]
+sound = "my-sound.ini"
+eva = "my-eva.ini"
+```
+
+Omitted names keep the profile's pair: `soundmd.ini`/`evamd.ini` for `yr` and
+`custom`, `soundmo.ini`/`evamo.ini` for `mo` (and for `auto` once its rules
+triplet selects MO). Both are unlayered presentation readers: never required,
+never part of the preset completeness or ambiguity checks, and not part of the
+multiplayer rules compatibility hash. A named file that is missing keeps the
+audio owner's tolerated empty catalog instead of failing startup, exactly as
+the fixed names did.
+
+Custom mode requires all three logical Rules/Art/AI basenames. Paths and
+wildcards are rejected; these names are resolved through the existing VFS, not
+arbitrary host file access. Overrides cannot be mixed with a preset. Explicit
+`mo` and `custom` require all three nonempty readable winners before consumers
+build data, and never fall back to YR when a selected root is missing. `yr`
+preserves legacy admission: individual consumers still report unavailable files
+at their original stage, without eagerly requiring gameplay INIs in asset-only
+tools.
 
 `auto` probes only files visible to the assembled resource provider. It accepts
 YR 3/3 with MO 0/3, or MO 3/3 with YR 0/3. Both complete sets, a partial alternate
@@ -82,7 +100,7 @@ remain YR and never reread an unrelated cwd configuration.
 
 ## Scope and source
 
-This is root selection only. Sound/EVA/theme, mode/campaign catalogs, UI,
+This is root selection only. Theme, mode/campaign catalogs, UI (UIMD),
 localization, arbitrary MOD archives and Ares/Phobos gameplay tags are not
 retargeted. A directory missing required retail archives still cannot enter the
 normal game bootstrap. Selecting the MO triplet does not certify that every MO

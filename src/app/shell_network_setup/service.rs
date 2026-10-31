@@ -279,6 +279,16 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 state.platform.window.request_redraw();
                 return Ok(());
             }
+            // A VERA room's host moves its open spectator row after a leave;
+            // online the part sink's options carry it.
+            if dialog.host && state.match_state.session.network_several_observers() {
+                state
+                    .frontend
+                    .network_setup_protocol
+                    .as_mut()
+                    .expect("setup owns protocol")
+                    .republish_setup();
+            }
             // Original5E10F2..5E1114 plays Rules+6BC only after endpoint
             // admission/removal while membershipAC0264>=2. This adapter is
             // admitted setup (state2), not a participant-count predicate.

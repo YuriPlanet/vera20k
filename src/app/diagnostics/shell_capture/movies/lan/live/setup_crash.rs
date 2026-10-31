@@ -570,7 +570,7 @@ mod tests {
         let mut guest = MatchSession::default();
         guest.enter_network(NetworkReturnContext::LanLobby);
         guest
-            .accept_network_setup(launch.clone(), false, None)
+            .accept_network_setup(launch.clone(), false, None, false)
             .unwrap();
         guest.invalidate_network_agreement().unwrap();
         assert_eq!(guest.network_map_status(0), Some(0));
@@ -580,7 +580,8 @@ mod tests {
         launch.local_player_index = 0;
         let mut host = MatchSession::default();
         host.enter_network(NetworkReturnContext::LanLobby);
-        host.accept_network_setup(launch, true, None).unwrap();
+        host.accept_network_setup(launch, true, None, false)
+            .unwrap();
         assert!(setup_members(&host, false).is_none());
         host.set_network_map_status(1, 1).unwrap();
         assert_eq!(setup_members(&host, false), Some(expected.clone()));

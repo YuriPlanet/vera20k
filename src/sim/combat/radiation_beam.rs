@@ -13,6 +13,10 @@ pub struct RadiationBeamBirth {
     pub to: ProjectileCoord,
     pub z_adjust: i32,
     pub color: [u8; 3],
+    /// Phobos `Beam.IsHouseColor`: presentation replaces `color` with this
+    /// House's laser color before the beam is stored.
+    pub house: Option<crate::sim::intern::InternedId>,
+    pub house_color: bool,
     pub duration: i32,
     pub amplitude: NativeF64Bits,
 }
@@ -93,11 +97,12 @@ pub(crate) fn create(
     let Some(to) = super::fire_coord::effect_target_coordinate(world, rules, target) else {
         return;
     };
-    create_endpoints(world, rules, from, to, z_adjust, mode);
+    create_endpoints(world, rules, from, to, z_adjust, mode, None);
 }
 
 /// Phobos `BulletExt::SimulatedFiringRadBeam`: the same copied modes0/1 with
 /// caller-supplied endpoints (the simulated child's source coordinate).
+/// `house` is `Some` when `Beam.IsHouseColor` takes that House's laser color.
 pub(crate) fn create_endpoints(
     world: &mut crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -105,6 +110,7 @@ pub(crate) fn create_endpoints(
     to: ProjectileCoord,
     z_adjust: i32,
     mode: CopiedBeamMode,
+    house: Option<crate::sim::intern::InternedId>,
 ) {
     let color = match mode {
         CopiedBeamMode::Radiation => {
@@ -122,6 +128,8 @@ pub(crate) fn create_endpoints(
                 to,
                 z_adjust,
                 color,
+                house,
+                house_color: house.is_some(),
                 duration: 15,
                 amplitude: NativeF64Bits::from_bits(40.0_f64.to_bits()),
             },

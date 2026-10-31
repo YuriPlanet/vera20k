@@ -785,9 +785,11 @@ pub struct ScenarioSession {
     /// Accepted MPMode factory class. Runtime completion queries its virtual
     /// policy directly; no independent cooperative-win flag is retained.
     multiplayer_mode_class: Option<crate::skirmish_modes::MpModeClass>,
-    /// NativeAC1198, assigned by each observer's CreateHouses688116. The last
-    /// observer in House creation order owns this native presentation identity.
-    observer_house: Option<InternedId>,
+    /// Native `[0xAC1198]`, assigned by each observer's CreateHouses688116:
+    /// one pointer, so the last observer in House creation order owns the
+    /// observer's presentation. VERA's own game rooms admit several observers,
+    /// so this holds every observer House in creation order and each gets it.
+    observer_houses: Vec<InternedId>,
     /// Native Session+318/A8B550, admitted from the start/timing service.
     /// It is independent of local command scheduling preferences.
     network_max_ahead_frames: Option<i32>,
@@ -1345,16 +1347,20 @@ impl ScenarioSession {
     pub const fn multiplayer_mode_class(&self) -> Option<crate::skirmish_modes::MpModeClass> {
         self.multiplayer_mode_class
     }
-    pub const fn observer_house(&self) -> Option<InternedId> {
-        self.observer_house
+    /// Whether `house` is an observer's (`[0xAC1198]`).
+    pub fn is_observer_house(&self, house: InternedId) -> bool {
+        self.observer_houses.contains(&house)
+    }
+    pub fn observer_houses(&self) -> &[InternedId] {
+        &self.observer_houses
     }
     pub(crate) fn install_multiplayer_house_identity(
         &mut self,
         class: crate::skirmish_modes::MpModeClass,
-        observer: Option<InternedId>,
+        observers: Vec<InternedId>,
     ) {
         self.multiplayer_mode_class = Some(class);
-        self.observer_house = observer;
+        self.observer_houses = observers;
     }
 
     pub fn install_waypoints(
@@ -1634,7 +1640,7 @@ impl ScenarioSession {
             timing.hash(hasher);
         }
         s.start_header.hash(hasher);
-        // observer_house, like current_house, selects process-local presentation
+        // observer_houses, like current_house, selects process-local presentation
         // and accepted outcome, and skips the observer's terminal score draw
         // (every peer holds the same node data, and the RNG state is hashed).
         // It is saved and reference-validated, not shared CRC input.
@@ -1874,7 +1880,7 @@ impl ScenarioSession {
             theater: desc.theater.clone(),
             game_mode: ScenarioGameMode::from_legacy_nonzero(desc.game_mode_nonzero),
             multiplayer_mode_class: None,
-            observer_house: None,
+            observer_houses: Vec::new(),
             network_max_ahead_frames: None,
             network_command_timing: None,
             start_header: crate::map::preview::ScenarioStartHeader::default(),

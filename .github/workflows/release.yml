@@ -6,7 +6,7 @@ name: Release
 # commit to be a release, so there are two kinds, both started by hand (and
 # nightly.yml starts a dev build of main each day that main has changed):
 #
-#   dev build -- dispatch with `promote` empty. Builds all platforms and runs the
+#   dev build -- dispatch from main with `promote` empty. Builds all platforms and runs the
 #                library tests on each at the same time; nothing is tagged or
 #                published unless every build and every test run passes (publish
 #                mode `none` runs them too). Names every installer after its
@@ -112,6 +112,12 @@ jobs:
           INPUT_PUBLISH: ${{ inputs.publish }}
         run: |
           set -euo pipefail
+          # The signing environment is independently restricted to main. Do
+          # not spend a build on a ref that cannot produce a signed installer.
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo '::error::Dev builds must run from main to use the protected macOS signing environment.'
+            exit 1
+          fi
           version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
           if [ -z "$version" ]; then
             echo "No [package] version found in Cargo.toml" >&2
@@ -570,11 +576,59 @@ jobs:
           echo 'Linux AppImage: complete, and starting in its data folder.'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ matrix.target }}
+          name: ${{ runner.os == 'macOS' && 'macos-unsigned' || matrix.target }}
           path: |
             dist/*-setup.exe
             dist/*.dmg
             dist/*.AppImage
+          if-no-files-found: error
+
+  # A fresh runner signs the built image without executing its app, Cargo,
+  # Swift or package installation with credentials present. The environment's
+  # exact-main branch policy is the security boundary, outside workflow YAML.
+  macos-sign:
+    name: sign and notarize macOS
+    needs: [prepare, build, test]
+    if: inputs.promote == '' && github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    environment: macos-signing
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: macos-unsigned
+          path: unsigned
+      - name: Sign, notarize and staple the disk image
+        shell: bash
+        env:
+          MACOS_SIGNING_KEYCHAIN: ${{ secrets.MACOS_SIGNING_KEYCHAIN }}
+          MACOS_SIGNING_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_SIGNING_KEYCHAIN_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ vars.MACOS_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          images=(unsigned/*.dmg)
+          test "${#images[@]}" -eq 1
+          name="$(basename "${images[0]}")"
+          python3 .github/release/macos/notarize.py "${images[0]}" "ready/$name" \
+            --records notarization --identity "$MACOS_SIGNING_IDENTITY" --team "$APPLE_TEAM_ID"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: macos-notarization
+          path: |
+            notarization/*.json
+            ready/*.dmg
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-arm64
+          path: ready/*.dmg
           if-no-files-found: error
 
   # Each platform's installed game updates itself to this dev build through
@@ -592,11 +646,11 @@ jobs:
   # The game is installed where players keep it: a Windows folder with a space
   # in its path, /Applications, and an AppImage in ~/Applications that FUSE
   # mounts. Without retail game data there is no main menu to ask on, so that
-  # build updates without asking. It uploads nothing: `publish` takes every
-  # artifact as an installer.
+  # build updates without asking. It uploads nothing. The Mac input is the
+  # final notarized image, never the unsigned staging artifact.
   update-test:
     name: update test (${{ matrix.target }})
-    needs: [prepare, build]
+    needs: [prepare, build, macos-sign]
     if: inputs.promote == ''
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -640,6 +694,21 @@ jobs:
         with:
           name: ${{ matrix.target }}
           path: release
+      - name: Verify the notarized Mac installer and app
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          images=(release/*.dmg)
+          test "${#images[@]}" -eq 1
+          xcrun stapler validate "${images[0]}"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "${images[0]}"
+          mount="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "${images[0]}" > /dev/null
+          trap 'hdiutil detach "$mount" > /dev/null || true' EXIT
+          codesign --verify --strict --verbose=2 "$mount/VERA20K.app"
+          spctl --assess --type execute --verbose=4 "$mount/VERA20K.app"
+          "$mount/VERA20K.app/Contents/MacOS/VERA20K" -h > /dev/null
       - name: Build the older test program
         shell: bash
         env:
@@ -758,7 +827,7 @@ jobs:
 
   publish:
     name: publish
-    needs: [prepare, build, test, update-test]
+    needs: [prepare, build, test, macos-sign, update-test]
     # "none" stops here, with the installers left as workflow artifacts.
     if: needs.prepare.outputs.publish != 'none'
     #
@@ -790,8 +859,15 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
+          # Only the final Windows and Linux installers, not Mac staging or
+          # failure diagnostics. The next step adds the final Mac installer.
+          pattern: '*-x64'
           path: dist
           merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: macos-arm64
+          path: dist
       - name: Check the installers
         shell: bash
         run: |

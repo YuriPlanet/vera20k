@@ -136,7 +136,9 @@ fn sequenced_wol_cold_and_warm_rules_share_world_and_agreement_identity() {
     launch.rebuild_house_roster();
     let mut session = MatchSession::default();
     session.enter_network(NetworkReturnContext::Wol);
-    session.accept_network_setup(launch, true, Some(7)).unwrap();
+    session
+        .accept_network_setup(launch, true, Some(7), false)
+        .unwrap();
     session.prepare_wol_timing([0], true).unwrap();
     let startup = session.freeze_network_start(73).unwrap();
     let LoadingStartup::Network(admitted) = &startup else {
@@ -241,7 +243,12 @@ fn failed_network_load_retries_its_shell_without_installing_an_offline_fallback(
     let mut session = MatchSession::default();
     session.enter_network(NetworkReturnContext::LanLobby);
     session
-        .accept_network_setup(test_launch_session(LaunchCountry::America), true, Some(7))
+        .accept_network_setup(
+            test_launch_session(LaunchCountry::America),
+            true,
+            Some(7),
+            false,
+        )
         .unwrap();
     session.set_network_start_seed(77).unwrap();
     session.prepare_network_timing(2, || 0).unwrap();
@@ -323,7 +330,7 @@ fn admitted_network_start_preserves_canonical_humans_and_host_seed_in_fresh_load
     let mut session = MatchSession::default();
     session.enter_network(NetworkReturnContext::LanLobby);
     session
-        .accept_network_setup(launch, false, Some(7))
+        .accept_network_setup(launch, false, Some(7), false)
         .unwrap();
     session.prepare_network_timing(2, || 0).unwrap();
     let startup = session.freeze_network_start(0xabc123).unwrap();
@@ -2224,7 +2231,9 @@ fn network_load_with_remote_peer(
     let peer = sim.interner().get("Remote").unwrap();
     let mut session = crate::app::match_runtime::session::MatchSession::default();
     session.enter_network(context);
-    session.accept_network_setup(launch, true, Some(7)).unwrap();
+    session
+        .accept_network_setup(launch, true, Some(7), false)
+        .unwrap();
     session.prepare_network_timing(2, || 0).unwrap();
     let mut result = super::super::transitions::fallback_map_load_result();
     result.scenario.startup = session.freeze_network_start(1).unwrap();
@@ -2294,7 +2303,12 @@ fn a_network_start_installs_its_mode_and_timing_into_the_scenario() {
     let mut session = MatchSession::default();
     session.enter_network(NetworkReturnContext::LanLobby);
     session
-        .accept_network_setup(test_launch_session(LaunchCountry::America), true, Some(7))
+        .accept_network_setup(
+            test_launch_session(LaunchCountry::America),
+            true,
+            Some(7),
+            false,
+        )
         .unwrap();
     session.set_network_start_seed(77).unwrap();
     session.prepare_network_timing(2, || 0).unwrap();

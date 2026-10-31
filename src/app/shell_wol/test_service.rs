@@ -553,6 +553,7 @@ fn lobby_greeting(state: &mut AppState) {
         action: false,
         ansi: false,
         options: None,
+        sent_at: None,
     };
     for event in [
         WolServiceEvent::Ladder(vec![tanya_ladder()]),
@@ -752,6 +753,7 @@ fn match_requested(state: &mut AppState) {
         action: false,
         ansi: true,
         options,
+        sent_at: None,
     };
     let players = format!("{local},0,0,0,0,0,0,0,{GUEST},1,0,0,0,0,0,0");
     for event in [

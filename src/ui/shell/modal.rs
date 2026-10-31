@@ -428,11 +428,7 @@ pub fn wait_box_layout(screen_w: i32, screen_h: i32) -> WaitBoxLayout {
 }
 
 /// WOL wait proc 0x00792CF0 uses the same shell mapping for art and hit rectangles.
-pub fn wait_box_layout_on(
-    screen_w: i32,
-    screen_h: i32,
-    scale: geom::ShellScale,
-) -> WaitBoxLayout {
+pub fn wait_box_layout_on(screen_w: i32, screen_h: i32, scale: geom::ShellScale) -> WaitBoxLayout {
     if scale.is_retail() {
         return wait_box_layout(screen_w, screen_h);
     }
@@ -460,6 +456,8 @@ pub struct WolCreateGameLayout {
     pub clan: Option<RectPx>,
     pub limit: RectPx,
     pub observe: Option<RectPx>,
+    /// VERA's online popup's Players and Allow spectators.
+    pub room: Option<crate::ui::room_limits::RoomLimitsLayout>,
     pub ok: RectPx,
     pub cancel: RectPx,
     /// Its own status line `0x695`.
@@ -477,20 +475,24 @@ const ONLINE_STATUS_INSET: i32 = 10;
 /// `online` is VERA's online lobby on Red Alert 2's box art: no clan or
 /// observer box (the lobby's own Observe box still seats an observer), Limit
 /// Screen Resolution in the clan row under the password field, clear of the
-/// art's Tesla Trooper, and the status line inside the frame.
+/// art's Tesla Trooper, then Players and Allow spectators in the limit and
+/// observer rows, and the status line inside the frame.
 pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> WolCreateGameLayout {
     let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
     let field = child(133, 47, 140, 12);
     let clan = child(34, 76, 234, 14);
+    let limit = child(34, 93, 234, 14);
+    let observe = child(34, 110, 234, 14);
     let status = child(0, 186, 291, 12);
     let layout = WolCreateGameLayout {
         dialog,
         password_label: child(11, 48, 113, 12),
         password: new_edit_window(field),
         clan: Some(clan),
-        limit: child(34, 93, 234, 14),
-        observe: Some(child(34, 110, 234, 14)),
+        limit,
+        observe: Some(observe),
+        room: None,
         ok: child(33, 128, 83, 15),
         cancel: child(184, 128, 83, 15),
         status,
@@ -502,6 +504,12 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
         clan: None,
         observe: None,
         limit: RectPx::new(field.x, clan.y, field.w, clan.h),
+        room: Some(room_limits_layout(
+            layout.password_label,
+            field,
+            limit.y,
+            observe,
+        )),
         status: RectPx::new(
             dialog.x + ONLINE_STATUS_INSET,
             status.y,
@@ -509,6 +517,44 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
             status.h,
         ),
         ..layout
+    }
+}
+
+/// VERA's Create Game box in the LAN lobby, the online box's art and
+/// buttons: Players in the password row, Allow spectators in the clan row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LanCreateGameLayout {
+    pub dialog: RectPx,
+    pub room: crate::ui::room_limits::RoomLimitsLayout,
+    pub ok: RectPx,
+    pub cancel: RectPx,
+}
+
+pub fn lan_create_game_layout(screen_w: i32, screen_h: i32) -> LanCreateGameLayout {
+    let native = wol_create_game_layout(screen_w, screen_h, false);
+    let field = modal_child(native.dialog, geom::child_window(133, 47, 140, 12));
+    let clan = native.clan.expect("the native box has its clan row");
+    LanCreateGameLayout {
+        dialog: native.dialog,
+        room: room_limits_layout(native.password_label, field, field.y, clan),
+        ok: native.ok,
+        cancel: native.cancel,
+    }
+}
+
+/// Players beside its caption at `players_y`, the trackbar under `field`'s
+/// left edge, and Allow spectators in `checkbox_row` from the same edge.
+fn room_limits_layout(
+    caption: RectPx,
+    field: RectPx,
+    players_y: i32,
+    checkbox_row: RectPx,
+) -> crate::ui::room_limits::RoomLimitsLayout {
+    let players = RectPx::new(field.x, players_y, 129, 22);
+    crate::ui::room_limits::RoomLimitsLayout {
+        players_label: RectPx::new(caption.x, players.y, caption.w, players.h),
+        players,
+        spectators: RectPx::new(field.x, checkbox_row.y, field.w, checkbox_row.h),
     }
 }
 

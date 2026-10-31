@@ -344,6 +344,8 @@ impl GameConfig {
                 ("ini", "rules") => parse_string(value).map(|name| ini.rules = Some(name)),
                 ("ini", "art") => parse_string(value).map(|name| ini.art = Some(name)),
                 ("ini", "ai") => parse_string(value).map(|name| ini.ai = Some(name)),
+                ("ini", "sound") => parse_string(value).map(|name| ini.sound = Some(name)),
+                ("ini", "eva") => parse_string(value).map(|name| ini.eva = Some(name)),
                 _ => Ok(()),
             };
             read.with_context(|| format!("line {line_number}: [{section}] {key}"))?;
@@ -573,9 +575,28 @@ mod tests {
             "{base}[ini]\nprofile='custom'\nrules='r.ini'\nart='a.ini'\nai='i.ini'\n"
         ))
         .unwrap();
+        let custom_roots = custom.ini.resolve(|_| true).unwrap();
+        assert_eq!(custom_roots.names(), ["r.ini", "a.ini", "i.ini"]);
         assert_eq!(
-            custom.ini.resolve(|_| true).unwrap().names(),
-            ["r.ini", "a.ini", "i.ini"]
+            (custom_roots.sound(), custom_roots.eva()),
+            ("soundmd.ini", "evamd.ini")
+        );
+        let mo = GameConfig::parse(&format!("{base}[ini]\nprofile='mo'\n")).unwrap();
+        let mo_roots = mo.ini.resolve(|_| true).unwrap();
+        assert_eq!(
+            (mo_roots.sound(), mo_roots.eva()),
+            ("soundmo.ini", "evamo.ini")
+        );
+        // Optional presentation roots for any profile; they keep the shared
+        // names when omitted.
+        let audio = GameConfig::parse(&format!(
+            "{base}[ini]\nsound='my-sound.ini'\neva='my-eva.ini'\n"
+        ))
+        .unwrap();
+        let audio_roots = audio.ini.resolve(|_| true).unwrap();
+        assert_eq!(
+            (audio_roots.sound(), audio_roots.eva()),
+            ("my-sound.ini", "my-eva.ini")
         );
         for bad in [
             "profile='other'",
@@ -583,6 +604,8 @@ mod tests {
             "profile='mo'\nai='aimd.ini'",
             "profile=mo",
             "profile='custom'\nrules='../r.ini'\nart='a.ini'\nai='i.ini'",
+            "sound='../my-sound.ini'",
+            "eva='a.map'",
         ] {
             assert!(
                 GameConfig::parse(&format!("{base}[ini]\n{bad}\n")).is_err(),

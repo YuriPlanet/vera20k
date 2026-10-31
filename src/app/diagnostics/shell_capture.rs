@@ -1273,6 +1273,7 @@ impl ShellCaptureRequest {
                 movies::WolTarget::ModernLobby
                     | movies::WolTarget::ModernCreate
                     | movies::WolTarget::ModernRoomOptions
+                    | movies::WolTarget::ModernSpectators
                     | movies::WolTarget::ModernOptions
                     | movies::WolTarget::ModernUsername
             ),

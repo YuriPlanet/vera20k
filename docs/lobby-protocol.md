@@ -151,7 +151,7 @@ Event kinds and payloads:
 | `choices` | `{from,row,slot,observer}` |
 | `ready` | `{from,ready,revision}` |
 | `map_status` | `{from,status,revision}` |
-| `chat` | `{from:<Member>,text,private,action}` |
+| `chat` | `{from:<Member>,text,private,action,sent_at}` |
 | `game_started` | `{match_id,revision,version,rules_digest,seed,users:[{player_id,name,flags,source_index}],relay:<RelayGrant>}` |
 | `start_confirmed` | `{match_id}` |
 | `timing_confirmed` | `{match_id,pings:[integer],relay:<RelayGrant>}` |
@@ -163,6 +163,9 @@ Event kinds and payloads:
 | `located` | `{channel:<Channel or null>}` |
 | `kicked` | `{channel:<Channel>,user:<Member>,by:<Member>}` |
 | `error` | `{code,message}` |
+
+A `chat` event's `sent_at` is the Unix time in seconds the service sent it. Games from
+0.2.4 show it, in the player's local time, before each line of the chat lobby.
 
 RelayGrant is `{address,ticket,packet_key,payload_key,source_index,ordering_certificate,federation?}`. Address is `IPv4:port`
 of the user's relay in the match. The service chooses it at start and every later grant for that match names it;
@@ -353,9 +356,10 @@ deployment's `ADMIN_KEY`. Without a key of at least 32 characters it returns 404
 the sign-in ingress limit of 120 requests a minute per address. `{text,minutes}`
 sets the one current notice, replacing any earlier one: non-blank text of at most
 2048 UTF-8 bytes, kept for 1–10080 minutes. `{minutes:0}` alone clears it. Both
-return `{notice,delivered}`: the notice `{id,text,expires_at}` or `null`, and how
+return `{notice,delivered}`: the notice `{id,text,sent_at,expires_at}` or `null`, and how
 many sessions received it at once. A notice is an ordinary public `chat` event from
-`{player_id:"00000000-0000-0000-0000-000000000000",name:"VERA20k",flags:1,squad:0,clan_name:"",clan_tag:""}`.
+`{player_id:"00000000-0000-0000-0000-000000000000",name:"VERA20k",flags:1,squad:0,clan_name:"",clan_tag:""}`
+whose `sent_at` is the time it was set.
 Sessions in the public channel or a game room that has not started receive it when it is
 set; others receive it on their next public-channel join until it expires. Each
 session receives a notice once. Sign-in refuses `VERA20k` without case with 409

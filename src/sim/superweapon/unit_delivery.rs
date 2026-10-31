@@ -127,13 +127,14 @@ fn delivery_owner(
         DeliveryOwner::Neutral => HouseSelector::Neutral,
         DeliveryOwner::Special => HouseSelector::Special,
     };
-    sim.ares_nonrandom_house_kind(
+    sim.house_kind(
         selector,
         None,
         sim.houses.contains_key(&invoker).then_some(invoker),
         None,
         None,
         rules,
+        None,
     )
 }
 

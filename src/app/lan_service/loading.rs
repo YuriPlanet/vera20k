@@ -450,7 +450,12 @@ mod tests {
         let mut session = MatchSession::default();
         session.enter_network(NetworkReturnContext::Wol);
         session
-            .accept_network_setup(original_guest.network_setup().unwrap().clone(), false, None)
+            .accept_network_setup(
+                original_guest.network_setup().unwrap().clone(),
+                false,
+                None,
+                false,
+            )
             .unwrap();
         session
             .bind_network_endpoint("Host", relay_peer_endpoint(0).unwrap())

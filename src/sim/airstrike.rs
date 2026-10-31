@@ -505,6 +505,10 @@ impl Simulation {
     /// GetFLH(0,zero); target is GetCoords(+48), without TargetCoordOffset.
     /// Presentation owns the planning/Health gate and clock-driven wobble.
     /// No RNG draw, timer write or detach; isolate the shared fallback Cell.
+    ///
+    /// Phobos `DEFINE_JUMP(LJMP, 0x6D481D, 0x6D482D)` ("Allow airstrike flare
+    /// draw to foot") skips the building-only gate, so a foot target draws the
+    /// line too.
     pub fn airstrike_designation_coordinates(
         &self,
         owner: u64,
@@ -520,6 +524,7 @@ impl Simulation {
             .substrate
             .entities
             .get(source.airstrike.manager.as_ref()?.target?)?;
+        #[cfg(not(feature = "phobos"))]
         if target.category() != EntityCategory::Structure {
             return None;
         }

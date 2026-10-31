@@ -9,6 +9,8 @@
 //! A failed Unlimbo deletes that plane and returns the prior count minus one.
 
 use super::{FrameEffects, PlacementEvidence, Simulation};
+#[cfg(feature = "phobos")]
+use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
@@ -40,16 +42,28 @@ impl Simulation {
         };
         let house_id = boris.owner();
         let owner_name = self.interner.resolve(house_id).to_owned();
-        let Some(target) = self.substrate.entities.get(target) else {
+        let Some(target_entity) = self.substrate.entities.get(target) else {
             return result;
         };
         //41D8C9 calls GetCoords (+48), not TargetCoords (+A4), and divides
-        //towards zero before narrowing to the CellStruct words.
-        let coord = ground_pose::object_get_coords(target, self.resolved_terrain.as_ref());
-        let target = TargetKind::Cell(
-            crate::util::lepton::lepton_to_cell_packed(coord.x) as u16,
-            crate::util::lepton::lepton_to_cell_packed(coord.y) as u16,
-        );
+        //towards zero before narrowing to the CellStruct words. Phobos
+        //`AirstrikeClass_Fire_SetAirstrike` (`0x41D97B`) keeps that path for a
+        //building only; every other target stays the object itself, so the
+        //aircraft follow a moving unit instead of the cell it stood on.
+        #[cfg(feature = "phobos")]
+        let keep_object = target_entity.category() != EntityCategory::Structure;
+        #[cfg(not(feature = "phobos"))]
+        let keep_object = false;
+        let target = if keep_object {
+            TargetKind::Entity(target)
+        } else {
+            let coord =
+                ground_pose::object_get_coords(target_entity, self.resolved_terrain.as_ref());
+            TargetKind::Cell(
+                crate::util::lepton::lepton_to_cell_packed(coord.x) as u16,
+                crate::util::lepton::lepton_to_cell_packed(coord.y) as u16,
+            )
+        };
         let (authored, waypoint) = self.houses.get(&house_id).map_or((-1, 0), |house| {
             (house.authored_edge(), house.waypoint_edge())
         });
@@ -193,6 +207,36 @@ mod tests {
             assert_eq!((plane.position.rx(), plane.position.ry()), position);
             assert!(!plane.lifecycle.in_limbo());
         }
+    }
+
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn a_non_building_target_keeps_the_object_instead_of_its_cell() {
+        let Some((rules, mut sim, boris, _)) = world() else {
+            return;
+        };
+        let target = sim
+            .spawn_object("MTNK", "Americans", 40, 40, 0, &rules)
+            .unwrap();
+        assert_eq!(
+            sim.substrate.entities.get(target).unwrap().category(),
+            EntityCategory::Unit
+        );
+        let sortie = sim.create_airstrike_aircraft(
+            boris,
+            target,
+            "BPLN",
+            1,
+            &rules,
+            FrameEffects::default(),
+        );
+        assert_eq!(sortie.count, 1);
+        let plane = sim.substrate.entities.get(sortie.aircraft[0]).unwrap();
+        assert_eq!(
+            plane.attack_target.target(),
+            Some(TargetKind::Entity(target)),
+            "Phobos keeps a non-building target as the object"
+        );
     }
 
     #[test]

@@ -140,6 +140,46 @@ fn initial_campaign_slot_is_visible_and_replaced_without_touching_user_saves() {
 }
 
 #[test]
+fn initial_campaign_replaces_its_hidden_previous_layout_slot() {
+    let repository = fixture("initial-campaign-old-layout");
+    let mut old_header = GameSnapshot::read_header(&snapshot("old first mission", 1)).unwrap();
+    old_header.layout ^= 1;
+    let old_bytes = crate::util::save_codec::serialize(&old_header).unwrap();
+    assert!(GameSnapshot::read_header(&old_bytes).is_err());
+    let first = repository.write_named("ALL01UMD.sav", &old_bytes).unwrap();
+    let manual_bytes = snapshot("manual", 2);
+    let manual = repository.write_named("user.bin", &manual_bytes).unwrap();
+    assert!(
+        !repository
+            .browser_entries()
+            .iter()
+            .find(|(entry, _)| entry.path == first)
+            .unwrap()
+            .0
+            .header
+            .is_compatible()
+    );
+
+    let replacement = snapshot("[Allied 01 - Time Lapse]", 3);
+    repository
+        .write_initial_campaign("ALL01UMD.sav", &replacement)
+        .unwrap();
+    assert_eq!(repository.read(&first).unwrap(), replacement);
+    assert!(
+        repository
+            .browser_entries()
+            .iter()
+            .find(|(entry, _)| entry.path == first)
+            .unwrap()
+            .0
+            .header
+            .is_compatible()
+    );
+    assert_eq!(repository.read(&manual).unwrap(), manual_bytes);
+    std::fs::remove_dir_all(repository.directory()).unwrap();
+}
+
+#[test]
 fn initial_campaign_attempt_is_process_owned_and_rearmed_only_by_its_callers() {
     let mut state = PersistenceState::new(Default::default());
     assert!(!state.take_initial_campaign_save(false));

@@ -1471,7 +1471,7 @@ mod tests {
         let mut session = MatchSession::default();
         session.enter_network(super::super::session::NetworkReturnContext::LanLobby);
         session
-            .accept_network_setup(launch, false, Some(7))
+            .accept_network_setup(launch, false, Some(7), false)
             .unwrap();
         let mut sim = Simulation::new();
         // Deliberately distinct participant and native House ordering.
@@ -1639,7 +1639,9 @@ mod tests {
             let (mut session, mut sim) = vote_fixture();
             let launch = session.network_setup().unwrap().clone();
             session.enter_network(super::super::session::NetworkReturnContext::Wol);
-            session.accept_network_setup(launch, false, None).unwrap();
+            session
+                .accept_network_setup(launch, false, None, false)
+                .unwrap();
             session.prepare_wol_timing([0; 2], false).unwrap();
             let endpoint = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30125);
             let remote_name = session.network_setup().unwrap().humans[0].name.clone();
@@ -1771,7 +1773,9 @@ mod tests {
         let (mut session, mut sim) = vote_fixture();
         let launch = session.network_setup().unwrap().clone();
         session.enter_network(super::super::session::NetworkReturnContext::Wol);
-        session.accept_network_setup(launch, false, None).unwrap();
+        session
+            .accept_network_setup(launch, false, None, false)
+            .unwrap();
         session.prepare_wol_timing([0; 2], false).unwrap();
         let remote_name = session.network_setup().unwrap().humans[0].name.clone();
         let endpoint = relay_peer_endpoint(0).unwrap();
@@ -1941,7 +1945,9 @@ mod tests {
             launch.local_player_index = local_source;
             let mut session = MatchSession::default();
             session.enter_network(super::super::session::NetworkReturnContext::Wol);
-            session.accept_network_setup(launch, false, None).unwrap();
+            session
+                .accept_network_setup(launch, false, None, false)
+                .unwrap();
             let name = session.network_source_owner(2).unwrap();
             let owner = sim.intern(&name);
             sim.houses_mut_for_test()

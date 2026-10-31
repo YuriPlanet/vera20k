@@ -5008,15 +5008,20 @@ mod tests {
         let hash = sim.state_hash();
         let rng = sim.rng_state();
         let mut beams = RadiationBeams::default();
-        beams.create(RadiationBeamBirth {
-            frame: 7,
-            from: ProjectileCoord::new(256, 256, 0),
-            to: ProjectileCoord::new(768, 256, 0),
-            z_adjust: -32,
-            color: [0, 255, 0],
-            duration: 15,
-            amplitude: NativeF64Bits::from_bits(40.0_f64.to_bits()),
-        });
+        beams.create(
+            RadiationBeamBirth {
+                frame: 7,
+                from: ProjectileCoord::new(256, 256, 0),
+                to: ProjectileCoord::new(768, 256, 0),
+                z_adjust: -32,
+                color: [0, 255, 0],
+                house: None,
+                house_color: false,
+                duration: 15,
+                amplitude: NativeF64Bits::from_bits(40.0_f64.to_bits()),
+            },
+            |_| [0; 3],
+        );
         let initial =
             serde_json::to_value(MapRadiationBeamObservation::capture(&beams).unwrap()).unwrap();
         assert_eq!(initial["live"][0]["progress"], 0);

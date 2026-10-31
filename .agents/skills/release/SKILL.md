@@ -81,11 +81,14 @@ disabled (`gh workflow list --all` shows its state). By hand:
 For example, after publishing `v0.2.0`, main can move to `0.2.1` for future development
 builds while `v0.2.0` remains Latest.
 
-A release that main's version cannot carry, such as a patch while main is ahead, comes from
-a branch: main plus one commit setting the version, dispatched with `--ref <branch>`. Its
-`.github/workflows` must equal main's (`git diff origin/main <branch> -- .github/workflows`
-is empty) when the dev build runs: the workflow's token cannot create a tag on a commit whose
-`.github/workflows` differ from main's (HTTP 403).
+Dev builds run from `main`: the `macos-signing` environment allows only that exact
+branch, so an arbitrary dispatched branch cannot read the Apple credentials.
+The separate signing job must pass before updater tests or publication. Stable
+promotion keeps the notarized installer bytes unchanged. See
+[Mac signing](../../../.github/release/macos/README.md) for environment setup and
+resuming a submission that outlasted the job. A patch release from another branch
+needs a separate, explicitly authorized signing policy; do not widen the environment
+to an arbitrary branch pattern.
 
 The repository ruleset `Release tags` lets only repository admins create, move or delete a tag
 other than a dev build's (`v*-*`), so nobody else can publish a release under a version

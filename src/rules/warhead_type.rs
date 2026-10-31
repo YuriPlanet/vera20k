@@ -259,6 +259,10 @@ pub struct WarheadType {
     /// Calls in airstrike. `WarheadTypeClass+0x16C` (ReadINI `0x0075D8F0`),
     /// read by `TechnoClass::What_Weapon_Should_I_Use @ 0x006F3481`.
     pub airstrike: bool,
+    /// Phobos `AirstrikeTargets=`: which target kinds an `Airstrike=` warhead
+    /// may designate. Default `buildings`.
+    #[cfg(feature = "phobos")]
+    pub airstrike_targets: crate::rules::airstrike_targets::AirstrikeTargets,
     /// Radiation contamination. `WarheadTypeClass+0x177`, written by
     /// `WarheadTypeClass::ReadINI` @ `0x0075d9c7` from the key string at
     /// `0x00839e80`. (`+0x179` is `AffectsAllies=`, not this.)
@@ -664,6 +668,12 @@ impl WarheadType {
             mind_control: section.read_bool("MindControl", false),
             poison: section.read_bool("Poison", false),
             airstrike: section.read_bool("Airstrike", false),
+            #[cfg(feature = "phobos")]
+            airstrike_targets: {
+                let raw = section.read_string("AirstrikeTargets", "", 0x100);
+                crate::rules::airstrike_targets::AirstrikeTargets::parse(&raw)
+                    .unwrap_or(crate::rules::airstrike_targets::AirstrikeTargets::DEFAULT)
+            },
             radiation: section.read_bool("Radiation", false),
             culling: section.read_bool("Culling", false),
             paralyzes: section.read_int("Paralyzes", 0),

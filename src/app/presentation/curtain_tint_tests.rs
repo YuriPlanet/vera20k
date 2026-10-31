@@ -128,6 +128,7 @@ fn building_voxel_shield_intensity_precedes_the_curtain_without_changing_shp() {
             int(&original["frame"]) as u32,
             false,
             custom,
+            0,
             kind,
         )
         .1
@@ -156,6 +157,7 @@ fn assert_curtain_arm_matches(section: &str) {
             PaletteLight::color_scheme([1000; 3], intensity),
             sim.session().binary_frame(),
             row["airstrike"] == "self",
+            0,
             0,
             if section == "draw_curtain_arm" {
                 TechnoDraw::Voxel
@@ -611,7 +613,7 @@ fn building_animation_retains_the_pre_techno_airstrike_sample() {
     let input = PaletteLight::color_scheme([1000; 3], 500);
     let (_, retained) = building_anim_light(&building, TINT, input, &sim, None);
     let (_, body) =
-        techno_effect_light_at(&building, TINT, input, 1010, true, 0, TechnoDraw::Shape);
+        techno_effect_light_at(&building, TINT, input, 1010, true, 0, 0, TechnoDraw::Shape);
     assert_eq!(retained.brightness(), 1000);
     let native: Value =
         serde_json::from_str(crate::test_fixture::text("tools/airstrike_tint.json")).unwrap();

@@ -12,6 +12,7 @@ use super::{
 };
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::render::shell_paint::{self, ModalButton, PaintLabel};
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::lan_shell::{JOIN, PAGE};
@@ -25,6 +26,63 @@ fn row_rgb(color: Option<u32>) -> [f32; 3] {
         Some(color) => [color as u8, (color >> 8) as u8, (color >> 16) as u8]
             .map(|channel| f32::from(channel) / 255.0),
     }
+}
+
+/// VERA's Create Game box (`LanShellRuntime::create`): the online box's art
+/// and buttons, with its room's limits.
+fn paint_create_box(
+    state: &AppState,
+    atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
+    lobby: &crate::ui::lan_shell::LanLobbyState,
+    picker: &crate::ui::room_limits::RoomLimitsPicker,
+    overlay: &mut ShellFrameOverlay,
+) {
+    let layout = crate::ui::shell::modal::lan_create_game_layout(
+        state.render_width() as i32,
+        state.render_height() as i32,
+    );
+    let mut buttons = Vec::new();
+    let mut labels = Vec::new();
+    for (id, rect, key) in [(1, layout.ok, "GUI:OK"), (2, layout.cancel, "GUI:Cancel")] {
+        let pressed = lobby.buttons.is_pressed(id);
+        buttons.push(ModalButton {
+            rect,
+            pressed,
+            enabled: true,
+        });
+        labels.push(PaintLabel {
+            text: localized_label(state, key, key).into(),
+            rect: crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed),
+            align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            rgb: SHELL_LABEL_TEXT_RGB,
+            path_a_reveal: None,
+        });
+    }
+    let mut controls = Vec::new();
+    super::wol_lobby::paint_room_limits(
+        state,
+        atlas,
+        &mut controls,
+        &mut labels,
+        picker,
+        &layout.room,
+    );
+    let draw = shell_paint::paint_modal_shp(
+        &state.renderer.bit_font,
+        atlas
+            .ra2_dialog_background
+            .or_else(|| atlas.mode_two_dialog_background(None)),
+        type3_button_frames(atlas),
+        layout.dialog,
+        &buttons,
+        &labels,
+        ShellScale::RETAIL,
+        super::wol_lobby::POPUP_DEPTHS,
+    );
+    // The box first, then its controls.
+    overlay.controls.extend(draw.sprites);
+    overlay.controls.extend(controls);
+    overlay.texts.extend(draw.text);
 }
 
 pub(crate) fn render_lan_lobby(
@@ -118,7 +176,10 @@ pub(crate) fn render_lan_lobby(
             scale.factor(),
         )
     };
-    if !leaving {
+    // VERA's Create Game box shows over the bare backdrop, as the online
+    // lobby's does.
+    let creating = runtime.create.as_ref();
+    if !leaving && creating.is_none() {
         for (key, rect) in layout.labels {
             texts.push(text(
                 &localized_label(state, key, key),
@@ -327,6 +388,9 @@ pub(crate) fn render_lan_lobby(
                 SHELL_DROPDOWN_TEXT_DEPTH - 0.00013,
             ));
         }
+    }
+    if let Some(picker) = creating {
+        paint_create_box(state, atlas, lobby, picker, &mut overlay);
     }
     in_game_shell::render_shell_frame(
         state,

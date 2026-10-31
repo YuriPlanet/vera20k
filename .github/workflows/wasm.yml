@@ -45,6 +45,7 @@ on:
       - 'src/app/shell_random_map.rs'
       - 'src/app/shell_wol.rs'
       - 'src/app/spawn_probe.rs'
+      - 'src/app/input/ime.rs'
       - 'src/app/input/keyboard.rs'
       - 'src/app/lan_service**'
       - 'src/app/loading/**'

@@ -257,9 +257,11 @@ fn receive_options_text(
 pub(super) fn publish_roster(state: &mut AppState) -> Result<bool> {
     let session = &state.match_state.session;
     ensure!(session.host(), "only the host publishes a LAN roster");
-    let rows = if session
-        .network_setup_capacity()
-        .is_some_and(|capacity| capacity > 8)
+    // A VERA room's spectator rows may lie past the native eight.
+    let rows = if session.network_several_observers()
+        || session
+            .network_setup_capacity()
+            .is_some_and(|capacity| capacity > 8)
     {
         NETWORK_PLAYER_SLOT_COUNT
     } else {
@@ -882,7 +884,9 @@ mod tests {
         launch.rebuild_house_roster();
         let mut session = MatchSession::default();
         session.enter_network(NetworkReturnContext::LanLobby);
-        session.accept_network_setup(launch, host, Some(7)).unwrap();
+        session
+            .accept_network_setup(launch, host, Some(7), false)
+            .unwrap();
         session.set_network_start_seed(0xf1234567).unwrap();
         session
             .accept_network_map_metadata(
@@ -917,7 +921,7 @@ mod tests {
             })
             .collect();
         launch.rebuild_house_roster();
-        host.accept_network_setup(launch.clone(), true, None)
+        host.accept_network_setup(launch.clone(), true, None, false)
             .unwrap();
         host.select_network_map(launch.mode.clone(), "thirty.map".into(), 30)
             .unwrap();
@@ -932,7 +936,9 @@ mod tests {
         .unwrap();
         let mut guest = fixture(false);
         launch.local_player_index = 29;
-        guest.accept_network_setup(launch, false, None).unwrap();
+        guest
+            .accept_network_setup(launch, false, None, false)
+            .unwrap();
         let payload = projected_options(&host, 3, 0).unwrap().encode();
         let parts = crate::net::lan_messages::extended_setup::encode(
             crate::net::lan_messages::extended_setup::SetupKind::Options,
@@ -1214,7 +1220,8 @@ mod tests {
         let mut host = fixture(true);
         let mut launch = host.network_setup().unwrap().clone();
         launch.humans[1].raw_slot_index = Some(2);
-        host.accept_network_setup(launch, true, Some(7)).unwrap();
+        host.accept_network_setup(launch, true, Some(7), false)
+            .unwrap();
         host.set_network_row_kind(1, NetworkRowKind::Ai(AiDifficulty::Hard))
             .unwrap();
         let options = projected_options(&host, 3, 0).unwrap().encode();
@@ -1291,7 +1298,9 @@ mod tests {
         request.country = LaunchCountry::Yuri;
         request.country_random = false;
         let mut wol = lan.clone();
-        let result = lan.accept_lan_peer_choices(1, request.clone()).unwrap();
+        let result = lan
+            .accept_lan_peer_choices(1, request.clone(), false)
+            .unwrap();
         assert!(result.options);
         assert!(!result.roster);
         let slot = &lan.network_setup().unwrap().humans[1].slot;

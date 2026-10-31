@@ -18,6 +18,8 @@ profile = "yr" # yr | mo | auto | custom
 # rules = "my-rules.ini"
 # art = "my-art.ini"
 # ai = "my-ai.ini"
+# sound = "my-sound.ini"
+# eva = "my-eva.ini"
 
 [graphics]
 extra_animations = true   # cosmetic effects: water/ore sparkles (future: laser pulses, particle trails)

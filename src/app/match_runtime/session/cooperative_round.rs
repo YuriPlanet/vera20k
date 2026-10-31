@@ -608,7 +608,7 @@ mod tests {
         let mut session = MatchSession::default();
         session.enter_network(NetworkReturnContext::LanLobby);
         session
-            .accept_network_setup(launch, local == 0, Some(7))
+            .accept_network_setup(launch, local == 0, Some(7), false)
             .unwrap();
         session.set_network_start_seed(SEED).unwrap();
         session.prepare_network_timing(2, || 0).unwrap();
