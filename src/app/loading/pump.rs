@@ -684,6 +684,7 @@ impl LoadingSession {
             native,
             job,
             next_frame: NextLoadingFrame::Later,
+            install_after_ms: None,
         }
     }
 
