@@ -4825,6 +4825,29 @@ mod tests {
             sim.substrate.entities.get(101).unwrap().is_parachuted(),
             "a later destructor cannot reconstruct the already-cleared owner"
         );
+
+        // GameEntity serde is the production snapshot payload. Preserve the
+        // orphaned raw flag, then let ObjectAI consume it in a subsequent fall.
+        let cap = rules.general.parachute_max_fall_rate;
+        let owner = sim.substrate.entities.get_mut(101).unwrap();
+        owner.set_fall_rate_for_test(cap);
+        let bytes = serde_json::to_vec(owner).unwrap();
+        let mut restored: GameEntity = serde_json::from_slice(&bytes).unwrap();
+        restored.lifecycle.set_in_limbo_for_test(false);
+        restored.lifecycle.set_cell_marked_for_test(false);
+        restored.position.put_z(512);
+        restored.begin_bomb_fall();
+        *sim.substrate.entities.get_mut(101).unwrap() = restored;
+        sim.object_ai_fall(101, &rules, None, FrameEffects::default())
+            .unwrap();
+        let owner = sim.substrate.entities.get(101).unwrap();
+        assert!(owner.is_parachuted());
+        assert_eq!(owner.parachute_animation(), None);
+        assert_eq!(
+            owner.fall_rate(),
+            cap,
+            "restored raw flag still selects canopy cap"
+        );
     }
 
     #[test]
