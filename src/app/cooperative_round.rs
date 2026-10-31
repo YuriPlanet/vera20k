@@ -1,5 +1,7 @@
-//! The LAN Cooperative continuation: Cooperative `+0xA0` at a mission's
-//! end, the result dialog BC6 and the next mission over the same session.
+//! The network Cooperative continuation: Cooperative `+0xA0` at a
+//! mission's end, the result dialog BC6 and, on LAN, the next mission over
+//! the same session. A WOL match's relay ends with its mission, so there
+//! BC6's Continue returns to VERA's kept room on the next stage instead.
 //!
 //! The progress record belongs to `MultiplayerShellRuntime`'s
 //! `CooperativeProgressState`; the participants, the agreed seed and BC6's
@@ -14,9 +16,15 @@
 //! `0x0046ECD8`) and the master's `0x0046D8B0` reply are not ported.
 //! RESIDUAL: the dialog's 20 s keepalive `0x0D` (`0x0046EADD`) is not sent;
 //! a peer's unhandled records still reach the loop's tail.
+//! RESIDUAL: on WOL BC6 sends and receives no records: the partner's row
+//! stays unready and chat stays local. The next mission starts from the
+//! room as a first start does, without `+0xAC`'s carry-over record
+//! (`0x004C6210`); no retail co-op map reads one (none sets a global or
+//! `TimerInherit`).
 
 use crate::app::frontend::skirmish_session::cooperative::CooperativeMissionRow;
 use crate::app::match_runtime::session::{CooperativeRoundEvent, CooperativeRoundStep};
+use crate::app::shell_network_setup::CooperativeResume;
 use crate::app::{App, AppState, GameScreen};
 use crate::ui::coop_score_shell::{CoopScoreAction, CoopScoreModel, CoopScorePage};
 use crate::ui::lan_shell::LanChatLine;
@@ -637,6 +645,23 @@ fn run_step(state: &mut AppState, step: CooperativeRoundStep) {
         }
         CooperativeRoundStep::Exit(true) => begin_next_mission(state),
         CooperativeRoundStep::Exit(false) => finish(state),
+        CooperativeRoundStep::ContinueInRoom => {
+            // The room the host gets back takes the round's mode and the
+            // stage `+0xA0` selected, the mission BC6 would have loaded.
+            let resume =
+                state
+                    .match_state
+                    .session
+                    .network_setup()
+                    .map(|launch| CooperativeResume {
+                        mode_id: launch.mode.id,
+                        scenario: state.frontend.multiplayer_shell_runtime.scenario_index(),
+                    });
+            if let Some(visit) = state.frontend.wol.as_mut() {
+                visit.cooperative_resume = resume;
+            }
+            finish(state);
+        }
     }
 }
 

@@ -229,6 +229,10 @@ pub(crate) struct WolVisit {
     /// joined through the match so its players return to it afterwards
     /// (`finish` asks the lobby for it back).
     pub(crate) back_to_room: bool,
+    /// VERA: BC6's Continue after a co-op mission: the stage the kept
+    /// room's host takes when the room comes back. The runner's post-match
+    /// entry drops it unless it waits for that room.
+    pub(crate) cooperative_resume: Option<crate::app::shell_network_setup::CooperativeResume>,
     /// `![0xB77DC0]`: connected to a server. A WOLAPI creation
     /// (`0x00786485`) and a failed login clear it, a connect sets it, and a
     /// lost connection outside a match clears it.
@@ -294,6 +298,7 @@ impl WolVisit {
             last_pager: None,
             in_game: false,
             back_to_room: false,
+            cooperative_resume: None,
             connected: false,
             disconnected: false,
             relogin: None,

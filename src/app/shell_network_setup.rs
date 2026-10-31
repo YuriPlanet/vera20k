@@ -7,7 +7,9 @@
 mod actions;
 pub(crate) mod agreement;
 mod cooperative;
-pub(crate) use cooperative::chooser_rows as cooperative_chooser_rows;
+pub(crate) use cooperative::{
+    CooperativeResume, chooser_rows as cooperative_chooser_rows, resume as resume_cooperative,
+};
 pub(crate) mod maps;
 mod service;
 pub(crate) use service::{

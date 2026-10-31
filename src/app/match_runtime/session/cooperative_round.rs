@@ -8,7 +8,9 @@
 //! [`CooperativeRoundEvent`]s and every packet this side sends is a
 //! [`NetworkLoadingRequest`]; `lan_service::cooperative` moves both.
 
-use super::{MatchSession, NetworkLoadingRequest, NetworkPhase, NetworkSession};
+use super::{
+    MatchSession, NetworkLoadingRequest, NetworkPhase, NetworkReturnContext, NetworkSession,
+};
 use crate::skirmish_launch::{
     LaunchStartPosition, SkirmishAiSlot, SkirmishLaunchSession, SkirmishLocalSlot,
 };
@@ -127,6 +129,9 @@ pub(crate) enum CooperativeRoundStep {
     },
     /// The loop left with `0x89E04C`.
     Exit(bool),
+    /// VERA: Continue on WOL left with result 0 for the room the players
+    /// return to, which its host sets to the next stage.
+    ContinueInRoom,
 }
 
 impl MatchSession {
@@ -244,11 +249,18 @@ impl MatchSession {
     /// (`0x0046FD61`). The button disables itself once ready, so only the
     /// ready arm is reachable; `difficulty` is `[0xA8EB68]` for the
     /// master's `0x32`.
+    /// VERA: a WOL match's relay ends with its mission, so BC6's records
+    /// have no transport and `+0xAC` no session to continue. A round with a
+    /// stage left leaves at once with result 0 for the players' room.
     pub(crate) fn continue_cooperative_round(
         &mut self,
         difficulty: i32,
     ) -> anyhow::Result<CooperativeRoundStep> {
         let host = self.host;
+        let online = self
+            .network
+            .as_ref()
+            .is_some_and(|network| network.return_context == NetworkReturnContext::Wol);
         let RoundParts {
             requests,
             connected: _,
@@ -256,6 +268,10 @@ impl MatchSession {
             round,
         } = round_parts(self)?;
         anyhow::ensure!(round.outcome.is_none(), "the result dialog has closed");
+        if online && round.can_continue {
+            round.outcome = Some(false);
+            return Ok(CooperativeRoundStep::ContinueInRoom);
+        }
         let local = launch.local_player_index;
         round.local_ready = true;
         if let Some(row) = launch
@@ -603,10 +619,20 @@ mod tests {
         MatchSession,
         Arc<crate::app::match_bootstrap::PreparedNetworkStartup>,
     ) {
+        frozen_in(NetworkReturnContext::LanLobby, local)
+    }
+
+    fn frozen_in(
+        context: NetworkReturnContext,
+        local: usize,
+    ) -> (
+        MatchSession,
+        Arc<crate::app::match_bootstrap::PreparedNetworkStartup>,
+    ) {
         let mut launch = super::super::tests::network_fixture();
         launch.local_player_index = local;
         let mut session = MatchSession::default();
-        session.enter_network(NetworkReturnContext::LanLobby);
+        session.enter_network(context);
         session
             .accept_network_setup(launch, local == 0, Some(7), false)
             .unwrap();
@@ -818,6 +844,29 @@ mod tests {
             .unwrap();
         assert!(session.cooperative_round().unwrap().quit_enabled());
         assert!(!session.cooperative_round_continue_enabled());
+    }
+
+    /// A WOL relay carries no BC6 record: Continue leaves for the room at
+    /// once, and the last mission keeps BC6's own result 0.
+    #[test]
+    fn an_online_round_continues_in_its_room() {
+        let (mut session, _) = frozen_in(NetworkReturnContext::Wol, 0);
+        session
+            .enter_cooperative_round(Some("C2S02MD.MAP".into()), true, 2)
+            .unwrap();
+        assert_eq!(
+            session.continue_cooperative_round(1).unwrap(),
+            CooperativeRoundStep::ContinueInRoom
+        );
+        assert_eq!(session.cooperative_round().unwrap().outcome(), Some(false));
+        assert!(session.take_network_loading_requests().is_empty());
+
+        let (mut last, _) = frozen_in(NetworkReturnContext::Wol, 0);
+        last.enter_cooperative_round(None, false, 2).unwrap();
+        assert_eq!(
+            last.continue_cooperative_round(1).unwrap(),
+            CooperativeRoundStep::Exit(false)
+        );
     }
 
     #[test]

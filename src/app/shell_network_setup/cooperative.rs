@@ -1,5 +1,6 @@
 //! The setup's Cooperative campaign (LAN, and WOL where wired: Use Map,
-//! the host's join, Quick Co-op): MPCooperative's slots (vtable
+//! the host's join, Quick Co-op, a kept room's return after BC6's
+//! Continue): MPCooperative's slots (vtable
 //! `0x007EE27C`) at their native call sites in the setup, Choose Map, the
 //! host's join and the guest's packets. The progress itself belongs to the
 //! runtime's `CooperativeProgressState`; this module only reads the session
@@ -11,7 +12,17 @@ use crate::app::AppState;
 use crate::app::frontend::skirmish_session::cooperative::{
     CooperativeCampaignText, CooperativeSlotContext, SavedCampaignJoin, SavedCampaignLeave,
 };
+use crate::skirmish_launch::SkirmishLaunchMode;
 use crate::skirmish_modes::MpModeClass;
+
+/// VERA: what BC6's Continue in a WOL room leaves for the room's return:
+/// the round's Cooperative mode and the scenario `+0xA0` selected, the
+/// mission BC6 would have loaded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CooperativeResume {
+    pub(crate) mode_id: i32,
+    pub(crate) scenario: usize,
+}
 
 /// What the slots read from the session: the scenario file names in catalog
 /// order (`[0xA8B8CC]`), the nodes' names local first (`0xA8DA78`), the
@@ -158,7 +169,14 @@ pub(super) fn host_opened(state: &mut AppState) -> anyhow::Result<()> {
         })
     };
     if let Some(index) = selected.filter(|index| *index != current) {
-        select_scenario(state, index, true)?;
+        let mode = state
+            .match_state
+            .session
+            .network_setup()
+            .expect("admitted setup")
+            .mode
+            .clone();
+        select_scenario(state, index, Some(mode))?;
     }
     refresh_rows(state, false)?;
     let inputs = SlotInputs::read(state);
@@ -185,16 +203,52 @@ pub(super) fn host_opened(state: &mut AppState) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// VERA: a WOL room its host gets back after BC6's Continue
+/// ([`CooperativeResume`]), before its players are seated again. The
+/// relay match ended with the mission, so the room stands in for `+0xAC`:
+/// it takes the Cooperative mode and the next stage with the capacity pass,
+/// as BC open's selection does, and keeps the record, which `+0x20` would
+/// replace outside Choose Map. `+0x24` and `+0x60` follow as after Use Map;
+/// C2's opening publish, still queued, carries them, and the partner's
+/// join (`+0x94`) names both players again.
+pub(crate) fn resume(state: &mut AppState, resume: CooperativeResume) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .cooperative_next_scenario_token()
+            .is_some(),
+        "no campaign stage to continue"
+    );
+    let mode = crate::skirmish_modes::mode_by_id(&state.frontend.skirmish_modes, resume.mode_id)
+        .filter(|mode| mode.class == MpModeClass::Cooperative)
+        .map(SkirmishLaunchMode::from_game_mode)
+        .ok_or_else(|| anyhow::anyhow!("no Cooperative mode {}", resume.mode_id))?;
+    select_scenario(state, resume.scenario, Some(mode))?;
+    anyhow::ensure!(current(state), "the next mission has no loadable map");
+    let setup = setup_open(state);
+    let published = {
+        let parts = state.frontend.multiplayer_shell_runtime.cooperative_parts();
+        parts.progress.request_refresh();
+        parts.progress.publish(parts.registry, setup)
+    };
+    publish(state, published)
+}
+
 /// `MPGameOptions__SelectScenario` (`0x005E7BF0`) from `+0x20`: the
 /// scenario its record's first map names becomes the setup's map. It writes
 /// only the map globals and the row count `[0xA8BB0C]`, keeping every row,
-/// start and team. `bc_open` adds what BC's init runs after its helper,
-/// the capacity pass `0x005EC3A0` at `0x005DED73`; ChooseMap's port carries
-/// it.
+/// start and team. `capacity_pass` adds what BC's init runs after its
+/// helper, the capacity pass `0x005EC3A0` at `0x005DED73`, in that mode;
+/// ChooseMap's port carries it.
 /// RESIDUAL: that port also resets starts and teams (`0x005EE6A0`,
 /// `0x005EE510`), which BC's init is not traced to run; its rows are the
 /// defaults then.
-fn select_scenario(state: &mut AppState, index: usize, bc_open: bool) -> anyhow::Result<()> {
+fn select_scenario(
+    state: &mut AppState,
+    index: usize,
+    capacity_pass: Option<SkirmishLaunchMode>,
+) -> anyhow::Result<()> {
     let Some(file) = state
         .frontend
         .scenario_catalog
@@ -215,24 +269,19 @@ fn select_scenario(state: &mut AppState, index: usize, bc_open: bool) -> anyhow:
         log::warn!("Cooperative selected {file}, which has no loadable map entry");
         return Ok(());
     };
-    if bc_open {
-        let mode = state
+    match capacity_pass {
+        Some(mode) => {
+            let removed =
+                state
+                    .match_state
+                    .session
+                    .select_network_map(mode, file.clone(), capacity)?;
+            debug_assert!(removed.is_empty(), "a Cooperative map seats both players");
+        }
+        None => state
             .match_state
             .session
-            .network_setup()
-            .expect("admitted setup")
-            .mode
-            .clone();
-        let removed = state
-            .match_state
-            .session
-            .select_network_map(mode, file.clone(), capacity)?;
-        debug_assert!(removed.is_empty(), "a Cooperative map seats both players");
-    } else {
-        state
-            .match_state
-            .session
-            .select_network_scenario(file.clone(), capacity)?;
+            .select_network_scenario(file.clone(), capacity)?,
     }
     // +0x20 writes [0xA8B254] before the selection.
     state
@@ -487,7 +536,7 @@ pub(super) fn guest_left(state: &mut AppState) -> anyhow::Result<()> {
                     .then_some(index)
             });
             if let Some(index) = index {
-                select_scenario(state, index, false)?;
+                select_scenario(state, index, None)?;
                 super::actions::queue(state, NetworkSetupRequest::PublishOptions);
             }
         }
@@ -576,7 +625,7 @@ pub(super) fn mode_entered(state: &mut AppState) -> anyhow::Result<()> {
     if let Some(index) = selected
         && state.match_state.session.host()
     {
-        select_scenario(state, index, false)?;
+        select_scenario(state, index, None)?;
     }
     if setup_open(state) {
         refresh_countries(state)?;
