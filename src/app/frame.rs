@@ -115,6 +115,17 @@ impl App {
         }
         let started = Instant::now();
         let mut result = RuntimeServiceResult::default();
+        let restoring = state
+            .match_state
+            .live_network
+            .as_ref()
+            .is_some_and(|live| live.restoring_match());
+        let profile = &state.persistence.options_profile;
+        let (sound, voice) = (
+            f64::from(profile.sound_volume),
+            f64::from(profile.voice_volume),
+        );
+        state.audio.mute_for_restore(restoring, sound, voice);
         let mut attempts = 0;
         loop {
             let before = state.match_state.sim_runtime.as_ref().map(|runtime| {
@@ -1235,7 +1246,11 @@ impl App {
                                 .to_owned(),
                         ),
                         crate::net::live_commands::NetworkRecoveryStatus::CatchingUp { frames } => {
-                            Some(format!("Catching up - {frames} frames behind"))
+                            Some(if live.restoring_match() {
+                                format!("Rejoining the match - {frames} frames behind")
+                            } else {
+                                format!("Catching up - {frames} frames behind")
+                            })
                         }
                     }
                 })

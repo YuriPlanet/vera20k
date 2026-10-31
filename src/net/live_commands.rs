@@ -341,6 +341,21 @@ impl LiveCommandSession {
         }
     }
 
+    /// This process replaces one that left a match under way (Networking.md).
+    pub fn begin_match_restore(&mut self) {
+        if let Some(session) = self.sequenced.as_mut() {
+            session.begin_restore();
+        }
+    }
+
+    /// Still replaying a match this process rejoined; local input has no place
+    /// in it yet.
+    pub fn restoring_match(&self) -> bool {
+        self.sequenced
+            .as_ref()
+            .is_some_and(|session| session.restoring())
+    }
+
     /// Whether a confirmed UI exit's EXIT waits for the relay to sequence it.
     pub fn exit_requested(&self) -> bool {
         self.sequenced

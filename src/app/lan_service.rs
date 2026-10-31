@@ -134,6 +134,9 @@ pub(crate) struct LanService {
     // The same socket owner survives until its terminal relay ACK arrives.
     online_closing: bool,
     online_timing: Option<crate::net::lockstep::WolStartTiming>,
+    // This process replaces one that left the match: the others are already
+    // playing, and its loading is nobody's business but its own.
+    online_restore: bool,
     games: Vec<DiscoveryRecord>,
     /// Radio observations for BB only; never admitted as gameplay endpoints.
     observed_participants: Vec<ObservedParticipant>,
@@ -220,6 +223,7 @@ impl LanService {
             transport: Some(transport),
             online_closing: false,
             online_timing: None,
+            online_restore: false,
             games: Vec::new(),
             observed_participants: Vec::new(),
             selected_game: None,
@@ -1042,6 +1046,7 @@ impl LanService {
         }
         self.maps.cancel();
         self.online_timing = None;
+        self.online_restore = false;
         self.setup_scope = None;
         self.setup_agreement = None;
         self.received_options = None;
@@ -1570,6 +1575,17 @@ pub(crate) fn renew_online_relay(
         .and_then(|service| service.transport.as_mut())
         .ok_or_else(|| anyhow::anyhow!("online renewal has no admitted route"))?;
     Ok(transport.renew_relay(address, ticket, key, payload_key)?)
+}
+
+/// The installed online transport returns to a match under way.
+pub(crate) fn mark_online_restore(state: &mut AppState) -> anyhow::Result<()> {
+    state
+        .match_state
+        .lan_service
+        .as_mut()
+        .ok_or_else(|| anyhow::anyhow!("online restore has no transport"))?
+        .online_restore = true;
+    Ok(())
 }
 
 /// Apply the same agreed timing vector on every client before freezing the
@@ -3443,6 +3459,14 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
             crate::net::live_commands::LiveCommandMode::Lan
         },
     )?;
+    if state
+        .match_state
+        .lan_service
+        .as_ref()
+        .is_some_and(|service| service.online_restore)
+    {
+        live.begin_match_restore();
+    }
     if publisher == Some(local_house)
         && let Some(timing) = online_timing
     {

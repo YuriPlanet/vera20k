@@ -196,6 +196,9 @@ pub(super) struct SequencedSession {
     // frame and the rest of its stream is ignored.
     refused: u32,
     next_batch: u64,
+    // This process replaces one that left a match under way. Its batch counter
+    // lies in the history it is reading, so it submits nothing until caught up.
+    restoring: bool,
     accepted_batch: u64,
     submissions: VecDeque<Submission>,
     sample_sent: Option<u32>,
@@ -292,6 +295,7 @@ impl SequencedSession {
             last_batch: [0; 30],
             refused: 0,
             next_batch: 1,
+            restoring: false,
             accepted_batch: 0,
             submissions: VecDeque::new(),
             sample_sent: None,
@@ -301,6 +305,30 @@ impl SequencedSession {
             command_traces: VecDeque::new(),
             lost: Vec::new(),
         }
+    }
+
+    pub(super) fn begin_restore(&mut self) {
+        self.restoring = true;
+    }
+
+    pub(super) fn restoring(&self) -> bool {
+        self.restoring
+    }
+
+    /// Ends a restore once the world at `frame` has reached the shared one.
+    /// A status can only postdate the last batch the departed process sent,
+    /// so history read past that status holds this source's final batch ID.
+    fn settle_restore(&mut self, frame: u32) -> Result<(), SequencedError> {
+        if self.statuses > 0
+            && self.next_sequence >= self.remote_next_sequence
+            && self.head_frame.saturating_sub(frame) <= u32::from(self.fps) / 2
+        {
+            let last = self.last_batch[usize::from(self.local_source)];
+            self.next_batch = last.checked_add(1).ok_or(SequencedError::InvalidTimeline)?;
+            self.accepted_batch = last;
+            self.restoring = false;
+        }
+        Ok(())
     }
 
     /// Remote Houses whose connection the relay ended in dispatched frames.
@@ -981,6 +1009,23 @@ impl SequencedSession {
         context: NetworkQueueContext,
         now: u32,
     ) -> Result<(), LiveCommandError> {
+        if self.restoring {
+            self.settle_restore(context.frame)?;
+        }
+        if self.restoring {
+            // Orders given to a world still replaying the past are dropped
+            // here, the one boundary every local command crosses.
+            let records: Vec<_> = queues
+                .local_records_after(std::iter::empty())
+                .map_err(super::CommandExchangeError::from)?
+                .into_iter()
+                .cloned()
+                .collect();
+            queues
+                .commit_local_submission(&records)
+                .map_err(super::CommandExchangeError::from)?;
+            return Ok(());
+        }
         while self
             .submissions
             .front()
@@ -1211,6 +1256,51 @@ mod service_clock_tests {
         assert!(service_due(Some(1018), 1118, 100));
         assert!(!service_due(Some(u32::MAX - 50), 48, 100));
         assert!(service_due(Some(u32::MAX - 50), 49, 100));
+    }
+}
+
+#[cfg(test)]
+mod restore_tests {
+    use super::*;
+    use vera20k_relay_protocol::OrderStatus;
+
+    fn status(next_seq: u64, head_frame: u32) -> OrderEvent {
+        OrderEvent::Status(OrderStatus {
+            head_frame,
+            oldest_seq: 1,
+            next_seq,
+            active_sources: 3,
+            tick_hz: 30,
+            start_delay_ms: 0,
+            started: true,
+        })
+    }
+
+    /// The counter the departed process reached comes from the history: its
+    /// own first ID would make the relay end this client's match (`BatchGap`).
+    #[test]
+    fn resumes_the_batch_counter_only_once_the_world_caught_up() {
+        let mut houses = [None; 30];
+        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
+        let mut session = SequencedSession::with_roster(houses, 0, [7; 32], 30);
+        session.begin_restore();
+        session.last_batch[0] = 41;
+        session.next_sequence = 500;
+
+        // Nothing is known of the relay yet.
+        session.settle_restore(0).unwrap();
+        assert!(session.restoring());
+        session.receive(status(900, 1000), Instant::now()).unwrap();
+        // History still to read, then a world still far behind it.
+        session.settle_restore(1000).unwrap();
+        assert!(session.restoring());
+        session.next_sequence = 900;
+        session.settle_restore(900).unwrap();
+        assert!(session.restoring());
+
+        session.settle_restore(990).unwrap();
+        assert!(!session.restoring());
+        assert_eq!((session.next_batch, session.accepted_batch), (42, 41));
     }
 }
 

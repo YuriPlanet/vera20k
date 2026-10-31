@@ -1197,9 +1197,11 @@ fn exit_awaits_unreachable_relay(
     now_millis: u32,
     frame: u32,
 ) -> bool {
+    // A rejoining process submits nothing until it has caught up.
     live.exit_requested()
-        && live.recovery_status(now_millis, frame)
-            == Some(crate::net::live_commands::NetworkRecoveryStatus::Reconnecting)
+        && (live.restoring_match()
+            || live.recovery_status(now_millis, frame)
+                == Some(crate::net::live_commands::NetworkRecoveryStatus::Reconnecting))
 }
 
 /// Quit Game 2 (`0x0064AE50` WM_COMMAND 2): the result cell becomes 2 and

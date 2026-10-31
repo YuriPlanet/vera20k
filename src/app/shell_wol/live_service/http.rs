@@ -69,6 +69,9 @@ pub(super) enum Request {
     /// place of `/v1/sessions`. Polling starts with the first event.
     AdoptSession {
         token: String,
+        /// A returning player's match and the end of its event history; the
+        /// `timing_confirmed` before it belongs to the process that left.
+        resume: Option<(String, u64)>,
     },
     Channels(u32),
     Command {
@@ -380,10 +383,11 @@ fn decode_session(value: Value, requested_nickname: &str) -> Result<Session, Req
 }
 
 impl Client {
-    fn adopt_session(&mut self, token: String) {
+    fn adopt_session(&mut self, token: String, resume: Option<(String, u64)>) {
         self.token = Some(token);
-        self.cursor = 0;
-        self.active_match = None;
+        let (active_match, cursor) = resume.map_or((None, 0), |(id, cursor)| (Some(id), cursor));
+        self.cursor = cursor;
+        self.active_match = active_match;
         self.spawned = true;
     }
 
@@ -966,9 +970,9 @@ macro_rules! serial_driver {
                 }
             }
             Some(Request::Abandon) => client.abandoned = client.token.is_some(),
-            Some(Request::AdoptSession { token }) => {
+            Some(Request::AdoptSession { token, resume }) => {
                 if client.token.is_none() {
-                    client.adopt_session(token);
+                    client.adopt_session(token, resume);
                     failed_polls = 0;
                 }
             }
@@ -1532,7 +1536,19 @@ mod tests {
         let mut failures = 0;
 
         let mut spawned = client();
-        spawned.adopt_session("synthetic-test-session".to_owned());
+        // A returning engine's start is history: it polls at its match's pace at once.
+        let mut returning = client();
+        returning.adopt_session(
+            "synthetic-test-session".to_owned(),
+            Some(("11111111-1111-1111-1111-111111111111".to_owned(), 2)),
+        );
+        assert_eq!(returning.cursor, 2);
+        assert_eq!(
+            returning.poll_finished(Ok(()), &mut failures, &output),
+            Duration::from_secs(60)
+        );
+
+        spawned.adopt_session("synthetic-test-session".to_owned(), None);
         assert_eq!(spawned.stream_bearer(), None);
         // The start barrier waits on the other players' events.
         assert_eq!(

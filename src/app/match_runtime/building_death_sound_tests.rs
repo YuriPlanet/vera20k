@@ -145,6 +145,7 @@ fn audio_runtime(with_device: bool) -> AppAudioRuntime {
     });
     AppAudioRuntime {
         master_groups: Default::default(),
+        restore_muted: false,
         theme: Default::default(),
         service_clock: Default::default(),
         music_player: None,

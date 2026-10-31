@@ -823,6 +823,7 @@ impl App {
                     launcher_audio_available,
                     theme_startup_suppressed: false,
                     master_groups: Default::default(),
+                    restore_muted: false,
                 };
                 if let Some(assets) = startup_asset_manager.as_ref() {
                     startup_audio_runtime.initialize_theme(assets);

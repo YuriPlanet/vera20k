@@ -470,6 +470,9 @@ struct PendingStart {
     relay_acknowledged: bool,
     probes_started: bool,
     latencies_reported: bool,
+    /// A returning player: the match started without this process, so its
+    /// barriers are over and these are the timing it agreed.
+    resume_pings: Option<Vec<i32>>,
     /// The unanswered `relay_ready` or `latency_ready`.
     report: Option<PendingReport>,
 }
@@ -2422,27 +2425,7 @@ fn apply_event(
                 grant.key,
                 grant.payload_key,
             )?;
-            service.relay_granted(crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32);
-            crate::app::lan_service::apply_online_timing(state, &timing.pings)?;
-            let count = state
-                .match_state
-                .session
-                .network_setup()
-                .ok_or_else(|| anyhow!("missing setup"))?
-                .humans
-                .len();
-            for node in 1..count {
-                crate::app::shell_network_setup::service_event(
-                    state,
-                    NetworkSetupEvent::PeerConnected { node },
-                )?;
-            }
-            crate::app::shell_network_setup::service_event(
-                state,
-                NetworkSetupEvent::Negotiated { result: 0 },
-            )?;
-            service.match_id = Some(timing.match_id);
-            service.pending = None;
+            enter_timed_start(state, service, timing.match_id, &timing.pings)?;
         }
         "start_rejected" => {
             cancel_pending(state, service);
@@ -2454,6 +2437,38 @@ fn apply_event(
         "error" => notice(state, "The online service rejected the request."),
         _ => {}
     }
+    Ok(())
+}
+
+/// The agreed timing is known and the current grant is fresh: leave the online
+/// barriers for the loading that follows `Negotiated`.
+fn enter_timed_start(
+    state: &mut AppState,
+    service: &mut LiveService,
+    match_id: String,
+    pings: &[i32],
+) -> Result<()> {
+    service.relay_granted(crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32);
+    crate::app::lan_service::apply_online_timing(state, pings)?;
+    let count = state
+        .match_state
+        .session
+        .network_setup()
+        .ok_or_else(|| anyhow!("missing setup"))?
+        .humans
+        .len();
+    for node in 1..count {
+        crate::app::shell_network_setup::service_event(
+            state,
+            NetworkSetupEvent::PeerConnected { node },
+        )?;
+    }
+    crate::app::shell_network_setup::service_event(
+        state,
+        NetworkSetupEvent::Negotiated { result: 0 },
+    )?;
+    service.match_id = Some(match_id);
+    service.pending = None;
     Ok(())
 }
 
@@ -2552,6 +2567,7 @@ fn begin_start(state: &mut AppState, service: &mut LiveService, start: wire::Sta
             address: start.relay.address,
             gateway: None,
             grant,
+            resume_pings: None,
         },
     )
 }
@@ -2568,6 +2584,8 @@ struct RelayStart {
     /// A spawn launch's `[Relay] GatewayUrl`; the built-in lobby uses the compiled one.
     gateway: Option<String>,
     grant: DecodedRelayGrant,
+    /// A spawn launch returning to a match under way: its agreed timing.
+    resume_pings: Option<Vec<i32>>,
 }
 
 /// The state right after `game_started`: the authenticated relay socket,
@@ -2639,6 +2657,7 @@ fn admit_relay_start(
         relay_acknowledged: false,
         probes_started: false,
         latencies_reported: false,
+        resume_pings: start.resume_pings,
         report: None,
     });
     Ok(())
@@ -2672,10 +2691,16 @@ pub(crate) fn begin_spawned_match(
     service.spawned = true;
     service.relay_timeout = relay.admission_timeout;
     service.player_id = relay.player_id;
+    let (resume_pings, resume_cursor) = relay.resume.map_or((None, None), |resume| {
+        (Some(resume.pings), Some(resume.cursor))
+    });
     // The launcher's bearer replaces `/v1/sessions`; nothing else is opened.
     service
         .requests
-        .send(http::Request::AdoptSession { token: relay.token })
+        .send(http::Request::AdoptSession {
+            token: relay.token,
+            resume: resume_cursor.map(|cursor| (relay.match_id.clone(), cursor)),
+        })
         .map_err(|_| anyhow!("the match service worker stopped"))?;
     let users: Vec<_> = launch
         .humans
@@ -2705,6 +2730,7 @@ pub(crate) fn begin_spawned_match(
             address: relay.address,
             gateway: relay.gateway_url,
             grant: relay.grant,
+            resume_pings,
         },
     );
     // Keep this visit's own worker even on failure: no lobby worker may
@@ -2802,6 +2828,10 @@ fn poll_relay(state: &mut AppState, service: &mut LiveService) -> Result<()> {
             )?;
             pending.relay_acknowledged = true;
             let match_id = pending.match_id.clone();
+            if let Some(pings) = pending.resume_pings.take() {
+                crate::app::lan_service::mark_online_restore(state)?;
+                return enter_timed_start(state, service, match_id, &pings);
+            }
             commands.push(("relay_ready", json!({"match_id":match_id})));
         }
     }
@@ -3014,6 +3044,7 @@ mod completion_tests {
             relay_acknowledged: true,
             probes_started: false,
             latencies_reported: false,
+            resume_pings: None,
             report: None,
         });
         let sent = || match input.try_recv() {

@@ -109,6 +109,17 @@ match on the same relay, or the match's final frame after 24 hours of play ends
 membership. The relay
 remains required for progress.
 
+A process that left a match without Leave (a closed window or browser tab, a crash)
+can be replaced within that silence limit. The launcher receives a fresh `[Relay]`
+section with `ResumePings`, the timing vector every client started with, and
+`ResumeCursor`, the end of the lobby events that process already consumed. The new
+process skips the start barriers, loads the same world without reporting progress to
+the others, and reads the whole stream from sequence 1 as ordinary catch-up. It
+learns its batch counter from that stream, so it submits nothing until the world has
+caught up; local orders given until then are dropped, and effects and voices stay
+silent. The relay refuses a different world as an agreement mismatch. Abort Mission
+during this replay leaves as it does while Reconnecting.
+
 Authored Battle matches record reconstructible JSON replays in `replays/`.
 `vera20k --replay <replay.json> --ra2-dir <retail-directory>` opens read-only
 playback with camera controls and Escape to close.

@@ -92,6 +92,7 @@ fn map_music_action_follows_native_read_and_queue() {
             launcher_audio_available: input["device"].as_bool().unwrap_or(true),
             theme_startup_suppressed: input["suppressed"].as_bool().unwrap_or(false),
             master_groups: Default::default(),
+            restore_muted: false,
         };
         for (index, effect) in effects.iter().enumerate() {
             let TriggerEffect::MusicTheme { request } = effect else {
