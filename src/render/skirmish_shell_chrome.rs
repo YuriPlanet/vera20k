@@ -96,7 +96,7 @@ const TRACKBAR_FRAME_BORDER: i32 = 2;
 /// BC/BD/C2/C9 place their speed, credits and units sliders at 129x21 and the
 /// co-op difficulty slider at 266x22, or 266x21 on WOL's host C2
 /// (`0x0060B950` placement, `tools/storage_oracle/lan_lobby.json`).
-pub const TRACKBAR_FRAMES: [(i32, i32, i32); 9] = [
+pub const TRACKBAR_FRAMES: [(i32, i32, i32); 10] = [
     (129, 22, 50),
     (226, 22, 50),
     (263, 21, 50),
@@ -106,6 +106,8 @@ pub const TRACKBAR_FRAMES: [(i32, i32, i32); 9] = [
     (129, 21, 50),
     (266, 22, 0),
     (266, 21, 0),
+    // The online pause menu FF's Connection and Game Speed (60B7A0).
+    (210, 21, 50),
 ];
 const SKIRMISH_FLAG_PCX_NAMES: [&str; 12] = [
     "usai.pcx", "japi.pcx", "frai.pcx", "geri.pcx", "gbri.pcx", "djbi.pcx", "arbi.pcx", "lati.pcx",

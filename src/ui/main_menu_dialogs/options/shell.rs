@@ -205,7 +205,7 @@ impl LauncherOptionsLayout {
         let display_combo = px(RectPx::new(351, 110, 180, COMBO_FACE_H));
         // VERA's Accessibility band takes the main page's Audio Options place:
         // its heading, then one caption row over one slider. The trackbar's
-        // border art is only authored for the nine windows in
+        // border art is only authored for the windows in
         // `skirmish_shell_chrome::TRACKBAR_FRAMES`, and a plaque slider is one
         // of the 50-reserve ones, so this row takes the 226x22 window the main
         // page's Generate Map slider uses rather than the plain 181x22 one:

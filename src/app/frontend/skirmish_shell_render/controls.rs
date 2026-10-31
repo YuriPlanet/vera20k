@@ -1371,6 +1371,19 @@ mod tests {
                     .sliders
                     .map(|rect| (true, rect)),
             );
+            // The online pause menu's Internet Game Controls.
+            let shell =
+                crate::ui::shell::in_game_shell::allied_fixture_layout(width as i32, height as i32);
+            let internet = crate::ui::shell::pause_menu::pause_menu_layout(
+                width as i32,
+                height as i32,
+                shell,
+                [125, 25],
+                crate::ui::shell::pause_menu::PauseMenuTemplate::Internet,
+            )
+            .internet
+            .expect("FF has its sliders");
+            windows.extend(internet.sliders.map(|rect| (true, rect)));
             use crate::ui::multiplayer_setup::{
                 DIFFICULTY, MultiplayerSetupLayout, SetupDialog, SetupFlavor,
             };
