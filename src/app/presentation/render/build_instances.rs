@@ -176,6 +176,31 @@ pub(super) fn build_world_instances(
         // Terrain draws regardless of shroud — the native tile walk has no
         // explored gate (`CellOverlay_TileDraw @ 0x00480350`); the flat shroud
         // curtain blacks out unexplored ground in the multiply pass.
+        //
+        // The water mask is different: the post chain would ripple the flat
+        // fog curtain covering unexplored water, so mask candidates are
+        // filtered through the local player's shroud test first.
+        let fog_view = state.match_state.sim_runtime.as_ref().map(|rt| rt.view());
+        let sandbox = state.match_state.sandbox_full_visibility;
+        let viewer = fog_view.as_ref().and_then(|view| {
+            crate::app::input::commands::preferred_local_owner_name(state)
+                .and_then(|name| view.interner().get(&name))
+        });
+        let fog_of_war = fog_view
+            .as_ref()
+            .map(|view| view.session().game_options().fog_of_war)
+            .unwrap_or(false);
+        let fog = fog_view.as_ref().map(|view| view.fog());
+        let water_visible = move |rx: u16, ry: u16| {
+            sandbox
+                || !crate::app::presentation::instances::translucent_fog_conceals_cell(
+                    viewer,
+                    fog,
+                    rx,
+                    ry,
+                    fog_of_war,
+                )
+        };
         crate::render::terrain_instances::build_visible_instances(
             grid,
             Some(state.match_state.match_presentation.lighting.grid()),
@@ -189,6 +214,7 @@ pub(super) fn build_world_instances(
                 .sim_runtime
                 .as_ref()
                 .and_then(|rt| rt.view().resolved_terrain()),
+            Some(&water_visible),
         )
     } else {
         crate::render::terrain_instances::TerrainInstances {

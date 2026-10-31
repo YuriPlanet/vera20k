@@ -41,6 +41,10 @@ fn visible_cell_slice(grid: &TerrainGrid, view_top: f32, view_bottom: f32) -> &[
 /// tiles are fully opaque inside the diamond shape (confirmed via diagnostics),
 /// so no base clear-ground layer is needed. Missing tiles are skipped —
 /// the caller's UV lookup should provide fallbacks if desired.
+///
+/// `water_visible` decides which water cells may enter the post-process mask.
+/// The app passes the local player's shroud test so water hidden under fog is
+/// never displaced (a ripple on black fog is visible as moving darkness).
 pub fn build_visible_instances(
     grid: &TerrainGrid,
     lighting_grid: Option<&CellLightGrid>,
@@ -50,6 +54,7 @@ pub fn build_visible_instances(
     screen_height: f32,
     uv_fn: UvLookupFn<'_>,
     live_terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    water_visible: Option<&dyn Fn(u16, u16) -> bool>,
 ) -> TerrainInstances {
     let view_left: f32 = camera_x - CULL_MARGIN;
     let view_right: f32 = camera_x + screen_width + CULL_MARGIN;
@@ -128,7 +133,9 @@ pub fn build_visible_instances(
         // (extra-data tiles start above the diamond by `draw_offset.y`).
         let iso_row: f32 = cell.screen_y + f32::from(cell.z as i8) * HEIGHT_STEP;
         let screen_y = iso_row - level as f32 * HEIGHT_STEP;
-        if live_cell.is_some_and(|live| live.is_water()) {
+        if live_cell.is_some_and(|live| live.is_water())
+            && water_visible.is_none_or(|visible| visible(cell.rx, cell.ry))
+        {
             // The mask covers the cell's iso diamond, not an extra-data tile's
             // full canvas: water tiles carry no elevated art.
             instances.water.push([
@@ -239,11 +246,51 @@ mod tests {
             100.0,
             Some(&lookup),
             Some(&live),
+            None,
         );
         assert_eq!(
             instances.water,
             vec![[-30.0, -15.0, TILE_WIDTH, TILE_HEIGHT]],
             "only the water cell becomes a mask diamond, in frame pixels"
+        );
+    }
+
+    /// Water under fog never reaches the mask: the caller's shroud test rejects
+    /// the cell, so the post chain cannot ripple the flat fog curtain over it.
+    #[test]
+    fn concealed_water_cells_emit_no_mask_diamonds() {
+        let grid = TerrainGrid {
+            cells: vec![cell(0, 0, 0.0, 0.0)],
+            world_width: 60.0,
+            world_height: 30.0,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            bridge_middle_tiles: None,
+        };
+        let live = resolved_terrain::test_grid(1, 1, resolved_terrain::test_water_cell);
+        let lookup = |_, _, _| {
+            Some(TilePlacement {
+                uv_origin: [0.0; 2],
+                uv_size: [1.0; 2],
+                pixel_size: [TILE_WIDTH, TILE_HEIGHT],
+                draw_offset: [0.0, 0.0],
+            })
+        };
+        let concealed = |_: u16, _: u16| false;
+        let instances = build_visible_instances(
+            &grid,
+            None,
+            0.0,
+            0.0,
+            100.0,
+            100.0,
+            Some(&lookup),
+            Some(&live),
+            Some(&concealed),
+        );
+        assert!(
+            instances.water.is_empty(),
+            "a cell hidden by fog must not enter the mask"
         );
     }
 }
