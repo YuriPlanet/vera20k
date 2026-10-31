@@ -4544,6 +4544,10 @@ pub struct RuleSet {
     /// projectile emitter's nullable type keys.
     #[cfg(feature = "phobos")]
     pub phobos_airburst: crate::rules::phobos_airburst::PhobosAirburstGlobals,
+    /// Phobos `[AudioVisual] LaserPositionUpdate.StopOnFirerConvert=`, the
+    /// default the weapon-level nullable inherits.
+    #[cfg(feature = "phobos")]
+    pub phobos_laser_tracking: crate::rules::phobos_laser_tracking::LaserTrackingGlobals,
     /// Phobos `[SIDE] SuperWeaponSidebar.*PCX=` names, in `[Sides]` order.
     #[cfg(feature = "phobos")]
     side_sw_sidebar_art: Vec<crate::rules::phobos_sw_sidebar::SuperWeaponSidebarSideArt>,
@@ -6163,6 +6167,9 @@ impl RuleSet {
         #[cfg(feature = "phobos")]
         let phobos_airburst = crate::rules::phobos_airburst::PhobosAirburstGlobals::from_ini(ini);
         #[cfg(feature = "phobos")]
+        let phobos_laser_tracking =
+            crate::rules::phobos_laser_tracking::LaserTrackingGlobals::from_ini(ini);
+        #[cfg(feature = "phobos")]
         let side_sw_sidebar_art: Vec<
             crate::rules::phobos_sw_sidebar::SuperWeaponSidebarSideArt,
         > = country_side_registry
@@ -6481,6 +6488,8 @@ impl RuleSet {
             power_plant_enhancer,
             #[cfg(feature = "phobos")]
             phobos_airburst,
+            #[cfg(feature = "phobos")]
+            phobos_laser_tracking,
             #[cfg(feature = "phobos")]
             side_sw_sidebar_art,
             #[cfg(feature = "ares")]
