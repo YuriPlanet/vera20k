@@ -1178,21 +1178,9 @@ pub struct GeneralRules {
     pub dumb_target_strength_coefficient: f64,
     /// AI coefficient for whole cells beyond the selected weapon range.
     pub dumb_target_distance_coefficient: f64,
-    /// `MyEffectivenessCoefficientDefault=` (`RulesClass+0x1040`,
-    /// `RulesClass::ReadGeneral @ 0x00671AEE`). Read default for the per-type
-    /// `MyEffectivenessCoefficient=`, and through it the live coefficient for
-    /// every house that has ever had a building in the world — see
-    /// [`crate::sim::combat::greatest_threat`]. Fallbacks here are the stock
-    /// `rulesmd.ini` values; the `RulesClass` constructor seed is UNCHECKED.
-    pub my_effectiveness_coefficient_default: f64,
-    /// `TargetEffectivenessCoefficientDefault=` (`RulesClass+0x1048`).
-    pub target_effectiveness_coefficient_default: f64,
-    /// `TargetSpecialThreatCoefficientDefault=` (`RulesClass+0x1050`).
-    pub target_special_threat_coefficient_default: f64,
-    /// `TargetStrengthCoefficientDefault=` (`RulesClass+0x1058`).
-    pub target_strength_coefficient_default: f64,
-    /// `TargetDistanceCoefficientDefault=` (`RulesClass+0x1060`).
-    pub target_distance_coefficient_default: f64,
+    /// Retained General defaults (original Rules+1040..1060,
+    /// ctor666C3F..666C75 zero, ReadGeneral671AF6..671B97).
+    threat_coefficient_defaults: super::threat_coefficients::ThreatCoefficients,
     /// `EnemyHouseThreatBonus=` (`RulesClass+0x1090`, ReadDouble at
     /// `0x00671C7C`; constructor 0.0 at `0x00666CB7`, stock rulesmd 400):
     /// added to the threat score of a candidate the scorer house's current
@@ -2750,11 +2738,7 @@ impl Default for GeneralRules {
             dumb_target_special_threat_coefficient: 200.0,
             dumb_target_strength_coefficient: 200.0,
             dumb_target_distance_coefficient: -1.0,
-            my_effectiveness_coefficient_default: 200.0,
-            target_effectiveness_coefficient_default: -200.0,
-            target_special_threat_coefficient_default: 200.0,
-            target_strength_coefficient_default: -200.0,
-            target_distance_coefficient_default: -10.0,
+            threat_coefficient_defaults: Default::default(),
             enemy_house_threat_bonus: 0.0,
             threat_per_occupant: 5,
             normal_targeting_delay: 27,
@@ -3414,6 +3398,12 @@ pub(crate) fn ambient_change_terms(rate: f64, step: f64) -> (bool, i32, i32) {
 }
 
 impl GeneralRules {
+    pub(crate) fn threat_coefficient_defaults(
+        &self,
+    ) -> super::threat_coefficients::ThreatCoefficients {
+        self.threat_coefficient_defaults
+    }
+
     /// LogicClass::AI55B259..55B265 uses the shared ftol(minutes*900),
     /// without clamping negative, zero or exceptional conversion results.
     pub fn shroud_growth_interval_frames(&self) -> i32 {
@@ -3736,26 +3726,8 @@ impl GeneralRules {
                 "DumbTargetDistanceCoefficient",
                 defaults.dumb_target_distance_coefficient,
             ),
-            my_effectiveness_coefficient_default: general.read_double(
-                "MyEffectivenessCoefficientDefault",
-                defaults.my_effectiveness_coefficient_default,
-            ),
-            target_effectiveness_coefficient_default: general.read_double(
-                "TargetEffectivenessCoefficientDefault",
-                defaults.target_effectiveness_coefficient_default,
-            ),
-            target_special_threat_coefficient_default: general.read_double(
-                "TargetSpecialThreatCoefficientDefault",
-                defaults.target_special_threat_coefficient_default,
-            ),
-            target_strength_coefficient_default: general.read_double(
-                "TargetStrengthCoefficientDefault",
-                defaults.target_strength_coefficient_default,
-            ),
-            target_distance_coefficient_default: general.read_double(
-                "TargetDistanceCoefficientDefault",
-                defaults.target_distance_coefficient_default,
-            ),
+            // The ordered processor owns these current-default reads.
+            threat_coefficient_defaults: defaults.threat_coefficient_defaults,
             enemy_house_threat_bonus: general
                 .read_double("EnemyHouseThreatBonus", defaults.enemy_house_threat_bonus),
             threat_per_occupant: general
@@ -4965,6 +4937,14 @@ impl RuleSet {
                 .native_techno_type_order
                 .push((category, id.to_owned(), handle));
         }
+        for (category, id, coefficients) in processed.techno_threat_coefficients() {
+            let key = (category, id.to_ascii_uppercase());
+            if let Some(handle) = rules.object_category_index.get(&key).copied()
+                && rules.object_by_handle(handle).id == id
+            {
+                rules.object_list[handle.0 as usize].project_threat_coefficients(coefficients);
+            }
+        }
         for (category, name, slots) in processed.weapon_slot_states() {
             if let Some(object) = rules
                 .object_list
@@ -6024,6 +6004,7 @@ impl RuleSet {
         let production: ProductionRules = ProductionRules::from_ini(ini);
         let mut general: GeneralRules = GeneralRules::from_ini(ini);
         general.tree_strength = processed.tree_strength();
+        general.threat_coefficient_defaults = processed.threat_coefficient_defaults();
         let (_, color_indexes) = processed.color_add_state();
         general.laser_target_color = color_indexes.laser_target_color();
         general.iron_curtain_color = color_indexes.iron_curtain_color();
@@ -7230,6 +7211,20 @@ impl RuleSet {
         // v34: Country starting-veterancy; optional extensions add domains below.
         b"rules-simulation-config-v34".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        // ReadINI71551E..715720 can retain different weights for identical
+        // current text. Include the projected bits and process-resident defaults.
+        b"threat-coefficients-v1".hash(&mut hasher);
+        self.general.threat_coefficient_defaults.hash(&mut hasher);
+        self.object_list
+            .iter()
+            .map(|object| {
+                (
+                    (object.category, object.id.to_ascii_uppercase()),
+                    object.threat_coefficients(),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
         // InfantryType ReadINI5245B8..5245F5 retains both theft bytes across
         // invalid later reads. Flattened text alone cannot identify that state.
         let mut theft_flags: Vec<_> = self

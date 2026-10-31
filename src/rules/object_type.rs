@@ -478,19 +478,9 @@ pub struct ObjectType {
     /// qualifying member of the highest rating (`TeamClass::Fetch_A_Leader @
     /// 0x006EC3D0`).
     pub leadership_rating: i32,
-    /// `MyEffectivenessCoefficient=` (`TechnoTypeClass+0x2C8`, read at
-    /// `0x0071556B`). `None` means the key is absent, in which case native
-    /// passes `[General] MyEffectivenessCoefficientDefault` (`RulesClass+0x1040`)
-    /// as the read default — so the resolution happens where the value is used.
-    pub my_effectiveness_coefficient: Option<f64>,
-    /// `TargetEffectivenessCoefficient=` (`TechnoTypeClass+0x2D0`, `0x007155D8`).
-    pub target_effectiveness_coefficient: Option<f64>,
-    /// `TargetSpecialThreatCoefficient=` (`TechnoTypeClass+0x2D8`, `0x0071563F`).
-    pub target_special_threat_coefficient: Option<f64>,
-    /// `TargetStrengthCoefficient=` (`TechnoTypeClass+0x2E0`, `0x007156A6`).
-    pub target_strength_coefficient: Option<f64>,
-    /// `TargetDistanceCoefficient=` (`TechnoTypeClass+0x2E8`, `0x0071570C`).
-    pub target_distance_coefficient: Option<f64>,
+    /// Final retained TechnoType+2C8..2E8, published by the ordered reader
+    /// (original ReadINI71551E..715720), never resolved at score time.
+    threat_coefficients: super::threat_coefficients::ThreatCoefficients,
     /// TechnoType+2F0: exact-case `ThreatAvoidanceCoefficient`, ReadDouble
     /// 712452..712473 (5283D0), constructor positive-zero. FootUnlimbo copies
     /// this to its own retained+530 after placement succeeds (4D72EA..4D72F4).
@@ -2499,6 +2489,17 @@ fn native_minutes_to_ticks(value: f64) -> u32 {
 }
 
 impl ObjectType {
+    pub(crate) fn threat_coefficients(&self) -> super::threat_coefficients::ThreatCoefficients {
+        self.threat_coefficients
+    }
+
+    pub(crate) fn project_threat_coefficients(
+        &mut self,
+        coefficients: super::threat_coefficients::ThreatCoefficients,
+    ) {
+        self.threat_coefficients = coefficients;
+    }
+
     /// Phobos `AllowAirstrike` as the cursor and `CanFire` tests read it: an
     /// explicit value wins, a building otherwise follows `CanC4`, and every
     /// other kind is targetable by default.
@@ -3731,14 +3732,6 @@ impl ObjectType {
             };
         // `IsGattling=` gates the Stage loop read beside it (`0x0071407E`).
         let is_gattling = section.read_bool("IsGattling", false);
-        // The targeting coefficients (`0x0071556B..0x0071570C`) read with a
-        // `[General]` default resolved where the value is used; `None` marks
-        // an absent key.
-        let present_double = |key: &str| {
-            section
-                .is_present(key)
-                .then(|| section.read_double(key, 0.0))
-        };
         // `GuardRange=` and `AirRangeBonus=` are ReadRange whole leptons
         // (`0x007122B3`, `0x007147A9`), kept here as cells; `None` marks an
         // absent key.
@@ -3855,11 +3848,7 @@ impl ObjectType {
             special_threat_value: section.read_double("SpecialThreatValue", 0.0),
             threat_posed: section.read_int("ThreatPosed", 0),
             leadership_rating: section.read_int("LeadershipRating", 5),
-            my_effectiveness_coefficient: present_double("MyEffectivenessCoefficient"),
-            target_effectiveness_coefficient: present_double("TargetEffectivenessCoefficient"),
-            target_special_threat_coefficient: present_double("TargetSpecialThreatCoefficient"),
-            target_strength_coefficient: present_double("TargetStrengthCoefficient"),
-            target_distance_coefficient: present_double("TargetDistanceCoefficient"),
+            threat_coefficients: Default::default(),
             threat_avoidance_coefficient: section.read_double_bits(
                 "ThreatAvoidanceCoefficient",
                 crate::util::native_x87::NativeF64Bits::POSITIVE_ZERO,

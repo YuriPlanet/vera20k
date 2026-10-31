@@ -117,6 +117,7 @@
 //! - rules/ does NOT depend on (outside tests): sim/, render/, ui/, audio/, net/
 
 pub mod airstrike;
+pub(crate) mod threat_coefficients;
 #[cfg(feature = "phobos")]
 pub mod airstrike_targets;
 pub mod attach_effect;
