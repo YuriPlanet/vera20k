@@ -1025,6 +1025,12 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             let prepares_start = requests
                 .iter()
                 .any(|request| matches!(request, NetworkSetupRequest::StartGame { .. }));
+            let publishes_options = requests.iter().any(|request| {
+                matches!(
+                    request,
+                    NetworkSetupRequest::PublishOptions | NetworkSetupRequest::PublishRoster
+                )
+            });
             for request in requests {
                 // Start publishes one immutable final snapshot. Sending both
                 // native roster/options observations separately would create
@@ -1034,6 +1040,12 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                         request,
                         NetworkSetupRequest::PublishOptions | NetworkSetupRequest::PublishRoster
                     )
+                {
+                    continue;
+                }
+                // The options this batch publishes already carry the C0.
+                if (prepares_start || publishes_options)
+                    && matches!(request, NetworkSetupRequest::PublishCooperativeCampaign(_))
                 {
                     continue;
                 }
@@ -1481,8 +1493,27 @@ fn options(state: &AppState) -> Result<wire::Options> {
             .frontend
             .multiplayer_shell_runtime
             .cooperative_difficulty(),
+        cooperative_campaign: cooperative_campaign(state),
         seed: Some(crate::app::shell_network_setup::resident_seed(state)),
     })
+}
+
+/// The host's current `C0` text for its options, only in Cooperative: the
+/// record `+0x60` would send each guest at that moment.
+fn cooperative_campaign(state: &AppState) -> Option<String> {
+    let cooperative = state
+        .match_state
+        .session
+        .network_setup()
+        .is_some_and(|launch| launch.mode.class == crate::skirmish_modes::MpModeClass::Cooperative);
+    cooperative
+        .then(|| {
+            state
+                .frontend
+                .multiplayer_shell_runtime
+                .cooperative_campaign_text()
+        })
+        .flatten()
 }
 
 fn canonical_options(options: &wire::Options) -> Result<Value> {
@@ -1515,12 +1546,11 @@ fn restore_accepted_options(state: &mut AppState, service: &LiveService) {
         return;
     };
     let result = decode::<wire::Options>(accepted)
-        .and_then(|options| options.into_options(&state.frontend.wol_account.nickname))
-        .and_then(|options| {
-            crate::app::shell_network_setup::service_event(
-                state,
-                NetworkSetupEvent::HostSetup(options),
-            )
+        .and_then(|options| options.into_setup_events(&state.frontend.wol_account.nickname))
+        .and_then(|events| {
+            events
+                .into_iter()
+                .try_for_each(|event| crate::app::shell_network_setup::service_event(state, event))
         });
     if result.is_err() {
         notice(
@@ -1714,6 +1744,16 @@ fn request_setup(
         NetworkSetupRequest::PublishStartStaging(_) => {
             service.command("options", json!({"options":options(state)?}));
         }
+        // +0x60's C0 rides in the options (`cooperative_campaign`), so its
+        // publish is one of them; the loop drops it when its batch already
+        // publishes options or starts.
+        NetworkSetupRequest::PublishCooperativeCampaign(_) => {
+            service.command("options", json!({"options":options(state)?}));
+        }
+        // RESIDUAL: mode+64's C1 (0x005C2710) is not carried, as on LAN:
+        // VERA reads no round assignment after the publish, so guests keep
+        // their own.
+        NetworkSetupRequest::PublishCooperativeAssignments(_) => {}
         NetworkSetupRequest::RequestPreview
         | NetworkSetupRequest::OfferPreview
         | NetworkSetupRequest::AcknowledgePreview
@@ -2297,16 +2337,16 @@ fn apply_event(
                     .inspect_err(|_| {
                         log::warn!("Online host options roster was not admitted");
                     })?;
-                let options = p.options.into_options(&local).inspect_err(|_| {
+                let events = p.options.into_setup_events(&local).inspect_err(|_| {
                     log::warn!("Online host options had no admitted local player");
                 })?;
-                crate::app::shell_network_setup::service_event(
-                    state,
-                    NetworkSetupEvent::HostSetup(options),
-                )
-                .inspect_err(|_| {
-                    log::warn!("Online host setup was not admitted");
-                })?;
+                for event in events {
+                    crate::app::shell_network_setup::service_event(state, event).inspect_err(
+                        |_| {
+                            log::warn!("Online host setup was not admitted");
+                        },
+                    )?;
+                }
             }
             maps::received_options(state, service, generated)?;
             // The owner is ready without a guest Accept button, but still proves its
@@ -3316,6 +3356,42 @@ mod completion_tests {
             .accept_network_setup(launch, true, None, false)
             .unwrap();
         session
+    }
+
+    #[test]
+    fn a_cooperative_campaign_reaches_the_guest_ahead_of_the_options_it_rides_in() {
+        let launch = setup_session().network_setup().unwrap().clone();
+        let mut value = json!({
+            "launch": launch,
+            "map_metadata": {"display_name": "Map", "player_capacity": 2, "official": true,
+                "byte_length": 1, "digest": "d", "source_sha256": "11".repeat(32),
+                "effective_digest": "aa".repeat(32)},
+            "vacancies": vec!["open"; 30],
+            "observer_row": null,
+            "cooperative_difficulty": 1,
+            "seed": null,
+        });
+        let plain: wire::Options = serde_json::from_value(value.clone()).unwrap();
+        // Lobbies from before the field refuse it, so other modes leave it out.
+        let sent = serde_json::to_value(&plain).unwrap();
+        assert!(sent.get("cooperative_campaign").is_none());
+        let events = plain.into_setup_events("Guest").unwrap();
+        assert!(matches!(
+            events.as_slice(),
+            [NetworkSetupEvent::HostSetup(_)]
+        ));
+        // 0x007A7F02: the host's C0 reaches the guest before its options.
+        let text = "C0,0,0,0,0,0,0,0,0,0,0,0,1,2,-1,Host,Guest";
+        value["cooperative_campaign"] = json!(text);
+        let cooperative: wire::Options = serde_json::from_value(value).unwrap();
+        let events = cooperative.into_setup_events("Guest").unwrap();
+        assert!(matches!(
+            events.as_slice(),
+            [
+                NetworkSetupEvent::CooperativeCampaign(campaign),
+                NetworkSetupEvent::HostSetup(options),
+            ] if campaign == text && options.launch.local_player_index == 1
+        ));
     }
 
     #[test]

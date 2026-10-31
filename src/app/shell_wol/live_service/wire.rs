@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::app::match_runtime::session::{NetworkMapMetadata, NetworkVacancy};
-use crate::app::shell_network_setup::HostOptions;
+use crate::app::shell_network_setup::{HostOptions, NetworkSetupEvent};
 use crate::ui::wol_lobby::{WolChannel, WolMember};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -175,6 +175,12 @@ pub(super) struct Options {
     pub vacancies: [Vacancy; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
     pub observer_row: Option<u8>,
     pub cooperative_difficulty: i32,
+    /// Cooperative's campaign record, the `C0` text LAN sends as its own
+    /// type `0x17` packet (`0x0049D680` through `0x005E3720`). Online it
+    /// rides in the options, so every revision and a late join carry it.
+    /// Absent in every other mode: lobbies before it refuse the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cooperative_campaign: Option<String>,
     pub seed: Option<u32>,
 }
 
@@ -195,6 +201,20 @@ impl Options {
             cooperative_difficulty: self.cooperative_difficulty,
             seed: self.seed,
         })
+    }
+
+    /// What a guest's options sink makes of one host options event: the
+    /// host's `C0` first, as it reaches a WOL guest ahead of the options
+    /// (`0x007A7F02`), so the campaign's country refresh never outlives
+    /// the host's rows; then the options themselves.
+    pub fn into_setup_events(mut self, local: &str) -> anyhow::Result<Vec<NetworkSetupEvent>> {
+        let campaign = self.cooperative_campaign.take();
+        let options = self.into_options(local)?;
+        Ok(campaign
+            .map(NetworkSetupEvent::CooperativeCampaign)
+            .into_iter()
+            .chain([NetworkSetupEvent::HostSetup(options)])
+            .collect())
     }
 }
 
