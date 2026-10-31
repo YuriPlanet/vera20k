@@ -203,22 +203,15 @@ impl ThreatCoefficients {
     ) -> Self {
         let general = &rules.general;
         if scorer_house_byte_set {
+            // CalculateThreatScore70CD10 loads the five stored type
+            // doubles. ReadINI71551E..715720 already resolved their defaults.
+            let coefficients = scorer_type.threat_coefficients();
             Self {
-                my_effectiveness: scorer_type
-                    .my_effectiveness_coefficient
-                    .unwrap_or(general.my_effectiveness_coefficient_default),
-                target_effectiveness: scorer_type
-                    .target_effectiveness_coefficient
-                    .unwrap_or(general.target_effectiveness_coefficient_default),
-                target_special_threat: scorer_type
-                    .target_special_threat_coefficient
-                    .unwrap_or(general.target_special_threat_coefficient_default),
-                target_strength: scorer_type
-                    .target_strength_coefficient
-                    .unwrap_or(general.target_strength_coefficient_default),
-                target_distance: scorer_type
-                    .target_distance_coefficient
-                    .unwrap_or(general.target_distance_coefficient_default),
+                my_effectiveness: coefficients.my_effectiveness(),
+                target_effectiveness: coefficients.target_effectiveness(),
+                target_special_threat: coefficients.target_special_threat(),
+                target_strength: coefficients.target_strength(),
+                target_distance: coefficients.target_distance(),
             }
         } else {
             Self {
@@ -3157,3 +3150,7 @@ mod unarmed_tests;
 #[cfg(test)]
 #[path = "greatest_threat_healer_guard_tests.rs"]
 mod healer_guard_tests;
+
+#[cfg(test)]
+#[path = "greatest_threat_coefficient_tests.rs"]
+mod coefficient_tests;
