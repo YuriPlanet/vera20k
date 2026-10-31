@@ -1229,6 +1229,7 @@ impl App {
                 retail_screenshot_frame_cache: Default::default(),
                 post_chain: None,
                 water_mask: None,
+                water_distortion: None,
             },
             process_assets,
             audio: startup_audio_runtime,

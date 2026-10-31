@@ -1250,10 +1250,26 @@ impl App {
                         .rules()
                         .and_then(|rules| rules.post_process.water_ripple);
                     let ripple = water_ripple.map(|ripple| {
-                        [ripple.amplitude, ripple.wavelength, ripple.speed]
+                        [
+                            ripple.amplitude,
+                            ripple.mask_value,
+                            ripple.mask_value_high,
+                            if ripple.full_rect_mask { 1.0 } else { 0.0 },
+                        ]
                     });
                     let ripple_debug = water_ripple.is_some_and(|ripple| ripple.debug);
-                    let ripple_time = times.radar_ms as f32 / 1000.0;
+                    // TC2 steps its distortion texture every
+                    // `DistortionAnimInterval`; a zero interval scrolls
+                    // continuously.
+                    let ripple_time = water_ripple.map_or(times.radar_ms, |ripple| {
+                        let interval = ripple.anim_interval_ms.max(0.0) as u64;
+                        if interval > 0 {
+                            (times.radar_ms / interval) * interval
+                        } else {
+                            times.radar_ms
+                        }
+                    }) as f32
+                        / 1000.0;
                     let post_params = crate::render::post_process::PostParams::from_effects(
                         color_grade,
                         filmic,
@@ -1262,7 +1278,6 @@ impl App {
                         fxaa,
                         bloom,
                         ripple,
-                        ripple_time,
                         ripple_debug,
                         viewport,
                     );
@@ -1297,11 +1312,42 @@ impl App {
                                 frame_size,
                             );
                         }
+                        if state.renderer.water_distortion.is_none() {
+                            state.renderer.water_distortion =
+                                Some(crate::render::water_distortion::WaterDistortion::new(
+                                    &state.renderer.gpu.device,
+                                    &state.renderer.gpu.queue,
+                                    frame_size,
+                                ));
+                        }
+                        if let Some(distortion) = state.renderer.water_distortion.as_mut() {
+                            distortion.resize(&state.renderer.gpu.device, frame_size);
+                        }
                     } else {
                         state.renderer.post_chain = None;
                         state.renderer.water_mask = None;
+                        state.renderer.water_distortion = None;
                     }
                     let render_output = render::render_game(state, &mut encoder, times)?;
+                    // The mask is rasterized inside `render_game`; the field is
+                    // generated from it now, before the frame is presented.
+                    if let (Some(distortion), Some(mask), Some(ripple)) = (
+                        state.renderer.water_distortion.as_mut(),
+                        state.renderer.water_mask.as_ref(),
+                        water_ripple,
+                    ) {
+                        distortion.generate(
+                            &state.renderer.gpu.device,
+                            &state.renderer.gpu.queue,
+                            &mut encoder,
+                            mask.view(),
+                            crate::render::water_distortion::DistortionParams::new(
+                                ripple.wavelength,
+                                ripple.speed,
+                                ripple_time,
+                            ),
+                        );
+                    }
                     state
                         .renderer
                         .present_game_frame(&mut encoder, &output.texture);

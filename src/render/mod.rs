@@ -59,6 +59,7 @@ pub(crate) mod radial_indicator;
 pub(crate) mod radiation_beam;
 pub(crate) mod scaled_copy;
 pub(crate) mod screen_presentation;
+pub(crate) mod water_distortion;
 pub(crate) mod water_mask;
 pub mod screenshot;
 pub mod selection_overlay;

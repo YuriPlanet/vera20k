@@ -59,6 +59,10 @@ pub(crate) struct RendererState {
     /// Water mask the post chain samples for displacement. Created and dropped
     /// together with `post_chain`.
     pub(crate) water_mask: Option<crate::render::water_mask::WaterMask>,
+    /// Water distortion field generated from that mask, the displacement the
+    /// post chain actually applies. Created and dropped with `post_chain`.
+    pub(crate) water_distortion:
+        Option<crate::render::water_distortion::WaterDistortion>,
 }
 
 impl RendererState {
@@ -100,6 +104,7 @@ impl RendererState {
             self.copy_game_frame_to(encoder, destination);
             return;
         };
+        let distortion = self.water_distortion.as_ref().map(|field| field.view());
         debug_assert_eq!(chain.format(), format);
         chain.draw(
             &self.gpu.device,
@@ -107,6 +112,7 @@ impl RendererState {
             encoder,
             &source_view,
             mask.view(),
+            distortion,
             &destination_view,
             size,
         );
