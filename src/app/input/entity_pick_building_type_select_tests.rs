@@ -1,10 +1,11 @@
 //! Type-select admission for structures.
 //!
 //! Retail's ID match (`0x00732C30`) admits a building only when its type has
-//! `UndeploysInto=` (`0x00732C61..0x00732C83`). Phobos
-//! `[General] BuildingTypeSelectable`, live only with Ares, admits every
-//! building. These tests drive the tap that reads that gate, not the gate
-//! alone.
+//! `UndeploysInto=` (`0x00732C61..0x00732C83`). Phobos `[General]
+//! BuildingTypeSelectable`, live only with Ares, lifts the type query of
+//! CanBeSelectedNow for the ID match only, so every building that passes the
+//! TechnoClass checks (`0x006FC030`) joins. These tests drive the tap that
+//! reads those gates, not the gates alone.
 use crate::app::input::entity_pick::compute_type_select_tap_with_playfield;
 use crate::app::types::TypeSelectOutcome;
 use crate::map::entities::EntityCategory;
@@ -61,6 +62,19 @@ fn two_buildings(type_id: &str) -> (Simulation, Vec<u64>) {
     (sim, vec![1, 2])
 }
 
+/// The same pair with entity 2 holding a tank-bunker occupant, which
+/// CanBeSelectedNow's TechnoClass checks (`0x006FC030`) refuse.
+#[cfg(all(feature = "phobos", feature = "ares"))]
+fn building_pair_with_garrison(type_id: &str) -> (Simulation, Vec<u64>) {
+    let (mut sim, order) = two_buildings(type_id);
+    sim.entities_mut_for_test()
+        .get_mut(2)
+        .expect("entity 2")
+        .bunker
+        .set_bunker_occupant_for_test(Some(99));
+    (sim, order)
+}
+
 /// Run the tap the way a second press of T does with the map scope already
 /// chosen, so the result is the ID match alone.
 fn tap(
@@ -112,7 +126,10 @@ fn an_undeploysinto_building_stays_admissible() {
 fn the_switch_admits_every_building() {
     let (sim, order) = two_buildings("GAPOWR");
     let rules = rules("BuildingTypeSelectable=yes\n");
-    assert!(rules.structure_type_selectable("GAPOWR"));
+    assert!(
+        !rules.structure_type_selectable("GAPOWR"),
+        "the independent UndeploysInto arm stays retail"
+    );
     assert_eq!(
         tap(sim.entities(), &order, &rules, sim.interner()),
         vec![1, 2]
@@ -121,10 +138,64 @@ fn the_switch_admits_every_building() {
 
 #[cfg(all(feature = "phobos", feature = "ares"))]
 #[test]
+fn the_switch_still_applies_the_building_selection_checks() {
+    let (sim, order) = building_pair_with_garrison("GAPOWR");
+    let rules = rules("BuildingTypeSelectable=yes\n");
+    assert_eq!(
+        tap(sim.entities(), &order, &rules, sim.interner()),
+        vec![1],
+        "the hook lifts only Is1x1AndUndeployable 0x465D40, so CanBeSelectedNow \
+         still refuses the occupied bunker"
+    );
+}
+
+#[cfg(all(feature = "phobos", feature = "ares"))]
+#[test]
+fn the_undeploysinto_arm_still_outranks_the_building_checks() {
+    let (sim, order) = building_pair_with_garrison("GACNST");
+    let rules = rules("BuildingTypeSelectable=yes\n");
+    assert_eq!(
+        tap(sim.entities(), &order, &rules, sim.interner()),
+        vec![1, 2],
+        "0x00732C61..0x00732C83 admits the UndeploysInto type on its own"
+    );
+}
+
+#[cfg(all(feature = "phobos", feature = "ares"))]
+#[test]
+fn the_switch_lifts_only_the_id_match_context() {
+    // Phobos sets ExtSelection::ProcessingIDMatches around the ID match only
+    // (hooks 0x732A85/0x732B28, cleared at 0x732C06), so the band and N/M
+    // walks keep CanBeSelectedNow's own type query.
+    let (sim, _) = two_buildings("GAPOWR");
+    let rules = rules("BuildingTypeSelectable=yes\n");
+    let entity = sim.entities().get(1).expect("entity 1");
+    assert!(
+        !super::selection_dynamic_prefix(
+            entity,
+            sim.entities(),
+            Some(&rules),
+            Some(sim.interner()),
+            false,
+        ),
+        "outside the ID match a plain building is still refused"
+    );
+    assert!(super::selection_dynamic_prefix(
+        entity,
+        sim.entities(),
+        Some(&rules),
+        Some(sim.interner()),
+        true,
+    ));
+}
+
+#[cfg(all(feature = "phobos", feature = "ares"))]
+#[test]
 fn the_switch_is_read_from_the_general_section() {
     // Absent key keeps the retail gate.
+    assert!(!rules("").building_type_selectable());
     assert!(!rules("").structure_type_selectable("GAPOWR"));
     // `no` is the same as absent.
-    assert!(!rules("BuildingTypeSelectable=no\n").structure_type_selectable("GAPOWR"));
-    assert!(rules("BuildingTypeSelectable=yes\n").structure_type_selectable("GAPOWR"));
+    assert!(!rules("BuildingTypeSelectable=no\n").building_type_selectable());
+    assert!(rules("BuildingTypeSelectable=yes\n").building_type_selectable());
 }

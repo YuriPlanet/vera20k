@@ -44,6 +44,7 @@ fn next_object(
                 sim.entities(),
                 rules,
                 Some(sim.interner()),
+                false,
             )
             && rules.is_some_and(|rules| sim.object_is_selectable(id, rules))
     };
@@ -193,6 +194,7 @@ fn combatant_selection(
                     sim.entities(),
                     Some(rules),
                     Some(sim.interner()),
+                    false,
                 )
                 && sim.object_is_selectable(*id, rules)
         })
