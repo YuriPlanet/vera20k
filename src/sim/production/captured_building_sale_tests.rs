@@ -4,7 +4,8 @@
 //! Building transition is compared through `change_owner_with_rules`; the
 //! separate retail world tests exercise the Rust Engineer command and Walk.
 //! Tail rows start with supplied current ownership and mission state and call
-//! only `sell_after_owner_change`. No Selling frame or host refund is advanced.
+//! only `sell_after_owner_change`. Selling rows execute two building visits,
+//! through the upgrade refund and the following host-sale stage-zero tail.
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
@@ -77,6 +78,12 @@ fn scene(row: &Value) -> (Simulation, RuleSet, InternedId) {
             "[{kind}]\nStrength={}\nCost={cost}\n",
             signed(&native_type["strength"])
         ));
+        if input["turret_types"]
+            .as_array()
+            .is_some_and(|names| names.iter().any(|name| name.as_str() == Some(kind)))
+        {
+            text.push_str("Turret=yes\n");
+        }
     }
     let mut rules = RuleSet::from_ini(&IniFile::from_str(&text)).unwrap();
     let object = rules.object(host).unwrap();
@@ -90,7 +97,12 @@ fn scene(row: &Value) -> (Simulation, RuleSet, InternedId) {
             assert_eq!(upgrade["super_weapon"], -1);
             assert!(object.super_weapon.is_none());
             assert_eq!(upgrade["turret"], false);
-            assert!(!object.has_turret);
+            assert_eq!(
+                object.has_turret,
+                input["turret_types"]
+                    .as_array()
+                    .is_some_and(|names| names.iter().any(|kind| kind == &upgrade["name"]))
+            );
         }
     }
     if boolean(&before["buildup"]) {
@@ -255,5 +267,58 @@ fn captured_building_sale_matches_original_tail_gates_and_upgrade_refunds() {
     assert!(!rows.is_empty());
     for row in rows {
         compare(row, false);
+    }
+}
+
+#[test]
+fn turret_upgrade_selling_matches_original_refund_constructor_and_rng_visits() {
+    use crate::sim::rng::SimRng;
+
+    for row in corpus()["selling_cases"].as_array().unwrap() {
+        let (mut sim, rules, owner) = scene(row);
+        let next_id = sim.next_stable_object_id();
+        let native_id = sim.native_identity_cursor().unwrap();
+        let initial = &row["rng_before"];
+        sim.scenario_rng = SimRng::from_native_state_hex_for_test(name(&initial["scenario"]));
+        sim.main_rng = SimRng::from_native_state_hex_for_test(name(&initial["main"])).into();
+        sim.mapgen_rng = SimRng::from_native_state_hex_for_test(name(&initial["mapgen"]));
+        let mut constructors = 0;
+        for phase in row["phases"].as_array().unwrap() {
+            let draws = phase["draws"].as_array().unwrap();
+            let mut expected_rng = sim.clone_scenario_rng();
+            for draw in draws {
+                assert_eq!(draw["entry"], 0x65C780);
+                assert_eq!(draw["site"], 0x6F3254);
+                assert_eq!(
+                    u64::from(expected_rng.next_u32()),
+                    draw["result"].as_u64().unwrap()
+                );
+            }
+            constructors += draws.len() as u64;
+            sim.session
+                .set_binary_frame_for_test(phase["frame"].as_u64().unwrap() as u32);
+            sim.visit_building_down(BUILDING, &rules, None, FrameEffects::default());
+            assert_eq!(state(&sim, &rules, owner), phase["state"]);
+            for (actual, stream) in [
+                (sim.scenario_rng().logical_state(), "scenario"),
+                (sim.main_rng.logical_state(), "main"),
+                (sim.mapgen_rng.logical_state(), "mapgen"),
+            ] {
+                assert_eq!(
+                    actual,
+                    SimRng::from_native_state_hex_for_test(name(&phase["rng"][stream]))
+                        .logical_state()
+                );
+            }
+            assert_eq!(sim.next_stable_object_id(), next_id + constructors);
+            assert_eq!(
+                sim.native_identity_cursor(),
+                Some(native_id + constructors as u32)
+            );
+        }
+        assert_eq!(
+            constructors as i64,
+            row["object_id_counter_delta"].as_i64().unwrap()
+        );
     }
 }

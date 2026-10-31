@@ -6,7 +6,8 @@ Run against a supported original executable:
 VERA20K_GAMEMD_EXE='<original-gamemd.exe>' python -m tools.spatial_oracle.building_upgrades --check
 ```
 
-The corpus contains 15 admission/install, 6 power and 4 removal controls. It uses
+The corpus contains 15 admission/install, 6 power, 4 ordinary removal and 4
+top/earlier/host Turret removal controls. It uses
 the existing `building_art_transition.ArtFixture`, original executable mapping,
 and checked Unicorn execution. The metadata records the original byte slices,
 fixture priors and substituted callout boundaries. No game
@@ -111,6 +112,25 @@ does nothing. No pointer compaction occurs. Cloaking and superweapon PowerDown
 arms remain outside these ordinary power-up controls.
 
 ## Coverage limits
+
+`451690` tests the removed top type's own `Turret` byte (`+CA1`). When true,
+it clears animation slot 9, then re-reads the live signed count, clears only
+its last type pointer and sets count to zero. Earlier pointers remain retained.
+Only a lower upgrade or host having Turret does not select that branch.
+The four `turret_removal` controls execute those alternatives with distinct
+type pointers, empty animation slots, first SuperWeapon=-1 and variant5FC=-1.
+Rust consumes both pointer identities and the selected animation slot; its
+occupied-slot regression uses real Anim objects through the existing cleanup
+owner, with provided slot occupancy rather than a slot9 producer claim.
+
+The connected refund/constructor comparison lives in the existing
+[`captured_building_sale`](captured_building_sale.md) owner. Count-zero stale
+prefixes must not be eagerly cleared: native PowerDown clears only the top
+pointer. A later explicit-level install might expose retained pointers again;
+that joined history is not covered here. The raw variant5FC reset is an explicit
+native store, but VERA has no authoritative producer/consumer for the broader
+SHP turret variant mechanism. Fresh non-WallTower hosts remain at native -1;
+that separate mechanism and malformed signed counts outside 1..3 remain residuals.
 
 The controls supply an already resolved ordinary host and incoming building,
 not physical INI loading, world lookup or Building construction. Original

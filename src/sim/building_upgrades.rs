@@ -3,7 +3,7 @@
 //! tools/spatial_oracle/building_upgrades.{json,md}.
 
 use crate::map::entities::EntityCategory;
-use crate::rules::object_type::ObjectType;
+use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::world::{Simulation, UninitContext};
@@ -203,6 +203,91 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn power_down_uses_only_the_top_types_turret_flag_and_preserves_retained_prefix() {
+        use crate::rules::art_data::ArtRegistry;
+        use crate::sim::components::AnimClassSpawnDescriptor;
+        let golden = crate::test_fixture::json("tools/spatial_oracle/building_upgrades.json");
+        for row in golden["turret_removal"].as_array().unwrap() {
+            let (mut sim, _, host, _) = fixture(&serde_json::json!({}));
+            let text = format!(
+                "[BuildingTypes]\n0=POWER\n1=UPGRADE\n2=LOWER\n[POWER]\nStrength=100\nTurret={}\n[UPGRADE]\nTurret={}\n[LOWER]\nTurret={}\n[Animations]\n0=N\n",
+                row["host_turret"], row["top_turret"], row["lower_turret"]
+            );
+            let art_ini = IniFile::from_str("[N]\nLoopCount=-1\nRate=300\n");
+            let mut rules =
+                RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(&text), &art_ini)
+                    .unwrap();
+            let mut art = ArtRegistry::from_ini(&art_ini);
+            art.bind_anim_frame_count_for_test("N", 40);
+            rules.install_art_data(art);
+            sim.interner.intern("LOWER");
+            let types = std::array::from_fn(|slot| {
+                row["initial_slots"][slot]
+                    .as_str()
+                    .map(|name| sim.interner.get(name).unwrap())
+            });
+            sim.substrate
+                .entities
+                .get_mut(host)
+                .unwrap()
+                .set_building_upgrades_for_test(
+                    row["initial_count"].as_i64().unwrap() as i8,
+                    types,
+                );
+            // Supplied occupied slots, built through the real Anim constructor;
+            // this does not claim a port of the separate slot9 producer.
+            let anim_type = sim.interner.intern("N");
+            let mut sentinels = Vec::new();
+            for slot in [0, 1, 9] {
+                let anim = sim
+                    .spawn_anim_object(
+                        &rules,
+                        AnimClassSpawnDescriptor::new(
+                            anim_type,
+                            1,
+                            1,
+                            crate::util::fixed_math::SimFixed::ZERO,
+                            crate::util::fixed_math::SimFixed::ZERO,
+                            0,
+                        ),
+                    )
+                    .unwrap();
+                sim.substrate
+                    .entities
+                    .get_mut(host)
+                    .unwrap()
+                    .building_art
+                    .anim_slots_mut_for_test()[slot] = Some(anim);
+                sentinels.push((slot, anim));
+            }
+            sim.power_down_building_upgrade(host, &rules);
+            let actual = sim.entities().get(host).unwrap();
+            assert_eq!(
+                i64::from(actual.building_upgrades().count()),
+                row["count"].as_i64().unwrap(),
+                "{}",
+                row["name"]
+            );
+            for slot in 0..3 {
+                assert_eq!(
+                    actual.building_upgrades().types()[slot].map(|id| sim.interner.resolve(id)),
+                    row["slots"][slot].as_str(),
+                    "{} slot{slot}",
+                    row["name"]
+                );
+            }
+            let removed_slot = row["animation_slots"][0].as_u64().unwrap() as usize;
+            for (slot, anim) in sentinels {
+                assert_eq!(
+                    actual.building_art.anim_slots()[slot],
+                    (slot != removed_slot).then_some(anim)
+                );
+                assert_eq!(sim.anim(anim).is_some(), slot != removed_slot);
+            }
+        }
+    }
 }
 
 /// Building+702 and the three Building+5EC type pointers. Installed upgrades
@@ -243,13 +328,20 @@ impl BuildingUpgrades {
         }
     }
 
-    pub(crate) fn power_down(&mut self) -> Option<usize> {
+    pub(crate) fn power_down(&mut self, removed_turret: bool) -> Option<usize> {
         if !(1..=3).contains(&self.count) {
             return None;
         }
-        self.count -= 1;
-        let slot = self.count as usize;
-        self.types[slot] = None;
+        let slot = (self.count - 1) as usize;
+        if removed_turret {
+            // Building4516DC..4516E7 clears only the live top pointer. Earlier
+            // types remain retained even though the counted prefix is empty.
+            self.types[slot] = None;
+            self.count = 0;
+        } else {
+            self.count -= 1;
+            self.types[slot] = None;
+        }
         Some(slot)
     }
 
@@ -421,7 +513,7 @@ impl Simulation {
         true
     }
 
-    /// Original451690 ordinary PowerDown, called after the sale refund. A
+    /// Original BuildingClass::PowerDown451690, called after the sale refund. A
     /// null final type still removes that level; callers must validate their
     /// refund object before starting a sale of malformed sparse state.
     pub(crate) fn power_down_building_upgrade(
@@ -432,15 +524,23 @@ impl Simulation {
         let entity = self.substrate.entities.get(id)?;
         let slot = usize::try_from(i32::from(entity.building_upgrades().count()) - 1).ok()?;
         let removed = *entity.building_upgrades().types().get(slot)?;
-        self.clear_building_anim_slot(id, slot as u8);
+        let removed_type = removed.and_then(|ty| {
+            self.interner
+                .object_type_in_category(ty, ObjectCategory::Building, rules)
+        });
+        // The removed type's own CA1 flag selects this branch, not the host
+        // or Building HasTurret's scan of the entire installed prefix.
+        let removed_turret = removed_type.is_some_and(|ty| ty.has_turret);
+        let refresh_supers = removed_type.is_some_and(|ty| ty.super_weapon.is_some());
+        self.clear_building_anim_slot(id, if removed_turret { 9 } else { slot as u8 });
+        //451690 re-reads the live count after scalar deletion before changing
+        // the prefix. Fresh non-WallTower hosts keep native variant5FC=-1;
+        // the separate SHP turret-variant/slot9 producer is not represented.
         self.substrate
             .entities
             .get_mut(id)?
-            .remove_building_upgrade_level()?;
-        if removed
-            .and_then(|ty| self.object_type(ty, rules))
-            .is_some_and(|ty| ty.super_weapon.is_some())
-        {
+            .remove_building_upgrade_level(removed_turret)?;
+        if refresh_supers {
             let owner = self.substrate.entities.get(id)?.owner();
             crate::sim::superweapon::update_owned_supers(self, rules, owner);
         }

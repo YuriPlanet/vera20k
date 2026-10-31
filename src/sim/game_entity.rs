@@ -1336,8 +1336,8 @@ impl GameEntity {
         self.building_upgrades.commit_type(type_id);
     }
 
-    pub(crate) fn remove_building_upgrade_level(&mut self) -> Option<usize> {
-        self.building_upgrades.power_down()
+    pub(crate) fn remove_building_upgrade_level(&mut self, removed_turret: bool) -> Option<usize> {
+        self.building_upgrades.power_down(removed_turret)
     }
 
     #[cfg(any(test, feature = "test-support"))]
