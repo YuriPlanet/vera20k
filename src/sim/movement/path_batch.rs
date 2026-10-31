@@ -25,18 +25,15 @@
 //! stopped (a Chrono Miner bound for its refinery, #1672) waits, its request
 //! gets no answer and Process_Movement then returns on the null destination,
 //! so the NULL destination native sets in that call is not set, and the
-//! redirect's NavCom stays for the queued Enter mission. Two
-//! visible cases: Infantry Scatter's immediate Process (0x51D478) waits, so
-//! scattered infantry leave a frame later; a Drive/Ship Foot whose track
-//! ends with no path left loses that frame's movement where native's timer
-//! had run out. Through these requests a Foot searches at most once a
+//! redirect's NavCom stays for the queued Enter mission. A Drive/Ship Foot
+//! whose track ends with no path left loses that frame's movement where
+//! native's timer had run out. Through ordinary requests a Foot searches at most once a
 //! frame, and only when the pass answered it: its first request that frame
 //! takes the answer, or searches for itself when none fits, and any other
-//! waits. That includes the requests of a refused cell's recursion (Walk's
-//! admission retries, which expire the timer; Drive/Ship's Process_Movement
-//! re-entries, of which the 0x4B4541 tail expires it) and a code-2 re-path
+//! waits. That includes Drive/Ship's Process_Movement re-entries (of which
+//! the 0x4B4541 tail expires the timer) and a code-2 re-path
 //! right after a found route, whose timer Find_Path left run out. So a Foot
-//! whose next cell refuses it stands that frame with its head cleared and
+//! on those paths whose next cell refuses it stands with its head cleared and
 //! re-paths the next, where native re-paths and usually steps at once, and a
 //! Foot whose new route is blocked at its first step by a moving friendly
 //! re-paths a frame later. Hover's own timer-gated Find_Path is not batched.
@@ -44,6 +41,12 @@
 //! movement. Each search reads only that frame-start world, so no result
 //! depends on the thread count. Simulations start without batching; real
 //! matches and sim-bench turn it on ([`Simulation::batch_path_searches`]).
+//!
+//! Infantry Scatter's immediate Process (0x51D478) and Walk's refused-cell
+//! Process(false) recursion (0x75B716/0x75BABB/0x75BC04) search synchronously
+//! against the live world, without using the batch's frame-start answers.
+//! Their head reservations must be visible before the next Scatter recipient
+//! or caller continues. These calls do not consume the ordinary batch's cap.
 //!
 //! A request that heads for the Foot's own cell never waits, even when the
 //! pass did not answer the Foot or the Foot searched already that frame: it
@@ -131,9 +134,9 @@
 //! terrain object's multi-cell foundation test sees the Foot still in its
 //! cell when the foundation covers it.
 
+use crate::util::time::{Duration, Instant};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use crate::util::time::{Duration, Instant};
 
 use super::foot_path::MoverLift;
 use super::movement_path::MovePathFailure;
@@ -506,6 +509,24 @@ impl Simulation {
     /// Batch the path searches from now on; see the module docs.
     pub fn batch_path_searches(&mut self) {
         self.path_batch.get_or_insert_with(PathBatch::default);
+    }
+
+    /// Native synchronous calls (InfantryClass::Scatter 0x51D478 and
+    /// WalkLocomotion::Process 0x75AEC0's admission recursion) must neither
+    /// wait nor read an answer computed before earlier callees reserved heads.
+    /// Source: original gamemd instructions. Temporarily move the same batch
+    /// aside so defer, code-2 urgency and core-search lookup all use the live
+    /// path. Nested calls inherit that path; ordinary pending/ready work is
+    /// restored even when the operation returns an error.
+    pub(super) fn with_synchronous_path_searches<R>(
+        &mut self,
+        operation: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let batch = self.path_batch.take();
+        let result = operation(self);
+        debug_assert!(self.path_batch.is_none());
+        self.path_batch = batch;
+        result
     }
 
     /// Whether `id`'s `request` waits for the next frame's batch, as if its

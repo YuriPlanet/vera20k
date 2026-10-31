@@ -106,14 +106,25 @@ impl Simulation {
             rules,
             registry,
         )?;
-        self.finish_walk_admission_response(
-            request,
-            candidate,
-            code,
-            rules,
-            registry,
-            frame_effects,
-        )
+        let recursive = !request.allows_retry();
+        let respond = |sim: &mut Self| {
+            sim.finish_walk_admission_response(
+                request,
+                candidate,
+                code,
+                rules,
+                registry,
+                frame_effects,
+            )
+        };
+        // WalkLocomotion::Process(false), original gamemd 75AEC0: its
+        // response may search again at code2 or synchronously Scatter code6.
+        // The preceding admission lookup itself performs no path search.
+        if recursive {
+            self.with_synchronous_path_searches(respond)
+        } else {
+            respond(self)
+        }
     }
 
     ///75B696: one response owner for the live classifier and the corpus's

@@ -184,6 +184,11 @@ fn no_queue_path_request(
 }
 
 impl FootPathRequest {
+    /// The retained Walk Process(false) visit, not a new ordinary request.
+    pub(super) fn is_walk_admission_retry(&self) -> bool {
+        !self.visit.walk_retry_allowed
+    }
+
     /// Resume the retained recursive visit in the decoder corpus after its
     ///supplied Find_Path. Production resumes through PendingMovementPass.
     #[cfg(any(test, feature = "test-support"))]

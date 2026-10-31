@@ -328,15 +328,17 @@ impl Simulation {
             return Err(String::from("Scatter Process requires navigation"));
         }
         let outcome = self
-            .process_active_locomotor(
-                id,
-                rules,
-                crate::sim::world::ObjectAiCtx {
-                    overlay_registry: registry,
-                    effects: frame_effects,
-                    ..Default::default()
-                },
-            )
+            .with_synchronous_path_searches(|sim| {
+                sim.process_active_locomotor(
+                    id,
+                    rules,
+                    crate::sim::world::ObjectAiCtx {
+                        overlay_registry: registry,
+                        effects: frame_effects,
+                        ..Default::default()
+                    },
+                )
+            })
             .map_err(|error| format!("Scatter Process failed: {error:?}"))?;
         Ok(outcome.bridge_state_changed())
     }

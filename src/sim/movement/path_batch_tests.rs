@@ -1,6 +1,6 @@
-//! Rust regression tests for the batched path searches ([`super`]). A
-//! batched answer is checked against Find_Path's own search on the same
-//! world; no native behavior is claimed.
+//! Regression tests for batched searches and their synchronous call boundaries.
+//! Route controls compare Find_Path on the same world; the GI tests below
+//! exercise the cited native Scatter/recursive Process boundaries.
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::components::NavTargetRef;
@@ -16,6 +16,209 @@ const WEST_STEP: u8 = 6;
 /// A code-2 re-path at urgency 1, as a Foot whose blockage timer has not run
 /// out asks it.
 const CODE2: WaitingRequest = WaitingRequest::Code2Ladder { urgency: 1 };
+
+struct CrowdedGiScene {
+    sim: Simulation,
+    rules: RuleSet,
+    registry: OverlayTypeRegistry,
+    mover: u64,
+    friends: [u64; 3],
+    waiting: u64,
+}
+
+fn crowded_retail_gi() -> Option<CrowdedGiScene> {
+    let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("Hills.mmx")?;
+    let registry = OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
+    let rules = retail.rules;
+    let (mut sim, _) = arena(&rules);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let mut gi = |cell: (u16, u16)| {
+        sim.spawn_object_with_overlay_registry(
+            "E1",
+            "Americans",
+            cell.0,
+            cell.1,
+            0,
+            &rules,
+            &registry,
+        )
+        .expect("ordinary GI Unlimbo")
+    };
+    let friends = std::array::from_fn(|_| gi((11, 10)));
+    let mover = gi((10, 10));
+    let waiting = gi((20, 20));
+    for id in friends {
+        let e = sim.substrate.entities.get(id).unwrap();
+        assert_eq!(e.navigation.nav_com(), None);
+        assert_eq!(e.locomotor.as_ref().unwrap().walk_is_moving(), Some(false));
+    }
+    let cell = sim
+        .resolved_terrain
+        .as_ref()
+        .unwrap()
+        .native_cell_identity((11, 10));
+    assert_eq!(
+        sim.foot_can_enter(
+            mover,
+            cell,
+            crate::sim::movement::infantry_entry::InfantryEntryArgs {
+                direction: 2,
+                height: 0,
+                previous_cell: None,
+            },
+            &rules,
+            Some(&registry),
+        )
+        .unwrap(),
+        6,
+        "the actual three stationary GIs must produce native code6",
+    );
+    sim.batch_path_searches();
+    send(&mut sim, &rules, waiting, (25, 20));
+    sim.process_active_locomotor(
+        waiting,
+        &rules,
+        crate::sim::world::ObjectAiCtx {
+            overlay_registry: Some(&registry),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        sim.pending_path_search_actor_ids().collect::<Vec<_>>(),
+        [waiting]
+    );
+    send(&mut sim, &rules, mover, (20, 10));
+    rolling(&mut sim, mover, EAST);
+    sim.substrate
+        .entities
+        .get_mut(mover)
+        .unwrap()
+        .navigation
+        .path_replay_mut()
+        .set_directions_for_test(vec![2]);
+    Some(CrowdedGiScene {
+        sim,
+        rules,
+        registry,
+        mover,
+        friends,
+        waiting,
+    })
+}
+
+/// CellClass::Scatter_Objects481670 dispatches this full allied cell. Each
+/// GI's Scatter51D478 must publish its new head/raw reservation before the
+/// next recipient, without another object AI or frame. Enter directly so no
+/// outer Walk retry scope can mask Scatter's own synchronous boundary.
+#[test]
+fn synchronous_scatter_publishes_retail_gi_heads_with_batching_enabled() {
+    use crate::sim::movement::ground_pose::position_world_coord;
+    let Some(CrowdedGiScene {
+        mut sim,
+        rules,
+        registry,
+        friends,
+        waiting,
+        ..
+    }) = crowded_retail_gi()
+    else {
+        return;
+    };
+    let before = friends.map(|id| {
+        let e = sim.substrate.entities.get(id).unwrap();
+        (
+            position_world_coord(&e.position),
+            e.mission.current(),
+            e.mission.ai_counter(),
+        )
+    });
+    let frame = (sim.session.tick(), sim.session.binary_frame());
+    sim.scatter_cell_objects(
+        (11, 10),
+        MovementLayer::Ground,
+        None,
+        crate::sim::movement::ScatterFlags::new(true, true),
+        &rules,
+        Some(&registry),
+        FrameEffects::default(),
+    )
+    .unwrap();
+    for (id, (position, mission, ai_counter)) in friends.into_iter().zip(before) {
+        let e = sim.substrate.entities.get(id).unwrap();
+        assert!(
+            e.locomotor.as_ref().unwrap().step_head().is_some(),
+            "GI {id} must reserve its head in this call"
+        );
+        assert_eq!(
+            e.locomotor.as_ref().unwrap().walk_animation_moving(),
+            Some(true)
+        );
+        assert_eq!(
+            position_world_coord(&e.position),
+            position,
+            "fresh-head Process returns before paid XYZ motion"
+        );
+        assert_eq!(
+            (e.mission.current(), e.mission.ai_counter()),
+            (mission, ai_counter)
+        );
+    }
+    assert_eq!((sim.session.tick(), sim.session.binary_frame()), frame);
+    assert!(
+        sim.path_batch_stats().is_some(),
+        "ordinary path batching remains enabled"
+    );
+    assert_eq!(
+        sim.pending_path_search_actor_ids().collect::<Vec<_>>(),
+        [waiting]
+    );
+}
+
+/// Walk75B716 re-enters Process(false) synchronously after the real code6.
+/// Its new search may route round the crowd; it must not register another
+/// frame's request merely because the outer Process uses batching.
+#[test]
+fn synchronous_walk_admission_retry_finishes_before_return() {
+    let Some(CrowdedGiScene {
+        mut sim,
+        rules,
+        registry,
+        mover,
+        waiting,
+        ..
+    }) = crowded_retail_gi()
+    else {
+        return;
+    };
+    sim.process_active_locomotor(
+        mover,
+        &rules,
+        crate::sim::world::ObjectAiCtx {
+            overlay_registry: Some(&registry),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(
+        sim.substrate
+            .entities
+            .get(mover)
+            .unwrap()
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .step_head()
+            .is_some(),
+        "the native retry searches and selects the replacement head in this call"
+    );
+    assert!(sim.path_batch_stats().is_some());
+    assert_eq!(
+        sim.pending_path_search_actor_ids().collect::<Vec<_>>(),
+        [waiting]
+    );
+}
 
 /// A tank, a tank that cannot move, an infantryman and a one-cell building.
 fn rules() -> RuleSet {
@@ -815,10 +1018,10 @@ fn a_foots_first_request_in_a_frame_claims_its_answer() {
 /// timer-running branch does: the owner's vt+0x548 clears its walking Doing
 /// (0x75AF57..0x75AF5F). Next frame it routes with the answer, and when its
 /// next cell then refuses it (code 7), the admission retry clears the path
-/// and expires +640, and the retry's recursion waits for the batch after,
-/// whose answer the repeated request takes.
+/// and expires +640. Original Walk75AEC0(false) then searches again in the
+/// same call, without consuming another batch answer or registering a wait.
 #[test]
-fn a_refused_walk_retry_waits_for_the_next_batch() {
+fn a_refused_walk_retry_searches_again_in_the_same_frame() {
     let rules = rules();
     let route = |sim: &Simulation, id: u64| {
         let foot = sim.substrate.entities.get(id).unwrap();
@@ -866,18 +1069,9 @@ fn a_refused_walk_retry_waits_for_the_next_batch() {
         .expect("code 7 retries once");
     run(&mut sim, &recursion);
     let batch = sim.path_batch.as_ref().unwrap();
-    assert_eq!(batch.pending, [(infantry, WaitingRequest::NoQueue)]);
-    assert_eq!(batch.used, [1, 0], "the recursion did not search");
-    assert!(
-        route(&sim, infantry).is_empty(),
-        "the retry cleared the path"
-    );
-
-    sim.answer_batched_path_searches(&rules, None);
-    let repeated = sim.no_queue_request(infantry).unwrap();
-    run(&mut sim, &repeated);
-    assert_eq!(sim.path_batch.as_ref().unwrap().used, [2, 0]);
-    assert!(!route(&sim, infantry).is_empty(), "the next answer routes");
+    assert!(batch.pending.is_empty(), "the recursion never waits");
+    assert_eq!(batch.used, [1, 0], "the recursion searched the live world");
+    assert!(!route(&sim, infantry).is_empty(), "the retry has routed");
 }
 
 /// Drive's no-queue arm in a retry recursion (Process_Movement(0, 0)) waits

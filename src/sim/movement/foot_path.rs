@@ -400,31 +400,36 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<FootPathOutcome, String> {
-        // A batched request waits for the next frame's batch as if the +640
-        // timer still ran (`path_batch`, a proposed deviation): 75AF4B..75AF66
-        // calls the owner's vt+0x548 and returns. So does the admission
-        // retry's recursion, whose +640 the retry just expired, unless it is
-        // the Foot's first request in a frame the batch answered. A request
-        // for the Foot's own cell never waits.
-        if Self::defer_path_search(
-            &mut self.path_batch,
-            &self.resolved_terrain,
-            &self.overlay_grid,
-            &self.substrate.entities,
-            request.entity_id,
-            super::path_batch::WaitingRequest::NoQueue,
-        ) {
-            self.substrate.walk_owner_clear_doing(request.entity_id)?;
-            return Ok(FootPathOutcome::Returned);
+        let run = |sim: &mut Self| {
+            // Ordinary batched requests take the timer-running return
+            // (75AF4B..75AF66). The admission retry has just expired +640;
+            // native Walk75AEC0(false) reaches Find_Path75AFC5 in this call.
+            // Source: original gamemd instructions, 75B716/75BABB/75BC04.
+            if Self::defer_path_search(
+                &mut sim.path_batch,
+                &sim.resolved_terrain,
+                &sim.overlay_grid,
+                &sim.substrate.entities,
+                request.entity_id,
+                super::path_batch::WaitingRequest::NoQueue,
+            ) {
+                sim.substrate.walk_owner_clear_doing(request.entity_id)?;
+                return Ok(FootPathOutcome::Returned);
+            }
+            sim.run_walk_path_request(request, rules, registry, frame_effects)
+                .map(|resumed| {
+                    if resumed {
+                        FootPathOutcome::Resume
+                    } else {
+                        FootPathOutcome::Returned
+                    }
+                })
+        };
+        if request.is_walk_admission_retry() {
+            self.with_synchronous_path_searches(run)
+        } else {
+            run(self)
         }
-        self.run_walk_path_request(request, rules, registry, frame_effects)
-            .map(|resumed| {
-                if resumed {
-                    FootPathOutcome::Resume
-                } else {
-                    FootPathOutcome::Returned
-                }
-            })
     }
 
     /// `Find_Path(cell, 0, 0)` for a no-queue caller whose own movement
