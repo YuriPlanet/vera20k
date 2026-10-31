@@ -1074,13 +1074,37 @@ fn admit_firing_effects(
         target_coords
     };
     if context.weapon.is_laser {
-        super::laser::create_effect(
+        // BulletExt::SimulatedFiringLaser's LaserRT arm. `Splits` children pass
+        // `ignoreShooter`, so their `Firer`/`All` modes never follow the firer.
+        let track = {
+            let follow = context.weapon.laser_position_update;
+            if follow == crate::rules::phobos_laser_tracking::PositionFollow::None {
+                None
+            } else {
+                super::laser::build_track(
+                    world,
+                    rules,
+                    context.source_id,
+                    target,
+                    0,
+                    follow,
+                    context
+                        .weapon
+                        .laser_position_update_stop_on_firer_convert
+                        .unwrap_or(rules.phobos_laser_tracking.stop_on_firer_convert),
+                    origin,
+                    context.ext.splits,
+                )
+            }
+        };
+        let birth = super::laser::create_effect(
             world,
             Some(context.owner_house),
             origin,
             effect_to,
             context.weapon,
         );
+        birth.track = track;
     }
     if context.weapon.is_electric_bolt {
         super::electric_bolt::create_effect(world, rules, origin, effect_to, context.weapon, None);

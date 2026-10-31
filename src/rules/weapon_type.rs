@@ -270,6 +270,15 @@ pub struct WeaponType {
     /// simulated child radiation beam takes the firing House's laser color.
     #[cfg(feature = "phobos")]
     pub phobos_beam_is_house_color: bool,
+    /// Phobos `LaserPositionUpdate` (`Valueable<PositionFollow>`, default
+    /// none): which ends of this weapon's lasers follow their live objects.
+    #[cfg(feature = "phobos")]
+    pub laser_position_update: crate::rules::phobos_laser_tracking::PositionFollow,
+    /// Phobos `LaserPositionUpdate.StopOnFirerConvert` (`Nullable<bool>`):
+    /// stop following the firer once its TechnoType changes; `None` inherits
+    /// `[AudioVisual]`.
+    #[cfg(feature = "phobos")]
+    pub laser_position_update_stop_on_firer_convert: Option<bool>,
 }
 
 impl WeaponType {
@@ -562,6 +571,19 @@ impl WeaponType {
                 },
             ))
             .filter(|range| range.values > 0),
+            #[cfg(feature = "phobos")]
+            laser_position_update: section.read_string_with(
+                "LaserPositionUpdate",
+                2048,
+                crate::rules::phobos_laser_tracking::PositionFollow::None,
+                |current, raw| {
+                    crate::rules::phobos_laser_tracking::PositionFollow::parse(raw)
+                        .unwrap_or(current)
+                },
+            ),
+            #[cfg(feature = "phobos")]
+            laser_position_update_stop_on_firer_convert: section
+                .read_phobos_nullable_bool("LaserPositionUpdate.StopOnFirerConvert", None),
         }
     }
 }

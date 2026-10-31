@@ -111,11 +111,23 @@ impl Lasers {
 
     /// 550150 visits backwards. At most one increment/restart per visit,
     /// including a skipped frame counter; it never catches up elapsed frames.
-    pub(crate) fn update(&mut self, frame: i32) {
+    /// Phobos `LaserDrawClass_Update550173` refreshes the tracked endpoints
+    /// here whenever the world is available.
+    pub(crate) fn update(
+        &mut self,
+        frame: i32,
+        world: Option<(
+            &crate::sim::world::Simulation,
+            &crate::rules::ruleset::RuleSet,
+        )>,
+    ) {
         for laser in self.live.iter_mut().rev() {
             if laser.timer.expired(frame) {
                 laser.age = laser.age.wrapping_add(1);
                 laser.timer.start(frame, 1);
+            }
+            if let Some((sim, rules)) = world {
+                laser.birth.update_tracking(sim, rules);
             }
         }
         self.live.retain(|laser| laser.age < laser.birth.duration);

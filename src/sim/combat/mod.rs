@@ -115,6 +115,8 @@ mod ifv_fireat_tests;
 mod impact_height_tests;
 #[cfg(test)]
 mod laser_tests;
+#[cfg(all(test, feature = "phobos"))]
+mod laser_tracking_tests;
 #[cfg(test)]
 mod mirage_disguise_tests;
 #[cfg(test)]
