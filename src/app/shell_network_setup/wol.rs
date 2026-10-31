@@ -191,7 +191,13 @@ pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<
             .and_then(|rules| rules.general.player_joined_sound())
             .map(str::to_owned);
         App::play_shell_ui_sound_by_id(state, sound.as_deref());
-        queue(state, NetworkSetupRequest::Kick { name });
+        queue(
+            state,
+            NetworkSetupRequest::Kick {
+                name,
+                keep_out: false,
+            },
+        );
         return Ok(());
     };
     let mut human = crate::skirmish_launch::SkirmishHumanSlot {

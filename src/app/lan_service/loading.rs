@@ -40,6 +40,10 @@ impl<'a> LoadingNetworkService<'a> {
             service.transport.is_some(),
             "loading transport is not available"
         );
+        // The others left their loading long ago and consume no more progress.
+        if service.online_restore {
+            return Ok(None);
+        }
         Ok(Some(Self {
             session,
             service: Some(service),

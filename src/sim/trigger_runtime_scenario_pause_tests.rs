@@ -247,10 +247,10 @@ fn scenario_services_replay_between_production_frames() {
         let mut live = runtime();
         let mut replay = ReplayLog::new(ReplayHeader {
             pixel_conversion_bounds: live.simulation.session.pixel_conversion_bounds(),
-            version: 2,
+            version: crate::sim::replay::REPLAY_VERSION,
             tick_hz: 15,
             seed: 0,
-            map_name: String::new(),
+            map_name: live.simulation.session().map_name().to_owned(),
             rules_hash: 0,
         });
         // Movie service may precede the first world frame. Its ordering survives JSON.

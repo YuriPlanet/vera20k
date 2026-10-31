@@ -9,7 +9,7 @@ use super::Simulation;
 use super::queued_command::QueuedCommand;
 use crate::sim::command_queue::{
     CommandDispatchClock, CommandDispatchHouse, CommandDispatchMode, DoListEvent, DoListHost,
-    DoListRetimeWindow,
+    DoListInsertion, DoListRetimeWindow,
 };
 use crate::sim::world::FrameEffects;
 
@@ -116,7 +116,7 @@ impl Simulation {
         }
         for (entry, ingress) in prepared {
             valid &= if ingress {
-                self.admit_queued_command(entry, false)
+                self.admit_queued_command(entry, false, DoListInsertion::Back)
             } else {
                 self.local_commands.try_push_bounded(
                     entry,
@@ -264,6 +264,7 @@ impl Simulation {
         &mut self,
         mut command: QueuedCommand,
         record: bool,
+        insertion: DoListInsertion,
     ) -> bool {
         command.clear_processed();
         let receipt = record.then(|| command.replay_envelope());
@@ -280,6 +281,7 @@ impl Simulation {
             } else {
                 usize::MAX
             },
+            insertion,
         );
         if accepted && let Some(receipt) = receipt {
             self.frame_command_admissions.push(receipt);
@@ -299,6 +301,7 @@ impl Simulation {
                 diagnostic_issue_tick: self.session.tick(),
             },
             true,
+            DoListInsertion::Back,
         )
     }
 
@@ -323,7 +326,7 @@ impl Simulation {
                     continue;
                 }
             }
-            self.admit_queued_command(command, true);
+            self.admit_queued_command(command, true, DoListInsertion::Back);
         }
     }
 
@@ -342,7 +345,11 @@ impl Simulation {
             &command.payload,
             self.session.game_mode().is_network(),
         );
-        self.admit_queued_command(QueuedCommand::from_envelope(command), record);
+        self.admit_queued_command(
+            QueuedCommand::from_envelope(command),
+            record,
+            DoListInsertion::Back,
+        );
     }
 
     /// Already-ordered arrivals share one admitted FIFO, including commands
@@ -577,14 +584,19 @@ impl Simulation {
             ) {
                 self.frame_command_admissions.push(command.clone());
             } else {
-                self.admit_queued_command(QueuedCommand::from_envelope(command.clone()), true);
+                self.admit_queued_command(
+                    QueuedCommand::from_envelope(command.clone()),
+                    true,
+                    DoListInsertion::Back,
+                );
             }
         }
         Vec::new()
     }
 
     /// House-generated events use the same local/deferred owners. Playback
-    /// supplies every accepted admission, so regenerated writes are suppressed.
+    /// supplies these admissions, so their regenerated writes are suppressed.
+    /// Shared PlanMgr events regenerate in their own publication owner.
     pub(super) fn issue_generated_frame_commands(&mut self, generated: Vec<CommandEnvelope>) {
         let execute_tick = self.session.tick().saturating_add(1);
         for command in generated {
@@ -1100,7 +1112,11 @@ impl Simulation {
             .iter()
             .filter(|command| !Self::command_uses_frame_ingress(&command.payload, is_network))
         {
-            self.admit_queued_command(QueuedCommand::from_envelope(command.clone()), true);
+            self.admit_queued_command(
+                QueuedCommand::from_envelope(command.clone()),
+                true,
+                DoListInsertion::Back,
+            );
         }
         let mut list = std::mem::take(&mut self.pending_commands);
         self.dispatch_reserved_slots = list.native_occupancy();

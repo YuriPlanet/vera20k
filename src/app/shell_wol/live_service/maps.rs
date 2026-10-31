@@ -5,9 +5,9 @@ use crate::app::AppState;
 use crate::app::shell_network_setup::maps::{self as shared_maps, GeneratedMapManifest};
 use crate::app::shell_network_setup::{accept_network_map_source, set_network_map_progress};
 use crate::map::source::{LoadedTransferAsset, TransferResource};
+use crate::util::time::{Duration, Instant};
 use anyhow::{Result, anyhow, ensure};
 use std::path::PathBuf;
-use crate::util::time::{Duration, Instant};
 const CHUNK: usize = 32768;
 
 #[derive(PartialEq, Eq)]
@@ -133,10 +133,19 @@ impl Transfers {
             })
     }
     fn fail(&mut self, state: &mut AppState) {
+        // Retried failures and the deadline are the connection, not the map.
+        let interrupted = self
+            .transfer
+            .as_ref()
+            .is_some_and(|transfer| transfer.retries > 0 || Instant::now() > transfer.deadline);
         if !self.failed {
             super::notice(
                 state,
-                "Map transfer or include verification failed. Rejoin after checking the map and its required include files.",
+                if interrupted {
+                    "The map transfer stopped because the connection to VERA20k Online kept failing. Rejoin the game to try again."
+                } else {
+                    "Map transfer or include verification failed. Rejoin after checking the map and its required include files."
+                },
             );
         }
         self.failed = true;
@@ -470,11 +479,10 @@ impl Transfers {
                 transfer.retry_at = Instant::now() + Duration::from_secs(2);
             }
             http::Response::MapFailure { retryable, .. } => {
-                let transfer = self.transfer.as_mut().unwrap();
-                transfer.retries += 1;
-                ensure!(retryable && transfer.retries <= 3, "map transfer failed");
-                transfer.in_flight = false;
-                transfer.retry_at = Instant::now() + Duration::from_secs(2);
+                self.transfer
+                    .as_mut()
+                    .unwrap()
+                    .retry_after_failure(retryable)?;
             }
             _ => {}
         }
@@ -509,9 +517,43 @@ pub(super) fn available(
     }
 }
 
+impl Transfer {
+    /// A dropped connection retries, less often each time, until the
+    /// transfer's deadline rather than failing on a short drop.
+    fn retry_after_failure(&mut self, retryable: bool) -> Result<()> {
+        ensure!(retryable, "map transfer failed");
+        self.retries = self.retries.saturating_add(1);
+        self.in_flight = false;
+        self.retry_at = Instant::now() + Duration::from_secs((1 << self.retries.min(4)).min(15));
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_dropped_connection_keeps_a_map_transfer_retrying() {
+        let now = Instant::now();
+        let mut transfer = Transfer {
+            resource: TransferResource::Map,
+            direction: Direction::Download,
+            bytes: Vec::new(),
+            offset: 0,
+            in_flight: true,
+            retry_at: now,
+            deadline: now + Duration::from_secs(300),
+            retries: 0,
+            directory: PathBuf::new(),
+        };
+        for _ in 0..6 {
+            transfer.retry_after_failure(true).unwrap();
+        }
+        assert!(!transfer.in_flight);
+        assert!(transfer.retry_at <= Instant::now() + Duration::from_secs(15));
+        assert!(transfer.retry_after_failure(false).is_err());
+    }
     #[test]
     fn download_rejects_duplicate_offsets_and_changed_identity_without_appending() {
         let key = Key {

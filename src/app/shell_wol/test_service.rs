@@ -201,7 +201,7 @@ fn guest_answer(state: &mut AppState, request: &NetworkSetupRequest) {
                 }
             }
         }
-        (WolTestGuest::Joined, NetworkSetupRequest::Kick { name }) if name == GUEST => {
+        (WolTestGuest::Joined, NetworkSetupRequest::Kick { name, .. }) if name == GUEST => {
             state.frontend.wol_test_guest = WolTestGuest::Kicked;
             let Some(channel) = super::lobby::current_channel(state) else {
                 return;

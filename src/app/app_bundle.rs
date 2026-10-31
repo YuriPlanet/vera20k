@@ -441,24 +441,21 @@ mod first_launch {
     #[cfg(target_os = "macos")]
     impl Player for SystemDialogs {
         fn offer(&mut self, folder: &Path) -> Result<Offer> {
-            use objc2_app_kit::{NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn};
-            use objc2_foundation::NSString;
+            use objc2_app_kit::{
+                NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSAlertStyle,
+            };
 
-            let alert = NSAlert::new(self.mtm);
-            alert.setMessageText(&NSString::from_str(self.text.found));
-            alert.setInformativeText(&NSString::from_str(&format!(
-                "{}\n{}",
-                self.text.found_at,
-                folder.display()
-            )));
-            for title in [
-                self.text.use_folder,
-                self.text.choose_another,
-                self.text.quit,
-            ] {
-                alert.addButtonWithTitle(&NSString::from_str(title));
-            }
-            let response = alert.runModal();
+            let response = crate::app::system_dialog::alert(
+                self.mtm,
+                NSAlertStyle::Warning,
+                self.text.found,
+                &format!("{}\n{}", self.text.found_at, folder.display()),
+                &[
+                    self.text.use_folder,
+                    self.text.choose_another,
+                    self.text.quit,
+                ],
+            );
             Ok(if response == NSAlertFirstButtonReturn {
                 Offer::Use
             } else if response == NSAlertSecondButtonReturn {
@@ -510,32 +507,15 @@ mod first_launch {
     }
 
     #[cfg(target_os = "linux")]
-    #[derive(Clone, Copy)]
-    enum DialogTool {
-        Zenity,
-        Kdialog,
-    }
+    use crate::app::system_dialog::DialogTool;
 
     #[cfg(target_os = "linux")]
     impl SystemDialogs {
         fn new() -> Result<Self> {
-            let installed = |program: &str| {
-                std::env::var_os("PATH").is_some_and(|path| {
-                    std::env::split_paths(&path).any(|folder| folder.join(program).is_file())
-                })
-            };
-            let kde = std::env::var("XDG_CURRENT_DESKTOP")
-                .is_ok_and(|desktops| desktops.split(':').any(|desktop| desktop == "KDE"));
-            let tool = if kde && installed("kdialog") {
-                Some(DialogTool::Kdialog)
-            } else if installed("zenity") {
-                Some(DialogTool::Zenity)
-            } else if installed("kdialog") {
-                Some(DialogTool::Kdialog)
-            } else {
+            let tool = DialogTool::installed();
+            if tool.is_none() {
                 log::warn!("Neither zenity nor kdialog is installed to ask for the game folder");
-                None
-            };
+            }
             // gettext's order: the first of LANGUAGE's list, then the locale.
             let language = ["LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"]
                 .into_iter()

@@ -588,7 +588,7 @@ jobs:
   # exact-main branch policy is the security boundary, outside workflow YAML.
   macos-sign:
     name: sign and notarize macOS
-    needs: [prepare, build, test]
+    needs: [prepare, build]
     if: inputs.promote == '' && github.ref == 'refs/heads/main'
     runs-on: macos-latest
     timeout-minutes: 45
@@ -615,7 +615,7 @@ jobs:
           images=(unsigned/*.dmg)
           test "${#images[@]}" -eq 1
           name="$(basename "${images[0]}")"
-          python3 .github/release/macos/notarize.py "${images[0]}" "ready/$name" \
+          python3 .github/release/macos/notarize.py sign "${images[0]}" "ready/$name" \
             --records notarization --identity "$MACOS_SIGNING_IDENTITY" --team "$APPLE_TEAM_ID"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
@@ -701,14 +701,7 @@ jobs:
           set -euo pipefail
           images=(release/*.dmg)
           test "${#images[@]}" -eq 1
-          xcrun stapler validate "${images[0]}"
-          spctl --assess --type open --context context:primary-signature --verbose=4 "${images[0]}"
-          mount="$(mktemp -d)"
-          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "${images[0]}" > /dev/null
-          trap 'hdiutil detach "$mount" > /dev/null || true' EXIT
-          codesign --verify --strict --verbose=2 "$mount/VERA20K.app"
-          spctl --assess --type execute --verbose=4 "$mount/VERA20K.app"
-          "$mount/VERA20K.app/Contents/MacOS/VERA20K" -h > /dev/null
+          python3 .github/release/macos/notarize.py verify "${images[0]}" --smoke-test
       - name: Build the older test program
         shell: bash
         env:
@@ -945,7 +938,8 @@ jobs:
   promote:
     name: promote
     if: inputs.promote != ''
-    runs-on: ubuntu-latest
+    # Apple's signature and ticket checks run on the same files we publish.
+    runs-on: macos-latest
     timeout-minutes: 15
     permissions:
       contents: write
@@ -1018,6 +1012,13 @@ jobs:
             echo "tag=v$version"
             echo "commit=$commit"
           } >> "$GITHUB_OUTPUT"
+      - name: Require Apple notarization before promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          images=(dist/*.dmg)
+          test "${#images[@]}" -eq 1
+          python3 .github/release/macos/notarize.py verify "${images[0]}"
       - name: Write release notes
         shell: bash
         env:

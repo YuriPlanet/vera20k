@@ -188,13 +188,13 @@ pub(crate) fn create<'w>(
 /// already expired still draws. `IsSingleColor`/`LaserThickness` replace the
 /// stock color pair and width; `IsHouseColor` takes the House laser color.
 #[cfg(feature = "phobos")]
-pub(crate) fn create_effect<'w>(
-    world: &'w mut Simulation,
+pub(crate) fn create_effect(
+    world: &mut Simulation,
     house: Option<InternedId>,
     from: ProjectileCoord,
     to: ProjectileCoord,
     weapon: &WeaponType,
-) -> &'w mut LaserBirth {
+) {
     let (color, width, supported) = if weapon.is_house_color || weapon.phobos_laser_is_single_color
     {
         let color = match (weapon.is_house_color, house) {
@@ -230,7 +230,6 @@ pub(crate) fn create_effect<'w>(
     );
     birth.width = width;
     birth.supported = supported;
-    birth
 }
 
 /// LaserDraw54FE60 initializes every caller's width1/unsupported object;

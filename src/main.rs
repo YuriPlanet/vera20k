@@ -45,7 +45,10 @@ fn main() -> Result<()> {
         }
     };
 
-    vera20k::util::logging::install_panic_hook(log_path.as_deref());
+    vera20k::util::logging::install_panic_hook(
+        log_path.as_deref(),
+        Some(vera20k::app::system_dialog::report_panic),
+    );
 
     log::info!(
         "VERA20k {} starting ({}/{})",
@@ -90,6 +93,16 @@ fn main() -> Result<()> {
 fn run(app_bundle: bool) -> Result<i32> {
     let launch_mode =
         vera20k::app::frontend::launch::parse_launch_args(std::env::args_os().skip(1))?;
+
+    // A player started this launch and may have no console: a failure that
+    // ends it shows a message box. Spawn, replay and capture launches come
+    // from other programs and scripts, which must never wait on a click.
+    if matches!(
+        launch_mode,
+        vera20k::app::frontend::launch::AppLaunchMode::Interactive(_)
+    ) {
+        vera20k::app::system_dialog::enable_fatal_messages();
+    }
 
     // A help switch terminates before anything else is created, matching the
     // native switch parser returning a failure that makes WinMain bail.

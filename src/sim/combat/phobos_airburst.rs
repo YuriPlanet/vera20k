@@ -1074,7 +1074,7 @@ fn admit_firing_effects(
         target_coords
     };
     if context.weapon.is_laser {
-        let _ = super::laser::create_effect(
+        super::laser::create_effect(
             world,
             Some(context.owner_house),
             origin,

@@ -276,6 +276,7 @@ impl<'a> NetworkCommandQueues<'a> {
                     diagnostic_issue_tick,
                 },
                 true,
+                crate::sim::command_queue::DoListInsertion::Back,
             );
             assert!(
                 accepted,

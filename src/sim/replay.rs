@@ -6,9 +6,11 @@
 //! normally from the recorded header and consumes both record kinds at their
 //! original scheduler rungs.
 //!
-//! [`ReplayLog`] is the Rust command/hash recording. Version 3 retains the
-//! resolved authored Battle startup for standalone verification through the
-//! normal loader and frame owner. It is separate from [`NativeReplay`]. Production
+//! [`ReplayLog`] is the Rust command/hash recording. Version 4 regenerates
+//! shared PlanMgr events at their native publication rungs instead of importing
+//! them as frame input. It retains the resolved authored Battle startup for
+//! standalone verification through the normal loader and frame owner.
+//! It is separate from [`NativeReplay`]. Production
 //! does not record or play native streams yet; only tests build
 //! [`NativeReplay`], which is kept for native recording playback.
 
@@ -746,7 +748,7 @@ pub struct ReplayLog {
     pub initial_scenario_services: Vec<ScenarioServiceInput>,
 }
 
-pub const REPLAY_VERSION: u32 = 3;
+pub const REPLAY_VERSION: u32 = 4;
 
 /// The resolved launch and draw-free initial cursor projection contain no
 /// service session, ticket, network endpoint, authentication key or password.
@@ -1109,15 +1111,13 @@ impl ReplayPlayback {
             replay.header.rules_hash
         );
         anyhow::ensure!(
-            (1..=REPLAY_VERSION).contains(&replay.header.version),
+            replay.header.version == REPLAY_VERSION,
             "unsupported replay version"
         );
-        if replay.header.version == REPLAY_VERSION {
-            anyhow::ensure!(
-                runtime.simulation.session().map_name() == replay.header.map_name,
-                "replay map name mismatch"
-            );
-        }
+        anyhow::ensure!(
+            runtime.simulation.session().map_name() == replay.header.map_name,
+            "replay map name mismatch"
+        );
         if let Some(startup) = replay.startup.as_deref() {
             startup.validate_header(&replay.header)?;
             anyhow::ensure!(
@@ -1673,11 +1673,10 @@ mod tests {
         let map = beside.join("XMP03T4.MAP");
         std::fs::write(&map, assets.get("XMP03T4.MAP").unwrap()).unwrap();
         let verified = ReplayRunner::verify(&root, &decoded, map.to_str());
-        std::fs::remove_dir_all(&beside).unwrap();
-        assert_eq!(
-            verified.unwrap().final_state_hash,
-            scene.sim().state_hash()
-        );
+        // Remove the map this test wrote, then its now-empty directory.
+        std::fs::remove_file(&map).unwrap();
+        std::fs::remove_dir(&beside).unwrap();
+        assert_eq!(verified.unwrap().final_state_hash, scene.sim().state_hash());
         let mut corrupted = decoded;
         corrupted.ticks[10].state_hash = Some(1);
         assert!(
@@ -2183,10 +2182,10 @@ mod tests {
             .encode();
             let mut live = SimRuntime::from_simulation(world(frame));
             let mut replay = ReplayLog::new(ReplayHeader {
-                version: 1,
+                version: REPLAY_VERSION,
                 tick_hz: 15,
                 seed: 73,
-                map_name: "frameinfo".into(),
+                map_name: live.simulation.session().map_name().to_owned(),
                 rules_hash: 0,
                 pixel_conversion_bounds: live.simulation.session().pixel_conversion_bounds(),
             });

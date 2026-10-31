@@ -298,6 +298,115 @@ pub(crate) fn clear_typed_codes_for_network_session(state: &mut AppState) {
         ));
 }
 
+/// Which advice the startup error card gives. A Windows player starts
+/// vera20k.exe from a folder of their choosing; the macOS app and the Linux
+/// AppImage keep config.toml in their data folder and set up the game folder
+/// on first launch (`app_bundle`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CardHost {
+    Windows,
+    Unix,
+}
+
+impl CardHost {
+    const CURRENT: Self = if cfg!(target_os = "windows") {
+        Self::Windows
+    } else {
+        Self::Unix
+    };
+}
+
+/// The startup error card's title and text. `menu_assets` says the game
+/// archives loaded; `details` is the failure, already fit for the card.
+fn shell_error_card(
+    host: CardHost,
+    files: &crate::app::initialize::StartupFiles,
+    menu_assets: bool,
+    game_files: Option<&std::path::Path>,
+    log_file: Option<&std::path::Path>,
+    details: &str,
+) -> (&'static str, String) {
+    use crate::app::initialize::StartupProblem;
+
+    let config = files.config_file.as_deref().map_or_else(
+        || "config.toml".to_owned(),
+        |path| path.display().to_string(),
+    );
+    let log = log_file.map_or_else(
+        || "none could be written".to_owned(),
+        |path| path.display().to_string(),
+    );
+    let (title, mut text) = match &files.problem {
+        Some(StartupProblem::ConfigFile) => (
+            "config.toml could not be read",
+            format!(
+                "VERA20K could not read its settings file:\n{config}\n\n\
+It must be plain text saved as UTF-8. Correct the problem named below, or move the file away \
+and start VERA20K again without it.\n\n\
+Log: {log}"
+            ),
+        ),
+        Some(StartupProblem::Settings(folder)) => (
+            "Cannot use the settings folder",
+            format!(
+                "VERA20K keeps VERA.INI and VERARULES.INI in its settings folder:\n{}\n\n\
+It could not create, write or read them there. Make sure that folder can be written, or set \
+[paths] settings_dir in {config} to a folder you can write to.\n\n\
+Log: {log}",
+                folder.as_deref().map_or_else(
+                    || "(its location could not be found)".to_owned(),
+                    |folder| folder.display().to_string()
+                ),
+            ),
+        ),
+        None => {
+            // No archives at all means the installation is missing or wrong;
+            // some archives but no menu artwork means the install is
+            // incomplete. Say which, so the player is not sent looking for
+            // files that are present.
+            let title = if menu_assets {
+                "Unable to load the game menu"
+            } else {
+                "Game files not found"
+            };
+            let advice = match host {
+                CardHost::Windows => format!(
+                    "1. Copy vera20k.exe into your Red Alert 2: Yuri's Revenge folder and start it \
+there.\n\n\
+2. Or set [paths] ra2_dir in config.toml, either in the folder you start it from or beside \
+vera20k.exe:\n{config}"
+                ),
+                CardHost::Unix => format!(
+                    "Set [paths] ra2_dir in\n{config}\nto your Yuri's Revenge folder, the one \
+holding ra2md.mix and ra2.mix with the rest of the game, then start VERA20K again."
+                ),
+            };
+            let game_files = game_files.map_or_else(
+                || "No game installation configured".to_owned(),
+                |path| path.display().to_string(),
+            );
+            (
+                title,
+                format!(
+                    "VERA20K needs Red Alert 2: Yuri's Revenge to run.\n\n{advice}\n\n\
+Game files: {game_files}\nLog: {log}"
+                ),
+            )
+        }
+    };
+    // The card's in-repo face carries ASCII only, so a non-ASCII path draws
+    // as boxes. Point the player at the log, which holds the exact path in
+    // UTF-8.
+    if !text.is_ascii() {
+        text.push_str(
+            "\n(characters this screen cannot draw are shown as boxes; the log has the exact path)",
+        );
+    }
+    text.push_str("\n\nDetails: ");
+    text.push_str(details);
+    (title, text)
+}
+
 /// Reduce a startup error to text the status card can draw.
 ///
 /// The card's in-repo face carries ASCII only, while `std::io::Error` is
@@ -918,43 +1027,25 @@ impl App {
             .main_menu_shell_error
             .get_or_insert_with(|| "Required game-menu resources could not be loaded.".to_owned())
             .clone();
-        let asset_root = state
+        let game_files = state
             .platform
             .game_config
             .as_ref()
-            .map(|config| config.paths.ra2_dir.display().to_string())
-            .unwrap_or_else(|| "No game installation configured".to_owned());
-        // No archives at all means the installation is missing or wrong; some
-        // archives but no menu artwork means the install is incomplete. Say
-        // which, so the player is not sent looking for files that are present.
-        let title = if state.process_assets.manager().is_some() {
-            "Unable to load the game menu"
-        } else {
-            "Game files not found"
-        };
-        // The card's in-repo face carries ASCII only, so a non-ASCII install
-        // path draws as boxes. Point the player at the log, which holds the
-        // exact path in UTF-8.
-        let path_note = if asset_root.is_ascii() {
-            String::new()
-        } else {
-            "\n(characters this screen cannot draw are shown as boxes; the log has the exact path)"
-                .to_owned()
-        };
-        let details = display_error(&error);
+            .map(|config| config.paths.ra2_dir.clone());
+        let (title, text) = shell_error_card(
+            CardHost::CURRENT,
+            &state.frontend.startup_files,
+            state.process_assets.manager().is_some(),
+            game_files.as_deref(),
+            crate::util::logging::log_file(),
+            &display_error(&error),
+        );
         crate::app::frontend::status_screen::render(
             state,
             encoder,
             view,
             title,
-            &format!(
-                "VERA20K needs Red Alert 2: Yuri's Revenge to run.\n\n\
-1. Copy vera20k.exe into your Red Alert 2: Yuri's Revenge folder and start it there.\n\n\
-2. Or set [paths] ra2_dir in config.toml, either in the folder you start it from or beside vera20k.exe.\n\n\
-Game files: {asset_root}{path_note}\n\
-Log: logs/ra2.log\n\n\
-Details: {details}"
-            ),
+            &text,
             crate::app::frontend::status_screen::Buttons::QUIT,
         );
         Ok(())
@@ -1958,7 +2049,65 @@ Details: {details}"
 
 #[cfg(test)]
 mod status_error_tests {
-    use super::display_error;
+    use super::{CardHost, display_error, shell_error_card};
+    use crate::app::initialize::{StartupFiles, StartupProblem};
+    use std::path::Path;
+
+    #[test]
+    fn a_broken_config_or_settings_folder_is_not_called_missing_game_files() {
+        let root = std::env::temp_dir().join(format!("vera20k-card-{}", std::process::id()));
+        let launch = root.join("launch");
+        std::fs::create_dir_all(&launch).unwrap();
+        std::fs::create_dir_all(root.join("app")).unwrap();
+        let config = launch.join("config.toml");
+        std::fs::write(&config, b"[paths]\nra2_dir = 'C:/Gr\xfcn'\n").unwrap();
+        let executable = root.join("app/vera20k");
+        let error = crate::util::config::GameConfig::load_from(&launch, &executable).unwrap_err();
+        let files = StartupFiles {
+            config_file: crate::util::config::GameConfig::path_for(&launch, &executable).ok(),
+            problem: Some(StartupProblem::of_config_load(&error)),
+        };
+        let _ = std::fs::remove_dir_all(&root);
+        let details = display_error(&format!("{error:#}"));
+        let (title, text) = shell_error_card(CardHost::Unix, &files, false, None, None, &details);
+        assert_eq!(title, "config.toml could not be read");
+        assert!(text.contains(config.to_str().unwrap()), "{text}");
+        assert!(text.contains("not UTF-8 text"), "{text}");
+
+        let files = StartupFiles {
+            config_file: None,
+            problem: Some(StartupProblem::Settings(Some("/locked/VERA20k".into()))),
+        };
+        let (title, text) = shell_error_card(
+            CardHost::Windows,
+            &files,
+            false,
+            None,
+            None,
+            "Could not prepare VERA.INI: access was denied (os error 5)",
+        );
+        assert_eq!(title, "Cannot use the settings folder");
+        assert!(text.contains("/locked/VERA20k"), "{text}");
+    }
+
+    #[test]
+    fn the_game_files_card_gives_this_platforms_advice_and_real_paths() {
+        let files = StartupFiles {
+            config_file: Some("/home/player/.local/share/VERA20k/config.toml".into()),
+            problem: None,
+        };
+        let log = Path::new("/home/player/.local/share/VERA20k/logs/ra2.log");
+        let (title, text) =
+            shell_error_card(CardHost::Unix, &files, false, None, Some(log), "missing");
+        assert_eq!(title, "Game files not found");
+        assert!(!text.contains("vera20k.exe"), "{text}");
+        assert!(text.contains("VERA20k/config.toml"), "{text}");
+        assert!(text.contains("VERA20k/logs/ra2.log"), "{text}");
+
+        let (_, text) =
+            shell_error_card(CardHost::Windows, &files, false, None, Some(log), "missing");
+        assert!(text.contains("Copy vera20k.exe"), "{text}");
+    }
 
     #[test]
     fn localized_os_text_is_dropped_and_the_code_kept() {

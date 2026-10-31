@@ -1267,6 +1267,21 @@ impl ScenarioSession {
         self.network_command_timing.as_ref()
     }
 
+    /// EventClass::Add @0x00652230 (gamemd.exe instructions65223A..652258):
+    /// generated DoList events use the next send boundary, without MaxAhead.
+    /// Currently admitted sessions use native protocol2 (Session6973FF).
+    /// Offline keeps the constructor's FrameSendRate5 (6975DF); network
+    /// admission and TIMING already own its overrides, including relay rate1.
+    pub(crate) fn generated_event_frame(&self) -> u32 {
+        let rate = self
+            .network_command_timing()
+            .map_or(5, |timing| u32::from(timing.frame_send_rate().get()));
+        self.binary_frame
+            .wrapping_add(rate)
+            .wrapping_div(rate)
+            .wrapping_mul(rate)
+    }
+
     pub(crate) fn configure_sequenced_clock(&mut self, frames_per_second: u16) {
         let ahead = self.network_max_ahead_frames.expect("installed timing") as u16;
         let timing = self

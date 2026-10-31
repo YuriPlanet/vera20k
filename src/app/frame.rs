@@ -115,6 +115,17 @@ impl App {
         }
         let started = Instant::now();
         let mut result = RuntimeServiceResult::default();
+        let restoring = state
+            .match_state
+            .live_network
+            .as_ref()
+            .is_some_and(|live| live.restoring_match());
+        let profile = &state.persistence.options_profile;
+        let (sound, voice) = (
+            f64::from(profile.sound_volume),
+            f64::from(profile.voice_volume),
+        );
+        state.audio.mute_for_restore(restoring, sound, voice);
         let mut attempts = 0;
         loop {
             let before = state.match_state.sim_runtime.as_ref().map(|runtime| {
@@ -391,6 +402,16 @@ impl App {
                 if state.frontend.external_launch {
                     Self::finish_browser_external_launch(state, None);
                     Self::poll_browser_exit(state, event_loop);
+                    return RuntimeServiceResult {
+                        quit_requested: true,
+                        main_tick_admitted,
+                        screen_shake_offset,
+                        ..Default::default()
+                    };
+                }
+                // A Back just before Quit can still be logging out.
+                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+                if Self::begin_network_goodbye(state) {
                     return RuntimeServiceResult {
                         quit_requested: true,
                         main_tick_admitted,
@@ -1230,12 +1251,27 @@ impl App {
                         crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
                         frame,
                     )? {
-                        crate::net::live_commands::NetworkRecoveryStatus::Reconnecting => Some(
-                            "Reconnecting - waiting for connection; match remains active"
-                                .to_owned(),
-                        ),
+                        crate::net::live_commands::NetworkRecoveryStatus::Reconnecting => {
+                            // The relay drops a lapsed pass, which only the
+                            // lobby can renew: then waiting cannot help.
+                            let lapsed = live.relay_expires().is_some_and(|expires| {
+                                std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .is_ok_and(|now| now.as_secs() >= expires)
+                            });
+                            Some(if lapsed {
+                                "Reconnecting - VERA20k Online cannot renew this match's game server pass; Quit to leave"
+                            } else {
+                                "Reconnecting - waiting for connection; Quit to leave"
+                            }
+                            .to_owned())
+                        }
                         crate::net::live_commands::NetworkRecoveryStatus::CatchingUp { frames } => {
-                            Some(format!("Catching up - {frames} frames behind"))
+                            Some(if live.restoring_match() {
+                                format!("Rejoining the match - {frames} frames behind")
+                            } else {
+                                format!("Catching up - {frames} frames behind")
+                            })
                         }
                     }
                 })

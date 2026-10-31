@@ -9,17 +9,20 @@
 //! both (`wgpu_hal=error`); the longest matching prefix wins. A `/text` suffix
 //! keeps only messages containing `text`.
 
+use crate::util::time::{SystemTime, UNIX_EPOCH};
 use std::backtrace::Backtrace;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use crate::util::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{Mutex, OnceLock};
 
 use log::{LevelFilter, Log, Metadata, Record};
 
 static EXCEPTION_DUMP_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// The file [`init_file_logger`] opened, for messages that point the player
+/// at it.
+static LOG_FILE: OnceLock<PathBuf> = OnceLock::new();
 
 #[cfg(feature = "telemetry")]
 #[path = "logging_telemetry.rs"]
@@ -49,7 +52,13 @@ pub fn init_file_logger(name: &str) -> io::Result<PathBuf> {
     install("info,wgpu_hal=error", Destination::File(Mutex::new(file)))
         .map_err(|error| io::Error::other(error.to_string()))?;
 
+    let _ = LOG_FILE.set(log_path.clone());
     Ok(log_path)
+}
+
+/// The log file [`init_file_logger`] opened; None when the log goes to stderr.
+pub fn log_file() -> Option<&'static Path> {
+    LOG_FILE.get().map(PathBuf::as_path)
 }
 
 /// Install a logger that writes to stderr, filtered by `RUST_LOG` or else
@@ -240,8 +249,12 @@ fn utc_timestamp(time: SystemTime) -> String {
 /// file when one is available. Each outermost panic creates or replaces
 /// retail's `except.txt` report in the current working directory; recursive
 /// hook entry is suppressed. The default stderr hook is preserved so terminal
-/// users still see output.
-pub fn install_panic_hook(log_path: Option<&Path>) {
+/// users still see output. `notify` runs last, once all of that is written,
+/// so a player without a terminal can be told; it must not panic.
+pub fn install_panic_hook(
+    log_path: Option<&Path>,
+    notify: Option<fn(&std::panic::PanicHookInfo<'_>)>,
+) {
     let prev_hook = std::panic::take_hook();
     let log_path = log_path.map(Path::to_owned);
 
@@ -268,6 +281,10 @@ pub fn install_panic_hook(log_path: Option<&Path>) {
 
         // Preserve default stderr output for terminal users.
         prev_hook(info);
+
+        if let Some(notify) = notify {
+            notify(info);
+        }
     }));
 }
 

@@ -1795,11 +1795,11 @@ fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay()
     assert_eq!(restored.state_hash(), sim.state_hash(), "saved loss state");
 
     let header = ReplayHeader {
-        version: 1,
+        version: crate::sim::replay::REPLAY_VERSION,
         tick_hz: 15,
         seed: sim.session.seed(),
         pixel_conversion_bounds: sim.session.pixel_conversion_bounds(),
-        map_name: "factory-loss".into(),
+        map_name: sim.session.map_name().to_owned(),
         rules_hash: rules.simulation_config_hash(),
     };
     let mut resources = SimResources::empty();

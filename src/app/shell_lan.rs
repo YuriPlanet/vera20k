@@ -264,6 +264,9 @@ fn denial_modal(reason: u32, observer: bool) -> Option<&'static str> {
         // VERA direct-client admission extends native version checks with the
         // actual source build and enabled gameplay feature identity.
         8 => Some("VERA20k build or enabled gameplay features differ."),
+        // VERA's rooms: the host kicked this player within five minutes;
+        // the online join ban's text (`0x7A5890`'s 0x80040072).
+        9 => Some("TXT_JOINBAN"),
         _ => None,
     }
 }
@@ -389,6 +392,21 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
         .multiplayer_shell_runtime
         .local_participant()
         .name;
+    if matches!(
+        action,
+        LanLobbyAction::Create { .. } | LanLobbyAction::Join { .. }
+    ) && crate::app::lan_service::unavailable(state)
+    {
+        // Without its sockets the room would be one nobody sees: try them
+        // again, and say why when they are still taken.
+        crate::app::lan_service::open(state);
+        if crate::app::lan_service::unavailable(state) {
+            if let Some(runtime) = state.frontend.lan.as_mut() {
+                runtime.lobby.set_enabled(true);
+            }
+            return;
+        }
+    }
     match action {
         // VERA's lobby asks for its room's limits first.
         LanLobbyAction::Create { observe: _ } if !state.frontend.native_shell_ui => {
@@ -1002,7 +1020,15 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
             .as_mut()
             .expect("timed request")
             .canceling = true;
-        report_error(state, "TXT_REQUEST_DENIED");
+        // Native reports a timeout as a denial; VERA says nothing answered.
+        report_error(
+            state,
+            if state.frontend.native_shell_ui {
+                "TXT_REQUEST_DENIED"
+            } else {
+                "The game didn't answer. It may have closed, or a firewall may be blocking LAN games."
+            },
+        );
     }
     let runtime = state.frontend.lan.as_mut()?;
     let mut deadline = runtime
@@ -1141,5 +1167,6 @@ mod tests {
         assert_eq!(denial_modal(1, true), Some("TXT_OBSERVER_FULL"));
         assert_eq!(denial_modal(4, false), None);
         assert_eq!(denial_modal(7, false), Some("TXT_SERIAL_DUP"));
+        assert_eq!(denial_modal(9, false), Some("TXT_JOINBAN"));
     }
 }
