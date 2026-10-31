@@ -456,7 +456,7 @@ pub struct WolCreateGameLayout {
     pub clan: Option<RectPx>,
     pub limit: RectPx,
     pub observe: Option<RectPx>,
-    /// VERA's online popup's Players and Allow spectators.
+    /// VERA's online popup's Max players and Allow spectators.
     pub room: Option<crate::ui::room_limits::RoomLimitsLayout>,
     pub ok: RectPx,
     pub cancel: RectPx,
@@ -475,7 +475,7 @@ const ONLINE_STATUS_INSET: i32 = 10;
 /// `online` is VERA's online lobby on Red Alert 2's box art: no clan or
 /// observer box (the lobby's own Observe box still seats an observer), Limit
 /// Screen Resolution in the clan row under the password field, clear of the
-/// art's Tesla Trooper, then Players and Allow spectators in the limit and
+/// art's Tesla Trooper, then Max players and Allow spectators in the limit and
 /// observer rows, and the status line inside the frame.
 pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> WolCreateGameLayout {
     let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
@@ -521,7 +521,7 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
 }
 
 /// VERA's Create Game box in the LAN lobby, the online box's art and
-/// buttons: Players in the password row, Allow spectators in the clan row.
+/// buttons: Max players in the password row, Allow spectators in the clan row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LanCreateGameLayout {
     pub dialog: RectPx,
@@ -542,7 +542,7 @@ pub fn lan_create_game_layout(screen_w: i32, screen_h: i32) -> LanCreateGameLayo
     }
 }
 
-/// Players beside its caption at `players_y`, the trackbar under `field`'s
+/// Max players beside its caption at `players_y`, the trackbar under `field`'s
 /// left edge, and Allow spectators in `checkbox_row` from the same edge.
 fn room_limits_layout(
     caption: RectPx,

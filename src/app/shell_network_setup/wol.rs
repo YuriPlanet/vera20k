@@ -179,6 +179,9 @@ pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<
             .is_some_and(|protocol| protocol.locked);
     let row = if !session.host() {
         Some(None)
+    } else if session.network_room_full() {
+        // VERA's room is at its host's Max players.
+        None
     } else if session.network_no_open_player_row() {
         session.network_free_row(true).map(Some)
     } else {
