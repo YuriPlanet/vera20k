@@ -241,6 +241,7 @@ pub mod particle_system_type;
 pub mod particle_type;
 pub mod personal_rules;
 pub mod personality;
+pub mod post_process;
 pub mod powerups;
 pub mod prerequisite;
 pub mod process_owner;

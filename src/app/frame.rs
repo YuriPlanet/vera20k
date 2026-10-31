@@ -1175,6 +1175,9 @@ impl App {
                 };
                 let game_output = if state.renderer.upscale_pass.is_some() {
                     // Render game to intermediate texture, then upscale to swapchain.
+                    // The post chain stays off this path for now: its target here
+                    // is the upscale input, and wiring both paths at once would
+                    // need a second identity comparison.
                     let up = state.renderer.upscale_pass.as_ref().unwrap();
                     let game_depth = up.depth_view().clone();
                     let saved_depth = std::mem::replace(&mut state.renderer.depth_view, game_depth);
@@ -1192,10 +1195,42 @@ impl App {
                         .draw(&mut encoder, &view);
                     render_output
                 } else {
+                    // `[PostProcess]` owns the chain's lifetime: the first frame
+                    // that has a configured effect creates it, later frames
+                    // update its uniforms, and a rules set without effects
+                    // drops it back to the 1:1 copy. The viewport mask keeps
+                    // the sidebar column and the bottom strip on the retail
+                    // path, so UI chrome keeps its colours.
+                    let (viewport_width, viewport_height) =
+                        crate::app::input::camera::tactical_viewport_size(state);
+                    let viewport = [0.0, 0.0, viewport_width as f32, viewport_height as f32];
+                    let color_grade = state
+                        .rules()
+                        .and_then(|rules| rules.post_process.color_grade)
+                        .map(|grade| [grade.brightness, grade.contrast, grade.saturation]);
+                    let post_params = crate::render::post_process::PostParams::from_effects(
+                        color_grade,
+                        viewport,
+                    );
+                    if let Some(params) = post_params {
+                        if let Some(chain) = state.renderer.post_chain.as_ref() {
+                            chain.set_params(&state.renderer.gpu.queue, params);
+                        } else {
+                            state.renderer.post_chain =
+                                Some(crate::render::post_process::PostChain::new(
+                                    &state.renderer.gpu.device,
+                                    &state.renderer.gpu.queue,
+                                    output.texture.format(),
+                                    params,
+                                ));
+                        }
+                    } else {
+                        state.renderer.post_chain = None;
+                    }
                     let render_output = render::render_game(state, &mut encoder, times)?;
                     state
                         .renderer
-                        .copy_game_frame_to(&mut encoder, &output.texture);
+                        .present_game_frame(&mut encoder, &output.texture);
                     render_output
                 };
                 #[cfg(feature = "telemetry-dashboard")]

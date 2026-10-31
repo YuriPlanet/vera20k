@@ -53,6 +53,9 @@ pub(crate) struct RendererState {
     /// Previous presented pre-cursor composition, retained for input-time
     /// screenshot parity.
     pub(crate) retail_screenshot_frame_cache: crate::render::screenshot::PresentedFrameCache,
+    /// Full-frame post-processing at the presentation boundary. `None` keeps
+    /// the 1:1 texture copy (`present_game_frame`), which is the retail path.
+    pub(crate) post_chain: Option<crate::render::post_process::PostChain>,
 }
 
 impl RendererState {
@@ -62,6 +65,29 @@ impl RendererState {
             || self.combat_light_renderer.composition_texture(),
             |zoom| zoom.color_texture(),
         )
+    }
+
+    /// Hand the composed match frame to `destination`.
+    ///
+    /// The retail path is the 1:1 texture copy. With a post chain configured
+    /// the same frame goes through its passes instead; the copy remains the
+    /// fallback, so a build with no effects configured keeps the exact
+    /// behaviour and cost it had before the hook existed.
+    pub(crate) fn present_game_frame(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Texture,
+    ) {
+        let Some(chain) = self.post_chain.as_ref() else {
+            self.copy_game_frame_to(encoder, destination);
+            return;
+        };
+        let source = self.game_frame_texture();
+        debug_assert_eq!(destination.size(), source.size());
+        debug_assert_eq!(chain.format(), source.format());
+        let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+        let destination_view = destination.create_view(&wgpu::TextureViewDescriptor::default());
+        chain.draw(&self.gpu.device, encoder, &source_view, &destination_view);
     }
 
     pub(crate) fn copy_game_frame_to(

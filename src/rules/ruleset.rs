@@ -4542,6 +4542,10 @@ pub struct RuleSet {
     pub production: ProductionRules,
     /// Global gameplay constants (vision, gap generator, etc.).
     pub general: GeneralRules,
+    /// VERA-only `[PostProcess]` presentation effects (`ColorGrade=` and its
+    /// parameters). Empty by default, so the frame stays on the retail 1:1
+    /// copy path; gamemd reads no such section.
+    pub post_process: crate::rules::post_process::PostProcessRules,
     /// `[General] RevealTriggerRadius`, Rules+62C: ctor665EDE stores5;
     /// ReadGeneral67181C..671836 uses ReadInt5276D0 over the retained field,
     /// without clamping. Ordered rule passes use the shared typed projection.
@@ -6483,6 +6487,7 @@ impl RuleSet {
             color_add,
             production,
             general,
+            post_process: crate::rules::post_process::PostProcessRules::from_ini(ini),
             reveal_trigger_radius: ini
                 .section_or_empty("General")
                 .read_int("RevealTriggerRadius", 5),

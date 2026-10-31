@@ -53,6 +53,7 @@ pub mod overlay_atlas;
 pub mod palette_light;
 pub mod palette_textures;
 pub mod pixel_fx_sparkles;
+pub(crate) mod post_process;
 pub mod radar;
 pub(crate) mod radial_indicator;
 pub(crate) mod radiation_beam;
