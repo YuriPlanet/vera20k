@@ -708,8 +708,13 @@ pub(crate) fn render_multiplayer_setup(
         overlay.controls.extend(page.controls);
         overlay.texts.extend(page.texts);
     }
-    // Start Game Now's 0x130 over the locked C2/C9.
-    if let Some(verify) = crate::app::shell_network_setup::verify(state) {
+    // Start Game Now's 0x130 over the locked C2/C9; VERA's room waits a
+    // moment so a quick check does not flash it.
+    let verify = crate::app::shell_network_setup::verify(state);
+    if verify.is_some_and(|verify| !verify.shown(view.dialog.modern, now)) {
+        state.platform.window.request_redraw();
+    }
+    if let Some(verify) = verify.filter(|verify| verify.shown(view.dialog.modern, now)) {
         let paint = super::paint_wol_verify(
             state,
             verify,
