@@ -39,6 +39,8 @@ pub(crate) struct PersistenceState {
     /// MainTick55DBCD's process-global ABCE08. It is deliberately outside
     /// the saved Scenario and survives a same-mission restart.
     initial_campaign_save_attempted: bool,
+    /// The one UI load awaiting its loading frame and subsequent redraw.
+    pub(crate) pending_load: Option<commands::PendingSavedGameLoad>,
     /// The process-lifetime retail Options/Video/Audio profile. UI, window,
     /// render, and audio state are projections of this single retained value.
     pub(crate) options_profile: options_profile::RetailOptionsProfile,
@@ -49,6 +51,7 @@ impl PersistenceState {
     pub(crate) fn new(options_profile: options_profile::RetailOptionsProfile) -> Self {
         Self {
             initial_campaign_save_attempted: false,
+            pending_load: None,
             options_profile,
             repository: SaveRepository::new(),
         }

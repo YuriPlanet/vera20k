@@ -537,6 +537,9 @@ impl ApplicationHandler for App {
                 let Some(state) = self.state.as_mut() else {
                     return;
                 };
+                if state.persistence.pending_load.is_some() {
+                    return;
+                }
                 let in_game = state.frontend.screen == GameScreen::InGame;
                 let scale = state.platform.window.scale_factor();
                 let output = state.match_state.input.touch_mapper.translate(
@@ -811,6 +814,22 @@ impl ApplicationHandler for App {
                 event.state.is_pressed(),
                 paused,
             );
+        }
+        // Keep physical button/modifier releases above alive while the modal
+        // load owns input, so a key released here cannot stick after restore.
+        if state.persistence.pending_load.is_some() {
+            match &event {
+                WindowEvent::CloseRequested => state.persistence.pending_load = None,
+                WindowEvent::KeyboardInput { event, .. } if !event.state.is_pressed() => {}
+                WindowEvent::RedrawRequested
+                | WindowEvent::Resized(_)
+                | WindowEvent::ScaleFactorChanged { .. }
+                | WindowEvent::Focused(_)
+                | WindowEvent::Occluded(_)
+                | WindowEvent::CursorEntered { .. }
+                | WindowEvent::CursorLeft { .. } => {}
+                _ => return,
+            }
         }
         if crate::app::frontend::status_screen::handle_event(state, &event, event_loop) {
             return;
@@ -1633,8 +1652,7 @@ impl ApplicationHandler for App {
                     ) => return,
                 };
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-                if screen == ScreenPage::MainMenu
-                    && crate::app::updater::notes::wheel(state, lines)
+                if screen == ScreenPage::MainMenu && crate::app::updater::notes::wheel(state, lines)
                 {
                     return;
                 }

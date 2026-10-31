@@ -139,7 +139,7 @@ impl App {
                 crate::app::frontend::shell_transition::ShellExitThen::LoadSavedGameBack,
             ),
             BrowserInputResult::Outcome(SavedSeedOutcome::Load(path)) => {
-                Self::load_saved_game_from_menu(state, &path)
+                crate::app::persistence::commands::request_saved_game_load(state, path)
             }
             BrowserInputResult::Outcome(_) => {}
         }
@@ -147,8 +147,12 @@ impl App {
 
     /// 559D60 shares Load67E440 with the in-game browser. Failure keeps
     /// the existing sorted rows/selection; it never rescans the directory.
-    fn load_saved_game_from_menu(state: &mut AppState, path: &std::path::Path) {
-        match crate::app::persistence::commands::try_load_save_file(state, path) {
+    pub(crate) fn finish_load_saved_game_from_menu(
+        state: &mut AppState,
+        path: &std::path::Path,
+        result: Result<(), crate::app::persistence::PreparedLoadError>,
+    ) {
+        match result {
             Ok(()) => {
                 state.frontend.load_saved_game = None;
                 state.platform.window.request_redraw();

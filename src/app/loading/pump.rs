@@ -3306,50 +3306,44 @@ pub(crate) fn next_native_loading_frame(state: &AppState) -> Option<NextLoadingF
 /// The retained B7 browser is not painted or mutated, so failure can redraw it.
 /// The dialog paints no pointer; the window's own stays as the frame owner
 /// last set it, hidden wherever mouse.sha loaded.
-pub(crate) fn present_saved_game_loading(state: &mut AppState) {
+pub(crate) fn present_saved_game_loading(state: &mut AppState) -> anyhow::Result<bool> {
     if !crate::app::App::ensure_skirmish_shell_chrome(state) {
-        log::warn!("Saved-game loading dialog has no shell chrome");
-        return;
+        anyhow::bail!("Saved-game loading dialog has no shell chrome");
     }
-    let result = (|| -> anyhow::Result<()> {
-        let Some(output) = state
-            .renderer
-            .gpu
-            .acquire_frame()
-            .map_err(|error| anyhow::anyhow!("saved-game loading surface: {error}"))?
-        else {
-            return Ok(());
-        };
-        let mut encoder =
-            state
-                .renderer
-                .gpu
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Saved Game Loading"),
-                });
-        crate::app::frontend::skirmish_shell_render::render_saved_game_loading(
-            state,
-            &mut encoder,
-            &output.texture,
-        )?;
-        state.renderer.fps_overlay.encode(
-            &state.renderer.gpu,
-            &state.renderer.batch_renderer,
-            &mut encoder,
-            &output.texture,
-        );
+    let Some(output) = state
+        .renderer
+        .gpu
+        .acquire_frame()
+        .map_err(|error| anyhow::anyhow!("saved-game loading surface: {error}"))?
+    else {
+        return Ok(false);
+    };
+    let mut encoder =
         state
             .renderer
             .gpu
-            .queue
-            .submit(std::iter::once(encoder.finish()));
-        output.present(&state.renderer.gpu.queue);
-        Ok(())
-    })();
-    if let Err(error) = result {
-        log::warn!("Saved-game loading dialog presentation failed: {error:#}");
-    }
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Saved Game Loading"),
+            });
+    crate::app::frontend::skirmish_shell_render::render_saved_game_loading(
+        state,
+        &mut encoder,
+        &output.texture,
+    )?;
+    state.renderer.fps_overlay.encode(
+        &state.renderer.gpu,
+        &state.renderer.batch_renderer,
+        &mut encoder,
+        &output.texture,
+    );
+    state
+        .renderer
+        .gpu
+        .queue
+        .submit(std::iter::once(encoder.finish()));
+    output.present(&state.renderer.gpu.queue);
+    Ok(true)
 }
 
 /// After the load gamemd switches to the game mode and shows black until
