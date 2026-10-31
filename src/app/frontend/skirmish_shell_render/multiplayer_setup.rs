@@ -663,6 +663,62 @@ pub(crate) fn render_multiplayer_setup(
                 super::wol_lobby::POPUP_DEPTHS.text,
             );
         }
+        // VERA asks a guest before downloading a map it does not have, on
+        // the art of VERA's other online-service boxes.
+        if view.map_offer_open
+            && let Some(offer) = ui.map_offer.as_ref()
+        {
+            use crate::ui::shell::geom::ShellScale;
+            let boxed = layout.map_offer;
+            let pressed = |id| ui.buttons.is_pressed(id);
+            let button_label = |text: String, rect: RectPx, pressed: bool| PaintLabel {
+                text: text.into(),
+                rect: crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed),
+                align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                rgb: SHELL_LABEL_TEXT_RGB,
+                path_a_reveal: None,
+            };
+            let labels = [
+                PaintLabel {
+                    text: offer.message.as_str().into(),
+                    rect: boxed.body,
+                    align: super::text::validation_modal_body_text_align(),
+                    rgb: SHELL_LABEL_TEXT_RGB,
+                    path_a_reveal: None,
+                },
+                button_label("Download".to_owned(), boxed.ok, pressed(MAP_OFFER_DOWNLOAD)),
+                button_label(
+                    localized_label(state, "GUI:Leave", "Leave"),
+                    boxed.cancel,
+                    pressed(MAP_OFFER_LEAVE),
+                ),
+            ];
+            let draw = shell_paint::paint_modal_shp(
+                font,
+                atlas
+                    .ra2_dialog_background
+                    .or_else(|| atlas.mode_two_dialog_background(None)),
+                type3_button_frames(atlas),
+                boxed.dialog,
+                &[
+                    ModalButton {
+                        rect: boxed.ok,
+                        pressed: pressed(MAP_OFFER_DOWNLOAD),
+                        enabled: true,
+                    },
+                    ModalButton {
+                        rect: boxed.cancel,
+                        pressed: pressed(MAP_OFFER_LEAVE),
+                        enabled: true,
+                    },
+                ],
+                &labels,
+                ShellScale::RETAIL,
+                super::wol_lobby::POPUP_DEPTHS,
+            );
+            overlay.controls.extend(draw.sprites);
+            overlay.texts.extend(draw.text);
+        }
     }
     if let Some(notice) = &ui.notice {
         // 5D3514 replaces the parent dialog with the shared empty shell backdrop.

@@ -26,6 +26,9 @@ pub(crate) const NEXT_ROWS: u16 = 0x7F01;
 /// VERA-only: the room's Game Options button and its popup's OK.
 pub(crate) const GAME_OPTIONS: u16 = 0x7F02;
 pub(crate) const GAME_OPTIONS_OK: u16 = 0x7F03;
+/// VERA-only: the missing-map offer's Download and Leave.
+pub(crate) const MAP_OFFER_DOWNLOAD: u16 = 0x7F04;
+pub(crate) const MAP_OFFER_LEAVE: u16 = 0x7F05;
 /// VERA-only combos of the rows past the resource's eight, one block of
 /// 0x20 ids per column.
 const ROOM_ROW_COMBOS: u16 = 0x7F20;
@@ -418,6 +421,8 @@ pub(crate) struct SetupView {
     pub(crate) ping_icons: [Option<u8>; MODERN_SETUP_ROWS],
     /// VERA's Game Options popup is open over the room.
     pub(crate) options_open: bool,
+    /// VERA's missing-map offer is open over the room.
+    pub(crate) map_offer_open: bool,
     pub(crate) mode_label: String,
     pub(crate) map_label: String,
     pub(crate) selected_map_index: Option<usize>,
@@ -435,7 +440,11 @@ impl SetupView {
         self.combos.iter().find(|combo| combo.id == id)
     }
     pub(crate) fn enabled(&self, id: u16) -> bool {
-        if matches!(id, CHAT | CHAT_LOG | GAME_OPTIONS_OK) || (id == EMOTE && self.dialog.wol()) {
+        if matches!(
+            id,
+            CHAT | CHAT_LOG | GAME_OPTIONS_OK | MAP_OFFER_DOWNLOAD | MAP_OFFER_LEAVE
+        ) || (id == EMOTE && self.dialog.wol())
+        {
             return true;
         }
         if self.locked {
@@ -490,6 +499,18 @@ pub(crate) enum SetupAction {
     GameOptions {
         open: bool,
     },
+    /// The missing-map offer's answer: download the room's map, or leave.
+    MapOffer {
+        download: bool,
+    },
+}
+
+/// VERA asks a guest before downloading a room map it does not have.
+#[derive(Debug, Clone)]
+pub(crate) struct MapOffer {
+    pub(crate) message: String,
+    /// Download was pressed; the map transfer takes it from here.
+    pub(crate) accepted: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -507,6 +528,8 @@ pub(crate) struct MultiplayerSetupState {
     accept_flash_started: Option<Instant>,
     /// VERA's Game Options popup is open; it takes the room's input.
     pub(crate) options_open: bool,
+    /// VERA's missing-map offer; open until answered, it takes the room's input.
+    pub(crate) map_offer: Option<MapOffer>,
 }
 impl Default for MultiplayerSetupState {
     fn default() -> Self {
@@ -527,6 +550,7 @@ impl Default for MultiplayerSetupState {
             focus_started: Instant::now(),
             accept_flash_started: None,
             options_open: false,
+            map_offer: None,
         }
     }
 }
@@ -635,6 +659,8 @@ pub(crate) struct MultiplayerSetupLayout {
     pub(crate) labels: Vec<(&'static str, RectPx)>,
     pub(crate) option_labels: [(&'static str, RectPx); 3],
     pub(crate) game_options: Option<GameOptionsLayout>,
+    /// VERA's missing-map offer, a screen-centred two-button box.
+    pub(crate) map_offer: crate::ui::shell::modal::QuitConfirmLayout,
     pub(crate) map_preview: RectPx,
     /// C9's hidden `0x71F` static ("Preview unavailable"): placed by
     /// `0x0060B950` alone, so it keeps its template place while `0x468`
@@ -772,6 +798,7 @@ impl MultiplayerSetupLayout {
             labels,
             option_labels,
             game_options: None,
+            map_offer: crate::ui::shell::modal::quit_confirm_layout(width, height),
             cooperative_description: rect(60, 98, 540, 143),
             no_preview: (dialog.wol() && !host).then(|| rect(650, 37, 145, 113)),
             map_preview: scale.scale_rect(anchor_rect(
@@ -875,6 +902,8 @@ impl MultiplayerSetupLayout {
             EMOTE => self.emote,
             NO_PREVIEW => self.no_preview,
             GAME_OPTIONS_OK => self.game_options.map(|popup| popup.ok),
+            MAP_OFFER_DOWNLOAD => Some(self.map_offer.ok),
+            MAP_OFFER_LEAVE => Some(self.map_offer.cancel),
             _ => self.page.button_rect(id),
         }
     }
@@ -885,6 +914,9 @@ impl MultiplayerSetupLayout {
             self.control_rect(*id)
                 .is_some_and(|rect| rect.contains(x, y))
         };
+        if view.map_offer_open {
+            return [MAP_OFFER_DOWNLOAD, MAP_OFFER_LEAVE].into_iter().find(hit);
+        }
         if view.options_open {
             return CHECKBOXES
                 .into_iter()
@@ -1107,6 +1139,7 @@ mod tests {
             row_icons: std::array::from_fn(|_| None),
             ping_icons: [None; MODERN_SETUP_ROWS],
             options_open: true,
+            map_offer_open: false,
             mode_label: String::new(),
             map_label: String::new(),
             selected_map_index: None,
@@ -1121,6 +1154,16 @@ mod tests {
         let (x, y) = center(popup_layout.chat);
         assert_eq!(popup_layout.control_at(&view, x, y), None);
         view.options_open = false;
+        // VERA's missing-map offer takes every press until it is answered.
+        view.map_offer_open = true;
+        let (x, y) = center(popup_layout.chat);
+        assert_eq!(popup_layout.control_at(&view, x, y), None);
+        let (x, y) = center(popup_layout.map_offer.ok);
+        assert_eq!(
+            popup_layout.control_at(&view, x, y),
+            Some(MAP_OFFER_DOWNLOAD)
+        );
+        view.map_offer_open = false;
         let (x, y) = center(popup_layout.checkboxes[0]);
         assert_ne!(popup_layout.control_at(&view, x, y), Some(CHECKBOXES[0]));
         view.dialog = dialog(true, SetupFlavor::Wol, false);

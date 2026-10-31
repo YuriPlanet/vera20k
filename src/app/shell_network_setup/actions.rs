@@ -103,6 +103,23 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             }
             Ok(())
         }
+        SetupAction::MapOffer { download } => {
+            let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
+                return;
+            };
+            ui.cancel_pointer();
+            if download {
+                if let Some(offer) = ui.map_offer.as_mut() {
+                    offer.accepted = true;
+                }
+            } else {
+                // Without the map the player cannot play here.
+                ui.map_offer = None;
+                apply_action(state, SetupAction::Back);
+            }
+            state.platform.window.request_redraw();
+            Ok(())
+        }
         SetupAction::Page => {
             crate::app::shell_wol::page::open_page_dialog(state);
             Ok(())

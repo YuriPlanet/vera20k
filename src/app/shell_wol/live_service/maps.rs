@@ -86,6 +86,9 @@ pub(super) struct Transfers {
     /// map library sends it with the host's settings when it already holds
     /// the map, before the host's upload has begun.
     available: Option<(String, String, usize)>,
+    /// VERA: a guest's download of a map it does not have waits for the
+    /// player's answer to the room's missing-map offer.
+    asking: bool,
 }
 
 pub(super) fn received_options(
@@ -113,6 +116,8 @@ pub(super) fn cancel(state: &mut AppState, service: &mut LiveService) {
     service.maps.available = None;
     service.maps.failed = false;
     service.maps.complete = false;
+    service.maps.asking = false;
+    crate::app::shell_network_setup::close_missing_map_offer(state);
     set_network_map_progress(state, None);
 }
 pub(super) fn poll(state: &mut AppState, service: &mut LiveService) {
@@ -157,6 +162,9 @@ impl Transfers {
         self.complete = false;
         self.transfer = None;
         self.next_resource = None;
+        if std::mem::take(&mut self.asking) {
+            crate::app::shell_network_setup::close_missing_map_offer(state);
+        }
         set_network_map_progress(state, None);
     }
     fn poll(&mut self, state: &mut AppState, service: &mut LiveService) -> Result<()> {
@@ -197,6 +205,9 @@ impl Transfers {
         );
         if self.key.as_ref() != Some(&key) {
             self.forget_other_available(&key);
+            if std::mem::take(&mut self.asking) {
+                crate::app::shell_network_setup::close_missing_map_offer(state);
+            }
             self.generation = self.generation.wrapping_add(1);
             self.transfer = None;
             self.complete = false;
@@ -213,6 +224,13 @@ impl Transfers {
         }
         if let Some(resource) = self.next_resource.take() {
             self.begin_resource(state, service, resource)?;
+        }
+        if self.asking {
+            if !crate::app::shell_network_setup::take_missing_map_download(state) {
+                return Ok(());
+            }
+            self.agreed_to_download();
+            set_network_map_progress(state, Some((0, metadata.byte_length.max(0) as u32)));
         }
         let Some(transfer) = self.transfer.as_mut() else {
             return Ok(());
@@ -471,7 +489,22 @@ impl Transfers {
                 self.accept_download(state, loaded, resource)?
             }
             http::Response::CachedMap { loaded: None, .. } => {
-                self.transfer.as_mut().unwrap().in_flight = false
+                self.transfer.as_mut().unwrap().in_flight = false;
+                if self.ask_before_download() {
+                    set_network_map_progress(state, None);
+                    let metadata = state
+                        .match_state
+                        .session
+                        .network_map_metadata()
+                        .expect("transfer metadata");
+                    let message = format!(
+                        "You don't have the map {} ({} players, {} KB). Download it to play in this game? It is saved in your Red Alert 2 folder.",
+                        metadata.display_name,
+                        metadata.player_capacity,
+                        (metadata.byte_length.max(0) as u32).div_ceil(1024)
+                    );
+                    crate::app::shell_network_setup::offer_missing_map(state, message);
+                }
             }
             http::Response::MapUploaded { completed, .. } => {
                 let transfer = self.transfer.as_mut().unwrap();
@@ -579,6 +612,30 @@ pub(super) fn available(
     }
 }
 
+impl Transfers {
+    /// VERA asks first: a guest whose cache misses the room's map holds its
+    /// download until the player agrees. Seeds and generated previews are
+    /// not maps the player keeps, so they never ask.
+    fn ask_before_download(&mut self) -> bool {
+        let ask = self.key.as_ref().is_some_and(|key| key.random.is_none())
+            && self.transfer.as_ref().is_some_and(|transfer| {
+                transfer.resource == TransferResource::Map
+                    && matches!(transfer.direction, Direction::Download)
+            });
+        self.asking |= ask;
+        ask
+    }
+    /// The player agreed: the download starts now, with its full deadline.
+    fn agreed_to_download(&mut self) {
+        self.asking = false;
+        if let Some(transfer) = self.transfer.as_mut() {
+            let now = Instant::now();
+            transfer.retry_at = now;
+            transfer.deadline = now + Duration::from_secs(300);
+        }
+    }
+}
+
 impl Transfer {
     /// A dropped connection retries, less often each time, until the
     /// transfer's deadline rather than failing on a short drop.
@@ -633,6 +690,43 @@ mod tests {
         };
         maps.forget_other_available(&other);
         assert!(maps.available.is_none());
+    }
+    #[test]
+    fn a_guest_missing_the_map_waits_for_its_answer_before_downloading() {
+        let now = Instant::now();
+        let transfer = |resource| Transfer {
+            resource,
+            direction: Direction::Download,
+            bytes: Vec::new(),
+            offset: 0,
+            in_flight: false,
+            retry_at: now,
+            deadline: now,
+            retries: 0,
+            directory: PathBuf::new(),
+        };
+        let mut maps = Transfers {
+            key: Some(Key {
+                room: "room".into(),
+                digest: "a".repeat(64),
+                total: 9,
+                effective_digest: "b".repeat(64),
+                random: None,
+            }),
+            transfer: Some(transfer(TransferResource::Map)),
+            ..Default::default()
+        };
+        assert!(maps.ask_before_download());
+        assert!(maps.asking);
+        maps.agreed_to_download();
+        assert!(!maps.asking);
+        assert!(maps.transfer.as_ref().unwrap().deadline > now);
+        // A host's upload never asks.
+        maps.transfer.as_mut().unwrap().direction = Direction::Upload;
+        assert!(!maps.ask_before_download());
+        // Nor does a generated map's seed.
+        maps.transfer = Some(transfer(TransferResource::Seed));
+        assert!(!maps.ask_before_download());
     }
     #[test]
     fn a_dropped_connection_keeps_a_map_transfer_retrying() {

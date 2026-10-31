@@ -1609,7 +1609,7 @@ fn choose_map_prompt_labels(
         });
     let body = match (prompt.kind, online) {
         (ChooseMapPromptKind::Download, Some((name, players, bytes))) => format!(
-            "Download {name} ({players} players, {} KB)? It is saved in your game folder.",
+            "Download {name} ({players} players, {} KB)? It is saved in your Red Alert 2 folder.",
             bytes.div_ceil(1024)
         ),
         (ChooseMapPromptKind::Downloading, Some((name, ..))) => format!("Downloading {name}..."),

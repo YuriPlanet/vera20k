@@ -1124,6 +1124,40 @@ fn leave_setup(state: &mut AppState) -> SetupDialog {
     dialog
 }
 
+/// VERA asks first: a guest's online room offers its map before the
+/// transfer downloads it (`shell_wol::live_service::maps`).
+pub(crate) fn offer_missing_map(state: &mut AppState, message: String) {
+    if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+        ui.map_offer = Some(crate::ui::multiplayer_setup::MapOffer {
+            message,
+            accepted: false,
+        });
+        ui.cancel_pointer();
+    }
+    state.platform.window.request_redraw();
+}
+
+/// The offer's map changed or its transfer ended; it is no longer asked.
+pub(crate) fn close_missing_map_offer(state: &mut AppState) {
+    if let Some(ui) = state.frontend.multiplayer_setup.as_mut()
+        && ui.map_offer.take().is_some()
+    {
+        state.platform.window.request_redraw();
+    }
+}
+
+/// Whether the player pressed Download; the offer closes when they did.
+pub(crate) fn take_missing_map_download(state: &mut AppState) -> bool {
+    let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
+        return false;
+    };
+    let accepted = ui.map_offer.as_ref().is_some_and(|offer| offer.accepted);
+    if accepted {
+        ui.map_offer = None;
+    }
+    accepted
+}
+
 /// The shared CE owner admitted its OK/default key.
 pub(crate) fn acknowledge_notice(state: &mut AppState) {
     if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {

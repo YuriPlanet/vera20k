@@ -331,7 +331,9 @@ not a generated map), the service sends `map_available` with the settings, befor
 upload, and members download it through the same `GET /v1/maps/…` chunks. When the
 service cannot read a correct copy, it sends no `map_available` and the host uploads as
 usual. A host that hears `map_available` for its current map stops uploading; an upload
-sent anyway is accepted. Other custom maps go from host to members as before.
+sent anyway is accepted. Other custom maps go from host to members as before. A member
+whose game lacks the room's map is asked first: Download fetches it and saves it in the
+game folder; Leave leaves the room.
 
 `GET /v1/library/catalog` lists every library map:
 `{revision,maps:[{sha256,name,file_name,players,byte_length,header}]}`, where `name` is
