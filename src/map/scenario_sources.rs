@@ -183,7 +183,22 @@ fn append_loose_yrm_records(
     records: &mut Vec<SkirmishScenarioRecord>,
     ra2_dir: &Path,
 ) -> Result<()> {
-    for (path, file_name) in loose_files_with_extension(ra2_dir, "yrm")? {
+    let mut files = loose_files_with_extension(ra2_dir, "yrm")?;
+    // VERA's downloaded maps follow; a game-folder file of the same name is
+    // the one a lookup finds (`source::local_map_path`).
+    if let Some(downloaded) = crate::map::source::downloaded_maps_dir()
+        && crate::util::file_system::exists(downloaded)
+    {
+        for (path, file_name) in loose_files_with_extension(downloaded, "yrm")? {
+            if !files
+                .iter()
+                .any(|(_, name)| name.eq_ignore_ascii_case(&file_name))
+            {
+                files.push((path, file_name));
+            }
+        }
+    }
+    for (path, file_name) in files {
         if let Some(record) = loose_yrm_record(&path, file_name, records.len()) {
             records.push(record);
         }

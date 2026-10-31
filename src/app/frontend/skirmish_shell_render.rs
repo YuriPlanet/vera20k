@@ -709,7 +709,13 @@ fn render_skirmish_shell_with_atlas(
             );
         }
         if let Some(prompt) = message_box {
-            push_choose_map_prompt_instances(&mut instances, atlas, layout.screen, prompt);
+            push_choose_map_prompt_instances(
+                &mut instances,
+                atlas,
+                layout.screen,
+                prompt,
+                crate::app::map_library::download_progress(state),
+            );
         }
         instances
     } else {

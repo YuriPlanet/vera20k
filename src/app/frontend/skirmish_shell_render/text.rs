@@ -1609,10 +1609,18 @@ fn choose_map_prompt_labels(
         });
     let body = match (prompt.kind, online) {
         (ChooseMapPromptKind::Download, Some((name, players, bytes))) => format!(
-            "Download {name} ({players} players, {} KB)? It is saved in your Red Alert 2 folder.",
+            "Download {name} ({players} players, {} KB)? It is saved in VERA20k's Maps folder.",
             bytes.div_ceil(1024)
         ),
-        (ChooseMapPromptKind::Downloading, Some((name, ..))) => format!("Downloading {name}..."),
+        (ChooseMapPromptKind::Downloading, Some((name, ..))) => {
+            match crate::app::map_library::download_progress(state) {
+                Some((received, length)) => format!(
+                    "Downloading {name}... {}%",
+                    received.min(length) * 100 / length.max(1)
+                ),
+                None => format!("Downloading {name}..."),
+            }
+        }
         (ChooseMapPromptKind::DownloadFailed, Some((name, ..))) => {
             format!("{name} could not be downloaded. Check your internet connection and try again.")
         }

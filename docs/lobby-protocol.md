@@ -332,8 +332,9 @@ upload, and members download it through the same `GET /v1/maps/…` chunks. When
 service cannot read a correct copy, it sends no `map_available` and the host uploads as
 usual. A host that hears `map_available` for its current map stops uploading; an upload
 sent anyway is accepted. Other custom maps go from host to members as before. A member
-whose game lacks the room's map is asked first: Download fetches it and saves it in the
-game folder; Leave leaves the room.
+whose game lacks the room's map is asked first: Download fetches it and saves it in
+VERA's own `Maps` folder (beside its settings, never the game folder); Leave leaves the
+room.
 
 `GET /v1/library/catalog` lists every library map:
 `{revision,maps:[{sha256,name,file_name,players,byte_length,header}]}`, where `name` is
@@ -344,10 +345,10 @@ and answers 304 to a matching `If-None-Match`. `GET /v1/library/maps/<sha256>`
 downloads one map, and `GET /v1/library/maps?search=<text>&players=<n>&page=<n>`
 searches them (newest first, 50 a page). All three are public, and the search is
 limited per network; the service keeps no player, session or address with a map. The game reads the catalog
-once a run. In an online room, Choose Map lists each map whose file name the game
-folder does not hold under its Online Maps row, starred maps first. Use Map on one asks
-to download it, checks its length and SHA-256, and saves it in the game folder, where
-it is an ordinary map in every game type's list.
+once a run. In an online room, Choose Map lists each map whose file name neither the
+game folder nor VERA's `Maps` folder holds under its Online Maps row, starred maps
+first. Use Map on one asks to download it, checks its length and SHA-256, and saves it
+in VERA's `Maps` folder, where it is an ordinary map in every game type's list.
 
 The existing shell leaves its game channel during the successful start. The service
 therefore retains the match admission independently of channel membership until

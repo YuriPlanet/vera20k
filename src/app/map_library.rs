@@ -12,7 +12,7 @@
 //! its row is read by the same record reader as a local map's.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use anyhow::{Context, Result, ensure};
@@ -51,6 +51,9 @@ struct Download {
     sha256: String,
     result: Receiver<Result<Vec<u8>>>,
     cancel: Arc<AtomicBool>,
+    /// Bytes received so far, of `length`, for the box's progress bar.
+    received: Arc<AtomicUsize>,
+    length: usize,
 }
 
 /// The library's catalog and the one download Choose Map may run.
@@ -125,6 +128,10 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
             }
         }
     }
+    if state.frontend.map_library.download.is_some() {
+        // The download box's bar follows the bytes as they arrive.
+        state.platform.window.request_redraw();
+    }
     let library = &state.frontend.map_library;
     (matches!(library.phase, Phase::NotStarted | Phase::Fetching(_)) || library.download.is_some())
         .then(|| Instant::now() + POLL_INTERVAL)
@@ -143,15 +150,16 @@ fn take_catalog(
     }
 }
 
-/// Adds a Choose Map row for each library map the game folder does not hold
-/// a file of that name for. Also run after the catalog is rebuilt.
+/// Adds a Choose Map row for each library map that neither the game folder
+/// nor VERA's maps folder holds a file of that name for. Also run after the
+/// catalog is rebuilt.
 pub(crate) fn append_online_records(state: &mut AppState) {
-    let Some(ra2_dir) = state
-        .platform
-        .game_config
-        .as_ref()
-        .map(|config| config.paths.ra2_dir.clone())
-    else {
+    let Some((ra2_dir, maps_dir)) = state.platform.game_config.as_ref().map(|config| {
+        (
+            config.paths.ra2_dir.clone(),
+            config.paths.downloaded_maps_dir(),
+        )
+    }) else {
         return;
     };
     let maps = &state.frontend.map_library.maps;
@@ -161,24 +169,28 @@ pub(crate) fn append_online_records(state: &mut AppState) {
     append_rows(
         &mut state.frontend.scenario_catalog.records_mut(),
         maps,
-        &ra2_dir,
+        &[&ra2_dir, &maps_dir],
     );
 }
 
 fn append_rows(
     records: &mut Vec<SkirmishScenarioRecord>,
     maps: &[OnlineMap],
-    ra2_dir: &std::path::Path,
+    folders: &[&std::path::Path],
 ) {
-    // The folder is listed once; names compare without case, as `find` does.
-    let mut taken: std::collections::HashSet<String> =
-        crate::util::case_insensitive_path::native_listing(ra2_dir)
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|path| path.file_name()?.to_str())
-            .chain(records.iter().map(|record| record.file_name.as_str()))
-            .map(str::to_ascii_lowercase)
-            .collect();
+    // Each folder is listed once; names compare without case, as `find` does.
+    let listed: Vec<std::path::PathBuf> = folders
+        .iter()
+        .flat_map(|folder| {
+            crate::util::case_insensitive_path::native_listing(folder).unwrap_or_default()
+        })
+        .collect();
+    let mut taken: std::collections::HashSet<String> = listed
+        .iter()
+        .filter_map(|path| path.file_name()?.to_str())
+        .chain(records.iter().map(|record| record.file_name.as_str()))
+        .map(str::to_ascii_lowercase)
+        .collect();
     for map in maps {
         if !taken.insert(map.file_name.to_ascii_lowercase()) {
             continue;
@@ -187,6 +199,19 @@ fn append_rows(
         record.source_ordinal = records.len();
         records.push(record);
     }
+}
+
+/// The running download's bytes received and its length.
+pub(crate) fn download_progress(state: &AppState) -> Option<(u64, u64)> {
+    state
+        .frontend
+        .map_library
+        .download
+        .as_ref()
+        .map(|download| {
+            let received = download.received.load(Ordering::Relaxed);
+            (received as u64, download.length as u64)
+        })
 }
 
 /// Whether this Choose Map shows the Online Maps row: online rooms only.
@@ -242,8 +267,8 @@ fn read_favorites(state: &AppState) -> std::collections::BTreeSet<String> {
         .unwrap_or_default()
 }
 
-/// Use Map on an Online row: ask to download it first. False for a map the
-/// game folder already holds.
+/// Use Map on an Online row: ask to download it first. False for a map
+/// already saved.
 pub(crate) fn prompt_download(state: &mut AppState, selection: ChooseMapSelection) -> bool {
     let online = selection
         .record_index
@@ -267,9 +292,12 @@ pub(crate) fn start_download(state: &mut AppState, selection: ChooseMapSelection
         return;
     };
     let cancel = Arc::new(AtomicBool::new(false));
+    let received = Arc::new(AtomicUsize::new(0));
     let sha256 = map.sha256.clone();
+    let length = map.byte_length;
+    let counter = Arc::clone(&received);
     let Some(result) = spawn("vera-map-download", Arc::clone(&cancel), move |cancel| {
-        fetch::map(&map.sha256, map.byte_length, cancel)
+        fetch::map(&map.sha256, map.byte_length, cancel, &counter)
     }) else {
         set_prompt(state, selection, ChooseMapPromptKind::DownloadFailed);
         return;
@@ -279,6 +307,8 @@ pub(crate) fn start_download(state: &mut AppState, selection: ChooseMapSelection
         sha256,
         result,
         cancel,
+        received,
+        length,
     });
     set_prompt(state, selection, ChooseMapPromptKind::Downloading);
 }
@@ -361,14 +391,19 @@ fn finish_download(state: &mut AppState, sha256: String, result: Result<Vec<u8>>
     }
 }
 
-/// Saves a downloaded map in the game folder and turns its Online row into
-/// the ordinary row of that file.
+/// Saves a downloaded map in VERA's maps folder and turns its Online row
+/// into the ordinary row of that file.
 fn keep_download(state: &mut AppState, selection: ChooseMapSelection, bytes: &[u8]) -> Result<()> {
-    let ra2_dir = state
+    let (ra2_dir, maps_dir) = state
         .platform
         .game_config
         .as_ref()
-        .map(|config| config.paths.ra2_dir.clone())
+        .map(|config| {
+            (
+                config.paths.ra2_dir.clone(),
+                config.paths.downloaded_maps_dir(),
+            )
+        })
         .context("no game folder")?;
     let index = selection.record_index.context("no map selected")?;
     let map = state
@@ -379,29 +414,31 @@ fn keep_download(state: &mut AppState, selection: ChooseMapSelection, bytes: &[u
         .and_then(|record| state.frontend.map_library.online_map(record))
         .cloned()
         .context("the map left the library")?;
-    let name = match crate::map::source::keep_received_map(&ra2_dir, &map.file_name, bytes)? {
-        Some(name) => name,
-        // A file of that name arrived meanwhile: use it only if it is this map.
-        None => {
-            let path = crate::util::case_insensitive_path::find(&ra2_dir, &map.file_name)
-                .context("the saved map is gone")?;
-            let existing = crate::util::file_system::read(&path)?;
-            ensure!(
-                crate::util::sha256::sha256_hex(&existing) == map.sha256,
-                "another map named {} is in the game folder",
-                map.file_name
-            );
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .context("the saved map has no file name")?
-                .to_owned()
-        }
-    };
+    let path =
+        match crate::map::source::keep_received_map(&maps_dir, &ra2_dir, &map.file_name, bytes)? {
+            Some(name) => maps_dir.join(name),
+            // A file of that name arrived meanwhile: use it only if it is this map.
+            None => {
+                let path = crate::map::source::local_map_path(&ra2_dir, &map.file_name)
+                    .context("the saved map is gone")?;
+                let existing = crate::util::file_system::read(&path)?;
+                ensure!(
+                    crate::util::sha256::sha256_hex(&existing) == map.sha256,
+                    "another map named {} is already saved",
+                    map.file_name
+                );
+                path
+            }
+        };
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("the saved map has no file name")?
+        .to_owned();
     let mut records = state.frontend.scenario_catalog.records_mut();
     let ordinal = records[index].source_ordinal;
-    let record =
-        crate::map::scenario_sources::loose_yrm_record(&ra2_dir.join(&name), name.clone(), ordinal)
-            .context("the saved map does not read as a map")?;
+    let record = crate::map::scenario_sources::loose_yrm_record(&path, name.clone(), ordinal)
+        .context("the saved map does not read as a map")?;
     records[index] = record;
     log::info!("Downloaded the online map {} as {name}", map.name);
     Ok(())
@@ -507,7 +544,7 @@ mod fetch {
 
     use std::io::Read;
     use std::path::Path;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use anyhow::{Context, Result, bail, ensure};
 
@@ -578,7 +615,12 @@ mod fetch {
 
     /// `GET /v1/library/maps/<sha256>`: the whole map, checked against its
     /// catalog length and SHA-256.
-    pub(super) fn map(sha256: &str, length: usize, cancel: &AtomicBool) -> Result<Vec<u8>> {
+    pub(super) fn map(
+        sha256: &str,
+        length: usize,
+        cancel: &AtomicBool,
+        received: &AtomicUsize,
+    ) -> Result<Vec<u8>> {
         let base = base()?;
         let url = format!("{base}/v1/library/maps/{sha256}");
         let mut response = agent(&base)
@@ -591,7 +633,11 @@ mod fetch {
             "{url} answered {}",
             response.status()
         );
-        let bytes = read_limited(response.body_mut().as_reader(), length as u64, Some(cancel))?;
+        let bytes = read_limited(
+            response.body_mut().as_reader(),
+            length as u64,
+            Some((cancel, received)),
+        )?;
         ensure!(
             bytes.len() == length && crate::util::sha256::sha256_hex(&bytes) == sha256,
             "the downloaded map differs from the library's"
@@ -599,15 +645,17 @@ mod fetch {
         Ok(bytes)
     }
 
+    /// Reads at most `limit` bytes; a map download can be cancelled and
+    /// counts what has arrived.
     fn read_limited(
         mut source: impl Read,
         limit: u64,
-        cancel: Option<&AtomicBool>,
+        download: Option<(&AtomicBool, &AtomicUsize)>,
     ) -> Result<Vec<u8>> {
         let mut bytes = Vec::new();
         let mut buffer = vec![0; 64 * 1024];
         loop {
-            if cancel.is_some_and(|cancel| cancel.load(Ordering::Relaxed)) {
+            if download.is_some_and(|(cancel, _)| cancel.load(Ordering::Relaxed)) {
                 bail!("the download was cancelled");
             }
             let count = source.read(&mut buffer)?;
@@ -616,6 +664,24 @@ mod fetch {
             }
             bytes.extend_from_slice(&buffer[..count]);
             ensure!(bytes.len() as u64 <= limit, "the answer is too large");
+            if let Some((_, received)) = download {
+                received.store(bytes.len(), Ordering::Relaxed);
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn a_map_download_counts_what_has_arrived() {
+            let cancel = AtomicBool::new(false);
+            let received = AtomicUsize::new(0);
+            let body = vec![7; 70_000];
+            let read = read_limited(&body[..], 70_000, Some((&cancel, &received))).unwrap();
+            assert_eq!(read.len(), 70_000);
+            assert_eq!(received.load(Ordering::Relaxed), 70_000);
         }
     }
 }
@@ -624,7 +690,7 @@ mod fetch {
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 mod fetch {
     use std::path::Path;
-    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::{AtomicBool, AtomicUsize};
 
     use anyhow::{Result, bail};
 
@@ -634,7 +700,12 @@ mod fetch {
 
     pub(super) fn forget(_cache: &Path) {}
 
-    pub(super) fn map(_sha256: &str, _length: usize, _cancel: &AtomicBool) -> Result<Vec<u8>> {
+    pub(super) fn map(
+        _sha256: &str,
+        _length: usize,
+        _cancel: &AtomicBool,
+        _received: &AtomicUsize,
+    ) -> Result<Vec<u8>> {
         bail!("the browser build has no map library")
     }
 }
@@ -707,7 +778,7 @@ mod tests {
         let mut records = vec![maps[0].record.clone()];
         records[0].source = SkirmishScenarioSource::Synthetic;
         records[0].file_name = "Other.yrm".into();
-        append_rows(&mut records, &maps, &dir);
+        append_rows(&mut records, &maps, &[&dir]);
         std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!(records.len(), 2);
         assert_eq!(records[1].display_name, "Twin Rivers");

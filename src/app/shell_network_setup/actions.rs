@@ -110,7 +110,7 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             ui.cancel_pointer();
             if download {
                 if let Some(offer) = ui.map_offer.as_mut() {
-                    offer.accepted = true;
+                    offer.downloading = true;
                 }
             } else {
                 // Without the map the player cannot play here.

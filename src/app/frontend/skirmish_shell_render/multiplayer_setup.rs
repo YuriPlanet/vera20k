@@ -663,34 +663,64 @@ pub(crate) fn render_multiplayer_setup(
                 super::wol_lobby::POPUP_DEPTHS.text,
             );
         }
-        // VERA asks a guest before downloading a map it does not have, on
-        // the art of VERA's other online-service boxes.
+        // VERA asks a guest before downloading a map it does not have, then
+        // shows the download, on the art of VERA's other online-service boxes.
         if view.map_offer_open
             && let Some(offer) = ui.map_offer.as_ref()
         {
             use crate::ui::shell::geom::ShellScale;
             let boxed = layout.map_offer;
             let pressed = |id| ui.buttons.is_pressed(id);
-            let button_label = |text: String, rect: RectPx, pressed: bool| PaintLabel {
+            let progress = offer
+                .downloading
+                .then(|| {
+                    state
+                        .frontend
+                        .network_setup_protocol
+                        .as_ref()
+                        .and_then(|protocol| protocol.transfer_progress())
+                })
+                .flatten()
+                .map(|(completed, total)| (u64::from(completed), u64::from(total)));
+            let body = match progress {
+                Some((completed, total)) => format!(
+                    "Downloading {}... {}%",
+                    offer.name,
+                    completed.min(total) * 100 / total.max(1)
+                ),
+                None if offer.downloading => format!("Downloading {}...", offer.name),
+                None => offer.message.clone(),
+            };
+            let button_label = |text: String, rect: RectPx, pressed: bool, rgb| PaintLabel {
                 text: text.into(),
                 rect: crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed),
                 align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-                rgb: SHELL_LABEL_TEXT_RGB,
+                rgb,
                 path_a_reveal: None,
             };
             let labels = [
                 PaintLabel {
-                    text: offer.message.as_str().into(),
+                    text: body.into(),
                     rect: boxed.body,
                     align: super::text::validation_modal_body_text_align(),
                     rgb: SHELL_LABEL_TEXT_RGB,
                     path_a_reveal: None,
                 },
-                button_label("Download".to_owned(), boxed.ok, pressed(MAP_OFFER_DOWNLOAD)),
+                button_label(
+                    "Download".to_owned(),
+                    boxed.ok,
+                    pressed(MAP_OFFER_DOWNLOAD),
+                    if offer.downloading {
+                        SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
+                    } else {
+                        SHELL_LABEL_TEXT_RGB
+                    },
+                ),
                 button_label(
                     localized_label(state, "GUI:Leave", "Leave"),
                     boxed.cancel,
                     pressed(MAP_OFFER_LEAVE),
+                    SHELL_LABEL_TEXT_RGB,
                 ),
             ];
             let draw = shell_paint::paint_modal_shp(
@@ -704,7 +734,7 @@ pub(crate) fn render_multiplayer_setup(
                     ModalButton {
                         rect: boxed.ok,
                         pressed: pressed(MAP_OFFER_DOWNLOAD),
-                        enabled: true,
+                        enabled: !offer.downloading,
                     },
                     ModalButton {
                         rect: boxed.cancel,
@@ -718,6 +748,15 @@ pub(crate) fn render_multiplayer_setup(
             );
             overlay.controls.extend(draw.sprites);
             overlay.texts.extend(draw.text);
+            if let Some(progress) = progress {
+                super::modals::push_download_progress_bar(
+                    &mut overlay.controls,
+                    atlas,
+                    boxed.body,
+                    progress,
+                    super::wol_lobby::POPUP_DEPTHS.button,
+                );
+            }
         }
     }
     if let Some(notice) = &ui.notice {

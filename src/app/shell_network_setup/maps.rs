@@ -425,7 +425,7 @@ pub(crate) fn accept_transfer_asset(
     Ok(())
 }
 
-/// A received custom map stays for later: it is saved into the game folder
+/// A received custom map stays for later: it is saved into VERA's maps folder
 /// and listed in Choose Map, so the player can host it. Best effort; the room
 /// never waits on it, and a file the player already has is left alone.
 fn keep_for_choose_map(
@@ -437,12 +437,12 @@ fn keep_for_choose_map(
     let crate::map::source::LoadedMapSource::Loose { path, .. } = source else {
         return;
     };
-    let Some(ra2_dir) = state
-        .platform
-        .game_config
-        .as_ref()
-        .map(|config| config.paths.ra2_dir.clone())
-    else {
+    let Some((ra2_dir, maps_dir)) = state.platform.game_config.as_ref().map(|config| {
+        (
+            config.paths.ra2_dir.clone(),
+            config.paths.downloaded_maps_dir(),
+        )
+    }) else {
         return;
     };
     let kept = crate::util::file_system::read(path)
@@ -452,7 +452,7 @@ fn keep_for_choose_map(
                 crate::util::sha256::sha256_hex(&bytes) == digest,
                 "received map changed"
             );
-            crate::map::source::keep_received_map(&ra2_dir, host_file, &bytes)
+            crate::map::source::keep_received_map(&maps_dir, &ra2_dir, host_file, &bytes)
         });
     let name = match kept {
         Ok(Some(name)) => name,
@@ -476,7 +476,7 @@ fn keep_for_choose_map(
     }
     let ordinal = online.map_or(records.len(), |index| records[index].source_ordinal);
     if let Some(record) =
-        crate::map::scenario_sources::loose_yrm_record(&ra2_dir.join(&name), name.clone(), ordinal)
+        crate::map::scenario_sources::loose_yrm_record(&maps_dir.join(&name), name.clone(), ordinal)
     {
         log::info!("Kept the received map {host_file} as {name} for Choose Map");
         match online {

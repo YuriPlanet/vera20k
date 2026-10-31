@@ -226,7 +226,7 @@ impl Transfers {
             self.begin_resource(state, service, resource)?;
         }
         if self.asking {
-            if !crate::app::shell_network_setup::take_missing_map_download(state) {
+            if !crate::app::shell_network_setup::missing_map_download_agreed(state) {
                 return Ok(());
             }
             self.agreed_to_download();
@@ -431,6 +431,8 @@ impl Transfers {
             .to_owned();
         accept_network_map_source(state, source, effective)?;
         self.complete = true;
+        // The map arrived: the offer showing its download closes.
+        crate::app::shell_network_setup::close_missing_map_offer(state);
         Ok(())
     }
     fn accept_download(
@@ -498,12 +500,13 @@ impl Transfers {
                         .network_map_metadata()
                         .expect("transfer metadata");
                     let message = format!(
-                        "You don't have the map {} ({} players, {} KB). Download it to play in this game? It is saved in your Red Alert 2 folder.",
+                        "You don't have the map {} ({} players, {} KB). Download it to play in this game? It is saved in VERA20k's Maps folder.",
                         metadata.display_name,
                         metadata.player_capacity,
                         (metadata.byte_length.max(0) as u32).div_ceil(1024)
                     );
-                    crate::app::shell_network_setup::offer_missing_map(state, message);
+                    let name = metadata.display_name.clone();
+                    crate::app::shell_network_setup::offer_missing_map(state, name, message);
                 }
             }
             http::Response::MapUploaded { completed, .. } => {

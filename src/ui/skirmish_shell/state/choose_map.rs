@@ -51,7 +51,7 @@ pub enum ChooseMapPromptKind {
     /// OK goes on with the selection; Cancel keeps the chooser.
     EjectAi,
     /// VERA: the chosen map is only in the online map library. Download
-    /// saves it in the game folder and goes on with the selection.
+    /// saves it in VERA's maps folder and goes on with the selection.
     Download,
     /// Its download is running; only Cancel works.
     Downloading,

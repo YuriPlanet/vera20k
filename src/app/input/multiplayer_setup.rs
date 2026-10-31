@@ -155,9 +155,9 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     // inert; Enter appends CRLF before shared5EDD00/5DE360 submission.
     // VERA's Game Options popup takes the keys first and closes on Escape
     // or Enter.
-    let action = if ui.map_offer.as_ref().is_some_and(|offer| !offer.accepted) {
+    let action = if let Some(offer) = &ui.map_offer {
         match code {
-            Some(KeyCode::Enter | KeyCode::NumpadEnter) => {
+            Some(KeyCode::Enter | KeyCode::NumpadEnter) if !offer.downloading => {
                 Some(SetupAction::MapOffer { download: true })
             }
             Some(KeyCode::Escape) => Some(SetupAction::MapOffer { download: false }),

@@ -157,19 +157,39 @@ struct MapInput<'a> {
     source: LoadedMapSource,
 }
 
-fn local_map_path(ra2_dir: &Path, map_name: &str) -> Result<PathBuf> {
+static DOWNLOADED_MAPS_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// VERA's folder for maps it downloads or receives (`PathsConfig::
+/// downloaded_maps_dir`), set once at start. Map lookups and Choose Map's
+/// scan read it after the game folder; without it only the game folder counts.
+pub fn set_downloaded_maps_dir(dir: PathBuf) {
+    let _ = DOWNLOADED_MAPS_DIR.set(dir);
+}
+
+pub fn downloaded_maps_dir() -> Option<&'static Path> {
+    DOWNLOADED_MAPS_DIR.get().map(PathBuf::as_path)
+}
+
+/// A map file by name: the game folder first, then VERA's downloaded maps.
+pub fn local_map_path(ra2_dir: &Path, map_name: &str) -> Result<PathBuf> {
+    local_map_path_in(ra2_dir, downloaded_maps_dir(), map_name)
+}
+
+fn local_map_path_in(ra2_dir: &Path, downloaded: Option<&Path>, map_name: &str) -> Result<PathBuf> {
     let direct = PathBuf::from(map_name);
     if direct.is_absolute() && crate::util::file_system::exists(&direct) {
         return Ok(direct);
     }
-    let in_ra2 = ra2_dir.join(map_name);
-    if crate::util::file_system::exists(&in_ra2) {
-        return Ok(in_ra2);
-    }
-    for ext in MAP_EXTENSIONS {
-        let candidate = ra2_dir.join(format!("{map_name}.{ext}"));
-        if crate::util::file_system::exists(&candidate) {
-            return Ok(candidate);
+    for root in std::iter::once(ra2_dir).chain(downloaded) {
+        let exact = root.join(map_name);
+        if crate::util::file_system::exists(&exact) {
+            return Ok(exact);
+        }
+        for ext in MAP_EXTENSIONS {
+            let candidate = root.join(format!("{map_name}.{ext}"));
+            if crate::util::file_system::exists(&candidate) {
+                return Ok(candidate);
+            }
         }
     }
     Err(anyhow::anyhow!(
@@ -689,24 +709,34 @@ pub fn kept_map_file_name(host_file: &str) -> Result<String> {
     Ok(format!("{stem}.yrm"))
 }
 
-/// Keeps a map received in a room in the game folder as `<stem>.yrm`, where
-/// Choose Map lists loose `.yrm` files, so the player can host it later.
-/// `host_file` is the host's logical map name and `bytes` the verified file.
-/// Returns the new file's name, or `None` when a file of that name is
-/// already there: a player's own file is never replaced.
-pub fn keep_received_map(ra2_dir: &Path, host_file: &str, bytes: &[u8]) -> Result<Option<String>> {
+/// Keeps a map downloaded or received in a room as `<stem>.yrm` in VERA's
+/// `maps_dir`, never the retail installation; Choose Map lists it from there,
+/// so the player can host it later. `host_file` is the host's logical map
+/// name and `bytes` the verified file. Returns the new file's name, or `None`
+/// when either folder already has a file of that name: a player's own file
+/// is never replaced, and a game-folder file would be found first.
+pub fn keep_received_map(
+    maps_dir: &Path,
+    ra2_dir: &Path,
+    host_file: &str,
+    bytes: &[u8],
+) -> Result<Option<String>> {
     let name = kept_map_file_name(host_file)?;
-    if crate::util::case_insensitive_path::find(ra2_dir, &name).is_some() {
+    if [ra2_dir, maps_dir]
+        .into_iter()
+        .any(|dir| crate::util::case_insensitive_path::find(dir, &name).is_some())
+    {
         return Ok(None);
     }
+    crate::util::file_system::create_dir_all(maps_dir)?;
     #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
-    crate::util::file_system::write_new(ra2_dir.join(&name), bytes)?;
+    crate::util::file_system::write_new(maps_dir.join(&name), bytes)?;
     #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
     {
         // Written beside it first, so Choose Map never reads half a file.
-        let stage = ra2_dir.join(format!(".{name}.part"));
+        let stage = maps_dir.join(format!(".{name}.part"));
         let result = std::fs::write(&stage, bytes)
-            .and_then(|()| std::fs::rename(&stage, ra2_dir.join(&name)));
+            .and_then(|()| std::fs::rename(&stage, maps_dir.join(&name)));
         if result.is_err() {
             let _ = std::fs::remove_file(&stage);
         }
@@ -884,31 +914,47 @@ mod tests {
     use super::test_support::{TestDirectory, make_new_format_mix_bytes};
 
     #[test]
-    fn a_received_map_is_kept_as_a_choose_map_yrm_without_replacing_the_players_file() {
-        let game = TestDirectory::new("keep-received");
+    fn a_received_map_is_kept_in_veras_folder_without_replacing_the_players_file() {
+        let game = TestDirectory::new("keep-received-game");
+        let vera = TestDirectory::new("keep-received-vera");
+        let maps = vera.path().join("Maps");
         let map = b"[Basic]\nName=Frozen Lakes\nGameMode=standard\n";
         assert_eq!(
-            keep_received_map(game.path(), "Custom/FrozenLakes.map", map).unwrap(),
+            keep_received_map(&maps, game.path(), "Custom/FrozenLakes.map", map).unwrap(),
             Some("FrozenLakes.yrm".to_owned())
         );
+        assert!(
+            !game.path().join("FrozenLakes.yrm").exists(),
+            "nothing goes into the game folder"
+        );
+        // Found by name after the game folder, as every map lookup does.
+        assert_eq!(
+            local_map_path_in(game.path(), Some(&maps), "FrozenLakes.yrm").unwrap(),
+            maps.join("FrozenLakes.yrm")
+        );
         let record = crate::map::scenario_sources::loose_yrm_record(
-            &game.path().join("FrozenLakes.yrm"),
+            &maps.join("FrozenLakes.yrm"),
             "FrozenLakes.yrm".to_owned(),
             0,
         )
         .expect("Choose Map reads the kept map");
         assert_eq!(record.display_name, "Frozen Lakes");
-        // The player's own file of that name, in any case, stays as it is.
+        // The player's own file of that name, in either folder and any case,
+        // stays as it is.
         game.write("lakes.YRM", b"[Basic]\nName=Mine\n");
         assert_eq!(
-            keep_received_map(game.path(), "Lakes.yrm", map).unwrap(),
+            keep_received_map(&maps, game.path(), "Lakes.yrm", map).unwrap(),
             None
         );
         assert_eq!(
             std::fs::read(game.path().join("lakes.YRM")).unwrap(),
             b"[Basic]\nName=Mine\n"
         );
-        assert!(keep_received_map(game.path(), "../Escape.yrm", map).is_err());
+        assert_eq!(
+            keep_received_map(&maps, game.path(), "frozenlakes.YRM", map).unwrap(),
+            None
+        );
+        assert!(keep_received_map(&maps, game.path(), "../Escape.yrm", map).is_err());
     }
     use super::*;
     use crate::assets::mix_hash::mix_hash;

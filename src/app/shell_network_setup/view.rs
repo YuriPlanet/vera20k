@@ -553,8 +553,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             .frontend
             .multiplayer_setup
             .as_ref()
-            .and_then(|ui| ui.map_offer.as_ref())
-            .is_some_and(|offer| !offer.accepted),
+            .is_some_and(|ui| ui.map_offer.is_some()),
         mode_label: label(
             state,
             if launch.selected_map_file.is_none() {

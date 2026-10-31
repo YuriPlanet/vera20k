@@ -505,12 +505,14 @@ pub(crate) enum SetupAction {
     },
 }
 
-/// VERA asks a guest before downloading a room map it does not have.
+/// VERA asks a guest before downloading a room map it does not have, then
+/// shows the download's progress until the map arrives.
 #[derive(Debug, Clone)]
 pub(crate) struct MapOffer {
+    pub(crate) name: String,
     pub(crate) message: String,
     /// Download was pressed; the map transfer takes it from here.
-    pub(crate) accepted: bool,
+    pub(crate) downloading: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -528,7 +530,8 @@ pub(crate) struct MultiplayerSetupState {
     accept_flash_started: Option<Instant>,
     /// VERA's Game Options popup is open; it takes the room's input.
     pub(crate) options_open: bool,
-    /// VERA's missing-map offer; open until answered, it takes the room's input.
+    /// VERA's missing-map offer; open until its map arrives, it takes the
+    /// room's input.
     pub(crate) map_offer: Option<MapOffer>,
 }
 impl Default for MultiplayerSetupState {

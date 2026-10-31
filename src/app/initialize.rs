@@ -353,6 +353,9 @@ impl App {
                 Ok(config)
             });
         let game_config = startup_asset_or_error(game_config, &mut main_menu_shell_error);
+        if let Some(config) = &game_config {
+            crate::map::source::set_downloaded_maps_dir(config.paths.downloaded_maps_dir());
+        }
         let startup_files = StartupFiles {
             config_file: GameConfig::path(),
             problem: startup_problem,
