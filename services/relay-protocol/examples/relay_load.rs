@@ -402,7 +402,8 @@ fn drive(
                                 OrderEntry::Batch { sequence, .. }
                                 | OrderEntry::FrameEnd { sequence, .. }
                                 | OrderEntry::Departure { sequence, .. }
-                                | OrderEntry::Pause { sequence, .. } => *sequence,
+                                | OrderEntry::Pause { sequence, .. }
+                                | OrderEntry::Rate { sequence, .. } => *sequence,
                             };
                             if sequence < player.next_sequence || player.ahead.contains(&sequence) {
                                 continue;

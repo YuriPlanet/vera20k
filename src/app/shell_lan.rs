@@ -21,6 +21,23 @@ const CANCEL: u16 = 2;
 // Native CDTimerClass uses timeGetTime()/16, including the 600-bucket join
 // timer AC0230/AC0238 armed by005DF410. It is independent of simulation ticks.
 const JOIN_TIMEOUT: Duration = Duration::from_millis(600 * 16);
+/// VERA: how long a guest back from a match watches for its host's room.
+const REJOIN_WINDOW: Duration = Duration::from_secs(120);
+
+/// VERA: how a player of VERA's LAN room returns to it after the match. The
+/// room lives in its host's process, so the host opens the same room again
+/// and each guest joins it once its host advertises it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum LanRematch {
+    Host,
+    Guest { host: String },
+}
+
+/// A returning guest's host and how long it is watched for.
+struct Rejoin {
+    host: String,
+    until: Instant,
+}
 const RESERVED_LABELS: [&str; 7] = [
     "GUI:Open",
     "GUI:Closed",
@@ -92,6 +109,7 @@ pub(crate) struct LanShellRuntime {
     /// VERA's Create Game box while it is up: the room's limits.
     pub(crate) create: Option<RoomLimitsPicker>,
     pending_join: Option<PendingJoin>,
+    rejoin: Option<Rejoin>,
     requests: Vec<LanServiceRequest>,
 }
 
@@ -102,12 +120,45 @@ impl LanShellRuntime {
             modal: None,
             create: None,
             pending_join: None,
+            rejoin: None,
             requests: vec![LanServiceRequest::Refresh],
         }
     }
 
     pub(crate) fn take_service_requests(&mut self) -> Vec<LanServiceRequest> {
         std::mem::take(&mut self.requests)
+    }
+
+    /// Join the returning guest's host room the way Join would, once it is
+    /// listed open. Returns the host's name when the window ended first.
+    fn rejoin_host(&mut self, observe: bool, now: Instant) -> Option<String> {
+        let rejoin = self.rejoin.as_ref()?;
+        if now >= rejoin.until {
+            return self.rejoin.take().map(|rejoin| rejoin.host);
+        }
+        if self.pending_join.is_some() || self.create.is_some() || self.modal.is_some() {
+            return None;
+        }
+        let Some(game_id) = self
+            .lobby
+            .games
+            .iter()
+            .find(|game| game.open && game.name.eq_ignore_ascii_case(&rejoin.host))
+            .map(|game| game.id)
+        else {
+            return None;
+        };
+        self.rejoin = None;
+        self.pending_join = Some(PendingJoin {
+            game_id,
+            observe,
+            expires: now + JOIN_TIMEOUT,
+            canceling: false,
+        });
+        self.lobby.selection_enabled = false;
+        self.requests
+            .push(LanServiceRequest::Join { game_id, observe });
+        None
     }
 
     pub(crate) fn pending_game(&self) -> Option<u64> {
@@ -179,6 +230,43 @@ impl App {
             .reset_to(DialogId(0xE2), false);
         state.frontend.shell_first_paint_slide = None;
         state.platform.window.request_redraw();
+    }
+
+    /// After a match: a new BB as always, which the host of VERA's room
+    /// leaves at once for the same room again, and where its guests wait to
+    /// join it.
+    pub(crate) fn reopen_lan_room(state: &mut AppState) {
+        let rematch = state.frontend.lan_rematch.take();
+        Self::open_lan_lobby(state);
+        if state.frontend.lan.is_none() {
+            return;
+        }
+        match rematch {
+            Some(LanRematch::Host) if !crate::app::lan_service::unavailable(state) => {
+                let observe = state
+                    .frontend
+                    .multiplayer_shell_runtime
+                    .lan_create_observer();
+                Self::commit_lan_create(state, observe);
+            }
+            Some(LanRematch::Guest { host }) => {
+                let text = format!("Waiting for {host} to open the game room again...");
+                if let Some(runtime) = state.frontend.lan.as_mut() {
+                    runtime.rejoin = Some(Rejoin {
+                        host,
+                        until: Instant::now() + REJOIN_WINDOW,
+                    });
+                }
+                append_chat(
+                    state,
+                    LanChatLine {
+                        text: text.encode_utf16().collect(),
+                        color: u32::MAX,
+                    },
+                );
+            }
+            _ => {}
+        }
     }
 
     pub(crate) fn commit_lan_create(state: &mut AppState, observe: bool) {
@@ -407,6 +495,14 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
             return;
         }
     }
+    if matches!(
+        action,
+        LanLobbyAction::Create { .. } | LanLobbyAction::Join { .. }
+    ) && let Some(runtime) = state.frontend.lan.as_mut()
+    {
+        // The player chose another room: no longer wait for the old host.
+        runtime.rejoin = None;
+    }
     match action {
         // VERA's lobby asks for its room's limits first.
         LanLobbyAction::Create { observe: _ } if !state.frontend.native_shell_ui => {
@@ -522,6 +618,7 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
             if let Some(action) = selection {
                 dispatch(state, action);
             }
+            rejoin_host(state);
         }
         LanServiceEvent::Players { game_id, players } => {
             if runtime.lobby.selected_game().map(|game| game.id) == game_id {
@@ -569,6 +666,27 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
         }
     }
     state.platform.window.request_redraw();
+}
+
+/// VERA: a returning guest joins its host's room as soon as it is listed.
+fn rejoin_host(state: &mut AppState) {
+    let observe = state.frontend.multiplayer_shell_runtime.lan_observer();
+    let Some(host) = state
+        .frontend
+        .lan
+        .as_mut()
+        .and_then(|runtime| runtime.rejoin_host(observe, Instant::now()))
+    else {
+        return;
+    };
+    let text = format!("{host} did not open the game room again.");
+    append_chat(
+        state,
+        LanChatLine {
+            text: text.encode_utf16().collect(),
+            color: u32::MAX,
+        },
+    );
 }
 
 /// Type1 discovery5E0218..5E04E0. The existing discovery projection owns the
@@ -1126,6 +1244,48 @@ mod tests {
         lobby.games[0].open = true;
         assert_eq!(join_error(&lobby, "<open>", &[]), None);
     }
+    #[test]
+    fn a_returning_guest_joins_its_host_room_once_it_is_open() {
+        let now = Instant::now();
+        let mut runtime = LanShellRuntime::new("Guest", false);
+        runtime.take_service_requests();
+        runtime.rejoin = Some(Rejoin {
+            host: "Host".into(),
+            until: now + REJOIN_WINDOW,
+        });
+        let game = |id, name: &str, open| LanGameRow {
+            id,
+            name: name.into(),
+            open,
+        };
+        runtime
+            .lobby
+            .replace_games(vec![game(8, "Other", true), game(7, "host", false)]);
+        assert_eq!(runtime.rejoin_host(false, now), None);
+        assert_eq!(runtime.pending_game(), None);
+        runtime.lobby.replace_games(vec![game(7, "host", true)]);
+        runtime.rejoin_host(true, now);
+        assert_eq!(runtime.pending_game(), Some(7));
+        assert!(matches!(
+            runtime.take_service_requests().as_slice(),
+            [LanServiceRequest::Join {
+                game_id: 7,
+                observe: true
+            }]
+        ));
+        assert!(runtime.rejoin.is_none());
+
+        let mut late = LanShellRuntime::new("Guest", false);
+        late.rejoin = Some(Rejoin {
+            host: "Host".into(),
+            until: now,
+        });
+        late.lobby.replace_games(vec![game(7, "Host", true)]);
+        assert_eq!(late.rejoin_host(false, now).as_deref(), Some("Host"));
+        assert_eq!(late.pending_game(), None);
+        assert!(late.rejoin.is_none());
+    }
+
     #[test]
     fn pending_join_disables_admission_until_a_service_result_releases_it() {
         let mut runtime = LanShellRuntime::new("Tester", false);

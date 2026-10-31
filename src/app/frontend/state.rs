@@ -147,6 +147,8 @@ pub(crate) struct FrontendState {
     pub(crate) multiplayer_setup: Option<crate::ui::multiplayer_setup::MultiplayerSetupState>,
     /// The host's last Create Game choices, which its next VERA room takes.
     pub(crate) room_limits: crate::ui::room_limits::RoomLimits,
+    /// VERA: how this player returns to its LAN room after the match.
+    pub(crate) lan_rematch: Option<crate::app::shell_lan::LanRematch>,
     /// Options' Network child D7, retained until its teardown completes.
     pub(crate) network_options: Option<crate::ui::network_options::NetworkOptionsState>,
     /// `0x10E`'s background and icon art (`0x0072C7E0`).

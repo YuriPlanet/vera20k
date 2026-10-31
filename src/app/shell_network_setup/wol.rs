@@ -713,6 +713,8 @@ pub(super) fn verify_connected(state: &mut AppState, node: usize) -> anyhow::Res
 /// (`0x00794F30..0x00794F44`), leaves the game channel (API+0x24 at
 /// `0x007955F1`) and starts the match; 2 opens `0xD0` with
 /// `TXT_SCENARIOS_DO_NOT_MATCH` over `0x130` first; 1 and 2 abort.
+/// VERA's own room (not the original-style one) stays joined instead, so
+/// its players come back to it after the match.
 pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()> {
     let verify = verify_mut(state)?;
     anyhow::ensure!(verify.mismatch.is_none(), "the mismatch box is up");
@@ -735,9 +737,21 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
                 super::commit_start(state, seed);
                 return Ok(());
             }
-            protocol.requests.push(NetworkSetupRequest::Leave);
+            let quick_match = super::quick_match(state);
+            let back_to_room = super::dialog(state).modern && !quick_match;
+            let protocol = state
+                .frontend
+                .network_setup_protocol
+                .as_mut()
+                .expect("setup owns protocol");
+            if !back_to_room {
+                protocol.requests.push(NetworkSetupRequest::Leave);
+            }
+            if let Some(visit) = state.frontend.wol.as_mut() {
+                visit.back_to_room = back_to_room;
+            }
             state.frontend.skirmish_preview_texture = None;
-            if super::quick_match(state) {
+            if quick_match {
                 // 0x130 closes without a slide and no setup dialog exists.
                 crate::app::shell_wol::quick_match::start_leave(state);
                 super::commit_start(state, seed);

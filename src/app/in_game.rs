@@ -611,6 +611,7 @@ impl App {
         }
         // Remote EXIT senders run DestroyConnection first (0x0064C9B1).
         crate::app::match_runtime::network_match::drain_departures(state);
+        crate::app::match_runtime::network_match::post_speed_changes(state);
         let local_owner = crate::app::input::commands::preferred_local_owner(state);
         let local_owner_id = local_owner.as_deref().and_then(|owner| {
             state

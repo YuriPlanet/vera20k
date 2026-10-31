@@ -16,7 +16,7 @@ mod sequenced;
 mod startup;
 mod timing;
 pub use sequenced::{
-    CommandDeliveryTrace, MultiplayerPauseStatus, SequencedError, SequencedTiming,
+    CommandDeliveryTrace, MatchSpeedChange, MultiplayerPauseStatus, SequencedError, SequencedTiming,
 };
 pub use startup::{StartupAgreement, StartupError};
 
@@ -267,6 +267,21 @@ impl LiveCommandSession {
             .map_or_else(Vec::new, |session| session.take_lost())
     }
 
+    /// The relay's rate changes in frames dispatched so far.
+    pub fn take_speed_changes(&mut self) -> Vec<MatchSpeedChange> {
+        self.sequenced
+            .as_mut()
+            .map_or_else(Vec::new, |session| session.take_speed_changes())
+    }
+
+    /// A hidden window's frames may be throttled by its system, so it never
+    /// reports falling behind the relay's clock.
+    pub fn set_presentation_hidden(&mut self, hidden: bool) {
+        if let Some(session) = &mut self.sequenced {
+            session.set_presentation_hidden(hidden);
+        }
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn mark_sequenced_started_for_test(&mut self) {
         if let Some(session) = &mut self.sequenced {
@@ -297,8 +312,10 @@ impl LiveCommandSession {
             .map_or(0, |session| session.frontier())
     }
 
-    pub fn fixed_frames_per_second(&self) -> Option<u16> {
-        self.sequenced.as_ref().map(|session| session.fps)
+    /// The relay's current frame rate: the match's own, or slower while a
+    /// player's PC cannot keep up. The simulation keeps the match's own.
+    pub fn relay_frames_per_second(&self) -> Option<u16> {
+        self.sequenced.as_ref().map(|session| session.pace_fps)
     }
 
     /// App-only pacing observation. Availability and canonical dispatch remain
