@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, VecDeque};
 
 use crate::app::AppState;
 use crate::app::match_runtime::session::{MatchSession, SessionMode, WallBucketTimer};
-use crate::net::live_commands::{LiveCommandMode, LiveWaitInfo, LiveWaitKind};
+use crate::net::live_commands::{LiveCommandMode, LiveWaitInfo, LiveWaitKind, MatchSpeedChange};
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
 use crate::ui::lan_shell::LanChatLine;
@@ -27,7 +27,7 @@ pub(crate) fn frame_budget(state: &AppState) -> Option<(u16, u32)> {
         .match_state
         .live_network
         .as_ref()
-        .and_then(|live| live.fixed_frames_per_second())
+        .and_then(|live| live.relay_frames_per_second())
     {
         return Some((fps, 0));
     }
@@ -271,6 +271,38 @@ pub(crate) fn drain_departures(state: &mut AppState) {
             continue;
         };
         kick(state, source, ConnectionError::Lost);
+    }
+}
+
+/// The relay's rate changes in frames dispatched so far, one chat line each.
+/// The relay slows a match whose player's PC cannot keep up; native lockstep
+/// slows to its slowest player without a line.
+pub(crate) fn post_speed_changes(state: &mut AppState) {
+    let changes = state
+        .match_state
+        .live_network
+        .as_mut()
+        .map(|live| live.take_speed_changes())
+        .unwrap_or_default();
+    for change in changes {
+        let text = match change {
+            MatchSpeedChange::SlowedBy(house) => {
+                let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+                    return;
+                };
+                let name = house_source(
+                    &state.match_state.session,
+                    &runtime.simulation,
+                    i32::from(house),
+                )
+                .map(|source| participant_name(&state.match_state.session, source))
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| "A player".to_owned());
+                format!("{name} is slowing the game down.")
+            }
+            MatchSpeedChange::Normal => "Game speed is back to normal.".to_owned(),
+        };
+        crate::app::input::messages::post_match_speed(state, &text);
     }
 }
 

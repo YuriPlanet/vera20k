@@ -24,7 +24,7 @@ mod sequenced;
 pub use sequenced::federation::{MAX_FEDERATED_RELAYS, sign_federation_roster};
 pub use sequenced::{
     ORDERING_BATCH_CAPACITY, ORDERING_CERTIFICATE_LEN, ORDERING_PULL_LIMIT, OrderEntry, OrderError,
-    OrderEvent, OrderStatus, OrderingCertificate,
+    OrderEvent, OrderPace, OrderStatus, OrderingCertificate, paced_rates,
 };
 
 type HmacSha256 = Hmac<Sha256>;
