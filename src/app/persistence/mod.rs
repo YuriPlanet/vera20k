@@ -17,9 +17,9 @@ pub(crate) mod rules_profile;
 pub(crate) mod wol_profile;
 pub(crate) use resource_load::{PreparedSavedGame, SavedGamePreparationView};
 
-use std::path::{Path, PathBuf};
 #[cfg(any(feature = "dev-overlays", test))]
 use crate::util::time::SystemTime;
+use std::path::{Path, PathBuf};
 
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -535,7 +535,9 @@ impl SaveRepository {
 
     fn validate_existing_save(&self, path: &Path) -> Result<(), SaveWriteError> {
         let previous = self.read(path).map_err(SaveWriteError::write_file)?;
-        GameSnapshot::read_header(&previous).map_err(|error| {
+        // SaveGame67CF42 replaces the slot; an old VERA body's load layout
+        // must not prevent replacement of its recognizable product metadata.
+        GameSnapshot::read_metadata(&previous).map_err(|error| {
             SaveWriteError::write_file(std::io::Error::new(std::io::ErrorKind::InvalidData, error))
         })?;
         Ok(())
