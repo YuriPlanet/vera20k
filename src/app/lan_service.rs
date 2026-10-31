@@ -4155,6 +4155,12 @@ fn setup_request(
         )
 }
 
+/// The name of the LAN host that admitted this guest, while its setup lasts.
+pub(crate) fn admitted_host_name(state: &AppState) -> Option<String> {
+    let service = state.match_state.lan_service.as_ref()?;
+    Some(service.admitted_host.as_ref()?.0.clone())
+}
+
 pub(crate) fn force_presence(state: &mut AppState) {
     if let Some(service) = state.match_state.lan_service.as_mut() {
         service.force_presence = true;
