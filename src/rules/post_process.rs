@@ -37,6 +37,10 @@
 //! FXAA.Subpix=0.25
 //! FXAA.EdgeThreshold=0.125
 //! FXAA.EdgeThresholdMin=0
+//! Bloom=no
+//! Bloom.Threshold=0.5
+//! Bloom.Intensity=0.4
+//! Bloom.Radius=1
 //! ```
 
 use crate::rules::ini_parser::IniFile;
@@ -54,6 +58,8 @@ pub struct PostProcessRules {
     pub sepia: Option<SepiaRules>,
     /// The ReShade `FXAA` port; `None` leaves it out.
     pub fxaa: Option<FxaaRules>,
+    /// The multi-pass bloom; `None` leaves it out.
+    pub bloom: Option<BloomRules>,
 }
 
 /// Linear-space colour grading applied to the composed match frame.
@@ -142,6 +148,27 @@ impl Default for FxaaRules {
     }
 }
 
+/// Four-level downsample/upsample bloom over the composed frame.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BloomRules {
+    /// Display-luma floor for the bright pass; 0.0 includes everything.
+    pub threshold: f32,
+    /// Bloom add strength at the composite step.
+    pub intensity: f32,
+    /// Upsample tent radius multiplier.
+    pub radius: f32,
+}
+
+impl Default for BloomRules {
+    fn default() -> Self {
+        Self {
+            threshold: 0.5,
+            intensity: 0.4,
+            radius: 1.0,
+        }
+    }
+}
+
 impl PostProcessRules {
     /// Read `[PostProcess]`. Each `Effect=` key is that effect's own switch;
     /// when it is `no` (the default) the effect's other keys are not read.
@@ -199,6 +226,14 @@ impl PostProcessRules {
                         .read_float("FXAA.EdgeThresholdMin", defaults.edge_threshold_min),
                 }
             }),
+            bloom: section.read_bool("Bloom", false).then(|| {
+                let defaults = BloomRules::default();
+                BloomRules {
+                    threshold: section.read_float("Bloom.Threshold", defaults.threshold),
+                    intensity: section.read_float("Bloom.Intensity", defaults.intensity),
+                    radius: section.read_float("Bloom.Radius", defaults.radius),
+                }
+            }),
         }
     }
 }
@@ -250,7 +285,7 @@ mod tests {
     #[test]
     fn reshade_ports_read_their_switches_defaults_and_values() {
         let defaults = PostProcessRules::from_ini(&IniFile::from_str(
-            "[PostProcess]\nFilmicPass=yes\nColourfulness=yes\nSepia=yes\nFXAA=yes\n",
+            "[PostProcess]\nFilmicPass=yes\nColourfulness=yes\nSepia=yes\nFXAA=yes\nBloom=yes\n",
         ));
         assert_eq!(defaults.filmic_pass, Some(FilmicPassRules::default()));
         assert_eq!(
@@ -259,11 +294,12 @@ mod tests {
         );
         assert_eq!(defaults.sepia, Some(SepiaRules::default()));
         assert_eq!(defaults.fxaa, Some(FxaaRules::default()));
+        assert_eq!(defaults.bloom, Some(BloomRules::default()));
 
         let off = PostProcessRules::from_ini(&IniFile::from_str(
             "[PostProcess]\nFilmicPass=no\nFilmicPass.Strength=0\n\
              Colourfulness=no\nColourfulness.Amount=0\nSepia=no\nSepia.Strength=0\n\
-             FXAA=no\nFXAA.Subpix=1\n",
+             FXAA=no\nFXAA.Subpix=1\nBloom=no\nBloom.Intensity=1\n",
         ));
         assert_eq!(off, PostProcessRules::default(), "switches gate every key");
 
@@ -273,7 +309,8 @@ mod tests {
              FilmicPass.Saturation=0.1\nColourfulness=yes\nColourfulness.Amount=0.2\n\
              Colourfulness.LimLuma=0.5\nSepia=yes\nSepia.Strength=0.3\n\
              Sepia.TintR=0.2\nSepia.TintG=0.3\nSepia.TintB=0.4\n\
-             FXAA=yes\nFXAA.Subpix=0.6\nFXAA.EdgeThreshold=0.2\nFXAA.EdgeThresholdMin=0.05\n",
+             FXAA=yes\nFXAA.Subpix=0.6\nFXAA.EdgeThreshold=0.2\nFXAA.EdgeThresholdMin=0.05\n\
+             Bloom=yes\nBloom.Threshold=0.3\nBloom.Intensity=0.6\nBloom.Radius=1.5\n",
         ));
         let filmic = authored.filmic_pass.expect("authored filmic pass");
         assert!((filmic.strength - 0.5).abs() < 1e-6);
@@ -294,6 +331,10 @@ mod tests {
         assert!((fxaa.subpix - 0.6).abs() < 1e-6);
         assert!((fxaa.edge_threshold - 0.2).abs() < 1e-6);
         assert!((fxaa.edge_threshold_min - 0.05).abs() < 1e-6);
+        let bloom = authored.bloom.expect("authored bloom");
+        assert!((bloom.threshold - 0.3).abs() < 1e-6);
+        assert!((bloom.intensity - 0.6).abs() < 1e-6);
+        assert!((bloom.radius - 1.5).abs() < 1e-6);
     }
 
     /// The production `RuleSet` publishes the section; an empty INI leaves the
@@ -305,7 +346,7 @@ mod tests {
 
         let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
             "[PostProcess]\nColorGrade=yes\nColorGrade.Saturation=0.5\n\
-             FilmicPass=yes\nFXAA=yes\n",
+             FilmicPass=yes\nFXAA=yes\nBloom=yes\n",
         ))
         .unwrap();
         assert_eq!(
@@ -321,5 +362,6 @@ mod tests {
             Some(FilmicPassRules::default())
         );
         assert_eq!(rules.post_process.fxaa, Some(FxaaRules::default()));
+        assert_eq!(rules.post_process.bloom, Some(BloomRules::default()));
     }
 }

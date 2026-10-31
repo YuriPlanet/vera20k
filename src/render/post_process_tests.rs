@@ -165,7 +165,7 @@ fn the_identity_chain_reproduces_the_frame_copy_byte_for_byte() {
             size,
             wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         );
-        let chain = PostChain::new(
+        let mut chain = PostChain::new(
             &gpu.device,
             &gpu.queue,
             FORMAT,
@@ -179,7 +179,14 @@ fn the_identity_chain_reproduces_the_frame_copy_byte_for_byte() {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Post process chain"),
             });
-        chain.draw(&gpu.device, &mut encoder, &source_view, &chained_view);
+        chain.draw(
+            &gpu.device,
+            &gpu.queue,
+            &mut encoder,
+            &source_view,
+            &chained_view,
+            (size[0], size[1]),
+        );
         gpu.queue.submit([encoder.finish()]);
 
         let copy_bytes = gpu.read(&copied, size);
@@ -216,7 +223,7 @@ fn the_colour_grade_pass_reads_its_uniform() {
         size,
         wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
     );
-    let chain = PostChain::new(
+    let mut chain = PostChain::new(
         &gpu.device,
         &gpu.queue,
         FORMAT,
@@ -229,7 +236,14 @@ fn the_colour_grade_pass_reads_its_uniform() {
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Post process colour grade"),
         });
-    chain.draw(&gpu.device, &mut encoder, &source_view, &target_view);
+    chain.draw(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &source_view,
+        &target_view,
+        (size[0], size[1]),
+    );
     gpu.queue.submit([encoder.finish()]);
 
     let bytes = gpu.read(&target, size);
@@ -263,7 +277,7 @@ fn the_viewport_mask_excludes_the_ui_column() {
         size,
         wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
     );
-    let chain = PostChain::new(
+    let mut chain = PostChain::new(
         &gpu.device,
         &gpu.queue,
         FORMAT,
@@ -276,7 +290,14 @@ fn the_viewport_mask_excludes_the_ui_column() {
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Post process viewport mask"),
         });
-    chain.draw(&gpu.device, &mut encoder, &source_view, &target_view);
+    chain.draw(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &source_view,
+        &target_view,
+        (size[0], size[1]),
+    );
     gpu.queue.submit([encoder.finish()]);
 
     let bytes = gpu.read(&target, size);
@@ -307,7 +328,7 @@ fn the_filmic_pass_moves_mid_grey() {
         size,
         wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
     );
-    let chain = PostChain::new(
+    let mut chain = PostChain::new(
         &gpu.device,
         &gpu.queue,
         FORMAT,
@@ -320,7 +341,14 @@ fn the_filmic_pass_moves_mid_grey() {
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Post process filmic"),
         });
-    chain.draw(&gpu.device, &mut encoder, &source_view, &target_view);
+    chain.draw(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &source_view,
+        &target_view,
+        (size[0], size[1]),
+    );
     gpu.queue.submit([encoder.finish()]);
 
     let bytes = gpu.read(&target, size);
@@ -349,7 +377,7 @@ fn the_sepia_pass_warms_mid_grey() {
         size,
         wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
     );
-    let chain = PostChain::new(
+    let mut chain = PostChain::new(
         &gpu.device,
         &gpu.queue,
         FORMAT,
@@ -362,7 +390,14 @@ fn the_sepia_pass_warms_mid_grey() {
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Post process sepia"),
         });
-    chain.draw(&gpu.device, &mut encoder, &source_view, &target_view);
+    chain.draw(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &source_view,
+        &target_view,
+        (size[0], size[1]),
+    );
     gpu.queue.submit([encoder.finish()]);
 
     let bytes = gpu.read(&target, size);
@@ -397,7 +432,7 @@ fn the_fxaa_pass_blends_only_the_edge() {
         size,
         wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
     );
-    let chain = PostChain::new(
+    let mut chain = PostChain::new(
         &gpu.device,
         &gpu.queue,
         FORMAT,
@@ -410,7 +445,14 @@ fn the_fxaa_pass_blends_only_the_edge() {
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Post process fxaa"),
         });
-    chain.draw(&gpu.device, &mut encoder, &source_view, &target_view);
+    chain.draw(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &source_view,
+        &target_view,
+        (size[0], size[1]),
+    );
     gpu.queue.submit([encoder.finish()]);
 
     let out = gpu.read(&target, size);
@@ -436,4 +478,81 @@ fn the_fxaa_pass_blends_only_the_edge() {
         })
     });
     assert!(edge_changed, "FXAA must reshape the hard edge");
+}
+
+/// Bloom keeps the bright block saturated, spills a halo beside it, and leaves
+/// the far corners close to black.
+#[test]
+#[ignore = "needs a wgpu adapter; run explicitly"]
+fn the_bloom_chain_spills_a_local_halo() {
+    let gpu = Gpu::new();
+    let size = [64, 64];
+    let mut source_bytes = Vec::new();
+    for y in 0..size[1] {
+        for x in 0..size[0] {
+            let value = if (24..40).contains(&x) && (24..40).contains(&y) {
+                255
+            } else {
+                0
+            };
+            source_bytes.extend_from_slice(&[value, value, value, 255]);
+        }
+    }
+
+    let source = gpu.texture(
+        size,
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+    );
+    gpu.upload(&source, &source_bytes, size);
+
+    let target = gpu.texture(
+        size,
+        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+    );
+    let mut chain = PostChain::new(
+        &gpu.device,
+        &gpu.queue,
+        FORMAT,
+        super::PostParams::bloom(0.4, 0.6, [0.0, 0.0, 64.0, 64.0]),
+    );
+    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Post process bloom"),
+        });
+    chain.draw(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &source_view,
+        &target_view,
+        (size[0], size[1]),
+    );
+    gpu.queue.submit([encoder.finish()]);
+
+    let out = gpu.read(&target, size);
+    let stride = size[0] as usize * 4;
+    let texel = |x: usize, y: usize| {
+        let start = y * stride + x * 4;
+        [out[start], out[start + 1], out[start + 2], out[start + 3]]
+    };
+
+    let centre = texel(31, 31);
+    assert!(centre[0] >= 250, "the bright block stays saturated: {centre:?}");
+    assert_eq!(centre[3], 255, "alpha passes through: {centre:?}");
+
+    let halo = texel(20, 32);
+    assert!(halo[2] > 0, "bloom must spill beside the block: {halo:?}");
+
+    // Four upsample levels spread the glow wide, so the far corner is dim
+    // rather than zero; the point is that it stays well below the block.
+    let corner = texel(0, 0);
+    assert!(
+        corner[2] <= 48,
+        "the far corner stays dim: {corner:?}"
+    );
 }

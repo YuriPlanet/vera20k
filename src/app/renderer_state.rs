@@ -74,20 +74,34 @@ impl RendererState {
     /// fallback, so a build with no effects configured keeps the exact
     /// behaviour and cost it had before the hook existed.
     pub(crate) fn present_game_frame(
-        &self,
+        &mut self,
         encoder: &mut wgpu::CommandEncoder,
         destination: &wgpu::Texture,
     ) {
-        let Some(chain) = self.post_chain.as_ref() else {
+        let (source_view, destination_view, size, format) = {
+            let source = self.game_frame_texture();
+            debug_assert_eq!(destination.size(), source.size());
+            let size = source.size();
+            (
+                source.create_view(&wgpu::TextureViewDescriptor::default()),
+                destination.create_view(&wgpu::TextureViewDescriptor::default()),
+                (size.width, size.height),
+                source.format(),
+            )
+        };
+        let Some(chain) = self.post_chain.as_mut() else {
             self.copy_game_frame_to(encoder, destination);
             return;
         };
-        let source = self.game_frame_texture();
-        debug_assert_eq!(destination.size(), source.size());
-        debug_assert_eq!(chain.format(), source.format());
-        let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
-        let destination_view = destination.create_view(&wgpu::TextureViewDescriptor::default());
-        chain.draw(&self.gpu.device, encoder, &source_view, &destination_view);
+        debug_assert_eq!(chain.format(), format);
+        chain.draw(
+            &self.gpu.device,
+            &self.gpu.queue,
+            encoder,
+            &source_view,
+            &destination_view,
+            size,
+        );
     }
 
     pub(crate) fn copy_game_frame_to(

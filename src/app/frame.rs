@@ -1242,16 +1242,21 @@ impl App {
                         .map(|fxaa| {
                             [fxaa.subpix, fxaa.edge_threshold, fxaa.edge_threshold_min]
                         });
+                    let bloom = state
+                        .rules()
+                        .and_then(|rules| rules.post_process.bloom)
+                        .map(|bloom| [bloom.threshold, bloom.intensity, bloom.radius]);
                     let post_params = crate::render::post_process::PostParams::from_effects(
                         color_grade,
                         filmic,
                         colourfulness,
                         sepia,
                         fxaa,
+                        bloom,
                         viewport,
                     );
                     if let Some(params) = post_params {
-                        if let Some(chain) = state.renderer.post_chain.as_ref() {
+                        if let Some(chain) = state.renderer.post_chain.as_mut() {
                             chain.set_params(&state.renderer.gpu.queue, params);
                         } else {
                             state.renderer.post_chain =
