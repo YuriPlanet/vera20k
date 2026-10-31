@@ -379,13 +379,22 @@ pub(crate) struct NativePcxImage {
     pub(crate) height: u32,
 }
 
-/// gamemd PCX blit6BA580: embedded palette, then RGB(255,0,255) keyed in the
-/// packed surface-word domain; only 8-bit indexed files load. No house remap
-/// or cameo.pal applies. Ares PCX cameos and Phobos' superweapon sidebar art
-/// (`PCX::BlitToSurface`) both draw through it.
+/// gamemd PCX blit 6BA580: embedded palette, then RGB(255,0,255) keyed in the
+/// packed surface-word domain. No house remap or cameo.pal applies. Ares PCX
+/// cameos and Phobos' superweapon sidebar art (`PCX::BlitToSurface`) both draw
+/// through it.
+///
+/// 8-bit indexed files always load. A 3-plane 24-bit file loads only with
+/// Phobos: 630310 packs its red, green and blue planes into the display word
+/// (630619..630665), and Phobos `RGB_PCX_Loader` (6B9D9C,
+/// `src/Misc/Hooks.PCX.cpp`) has the PCX cache load 6B9D00 keep that 16-bit
+/// surface. Without Phobos, the load's palette conversion (6B9DA3..6B9EC1)
+/// reads it as one byte per pixel and garbles it; VERA keeps the SHP fallback
+/// instead.
 #[cfg(any(feature = "ares", feature = "phobos"))]
 pub(crate) fn decode_native_pcx(bytes: &[u8]) -> Option<NativePcxImage> {
     let image = crate::assets::pcx_file::PcxFile::from_bytes(bytes).ok()?;
+    #[cfg(not(feature = "phobos"))]
     if !image.is_indexed() {
         return None;
     }
@@ -928,6 +937,34 @@ mod tests {
         {
             assert_eq!([cameo.canvas_width, cameo.canvas_height], [2, 2]);
             assert_eq!(&cameo.rgba[0..4], &[200, 10, 180, 255]);
+        }
+    }
+
+    #[cfg(any(feature = "ares", feature = "phobos"))]
+    #[test]
+    fn a_24_bit_pcx_loads_only_with_phobos() {
+        // 2x1 in three RLE planes: magenta, then a colour. `C1 FF` is a
+        // one-byte run; a literal FF would read as a run marker.
+        let mut bytes = vec![0u8; 128];
+        bytes[0] = 0x0a;
+        bytes[2] = 1;
+        bytes[3] = 8;
+        bytes[8..10].copy_from_slice(&1u16.to_le_bytes());
+        bytes[65] = 3;
+        bytes[66..68].copy_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&[0xc1, 0xff, 17]); // red plane
+        bytes.extend_from_slice(&[0, 41]); // green plane
+        bytes.extend_from_slice(&[0xc1, 0xff, 83]); // blue plane
+        let image = super::decode_native_pcx(&bytes);
+        #[cfg(feature = "phobos")]
+        {
+            let image = image.unwrap();
+            assert_eq!([image.width, image.height], [2, 1]);
+            assert_eq!(image.rgba, [255, 0, 255, 0, 17, 41, 83, 255]);
+        }
+        #[cfg(not(feature = "phobos"))]
+        {
+            assert!(image.is_none());
         }
     }
 
