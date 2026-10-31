@@ -204,9 +204,10 @@ impl Options {
     }
 
     /// What a guest's options sink makes of one host options event: the
-    /// host's `C0` first, as it reaches a WOL guest ahead of the options
-    /// (`0x007A7F02`), so the campaign's country refresh never outlives
-    /// the host's rows; then the options themselves.
+    /// host's `C0` first, as the native host sends it ahead of its options
+    /// (`+0x94` at the join accept `0x007A6E5A`, Use Map's `+0x60` before
+    /// its publish), so the campaign's country refresh never outlives the
+    /// host's rows; then the options themselves.
     pub fn into_setup_events(mut self, local: &str) -> anyhow::Result<Vec<NetworkSetupEvent>> {
         let campaign = self.cooperative_campaign.take();
         let options = self.into_options(local)?;

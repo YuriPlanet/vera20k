@@ -773,6 +773,13 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             preview_file_received(state, transferred_file)?;
         }
         NetworkSetupEvent::CooperativeCampaign(text) => {
+            // The 'C' arm (0x005E43CE) follows the parse's WOL drop of every
+            // option text (0x005E3E73..0x005E3E90), as HostSetup does.
+            if dialog.wol()
+                && (crate::app::shell_wol::in_match(state) || super::wol::start_pending(state))
+            {
+                return Ok(());
+            }
             super::cooperative::campaign_received(state, &text)?;
         }
         NetworkSetupEvent::StartStaging(text) => {

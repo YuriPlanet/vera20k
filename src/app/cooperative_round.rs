@@ -21,6 +21,9 @@
 //! room as a first start does, without `+0xAC`'s carry-over record
 //! (`0x004C6210`); no retail co-op map reads one (none sets a global or
 //! `TimerInherit`).
+//! RESIDUAL: a WOL match with no kept room (an original-style room, Play
+//! Buddy, Quick Co-op) has nothing to continue in: Continue returns to the
+//! lobby as Quit does, and the pair goes on through Use Saved Campaign.
 
 use crate::app::frontend::skirmish_session::cooperative::CooperativeMissionRow;
 use crate::app::match_runtime::session::{CooperativeRoundEvent, CooperativeRoundStep};
@@ -657,7 +660,12 @@ fn run_step(state: &mut AppState, step: CooperativeRoundStep) {
                         mode_id: launch.mode.id,
                         scenario: state.frontend.multiplayer_shell_runtime.scenario_index(),
                     });
-            if let Some(visit) = state.frontend.wol.as_mut() {
+            if let Some(visit) = state
+                .frontend
+                .wol
+                .as_mut()
+                .filter(|visit| visit.back_to_room)
+            {
                 visit.cooperative_resume = resume;
             }
             finish(state);

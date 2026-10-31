@@ -3380,7 +3380,8 @@ mod completion_tests {
             events.as_slice(),
             [NetworkSetupEvent::HostSetup(_)]
         ));
-        // 0x007A7F02: the host's C0 reaches the guest before its options.
+        // The native host sends its C0 ahead of the options (+0x94 at the
+        // join accept 0x007A6E5A), so the guest applies it first.
         let text = "C0,0,0,0,0,0,0,0,0,0,0,0,1,2,-1,Host,Guest";
         value["cooperative_campaign"] = json!(text);
         let cooperative: wire::Options = serde_json::from_value(value).unwrap();

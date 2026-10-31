@@ -211,6 +211,8 @@ pub(super) fn host_opened(state: &mut AppState) -> anyhow::Result<()> {
 /// replace outside Choose Map. `+0x24` and `+0x60` follow as after Use Map;
 /// C2's opening publish, still queued, carries them, and the partner's
 /// join (`+0x94`) names both players again.
+/// RESIDUAL: that join's tail prints `TXT_SAVE_CAMP_AVAILABLE` after a won
+/// mission, whose save it finds; `+0xAC` runs no join.
 pub(crate) fn resume(state: &mut AppState, resume: CooperativeResume) -> anyhow::Result<()> {
     anyhow::ensure!(
         state
