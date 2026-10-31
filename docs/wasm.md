@@ -121,7 +121,9 @@ entry points. Browser LAN discovery and direct UDP connections are not supported
 Random map generation and synchronous GPU screenshot/capture are also unavailable
 in this single-threaded preview. Existing installed maps remain the target.
 Shifted punctuation shortcuts on non-US keyboard layouts
-are not fully mapped. Large atlas work and synchronous save preparation can
+are not fully mapped. Chat edits take input-method text through a hidden textarea
+that the engine adds to the page while one is active (`src/web/ime.rs`), so a host
+page needs no markup for it. Large atlas work and synchronous save preparation can
 still hold the browser event loop; runtime/performance validation is outstanding.
 
 ## Checks

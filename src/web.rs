@@ -1,4 +1,6 @@
 //! Browser host boundary. App remains the owner of the frontend and match lifecycle.
+pub(crate) mod ime;
+
 use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
 
@@ -90,6 +92,7 @@ pub(crate) fn spawn_finished(report: &str) {
 pub(crate) fn engine_exited() {
     crate::audio::web_output::pause();
     remove_spawn_files();
+    ime::remove();
     MUSIC.with(|slot| slot.borrow_mut().take());
     SFX.with(|slot| slot.borrow_mut().take());
     WAKE.with(|slot| slot.borrow_mut().take());
@@ -107,12 +110,17 @@ fn request_spawn_action(action: crate::app::SpawnAction) -> Result<(), JsValue> 
         return Err(JsValue::from_str("No start_spawn launch is running"));
     }
     SPAWN_ACTIONS.with(|actions| actions.borrow_mut().push_back(action));
+    wake();
+    Ok(())
+}
+
+/// Run the event loop's next pass now, even while it waits.
+fn wake() {
     WAKE.with(|slot| {
         if let Some(proxy) = slot.borrow().as_ref() {
             let _ = proxy.send_event(());
         }
     });
-    Ok(())
 }
 
 /// docs/spawn.md "Scripted leave and resign": leave the running multiplayer
