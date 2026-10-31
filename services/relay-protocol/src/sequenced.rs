@@ -62,8 +62,15 @@ const PUSH_DRAIN_BYTES: usize = 96 * 1024;
 // reader's one-frame gap grace.
 const PUSH_REPEAT_MS: u64 = 8;
 // Repeats per second relay-wide. They spend no fresh budget, so they add at
-// most one room's packet budget to the relay's ordering output.
+// most half the relay's fresh total to its ordering output.
 const PUSH_REPEAT_PACKETS: u64 = 8192;
+// One room's fresh ordering packets per second. Every entry goes to every
+// reader as its own packet, so a full 30-source room at 60 Hz needs about
+// 8,200 at 150 actions a minute and 10,600 at 300, before repairs. The cap
+// stays below the
+// relay-wide total so a flooding room's asks leave the rest unreserved for
+// matches that start or repair.
+const ROOM_ORDER_PACKETS: u64 = 12_288;
 pub(super) const LEAVE_REQUEST: u8 = 3;
 const READY_EVENT: u8 = 0;
 const STATUS_EVENT: u8 = 1;
@@ -2311,6 +2318,49 @@ mod tests {
     }
 
     #[test]
+    fn one_room_may_spend_past_half_the_relay_ordering_output() {
+        fn spend(server: &mut RelayServer, packets: u64) {
+            let room = server.rooms.get_mut(&[5; 16]).unwrap();
+            assert!(server.order_packets.admit_part(
+                &mut room.order_packets,
+                unix(0),
+                packets,
+                INGRESS_PER_SECOND
+            ));
+            server
+                .order_packets
+                .charge_part(&mut room.order_packets, packets);
+        }
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 2);
+        let (mut reader, mut other) = (client(&key, 0), client(&key, 1));
+        let cert = certificate(&key, 3, 1400);
+        for peer in [&mut reader, &mut other] {
+            connect(&mut server, peer, 0);
+            configure(&mut server, peer, &cert, 0);
+        }
+        // A full 30-source room at 60 Hz pushes more than half the total.
+        spend(&mut server, INGRESS_PER_SECOND / 2);
+        let mut bytes = Vec::new();
+        reader.pull_ordering(1, &mut bytes).unwrap();
+        assert!(
+            server
+                .process_at(endpoint(&reader), &bytes, unix(0), 0)
+                .is_ok()
+        );
+        let left = ROOM_ORDER_PACKETS - server.rooms[&[5; 16]].order_packets.spent;
+        spend(&mut server, left);
+        reader.pull_ordering(1, &mut bytes).unwrap();
+        assert!(
+            matches!(
+                server.process_at(endpoint(&reader), &bytes, unix(0), 0),
+                Err(RelayError::RateLimited)
+            ),
+            "a room leaves the rest of the total to other matches"
+        );
+    }
+
+    #[test]
     fn renewed_push_replays_journal_ciphertext_and_rebinds_only_after_opt_in() {
         let directory = TestDirectory::new();
         let key = SecretKey::new([73; 32]);
@@ -4490,7 +4540,7 @@ impl RelayServer {
             .permits(now, cost, PLAYER_BYTES_PER_SECOND)
             || !room.outgoing.permits(now, cost, ROOM_BYTES_PER_SECOND)
             || !admission.order_packets.permits(now, packets, 2048)
-            || !room.order_packets.permits(now, packets, 8192)
+            || !room.order_packets.permits(now, packets, ROOM_ORDER_PACKETS)
         {
             return Err(RelayError::RateLimited);
         }
