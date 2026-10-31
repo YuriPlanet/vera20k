@@ -111,24 +111,35 @@ struct FragOutput {
 fn fs_main(input: VertexOutput) -> FragOutput {
     // Water refraction: the engine's field is neutral (0.5, 0.5) on every
     // non-water tile, so sampling it for the whole terrain pass displaces
-    // water only. The offset stays inside the tile's own atlas rect so a
-    // warped water tile never bleeds into a neighbouring entry.
+    // water only. The offset fades to zero at the iso diamond's boundary, so
+    // neighbouring tiles still meet on their unwarped edge (no seams, no
+    // transparent corner sampled by a displaced read).
+    let rect = max(input.uv_max - input.uv_min, vec2f(1e-6, 1e-6));
+    let local = (input.uv - input.uv_min) / rect;
+    let centered = local * 2.0 - vec2f(1.0);
+    // |cx| + |cy| <= 1 is the diamond the TMP tile draws.
+    let diamond_edge = clamp(1.0 - (abs(centered.x) + abs(centered.y)) / 0.35, 0.0, 1.0);
     let field = textureSampleLevel(
         t_distortion,
         s_sprite,
         input.position.xy / camera.screen_size,
         0.0,
     ).rg;
-    let offset_px = (field - vec2f(0.5)) * 2.0 * camera.water_amplitude;
+    let offset_px = (field - vec2f(0.5)) * 2.0 * camera.water_amplitude * diamond_edge;
     let warped_uv = clamp(
         input.uv + offset_px * input.uv_per_px,
         input.uv_min,
         input.uv_max,
     );
-    let color: vec4f = textureSample(t_sprite, s_sprite, warped_uv);
-    if (color.a < 0.01) {
+    // Alpha comes from the unwarped texel: a displaced read near the diamond
+    // edge must never punch a transparent hole through opaque water.
+    let base: vec4f = textureSample(t_sprite, s_sprite, input.uv);
+    if (base.a < 0.01) {
         discard;
     }
+    let warped: vec4f = textureSample(t_sprite, s_sprite, warped_uv);
+    let chosen: vec4f = select(base, warped, warped.a >= 0.01);
+    let color: vec4f = vec4f(chosen.rgb, base.a);
 
     // R8 depth atlas: byte 0..255 stored as 0..1. Depth stays on the unwarped
     // UV so the tiles' occlusion does not move with the ripple.
