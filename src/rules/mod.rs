@@ -150,6 +150,7 @@ pub mod phobos_selection_flash;
 pub mod phobos_sw_sidebar;
 #[cfg(feature = "phobos")]
 pub mod phobos_warhead_anim;
+pub mod phobos_laser_tracking;
 pub mod phobos_radiation;
 pub mod phobos_shields;
 /// Whether this binary includes the supported Ares extensions. INIs cannot change it.

@@ -1836,7 +1836,11 @@ fn advance_one_simulation_frame(
                         .record_logic_visit();
                 }
                 LifecycleOutput::LaserUpdate { frame } => {
-                    state.match_state.match_presentation.lasers.update(frame);
+                    let runtime = state.match_state.sim_runtime.as_ref();
+                    state.match_state.match_presentation.lasers.update(
+                        frame,
+                        runtime.map(|runtime| (&runtime.simulation, &runtime.resources.rules)),
+                    );
                 }
                 LifecycleOutput::LaserCreated(birth) => {
                     let runtime = state.match_state.sim_runtime.as_ref();

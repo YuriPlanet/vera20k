@@ -335,6 +335,7 @@ fn stock_single_color_laser_keeps_only_the_inner_colour() {
             0,
             rules.weapon("LaserProbe").unwrap(),
             Some(ProjectileCoord::new(1280, 1280, 0)),
+            false,
         )
         .unwrap();
         (birth.color, owner)
@@ -397,6 +398,7 @@ fn direct_laser_keeps_explicit_source_and_native_constructor_defaults() {
         0,
         rules.weapon("LaserProbe").unwrap(),
         Some(from),
+        false,
     )
     .unwrap();
     assert_eq!(birth.from, from);
@@ -420,6 +422,7 @@ fn direct_laser_keeps_explicit_source_and_native_constructor_defaults() {
             0,
             rules.weapon("LaserProbe").unwrap(),
             source,
+            false,
         )
         .unwrap();
         assert_eq!(birth.from, coordinate(&row["laser"]["source"]));

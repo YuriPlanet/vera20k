@@ -54,6 +54,7 @@ fn draws(row: &Value) -> Vec<LaserDraw> {
         },
         duration: integer(&laser["duration"]),
         fade_end: NativeF32Bits::from_bits(laser["fade_end_bits"].as_u64().unwrap() as u32),
+        track: None,
     };
     let mut lasers = Lasers::default();
     lasers.create(first, |_| inner);

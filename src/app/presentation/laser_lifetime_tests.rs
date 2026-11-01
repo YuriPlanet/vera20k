@@ -40,6 +40,7 @@ fn birth(value: &Value) -> LaserBirth {
         fade_end: crate::util::native_x87::NativeF32Bits::from_bits(
             value["fade_end_bits"].as_u64().unwrap() as u32,
         ),
+        track: None,
     }
 }
 
@@ -231,7 +232,7 @@ fn original_joined_disk_births_keep_the_common_laser_lifetime() {
                 }
                 "laser_update" => {
                     assert_eq!(state["logic_frame"], state["frame"]);
-                    lasers.update(frame);
+                    lasers.update(frame, None);
                 }
                 // Only actual births and original550150 visits mutate this
                 // owner. Shot construction, expiry, duplicate retirement and
@@ -361,7 +362,7 @@ fn original_logic_lifetimes_include_repeated_skipped_and_wrapping_frames() {
         lasers.create(birth(initial), |_| rgb(initial));
         assert_state(&lasers, &states[0], name);
         for state in &states[1..] {
-            lasers.update(integer(&state["frame"]));
+            lasers.update(integer(&state["frame"]), None);
             assert_state(&lasers, state, &format!("{name} frame {}", state["frame"]));
         }
     }
@@ -441,7 +442,7 @@ fn births_after_the_logic_update_keep_constructor_age_until_the_next_visit() {
     lasers.create(first, |_| rgb(initial));
     // Original Logic55B5C3 precedes object births55B5FF. This replay tests
     // the presentation consumer; the real Sim output ordering has its own test.
-    lasers.update(201);
+    lasers.update(201, None);
     lasers.create(
         LaserBirth {
             frame: 201,

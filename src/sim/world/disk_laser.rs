@@ -308,9 +308,32 @@ impl Simulation {
             };
             let first = point(a);
             if a == b && shot.step != 0 {
-                let impact = effect_target_coordinate(self, rules, target.projectile_target(self))
+                let effect_target = target.projectile_target(self);
+                let impact = effect_target_coordinate(self, rules, effect_target)
                     .expect("Disk effect target");
-                construct(
+                // ActivateMainBeam4A7696 skips a zero-length beam; every other
+                // disk laser (the ring animation) carries no tracking data.
+                #[cfg(feature = "phobos")]
+                let track = (first != impact)
+                    .then(|| {
+                        crate::sim::combat::laser::build_track(
+                            self,
+                            rules,
+                            source_id,
+                            effect_target,
+                            0,
+                            weapon.laser_position_update,
+                            weapon
+                                .laser_position_update_stop_on_firer_convert
+                                .unwrap_or(rules.phobos_laser_tracking.stop_on_firer_convert),
+                            first,
+                            false,
+                        )
+                    })
+                    .flatten();
+                #[cfg(not(feature = "phobos"))]
+                let track = None;
+                let birth = construct(
                     &self.session,
                     &mut self.lifecycle_outputs,
                     first,
@@ -320,6 +343,7 @@ impl Simulation {
                     color,
                     NativeF32Bits::POSITIVE_ZERO,
                 );
+                birth.track = track;
                 let warhead_name = weapon.warhead.as_deref().expect("Disk damage warhead");
                 let warhead = rules.warhead(warhead_name).expect("Disk damage warhead");
                 let warhead_id = self.interner.intern(warhead_name);
