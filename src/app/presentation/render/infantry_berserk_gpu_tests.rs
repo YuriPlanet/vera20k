@@ -1,13 +1,15 @@
 //! Physical GI atlas/frame/material/replay against original518F90 body pixels.
 //! The viewport controls join Object5F4B10 and its original camera projection;
 //! Rust derives their positions through the production screen-position owner.
-//! Pose, Cell light and final shape Z remain declared native priors. CAOS
-//! gameplay and the full builder have separate production controls.
+//! Caller controls retain declared pose/light/Z; production controls use the
+//! live SHP emitter, including its map/TMP depth inputs. CAOS has separate controls.
 
 use super::super::draw_plan_lowering::{
     NativeDisplayOrder, ObjectPieceInstance, PlannedObjectInstance, lower_object_instances,
 };
 use super::*;
+use crate::app::presentation::instances::{ShpInputs, build_shp_instances_from_inputs};
+use crate::app::presentation::interpolation::RenderInterpolation;
 use crate::app::presentation::lighting::{
     body_extra_light, body_palette_light, shp_colour_word, techno_effect_light,
 };
@@ -28,8 +30,10 @@ use crate::sim::combat::Health;
 use crate::sim::components::DriveCoord;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::FacingClass;
+use crate::sim::runtime::{SimResources, SimRuntime};
 use crate::sim::world::{Simulation, display_layers::DisplayLayer};
 use serde_json::Value;
+use std::cell::RefCell;
 use std::collections::HashSet;
 
 fn int(value: &Value) -> i32 {
@@ -100,27 +104,54 @@ fn physical_rules(assets: &AssetManager, shared: &Value) -> crate::rules::rulese
 #[test]
 #[ignore = "requires GPU and retail assets; physical GI atlas and retained material versus eight original whole-body draws"]
 fn retail_gi_berserk_atlas_and_replay_match_original_body_pixels() {
-    compare_original_body_pixels(false);
+    compare_original_body_pixels(BodyReplay::Caller);
 }
 
 #[test]
 #[ignore = "requires GPU and retail assets; physical GI camera projection and clipping versus original Object DrawIfVisible and body pixels"]
 fn retail_gi_viewport_camera_and_replay_match_original_admission_pixels() {
-    compare_original_body_pixels(true);
+    compare_original_body_pixels(BodyReplay::Viewport);
 }
 
-fn compare_original_body_pixels(join_viewport: bool) {
+#[test]
+#[ignore = "requires GPU and retail assets; production GI emitter against original body parameters and pixels"]
+fn retail_gi_production_emitter_matches_original_body() {
+    compare_original_body_pixels(BodyReplay::Production);
+}
+
+#[test]
+#[ignore = "requires GPU and retail assets; production GI depth at the original first-row occlusion boundary"]
+fn retail_gi_production_depth_keeps_native_front_pixels_visible() {
+    compare_original_body_pixels(BodyReplay::DepthBoundary);
+}
+
+#[derive(Clone, Copy)]
+enum BodyReplay {
+    Caller,
+    Viewport,
+    Production,
+    DepthBoundary,
+}
+
+fn compare_original_body_pixels(mode: BodyReplay) {
+    let join_viewport = !matches!(mode, BodyReplay::Caller);
+    let production = matches!(mode, BodyReplay::Production | BodyReplay::DepthBoundary);
+    let depth_boundary = matches!(mode, BodyReplay::DepthBoundary);
     let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;
     };
-    // Use the existing theater owner to admit the physical CLEAR01 input.
-    // Final shape Z remains an observed native prior for this flat crop.
-    crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+    let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
     let native =
         crate::test_fixture::json("tools/procedural_drawing_oracle/infantry_berserk_body.json");
     let shared = &native["shared"];
     for asset in shared["assets"].as_array().unwrap() {
         let name = asset["name"].as_str().unwrap();
+        // The native control supplied selected Rules and the Clear tile prefix.
+        // Their consumed keys/mapping are checked below; other INI bytes are
+        // outside this prepared draw. Binary drawing inputs remain exact.
+        if name.eq_ignore_ascii_case("RULESMD.INI") || name.eq_ignore_ascii_case("TEMPERATMD.INI") {
+            continue;
+        }
         let raw = assets
             .get_ref(name)
             .unwrap_or_else(|| panic!("physical {name}"));
@@ -131,6 +162,31 @@ fn compare_original_body_pixels(join_viewport: bool) {
             "{name}"
         );
     }
+    let mapping = &shared["cells"]["tile_mapping"];
+    let theater_ini = IniFile::from_bytes(assets.get_ref("TEMPERATMD.INI").unwrap()).unwrap();
+    let clear_section = theater_ini
+        .section(mapping["section"].as_str().unwrap())
+        .unwrap();
+    // Original theater_tile_files uses ReadInt default0 and ReadString TILE/64.
+    assert_eq!(
+        clear_section.read_int("TilesInSet", 0),
+        int(&mapping["tiles_in_set"])
+    );
+    assert_eq!(
+        clear_section.read_string("FileName", "TILE", 64),
+        mapping["file_name"].as_str().unwrap()
+    );
+    let bounds = &theater.lookup.bounds()[0];
+    assert_eq!(i32::from(bounds.start), int(&mapping["base"]));
+    assert_eq!(i32::from(bounds.count), int(&mapping["tiles_in_set"]));
+    assert_eq!(
+        theater
+            .lookup
+            .filename(int(&mapping["tile_id"]))
+            .unwrap()
+            .to_ascii_lowercase(),
+        format!("{}01.tem", mapping["file_name"].as_str().unwrap()).to_ascii_lowercase()
+    );
     let rules = physical_rules(&assets, shared);
     let source = ShpFile::from_bytes(assets.get_ref("GI.SHP").unwrap()).unwrap();
     let palette = Palette::from_bytes(assets.get_ref("UNITTEM.PAL").unwrap()).unwrap();
@@ -190,9 +246,37 @@ fn compare_original_body_pixels(join_viewport: bool) {
         .set_in_limbo_for_test(actor["limbo"].as_bool().unwrap());
     gi.lifecycle
         .set_object_alive_for_test(actor["alive"].as_bool().unwrap());
+    gi.mission_leaf
+        .set_infantry_doing_verified(int(&actor["doing"]))
+        .unwrap();
     sim.entities_mut_for_test().insert(gi);
     sim.submit_object_display_for_test(1, DisplayLayer::GROUND, Some(&rules));
     let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let mut resources = SimResources::empty();
+    resources.rules = rules;
+    if production {
+        let mut terrain = crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
+            crate::map::resolved_terrain::test_smudge_cell(x, y)
+        });
+        let raw_rules = IniFile::from_bytes(assets.get_ref("RULESMD.INI").unwrap()).unwrap();
+        terrain
+            .bind_saved_template_assets(
+                &theater,
+                &assets,
+                &crate::rules::terrain_rules::TerrainRules::from_ini(&raw_rules),
+                &resources.overlay_registry,
+                false,
+                0,
+                Default::default(),
+            )
+            .unwrap();
+        sim.install_resolved_terrain_for_new_map(terrain);
+    }
+    let mut runtime = SimRuntime {
+        simulation: sim,
+        resources,
+    };
+    let rules = &runtime.resources.rules;
     let mut light_grid = CellLightGrid::new();
     light_grid.insert_profiled_light(
         (10, 20),
@@ -218,6 +302,7 @@ fn compare_original_body_pixels(join_viewport: bool) {
         wgpu::TextureFormat::Bgra8UnormSrgb,
         wgpu::TextureFormat::Rgba8UnormSrgb,
     ] {
+        let sim = &runtime.simulation;
         let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
         let mut view = camera(size);
         view.native_z_origin_y = int(&surface["depth_baseline"]) as f32 - 32768.;
@@ -253,6 +338,12 @@ fn compare_original_body_pixels(join_viewport: bool) {
         batch.bind_shroud(&gpu.device, Some(&fog));
         for row in rows {
             let name = row["name"].as_str().unwrap();
+            if production && !matches!(name, "frame0_center" | "frame1_center") {
+                continue;
+            }
+            if depth_boundary && name != "frame0_center" {
+                continue;
+            }
             let input = &row["input"];
             // DrawIfVisible may return before the body. Its return value never
             // gates the Rust draw: a conservatively submitted outside sprite
@@ -302,10 +393,15 @@ fn compare_original_body_pixels(join_viewport: bool) {
                 ];
                 batch.write_camera(&gpu.queue, view);
             }
-            let gi = sim.entities_mut_for_test().get_mut(1).unwrap();
+            let gi = runtime
+                .simulation
+                .entities_mut_for_test()
+                .get_mut(1)
+                .unwrap();
             gi.berserk
                 .set_active_for_test(input["berserk"].as_bool().unwrap());
             gi.body_facing = FacingClass::new(int(&input["facing"]) as u16, 0);
+            let sim = &runtime.simulation;
             let gi = sim.entities().get(1).unwrap();
             let before = sim.state_hash();
             let record = rules
@@ -377,28 +473,62 @@ fn compare_original_body_pixels(join_viewport: bool) {
             let position = [anchor[0] + entry.offset_x, anchor[1] + entry.offset_y];
             let gradient = pack_z_gradient(ZGradient::Vertical, false);
             assert_eq!(gradient, int(&body["gradient"]) as u32);
-            let layers = lower_object_instances(vec![PlannedObjectInstance::object(
-                parent,
-                vec![ObjectPieceInstance {
-                    target: ObjectTexture::ShpPage(entry.page as usize),
-                    render_z: parent.policy.render_z,
-                    instance: SpriteInstance {
-                        position,
-                        size: entry.pixel_size,
-                        uv_origin: entry.uv_origin,
-                        uv_size: entry.uv_size,
-                        source_palette: entry.source_palette,
-                        tint,
-                        alpha: 1.,
-                        palette_light: light,
-                        // This is the observed final shape input, not a new
-                        // derivation of Foot GetZAdjust or map/TMP state.
-                        z_adjust: int(&body["z_adjust"]) as f32,
-                        z_gradient: gradient,
-                        ..Default::default()
+            let mut objects = Vec::new();
+            if production {
+                let pitches =
+                    RefCell::new(crate::render::unit_atlas::BarrelImagePitches::default());
+                build_shp_instances_from_inputs(
+                    &ShpInputs {
+                        runtime: &runtime,
+                        atlas: Some(&atlas),
+                        overlay_atlas: None,
+                        unit_atlas: None,
+                        barrel_image_pitches: &pitches,
+                        interpolation: &RenderInterpolation::new(false),
+                        camera: view.camera_pos,
+                        render_size: size,
+                        zoom: 1.,
+                        building_viewport:
+                            crate::app::presentation::render::tactical_world_viewport(
+                                view.camera_pos,
+                                [0, 0, size[0], size[1]],
+                                None,
+                            ),
+                        axis: crate::render::batch::DepthAxis::NONE,
+                        local_owner: Some("PreparedHouse"),
+                        ignore_visibility: true,
+                        lighting: &light_grid,
+                        house_colors: &house_colors,
+                        building_zshape: false,
                     },
-                }],
-            )]);
+                    &mut objects,
+                    &order,
+                );
+            } else {
+                objects.push(PlannedObjectInstance::object(
+                    parent,
+                    vec![ObjectPieceInstance {
+                        target: ObjectTexture::ShpPage(entry.page as usize),
+                        render_z: parent.policy.render_z,
+                        instance: SpriteInstance {
+                            position,
+                            size: entry.pixel_size,
+                            uv_origin: entry.uv_origin,
+                            uv_size: entry.uv_size,
+                            source_palette: entry.source_palette,
+                            tint,
+                            alpha: 1.,
+                            palette_light: light,
+                            // This is the observed final shape input, not a new
+                            // derivation of Foot GetZAdjust or map/TMP state.
+                            z_adjust: int(&body["z_adjust"]) as f32,
+                            z_gradient: gradient,
+                            ..Default::default()
+                        },
+                    }],
+                ));
+            }
+            let layers = lower_object_instances(objects);
             let layer = &layers[2];
             assert_eq!(layer.owners, [1]);
             let mut pool = InstanceBufferPool::new();
@@ -425,7 +555,14 @@ fn compare_original_body_pixels(join_viewport: bool) {
             let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
             terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
             let mut encoder = gpu.device.create_command_encoder(&Default::default());
-            let old_z = int(&input["old_z"]) as u16;
+            // Original raw leaf494BC5..494BC7 admits candidate < old Z.
+            // The first-row candidate was observed in the original execution;
+            // its unchanged admitted color is the existing native pixel golden.
+            let old_z = if depth_boundary {
+                u16::try_from(int(&body["first_candidate"]) + 1).unwrap()
+            } else {
+                int(&input["old_z"]) as u16
+            };
             clear(&mut encoder, &cv, &dv, old_z, wgpu::LoadOp::Load);
             let clip = if join_viewport {
                 let caller_clip = [0, 0, size[0], size[1]];
@@ -476,14 +613,46 @@ fn compare_original_body_pixels(join_viewport: bool) {
             for (stage, expected) in stages {
                 let expected = decode(expected);
                 assert_eq!(expected.len(), pixels * 2);
-                for (at, pixel) in output[0].as_chunks::<4>().0.iter().enumerate() {
-                    let word = u16::from_le_bytes(expected[at * 2..at * 2 + 2].try_into().unwrap());
+                if depth_boundary {
+                    let first = expected
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
+                        .position(|word| u16::from_le_bytes(*word) != background)
+                        .unwrap();
+                    let native_frame = shared["frames"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|f| f["frame"] == input["frame"])
+                        .unwrap();
+                    let first_row = int(&body["point"][1]) + int(&native_frame["native_rect"][1])
+                        - int(&surface["canvas"][1]) / 2;
+                    assert_eq!(first / size[0] as usize, first_row as usize);
+                    let word = u16::from_le_bytes(expected[first * 2..][..2].try_into().unwrap());
                     assert_eq!(
-                        *pixel,
-                        encoded(word, format),
-                        "{name} {stage} {format:?}: native pixel{at}"
+                        &output[0][first * 4..][..4],
+                        &encoded(word, format),
+                        "{name}: native first-row pixel must pass the depth test"
                     );
+                } else {
+                    for (at, pixel) in output[0].as_chunks::<4>().0.iter().enumerate() {
+                        let word =
+                            u16::from_le_bytes(expected[at * 2..at * 2 + 2].try_into().unwrap());
+                        assert_eq!(
+                            *pixel,
+                            encoded(word, format),
+                            "{name} {stage} {format:?}: native pixel{at}"
+                        );
+                    }
                 }
+            }
+            if production {
+                assert_eq!(
+                    layer.instances[0].z_adjust,
+                    int(&body["z_adjust"]) as f32,
+                    "{name}: original Infantry5195AF -> Techno706024/706430 body depth"
+                );
             }
             let frame = &source.frames[usize::from(frame)];
             let mut holes = 0;
@@ -530,5 +699,14 @@ fn compare_original_body_pixels(join_viewport: bool) {
             compared += 1;
         }
     }
-    assert_eq!(compared, rows.len() * 2);
+    assert_eq!(
+        compared,
+        if depth_boundary {
+            2
+        } else if production {
+            4
+        } else {
+            rows.len() * 2
+        }
+    );
 }
