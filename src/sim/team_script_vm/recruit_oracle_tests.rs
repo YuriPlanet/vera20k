@@ -289,7 +289,7 @@ fn recruit_matches_the_original() {
         };
         let mut asked = Vec::new();
         let winner = recruit_pick(
-            &candidates,
+            candidates.iter().copied(),
             origin,
             int(&row["group"]),
             flag(&row["recruiter"]),

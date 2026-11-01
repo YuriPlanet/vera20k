@@ -67,6 +67,15 @@ pub struct EntityStore {
     /// stored entity's category never changes (a replacement comes through
     /// [`Self::insert`], which copies it). Kept and rebuilt as `owners` is.
     categories: Vec<EntityCategory>,
+    /// VERA-only: the stored ids of each owner's objects of each category,
+    /// ascending ([`Self::owned_ids`]), for walks that want one house's
+    /// objects of one class without loading the others. The entities' owners
+    /// and categories are the source of truth: [`Self::insert`] and
+    /// [`Self::remove`] keep it, [`Self::change_owner`], the owners' one live
+    /// writer, moves an id between lists, and compaction changes no id.
+    /// Rebuilt on load ([`Self::rebuild_class_registries`]), never saved or
+    /// hashed, and only looked up, never iterated as a map.
+    owned: LookupMap<(InternedId, EntityCategory), Vec<u64>>,
     /// Derived InfantryClass registry, in monotonic construction-ID order.
     /// Uninit retains an entry; remove compacts it. Class/category is immutable
     /// while stored, like indexed identity (replace through remove/insert).
@@ -129,6 +138,7 @@ impl Clone for EntityStore {
             slot_of: self.slot_of.clone(),
             owners: self.owners.clone(),
             categories: self.categories.clone(),
+            owned: self.owned.clone(),
             infantry_registry: self.infantry_registry.clone(),
             foot_registry: self.foot_registry.clone(),
             techno_registry: self.techno_registry.clone(),
@@ -159,6 +169,7 @@ impl EntityStore {
             slot_of: HashMap::default(),
             owners: Vec::new(),
             categories: Vec::new(),
+            owned: LookupMap::default(),
             infantry_registry: Vec::new(),
             foot_registry: Vec::new(),
             techno_registry: Vec::new(),
@@ -177,11 +188,21 @@ impl EntityStore {
         let infantry = category == EntityCategory::Infantry;
         let owner = entity.owner();
         let foot = category.is_foot();
-        // A replaced entity leaves the airborne set; this one joins it if the
+        // A replaced entity leaves its owner's list and the airborne set;
+        // this one joins its owner's list, and the airborne set if the
         // tracker holds it.
-        if let Some(entry) = self.get(id).and_then(airborne_entry) {
-            self.airborne.remove(&entry);
+        if let Some((key, entry)) = self.get(id).map(|replaced| {
+            (
+                (replaced.owner(), replaced.category()),
+                airborne_entry(replaced),
+            )
+        }) {
+            self.unlist_owned(id, key);
+            if let Some(entry) = entry {
+                self.airborne.remove(&entry);
+            }
         }
+        self.list_owned(id, (owner, category));
         if let Some(entry) = airborne_entry(&entity) {
             self.airborne.insert(entry);
         }
@@ -247,8 +268,11 @@ impl EntityStore {
     pub fn remove(&mut self, stable_id: u64) -> Option<GameEntity> {
         let slot = self.slot_of.remove(&stable_id)? as usize;
         let removed = self.entities[slot].take().map(|entity| *entity);
-        if let Some(entry) = removed.as_ref().and_then(airborne_entry) {
-            self.airborne.remove(&entry);
+        if let Some(entity) = &removed {
+            self.unlist_owned(stable_id, (entity.owner(), entity.category()));
+            if let Some(entry) = airborne_entry(entity) {
+                self.airborne.remove(&entry);
+            }
         }
         self.touched.note(stable_id, self.len());
         self.remove_infantry_index(stable_id);
@@ -556,8 +580,49 @@ impl EntityStore {
             && let Some(e) = self.entities[slot as usize].as_deref_mut()
             && e.owner() != new_owner
         {
+            let (old_owner, category) = (e.owner(), e.category());
             e.set_owner_from_store(new_owner, OwnerChangeAuthority(()));
             self.owners[slot as usize] = new_owner;
+            self.unlist_owned(stable_id, (old_owner, category));
+            self.list_owned(stable_id, (new_owner, category));
+        }
+    }
+
+    /// The stored ids of `owner`'s objects of `category`, ascending: the ids
+    /// a walk of every entity in stable_id order keeps for that owner and
+    /// category, without loading the others. Debug builds check them against
+    /// that walk (the live-read check).
+    pub(crate) fn owned_ids(&self, owner: InternedId, category: EntityCategory) -> &[u64] {
+        let ids = self
+            .owned
+            .get(&(owner, category))
+            .map_or(&[][..], Vec::as_slice);
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled()
+                || ids.iter().copied().eq(self
+                    .stored()
+                    .filter(|(_, entity)| entity.owner() == owner && entity.category() == category)
+                    .map(|(id, _)| id)),
+            "the owned index disagrees with the entities of {owner:?}'s {category:?}"
+        );
+        ids
+    }
+
+    /// Put `id` on the `key` owner's list, in order. Ids mostly arrive
+    /// ascending, so this mostly appends.
+    fn list_owned(&mut self, id: u64, key: (InternedId, EntityCategory)) {
+        let ids = self.owned.entry(key).or_default();
+        if let Err(index) = ids.binary_search(&id) {
+            ids.insert(index, id);
+        }
+    }
+
+    /// Take `id` off the `key` owner's list.
+    fn unlist_owned(&mut self, id: u64, key: (InternedId, EntityCategory)) {
+        if let Some(ids) = self.owned.get_mut(&key)
+            && let Ok(index) = ids.binary_search(&id)
+        {
+            ids.remove(index);
         }
     }
 
@@ -650,9 +715,20 @@ impl EntityStore {
         self.values().filter_map(airborne_entry).collect()
     }
 
-    /// Rebuild class registries from primary storage. Owned by
-    /// Deserialize; synthetic fixtures may also rebuild after raw setup.
+    /// Rebuild class registries, and the owners' lists, from primary storage.
+    /// Owned by Deserialize; synthetic fixtures may also rebuild after raw
+    /// setup.
     pub(crate) fn rebuild_class_registries(&mut self) {
+        let mut owned: LookupMap<(InternedId, EntityCategory), Vec<u64>> = LookupMap::default();
+        // Storage iterates in ascending stable_id order, so each list comes
+        // out sorted.
+        for (id, entity) in self.stored() {
+            owned
+                .entry((entity.owner(), entity.category()))
+                .or_default()
+                .push(id);
+        }
+        self.owned = owned;
         let infantry: Vec<u64> = self
             .stored()
             .filter(|(_, entity)| entity.category() == EntityCategory::Infantry)
@@ -886,9 +962,10 @@ mod tests {
     /// across compactions, re-stored ids and ids below the newest; the owner
     /// column follows every entity's owner through them and through
     /// `change_owner`, the category column every entity's category through
-    /// them (and walks of one category keep the stable_id order), and the
-    /// airborne set every entity's tracker membership through them and
-    /// through `set_air_membership`.
+    /// them (and walks of one category keep the stable_id order), each
+    /// owner's list of its objects of a category both, in stable_id order,
+    /// and the airborne set every entity's tracker membership through them
+    /// and through `set_air_membership`.
     #[test]
     fn storage_answers_as_an_ordered_map_through_compactions() {
         let mut store = EntityStore::new();
@@ -1035,6 +1112,16 @@ mod tests {
                             .map(|(&id, _)| id)
                             .collect::<Vec<_>>()
                     );
+                    for house in houses {
+                        assert_eq!(
+                            store.owned_ids(house, class),
+                            owners
+                                .iter()
+                                .filter(|&(id, &owner)| owner == house && categories[id] == class)
+                                .map(|(&id, _)| id)
+                                .collect::<Vec<_>>()
+                        );
+                    }
                 }
                 assert_eq!(
                     store.building_registry,
@@ -1114,6 +1201,14 @@ mod tests {
         assert_eq!(restored.techno_registry, [2, 4, 7]);
         for id in [2, 4, 7] {
             assert_eq!(restored.owner_of(id), Some(store.get(id).unwrap().owner()));
+        }
+        let (americans, russians) = (
+            crate::sim::intern::test_intern("Americans"),
+            crate::sim::intern::test_intern("Russians"),
+        );
+        for copy in [&restored, &store.clone()] {
+            assert_eq!(copy.owned_ids(americans, EntityCategory::Unit), [2, 4]);
+            assert_eq!(copy.owned_ids(russians, EntityCategory::Unit), [7]);
         }
         let airborne: Vec<u64> = restored.airborne().map(GameEntity::stable_id).collect();
         assert_eq!(
