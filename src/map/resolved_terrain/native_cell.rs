@@ -1012,7 +1012,7 @@ impl ResolvedTerrainGrid {
     pub(crate) fn write_native_cell_level(&mut self, cell: NativeCellIdentity, level: u8) {
         match cell {
             NativeCellIdentity::Real(index) => {
-                self.cells[index].level = level;
+                self.set_cell_level(index, level);
                 self.cells[index].refresh_current_height_projection();
             }
             NativeCellIdentity::Dummy => self.shared_cell_dummy.set_level(level as i8),

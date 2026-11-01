@@ -224,15 +224,17 @@ impl ResolvedTerrainGrid {
                     continue;
                 }
                 original_footprint.push(coord);
-                if let Some(cell) = self.cell_mut(coord.0, coord.1)
+                if let Some(cell_index) = self.index(coord.0, coord.1)
+                    && let Some(cell) = self.cell_mut(coord.0, coord.1)
                     && cell.final_tile_index == i32::from(old.tile_id)
                     && usize::from(cell.final_sub_tile) == index
                 {
                     cell.final_tile_index = 0xFFFF;
                     cell.final_sub_tile = 0;
-                    cell.level = (cell.level as i8)
+                    let level = (cell.level as i8)
                         .wrapping_sub(prototype.metadata.template_height as i8)
                         as u8;
+                    self.set_cell_level(cell_index, level);
                 }
             }
         }
@@ -267,6 +269,10 @@ impl ResolvedTerrainGrid {
                         index as u8,
                         prototype,
                     );
+                    let level = (self.cells[cell_index].level as i8)
+                        .wrapping_add(prototype.metadata.template_height as i8)
+                        as u8;
+                    self.set_cell_level(cell_index, level);
                     self.apply_runtime_lat_slope(x as i16, y as i16, &catalog, &mut changed_cells);
                     for (dx, dy) in [(0i16, -1i16), (1, 0), (0, 1), (-1, 0)] {
                         self.apply_runtime_lat_slope(
@@ -469,7 +475,6 @@ fn stamp_dynamic_tile_identity(
     cell.final_sub_tile = sub_tile;
     cell.is_wood_bridge_repair_tile = false;
     cell.slope_type = prototype.metadata.slope_type;
-    cell.level = (cell.level as i8).wrapping_add(prototype.metadata.template_height as i8) as u8;
     cell.overlay_blocks = false;
     cell.overlay_zone_type = None;
 }

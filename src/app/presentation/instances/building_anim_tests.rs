@@ -148,6 +148,28 @@ fn emit_with_material(
     palette: PaletteLight,
     material: DrawState,
 ) -> Vec<PlannedObjectInstance> {
+    emit_admitted(
+        sim,
+        rules,
+        building,
+        atlas,
+        order,
+        palette,
+        material,
+        &|_| true,
+    )
+}
+
+fn emit_admitted(
+    sim: &Simulation,
+    rules: &RuleSet,
+    building: u64,
+    atlas: &SpriteAtlas,
+    order: &NativeDisplayOrder,
+    palette: PaletteLight,
+    material: DrawState,
+    slot_admitted: &dyn Fn(u64) -> bool,
+) -> Vec<PlannedObjectInstance> {
     let mut out = Vec::new();
     let building = sim.entities().get(building).unwrap();
     let grid = crate::map::lighting::CellLightGrid::new();
@@ -166,6 +188,7 @@ fn emit_with_material(
         sim,
         Some(building.owner()),
         building,
+        slot_admitted,
         &|_| 0,
         0.0,
         10000.0,
@@ -715,4 +738,46 @@ fn bunker_migration_keeps_active_anim_offsets_start_and_independent_membership()
             .is_empty()
         );
     }
+}
+
+/// Preparation keeps exactly the slots the Display encounter can consume:
+/// Tactical6D2140 admits a projected point up to 360 px right of the view
+/// with its building far outside, not 361, and AnimDrawIfVisible422C70
+/// stops a pending delay+184 first.
+#[test]
+fn slot_preparation_keeps_only_slots_display_can_admit() {
+    let (mut sim, rules, building, atlas) = fixture("CAOILD", false);
+    let anim = sim
+        .entities()
+        .get(building)
+        .unwrap()
+        .building_art
+        .anim_slots()[3]
+        .unwrap();
+    let order = NativeDisplayOrder::new(&[anim]);
+    let (x, y, ..) =
+        super::super::overlays::anim_world_render_coords(sim.anim_absolute_coord(anim).unwrap());
+    let viewport = [800.0, 600.0];
+    let prepared = |sim: &Simulation, beyond: f32| {
+        let camera = [x - viewport[0] - beyond, y];
+        emit_admitted(
+            sim,
+            &rules,
+            building,
+            &atlas,
+            &order,
+            PaletteLight::default(),
+            DrawState::default(),
+            &|anim| super::super::overlays::slot_anim_admissible(sim, anim, camera, viewport),
+        )
+        .len()
+    };
+    assert_eq!(prepared(&sim, 360.0), 1);
+    assert_eq!(prepared(&sim, 361.0), 0);
+    sim.anims_mut_for_test()
+        .get_mut(anim)
+        .unwrap()
+        .runtime_mut_for_test()
+        .delay_remaining = 1;
+    assert_eq!(prepared(&sim, 360.0), 0);
 }

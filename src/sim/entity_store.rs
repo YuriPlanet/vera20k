@@ -529,7 +529,7 @@ impl EntityStore {
 
     /// The entities of `category` in stable_id order, chosen by the category
     /// column without loading the others.
-    pub(crate) fn values_of_category(
+    pub fn values_of_category(
         &self,
         category: EntityCategory,
     ) -> impl Iterator<Item = &GameEntity> {

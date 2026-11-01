@@ -1452,8 +1452,14 @@ fn emit_building_bib(
 /// This entry is independent of the parent's body admission and viewport:
 /// a slot offset can put an animation on screen while its parent is outside.
 /// The existing slot palette/frame/light owner is shared by every building.
+///
+/// `camera` and `projection_viewport` are the Display traversal's; only the
+/// slots its encounter can consume ([`super::overlays::slot_anim_admissible`])
+/// are prepared, and a building with none is skipped before its own work.
 pub(crate) fn build_building_anim_instances(
     state: &AppState,
+    camera: [f32; 2],
+    projection_viewport: [f32; 2],
     objects: &mut Vec<PlannedObjectInstance>,
     order: &NativeDisplayOrder,
 ) {
@@ -1489,14 +1495,16 @@ pub(crate) fn build_building_anim_instances(
         state.render_width() as f32 / zoom,
         state.render_height() as f32 / zoom,
     ];
-    for building in sim.entities().values() {
-        if building.category() != EntityCategory::Structure
-            || building
+    let slot_admitted =
+        |anim| super::overlays::slot_anim_admissible(sim, anim, camera, projection_viewport);
+    for building in sim.entities().values_of_category(EntityCategory::Structure) {
+        if slot_anims_hidden_by_sale(building)
+            || !building
                 .building_art
                 .anim_slots()
                 .iter()
-                .all(Option::is_none)
-            || slot_anims_hidden_by_sale(building)
+                .flatten()
+                .any(|&anim| slot_admitted(anim))
         {
             continue;
         }
@@ -1559,6 +1567,7 @@ pub(crate) fn build_building_anim_instances(
             sim,
             local_owner_id,
             building,
+            &slot_admitted,
             &|id| anim_colour_word(state, sim, cells.as_ref(), &shrouded, id),
             axis.origin_y,
             axis.world_height,
@@ -1610,6 +1619,7 @@ fn emit_building_anims(
     sim: &crate::sim::world::Simulation,
     local_owner_id: Option<crate::sim::intern::InternedId>,
     building: &crate::sim::game_entity::GameEntity,
+    slot_admitted: &dyn Fn(u64) -> bool,
     anim_word: &dyn Fn(u64) -> u16,
     origin_y: f32,
     world_height: f32,
@@ -1617,11 +1627,10 @@ fn emit_building_anims(
     draw_state: DrawState,
     detail_level: i32,
 ) {
-    let rules_image: String = rules
+    let rules_image: &str = rules
         .and_then(|r| r.object(building_type))
-        .map(|o| o.image.clone())
-        .unwrap_or_else(|| building_type.to_string());
-    let art_entry = match art_reg.resolve_metadata_entry(building_type, &rules_image) {
+        .map_or(building_type, |o| o.image.as_str());
+    let art_entry = match art_reg.resolve_metadata_entry(building_type, rules_image) {
         Some(e) => e,
         None => return,
     };
@@ -1630,6 +1639,9 @@ fn emit_building_anims(
         else {
             continue;
         };
+        if !slot_admitted(anim_id) {
+            continue;
+        }
         let Some(instance) = sim.anim(anim_id) else {
             continue;
         };
@@ -1709,7 +1721,7 @@ fn emit_building_anims(
             world_height,
         );
 
-        let config = art_reg.anim_runtime_config(anim_name);
+        let config = Some(runtime_config);
         // Building mark 0043F9A6..0043FA68 supplies explicit selected Convert/top
         // only when ShouldUseCellDrawer, at the light UpdateAnimation keeps
         // armed (`lighting::building_anim_light`).
@@ -1801,10 +1813,7 @@ fn emit_building_anims(
                         // also rides the Z term (native `YDrawOffset + ZAdjust - 2`).
                         z_adjust: lifted_z_adjust(
                             lift_px,
-                            z_adjust_px
-                                + art_reg
-                                    .anim_runtime_config(anim_name)
-                                    .map_or(0, |c| c.y_draw_offset),
+                            z_adjust_px + runtime_config.y_draw_offset,
                         ),
                         z_gradient: pack_z_gradient(ZGradient::Vertical, false),
                         ..Default::default()
