@@ -459,7 +459,7 @@ pub struct WolCreateGameLayout {
     /// VERA's online popup's Max players and Allow spectators.
     pub room: Option<crate::ui::room_limits::RoomLimitsLayout>,
     /// VERA's online popup's Room name caption and edit, a row above the
-    /// password at the rows' 17-unit pitch.
+    /// password.
     pub name: Option<(RectPx, RectPx)>,
     pub ok: RectPx,
     pub cancel: RectPx,
@@ -476,11 +476,10 @@ fn new_edit_window(rect: RectPx) -> RectPx {
 const ONLINE_STATUS_INSET: i32 = 10;
 
 /// `online` is VERA's online lobby on Red Alert 2's box art: no clan or
-/// observer box (the lobby's own Observe box still seats an observer), Limit
-/// Screen Resolution in the clan row under the password field, clear of the
-/// art's Tesla Trooper, then Max players and Allow spectators in the limit and
-/// observer rows, the status line inside the frame, and Room name above the
-/// password.
+/// observer box (the lobby's own Observe box still seats an observer); Room
+/// name, Password, Limit Screen Resolution, Max players and Allow spectators
+/// in the field column clear of the art's Tesla Trooper, and the status line
+/// inside the frame.
 pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> WolCreateGameLayout {
     let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
@@ -505,20 +504,28 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
     if !online {
         return layout;
     }
+    // Room name and Password, then the three option rows at the native
+    // 17-unit pitch, centred between the art's top edge and the status line.
+    let row = |y| child(133, y, 140, 12);
+    let caption = |y| child(11, y + 1, 113, 12);
+    let password_label = caption(58);
+    let password = row(58);
+    let check = |y| RectPx::new(password.x, child(34, y, 234, 14).y, password.w, clan.h);
     WolCreateGameLayout {
+        password_label,
+        password: new_edit_window(password),
         clan: None,
         observe: None,
-        limit: RectPx::new(field.x, clan.y, field.w, clan.h),
+        limit: check(79),
         room: Some(room_limits_layout(
-            layout.password_label,
-            field,
-            limit.y,
-            observe,
+            password_label,
+            password,
+            child(34, 96, 234, 14).y,
+            check(113),
         )),
-        name: Some((
-            child(11, 31, 113, 12),
-            new_edit_window(child(133, 30, 140, 12)),
-        )),
+        name: Some((caption(40), new_edit_window(row(40)))),
+        ok: child(33, 135, 83, 15),
+        cancel: child(184, 135, 83, 15),
         status: RectPx::new(
             dialog.x + ONLINE_STATUS_INSET,
             status.y,
@@ -526,6 +533,41 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
             status.h,
         ),
         ..layout
+    }
+}
+
+/// The Create Game box on the lobby page's shell mapping: the retail
+/// placement at `scale`'s retail size, otherwise the 800x600 box scaled with
+/// the page, as [`message_box_layout_on`] does for message boxes.
+pub fn wol_create_game_layout_on(
+    screen_w: i32,
+    screen_h: i32,
+    online: bool,
+    scale: geom::ShellScale,
+) -> WolCreateGameLayout {
+    if scale.is_retail() {
+        return wol_create_game_layout(screen_w, screen_h, online);
+    }
+    let base = wol_create_game_layout(geom::SHELL_BASE_W, geom::SHELL_BASE_H, online);
+    let s = |rect| scale.scale_rect(rect);
+    WolCreateGameLayout {
+        dialog: s(base.dialog),
+        password_label: s(base.password_label),
+        password: s(base.password),
+        clan: base.clan.map(s),
+        limit: s(base.limit),
+        observe: base.observe.map(s),
+        room: base
+            .room
+            .map(|room| crate::ui::room_limits::RoomLimitsLayout {
+                players_label: s(room.players_label),
+                players: s(room.players),
+                spectators: s(room.spectators),
+            }),
+        name: base.name.map(|(label, edit)| (s(label), s(edit))),
+        ok: s(base.ok),
+        cancel: s(base.cancel),
+        status: s(base.status),
     }
 }
 
@@ -587,6 +629,27 @@ pub fn wol_channel_password_layout(screen_w: i32, screen_h: i32) -> WolChannelPa
         password: new_edit_window(child(48, 94, 202, 12)),
         ok: child(49, 163, 83, 15),
         cancel: child(157, 163, 83, 15),
+    }
+}
+
+/// The channel password popup on the lobby page's shell mapping, as
+/// [`wol_create_game_layout_on`].
+pub fn wol_channel_password_layout_on(
+    screen_w: i32,
+    screen_h: i32,
+    scale: geom::ShellScale,
+) -> WolChannelPasswordLayout {
+    if scale.is_retail() {
+        return wol_channel_password_layout(screen_w, screen_h);
+    }
+    let base = wol_channel_password_layout(geom::SHELL_BASE_W, geom::SHELL_BASE_H);
+    let s = |rect| scale.scale_rect(rect);
+    WolChannelPasswordLayout {
+        dialog: s(base.dialog),
+        label: s(base.label),
+        password: s(base.password),
+        ok: s(base.ok),
+        cancel: s(base.cancel),
     }
 }
 
@@ -1024,6 +1087,29 @@ mod tests {
             }
         }
         assert_eq!(checked, 36);
+    }
+
+    #[test]
+    fn lobby_popups_grow_with_a_scaled_page() {
+        let scale = geom::ShellScale::from_screen(1600, 1200);
+        let retail = wol_create_game_layout(800, 600, true);
+        let scaled = wol_create_game_layout_on(1600, 1200, true, scale);
+        assert_eq!(scaled.dialog, scale.scale_rect(retail.dialog));
+        assert_eq!((scaled.dialog.w, scaled.dialog.h), (902, 652));
+        assert_eq!(
+            scaled.name.unwrap().1,
+            scale.scale_rect(retail.name.unwrap().1)
+        );
+        let password = wol_channel_password_layout_on(1600, 1200, scale);
+        assert_eq!(
+            password.ok,
+            scale.scale_rect(wol_channel_password_layout(800, 600).ok)
+        );
+        // A window the page keeps at retail size keeps the retail placement.
+        assert_eq!(
+            wol_create_game_layout_on(1024, 768, true, geom::ShellScale::RETAIL),
+            wol_create_game_layout(1024, 768, true)
+        );
     }
 
     #[test]

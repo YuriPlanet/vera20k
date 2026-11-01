@@ -66,6 +66,7 @@ fn paint_create_box(
         &mut labels,
         picker,
         &layout.room,
+        ShellScale::RETAIL,
     );
     let draw = shell_paint::paint_modal_shp(
         &state.renderer.bit_font,

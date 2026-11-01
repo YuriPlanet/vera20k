@@ -630,6 +630,7 @@ pub(crate) fn render_wol_page(
                 lobby.ui.is_modern(),
                 screen_w,
                 screen_h,
+                crate::app::shell_wol::lobby::popup_scale(state),
                 &status,
                 lobby.ui.caret_visible(crate::util::time::Instant::now()),
             ),
