@@ -10,7 +10,7 @@ mod credits;
 mod movie_list;
 mod page;
 
-pub use credits::{CreditLine, CreditsLayoutFlags, parse_credits};
+pub use credits::{CreditLine, CreditsLayoutFlags, append_vera20k_credits, parse_credits};
 pub use movie_list::{
     MOVIE_LIST_CONTROL, MOVIE_LIST_DIALOG, MOVIE_LIST_PAGE, MOVIE_LIST_PROMPT_KEY,
     MOVIE_LIST_TOOLTIP_KEY, MovieEntry, MovieListLayout, MovieListState, MovieProgress,

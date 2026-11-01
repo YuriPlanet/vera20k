@@ -184,6 +184,64 @@ pub fn parse_credits(
     lines
 }
 
+/// VERA: the project's creator and contributors: the GitHub login of each
+/// commit author of YuriPlanet/vera20k
+/// (`gh api repos/YuriPlanet/vera20k/contributors --paginate`) and the name on
+/// that GitHub profile (`gh api users/<login> --jq .name`), or the login when
+/// the profile has none. Contributors are in case-insensitive order of the
+/// shown name.
+const VERA20K_CREATOR: (&str, &str) = ("hrusten", "Halvor Nikolai Rusten");
+const VERA20K_CONTRIBUTORS: &[(&str, &str)] = &[
+    ("1372704087", "1372704087"),
+    ("AdrianLuo-X", "AdrianLuo-X"),
+    ("baixiong443", "baixiong443"),
+    ("CCDawn", "CalvinDawn"),
+    ("ckbk123", "CAO Kha Bao Khanh"),
+    ("yeungtuzi", "dahema"),
+    ("DavidTanner", "David Tanner"),
+    ("Flactine", "Flactine"),
+    ("flitting", "flitting"),
+    ("iamapig120", "Handle"),
+    ("himhp", "himhp"),
+    ("jamesulip", "jamesulip"),
+    ("ckbk456", "Khang Cao"),
+    ("EncoreAlpha", "Kironix"),
+    ("Krisztiaan", "Krisztiaan"),
+    ("libi", "libi"),
+    ("luckyvermeil", "luckyvermeil"),
+    ("HaoJun0823", "Randerion(HaoJun0823)"),
+    ("adamanteye", "Xuelin Yang"),
+    ("996666925", "\u{98ce}\u{96e8}\u{58f0}"),
+];
+
+/// VERA: roll a VERA20k section after the last retail credit line. The retail
+/// lines are kept as parsed; the section is written in CREDITSMD.TXT's own
+/// layout (centred runs, a `- role -` line over its names) and laid out by
+/// the same parser, starting four blank lines below the retail end. Each name
+/// is a `{login}` label, as the retail file labels its own names, so a
+/// profile name outside ASCII survives the byte parser.
+pub fn append_vera20k_credits(lines: &mut Vec<CreditLine>, surface_height: i32) {
+    let mut text = String::from("\r\n\r\n\r\n\r\n       VERA20k\r\n\r\n       - Created by -\r\n");
+    text.push_str(&format!(
+        "       {{{}}}\r\n\r\n       - Contributors -\r\n",
+        VERA20K_CREATOR.0
+    ));
+    for (login, _) in VERA20K_CONTRIBUTORS {
+        text.push_str(&format!("       {{{login}}}\r\n"));
+    }
+    let name = |login: &str| {
+        std::iter::once(&VERA20K_CREATOR)
+            .chain(VERA20K_CONTRIBUTORS)
+            .find(|(key, _)| *key == login)
+            .map_or_else(|| login.to_owned(), |(_, name)| (*name).to_owned())
+    };
+    // Start where the last retail line's own CR leaves the cursor.
+    let start_y = lines
+        .last()
+        .map_or(surface_height + 2, |line| line.y + LINE_ADVANCE);
+    lines.extend(parse_credits(text.as_bytes(), start_y - 2, &name));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,6 +266,28 @@ mod tests {
         assert_eq!(lines[2].text, "Frank Hsu");
         assert_eq!(lines[2].y, 602 + 48);
         assert_eq!(lines[2].flags.0, 0x148 | 0x20);
+    }
+
+    #[test]
+    fn vera20k_credits_roll_after_the_retail_lines_without_changing_them() {
+        let retail = parse_credits(
+            b"       {CRD:CREDITS}\r\n       Frank Hsu\r\n",
+            600,
+            &key_echo,
+        );
+        let mut lines = retail.clone();
+        append_vera20k_credits(&mut lines, 600);
+
+        assert_eq!(lines[..retail.len()], retail[..]);
+        let vera = &lines[retail.len()..];
+        assert_eq!(vera[0].text, "VERA20k");
+        // Four blank lines under the last retail line.
+        assert_eq!(vera[0].y, retail[1].y + 5 * LINE_ADVANCE);
+        assert_eq!(vera[2].text, "Halvor Nikolai Rusten");
+        // A profile name outside ASCII comes through whole.
+        assert_eq!(vera.last().unwrap().text, "\u{98ce}\u{96e8}\u{58f0}");
+        assert_eq!(vera.len(), 4 + VERA20K_CONTRIBUTORS.len());
+        assert!(vera.iter().all(|line| line.flags.centered()));
     }
 
     #[test]

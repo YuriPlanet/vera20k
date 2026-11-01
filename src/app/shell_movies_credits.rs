@@ -5,8 +5,8 @@
 
 use crate::sim::trigger_runtime::ThemeRequest;
 use crate::ui::shell::list::ListMetrics;
-use std::sync::Arc;
 use crate::util::time::Instant;
+use std::sync::Arc;
 
 use super::{App, AppState};
 use crate::app::frontend::credits_roll::{
@@ -452,11 +452,10 @@ impl App {
             return;
         };
         let lookup = |key: &str| Self::csf_label(state, key, &format!("MISSING:'{key}'"));
-        let lines = crate::ui::movies_credits_shell::parse_credits(
-            &bytes,
-            state.renderer.gpu.config.height as i32,
-            &lookup,
-        );
+        let surface_height = state.renderer.gpu.config.height as i32;
+        let mut lines =
+            crate::ui::movies_credits_shell::parse_credits(&bytes, surface_height, &lookup);
+        crate::ui::movies_credits_shell::append_vera20k_credits(&mut lines, surface_height);
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         // ThemeClass::Stop(0), then a silent ScoreVolume is lifted to 0.4 for
         // the CREDITS theme; the saved value is restored afterwards.
