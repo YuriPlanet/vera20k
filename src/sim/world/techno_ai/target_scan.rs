@@ -789,15 +789,23 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
         );
     }
 
-    /// Through the object's live `+0x3C4` override. Hunt4D5392,
-    /// AreaGuard4D6F06 and passive/arrival acquisition709820 observe all
-    /// earlier object turns, including newly admitted candidates. Reusing a
-    /// frame-start result would omit their ranking and query/RNG effects.
+    /// Through the object's `+0x3C4` override, or this pass's batched answer
+    /// ([`super::scan_batch`]). Natively Hunt (`0x004D5392`), Area Guard
+    /// (`0x004D6F06`) and the targeting slot all scan the world as the
+    /// object's turn finds it; an answer scanned it as the pass began, a
+    /// sim-scale deviation.
     fn greatest_threat(&mut self, mask: ScanMission) -> Option<TargetKind> {
         let (rules, registry) = (self.rules, self.ctx.overlay_registry);
-        let outcome = self
-            .sim
-            .threat_scan(rules, registry, self.id, mask, self.scan_coord);
+        let outcome =
+            match self
+                .sim
+                .take_batched_scan(rules, registry, self.id, mask, self.scan_coord)
+            {
+                Some(outcome) => outcome,
+                None => self
+                    .sim
+                    .threat_scan(rules, registry, self.id, mask, self.scan_coord),
+            };
         Simulation::commit_threat_scan(
             &mut self.sim.scenario_rng,
             &mut self.sim.substrate,

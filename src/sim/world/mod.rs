@@ -1489,8 +1489,8 @@ pub struct Simulation {
     /// Batched path searches (`movement::path_batch`); `None`
     /// searches in native order. Its registrations wait across a save.
     pub(crate) path_batch: Option<crate::sim::movement::path_batch::PathBatch>,
-    /// Retired target-scan request, retained only for positional save layout
-    /// compatibility. Cleared during snapshot restoration; never read by scans.
+    /// Batched target scans (`techno_ai::scan_batch`); `None` scans in
+    /// native order. A save carries only the setting.
     pub(crate) scan_batch: Option<techno_ai::ScanBatch>,
     /// Retained native navigation base plane/raw movement rows plus the live
     /// derived hierarchy. ZoneGrid saves only its own retained base state;

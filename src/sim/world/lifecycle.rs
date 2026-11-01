@@ -4930,6 +4930,11 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> TargetingSweepReceipt {
+        // VERA-only: the sweep releases a batched target scan's pick as it
+        // does a TarCom (`techno_ai::scan_batch`).
+        if let TargetKind::Entity(target_id) = target {
+            self.release_batched_scan_pick(target_id);
+        }
         #[cfg(any(test, feature = "test-support"))]
         let mut cell_detaches = Vec::new();
         let mut listeners = self.substrate.entities.keys_sorted();
@@ -5682,6 +5687,9 @@ impl Simulation {
         control: PointerExpiryControl,
         context: UninitContext<'_>,
     ) {
+        // VERA-only: a batched target scan holds its pick across the turns
+        // before its scanner's as a TarCom does (`techno_ai::scan_batch`).
+        self.release_batched_scan_pick(expired_id);
         // `DispatchPointerExpiredCleanup @ 0x007258D0` calls
         // `BombListClass::PointerGotInvalid @ 0x00439150` after its listener
         // loop (0x00725961) whatever the control, so a cloaking planter loses

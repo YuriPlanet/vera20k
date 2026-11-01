@@ -1,10 +1,20 @@
-//! Live target acquisition and compatibility with the retired scan request.
+//! Rust regression tests for the batched target scans ([`super`]). A batched
+//! answer is checked against the object's own scan on the same world; no
+//! native behavior is claimed.
 use super::*;
-use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::{ScanMission, TargetKind};
-use crate::sim::mission::{MissionId, MissionType};
+use crate::sim::mission::MissionType;
 use crate::sim::scenario_session::ScenarioGameMode;
 use crate::sim::world::{FrameEffects, ObjectAiCtx};
+
+/// Put `id` on `mission`.
+fn on_mission(sim: &mut Simulation, id: u64, mission: MissionType) {
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .mission
+        .set_current_for_test(MissionId::from_known(mission), 0);
+}
 
 /// A production-admitted tank whose next due mission visit is Hunt.
 fn hunting_tank_scene(rules: &RuleSet) -> (Simulation, u64) {
@@ -23,19 +33,11 @@ fn hunting_tank_scene(rules: &RuleSet) -> (Simulation, u64) {
         &crate::sim::mission::authority::LiveReadyInputProvider { rules },
     )
     .unwrap();
-    assert_eq!(
-        sim.substrate
-            .entities
-            .get(hunter)
-            .unwrap()
-            .mission
-            .current(),
-        MissionId::from_known(MissionType::Hunt)
-    );
     sim.refresh_object_sight(hunter, rules, 0, FrameEffects::default());
     (sim, hunter)
 }
 
+/// Run `hunter`'s mission handler; answers its target.
 fn run_mission(sim: &mut Simulation, rules: &RuleSet, hunter: u64) -> Option<TargetKind> {
     super::super::mission_handlers::dispatch_foot_mission(
         sim,
@@ -48,150 +50,112 @@ fn run_mission(sim: &mut Simulation, rules: &RuleSet, hunter: u64) -> Option<Tar
     actor.attack_target.target()
 }
 
-/// Exercise the former real-match opt-in, which now keeps scans live.
-#[allow(deprecated)]
-fn request_legacy_scan_mode(sim: &mut Simulation) {
-    sim.batch_target_scans();
-}
-
-/// Foot::Mission_Hunt calls Retaliate_And_Scan synchronously at 0x004D5392.
-/// An earlier factory/Unlimbo can therefore admit a hostile before this
-/// hunter's turn, even when the pass began without a target.
+/// The module's sim-scale deviation: Foot::Mission_Hunt scans at its turn
+/// (`0x004D5392`), so natively a hunter sees a hostile an earlier turn of the
+/// same pass admits. Its batched answer saw the pass begin, before the
+/// hostile, so this run of its handler finds nothing; the answer for its next
+/// run, a later pass's, sees the hostile.
 #[test]
-fn hunt_sees_a_hostile_admitted_after_the_pass_begins() {
+fn a_hunter_sees_a_hostile_admitted_during_the_pass_at_its_next_run() {
     let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
     let rules = &fixture.rules;
     let (mut serial, hunter) = hunting_tank_scene(rules);
-    let (mut requested, requested_hunter) = hunting_tank_scene(rules);
-    assert_eq!(hunter, requested_hunter);
-    assert!(
-        serial
-            .threat_scan(rules, None, hunter, ScanMission::Hunt, None)
-            .target()
-            .is_none()
-    );
-
-    request_legacy_scan_mode(&mut requested);
-    let hostile = serial
-        .spawn_object("HTNK", "Russians", 14, 12, 0, rules)
-        .unwrap();
-    assert_eq!(
-        requested
+    let (mut batched, _) = hunting_tank_scene(rules);
+    batched.batch_target_scans();
+    batched.answer_batched_scans(rules, None);
+    // The hostile sleeps, so only the hunter's scan targets it.
+    let admit = |sim: &mut Simulation| {
+        let id = sim
             .spawn_object("HTNK", "Russians", 14, 12, 0, rules)
-            .unwrap(),
-        hostile
-    );
-    let live = run_mission(&mut serial, rules, hunter);
-    assert_eq!(live, Some(TargetKind::Entity(hostile)));
-    assert_eq!(run_mission(&mut requested, rules, hunter), live);
-    assert_eq!(
-        requested.scenario_rng.logical_state(),
-        serial.scenario_rng.logical_state()
-    );
-}
-
-/// An old pick remaining legal does not preserve its rank after a more
-/// valuable target enters. Both worlds use the real retail selector.
-#[test]
-fn hunt_reranks_new_candidates_even_when_the_old_pick_remains_legal() {
-    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
-        return;
+            .unwrap();
+        on_mission(sim, id, MissionType::Sleep);
+        id
     };
-    let rules = &fixture.rules;
-    let (mut serial, hunter) = hunting_tank_scene(rules);
-    let (mut requested, _) = hunting_tank_scene(rules);
-    let previous = serial
-        .spawn_object("E1", "Russians", 14, 12, 0, rules)
-        .unwrap();
+    let hostile = admit(&mut serial);
+    assert_eq!(admit(&mut batched), hostile);
     assert_eq!(
-        requested
-            .spawn_object("E1", "Russians", 14, 12, 0, rules)
-            .unwrap(),
-        previous
-    );
-    assert_eq!(
-        serial
-            .threat_scan(rules, None, hunter, ScanMission::Hunt, None)
-            .target(),
-        Some(previous)
-    );
-    request_legacy_scan_mode(&mut requested);
-    let hostile = serial
-        .spawn_object("HTNK", "Russians", 12, 14, 0, rules)
-        .unwrap();
-    assert_eq!(
-        requested
-            .spawn_object("HTNK", "Russians", 12, 14, 0, rules)
-            .unwrap(),
-        hostile
-    );
-    let live = run_mission(&mut serial, rules, hunter);
-    assert_eq!(live, Some(TargetKind::Entity(hostile)));
-    assert_eq!(run_mission(&mut requested, rules, hunter), live);
-    assert!(
-        requested
-            .substrate
-            .entities
-            .get(previous)
-            .unwrap()
-            .is_active()
-    );
-    assert_eq!(
-        requested.scenario_rng.logical_state(),
-        serial.scenario_rng.logical_state()
-    );
-}
-
-/// The old payload contained no serialized fields, only the Option tag.
-/// A restored request must not re-enable frame-start acquisition.
-#[test]
-fn a_saved_legacy_scan_request_resumes_with_live_acquisition() {
-    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
-        return;
-    };
-    let rules = &fixture.rules;
-    let (mut saved, hunter) = hunting_tank_scene(rules);
-    saved.scan_batch = Some(ScanBatch::default());
-    assert_eq!(
-        crate::util::save_codec::serialize(&saved.scan_batch).unwrap(),
-        vec![1]
-    );
-    let terrain = saved.resolved_terrain.as_ref().unwrap().clone();
-    let bytes = crate::sim::snapshot::GameSnapshot::save(&saved, 0, 0, "hunt.map", 0);
-    let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
-        .unwrap()
-        .sim;
-    assert!(
-        restored.scan_batch.is_some(),
-        "the saved Option tag decoded"
-    );
-    restored.restore_after_snapshot_load().unwrap();
-    assert!(
-        restored.scan_batch.is_none(),
-        "load retires the legacy request before any object turn"
-    );
-    restored.rebuild_caches_after_load(terrain, Default::default(), rules);
-    assert!(restored.rebuild_dynamic_navigation(rules));
-    let hostile = restored
-        .spawn_object("HTNK", "Russians", 14, 12, 0, rules)
-        .unwrap();
-    assert_eq!(
-        run_mission(&mut restored, rules, hunter),
+        run_mission(&mut serial, rules, hunter),
         Some(TargetKind::Entity(hostile))
     );
+    assert_eq!(run_mission(&mut batched, rules, hunter), None);
+    assert_eq!(batched.batched_scans_used(), 1, "the answer is taken");
+
+    batched.finish_batched_scans();
+    let now = batched.session.binary_frame();
+    let next_run = now
+        + batched
+            .substrate
+            .entities
+            .get(hunter)
+            .unwrap()
+            .mission
+            .dispatch_timer()
+            .remaining_if_pending(now)
+            .expect("Hunt runs again later") as u32;
+    let grid = batched
+        .path_grid_snapshot()
+        .map(|grid| (*grid).clone())
+        .unwrap();
+    // Whole frames through the handler's next run; a frame commits its
+    // number only after its pass.
+    while batched.session.binary_frame() <= next_run {
+        let outcome = batched.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+        assert!(outcome.frame_committed);
+    }
+    let actor = batched.substrate.entities.get(hunter).unwrap();
+    assert_eq!(
+        actor.attack_target.target(),
+        Some(TargetKind::Entity(hostile))
+    );
+    assert_eq!(batched.batched_scans_used(), 2, "the next run's answer");
 }
 
-/// Whole frames on a worker pool: per-call candidate scoring may run in
-/// parallel, but each object consumes the world at its own visit.
-fn frames_on_workers(
+/// A save keeps the setting, in the bytes the retired empty struct wrote, but
+/// not a pass's answers; a game saved without batching resumes without it.
+#[test]
+fn a_save_keeps_the_setting_and_drops_the_answers() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &fixture.rules;
+    let (mut sim, _) = hunting_tank_scene(rules);
+    sim.batch_target_scans();
+    sim.answer_batched_scans(rules, None);
+    assert!(!sim.scan_batch.as_ref().unwrap().answers.is_empty());
+    assert_eq!(
+        crate::util::save_codec::serialize(&sim.scan_batch).unwrap(),
+        vec![1]
+    );
+    let load = |sim: &Simulation| {
+        let bytes = crate::sim::snapshot::GameSnapshot::save(sim, 0, 0, "scan_batch", 0);
+        let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+            .unwrap()
+            .sim;
+        restored.restore_after_snapshot_load().unwrap();
+        restored
+    };
+    let restored = load(&sim);
+    let batch = restored.scan_batch.as_ref().expect("still batching");
+    assert!(batch.answers.is_empty());
+    let serial = crate::sim::arena_fixture::rival_arena(rules, 626);
+    assert!(
+        load(&serial).scan_batch.is_none(),
+        "a serial game stays serial"
+    );
+}
+
+/// `frames` whole frames, with scans batched, of a `size` arena that `setup`
+/// fills, on a worker pool of `threads`: each frame's state hash, and the
+/// answers scans took.
+fn batched_frames(
     rules: &RuleSet,
     size: u16,
     threads: usize,
     frames: usize,
     setup: impl Fn(&mut Simulation) + Sync,
-) -> Vec<u64> {
+) -> (Vec<u64>, usize) {
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(threads)
         .build()
@@ -205,7 +169,8 @@ fn frames_on_workers(
             .map(|grid| (*grid).clone())
             .unwrap();
         setup(&mut sim);
-        (0..frames)
+        sim.batch_target_scans();
+        let hashes = (0..frames)
             .map(|_| {
                 let outcome = sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
                 assert!(
@@ -214,29 +179,15 @@ fn frames_on_workers(
                 );
                 sim.state_hash()
             })
-            .collect()
+            .collect();
+        (hashes, sim.batched_scans_used())
     })
 }
 
-#[test]
-fn whole_frames_do_not_depend_on_the_thread_count() {
-    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
-        return;
-    };
-    let rules = &fixture.rules;
-    let squads = |sim: &mut Simulation| {
-        for i in 0..8u16 {
-            for (house, x) in [("Americans", 10), ("Russians", 15)] {
-                sim.spawn_object("E1", house, x, 8 + 2 * i, 0, rules)
-                    .unwrap();
-            }
-        }
-    };
-    let one = frames_on_workers(rules, 32, 1, 90, squads);
-    assert_eq!(frames_on_workers(rules, 32, 4, 90, squads), one);
-}
-
-/// Two hunting companies still exercise parallel scoring within one scan.
+/// Two hunting companies of 150 riflemen: each Hunt scan walks more objects
+/// than `greatest_threat::flat_scores` scores one by one, so it scores them
+/// side by side inside the batch's side-by-side answers, and every frame's
+/// state hash is still the same on one worker thread as on four.
 #[test]
 fn nested_side_by_side_hunt_scans_do_not_depend_on_the_thread_count() {
     let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -250,16 +201,12 @@ fn nested_side_by_side_hunt_scans_do_not_depend_on_the_thread_count() {
                     let id = sim
                         .spawn_object("E1", house, x + j, 4 + 2 * i, 0, rules)
                         .unwrap();
-                    sim.substrate
-                        .entities
-                        .get_mut(id)
-                        .unwrap()
-                        .mission
-                        .set_current_for_test(MissionId::from_known(MissionType::Hunt), 0);
+                    on_mission(sim, id, MissionType::Hunt);
                 }
             }
         }
     };
-    let one = frames_on_workers(rules, 48, 1, 10, companies);
-    assert_eq!(frames_on_workers(rules, 48, 4, 10, companies), one);
+    let (one, used) = batched_frames(rules, 48, 1, 10, companies);
+    assert!(used > 0, "the hunters' scans take batched answers");
+    assert_eq!(batched_frames(rules, 48, 4, 10, companies), (one, used));
 }
