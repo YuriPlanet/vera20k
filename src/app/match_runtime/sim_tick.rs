@@ -855,24 +855,8 @@ fn advance_in_game_runtime_mode(
     let mut paced_frame_start_ms = None;
     let pacer_timing_admits = match mode {
         RuntimeAdvanceMode::WallClock { now_ms } => {
-            let game_speed = state
-                .match_state
-                .sim_runtime
-                .as_ref()
-                .map(|rt| &rt.simulation)
-                .map_or_else(
-                    || {
-                        state
-                            .match_state
-                            .match_presentation
-                            .in_game_options
-                            .game_speed
-                            .min(6) as u8
-                    },
-                    |sim| sim.session().game_options().game_speed.clamp(0, 6) as u8,
-                );
             // Pure timing consult; pause/menu blocking belongs to the decision.
-            let network_fps = super::network_match::frame_budget(state);
+            let (game_speed, network_fps) = local_pacing_inputs(state);
             if let Some(live) = state
                 .match_state
                 .live_network
@@ -1146,8 +1130,30 @@ fn advance_in_game_runtime_mode(
     decision.run_sim
 }
 
+/// The GameSpeed and network FPS (with lag delay) the local pacer times
+/// Main_Tick by; sequenced online play paces with its own clock instead.
+pub(crate) fn local_pacing_inputs(state: &AppState) -> (u8, Option<(u16, u32)>) {
+    let game_speed = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .map(|rt| &rt.simulation)
+        .map_or_else(
+            || {
+                state
+                    .match_state
+                    .match_presentation
+                    .in_game_options
+                    .game_speed
+                    .min(6) as u8
+            },
+            |sim| sim.session().game_options().game_speed.clamp(0, 6) as u8,
+        );
+    (game_speed, super::network_match::frame_budget(state))
+}
+
 /// Debug speed is limited to an offline Skirmish; online, LAN and campaign
-/// play keep one frame per paced pass.
+/// play keep one frame per paced interval.
 pub(crate) fn debug_speed_allowed(state: &AppState) -> bool {
     state.match_state.session_mode() == super::session::SessionMode::Skirmish
         && state.match_state.live_network.is_none()

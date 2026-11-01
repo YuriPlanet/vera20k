@@ -101,7 +101,7 @@ fn apply_screen_shake(
 impl App {
     /// Service the match runtime for one pass: the outcome voice wait, the
     /// scenario exit cascade, the quit cascade, the audio pump and, when
-    /// admitted, one simulation advance. Shared by the render pass and the
+    /// admitted, each simulation advance due by now. Shared by the render pass and the
     /// hidden-window service loop in `about_to_wait`, so the world keeps the
     /// same cadence whether or not a frame is drawn. Returns quit state and
     /// the pre-Logic Main_Tick admission for its later consumers.
@@ -128,6 +128,11 @@ impl App {
         state.audio.mute_for_restore(restoring, sound, voice);
         let mut attempts = 0;
         loop {
+            if result.last_frame_completed {
+                // Observe each catch-up frame, so interpolation keeps
+                // consecutive endpoints instead of snapping at the jump.
+                crate::app::presentation::interpolation::prepare(state, false);
+            }
             let before = state.match_state.sim_runtime.as_ref().map(|runtime| {
                 (
                     runtime.simulation.session().tick(),
@@ -177,6 +182,19 @@ impl App {
                 .as_ref()
                 .filter(|live| live.uses_sequenced_lockstep())
             else {
+                // Main__ThrottleFrame (0x0055E160) polls its timer without
+                // waiting for a refresh: run every frame already due, so an
+                // interval shorter than one refresh keeps its native rate.
+                let (game_speed, network_fps) =
+                    crate::app::match_runtime::sim_tick::local_pacing_inputs(state);
+                if state.platform.frame_pacer.should_admit(
+                    crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+                    game_speed,
+                    network_fps,
+                    false,
+                ) {
+                    continue;
+                }
                 break;
             };
             if !live.has_terminal_network_error() {
