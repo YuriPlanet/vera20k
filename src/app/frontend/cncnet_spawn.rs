@@ -27,7 +27,7 @@ use crate::skirmish_launch::{
     SkirmishHumanSlot, SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLaunchSession,
     SkirmishLocalSlot,
 };
-use crate::skirmish_modes::{ModeStartEffect, MpModeClass};
+use crate::skirmish_modes::ModeStartEffect;
 
 #[derive(Debug)]
 pub(crate) struct SpawnRequest {
