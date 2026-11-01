@@ -104,8 +104,8 @@ oracles, scripts) until steps 1 and 2 are clean.
      `git checkout --detach <PR head SHA>`, then merge `origin/main`.
    - Push a slot merge to the contributor's branch, and confirm the PR head
      equals the SHA you pushed.
-   - Apply [Contributor attribution](#contributor-attribution) before choosing the
-     merge method. Use an explicit `--subject`, `--body-file` and
+   - Squash-merge as [Contributor attribution](#contributor-attribution) says:
+     `gh pr merge <N> --squash` with an explicit `--subject`, `--body-file` and
      `--match-head-commit <actual head SHA>`. Write "Part of #N" unless the PR
      really closes N.
    - Release a claimed slot with `integration_slot.py release pr<N>` once its work is
@@ -120,9 +120,8 @@ oracles, scripts) until steps 1 and 2 are clean.
 
 ## Contributor attribution
 
-- Use the contributor's verified GitHub login as the default public credit,
-  including the author name on maintainer-created integration commits. A numeric
-  username is a complete identity. Honor an explicit different public-name
+- Use the contributor's verified GitHub login as the default public credit. A
+  numeric username is a complete identity. Honor an explicit different public-name
   preference from that contributor or the maintainer; verify who supplied it.
 - A raw Git author name, email address or social-profile name is not evidence of
   the preferred public credit. Without that explicit preference, do not infer,
@@ -137,13 +136,16 @@ oracles, scripts) until steps 1 and 2 are clean.
 - Before merging, inspect the exact author/account mapping, subject, body and
   trailers the merge will produce, including GitHub's generated defaults. Resolve
   unexpected identities, unrequested personal names and duplicate credit first.
-- GitHub's squash authors its commit with the account's profile name and default
-  commit email, not the identity on the PR's commits, even when the contributor
-  opened the PR. Squash only when an earlier squash of that account read back
-  with its verified identity. Otherwise keep the identity on the contributor's
-  own commits: rebase-merge a single commit, or prepare one combined commit with
-  that author and rebase-merge it. When the branch is not editable, use a merge
-  commit.
-- After merging, read back the resulting commit and verify the same attribution.
-  Report a mismatch and resolve it before further merges. Do not rewrite shared
-  history without the user's explicit authorization.
+- Squash-merge every contributor's PR, so GitHub shows the contributor alone.
+  GitHub authors the squash with the contributor's account (its profile name and
+  default commit email) and commits it as GitHub, which it does not display. A
+  rebase-merge makes the merging maintainer the committer, and a merge commit is
+  the maintainer's own, so GitHub shows the maintainer's name as well; the
+  maintainer does not want that. Put integration fixes on the branch as ordinary
+  commits rather than rewriting the contributor's, and write the body yourself
+  with no `Co-authored-by` for integration work.
+- After merging, read back the resulting commit:
+  `gh api repos/<owner>/<repo>/commits/<sha> --jq '.author.login, .committer.login'`
+  prints the contributor's login and `web-flow`, and no trailer names the
+  maintainer. Report a mismatch and resolve it before further merges. Do not
+  rewrite shared history without the user's explicit authorization.
