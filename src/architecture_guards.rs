@@ -311,7 +311,7 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 "util/config.rs",
                 "util/logging.rs",
                 // Switches that only remove debug assertions.
-                "sim/touch_log.rs",
+                "util/debug_checks.rs",
                 "sim/world/master_frame.rs",
                 // Retail probes that movement_bridge_retail_tests.rs includes
                 // by `#[path]`, which the test-gate scan cannot see.
