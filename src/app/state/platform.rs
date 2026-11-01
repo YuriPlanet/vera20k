@@ -88,6 +88,9 @@ pub(crate) struct PlatformState {
     pub(crate) window_hidden: bool,
     /// Local wall-clock admission state. Never serialized or read by the sim.
     pub(crate) frame_pacer: LocalFramePacer,
+    /// Whether the next visible pass must draw, or may only service the
+    /// match because the presented picture still stands. Presentation-only.
+    pub(crate) redraw_gate: crate::app::match_runtime::redraw_gate::RedrawGate,
     /// Loaded GameConfig — missing config.toml falls back to the executable
     /// root; `None` only when config loading or executable-root discovery
     /// fails. Set once at process start from `GameConfig::load()`; not
@@ -129,6 +132,7 @@ impl PlatformState {
             pause_on_focus_loss,
             window_hidden: false,
             frame_pacer: LocalFramePacer::new(),
+            redraw_gate: Default::default(),
             game_config,
             capture_client_size,
             recenter_windowed: false,

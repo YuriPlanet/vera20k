@@ -44,6 +44,17 @@ pub(super) enum FrameRenderOutcome {
     Presented,
     Unavailable,
     Deferred,
+    /// A probe found the presented picture still standing and drew nothing.
+    Unchanged,
+}
+
+/// What one pass of `render_frame` may do once the match is serviced.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FramePass {
+    Draw,
+    /// Service the match, then draw only if the presented picture no longer
+    /// stands (`match_runtime::redraw_gate`).
+    Probe,
 }
 
 /// The composition's full-height battlefield/command-bar region. Native
@@ -659,6 +670,7 @@ impl App {
         mut tactical_capture: Option<
             &mut crate::app::diagnostics::tactical_capture::session::TacticalCaptureSession,
         >,
+        pass: FramePass,
     ) -> Result<FrameRenderOutcome> {
         if let Some(presented) = crate::app::persistence::commands::pump_saved_game_load(state) {
             return Ok(if presented {
@@ -798,6 +810,19 @@ impl App {
                 runtime_pass.main_tick_admitted || tactical_capture.is_some(),
             )
         };
+        // A changed picture is drawn in this same pass, so each drawn frame
+        // still follows exactly one match service.
+        if pass == FramePass::Probe
+            && state.platform.redraw_gate.still_presented(
+                crate::app::match_runtime::redraw_gate::still_frame(
+                    state,
+                    false,
+                    runtime_pass.screen_shake_offset,
+                ),
+            )
+        {
+            return Ok(FrameRenderOutcome::Unchanged);
+        }
         let next_canonical = ordinary_online
             .then(|| Self::next_online_render_frame(state))
             .flatten();
@@ -1459,6 +1484,12 @@ impl App {
             } else {
                 [0, 0]
             });
+        let still = crate::app::match_runtime::redraw_gate::still_frame(
+            state,
+            shell_capture.is_some() || tactical_capture.is_some(),
+            runtime_pass.screen_shake_offset,
+        );
+        state.platform.redraw_gate.record_presented(still);
         // A family renderer that drew a timer-driven 0x71C frame this pass
         // advances it now that the frame reached the screen.
         state.frontend.shell_monitor.commit_presented();
