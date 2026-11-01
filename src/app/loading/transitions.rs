@@ -200,6 +200,10 @@ pub(crate) fn install_world_presentation(
     state
         .match_state
         .match_presentation
+        .super_timer_next_flip_ms = None;
+    state
+        .match_state
+        .match_presentation
         .super_timer_dock
         .reset();
     sync_in_game_options_speed_from_sim(state);

@@ -74,6 +74,9 @@ pub(super) struct UiInstances {
     #[cfg(feature = "phobos")]
     pub placement_ghost: Vec<SpriteInstance>,
     pub target_line: Vec<SpriteInstance>,
+    /// Whether a target line moves with the wall clock: planning dashes
+    /// (63D8B8), mind-control links (704E40), psychic detection lines (4DC340).
+    pub timed_lines: bool,
     pub tactical_line_calls: Vec<crate::app::presentation::airstrike_lines::TacticalLineCall>,
     pub factory_rally_first: Vec<SpriteInstance>,
     pub factory_rally_second: Vec<SpriteInstance>,
@@ -929,7 +932,8 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
         }
     };
     let (mut target_line, planning_highlights) = planning_lines::build(state, view);
-    target_line.extend(
+    let planning_dashes = !target_line.is_empty();
+    let (action_lines, timed_action_lines) =
         crate::app::presentation::target_lines::build_target_line_instances_sampled(
             &state.match_state.match_presentation.target_lines,
             state.match_state.input.planning.active(),
@@ -953,8 +957,8 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
             },
             &mut shroud_alpha,
             Some(&state.match_state.match_presentation.interpolation),
-        ),
-    );
+        );
+    target_line.extend(action_lines);
     target_line.extend(planning_highlights);
     let selected = crate::app::input::dispatch::selected_stable_ids_in_order(
         state
@@ -989,6 +993,7 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
         #[cfg(feature = "phobos")]
         placement_ghost: placement_preview.ghost,
         target_line,
+        timed_lines: planning_dashes || timed_action_lines,
         tactical_line_calls,
         factory_rally_first,
         factory_rally_second,

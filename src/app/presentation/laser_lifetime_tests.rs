@@ -73,7 +73,7 @@ fn original_general_main_continuation_is_sampled_once_per_composite() {
             .observations()
             .map(|value| serde_json::to_value(value).unwrap())
             .collect::<Vec<_>>();
-        let ((), trace) = crate::sim::rng::trace_draws(|| lasers.composite(&mut main.draws()));
+        let (_, trace) = crate::sim::rng::trace_draws(|| lasers.composite(&mut main.draws()));
         assert_eq!(
             main.native_state_hex(),
             row["rng_after"]["main"].as_str().unwrap(),

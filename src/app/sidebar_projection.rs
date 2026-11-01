@@ -38,6 +38,9 @@ pub(crate) struct CreditTick {
 pub(crate) struct SidebarProjectionState {
     displayed_credits: HashMap<String, i32>,
     current_view: Option<SidebarView>,
+    /// Counts changes of `current_view`, so a standing picture can tell its
+    /// sidebar is unchanged without keeping a copy (`redraw_gate`).
+    view_revision: u64,
     /// Retained native strip order, keyed to the local house. `None` is the
     /// scenario-init window (`[0xA8E7AC] != 0`), where insertions are silent.
     cameos: Option<(InternedId, CameoStrips)>,
@@ -243,7 +246,15 @@ impl SidebarProjectionState {
         self.current_view.as_ref()
     }
 
+    /// Changes whenever the retained view does.
+    pub(crate) fn view_revision(&self) -> u64 {
+        self.view_revision
+    }
+
     pub(crate) fn replace_view(&mut self, view: Option<SidebarView>) {
+        if self.current_view != view {
+            self.view_revision = self.view_revision.wrapping_add(1);
+        }
         if view.is_none() {
             self.clear_ready_building(None);
             self.cameos = None;
@@ -650,6 +661,8 @@ impl SidebarProjectionState {
         };
         self.apply_cameo_draw_state(&mut view, sim, rules, owner, armed_building);
         self.current_view = Some(view);
+        // Committed frames only; the world revision moves with them anyway.
+        self.view_revision = self.view_revision.wrapping_add(1);
     }
 
     /// Validate foreign handles against the one Factory registry and retained

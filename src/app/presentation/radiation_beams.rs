@@ -69,6 +69,12 @@ impl RadiationBeams {
         });
     }
 
+    /// Whether no beam is live: each composite advances every live beam's
+    /// progress (`0x00659110`), drawn or not.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.live.is_empty()
+    }
+
     pub(crate) fn composite(
         &mut self,
         frame_rate: u32,

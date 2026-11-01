@@ -86,6 +86,9 @@ pub(crate) struct MatchPresentationState {
     /// The Supers' timer blinks (`SuperClass+0x40`, `+0x48`), by owner and
     /// type (`presentation::super_timers`).
     pub(crate) super_timer_blinks: crate::app::presentation::super_timers::TimerBlinks,
+    /// The earliest clock ms a drawn 0 s Super line's blink flips at, as of
+    /// the last timer draw (`presentation::super_timers::blink_due`).
+    pub(crate) super_timer_next_flip_ms: Option<u64>,
     /// Local timer-list folding and scroll state, independent of simulation.
     pub(crate) super_timer_dock: crate::app::presentation::super_timers::TimerDock,
     pub(crate) combat_lights: crate::app::presentation::combat_lights::CombatLightRuntime,

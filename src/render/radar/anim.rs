@@ -384,6 +384,11 @@ impl RadarAnimState {
     pub fn set_has_radar(&mut self, has_radar: bool) -> Option<RadarAvailabilityCue> {
         self.presentation.set_has_radar(has_radar)
     }
+    /// Whether the housing is opening or closing: `653100` steps it on the
+    /// first draw after each four wall-clock buckets.
+    pub fn housing_moving(&self) -> bool {
+        self.presentation.housing_moving()
+    }
     /// Native 653100 samples wall time once per draw, independent of game speed.
     /// Returns whether the housing finished opening or closing in this draw.
     pub fn tick(&mut self, gpu: &GpuContext, wall_ms: u64) -> bool {
