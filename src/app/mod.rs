@@ -63,6 +63,7 @@ mod initialize;
 pub(crate) mod input;
 pub(crate) mod lan_service;
 pub(crate) mod loading;
+pub(crate) mod map_library;
 pub(crate) mod match_audio;
 pub mod match_bootstrap;
 pub(crate) mod match_diagnostics;

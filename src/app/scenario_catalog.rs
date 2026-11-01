@@ -209,13 +209,32 @@ impl ScenarioCatalog {
         assets: &AssetManager,
     ) -> Option<crate::map::source::LoadedMapIni> {
         crate::map::source::validate_network_map_name(file).ok()?;
-        let loaded = crate::map::source::load_network_map_ini(root, file, assets).ok()?;
-        Self::verify_transferred_network_map(
-            &loaded,
-            metadata,
-            crate::map::rmg::is_seed_selection(file),
-        )
-        .then_some(loaded)
+        let seed = crate::map::rmg::is_seed_selection(file);
+        let verified = |name: &str| {
+            let loaded = crate::map::source::load_network_map_ini(root, name, assets).ok()?;
+            Self::verify_transferred_network_map(&loaded, metadata, seed).then_some(loaded)
+        };
+        verified(file).or_else(|| {
+            // VERA: the same map under another name or case, as a map received
+            // or downloaded earlier is kept (`keep_received_map`): a loose map
+            // in the game folder or VERA's Maps folder whose bytes verify.
+            // Only files of the host's length are read.
+            if seed {
+                return None;
+            }
+            let length = u64::try_from(metadata.byte_length).ok()?;
+            std::iter::once(root)
+                .chain(crate::map::source::downloaded_maps_dir())
+                .filter_map(|dir| crate::util::file_system::read_dir(dir).ok())
+                .flatten()
+                .filter_map(|entry| Some(entry.ok()?.path()))
+                .filter(|path| {
+                    crate::map::source::is_loose_map_name(path)
+                        && crate::util::file_system::metadata(path)
+                            .is_ok_and(|meta| meta.is_file() && meta.len() == length)
+                })
+                .find_map(|path| verified(path.to_str()?))
+        })
     }
 
     /// Mutable access to the records. The guard re-projects the shell map
@@ -340,6 +359,42 @@ mod tests {
             catalog
                 .verify_network_map_input("RandMap.Sed", &wrong, root.path(), &assets)
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn a_guest_finds_its_copy_of_the_hosts_map_under_another_name() {
+        let map: &[u8] = b"[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n[IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n";
+        let host = TestDirectory::new("kept-name-host");
+        host.write("Lakes.map", map);
+        let host_assets = AssetManager::from_loose_root_for_test(host.path());
+        let record = SkirmishScenarioRecord::concrete_from_ini(
+            0,
+            SkirmishScenarioSource::Synthetic,
+            "Lakes.map",
+            &IniFile::from_bytes(map).unwrap(),
+        );
+        let metadata = ScenarioCatalog::from_records(vec![record])
+            .network_map_metadata("Lakes.map", host.path(), &host_assets)
+            .unwrap();
+
+        let guest = TestDirectory::new("kept-name-guest");
+        let guest_assets = AssetManager::from_loose_root_for_test(guest.path());
+        let catalog = ScenarioCatalog::from_records(Vec::new());
+        guest.write("Lakes.yrm", b"[Map]\nTheater=SNOW\n");
+        assert!(
+            catalog
+                .verify_network_map_input("Lakes.map", &metadata, guest.path(), &guest_assets)
+                .is_none(),
+            "another map under the kept name is not the host's"
+        );
+        // Kept under another name and case, as a copy beside another map of
+        // its name is.
+        guest.write("lakes-1A2B.YRM", map);
+        assert!(
+            catalog
+                .verify_network_map_input("Lakes.map", &metadata, guest.path(), &guest_assets)
+                .is_some()
         );
     }
 

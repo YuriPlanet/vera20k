@@ -1126,7 +1126,7 @@ impl App {
             return;
         }
         if let Some(chooser) = shell.choose_map_modal.as_mut()
-            && chooser.eject_prompt.is_none()
+            && chooser.message_box.is_none()
         {
             chooser.show();
         }
@@ -1362,7 +1362,9 @@ impl App {
                 .skirmish_shell_state
                 .random_map_setup_modal
                 .as_mut()
-                && setup.statics.hover(&help, crate::util::time::Instant::now())
+                && setup
+                    .statics
+                    .hover(&help, crate::util::time::Instant::now())
             {
                 state.platform.window.request_redraw();
             }

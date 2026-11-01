@@ -457,8 +457,11 @@ impl MultiplayerShellRuntime {
         let records = catalog.records();
         let preferred = usize::try_from(snapshot.scenario_index).unwrap_or(0);
         let valid = |mode: &SkirmishGameMode, index: usize| {
+            // VERA: an Online row names no file here until Choose Map
+            // downloads it, so a remembered index on one gives way too.
             records.get(index).is_some_and(|record| {
-                crate::map::skirmish_scenarios::is_valid_map(record, mode, room_only)
+                !record.is_online()
+                    && crate::map::skirmish_scenarios::is_valid_map(record, mode, room_only)
             })
         };
         let mut selected = valid(mode, preferred).then_some(preferred);
