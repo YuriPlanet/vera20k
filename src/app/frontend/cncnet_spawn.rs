@@ -7,8 +7,8 @@
 //! `GameLobbyBase.WriteSpawnIni` and `CampaignSelector.LaunchMission`:
 //! https://github.com/CnCNet/xna-cncnet-client/tree/develop/DXMainClient/DXGUI
 //!
-//! This boundary admits one local human, the stock YR modes but Cooperative and
-//! stock YR campaigns. Ares builds also carry allocated custom Country identities
+//! This boundary admits one local human, the stock YR modes and stock YR
+//! campaigns. Ares builds also carry allocated custom Country identities
 //! into Battle startup. External campaigns pass an explicit Scenario independently
 //! of record0. Multiplayer files (`PlayerCount>1` or `[Relay]`, docs/spawn.md)
 //! normalize into a canonical source-ordered session plus a relay or direct
@@ -27,7 +27,7 @@ use crate::skirmish_launch::{
     SkirmishHumanSlot, SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLaunchSession,
     SkirmishLocalSlot,
 };
-use crate::skirmish_modes::{ModeStartEffect, MpModeClass};
+use crate::skirmish_modes::ModeStartEffect;
 
 #[derive(Debug)]
 pub(crate) struct SpawnRequest {
@@ -45,14 +45,11 @@ pub(crate) fn spawn_battle_mode() -> SkirmishLaunchMode {
     SkirmishLaunchMode::stock(crate::skirmish_launch::BATTLE_MODE_ID).expect("stock Battle row")
 }
 
-/// The stock rows a spawn may select: every mode but Cooperative, whose Start
-/// (`0x005C1D80`) binds a campaign progress record and whose `+0xA0`
-/// (`0x005C3710`) continues to the next mission, neither of which a launch of
-/// one fixed game carries.
+/// The stock rows a spawn may select. A Cooperative launch is one mission: it
+/// holds no campaign progress record for its Start (`0x005C1D80`) to bind, so
+/// `+0xA0` (`0x005C3710`) records nothing and no next mission follows.
 pub(crate) fn spawn_modes() -> impl Iterator<Item = SkirmishLaunchMode> {
-    (1..=9)
-        .filter_map(SkirmishLaunchMode::stock)
-        .filter(|mode| mode.class != MpModeClass::Cooperative)
+    (1..=9).filter_map(SkirmishLaunchMode::stock)
 }
 
 /// `[Settings] GameMode`. The launcher owns which maps a mode may use: the file
@@ -61,7 +58,7 @@ fn spawn_mode(settings: &IniSection) -> Result<SkirmishLaunchMode> {
     let id = integer(settings, "GameMode", crate::skirmish_launch::BATTLE_MODE_ID)?;
     spawn_modes()
         .find(|mode| mode.id == id)
-        .with_context(|| format!("GameMode={id} is not a stock YR mode a spawn can start"))
+        .with_context(|| format!("GameMode={id} is not a stock YR mode"))
 }
 
 /// The team choices network setup offers a mode (`view.rs`' Team column and
@@ -664,11 +661,26 @@ fn skirmish(
     for (opponent, team) in opponents.iter_mut().zip(&teams[player_count..]) {
         opponent.team = *team;
     }
+    // Cooperative's AI rows come from its mode+68 (`0x005C30C0`), whose rows the
+    // launcher writes here, so it admits them though setup offers none by hand.
     ensure!(
-        ai_count == 0 || mode.class.lists_in_skirmish(),
+        ai_count == 0 || mode.class.lists_in_skirmish() || mode.class.uses_cooperative_setup(),
         "GameMode={} cannot include AI players",
         mode.id
     );
+    // Vtable+BC (`0x005C4F00`) and +98 (`0x005C42C0`).
+    ensure!(
+        mode.class.allows_observers() || humans.iter().all(|human| !human.is_observer()),
+        "GameMode={} cannot have spectators",
+        mode.id
+    );
+    if let Some(limit) = mode.class.setup_player_limit() {
+        ensure!(
+            humans.len() <= limit,
+            "GameMode={} admits {limit} human players",
+            mode.id
+        );
+    }
     let playing_teams: Vec<_> = humans
         .iter()
         .filter(|human| !human.is_observer())
@@ -727,10 +739,8 @@ fn skirmish(
                 session.humans[source].role = role;
             }
         }
-        Ok(ModeStartEffect::None) => {}
-        Ok(ModeStartEffect::CooperativePartners) => {
-            unreachable!("spawn_modes leaves Cooperative out")
-        }
+        // No progress record to bind the partners into (see `spawn_modes`).
+        Ok(ModeStartEffect::None | ModeStartEffect::CooperativePartners) => {}
         Err(_) => bail!(
             "GameMode={} cannot start with these settings",
             session.mode.id

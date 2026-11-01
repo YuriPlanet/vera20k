@@ -669,10 +669,8 @@ fn game_mode_selects_its_stock_row_and_start_effect() {
         let roles: Vec<_> = free.humans.iter().map(|h| h.role.native_value()).collect();
         assert_eq!(roles, [0, 1]);
     }
-    // Cooperative needs a campaign record; 10 has no MPModesMD row.
-    for mode in [3, 10] {
-        assert!(SpawnRequest::parse(&in_mode(mode, network_spawn(2, 0, ""))).is_err());
-    }
+    // 10 has no MPModesMD row.
+    assert!(SpawnRequest::parse(&in_mode(10, network_spawn(2, 0, ""))).is_err());
 }
 
 #[test]
@@ -710,6 +708,29 @@ fn game_mode_admits_only_its_setup_choices() {
         ),)
         .is_err()
     );
+}
+
+/// One mission of a Co-op campaign: the launcher's enemy rows, at most two
+/// humans (`0x005C42C0`), no spectators (`0x005C4F00`), and no teams, since the
+/// bootstrap allies each side (`AlliesAllowed=no`, `permits_all_allied`).
+#[test]
+fn cooperative_admits_its_enemy_rows_and_two_humans() {
+    let enemies = "[HouseHandicaps]\nMulti3=1\nMulti4=1\n[HouseCountries]\nMulti3=8\nMulti4=7\n\
+         [HouseColors]\nMulti3=2\nMulti4=3\n";
+    let with_ai = |count, extra: &str| {
+        in_mode(3, network_spawn(count, 0, &format!("{enemies}{extra}"))).replacen(
+            "[Settings]\n",
+            "[Settings]\nAIPlayers=2\n",
+            1,
+        )
+    };
+    let session = parse_network(&with_ai(2, "")).session;
+    assert_eq!(session.mode.override_file, "MPCoopMD.ini");
+    assert_eq!(session.opponents.len(), 2);
+    assert!(!session.all_allied());
+    assert!(SpawnRequest::parse(&with_ai(2, "[IsSpectator]\nMulti2=Yes\n")).is_err());
+    assert!(SpawnRequest::parse(&with_ai(2, "[HouseTeams]\nMulti1=0\nMulti2=0\n")).is_err());
+    assert!(SpawnRequest::parse(&in_mode(3, network_spawn(3, 0, ""))).is_err());
 }
 
 #[test]
