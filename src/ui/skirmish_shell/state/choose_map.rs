@@ -51,7 +51,7 @@ pub enum ChooseMapPromptKind {
     /// OK goes on with the selection; Cancel keeps the chooser.
     EjectAi,
     /// VERA: the chosen map is only in the online map library. Download
-    /// saves it in VERA's maps folder and goes on with the selection.
+    /// saves it in VERA's maps folder.
     Download,
     /// Its download is running; only Cancel works.
     Downloading,
@@ -60,6 +60,22 @@ pub enum ChooseMapPromptKind {
     /// It arrived but could not be saved in VERA's maps folder; Download
     /// tries again.
     SaveFailed,
+    /// It is saved in VERA's maps folder. The box waits: OK goes on with the
+    /// selection, and Cancel keeps the chooser with the map selected.
+    Downloaded,
+}
+
+/// What answering Use Map's box does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChooseMapPromptAnswer {
+    /// Go on with the selection.
+    UseMap,
+    /// Download the selected online map.
+    Download,
+    /// Close the box, stopping any download, and keep the chooser.
+    Close,
+    /// Nothing: Download waits while one runs.
+    Wait,
 }
 
 /// Use Map's two-button box over the chooser.
@@ -74,6 +90,19 @@ impl ChooseMapPrompt {
     /// Whether a button takes presses: Download waits while one runs.
     pub fn button_enabled(&self, button: ChooseMapPromptButton) -> bool {
         button == ChooseMapPromptButton::Cancel || self.kind != ChooseMapPromptKind::Downloading
+    }
+
+    /// What OK (`ok`) or Cancel does, from a click or a key.
+    pub fn answer(&self, ok: bool) -> ChooseMapPromptAnswer {
+        use ChooseMapPromptKind as Kind;
+        match (self.kind, ok) {
+            (_, false) => ChooseMapPromptAnswer::Close,
+            (Kind::EjectAi | Kind::Downloaded, true) => ChooseMapPromptAnswer::UseMap,
+            (Kind::Downloading, true) => ChooseMapPromptAnswer::Wait,
+            (Kind::Download | Kind::DownloadFailed | Kind::SaveFailed, true) => {
+                ChooseMapPromptAnswer::Download
+            }
+        }
     }
 }
 
