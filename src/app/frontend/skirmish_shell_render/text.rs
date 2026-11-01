@@ -315,6 +315,12 @@ fn list_text_inset(scale: ShellScale) -> i32 {
 
 const LIST_TEXT_INSET: i32 = 2;
 
+/// A list row's caption alignment. The owner-draw list (`0x00618D40`) draws a
+/// plain row with `Shell__DrawTextAligned` (`0x006211D0`) and flags 0: top-left,
+/// not centred, so a name too wide for the row keeps its first line in the row
+/// and the row clip hides the wrapped rest.
+const LIST_ROW_TEXT_ALIGN: ShellAlign = ShellAlign::NONE;
+
 pub(super) fn combo_face_text_fit_width(rect: RectPx, scale: ShellScale) -> u32 {
     // The truncation test runs on gamemd's glyph metrics, so the stretched face's
     // width is taken back to the units the caption is centred in.
@@ -1197,7 +1203,7 @@ pub(super) fn push_choose_map_modal_text_draws(
                 row.h,
             )),
             SHELL_LABEL_TEXT_RGB,
-            ShellAlign::V_CENTER,
+            LIST_ROW_TEXT_ALIGN,
             SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
             scale.factor(),
         );
@@ -1242,12 +1248,12 @@ pub(super) fn push_choose_map_modal_text_draws(
                 row.h,
             )),
             SHELL_LABEL_TEXT_RGB,
-            ShellAlign::V_CENTER,
+            LIST_ROW_TEXT_ALIGN,
             SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
             scale.factor(),
         );
     }
-    // VERA: an empty Online Maps list says why.
+    // VERA: an empty Online Maps list says why, wrapped down the list.
     if modal.online_maps_selected() && modal.filtered_record_indices.is_empty() {
         let row = geometry.row(0);
         push_text_draw(
@@ -1258,10 +1264,10 @@ pub(super) fn push_choose_map_modal_text_draws(
                 row.x + list_text_inset(scale),
                 row.y,
                 row.w - list_text_inset(scale),
-                row.h,
+                geometry.content.y + geometry.content.h - row.y,
             )),
             SHELL_LABEL_TEXT_RGB,
-            ShellAlign::V_CENTER,
+            LIST_ROW_TEXT_ALIGN,
             SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
             scale.factor(),
         );
@@ -1843,6 +1849,36 @@ mod tests {
 
         assert_eq!(label.as_ref(), "ab");
         assert!(font.text_width(label.as_ref()) <= 14);
+    }
+
+    /// A map name wider than its row (a file name with no description) used to
+    /// be centred as two lines, so half of each spilled past the row clip.
+    #[test]
+    fn a_list_row_too_narrow_for_its_name_keeps_the_first_line_in_the_row() {
+        let font = crate::render::bit_font::tests::make_test_font(&[(b'a' as u16, 6)], 4);
+        let row = TextRect {
+            x: 10,
+            y: 40,
+            w: 60,
+            h: 19,
+        };
+        let draw = crate::render::shell_text::draw_in_rect_scaled(
+            &font,
+            &"a".repeat(20),
+            row,
+            SHELL_LABEL_TEXT_RGB,
+            LIST_ROW_TEXT_ALIGN,
+            [0.0, 0.0],
+            0.5,
+            1.0,
+        );
+        let top = draw
+            .instances
+            .iter()
+            .map(|glyph| glyph.position[1])
+            .fold(f32::INFINITY, f32::min);
+        assert_eq!(top, row.y as f32);
+        assert_eq!((draw.scissor.y, draw.scissor.h), (40, 19));
     }
 
     #[test]
