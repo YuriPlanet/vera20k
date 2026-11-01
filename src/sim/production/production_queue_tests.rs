@@ -2540,8 +2540,13 @@ fn a_held_build_at_its_build_limit_resumes_on_produce() {
         queue_view_for_owner(&sim, &rules, "Americans")[0].state,
         BuildQueueState::Paused
     );
-    let option = super::production_tech::build_option_for_owner(&sim, &rules, "Americans", "AMCV")
-        .expect("the type stays listed");
+    let option = super::production_tech::build_option_for_owner(
+        &sim,
+        &rules,
+        sim.interner.get("Americans"),
+        "AMCV",
+    )
+    .expect("the type stays listed");
     assert_eq!(
         option.reason,
         Some(super::BuildDisabledReason::AtBuildLimit)

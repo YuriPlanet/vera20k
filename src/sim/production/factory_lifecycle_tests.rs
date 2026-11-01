@@ -3710,15 +3710,25 @@ fn secret_lab_fallback_capture_paid_queue_snapshot_and_loss_share_the_existing_o
     // Native Begin_Production takes already-admitted events and checks the
     // build limit, so the pre-capture gate belongs to the sidebar/Select owner.
     assert!(
-        !super::production_tech::build_option_for_owner(&sim, &rules, "Americans", "E1")
-            .unwrap()
-            .enabled
+        !super::production_tech::build_option_for_owner(
+            &sim,
+            &rules,
+            sim.interner.get("Americans"),
+            "E1"
+        )
+        .unwrap()
+        .enabled
     );
     sim.change_owner_with_rules(lab, owner, &rules, None, FrameEffects::default());
     assert!(
-        super::production_tech::build_option_for_owner(&sim, &rules, "Americans", "E1")
-            .unwrap()
-            .enabled
+        super::production_tech::build_option_for_owner(
+            &sim,
+            &rules,
+            sim.interner.get("Americans"),
+            "E1"
+        )
+        .unwrap()
+        .enabled
     );
     assert_eq!(sim.houses[&owner].base_projection().secret_labs(), [lab]);
     assert!(
@@ -3782,9 +3792,14 @@ fn secret_lab_fallback_capture_paid_queue_snapshot_and_loss_share_the_existing_o
         product
     );
     assert!(
-        super::production_tech::build_option_for_owner(&restored, &rules, "Americans", "E1")
-            .unwrap()
-            .enabled
+        super::production_tech::build_option_for_owner(
+            &restored,
+            &rules,
+            restored.interner.get("Americans"),
+            "E1"
+        )
+        .unwrap()
+        .enabled
     );
     let credits = restored.houses[&owner].economy().credits();
     let spent = restored.houses[&owner].economy().spent_credits();
@@ -3809,9 +3824,14 @@ fn secret_lab_fallback_capture_paid_queue_snapshot_and_loss_share_the_existing_o
         Some(fallback)
     );
     assert!(
-        !super::production_tech::build_option_for_owner(&restored, &rules, "Americans", "E1")
-            .unwrap()
-            .enabled
+        !super::production_tech::build_option_for_owner(
+            &restored,
+            &rules,
+            restored.interner.get("Americans"),
+            "E1"
+        )
+        .unwrap()
+        .enabled
     );
     // The loss recheck reaches ordinary strip cancellation. Both duplicate
     // requests are removed and the held identity is destroyed, not delivered.

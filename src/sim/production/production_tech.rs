@@ -103,19 +103,20 @@ fn append_construction_options(
 /// No money check: a build starts without the funds and stalls its steps
 /// instead (`SelectClass::Action @ 0x006AAD00` and `HouseClass::Begin_Production
 /// @ 0x004FA350` test none).
+/// `owner` is the house's interned name; `None` for a name nothing interned.
 pub(super) fn build_option_for_owner(
     sim: &Simulation,
     rules: &RuleSet,
-    owner: &str,
+    owner: Option<InternedId>,
     type_id: &str,
 ) -> Option<BuildOption> {
     let obj = rules.object(type_id)?;
-    let reason = match sim.interner.get(owner) {
+    let reason = match owner {
         Some(owner_id) => sidebar_state(sim, rules, owner_id, obj),
         None => Some(BuildDisabledReason::NoFactory),
     };
     let type_interned = sim.interner.get(type_id).unwrap_or_default();
-    let cost = match sim.interner.get(owner) {
+    let cost = match owner {
         Some(owner_id) => sim.cost_of(owner_id, obj, rules),
         None => rules.cost_of(obj, None),
     };
@@ -126,10 +127,7 @@ pub(super) fn build_option_for_owner(
         object_category: obj.category,
         queue_category: production_category_for_object(obj),
         enabled: reason.is_none(),
-        at_build_limit: sim
-            .interner
-            .get(owner)
-            .is_some_and(|owner| check_build_limit(sim, rules, owner, obj)),
+        at_build_limit: owner.is_some_and(|owner| check_build_limit(sim, rules, owner, obj)),
         reason,
     })
 }
@@ -249,6 +247,7 @@ pub fn all_build_options_for_owner(
     rules: &RuleSet,
     owner: &str,
 ) -> Vec<BuildOption> {
+    let owner = sim.interner.get(owner);
     let mut out: Vec<BuildOption> = Vec::new();
     for id in &rules.building_ids {
         if let Some(opt) = build_option_for_owner(sim, rules, owner, id) {
