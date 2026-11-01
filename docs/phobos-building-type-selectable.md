@@ -9,8 +9,10 @@ BuildingTypeSelectable=false    ; boolean, default no
 ```
 
 With the switch on, a second T press (or the sidebar's TypeSelect button) with
-a building selected selects every building of that type the local player owns,
-on screen first and across the map when the screen has no more of them.
+a building selected selects every building of that type the local player owns
+that still answers CanBeSelectedNow - so a bunker with a unit installed in it
+stays out - on screen first and across the map when the screen has no more of
+them.
 
 ## Native site
 
@@ -38,21 +40,18 @@ patches.
 
 ## Where VERA20K owns it
 
-- `rules/ruleset.rs` - `GeneralRules::building_type_selectable` and
-  `RuleSet::structure_type_selectable`, the admission predicate: the retail
-  `UndeploysInto=` test, or every building with the switch on.
-- `app/input/entity_pick.rs` - `type_select_candidates` asks the predicate for
-  a structure instead of the hardcoded `UndeploysInto` test. Both callers of
-  the tap (the T key and the sidebar's TypeSelect button) and the map-wide
-  stage run through it.
+- `rules/ruleset.rs` - `GeneralRules::building_type_selectable`, read with
+  `RuleSet::building_type_selectable` for the hook's own answer, and
+  `RuleSet::structure_type_selectable` for the retail `UndeploysInto=` arm.
+- `app/input/entity_pick.rs` - `selection_dynamic_prefix` is CanBeSelectedNow:
+  the `0x00465D40` type query plus the TechnoClass checks. Its
+  `processing_id_matches` argument is Phobos's `ExtSelection::ProcessingIDMatches`
+  context, true only for `type_select_candidates` (the tap and the sidebar
+  button), so the band, the held click and N/M keep the retail type query.
 
 ## Residuals
 
-- With the switch on, native CanBeSelectedNow still applies its TechnoClass
-  checks (`0x006FC030`) to each building; VERA admits every building of the
-  type. Trigger: a building those checks refuse while the switch is on;
-  effect: it joins the type selection; rare, presentation only.
 - The held-T click and the T-held band drag reach buildings without asking the
-  predicate at all, and this key does not change that. Their admission is the
-  ordinary type group, so the switch only shows on the tap and the sidebar
-  button.
+  ID match's building arm at all, and this key does not change that. Their
+  admission is the ordinary type group, so the switch only shows on the tap and
+  the sidebar button.

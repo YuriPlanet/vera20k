@@ -850,7 +850,7 @@ fn type_select_candidates(
             {
                 return None;
             }
-            let dynamic = selection_dynamic_prefix(entity, entities, rules, interner)
+            let dynamic = selection_dynamic_prefix(entity, entities, rules, interner, true)
                 && type_is_selectable(type_id, rules)
                 && (!require_playfield_membership || entity.in_playfield());
             // The ID match's independent building arm (732C61..732C83)
@@ -1063,7 +1063,7 @@ fn entities_in_rect(
             ) {
                 return None;
             }
-            if !selection_dynamic_prefix(entity, entities, rules, interner) {
+            if !selection_dynamic_prefix(entity, entities, rules, interner, false) {
                 return None;
             }
             Some(entity.stable_id())
@@ -1116,11 +1116,19 @@ pub(crate) fn selection_dynamic_prefix(
     entities: &EntityStore,
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
+    processing_id_matches: bool,
 ) -> bool {
     // BuildingClass::CanBeSelectedNow459C00 calls the existing type query
     // Is1x1WithUndeploy465D40 before the shared Techno6FC030 prefix below.
+    // Phobos's BuildingClass_Is1x1AndUndeployable_BuildingMassSelectable hook
+    // at 0x465D40 answers true only while the type-select ID match runs
+    // (`ExtSelection::ProcessingIDMatches`), so the checks below still decide
+    // every building rather than admitting all of them outright.
     let building = entity.category() == EntityCategory::Structure;
+    let id_match_lift =
+        processing_id_matches && rules.is_some_and(|rules| rules.building_type_selectable());
     if building
+        && !id_match_lift
         && !rules
             .zip(interner)
             .and_then(|(rules, interner)| rules.object(interner.resolve(entity.type_ref())))

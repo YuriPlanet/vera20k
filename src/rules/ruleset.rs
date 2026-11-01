@@ -1784,10 +1784,11 @@ pub struct GeneralRules {
     /// building starts only after the held one is placed.
     #[cfg(feature = "phobos")]
     pub building_production_queue: bool,
-    /// Phobos `[General] BuildingTypeSelectable=` (default false): type select
-    /// admits every building, not only the `UndeploysInto=` ones the retail ID
-    /// match admits (`0x00732C61..0x00732C83`). Phobos disables the switch
-    /// without Ares (`BuildingClass_Is1x1AndUndeployable_BuildingMassSelectable`).
+    /// Phobos `[General] BuildingTypeSelectable=` (default false): the type
+    /// select ID match lets a building pass the `0x00465D40` type query of
+    /// CanBeSelectedNow, so any building that survives the TechnoClass checks
+    /// joins. Phobos disables the switch without Ares
+    /// (`BuildingClass_Is1x1AndUndeployable_BuildingMassSelectable`).
     #[cfg(all(feature = "phobos", feature = "ares"))]
     pub building_type_selectable: bool,
     /// Phobos `[General] AIFireSale=` (default true): whether a computer
@@ -9311,27 +9312,34 @@ impl RuleSet {
             .unwrap_or(self.mind_control.mind_control_link_visible_to_house)
     }
 
-    /// Type-select admission for a structure.
+    /// The ID match's independent building arm (`0x00732C61..0x00732C83`): a
+    /// structure of a listed type is admitted outright when its type has
+    /// `UndeploysInto=`, even when CanBeSelectedNow refuses it.
     ///
-    /// The native ID match (`0x00732C30`) admits a building of a listed type
-    /// when CanBeSelectedNow (vt+0x13C) answers true or its type has
-    /// `UndeploysInto=` (`0x00732C61..0x00732C83`). A building's
-    /// CanBeSelectedNow (`0x00459C00`) first asks `0x00465D40`, true only for
-    /// a 1x1 `UndeploysInto=` type, so retail admits exactly the
-    /// `UndeploysInto=` buildings. Phobos's hook makes `0x00465D40` answer true
-    /// during the ID match under `BuildingTypeSelectable`, with Ares loaded.
-    /// RESIDUAL: with the switch on, native still applies CanBeSelectedNow's
-    /// TechnoClass checks (`0x006FC030`); this admits every building of the
-    /// type.
+    /// The other admission is CanBeSelectedNow (`vt+0x13C`), which a building
+    /// answers through `0x00465D40` plus the TechnoClass checks at
+    /// `0x006FC030` — see [`Self::building_type_selectable`].
     pub fn structure_type_selectable(&self, id: &str) -> bool {
-        #[cfg(all(feature = "phobos", feature = "ares"))]
-        {
-            if self.general.building_type_selectable {
-                return true;
-            }
-        }
         self.object(id)
             .is_some_and(|object| object.undeploys_into.is_some())
+    }
+
+    /// Phobos `[General] BuildingTypeSelectable=` (default false): the hook at
+    /// `BuildingClass_Is1x1AndUndeployable_BuildingMassSelectable 0x00465D40`
+    /// makes that type query answer true, so CanBeSelectedNow admits every
+    /// building that passes its TechnoClass checks (`0x006FC030`). The hook is
+    /// gated on its own `ExtSelection::ProcessingIDMatches` flag, so only the
+    /// type-select ID match sees the lift; it also returns at once without
+    /// Ares, which patches the same region.
+    pub fn building_type_selectable(&self) -> bool {
+        #[cfg(all(feature = "phobos", feature = "ares"))]
+        {
+            self.general.building_type_selectable
+        }
+        #[cfg(not(all(feature = "phobos", feature = "ares")))]
+        {
+            false
+        }
     }
 
     /// Phobos `[AudioVisual] MissingCameo=`: the file a cameo with no art
