@@ -1277,11 +1277,11 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             self.owner_id,
             &target,
             terrain,
-            Some(sim.house_alliances.as_map()),
+            Some(&sim.house_alliances),
             &crate::sim::combat::line_of_fire::LineOfFireInputs {
                 overlay_grid: sim.overlay_grid.as_ref(),
                 overlay_registry: self.context.registry(),
-                alliances: Some(sim.house_alliances.as_map()),
+                alliances: Some(&sim.house_alliances),
             },
         )
     }

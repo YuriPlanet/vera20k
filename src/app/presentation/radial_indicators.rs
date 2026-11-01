@@ -49,6 +49,14 @@ impl SuperweaponRangePulse {
     }
 }
 
+/// One draw's radial indicators.
+pub(crate) struct RadialIndicators {
+    pub(crate) draws: Vec<RadialIndicatorDraw>,
+    /// The draw advanced the superweapon range pulse or read the clock for a
+    /// concentric ring, so the next draw differs without a game frame.
+    pub(crate) animated: bool,
+}
+
 pub(crate) fn build(
     sim: Option<&Simulation>,
     rules: Option<&RuleSet>,
@@ -61,9 +69,13 @@ pub(crate) fn build(
     colors: &HouseColorMap,
     viewport: SurfaceLineViewport,
     time_ms: u64,
-) -> Vec<RadialIndicatorDraw> {
+) -> RadialIndicators {
+    let mut animated = false;
     let (Some(sim), Some(rules)) = (sim, rules) else {
-        return Vec::new();
+        return RadialIndicators {
+            draws: Vec::new(),
+            animated,
+        };
     };
     #[cfg(not(feature = "phobos"))]
     let _ = (armed_building, show_power_plant_enhancer_range);
@@ -125,6 +137,7 @@ pub(crate) fn build(
         }
         //4567EE uses the frame owner's one timeGetTime input (also used by
         //radar). It never starts a simulation timer or advances a new clock.
+        animated = true;
         let phase = ((time_ms as u32) >> 1) & 0x3ff;
         let mut outer = draw;
         outer.fade = false;
@@ -227,8 +240,9 @@ pub(crate) fn build(
         // Native outer pulse state advances once per active draw, before the
         // line-multiplier branch; Range<=0 and no armed SW freeze it.
         let outer_factor = superweapon_pulse.advance();
+        animated = true;
         if !super_weapon.range.is_finite() {
-            return draws;
+            return RadialIndicators { draws, animated };
         }
         let position = cursor_cell.and_then(|(cell_x, cell_y)| {
             let center = || {
@@ -303,7 +317,7 @@ pub(crate) fn build(
                 if X::compare(final_index, X::load_i32(MAX_SUPERWEAPON_RINGS))
                     != crate::util::native_x87::X87Ordering::Less
                 {
-                    return draws;
+                    return RadialIndicators { draws, animated };
                 }
                 // Native stores outer phase/direction once, then advances only
                 // these local registers for each positive-LM ring.
@@ -343,7 +357,7 @@ pub(crate) fn build(
             }
         }
     }
-    draws
+    RadialIndicators { draws, animated }
 }
 
 #[cfg(test)]

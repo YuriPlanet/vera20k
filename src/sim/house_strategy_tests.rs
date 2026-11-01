@@ -14,6 +14,7 @@
 use super::*;
 use std::collections::BTreeSet;
 
+use crate::map::houses::HouseAllianceMap;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::combat::Health;
 use crate::sim::game_entity::GameEntity;
@@ -582,8 +583,10 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
     ]
     .into_iter()
     .collect::<crate::sim::houses::Houses>();
-    let mut alliances = HouseAllianceMap::new();
-    alliances.insert("OWNER".to_string(), BTreeSet::from(["ALLIED".to_string()]));
+    let alliances = HouseAlliances::new(HouseAllianceMap::from([(
+        "OWNER".to_string(),
+        BTreeSet::from(["ALLIED".to_string()]),
+    )]));
     {
         let anger = houses.get_mut(&owner).unwrap().grudge_scores_mut_for_test();
         anger.insert(allied, 99);
@@ -657,7 +660,7 @@ fn gsi_04_05_sparse_zero_updates_preserve_representation_and_rescan() {
 
     update_anger_nodes(
         &mut houses,
-        &HouseAllianceMap::new(),
+        &HouseAlliances::default(),
         &interner,
         owner,
         first,
@@ -677,7 +680,7 @@ fn gsi_04_05_sparse_zero_updates_preserve_representation_and_rescan() {
         .set_enemy_house_for_test(None);
     update_anger_nodes(
         &mut houses,
-        &HouseAllianceMap::new(),
+        &HouseAlliances::default(),
         &interner,
         owner,
         first,

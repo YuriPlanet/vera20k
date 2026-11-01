@@ -523,7 +523,7 @@ fn healthy_allied_building_for_engineer(
         return false;
     };
     if !crate::sim::combat::combat_weapon::is_ally_by_object(
-        Some(sim.house_alliances.as_map()),
+        Some(&sim.house_alliances),
         &sim.interner,
         actor.owner(),
         building.owner(),

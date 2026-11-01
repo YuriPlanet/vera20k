@@ -811,16 +811,20 @@ impl App {
             )
         };
         // A changed picture is drawn in this same pass, so each drawn frame
-        // still follows exactly one match service.
-        if pass == FramePass::Probe
+        // still follows exactly one match service. The picture is judged by
+        // the clock before the draw (`redraw_gate::PictureClock`).
+        let picture_clock = crate::app::match_runtime::redraw_gate::PictureClock::now();
+        let unchanged = pass == FramePass::Probe
             && state.platform.redraw_gate.still_presented(
                 crate::app::match_runtime::redraw_gate::still_frame(
                     state,
                     false,
                     runtime_pass.screen_shake_offset,
+                    picture_clock,
                 ),
-            )
-        {
+            );
+        // The gate's audit draws the pass anyway and checks its pixels.
+        if unchanged && !state.platform.redraw_gate.auditing() {
             return Ok(FrameRenderOutcome::Unchanged);
         }
         let next_canonical = ordinary_online
@@ -1407,6 +1411,18 @@ impl App {
         } else {
             None
         };
+        let pending_gate_audit = if state.platform.redraw_gate.auditing() {
+            Some(crate::render::frame_readback::PendingBgra8Readback::encode(
+                &state.renderer.gpu.device,
+                &mut encoder,
+                &output.texture,
+                state.renderer.gpu.config.format,
+                state.renderer.gpu.config.width,
+                state.renderer.gpu.config.height,
+            )?)
+        } else {
+            None
+        };
         let retail_screenshot_current_frame =
             std::mem::take(&mut state.match_state.input.retail_screenshot_requested);
         let screenshot_central_rect = shake_central_rect(state, &output.texture);
@@ -1484,12 +1500,32 @@ impl App {
             } else {
                 [0, 0]
             });
-        let still = crate::app::match_runtime::redraw_gate::still_frame(
-            state,
-            shell_capture.is_some() || tactical_capture.is_some(),
-            runtime_pass.screen_shake_offset,
-        );
+        // A draw that showed a self-moving effect leaves no still picture.
+        let still = if game_render_output
+            .as_ref()
+            .is_some_and(|output| output.motion)
+        {
+            None
+        } else {
+            crate::app::match_runtime::redraw_gate::still_frame(
+                state,
+                shell_capture.is_some() || tactical_capture.is_some(),
+                runtime_pass.screen_shake_offset,
+                picture_clock,
+            )
+        };
         state.platform.redraw_gate.record_presented(still);
+        if let Some(readback) = pending_gate_audit {
+            let pixels = readback.finish(
+                &state.renderer.gpu.device,
+                submission.clone(),
+                crate::render::screenshot::READBACK_TIMEOUT,
+            )?;
+            state
+                .platform
+                .redraw_gate
+                .audit_presented(pixels, unchanged);
+        }
         // A family renderer that drew a timer-driven 0x71C frame this pass
         // advances it now that the frame reached the screen.
         state.frontend.shell_monitor.commit_presented();

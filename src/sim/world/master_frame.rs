@@ -167,9 +167,11 @@ struct LogicRequest<'a> {
 }
 
 impl Simulation {
-    /// Mark the step the frame enters. Only tests observe it.
+    /// Mark the step the frame enters: it advances the world's revision, and
+    /// tests observe the step itself.
     #[inline]
     fn enter_frame_step(&mut self, step: FrameStep) {
+        self.note_revision();
         #[cfg(any(test, feature = "test-support"))]
         self.frame_step_trace.push(step);
         #[cfg(not(any(test, feature = "test-support")))]

@@ -2816,7 +2816,6 @@ impl Simulation {
             .houses
             .get(&owner)
             .and_then(|house| house.enemy_house());
-        let asker = self.interner.resolve(owner);
         let terrain = self.resolved_terrain.as_ref();
         let buildings: Vec<TargetBuilding> = self
             .substrate
@@ -2830,11 +2829,9 @@ impl Simulation {
                 id,
                 location: location_xyz(building, terrain),
                 enemy_owned: Some(building.owner()) == enemy,
-                allied: crate::map::houses::is_allied_with(
-                    self.house_alliances.as_map(),
-                    asker,
-                    self.interner.resolve(building.owner()),
-                ),
+                allied: self
+                    .house_alliances
+                    .is_allied(&self.interner, owner, building.owner()),
                 passive: self
                     .houses
                     .get(&building.owner())

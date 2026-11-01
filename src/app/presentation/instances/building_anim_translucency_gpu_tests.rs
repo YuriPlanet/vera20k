@@ -574,7 +574,7 @@ impl SlotScene {
             None
         );
         assert!(!crate::map::houses::is_allied_with(
-            self.scene.sim().house_alliances(),
+            self.scene.sim().house_alliances().as_map(),
             ATTACKER_OWNER,
             PLANT_OWNER
         ));

@@ -659,7 +659,7 @@ pub fn select_crush_victims(
     occ: &[u64],
     entities: &EntityStore,
     crusher_id: u64,
-    alliances: &crate::map::houses::HouseAllianceMap,
+    alliances: &crate::sim::house_diplomacy::HouseAlliances,
     interner: &crate::sim::intern::StringInterner,
     crusher_coord: (i32, i32),
     capability: CrushCapability,

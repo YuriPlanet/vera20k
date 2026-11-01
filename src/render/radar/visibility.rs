@@ -605,7 +605,7 @@ mod tests {
                 sim.houses(),
                 None,
                 sim.fog(),
-                sim.house_alliances(),
+                sim.house_alliances().as_map(),
                 true,
                 false,
                 Some(&rules),

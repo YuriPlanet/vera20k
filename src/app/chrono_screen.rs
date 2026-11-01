@@ -28,6 +28,12 @@ impl ChronoScreenPresentation {
         self.draw.is_some()
     }
 
+    /// Whether a draw command or surface capture is pending: the next draws
+    /// consume them.
+    pub(crate) fn active(&self) -> bool {
+        self.draw.is_some() || self.capture_prior || self.capture_destination
+    }
+
     pub(crate) fn before_frame(
         &mut self,
         gpu: &crate::render::gpu::GpuContext,

@@ -1001,7 +1001,7 @@ fn assert_recorded_scores(fixture: &SuppliedFootFixture, rules: &RuleSet, row: &
                 rules,
                 &fixture.sim.interner,
                 None,
-                Some(fixture.sim.house_alliances.as_map()),
+                Some(&fixture.sim.house_alliances),
                 coefficients,
                 ThreatReference::Coords(xyz(&score["anchor_xyz"])),
                 None,

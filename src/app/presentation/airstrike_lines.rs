@@ -202,6 +202,14 @@ pub(crate) fn drain_opaque(
     }
 }
 
+/// Whether `calls` hold a designation: each draw requests a Main shade
+/// (`0x00705905`) and wobbles its target on the wall clock (`0x006D482D`).
+pub(crate) fn animated(calls: &[TacticalLineCall]) -> bool {
+    calls
+        .iter()
+        .any(|call| matches!(call, TacticalLineCall::Designation { .. }))
+}
+
 pub(crate) fn composite(
     calls: &[TacticalLineCall],
     wall_ms: u32,

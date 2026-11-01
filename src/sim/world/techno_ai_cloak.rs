@@ -566,7 +566,7 @@ pub(crate) fn uncloak_on_sensor_neighbour_after_cell_entry(
             continue;
         };
         if crate::sim::combat::combat_weapon::is_ally_by_object(
-            Some(sim.house_alliances.as_map()),
+            Some(&sim.house_alliances),
             &sim.interner,
             other.owner(),
             owner,

@@ -105,8 +105,8 @@ impl<'a> SimView<'a> {
     }
 
     /// The houses' ally graph, which fog and visibility questions ask.
-    pub fn house_alliances(&self) -> &'a crate::map::houses::HouseAllianceMap {
-        self.simulation.house_alliances.as_map()
+    pub fn house_alliances(&self) -> &'a crate::sim::house_diplomacy::HouseAlliances {
+        &self.simulation.house_alliances
     }
 
     pub fn houses(&self) -> &'a crate::sim::houses::Houses {

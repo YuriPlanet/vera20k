@@ -439,6 +439,21 @@ impl MessageList {
         sound_requests
     }
 
+    /// Whether the next TextLabel paint (72A5B1..72A609) could differ from
+    /// the last: a reveal not painted yet, or a count short of the text plus
+    /// its highlight tail. Past that, each paint draws the same label and
+    /// requests no MessageCharTyped, so a standing picture may skip paints.
+    pub fn revealing(&self) -> bool {
+        self.messages.iter().any(|message| {
+            message.reveal.is_some_and(|reveal| {
+                reveal.count == 0
+                    || u64::from(reveal.count)
+                        < message.text.encode_utf16().count() as u64
+                            + u64::from(crate::render::bit_font::TEXT_LABEL_HIGHLIGHT_UNITS)
+            })
+        })
+    }
+
     fn restack(&mut self) {
         let base = self.y
             + if self.edit.is_some() {
@@ -649,6 +664,45 @@ mod tests {
         assert!(l.messages()[0].reveal_count() > 5 + 8);
         assert!(l.manage(11_000));
         assert_eq!(l.advance_reveal(11_001), 0, "expired labels own no state");
+    }
+
+    /// A typed label changes on every paint bucket until its count passes the
+    /// text and the highlight tail; then each paint draws the same colours and
+    /// requests no MessageCharTyped, so a standing picture may skip paints.
+    #[test]
+    fn a_reveal_settles_once_the_highlight_passes_the_text() {
+        let mut l = list(6, 500);
+        l.add_message(&post(None, "Hi", Some(100_000), false), 0, &mono);
+        let colours = |l: &MessageList| {
+            let reveal = crate::render::bit_font::text_label_reveal(
+                l.messages()[0].reveal_count(),
+                [200, 40, 40],
+            );
+            (1..=2)
+                .map(|unit| crate::render::shell_text_reveal::encoded_unit_rgb(unit, reveal))
+                .collect::<Vec<_>>()
+        };
+        assert!(l.revealing(), "the first paint starts the reveal");
+        let mut wall = 100;
+        l.advance_reveal(wall);
+        while l.revealing() {
+            let before = colours(&l);
+            wall += 16;
+            l.advance_reveal(wall);
+            assert_ne!(
+                colours(&l),
+                before,
+                "count {}",
+                l.messages()[0].reveal_count()
+            );
+        }
+        assert_eq!(l.messages()[0].reveal_count(), 2 + 8);
+        let settled = colours(&l);
+        for _ in 0..3 {
+            wall += 16;
+            assert_eq!(l.advance_reveal(wall), 0);
+            assert_eq!(colours(&l), settled);
+        }
     }
 
     #[test]

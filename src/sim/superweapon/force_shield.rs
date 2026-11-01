@@ -37,7 +37,6 @@
 mod tests;
 
 use crate::map::entities::EntityCategory;
-use crate::map::houses::is_allied_with;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::superweapon::invulnerability::{InvulnKind, apply_invulnerability};
@@ -109,18 +108,15 @@ pub fn launch(
     let terrain = sim.resolved_terrain.as_ref();
     let ground = crate::sim::projectile::cell_ground_coord(terrain, target_rx, target_ry);
     let centre = [ground.x, ground.y, ground.z];
-    let launcher = sim.interner.resolve(owner);
     let (ids, buildings): (Vec<u64>, Vec<(bool, [i32; 3])>) = sim
         .substrate
         .entities
         .values()
         .filter(|building| building.category() == EntityCategory::Structure)
         .map(|building| {
-            let allied = is_allied_with(
-                sim.house_alliances.as_map(),
-                sim.interner.resolve(building.owner()),
-                launcher,
-            );
+            let allied = sim
+                .house_alliances
+                .is_allied(&sim.interner, building.owner(), owner);
             let coords = crate::sim::movement::ground_pose::object_get_coords(building, terrain);
             (
                 building.stable_id(),

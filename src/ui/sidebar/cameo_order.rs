@@ -58,7 +58,7 @@ pub(crate) fn pending_production_smoothed_stage(actual: i32, predicted: i32) -> 
 
 /// Current comparison inputs, projected from the rules, local House Cost_Of
 /// and the process string table. They are never retained as gameplay state.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Cameo {
     pub id: CameoId,
     pub tab: SidebarTab,
@@ -66,7 +66,7 @@ pub(crate) struct Cameo {
     pub key: CameoKey,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum CameoKey {
     SuperWeapon {
         recharge_frames: i32,

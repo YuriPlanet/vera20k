@@ -2005,9 +2005,14 @@ impl ApplicationHandler for App {
             }
             if Self::invisible_spawn_window(state) {
                 // An invisible window receives no RedrawRequested; drive the
-                // same frame directly, as the hidden capture drivers do.
+                // same frame directly, as the hidden capture drivers do. It
+                // stands for a visible window, so a still picture is probed.
+                let pass = match state.platform.redraw_gate.next_pass() {
+                    crate::app::match_runtime::redraw_gate::NextPass::Probe => FramePass::Probe,
+                    crate::app::match_runtime::redraw_gate::NextPass::Draw => FramePass::Draw,
+                };
                 let deferred = matches!(
-                    Self::render_frame(state, event_loop, None, None, FramePass::Draw),
+                    Self::render_frame(state, event_loop, None, None, pass),
                     Ok(FrameRenderOutcome::Deferred)
                 );
                 event_loop.set_control_flow(if deferred {
@@ -2059,7 +2064,7 @@ impl ApplicationHandler for App {
                 // hidden loop does; the pass draws only once the picture
                 // changed. Window events and explicit redraw requests still
                 // draw at once, and a picture that starts moving goes back to
-                // a redraw per refresh at the next wake.
+                // a redraw per refresh from the next refresh.
                 match Self::render_frame(state, event_loop, None, None, FramePass::Probe) {
                     Ok(FrameRenderOutcome::Deferred) => {
                         event_loop.set_control_flow(ControlFlow::Poll);
@@ -2069,17 +2074,28 @@ impl ApplicationHandler for App {
                         if let Err(err) = outcome {
                             log::error!("Render: {err:#}");
                         }
-                        let wake =
-                            Instant::now() + crate::app::match_runtime::frame_pacer::SERVICE_WAKE;
-                        event_loop.set_control_flow(ControlFlow::WaitUntil(
-                            shell_scroll_wake.map_or(wake, |service| service.min(wake)),
-                        ));
+                        if state.platform.redraw_gate.next_pass()
+                            == crate::app::match_runtime::redraw_gate::NextPass::Draw
+                        {
+                            event_loop.set_control_flow(
+                                shell_scroll_wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil),
+                            );
+                            state.platform.window.request_redraw();
+                        } else {
+                            let wake = Instant::now()
+                                + crate::app::match_runtime::frame_pacer::SERVICE_WAKE;
+                            event_loop.set_control_flow(ControlFlow::WaitUntil(
+                                shell_scroll_wake.map_or(wake, |service| service.min(wake)),
+                            ));
+                        }
                     }
                 }
             } else {
-                if let Some(deadline) = shell_scroll_wake {
-                    event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
-                }
+                // A probe's wake must not outlive it: a past deadline would
+                // spin this loop between refreshes.
+                event_loop.set_control_flow(
+                    shell_scroll_wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil),
+                );
                 state.platform.window.request_redraw();
             }
         }

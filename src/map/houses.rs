@@ -201,7 +201,7 @@ pub(crate) fn normalize_house_name(name: &str) -> String {
 /// `f` applied to `name`'s ally-graph key ([`normalize_house_name`]), built
 /// on the stack when it fits. The alliance tests run for every path-search
 /// blocker and fog viewer, where a heap key per test showed in profiles.
-fn with_house_key<R>(name: &str, f: impl FnOnce(&str) -> R) -> R {
+pub(crate) fn with_house_key<R>(name: &str, f: impl FnOnce(&str) -> R) -> R {
     let name = name.trim();
     let mut buffer = [0u8; 64];
     match buffer.get_mut(..name.len()) {

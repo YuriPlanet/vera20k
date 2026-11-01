@@ -107,6 +107,7 @@ pub mod temporal;
 pub(crate) mod tesla_charging;
 pub mod timer; // signed frame-anchored countdown primitive
 pub(crate) mod touch_log; // which stored objects were handed out mutably, per reader
+pub use touch_log::live_read_check_enabled;
 pub mod type_handle_table; // InternedId -> TypeHandle, one-hop entity->type resolution
 
 // --- Pure read-only deterministic engine-data services (gamemd-exact lookup tables) ---
@@ -207,7 +208,7 @@ pub mod tiberium_germinate;
 
 // --- Per-match settings, per-player state ---
 pub mod game_options;
-pub(crate) mod house_diplomacy; // ally graph: install, MakeAlly/MakeEnemy, Computer_Paranoid
+pub mod house_diplomacy; // ally graph: install, MakeAlly/MakeEnemy, Computer_Paranoid
 pub mod house_state;
 pub mod houses;
 pub(crate) mod house_strategy;

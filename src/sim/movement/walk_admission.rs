@@ -446,11 +446,10 @@ impl Simulation {
                     .entities
                     .get(blocker)
                     .ok_or("retired Walk blocker")?;
-                if crate::map::houses::is_allied_with(
-                    self.house_alliances.as_map(),
-                    self.interner.resolve(actor.owner()),
-                    self.interner.resolve(other.owner()),
-                ) {
+                if self
+                    .house_alliances
+                    .is_allied(&self.interner, actor.owner(), other.owner())
+                {
                     return Ok(());
                 }
                 Some(TargetKind::Entity(blocker))

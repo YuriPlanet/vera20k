@@ -252,6 +252,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::map::entities::EntityCategory;
+#[cfg(any(test, feature = "test-support"))]
 use crate::map::houses::HouseAllianceMap;
 use crate::map::overlay::OverlayEntry;
 use crate::map::playfield::PlayfieldBounds;
@@ -1411,6 +1412,10 @@ pub struct Simulation {
     /// presentation outcomes are moved into `SimFrameOutput` after the tick.
     #[serde(skip)]
     trigger_effects: Vec<TriggerEffect>,
+    /// [`Self::revision`]'s count. Never hashed or saved: a loaded world
+    /// starts again from zero under its own rules serial.
+    #[serde(skip)]
+    revision: u64,
     #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
     frame_step_trace: Vec<FrameStep>,
@@ -2522,7 +2527,7 @@ impl Simulation {
         // (0x00469C93 -> 0x00422702/0x00424D5A) accesses the live smudge map
         // before returning. Keep that authority resident through recursion.
         // Evidence: active gamemd.exe bodies and caller instructions.
-        let house_alliances = self.house_alliances.as_map().clone();
+        let house_alliances = self.house_alliances.clone();
         let current_tick = u64::from(self.session.binary_frame());
         let scenario_no_damage = self.session.no_damage();
         let mut effects = crate::sim::combat::DeathEffects::default();
@@ -3146,7 +3151,6 @@ impl Simulation {
             if game_mode_nonzero && victim_passive {
                 continue;
             }
-            let victim_name = interner.resolve(event.owner).to_string();
             let listeners: Vec<InternedId> = houses
                 .order()
                 .iter()
@@ -3154,11 +3158,7 @@ impl Simulation {
                 .filter(|&listener| {
                     listener != event.owner
                         && houses.get(&listener).is_some_and(|house| house.is_human())
-                        && crate::map::houses::is_allied_with(
-                            house_alliances.as_map(),
-                            &victim_name,
-                            interner.resolve(listener),
-                        )
+                        && house_alliances.is_allied(interner, event.owner, listener)
                 })
                 .collect();
             for listener in listeners {
@@ -3388,8 +3388,8 @@ impl Simulation {
         &self.fog
     }
 
-    pub fn house_alliances(&self) -> &HouseAllianceMap {
-        self.house_alliances.as_map()
+    pub fn house_alliances(&self) -> &HouseAlliances {
+        &self.house_alliances
     }
 
     pub fn sound_events(&self) -> &[SimSoundEvent] {
@@ -3458,6 +3458,21 @@ impl Simulation {
 
     pub fn playfield_size_height(&self) -> Option<i32> {
         self.playfield_size_height
+    }
+
+    /// Advances on every frame step and every debug-trainer write. Between
+    /// frames the world changes otherwise only through command queues,
+    /// interning and per-input selection effects, none of which reach house,
+    /// production, power or superweapon state; a presentation cache of values
+    /// derived from those holds while this and the rules serial are unchanged.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// Mark a write that a presentation cache keyed on [`Self::revision`]
+    /// must see.
+    pub(crate) fn note_revision(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
     }
 
     pub fn playfield_revision(&self) -> u64 {
@@ -4411,6 +4426,7 @@ impl Simulation {
             #[cfg(test)]
             receiver_fixture: None,
             trigger_effects: Vec::new(),
+            revision: 0,
             #[cfg(any(test, feature = "test-support"))]
             frame_step_trace: Vec::new(),
             #[cfg(any(test, feature = "test-support"))]

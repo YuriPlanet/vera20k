@@ -55,7 +55,6 @@
 use crate::sim::world::FrameEffects;
 
 use crate::map::entities::EntityCategory;
-use crate::map::houses::HouseAllianceMap;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::house_state::HouseState;
@@ -277,7 +276,7 @@ fn pick_enemy(
                 .is_some_and(|peer| !peer.multiplay_passive() && !peer.is_defeated())
     });
     if let Some(peer) = first {
-        update_anger_nodes(houses, house_alliances.as_map(), interner, owner, peer, 1);
+        update_anger_nodes(houses, house_alliances, interner, owner, peer, 1);
     }
 }
 
@@ -302,7 +301,7 @@ fn forget_defeated_enemy(
         .unwrap_or(0);
     update_anger_nodes(
         houses,
-        house_alliances.as_map(),
+        house_alliances,
         interner,
         owner,
         enemy,
@@ -462,7 +461,7 @@ pub(crate) fn all_to_hunt(
 /// With no winner the enemy is cleared (`0x0050484F`).
 pub(crate) fn update_anger_nodes(
     houses: &mut crate::sim::houses::Houses,
-    alliances: &HouseAllianceMap,
+    alliances: &HouseAlliances,
     interner: &StringInterner,
     owner: InternedId,
     peer: InternedId,
@@ -492,11 +491,7 @@ pub(crate) fn update_anger_nodes(
             .unwrap_or(0);
         if score > best_score
             && !candidate.is_defeated()
-            && !crate::map::houses::is_allied_with(
-                alliances,
-                interner.resolve(owner),
-                interner.resolve(candidate_id),
-            )
+            && !alliances.is_allied(interner, owner, candidate_id)
         {
             best_score = score;
             best_house = Some(candidate_id);
