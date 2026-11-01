@@ -1098,6 +1098,12 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     }
 }
 
+/// VERA: Choose Map's credit for a map's `[Basic]` `Author`, when it names one.
+fn map_author_line(author: Option<&str>) -> Option<String> {
+    let author = author?.trim();
+    (!author.is_empty()).then(|| format!("By {author}"))
+}
+
 /// Text of Choose Map `0x6B` besides its heading and status line, which the
 /// caller paints ([`dialog_statics_labels`]). While a slide runs the column
 /// draws the buttons without captions; the labels and lists (left-side
@@ -1170,6 +1176,24 @@ pub(super) fn push_choose_map_modal_text_draws(
                 rect_to_text_rect(rect),
                 button_label_color_for_disabled(disabled),
                 ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
+                scale.factor(),
+            );
+        }
+        // VERA: the selected map's author under its preview, top-aligned
+        // like `0x102`'s game type there, so a long name keeps its first line.
+        if let Some(line) = modal
+            .selected_record_index()
+            .and_then(|index| state.frontend.scenario_catalog.records().get(index))
+            .and_then(|record| map_author_line(record.author.as_deref()))
+        {
+            push_text_draw(
+                out,
+                state,
+                &line,
+                rect_to_text_rect(layout.author),
+                SHELL_LABEL_TEXT_RGB,
+                ShellAlign::H_CENTER,
                 SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
                 scale.factor(),
             );
@@ -1886,6 +1910,15 @@ mod tests {
             .fold(f32::INFINITY, f32::min);
         assert_eq!(top, row.y as f32);
         assert_eq!((draw.scissor.y, draw.scissor.h), (40, 19));
+    }
+
+    /// VERA: Choose Map credits a map's author, and draws nothing for a map
+    /// whose `Author` is missing or blank.
+    #[test]
+    fn choose_map_credits_a_named_author_only() {
+        assert_eq!(map_author_line(Some(" Burg ")).as_deref(), Some("By Burg"));
+        assert_eq!(map_author_line(Some("  ")), None);
+        assert_eq!(map_author_line(None), None);
     }
 
     #[test]

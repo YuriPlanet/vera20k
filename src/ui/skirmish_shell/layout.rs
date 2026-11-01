@@ -305,6 +305,9 @@ pub struct ChooseMapModalLayout {
     pub game_map_heading: RectPx,
     pub status_help: RectPx,
     pub preview: RectPx,
+    /// VERA: the selected map's author, under the preview where `0x102`
+    /// shows its game type ([`game_type_rect`]). `0x6B` has no such line.
+    pub author: RectPx,
 }
 
 impl ChooseMapModalLayout {
@@ -531,6 +534,16 @@ fn right_static(rule: AnchorRule, template: RectPx, screen_w: i32, screen_h: i32
     crate::ui::shell::layout::anchor_rect(rule, template, screen_w, screen_h)
 }
 
+/// Game type `0x6EC` of `0x102`, under the right panel's map preview.
+fn game_type_rect(screen_w: i32, screen_h: i32) -> RectPx {
+    right_static(
+        MAP_TEXT_ANCHOR,
+        RectPx::new(432, 103, 90, 10),
+        screen_w,
+        screen_h,
+    )
+}
+
 /// Status line `0x695` of `0x102`: the family static (template 410x12 DLU).
 fn status_help_rect(screen_w: i32, screen_h: i32) -> RectPx {
     crate::ui::shell::layout::status_line_rect(RectPx::new(2, 355, 410, 12), screen_w, screen_h)
@@ -567,12 +580,7 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
             screen_w,
             screen_h,
         ),
-        game_type: right_static(
-            MAP_TEXT_ANCHOR,
-            RectPx::new(432, 103, 90, 10),
-            screen_w,
-            screen_h,
-        ),
+        game_type: game_type_rect(screen_w, screen_h),
         map_label: right_static(
             MAP_TEXT_ANCHOR,
             RectPx::new(432, 116, 90, 20),
@@ -762,6 +770,7 @@ pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMa
             screen_w,
             screen_h,
         ),
+        author: game_type_rect(screen_w, screen_h),
     }
 }
 
@@ -1186,6 +1195,7 @@ impl ScaledRects for ChooseMapModalLayout {
             game_map_heading: self.game_map_heading.scaled_rects(scale),
             status_help: self.status_help.scaled_rects(scale),
             preview: self.preview.scaled_rects(scale),
+            author: self.author.scaled_rects(scale),
         }
     }
 }
@@ -1688,6 +1698,20 @@ mod tests {
         assert_eq!(layout.game_map_heading, RectPx::new(338, 98, 195, 16));
         assert_eq!(layout.status_help, RectPx::new(122, 662, 456, 21));
         assert_eq!(layout.preview, RectPx::new(756, 121, 144, 112));
+    }
+
+    /// VERA: the author line sits in the top panel art between the preview
+    /// and Use Map, wherever the right panel goes.
+    #[test]
+    fn choose_map_author_line_fits_between_the_preview_and_use_map() {
+        for (w, h) in [(800, 600), (1024, 768)] {
+            let chooser = compute_choose_map_modal_layout(w, h);
+            let top = compute_layout(w, h).right_panel.top;
+            let author = chooser.author;
+            assert!(author.y >= chooser.preview.y + chooser.preview.h);
+            assert!(author.y + author.h <= chooser.use_map_button.y);
+            assert!(author.x >= top.x && author.x + author.w <= top.x + top.w);
+        }
     }
 
     #[test]
