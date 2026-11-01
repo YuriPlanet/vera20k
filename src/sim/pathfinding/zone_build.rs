@@ -1378,6 +1378,57 @@ mod tests {
         );
     }
 
+    /// Bridge pairs have no zero filter, so a threat search estimates the edge
+    /// to record 0 before the Outside passability gate rejects it (`0x0042C580`).
+    #[test]
+    fn threat_search_reads_record_zero_through_a_bridge_edge() {
+        use crate::sim::pathfinding::zone_hierarchy::{
+            ZonePrecheckExclusions, ZonePrecheckOutcome, ZonePrecheckThreat, zone_precheck_flat,
+        };
+        let mut classes = vec![zone_class::GROUND; 10];
+        classes[9] = zone_class::OUTSIDE;
+        let mut ids = vec![1; 10];
+        ids[9] = 0;
+        let terrain = redirect_terrain(10, 1, Some(100), None, |cell| {
+            if cell.rx == 2 {
+                cell.final_tile_index = 100;
+            }
+        });
+        let bridge = BridgeEndpointRecord {
+            endpoint_a: (2, 0),
+            endpoint_b: (9, 0),
+            active: true,
+            bridge_kind: BridgeRecordKind::High,
+        };
+        let hierarchy = build_zone_hierarchy(
+            &hierarchy_base(classes, ids),
+            Some(&terrain),
+            &[bridge],
+            10,
+            1,
+        );
+        let level2 = hierarchy.level(2).unwrap();
+        assert!(level2.edges(1).iter().any(|edge| edge.neighbor == 0));
+
+        let level0 = hierarchy.level(0).unwrap();
+        let outcome = zone_precheck_flat(
+            &hierarchy,
+            level0.zone_at(0, 0),
+            level0.zone_at(8, 0),
+            MovementZone::Normal,
+            &ZonePrecheckExclusions::default(),
+            Some(ZonePrecheckThreat::new(
+                crate::util::native_x87::NativeF64Bits::ONE,
+                &|_| Ok(0),
+            )),
+        )
+        .unwrap();
+        let ZonePrecheckOutcome::Passed(result) = outcome else {
+            panic!("the ground route remains passable");
+        };
+        assert_eq!(result.paths[2], vec![1, 2]);
+    }
+
     #[test]
     fn gsi_04_12_hierarchy_geometry_inserts_all_three_pairs_at_all_levels() {
         let width = 7;
