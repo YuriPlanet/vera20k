@@ -498,6 +498,9 @@ impl MultiplayerShellRuntime {
         options.build_off_ally = snapshot.build_off_ally;
         options.mcv_redeploy = snapshot.mcv_repacks;
         options.crates = snapshot.crates_appear;
+        if let Some(room) = snapshot.room {
+            options.set_room_options(room);
+        }
         let mut local = self.local_participant();
         local.set_observer(observe);
         local.slot.team = if mode.must_ally {
@@ -605,6 +608,7 @@ impl MultiplayerShellRuntime {
         snapshot.build_off_ally = launch.options.build_off_ally;
         snapshot.mcv_repacks = launch.options.mcv_redeploy;
         snapshot.crates_appear = launch.options.crates;
+        snapshot.room = Some(launch.options.room_options());
         for (index, slot) in snapshot.slots.iter_mut().enumerate() {
             let row = (index + 1) as u8;
             *slot = if let Some(ai) = launch.opponents.iter().find(|ai| ai.raw_slot_index == row) {
@@ -2240,6 +2244,60 @@ mod tests {
             .unwrap();
         assert!(observer.local_player().is_observer());
         assert!(observer.opponents.is_empty());
+    }
+
+    /// A room reopened after its game keeps VERA's room options, as it keeps
+    /// the native checkboxes.
+    #[test]
+    fn a_reopened_room_keeps_its_bans_bridges_and_allying() {
+        use crate::map::skirmish_scenarios::{SkirmishScenarioRecord, SkirmishScenarioSource};
+        let mut owner = runtime(
+            MultiplayerSetupSnapshot::from_global_defaults(defaults(), SetupProfile::Skirmish),
+            1,
+        );
+        let catalog = crate::app::scenario_catalog::ScenarioCatalog::from_records(vec![
+            SkirmishScenarioRecord::concrete_from_ini(
+                0,
+                SkirmishScenarioSource::Synthetic,
+                "test.mmx",
+                &IniFile::from_str("[Basic]\nGameMode=standard\n"),
+            ),
+        ]);
+        let modes = [mode()];
+        let open = |owner: &mut MultiplayerShellRuntime| {
+            owner
+                .new_network_setup(
+                    SetupProfile::Lan,
+                    false,
+                    &catalog,
+                    &modes,
+                    crate::skirmish_launch::SkirmishLaunchOptions::default(),
+                    crate::ui::skirmish_shell::SkirmishTrackbarBounds::default(),
+                    false,
+                    Default::default(),
+                )
+                .unwrap()
+        };
+        let (mut launch, vacancies) = open(&mut owner);
+        let room = crate::skirmish_launch::RoomOptions {
+            bridges_destroyable: false,
+            ally_change_allowed: false,
+            bans: crate::sim::game_options::RoomBans {
+                yuri: true,
+                stolen_tech: true,
+                ..Default::default()
+            },
+        };
+        assert_ne!(launch.options.room_options(), room);
+        launch.options.set_room_options(room);
+        owner.remember_network_setup(
+            SetupProfile::Lan,
+            &launch,
+            std::array::from_fn(|row| Some(vacancies[row])),
+            std::array::from_fn(|_| None),
+            &catalog,
+        );
+        assert_eq!(open(&mut owner).0.options.room_options(), room);
     }
 
     #[test]

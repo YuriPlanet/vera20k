@@ -88,9 +88,13 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
             .clone(),
         random_map: random_map.clone(),
         admissions,
-        room: Some(RoomOptions::of(
-            &session.network_setup().expect("projected setup").options,
-        )),
+        room: Some(
+            session
+                .network_setup()
+                .expect("projected setup")
+                .options
+                .room_options(),
+        ),
     })?;
     let admitted = queue_payload(
         state,
@@ -123,32 +127,9 @@ struct ExtendedOptions {
     effective_digest: String,
     random_map: Option<crate::app::shell_network_setup::maps::GeneratedMapManifest>,
     admissions: Vec<ExtendedAdmission>,
+    /// VERA's room options, which the native options text has no field for.
     #[serde(default)]
-    room: Option<RoomOptions>,
-}
-
-/// VERA's room options, which the native options text has no field for.
-#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
-struct RoomOptions {
-    bridges_destroyable: bool,
-    ally_change_allowed: bool,
-    bans: crate::sim::game_options::RoomBans,
-}
-
-impl RoomOptions {
-    fn of(options: &crate::skirmish_launch::SkirmishLaunchOptions) -> Self {
-        Self {
-            bridges_destroyable: options.bridges_destroyable,
-            ally_change_allowed: options.ally_change_allowed,
-            bans: options.bans,
-        }
-    }
-
-    fn apply(self, options: &mut crate::skirmish_launch::SkirmishLaunchOptions) {
-        options.bridges_destroyable = self.bridges_destroyable;
-        options.ally_change_allowed = self.ally_change_allowed;
-        options.bans = self.bans;
-    }
+    room: Option<crate::skirmish_launch::RoomOptions>,
 }
 
 /// Host-authored admission projection for native Type3 assembly, derived from
@@ -252,7 +233,7 @@ fn receive_options_text(
     source_sha256: String,
     effective_digest: String,
     selected_map_file: String,
-    room: Option<RoomOptions>,
+    room: Option<crate::skirmish_launch::RoomOptions>,
 ) -> Result<()> {
     ensure!(
         source_sha256.is_empty() || crate::map::source::valid_source_sha256(&source_sha256),
@@ -270,7 +251,7 @@ fn receive_options_text(
     options.map_metadata.source_sha256 = source_sha256;
     options.map_metadata.effective_digest = effective_digest;
     if let Some(room) = room {
-        room.apply(&mut options.launch.options);
+        options.launch.options.set_room_options(room);
     }
     crate::app::shell_network_setup::service_event(state, NetworkSetupEvent::HostSetup(options))?;
     state

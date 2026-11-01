@@ -8,9 +8,13 @@ use crate::rules::ruleset::CountryIdx;
 use crate::sim::game_options::RoomBans;
 use crate::skirmish_launch::{LaunchCountry, SkirmishLocalSlot};
 
-/// Every `[Countries]` entry `bans` takes from the players.
+/// Every `[Countries]` entry `bans` takes from the players. None in
+/// Cooperative, whose campaign decides the countries.
 pub(crate) fn banned_countries(state: &AppState, bans: RoomBans) -> Vec<LaunchCountry> {
-    let Some(rules) = state.rules().filter(|_| !bans.is_empty()) else {
+    let Some(rules) = state
+        .rules()
+        .filter(|_| !bans.is_empty() && !super::cooperative::current(state))
+    else {
         return Vec::new();
     };
     (0..=u16::MAX)
