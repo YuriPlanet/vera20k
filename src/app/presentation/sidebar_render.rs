@@ -524,17 +524,6 @@ pub(crate) fn is_cursor_over_minimap(state: &AppState) -> bool {
     minimap.contains_screen_point_in_rect(x, y, rect.x, rect.y, rect.w, rect.h)
 }
 
-pub(crate) fn try_begin_minimap_drag(state: &mut AppState) -> bool {
-    if !is_cursor_over_minimap(state) {
-        return false;
-    }
-    // Capture the region for the release; Radar653CC0..653D6F decides
-    // separately whether this press centers the view or awaits an order.
-    state.match_state.input.minimap_dragging = true;
-    state.match_state.input.selection_state.cancel_drag();
-    true
-}
-
 pub(crate) fn minimap_camera_target(
     state: &AppState,
 ) -> Option<crate::render::radar::NativeRadarCameraTarget> {

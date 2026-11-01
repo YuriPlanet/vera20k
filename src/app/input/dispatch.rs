@@ -114,8 +114,8 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
         // VERA-internal (gamemd has no pause overlay; gamemd equivalent
         // UNCHECKED): a release that arrives while the overlay owns the mouse
         // never reaches the tactical body, so the whole gesture is dropped
-        // here — not just the capture byte. Leaving `minimap_dragging` or the
-        // band drag set would freeze edge auto-scroll, swallow every cursor
+        // here — not just the capture byte. Leaving a minimap press or the
+        // band drag active would freeze edge auto-scroll, swallow every cursor
         // move, and keep a stale gadget sticky capture eating clicks for the
         // rest of the match. `enter_in_game_menu_state` already tore the
         // gesture down on the way into the modal; this catches releases that
@@ -250,14 +250,27 @@ const TYPE_SELECT_TAP_ACTION_LINE_POLICY: SelectionActionLinePolicy =
 /// The context owner returns a selection click for Shift over an object.
 fn route_click_action_before_type_select<T>(
     action: SelectAction,
+    context_orders: bool,
     resolve_context_order: impl FnOnce(f32, f32) -> Option<T>,
 ) -> ClickActionRoute<T> {
+    if !context_orders {
+        return ClickActionRoute::Selection;
+    }
     let SelectAction::Click(sx, sy) = action else {
         return ClickActionRoute::Selection;
     };
     resolve_context_order(sx, sy)
         .map(ClickActionRoute::ContextOrder)
         .unwrap_or(ClickActionRoute::Selection)
+}
+
+/// VERA-only input mapping. Explicit attack-move and force-command chords
+/// still accept a left-click target; an ordinary left click only selects.
+fn left_click_can_issue_orders(state: &AppState) -> bool {
+    !state.persistence.options_profile.right_click_orders
+        || state.match_state.input.queued_order_mode == OrderMode::AttackMove
+        || is_ctrl_held(state)
+        || is_alt_held(state)
 }
 
 /// Tactical-viewport mouse body (routed here when the full-tactical ClickRegion
@@ -332,14 +345,13 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                         state.match_state.input.cursor_y,
                     ));
                 }
-            } else if let Some(run_cancel_ladder) =
-                state.match_state.input.tactical_mouse.end_right_press()
+            } else if let Some(is_click) = state.match_state.input.tactical_mouse.end_right_press()
             {
-                // The cancel ladder runs only when the drag threshold was
-                // never crossed. A right drag that panned the map ends
-                // silently — the selection survives it.
-                if run_cancel_ladder {
-                    right_click_cancel_ladder(state);
+                // Dispatch a click only when the drag threshold was never
+                // crossed. A right drag that panned the map ends silently;
+                // the selection survives it.
+                if is_click {
+                    handle_tactical_right_click(state);
                 }
                 // The native release tears the band rectangle down too.
                 state.match_state.input.selection_state.cancel_drag();
@@ -450,6 +462,9 @@ fn tactical_left_up(state: &mut AppState) {
         }
         super::state::TacticalPointerMode::Ordinary => {}
     }
+    // Planning-node editing stays a left-button tool in both control schemes,
+    // like explicit placement and targeting above; ordinary planned missions
+    // use the configured order button through the context owner below.
     if crate::app::input::planning_mode::connect_at_cursor(state) {
         return;
     }
@@ -546,12 +561,16 @@ fn tactical_left_up(state: &mut AppState) {
     // context action keep their ordinary priority while T is held.
     let type_select_held = state.match_state.input.type_select.held();
     if matches!(
-        route_click_action_before_type_select(action, |sx, sy| {
-            // A resolved context dispatch consumes the click
-            // even when its receiver admits no command.
-            try_queue_context_order(state, ContextOrderTarget::ScreenPoint(sx, sy), true)
-                .then_some(())
-        },),
+        route_click_action_before_type_select(
+            action,
+            left_click_can_issue_orders(state),
+            |sx, sy| {
+                // A resolved context dispatch consumes the click
+                // even when its receiver admits no command.
+                try_queue_context_order(state, ContextOrderTarget::ScreenPoint(sx, sy), true)
+                    .then_some(())
+            },
+        ),
         ClickActionRoute::ContextOrder(())
     ) {
         return;
@@ -735,18 +754,17 @@ fn tactical_left_up(state: &mut AppState) {
     }
 }
 
-/// The right-release cancel ladder: cancel exactly one armed cursor mode, and
-/// clear the selection only when nothing was armed.
+/// Cancel exactly one armed cursor mode before right-click orders or deselection.
 ///
 /// Display4AAD30's represented cursor rungs belong to MatchInputState.
 /// This existing selection owner handles its final UnselectAll48DC90 rung.
-fn right_click_cancel_ladder(state: &mut AppState) {
+fn cancel_armed_pointer_mode(state: &mut AppState) -> bool {
     if state
         .match_state
         .input
         .cancel_pointer_mode(&mut state.match_state.match_presentation.sidebar_gadget_state)
     {
-        return;
+        return true;
     }
     // RightUp4AAE47: beacon mode is the last rung before Unselect_All.
     if crate::app::input::beacon::mode_active(state) {
@@ -754,9 +772,32 @@ fn right_click_cancel_ladder(state: &mut AppState) {
             state,
             crate::app::input::beacon::BeaconModeRequest::Off,
         );
+        return true;
+    }
+    false
+}
+
+fn handle_tactical_right_click(state: &mut AppState) {
+    if cancel_armed_pointer_mode(state) {
         return;
     }
-    unselect_all(state);
+    // VERA-only alternative to Display4AAD30's final Unselect_All rung.
+    // Reuse the same context owner as retail left-click orders, including
+    // admission, modifiers, audio, feedback and network scheduling. Never
+    // fall through to selection on a refused right-click command.
+    if state.persistence.options_profile.right_click_orders {
+        try_queue_context_order(
+            state,
+            ContextOrderTarget::ScreenPoint(
+                state.match_state.input.cursor_x,
+                state.match_state.input.cursor_y,
+            ),
+            true,
+        );
+        state.match_state.input.queued_order_mode = OrderMode::Move;
+    } else {
+        unselect_all(state);
+    }
 }
 
 /// `Unselect_All_With_Mode_Reset 0x0048DC90`: the selection's clear, whose
@@ -802,19 +843,44 @@ fn band_caught_drawn_object(
     )
 }
 
-/// Minimap mouse body (routed here when the minimap ClickRegion consumes the
-/// edge): `RadarClass::Action @ 0x006539D0` ([`crate::app::input::radar`]).
-/// It ignores held motion — there is no continuous camera-follow (the held
-/// branch is dropped in `handle_cursor_moved_in_game`) — and a right release
-/// only releases the gadget's sticky capture.
+/// Route minimap mouse edges after gadget capture has selected this region.
+/// Retail input is `RadarClass::Action @ 0x006539D0`: left begins a context
+/// action (or centres the camera without one), right centres the camera.
+/// VERA's alternative scheme uses right for orders and ordinary left for the
+/// camera. Explicit left-button targeting still uses the context action.
 pub(crate) fn minimap_mouse(state: &mut AppState, button: MouseButton, btn_state: ElementState) {
     if crate::app::input::campaign_input::is_locked(state) {
         return;
     }
+    let right_click_orders = state.persistence.options_profile.right_click_orders;
     match (button, btn_state.is_pressed()) {
-        (MouseButton::Left, true) => crate::app::input::radar::left_press(state),
-        (MouseButton::Left, false) => crate::app::input::radar::left_release(state),
-        (MouseButton::Right, true) => crate::app::input::radar::right_press(state),
+        (MouseButton::Left, true)
+            if right_click_orders && state.match_state.input.minimap_press_active() => {}
+        (MouseButton::Left, true)
+            if left_click_can_issue_orders(state)
+                || state.match_state.input.targeting_mode.is_some() =>
+        {
+            crate::app::input::radar::begin_context_press(state);
+        }
+        (MouseButton::Right, true) if right_click_orders => {
+            crate::app::input::radar::begin_order_press(state, MouseButton::Right);
+        }
+        (MouseButton::Left | MouseButton::Right, true) => {
+            crate::app::input::radar::centre_view_at_cursor(state);
+        }
+        (MouseButton::Left, false) => {
+            crate::app::input::radar::finish_order_press(state, MouseButton::Left);
+        }
+        (MouseButton::Right, false)
+            if right_click_orders
+                && state.match_state.input.minimap_press_button() == Some(MouseButton::Right) =>
+        {
+            if cancel_armed_pointer_mode(state) {
+                state.match_state.input.cancel_minimap_press();
+            } else {
+                crate::app::input::radar::finish_order_press(state, MouseButton::Right);
+            }
+        }
         _ => {}
     }
 }
@@ -910,7 +976,7 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
     // (decompile 0x006539D0: `param_1 & 0x22` early-out). While a minimap press
     // is held we do NOT follow the cursor — but still swallow the move so it
     // doesn't begin a unit selection-drag.
-    if state.match_state.input.minimap_dragging {
+    if state.match_state.input.minimap_press_active() {
         return;
     }
     // Clamp drag position to the tactical viewport (exclude sidebar area).
@@ -6652,7 +6718,7 @@ mod context_click_route_tests {
         // click, including Ctrl+Shift attack-move and Shift ground Move.
         let mut resolved = 0;
         let route =
-            route_click_action_before_type_select(SelectAction::Click(12.0, 34.0), |x, y| {
+            route_click_action_before_type_select(SelectAction::Click(12.0, 34.0), true, |x, y| {
                 resolved += 1;
                 assert_eq!((x, y), (12.0, 34.0));
                 Some("admitted context action")
@@ -6662,15 +6728,28 @@ mod context_click_route_tests {
             route,
             ClickActionRoute::ContextOrder("admitted context action")
         );
-        let selection =
-            route_click_action_before_type_select::<()>(SelectAction::Click(12.0, 34.0), |_, _| {
-                None
-            });
+        let selection = route_click_action_before_type_select::<()>(
+            SelectAction::Click(12.0, 34.0),
+            true,
+            |_, _| None,
+        );
         assert_eq!(selection, ClickActionRoute::Selection);
         assert_eq!(
-            route_click_action_before_type_select::<()>(SelectAction::None, |_, _| panic!(
+            route_click_action_before_type_select::<()>(SelectAction::None, true, |_, _| panic!(
                 "a box/empty selection action is not a context click"
             )),
+            ClickActionRoute::Selection
+        );
+    }
+
+    #[test]
+    fn right_click_orders_leave_an_ordinary_left_click_to_selection() {
+        assert_eq!(
+            route_click_action_before_type_select::<()>(
+                SelectAction::Click(12.0, 34.0),
+                false,
+                |_, _| panic!("with Right-Click Orders a plain left click only selects"),
+            ),
             ClickActionRoute::Selection
         );
     }

@@ -584,7 +584,7 @@ pub(crate) fn camera_input_idle(state: &AppState) -> bool {
         .iter()
         .all(|key| input.planning.owns_key(*key))
         && input.pending_camera_scroll.is_idle()
-        && !input.minimap_dragging
+        && !input.minimap_press_active()
         && !input.tactical_mouse.captured
         && !input.tactical_mouse.left_held
         && !input.tactical_mouse.right_held
@@ -1297,7 +1297,7 @@ pub(crate) fn poll_mouse_scroll(state: &mut AppState) -> (f32, f32) {
     // right-drag gesture. The minimap-drag inhibit is VERA-internal: gamemd's
     // minimap re-centres only on press, while this flag owns the gesture here.
     if !state.match_state.input.tactical_mouse.captured
-        && !state.match_state.input.minimap_dragging
+        && !state.match_state.input.minimap_press_active()
         && !touch_owns_pointer(&state.match_state.input)
     {
         let now = state.match_state.input.edge_scroll.radar_timer();

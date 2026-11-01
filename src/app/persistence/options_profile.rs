@@ -140,6 +140,9 @@ pub(crate) struct RetailOptionsProfile {
     /// `[VERA] MouseWheelZoom=`: let the mouse wheel change the battle's
     /// view distance. Off by default; this is a local camera preference.
     pub(crate) mouse_wheel_zoom: bool,
+    /// `[VERA] RightClickOrders=`: left selects, right issues context orders.
+    /// VERA-only input preference; off by default.
+    pub(crate) right_click_orders: bool,
     /// `[VERA] LockCursor=`: keep the pointer inside the game window. On
     /// unless the player turns it off.
     pub(crate) lock_cursor: bool,
@@ -266,6 +269,7 @@ impl Default for RetailOptionsProfile {
             skip_startup_logo: false,
             render_interpolation: false,
             mouse_wheel_zoom: false,
+            right_click_orders: false,
             lock_cursor: true,
             window_maximized: false,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
@@ -294,7 +298,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 21],
+    pub(crate) vera: [(&'static str, String); 22],
 }
 
 impl RetailOptionsLoad {
@@ -497,6 +501,7 @@ impl RetailOptionsProfile {
             self.render_interpolation =
                 vera.read_bool("RenderInterpolation", self.render_interpolation);
             self.mouse_wheel_zoom = vera.read_bool("MouseWheelZoom", self.mouse_wheel_zoom);
+            self.right_click_orders = vera.read_bool("RightClickOrders", self.right_click_orders);
             self.lock_cursor = vera.read_bool("LockCursor", self.lock_cursor);
             self.window_maximized = vera.read_bool("WindowMaximized", self.window_maximized);
             // A non-numeric value answers 0, which the clamp lifts to the
@@ -641,6 +646,10 @@ impl RetailOptionsProfile {
                 (
                     "MouseWheelZoom",
                     format_bool(self.mouse_wheel_zoom).to_string(),
+                ),
+                (
+                    "RightClickOrders",
+                    format_bool(self.right_click_orders).to_string(),
                 ),
                 ("HouseColorStrength", self.house_color_strength.to_string()),
                 ("Display", self.display.ini_value().to_owned()),
@@ -1647,6 +1656,33 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         let reloaded = load_snapshot(&startup, &written).retained_profile;
         assert!(!reloaded.mouse_wheel_zoom);
         assert!(!reloaded.render_interpolation);
+        assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
+    }
+
+    #[test]
+    fn right_click_orders_preference_defaults_off_and_round_trips() {
+        let startup = RetailStartupOptions::default();
+        assert!(
+            !load_snapshot(&startup, b"")
+                .retained_profile
+                .right_click_orders
+        );
+        let input = b"[VERA]\nRightClickOrders=yes\nUnowned=keep\n";
+        let mut profile = load_snapshot(&startup, input).retained_profile;
+        assert!(profile.right_click_orders);
+        let written = profile.transform_settings(input);
+        assert!(
+            load_snapshot(&startup, &written)
+                .retained_profile
+                .right_click_orders
+        );
+        profile.right_click_orders = false;
+        let written = profile.transform_settings(&written);
+        assert!(
+            !load_snapshot(&startup, &written)
+                .retained_profile
+                .right_click_orders
+        );
         assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
     }
 

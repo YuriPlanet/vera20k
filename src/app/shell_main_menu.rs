@@ -99,6 +99,9 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         self.platform.cursor_confined = locked;
         crate::app::input::cursor::apply_cursor_confinement(self);
     }
+    fn store_right_click_orders(&mut self, enabled: bool) {
+        self.persistence.options_profile.right_click_orders = enabled;
+    }
     fn store_mouse_wheel_zoom(&mut self, enabled: bool) {
         self.persistence.options_profile.mouse_wheel_zoom = enabled;
         if !enabled {

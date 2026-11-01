@@ -116,7 +116,7 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
             CursorFeedbackKind::Scroll(dir)
         });
     }
-    if state.match_state.input.minimap_dragging
+    if state.match_state.input.minimap_press_active()
         || crate::app::presentation::sidebar_render::is_cursor_over_minimap(state)
     {
         // The radar's own action draws its row's mini set
