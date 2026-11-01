@@ -96,7 +96,8 @@
 //! expanding 40,000 cells, and a pass of a few hundred held its frame for up
 //! to a tenth of a second. A Foot it leaves out stands as one the cap leaves
 //! out does: there the jammed Foots find their detours later, so fewer reach
-//! combat.
+//! combat. A re-path past the budget does not start, or stops searching, once
+//! the ones before it have made the budget's expansions.
 //!
 //! A code-2 re-path searches at the urgency its ladder asked when the Foot
 //! registered it, the frame native searched: 2 once the Foot's latched
@@ -132,6 +133,7 @@
 //! cell when the foundation covers it.
 
 use crate::util::time::{Duration, Instant};
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -151,7 +153,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionId;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::pathfinding::zone_search::PathSearchFailure;
-use crate::sim::pathfinding::{BlockerNeighborCounts, PathGrid, count_search_steps};
+use crate::sim::pathfinding::{BlockerNeighborCounts, PathGrid, search_steps};
 use crate::sim::radio::Contacts;
 use crate::sim::world::{EntryFacts, Simulation};
 
@@ -402,6 +404,18 @@ fn code2_urgency(&(id, request): &(u64, WaitingRequest)) -> Option<(u64, u8)> {
         WaitingRequest::Code2Ladder { urgency } => Some((id, urgency)),
         WaitingRequest::NoQueue => None,
     }
+}
+
+/// Whether the urgency-2 re-path at `index` falls past the cut whatever it
+/// makes: the counts in `made` before it reach `budget`. Each count is one
+/// its re-path has reached, never more than its search makes in all, so
+/// their sum is at most the one the cut adds up.
+fn past_cut(made: &[AtomicU64], index: usize, budget: u64) -> bool {
+    made[..index]
+        .iter()
+        .map(|made| made.load(Ordering::Relaxed))
+        .sum::<u64>()
+        >= budget
 }
 
 /// What a pass did with a registration it took.
@@ -776,45 +790,65 @@ impl Simulation {
         // most by far (match bench: a median of ~720 expansions against ~70
         // for the rest), so they start first, in their turn's order, and none
         // runs alone at the end. An answer depends on its request alone, so
-        // the order changes none. `spent` is their expansions so far: each
-        // re-path it counts was taken before the one that reads it, so one
-        // taken once it reaches the budget falls past the cut below. No
-        // search runs other pool work on its thread, which would count there.
-        let spent = AtomicU64::new(0);
-        let mut searched = crate::sim::parallel::map_in_order(
-            turn,
-            || spent.load(Ordering::Acquire) >= urgency2_steps,
-            |&(id, request), spent_up| {
-                let urgency2 = request.is_urgency2();
-                if urgency2 && spent_up {
-                    return None;
-                }
-                let (answer, steps) = count_search_steps(|| {
-                    dummy.detached(|| {
-                        sim.batched_search(id, request, rules, registry, grid, counts, Some(facts))
-                    })
-                });
-                if urgency2 {
-                    spent.fetch_add(steps, Ordering::Release);
-                }
-                Some((answer, steps))
-            },
-        );
+        // the order changes none. `made` holds each re-path's expansions so
+        // far, which it publishes as it searches: one whose predecessors'
+        // counts reach the budget falls past the cut below whatever it makes,
+        // so it does not start, or stops. No search runs other pool work on
+        // its thread, which would count there.
+        let made: Vec<AtomicU64> = (0..urgent).map(|_| AtomicU64::new(0)).collect();
+        let mut searched = crate::sim::parallel::map_in_order(turn, |index, &(id, request)| {
+            debug_assert_eq!(index < urgent, request.is_urgency2());
+            let base = search_steps();
+            let search = |keep_searching: Option<&dyn Fn(u32) -> bool>| {
+                dummy.detached(|| {
+                    sim.batched_search(
+                        id,
+                        request,
+                        rules,
+                        registry,
+                        grid,
+                        counts,
+                        Some(facts),
+                        keep_searching,
+                    )
+                })
+            };
+            if index >= urgent {
+                let answer = search(None);
+                return Some((answer, search_steps() - base, false));
+            }
+            if past_cut(&made, index, urgency2_steps) {
+                return None;
+            }
+            let stopped = Cell::new(false);
+            let answer = search(Some(&|expanded| {
+                made[index].store(
+                    search_steps() - base + u64::from(expanded),
+                    Ordering::Relaxed,
+                );
+                stopped.set(past_cut(&made, index, urgency2_steps));
+                !stopped.get()
+            }));
+            let steps = search_steps() - base;
+            made[index].store(steps, Ordering::Relaxed);
+            Some((answer, steps, stopped.get()))
+        });
         #[cfg(any(test, feature = "test-support"))]
         assert_eq!(rng, sim.rng_state(), "batched searches draw no RNG");
         // Expansions the pass actually made, counted before the cut drops the
         // answers past the budget: that work was still done.
         let expanded: u64 = searched.iter().flatten().map(|entry| entry.1).sum();
-        let urgency2_made = spent.load(Ordering::Acquire);
+        let urgency2_made = made.iter().map(|made| made.load(Ordering::Relaxed)).sum();
         // The cut, which depends on the re-paths' expansions alone: in turn
         // order a re-path is answered while the ones before it stay under the
         // budget.
         let mut steps = 0;
         for searched in &mut searched[..urgent] {
             if steps < urgency2_steps {
-                let (_, made) = searched
+                let &(_, made, stopped) = searched
                     .as_ref()
                     .expect("a re-path before the cut was searched");
+                assert!(!stopped, "a re-path before the cut searched to its end");
                 steps += made;
             } else {
                 *searched = None;
@@ -822,14 +856,16 @@ impl Simulation {
         }
         let turns = searched
             .into_iter()
-            .map(|searched| searched.map_or(Turn::OverBudget, |(answer, _)| Turn::Searched(answer)))
+            .map(|searched| {
+                searched.map_or(Turn::OverBudget, |(answer, ..)| Turn::Searched(answer))
+            })
             .collect();
         (turns, expanded, urgency2_made)
     }
 
     /// `id`'s search as its `request`'s Find_Path would run it now, without
     /// effects, reading the batch's kept entry `facts`; `None` when it has
-    /// nothing to answer.
+    /// nothing to answer or `keep_searching` stopped it.
     fn batched_search(
         &self,
         id: u64,
@@ -839,6 +875,7 @@ impl Simulation {
         grid: &PathGrid,
         counts: &BlockerNeighborCounts,
         facts: Option<&EntryFacts>,
+        keep_searching: Option<&dyn Fn(u32) -> bool>,
     ) -> Option<BatchedSearch> {
         let request = match request {
             WaitingRequest::NoQueue => self.no_queue_request(id)?,
@@ -864,12 +901,15 @@ impl Simulation {
             counts,
             MoverLift::Emulated,
             facts,
+            keep_searching,
         );
         if read_own_cell
             || matches!(
                 found,
                 Err(MovePathFailure::MissingGrid
-                    | MovePathFailure::Search(PathSearchFailure::CellEntryUnavailable(_)))
+                    | MovePathFailure::Search(
+                        PathSearchFailure::CellEntryUnavailable(_) | PathSearchFailure::Stopped
+                    ))
             )
         {
             return None;

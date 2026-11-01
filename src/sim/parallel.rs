@@ -19,20 +19,15 @@ pub(crate) fn map<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) 
 /// [`map`] that starts the items in slice order, each on the next free
 /// worker, with the results in item order. Starting the costliest items
 /// first keeps the slowest from running alone at the end. `work` also gets
-/// what `before` read just before its item was taken: whatever earlier
-/// items publish with `Release` and `before` reads with `Acquire` comes
-/// only from items earlier in the slice.
-pub(crate) fn map_in_order<T: Sync, B, R: Send>(
+/// the item's index.
+pub(crate) fn map_in_order<T: Sync, R: Send>(
     items: &[T],
-    before: impl Fn() -> B + Sync,
-    work: impl Fn(&T, B) -> R + Sync,
+    work: impl Fn(usize, &T) -> R + Sync,
 ) -> Vec<R> {
     use std::sync::atomic::{AtomicUsize, Ordering};
     let next = AtomicUsize::new(0);
     // A puller per worker takes the next item until none is left; one a
-    // busy worker never starts finds none left. An item's publication
-    // happens before a later read that sees it, so its take precedes the
-    // reader's next take in `next`'s order.
+    // busy worker never starts finds none left.
     let pullers = rayon::current_num_threads().min(items.len());
     let done: Vec<Vec<(usize, R)>> = (0..pullers)
         .into_par_iter()
@@ -40,12 +35,11 @@ pub(crate) fn map_in_order<T: Sync, B, R: Send>(
         .map(|_| {
             let mut done = Vec::new();
             loop {
-                let seen = before();
                 let index = next.fetch_add(1, Ordering::Relaxed);
                 let Some(item) = items.get(index) else {
                     break;
                 };
-                done.push((index, work(item, seen)));
+                done.push((index, work(index, item)));
             }
             done
         })
@@ -148,8 +142,11 @@ mod tests {
         assert!(super::any_index(1000, |index| index == 999));
         assert!(!super::any_index(1000, |index| index >= 1000));
         assert_eq!(
-            super::map_in_order(&items, || (), |item, ()| item * item),
-            squares
+            super::map_in_order(&items, |index, item| item * item + index as u64),
+            items
+                .iter()
+                .map(|item| item * item + item)
+                .collect::<Vec<_>>()
         );
     }
 

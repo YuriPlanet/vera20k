@@ -94,14 +94,15 @@ impl EntryFacts {
         self.blockers.resize_with(slots, OnceLock::new);
     }
 
-    /// Real cell `index`'s facts, kept from this batch's first ask.
+    /// Real cell `index`'s facts, kept from this batch's first ask
+    /// ([`Self::keep`]).
     pub(super) fn cell(&self, index: usize, read: impl Fn() -> CellFacts) -> &CellFacts {
         let kept = &self.cells[index];
         let kept = match kept.get() {
             Some(kept) => kept,
             None => {
                 self.cells_kept.mark(index);
-                kept.get_or_init(&read)
+                Self::keep(kept, read())
             }
         };
         debug_assert!(
@@ -132,14 +133,15 @@ impl EntryFacts {
         cell
     }
 
-    /// The facts of the entity in `slot`, kept from this batch's first ask.
+    /// The facts of the entity in `slot`, kept from this batch's first ask
+    /// ([`Self::keep`]).
     pub(super) fn blocker(&self, slot: usize, read: impl Fn() -> BlockerFacts) -> &BlockerFacts {
         let kept = &self.blockers[slot];
         let kept = match kept.get() {
             Some(kept) => kept,
             None => {
                 self.blockers_kept.mark(slot);
-                kept.get_or_init(&read)
+                Self::keep(kept, read())
             }
         };
         debug_assert!(
@@ -147,6 +149,16 @@ impl EntryFacts {
             "the entity in slot {slot} changed during a path batch"
         );
         kept
+    }
+
+    /// Keep the `read` facts in `kept`, unless another search kept its own
+    /// first, and return the kept ones. Each search reads before the lock,
+    /// which then holds only for the copy, so searches asking at once read
+    /// side by side instead of waiting for one read. Every read sees the one
+    /// unchanged world, so the copies are equal and either may stay.
+    fn keep<T>(kept: &OnceLock<T>, read: T) -> &T {
+        let _ = kept.set(read);
+        kept.get().expect("kept just now")
     }
 }
 
@@ -300,10 +312,18 @@ impl PlainCell {
         self.0 as u8 as i8
     }
 
-    /// Whether the land row for `speed` is nonzero, when the cell has one
-    /// ([`CellFacts::speed_costs`]).
-    pub(super) fn row_nonzero(self, speed: SpeedType) -> Option<bool> {
-        let n = Self::SPEEDS.iter().position(|&known| known == speed)?;
+    /// The row the word keeps for SpeedType `speed`, for
+    /// [`Self::row_nonzero`]; `None` for one it keeps none for.
+    pub(super) fn speed_row(speed: SpeedType) -> Option<u32> {
+        Self::SPEEDS
+            .iter()
+            .position(|&known| known == speed)
+            .map(|n| n as u32)
+    }
+
+    /// Whether the land row `n` ([`Self::speed_row`]) is nonzero, when the
+    /// cell has one ([`CellFacts::speed_costs`]).
+    pub(super) fn row_nonzero(self, n: u32) -> Option<bool> {
         (self.0 >> (8 + n) & 1 != 0).then_some(self.0 >> (16 + n) & 1 != 0)
     }
 }
@@ -433,5 +453,55 @@ mod tests {
             );
         }
         assert_eq!(facts.blocker(69, || blocker(2, 9)).rx, 9);
+    }
+
+    /// Two searches asking about one cell, or one blocker, at once both
+    /// read it, neither waiting for the other's read, and both get the facts
+    /// the table keeps.
+    #[test]
+    fn searches_asking_at_once_read_side_by_side() {
+        use std::sync::atomic::AtomicUsize;
+        let mut facts = EntryFacts::default();
+        facts.reset(1, 1);
+        let reading = AtomicUsize::new(0);
+        // Each search's first read waits until the other's has started.
+        let side_by_side = || {
+            reading.fetch_add(1, Ordering::SeqCst);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while reading.load(Ordering::SeqCst) % 2 != 0 {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "a search waited for the other's read"
+                );
+                std::thread::yield_now();
+            }
+        };
+        let at_once = |ask: &(dyn Fn(&dyn Fn()) + Sync)| {
+            std::thread::scope(|scope| {
+                for _ in 0..2 {
+                    scope.spawn(|| ask(&side_by_side));
+                }
+            });
+        };
+        at_once(&|wait| {
+            let first = std::cell::Cell::new(true);
+            let kept = facts.cell(0, || {
+                if first.replace(false) {
+                    wait();
+                }
+                cell_facts(3)
+            });
+            assert_eq!(*kept, cell_facts(3));
+        });
+        at_once(&|wait| {
+            let first = std::cell::Cell::new(true);
+            let kept = facts.blocker(0, || {
+                if first.replace(false) {
+                    wait();
+                }
+                blocker(1, 5)
+            });
+            assert_eq!(*kept, blocker(1, 5));
+        });
     }
 }
