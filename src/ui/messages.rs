@@ -23,6 +23,9 @@ pub const MESSAGE_LINE_HEIGHT_PX: i32 = 19;
 pub const MESSAGE_PREFIX_SEPARATOR: &str = ":";
 /// Retail visible-message cap (Init maxMsg=6; clamped ≤ MESSAGE_SLOTS).
 pub const MESSAGE_MAX_VISIBLE_RETAIL: usize = 6;
+/// The units behind a TextLabel's reveal count that blend toward white;
+/// the renderer's Path-A reveal draws this span.
+pub(crate) const TEXT_LABEL_HIGHLIGHT_UNITS: u32 = 8;
 /// Read_Scenario's Init MaxChars `0x62` (`0x00684ABB`, clamp `0x70`): the
 /// edit holds at most `MaxChars − 1` typed units.
 const MESSAGE_EDIT_MAX_CHARS: usize = 0x62;
@@ -449,7 +452,7 @@ impl MessageList {
                 reveal.count == 0
                     || u64::from(reveal.count)
                         < message.text.encode_utf16().count() as u64
-                            + u64::from(crate::render::bit_font::TEXT_LABEL_HIGHLIGHT_UNITS)
+                            + u64::from(TEXT_LABEL_HIGHLIGHT_UNITS)
             })
         })
     }

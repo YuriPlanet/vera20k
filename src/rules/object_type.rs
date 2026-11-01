@@ -3681,7 +3681,7 @@ impl ObjectType {
     /// compare them with a fresh read of the lists against `rules`.
     fn house_masks(&self, rules: &crate::rules::ruleset::RuleSet) -> HouseMasks {
         debug_assert!(
-            !crate::sim::touch_log::live_read_check_enabled()
+            !crate::util::debug_checks::live_read_check_enabled()
                 || self.house_masks == HouseMasks::derive(self, rules),
             "{}: house masks projected against another Country registry",
             self.id
