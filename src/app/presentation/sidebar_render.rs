@@ -739,17 +739,37 @@ pub(crate) fn refresh_sidebar_indicators(state: &mut AppState) {
         let owner = sim.interner().get(&owner_name).unwrap_or_default();
         let (produced, drained) = production::power_balance_for_owner(sim, rules, &owner_name);
         let presentation = &state.match_state.match_presentation;
+        let side = current_sidebar_side(state);
+        // HouseExt's two counts, walked over the store once per frame.
+        let (harvesters_active, harvesters_total) = sim.harvester_counts(rules, owner);
+        // Native draws the harvester counter before the power delta, and this is
+        // also the lane's append order.
         Some(
-            [power_delta_indicator(
-                sim,
-                rules,
-                current_sidebar_side(state),
-                owner,
-                &presentation.sidebar_indicators,
-                presentation.show_power_delta,
-                produced,
-                drained,
-            )]
+            [
+                harvester_counter_indicator(
+                    sim,
+                    rules,
+                    side,
+                    owner,
+                    &presentation.sidebar_indicators,
+                    presentation.show_harvester_counter,
+                    crate::app::presentation::sidebar_text::credits_tint(current_sidebar_theme(
+                        state,
+                    )),
+                    harvesters_active,
+                    harvesters_total,
+                ),
+                power_delta_indicator(
+                    sim,
+                    rules,
+                    side,
+                    owner,
+                    &presentation.sidebar_indicators,
+                    presentation.show_power_delta,
+                    produced,
+                    drained,
+                ),
+            ]
             .into_iter()
             .flatten()
             .collect::<Vec<_>>(),
@@ -767,6 +787,16 @@ pub(crate) fn refresh_sidebar_indicators(state: &mut AppState) {
 // Chrome / theme helpers
 // ---------------------------------------------------------------------------
 
+/// `Sidebar.*` colours are `ColorStruct` triples; the sidebar text lane takes a
+/// linear tint, which is also what the nullable harvester green falls back to.
+#[cfg(feature = "phobos")]
+fn sidebar_colour(rgb: [u8; 3]) -> [f32; 3] {
+    rgb.map(|value| f32::from(value) / 255.0)
+}
+
+/// The hook's own base column for the harvester and weeds branches: `+50`.
+#[cfg(feature = "phobos")]
+const HARVESTER_ANCHOR_X: i32 = 50;
 /// The hook's own base column for the power delta: `0x4A25E0` passes
 /// `DSurface::Sidebar->GetWidth() / 2 - 70`, while the harvester and weeds
 /// branches use `+ 50` and overlap each other by design.
@@ -776,6 +806,75 @@ const POWER_DELTA_ANCHOR_X: i32 = -70;
 /// as the credits counter.
 #[cfg(feature = "phobos")]
 const INDICATOR_SURFACE_Y: i32 = 2;
+
+/// The harvester-counter branch of the same hook (`Hooks.UI.cpp:111-135`),
+/// reading `HouseExt::ActiveHarvesterCount` and `TotalHarvesterCount`
+/// (`Ext/House/Body.cpp:278-303`).
+///
+/// The colour compares the *working-to-total* ratio with strict greater-than —
+/// the reverse of the power delta's less-than — so a house with no counted
+/// harvester at all reads `1.0` and stays green. `[label][working]/[total]`,
+/// unless the side hides the total (`HideMaxValue`, which wins) or shows only
+/// it (`OnlyMaxValue`). The branch opens on `HarvesterCounter.Show`, the
+/// `[Phobos] ShowHarvesterCounter` client switch and a player who has not been
+/// defeated; unlike the power delta it asks nothing about owned buildings.
+#[cfg(feature = "phobos")]
+fn harvester_counter_indicator(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    side: i32,
+    owner: crate::sim::intern::InternedId,
+    ui: &crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi,
+    client_enabled: bool,
+    tooltip_tint: [f32; 3],
+    active: i32,
+    total: i32,
+) -> Option<crate::ui::sidebar::SidebarIndicator> {
+    let counter = &ui.harvester;
+    if !(counter.show && client_enabled) {
+        return None;
+    }
+    if sim
+        .houses()
+        .get(&owner)
+        .is_some_and(crate::sim::house_state::HouseState::is_defeated)
+    {
+        return None;
+    }
+    let percent = if total == 0 {
+        1.0
+    } else {
+        f64::from(active) / f64::from(total)
+    };
+    let side_settings = rules.side_harvester_counter(side);
+    let tint = if percent > counter.condition_yellow {
+        // `ColorGreen` is a `Nullable`, whose source fallback is
+        // `Drawing::TooltipColor` (`Hooks.UI.cpp:117`).
+        side_settings
+            .color_green
+            .map(sidebar_colour)
+            .unwrap_or(tooltip_tint)
+    } else if percent > counter.condition_red {
+        sidebar_colour(side_settings.color_yellow)
+    } else {
+        sidebar_colour(side_settings.color_red)
+    };
+    let text = if side_settings.hide_max_value {
+        format!("{}{active}", counter.label)
+    } else if side_settings.only_max_value {
+        format!("{}{total}", counter.label)
+    } else {
+        format!("{}{active}/{total}", counter.label)
+    };
+    Some(crate::ui::sidebar::SidebarIndicator {
+        text,
+        tint,
+        anchor_x: HARVESTER_ANCHOR_X + side_settings.offset[0],
+        anchor_y: INDICATOR_SURFACE_Y + side_settings.offset[1],
+        // The harvester and weeds branches hardcode TextPrintType::Center.
+        align: crate::rules::phobos_sidebar_indicators::SidebarTextAlign::Center,
+    })
+}
 
 /// The power-delta branch of Phobos's shared sidebar indicator hook
 /// (`CreditsClass_GraphicLogic_HarvesterCounter @ 0x4A25E0`,
@@ -816,7 +915,7 @@ fn power_delta_indicator(
         .power_states()
         .get(&owner)
         .is_some_and(|power| power.blackout_remaining(frame) > 0);
-    let (text, rgb) = if blacked_out {
+    let (text, color) = if blacked_out {
         (ui.power_blackout_label.clone(), side_settings.color_grey)
     } else {
         let percent = if power_produced != 0 {
@@ -845,7 +944,7 @@ fn power_delta_indicator(
     };
     Some(crate::ui::sidebar::SidebarIndicator {
         text,
-        rgb,
+        tint: sidebar_colour(color),
         anchor_x: POWER_DELTA_ANCHOR_X + side_settings.offset[0],
         anchor_y: INDICATOR_SURFACE_Y + side_settings.offset[1],
         align: side_settings.align,

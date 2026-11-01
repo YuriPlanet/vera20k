@@ -4555,9 +4555,12 @@ pub struct RuleSet {
     /// Phobos `[SIDE] Sidebar.PowerDelta.*`, in `[Sides]` order: the per-side
     /// offset, colours and alignment of the power-delta sidebar indicator.
     #[cfg(feature = "phobos")]
-    side_power_delta: Vec<
-        crate::rules::phobos_sidebar_indicators::PowerDeltaSideSettings,
-    >,
+    side_power_delta: Vec<crate::rules::phobos_sidebar_indicators::PowerDeltaSideSettings>,
+    /// Phobos `[SIDE] Sidebar.HarvesterCounter.*`, in `[Sides]` order: the
+    /// offset, count-format switches and colours of the harvester counter.
+    #[cfg(feature = "phobos")]
+    side_harvester_counter:
+        Vec<crate::rules::phobos_sidebar_indicators::HarvesterCounterSideSettings>,
     /// Effective side for each country after `[Sides]` membership and the
     /// per-country `Side=` override have both run.
     country_sides: Vec<Option<SideIdx>>,
@@ -6205,6 +6208,20 @@ impl RuleSet {
                     .unwrap_or_default()
             })
             .collect();
+        #[cfg(feature = "phobos")]
+        let side_harvester_counter: Vec<
+            crate::rules::phobos_sidebar_indicators::HarvesterCounterSideSettings,
+        > = country_side_registry
+            .side_ids
+            .iter()
+            .map(|name| {
+                ini.section(name)
+                    .map(
+                        crate::rules::phobos_sidebar_indicators::HarvesterCounterSideSettings::from_section,
+                    )
+                    .unwrap_or_default()
+            })
+            .collect();
         let color_schemes = crate::rules::color_scheme::parse_color_schemes(ini);
         let house_color_ramps =
             crate::rules::house_colors::HouseColorRamps::from_schemes(&color_schemes);
@@ -6518,6 +6535,8 @@ impl RuleSet {
             side_sw_sidebar_art,
             #[cfg(feature = "phobos")]
             side_power_delta,
+            #[cfg(feature = "phobos")]
+            side_harvester_counter,
             #[cfg(feature = "ares")]
             side_extensions: country_side_registry.side_extensions,
             side_indices: country_side_registry.side_indices,
@@ -7408,6 +7427,8 @@ impl RuleSet {
         {
             b"phobos-sidebar-power-delta-v1".hash(&mut hasher);
             self.side_power_delta.hash(&mut hasher);
+            b"phobos-sidebar-harvester-counter-v1".hash(&mut hasher);
+            self.side_harvester_counter.hash(&mut hasher);
         }
         #[cfg(feature = "phobos")]
         {
@@ -9426,6 +9447,20 @@ impl RuleSet {
             .ok()
             .and_then(|index| self.side_power_delta.get(index))
             .copied()
+            .unwrap_or_default()
+    }
+
+    /// Phobos `[SIDE] Sidebar.HarvesterCounter.*` for a native side index. A
+    /// side outside `[Sides]` keeps the constructor defaults.
+    #[cfg(feature = "phobos")]
+    pub fn side_harvester_counter(
+        &self,
+        index: i32,
+    ) -> crate::rules::phobos_sidebar_indicators::HarvesterCounterSideSettings {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.side_harvester_counter.get(index))
+            .cloned()
             .unwrap_or_default()
     }
 

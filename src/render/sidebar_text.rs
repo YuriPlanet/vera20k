@@ -243,7 +243,7 @@ pub fn build_indicator_instances(
     anchor_x: i32,
     anchor_y: i32,
     align: crate::rules::phobos_sidebar_indicators::SidebarTextAlign,
-    rgb: [u8; 3],
+    tint: [f32; 3],
     camera_offset: [f32; 2],
 ) -> Vec<SpriteInstance> {
     use crate::rules::phobos_sidebar_indicators::SidebarTextAlign;
@@ -259,7 +259,6 @@ pub fn build_indicator_instances(
     };
     let x = panel_rect.x.round() + (surface_w / 2 + anchor_x - pull) as f32;
     let y = panel_rect.y.round() + anchor_y as f32;
-    let tint = rgb.map(|value| f32::from(value) / 255.0);
     font.build_text(text, x, y, 1.0, CREDITS_DEPTH, tint, camera_offset)
 }
 
