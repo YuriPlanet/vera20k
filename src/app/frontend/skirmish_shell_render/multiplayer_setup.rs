@@ -216,28 +216,6 @@ pub(crate) fn render_multiplayer_setup(
         )
     };
     if !leaving && ui.notice.is_none() {
-        if let Some((completed, total)) = state
-            .frontend
-            .network_setup_protocol
-            .as_ref()
-            .and_then(|protocol| protocol.transfer_progress())
-        {
-            let caption = format!(
-                "Map transfer: {}%",
-                completed.saturating_mul(100) / total.max(1)
-            );
-            let rect = scale.derive_rect(layout.map_label, |mut rect| {
-                rect.y += 36;
-                rect
-            });
-            texts.push(text(
-                &caption,
-                rect,
-                ShellAlign::H_CENTER,
-                SHELL_LABEL_TEXT_RGB,
-                SHELL_CONTROL_TEXT_DEPTH,
-            ));
-        }
         for (key, rect) in layout
             .labels
             .iter()
