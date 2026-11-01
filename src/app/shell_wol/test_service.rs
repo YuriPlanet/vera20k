@@ -7,17 +7,18 @@
 //! It answers the visit's and the WOL setup's requests once no shell
 //! transition runs: like a real service, a reply arrives after the page that
 //! asked has slid out. Any login is accepted. The lobbies, games and users
-//! are fixed stand-ins; Boris's game is a tournament room, Vladimir's has
-//! other rules (its exInfo hash differs from the user's), and the user is
-//! in a stand-in squad, so clan games can be created. Two of the users say
-//! one line each when a chat lobby is joined, and a locate finds them. A
-//! created game is joined by one stand-in guest, in no squad, who picks,
-//! has the map and accepts; the joined game's host answers the guest's
-//! first choices with its options. A start with that guest gets OnGameStart
-//! and the connection verify, then the scenario negotiation fails
-//! ("Scenarios don't match"): nobody can play a match here. The buddy list
-//! starts with four stand-ins whose locates answer a chat lobby, a game,
-//! offline and find-disabled; Add and Remove change it for the process.
+//! are fixed stand-ins; Boris's game is a tournament room, Vladimir's a
+//! co-op room with other rules (its exInfo hash differs from the user's),
+//! and the user is in a stand-in squad, so clan games can be created. Two
+//! of the users say one line each when a chat lobby is joined, and a
+//! locate finds them. A created game is joined by one stand-in guest, in no
+//! squad, who picks, has the map and accepts; the joined game's host
+//! answers the guest's first choices with its options. A start with that
+//! guest gets OnGameStart and the connection verify, then the scenario
+//! negotiation fails ("Scenarios don't match"): nobody can play a match
+//! here. The buddy list starts with four stand-ins whose locates answer a
+//! chat lobby, a game, offline and find-disabled; Add and Remove change it
+//! for the process.
 //! Quick Match finds a `Lob_40_0` lobby whose stand-in matchbot answers a
 //! request with `Working`, the pool size and a `Start` that makes the user
 //! the host and Natasha the opponent; she joins the created game, accepts,
@@ -861,7 +862,7 @@ fn stand_in_hash(state: &AppState) -> i32 {
     super::lobby::local_ini_hash(state).unwrap_or(0)
 }
 
-/// The first scenario record, which Tanya's and Vladimir's games name.
+/// The first scenario record, which Tanya's game names.
 fn stand_in_map(state: &AppState) -> String {
     state
         .frontend
@@ -874,8 +875,9 @@ fn stand_in_map(state: &AppState) -> String {
 
 /// Open games of other stand-in hosts, one that is full and one whose
 /// rules differ (`hash + 1`). Each keeps an observer slot, which the shown
-/// capacity leaves out. Their scenarios name `map`, the random map and a
-/// name the 40-byte exInfo cuts.
+/// capacity leaves out. Their scenarios name `map`, the random map, a
+/// name the 40-byte exInfo cuts and Quick Co-op's campaign map, so the
+/// modern list tags the room with other rules as a co-op room.
 fn games(hash: i32, map: &str) -> Vec<WolChannel> {
     let game = |host: &str, users, max_users, ping, hash: i32, scenario: &str| WolChannel {
         kind: GAME_CHANNEL,
@@ -908,7 +910,8 @@ fn games(hash: i32, map: &str) -> Vec<WolChannel> {
             hash,
             "Transylvania_but_much_longer_still.yro",
         ),
-        game("Vladimir", 2, 7, 90, hash.wrapping_add(1), map),
+        // A co-op room with one of its two seats taken.
+        game("Vladimir", 1, 3, 90, hash.wrapping_add(1), QUICK_COOP_MAP),
     ]
 }
 

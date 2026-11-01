@@ -1365,11 +1365,34 @@ pub(crate) fn open_art(state: &mut AppState) -> bool {
 
 fn refill_games(state: &mut AppState) {
     let sort = state.frontend.wol_lobby_globals.game_sort;
-    let Some(lobby) = lobby_mut(state) else {
+    let Some(lobby) = lobby(state) else {
         return;
     };
-    let rows = game_rows(&lobby.games, sort, lobby.ui.observer);
-    lobby.ui.replace_games(rows);
+    let mut rows = game_rows(&lobby.games, sort, lobby.ui.observer);
+    // VERA: the modern list tags a room whose exInfo names a co-op
+    // campaign's map with the Cooperative mode's name (MPModesMD.ini).
+    let tag = state
+        .frontend
+        .skirmish_modes
+        .iter()
+        .find(|mode| mode.class == crate::skirmish_modes::MpModeClass::Cooperative)
+        .map(|mode| csf(state, &mode.ui_name_key));
+    for row in &mut rows {
+        if cooperative_campaign(state, &lobby.games[row.record]).is_some() {
+            row.tag = tag.clone();
+        }
+    }
+    if let Some(lobby) = lobby_mut(state) {
+        lobby.ui.replace_games(rows);
+    }
+}
+
+/// The co-op campaign whose map a game's exInfo names.
+fn cooperative_campaign(state: &AppState, channel: &WolChannel) -> Option<usize> {
+    state
+        .frontend
+        .multiplayer_shell_runtime
+        .cooperative_campaign_for_scenario(&channel.ex_info().scenario)
 }
 
 fn refill_lobbies(state: &mut AppState) {
@@ -3999,7 +4022,7 @@ pub(crate) fn status_help(state: &AppState) -> String {
     match ui.buttons.hovered {
         Some(GAMES) => match ui.game_list.hot_row.and_then(|row| ui.game_rows.get(row)) {
             None => csf(state, "STT:LobbyListGames"),
-            Some(row) => game_help(state, row),
+            Some(row) => game_help(state, row, ui.is_modern()),
         },
         Some(PLAYERS) => match ui
             .player_list
@@ -4088,8 +4111,8 @@ fn scenario_description(state: &AppState, scenario: &str) -> String {
 
 /// `0x00780E30`: the host (the name up to `'`, at most 10 characters), the
 /// ping, then `", "` and the map when exInfo names a scenario `0x00780D90`
-/// knows.
-fn game_help(state: &AppState, row: &WolGameRow) -> String {
+/// knows. VERA: the modern list's help then names a co-op room's campaign.
+fn game_help(state: &AppState, row: &WolGameRow, modern: bool) -> String {
     let host: String = row
         .name
         .split('\'')
@@ -4107,8 +4130,8 @@ fn game_help(state: &AppState, row: &WolGameRow) -> String {
         )
     };
     let mut help = format!("{}, {ping}", user_help(state, &host, None));
-    let scenario = lobby(state)
-        .and_then(|lobby| lobby.games.get(row.record))
+    let channel = lobby(state).and_then(|lobby| lobby.games.get(row.record));
+    let scenario = channel
         .map(|channel| channel.ex_info().scenario)
         .unwrap_or_default();
     if !scenario.is_empty() {
@@ -4117,6 +4140,19 @@ fn game_help(state: &AppState, row: &WolGameRow) -> String {
             help.push_str(", ");
             help.push_str(&name);
         }
+    }
+    if let Some(key) = channel
+        .filter(|_| modern)
+        .and_then(|channel| cooperative_campaign(state, channel))
+        .and_then(|campaign| {
+            state
+                .frontend
+                .multiplayer_shell_runtime
+                .cooperative_campaign_name(campaign)
+        })
+    {
+        help.push_str(", ");
+        help.push_str(&csf(state, key));
     }
     help
 }

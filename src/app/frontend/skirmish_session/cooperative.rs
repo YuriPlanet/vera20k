@@ -176,6 +176,21 @@ impl CooperativeRegistry {
     pub fn campaign(&self, campaign_type: usize) -> Option<&CooperativeCampaign> {
         self.campaigns.get(campaign_type)
     }
+
+    /// VERA: the first campaign with a stage whose map variant `scenario`
+    /// names (`<token>.MAP`, compared as `+0x4C` compares). Retail lists
+    /// these maps for Cooperative only (missionsmd.pkt
+    /// `GameMode=cooperative`), so the modern WOL list reads a room on one
+    /// as a Cooperative room.
+    pub fn campaign_for_scenario(&self, scenario: &str) -> Option<usize> {
+        self.campaigns.iter().position(|campaign| {
+            campaign
+                .stages
+                .iter()
+                .flat_map(|stage| &stage.map_variants)
+                .any(|token| scenario_is_map(scenario, token))
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1924,6 +1939,18 @@ mod tests {
             CooperativeAiDifficulty::Easy
         );
         assert_eq!(registry.campaigns[0].stages[1].map_variants[2], "A2C");
+    }
+
+    /// A room's exInfo scenario names a campaign by any stage's variant as
+    /// `<token>.MAP` in any case; other files name none.
+    #[test]
+    fn a_campaign_map_scenario_names_its_campaign() {
+        let registry = registry();
+        assert_eq!(registry.campaign_for_scenario("a2b.map"), Some(0));
+        assert_eq!(registry.campaign_for_scenario("W1C.MAP"), Some(1));
+        for other in ["A1", "A1.YRM", "A1B.MAPX", "XMP29U2.MAP", ""] {
+            assert_eq!(registry.campaign_for_scenario(other), None, "{other}");
+        }
     }
 
     #[test]

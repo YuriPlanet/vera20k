@@ -1179,6 +1179,11 @@ impl MultiplayerShellRuntime {
             .map(|campaign| campaign.campaign_name.as_str())
     }
 
+    /// The campaign whose maps include `scenario`, a WOL room's listed map.
+    pub(crate) fn cooperative_campaign_for_scenario(&self, scenario: &str) -> Option<usize> {
+        self.cooperative_registry.campaign_for_scenario(scenario)
+    }
+
     /// Cooperative `+0x1C` for a native country value (-2 Random).
     pub(crate) fn cooperative_admits(&self, country: i32) -> bool {
         self.cooperative_progress.admits_country(

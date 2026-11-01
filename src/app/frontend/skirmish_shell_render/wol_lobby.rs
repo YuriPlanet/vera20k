@@ -34,6 +34,9 @@ pub(super) const POPUP_DEPTHS: ModalDepths = ModalDepths {
 /// `0x808080`: a full game's row (`0x00781480`).
 const GREYED_RGB: [f32; 3] = [128.0 / 255.0; 3];
 
+/// VERA: the modern game list's gap between a room's name and its tag.
+const GAME_TAG_GAP: i32 = 8;
+
 /// Sprites on the skirmish atlas, sprites on the lobby art and texts.
 #[derive(Default)]
 pub(crate) struct WolLobbyPaint {
@@ -325,22 +328,41 @@ pub(crate) fn paint_wol_lobby_children(
             SHELL_LABEL_TEXT_RGB
         };
         // The modern list keeps one retail icon, a password game's lock, in
-        // the first icon column; that row's name starts at the next one.
+        // the first icon column; that row's name starts at the next one. A
+        // tag ends the name cell against the Ping column, and the name stops
+        // a gap before it.
         let name_x = if row.keyed {
             GAME_PASSWORD_X
         } else {
             GAME_TYPE_X
         };
+        let name_end = GAME_PING_X - 2;
+        let tag = row.tag.as_deref().filter(|_| modern);
+        let tag_w = tag.map_or(0, |tag| {
+            (font.text_width(tag) as i32).min(name_end - name_x)
+        });
+        let name_w = match tag {
+            Some(_) => name_end - name_x - tag_w - GAME_TAG_GAP,
+            None => name_end - name_x,
+        };
         paint.texts.push(text(
             &row.text,
             if modern {
-                cell(rect, name_x, GAME_PING_X - 2 - name_x)
+                cell(rect, name_x, name_w.max(1))
             } else {
                 cell(rect, GAME_NAME_X, GAME_NAME_W)
             },
             ShellAlign::V_CENTER,
             rgb,
         ));
+        if let Some(tag) = tag {
+            paint.texts.push(text(
+                tag,
+                cell(rect, name_end - tag_w, tag_w.max(1)),
+                ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
+                rgb,
+            ));
+        }
         // A -1 ping is the text "???"; any other is an integer cell. The
         // modern list centres it under its Ping header instead of starting
         // it at the retail column, left of the header's caption.
