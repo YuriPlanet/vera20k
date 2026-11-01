@@ -98,6 +98,9 @@ pub(crate) enum AttackAction {
     /// Move (1) over an object: an Aircraft's own Cell action under it
     /// (`0x00417D7C`), which its ClickedAction sends to Foot's Move arm.
     Move,
+    /// GuardArea (0x1A): a player's negative-damage Infantry turns Attack on
+    /// a Cell into this action (Infantry51F838..51F85B).
+    GuardArea,
     /// AttackSupport (0x3B): a player's healing Unit's Attack on a Cell
     /// (`0x007404FD..0x00740522`). SetCursorFromAction (`0x004AAE90`) has no
     /// case for it, so it shows the arrow (row 0), and Foot's ClickedAction_Cell
@@ -309,8 +312,11 @@ pub(crate) fn attack_action(
         sim.interner(),
     );
     let infiltrator = actor.category() == EntityCategory::Infantry && kind.infiltrate;
-    let healing_unit = actor.category() == EntityCategory::Unit
-        && human
+    let healing_weapon = human
+        && matches!(
+            actor.category(),
+            EntityCategory::Unit | EntityCategory::Infantry
+        )
         && crate::sim::combat::combat_weapon::weapon_damage_value(
             actor,
             kind,
@@ -318,12 +324,23 @@ pub(crate) fn attack_action(
             rules,
             sim.interner(),
         ) < 0;
+    let healing_unit = actor.category() == EntityCategory::Unit && healing_weapon;
     // UnitClass::What_Action_OnCell 0x007404FD..0x00740522: a player's Unit
     // whose GetWeaponDamageValue(-1) (0x006F3970) is negative, an IFV with an
     // Engineer, turns Foot's Attack on a Cell into AttackSupport (0x3B), which
     // every later Unit rung returns unchanged (0x0074072B..0x0074075F).
     if action == AttackAction::Attack && healing_unit && matches!(target, TargetKind::Cell(..)) {
         action = AttackAction::AttackSupport;
+    }
+    // gamemd.exe InfantryClass::What_Action_OnCell 0x0051F838..0x0051F85B:
+    // the same negative GetWeaponDamageValue(-1) instead answers GuardArea,
+    // before the deploy-fire rungs. Object healing has its own class ladder.
+    if action == AttackAction::Attack
+        && actor.category() == EntityCategory::Infantry
+        && healing_weapon
+        && matches!(target, TargetKind::Cell(..))
+    {
+        action = AttackAction::GuardArea;
     }
     // UnitClass::What_Action_OnObject's healer arm (0x0073FD7C)
     // asks Is_Ally_ByObject (0x004F9A90), which refuses a Terrain object's
@@ -1103,6 +1120,21 @@ fn attack_branch_orders(
             | AttackAction::AttackSupport => consumed_attack_action = true,
             AttackAction::Rally => unreachable!("rally remains with its existing receiver"),
             AttackAction::Select => select_fallback = true,
+            AttackAction::GuardArea => {
+                consumed_attack_action = true;
+                // gamemd.exe FootClass::ClickedAction_Cell 0x004D7E35..0x004D7E8B:
+                // an armed Infantry's admitted GuardArea sends mission 11 with
+                // the clicked Cell as target and no destination. ClickedMission
+                // 0x006FFC09..0x006FFC23 only promotes Move/Attack, not AreaGuard.
+                if matches!(attack_target, TargetKind::Cell(..))
+                    && guard_area_admitted(sim, rules, id, None)
+                {
+                    queued.push(Command::Guard {
+                        entity_id: id,
+                        target: Some(attack_target),
+                    });
+                }
+            }
             AttackAction::Attack => {
                 consumed_attack_action = true;
                 let payload = match attack_target {
@@ -1918,6 +1950,7 @@ fn object_attack_click_command(
         AttackAction::Select
         | AttackAction::None
         | AttackAction::Rally
+        | AttackAction::GuardArea
         | AttackAction::AttackSupport => return None,
     }
     match infantry_attack_action(sim, rules, attacker_id, target_id) {
@@ -1974,6 +2007,7 @@ impl From<AttackAction> for ReleaseAction {
             | AttackAction::NoMove
             | AttackAction::Rally
             | AttackAction::Move
+            | AttackAction::GuardArea
             | AttackAction::AttackSupport => Self::Other,
         }
     }
@@ -2531,9 +2565,9 @@ pub(crate) fn try_queue_context_order(
         {
             // Each selected object's What_Action on the Cell reaches its
             // unforced Attack rung on its own (0x004AE750's object loop);
-            // its tail is the forced shot's (Attack, or a healing Unit's
-            // AttackSupport), and any other answer keeps the object on its
-            // Move rungs below. Foot's shroud wrapper
+            // its tail is the forced shot's (Attack, a healing Unit's
+            // AttackSupport, or Infantry's GuardArea). Other answers keep the
+            // object on its Move rungs below. Foot's shroud wrapper
             // (0x004DDE64..0x004DDEBE) takes a Foot's Attack back over a
             // shrouded Cell; the Building wrapper keeps it.
             let rung: Vec<u64> = selected_ids
@@ -2560,7 +2594,11 @@ pub(crate) fn try_queue_context_order(
                                 true,
                                 Some(&resources.overlay_registry),
                             ),
-                            Some(AttackAction::Attack | AttackAction::AttackSupport)
+                            Some(
+                                AttackAction::Attack
+                                    | AttackAction::AttackSupport
+                                    | AttackAction::GuardArea
+                            )
                         )
                 })
                 .collect();
@@ -8573,3 +8611,7 @@ mod engineer_special_entry_tests;
 #[cfg(test)]
 #[path = "foot_unarmed_ctrl_tests.rs"]
 mod foot_unarmed_ctrl_tests;
+
+#[cfg(test)]
+#[path = "infantry_healer_cell_tests.rs"]
+mod infantry_healer_cell_tests;

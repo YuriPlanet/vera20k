@@ -627,6 +627,7 @@ fn unforced_cell_attack_feedback(
         Some(
             feedback @ (CursorFeedbackKind::EnemyUnit
             | CursorFeedbackKind::EnemyOutOfRange
+            | CursorFeedbackKind::GuardArea
             | CursorFeedbackKind::Default),
         ) => Some(feedback),
         _ => None,
@@ -1144,6 +1145,7 @@ pub(super) fn capability_cursor_for_hover(
                     }
                     AttackAction::NoMove => return CursorFeedbackKind::Invalid,
                     AttackAction::Select => return CursorFeedbackKind::FriendlyUnit,
+                    AttackAction::GuardArea => return CursorFeedbackKind::GuardArea,
                     AttackAction::Rally | AttackAction::Move => return CursorFeedbackKind::Move,
                     AttackAction::Attack => {}
                 }
@@ -1411,6 +1413,7 @@ fn action_feedback(
         AttackAction::Rally | AttackAction::Move => Some(CursorFeedbackKind::Move),
         AttackAction::Select => Some(CursorFeedbackKind::FriendlyUnit),
         AttackAction::AttackSupport => Some(CursorFeedbackKind::Default),
+        AttackAction::GuardArea => Some(CursorFeedbackKind::GuardArea),
         AttackAction::Attack => Some(
             if attack_cursor_is_in_range(
                 sim,
