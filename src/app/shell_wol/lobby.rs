@@ -3492,6 +3492,8 @@ pub(super) fn page_received(state: &mut AppState, from: WolMember, text: Vec<u16
 
 pub(crate) fn update_geometry(state: &mut AppState) {
     let layout = layout(state);
+    let create_rects = create_layout(state);
+    let password_rect = password_layout(state).password;
     let font = &state.renderer.bit_font;
     let Some(lobby) = state
         .frontend
@@ -3516,27 +3518,23 @@ pub(crate) fn update_geometry(state: &mut AppState) {
         .scroll_to_caret((scale.base_rect(layout.chat).w - 3).max(0) as u32, |text| {
             font.text_width(text)
         });
-    let modern = ui.is_modern();
     if let Some(popup) = ui.popup.as_mut() {
-        let (width, height) = (
-            state.renderer.gpu.config.width as i32,
-            state.renderer.gpu.config.height as i32,
-        );
-        let available = |rect: crate::ui::shell::geom::RectPx| (rect.w - 3).max(0) as u32;
+        // Text widths are in the box's authored pixels.
+        let available =
+            |rect: crate::ui::shell::geom::RectPx| (scale.base_rect(rect).w - 3).max(0) as u32;
         match &mut popup.kind {
             WolPopupKind::Create(create) => {
-                let layout = crate::ui::shell::modal::wol_create_game_layout(width, height, modern);
                 create
                     .password
-                    .scroll_to_caret(available(layout.password), |text| font.text_width(text));
-                if let (Some(name), Some((_, rect))) = (create.name.as_mut(), layout.name) {
+                    .scroll_to_caret(available(create_rects.password), |text| {
+                        font.text_width(text)
+                    });
+                if let (Some(name), Some((_, rect))) = (create.name.as_mut(), create_rects.name) {
                     name.scroll_to_caret(available(rect), |text| font.text_width(text));
                 }
             }
             WolPopupKind::Password(edit) => {
-                let rect =
-                    crate::ui::shell::modal::wol_channel_password_layout(width, height).password;
-                edit.scroll_to_caret(available(rect), |text| font.text_width(text))
+                edit.scroll_to_caret(available(password_rect), |text| font.text_width(text))
             }
         }
     }
@@ -3593,14 +3591,9 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
 /// The popup control under the pointer.
 fn popup_control(state: &AppState, popup: &WolLobbyPopup) -> Option<u16> {
     let (x, y) = state.match_state.input.cursor_px();
-    let (width, height) = (
-        state.renderer.gpu.config.width as i32,
-        state.renderer.gpu.config.height as i32,
-    );
     let controls = match popup.kind {
         WolPopupKind::Create(_) => {
-            let layout =
-                crate::ui::shell::modal::wol_create_game_layout(width, height, modern_lobby(state));
+            let layout = create_layout(state);
             [
                 Some((POPUP_OK, layout.ok)),
                 Some((POPUP_CANCEL, layout.cancel)),
@@ -3615,7 +3608,7 @@ fn popup_control(state: &AppState, popup: &WolLobbyPopup) -> Option<u16> {
             .collect()
         }
         WolPopupKind::Password(_) => {
-            let layout = crate::ui::shell::modal::wol_channel_password_layout(width, height);
+            let layout = password_layout(state);
             vec![
                 (POPUP_OK, layout.ok),
                 (POPUP_CANCEL, layout.cancel),
@@ -3629,13 +3622,36 @@ fn popup_control(state: &AppState, popup: &WolLobbyPopup) -> Option<u16> {
         .map(|(id, _)| id)
 }
 
-/// Where VERA's online Create Game has its room's limits.
-fn popup_room_layout(state: &AppState) -> Option<crate::ui::room_limits::RoomLimitsLayout> {
-    let (width, height) = (
+/// The popups follow the lobby page's shell mapping, so they grow with it.
+pub(crate) fn popup_scale(state: &AppState) -> ShellScale {
+    layout(state).page.scale
+}
+
+fn popup_screen(state: &AppState) -> (i32, i32) {
+    (
         state.renderer.gpu.config.width as i32,
         state.renderer.gpu.config.height as i32,
-    );
-    crate::ui::shell::modal::wol_create_game_layout(width, height, modern_lobby(state)).room
+    )
+}
+
+fn create_layout(state: &AppState) -> crate::ui::shell::modal::WolCreateGameLayout {
+    let (width, height) = popup_screen(state);
+    crate::ui::shell::modal::wol_create_game_layout_on(
+        width,
+        height,
+        modern_lobby(state),
+        popup_scale(state),
+    )
+}
+
+fn password_layout(state: &AppState) -> crate::ui::shell::modal::WolChannelPasswordLayout {
+    let (width, height) = popup_screen(state);
+    crate::ui::shell::modal::wol_channel_password_layout_on(width, height, popup_scale(state))
+}
+
+/// Where VERA's online Create Game has its room's limits.
+fn popup_room_layout(state: &AppState) -> Option<crate::ui::room_limits::RoomLimitsLayout> {
+    create_layout(state).room
 }
 
 pub(super) fn cursor_moved(state: &mut AppState) {
@@ -3645,13 +3661,14 @@ pub(super) fn cursor_moved(state: &mut AppState) {
         .and_then(|lobby| lobby.ui.popup.as_ref())
         .map(|popup| popup_control(state, popup));
     let room = popup_room_layout(state);
+    let popup_scale = popup_scale(state);
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
     if let (Some(over), Some(popup)) = (popup_over, lobby.ui.popup.as_mut()) {
         popup.buttons.hovered = over;
         if let (Some(picker), Some(room)) = (popup.room_mut(), room) {
-            picker.drag(&room, ShellScale::RETAIL, x);
+            picker.drag(&room, popup_scale, x);
         }
         state.platform.window.request_redraw();
         return;
@@ -3692,13 +3709,8 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     let scale = layout.page.scale;
     if let Some(popup) = lobby(state).and_then(|lobby| lobby.ui.popup.clone()) {
         let over = popup_control(state, &popup);
-        let (width, height) = (
-            state.renderer.gpu.config.width as i32,
-            state.renderer.gpu.config.height as i32,
-        );
-        let room = popup_room_layout(state);
+        let rects = create_layout(state);
         let lobby = lobby_mut(state).expect("checked");
-        let modern = lobby.ui.is_modern();
         let popup = lobby.ui.popup.as_mut().expect("checked");
         if !pressed {
             if let Some(picker) = popup.room_mut() {
@@ -3716,24 +3728,19 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         }
         let picked = popup
             .room_mut()
-            .zip(room)
-            .map(|(picker, room)| picker.press(&room, ShellScale::RETAIL, x, y));
+            .zip(rects.room)
+            .map(|(picker, room)| picker.press(&room, scale, x, y));
         let press = match (picked, over) {
             (Some(RoomLimitsPress::Players), _) => Press::Nothing,
             (Some(RoomLimitsPress::Spectators), _) => Press::Cue(LauncherCue::Checkbox),
             (_, Some(control @ (CREATE_CLAN | CREATE_LIMIT | CREATE_OBSERVE))) => {
-                let rect = crate::ui::shell::modal::wol_create_game_layout(width, height, modern);
                 let window = match control {
-                    CREATE_CLAN => rect.clan,
-                    CREATE_LIMIT => Some(rect.limit),
-                    _ => rect.observe,
+                    CREATE_CLAN => rects.clan,
+                    CREATE_LIMIT => Some(rects.limit),
+                    _ => rects.observe,
                 };
                 if window.is_some_and(|window| {
-                    crate::ui::skirmish_shell::checkbox_icon_rect(
-                        window,
-                        crate::ui::shell::geom::ShellScale::RETAIL,
-                    )
-                    .contains(x, y)
+                    crate::ui::skirmish_shell::checkbox_icon_rect(window, scale).contains(x, y)
                 }) && popup.toggle(control)
                 {
                     Press::Cue(LauncherCue::Checkbox)
