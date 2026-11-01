@@ -52,6 +52,22 @@ pub struct FogDrawOptions {
     pub current_house_defeated: bool,
 }
 
+/// One visited cell of a rebuild, in native order: where its frames land and
+/// which frames it selects, [`NO_FRAME`] for none. The first is copied, the
+/// second (FOG.SHP only) blended.
+///
+/// The A plane is a pure function of these, the lattice size and camera, the
+/// frame set the options select and the frames' bytes. So a fog generation
+/// whose list equals the drawn one, with all else unchanged, needs no redraw
+/// or upload; most ticks change no cell in view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CellBlits {
+    origin: [i32; 2],
+    frames: [u16; 2],
+}
+
+const NO_FRAME: u16 = u16::MAX;
+
 /// What the shroud brightness buffer writes for one cell.
 ///
 /// Split out of the rebuild loop so the decision can be tested without a GPU.
@@ -195,6 +211,13 @@ pub struct ShroudBuffer {
     /// Translucent-fog policy, expressed as the fraction of native A darkening
     /// that survives; this source's own value keeps native fixtures intact.
     fog_strength_milli: u32,
+    /// What `pixels` holds: the blits of the last redraw.
+    drawn_blits: Vec<CellBlits>,
+    /// The next rebuild's blits, allocated once.
+    next_blits: Vec<CellBlits>,
+    /// A resize, new frames or a load leaves `pixels` unproven by
+    /// `drawn_blits`; the next rebuild redraws whatever it collects.
+    redraw_required: bool,
 }
 
 /// Align `n` up to the next multiple of `align`.
@@ -315,6 +338,9 @@ impl ShroudBuffer {
             map_height,
             lut,
             fog_strength_milli: FOG_STRENGTH_MILLI,
+            drawn_blits: Vec::new(),
+            next_blits: Vec::new(),
+            redraw_required: true,
         };
         result.upload(queue);
         result
@@ -346,12 +372,15 @@ impl ShroudBuffer {
     /// load, so an equal counter value no longer proves an unchanged view.
     pub fn mark_stale(&mut self) {
         self.last_fog_gen = u64::MAX;
+        self.redraw_required = true;
     }
 
     /// Rebuild the shroud buffer if camera moved, fog changed, or screen resized.
     ///
     /// Copy/blend the selected SHROUD.SHP/FOG.SHP bytes into the CPU buffer,
-    /// then upload it once. Native per-cell ordering is retained.
+    /// then upload it once. Native per-cell ordering is retained. A new fog
+    /// generation that selects the same frames for every cell in view keeps
+    /// the plane as drawn. Returns whether the plane was redrawn and uploaded.
     pub fn rebuild_if_needed(
         &mut self,
         device: &wgpu::Device,
@@ -365,7 +394,7 @@ impl ShroudBuffer {
         zoom: f32,
         native_cells: Option<&NativeCellQuery<'_>>,
         fog_options: FogDrawOptions,
-    ) {
+    ) -> bool {
         // Render shroud at virtual resolution (screen / zoom) so diamond blits
         // stay at fixed world-pixel sizes. Blitters address it from the uploaded
         // camera/zoom and this source's origin, without normalized UV stretching.
@@ -395,20 +424,19 @@ impl ShroudBuffer {
             self.last_screen_w = screen_w;
             self.last_screen_h = screen_h;
             // Force rebuild after resize.
-            self.last_fog_gen = u64::MAX;
+            self.mark_stale();
         }
 
         // Skip if nothing changed (camera rounded to pixel + fog generation + zoom).
         let cam_x_r = cam_x.floor();
         let cam_y_r = cam_y.floor();
-        if fog.view_generation() == self.last_fog_gen
-            && self.last_owner == Some(owner)
+        let same_view = self.last_owner == Some(owner)
             && self.last_fog_options == fog_options
             && cam_x_r == self.last_cam_x
             && cam_y_r == self.last_cam_y
-            && (zoom - self.last_zoom).abs() < 1e-6
-        {
-            return;
+            && (zoom - self.last_zoom).abs() < 1e-6;
+        if same_view && fog.view_generation() == self.last_fog_gen {
+            return false;
         }
         self.last_fog_gen = fog.view_generation();
         self.last_owner = Some(owner);
@@ -417,7 +445,14 @@ impl ShroudBuffer {
         self.last_cam_y = cam_y_r;
         self.last_zoom = zoom;
 
-        self.rasterize(fog, owner, native_cells, fog_options);
+        let mut blits = std::mem::take(&mut self.next_blits);
+        self.collect_blits(fog, owner, native_cells, fog_options, &mut blits);
+        if same_view && !self.redraw_required && blits == self.drawn_blits {
+            self.next_blits = blits;
+            return false;
+        }
+        self.next_blits = std::mem::replace(&mut self.drawn_blits, blits);
+        self.draw_blits(fog_options);
 
         // Debug: dump the CPU brightness buffer as a grayscale PNG when
         // RA2_DUMP_SHROUD names a path. Diagnostic only — no gamemd counterpart.
@@ -436,6 +471,7 @@ impl ShroudBuffer {
         }
 
         self.upload(queue);
+        true
     }
 
     fn upload(&self, queue: &wgpu::Queue) {
@@ -469,6 +505,7 @@ impl ShroudBuffer {
 
     /// Shared full-rebuild CPU owner, separated from upload for direct native
     /// scene comparisons. Empty bounds still retain the authoritative reset.
+    #[cfg(test)]
     fn rasterize(
         &mut self,
         fog: &FogState,
@@ -476,11 +513,25 @@ impl ShroudBuffer {
         native_cells: Option<&NativeCellQuery<'_>>,
         fog_options: FogDrawOptions,
     ) {
-        // Fill bright, then darken unrevealed cells and blit edge transitions.
-        // Blitting in world-pixel coordinates at virtual resolution
-        // means diamond tiles match the world grid exactly at every zoom.
-        self.pixels.fill(NEUTRAL);
+        let mut blits = std::mem::take(&mut self.next_blits);
+        self.collect_blits(fog, owner, native_cells, fog_options, &mut blits);
+        self.next_blits = std::mem::replace(&mut self.drawn_blits, blits);
+        self.draw_blits(fog_options);
+    }
 
+    /// The cells a rebuild blits, in native order, with the frames each
+    /// selects at the current camera. Reads the fog state only;
+    /// [`Self::draw_blits`] writes the plane from them. Cells that select no
+    /// frame leave the neutral fill and are left out.
+    fn collect_blits(
+        &self,
+        fog: &FogState,
+        owner: InternedId,
+        native_cells: Option<&NativeCellQuery<'_>>,
+        fog_options: FogDrawOptions,
+        blits: &mut Vec<CellBlits>,
+    ) {
+        blits.clear();
         let vp_w = self.width as i32;
         let vp_h = self.height as i32;
         let cam_x_r = self.last_cam_x;
@@ -493,6 +544,8 @@ impl ShroudBuffer {
         else {
             return;
         };
+        // A frame index past the set selects nothing, as a missing frame does.
+        let frame = |index: usize| u16::try_from(index).unwrap_or(NO_FRAME);
 
         // Native6D7312..6D7532 visits increasing screen diagonals, then
         // increasing X/decreasing Y within each diagonal. Each cell copies
@@ -525,58 +578,60 @@ impl ShroudBuffer {
                     continue;
                 }
 
-                if fog_options.fog_of_war {
+                let frames = if fog_options.fog_of_war {
                     //47F018..47F038 selects FOG.SHP for the ground copy too.
                     //480210/480266 map -2 to15 and -1 to0 for both channels.
                     let ground = fog.map_cell_edge_frame(owner, (rx, ry), false, native_cells);
-                    if let Some(frame) = self.fog_frames.get(native_frame_index(ground)) {
-                        blit_frame_pixels(
-                            &mut self.pixels,
-                            self.row_stride as usize,
-                            [vp_w as u32, vp_h as u32],
-                            frame,
-                            [vx, vy],
-                            BrightnessWrite::Copy,
-                        );
-                    }
                     //480249..480290 skips only this blend for a defeated
                     //current House (+1F5); the ground copy still used FOG.
-                    if !fog_options.current_house_defeated {
+                    let edge = if fog_options.current_house_defeated {
+                        NO_FRAME
+                    } else {
                         let edge = fog.map_cell_edge_frame(owner, (rx, ry), true, native_cells);
-                        if let Some(frame) = self.fog_frames.get(native_frame_index(edge)) {
-                            blit_frame_pixels(
-                                &mut self.pixels,
-                                self.row_stride as usize,
-                                [vp_w as u32, vp_h as u32],
-                                frame,
-                                [vx, vy],
-                                BrightnessWrite::FogBlend,
-                            );
-                        }
+                        frame(native_frame_index(edge))
+                    };
+                    [frame(native_frame_index(ground)), edge]
+                } else {
+                    match cell_fill(fog, owner, rx, ry, &self.lut) {
+                        CellFill::Frame(idx) => [frame(idx), NO_FRAME],
+                        CellFill::None => [NO_FRAME; 2],
                     }
-                } else if let CellFill::Frame(idx) = cell_fill(fog, owner, rx, ry, &self.lut) {
-                    self.blit_frame(idx, vx, vy, vp_w, vp_h);
+                };
+                if frames != [NO_FRAME; 2] {
+                    blits.push(CellBlits {
+                        origin: [vx, vy],
+                        frames,
+                    });
                 }
             }
         }
     }
 
-    /// Blit one SHROUD.SHP frame's raw brightness pixels into the CPU buffer.
-    ///
-    /// Coordinates are in viewport space (0,0 = top-left of screen).
-    /// Handles clipping and transparent pixel skip (0xFE).
-    fn blit_frame(&mut self, frame_idx: usize, vx: i32, vy: i32, vp_w: i32, vp_h: i32) {
-        let Some(frame) = self.frames.get(frame_idx) else {
-            return;
+    /// Redraw the plane from `drawn_blits`: fill bright, then copy each
+    /// cell's first frame and blend its second, in collection order.
+    /// Blitting in world-pixel coordinates at virtual resolution means
+    /// diamond tiles match the world grid exactly at every zoom.
+    fn draw_blits(&mut self, fog_options: FogDrawOptions) {
+        self.pixels.fill(NEUTRAL);
+        self.redraw_required = false;
+        let size = [self.width, self.height];
+        let stride = self.row_stride as usize;
+        let frames = if fog_options.fog_of_war {
+            &self.fog_frames
+        } else {
+            &self.frames
         };
-        blit_frame_pixels(
-            &mut self.pixels,
-            self.row_stride as usize,
-            [vp_w as u32, vp_h as u32],
-            frame,
-            [vx, vy],
-            BrightnessWrite::Copy,
-        );
+        for blit in &self.drawn_blits {
+            let writes = [BrightnessWrite::Copy, BrightnessWrite::FogBlend];
+            for (index, write) in blit.frames.into_iter().zip(writes) {
+                if index == NO_FRAME {
+                    continue;
+                }
+                if let Some(frame) = frames.get(usize::from(index)) {
+                    blit_frame_pixels(&mut self.pixels, stride, size, frame, blit.origin, write);
+                }
+            }
+        }
     }
 
     /// Read-only GPU source. The view stays stable until a resize; the uniform
@@ -892,6 +947,68 @@ mod tests {
             other => panic!("a shroud boundary cell must take a frame, got {other:?}"),
         }
     }
+
+    /// The sim bumps the view generation every committed tick. One that
+    /// changes no cell in view keeps the drawn plane and skips the upload; a
+    /// change in view redraws exactly what a fresh buffer draws.
+    #[test]
+    #[ignore = "requires GPU; the A plane's texture and upload"]
+    fn a_fog_generation_that_changes_no_cell_in_view_keeps_the_drawn_plane() {
+        let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
+        let owner = intern::test_intern("Americans");
+        // Distinct frames, so a wrong selection changes bytes.
+        let frames: Vec<Vec<u8>> = (0..48u8).map(|frame| vec![frame; 60 * 30]).collect();
+        let size = [320, 200];
+        let new_source = || {
+            ShroudBuffer::new(
+                &gpu.device,
+                &gpu.queue,
+                size,
+                [32, 32],
+                frames.clone(),
+                [60, 30],
+                SHROUD_EDGE_LUT,
+            )
+        };
+        // The view's centre is cell (16, 16).
+        let rebuild = |source: &mut ShroudBuffer, fog: &FogState| {
+            source.rebuild_if_needed(
+                &gpu.device,
+                &gpu.queue,
+                fog,
+                owner,
+                -190.0,
+                410.0,
+                size[0],
+                size[1],
+                1.0,
+                None,
+                FogDrawOptions::default(),
+            )
+        };
+        let mut fog = FogState::new(32, 32);
+        for ry in 14..=18 {
+            for rx in 14..=18 {
+                fog.mark_visible_for_owner(owner, rx, ry);
+            }
+        }
+        let mut source = new_source();
+        assert!(rebuild(&mut source, &fog));
+        let drawn = source.pixels.clone();
+
+        fog.mark_visible_for_owner(owner, 31, 0);
+        fog.bump_view_generation();
+        assert!(!rebuild(&mut source, &fog), "the change is out of view");
+        assert_eq!(source.pixels, drawn);
+
+        fog.mark_visible_for_owner(owner, 19, 16);
+        fog.bump_view_generation();
+        assert!(rebuild(&mut source, &fog));
+        assert_ne!(source.pixels, drawn);
+        let mut fresh = new_source();
+        assert!(rebuild(&mut fresh, &fog));
+        assert_eq!(source.pixels, fresh.pixels);
+    }
 }
 
 /// Extract raw brightness pixel data from a loaded SHROUD.SHP file.
@@ -906,7 +1023,7 @@ pub fn extract_shp_brightness(shp: &crate::assets::shp_file::ShpFile) -> (Vec<Ve
 
     for frame in &shp.frames {
         // Start with TRANSPARENT so pixels outside the actual SHP subframe
-        // are skipped by blit_frame(). Only real SHP pixels affect the buffer.
+        // are skipped by blit_frame_pixels(). Only real SHP pixels affect the buffer.
         let mut buf = vec![TRANSPARENT; canvas_size];
         let fw = frame.frame_width as u32;
         let fh = frame.frame_height as u32;
