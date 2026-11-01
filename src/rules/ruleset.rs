@@ -30,7 +30,9 @@ use crate::rules::native_processing::{
     CountryProjection, CountryVeterancyState, ProcessedRulesLayers, RulesLayerStack,
     SideProjection, house_type_index_of_name,
 };
-use crate::rules::object_type::{BuildCategory, FactoryType, ObjectCategory, ObjectType};
+use crate::rules::object_type::{
+    BuildCategory, FactoryType, HouseMasks, ObjectCategory, ObjectType,
+};
 use crate::rules::particle_system_type::{ParticleSystemType, ParticleSystemTypeId};
 use crate::rules::particle_type::{ParticleType, ParticleTypeId, PendingParticleType};
 use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup};
@@ -4471,8 +4473,8 @@ pub struct RuleSet {
     countries: HashMap<String, CountryRules>,
     /// Country identities in native `[Countries]` registration order.
     country_ids: Vec<String>,
-    /// Uppercase country identity -> source-order index.
-    country_indices: HashMap<String, CountryIdx>,
+    /// Uppercase country identity -> source-order index; only looked up.
+    country_indices: LookupMap<String, CountryIdx>,
     /// Side identities in native `[Sides]` registration order, including
     /// sides allocated later by a per-country `Side=` override.
     side_ids: Vec<String>,
@@ -5599,7 +5601,22 @@ impl RuleSet {
             }
         }
         processed.rules_type_references().apply_to(&mut rules);
+        rules.project_house_masks();
         Ok(rules)
+    }
+
+    /// Derive every type's [`HouseMasks`] against the current Country
+    /// registry. The Rules build and [`Self::refresh_country_side_projection`]
+    /// are the registry's only writers, and both end here.
+    fn project_house_masks(&mut self) {
+        let masks: Vec<HouseMasks> = self
+            .object_list
+            .iter()
+            .map(|object| HouseMasks::derive(object, self))
+            .collect();
+        for (object, masks) in self.object_list.iter_mut().zip(masks) {
+            object.project_house_masks(masks);
+        }
     }
 
     /// The `ids` whose Type has an object of `category`. The ordered Rules
@@ -8750,6 +8767,7 @@ impl RuleSet {
         }
         self.side_indices = projection.side_indices;
         self.country_sides = projection.country_sides;
+        self.project_house_masks();
     }
 
     /// Native Country veteran-list membership uses the current HouseType,
@@ -9135,7 +9153,9 @@ impl RuleSet {
 
     /// Resolve a country name to its stable `[Countries]` registration index.
     pub fn country_index(&self, id: &str) -> Option<CountryIdx> {
-        self.country_indices.get(&id.to_ascii_uppercase()).copied()
+        crate::util::native_string::with_ascii_uppercase(id, |key| {
+            self.country_indices.get(key).copied()
+        })
     }
 
     /// Installed Ares1001BA90 shared Find: first stored-ID match, sentinel
@@ -10581,7 +10601,7 @@ fn parse_registry(ini: &IniFile, section_name: &str) -> Vec<String> {
 struct ProjectedCountrySideRegistry {
     rules: HashMap<String, CountryRules>,
     country_ids: Vec<String>,
-    country_indices: HashMap<String, CountryIdx>,
+    country_indices: LookupMap<String, CountryIdx>,
     side_ids: Vec<String>,
     #[cfg(feature = "ares")]
     side_extensions: Vec<crate::rules::ares_side_extension::AresSideExtension>,
@@ -10613,7 +10633,7 @@ fn project_country_side_registry<'a>(
             });
     }
     let mut country_ids = Vec::new();
-    let mut country_indices = HashMap::new();
+    let mut country_indices = LookupMap::default();
     let mut country_sides = Vec::new();
     let mut rules = HashMap::new();
     for (id, section, color, side, parent, veteran) in countries {

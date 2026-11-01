@@ -202,16 +202,7 @@ pub(crate) fn normalize_house_name(name: &str) -> String {
 /// on the stack when it fits. The alliance tests run for every path-search
 /// blocker and fog viewer, where a heap key per test showed in profiles.
 pub(crate) fn with_house_key<R>(name: &str, f: impl FnOnce(&str) -> R) -> R {
-    let name = name.trim();
-    let mut buffer = [0u8; 64];
-    match buffer.get_mut(..name.len()) {
-        Some(key) => {
-            key.copy_from_slice(name.as_bytes());
-            key.make_ascii_uppercase();
-            f(std::str::from_utf8(key).expect("ASCII uppercasing keeps UTF-8"))
-        }
-        None => f(&normalize_house_name(name)),
-    }
+    crate::util::native_string::with_ascii_uppercase(name.trim(), f)
 }
 
 /// Parse the ordered active-house roster from a map's INI data.

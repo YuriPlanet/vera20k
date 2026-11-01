@@ -149,7 +149,7 @@ pub(crate) fn can_build(
         }
         // CanBuild4F7A7D treats raw-1 as its skip sentinel, even when a
         // nonempty authored list actually resolved to all32 Country bits.
-        let forbidden = rules.house_type_mask(&obj.forbidden_houses);
+        let forbidden = obj.forbidden_houses_mask(rules);
         if forbidden != u32::MAX && forbidden & house_bit != 0 {
             return CanBuild::No;
         }
@@ -959,7 +959,7 @@ fn get_ownable(obj: &ObjectType, rules: &RuleSet, game_mode_nonzero: bool) -> u3
     if obj.double_owned && game_mode_nonzero {
         return 0x7FFF_FFFF;
     }
-    rules.house_type_mask(&obj.owner)
+    obj.owner_mask(rules)
 }
 
 #[cfg(test)]

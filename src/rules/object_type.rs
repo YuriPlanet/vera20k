@@ -355,6 +355,34 @@ pub struct PhobosOreGathering {
     pub frames_per_dir: Vec<i32>,
 }
 
+/// `Owner=`, `RequiredHouses=` and `ForbiddenHouses=` as House-type masks
+/// ([`crate::rules::ruleset::RuleSet::house_type_mask`]). The masks depend
+/// on the Country registry, so the Rules build and each registry refresh
+/// derive them again (`RuleSet::project_house_masks`); the token lists are
+/// written only when a type is read.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct HouseMasks {
+    owner: u32,
+    required: u32,
+    forbidden: u32,
+}
+
+impl HouseMasks {
+    pub(crate) fn derive(object: &ObjectType, rules: &crate::rules::ruleset::RuleSet) -> Self {
+        Self {
+            owner: rules.house_type_mask(&object.owner),
+            required: if object.required_houses.is_empty()
+                && !object.required_houses_explicitly_empty
+            {
+                u32::MAX
+            } else {
+                rules.house_type_mask(&object.required_houses)
+            },
+            forbidden: rules.house_type_mask(&object.forbidden_houses),
+        }
+    }
+}
+
 /// A game object definition parsed from a rules.ini section.
 ///
 /// Fields use sensible defaults when the INI key is absent, matching
@@ -668,6 +696,8 @@ pub struct ObjectType {
     /// Countries explicitly forbidden from building this (ForbiddenHouses= in rules.ini).
     /// Inverse of Owner — if the player's country is in this list, they cannot build.
     pub forbidden_houses: Vec<String>,
+    /// The three lists above as House-type masks ([`HouseMasks`]).
+    house_masks: HouseMasks,
     /// Signed `TechnoTypeClass+0x6D0` side filter used only by native AI base
     /// planning selectors ([`Self::planned_for_side`]). The constructor seed
     /// is `-1` (all sides).
@@ -3629,15 +3659,39 @@ impl ObjectType {
         }
     }
 
+    /// `Owner=` (`+0x6CC`) as a House-type mask: `Get_Ownable @ 0x00711EC0`
+    /// answers it outside `DoubleOwned=`.
+    pub(crate) fn owner_mask(&self, rules: &crate::rules::ruleset::RuleSet) -> u32 {
+        self.house_masks(rules).owner
+    }
+
     /// ReadOwners4750D0 / Type reader714531: absent/empty ReadString keeps
     /// the constructor's -1 (711633), but nonempty comma-only input writes0.
     /// CanBuild4F79E4 and FirstBuildable505230 both test this raw mask.
     pub(crate) fn required_houses_mask(&self, rules: &crate::rules::ruleset::RuleSet) -> u32 {
-        if self.required_houses.is_empty() && !self.required_houses_explicitly_empty {
-            u32::MAX
-        } else {
-            rules.house_type_mask(&self.required_houses)
-        }
+        self.house_masks(rules).required
+    }
+
+    /// `ForbiddenHouses=` as a House-type mask (CanBuild4F7A7D).
+    pub(crate) fn forbidden_houses_mask(&self, rules: &crate::rules::ruleset::RuleSet) -> u32 {
+        self.house_masks(rules).forbidden
+    }
+
+    /// The masks [`crate::rules::ruleset::RuleSet`] projected; debug builds
+    /// compare them with a fresh read of the lists against `rules`.
+    fn house_masks(&self, rules: &crate::rules::ruleset::RuleSet) -> HouseMasks {
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled()
+                || self.house_masks == HouseMasks::derive(self, rules),
+            "{}: house masks projected against another Country registry",
+            self.id
+        );
+        self.house_masks
+    }
+
+    /// Store masks derived against the current Country registry.
+    pub(crate) fn project_house_masks(&mut self, masks: HouseMasks) {
+        self.house_masks = masks;
     }
 
     /// The AI base planning side filter: `AIBasePlanningSide=` (`+0x6D0`) is
@@ -4050,6 +4104,7 @@ impl ObjectType {
             double_owned: section.read_bool("DoubleOwned", false),
             required_houses,
             required_houses_explicitly_empty,
+            house_masks: HouseMasks::default(),
             forbidden_houses,
             // gamemd-derived: `TechnoTypeClass__Constructor @ 0x00710FF0`
             // seeds +0x6D0 to -1; `TechnoTypeClass::ReadINI` around 0x007149FB

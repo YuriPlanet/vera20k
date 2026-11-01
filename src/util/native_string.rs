@@ -21,6 +21,21 @@ pub fn narrow_widened(text: &str) -> Vec<u8> {
         .collect()
 }
 
+/// `f` applied to `text` with its ASCII letters upper-cased, as
+/// `str::to_ascii_uppercase` gives, built on the stack when it fits. For keys
+/// folded on every lookup, where a heap key per query showed in profiles.
+pub fn with_ascii_uppercase<R>(text: &str, f: impl FnOnce(&str) -> R) -> R {
+    let mut buffer = [0u8; 64];
+    match buffer.get_mut(..text.len()) {
+        Some(key) => {
+            key.copy_from_slice(text.as_bytes());
+            key.make_ascii_uppercase();
+            f(std::str::from_utf8(key).expect("ASCII uppercasing keeps UTF-8"))
+        }
+        None => f(&text.to_ascii_uppercase()),
+    }
+}
+
 /// Encode UTF-16 text through the Windows active ANSI code page.
 #[cfg(windows)]
 pub fn acp_encode(text: &str) -> Vec<u8> {
@@ -323,5 +338,18 @@ mod tests {
         assert_eq!(crt_wcstol(&wide("-2147483648"), 10), i32::MIN);
         assert_eq!(crt_wcstoul(&wide("-1"), 10), u32::MAX);
         assert_eq!(crt_wcstoul(&wide("x"), 10), 0);
+    }
+
+    /// The stack fold and the heap fallback past 64 bytes answer
+    /// `to_ascii_uppercase`, leaving non-ASCII letters as they are.
+    #[test]
+    fn ascii_uppercase_fold_matches_the_heap_answer_on_both_sides_of_the_buffer() {
+        let long = "r".repeat(65);
+        for text in ["Americans", "\u{e9}t\u{e9}", &long[..64], long.as_str()] {
+            assert_eq!(
+                with_ascii_uppercase(text, str::to_owned),
+                text.to_ascii_uppercase()
+            );
+        }
     }
 }

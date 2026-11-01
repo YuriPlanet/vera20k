@@ -3161,7 +3161,7 @@ mod tests {
         for row in corpus["type_inputs"].as_array().unwrap() {
             let object = rules.object(row["id"].as_str().unwrap()).unwrap();
             assert_eq!(
-                rules.house_type_mask(&object.owner),
+                object.owner_mask(&rules),
                 row["owner_mask"].as_u64().unwrap() as u32,
                 "{} Owner mask",
                 row["id"],
@@ -3302,7 +3302,7 @@ mod tests {
             let rules = RuleSet::from_ini(&ini).unwrap();
             let object = rules.object(type_id).unwrap();
             assert_eq!(
-                rules.house_type_mask(&object.owner),
+                object.owner_mask(&rules),
                 gate["owner_mask"].as_u64().unwrap() as u32
             );
             assert_eq!(
