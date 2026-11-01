@@ -567,6 +567,7 @@ pub(crate) fn paint_wol_lobby_popup(
             popup.buttons.is_pressed(POPUP_CANCEL),
         )
     };
+    let mut room_name = None;
     let (dialog, buttons, mut labels, password) = match &popup.kind {
         WolPopupKind::Create(create) => {
             let layout = crate::ui::shell::modal::wol_create_game_layout(width, height, modern);
@@ -612,6 +613,16 @@ pub(crate) fn paint_wol_lobby_popup(
             }
             if let (Some(picker), Some(room)) = (&create.room, &layout.room) {
                 paint_room_limits(state, atlas, &mut paint.controls, &mut labels, picker, room);
+            }
+            if let (Some(edit), Some((label, rect))) = (&create.name, layout.name) {
+                labels.push(PaintLabel {
+                    text: "Room name".to_owned().into(),
+                    rect: label,
+                    align: ShellAlign::H_RIGHT,
+                    rgb: SHELL_LABEL_TEXT_RGB,
+                    path_a_reveal: None,
+                });
+                room_name = Some((edit, rect));
             }
             labels.push(caption(
                 "GUI:OK",
@@ -703,5 +714,16 @@ pub(crate) fn paint_wol_lobby_popup(
         scale,
         POPUP_DEPTHS.text,
     );
+    if let Some((edit, rect)) = room_name {
+        push_edit(
+            &mut paint,
+            state,
+            edit,
+            rect,
+            caret_visible,
+            scale,
+            POPUP_DEPTHS.text,
+        );
+    }
     paint
 }

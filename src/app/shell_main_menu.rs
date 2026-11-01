@@ -2111,10 +2111,10 @@ mod status_error_tests {
     #[test]
     fn the_game_files_card_gives_this_platforms_advice_and_real_paths() {
         let files = StartupFiles {
-            config_file: Some("/home/player/.local/share/VERA20k/config.toml".into()),
+            config_file: Some("~/.local/share/VERA20k/config.toml".into()),
             problem: None,
         };
-        let log = Path::new("/home/player/.local/share/VERA20k/logs/ra2.log");
+        let log = Path::new("~/.local/share/VERA20k/logs/ra2.log");
         let (title, text) =
             shell_error_card(CardHost::Unix, &files, false, None, Some(log), "missing");
         assert_eq!(title, "Game files not found");

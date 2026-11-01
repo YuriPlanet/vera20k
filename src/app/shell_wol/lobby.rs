@@ -1585,12 +1585,24 @@ fn left_channel(state: &mut AppState) {
 /// joined channel %s").
 const JOINED_LOBBY_LINE: &str = "You have joined VERA lobby.";
 
+/// The Room name VERA's online Create Game starts with; OK with it unchanged
+/// creates gamemd's own name.
+fn default_room_name(nickname: &str) -> String {
+    format!("{nickname}'s game")
+}
+
 /// VERA's line for a guest entering a modern-lobby game room (gamemd's C9
-/// prints none): it names the room's operator, its host. `users` is the
-/// room's user list without the local player, as `(name, operator)`.
-fn joined_game_line(users: &[(String, bool)]) -> Option<String> {
+/// prints none): it names the room's operator, its host, and the room's own
+/// name when the host gave it one. `users` is the room's user list without
+/// the local player, as `(name, operator)`.
+fn joined_game_line(users: &[(String, bool)], room: &str) -> Option<String> {
     let (host, _) = users.iter().find(|(_, operator)| *operator)?;
-    Some(format!("You have joined {host}'s game."))
+    // gamemd's own name is "%s's_game" (`0x00789B60`).
+    Some(if !room.eq_ignore_ascii_case(&format!("{host}'s_game")) {
+        format!("You have joined {host}'s game ({room}).")
+    } else {
+        format!("You have joined {host}'s game.")
+    })
 }
 
 fn modern_lobby(state: &AppState) -> bool {
@@ -1924,6 +1936,7 @@ pub(crate) fn republish_channel(state: &mut AppState) -> Option<WolChannel> {
 fn create_confirmed(
     state: &mut AppState,
     password: String,
+    name: Option<String>,
     clan: bool,
     limit: bool,
     observe: bool,
@@ -1934,7 +1947,11 @@ fn create_confirmed(
     globals.limit_resolution = limit;
     let lobby_number = globals.lobby_number;
     let ex_info = ex_info(state);
-    let channel = created_channel(&nickname, clan, limit, width, lobby_number, ex_info);
+    let mut channel = created_channel(&nickname, clan, limit, width, lobby_number, ex_info);
+    // VERA's online lobby names the room as its host typed.
+    if let Some(name) = name {
+        channel.name = name;
+    }
     // The key goes to +0xD7 with spaces made '_'; the popup's observe byte
     // becomes the observer preference [0xAC10C8].
     let key = password.replace(' ', "_");
@@ -2077,11 +2094,16 @@ fn popup_action(state: &mut AppState, action: WolPopupAction) {
             limit,
             observe,
             room,
+            name,
         } => {
             if let Some(room) = room {
                 state.frontend.room_limits = room;
             }
-            create_confirmed(state, password, clan, limit, observe)
+            // An untouched Room name keeps gamemd's "%s's_game".
+            let default = default_room_name(&nickname(state));
+            let name = name.filter(|name| *name != default);
+            state.frontend.wol_room_name = name.clone();
+            create_confirmed(state, password, name, clan, limit, observe)
         }
         WolPopupAction::CreateCancelled => {
             if let Some(lobby) = lobby_mut(state) {
@@ -2249,6 +2271,11 @@ pub(super) fn begin_create(state: &mut AppState) {
     let limit = globals.limit_resolution;
     let squad = squad_id(state);
     let room = state.frontend.room_limits;
+    let name = state
+        .frontend
+        .wol_room_name
+        .clone()
+        .unwrap_or_else(|| default_room_name(&nickname(state)));
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
@@ -2256,8 +2283,8 @@ pub(super) fn begin_create(state: &mut AppState) {
     lobby.ui.game_list.selected = None;
     lobby.covered = true;
     // +0x13 starts as [0xAC10C8] == 1. VERA's lobby also offers its room's
-    // limits, from the host's last choice.
-    let room = lobby.ui.is_modern().then_some(room);
+    // limits and name, from the host's last choice.
+    let room = lobby.ui.is_modern().then_some((room, name.as_str()));
     lobby.ui.popup = Some(WolLobbyPopup::create(width, limit, squad, observer, room));
     state
         .frontend
@@ -2643,7 +2670,11 @@ fn enter_game_as_guest(state: &mut AppState) {
         if quick_match_runner(state) {
             super::quick_match::game_joined(state, true);
         }
-        if modern && let Some(line) = joined_game_line(&users) {
+        let room = lobby(state)
+            .and_then(|lobby| lobby.current.as_ref())
+            .map(|channel| channel.name.clone())
+            .unwrap_or_default();
+        if modern && let Some(line) = joined_game_line(&users, &room) {
             message_line(state, line);
         }
     } else {
@@ -2676,6 +2707,10 @@ enum JoinErrorReply {
 /// five minutes: 0x80040072 with the HRESULT customer bit, so it shows the
 /// join ban's text without the channel ban's exit from the lobby.
 pub(crate) const KEPT_OUT_JOIN_ERROR: u32 = 0xA004_0072;
+
+/// VERA's lobby refused a Create because another open room has that name.
+pub(crate) const ROOM_NAME_TAKEN: u32 = 0xA004_0073;
+const ROOM_NAME_TAKEN_TEXT: &str = "That room name is already in use. Choose another one.";
 
 fn join_error_reply(code: u32, pending: bool) -> JoinErrorReply {
     let reply = |key, close, forget, next_lobby| JoinErrorReply::Box {
@@ -2779,6 +2814,9 @@ fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>) {
                 BoxThen::CreateFailed
             };
             show_box(state, key, false, then);
+            if code == ROOM_NAME_TAKEN {
+                replace_box_body(state, ROOM_NAME_TAKEN_TEXT);
+            }
         }
         Ok(members) => {
             close_wait(state);
@@ -3484,21 +3522,21 @@ pub(crate) fn update_geometry(state: &mut AppState) {
             state.renderer.gpu.config.width as i32,
             state.renderer.gpu.config.height as i32,
         );
-        let rect = match popup.kind {
-            WolPopupKind::Create(_) => {
-                crate::ui::shell::modal::wol_create_game_layout(width, height, modern).password
-            }
-            WolPopupKind::Password(_) => {
-                crate::ui::shell::modal::wol_channel_password_layout(width, height).password
-            }
-        };
-        let available = (rect.w - 3).max(0) as u32;
+        let available = |rect: crate::ui::shell::geom::RectPx| (rect.w - 3).max(0) as u32;
         match &mut popup.kind {
-            WolPopupKind::Create(create) => create
-                .password
-                .scroll_to_caret(available, |text| font.text_width(text)),
+            WolPopupKind::Create(create) => {
+                let layout = crate::ui::shell::modal::wol_create_game_layout(width, height, modern);
+                create
+                    .password
+                    .scroll_to_caret(available(layout.password), |text| font.text_width(text));
+                if let (Some(name), Some((_, rect))) = (create.name.as_mut(), layout.name) {
+                    name.scroll_to_caret(available(rect), |text| font.text_width(text));
+                }
+            }
             WolPopupKind::Password(edit) => {
-                edit.scroll_to_caret(available, |text| font.text_width(text))
+                let rect =
+                    crate::ui::shell::modal::wol_channel_password_layout(width, height).password;
+                edit.scroll_to_caret(available(rect), |text| font.text_width(text))
             }
         }
     }
@@ -3570,6 +3608,7 @@ fn popup_control(state: &AppState, popup: &WolLobbyPopup) -> Option<u16> {
                 Some((CREATE_LIMIT, layout.limit)),
                 layout.observe.map(|rect| (CREATE_OBSERVE, rect)),
                 Some((POPUP_PASSWORD, layout.password)),
+                layout.name.map(|(_, rect)| (CREATE_NAME, rect)),
             ]
             .into_iter()
             .flatten()
@@ -3705,6 +3744,11 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
             (_, Some(control @ (POPUP_OK | POPUP_CANCEL))) if popup.enabled(control) => {
                 popup.buttons.press(Some(control));
                 Press::Button
+            }
+            (_, Some(control @ (POPUP_PASSWORD | CREATE_NAME))) => {
+                popup.focus(control);
+                popup.buttons.press(None);
+                Press::Nothing
             }
             _ => {
                 popup.buttons.press(None);
@@ -4155,10 +4199,14 @@ mod tests {
     fn a_joined_game_line_names_the_operator_not_the_first_user() {
         let users = [("Guest".to_owned(), false), ("Host".to_owned(), true)];
         assert_eq!(
-            joined_game_line(&users).as_deref(),
+            joined_game_line(&users, "Host's_game").as_deref(),
             Some("You have joined Host's game.")
         );
-        assert_eq!(joined_game_line(&users[..1]), None);
+        assert_eq!(
+            joined_game_line(&users, "No rush").as_deref(),
+            Some("You have joined Host's game (No rush).")
+        );
+        assert_eq!(joined_game_line(&users[..1], "No rush"), None);
     }
 
     #[test]
