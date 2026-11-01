@@ -654,6 +654,64 @@ fn thirty_humans_fill_every_network_row_and_reuse_colours() {
     assert!(SpawnRequest::parse(&clash).is_err());
 }
 
+fn in_mode(mode: i32, text: String) -> String {
+    text.replacen("[Settings]\n", &format!("[Settings]\nGameMode={mode}\n"), 1)
+}
+
+#[test]
+fn game_mode_selects_its_stock_row_and_start_effect() {
+    assert_eq!(parse_network(&network_spawn(2, 0, "")).session.mode.id, 1);
+    let mega = parse_network(&in_mode(5, network_spawn(2, 0, ""))).session;
+    assert_eq!(mega.mode.override_file, "MPMWMD.ini");
+    // FreeForAll5C5D40: each player's role is its source, in every file.
+    for local in 0..2 {
+        let free = parse_network(&in_mode(2, network_spawn(2, local, ""))).session;
+        let roles: Vec<_> = free.humans.iter().map(|h| h.role.native_value()).collect();
+        assert_eq!(roles, [0, 1]);
+    }
+    // Cooperative needs a campaign record; 10 has no MPModesMD row.
+    for mode in [3, 10] {
+        assert!(SpawnRequest::parse(&in_mode(mode, network_spawn(2, 0, ""))).is_err());
+    }
+}
+
+#[test]
+fn game_mode_admits_only_its_setup_choices() {
+    let parses = |mode: i32, extra: &str| {
+        SpawnRequest::parse(&in_mode(mode, network_spawn(2, 0, extra))).is_ok()
+    };
+    let split = "[HouseTeams]\nMulti1=0\nMulti2=1\n";
+    let same = "[HouseTeams]\nMulti1=0\nMulti2=0\n";
+    assert!(parses(9, split));
+    assert!(!parses(9, ""), "MustAlly has no None team");
+    assert!(!parses(9, same), "TXT_CANNOT_ALLY");
+    assert!(!parses(2, split), "FreeForAll's AlliesAllowed=no");
+    assert!(!parses(5, same), "every other mode refuses it too");
+    // Only row 0 seeds the scan: a watching host bypasses it.
+    let watching = "[HouseTeams]\nMulti2=0\nMulti3=0\n[IsSpectator]\nMulti1=Yes\n";
+    assert!(SpawnRequest::parse(&in_mode(9, network_spawn(3, 0, watching))).is_ok());
+    let ai = "[HouseHandicaps]\nMulti3=1\n[HouseCountries]\nMulti3=3\n[HouseColors]\nMulti3=6\n";
+    let with_ai = |mode| {
+        SpawnRequest::parse(&in_mode(mode, network_spawn(2, 0, ai)).replacen(
+            "[Settings]\n",
+            "[Settings]\nAIPlayers=1\n",
+            1,
+        ))
+        .is_ok()
+    };
+    assert!(with_ai(2));
+    assert!(!with_ai(5), "ManBattle has no AI rows");
+    // Unholy5D6310's Start answers false without bases.
+    assert!(
+        SpawnRequest::parse(&in_mode(4, network_spawn(2, 0, "")).replacen(
+            "[Settings]\n",
+            "[Settings]\nBases=No\n",
+            1,
+        ),)
+        .is_err()
+    );
+}
+
 #[test]
 fn network_ai_houses_follow_every_human() {
     let session = parse_network(
