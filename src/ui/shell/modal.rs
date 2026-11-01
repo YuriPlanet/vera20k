@@ -458,6 +458,9 @@ pub struct WolCreateGameLayout {
     pub observe: Option<RectPx>,
     /// VERA's online popup's Max players and Allow spectators.
     pub room: Option<crate::ui::room_limits::RoomLimitsLayout>,
+    /// VERA's online popup's Room name caption and edit, a row above the
+    /// password at the rows' 17-unit pitch.
+    pub name: Option<(RectPx, RectPx)>,
     pub ok: RectPx,
     pub cancel: RectPx,
     /// Its own status line `0x695`.
@@ -476,7 +479,8 @@ const ONLINE_STATUS_INSET: i32 = 10;
 /// observer box (the lobby's own Observe box still seats an observer), Limit
 /// Screen Resolution in the clan row under the password field, clear of the
 /// art's Tesla Trooper, then Max players and Allow spectators in the limit and
-/// observer rows, and the status line inside the frame.
+/// observer rows, the status line inside the frame, and Room name above the
+/// password.
 pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> WolCreateGameLayout {
     let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
@@ -493,6 +497,7 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
         limit,
         observe: Some(observe),
         room: None,
+        name: None,
         ok: child(33, 128, 83, 15),
         cancel: child(184, 128, 83, 15),
         status,
@@ -509,6 +514,10 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
             field,
             limit.y,
             observe,
+        )),
+        name: Some((
+            child(11, 31, 113, 12),
+            new_edit_window(child(133, 30, 140, 12)),
         )),
         status: RectPx::new(
             dialog.x + ONLINE_STATUS_INSET,

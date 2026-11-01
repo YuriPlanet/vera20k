@@ -147,6 +147,9 @@ pub(crate) struct FrontendState {
     pub(crate) multiplayer_setup: Option<crate::ui::multiplayer_setup::MultiplayerSetupState>,
     /// The host's last Create Game choices, which its next VERA room takes.
     pub(crate) room_limits: crate::ui::room_limits::RoomLimits,
+    /// The host's last Room name in VERA's online lobby, which its next
+    /// Create Game shows; `None` until one is typed.
+    pub(crate) wol_room_name: Option<String>,
     /// VERA: how this player returns to its LAN room after the match.
     pub(crate) lan_rematch: Option<crate::app::shell_lan::LanRematch>,
     /// Options' Network child D7, retained until its teardown completes.
