@@ -346,11 +346,17 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             selected,
             choices: players,
         });
+        // VERA's room bans leave their countries off the list.
+        let banned = super::bans::banned_countries(state, launch.options.bans);
         let mut countries: Vec<_> = state
             .rules()
             .map(skirmish_shell::country_choices)
             .unwrap_or_default()
             .into_iter()
+            .filter(|item| {
+                !matches!(item, SkirmishComboItem::Country(SkirmishCountryChoice::Country(country))
+                    if banned.contains(country))
+            })
             .map(|item| choice(state, item))
             .collect();
         if let Some(player_countries) = coop.as_ref().and_then(|coop| coop.player_countries) {
@@ -554,6 +560,14 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             options.crates,
             options.super_weapons,
             options.build_off_ally,
+        ],
+        room_checks: [
+            options.bridges_destroyable,
+            options.ally_change_allowed,
+            options.bans.yuri,
+            options.bans.france,
+            options.bans.spy,
+            options.bans.stolen_tech,
         ],
         row_icons,
         options_open: dialog.modern

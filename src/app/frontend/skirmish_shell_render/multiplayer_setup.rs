@@ -884,6 +884,29 @@ fn push_option_controls(
             ShellAlign::V_CENTER,
         ));
     }
+    // VERA's own checkboxes, only in its Game Options.
+    if layout.game_options.is_some() {
+        for (index, label) in crate::ui::multiplayer_setup::ROOM_CHECKBOX_LABELS
+            .into_iter()
+            .enumerate()
+        {
+            let rect = layout.room_checkboxes[index];
+            paint_control(
+                controls,
+                &atlas.control_chrome(),
+                ControlPaint::Checkbox {
+                    rect,
+                    checked: view.room_checks[index],
+                },
+                scale,
+            );
+            texts.push(text(
+                label,
+                crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
+                ShellAlign::V_CENTER,
+            ));
+        }
+    }
     for bar in view
         .trackbars
         .iter()

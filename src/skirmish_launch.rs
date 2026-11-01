@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::sim::game_options::GameOptions;
+use crate::sim::game_options::{GameOptions, RoomBans};
 use crate::sim::rng::SimRng;
 use crate::skirmish_modes::SkirmishGameMode;
 
@@ -418,6 +418,10 @@ pub struct SkirmishLaunchOptions {
     pub multi_engineer: bool,
     pub harvester_truce: bool,
     pub ally_change_allowed: bool,
+    /// VERA's room bans. Left out when empty, so a room without bans sends
+    /// the same options as before them.
+    #[serde(default, skip_serializing_if = "RoomBans::is_empty")]
+    pub bans: RoomBans,
 }
 
 impl Default for SkirmishLaunchOptions {
@@ -442,6 +446,7 @@ impl Default for SkirmishLaunchOptions {
             multi_engineer: defaults.multi_engineer,
             harvester_truce: defaults.harvester_truce,
             ally_change_allowed: defaults.ally_change_allowed,
+            bans: RoomBans::default(),
         }
     }
 }
@@ -474,6 +479,7 @@ impl SkirmishLaunchOptions {
             multi_engineer: options.multi_engineer,
             harvester_truce: options.harvester_truce,
             ally_change_allowed: options.ally_change_allowed,
+            bans: options.bans,
         }
     }
 
@@ -492,6 +498,7 @@ impl SkirmishLaunchOptions {
             multi_engineer: self.multi_engineer,
             harvester_truce: self.harvester_truce,
             ally_change_allowed: self.ally_change_allowed,
+            bans: self.bans,
             starting_credits: self.starting_credits,
             unit_count: self.unit_count,
             tech_level: self.tech_level,

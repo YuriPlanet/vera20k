@@ -1339,6 +1339,42 @@ impl MatchSession {
         Ok(())
     }
 
+    /// VERA's room bans on the host: each player, AI and inactive row whose
+    /// chosen country is `banned` goes back to Random.
+    pub(crate) fn random_for_network_countries(
+        &mut self,
+        banned: impl Fn(crate::skirmish_launch::LaunchCountry) -> bool,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(self.host, "only the host enforces the room's bans");
+        let Some(NetworkSession {
+            phase:
+                NetworkPhase::Setup {
+                    launch,
+                    inactive_choices,
+                    ..
+                },
+            ..
+        }) = self.network.as_mut()
+        else {
+            anyhow::bail!("network setup is not editable");
+        };
+        for human in launch
+            .humans
+            .iter_mut()
+            .filter(|human| !human.is_observer())
+        {
+            human.slot.country_random |= banned(human.slot.country);
+        }
+        for ai in &mut launch.opponents {
+            ai.country_random |= banned(ai.country);
+        }
+        for choices in inactive_choices.iter_mut() {
+            choices.country_random |= banned(choices.country);
+        }
+        launch.rebuild_house_roster();
+        Ok(())
+    }
+
     pub(crate) fn set_network_row_choices(
         &mut self,
         row: u8,

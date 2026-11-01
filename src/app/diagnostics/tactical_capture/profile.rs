@@ -617,6 +617,7 @@ impl TacticalOptions {
             multi_engineer: self.multi_engineer,
             harvester_truce: self.harvester_truce,
             ally_change_allowed: self.ally_change_allowed,
+            bans: Default::default(),
         }
     }
 }

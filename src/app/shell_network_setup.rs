@@ -5,6 +5,7 @@
 //! `wol`; every shared helper branches on GameMode like the native ones.
 
 mod actions;
+pub(crate) mod bans;
 pub(crate) mod agreement;
 mod cooperative;
 pub(crate) use cooperative::chooser_rows as cooperative_chooser_rows;

@@ -849,9 +849,11 @@ impl MultiplayerShellRuntime {
 
     /// Host ProcessRandomAssignments69B8C0 consumes this process Scenario
     /// cursor. The accepted host seed reseeds gameplay later at52E619.
+    /// A Random country never lands on one of VERA's room bans, `banned`.
     pub(crate) fn resolve_network_assignments(
         &mut self,
         session: &SkirmishLaunchSession,
+        banned: &[LaunchCountry],
     ) -> Result<SkirmishLaunchSession, CooperativeError> {
         let progress = is_cooperative_mode(session).then(|| {
             self.cooperative_progress
@@ -862,7 +864,7 @@ impl MultiplayerShellRuntime {
         let registry = &self.cooperative_registry;
         let roster = &self.cooperative_country_roster;
         let mut draw_country = |role, rng: &mut SimRng| {
-            draw_shell_country(registry, progress.as_ref(), roster, role, rng)
+            draw_shell_country(registry, progress.as_ref(), roster, role, rng, banned)
         };
         let mut assignments = ShellRandomAssignmentState::new(session);
         assignments.resolve_humans(&mut self.scenario_rng, &mut draw_country)?;
@@ -1062,7 +1064,7 @@ impl MultiplayerShellRuntime {
         let roster = &self.cooperative_country_roster;
         let mut assignments = ShellRandomAssignmentState::new(&staged_session);
         let mut draw_country =
-            |role, rng: &mut SimRng| draw_shell_country(registry, None, roster, role, rng);
+            |role, rng: &mut SimRng| draw_shell_country(registry, None, roster, role, rng, &[]);
 
         assignments.resolve_local_country(&mut self.scenario_rng, &mut draw_country)?;
         assignments.pack_ai_assignments(&session.opponents);
@@ -1593,7 +1595,32 @@ pub(crate) fn skirmish_global_defaults(state: &SkirmishShellState) -> SkirmishGl
     }
 }
 
+/// One shell Random country. VERA's room bans redraw a draw that lands on a
+/// `banned` country, so a room without bans draws exactly as native does;
+/// Cooperative keeps its campaign's own countries.
 fn draw_shell_country(
+    registry: &CooperativeRegistry,
+    progress: Option<&CooperativeProgressRecord>,
+    roster: &[CooperativeCountryRosterEntry],
+    role: RandomCountryRole,
+    rng: &mut SimRng,
+    banned: &[LaunchCountry],
+) -> Result<LaunchCountry, CooperativeError> {
+    if progress.is_some() {
+        return draw_native_shell_country(registry, progress, roster, role, rng);
+    }
+    // Retail bans at most two of the ten countries a draw reaches; a mod
+    // that bans every one of them fails here instead of drawing forever.
+    for _ in 0..64 {
+        let country = draw_native_shell_country(registry, progress, roster, role, rng)?;
+        if !banned.contains(&country) {
+            return Ok(country);
+        }
+    }
+    Err(CooperativeError::NoEligibleRandomCountries)
+}
+
+fn draw_native_shell_country(
     registry: &CooperativeRegistry,
     progress: Option<&CooperativeProgressRecord>,
     roster: &[CooperativeCountryRosterEntry],
@@ -3392,6 +3419,36 @@ WOLTaunts=junk
         );
     }
 
+    /// A room ban redraws a Random country that lands on it; without bans
+    /// the draws are the native ones.
+    #[cfg(not(feature = "ares"))]
+    #[test]
+    fn random_country_redraws_a_banned_country() {
+        use crate::skirmish_launch::RandomCountryRole;
+        let registry = CooperativeRegistry::default();
+        let draw = |banned: &[LaunchCountry]| {
+            let mut rng = SimRng::new(1);
+            let country = draw_shell_country(
+                &registry,
+                None,
+                &[],
+                RandomCountryRole::Human,
+                &mut rng,
+                banned,
+            )
+            .unwrap();
+            (country, rng)
+        };
+        let (native, mut native_rng) = draw(&[]);
+        let (redrawn, _) = draw(&[native]);
+        assert_ne!(redrawn, native);
+        assert_eq!(
+            redrawn,
+            LaunchCountry::from_country_index(native_rng.next_range_u32_inclusive(0, 9)),
+            "the redraw is the stream's next draw"
+        );
+    }
+
     #[cfg(feature = "ares")]
     #[test]
     fn ares_random_country_uses_multiplay_weights_and_ai_weights() {
@@ -3405,9 +3462,16 @@ WOLTaunts=junk
         let registry = CooperativeRegistry::default();
         let mut rng = SimRng::new(1);
         assert_eq!(
-            draw_shell_country(&registry, None, &roster, RandomCountryRole::Human, &mut rng)
-                .unwrap()
-                .raw_index(),
+            draw_shell_country(
+                &registry,
+                None,
+                &roster,
+                RandomCountryRole::Human,
+                &mut rng,
+                &[]
+            )
+            .unwrap()
+            .raw_index(),
             1
         );
         let mut rng = SimRng::new(1);
@@ -3417,7 +3481,8 @@ WOLTaunts=junk
                 None,
                 &roster,
                 RandomCountryRole::Ai { index: 0 },
-                &mut rng
+                &mut rng,
+                &[]
             )
             .unwrap()
             .raw_index(),
@@ -3428,7 +3493,14 @@ WOLTaunts=junk
         )];
         let mut rng = SimRng::new(1);
         assert!(matches!(
-            draw_shell_country(&registry, None, &none, RandomCountryRole::Human, &mut rng),
+            draw_shell_country(
+                &registry,
+                None,
+                &none,
+                RandomCountryRole::Human,
+                &mut rng,
+                &[]
+            ),
             Err(CooperativeError::NoEligibleRandomCountries)
         ));
     }

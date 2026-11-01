@@ -48,8 +48,9 @@ pub(crate) enum CanBuild {
 
 /// `HouseClass::CanBuild @ 0x004F7870` for house `owner` and type `obj`.
 ///
-/// With `skip_tech` (the first flag), only the build limit is asked
-/// ([`build_limit`]). Otherwise, in order (`0x004F7889..0x004F7BE5`):
+/// A type VERA's room bans ([`crate::sim::game_options::RoomBans`]) is
+/// refused first, whatever the flags. With `skip_tech` (the first flag),
+/// only the build limit is asked ([`build_limit`]). Otherwise, in order (`0x004F7889..0x004F7BE5`):
 /// - `TechnoType+0xC98` refuses; only the constructor writes it, with 0
 ///   (`0x007113CC`);
 /// - a `PrerequisiteOverride=` BuildingType the house has on the map
@@ -95,6 +96,12 @@ pub(crate) fn can_build(
     #[cfg(feature = "debug-tools")]
     if trainer.tech_all {
         return build_limit(sim, rules, owner, obj, count_in_production);
+    }
+    // VERA's room bans (`RoomBans`, no gamemd option) refuse a banned type
+    // to every house, ahead of the build-limit-only FindFactory route the
+    // computer's teams take.
+    if sim.session.game_options().bans.bans_type(obj) {
+        return CanBuild::No;
     }
     if skip_tech {
         return build_limit(sim, rules, owner, obj, count_in_production);
