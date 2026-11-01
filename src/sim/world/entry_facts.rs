@@ -7,10 +7,11 @@
 //! table and later asks read the copy. The world stays the source of truth:
 //! the tables are emptied before each batch, never saved or hashed, and debug
 //! builds compare every reuse with a fresh read. Asks outside a batch read
-//! the world directly.
+//! the world directly. A batch asks about a few thousand of the map's cells,
+//! so the tables mark what they keep and the reset empties only those.
 
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use crate::map::cell_index::NativeCellIdentity as Cell;
 use crate::map::entities::EntityCategory;
@@ -33,6 +34,37 @@ pub(crate) struct EntryFacts {
     /// Each real cell's [`PlainCell`] bits, 0 until asked.
     plain: Vec<AtomicU32>,
     blockers: Vec<OnceLock<BlockerFacts>>,
+    /// The real cells whose `cells` or `plain` entry this batch filled.
+    cells_kept: KeptBits,
+    /// The slots whose `blockers` entry this batch filled.
+    blockers_kept: KeptBits,
+}
+
+/// One bit per table entry, set when an ask fills it, so a reset empties only
+/// the filled entries. Searches on several threads may set one bit at once.
+#[derive(Default)]
+struct KeptBits(Vec<AtomicU64>);
+
+impl KeptBits {
+    fn mark(&self, index: usize) {
+        let (word, bit) = (&self.0[index / 64], 1u64 << (index % 64));
+        if word.load(Ordering::Relaxed) & bit == 0 {
+            word.fetch_or(bit, Ordering::Relaxed);
+        }
+    }
+
+    /// `empty` every marked entry and clear the marks, then fit them to `len`
+    /// entries.
+    fn empty_marked(&mut self, len: usize, mut empty: impl FnMut(usize)) {
+        for (word_index, word) in self.0.iter_mut().enumerate() {
+            let mut bits = std::mem::take(word.get_mut());
+            while bits != 0 {
+                empty(word_index * 64 + bits.trailing_zeros() as usize);
+                bits &= bits - 1;
+            }
+        }
+        self.0.resize_with(len.div_ceil(64), AtomicU64::default);
+    }
 }
 
 impl std::fmt::Debug for EntryFacts {
@@ -48,23 +80,30 @@ impl EntryFacts {
     /// Forget every kept fact and fit the tables to `cells` real cells and
     /// `slots` entity slots, before a batch.
     pub(crate) fn reset(&mut self, cells: usize, slots: usize) {
-        crate::sim::parallel::for_each_mut(&mut self.cells, |kept| {
-            kept.take();
+        let (kept_cells, plain) = (&mut self.cells, &mut self.plain);
+        self.cells_kept.empty_marked(cells, |index| {
+            kept_cells[index].take();
+            *plain[index].get_mut() = 0;
         });
         self.cells.resize_with(cells, OnceLock::new);
-        crate::sim::parallel::for_each_mut(&mut self.plain, |kept| {
-            *kept.get_mut() = 0;
-        });
         self.plain.resize_with(cells, AtomicU32::default);
-        crate::sim::parallel::for_each_mut(&mut self.blockers, |kept| {
-            kept.take();
+        let blockers = &mut self.blockers;
+        self.blockers_kept.empty_marked(slots, |slot| {
+            blockers[slot].take();
         });
         self.blockers.resize_with(slots, OnceLock::new);
     }
 
     /// Real cell `index`'s facts, kept from this batch's first ask.
     pub(super) fn cell(&self, index: usize, read: impl Fn() -> CellFacts) -> &CellFacts {
-        let kept = self.cells[index].get_or_init(&read);
+        let kept = &self.cells[index];
+        let kept = match kept.get() {
+            Some(kept) => kept,
+            None => {
+                self.cells_kept.mark(index);
+                kept.get_or_init(&read)
+            }
+        };
         debug_assert!(
             !crate::sim::touch_log::live_read_check_enabled() || *kept == read(),
             "real cell {index} changed during a path batch"
@@ -80,6 +119,7 @@ impl EntryFacts {
         let cell = match kept.load(Ordering::Relaxed) {
             0 => {
                 let cell = read();
+                self.cells_kept.mark(index);
                 kept.store(cell.0, Ordering::Relaxed);
                 cell
             }
@@ -94,7 +134,14 @@ impl EntryFacts {
 
     /// The facts of the entity in `slot`, kept from this batch's first ask.
     pub(super) fn blocker(&self, slot: usize, read: impl Fn() -> BlockerFacts) -> &BlockerFacts {
-        let kept = self.blockers[slot].get_or_init(&read);
+        let kept = &self.blockers[slot];
+        let kept = match kept.get() {
+            Some(kept) => kept,
+            None => {
+                self.blockers_kept.mark(slot);
+                kept.get_or_init(&read)
+            }
+        };
         debug_assert!(
             !crate::sim::touch_log::live_read_check_enabled() || *kept == read(),
             "the entity in slot {slot} changed during a path batch"
@@ -336,5 +383,55 @@ impl EntryFacts {
             sim.substrate.entities.slot_count(),
         );
         facts
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cell_facts(level: i8) -> CellFacts {
+        CellFacts {
+            coord: (1, 2),
+            level,
+            slope: 0,
+            flags: 0,
+            ground: (0, None),
+            deck: (0, None),
+            in_playfield: true,
+            overlay: OverlayCell::default(),
+            terrain_object: false,
+            ground_listed: false,
+            deck_listed: false,
+            speed_costs: SpeedCostProfile::default(),
+        }
+    }
+
+    fn blocker(id: u64, rx: u16) -> BlockerFacts {
+        BlockerFacts::of(&GameEntity::test_default(id, "MTNK", "Americans", rx, 0), 0)
+    }
+
+    /// A reset empties what the last batch kept on both sides of a mark-word
+    /// boundary, and a slot kept before the table shrinks comes back empty
+    /// when it regrows.
+    #[test]
+    fn a_reset_forgets_every_fact_the_last_batch_kept() {
+        let mut facts = EntryFacts::default();
+        facts.reset(130, 70);
+        for index in [0, 63, 64, 129] {
+            facts.cell(index, || cell_facts(1));
+            facts.plain(index, || PlainCell(PlainCell::KNOWN | 1));
+        }
+        facts.blocker(69, || blocker(1, 5));
+        facts.reset(130, 10);
+        facts.reset(130, 70);
+        for index in [0, 63, 64, 129] {
+            assert_eq!(facts.cell(index, || cell_facts(2)).level, 2);
+            assert_eq!(
+                facts.plain(index, || PlainCell(PlainCell::KNOWN | 2)),
+                PlainCell(PlainCell::KNOWN | 2)
+            );
+        }
+        assert_eq!(facts.blocker(69, || blocker(2, 9)).rx, 9);
     }
 }
