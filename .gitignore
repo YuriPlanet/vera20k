@@ -18,6 +18,7 @@ Thumbs.db
 *.pcx
 *.log
 *.txt
+!src/render/multilut_atlas1.png
 !tools/requirements-test.txt
 !tools/telemetry-dashboard/vendor/THREE-LICENSE.txt
 !/LICENSES/*.txt

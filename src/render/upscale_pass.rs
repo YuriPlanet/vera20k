@@ -15,8 +15,10 @@
 //!
 //! Depends on: `render/gpu.rs` (GpuContext), `render/scaled_copy.rs` (the copy)
 
+use super::anime4k::Anime4K;
 use super::gpu::GpuContext;
 use super::scaled_copy::{ScaledSurface, create_depth_target};
+use crate::rules::post_process::Anime4kTier;
 
 /// VERA-only wheel zoom composes at one source pixel per world pixel (stock YR
 /// has no world zoom).
@@ -28,14 +30,27 @@ pub(crate) struct WorldZoomPass {
     world_depth: wgpu::TextureView,
     source_size: [u32; 2],
     scale: f32,
+    fsr: bool,
+    /// Anime4K only upsamples by exactly 2x, so it runs at `scale` 2 and the
+    /// copy then blits its 2x frame one to one.
+    tier: Anime4kTier,
+    anime4k: Option<Anime4K>,
+    /// The copy's params currently describe the identity blit.
+    identity: bool,
 }
 
 /// The world target for `target` at `scale`: `ceil(target / scale)`, clamped
 /// to the device's 2D texture limit (the minimum-zoom clamp on a very wide
 /// window can otherwise round one texel past it).
-fn world_source_size(device: &wgpu::Device, target: [u32; 2], scale: f32) -> [u32; 2] {
+pub(crate) fn world_source_size(device: &wgpu::Device, target: [u32; 2], scale: f32) -> [u32; 2] {
     let max = device.limits().max_texture_dimension_2d;
     target.map(|v| ((v as f32 / scale).ceil().max(1.0) as u32).min(max))
+}
+
+/// Anime4K's networks upsample by exactly 2x, so they only serve a 2x world
+/// copy; any other scale keeps the plain reconstruction.
+fn tier_at(scale: f32, tier: Anime4kTier) -> Anime4kTier {
+    if scale == 2.0 { tier } else { Anime4kTier::Off }
 }
 
 impl WorldZoomPass {
@@ -45,6 +60,8 @@ impl WorldZoomPass {
         format: wgpu::TextureFormat,
         target: [u32; 2],
         scale: f32,
+        fsr: bool,
+        tier: Anime4kTier,
     ) -> Self {
         let source_size = world_source_size(device, target, scale);
         let (_, world_depth) =
@@ -56,12 +73,28 @@ impl WorldZoomPass {
             (target[0], target[1]),
             Some(wgpu::TextureFormat::Depth32Float),
         );
-        surface.place(queue, (0.0, 0.0), scale, scale.fract() == 0.0);
+        let tier = tier_at(scale, tier);
+        let anime4k = tier
+            .enabled()
+            .then(|| Anime4K::new(device, tier, source_size))
+            .flatten();
+        let identity = anime4k.is_some();
+        surface.place(
+            queue,
+            (0.0, 0.0),
+            if identity { 1.0 } else { scale },
+            identity || scale.fract() == 0.0,
+        );
+        surface.set_fsr(queue, fsr && !identity);
         Self {
             surface,
             world_depth,
             source_size,
             scale,
+            fsr,
+            tier,
+            anime4k,
+            identity,
         }
     }
 
@@ -71,19 +104,41 @@ impl WorldZoomPass {
         queue: &wgpu::Queue,
         target: [u32; 2],
         scale: f32,
+        fsr: bool,
+        tier: Anime4kTier,
     ) {
         let source_size = world_source_size(device, target, scale);
-        if source_size != self.source_size {
+        let resized = source_size != self.source_size;
+        if resized {
             let (_, depth) =
                 create_depth_target(device, "Wheel zoom world", (source_size[0], source_size[1]));
             self.world_depth = depth;
             self.source_size = source_size;
         }
         self.surface.resize(device, (target[0], target[1]));
-        if scale != self.scale {
-            self.surface
-                .place(queue, (0.0, 0.0), scale, scale.fract() == 0.0);
+        let tier = tier_at(scale, tier);
+        if tier != self.tier || (resized && tier.enabled()) {
+            self.anime4k = tier
+                .enabled()
+                .then(|| Anime4K::new(device, tier, source_size))
+                .flatten();
+            self.tier = tier;
+        }
+        let identity = self.anime4k.is_some();
+        let mode_changed = identity != self.identity;
+        if scale != self.scale || mode_changed {
+            self.surface.place(
+                queue,
+                (0.0, 0.0),
+                if identity { 1.0 } else { scale },
+                identity || scale.fract() == 0.0,
+            );
             self.scale = scale;
+            self.identity = identity;
+        }
+        if fsr != self.fsr || mode_changed {
+            self.surface.set_fsr(queue, fsr && !identity);
+            self.fsr = fsr;
         }
     }
 
@@ -125,6 +180,13 @@ impl WorldZoomPass {
         tactical: [u32; 4],
         clear: wgpu::Color,
     ) {
+        // A tier replaces the reconstruction with its 2x frame, which the
+        // copy then places one to one (its params say scale 1 and sharp).
+        let anime4k = self.anime4k.as_ref();
+        if let Some(anime4k) = anime4k {
+            anime4k.run(device, encoder, source);
+        }
+        let source = anime4k.map_or(source, |anime4k| anime4k.output_texture());
         let bind_group = self.surface.bind_group_for(device, source);
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Wheel zoom completed world"),

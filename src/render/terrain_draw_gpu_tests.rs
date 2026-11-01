@@ -430,7 +430,7 @@ pub(crate) fn camera(size: [u32; 2]) -> CameraUniform {
         world_height: 1000.0,
         _pad: 0.0,
         native_z_origin_y: 0.0,
-        water_amplitude: 0.0,
+        _native_z_pad: 0.0,
     }
 }
 pub(crate) fn encoded(word: u16, format: wgpu::TextureFormat) -> [u8; 4] {

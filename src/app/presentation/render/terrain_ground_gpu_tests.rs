@@ -538,7 +538,7 @@ fn tree_transactions_preserve_tmp_shp_voxel_overlap_and_coalesced_order() {
                 &cv,
                 &dv,
             );
-            batch.draw_with_buffer_zdepth(&mut pass, &tmp_group, None, &tmp_buffer, 1);
+            batch.draw_with_buffer_zdepth(&mut pass, &tmp_group, &tmp_buffer, 1);
         }
         // Clip both edges; every restarted normal pass must restore this clip.
         let stats = draw_native_object_pass(

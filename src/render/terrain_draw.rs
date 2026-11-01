@@ -456,7 +456,7 @@ impl TerrainDrawRenderer {
                 _pad: 0.0,
 
                 native_z_origin_y: 0.0,
-                water_amplitude: 0.0,
+                _native_z_pad: 0.0,
             },
         }
     }

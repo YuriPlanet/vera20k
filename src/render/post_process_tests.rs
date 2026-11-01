@@ -13,7 +13,8 @@ use std::time::Duration;
 
 use crate::render::frame_readback::PendingBgra8Readback;
 use crate::render::gpu::block_on;
-use crate::render::post_process::PostChain;
+use crate::render::post_process::{PostChain, PostParams};
+use crate::rules::post_process::DlaaRules;
 use crate::render::water_distortion::{DistortionParams, WaterDistortion};
 use crate::render::water_mask::WaterMask;
 
@@ -735,6 +736,905 @@ fn the_bloom_chain_spills_a_local_halo() {
         corner[2] <= 48,
         "the far corner stays dim: {corner:?}"
     );
+}
+
+/// Sharpen deepens a soft edge while blur softens it: each arm reads its
+/// uniform and only moves the texels beside the step.
+#[test]
+#[ignore = "needs a wgpu adapter; run explicitly"]
+fn the_sharpen_and_blur_arms_move_the_edge_in_opposite_directions() {
+    let gpu = Gpu::new();
+    let size = [32, 8];
+    let mut source_bytes = Vec::new();
+    for _ in 0..size[1] {
+        for x in 0..size[0] {
+            let value = if x < 16 { 64 } else { 192 };
+            source_bytes.extend_from_slice(&[value, value, value, 255]);
+        }
+    }
+    let source = gpu.texture(
+        size,
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+    );
+    gpu.upload(&source, &source_bytes, size);
+
+    let run = |params: PostParams| {
+        let target = gpu.texture(
+            size,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        );
+        let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+        let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+        let mask = gpu.mask(size, 0);
+        let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut chain = PostChain::new(&gpu.device, &gpu.queue, FORMAT, params);
+        let mut encoder = gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Post process sharpen/blur"),
+            });
+        chain.draw(
+            &gpu.device,
+            &gpu.queue,
+            &mut encoder,
+            &source_view,
+            &mask_view,
+            &target_view,
+            (size[0], size[1]),
+        );
+        gpu.queue.submit([encoder.finish()]);
+        gpu.read(&target, size)
+    };
+
+    // The test helpers live in `render::post_process::PostParams`, gated to the
+    // crate's tests, so build the uniforms through the production entry point.
+    let sharpen = PostParams::from_effects(
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some([0.6, 0.5]),
+        None,
+        Default::default(),
+        None,
+        false,
+        [0.0, 0.0, size[0] as f32, size[1] as f32],
+    )
+    .expect("sharpen configures the chain");
+    let out = run(sharpen);
+    let stride = size[0] as usize * 4;
+    let at = |x: usize, y: usize| {
+        let start = y * stride + x * 4;
+        out[start]
+    };
+    assert!(at(15, 4) < 64, "the dark side darkens: {}", at(15, 4));
+    assert!(at(16, 4) > 192, "the bright side brightens: {}", at(16, 4));
+
+    let blur = PostParams::from_effects(
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some([2.0, 1.0]),
+        None,
+        None,
+        Default::default(),
+        None,
+        false,
+        [0.0, 0.0, size[0] as f32, size[1] as f32],
+    )
+    .expect("blur configures the chain");
+    let out = run(blur);
+    let at = |x: usize, y: usize| {
+        let start = y * stride + x * 4;
+        out[start]
+    };
+    assert!(at(15, 4) > 64, "the dark edge lightens: {}", at(15, 4));
+    assert!(at(16, 4) < 192, "the bright edge dims: {}", at(16, 4));
+    assert_eq!(at(2, 4), 64, "the far interior is left alone");
+    assert_eq!(at(29, 4), 192, "the far interior is left alone");
+}
+
+/// The LUT arm samples the `.cube` table it is given: a table of one flat
+/// colour replaces the frame at full strength, which catches a table uploaded
+/// with the wrong orientation or ignored by the shader.
+#[test]
+#[ignore = "needs a wgpu adapter; run explicitly"]
+fn the_lut_arm_reads_the_cube_table() {
+    let gpu = Gpu::new();
+    let size = [2, 2];
+    let source = gpu.texture(
+        size,
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+    );
+    let source_bytes = pattern(size);
+    gpu.upload(&source, &source_bytes, size);
+
+    // Every entry of a 2x2x2 table is the same blue, so trilinear interpolation
+    // cannot blur the assertion.
+    let mut cube = String::from("LUT_3D_SIZE 2\n");
+    for _ in 0..8 {
+        cube.push_str("0.0 0.0 1.0\n");
+    }
+    let lut = super::PostLut::from_cube(&gpu.device, &gpu.queue, &cube).expect("parse cube");
+
+    let target = gpu.texture(
+        size,
+        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+    );
+    let params = PostParams::identity()
+        .with_color(None, [1.0, 0.0, 0.0])
+        .with_viewport([0.0, 0.0, size[0] as f32, size[1] as f32]);
+    let mut chain = PostChain::new(&gpu.device, &gpu.queue, FORMAT, params);
+    chain.set_luts([Some(lut.view().clone()), None, None]);
+    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mask = gpu.mask(size, 0);
+    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Post process lut"),
+        });
+    chain.draw(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &source_view,
+        &mask_view,
+        &target_view,
+        (size[0], size[1]),
+    );
+    gpu.queue.submit([encoder.finish()]);
+
+    let out = gpu.read(&target, size);
+    for texel in out.chunks_exact(4) {
+        // Readback bytes are BGRA: the table's blue lands in the first lane.
+        assert!(texel[0] >= 250, "the table's blue replaces the frame: {texel:?}");
+        assert!(texel[1] <= 5, "the table's green stays near zero: {texel:?}");
+        assert_eq!(texel[3], 255, "alpha passes through: {texel:?}");
+    }
+}
+
+/// MultiLUT applies its tables in order: the second table receives the colour
+/// the first produced, so a flat red table followed by a flat green one ends
+/// green. This also proves binding 7 is the second table.
+#[test]
+#[ignore = "needs a wgpu adapter; run explicitly"]
+fn the_second_lut_refines_the_first() {
+    let gpu = Gpu::new();
+    let size = [2, 2];
+    let source = gpu.texture(
+        size,
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+    );
+    let source_bytes = pattern(size);
+    gpu.upload(&source, &source_bytes, size);
+
+    let flat = |colour: &str| {
+        let mut cube = String::from("LUT_3D_SIZE 2\n");
+        for _ in 0..8 {
+            cube.push_str(colour);
+            cube.push('\n');
+        }
+        super::PostLut::from_cube(&gpu.device, &gpu.queue, &cube).expect("parse cube")
+    };
+    let red = flat("1.0 0.0 0.0");
+    let green = flat("0.0 1.0 0.0");
+
+    let target = gpu.texture(
+        size,
+        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+    );
+    let params = PostParams::identity()
+        .with_color(None, [1.0, 1.0, 0.0])
+        .with_viewport([0.0, 0.0, size[0] as f32, size[1] as f32]);
+    let mut chain = PostChain::new(&gpu.device, &gpu.queue, FORMAT, params);
+    chain.set_luts([
+        Some(red.view().clone()),
+        Some(green.view().clone()),
+        None,
+    ]);
+    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mask = gpu.mask(size, 0);
+    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Post process multilut"),
+        });
+    chain.draw(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &source_view,
+        &mask_view,
+        &target_view,
+        (size[0], size[1]),
+    );
+    gpu.queue.submit([encoder.finish()]);
+
+    let out = gpu.read(&target, size);
+    for texel in out.chunks_exact(4) {
+        // BGRA readback: green lands in the second lane.
+        assert!(texel[1] >= 250, "the second table wins: {texel:?}");
+        assert!(texel[0] <= 5 && texel[2] <= 5, "red is replaced: {texel:?}");
+        assert_eq!(texel[3], 255, "alpha passes through: {texel:?}");
+    }
+}
+
+/// The `MultiLUT` arm samples the atlas at binding 9. A sheet whose every texel
+/// is blue forces the result to blue whichever selector/tile the coordinate
+/// maths lands on, which catches the arm being skipped or the sheet unbound.
+#[test]
+#[ignore = "needs a wgpu adapter; run explicitly"]
+fn the_atlas_arm_samples_the_multilut_sheet() {
+    let gpu = Gpu::new();
+    let size = [2, 2];
+    let source = gpu.texture(
+        size,
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+    );
+    let source_bytes = pattern(size);
+    gpu.upload(&source, &source_bytes, size);
+
+    // `MultiLut_atlas1.png`'s shape: 32 tiles across, 17 LUT rows.
+    let sheet_size = [32 * 32, 32 * 17];
+    let atlas = gpu.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Post process MultiLUT test atlas"),
+        size: wgpu::Extent3d {
+            width: sheet_size[0],
+            height: sheet_size[1],
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let mut sheet = vec![0u8; (sheet_size[0] * sheet_size[1] * 4) as usize];
+    for texel in sheet.chunks_exact_mut(4) {
+        texel[2] = 255;
+        texel[3] = 255;
+    }
+    gpu.queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &atlas,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &sheet,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(sheet_size[0] * 4),
+            rows_per_image: Some(sheet_size[1]),
+        },
+        wgpu::Extent3d {
+            width: sheet_size[0],
+            height: sheet_size[1],
+            depth_or_array_layers: 1,
+        },
+    );
+    let atlas_view = atlas.create_view(&wgpu::TextureViewDescriptor::default());
+
+    let target = gpu.texture(
+        size,
+        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+    );
+    let params = PostParams::identity()
+        .with_atlas_lut(Some([1.0, 1.0, 1.0]))
+        .with_viewport([0.0, 0.0, size[0] as f32, size[1] as f32]);
+    let mut chain = PostChain::new(&gpu.device, &gpu.queue, FORMAT, params);
+    chain.set_atlas(Some(atlas_view));
+    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mask = gpu.mask(size, 0);
+    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Post process atlas"),
+        });
+    chain.draw(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &source_view,
+        &mask_view,
+        &target_view,
+        (size[0], size[1]),
+    );
+    gpu.queue.submit([encoder.finish()]);
+
+    let out = gpu.read(&target, size);
+    for texel in out.chunks_exact(4) {
+        // BGRA readback: the sheet's blue lands in the first lane.
+        assert!(texel[0] >= 250, "the sheet's blue reaches the frame: {texel:?}");
+        assert!(texel[1] <= 5, "the sheet has no green: {texel:?}");
+        assert_eq!(texel[3], 255, "alpha passes through: {texel:?}");
+    }
+}
+
+/// The chain's DLAA finish runs as its own presentation stage: with DLAA
+/// configured, a staircase edge must come out with intermediate texels even
+/// though the main pass is the identity.
+#[test]
+#[ignore = "needs a wgpu adapter; run explicitly"]
+fn the_dlaa_finish_softens_a_staircase_edge() {
+    let gpu = Gpu::new();
+    let size = [32, 32];
+    let source = gpu.texture(
+        size,
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+    );
+    let mut source_bytes = Vec::new();
+    for y in 0..size[1] {
+        let edge = size[0] / 2 + y / 4;
+        for x in 0..size[0] {
+            let value: u8 = if x < edge { 40 } else { 220 };
+            // BGRA with grey, so the channel order does not matter.
+            source_bytes.extend_from_slice(&[value, value, value, 255]);
+        }
+    }
+    gpu.upload(&source, &source_bytes, size);
+
+    let target = gpu.texture(
+        size,
+        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+    );
+    let params = PostParams::identity().with_viewport([0.0, 0.0, size[0] as f32, size[1] as f32]);
+    let mut chain = PostChain::new(&gpu.device, &gpu.queue, FORMAT, params);
+    chain.set_dlaa(Some(DlaaRules::default()));
+    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mask = gpu.mask(size, 0);
+    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Post process dlaa"),
+        });
+    chain.draw(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &source_view,
+        &mask_view,
+        &target_view,
+        (size[0], size[1]),
+    );
+    gpu.queue.submit([encoder.finish()]);
+
+    let out = gpu.read(&target, size);
+    let intermediate = out
+        .chunks_exact(4)
+        .filter(|texel| (60..200).contains(&texel[0]))
+        .count();
+    assert!(
+        intermediate > 0,
+        "the DLAA finish smooths the staircase steps"
+    );
+}
+
+/// RCAS sharpens a soft edge but never overshoots its neighbours: the dark
+/// side cannot fall below the dark texel and the bright side cannot pass the
+/// bright one, which is what separates RCAS from a plain unsharp mask.
+#[test]
+#[ignore = "needs a wgpu adapter; run explicitly"]
+fn the_rcas_arm_sharpens_without_overshoot() {
+    let gpu = Gpu::new();
+    let size = [32, 8];
+    let mut source_bytes = Vec::new();
+    for _ in 0..size[1] {
+        for x in 0..size[0] {
+            let value = if x < 16 { 64 } else { 192 };
+            source_bytes.extend_from_slice(&[value, value, value, 255]);
+        }
+    }
+    let source = gpu.texture(
+        size,
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+    );
+    gpu.upload(&source, &source_bytes, size);
+
+    let target = gpu.texture(
+        size,
+        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+    );
+    let params = PostParams::from_effects(
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(1.0),
+        Default::default(),
+        None,
+        false,
+        [0.0, 0.0, size[0] as f32, size[1] as f32],
+    )
+    .expect("super resolution configures the chain")
+    .with_rcas(true);
+    let mut chain = PostChain::new(&gpu.device, &gpu.queue, FORMAT, params);
+    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mask = gpu.mask(size, 0);
+    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Post process rcas"),
+        });
+    chain.draw(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &source_view,
+        &mask_view,
+        &target_view,
+        (size[0], size[1]),
+    );
+    gpu.queue.submit([encoder.finish()]);
+
+    let out = gpu.read(&target, size);
+    let stride = size[0] as usize * 4;
+    let at = |x: usize, y: usize| {
+        let start = y * stride + x * 4;
+        out[start]
+    };
+    assert!(at(15, 4) <= 64, "the dark side cannot undershoot: {}", at(15, 4));
+    assert!(at(16, 4) >= 192, "the bright side cannot overshoot: {}", at(16, 4));
+    assert_eq!(at(2, 4), 64, "the far interior is left alone");
+}
+
+/// Deband smooths the 1-bit steps inside a gradient while a flat band middle
+/// stays a byte copy (no noise where nothing varies).
+#[test]
+#[ignore = "needs a wgpu adapter; run explicitly"]
+fn the_deband_arm_softens_steps_but_not_flat_colour() {
+    let gpu = Gpu::new();
+    let size = [64, 8];
+    let mut source_bytes = Vec::new();
+    for _ in 0..size[1] {
+        for x in 0..size[0] {
+            // Four 16-pixel bands, each two 8-bit steps brighter than the last.
+            let value = 100 + (x / 16) as u8 * 2;
+            source_bytes.extend_from_slice(&[value, value, value, 255]);
+        }
+    }
+    let source = gpu.texture(
+        size,
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+    );
+    gpu.upload(&source, &source_bytes, size);
+
+    let target = gpu.texture(
+        size,
+        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+    );
+    let params = PostParams::identity()
+        .with_quality(Some([3.0, 0.02, 1.0]), None, None)
+        .with_viewport([0.0, 0.0, size[0] as f32, size[1] as f32]);
+    let mut chain = PostChain::new(&gpu.device, &gpu.queue, FORMAT, params);
+    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mask = gpu.mask(size, 0);
+    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Post process deband"),
+        });
+    chain.draw(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &source_view,
+        &mask_view,
+        &target_view,
+        (size[0], size[1]),
+    );
+    gpu.queue.submit([encoder.finish()]);
+
+    let out = gpu.read(&target, size);
+    let stride = size[0] as usize * 4;
+    let at = |x: usize, y: usize| {
+        let start = y * stride + x * 4;
+        out[start]
+    };
+    assert!(
+        at(8, 4).abs_diff(100) <= 1,
+        "a flat band middle stays put: {}",
+        at(8, 4)
+    );
+    assert!(
+        at(24, 4).abs_diff(102) <= 1,
+        "the next flat band middle stays too: {}",
+        at(24, 4)
+    );
+    let softened = (14..=17).any(|x| at(x, 4) != 100 && at(x, 4) != 102);
+    assert!(softened, "the band step gains intermediate values");
+}
+
+/// Clarity lifts wide local contrast: the edge pair separates further while
+/// the flat interiors keep their bytes.
+#[test]
+#[ignore = "needs a wgpu adapter; run explicitly"]
+fn the_clarity_arm_lifts_wide_local_contrast() {
+    let gpu = Gpu::new();
+    let size = [32, 8];
+    let mut source_bytes = Vec::new();
+    for _ in 0..size[1] {
+        for x in 0..size[0] {
+            let value = if x < 16 { 96 } else { 160 };
+            source_bytes.extend_from_slice(&[value, value, value, 255]);
+        }
+    }
+    let source = gpu.texture(
+        size,
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+    );
+    gpu.upload(&source, &source_bytes, size);
+
+    let target = gpu.texture(
+        size,
+        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+    );
+    let params = PostParams::identity()
+        .with_quality(None, Some([4.0, 0.6]), None)
+        .with_viewport([0.0, 0.0, size[0] as f32, size[1] as f32]);
+    let mut chain = PostChain::new(&gpu.device, &gpu.queue, FORMAT, params);
+    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mask = gpu.mask(size, 0);
+    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Post process clarity"),
+        });
+    chain.draw(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &source_view,
+        &mask_view,
+        &target_view,
+        (size[0], size[1]),
+    );
+    gpu.queue.submit([encoder.finish()]);
+
+    let out = gpu.read(&target, size);
+    let stride = size[0] as usize * 4;
+    let at = |x: usize, y: usize| {
+        let start = y * stride + x * 4;
+        out[start]
+    };
+    assert!(at(14, 4) < 96, "the dark side darkens: {}", at(14, 4));
+    assert!(at(18, 4) > 160, "the bright side brightens: {}", at(18, 4));
+    assert_eq!(at(2, 4), 96, "the far interior is left alone");
+}
+
+/// Vibrance lifts a muted colour's chroma but leaves a saturated primary
+/// alone, and keeps the luma in place.
+#[test]
+#[ignore = "needs a wgpu adapter; run explicitly"]
+fn the_vibrance_arm_lifts_muted_colour_only() {
+    let gpu = Gpu::new();
+    let size = [2, 1];
+    let source = gpu.texture(
+        size,
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+    );
+    // BGRA: one muted blue-grey and one saturated red.
+    gpu.upload(&source, &[170, 180, 200, 255, 0, 0, 255, 255], size);
+
+    let target = gpu.texture(
+        size,
+        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+    );
+    let params = PostParams::identity()
+        .with_quality(None, None, Some(0.5))
+        .with_viewport([0.0, 0.0, size[0] as f32, size[1] as f32]);
+    let mut chain = PostChain::new(&gpu.device, &gpu.queue, FORMAT, params);
+    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mask = gpu.mask(size, 0);
+    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Post process vibrance"),
+        });
+    chain.draw(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &source_view,
+        &mask_view,
+        &target_view,
+        (size[0], size[1]),
+    );
+    gpu.queue.submit([encoder.finish()]);
+
+    let out = gpu.read(&target, size);
+    let muted = [out[0], out[1], out[2]];
+    let saturated = [out[4], out[5], out[6]];
+    let spread = |c: [u8; 3]| {
+        c.iter().max().unwrap().abs_diff(*c.iter().min().unwrap())
+    };
+    assert!(spread(muted) > 30, "the muted texel gains chroma: {muted:?}");
+    assert!(spread(saturated) >= 250, "saturated red stays saturated: {saturated:?}");
+    assert_eq!(out[3], 255, "alpha passes through");
+}
+
+/// SMAA softens a 45 degree staircase: the boundary texels leave their source
+/// bytes while both flat interiors stay byte copies, which is what separates it
+/// from a whole-frame blur.
+#[test]
+#[ignore = "needs a wgpu adapter; run explicitly"]
+fn the_smaa_pass_softens_a_staircase_edge() {
+    let gpu = Gpu::new();
+    let size = [32, 32];
+    let mut source_bytes = Vec::new();
+    for y in 0..size[1] {
+        for x in 0..size[0] {
+            let value = if x + y < 32 { 255 } else { 0 };
+            source_bytes.extend_from_slice(&[value, value, value, 255]);
+        }
+    }
+    let source = gpu.texture(
+        size,
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+    );
+    gpu.upload(&source, &source_bytes, size);
+
+    let target = gpu.texture(
+        size,
+        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+    );
+    let params = PostParams::identity()
+        .with_smaa(Some([0.1, 8.0]))
+        .with_viewport([0.0, 0.0, size[0] as f32, size[1] as f32]);
+    let mut chain = PostChain::new(&gpu.device, &gpu.queue, FORMAT, params);
+    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mask = gpu.mask(size, 0);
+    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Post process smaa"),
+        });
+    chain.draw(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &source_view,
+        &mask_view,
+        &target_view,
+        (size[0], size[1]),
+    );
+    gpu.queue.submit([encoder.finish()]);
+
+    let out = gpu.read(&target, size);
+    let stride = size[0] as usize * 4;
+    let at = |x: usize, y: usize| {
+        let start = y * stride + x * 4;
+        [out[start], out[start + 1], out[start + 2], out[start + 3]]
+    };
+    assert_eq!(at(0, 0), [255, 255, 255, 255], "white interior is untouched");
+    assert_eq!(at(31, 31), [0, 0, 0, 255], "black interior is untouched");
+    let softened = (0..size[1] as usize).any(|y| {
+        (0..size[0] as usize).any(|x| {
+            let texel = at(x, y);
+            texel[0] > 0 && texel[0] < 255
+        })
+    });
+    assert!(softened, "the staircase boundary must gain intermediate texels");
+}
+
+/// The AO arm reads the bound battlefield depth: a texel behind a nearer
+/// neighbour darkens, one that fronts the step does not, and the frame's
+/// unrelated texels stay byte copies.
+#[test]
+#[ignore = "needs a wgpu adapter; run explicitly"]
+fn the_depth_ao_arm_darkens_behind_a_nearer_step() {
+    let gpu = Gpu::new();
+    let size = [32, 8];
+    let mut source_bytes = Vec::new();
+    for _ in 0..size[1] {
+        for _ in 0..size[0] {
+            source_bytes.extend_from_slice(&[128, 128, 128, 255]);
+        }
+    }
+    let source = gpu.texture(
+        size,
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+    );
+    gpu.upload(&source, &source_bytes, size);
+
+    // Native Z: far on the left (0.6), nearer on the right (0.3). wgpu rejects
+    // buffer copies into depth formats, so a tiny pass writes the step.
+    let depth = gpu.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Post process test depth"),
+        size: wgpu::Extent3d {
+            width: size[0],
+            height: size[1],
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Depth32Float,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let depth_shader = gpu
+        .device
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Post process test depth step"),
+            source: wgpu::ShaderSource::Wgsl(
+                r#"
+@vertex
+fn vs_main(@builtin(vertex_index) idx: u32) -> @builtin(position) vec4f {
+    let x = f32((idx << 1u) & 2u);
+    let y = f32(idx & 2u);
+    return vec4f(x * 2.0 - 1.0, 1.0 - y * 2.0, 0.0, 1.0);
+}
+
+@fragment
+fn fs_main(@builtin(position) position: vec4f) -> @builtin(frag_depth) f32 {
+    return select(0.6, 0.3, position.x >= 16.0);
+}
+"#
+                .into(),
+            ),
+        });
+    let depth_pipeline = gpu
+        .device
+        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Post process test depth step"),
+            layout: None,
+            vertex: wgpu::VertexState {
+                module: &depth_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &depth_shader,
+                entry_point: Some("fs_main"),
+                targets: &[],
+                compilation_options: Default::default(),
+            }),
+            primitive: Default::default(),
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Always),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: Default::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+    let depth_view = depth.create_view(&wgpu::TextureViewDescriptor::default());
+    {
+        let mut fill = gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Post process test depth fill"),
+            });
+        {
+            let mut pass = fill.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Post process test depth fill"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&depth_pipeline);
+            pass.draw(0..3, 0..1);
+        }
+        gpu.queue.submit([fill.finish()]);
+    }
+
+    let target = gpu.texture(
+        size,
+        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+    );
+    let params = PostParams::from_effects(
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        crate::render::post_process::DepthEffects {
+            scale: [1.0, 1.0],
+            depth_of_field: None,
+            ssao: Some([6.0, 0.5, 0.02]),
+        },
+        None,
+        false,
+        [0.0, 0.0, size[0] as f32, size[1] as f32],
+    )
+    .expect("ao configures the chain");
+    let mut chain = PostChain::new(&gpu.device, &gpu.queue, FORMAT, params);
+    let source_view = source.create_view(&wgpu::TextureViewDescriptor::default());
+    let depth_view = depth.create_view(&wgpu::TextureViewDescriptor::default());
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mask = gpu.mask(size, 0);
+    let mask_view = mask.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Post process depth ao"),
+        });
+    chain.draw_with_depth(
+        &gpu.device,
+        &gpu.queue,
+        &mut encoder,
+        &source_view,
+        &mask_view,
+        Some(&depth_view),
+        &target_view,
+        (size[0], size[1]),
+    );
+    gpu.queue.submit([encoder.finish()]);
+
+    let out = gpu.read(&target, size);
+    let stride = size[0] as usize * 4;
+    let at = |x: usize, y: usize| {
+        let start = y * stride + x * 4;
+        out[start]
+    };
+    assert!(at(14, 4) < 128, "behind the step darkens: {}", at(14, 4));
+    assert_eq!(at(18, 4), 128, "the near side stays unshaded");
+    assert_eq!(at(28, 4), 128, "far from the step stays untouched");
 }
 
 /// The mask rasterizer covers exactly the diamond it is given, in frame

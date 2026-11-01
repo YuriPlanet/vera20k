@@ -852,6 +852,8 @@ impl App {
             Self::follow_window_size(state);
             return Ok(FrameRenderOutcome::Unavailable);
         };
+        // Live [PostProcess] edits: re-read VERARULES.INI when it changes.
+        state.refresh_post_process_rules();
         let view: wgpu::TextureView = output.texture.create_view(&Default::default());
         let mut encoder: wgpu::CommandEncoder =
             state
@@ -1204,66 +1206,163 @@ impl App {
                     let (viewport_width, viewport_height) =
                         crate::app::input::camera::tactical_viewport_size(state);
                     let viewport = [0.0, 0.0, viewport_width as f32, viewport_height as f32];
-                    let color_grade = state
-                        .rules()
-                        .and_then(|rules| rules.post_process.color_grade)
+                    let post_rules = state.post_process_rules();
+                    let color_grade = post_rules
+                        .color_grade
                         .map(|grade| [grade.brightness, grade.contrast, grade.saturation]);
-                    let filmic = state
-                        .rules()
-                        .and_then(|rules| rules.post_process.filmic_pass)
-                        .map(|filmic| {
-                            [
-                                filmic.strength,
-                                filmic.fade,
-                                filmic.contrast,
-                                filmic.linearization,
-                                filmic.bleach,
-                                filmic.saturation,
-                            ]
-                        });
-                    let colourfulness = state
-                        .rules()
-                        .and_then(|rules| rules.post_process.colourfulness)
+                    let filmic = post_rules.filmic_pass.map(|filmic| {
+                        [
+                            filmic.strength,
+                            filmic.fade,
+                            filmic.contrast,
+                            filmic.linearization,
+                            filmic.bleach,
+                            filmic.saturation,
+                        ]
+                    });
+                    let colourfulness = post_rules
+                        .colourfulness
                         .map(|colour| [colour.amount, colour.lim_luma]);
-                    let sepia = state
-                        .rules()
-                        .and_then(|rules| rules.post_process.sepia)
-                        .map(|sepia| {
-                            [
-                                sepia.strength,
-                                sepia.tint[0],
-                                sepia.tint[1],
-                                sepia.tint[2],
-                            ]
-                        });
-                    let fxaa = state
-                        .rules()
-                        .and_then(|rules| rules.post_process.fxaa)
-                        .map(|fxaa| {
-                            [fxaa.subpix, fxaa.edge_threshold, fxaa.edge_threshold_min]
-                        });
-                    let bloom = state
-                        .rules()
-                        .and_then(|rules| rules.post_process.bloom)
+                    let sepia = post_rules.sepia.map(|sepia| {
+                        [
+                            sepia.strength,
+                            sepia.tint[0],
+                            sepia.tint[1],
+                            sepia.tint[2],
+                        ]
+                    });
+                    let fxaa = post_rules.fxaa.map(|fxaa| {
+                        [fxaa.subpix, fxaa.edge_threshold, fxaa.edge_threshold_min]
+                    });
+                    let blur = post_rules.blur.map(|blur| [blur.radius, blur.strength]);
+                    let sharpen = post_rules
+                        .sharpen
+                        .map(|sharpen| [sharpen.strength, sharpen.clamp]);
+                    let super_resolution = post_rules
+                        .super_resolution
+                        .map(|super_resolution| super_resolution.sharpness);
+                    let bloom = post_rules
+                        .bloom
                         .map(|bloom| [bloom.threshold, bloom.intensity, bloom.radius]);
-                    let water_ripple = state
-                        .rules()
-                        .and_then(|rules| rules.post_process.water_ripple);
+                    let tonemap = post_rules
+                        .tonemap
+                        .map(|tonemap| [tonemap.operator.lane(), tonemap.exposure]);
+                    // A table contributes only when it loaded and its strength
+                    // is positive; empty slots stay at 0 so the shader skips
+                    // them.
+                    let lut_strengths = post_rules.lut.as_ref().map_or([0.0; 3], |lut| {
+                        let requested = [lut.strength, lut.strength2, lut.strength3];
+                        let mut strengths = [0.0; 3];
+                        for (slot, (strength, loaded)) in strengths
+                            .iter_mut()
+                            .zip(requested.into_iter().zip(state.renderer.post_luts.iter()))
+                        {
+                            if loaded.is_some() && strength > 0.0 {
+                                *slot = strength;
+                            }
+                        }
+                        strengths
+                    });
+                    let smaa = post_rules.smaa.map(|smaa| [smaa.threshold, smaa.search_steps]);
+                    let deband = post_rules
+                        .deband
+                        .map(|deband| [deband.radius, deband.threshold, deband.grain]);
+                    let clarity = post_rules
+                        .clarity
+                        .map(|clarity| [clarity.radius, clarity.strength]);
+                    let curve = post_rules
+                        .curve
+                        .map(|curve| [curve.method as f32, curve.strength]);
+                    let vibrance = post_rules.vibrance.map(|vibrance| vibrance.amount);
+                    let fsr = post_rules
+                        .super_resolution
+                        .is_some_and(|super_resolution| super_resolution.fsr);
+                    let water_ripple = post_rules.water_ripple;
+                    // `ArcaneBloom` replaces the plain bloom stage when set, so
+                    // it keeps the chain alive on its own.
+                    let arcane_bloom = post_rules.arcane_bloom;
+                    let pirate_bloom = post_rules.pirate_bloom;
+                    let dlaa = post_rules.dlaa;
+                    // A sheet contributes only when it loaded; an empty slot
+                    // leaves the atlas arm off.
+                    let lut_atlas = post_rules
+                        .lut_atlas
+                        .as_ref()
+                        .filter(|_| state.renderer.post_atlas.is_some())
+                        .map(|atlas| [atlas.selector as f32, atlas.chroma, atlas.luma]);
                     let ripple_debug = water_ripple.is_some_and(|ripple| ripple.debug);
+                    let frame_size = {
+                        let window = output.texture.size();
+                        let world_scale = state.match_state.input.zoom_level
+                            / state.battlefield_render_scale();
+                        if world_scale == 1.0 {
+                            (window.width, window.height)
+                        } else {
+                            let size = crate::render::upscale_pass::world_source_size(
+                                &state.renderer.gpu.device,
+                                [window.width, window.height],
+                                world_scale,
+                            );
+                            (size[0], size[1])
+                        }
+                    };
+                    let depth_effects = crate::render::post_process::DepthEffects {
+                        scale: [
+                            frame_size.0 as f32 / output.texture.width().max(1) as f32,
+                            frame_size.1 as f32 / output.texture.height().max(1) as f32,
+                        ],
+                        depth_of_field: post_rules
+                            .depth_of_field
+                            .map(|dof| [dof.focus, dof.range, dof.strength]),
+                        ssao: post_rules
+                            .ssao
+                            .map(|ssao| [ssao.radius, ssao.intensity, ssao.bias]),
+                    };
                     let post_params = crate::render::post_process::PostParams::from_effects(
                         color_grade,
                         filmic,
                         colourfulness,
                         sepia,
                         fxaa,
+                        blur,
+                        sharpen,
+                        super_resolution,
+                        depth_effects,
                         bloom,
                         ripple_debug,
                         viewport,
-                    );
-                    let frame_size = {
-                        let size = output.texture.size();
-                        (size.width, size.height)
-                    };
+                    )
+                    .map(|params| {
+                        params
+                            .with_color(tonemap, lut_strengths)
+                            .with_smaa(smaa)
+                            .with_quality(deband, clarity, vibrance)
+                            .with_curve(curve)
+                            .with_atlas_lut(lut_atlas)
+                            .with_rcas(fsr)
+                    })
+                    .or_else(|| {
+                        let presentation =
+                            crate::render::post_process::PostParams::presentation_configures_chain(
+                                tonemap,
+                                lut_strengths,
+                                smaa,
+                            );
+                        (presentation || deband.is_some() || clarity.is_some() || vibrance.is_some()
+                            || curve.is_some() || lut_atlas.is_some()
+                            || arcane_bloom.is_some() || pirate_bloom.is_some()
+                            || dlaa.is_some())
+                            .then(|| {
+                                crate::render::post_process::PostParams::identity()
+                                    .with_color(tonemap, lut_strengths)
+                                    .with_smaa(smaa)
+                                    .with_quality(deband, clarity, vibrance)
+                                    .with_curve(curve)
+                                    .with_atlas_lut(lut_atlas)
+                                    .with_rcas(fsr)
+                                    .with_viewport(viewport)
+                            })
+                    });
                     if let Some(params) = post_params {
                         if let Some(chain) = state.renderer.post_chain.as_mut() {
                             chain.set_params(&state.renderer.gpu.queue, params);
@@ -1279,8 +1378,26 @@ impl App {
                     } else {
                         state.renderer.post_chain = None;
                     }
+                    if let Some(chain) = state.renderer.post_chain.as_mut() {
+                        let views = [
+                            state.renderer.post_luts[0].as_ref().map(|lut| lut.view().clone()),
+                            state.renderer.post_luts[1].as_ref().map(|lut| lut.view().clone()),
+                            state.renderer.post_luts[2].as_ref().map(|lut| lut.view().clone()),
+                        ];
+                        chain.set_luts(views);
+                        chain.set_atlas(
+                            state
+                                .renderer
+                                .post_atlas
+                                .as_ref()
+                                .map(|atlas| atlas.view().clone()),
+                        );
+                        chain.set_arcane_bloom(arcane_bloom);
+                        chain.set_pirate_bloom(pirate_bloom);
+                        chain.set_dlaa(dlaa);
+                    }
                     // The mask and field serve two independent consumers: the
-                    // post chain's debug tint, and the terrain shader's water
+                    // post chain's debug tint, and the terrain warp pass's water
                     // displacement. Keep them alive when either is configured.
                     if state.renderer.post_chain.is_some() || water_ripple.is_some() {
                         if state.renderer.water_mask.is_none() {
@@ -1298,7 +1415,6 @@ impl App {
                                 frame_size,
                             );
                         }
-                        let mut field_rebuilt = false;
                         if state.renderer.water_distortion.is_none() {
                             state.renderer.water_distortion =
                                 Some(crate::render::water_distortion::WaterDistortion::new(
@@ -1306,28 +1422,31 @@ impl App {
                                     &state.renderer.gpu.queue,
                                     frame_size,
                                 ));
-                            field_rebuilt = true;
                         }
                         if let Some(distortion) = state.renderer.water_distortion.as_mut() {
-                            field_rebuilt |=
-                                distortion.resize(&state.renderer.gpu.device, frame_size);
-                        }
-                        if field_rebuilt || state.renderer.water_distortion_bind_group.is_none() {
-                            state.renderer.water_distortion_bind_group =
-                                state.renderer.water_distortion.as_ref().map(|field| {
-                                    state
-                                        .renderer
-                                        .batch_renderer
-                                        .create_water_distortion_bind_group(
-                                            &state.renderer.gpu.device,
-                                            field.view(),
-                                        )
-                                });
+                            distortion.resize(&state.renderer.gpu.device, frame_size);
                         }
                     } else {
                         state.renderer.water_mask = None;
                         state.renderer.water_distortion = None;
-                        state.renderer.water_distortion_bind_group = None;
+                    }
+                    // The terrain-only refraction target follows the frame. It
+                    // only exists while `[PostProcess] WaterRipple` is set; the
+                    // draw dispatch falls back to the single composition pass.
+                    if water_ripple.is_some() {
+                        if let Some(warp) = state.renderer.terrain_warp.as_mut() {
+                            warp.resize(&state.renderer.gpu.device, frame_size);
+                        } else {
+                            state.renderer.terrain_warp =
+                                Some(crate::render::terrain_warp::TerrainWarp::new(
+                                    &state.renderer.gpu.device,
+                                    &state.renderer.gpu.queue,
+                                    frame_size,
+                                    output.texture.format(),
+                                ));
+                        }
+                    } else {
+                        state.renderer.terrain_warp = None;
                     }
                     let render_output = render::render_game(state, &mut encoder, times)?;
                     state
@@ -1403,6 +1522,16 @@ impl App {
             &mut encoder,
             &output.texture,
         );
+        if state.renderer.post_panel_visible {
+            let text = post_panel_text(&state.post_process_rules());
+            state.renderer.fps_overlay.encode_panel(
+                &state.renderer.gpu,
+                &state.renderer.batch_renderer,
+                &mut encoder,
+                &output.texture,
+                &text,
+            );
+        }
         if state.frontend.screen == GameScreen::InGame {
             let status = state
                 .match_state
@@ -1732,4 +1861,61 @@ mod tests {
             ]
         );
     }
+}
+
+/// The F9 panel's read-only summary of the live [PostProcess] set. Editing
+/// VERARULES.INI applies on the next frame; this only reports.
+fn post_panel_text(rules: &crate::rules::post_process::PostProcessRules) -> String {
+    let flag = |enabled: bool| if enabled { "ON" } else { "OFF" };
+    let line1 = format!(
+        "POST FX  F9   GRADE {}  FILMIC {}  COLOUR {}  SEPIA {}",
+        flag(rules.color_grade.is_some()),
+        flag(rules.filmic_pass.is_some()),
+        flag(rules.colourfulness.is_some()),
+        flag(rules.sepia.is_some())
+    );
+    let line2 = format!(
+        "FXAA {}  SMAA {}  BLUR {}  SHARPEN {}  BLOOM {}",
+        flag(rules.fxaa.is_some()),
+        flag(rules.smaa.is_some()),
+        flag(rules.blur.is_some()),
+        flag(rules.sharpen.is_some()),
+        flag(rules.bloom.is_some())
+    );
+    let lut_count = rules.lut.as_ref().map_or(0, |lut| {
+        [&lut.file, &lut.file2, &lut.file3]
+            .iter()
+            .filter(|file| !file.is_empty())
+            .count()
+    });
+    let line3 = format!(
+        "SR {}  FSR {}  A4K {}  DLAA {}  CLARITY {}  VIBRANCE {}",
+        flag(rules.super_resolution.is_some()),
+        flag(rules
+            .super_resolution
+            .is_some_and(|super_resolution| super_resolution.fsr)),
+        rules
+            .super_resolution
+            .map_or("OFF", |super_resolution| super_resolution.anime4k.label()),
+        flag(rules.dlaa.is_some()),
+        flag(rules.clarity.is_some()),
+        flag(rules.vibrance.is_some())
+    );
+    let line4 = format!(
+        "DOF {}  SSAO {}  TONEMAP {}  DEBAND {}  AB {}  PB {}  SCALE {:.2}",
+        flag(rules.depth_of_field.is_some()),
+        flag(rules.ssao.is_some()),
+        flag(rules.tonemap.is_some()),
+        flag(rules.deband.is_some()),
+        flag(rules.arcane_bloom.is_some()),
+        flag(rules.pirate_bloom.is_some()),
+        rules.super_resolution.map_or(1.0, |sr| sr.render_scale)
+    );
+    let line5 = format!(
+        "LUT {}x{}  ATLAS {}  EDIT VERARULES.INI - CHANGES APPLY LIVE",
+        flag(rules.lut.is_some()),
+        lut_count,
+        flag(rules.lut_atlas.is_some())
+    );
+    [line1, line2, line3, line4, line5].join("\n")
 }

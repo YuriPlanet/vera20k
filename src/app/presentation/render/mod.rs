@@ -211,29 +211,56 @@ pub(crate) fn render_game(
     let vsw = sw / z;
     let vsh = sh / z;
 
+    // `SuperResolution.RenderScale` renders the battlefield at a fraction of
+    // the frame and reconstructs it when compositing, so only the world carries
+    // the lower resolution. UI keeps its own pixels. Captures stay native.
+    let render_scale = state.battlefield_render_scale();
+
     // Wheel zoom is a presentation copy of the fully resolved world. Keep all
     // native source/depth/packed operations on the same one-texel lattice;
     // filtering each sprite (or its palette indices) loses edges and details.
-    if z == 1.0 {
+    let world_scale = z / render_scale;
+    // `SuperResolution.Fsr`: the reduced world layer is reconstructed by the
+    // FSR1 EASU pass instead of the plain bicubic.
+    let fsr = state
+        .post_process_rules()
+        .super_resolution
+        .is_some_and(|super_resolution| super_resolution.fsr);
+    // `SuperResolution.Anime4K`: the network reconstructs a half-resolution
+    // world (a 2x copy) instead of the bicubic or EASU reconstruction. The
+    // networks upsample by exactly 2x, so a native render keeps the copy that
+    // wheel zoom needs for its pixel-exact blocks.
+    let anime4k = if render_scale <= 0.5 {
+        state
+            .post_process_rules()
+            .super_resolution
+            .map_or(crate::rules::post_process::Anime4kTier::Off, |sr| sr.anime4k)
+    } else {
+        crate::rules::post_process::Anime4kTier::Off
+    };
+    if world_scale == 1.0 {
         state.renderer.world_zoom_pass = None;
     } else {
         let renderer = &mut state.renderer;
         let gpu = &renderer.gpu;
         let target = [sw as u32, sh as u32];
         if let Some(pass) = renderer.world_zoom_pass.as_mut() {
-            pass.set_view(&gpu.device, &gpu.queue, target, z);
+            pass.set_view(&gpu.device, &gpu.queue, target, world_scale, fsr, anime4k);
         } else {
             renderer.world_zoom_pass = Some(crate::render::upscale_pass::WorldZoomPass::new(
                 &gpu.device,
                 &gpu.queue,
                 gpu.surface_format,
                 target,
-                z,
+                world_scale,
+                fsr,
+                anime4k,
             ));
         }
         renderer.batch_renderer.set_native_world_resolution(
             &gpu.queue,
             renderer.world_zoom_pass.as_ref().unwrap().source_size(),
+            render_scale,
         );
     }
     let world_camera = state.renderer.batch_renderer.camera_uniform();
@@ -281,18 +308,35 @@ pub(crate) fn render_game(
     // Water mask for `[PostProcess] WaterRipple`: the same visible-cell sweep
     // that built the terrain instances also collected the water diamonds.
     if let Some(mask) = state.renderer.water_mask.as_mut() {
-        mask.draw(
-            &state.renderer.gpu.queue,
-            encoder,
-            &world.terrain.water,
-        );
+        // The diamonds are world-space offsets; a reduced render scale draws
+        // them at `render_scale` battlefield texels per world pixel.
+        if render_scale != 1.0 {
+            let quads: Vec<[f32; 4]> = world
+                .terrain
+                .water
+                .iter()
+                .map(|quad| {
+                    [
+                        quad[0] * render_scale,
+                        quad[1] * render_scale,
+                        quad[2] * render_scale,
+                        quad[3] * render_scale,
+                    ]
+                })
+                .collect();
+            mask.draw(&state.renderer.gpu.queue, encoder, &quads);
+        } else {
+            mask.draw(
+                &state.renderer.gpu.queue,
+                encoder,
+                &world.terrain.water,
+            );
+        }
     }
     // The terrain pass samples this field from its own shader, so it must be
     // ready before the world draws. Only revealed water is in the mask; fog
     // stays neutral and therefore never moves.
-    let water_ripple = state
-        .rules()
-        .and_then(|rules| rules.post_process.water_ripple);
+    let water_ripple = state.post_process_rules().water_ripple;
     if let (Some(field), Some(mask), Some(ripple)) = (
         state.renderer.water_distortion.as_mut(),
         state.renderer.water_mask.as_ref(),
@@ -316,13 +360,6 @@ pub(crate) fn render_game(
             ),
         );
     }
-    // Feed the terrain shader's amplitude lane after the camera owner wrote
-    // the rest of the uniform.
-    let water_amplitude = water_ripple.map_or(0.0, |ripple| ripple.amplitude);
-    state
-        .renderer
-        .batch_renderer
-        .set_water_amplitude(&state.renderer.gpu.queue, water_amplitude);
     for layer in &mut world.object_layers {
         object_extras::defer_health_to_frame(layer, world_camera.camera_pos, z);
     }

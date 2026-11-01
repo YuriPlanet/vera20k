@@ -7,7 +7,7 @@ use super::{
     shroud_buffer::ShroudBuffer,
     tactical_draw_plan::RenderZPolicy,
     terrain_draw::{DestinationEditCommand, TerrainDrawRenderer, TerrainPiece},
-    terrain_draw_gpu_tests::{Gpu, camera, clear, encoded},
+    terrain_draw_gpu_tests::{Gpu, camera, clear, encoded, extent},
 };
 use serde_json::Value;
 use wgpu::util::DeviceExt;
@@ -67,9 +67,23 @@ fn production_world_zoom_resolves_before_screen_fixed_ui() {
     let gpu = Gpu::new();
     let format = wgpu::TextureFormat::Bgra8UnormSrgb;
     let size = [12, 8];
-    let mut zoom =
-        super::upscale_pass::WorldZoomPass::new(&gpu.device, &gpu.queue, format, [10, 8], 1.25);
-    zoom.set_view(&gpu.device, &gpu.queue, size, 0.8);
+    let mut zoom = super::upscale_pass::WorldZoomPass::new(
+        &gpu.device,
+        &gpu.queue,
+        format,
+        [10, 8],
+        1.25,
+        false,
+        crate::rules::post_process::Anime4kTier::Off,
+    );
+    zoom.set_view(
+        &gpu.device,
+        &gpu.queue,
+        size,
+        0.8,
+        false,
+        crate::rules::post_process::Anime4kTier::Off,
+    );
     let source_size = zoom.source_size();
     assert_eq!(source_size, [15, 10]);
     let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
@@ -80,7 +94,7 @@ fn production_world_zoom_resolves_before_screen_fixed_ui() {
             ..camera(size)
         },
     );
-    batch.set_native_world_resolution(&gpu.queue, source_size);
+    batch.set_native_world_resolution(&gpu.queue, source_size, 1.0);
     assert_eq!(batch.camera_uniform().screen_size, [15.0, 10.0]);
     assert_eq!(batch.camera_uniform().zoom, 1.0);
     assert_eq!(batch.ui_camera_uniform().screen_size, [12.0, 8.0]);
@@ -498,7 +512,7 @@ fn production_world_a_sampling_matches_cpu_source_at_fractional_scroll_and_zoom(
                             "batch" => {
                                 batch.draw_passthrough_range(&mut pass, &texture, &data, 0, 1)
                             }
-                            "tmp" => batch.draw_with_buffer_zdepth(&mut pass, &tmp, None, &data, 1),
+                            "tmp" => batch.draw_with_buffer_zdepth(&mut pass, &tmp, &data, 1),
                             "voxel" => batch.draw_voxel_sprites_range(
                                 &mut pass,
                                 &voxel,
@@ -702,4 +716,112 @@ fn production_a_blitter_workload_timing() {
             );
         }
     }
+}
+
+/// FSR1 EASU reconstructs a reduced sprite edge more sharply than the plain
+/// bicubic: the steepest adjacent step in the row grows, which is the
+/// difference a player sees on a stair-stepped sprite at a fractional scale.
+#[test]
+#[ignore = "requires GPU; EASU reconstruction sharpness"]
+fn easu_reconstruction_is_sharper_than_the_plain_bicubic() {
+    let gpu = Gpu::new();
+    let format = wgpu::TextureFormat::Bgra8UnormSrgb;
+    let source_size = [48u32, 6];
+    let target_size = [64u32, 8];
+    let scale = 4.0 / 3.0;
+    let mut bytes = Vec::new();
+    for _ in 0..source_size[1] {
+        for x in 0..source_size[0] {
+            let value = if x < 24 { 0u8 } else { 255 };
+            bytes.extend_from_slice(&[value, value, value, 255]);
+        }
+    }
+    let source = gpu.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("EASU reconstruction source"),
+        size: extent(source_size),
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    gpu.queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &bytes,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(source_size[0] * 4),
+            rows_per_image: Some(source_size[1]),
+        },
+        extent(source_size),
+    );
+
+    let surface = super::scaled_copy::ScaledSurface::new(
+        &gpu.device,
+        "EASU reconstruction",
+        format,
+        (target_size[0], target_size[1]),
+        None,
+    );
+    surface.place(&gpu.queue, (0.0, 0.0), scale, false);
+
+    let run = |fsr: bool| {
+        surface.set_fsr(&gpu.queue, fsr);
+        let bind = surface.bind_group_for(&gpu.device, &source);
+        let mut encoder = gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("EASU reconstruction"),
+            });
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("EASU reconstruction"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: surface.color_view(),
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            surface.draw(&mut pass, Some(&bind), [0, 0, target_size[0], target_size[1]]);
+        }
+        let read = gpu.read(&mut encoder, surface.color_texture());
+        let reads = vec![read];
+        let mut rows = gpu.finish(encoder, &reads, target_size);
+        rows.pop().expect("the EASU readback row set")
+    };
+
+    let row = |all: &[u8]| -> Vec<u8> {
+        let start = 4 * target_size[0] as usize * 4;
+        all[start..start + target_size[0] as usize * 4]
+            .chunks_exact(4)
+            .map(|texel| texel[0])
+            .collect()
+    };
+    let steepest = |values: &[u8]| -> u8 {
+        values
+            .windows(2)
+            .map(|pair| pair[0].abs_diff(pair[1]))
+            .max()
+            .unwrap_or(0)
+    };
+    let bicubic_step = steepest(&row(&run(false)));
+    let easu_step = steepest(&row(&run(true)));
+    assert!(
+        easu_step > bicubic_step,
+        "EASU must steepen the edge: bicubic {bicubic_step}, easu {easu_step}"
+    );
 }

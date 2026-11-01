@@ -20,6 +20,8 @@
 //! - render/ does NOT depend on: app/, audio/, net/
 
 pub(crate) mod aircraft_shadow;
+pub(crate) mod anime4k;
+pub(crate) mod arcane_bloom;
 pub(crate) mod atlas_growth;
 #[cfg(test)]
 mod atlas_refresh_retail_tests;
@@ -36,6 +38,7 @@ pub mod combat_light;
 pub mod cursor_atlas;
 #[cfg(test)]
 pub(crate) mod depth_gpu_tests;
+pub(crate) mod dlaa;
 pub mod draw_state;
 pub(crate) mod electric_bolt;
 pub(crate) mod foot_depth;
@@ -53,12 +56,14 @@ pub mod overlay_atlas;
 pub mod palette_light;
 pub mod palette_textures;
 pub mod pixel_fx_sparkles;
+pub(crate) mod pirate_bloom;
 pub(crate) mod post_process;
 pub mod radar;
 pub(crate) mod radial_indicator;
 pub(crate) mod radiation_beam;
 pub(crate) mod scaled_copy;
 pub(crate) mod screen_presentation;
+pub(crate) mod terrain_warp;
 pub(crate) mod water_distortion;
 pub(crate) mod water_mask;
 pub mod screenshot;

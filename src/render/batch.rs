@@ -146,10 +146,9 @@ pub struct CameraUniform {
     /// Tactical viewport origin in unscaled native row units. Dirty-clip
     /// rebasing cancels the dirty origin (005F4CD9..CED /00437C49..5C).
     pub native_z_origin_y: f32,
-    /// Water displacement amplitude in screen pixels. The Z-depth (terrain)
-    /// shader offsets water-tile UVs by this much; every other pipeline
-    /// ignores it.
-    pub water_amplitude: f32,
+    /// Legacy scratch lane; the water displacement lives in the terrain warp
+    /// pass now.
+    pub _native_z_pad: f32,
 }
 
 /// Legacy normalized world/sort scalar: `1 - (row - origin_y) / world_height`.
@@ -477,10 +476,6 @@ pub struct BatchRenderer {
     default_source_indices: wgpu::TextureView,
     /// Layout for zdepth texture bind groups (group 1): color + sampler + R8 depth.
     zdepth_texture_bind_group_layout: wgpu::BindGroupLayout,
-    /// Layout for the water distortion field (group 2 of the zdepth pipeline).
-    water_distortion_bind_group_layout: wgpu::BindGroupLayout,
-    /// Neutral 1x1 field used when the water mask produced no distortion.
-    default_water_distortion_bind_group: wgpu::BindGroup,
     /// Layout for the unit-atlas R8Uint texture (binding 0). Used by the voxel
     /// sprite pipeline; tiles store palette indices, not RGB.
     pub unit_atlas_bind_group_layout: wgpu::BindGroupLayout,
@@ -624,7 +619,7 @@ impl BatchRenderer {
             _pad: 0.0,
 
             native_z_origin_y: 0.0,
-            water_amplitude: 0.0,
+            _native_z_pad: 0.0,
         };
         let camera_buffer: wgpu::Buffer =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -890,71 +885,6 @@ impl BatchRenderer {
                 ],
             });
 
-        // Z-depth pipeline layout: camera, the tile/depth atlas pair, and the
-        // per-frame water distortion field the terrain shader offsets water
-        // tiles with (group 2).
-        let water_distortion_bind_group_layout: wgpu::BindGroupLayout = device
-            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Water Distortion BGL"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        // The terrain pipelines' shared atlas sampler is filtering,
-                        // so the field must be filterable too (Rg16Float is).
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                }],
-            });
-        let default_water_distortion_bind_group: wgpu::BindGroup = {
-            let texture = device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("Neutral water distortion"),
-                size: wgpu::Extent3d {
-                    width: 1,
-                    height: 1,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rg16Float,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            });
-            queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                &[0x00, 0x38, 0x00, 0x38],
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(4),
-                    rows_per_image: Some(1),
-                },
-                wgpu::Extent3d {
-                    width: 1,
-                    height: 1,
-                    depth_or_array_layers: 1,
-                },
-            );
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Neutral water distortion"),
-                layout: &water_distortion_bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        &texture.create_view(&wgpu::TextureViewDescriptor::default()),
-                    ),
-                }],
-            })
-        };
-
         // Z-depth pipeline: per-pixel depth via frag_depth, Less compare.
         let zdepth_shader: wgpu::ShaderModule =
             device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -973,7 +903,6 @@ impl BatchRenderer {
                 bind_group_layouts: &[
                     Some(&camera_bind_group_layout),
                     Some(&zdepth_texture_bind_group_layout),
-                    Some(&water_distortion_bind_group_layout),
                 ],
                 immediate_size: 0,
             });
@@ -1260,8 +1189,6 @@ impl BatchRenderer {
             texture_bind_group_layout,
             default_source_indices,
             zdepth_texture_bind_group_layout,
-            water_distortion_bind_group_layout,
-            default_water_distortion_bind_group,
             unit_atlas_bind_group_layout,
             voxel_palette_bind_group_layout,
             voxel_sprite_pipeline,
@@ -1599,7 +1526,7 @@ impl BatchRenderer {
             _pad: debug_depth_view,
 
             native_z_origin_y: 0.0,
-            water_amplitude: 0.0,
+            _native_z_pad: 0.0,
         };
         self.write_camera(queue, uniform);
     }
@@ -1619,18 +1546,6 @@ impl BatchRenderer {
         );
     }
 
-    /// Set only the terrain water displacement amplitude lane. Safe to call
-    /// after `update_camera`: it writes one float at its own offset, so the
-    /// rest of the uploaded uniform stays as the camera owner wrote it.
-    pub(crate) fn set_water_amplitude(&self, queue: &wgpu::Queue, amplitude: f32) {
-        {
-            let mut uploaded = self.uploaded_camera.write().expect("camera owner lock");
-            uploaded.world.water_amplitude = amplitude;
-        }
-        let offset = std::mem::offset_of!(CameraUniform, water_amplitude) as u64;
-        queue.write_buffer(&self.camera_buffer, offset, bytemuck::bytes_of(&amplitude));
-    }
-
     pub(crate) fn camera_uniform(&self) -> CameraUniform {
         self.uploaded_camera
             .read()
@@ -1646,10 +1561,19 @@ impl BatchRenderer {
     /// Render the world at native texel resolution while UI keeps frame pixels.
     /// These are distinct GPU buffers; no camera is rewritten between encoded
     /// passes, since queue writes would otherwise affect every draw this frame.
-    pub(crate) fn set_native_world_resolution(&self, queue: &wgpu::Queue, size: [u32; 2]) {
+    ///
+    /// `zoom` is the world scale the smaller target is drawn at: 1 draws one
+    /// world pixel per texel, and a lower value (the `[PostProcess]`
+    /// `SuperResolution.RenderScale`) draws the same view with fewer texels.
+    pub(crate) fn set_native_world_resolution(
+        &self,
+        queue: &wgpu::Queue,
+        size: [u32; 2],
+        zoom: f32,
+    ) {
         let mut uploaded = self.uploaded_camera.write().expect("camera owner lock");
         uploaded.world.screen_size = size.map(|v| v as f32);
-        uploaded.world.zoom = 1.0;
+        uploaded.world.zoom = zoom;
         queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uploaded.world));
     }
 
@@ -1941,35 +1865,14 @@ impl BatchRenderer {
         })
     }
 
-    /// Create the group-2 bind group for the terrain shader's water
-    /// displacement field. The field is frame-sized, so rebuild it whenever
-    /// `WaterDistortion` resizes.
-    pub(crate) fn create_water_distortion_bind_group(
-        &self,
-        device: &wgpu::Device,
-        view: &wgpu::TextureView,
-    ) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Water Distortion"),
-            layout: &self.water_distortion_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(view),
-            }],
-        })
-    }
-
     /// Draw instances with the TMP Z-depth pipeline (per-pixel depth, LessEqual).
     ///
     /// Used for terrain tiles with TMP Z-data. The bind_group must be created via
-    /// `create_zdepth_bind_group_on_device()` with matching color + depth atlas
-    /// textures. `distortion` supplies the water field; `None` binds the neutral
-    /// field, which leaves every tile unwarped.
+    /// `create_zdepth_bind_group_on_device()` with matching color + depth atlas textures.
     pub fn draw_with_buffer_zdepth<'a>(
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,
         bind_group: &'a wgpu::BindGroup,
-        distortion: Option<&'a wgpu::BindGroup>,
         buffer: &'a wgpu::Buffer,
         count: u32,
     ) {
@@ -1979,11 +1882,6 @@ impl BatchRenderer {
         render_pass.set_pipeline(&self.zdepth_pipeline);
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
         render_pass.set_bind_group(1, bind_group, &[]);
-        render_pass.set_bind_group(
-            2,
-            distortion.unwrap_or(&self.default_water_distortion_bind_group),
-            &[],
-        );
         render_pass.set_vertex_buffer(0, buffer.slice(..));
         render_pass.draw(0..6, 0..count);
     }

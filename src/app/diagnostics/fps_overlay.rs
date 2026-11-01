@@ -102,6 +102,20 @@ impl FpsOverlay {
         );
     }
 
+    /// The F9 POST FX panel: a read-only text block in the same window font,
+    /// independent of the FPS readout's own visibility.
+    pub(crate) fn encode_panel(
+        &self,
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Texture,
+        text: &str,
+    ) {
+        let mut frame = self.frame.lock().expect("post panel frame lock");
+        self.encode_text(gpu, batch, encoder, destination, &mut frame, text, 8.0, "post_fx");
+    }
+
     /// Persistent replay/recovery facts share the final-window font/camera.
     /// This call neither samples nor changes the FPS counter's visibility.
     pub(crate) fn encode_status(
@@ -149,7 +163,7 @@ impl FpsOverlay {
             world_height: 1.0,
             _pad: 0.0,
             native_z_origin_y: 0.0,
-            water_amplitude: 0.0,
+            _native_z_pad: 0.0,
         };
         gpu.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
