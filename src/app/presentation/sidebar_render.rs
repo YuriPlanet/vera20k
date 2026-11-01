@@ -466,8 +466,10 @@ pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
 /// Ares1003D800 additionally admits the current Country's retained lists.
 /// An undeploying Building uses the Unit-list branch, comparing its own
 /// BuildingType pointer, not UndeploysInto; that cannot match an INI-produced
-/// UnitType list. New Ares SpyEffect.Custom House gains are a separate chain;
-/// this selector reads the stock spy flags currently represented by HouseState.
+/// UnitType list. Phobos fixes that arm (see
+/// [`undeploying_building_is_veteran`]). New Ares SpyEffect.Custom House gains
+/// are a separate chain; this selector reads the stock spy flags currently
+/// represented by HouseState.
 ///
 /// [`SidebarCameoAtlas::cameo`]: crate::render::sidebar_cameo_atlas::SidebarCameoAtlas::cameo
 fn shows_alt_cameo(
@@ -483,6 +485,9 @@ fn shows_alt_cameo(
     }
     if crate::rules::ARES_ENABLED {
         if obj.category == ObjectCategory::Building && obj.undeploys_into.is_some() {
+            #[cfg(feature = "phobos")]
+            return undeploying_building_is_veteran(house, obj, rules, country);
+            #[cfg(not(feature = "phobos"))]
             return false;
         }
         if rules.country_starts_veteran(country, obj) {
@@ -503,6 +508,31 @@ fn shows_alt_cameo(
             ObjectCategory::Building => house.veteran_units() && obj.undeploys_into.is_some(),
             ObjectCategory::Aircraft => false,
         }
+}
+
+/// Phobos' fixed building arm of `TechnoTypeExt::CameoIsVeteran`: a building
+/// that undeploys answers with its unit, so a `Factory=UnitType` infiltration
+/// and the unit's `VeteranUnits` entry promote the building too. Ares instead
+/// compared the BuildingType pointer against the unit list, which an INI list
+/// can never match. VERA keeps one ground veteran flag, so the naval variant
+/// Phobos reads separately cannot differ here.
+#[cfg(feature = "phobos")]
+fn undeploying_building_is_veteran(
+    house: &crate::sim::house_state::HouseState,
+    obj: &crate::rules::object_type::ObjectType,
+    rules: &crate::rules::ruleset::RuleSet,
+    country: &str,
+) -> bool {
+    if !obj.trainable {
+        return false;
+    }
+    if house.veteran_units() {
+        return true;
+    }
+    obj.undeploys_into
+        .as_deref()
+        .and_then(|unit| rules.object(unit))
+        .is_some_and(|unit| rules.country_starts_veteran(country, unit))
 }
 
 pub(crate) fn is_cursor_over_minimap(state: &AppState) -> bool {
@@ -1175,5 +1205,71 @@ mod tests {
                 row["name"]
             );
         }
+    }
+
+    /// Rules for the two undeploying-building tests: a trainable building that
+    /// undeploys into a unit the American country lists as veteran.
+    #[cfg(feature = "ares")]
+    fn undeploying_building_rules() -> crate::rules::ruleset::RuleSet {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+        RuleSet::from_ini(&IniFile::from_str(
+            "[Countries]\n0=Americans\n1=Russians\n\
+             [Americans]\nVeteranUnits=AMCV\n[Russians]\n\
+             [VehicleTypes]\n0=AMCV\n\
+             [BuildingTypes]\n0=GACNST\n1=PLANT\n\
+             [AMCV]\nStrength=200\nTrainable=yes\n\
+             [GACNST]\nStrength=1000\nTrainable=yes\nUndeploysInto=AMCV\n\
+             [PLANT]\nStrength=1000\nTrainable=yes\n",
+        ))
+        .unwrap()
+    }
+
+    /// Phobos `TechnoTypeExt::CameoIsVeteran`'s fixed building arm: a building
+    /// that undeploys answers with its unit, so the war factory infiltration
+    /// and the unit's own `VeteranUnits` entry both promote it.
+    #[cfg(all(feature = "ares", feature = "phobos"))]
+    #[test]
+    fn a_deployable_building_reads_its_unit_for_the_alternate_cameo() {
+        let rules = undeploying_building_rules();
+        let owner = crate::sim::intern::InternedId::default();
+        let building = rules.object("GACNST").expect("the deployable building");
+        let mut house = HouseState::new(owner, 0, None, true, 0, 10);
+        assert!(
+            !shows_alt_cameo(&house, building, &rules, "Russians", true),
+            "no infiltration and no list entry yet"
+        );
+        house.grant_veteran_units();
+        assert!(
+            shows_alt_cameo(&house, building, &rules, "Russians", true),
+            "the war factory arm promotes the undeploying building"
+        );
+
+        let fresh = HouseState::new(owner, 0, None, true, 0, 10);
+        assert!(
+            shows_alt_cameo(&fresh, building, &rules, "Americans", true),
+            "the unit's VeteranUnits entry reaches it through UndeploysInto"
+        );
+        let plant = rules.object("PLANT").expect("a plain building");
+        assert!(
+            !shows_alt_cameo(&fresh, plant, &rules, "Americans", true),
+            "a building that does not undeploy keeps the Ares answer"
+        );
+    }
+
+    /// Without Phobos the Ares arm stands: the building compares its own
+    /// pointer against a unit-only list, which an INI list can never hold.
+    #[cfg(all(feature = "ares", not(feature = "phobos")))]
+    #[test]
+    fn ares_alone_still_refuses_the_undeploying_buildings_alternate_cameo() {
+        let rules = undeploying_building_rules();
+        let owner = crate::sim::intern::InternedId::default();
+        let building = rules.object("GACNST").expect("the deployable building");
+        let mut house = HouseState::new(owner, 0, None, true, 0, 10);
+        house.grant_veteran_units();
+        assert!(
+            !shows_alt_cameo(&house, building, &rules, "Americans", true),
+            "Ares never reaches the unit list for an undeploying building"
+        );
     }
 }

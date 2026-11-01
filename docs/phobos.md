@@ -62,6 +62,7 @@ Supported extensions:
 - [Selection flash](phobos-selection-flash.md) (`[AudioVisual] SelectionFlashDuration` behind `[Phobos] ShowFlashOnSelecting`)
 - [Semantic locomotor aliases](phobos-locomotor-aliases.md) (`Locomotor=Drive` and friends beside the braced CLSIDs)
 - [Airstrike target eligibility](phobos-airstrike-targets.md) (`AllowAirstrike` per TechnoType, `AirstrikeTargets` per warhead, and object targets for non-buildings)
+- [Deployable-building alternate cameo](phobos-deployable-cameo.md) (Ares' `UndeploysInto` cameo arm, fixed)
 
 ## Original project and authors
 
