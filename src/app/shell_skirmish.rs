@@ -899,52 +899,73 @@ impl App {
         true
     }
 
-    /// A release while Use Map's box shows: OK goes on to Use Map's close,
-    /// Download fetches the map, and Cancel keeps the chooser.
+    /// A release while Use Map's box shows answers it with the button it
+    /// was pressed on.
     pub(super) fn handle_choose_map_prompt_mouse_up(state: &mut AppState) -> bool {
         let (x, y) = state.match_state.input.cursor_px();
         let released = Self::choose_map_prompt_button_at(state, x, y);
-        let Some(modal) = state
+        let Some(prompt) = state
             .frontend
             .skirmish_shell_state
             .choose_map_modal
             .as_mut()
+            .and_then(|modal| modal.message_box.as_mut())
         else {
             return false;
         };
-        let Some(prompt) = modal.message_box.as_mut() else {
-            return false;
-        };
         let pressed = prompt.pressed.take();
-        if pressed.is_none() || pressed != released {
-            state.platform.window.request_redraw();
-            return true;
-        }
-        let selection = prompt.selection;
-        let download = prompt.kind != crate::ui::skirmish_shell::ChooseMapPromptKind::EjectAi;
-        if download {
-            if pressed == Some(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok) {
-                crate::app::map_library::start_download(state, selection);
-            } else {
-                modal.close_prompt();
-                crate::app::map_library::cancel_download(state);
-            }
-            state.platform.window.request_redraw();
-            return true;
-        }
-        if pressed == Some(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok) {
-            // A chooser the random-map run hid closes without a slide
-            // (`0x00608070` returns while it is invisible).
-            modal.message_box = None;
-            Self::leave_shell_dialog(
-                state,
-                crate::app::frontend::shell_transition::ShellExitThen::ChooseMapUse(selection),
-            );
-        } else {
-            modal.close_prompt();
+        let prompt = *prompt;
+        if pressed.is_some() && pressed == released {
+            let ok = pressed == Some(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok);
+            Self::answer_choose_map_prompt(state, prompt, ok);
         }
         state.platform.window.request_redraw();
         true
+    }
+
+    /// Answers Use Map's box with OK (`ok`) or Cancel. OK goes on to Use
+    /// Map's close; for a map just downloaded it first asks to eject AI
+    /// players, as Use Map does for a map that was already here. Download
+    /// fetches the map, and Cancel keeps the chooser.
+    fn answer_choose_map_prompt(
+        state: &mut AppState,
+        prompt: crate::ui::skirmish_shell::ChooseMapPrompt,
+        ok: bool,
+    ) {
+        use crate::ui::skirmish_shell::ChooseMapPromptAnswer as Answer;
+        let modal = state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_mut();
+        match prompt.answer(ok) {
+            Answer::UseMap => {
+                // A chooser the random-map run hid closes without a slide
+                // (`0x00608070` returns while it is invisible).
+                if let Some(modal) = modal {
+                    modal.message_box = None;
+                }
+                if prompt.kind == crate::ui::skirmish_shell::ChooseMapPromptKind::Downloaded
+                    && Self::prompt_choose_map_eject(state, prompt.selection)
+                {
+                    return;
+                }
+                Self::leave_shell_dialog(
+                    state,
+                    crate::app::frontend::shell_transition::ShellExitThen::ChooseMapUse(
+                        prompt.selection,
+                    ),
+                );
+            }
+            Answer::Download => crate::app::map_library::start_download(state, prompt.selection),
+            Answer::Close => {
+                if let Some(modal) = modal {
+                    modal.close_prompt();
+                }
+                crate::app::map_library::cancel_download(state);
+            }
+            Answer::Wait => {}
+        }
     }
 
     /// VERA: a printable key or Backspace while Choose Map shows edits its
@@ -996,32 +1017,21 @@ impl App {
     }
 
     /// Enter or Escape on Use Map's box answer Cancel (`0x005D370D`). VERA's
-    /// download box takes Enter as Download, as the room's missing-map offer
-    /// does; while the download runs, Enter does nothing and Escape cancels.
+    /// download boxes take Enter as OK, as the room's missing-map offer
+    /// does: Download, or going on with a downloaded map. While the
+    /// download runs, Enter does nothing and Escape cancels.
     pub(super) fn answer_choose_map_prompt_key(state: &mut AppState, enter: bool) -> bool {
-        let Some(modal) = state
+        let Some(prompt) = state
             .frontend
             .skirmish_shell_state
             .choose_map_modal
-            .as_mut()
+            .as_ref()
+            .and_then(|modal| modal.message_box)
         else {
             return false;
         };
-        use crate::ui::skirmish_shell::ChooseMapPromptKind as Kind;
-        if enter
-            && let Some(prompt) = modal.message_box
-            && prompt.kind != Kind::EjectAi
-        {
-            if prompt.kind != Kind::Downloading {
-                crate::app::map_library::start_download(state, prompt.selection);
-                state.platform.window.request_redraw();
-            }
-            return true;
-        }
-        if !modal.close_prompt() {
-            return false;
-        }
-        crate::app::map_library::cancel_download(state);
+        let ok = enter && prompt.kind != crate::ui::skirmish_shell::ChooseMapPromptKind::EjectAi;
+        Self::answer_choose_map_prompt(state, prompt, ok);
         state.platform.window.request_redraw();
         true
     }

@@ -1618,15 +1618,20 @@ fn choose_map_prompt_labels(
     prompt: &crate::ui::skirmish_shell::ChooseMapPrompt,
 ) -> (String, String) {
     use crate::ui::skirmish_shell::ChooseMapPromptKind;
-    let online = prompt
+    let record = prompt
         .selection
         .record_index
-        .and_then(|index| state.frontend.scenario_catalog.records().get(index))
-        .and_then(|record| {
-            let map = state.frontend.map_library.online_map(record)?;
-            Some((map.name.as_str(), record.player_capacity, map.byte_length))
-        });
+        .and_then(|index| state.frontend.scenario_catalog.records().get(index));
+    let online = record.and_then(|record| {
+        let map = state.frontend.map_library.online_map(record)?;
+        Some((map.name.as_str(), record.player_capacity, map.byte_length))
+    });
     let body = match (prompt.kind, online) {
+        // A downloaded map's row is the saved file's, no longer the library's.
+        (ChooseMapPromptKind::Downloaded, _) => format!(
+            "{} was downloaded and saved in VERA20k's Maps folder.",
+            record.map_or("The map", |record| record.display_name.as_str())
+        ),
         (ChooseMapPromptKind::Download, Some((name, players, bytes))) => format!(
             "Download {name} ({players} players, {} KB)? It is saved in VERA20k's Maps folder.",
             bytes.div_ceil(1024)
@@ -1649,7 +1654,9 @@ fn choose_map_prompt_labels(
         _ => localized_label(state, "GUI:EjectAIPlayers", "GUI:EjectAIPlayers"),
     };
     let ok = match prompt.kind {
-        ChooseMapPromptKind::EjectAi => localized_label(state, "GUI:Ok", "OK"),
+        ChooseMapPromptKind::EjectAi | ChooseMapPromptKind::Downloaded => {
+            localized_label(state, "GUI:Ok", "OK")
+        }
         _ => "Download".to_owned(),
     };
     (body, ok)

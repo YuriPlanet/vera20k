@@ -473,7 +473,8 @@ fn set_prompt(state: &mut AppState, selection: ChooseMapSelection, kind: ChooseM
     state.platform.window.request_redraw();
 }
 
-/// A download ended: keep the map and go on with Use Map, or say it failed.
+/// A download ended: keep the map and say so, or say it failed. The box
+/// stays until the player answers it.
 fn finish_download(state: &mut AppState, sha256: String, result: Result<Vec<u8>>) {
     // The box this download belongs to, unless the player closed it.
     let Some(prompt) = state
@@ -495,30 +496,14 @@ fn finish_download(state: &mut AppState, sha256: String, result: Result<Vec<u8>>
             .map_err(|error| (ChooseMapPromptKind::SaveFailed, error)),
         Err(error) => Err((ChooseMapPromptKind::DownloadFailed, error)),
     };
-    match kept {
-        Ok(()) => {
-            if let Some(modal) = state
-                .frontend
-                .skirmish_shell_state
-                .choose_map_modal
-                .as_mut()
-            {
-                modal.message_box = None;
-            }
-            // The rest of Use Map, as for a map that was already here.
-            if super::App::prompt_choose_map_eject(state, selection) {
-                return;
-            }
-            super::App::leave_shell_dialog(
-                state,
-                crate::app::frontend::shell_transition::ShellExitThen::ChooseMapUse(selection),
-            );
-        }
+    let kind = match kept {
+        Ok(()) => ChooseMapPromptKind::Downloaded,
         Err((kind, error)) => {
             log::warn!("Could not download the online map {sha256}: {error:#}");
-            set_prompt(state, selection, kind);
+            kind
         }
-    }
+    };
+    set_prompt(state, selection, kind);
 }
 
 /// Saves a downloaded map in VERA's maps folder; its Online row becomes the
