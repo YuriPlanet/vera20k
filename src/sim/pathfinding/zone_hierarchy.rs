@@ -8,6 +8,7 @@
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use super::passability;
@@ -50,15 +51,43 @@ fn estimate_zone_threat(
     if level == 0 || level > 2 {
         return Ok(0);
     }
+    // Record+20 is a bare array read: level1 loads it straight into the House
+    // threat subscript (`mov ecx,[eax+edx*4+0x20]`, 58628A..5862A9) and level2
+    // does the same (585F5F..585FEB), with no missing-seed or bounds branch.
+    // Zone 0, the Outside sentinel, carries 0 by construction: 581F90 clears
+    // the temporary record's +20 (58205F), 58A500's operator= copies it whole
+    // (58A59F..58A5A2) and 5820C0 stamps the Outside class. A record without a
+    // seed therefore reads 0; raising an error here instead reached sim_tick's
+    // expect and failed the whole frame (issue #3330). A missing record slot
+    // reads 0 as well: the precheck only estimates edges between recorded
+    // zones, so VERA cannot reach that case and 0 is the simplest answer.
+    //
+    // Keep this default out of `ZoneRecord` (its field, `new`, `from_seed`
+    // and `native_threat_index`): `fold_history_hash` hashes the stored
+    // `Option` as is, so a changed storage would shift every map's navigation
+    // history hash.
     let index = |zone| {
         graph
             .record(zone)
             .and_then(ZoneRecord::native_threat_index)
-            .ok_or_else(|| format!("hierarchy level{level} zone{zone} lacks native threat seed"))
+            .unwrap_or_else(|| {
+                // Never taken on a native-complete graph; report once per
+                // process. The precheck runs on path_batch worker threads, so
+                // the gate is an atomic, not a Cell.
+                static LOGGED: AtomicBool = AtomicBool::new(false);
+                if !LOGGED.swap(true, Ordering::Relaxed) {
+                    log::warn!(
+                        "hierarchy level{level} zone{zone} lacks a native threat seed; \
+                         reading 0 like the 58205F-cleared Outside record"
+                    );
+                }
+                0
+            })
     };
-    let target_index = index(target)?;
     if level == 1 {
-        return lookup(target_index);
+        // Level1 reads the target's record+20 only (58628A) and subscripts
+        // the House threat array with it directly.
+        return lookup(index(target));
     }
     let decode = |index: i32| {
         let remainder = index.wrapping_sub(1) % (i32::from(graph.cell_grid().side()) / 4 + 2);
@@ -73,8 +102,10 @@ fn estimate_zone_threat(
         );
         (raw, aligned)
     };
-    let (source_raw, source) = decode(index(source)?);
-    let (target_raw, target) = decode(target_index);
+    // Level2 reads the source endpoint's record+20 first (585F71), then the
+    // target's (585FE7): the same bare read as level1, in native order.
+    let (source_raw, source) = decode(index(source));
+    let (target_raw, target) = decode(index(target));
     let read = |coord: (i16, i16)| {
         lookup(
             crate::sim::house_threat::HouseSpatialThreat::index_for_grid(graph.cell_grid(), coord),
@@ -1090,6 +1121,53 @@ mod tests {
         assert_eq!(result.paths[1], vec![1, 2, 3, 4]);
         assert_eq!(result.paths[0], vec![1, 2, 3, 4, 5, 6]);
         assert!(result.marked[0].contains(&4));
+    }
+
+    /// Issue #3330 integration: the fixture's level1/level2 records carry no
+    /// native seed, so a threat-active precheck drives the record+20 fallback
+    /// on those two levels. Level 0 returns 0 before reading any record, so
+    /// the Outside sentinel record and the bridge-style edge into it below
+    /// only complete the environment: 42C580 still estimates that edge ahead
+    /// of the admission gates, and the Outside zone (5820C0's class,
+    /// passability value 3) is never routed. Native bare-reads the missing
+    /// seeds as 0 (58205F clears the sentinel's +20; 58628A/585F5F index the
+    /// House array with it), so the precheck passes instead of failing the
+    /// frame.
+    #[test]
+    fn threat_active_precheck_reads_unseeded_zones_as_native_zero() {
+        let mut hierarchy = fixture_hierarchy();
+        let level0 = &mut hierarchy.levels_mut()[0];
+        level0.set_record(ZoneRecord::new(
+            ZONE_INVALID,
+            0,
+            crate::map::resolved_terrain::zone_class::OUTSIDE,
+        ));
+        level0.push_edge(2, ZoneEdgeRecord::new(ZONE_INVALID, 0));
+        let reads = std::cell::RefCell::new(Vec::new());
+        let lookup = |index| {
+            reads.borrow_mut().push(index);
+            Ok(0)
+        };
+        // 1.0, above the 42C290 activation threshold.
+        let coefficient = NativeF64Bits::from_bits(0x3ff0_0000_0000_0000);
+
+        let ZonePrecheckOutcome::Passed(result) = zone_precheck_flat(
+            &hierarchy,
+            1,
+            6,
+            MovementZone::Normal,
+            &ZonePrecheckExclusions::default(),
+            Some(ZonePrecheckThreat::new(coefficient, &lookup)),
+        )
+        .unwrap() else {
+            panic!("threat-active precheck should pass");
+        };
+        assert_eq!(result.paths[0], vec![1, 2, 3, 4, 5, 6]);
+        assert!(
+            reads.borrow().contains(&0),
+            "unseeded coarse zones read native threat index 0: {:?}",
+            reads.borrow()
+        );
     }
 
     #[test]

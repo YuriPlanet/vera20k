@@ -70,6 +70,57 @@ fn original_zone_threat_sampling_matches_all_directions_and_signed_average() {
     }
 }
 
+/// Zone 0, the Outside sentinel, has no seed: 581F90 clears the temporary
+/// record's +20 (58205F), 58A500's operator= copies it (58A59F) and 5820C0
+/// stamps the Outside class. 585F40 then bare-reads record+20 at level1
+/// (58628A) and level2 (585F5F) with no missing-seed branch, so an unseeded
+/// record and a missing record slot both answer threat index 0 instead of an
+/// error that fails the frame (issue #3330). Storage stays untouched: the
+/// seeded record keeps its `Some(131)` for `fold_history_hash`.
+#[test]
+fn unseeded_records_read_threat_index_zero_like_the_58205f_outside_sentinel() {
+    let mut graph = ZoneLevelGraph::new(2);
+    graph.set_record(ZoneRecord::new(1, 0, 0));
+    graph.set_record(ZoneRecord::from_seed(
+        2,
+        0,
+        0,
+        (0, 0),
+        crate::map::cell_index::CellGrid::Retail,
+    ));
+    assert_eq!(graph.record(1).unwrap().native_threat_index(), None);
+    assert_eq!(graph.record(2).unwrap().native_threat_index(), Some(131));
+    let reads = std::cell::RefCell::new(Vec::new());
+    let lookup = |index| {
+        reads.borrow_mut().push(index);
+        Ok(index)
+    };
+
+    // Level1 reads the seeded target's own index.
+    assert_eq!(estimate_zone_threat(&graph, 1, 1, 2, &lookup), Ok(131));
+    assert_eq!(*reads.borrow(), [131]);
+
+    // An unseeded target reads 0, like the cleared sentinel +20.
+    assert_eq!(estimate_zone_threat(&graph, 1, 2, 1, &lookup), Ok(0));
+    assert_eq!(*reads.borrow(), [131, 0]);
+
+    // A zone with no record slot at all (the sentinel slot a level never
+    // wrote) reads the same 0.
+    assert_eq!(estimate_zone_threat(&graph, 1, 2, 0, &lookup), Ok(0));
+    assert_eq!(*reads.borrow(), [131, 0, 0]);
+
+    // Level2 with both endpoints unseeded: the record+20 reads go source
+    // first (585F71), then target (585FE7), both answer 0, and both decode to
+    // the same wrapped block. The aligned branch then issues the same raw read
+    // twice (target corner, then source corner, the one coordinate here), so
+    // padded index 0 is looked up twice and the average is 0. Every read lands
+    // on the same index, so the asserted order is the same whichever endpoint
+    // is read first.
+    reads.borrow_mut().clear();
+    assert_eq!(estimate_zone_threat(&graph, 2, 1, 1, &lookup), Ok(0));
+    assert_eq!(*reads.borrow(), [0, 0]);
+}
+
 /// The precheck memo holds only threat-free answers: on a hierarchy that
 /// already answered a threat-free precheck, a threat-active one still reads
 /// the House threat and keeps nothing.
