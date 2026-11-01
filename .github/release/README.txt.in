@@ -31,8 +31,9 @@ REQUIREMENTS
     some Windows 11 PCs have on, blocks unsigned programs outright: there,
     VERA20k runs only with it turned off, in Windows Security > App & browser
     control > Smart App Control settings.
-  macOS: requires an Apple Silicon Mac running macOS 11 or later. Published
-    Mac builds are signed with Developer ID and notarized by Apple.
+  macOS: requires macOS 11 or later. The macos-arm64 disk image is for Apple
+    Silicon Macs, the macos-x64 one for Intel Macs. Published Mac builds are
+    signed with Developer ID and notarized by Apple.
   Linux: needs ALSA (libasound2), a Vulkan driver, and libxkbcommon-x11-0
     for X11 keyboard support. The AppImage mounts itself with FUSE (fusermount, from the fuse3 or fuse package), which most
     desktops have; without it, start it with --appimage-extract-and-run.

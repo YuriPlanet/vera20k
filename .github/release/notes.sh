@@ -73,7 +73,7 @@ fi
 You need your own copy of Yuri's Revenge.
 
 - **Windows:** run the `-setup.exe`. If SmartScreen warns, click More info, then Run anyway.
-- **macOS (Apple Silicon):** open the `.dmg` and drag VERA20K into Applications.
+- **macOS:** open the `macos-arm64.dmg` (Apple Silicon) or `macos-x64.dmg` (Intel) and drag VERA20K into Applications.
 - **Linux:** make the `.AppImage` executable and start it.
 EOF
   echo

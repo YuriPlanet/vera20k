@@ -66,7 +66,9 @@ from tools.release_fixture import Publisher, public_key, signing_key
 
 ROOT = Path(__file__).resolve().parents[1]
 PORT = 47311
-SUFFIXES = {"windows": "-windows-x64-setup.exe", "macos": "-macos-arm64.dmg", "linux": "-linux-x64.AppImage"}
+# Each installer's name in the manifest (src/app/updater/manifest.rs).
+SUFFIXES = {"windows": "-windows-x64-setup.exe", "macos": "-macos-arm64.dmg", "macos-x64": "-macos-x64.dmg",
+            "linux": "-linux-x64.AppImage"}
 # The installer's stand-in game folder: tiny MIX and CSF files that pass its
 # game-data check and hold both master archives the first launch looks for.
 TEST_GAME = ROOT / ".github/release/windows/test-game"
@@ -97,6 +99,11 @@ def platform() -> str:
     return {"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")
 
 
+def installer() -> str:
+    """This machine's installer in the manifest: Intel Macs have their own."""
+    return "macos-x64" if platform() == "macos" and os.uname().machine == "x86_64" else platform()
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as file:
@@ -111,13 +118,13 @@ def run(*command, **options) -> None:
 
 def publish(work: Path, key: Path, version: str, release: Path | None) -> Path:
     """The R2 layout publish-r2.sh writes for `version`, signed with `key`:
-    `release` is this platform's installer, the other two are stand-ins."""
+    `release` is this machine's installer, the others are stand-ins."""
     publisher = Publisher(work / "publish", public_key(key))
     assets = []
     for index, (name_platform, suffix) in enumerate(SUFFIXES.items()):
         name = f"vera20k-{version}{suffix}"
         path = publisher.root / "assets" / name
-        if release and name_platform == platform():
+        if release and name_platform == installer():
             shutil.copyfile(release, path)
         else:
             path.write_bytes(f"{name} stand-in\n".encode())
@@ -328,13 +335,13 @@ def tamper(objects: Path, scenario: str, version: str) -> None:
     if scenario == "manifest":
         latest = objects / "latest.json"
         manifest = json.loads(latest.read_text())
-        manifest["files"][platform()]["sha256"] = "0" * 64
+        manifest["files"][installer()]["sha256"] = "0" * 64
         latest.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
     elif scenario == "installer":
-        installer = objects / f"releases/v{version}/vera20k-{version}{SUFFIXES[platform()]}"
-        data = bytearray(installer.read_bytes())
+        path = objects / f"releases/v{version}/vera20k-{version}{SUFFIXES[installer()]}"
+        data = bytearray(path.read_bytes())
         data[len(data) // 2] ^= 0xFF
-        installer.write_bytes(bytes(data))
+        path.write_bytes(bytes(data))
 
 
 def command_run(args) -> None:
@@ -380,7 +387,7 @@ def command_run(args) -> None:
 
 def command_fixture(directory: Path) -> None:
     """latest.json, its signature and the public key, for a release 1.2.3 of
-    three small stand-in installers."""
+    small stand-in installers."""
     with tempfile.TemporaryDirectory() as temp:
         key = Path(temp) / "key"
         key.mkdir()

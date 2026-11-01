@@ -13,6 +13,12 @@
       "sha256": "c34df1848523ab81ea8a5c644b99cd104414e5570c4cbeb83cef51fe356397fe",
       "size": 39
     },
+    "macos-x64": {
+      "key": "releases/v1.2.3/vera20k-1.2.3-macos-x64.dmg",
+      "name": "vera20k-1.2.3-macos-x64.dmg",
+      "sha256": "074467cf12df768c8ca2ee256e252f2f3a3930fdf151bd683819e55e480d7295",
+      "size": 37
+    },
     "windows": {
       "key": "releases/v1.2.3/vera20k-1.2.3-windows-x64-setup.exe",
       "name": "vera20k-1.2.3-windows-x64-setup.exe",
@@ -29,7 +35,7 @@
     "Update downloads the release with progress, installs it and restarts VERA20K."
   ],
   "tag": "v1.2.3",
-  "update_key": "XCNx346utVThi1i5oYklyV+uU0QNcq7JGxsRq5ygvyQ=",
+  "update_key": "9RgFMsR6olA58x544bkCwjNUbEhkc3SA0i6qaKB8qK4=",
   "updater": 1,
   "version": "1.2.3"
 }
