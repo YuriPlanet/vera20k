@@ -131,15 +131,37 @@ pub(crate) fn super_weapon_index_of_name<'a>(
     ids.position(|id| id.eq_ignore_ascii_case(incoming))
 }
 
-/// HouseClassGetPlayerAtFromString510FB0's exact physical token table.
-/// Shared by ReadHouseType475540 and TeamType House decoding.
+/// HouseClass::GetPlayerAtFromString @ 0x00510FB0 and ReadHouseType
+/// @ 0x00475540 use selectors starting at 0x117B. VERA extends their eight
+/// entries to the room capacity, preserving the original A..H identities.
+pub(crate) const HOUSE_TYPE_PLAYER_AT_SELECTORS: std::ops::Range<i32> =
+    0x117B..0x117B + crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32;
+
+/// Shared case-sensitive player token reader for Session and TeamType House.
+/// VERA extension: A..Z, AA..AD represent the thirty start slots.
 pub(crate) fn house_type_player_at(incoming: &str) -> Option<u8> {
-    let bytes = incoming.as_bytes();
-    (bytes.len() == 12
-        && bytes.starts_with(b"<Player @ ")
-        && bytes[11] == b'>'
-        && (b'A'..=b'H').contains(&bytes[10]))
-    .then(|| bytes[10] - b'A')
+    let letters = incoming.strip_prefix("<Player @ ")?.strip_suffix('>')?;
+    let slot = match letters.as_bytes() {
+        [letter @ b'A'..=b'Z'] => letter - b'A',
+        [b'A', letter @ b'A'..=b'Z'] => 26 + letter - b'A',
+        _ => return None,
+    };
+    (usize::from(slot) < crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT).then_some(slot)
+}
+
+/// INIClass::Put_HouseType @ 0x00475610 player-selector text, extended to
+/// the same thirty slots as the reader. Other HouseType values stay with callers.
+pub fn house_type_player_at_text(index: i32) -> Option<String> {
+    if !HOUSE_TYPE_PLAYER_AT_SELECTORS.contains(&index) {
+        return None;
+    }
+    let slot = (index - HOUSE_TYPE_PLAYER_AT_SELECTORS.start) as u8;
+    let (prefix, letter) = if slot < 26 {
+        ("", slot)
+    } else {
+        ("A", slot - 26)
+    };
+    Some(format!("<Player @ {prefix}{}>", char::from(b'A' + letter)))
 }
 
 /// One native `RulesClass::Process` source in its runtime position.
@@ -593,7 +615,7 @@ pub(crate) fn read_native_multiplayer_country(
     let index = if name.is_empty() {
         current
     } else if let Some(player) = house_type_player_at(&name) {
-        0x117b + i32::from(player)
+        HOUSE_TYPE_PLAYER_AT_SELECTORS.start + i32::from(player)
     } else {
         let found = processor.country_index_of_name(&name);
         if found != -1 {
