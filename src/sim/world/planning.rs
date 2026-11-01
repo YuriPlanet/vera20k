@@ -1798,6 +1798,13 @@ impl Simulation {
         true
     }
 
+    /// Runs the post-DoList publication rung for a component fixture that
+    /// applies plan commands without advancing a frame.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn publish_planning_commands_for_test(&mut self) {
+        self.publish_planning_commands();
+    }
+
     /// PlanMgr637550 -> EventClass::Add652230 (gamemd.exe instructions):
     /// reverse pending traversal and ring prepend retain generation order
     /// ahead of existing DoList events. Stamp only the independent copy.
