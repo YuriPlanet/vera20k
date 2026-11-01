@@ -197,6 +197,21 @@ impl GameEntity {
             .iter()
             .filter_map(|entry| entry.animation)
     }
+    /// 10058737..10058745 publishes the replacement Anim on the effect at
+    /// `index`, through
+    /// [`EntityStore::write_held_anim`](crate::sim::entity_store::EntityStore::write_held_anim),
+    /// returning the Anim it replaced.
+    fn hold_attached_effect_anim(
+        &mut self,
+        index: usize,
+        anim: u64,
+        _: crate::sim::entity_store::AnimHolderAuthority,
+    ) -> Option<u64> {
+        self.attach_effects
+            .entries
+            .get_mut(index)
+            .and_then(|entry| entry.animation.replace(anim))
+    }
     pub(crate) fn attached_effect_anim_expired(&mut self, expired: u64) {
         //10058770 clears the held pointer, without restarting or erasing the effect.
         for entry in &mut self.attach_effects.entries {
@@ -713,9 +728,10 @@ mod receiver {
                 let old = self
                     .substrate
                     .entities
-                    .get_mut(target)
-                    .and_then(|victim| victim.attach_effects.entries.get_mut(index))
-                    .and_then(|entry| entry.animation.replace(anim));
+                    .write_held_anim(target, |victim, authority| {
+                        victim.hold_attached_effect_anim(index, anim, authority)
+                    })
+                    .flatten();
                 if let Some(old) = old {
                     self.destroy_anim_with_context(old, rules);
                 }

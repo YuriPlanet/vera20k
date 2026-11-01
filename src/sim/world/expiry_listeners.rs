@@ -230,17 +230,6 @@ impl ExpiryListeners {
         reached
     }
 
-    /// Dedicated Anim callbacks select Parasite holders through the same
-    /// entity-reference index, without a generic Object callback broadcast.
-    pub(crate) fn entities_reached_by(
-        &mut self,
-        entities: &mut EntityStore,
-        expired: u64,
-    ) -> Vec<u64> {
-        self.refresh_entities(entities);
-        self.entities.reaching(expired).collect()
-    }
-
     fn refresh_entities(&mut self, entities: &mut EntityStore) {
         let ids = self.entities.rereads(
             entities.take_touched(TouchReader::ExpiryListeners),

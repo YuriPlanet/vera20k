@@ -146,7 +146,7 @@ impl ParasiteState {
     }
 
     pub(crate) fn grapple_anim(&self) -> Option<u64> {
-        self.grapple.anim
+        self.grapple.anim()
     }
 
     #[cfg(any(test, feature = "test-support"))]
