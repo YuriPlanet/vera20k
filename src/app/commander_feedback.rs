@@ -95,7 +95,6 @@ struct TroubleWatch {
     quiet_until_ms: u64,
 }
 
-
 /// What [`CommanderFeedback::enqueue`] resolved: the entry's own
 /// `EntryN.Timeout=`, which the `InTrouble` watcher reads as its silence.
 struct Queued {
@@ -204,27 +203,27 @@ pub(crate) struct CommanderFeedback {
     queue: VecDeque<ClipRequest>,
     /// One-shot diagnostic: the first frame this layer actually ran.
     logged_start: bool,
-    /// How many times this layer has been driven. A verdict waiting on this
-    /// layer reads it to tell "nothing is owed" from "not looked at yet": the
-    /// finish that earns the last clip reaches the world on the frame this
-    /// layer was already serviced, so an empty queue at that moment proves
-    /// nothing until one more pass has run.
+    /// How many times this layer has been driven. The verdict wait reads it to
+    /// tell "nothing is owed" from "not looked at yet": the finish that earns
+    /// the last clip can reach the world after this layer's pass for that
+    /// frame, so an empty queue proves nothing until one more pass has run.
     passes: u64,
-    /// A verdict this layer is holding back from the simulation while the
-    /// world keeps running under the loser's clip.
+    /// A published result the exit router leaves alone while the loser's
+    /// clip plays. See [`owe_the_verdict_a_clip`].
     verdict_wait: Option<VerdictWait>,
-    /// Whether this match's verdict was ever held for a clip. Survives the
-    /// release, so the beat that follows knows the line is still owed.
+    /// Whether the exit router ever left this match's result waiting.
+    /// Survives the release: from then on the router, not [`service`], says
+    /// the withheld line.
     verdict_held: bool,
-    /// Set once the hold is released: the result publishes on the next frame
-    /// and this layer must not grab it back. A defeat keeps its House flag
-    /// (`4F8780..4F87BB` retains Lost), so "the engine wants to publish" is
-    /// still true after publication and cannot be the release condition.
+    /// Set once the wait has ended, so it never re-opens.
     verdict_released: bool,
+    /// Whether the result's own EVA line has been said after the frame's
+    /// sound delivery withheld it. See [`withholds_verdict_line`].
+    verdict_line_said: bool,
 }
 
-/// A result this layer is holding open, so a clip may finish before the
-/// picture goes up.
+/// A published result waiting for the clip, so the clip finishes before the
+/// card goes up.
 #[derive(Debug, Clone, Copy)]
 struct VerdictWait {
     /// When the wait started, for the ceiling below.
@@ -240,71 +239,6 @@ struct VerdictWait {
 pub(crate) const MAX_HELD_RESULT_MS: u64 = 45_000;
 
 impl CommanderFeedback {
-    /// Clips waiting for their turn in this layer's own queue. The radar FIFO
-    /// is a separate stage ([`crate::app::radar_movie::has_pending`]), and the
-    /// match-end diagnostic counts both.
-    pub(crate) fn queue_len(&self) -> usize {
-        self.queue.len()
-    }
-
-    /// Advance this layer's side of the verdict hold. It owns itself here, so
-    /// this is where the hold may be written; the frame's question is asked
-    /// read-only from [`holds_published_outcome`].
-    ///
-    /// Opens on the frame the engine first says it may publish the local
-    /// result, and releases once the clip this layer owed has drained. The
-    /// simulation is held between those two edges, so the battlefield keeps
-    /// running for the whole clip and stops exactly when the verdict does.
-    fn tick_verdict_wait(&mut self, state: &mut AppState, wall_ms: u64) {
-        let Some(kind) = verdict_pending(state) else {
-            return;
-        };
-        if self.verdict_released || !holds_terminal_outcome(state) {
-            return;
-        }
-        if self.verdict_wait.is_none() {
-            log::info!(
-                "Verdict waits for the commander clip ({} queued, {} playing); \
-                 the result stays unpublished while the world runs",
-                self.queue.len(),
-                crate::app::radar_movie::has_pending(state),
-            );
-            self.verdict_held = true;
-            self.verdict_wait = Some(VerdictWait {
-                since_ms: wall_ms,
-                start_passes: self.passes,
-            });
-            // The battlefield's music changes now, on the frame the result
-            // would have been published, so the clip plays over it.
-            crate::app::match_runtime::sim_tick::start_verdict_theme(state, kind, wall_ms);
-            return;
-        }
-        let wait = self.verdict_wait.expect("checked just above");
-        if wall_ms.saturating_sub(wait.since_ms) >= MAX_HELD_RESULT_MS {
-            log::warn!(
-                "The commander clip is still pending after {} ms; letting the verdict go",
-                MAX_HELD_RESULT_MS
-            );
-            self.verdict_wait = None;
-            self.verdict_released = true;
-            return;
-        }
-        let outstanding = self.queue.len() > 0 || crate::app::radar_movie::has_pending(state);
-        if !outstanding && self.passes > wait.start_passes {
-            log::info!(
-                "The commander clip has finished; the verdict is free to go out \
-                 (tick {:?})",
-                state
-                    .match_state
-                    .sim_runtime
-                    .as_ref()
-                    .map(|runtime| runtime.simulation.session().tick()),
-            );
-            self.verdict_wait = None;
-            self.verdict_released = true;
-        }
-    }
-
     /// Drop everything. Used when the feature is switched off, the screen
     /// leaves the battle, or the scenario is torn down. A clip already handed
     /// to the radar FIFO ends with that FIFO's own teardown
@@ -313,6 +247,19 @@ impl CommanderFeedback {
         *self = Self::default();
     }
 
+    /// Whether the exit router is leaving a published result alone for a
+    /// clip. The world stopped on the result's frame, so the score page's
+    /// clock stays stopped too (`MatchState::elapsed_clock_paused`).
+    pub(crate) fn result_waits(&self) -> bool {
+        self.verdict_wait.is_some()
+    }
+
+    /// Whether nothing stands between a flagged result and its withheld
+    /// line: the exit router has not taken the result, and neither this
+    /// layer's queue nor the radar FIFO holds a clip.
+    fn verdict_line_clear(&self, radar_pending: bool) -> bool {
+        !self.verdict_held && self.queue.is_empty() && !radar_pending
+    }
 }
 
 /// The feature's own admit test. Only a live skirmish draws clips, and only
@@ -353,9 +300,9 @@ pub(crate) fn retire(state: &mut AppState) {
 /// Whether a finished match could owe the player a clip at all: the layer is
 /// on, this is a skirmish, and some commander exists to speak.
 ///
-/// A wrong `true` costs the result one frame before the empty queue is
-/// reported; a wrong `false` would cut the line the player just earned, so the
-/// test is generous on purpose.
+/// A wrong `true` holds the result's line and the card for one pass, until
+/// this layer has looked and found no clip; a wrong `false` would let a clip
+/// cut the line the player just earned, so the test is generous on purpose.
 pub(crate) fn may_speak(state: &AppState) -> bool {
     enabled(state)
         && state
@@ -370,59 +317,22 @@ pub(crate) fn may_speak(state: &AppState) -> bool {
             .is_some_and(|rules| !rules.personalities().is_empty())
 }
 
-/// Whether a terminal victory must wait for the clip that earned it.
+/// Whether a finished match's card and score page wait for the clip that
+/// earned it.
 ///
-/// `Custom End Game Movie` owns this. It is deliberately narrower than the two
-/// picture switches next to it in Options, and that gap is intentional:
-///
-/// * `Custom End Game Banner` and `Custom End Game Score` only *paint and play*.
-///   They gate on `ScenarioGameMode::is_nonzero`, so a LAN or WOL game uses
-///   them like a skirmish does — every client can draw its own country's card
-///   and start its own theme without consulting anybody.
-/// * This one *delays the verdict itself*. One client cannot decide alone that
-///   the loser's movie is over, so a network match keeps the immediate result.
-///
-/// What is missing is not the hold — [`crate::sim::world::OutcomeWaitBoundary::
-/// wait_complete`], the wait and the [`MAX_HELD_RESULT_MS`] ceiling are all
-/// session-agnostic already. It is the round trip: a per-peer "my clip has
-/// finished" signal folded into that boundary, so the wait ends only once the
-/// slowest peer's loser has stopped talking. Widen the network gate below when
-/// that exists; nothing downstream has to change.
+/// `Custom End Game Movie` owns this, and [`may_speak`] keeps it to a
+/// skirmish. The two picture switches next to it in Options only paint and
+/// play, so a LAN or WOL game uses them too. This one changes when the exit
+/// router takes the result, never when the simulation publishes it.
 pub(crate) fn holds_terminal_outcome(state: &AppState) -> bool {
-    if !state.persistence.options_profile.custom_end_game_movie {
-        return false;
-    }
-    if state.match_state.sim_runtime.as_ref().is_some_and(|runtime| {
-        runtime.simulation.session().game_mode().is_network()
-    }) {
-        return false;
-    }
-    may_speak(state)
+    state.persistence.options_profile.custom_end_game_movie && may_speak(state)
 }
 
-/// Whether the app is holding the simulation's own publication of the local
-/// result, so the loser's clip can play over a battlefield that is still
-/// fighting.
+/// Whether this match's verdict waited for a clip at all.
 ///
-/// This is the answer [`FrameClientBoundary::hold_outcome`] gives the engine.
-/// It is *not* the native voice wait: that one suspends the frame, which
-/// freezes the world the clip is supposed to play over. Holding the result
-/// back leaves the frame committing normally, so units, buildings and the
-/// radar window all keep moving until the clip ends — and only then does the
-/// verdict publish, take the screen and freeze it.
-pub(crate) fn holds_published_outcome(state: &AppState) -> bool {
-    let feedback = &state.match_state.match_presentation.commander_feedback;
-    holds_terminal_outcome(state) && !feedback.verdict_released
-}
-
-/// Whether this match's verdict was held back for a clip at all.
-///
-/// The exit router reads this to place the two things the clip's entrance
-/// takes away: the result's theme (started when the hold opens, so it plays
-/// under the clip) and the result's own EVA line, which
-/// `RadarMovieCommand::Announce` clears out of the queue and which is
-/// therefore said again where the card goes up. A verdict this layer never
-/// held keeps retail's own timing for both.
+/// The exit router reads this for the result's theme, which started when the
+/// wait opened so the rest of the clip plays over it. A verdict that never
+/// waited starts it on retail's own timing.
 pub(crate) fn verdict_was_held_for_a_clip(state: &AppState) -> bool {
     state
         .match_state
@@ -431,33 +341,96 @@ pub(crate) fn verdict_was_held_for_a_clip(state: &AppState) -> bool {
         .verdict_held
 }
 
-/// Whether the exit router must let the clip finish before taking the result.
+/// Whether the result's own EVA line is withheld for a clip.
 ///
-/// After the hold is released this is false, so the router takes the published
-/// result on the very frame the release reaches it — the verdict is the next
-/// thing this layer does, and it never re-opens.
-pub(crate) fn owe_the_verdict_a_clip(state: &AppState, _wall_ms: u64) -> bool {
+/// `Flag_To_Win 0x004FCBA9` / `Flag_To_Lose 0x004FCDA1` say it on the frame
+/// the House is flagged, and the clip that kill earns would clear it out of
+/// the queue on its entrance (`RadarMovieCommand::Announce` ->
+/// `clear_eva_queues`). With `Custom End Game Movie` on, the frame's sound
+/// delivery holds it back until [`service`] sees no clip in the way, or the
+/// exit router says it after the clip it waited for.
+pub(crate) fn withholds_verdict_line(state: &AppState) -> bool {
+    holds_terminal_outcome(state)
+        && !state
+            .match_state
+            .match_presentation
+            .commander_feedback
+            .verdict_line_said
+}
+
+/// Take the withheld line for the exit router to say after the clip. `false`
+/// when nothing was withheld or [`service`] has already said it.
+pub(crate) fn take_withheld_verdict_line(state: &mut AppState) -> bool {
+    if !withholds_verdict_line(state) {
+        return false;
+    }
     state
         .match_state
         .match_presentation
         .commander_feedback
-        .verdict_wait
-        .is_some()
+        .verdict_line_said = true;
+    true
 }
 
-/// The simulation's own "this House's result may be published now", for the
-/// local player. Read here so the hold opens on exactly the frame the engine
-/// would have published, and not one frame later.
-fn verdict_pending(state: &AppState) -> Option<crate::sim::house_state::HouseOutcomeKind> {
-    let runtime = state.match_state.sim_runtime.as_ref()?;
-    let sim = &runtime.simulation;
-    let frame = sim.session().binary_frame() as i32;
-    let game_mode_nonzero = sim.session().game_mode_nonzero();
-    let house = sim
-        .session()
-        .current_house()
-        .and_then(|owner| sim.houses().get(&owner))?;
-    house.pending_outcome(frame, game_mode_nonzero)
+/// Whether the exit router must leave the published result alone while the
+/// clip the finish earned is still playing.
+///
+/// The simulation has published the result on its own frame, and the app runs
+/// no further frame while the result waits (`App::service_match_runtime_once`),
+/// so this delays only the router: the card, the teardown and the score page.
+/// The first call opens the wait, stops the score page's clock and switches
+/// the battlefield theme. The wait ends once this layer has looked at the
+/// world again and neither its own queue nor the radar FIFO holds a clip, or
+/// after [`MAX_HELD_RESULT_MS`]; it never re-opens.
+pub(crate) fn owe_the_verdict_a_clip(
+    state: &mut AppState,
+    outcome: crate::sim::house_state::HouseOutcomeKind,
+    wall_ms: u64,
+) -> bool {
+    let feedback = &state.match_state.match_presentation.commander_feedback;
+    if feedback.verdict_released {
+        return false;
+    }
+    // An open wait outlives the switch, so unticking it never cuts a line
+    // that is halfway said.
+    let Some(wait) = feedback.verdict_wait else {
+        if !holds_terminal_outcome(state) {
+            return false;
+        }
+        log::info!(
+            "The verdict waits for the commander clip ({} queued, {} playing)",
+            feedback.queue.len(),
+            crate::app::radar_movie::has_pending(state),
+        );
+        let feedback = &mut state.match_state.match_presentation.commander_feedback;
+        feedback.verdict_held = true;
+        feedback.verdict_wait = Some(VerdictWait {
+            since_ms: wall_ms,
+            start_passes: feedback.passes,
+        });
+        // The world stopped on the frame that published the result, so the
+        // score page's time stops here rather than when the clip ends. The
+        // open wait keeps it stopped through the clip's own pause and resume
+        // ([`CommanderFeedback::result_waits`]).
+        state.match_state.scenario_elapsed_clock.pause(wall_ms);
+        crate::app::match_runtime::sim_tick::start_verdict_theme(state, outcome, wall_ms);
+        return true;
+    };
+    let outstanding = !feedback.queue.is_empty() || crate::app::radar_movie::has_pending(state);
+    if wall_ms.saturating_sub(wait.since_ms) >= MAX_HELD_RESULT_MS {
+        log::warn!(
+            "The commander clip is still pending after {MAX_HELD_RESULT_MS} ms; \
+             the verdict goes out"
+        );
+    } else if outstanding || feedback.passes <= wait.start_passes {
+        return true;
+    } else {
+        log::info!("The commander clip has finished; the verdict goes out");
+    }
+    let feedback = &mut state.match_state.match_presentation.commander_feedback;
+    feedback.verdict_wait = None;
+    feedback.verdict_released = true;
+    false
 }
 
 /// Whether buildings lost since the last clip are enough to call for help.
@@ -489,8 +462,37 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
     // question is "has this layer looked at the world since the match ended",
     // and a retired layer has looked and found nothing to say.
     feedback.passes = feedback.passes.saturating_add(1);
-    feedback.tick_verdict_wait(state, wall_ms);
     state.match_state.match_presentation.commander_feedback = feedback;
+    say_the_verdict_line_when_clear(state);
+}
+
+/// Say the result's withheld line once this layer has looked at the world and
+/// no clip is in the way: on the pass after the kill when the kill earned no
+/// clip, or once the last clip has ended. Defeats are observed on every pass,
+/// so a clip the kill earns is already queued here. A result the exit router
+/// has taken, or leaves waiting, gets its line from the router.
+fn say_the_verdict_line_when_clear(state: &mut AppState) {
+    if !withholds_verdict_line(state)
+        || !state
+            .match_state
+            .match_presentation
+            .commander_feedback
+            .verdict_line_clear(crate::app::radar_movie::has_pending(state))
+    {
+        return;
+    }
+    let Some(outcome) = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+        let sim = &runtime.simulation;
+        sim.houses().get(&sim.session().current_house()?)?.outcome()
+    }) else {
+        return;
+    };
+    state
+        .match_state
+        .match_presentation
+        .commander_feedback
+        .verdict_line_said = true;
+    crate::app::match_runtime::sim_tick::play_outcome_eva(state, outcome.kind);
 }
 
 impl CommanderFeedback {

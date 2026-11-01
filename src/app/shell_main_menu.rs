@@ -560,26 +560,29 @@ impl App {
             .map(|key| resolve_csf(state, key).into_owned()),
         };
         // A rules set may name its own picture for this country
-        // (`[EndGameScreens]`). The side's own name table still supplies what
-        // the override leaves out: an art with no palette keeps the side's.
-        let mut art = state.process_assets.side_score_art(model.side);
-        if let Some(background) = model.background.as_ref() {
-            // A name the install cannot open is not fatal: the side's own
-            // picture is still a correct score page, and a broken one is not.
-            if state
+        // (`[EndGameScreens]`). A name the install cannot open is not fatal:
+        // the side's own picture is still a correct score page, and the model
+        // then names no card, so the page keeps the retail paint order.
+        let mut model = model;
+        if let Some(background) = model.background.as_ref()
+            && !state
                 .process_assets
                 .manager()
                 .is_some_and(|assets| assets.contains(&background.shape))
-            {
-                art.multiplayer_background = Some(background.shape.as_str());
-                if let Some(palette) = background.palette.as_deref() {
-                    art.multiplayer_palette = Some(palette);
-                }
-            } else {
-                log::warn!(
-                    "[EndGameScreens] {} is not installed; the side's score art stays",
-                    background.shape
-                );
+        {
+            log::warn!(
+                "[EndGameScreens] {} is not installed; the side's score art stays",
+                background.shape
+            );
+            model.background = None;
+        }
+        // The side's own name table still supplies what the override leaves
+        // out: an art with no palette keeps the side's.
+        let mut art = state.process_assets.side_score_art(model.side);
+        if let Some(background) = model.background.as_ref() {
+            art.multiplayer_background = Some(background.shape.as_str());
+            if let Some(palette) = background.palette.as_deref() {
+                art.multiplayer_palette = Some(palette);
             }
         }
         state.frontend.score_art = state.process_assets.manager().and_then(|assets| {

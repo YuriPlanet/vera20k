@@ -51,29 +51,6 @@ pub trait OutcomeWaitBoundary {
         owner: crate::sim::intern::InternedId,
         kind: crate::sim::house_state::HouseOutcomeKind,
     ) -> bool;
-
-    /// Whether the client is holding this result back on purpose, with the
-    /// world still running.
-    ///
-    /// Answered true, the House keeps its flag and the result stays
-    /// unpublished, while the frame commits and runs on exactly as it
-    /// would have: no suspension, no terminal frame, and the same House asks
-    /// again on the next frame. That is what lets a client present the beat
-    /// in its own order — a beaten commander's clip before the verdict —
-    /// without freezing the battlefield it is played over.
-    ///
-    /// [`Self::wait_complete`] cannot express this: false there suspends the
-    /// frame itself (`HouseClass::Update 4F860F`), and true there publishes a
-    /// result that `Main_Tick` treats as the last frame it will ever run
-    /// (`commit_frame_tail`). Native has no third state, so this answers
-    /// `false` for every path that is not a client's own presentation.
-    fn hold_outcome(
-        &self,
-        _owner: crate::sim::intern::InternedId,
-        _kind: crate::sim::house_state::HouseOutcomeKind,
-    ) -> bool {
-        false
-    }
 }
 
 /// The local player's Planning Mode (`0x00AC4CF4`), owned by client input.
@@ -265,17 +242,6 @@ impl<'a> FrameEffects<'a> {
     ) -> bool {
         self.outcome_wait
             .is_none_or(|boundary| boundary.wait_complete(owner, kind))
-    }
-
-    /// See [`OutcomeWaitBoundary::hold_outcome`]. A headless frame has no
-    /// client presentation, so it never holds a result back.
-    pub(crate) fn outcome_held(
-        self,
-        owner: crate::sim::intern::InternedId,
-        kind: crate::sim::house_state::HouseOutcomeKind,
-    ) -> bool {
-        self.outcome_wait
-            .is_some_and(|boundary| boundary.hold_outcome(owner, kind))
     }
 
     pub fn with_local_planning(self, boundary: &'a dyn LocalPlanningBoundary) -> Self {

@@ -2,8 +2,9 @@
 //! Draw6D4B25 ->6D4E20. Steam gamemd original body/caller bytes.
 //!
 //! The selected campaign has one PlayerPtr result. Its text/frame is derived
-//! from that House's existing serialized outcome; no second result or expiry
-//! clock lives in presentation. New world/load/exit replaces that source. The
+//! from that House's serialized outcome, the result the simulation published,
+//! or the verdict the exit router took; no second result or expiry clock lives
+//! in presentation. New world/load/exit replaces that source. The
 //! immutable process art follows InitGame52C1EF..52C302's literal files, with
 //! native palette shifts and index-zero transparency; never theater/remap art.
 //! An Ares side naming `GraphicalText.Image=`/`.Palette=` replaces those two
@@ -241,19 +242,33 @@ impl EndGameBanner {
     }
 }
 
-/// The verdict this exit router is presenting — the one FlagWin4FC9E0 /
-/// FlagLose4FCBD0 would have turned into `TXT_VICTORIOUS`/`TXT_LOST`.
-///
-/// Native feeds `Tactical SetScreenText 6D4DB0` once, at Flag time, and the
-/// text object outlives everything after it. The House flag does not:
-/// `House4F8657` clears Won the instant the whole-Vox wait ends
-/// (`complete_outcome`), which is before `Main_Game 55CFD0` routes the result.
-/// Re-deriving the half from `house.outcome()` at draw time therefore answered
-/// nothing for a victory once the verdict was taken late — the defeat half
-/// kept working only because `4F8780..4F87BB` deliberately retains Lost. The
-/// cascade holds the verdict the router took, and everything here reads it.
-fn local_outcome(state: &AppState) -> Option<HouseOutcomeKind> {
+/// The verdict the exit router took. Only the country card reads it alone:
+/// the card goes up when the router takes the result.
+fn router_verdict(state: &AppState) -> Option<HouseOutcomeKind> {
     state.match_state.scenario_exit.as_ref()?.verdict()
+}
+
+/// The result the banner shows, from the frame the House is flagged.
+///
+/// Native sets the text once, at Flag time (FlagWin4FC9E0 calls
+/// `Tactical SetScreenText 6D4DB0` at 4FCB5D/4FCB9A, FlagLose4FCBD0 at
+/// 4FCD46/4FCD83), and the text outlives the rest of the sequence. The House
+/// flag does not: House4F8657 clears Won when the whole-Vox wait ends
+/// (`complete_outcome`), before Main_Game routes the result, while
+/// 4F8780..4F87BB keeps Lost. So the banner reads the router's verdict, then
+/// [`sim_outcome`].
+fn local_outcome(state: &AppState) -> Option<HouseOutcomeKind> {
+    router_verdict(state)
+        .or_else(|| sim_outcome(&state.match_state.sim_runtime.as_ref()?.simulation))
+}
+
+/// The local House's result as the simulation holds it: the one it published,
+/// else the House's own flag.
+fn sim_outcome(sim: &crate::sim::world::Simulation) -> Option<HouseOutcomeKind> {
+    let owner = sim.session().current_house()?;
+    sim.ready_outcome_for_owner(owner)
+        .or_else(|| sim.houses().get(&owner)?.outcome())
+        .map(|outcome| outcome.kind)
 }
 
 /// The country card this match selected, when it can actually be drawn.
@@ -279,7 +294,7 @@ pub(crate) fn active_art(state: &AppState) -> Option<&OutcomeBannerArt> {
     {
         return None;
     }
-    let kind = local_outcome(state)?;
+    let kind = router_verdict(state)?;
     state
         .match_state
         .match_presentation
@@ -339,9 +354,6 @@ impl OutcomeBannerArt {
     }
 }
 
-/// Throttle for the verdict-beat diagnostic in [`instances`].
-static VERDICT_BEAT_LOG_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
 fn result_view(kind: HouseOutcomeKind, campaign: bool) -> (usize, &'static str) {
     match (campaign, kind) {
         (true, HouseOutcomeKind::Victory) => (0, "TXT_SCENARIO_WON"),
@@ -354,9 +366,6 @@ fn result_view(kind: HouseOutcomeKind, campaign: bool) -> (usize, &'static str) 
 /// Tactical6D4E20 chooses shape first; centred white text is its missing-art
 /// branch. Its geometry follows the tactical viewport and is screen-fixed.
 pub(crate) fn instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
-    // Nothing is drawn until the exit router has taken the result and recorded
-    // it: the House flag is cleared mid-wait, so it is no verdict source at
-    // all. See [`local_outcome`].
     let Some(outcome_kind) = local_outcome(state) else {
         return Default::default();
     };
@@ -372,31 +381,7 @@ pub(crate) fn instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteIns
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
     ];
-    let card = active_art(state).and_then(|art| art.fit_quad(view, camera));
-    // Runtime evidence for the verdict beat. Every earlier round reasoned about
-    // this draw from the timing logs around it; none of them proved the frame
-    // actually produced a quad, or which atlas it is about to sample. Throttled
-    // to one line every 500 ms so a three-second beat leaves a handful.
-    let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-    let previous = VERDICT_BEAT_LOG_MS.swap(now_ms, std::sync::atomic::Ordering::Relaxed);
-    if now_ms.saturating_sub(previous) >= 500 {
-        log::info!(
-            "Verdict beat draw: outcome={} label={label} view={view:?} camera={camera:?} \
-             card={} side_art={} retail_art={}",
-            match outcome_kind {
-                HouseOutcomeKind::Victory => "victory",
-                HouseOutcomeKind::Defeat => "defeat",
-            },
-            card.is_some(),
-            state
-                .match_state
-                .match_presentation
-                .outcome_banner_side_art
-                .is_some(),
-            state.renderer.outcome_banner_art.is_some(),
-        );
-    }
-    if let Some(quad) = card {
+    if let Some(quad) = active_art(state).and_then(|art| art.fit_quad(view, camera)) {
         return (vec![quad], Vec::new());
     }
     if let Some(quad) = state
@@ -437,6 +422,35 @@ pub(crate) fn instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteIns
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// House4F8657 clears Won when the whole-Vox wait ends, before Main_Game
+    /// routes the result; the banner keeps its text through that frame.
+    #[test]
+    fn a_victory_keeps_its_banner_after_the_house_clears_won() {
+        use crate::sim::house_state::HouseState;
+        use crate::sim::runtime::SimRuntime;
+        use crate::sim::scenario_session::ScenarioGameMode;
+        use crate::sim::world::{FrameEffects, Simulation, TickLane};
+        let mut sim = Simulation::with_seed(0x004F_8657);
+        let owner = sim.intern("Human");
+        let mut house = HouseState::new(owner, 0, None, true, 0, 10);
+        assert!(house.accept_win_result(0, 0, false));
+        sim.houses_mut_for_test().register(house);
+        sim.session_mut_for_test()
+            .set_game_mode(ScenarioGameMode::Skirmish);
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        assert_eq!(sim_outcome(&sim), Some(HouseOutcomeKind::Victory));
+        let mut runtime = SimRuntime::from_simulation(sim);
+        runtime
+            .advance_frame(&[], 67, TickLane::Ordinary, FrameEffects::default())
+            .unwrap();
+        assert!(!runtime.simulation.houses()[&owner].has_won());
+        assert_eq!(
+            sim_outcome(&runtime.simulation),
+            Some(HouseOutcomeKind::Victory)
+        );
+    }
 
     #[test]
     fn native_signed_centering_keeps_large_shape_crop() {

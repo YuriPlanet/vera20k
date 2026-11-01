@@ -248,12 +248,6 @@ impl Simulation {
                 })
             };
             if let Some(kind) = kind {
-                // A client may own this beat: the result then stays
-                // unpublished while the frame commits and runs on, and the
-                // same House asks again next frame. Native has no such state,
-                // so a headless or replay frame never takes this branch.
-                let held = self.handles_house_outcome_locally(owner)
-                    && frame_effects.outcome_held(owner, kind);
                 // HouseClass::Update4F860F/4F8736 pumps all preceding Vox
                 // before publishing the request and visiting later Houses.
                 // VERA's network state represents every human viewpoint;
@@ -261,20 +255,16 @@ impl Simulation {
                 if self.handles_house_outcome_locally(owner) {
                     frame_effects.consume_prefix_effects(&mut self.trigger_effects);
                     frame_effects.flush_sound(self, rules);
-                }
-                if !held {
-                    if self.handles_house_outcome_locally(owner)
-                        && !frame_effects.outcome_wait_complete(owner, kind)
-                    {
+                    if !frame_effects.outcome_wait_complete(owner, kind) {
                         return Err(HouseOutcomeCursor {
                             index,
                             kind,
                             generated,
                         });
                     }
-                    self.houses.get_mut(&owner).unwrap().complete_outcome(kind);
-                    self.admit_house_outcome(owner, kind);
                 }
+                self.houses.get_mut(&owner).unwrap().complete_outcome(kind);
+                self.admit_house_outcome(owner, kind);
             }
             // Original4F87C2..4F87FA runs even on frame zero and before
             // team/EVA/defeat work. Clear1F6 before entering ReceiveDamage.

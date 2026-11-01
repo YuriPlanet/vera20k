@@ -482,12 +482,17 @@ impl App {
             .sim_runtime
             .as_ref()
             .is_some_and(|rt| rt.simulation.pending_network_wait());
+        // Main_Game48CE8A..48CEA8 runs the router 55CFD0 after every
+        // Main_Tick and leaves the loop once it routes, so no frame follows a
+        // published result. One the router leaves waiting for a commander
+        // clip keeps the world on that frame, as headless and replay runs do.
         if matches!(state.frontend.screen, GameScreen::InGame)
             && (network_frame_pending
                 || (simulation_allowed
                     && !state.focus_freeze_active()
                     && state.match_state.scenario_exit.is_none()
-                    && state.match_state.scenario_outcome.is_none()))
+                    && state.match_state.scenario_outcome.is_none()
+                    && !Self::local_outcome_exit_ready(state)))
         {
             let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
             // Wait_For_Players runs inside the frame's network service, ahead
@@ -762,13 +767,10 @@ impl App {
         if runtime_pass.quit_requested {
             return Ok(FrameRenderOutcome::Unavailable);
         }
-        // A commander clip the result earned is drawn *into* the radar window
-        // by the ordinary game frame; the movie itself only advances while
-        // that frame is composed. The native gates below stop drawing the
-        // moment the outcome is ready, so the verdict's own beat — the card up
-        // over the frozen battlefield, before the score page — would show
-        // nothing without this exception. The teardown stays where it was;
-        // only the picture keeps coming.
+        // The verdict's beat, the card over the stopped battlefield before the
+        // teardown starts, is drawn by the ordinary game frame. The native
+        // gates below stop drawing once the router has taken the result, so
+        // the beat needs this exception.
         let showing_verdict = state
             .match_state
             .scenario_exit

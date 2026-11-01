@@ -7,11 +7,11 @@
 //! VERA's page lays its controls out on the main page's bands and rows.
 
 use super::{
-    ACCESSIBILITY_LABEL, CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL, CUSTOM_END_GAME_BANNER_HELP,
-    CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL,
-    CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, DEVELOPER_OPTIONS_LABEL,
-    DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayChoice, DisplayTarget,
-    FPS_COUNTER_HELP, FPS_COUNTER_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL,
+    ACCESSIBILITY_LABEL, CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL,
+    CUSTOM_END_GAME_BANNER_HELP, CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP,
+    CUSTOM_END_GAME_MOVIE_LABEL, CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL,
+    DEVELOPER_OPTIONS_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayChoice,
+    DisplayTarget, FPS_COUNTER_HELP, FPS_COUNTER_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL,
     HAS_CHECK_FOR_UPDATES, HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL, LOCK_CURSOR_HELP,
     LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue,
     LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP,
@@ -286,7 +286,10 @@ impl LauncherOptionsLayout {
                     // clips. 150 leaves ~124 px of text, enough for 23.
                     (LauncherCheckboxId::FpsCounter, dlu(93, 187, 130, 10)),
                     (LauncherCheckboxId::SkipStartupLogo, dlu(93, 200, 130, 10)),
-                    (LauncherCheckboxId::CustomEndGameBanner, dlu(93, 213, 150, 10)),
+                    (
+                        LauncherCheckboxId::CustomEndGameBanner,
+                        dlu(93, 213, 150, 10),
+                    ),
                     (
                         LauncherCheckboxId::CustomEndGameScore,
                         dlu(93, 226, 150, 10),
