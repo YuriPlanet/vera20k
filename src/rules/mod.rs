@@ -213,6 +213,7 @@ mod country_parent_tests;
 #[cfg(test)]
 mod country_veterancy_tests;
 pub mod effect_asset_catalog;
+pub mod end_game;
 pub mod error;
 pub mod flh;
 pub mod foundation;

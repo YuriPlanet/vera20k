@@ -316,14 +316,20 @@ pub(crate) fn render_score_page(
     }
     let text = shell_paint::paint_labels_scaled(&state.renderer.bit_font, &labels, scale.factor());
 
+    // The shell pass draws these in array order with depth off
+    // (`DepthAxis::NONE`), so the list *is* the paint order. The dialog's own
+    // background goes first: it fills the whole 800x600 dialog, and a country
+    // card (`[EndGameScreens] Score*Art=`) fills it completely — drawn after
+    // the chrome it hid the right panel, the Continue button and the lower
+    // strip, which is what "the picture covers the whole menu" was.
     let draws = [
-        TexturedDraw {
-            texture: &chrome.texture,
-            instances: chrome_sprites,
-        },
         TexturedDraw {
             texture: &art.texture,
             instances: art_sprites,
+        },
+        TexturedDraw {
+            texture: &chrome.texture,
+            instances: chrome_sprites,
         },
         TexturedDraw {
             texture: &chrome.texture,

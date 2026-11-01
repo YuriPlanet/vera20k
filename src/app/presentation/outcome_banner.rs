@@ -66,14 +66,24 @@ impl OutcomeBannerArt {
         image: Option<&str>,
         palette: Option<&str>,
     ) -> Option<Self> {
+        // A named image that will not parse falls back to InitGame's literal
+        // surface, which is what the native slot lookup does.
+        Self::build_exact(gpu, batch, assets, image.unwrap_or(STOCK_IMAGE), palette)
+            .or_else(|| Self::build_exact(gpu, batch, assets, STOCK_IMAGE, palette))
+    }
+
+    /// One named SHP/PAL pair, no fallback: the country cards
+    /// (`[EndGameScreens]`) must never quietly show the retail banner instead.
+    fn build_exact(
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        assets: &AssetManager,
+        image: &str,
+        palette: Option<&str>,
+    ) -> Option<Self> {
         let shp = assets
-            .get_ref(image.unwrap_or(STOCK_IMAGE))
-            .and_then(|bytes| ShpFile::from_bytes(bytes).ok())
-            .or_else(|| {
-                assets
-                    .get_ref(STOCK_IMAGE)
-                    .and_then(|bytes| ShpFile::from_bytes(bytes).ok())
-            })?;
+            .get_ref(image)
+            .and_then(|bytes| ShpFile::from_bytes(bytes).ok())?;
         //6D4E8D sign-extends the SHP frame count; its invalid-count branch
         //uses text. The normal retail shape has a small positive count.
         if (shp.frames.len() as i16) <= 0 {
@@ -170,6 +180,168 @@ fn centered_origin(view: [i32; 2], canvas: [i32; 2]) -> [i32; 2] {
     std::array::from_fn(|axis| view[axis].wrapping_sub(canvas[axis]) / 2)
 }
 
+/// The local country's own win/lose card (`[EndGameScreens]`), drawn into the
+/// same slot as the retail `GRFXTXT` banner.
+///
+/// The slot is the tactical viewport, not the screen: the sidebar and the
+/// radar window stay uncovered, so a beaten commander's closing clip can play
+/// there while the card is up, and the card itself is fitted into the
+/// viewport instead of being cropped by it. One picture per outcome, built
+/// once per match; a country that names neither half answers `None` and the
+/// retail banner stays.
+pub(crate) struct EndGameBanner {
+    victory: Option<OutcomeBannerArt>,
+    defeat: Option<OutcomeBannerArt>,
+}
+
+impl EndGameBanner {
+    pub(crate) fn build(
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        assets: &AssetManager,
+        screens: &crate::rules::end_game::EndGameCatalog,
+        country: &str,
+    ) -> Option<Self> {
+        let half = |kind| {
+            let art = screens.presentation(country, kind)?.banner_art()?;
+            if !assets.contains(&art.shape) {
+                log::warn!(
+                    "[EndGameScreens] {} is not installed; the retail end-game banner stays",
+                    art.shape
+                );
+                return None;
+            }
+            OutcomeBannerArt::build_exact(gpu, batch, assets, &art.shape, art.palette.as_deref())
+                .or_else(|| {
+                    log::warn!(
+                        "[EndGameScreens] {} could not be read; the retail end-game banner stays",
+                        art.shape
+                    );
+                    None
+                })
+        };
+        let victory = half(crate::rules::end_game::EndGameKind::Victory);
+        let defeat = half(crate::rules::end_game::EndGameKind::Defeat);
+        if victory.is_none() && defeat.is_none() {
+            return None;
+        }
+        log::info!(
+            "[EndGameScreens] in-game banner for {country}: victory={} defeat={}",
+            victory.is_some(),
+            defeat.is_some()
+        );
+        Some(Self { victory, defeat })
+    }
+
+    fn art(&self, kind: HouseOutcomeKind) -> Option<&OutcomeBannerArt> {
+        match kind {
+            HouseOutcomeKind::Victory => self.victory.as_ref(),
+            HouseOutcomeKind::Defeat => self.defeat.as_ref(),
+        }
+    }
+}
+
+/// The verdict this exit router is presenting — the one FlagWin4FC9E0 /
+/// FlagLose4FCBD0 would have turned into `TXT_VICTORIOUS`/`TXT_LOST`.
+///
+/// Native feeds `Tactical SetScreenText 6D4DB0` once, at Flag time, and the
+/// text object outlives everything after it. The House flag does not:
+/// `House4F8657` clears Won the instant the whole-Vox wait ends
+/// (`complete_outcome`), which is before `Main_Game 55CFD0` routes the result.
+/// Re-deriving the half from `house.outcome()` at draw time therefore answered
+/// nothing for a victory once the verdict was taken late — the defeat half
+/// kept working only because `4F8780..4F87BB` deliberately retains Lost. The
+/// cascade holds the verdict the router took, and everything here reads it.
+fn local_outcome(state: &AppState) -> Option<HouseOutcomeKind> {
+    state.match_state.scenario_exit.as_ref()?.verdict()
+}
+
+/// The country card this match selected, when it can actually be drawn.
+///
+/// One owner for both halves of the draw: [`instances`] samples these frames
+/// and the tactical pass binds [`OutcomeBannerArt::texture`] for the emitted
+/// quads. Splitting the decision once made the quads address the retail
+/// `GRFXTXT` atlas while they carried the card's size and offsets, which is a
+/// garbled picture rather than a missing one.
+pub(crate) fn active_art(state: &AppState) -> Option<&OutcomeBannerArt> {
+    if !state.persistence.options_profile.custom_end_game_banner {
+        return None;
+    }
+    // A match, not a mission: the campaign's own `SCENARIO WON`/`LOST`
+    // banners belong to the campaign's art.
+    if !state
+        .match_state
+        .sim_runtime
+        .as_ref()?
+        .simulation
+        .session()
+        .game_mode_nonzero()
+    {
+        return None;
+    }
+    let kind = local_outcome(state)?;
+    state
+        .match_state
+        .match_presentation
+        .end_game_banner
+        .as_ref()?
+        .art(kind)
+        .filter(|art| art.frames.first().is_some() && art.canvas[0] > 0 && art.canvas[1] > 0)
+}
+
+/// The atlas the outcome pass must bind: whichever picture [`instances`] is
+/// about to describe. `None` keeps the caller's own default, the retail
+/// `GRFXTXT` slot.
+pub(crate) fn texture(state: &AppState) -> Option<&BatchTexture> {
+    active_art(state)
+        .or(state
+            .match_state
+            .match_presentation
+            .outcome_banner_side_art
+            .as_ref())
+        .or(state.renderer.outcome_banner_art.as_ref())
+        .map(OutcomeBannerArt::texture)
+}
+
+impl OutcomeBannerArt {
+    /// Fit the whole picture inside the tactical viewport and centre it.
+    /// Retail's frames are already the size of their slot and keep
+    /// [`Self::quad`]'s native crop; a country card is a full-screen
+    /// composition and must not lose its edges to the sidebar.
+    fn fit_quad(&self, view: [i32; 2], camera: [f32; 2]) -> Option<SpriteInstance> {
+        let frame = self.frames.first()?;
+        if self.canvas[0] <= 0 || self.canvas[1] <= 0 || view[0] <= 0 || view[1] <= 0 {
+            return None;
+        }
+        let scale = (view[0] as f32 / self.canvas[0] as f32)
+            .min(view[1] as f32 / self.canvas[1] as f32)
+            .min(1.0);
+        if scale <= 0.0 {
+            return None;
+        }
+        let size = [self.canvas[0] as f32 * scale, self.canvas[1] as f32 * scale];
+        Some(SpriteInstance {
+            position: [
+                (view[0] as f32 - size[0]) / 2.0 + f32::from(frame.offset[0]) * scale + camera[0],
+                (view[1] as f32 - size[1]) / 2.0 + f32::from(frame.offset[1]) * scale + camera[1],
+            ],
+            size,
+            uv_origin: [frame.atlas_x as f32 / self.atlas[0] as f32, 0.0],
+            uv_size: [
+                frame.size[0] as f32 / self.atlas[0] as f32,
+                frame.size[1] as f32 / self.atlas[1] as f32,
+            ],
+            depth: 0.00022,
+            tint: [1.0; 3],
+            alpha: 1.0,
+            ..Default::default()
+        })
+    }
+}
+
+/// Throttle for the verdict-beat diagnostic in [`instances`].
+static VERDICT_BEAT_LOG_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 fn result_view(kind: HouseOutcomeKind, campaign: bool) -> (usize, &'static str) {
     match (campaign, kind) {
         (true, HouseOutcomeKind::Victory) => (0, "TXT_SCENARIO_WON"),
@@ -182,25 +354,51 @@ fn result_view(kind: HouseOutcomeKind, campaign: bool) -> (usize, &'static str) 
 /// Tactical6D4E20 chooses shape first; centred white text is its missing-art
 /// branch. Its geometry follows the tactical viewport and is screen-fixed.
 pub(crate) fn instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    // Nothing is drawn until the exit router has taken the result and recorded
+    // it: the House flag is cleared mid-wait, so it is no verdict source at
+    // all. See [`local_outcome`].
+    let Some(outcome_kind) = local_outcome(state) else {
         return Default::default();
     };
-    let sim = &runtime.simulation;
-    let Some(outcome) = sim
-        .session()
-        .current_house()
-        .and_then(|house| sim.houses().get(&house))
-        .and_then(|house| house.outcome())
-    else {
-        return Default::default();
-    };
-    let (frame, label) = result_view(outcome.kind, !sim.session().game_mode_nonzero());
+    let campaign = !state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .is_some_and(|runtime| runtime.simulation.session().game_mode_nonzero());
+    let (frame, label) = result_view(outcome_kind, campaign);
     let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
     let view = [width as i32, height as i32];
     let camera = [
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
     ];
+    let card = active_art(state).and_then(|art| art.fit_quad(view, camera));
+    // Runtime evidence for the verdict beat. Every earlier round reasoned about
+    // this draw from the timing logs around it; none of them proved the frame
+    // actually produced a quad, or which atlas it is about to sample. Throttled
+    // to one line every 500 ms so a three-second beat leaves a handful.
+    let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+    let previous = VERDICT_BEAT_LOG_MS.swap(now_ms, std::sync::atomic::Ordering::Relaxed);
+    if now_ms.saturating_sub(previous) >= 500 {
+        log::info!(
+            "Verdict beat draw: outcome={} label={label} view={view:?} camera={camera:?} \
+             card={} side_art={} retail_art={}",
+            match outcome_kind {
+                HouseOutcomeKind::Victory => "victory",
+                HouseOutcomeKind::Defeat => "defeat",
+            },
+            card.is_some(),
+            state
+                .match_state
+                .match_presentation
+                .outcome_banner_side_art
+                .is_some(),
+            state.renderer.outcome_banner_art.is_some(),
+        );
+    }
+    if let Some(quad) = card {
+        return (vec![quad], Vec::new());
+    }
     if let Some(quad) = state
         .match_state
         .match_presentation

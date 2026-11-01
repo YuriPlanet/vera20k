@@ -4484,6 +4484,12 @@ pub struct RuleSet {
     /// `[CommanderFeedback]`: the talking-head layer's own switches, next to
     /// the personalities they govern.
     commander_feedback: crate::rules::personality::CommanderFeedbackRules,
+    /// `[EndGameScreens]`: per-country score-page music and backgrounds.
+    ///
+    /// Empty for every rules set without that section — which is all retail
+    /// data — and an empty catalog leaves the side art and the native `SCORE`
+    /// theme untouched.
+    end_game_screens: crate::rules::end_game::EndGameCatalog,
     /// Read-only projection of the live SideExt owner, in the same native
     /// array order as side_ids. Rebuilt after every Process/reset/save restore.
     #[cfg(feature = "ares")]
@@ -6450,6 +6456,10 @@ impl RuleSet {
             side_ids: country_side_registry.side_ids,
             personalities,
             commander_feedback: crate::rules::personality::parse_commander_feedback(ini),
+            end_game_screens: crate::rules::end_game::parse_end_game_screens(
+                ini,
+                &parse_registry(ini, "EndGameScreens"),
+            ),
             #[cfg(feature = "phobos")]
             side_gdi_positions,
             #[cfg(feature = "phobos")]
@@ -9222,6 +9232,12 @@ impl RuleSet {
     /// how easily a house is considered to be in trouble.
     pub fn commander_feedback(&self) -> crate::rules::personality::CommanderFeedbackRules {
         self.commander_feedback.clone()
+    }
+
+    /// `[EndGameScreens]`: the per-country score-page themes and backgrounds.
+    /// Empty for retail data, which is what keeps the retail page untouched.
+    pub fn end_game_screens(&self) -> &crate::rules::end_game::EndGameCatalog {
+        &self.end_game_screens
     }
 
     /// Phobos `WarheadTypeExt::AllowDamageOnSelf.Get([General] ...)`: the

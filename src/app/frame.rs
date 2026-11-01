@@ -762,10 +762,23 @@ impl App {
         if runtime_pass.quit_requested {
             return Ok(FrameRenderOutcome::Unavailable);
         }
+        // A commander clip the result earned is drawn *into* the radar window
+        // by the ordinary game frame; the movie itself only advances while
+        // that frame is composed. The native gates below stop drawing the
+        // moment the outcome is ready, so the verdict's own beat — the card up
+        // over the frozen battlefield, before the score page — would show
+        // nothing without this exception. The teardown stays where it was;
+        // only the picture keeps coming.
+        let showing_verdict = state
+            .match_state
+            .scenario_exit
+            .as_ref()
+            .is_some_and(|exit| exit.holding_banner());
         if Self::house_outcome_wait_pending(state)
             || (state.frontend.screen == GameScreen::InGame
                 && state.match_state.scenario_exit.is_some()
-                && Self::local_outcome_exit_ready(state))
+                && Self::local_outcome_exit_ready(state)
+                && !showing_verdict)
         {
             // House4F860B/4F8732 and outcome exits685670/685DC0 service
             // audio/network without drawing Tactical again. Keep the surface

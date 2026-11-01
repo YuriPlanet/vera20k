@@ -1819,7 +1819,10 @@ pub fn populate_launch_houses(
     // Resolved once: the catalog and these switches are the same for every
     // slot, and the base plan is built before the loop.
     let feedback = rules.commander_feedback();
-    for slot in slots {
+    // The slot ordinal seeds the commander pick, so a launch whose assignment
+    // table names a commander of the wrong side still ends up with one
+    // commander per house instead of the same stand-in three times.
+    for (slot_index, slot) in slots.iter().enumerate() {
         let name_id = sim.interner.intern(&slot.owner_name);
         let country_name = rules
             .country_name(slot.country.index())
@@ -1921,6 +1924,7 @@ pub fn populate_launch_houses(
                 rules.personalities(),
                 country_name,
                 requested,
+                slot_index,
             );
             house.set_personality(personality);
             if let Some(definition) = personality

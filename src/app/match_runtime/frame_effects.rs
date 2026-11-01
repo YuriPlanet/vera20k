@@ -54,6 +54,22 @@ pub(crate) struct FrameClientBoundary<'a> {
     logic_frame_rate: u32,
     outcome_wait: Option<RefCell<&'a mut Option<super::scenario_exit::ScenarioOutcomeVoiceWait>>>,
     scenario_pause: Option<RefCell<ScenarioPauseOwners<'a>>>,
+    /// Whether the verdict's beat belongs to the losing commander's clip.
+    ///
+    /// `HouseClass::Update 4F860F` holds the frame while the whole Vox queue
+    /// is busy, and a held frame draws nothing: the battlefield stands still
+    /// for the length of whatever is talking. With `Custom End Game Movie` on
+    /// the result's own line belongs to the card — it is said where the card
+    /// goes up, after the clip — so it is not admitted on the kill frame at
+    /// all.
+    ///
+    /// The same switch stops the wait from holding the frame for the clip's
+    /// *own* transmission line: `RadarMovieCommand::Announce` leaves that
+    /// line queued (`VoxClass::suspend` holds it, it does not unqueue it), and
+    /// `VoxClass::PumpAndCheckActive` counts a queued line as active. Holding
+    /// the frame there froze the battlefield for the length of the
+    /// transmission, before the clip had even been drawn.
+    defer_verdict_to_clip: bool,
 }
 
 impl<'a> FrameClientBoundary<'a> {
@@ -76,7 +92,15 @@ impl<'a> FrameClientBoundary<'a> {
             logic_frame_rate: 0,
             outcome_wait: None,
             scenario_pause: None,
+            defer_verdict_to_clip: false,
         }
+    }
+
+    /// Give the verdict's beat to the losing commander's clip. See
+    /// [`FrameClientBoundary::defer_verdict_to_clip`].
+    pub(crate) fn with_deferred_verdict(mut self, deferred: bool) -> Self {
+        self.defer_verdict_to_clip = deferred;
+        self
     }
 
     pub(crate) fn with_tactical_radar(mut self, setter: &'a mut TacticalRadarSetter<'a>) -> Self {
@@ -201,6 +225,23 @@ impl<'a> FrameClientBoundary<'a> {
 }
 
 impl OutcomeWaitBoundary for FrameClientBoundary<'_> {
+    /// The clip owns the beat, so the result is not published until it has
+    /// played — and the frame commits and runs on in the meantime.
+    ///
+    /// This is the only one of the three possible answers that keeps the
+    /// battlefield alive: [`Self::wait_complete`] answering false suspends the
+    /// frame itself (nothing moves, nothing draws), and answering true
+    /// publishes a result that `Main_Tick` treats as the match's last frame —
+    /// `commit_frame_tail` then refuses to commit again and the world stops
+    /// dead, which is exactly what "the units froze" looked like.
+    fn hold_outcome(
+        &self,
+        _owner: crate::sim::intern::InternedId,
+        _kind: crate::sim::house_state::HouseOutcomeKind,
+    ) -> bool {
+        self.defer_verdict_to_clip
+    }
+
     fn apply_prefix_effect(&self, effect: &crate::sim::trigger_runtime::TriggerEffect) -> bool {
         self.apply_prefix_effect_at(effect, super::frame_pacer::wall_clock_ms())
     }
@@ -365,7 +406,13 @@ impl SoundBoundary for FrameClientBoundary<'_> {
         {
             let mut admit_radar = self.admit_radar.borrow_mut();
             dispatch_sim_sound_events(
-                pending.iter().cloned(),
+                pending.iter().cloned().filter(|event| {
+                    // The verdict's own line is withheld on purpose when the
+                    // card is going to say it: see
+                    // [`FrameClientBoundary::defer_verdict_to_clip`].
+                    !(self.defer_verdict_to_clip
+                        && matches!(event, SimSoundEvent::MatchOutcome { .. }))
+                }),
                 sim,
                 rules,
                 self.local_owner,

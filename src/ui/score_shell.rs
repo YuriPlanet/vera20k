@@ -123,8 +123,23 @@ pub struct ScoreScreenModel {
     /// `.LoseTheme` under Ares, selected on the local player's
     /// `HouseClass+0x1F5` defeated flag. `None` keeps gamemd's literal `SCORE`.
     pub theme: Option<String>,
+    /// A background that replaces the local side's own. `None` keeps the side
+    /// art (`0x0072D730`); the field exists for `[EndGameScreens]`, which no
+    /// retail rules set writes.
+    pub background: Option<ScoreBackground>,
     /// Complete immutable result order. VERA pages rows beyond the eight native slots.
     pub rows: Vec<ScoreRow>,
+}
+
+/// A score-page background from `[EndGameScreens]`: the SHP whose first frame
+/// the page draws, and the palette it is drawn with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScoreBackground {
+    /// The SHP file name; the first frame is the page background.
+    pub shape: String,
+    /// The palette file name. `None` keeps the side's own palette, which is
+    /// what a rules set that only swaps the picture wants.
+    pub palette: Option<String>,
 }
 
 impl ScoreScreenModel {
@@ -764,6 +779,7 @@ mod tests {
             elapsed_seconds: 79,
             side: 0,
             theme: None,
+            background: None,
             rows: vec![
                 ScoreRow {
                     name: "Computer".into(),
