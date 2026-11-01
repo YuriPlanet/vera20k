@@ -12,9 +12,9 @@ use crate::ui::campaign_score_shell::{
 };
 use crate::ui::score_shell::{ScoreRow, ScoreScreenModel};
 use crate::ui::shell::geom::RectPx;
+use crate::util::time::Instant;
 use image::ImageEncoder;
 use serde_json::{Value, json};
-use crate::util::time::Instant;
 
 /// Frames to present once the target state is reached.
 const SETTLE_FRAMES: u32 = 4;
@@ -720,6 +720,7 @@ fn comparison_model(state: &AppState) -> Result<ScoreScreenModel> {
         elapsed_seconds: 79,
         side: 0,
         theme: None,
+        background: None,
         rows: vec![
             ScoreRow {
                 name: computer,

@@ -88,6 +88,16 @@ pub(crate) const SKIP_STARTUP_LOGO_HELP: &str =
     "Start without the logo movie; the loading screen still shows. Applies at the next start.";
 pub(crate) const FPS_COUNTER_LABEL: &str = "FPS Counter";
 pub(crate) const FPS_COUNTER_HELP: &str = "Show frames per second in the top-left corner. Off at every start; Ctrl+Alt+F also switches it.";
+/// VERA's end-game switches, the pair of `[EndGameScreens]` presentation
+/// stages. The verdict is what the match shows where it is decided; the score
+/// page is the dialog after it. Each stage owns its picture *and* its music, so
+/// a player can keep one stage and drop the other.
+pub(crate) const CUSTOM_END_GAME_BANNER_LABEL: &str = "Custom End Game Banner";
+pub(crate) const CUSTOM_END_GAME_BANNER_HELP: &str = "Show the victory or defeat picture a rules set gives your country over the battlefield, and start its music with it. Untick to keep the standard banner and theme.";
+pub(crate) const CUSTOM_END_GAME_SCORE_LABEL: &str = "Custom End Game Score";
+pub(crate) const CUSTOM_END_GAME_SCORE_HELP: &str = "Use the same country picture as the score screen's background and its music as the score theme. Untick to keep the standard score screen.";
+pub(crate) const CUSTOM_END_GAME_MOVIE_LABEL: &str = "Custom End Game Movie";
+pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "Play a beaten computer commander's losing clip before the victory or defeat verdict, and works in single player only — a network game cannot wait for every other player's clip, so it ends at once there while the two picture switches above still apply. Untick to end every match at once, which cuts the clip.";
 pub(crate) const SHIFT_QUEUE_HELP: &str =
     "Shift-click an infantry, vehicle or aircraft cameo to queue several at once.";
 pub(crate) const DISPLAY_LABEL: &str = "Display";
@@ -514,6 +524,20 @@ pub(crate) enum LauncherCheckboxId {
     /// VERA's developer box: the next launch skips `Init_Game`'s logo movie
     /// (`0x0052C5E2`); the splash and the first-run intro still play.
     SkipStartupLogo,
+    /// VERA's box: the score page draws the country's own victory or defeat
+    /// picture from `[EndGameScreens]` instead of the side's `MP*SCRN` art. On
+    /// by default — a rules set that names pictures shows them — and it covers
+    /// the picture only. The next finished match reads it, so it needs no live
+    /// apply.
+    CustomEndGameBanner,
+    /// VERA's box: the score page starts the country's own
+    /// `VictoryMusic=`/`DefeatMusic=` theme instead of the side's. Also read
+    /// once per finished match.
+    CustomEndGameScore,
+    /// VERA's box: a finished match waits for a beaten computer commander's
+    /// losing clip before the score page opens and the battle is torn down.
+    /// Read when the match ends, so it needs no live apply either.
+    CustomEndGameMovie,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -555,6 +579,9 @@ pub(crate) enum LauncherOptionsEvent {
     LockCursorChanged(bool),
     FpsCounterChanged(bool),
     SkipStartupLogoChanged(bool),
+    CustomEndGameBannerChanged(bool),
+    CustomEndGameScoreChanged(bool),
+    CustomEndGameMovieChanged(bool),
     /// VERA's team-colour strength, as the level the profile stores.
     HouseColorStrengthChanged(u8),
     ScorePreview(f32),
@@ -604,6 +631,15 @@ pub(crate) struct LauncherOptionsValues {
     /// The FPS readout's live state when the page opened, then each toggle.
     pub(crate) fps_counter: bool,
     pub(crate) skip_startup_logo: bool,
+    /// The country's own end-game picture is allowed; see
+    /// [`LauncherCheckboxId::CustomEndGameBanner`].
+    pub(crate) custom_end_game_banner: bool,
+    /// The country's own end-game music is allowed; see
+    /// [`LauncherCheckboxId::CustomEndGameScore`].
+    pub(crate) custom_end_game_score: bool,
+    /// The exit waits for the closing commander clip; see
+    /// [`LauncherCheckboxId::CustomEndGameMovie`].
+    pub(crate) custom_end_game_movie: bool,
     /// The Sidebar list's choice; like Zoom, it applies at once.
     pub(crate) sidebar: SidebarSize,
     /// VERA's team-colour strength as the slider's position,
@@ -635,6 +671,9 @@ impl Default for LauncherOptionsValues {
             wol_test_service: false,
             fps_counter: false,
             skip_startup_logo: false,
+            custom_end_game_banner: true,
+            custom_end_game_score: true,
+            custom_end_game_movie: true,
             sidebar: SidebarSize::Normal,
             house_color_position: 0,
             score_position: 4,
@@ -1001,6 +1040,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::LockCursor => &mut self.values.lock_cursor,
             LauncherCheckboxId::FpsCounter => &mut self.values.fps_counter,
             LauncherCheckboxId::SkipStartupLogo => &mut self.values.skip_startup_logo,
+            LauncherCheckboxId::CustomEndGameBanner => &mut self.values.custom_end_game_banner,
+            LauncherCheckboxId::CustomEndGameScore => &mut self.values.custom_end_game_score,
+            LauncherCheckboxId::CustomEndGameMovie => &mut self.values.custom_end_game_movie,
         };
         *slot = !*slot;
         let checked = *slot;
@@ -1040,6 +1082,15 @@ impl OptionsDialogState {
             LauncherCheckboxId::SkipStartupLogo => self
                 .pending_events
                 .push(LauncherOptionsEvent::SkipStartupLogoChanged(checked)),
+            LauncherCheckboxId::CustomEndGameBanner => self
+                .pending_events
+                .push(LauncherOptionsEvent::CustomEndGameBannerChanged(checked)),
+            LauncherCheckboxId::CustomEndGameScore => self
+                .pending_events
+                .push(LauncherOptionsEvent::CustomEndGameScoreChanged(checked)),
+            LauncherCheckboxId::CustomEndGameMovie => self
+                .pending_events
+                .push(LauncherOptionsEvent::CustomEndGameMovieChanged(checked)),
             LauncherCheckboxId::Tooltips
             | LauncherCheckboxId::TargetLines
             | LauncherCheckboxId::ShowHidden => {}

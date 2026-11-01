@@ -686,6 +686,35 @@ pub(crate) fn finish_presentation_assets(
     };
     #[cfg(not(feature = "ares"))]
     let outcome_banner_side_art = None;
+    // `[EndGameScreens]` may name the local player's own country a win/lose
+    // card. It takes the retail `GRFXTXT` banner's slot in the tactical
+    // viewport, so it is built with the world like the banner art above; the
+    // player's Custom End Game Banner switch is read when it is drawn.
+    let end_game_banner = {
+        let country = simulation
+            .session()
+            .current_house()
+            .and_then(|house| simulation.houses().get(&house))
+            .and_then(|house| house.country())
+            .map(|country| simulation.resolve(country).to_owned());
+        match country {
+            Some(country) => crate::app::presentation::outcome_banner::EndGameBanner::build(
+                gpu,
+                batch,
+                asset_manager,
+                rules.end_game_screens(),
+                &country,
+            ),
+            None => {
+                if !rules.end_game_screens().is_empty() {
+                    log::warn!(
+                        "[EndGameScreens]: no local country at load; the retail end-game banner stays"
+                    );
+                }
+                None
+            }
+        }
+    };
     let fnt_file = asset_manager.get_ref("GAME.FNT").and_then(|data| {
         crate::assets::fnt_file::FntFile::from_bytes(data)
             .map_err(|error| log::warn!("Failed to parse GAME.FNT: {error}"))
@@ -726,6 +755,7 @@ pub(crate) fn finish_presentation_assets(
         #[cfg(feature = "phobos")]
         sw_sidebar_art,
         outcome_banner_side_art,
+        end_game_banner,
         software_cursor,
         overlay_names: overlays.overlay_names,
         overlay_radar_colors: overlays.overlay_radar_colors,

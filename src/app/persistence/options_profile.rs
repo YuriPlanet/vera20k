@@ -179,6 +179,28 @@ pub(crate) struct RetailOptionsProfile {
     /// its personality and its trigger weights either way, and the simulation
     /// never reads it.
     pub(crate) commander_feedback: bool,
+    /// `[VERA] CustomEndGameBanner=`: the match's own verdict, shown where the
+    /// match is decided — the country's `VictoryArt=`/`DefeatArt=` picture
+    /// drawn over the tactical view where the retail `GRFXTXT` banner sits,
+    /// and its `VictoryMusic=`/`DefeatMusic=` theme started with it. On by
+    /// default, so a rules set that names them just works; untick it from
+    /// Options ("Custom End Game Verdict") to keep the retail banner and let
+    /// the battle theme run on. Presentation only: the simulation never reads
+    /// it, and the score page has its own switch below.
+    pub(crate) custom_end_game_banner: bool,
+    /// `[VERA] CustomEndGameScore=`: the score page's own picture and theme —
+    /// `VictoryArt=`/`DefeatArt=` as its background instead of the side's, and
+    /// `VictoryMusic=`/`DefeatMusic=` as its theme instead of the side's
+    /// `WinTheme`/`LoseTheme`. Separate from the verdict switch so a player can
+    /// keep one and drop the other. Presentation only.
+    pub(crate) custom_end_game_score: bool,
+    /// `[VERA] CustomEndGameMovie=`: hold the match result while a destroyed
+    /// computer commander's losing clip plays, so the movie comes first and
+    /// the verdict after it. Off restores gamemd's immediate handoff, which
+    /// cuts the clip. Presentation only, and skirmish only: the clip layer's
+    /// own `CommanderFeedback=` switch still decides whether clips exist at
+    /// all, and a network match is never held.
+    pub(crate) custom_end_game_movie: bool,
     /// `[VERA] TranslateChat=`: the language received online chat is
     /// translated into, or `None`, the default, for off. Only the `/translate`
     /// chat command changes it ([`Self::commit_chat_translation`]).
@@ -278,6 +300,9 @@ impl Default for RetailOptionsProfile {
             wol_test_service: false,
             solo_skirmish: false,
             commander_feedback: true,
+            custom_end_game_banner: true,
+            custom_end_game_score: true,
+            custom_end_game_movie: true,
             translate_chat: None,
             skipped_update: String::new(),
             display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
@@ -298,7 +323,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 22],
+    pub(crate) vera: [(&'static str, String); 25],
 }
 
 impl RetailOptionsLoad {
@@ -518,6 +543,12 @@ impl RetailOptionsProfile {
             self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
+            self.custom_end_game_banner =
+                vera.read_bool("CustomEndGameBanner", self.custom_end_game_banner);
+            self.custom_end_game_score =
+                vera.read_bool("CustomEndGameScore", self.custom_end_game_score);
+            self.custom_end_game_movie =
+                vera.read_bool("CustomEndGameMovie", self.custom_end_game_movie);
             if let Some(value) = vera.read_name("TranslateChat", 16) {
                 self.translate_chat = crate::ui::chat_translation::ChatLanguage::from_tag(value);
             }
@@ -638,6 +669,18 @@ impl RetailOptionsProfile {
                 (
                     "CommanderFeedback",
                     format_bool(self.commander_feedback).to_string(),
+                ),
+                (
+                    "CustomEndGameBanner",
+                    format_bool(self.custom_end_game_banner).to_string(),
+                ),
+                (
+                    "CustomEndGameScore",
+                    format_bool(self.custom_end_game_score).to_string(),
+                ),
+                (
+                    "CustomEndGameMovie",
+                    format_bool(self.custom_end_game_movie).to_string(),
                 ),
                 (
                     "RenderInterpolation",
@@ -1732,6 +1775,61 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                     .retained_profile
                     .commander_feedback,
                 expected
+            );
+        }
+    }
+
+    /// The three `CustomEndGame*=` switches are independent: turning one off
+    /// never touches the other two, so a player can keep the score page's
+    /// picture and drop the battlefield verdict, or keep both and cut the
+    /// closing movie short.
+    #[test]
+    fn the_custom_end_game_switches_round_trip_independently() {
+        let startup = RetailStartupOptions::default();
+        let stock = load_snapshot(&startup, b"").retained_profile;
+        assert!(stock.custom_end_game_banner, "verdict defaults on");
+        assert!(stock.custom_end_game_score, "score page defaults on");
+        assert!(stock.custom_end_game_movie, "movie defaults on");
+        for key in [
+            "CustomEndGameBanner",
+            "CustomEndGameScore",
+            "CustomEndGameMovie",
+        ] {
+            let input = format!("[VERA]\n{key}=no\nUnowned=keep\n");
+            let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
+            let (banner, score, movie) = (
+                profile.custom_end_game_banner,
+                profile.custom_end_game_score,
+                profile.custom_end_game_movie,
+            );
+            let off = match key {
+                "CustomEndGameBanner" => !banner,
+                "CustomEndGameScore" => !score,
+                _ => !movie,
+            };
+            assert!(off, "{key}=no switched its own key off");
+            assert_eq!(
+                (banner, score, movie),
+                (
+                    key != "CustomEndGameBanner",
+                    key != "CustomEndGameScore",
+                    key != "CustomEndGameMovie"
+                ),
+                "{key}=no left the other two alone"
+            );
+            let written = profile.transform_settings(input.as_bytes());
+            let text = String::from_utf8_lossy(&written).into_owned();
+            assert!(text.contains("Unowned=keep"));
+            assert!(text.contains(&format!("{key}=no")), "{key} is written back");
+            let reloaded = load_snapshot(&startup, &written).retained_profile;
+            assert_eq!(
+                (
+                    reloaded.custom_end_game_banner,
+                    reloaded.custom_end_game_score,
+                    reloaded.custom_end_game_movie
+                ),
+                (banner, score, movie),
+                "{key} survives a write and reread"
             );
         }
     }

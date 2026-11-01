@@ -82,6 +82,22 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // Read once at the next launch; Options' accept writes it out.
         self.persistence.options_profile.skip_startup_logo = skip;
     }
+    fn store_custom_end_game_banner(&mut self, enabled: bool) {
+        // Read when a match result is admitted: the verdict's picture and its
+        // music are chosen together, so a match already on screen keeps what it
+        // started with and the next one obeys the box.
+        self.persistence.options_profile.custom_end_game_banner = enabled;
+    }
+    fn store_custom_end_game_score(&mut self, enabled: bool) {
+        // Same moment as the verdict: the model that becomes the score page is
+        // built once, when the match ends.
+        self.persistence.options_profile.custom_end_game_score = enabled;
+    }
+    fn store_custom_end_game_movie(&mut self, enabled: bool) {
+        // Read when a match ends; a teardown already waiting for a clip keeps
+        // waiting, so the switch never cuts a line that is halfway said.
+        self.persistence.options_profile.custom_end_game_movie = enabled;
+    }
     fn store_shift_queue(&mut self, shift_queue: bool) {
         // The next cameo press reads it; Options' accept writes it out.
         self.persistence.options_profile.shift_queue = shift_queue;
@@ -543,6 +559,29 @@ impl App {
             ]
             .map(|key| resolve_csf(state, key).into_owned()),
         };
+        // A rules set may name its own picture for this country
+        // (`[EndGameScreens]`). The side's own name table still supplies what
+        // the override leaves out: an art with no palette keeps the side's.
+        let mut art = state.process_assets.side_score_art(model.side);
+        if let Some(background) = model.background.as_ref() {
+            // A name the install cannot open is not fatal: the side's own
+            // picture is still a correct score page, and a broken one is not.
+            if state
+                .process_assets
+                .manager()
+                .is_some_and(|assets| assets.contains(&background.shape))
+            {
+                art.multiplayer_background = Some(background.shape.as_str());
+                if let Some(palette) = background.palette.as_deref() {
+                    art.multiplayer_palette = Some(palette);
+                }
+            } else {
+                log::warn!(
+                    "[EndGameScreens] {} is not installed; the side's score art stays",
+                    background.shape
+                );
+            }
+        }
         state.frontend.score_art = state.process_assets.manager().and_then(|assets| {
             crate::render::main_menu_shell_chrome::build_score_art(
                 &state.renderer.gpu,
@@ -550,7 +589,7 @@ impl App {
                 assets,
                 model.side,
                 crate::app::frontend::shell_layout::art_key_screen_width(state),
-                state.process_assets.side_score_art(model.side),
+                art,
             )
         });
         state.frontend.campaign_score_page = None;

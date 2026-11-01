@@ -2596,7 +2596,11 @@ impl HouseState {
 
     /// HouseClass::Update4F85BE/4F86FE admits the whole-Vox wait on
     /// exact zero of+298. Campaign victory also requires AllowWin+27C<=0.
-    pub(crate) fn pending_outcome(
+    ///
+    /// The answer is the simulation's own "I am ready to publish this House's
+    /// result now", which a client reads to tell *when* its presentation owns
+    /// the beat: see [`crate::sim::world::OutcomeWaitBoundary::hold_outcome`].
+    pub fn pending_outcome(
         &self,
         frame: i32,
         game_mode_nonzero: bool,

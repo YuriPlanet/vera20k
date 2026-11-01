@@ -1069,6 +1069,7 @@ impl App {
                     sidebar_cameo_atlas: None,
                     sidebar_chrome: None,
                     outcome_banner_side_art: None,
+                    end_game_banner: None,
                     software_cursor: startup_software_cursor,
                 },
                 match_audio: Default::default(),

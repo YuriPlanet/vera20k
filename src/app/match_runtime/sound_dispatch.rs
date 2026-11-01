@@ -1059,7 +1059,7 @@ fn owner_is_local(
 /// `EVA_YouAreVictorious` (`0x00824C2C`) and `Flag_To_Lose 0x004FCDA1`
 /// `EVA_YouHaveLost` (`0x00824C08`), both with `EDX = -1` (the entry's own
 /// type; stock rows are STANDARD NORMAL). The side column is the consumer's.
-fn outcome_eva_event(
+pub(crate) fn outcome_eva_event(
     kind: crate::sim::house_state::HouseOutcomeKind,
     campaign: bool,
 ) -> &'static str {

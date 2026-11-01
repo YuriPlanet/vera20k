@@ -969,15 +969,14 @@ pub(super) fn dispatch_draw_passes(
     // TacticalDraw6D4B25->6D4E20 is its last battlefield draw: centred
     // GRFXTXT frame, or white text if the shape/converter is unavailable.
     // Keep the tactical clip and draw before sidebar copy/Chrono capture.
+    // The atlas comes from the same selector the instances did: a country
+    // card drawn through the retail `GRFXTXT` texture samples the wrong
+    // picture at the right coordinates.
     draw_pooled_ui(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
-        state
-            .renderer
-            .outcome_banner_art
-            .as_ref()
-            .map(|art| art.texture()),
+        crate::app::presentation::outcome_banner::texture(state),
         "outcome_shape",
     );
     draw_pooled_ui(

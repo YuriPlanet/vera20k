@@ -7,7 +7,9 @@
 //! VERA's page lays its controls out on the main page's bands and rows.
 
 use super::{
-    ACCESSIBILITY_LABEL, CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL, DEVELOPER_OPTIONS_LABEL,
+    ACCESSIBILITY_LABEL, CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL, CUSTOM_END_GAME_BANNER_HELP,
+    CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL,
+    CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, DEVELOPER_OPTIONS_LABEL,
     DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayChoice, DisplayTarget,
     FPS_COUNTER_HELP, FPS_COUNTER_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL,
     HAS_CHECK_FOR_UPDATES, HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL, LOCK_CURSOR_HELP,
@@ -270,8 +272,29 @@ impl LauncherOptionsLayout {
                     (LauncherCheckboxId::LockCursor, dlu(93, 158, 130, 10)),
                     (LauncherCheckboxId::RightClickOrders, dlu(238, 113, 130, 10)),
                     // Developer Options, in the main page's UI Options band.
-                    (LauncherCheckboxId::FpsCounter, dlu(93, 188, 130, 10)),
-                    (LauncherCheckboxId::SkipStartupLogo, dlu(93, 203, 130, 10)),
+                    // This band carries five rows where the others carry
+                    // three, so it uses a 13 DLU pitch instead of 15:
+                    // 187, 200, 213, 226, 239. At 15 the fifth row would end
+                    // at 258 and run through the Accessibility heading at 254;
+                    // at 13 the last row ends 5 short of it, the same gap the
+                    // other bands keep between their own rows. The last three
+                    // are the `[EndGameScreens]` switches and stay together.
+                    // The three end-game rows are wider than the column's usual
+                    // 130: their labels run to 21 characters ("Custom End Game
+                    // Banner"), and the text rect keeps a 26 px icon column, so
+                    // 130 would wrap them onto a second line the 10 DLU height
+                    // clips. 150 leaves ~124 px of text, enough for 23.
+                    (LauncherCheckboxId::FpsCounter, dlu(93, 187, 130, 10)),
+                    (LauncherCheckboxId::SkipStartupLogo, dlu(93, 200, 130, 10)),
+                    (LauncherCheckboxId::CustomEndGameBanner, dlu(93, 213, 150, 10)),
+                    (
+                        LauncherCheckboxId::CustomEndGameScore,
+                        dlu(93, 226, 150, 10),
+                    ),
+                    (
+                        LauncherCheckboxId::CustomEndGameMovie,
+                        dlu(93, 239, 150, 10),
+                    ),
                 ],
                 HAS_CHECK_FOR_UPDATES
                     .then(|| {
@@ -486,6 +509,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::WolTestService => WOL_TEST_SERVICE_LABEL,
             LauncherCheckboxId::FpsCounter => FPS_COUNTER_LABEL,
             LauncherCheckboxId::SkipStartupLogo => SKIP_STARTUP_LOGO_LABEL,
+            LauncherCheckboxId::CustomEndGameBanner => CUSTOM_END_GAME_BANNER_LABEL,
+            LauncherCheckboxId::CustomEndGameScore => CUSTOM_END_GAME_SCORE_LABEL,
+            LauncherCheckboxId::CustomEndGameMovie => CUSTOM_END_GAME_MOVIE_LABEL,
         }
     }
 
@@ -540,6 +566,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::WolTestService => self.values.wol_test_service,
             LauncherCheckboxId::FpsCounter => self.values.fps_counter,
             LauncherCheckboxId::SkipStartupLogo => self.values.skip_startup_logo,
+            LauncherCheckboxId::CustomEndGameBanner => self.values.custom_end_game_banner,
+            LauncherCheckboxId::CustomEndGameScore => self.values.custom_end_game_score,
+            LauncherCheckboxId::CustomEndGameMovie => self.values.custom_end_game_movie,
         }
     }
 
@@ -747,6 +776,15 @@ impl OptionsDialogState {
                 LauncherCheckboxId::FpsCounter => LauncherStatusHelp::Text(FPS_COUNTER_HELP),
                 LauncherCheckboxId::SkipStartupLogo => {
                     LauncherStatusHelp::Text(SKIP_STARTUP_LOGO_HELP)
+                }
+                LauncherCheckboxId::CustomEndGameBanner => {
+                    LauncherStatusHelp::Text(CUSTOM_END_GAME_BANNER_HELP)
+                }
+                LauncherCheckboxId::CustomEndGameScore => {
+                    LauncherStatusHelp::Text(CUSTOM_END_GAME_SCORE_HELP)
+                }
+                LauncherCheckboxId::CustomEndGameMovie => {
+                    LauncherStatusHelp::Text(CUSTOM_END_GAME_MOVIE_HELP)
                 }
             });
         }
@@ -1104,7 +1142,7 @@ mod tests {
             .chain(&layout.checkboxes)
             .map(|(id, _)| *id)
             .collect();
-        assert_eq!(all.len(), 13);
+        assert_eq!(all.len(), 16);
         for id in &all {
             assert_eq!(all.iter().filter(|other| *other == id).count(), 1, "{id:?}");
         }
@@ -1147,6 +1185,9 @@ mod tests {
             (RightClickOrders, ui, developer),
             (FpsCounter, developer, accessibility),
             (SkipStartupLogo, developer, accessibility),
+            (CustomEndGameBanner, developer, accessibility),
+            (CustomEndGameScore, developer, accessibility),
+            (CustomEndGameMovie, developer, accessibility),
         ] {
             let rect = checkbox(&layout, id);
             assert!(
@@ -1309,6 +1350,9 @@ mod tests {
             (RightClickOrders, RIGHT_CLICK_ORDERS_HELP),
             (FpsCounter, FPS_COUNTER_HELP),
             (SkipStartupLogo, SKIP_STARTUP_LOGO_HELP),
+            (CustomEndGameBanner, CUSTOM_END_GAME_BANNER_HELP),
+            (CustomEndGameScore, CUSTOM_END_GAME_SCORE_HELP),
+            (CustomEndGameMovie, CUSTOM_END_GAME_MOVIE_HELP),
         ] {
             assert_eq!(at(checkbox(&layout, id)), text(help), "{id:?}");
         }
@@ -1687,6 +1731,55 @@ mod tests {
                 ],
                 "{id:?}"
             );
+        }
+    }
+
+    /// The three end-game boxes are the VERA boxes that start ticked: a stock
+    /// profile plays and draws whatever a rules set names, so the player's
+    /// first click turns that override off rather than on. Each publishes its
+    /// own event and leaves the other two alone.
+    #[test]
+    fn the_end_game_boxes_start_ticked_and_publish_their_own_event() {
+        use LauncherCheckboxId::{CustomEndGameBanner, CustomEndGameMovie, CustomEndGameScore};
+        let layout = vera_layout();
+        for (id, label, off) in [
+            (
+                CustomEndGameBanner,
+                CUSTOM_END_GAME_BANNER_LABEL,
+                LauncherOptionsEvent::CustomEndGameBannerChanged(false),
+            ),
+            (
+                CustomEndGameScore,
+                CUSTOM_END_GAME_SCORE_LABEL,
+                LauncherOptionsEvent::CustomEndGameScoreChanged(false),
+            ),
+            (
+                CustomEndGameMovie,
+                CUSTOM_END_GAME_MOVIE_LABEL,
+                LauncherOptionsEvent::CustomEndGameMovieChanged(false),
+            ),
+        ] {
+            // A fresh page per box: each click is the player's first, and the
+            // boxes must not remember each other's state.
+            let mut state = vera_state();
+            assert_eq!(state.shell_checkbox_label(id), label);
+            assert!(state.shell_checkbox_checked(id), "{id:?} starts ticked");
+            let rect = checkbox(&layout, id);
+            state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
+            assert!(!state.shell_checkbox_checked(id), "{id:?} unticked");
+            assert_eq!(
+                state.drain_output().events,
+                [LauncherOptionsEvent::Cue(LauncherCue::Checkbox), off],
+                "{id:?}"
+            );
+            for other in [CustomEndGameBanner, CustomEndGameScore, CustomEndGameMovie] {
+                if other != id {
+                    assert!(
+                        state.shell_checkbox_checked(other),
+                        "{id:?}'s click left {other:?} alone"
+                    );
+                }
+            }
         }
     }
 
