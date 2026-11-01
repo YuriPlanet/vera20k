@@ -10,15 +10,16 @@
 //! events and explicit `request_redraw` calls still draw.
 //!
 //! The battlefield stands only while nothing on it moves by itself. Effects
-//! that step once per draw or read the wall clock while drawing (electric
+//! that step inside the tactical composite or read its clock (electric
 //! bolts, trails, radiation beams, laser jitter, airstrike flares,
 //! mind-control links, psychic lines, planning dashes, superweapon range
-//! pulses, flying credits) report their motion from the draw, which keeps
-//! every refresh drawn while one is shown. Owners stepped once per pass or
-//! once per draw after a wall-clock interval (zoom easing, radar housing and
-//! movies, the power bar, the chrono screen, message typing) keep every
-//! refresh drawn until they settle; the cursor animation and superweapon
-//! timer blinks draw again once their deadline passes.
+//! pulses, flying credits) move once per Main_Tick
+//! ([`crate::app::presentation::tactical_composite`]), so the picture keys on
+//! the tick count. Owners stepped once per pass or once per draw after a
+//! wall-clock interval (zoom easing, radar housing and movies, the power bar,
+//! the chrono screen, message typing) keep every refresh drawn until they
+//! settle; the cursor animation and superweapon timer blinks draw again once
+//! their deadline passes.
 
 use crate::app::AppState;
 use crate::app::input::precedence::ScreenPage;
@@ -128,6 +129,7 @@ pub(crate) fn still_frame(
                 || crate::app::presentation::super_timers::blink_due(state);
             (!moving).then(|| StillFrame::Battlefield {
                 revision,
+                composite: presentation.tactical_composite.ticks(),
                 camera: [input.camera_x, input.camera_y, input.zoom_level].map(f32::to_bits),
                 shake_px,
                 tooltip,
@@ -160,6 +162,8 @@ pub(crate) enum StillFrame {
     /// The offline battlefield with its sidebar and HUD.
     Battlefield {
         revision: Option<u64>,
+        /// The Main_Ticks counted: each owes a tactical composite.
+        composite: u64,
         /// Camera x and y, in world pixels, and the zoom, as bits.
         camera: [u32; 3],
         shake_px: Option<[i32; 2]>,
@@ -295,6 +299,7 @@ mod tests {
     fn battlefield(revision: u64, camera_x: f32, sidebar_view: u64, bubble: bool) -> StillFrame {
         StillFrame::Battlefield {
             revision: Some(revision),
+            composite: revision,
             camera: [camera_x, 240.0, 1.0].map(f32::to_bits),
             shake_px: Some([0, 0]),
             tooltip: None,

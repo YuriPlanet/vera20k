@@ -39,14 +39,8 @@ pub(crate) struct FlareStyle {
     pub(crate) z_adjust: i32,
 }
 
-pub(super) fn build(
-    from: DriveCoord,
-    target: DriveCoord,
-    wall_ms: u32,
-    main: &MainRngDraws,
-    style: FlareStyle,
-    view: SurfaceLineViewport,
-) -> Vec<SurfaceDraw> {
+/// One designation's flare shade.
+fn shade(main: &MainRngDraws) -> i32 {
     //705905 draws the stock 190..270 shade. Phobos's hook at 7058F6 resumes
     //at 705976, past that call, and draws its 745..1000 scale from the same
     //process Main stream instead.
@@ -54,7 +48,35 @@ pub(super) fn build(
     let random = main.ranged(190, 270);
     #[cfg(feature = "phobos")]
     let random = main.ranged(745, 1000);
-    geometry(from, wobble(target, wall_ms), random, style, view)
+    random
+}
+
+/// The flare shade each designating Techno drew at the last composite:
+/// Techno705860 requests one per Main_Tick's composite, and a draw between
+/// composites shows the same beam again.
+#[derive(Debug, Default)]
+pub(crate) struct AirstrikeShades {
+    shades: Vec<(u64, i32)>,
+}
+
+impl AirstrikeShades {
+    /// One composite's requests, in Tactical's designation order (after the
+    /// Laser and Bolt requests, `0x006D48F1`).
+    pub(crate) fn step(&mut self, calls: &[TacticalLineCall], main: &MainRngDraws) {
+        self.shades.clear();
+        for call in calls {
+            if let TacticalLineCall::Designation { id, .. } = *call {
+                self.shades.push((id, shade(main)));
+            }
+        }
+    }
+
+    fn get(&self, id: u64) -> Option<i32> {
+        self.shades
+            .iter()
+            .find(|(held, _)| *held == id)
+            .map(|&(_, shade)| shade)
+    }
 }
 
 ///705860 requests one Main ranged value, even if clipping/A/Z hides the beam.
@@ -174,6 +196,8 @@ pub(crate) enum TacticalLineCall {
         word: u16,
     },
     Designation {
+        /// The designating Techno.
+        id: u64,
         coords: [DriveCoord; 2],
         style: FlareStyle,
     },
@@ -202,18 +226,14 @@ pub(crate) fn drain_opaque(
     }
 }
 
-/// Whether `calls` hold a designation: each draw requests a Main shade
-/// (`0x00705905`) and wobbles its target on the wall clock (`0x006D482D`).
-pub(crate) fn animated(calls: &[TacticalLineCall]) -> bool {
-    calls
-        .iter()
-        .any(|call| matches!(call, TacticalLineCall::Designation { .. }))
-}
-
+/// The action stores and designation beams, each beam with its last
+/// composite's shade and its target wobbled by that composite's clock
+/// (`0x006D482D`). A designation that has drawn no shade yet waits for the
+/// next composite.
 pub(crate) fn composite(
     calls: &[TacticalLineCall],
     wall_ms: u32,
-    main: &MainRngDraws,
+    shades: &AirstrikeShades,
     view: SurfaceLineViewport,
 ) -> Vec<SurfaceDraw> {
     let mut draws = Vec::new();
@@ -223,9 +243,14 @@ pub(crate) fn composite(
                 draws.push(SurfaceDraw::OpaqueRect { rect, word })
             }
             TacticalLineCall::Designation {
+                id,
                 coords: [from, to],
                 style,
-            } => draws.extend(build(from, to, wall_ms, main, style, view)),
+            } => {
+                if let Some(shade) = shades.get(id) {
+                    draws.extend(geometry(from, wobble(to, wall_ms), shade, style, view));
+                }
+            }
         }
     }
     draws

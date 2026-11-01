@@ -175,6 +175,7 @@ fn composite_preserves_opaque_beam_order_and_advances_only_the_shared_main_draws
             word: 0xFFFF,
         },
         TacticalLineCall::Designation {
+            id: 7,
             coords: [from, to],
             style: style(),
         },
@@ -184,8 +185,10 @@ fn composite_preserves_opaque_beam_order_and_advances_only_the_shared_main_draws
         },
     ];
     let view = viewport(&native()["cases"][0]["input"]);
+    let mut shades = AirstrikeShades::default();
     for ms in [0, 128] {
-        let result = composite(&calls, ms, &main.draws(), view);
+        shades.step(&calls, &main.draws());
+        let result = composite(&calls, ms, &shades, view);
         // Phobos's hook at 0x007058F6 resumes past the stock draw at
         // 0x00705905 and draws only its own scale.
         #[cfg(not(feature = "phobos"))]

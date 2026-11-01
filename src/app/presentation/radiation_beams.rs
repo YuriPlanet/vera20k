@@ -1,6 +1,7 @@
 //! RadBeam kind1 registry659110/6591B0, in reverse birth order. Its copied
 //! endpoints have no detach links. Every Tactical composite draws once,
-//! increments progress, and removes expired entries, even with no pixels.
+//! increments progress, and removes expired entries, even with no pixels; a
+//! draw between composites shows the last one's lines ([`RadiationBeams::shown`]).
 
 use crate::render::radiation_beam::{BeamGeometry, segment_spacing};
 use crate::render::surface_line::{SurfaceDraw, SurfaceLineViewport};
@@ -45,6 +46,8 @@ pub(crate) struct RadiationBeams {
     live: Vec<Beam>,
     /// Derived last-composite work, rebuilt exactly once per composite.
     draws: Vec<SurfaceDraw>,
+    /// The camera `draws` are projected through.
+    camera: [i32; 2],
     composites: Vec<BeamCompositeObservation>,
 }
 
@@ -69,12 +72,6 @@ impl RadiationBeams {
         });
     }
 
-    /// Whether no beam is live: each composite advances every live beam's
-    /// progress (`0x00659110`), drawn or not.
-    pub(crate) fn is_empty(&self) -> bool {
-        self.live.is_empty()
-    }
-
     pub(crate) fn composite(
         &mut self,
         frame_rate: u32,
@@ -83,6 +80,7 @@ impl RadiationBeams {
     ) {
         self.draws.clear();
         self.composites.clear();
+        self.camera = viewport.camera;
         if self.live.is_empty() {
             return;
         }
@@ -115,6 +113,18 @@ impl RadiationBeams {
     }
 
     pub(crate) fn draws(&self) -> &[SurfaceDraw] {
+        &self.draws
+    }
+    /// The last composite's lines under the current camera.
+    pub(crate) fn shown(&mut self, camera: [i32; 2]) -> &[SurfaceDraw] {
+        if camera != self.camera {
+            for draw in &mut self.draws {
+                if let SurfaceDraw::Line(line) = draw {
+                    line.follow_camera(self.camera, camera);
+                }
+            }
+            self.camera = camera;
+        }
         &self.draws
     }
     pub(crate) fn composites(&self) -> &[BeamCompositeObservation] {

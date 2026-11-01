@@ -83,13 +83,12 @@ impl Lasers {
     }
 
     /// Tactical550240 visits reverse birth order on every composite,
-    /// including repeated draws without Logic. General55048F..550550
-    /// requests each channel's Main ranged draw before sampling detail or
-    /// clipping. Equal zero bounds still make three requests, with no raw
-    /// stream advance. Only this owner refreshes the derived color cache.
-    /// Returns whether it requested any: the next draw jitters again.
-    pub(crate) fn composite(&mut self, main: &mut MainRngDraws) -> bool {
-        let mut requested = false;
+    /// including composites without Logic (a scenario-pause tick).
+    /// General55048F..550550 requests each channel's Main ranged draw before
+    /// sampling detail or clipping. Equal zero bounds still make three
+    /// requests, with no raw stream advance. Only this owner refreshes the
+    /// derived color cache.
+    pub(crate) fn composite(&mut self, main: &mut MainRngDraws) {
         for laser in self.live.iter_mut().rev() {
             if laser.birth.duration <= 0 {
                 continue;
@@ -108,9 +107,7 @@ impl Lasers {
                 unreachable!("resolved General birth retains its draw-color arm");
             };
             *outer = Some(sampled);
-            requested = true;
         }
-        requested
     }
 
     /// 550150 visits backwards. At most one increment/restart per visit,

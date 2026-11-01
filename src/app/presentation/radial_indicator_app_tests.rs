@@ -73,6 +73,7 @@ fn query(sim: &Simulation, rules: &RuleSet, ids: &[u64], ms: u64) -> Vec<RadialI
             zoom: 1.,
         },
         ms,
+        1,
     )
     .draws;
     assert_eq!(
@@ -114,6 +115,7 @@ fn target_query(
             zoom: 1.0,
         },
         0,
+        1,
     )
     .draws
 }
@@ -526,6 +528,7 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
                 zoom: 1.0,
             },
             0,
+            1,
         )
         .draws;
         assert!(!draws.is_empty());
@@ -751,6 +754,7 @@ fn placement_query(
             zoom: 1.0,
         },
         0,
+        1,
     )
     .draws
 }

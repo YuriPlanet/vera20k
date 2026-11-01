@@ -68,6 +68,7 @@ fn build_nuke(
         &colors,
         viewport,
         0,
+        1,
     )
     .draws
 }

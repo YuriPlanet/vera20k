@@ -16,6 +16,8 @@ struct CreditText {
     text: String,
     rgb: [u8; 3],
     life: i32,
+    /// A composite drew it, so the next one ages it first.
+    drawn: bool,
 }
 
 #[derive(Default)]
@@ -89,6 +91,7 @@ impl FlyingCredits {
             rgb: if positive { [0, 255, 0] } else { [255, 0, 0] },
             // AddFlyingString100643D9 stores70+5; draw decrements after use.
             life: 75,
+            drawn: false,
         });
     }
 
@@ -96,22 +99,30 @@ impl FlyingCredits {
         self.live.clear();
     }
 
-    /// Whether no record is live: each build ages every live record.
-    pub(crate) fn is_empty(&self) -> bool {
-        self.live.is_empty()
+    /// One composite's aging. 10064514 ages each record after drawing it;
+    /// here a composite first ages the records an earlier one drew, so a draw
+    /// between composites shows the same labels. Offscreen records age too.
+    pub(crate) fn step(&mut self) {
+        for record in &mut self.live {
+            if record.drawn {
+                record.life -= 1;
+            }
+            record.drawn = true;
+        }
+        self.live.retain(|record| record.life >= 0);
     }
 
     ///10064430..10064514: append order, no fade; only the final70 draws
-    /// rise one pixel each. Offscreen records still age in the draw tail.
+    /// rise one pixel each.
     pub(crate) fn build_instances(
-        &mut self,
+        &self,
         font: &BitFont,
         camera: [f32; 2],
         zoom: f32,
         viewport: [u32; 2],
     ) -> Vec<SpriteInstance> {
         let mut out = Vec::new();
-        for record in &mut self.live {
+        for record in &self.live {
             let (x, y) = crate::util::lepton::absolute_leptons_to_screen(
                 record.coord.x,
                 record.coord.y,
@@ -139,9 +150,7 @@ impl FlyingCredits {
                     camera,
                 ));
             }
-            record.life -= 1;
         }
-        self.live.retain(|record| record.life >= 0);
         out
     }
 }
@@ -152,7 +161,7 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
 
     #[test]
-    fn bounty_text_obeys_shroud_and_ages_only_at_the_draw_owner() {
+    fn bounty_text_obeys_shroud_and_ages_once_per_composite() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=100\nSight=0\n",
         ))
@@ -194,26 +203,31 @@ mod tests {
         assert_eq!(credits.live[1].rgb, [255, 0, 0]);
         let font = crate::render::bit_font::tests::make_test_font(&[], 4);
         let camera = [-200.0, 0.0];
-        let first = credits.build_instances(&font, camera, 1.0, [2048, 2048]);
+        let composite = |credits: &mut FlyingCredits, camera, view| {
+            credits.step();
+            credits.build_instances(&font, camera, 1.0, view)
+        };
+        let first = composite(&mut credits, camera, [2048, 2048]);
         assert!(!first.is_empty());
         for _ in 0..5 {
             assert_eq!(
-                credits.build_instances(&font, camera, 1.0, [2048, 2048])[0].position,
+                composite(&mut credits, camera, [2048, 2048])[0].position,
                 first[0].position
             );
         }
-        let rising = credits.build_instances(&font, camera, 1.0, [2048, 2048]);
+        let rising = composite(&mut credits, camera, [2048, 2048]);
         assert_eq!(rising[0].position[1], first[0].position[1] - 1.0);
         assert!(
             rising.iter().all(|glyph| glyph.alpha == 1.0),
             "native labels do not fade"
         );
-        for _ in 0..76 {
-            assert!(
-                credits
-                    .build_instances(&font, [1e6, 1e6], 1.0, [1, 1])
-                    .is_empty()
-            );
+        assert_eq!(
+            credits.build_instances(&font, camera, 1.0, [2048, 2048])[0].position,
+            rising[0].position,
+            "a draw between composites does not rise"
+        );
+        for _ in 0..70 {
+            assert!(composite(&mut credits, [1e6, 1e6], [1, 1]).is_empty());
         }
         assert!(credits.live.is_empty(), "offscreen labels still expire");
         credits.admit(&sim, &rules, event);

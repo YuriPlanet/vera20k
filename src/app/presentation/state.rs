@@ -74,6 +74,11 @@ pub(crate) struct MatchPresentationState {
     pub(crate) electric_bolts: super::electric_bolts::ElectricBolts,
     /// Process registry B04A60; ordinary kind1 beams copy their endpoints.
     pub(crate) radiation_beams: super::radiation_beams::RadiationBeams,
+    /// The Main_Ticks the tactical effects above step on, and the last
+    /// composite's clock ([`super::tactical_composite`]).
+    pub(crate) tactical_composite: super::tactical_composite::TacticalComposite,
+    /// The airstrike flare shades of the last composite, by designating Techno.
+    pub(crate) airstrike_shades: super::airstrike_lines::AirstrikeShades,
     /// Process-lived native Tactical superweapon ring fade state. Map loads
     /// replace map resources but keep this presentation owner alive.
     pub(crate) superweapon_range_pulse:
