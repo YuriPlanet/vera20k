@@ -330,8 +330,8 @@ its SHA-256. Players never add maps; room uploads stay out of it. When the host 
 a map the library holds (same `source_sha256` and length, not `map_metadata.official`,
 not a generated map), the service sends `map_available` with the settings, before any
 upload, and members download it through the same `GET /v1/maps/…` chunks. When the
-service cannot read a correct copy, it sends no `map_available` and the host uploads as
-usual. A host that hears `map_available` for its current map stops uploading; an upload
+service does not copy it (it could not read a correct copy within about 2 seconds, or is
+busy copying others), it sends no `map_available` and the host uploads as usual. A host that hears `map_available` for its current map stops uploading; an upload
 sent anyway is accepted. Other custom maps go from host to members as before. A member
 whose game lacks the room's map is asked first: Download fetches it and saves it in
 VERA's own `Maps` folder (beside its settings, never the game folder); Leave leaves the
@@ -341,11 +341,16 @@ room.
 `{revision,maps:[{sha256,name,file_name,players,byte_length,header}]}`, where `name` is
 the map's `[Basic] Name=`, `file_name` the `.yrm` name to save it under, and `header`
 the base64 of the map's own `[Basic]`, `[Preview]`, `[PreviewPack]`, `[Waypoints]`,
-`[Header]` and `[RandomMap]` lines, byte for byte. It carries `ETag: "lib-<revision>"`
-and answers 304 to a matching `If-None-Match`. `GET /v1/library/maps/<sha256>`
-downloads one map, and `GET /v1/library/maps?search=<text>&players=<n>&page=<n>`
-searches them (newest first, 50 a page). All three are public, and the search is
-limited per network; the service keeps no player, session or address with a map. The game reads the catalog
+`[Header]` and `[RandomMap]` lines, byte for byte. No two library maps share a
+`file_name` without case: one whose name would, or whose name has nothing left to save
+under, ends in `-<first 8 hex of its SHA-256>.yrm`. The catalog carries
+`ETag: "lib-<revision>-<16 hex>"`, the hex from its content (catalogs written before:
+`"lib-<revision>"`), and answers 304 to a matching `If-None-Match`, weak or not, or `*`.
+`GET /v1/library/maps/<sha256>` downloads one map, and
+`GET /v1/library/maps?search=<text>&players=<n>&page=<n>` searches them (newest first,
+50 a page). The catalog and downloads also answer HEAD, and 503 `service_unavailable`
+when the library's storage fails. All three are public, and the search is limited per
+network; the service keeps no player, session or address with a map. The game reads the catalog
 when the player goes online and keeps it for the run once it arrives; a failed read is
 tried once more in that visit, and again on the next. In an online room (not one that
 takes only official maps), Choose Map lists under its Online Maps row each map the
