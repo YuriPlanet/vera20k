@@ -331,6 +331,9 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 "map/rmg/saved_seeds.rs",
                 "map/scenario_sources.rs",
                 "map/source/cache.rs",
+                // A received map's case-folded name check; a file it finds is
+                // kept only when it holds the same verified bytes.
+                "map/source.rs",
             ],
         ),
         (
@@ -1654,6 +1657,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              through vt+0x38 (0x00540D10) only when its bool argument is set",
         ),
         (
+            "net/live_commands/sequenced.rs",
+            "set_presentation_hidden",
+            "whether the game window is hidden, reported by the app: a hidden window, which \
+             its system may throttle, never reports falling behind the relay's clock",
+        ),
+        (
             "net/reliable.rs",
             "set_timing",
             "Set_Timing (0x00540C60) stores the manager's +0x58..+0x60 and copies them into \
@@ -1825,6 +1834,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "sim/movement/teleport_movement.rs",
             "set_warping_in",
             "Techno+0x271, cleared by TimerCheck's expiry and state 7",
+        ),
+        (
+            "sim/object_fall.rs",
+            "set_attached_anim_flag",
+            "Object+84: SetOwnerObject 0x00424B50 sets it when an Anim attaches and the last \
+             detach (0x00424B79, 0x0042291A) clears it, both through anim_class",
         ),
         (
             "sim/object_fall.rs",

@@ -196,8 +196,14 @@ jobs:
         with:
           toolchain: stable
       - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        if: matrix.target != 'macos-x64'
         with:
           tool: cargo-about@0.9.2
+      # cargo-about publishes no Intel Mac binary, and install-action's source
+      # fallback leaves out the `cli` feature that holds the command.
+      - name: Install cargo-about from source
+        if: matrix.target == 'macos-x64'
+        run: cargo install --locked cargo-about@0.9.2 --features cli
       # Before the build, so a crate with an unrecognized or GPL-incompatible
       # license stops the release early (.github/release/about.toml).
       - name: Third-party license notices
