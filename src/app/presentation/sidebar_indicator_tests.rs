@@ -77,19 +77,19 @@ fn the_net_power_text_and_ratio_colour_follow_the_hook() {
     let resolved = |produced: i32, drained: i32| {
         let indicator = power_delta_indicator(&sim, &rules, 0, owner, &on, true, produced, drained)
             .expect("drawn");
-        (indicator.text.clone(), indicator.rgb)
+        (indicator.text.clone(), indicator.tint)
     };
 
-    assert_eq!(resolved(100, 40), ("⚡+60".to_string(), [0, 255, 0]));
+    assert_eq!(resolved(100, 40), ("⚡+60".to_string(), [0.0, 1.0, 0.0]));
     // 0.8 is above the 0.75 yellow threshold and within the red one.
-    assert_eq!(resolved(100, 80), ("⚡+20".to_string(), [255, 255, 0]));
-    assert_eq!(resolved(100, 200), ("⚡-100".to_string(), [255, 0, 0]));
+    assert_eq!(resolved(100, 80), ("⚡+20".to_string(), [1.0, 1.0, 0.0]));
+    assert_eq!(resolved(100, 200), ("⚡-100".to_string(), [1.0, 0.0, 0.0]));
     // Exactly the yellow threshold is not below it, so it turns yellow.
-    assert_eq!(resolved(100, 75), ("⚡+25".to_string(), [255, 255, 0]));
+    assert_eq!(resolved(100, 75), ("⚡+25".to_string(), [1.0, 1.0, 0.0]));
     // No output at all: any drain doubles the red threshold, and the empty base
     // keeps the yellow fallback rather than reading green.
-    assert_eq!(resolved(0, 50), ("⚡-50".to_string(), [255, 0, 0]));
-    assert_eq!(resolved(0, 0), ("⚡+0".to_string(), [255, 255, 0]));
+    assert_eq!(resolved(0, 50), ("⚡-50".to_string(), [1.0, 0.0, 0.0]));
+    assert_eq!(resolved(0, 0), ("⚡+0".to_string(), [1.0, 1.0, 0.0]));
 }
 
 /// A spy or force-shield outage replaces the whole string with
@@ -116,7 +116,11 @@ fn a_blackout_drops_the_number_and_greys_the_label() {
     )
     .expect("drawn");
     assert_eq!(indicator.text, "⚡❌", "the blackout label alone");
-    assert_eq!(indicator.rgb, [9, 9, 9], "ColorGrey, not the ratio colour");
+    assert_eq!(
+        indicator.tint,
+        [9.0 / 255.0; 3],
+        "ColorGrey, not the ratio colour"
+    );
 }
 
 /// The side's `Offset` is added to the hook's own `-70, 2` anchor, and `Align`
@@ -175,6 +179,130 @@ fn a_defeated_player_draws_no_indicator() {
             true,
             100,
             40
+        )
+        .is_none()
+    );
+}
+
+/// The harvester-counter branch of the same hook (`Hooks.UI.cpp:111-135`):
+/// both switches and an undefeated player, `[label][working]/[total]`, the
+/// colour from a strict *greater-than* on the working ratio (the reverse of the
+/// power delta), and its own `+50` centre-anchored column.
+#[test]
+fn the_harvester_counter_opens_on_both_switches_and_formats_both_counts() {
+    use super::harvester_counter_indicator;
+    let (sim, owner) = house(2);
+    let rules = rules("");
+    let on = ui("HarvesterCounter.Show=yes\n");
+    let tooltip = [1.0, 1.0, 1.0];
+    let resolved = |active: i32, total: i32| {
+        harvester_counter_indicator(&sim, &rules, 0, owner, &on, true, tooltip, active, total)
+            .expect("drawn")
+    };
+
+    // The uimd switch defaults to no, and the client switch closes the branch.
+    assert!(
+        super::harvester_counter_indicator(&sim, &rules, 0, owner, &ui(""), true, tooltip, 1, 1)
+            .is_none(),
+        "HarvesterCounter.Show defaults to no"
+    );
+    assert!(
+        super::harvester_counter_indicator(&sim, &rules, 0, owner, &on, false, tooltip, 1, 1)
+            .is_none(),
+        "[Phobos] ShowHarvesterCounter=no closes the branch"
+    );
+
+    let all_working = resolved(2, 2);
+    assert_eq!(all_working.text, "⛏2/2");
+    // 2/2 is 1.0, above the 0.99 default, and `ColorGreen` is a Nullable left
+    // unset, so the source's `Drawing::TooltipColor` fallback carries it.
+    assert_eq!(all_working.tint, tooltip);
+    assert_eq!((all_working.anchor_x, all_working.anchor_y), (50, 2));
+    assert_eq!(
+        all_working.align,
+        SidebarTextAlign::Center,
+        "the harvester branch hardcodes the centre bit"
+    );
+
+    // Exactly the yellow threshold is not above it, so it turns yellow, and
+    // exactly the red one is not above it either, so it turns red.
+    assert_eq!(resolved(99, 100).tint, [1.0, 1.0, 0.0]);
+    assert_eq!(resolved(60, 100).tint, [1.0, 1.0, 0.0]);
+    assert_eq!(resolved(1, 2).tint, [1.0, 0.0, 0.0]);
+    assert_eq!(resolved(2, 5).tint, [1.0, 0.0, 0.0]);
+
+    // A house with no counted harvester at all answers 1.0, so it stays green.
+    let none = resolved(0, 0);
+    assert_eq!(none.text, "⛏0/0");
+    assert_eq!(none.tint, tooltip);
+}
+
+/// The side's own count-format switches, offset and explicit green.
+#[test]
+fn the_harvester_counter_side_settings_shape_the_string_and_anchor() {
+    use super::harvester_counter_indicator;
+    let (sim, owner) = house(2);
+    let on = ui("HarvesterCounter.Show=yes\n");
+    let resolved = |side_body: &str, active: i32, total: i32| {
+        harvester_counter_indicator(
+            &sim,
+            &rules(side_body),
+            0,
+            owner,
+            &on,
+            true,
+            [0.0, 0.0, 0.0],
+            active,
+            total,
+        )
+        .expect("drawn")
+    };
+
+    // HideMaxValue wins over OnlyMaxValue, the way the format branch reads.
+    assert_eq!(
+        resolved(
+            "Sidebar.HarvesterCounter.HideMaxValue=yes\nSidebar.HarvesterCounter.OnlyMaxValue=yes\n",
+            1,
+            3
+        )
+        .text,
+        "⛏1"
+    );
+    assert_eq!(
+        resolved("Sidebar.HarvesterCounter.OnlyMaxValue=yes\n", 1, 3).text,
+        "⛏3"
+    );
+
+    let moved = resolved(
+        "Sidebar.HarvesterCounter.Offset=20,-6\nSidebar.HarvesterCounter.ColorGreen=1,2,3\n",
+        2,
+        2,
+    );
+    assert_eq!((moved.anchor_x, moved.anchor_y), (70, -4));
+    assert_eq!(moved.tint, [1.0 / 255.0, 2.0 / 255.0, 3.0 / 255.0]);
+}
+
+/// The hook returns before any indicator for a defeated player
+/// (`Hooks.UI.cpp:104-105`).
+#[test]
+fn a_defeated_player_draws_no_harvester_counter() {
+    use super::harvester_counter_indicator;
+    let (mut sim, owner) = house(2);
+    sim.houses_mut_for_test()
+        .get_mut(&owner)
+        .expect("house")
+        .set_is_defeated_for_test(true);
+    assert!(
+        harvester_counter_indicator(
+            &sim,
+            &rules(""),
+            0,
+            owner,
+            &ui("HarvesterCounter.Show=yes\n"),
+            true,
+            [0.0, 0.0, 0.0],
+            2,
+            2
         )
         .is_none()
     );

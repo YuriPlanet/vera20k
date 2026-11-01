@@ -1041,6 +1041,8 @@ impl App {
                     #[cfg(feature = "phobos")]
                     show_power_delta: phobos_client.show_power_delta,
                     #[cfg(feature = "phobos")]
+                    show_harvester_counter: phobos_client.show_harvester_counter,
+                    #[cfg(feature = "phobos")]
                     show_power_plant_enhancer_range: phobos_client
                         .show_power_plant_enhancer_range,
                     #[cfg(feature = "phobos")]

@@ -254,12 +254,14 @@ pub struct SidebarLayout {
 /// the same per-frame pass as the power bar, because the native hook runs inside
 /// the credits tick rather than on a cameo transition.
 #[cfg(feature = "phobos")]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SidebarIndicator {
     /// The formatted label and value, e.g. `⚡+12` or the blackout label alone.
     pub text: String,
-    /// The colour `Drawing::RGB_To_Int` would pack, one byte per channel.
-    pub rgb: [u8; 3],
+    /// The colour the hook would pack through `Drawing::RGB_To_Int`, as the
+    /// linear tint the sidebar text lane takes. The harvester counter falls back
+    /// to the sidebar tooltip colour, which is already a float tint here.
+    pub tint: [f32; 3],
     /// X added to the sidebar surface midpoint — the hook's own base, `-70` for
     /// the power delta, `+50` for the harvester and weeds counters — plus the
     /// side's `Sidebar.*.Offset` X.

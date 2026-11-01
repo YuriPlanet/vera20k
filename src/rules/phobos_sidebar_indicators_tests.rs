@@ -5,6 +5,7 @@ use super::{
     load_string_or_default,
 };
 use crate::rules::ini_parser::IniFile;
+use crate::rules::ruleset::RuleSet;
 
 fn uimd(text: &str) -> SidebarIndicatorsUi {
     SidebarIndicatorsUi::from_ini(&IniFile::from_str(text), &|label| {
@@ -100,5 +101,99 @@ fn the_side_settings_read_their_own_defaults_and_offset() {
     assert_eq!(
         PowerDeltaSideSettings::from_section(bad.section("North").expect("section")).align,
         SidebarTextAlign::Left
+    );
+}
+
+/// `uimd.ini [Sidebar] HarvesterCounter.*` and the side's own
+/// `Sidebar.HarvesterCounter.*` (`Ext/Side/Body.cpp:33-38`, `Body.h:29-34`).
+#[test]
+fn the_harvester_counter_reads_both_layers_with_its_own_defaults() {
+    let defaults = uimd("[Sidebar]\nHarvesterCounter.Show=yes\n");
+    assert!(defaults.harvester.show);
+    assert_eq!(defaults.harvester.label, "\u{26CF}");
+    assert_eq!(
+        (
+            defaults.harvester.condition_yellow,
+            defaults.harvester.condition_red
+        ),
+        (0.99, 0.5)
+    );
+    assert!(
+        !uimd("").harvester.show,
+        "the switch defaults to no without uimd"
+    );
+
+    let tuned = uimd(
+        "[Sidebar]\nHarvesterCounter.Show=yes\nHarvesterCounter.Label=UI:PHOBOS:PowerLabel\n\
+         HarvesterCounter.ConditionYellow=75%\nHarvesterCounter.ConditionRed=50%\n",
+    );
+    // The label key resolves through the string table, like LoadStringOrDefault.
+    assert_eq!(tuned.harvester.label, "PWR");
+    assert_eq!(tuned.harvester.condition_yellow, 0.75);
+    assert_eq!(tuned.harvester.condition_red, 0.5);
+
+    let ini = IniFile::from_str(
+        "[North]\nSidebar.HarvesterCounter.Offset=12,-8\n\
+         Sidebar.HarvesterCounter.HideMaxValue=yes\n\
+         Sidebar.HarvesterCounter.ColorYellow=1,2,3\n",
+    );
+    let side =
+        super::HarvesterCounterSideSettings::from_section(ini.section("North").expect("section"));
+    assert_eq!(side.offset, [12, -8]);
+    assert!(side.hide_max_value);
+    assert!(!side.only_max_value);
+    assert_eq!(side.color_yellow, [1, 2, 3]);
+    assert_eq!(side.color_red, [255, 0, 0]);
+    assert_eq!(
+        side.color_green, None,
+        "ColorGreen is a Nullable: unset falls back to the tooltip colour"
+    );
+    assert_eq!(
+        super::HarvesterCounterSideSettings::default(),
+        super::HarvesterCounterSideSettings {
+            offset: [0, 0],
+            hide_max_value: false,
+            only_max_value: false,
+            color_green: None,
+            color_yellow: [255, 255, 0],
+            color_red: [255, 0, 0],
+        }
+    );
+}
+
+/// Phobos `[TechnoType] Harvester.Counted=` with its two fallbacks, which run in
+/// the source's read order: the explicit value, then `Enslaves=` for any
+/// TechnoType, then `Harvester=` for a UnitType only.
+#[test]
+fn harvester_counted_falls_back_in_the_sources_read_order() {
+    let ini = IniFile::from_str(
+        "[VehicleTypes]\n0=WMIN\n1=FREE\n2=EXCL\n[BuildingTypes]\n0=DERICK\n1=YARD\n\
+         [WMIN]\nStrength=600\nHarvester=yes\n\
+         [FREE]\nStrength=600\nEnslaves=SMIN\n\
+         [EXCL]\nStrength=600\nHarvester=yes\nHarvester.Counted=no\n\
+         [DERICK]\nStrength=1000\nHarvester.Counted=yes\n\
+         [YARD]\nStrength=1000\n\
+         [SMIN]\nStrength=600\n",
+    );
+    let rules = RuleSet::from_ini(&ini).expect("rules read");
+    assert!(
+        rules.object("WMIN").unwrap().harvester_counted(),
+        "the UnitType pass falls back to Harvester=yes"
+    );
+    assert!(
+        rules.object("FREE").unwrap().harvester_counted(),
+        "the TechnoType pass falls back to Enslaves="
+    );
+    assert!(
+        !rules.object("EXCL").unwrap().harvester_counted(),
+        "an explicit no overrides both fallbacks"
+    );
+    assert!(
+        rules.object("DERICK").unwrap().harvester_counted(),
+        "a building counts only when the key says so"
+    );
+    assert!(
+        !rules.object("YARD").unwrap().harvester_counted(),
+        "a building with no key and no Enslaves= is left out"
     );
 }

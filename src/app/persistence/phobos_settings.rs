@@ -29,6 +29,10 @@ pub(crate) struct PhobosClientSettings {
     /// client half of the power-delta sidebar indicator. The `uimd.ini` switch
     /// must also be on.
     pub(crate) show_power_delta: bool,
+    /// `[Phobos] ShowHarvesterCounter=`, default `yes` (`Phobos.INI.cpp:109`):
+    /// the client half of the harvester counter; the `uimd.ini` switch must be
+    /// on too.
+    pub(crate) show_harvester_counter: bool,
 }
 
 impl Default for PhobosClientSettings {
@@ -42,6 +46,7 @@ impl Default for PhobosClientSettings {
             show_flash_on_selecting: false,
             show_power_plant_enhancer_range: false,
             show_power_delta: true,
+            show_harvester_counter: true,
         }
     }
 }
@@ -76,6 +81,8 @@ pub(crate) fn read(settings_dir: &Path) -> PhobosClientSettings {
             defaults.show_power_plant_enhancer_range,
         ),
         show_power_delta: section.read_bool("ShowPowerDelta", defaults.show_power_delta),
+        show_harvester_counter: section
+            .read_bool("ShowHarvesterCounter", defaults.show_harvester_counter),
     }
 }
 
@@ -110,7 +117,7 @@ mod tests {
         let dir = profile_with(
             "[Phobos]\nShowPlacementPreview=no\nDigitalDisplay.Enable=yes\n\
              SuperWeaponSidebar.RequiredSignificance=2\nShowFlashOnSelecting=yes\n\
-             ShowPowerPlantEnhancerRange=yes\nShowPowerDelta=no\n",
+             ShowPowerPlantEnhancerRange=yes\nShowPowerDelta=no\nShowHarvesterCounter=no\n",
         );
         assert_eq!(
             read(&dir),
@@ -121,6 +128,7 @@ mod tests {
                 show_flash_on_selecting: true,
                 show_power_plant_enhancer_range: true,
                 show_power_delta: false,
+                show_harvester_counter: false,
             }
         );
         std::fs::remove_dir_all(dir).unwrap();

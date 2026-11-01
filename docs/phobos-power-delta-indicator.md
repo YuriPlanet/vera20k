@@ -84,6 +84,6 @@ straight into the draw flags; the harvester and weeds branches hardcode centre.
   (`0xFFF`) into the flags, which also sets its font-size bits.
 - Trigger: a label key the CSF table does not hold. Effect: VERA keeps the glyph
   default where native renders `MISSING:'<key>'`.
-- The harvester counter (`HarvesterCounter.*`) and the weeds counter
-  (`WeedsCounter.*`) are the other two branches of `0x4A25E0` and are not ported
-  here.
+- The harvester counter (`[HarvesterCounter](phobos-harvester-counter.md)`) and
+  the weeds counter (`WeedsCounter.*`) are the other two branches of `0x4A25E0`.
+  The weeds branch still needs the unported TS weeds mechanic for its number.

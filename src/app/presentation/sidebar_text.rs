@@ -54,7 +54,7 @@ pub fn build_sidebar_indicator_instances(
                 indicator.anchor_x,
                 indicator.anchor_y,
                 indicator.align,
-                indicator.rgb,
+                indicator.tint,
                 camera_offset,
             )
         })
@@ -105,7 +105,7 @@ mod tests {
         let font = digit_font();
         let resolved = |anchor_x: i32, align| SidebarIndicator {
             text: "12".to_string(),
-            rgb: [0, 255, 0],
+            tint: [0.0, 1.0, 0.0],
             anchor_x,
             anchor_y: 5,
             align,

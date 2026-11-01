@@ -71,11 +71,62 @@ impl Default for PowerDeltaUi {
     }
 }
 
+/// `uimd.ini [Sidebar] HarvesterCounter.*` (`src/Phobos.INI.cpp:174-185`).
+/// The two thresholds compare against the *working-to-total* ratio as `double`s.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HarvesterCounterUi {
+    /// `HarvesterCounter.Show=`, default `no`.
+    pub show: bool,
+    /// `HarvesterCounter.Label=`, resolved text, default the `⛏` glyph
+    /// (U+26CF, `Phobos.INI.cpp:177-178`).
+    pub label: String,
+    /// `HarvesterCounter.ConditionYellow=`, default `0.99`.
+    pub condition_yellow: f64,
+    /// `HarvesterCounter.ConditionRed=`, default `0.5`.
+    pub condition_red: f64,
+}
+
+impl Default for HarvesterCounterUi {
+    fn default() -> Self {
+        Self {
+            show: false,
+            label: HARVESTER_LABEL_DEFAULT.to_string(),
+            condition_yellow: 0.99,
+            condition_red: 0.5,
+        }
+    }
+}
+
+impl HarvesterCounterUi {
+    fn from_section(section: &IniSection, lookup: &dyn Fn(&str) -> Option<String>) -> Self {
+        let defaults = Self::default();
+        Self {
+            show: section.read_bool("HarvesterCounter.Show", defaults.show),
+            label: load_string_or_default(
+                section,
+                "HarvesterCounter.Label",
+                HARVESTER_LABEL_DEFAULT,
+                lookup,
+            ),
+            condition_yellow: section.read_double(
+                "HarvesterCounter.ConditionYellow",
+                defaults.condition_yellow,
+            ),
+            condition_red: section
+                .read_double("HarvesterCounter.ConditionRed", defaults.condition_red),
+        }
+    }
+}
+
+/// `⛏`, the `defaultValue` of `Phobos.INI.cpp:178`.
+const HARVESTER_LABEL_DEFAULT: &str = "\u{26CF}";
+
 /// Everything `uimd.ini` contributes to the indicator hook, with the two
 /// `[ToolTips]` labels already resolved to text.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SidebarIndicatorsUi {
     pub power_delta: PowerDeltaUi,
+    pub harvester: HarvesterCounterUi,
     /// `[ToolTips] PowerLabel=`, default the `⚡` glyph (U+26A1).
     pub power_label: String,
     /// `[ToolTips] PowerBlackoutLabel=`, default `⚡❌` (U+26A1 U+274C).
@@ -88,6 +139,7 @@ impl Default for SidebarIndicatorsUi {
     fn default() -> Self {
         Self {
             power_delta: PowerDeltaUi::default(),
+            harvester: HarvesterCounterUi::default(),
             power_label: POWER_LABEL_DEFAULT.to_string(),
             power_blackout_label: POWER_BLACKOUT_LABEL_DEFAULT.to_string(),
         }
@@ -120,6 +172,10 @@ impl SidebarIndicatorsUi {
             power_delta: ini
                 .section("Sidebar")
                 .map(PowerDeltaUi::from_section)
+                .unwrap_or_default(),
+            harvester: ini
+                .section("Sidebar")
+                .map(|section| HarvesterCounterUi::from_section(section, lookup))
                 .unwrap_or_default(),
             power_label: label("PowerLabel", POWER_LABEL_DEFAULT),
             power_blackout_label: label("PowerBlackoutLabel", POWER_BLACKOUT_LABEL_DEFAULT),
@@ -218,6 +274,69 @@ impl PowerDeltaSideSettings {
             this.align = align;
         }
         this
+    }
+}
+
+/// `rulesmd.ini [<Side ID>] Sidebar.HarvesterCounter.*`
+/// (`src/Ext/Side/Body.cpp:33-38`, types and defaults at `Body.h:29-34` and
+/// `:60-65`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct HarvesterCounterSideSettings {
+    /// `Sidebar.HarvesterCounter.Offset=`, `Point2D`, default `0,0`.
+    pub offset: [i32; 2],
+    /// `HideMaxValue=`, default `no`: drop the `/total` half and show only the
+    /// working count. It wins when both switches are set.
+    pub hide_max_value: bool,
+    /// `OnlyMaxValue=`, default `no`: show only the total count. Native requires
+    /// `HideMaxValue=no` for it to have any effect, which the format branch
+    /// reproduces.
+    pub only_max_value: bool,
+    /// `ColorGreen=` is a `Nullable<ColorStruct>`: unset falls back to the
+    /// current sidebar tooltip colour.
+    pub color_green: Option<[u8; 3]>,
+    /// `ColorYellow=`, default `255,255,0`.
+    pub color_yellow: [u8; 3],
+    /// `ColorRed=`, default `255,0,0`.
+    pub color_red: [u8; 3],
+}
+
+impl Default for HarvesterCounterSideSettings {
+    fn default() -> Self {
+        Self {
+            offset: [0, 0],
+            hide_max_value: false,
+            only_max_value: false,
+            color_green: None,
+            color_yellow: [255, 255, 0],
+            color_red: [255, 0, 0],
+        }
+    }
+}
+
+impl HarvesterCounterSideSettings {
+    pub(crate) fn from_section(section: &IniSection) -> Self {
+        let defaults = Self::default();
+        Self {
+            offset: section
+                .read_int_fields_complete::<2>("Sidebar.HarvesterCounter.Offset", 2048)
+                .unwrap_or(defaults.offset),
+            hide_max_value: section.read_bool(
+                "Sidebar.HarvesterCounter.HideMaxValue",
+                defaults.hide_max_value,
+            ),
+            only_max_value: section.read_bool(
+                "Sidebar.HarvesterCounter.OnlyMaxValue",
+                defaults.only_max_value,
+            ),
+            color_green: section
+                .read_phobos_nullable_color("Sidebar.HarvesterCounter.ColorGreen", None),
+            color_yellow: section.read_phobos_color(
+                "Sidebar.HarvesterCounter.ColorYellow",
+                defaults.color_yellow,
+            ),
+            color_red: section
+                .read_phobos_color("Sidebar.HarvesterCounter.ColorRed", defaults.color_red),
+        }
     }
 }
 
