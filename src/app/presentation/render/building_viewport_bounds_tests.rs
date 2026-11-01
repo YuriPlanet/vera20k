@@ -58,6 +58,8 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
         wgpu::TextureFormat::Bgra8UnormSrgb,
         [1024, 768],
         4.,
+        false,
+        Default::default(),
     );
     let colors = HouseColorMap::from([("Neutral".to_owned(), NO_REMAP)]);
     // Only this physical building's image is needed, while its simulation
