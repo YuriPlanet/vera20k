@@ -1370,10 +1370,12 @@ impl Simulation {
             let refused_capture = building.mission.current().known() == Some(MissionType::Selling)
                 || building.is_warped_out();
             let capturable = object.capturable;
-            let native_type_index = rules
+            let native_type_index = self
+                .interner
                 .type_array_index(
+                    engineer.type_ref(),
                     crate::rules::object_type::ObjectCategory::Infantry,
-                    self.interner.resolve(engineer.type_ref()),
+                    rules,
                 )
                 .unwrap_or(-1);
             //519D82..519EA5: with MultiEngineer on, a hostile building above

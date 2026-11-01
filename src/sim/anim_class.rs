@@ -1937,8 +1937,12 @@ impl Simulation {
         let Some(type_id) = self.anim(id).map(|anim| anim.type_id) else {
             return false;
         };
-        let type_name = self.interner.resolve(type_id).to_ascii_uppercase();
-        let Some(config) = rules.art().anim_runtime_config(&type_name).cloned() else {
+        // Borrowed from the rules, not the world: the visit below mutates the
+        // world while it reads the type.
+        let Some(config) = rules
+            .art()
+            .anim_runtime_config(self.interner.resolve(type_id))
+        else {
             self.destroy_anim(id, rules);
             return false;
         };
@@ -2051,7 +2055,7 @@ impl Simulation {
             .general
             .drop_zone_anim
             .as_deref()
-            .is_some_and(|name| name.eq_ignore_ascii_case(&type_name))
+            .is_some_and(|name| name.eq_ignore_ascii_case(self.interner.resolve(type_id)))
             && self.anim_absolute_coord(id).is_some_and(|world| {
                 Self::map_coord_cell(&self.resolved_terrain, world.x, world.y)
                     .and_then(|(x, y)| {

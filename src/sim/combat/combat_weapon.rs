@@ -62,6 +62,17 @@ pub enum WeaponSlot {
 pub(crate) struct WeaponRecord<'a> {
     pub weapon_id: Option<&'a str>,
     pub flh: crate::rules::flh::Flh,
+    /// `weapon_id` as the type's RuleSet resolved it.
+    resolved: crate::rules::ruleset::ResolvedWeapon,
+}
+
+impl WeaponRecord<'_> {
+    /// The record's WeaponType pointer: `rules.weapon(self.weapon_id?)`,
+    /// read through the handle the type resolved when `rules` built it.
+    #[inline]
+    pub(crate) fn weapon<'r>(&self, rules: &'r RuleSet) -> Option<&'r WeaponType> {
+        rules.resolved_weapon(self.weapon_id?, self.resolved)
+    }
 }
 
 /// Result of weapon selection: the chosen weapon and its warhead.
@@ -360,6 +371,7 @@ pub(crate) fn weapon_for_index(
     Some(WeaponRecord {
         weapon_id,
         flh: obj.weapon_flh(index, elite),
+        resolved: obj.resolved_weapons().slot(slot_index, elite),
     })
 }
 
@@ -1251,7 +1263,8 @@ pub(crate) fn select_weapon_index_against_in_query(
 /// primary, never the normal `OccupyWeapon`. No target is read; whether the
 /// weapon may fire is GetFireError's.
 fn occupant_weapon_record(occupant: &ObjectType, veterancy: u16) -> Option<WeaponRecord<'_>> {
-    let occupy = if veterancy >= RANK_ELITE_U16 {
+    let elite = veterancy >= RANK_ELITE_U16;
+    let occupy = if elite {
         occupant.elite_occupy_weapon.as_deref()
     } else {
         occupant.occupy_weapon.as_deref()
@@ -1262,6 +1275,7 @@ fn occupant_weapon_record(occupant: &ObjectType, veterancy: u16) -> Option<Weapo
         Some(WeaponRecord {
             weapon_id: Some(weapon_id),
             flh: crate::rules::flh::Flh::default(),
+            resolved: occupant.resolved_weapons().occupy(elite),
         })
     } else {
         weapon_for_index(occupant, veterancy, 0)
@@ -1321,7 +1335,7 @@ pub fn get_weapon<'r>(
     rules: &'r RuleSet,
     interner: &StringInterner,
 ) -> Option<&'r WeaponType> {
-    rules.weapon(get_weapon_record(entity, obj, index, entities, rules, interner)?.weapon_id?)
+    get_weapon_record(entity, obj, index, entities, rules, interner)?.weapon(rules)
 }
 
 /// `BuildingClass::GetWeapon4526F0`: first armed normal upgrade record in
@@ -1551,6 +1565,43 @@ mod tests {
         // No WeaponType in a valid own slot does not erase its retained FLH.
         let empty = weapon_for_index(obj, 0, 1).unwrap();
         assert_eq!((empty.weapon_id, empty.flh.height), (None, 9));
+    }
+
+    #[test]
+    fn records_answer_as_their_weapon_names_in_any_rule_set() {
+        let gi = "[GI]\nStrength=100\nPrimary=GUN\nElitePrimary=EGUN\n\
+                  OccupyWeapon=OGUN\nEliteOccupyWeapon=EOGUN\n\
+                  [GUN]\nWarhead=WH\n[EGUN]\nWarhead=WH\n[OGUN]\nWarhead=WH\n\
+                  [EOGUN]\nWarhead=WH\n[WH]\n";
+        let rules =
+            RuleSet::from_ini(&IniFile::from_str(&format!("[InfantryTypes]\n0=GI\n{gi}"))).unwrap();
+        // FIRST allocates the same weapons in another order, so a handle
+        // read in the wrong set names another weapon.
+        let other = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[InfantryTypes]\n0=FIRST\n1=GI\n\
+             [FIRST]\nStrength=100\nPrimary=EOGUN\nSecondary=OGUN\nElitePrimary=EGUN\n{gi}"
+        )))
+        .unwrap();
+        assert_ne!(rules.weapon_handle("GUN"), other.weapon_handle("GUN"));
+        let copy = rules.clone().with_fresh_serial();
+        for owner in [&rules, &copy] {
+            let gi = owner.object("GI").unwrap();
+            for set in [&rules, &other, &copy] {
+                for (record, name) in [
+                    (weapon_for_index(gi, 0, 0), "GUN"),
+                    (weapon_for_index(gi, RANK_ELITE_U16, 0), "EGUN"),
+                    (occupant_weapon_record(gi, 0), "OGUN"),
+                    (occupant_weapon_record(gi, RANK_ELITE_U16), "EOGUN"),
+                ] {
+                    let record = record.unwrap();
+                    assert_eq!(record.weapon_id, Some(name));
+                    assert!(
+                        std::ptr::eq(record.weapon(set).unwrap(), set.weapon(name).unwrap()),
+                        "{name}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

@@ -4426,6 +4426,56 @@ fn next_rule_set_serial() -> u64 {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub struct TypeHandle(pub u32);
 
+/// O(1) index into a `RuleSet`'s weapons, which [`RuleSet::weapon_handle`]
+/// resolves a name to.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct WeaponHandle(u32);
+
+/// A weapon name as one `RuleSet` resolved it ([`RuleSet::weapon_handle`]).
+/// [`RuleSet::resolved_weapon`] reads the handle only in that set and looks
+/// the name up anywhere else.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ResolvedWeapon {
+    /// The resolving set's serial; 0, which no set has, when unresolved.
+    rules_serial: u64,
+    handle: Option<WeaponHandle>,
+}
+
+/// The weapons a type's records name — `Weapon[]`, `EliteWeapon[]`,
+/// `OccupyWeapon=` and `EliteOccupyWeapon=` — resolved once by the set that
+/// built the type ([`RuleSet::resolve_type_weapons`]), so per-object reads
+/// skip hashing the name. Derived: never hashed or serialized.
+#[derive(Clone, Debug, Default)]
+pub struct TypeWeapons {
+    /// The resolving set's serial; 0 for a type no set resolved.
+    rules_serial: u64,
+    base: Box<[Option<WeaponHandle>]>,
+    elite: Box<[Option<WeaponHandle>]>,
+    /// `OccupyWeapon=`, then `EliteOccupyWeapon=`.
+    occupy: [Option<WeaponHandle>; 2],
+}
+
+impl TypeWeapons {
+    /// The base or, `elite`, the elite record at `index`.
+    #[inline]
+    pub(crate) fn slot(&self, index: usize, elite: bool) -> ResolvedWeapon {
+        let slots = if elite { &self.elite } else { &self.base };
+        ResolvedWeapon {
+            rules_serial: self.rules_serial,
+            handle: slots.get(index).copied().flatten(),
+        }
+    }
+
+    /// `OccupyWeapon=` or, `elite`, `EliteOccupyWeapon=`.
+    #[inline]
+    pub(crate) fn occupy(&self, elite: bool) -> ResolvedWeapon {
+        ResolvedWeapon {
+            rules_serial: self.rules_serial,
+            handle: self.occupy[usize::from(elite)],
+        }
+    }
+}
+
 /// Master container for all game data parsed from rules.ini.
 ///
 /// Name lookups are case-insensitive (matching the engine's find-or-allocate),
@@ -4458,8 +4508,11 @@ pub struct RuleSet {
     /// Case-insensitive identity of each type in the four native TechnoType
     /// registries to its ordered array index (`+0xDF8`).
     type_array_indices: HashMap<(ObjectCategory, String), i32>,
-    /// All weapons indexed by ID (e.g., "105mm" → WeaponType).
-    weapons: LookupMap<String, WeaponType>,
+    /// All weapons' handles indexed by ID (e.g., "105mm" → its
+    /// `weapon_types` index). Built once with the set, never changed.
+    weapons: LookupMap<String, WeaponHandle>,
+    /// The weapons `weapons` indexes, one per key.
+    weapon_types: Vec<WeaponType>,
     /// Derived from the one processed native Weapon family, in allocation
     /// order. The bool admits only slots whose Weapon/Warhead stored IDs map
     /// unambiguously into the existing name projection. Rebuilt with Rules;
@@ -5602,6 +5655,7 @@ impl RuleSet {
         }
         processed.rules_type_references().apply_to(&mut rules);
         rules.project_house_masks();
+        rules.resolve_type_weapons();
         Ok(rules)
     }
 
@@ -5817,7 +5871,7 @@ impl RuleSet {
         // WeaponTypeClass::ReadINI @ `0x00772080` calls
         // CCINIClass::ReadSoundList @ `0x00525430` for Report/DownReport at
         // `0x00772394`/`0x0077241A`; use its shared catalog/list owner.
-        for weapon in self.weapons.values_mut() {
+        for weapon in &mut self.weapon_types {
             let section = ini.section(&weapon.id);
             weapon.report = section.map_or_else(Vec::new, |section| {
                 sounds.read_rules_sound_list(section, "Report")
@@ -6261,7 +6315,8 @@ impl RuleSet {
         // Projectile, Warhead, Anim, OccupantAnim, OpenToppedAnim and
         // AttachedParticleSystem are retained here; AssaultAnim is retained by
         // this pass too, and Report lists bind below through the SOUNDMD catalog.
-        let mut weapons: LookupMap<String, WeaponType> = LookupMap::default();
+        let mut weapons: LookupMap<String, WeaponHandle> = LookupMap::default();
+        let mut weapon_types: Vec<WeaponType> = Vec::new();
         for state in processed.weapon_states() {
             let Some(section) = ini.section(state.id) else {
                 log::trace!("Weapon '{}' allocated but has no section", state.id);
@@ -6278,7 +6333,19 @@ impl RuleSet {
             weapon.occupant_anim = state.occupant_anim.map(str::to_owned);
             weapon.open_topped_anim = state.open_topped_anim.map(str::to_owned);
             weapon.attached_particle_system = state.attached_particle_system.map(str::to_owned);
-            weapons.insert(section.name.clone(), weapon);
+            // A repeated ID replaces the earlier weapon under its key. The
+            // reserve is `insert`'s, so the keys iterate in the order they
+            // did when the map held the weapons themselves.
+            weapons.reserve(1);
+            match weapons.entry(section.name.clone()) {
+                std::collections::hash_map::Entry::Occupied(slot) => {
+                    weapon_types[slot.get().0 as usize] = weapon;
+                }
+                std::collections::hash_map::Entry::Vacant(slot) => {
+                    slot.insert(WeaponHandle(weapon_types.len() as u32));
+                    weapon_types.push(weapon);
+                }
+            }
         }
         // Step 3: Parse warhead sections. The projected [Warheads] registry is
         // the processor's whole Warhead family: the [Warheads] values and
@@ -6303,7 +6370,7 @@ impl RuleSet {
         // Step 4: Collect projectile IDs referenced by weapons and parse them.
         let mut projectiles: LookupMap<String, ProjectileType> = LookupMap::default();
         let mut projectile_ids: HashSet<String> = HashSet::new();
-        for weapon in weapons.values() {
+        for weapon in &weapon_types {
             if let Some(ref proj_id) = weapon.projectile {
                 projectile_ids.insert(proj_id.clone());
             }
@@ -6464,6 +6531,7 @@ impl RuleSet {
             native_techno_type_order: Vec::new(),
             type_array_indices,
             weapons,
+            weapon_types,
             weapon_array: Vec::new(),
             warheads,
             projectiles,
@@ -6710,6 +6778,7 @@ impl RuleSet {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_fresh_serial(mut self) -> Self {
         self.serial = next_rule_set_serial();
+        self.resolve_type_weapons();
         self
     }
 
@@ -6770,9 +6839,19 @@ impl RuleSet {
         category: ObjectCategory,
         id: &str,
     ) -> Option<&ObjectType> {
+        self.type_handle_in_category(category, id)
+            .map(|handle| self.object_by_handle(handle))
+    }
+
+    /// The handle of the object [`Self::object_in_category`] answers.
+    pub(crate) fn type_handle_in_category(
+        &self,
+        category: ObjectCategory,
+        id: &str,
+    ) -> Option<TypeHandle> {
         self.object_category_index
             .get(&(category, id.to_ascii_uppercase()))
-            .map(|handle| self.object_by_handle(*handle))
+            .copied()
     }
 
     /// The computer's base defense candidates of a House's side
@@ -7000,7 +7079,71 @@ impl RuleSet {
 
     /// Look up a weapon by ID (case-insensitive, gamemd parity).
     pub fn weapon(&self, id: &str) -> Option<&WeaponType> {
-        Self::lookup_ci(&self.weapons, id)
+        self.weapon_handle(id)
+            .map(|handle| self.weapon_by_handle(handle))
+    }
+
+    /// The handle of the weapon [`Self::weapon`] answers for `id`.
+    pub fn weapon_handle(&self, id: &str) -> Option<WeaponHandle> {
+        Self::lookup_ci(&self.weapons, id).copied()
+    }
+
+    /// Dereference a handle this set resolved.
+    #[inline]
+    fn weapon_by_handle(&self, handle: WeaponHandle) -> &WeaponType {
+        &self.weapon_types[handle.0 as usize]
+    }
+
+    /// [`Self::weapon`] of `id`, through `resolved` when this set resolved
+    /// it from `id`; debug builds compare the handle with the name's.
+    #[inline]
+    pub(crate) fn resolved_weapon(
+        &self,
+        id: &str,
+        resolved: ResolvedWeapon,
+    ) -> Option<&WeaponType> {
+        if resolved.rules_serial != self.serial {
+            return self.weapon(id);
+        }
+        debug_assert!(
+            !crate::util::debug_checks::live_read_check_enabled()
+                || resolved.handle == self.weapon_handle(id),
+            "weapon {id:?} resolved to {:?}, unlike its name",
+            resolved.handle
+        );
+        resolved.handle.map(|handle| self.weapon_by_handle(handle))
+    }
+
+    /// Resolve every type's weapon records against this set's weapons
+    /// ([`TypeWeapons`]). Runs when the set is built, after the records'
+    /// last writer (`RulesTypeReferences::apply_to` sets the occupy
+    /// weapons), and when a copy takes its own serial.
+    fn resolve_type_weapons(&mut self) {
+        let resolve = |id: Option<&str>| id.and_then(|id| self.weapon_handle(id));
+        let resolved: Vec<TypeWeapons> = self
+            .object_list
+            .iter()
+            .map(|object| TypeWeapons {
+                rules_serial: self.serial,
+                base: object
+                    .weapon_list
+                    .iter()
+                    .map(|slot| resolve(slot.as_deref()))
+                    .collect(),
+                elite: object
+                    .elite_weapon_list
+                    .iter()
+                    .map(|slot| resolve(slot.as_deref()))
+                    .collect(),
+                occupy: [
+                    resolve(object.occupy_weapon.as_deref()),
+                    resolve(object.elite_occupy_weapon.as_deref()),
+                ],
+            })
+            .collect();
+        for (object, weapons) in self.object_list.iter_mut().zip(resolved) {
+            object.project_resolved_weapons(weapons);
+        }
     }
 
     /// WeaponType global88756C's allocation index, used by Action42 at
@@ -7372,8 +7515,7 @@ impl RuleSet {
             self.ares_super_weapon_metadata.hash(&mut hasher);
             b"ares-weapon-ammo-v1".hash(&mut hasher);
             Self::by_upper_id(
-                self.weapons
-                    .iter()
+                self.weapon_entries()
                     .map(|(id, weapon)| (id, weapon.ammo_cost())),
             )
             .hash(&mut hasher);
@@ -7398,8 +7540,7 @@ impl RuleSet {
             // Bound weapon `RadType=` names, by weapon ID: the map's
             // iteration order differs between targets.
             let mut rad_types: Vec<_> = self
-                .weapons
-                .iter()
+                .weapon_entries()
                 .map(|(id, weapon)| (id, &weapon.rad_type))
                 .collect();
             rad_types.sort_unstable_by_key(|&(id, _)| id);
@@ -8035,8 +8176,7 @@ impl RuleSet {
                 self.phobos_airburst.hash(&mut hasher);
             }
             let can_target_houses = Self::by_upper_id(
-                self.weapons
-                    .iter()
+                self.weapon_entries()
                     .filter(|(_, weapon)| {
                         weapon.can_target_houses()
                             != crate::rules::phobos_shields::AffectedHouse::ALL
@@ -8048,8 +8188,7 @@ impl RuleSet {
                 can_target_houses.hash(&mut hasher);
             }
             let weapon_targeting = Self::by_upper_id(
-                self.weapons
-                    .iter()
+                self.weapon_entries()
                     .filter(|(_, weapon)| {
                         weapon.weapon_targeting()
                             != crate::rules::phobos_airburst::PhobosWeaponTargeting::default()
@@ -8136,7 +8275,7 @@ impl RuleSet {
             "Ares.UnitDelivery".hash(&mut hasher);
             deliveries.hash(&mut hasher);
         }
-        Self::by_upper_id(self.weapons.iter().map(|(id, weapon)| {
+        Self::by_upper_id(self.weapon_entries().map(|(id, weapon)| {
             (
                 id,
                 (
@@ -8405,7 +8544,7 @@ impl RuleSet {
                 control_anims.hash(&mut hasher);
             }
         }
-        Self::by_upper_id(self.weapons.iter().map(|(id, weapon)| {
+        Self::by_upper_id(self.weapon_entries().map(|(id, weapon)| {
             (
                 id,
                 (
@@ -9994,6 +10133,7 @@ impl RuleSet {
         let mut infantry_checked: u32 = 0;
         let mut crawls_patched: u32 = 0;
         for obj in self.object_list.iter_mut() {
+            obj.project_silo_damage(art);
             // Resolve the art.ini section: use Image= override if present,
             // otherwise fall back to the object ID itself.
             let art_key: &str = &obj.image;
@@ -10183,11 +10323,16 @@ impl RuleSet {
         self.project_art_data();
     }
 
-    /// Raw synthetic fixture replacement: no native admission or field projection.
+    /// Raw synthetic fixture replacement: no native admission or field
+    /// projection, except the derived `SiloDamage=` each type keeps, which
+    /// follows the new ART.
     #[cfg(any(test, feature = "test-support"))]
     pub fn replace_art_registry_for_test(&mut self, art: crate::rules::art_data::ArtRegistry) {
         self.art_registry = art;
         self.voxel_assets = Default::default();
+        for object in &mut self.object_list {
+            object.project_silo_damage(&self.art_registry);
+        }
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -10207,13 +10352,17 @@ impl RuleSet {
     /// fixture writes it.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_weapon_speed_for_test(&mut self, id: &str, speed: i32) {
-        if let Some(weapon) = self
-            .weapons
-            .values_mut()
-            .find(|weapon| weapon.id.eq_ignore_ascii_case(id))
-        {
+        if let Some(weapon) = self.weapon_mut_for_test(id) {
             weapon.speed = speed;
         }
+    }
+
+    /// The weapon [`Self::weapon`] answers for `id`, to rewrite. Its handle
+    /// stays the same, so the types' resolved records stay current.
+    #[cfg(any(test, feature = "test-support"))]
+    fn weapon_mut_for_test(&mut self, id: &str) -> Option<&mut WeaponType> {
+        let handle = self.weapon_handle(id)?;
+        Some(&mut self.weapon_types[handle.0 as usize])
     }
 
     /// Supply original fixture vectors that the real sound reader cannot
@@ -10437,7 +10586,15 @@ impl RuleSet {
         &self,
         type_id: &str,
     ) -> Option<&crate::rules::animation_sequence::SequenceSet> {
-        let handle = self.type_handle(type_id)?;
+        self.animation_sequence_by_handle(self.type_handle(type_id)?)
+    }
+
+    /// The sequences of the object `handle` names, as
+    /// [`Self::animation_sequence`] answers for its name.
+    pub fn animation_sequence_by_handle(
+        &self,
+        handle: TypeHandle,
+    ) -> Option<&crate::rules::animation_sequence::SequenceSet> {
         self.animation_sequence_by_handle[handle.0 as usize].as_ref()
     }
 
@@ -10497,7 +10654,16 @@ impl RuleSet {
 
     /// Iterate all parsed weapon types.
     pub fn weapons_iter(&self) -> impl Iterator<Item = &WeaponType> {
-        self.weapons.values()
+        self.weapons
+            .values()
+            .map(|&handle| self.weapon_by_handle(handle))
+    }
+
+    /// Every weapon with its ID, in the ID map's order.
+    fn weapon_entries(&self) -> impl Iterator<Item = (&String, &WeaponType)> {
+        self.weapons
+            .iter()
+            .map(|(id, &handle)| (id, self.weapon_by_handle(handle)))
     }
 
     /// Total number of projectiles.
@@ -15008,7 +15174,7 @@ Projectile=Invisible
                 unit(rules).elite_occupy_weapon = Some("GUN".into());
             }),
             ("Range", |rules| {
-                rules.weapons.get_mut("GUN").unwrap().range_leptons = 1;
+                rules.weapon_mut_for_test("GUN").unwrap().range_leptons = 1;
             }),
             ("ShrapnelWeapon", |rules| {
                 rules.projectiles.get_mut("SHOT").unwrap().shrapnel_weapon = Some("GUN".into());
@@ -15105,24 +15271,25 @@ Projectile=Invisible
             ),
             (
                 "Anim",
-                Box::new(move |rules| rules.weapons.get_mut("GUN").unwrap().anim = names()),
+                Box::new(move |rules| rules.weapon_mut_for_test("GUN").unwrap().anim = names()),
             ),
             (
                 "OccupantAnim",
-                Box::new(move |rules| rules.weapons.get_mut("GUN").unwrap().occupant_anim = name()),
+                Box::new(move |rules| {
+                    rules.weapon_mut_for_test("GUN").unwrap().occupant_anim = name()
+                }),
             ),
             (
                 "OpenToppedAnim",
                 Box::new(move |rules| {
-                    rules.weapons.get_mut("GUN").unwrap().open_topped_anim = name()
+                    rules.weapon_mut_for_test("GUN").unwrap().open_topped_anim = name()
                 }),
             ),
             (
                 "AttachedParticleSystem",
                 Box::new(move |rules| {
                     rules
-                        .weapons
-                        .get_mut("GUN")
+                        .weapon_mut_for_test("GUN")
                         .unwrap()
                         .attached_particle_system = name();
                 }),
