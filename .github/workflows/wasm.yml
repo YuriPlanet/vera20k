@@ -50,6 +50,7 @@ on:
       - 'src/app/input/keyboard.rs'
       - 'src/app/lan_service**'
       - 'src/app/loading/**'
+      - 'src/app/map_library.rs'
       - 'src/app/match_diagnostics.rs'
       - 'src/app/match_runtime/frame_pacer.rs'
       - 'src/app/persistence/**'

@@ -151,6 +151,13 @@ CAPABILITIES: tuple[Capability, ...] = (
         "compilation. The separate WebAssembly workflow builds the browser target.",
         test=False,
     ),
+    Capability(
+        "wasm-threads",
+        ("wasm-threads",),
+        "Browser simulation work on a Web Worker pool; desktop feature-isolation "
+        "compilation. `tools/wasm/build.py --threads` builds the browser target.",
+        test=False,
+    ),
 )
 
 # The capability mixes #2797 declares meaningful: the three extension flags are
