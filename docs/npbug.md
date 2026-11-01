@@ -8,7 +8,9 @@ deliberate, documented deviation from native behavior, not a parity fix.
 The extension exists because the reports are compatibility candidates, not
 VERA-versus-retail defects — the inventory and its policy live in
 [#3024](https://github.com/YuriPlanet/vera20k/issues/3024). Builds without the
-feature keep every native path and its pinned goldens.
+feature keep every native path and its pinned goldens, with one deliberate
+exception in every build: a war factory captured while letting a unit out still
+lets it out ([#3593](https://github.com/YuriPlanet/vera20k/issues/3593)).
 
 Enable it explicitly:
 

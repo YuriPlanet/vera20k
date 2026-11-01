@@ -6313,7 +6313,20 @@ impl Simulation {
         if !unit_deploying && let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.set_archive_target(None);
         }
-        if current != Some(MissionType::Selling) && !simple_deployer_unloading {
+        // VERA deviation from gamemd (#3593): native queues this Guard on a
+        // war factory still letting its product out, too. The building is
+        // ready at once (`+0x6DD`), so Guard replaces Unload: a product
+        // captured before the door opens never leaves the bay, and one already
+        // driving out leaves the door open behind it. Keeping Unload lets the
+        // product out for the new owner and closes the door; the `0x007017CE`
+        // check in `change_owner_mission_half` already skips the idle reset.
+        // RESIDUAL: in the one frame between `exit_produced_object` and the
+        // Unload commit (Unload only queued), a capture still strands the
+        // product as in gamemd: the `0x007017CE` tail reads the current
+        // mission only. At most once per product.
+        let factory_unloading = self.weapons_factory_unloading(stable_id, rules);
+        if current != Some(MissionType::Selling) && !simple_deployer_unloading && !factory_unloading
+        {
             // `Queue_Mission(Guard, 1)`: the queue write, then Ready_To_Commence
             // (`+0x200`) and Commence (`+0x1EC`).
             let _ = self.mission_queue_exact(
@@ -6771,7 +6784,8 @@ impl Simulation {
     ///   (`+0x1E8` = `MissionClass::Queue_Mission @ 0x005B35E0`) unless current
     ///   is Selling (0x13), or a Unit whose type is `IsSimpleDeployer`
     ///   (`UnitType+0xE13`) is in Unload; a ready object commits Guard on the
-    ///   spot;
+    ///   spot. VERA also skips it for a `WeaponsFactory=` building in Unload,
+    ///   so a captured factory still lets its product out (#3593);
     /// - `0x00701793..0x007017BA`, after the `+0x21C` house swap: a Rescue
     ///   (0x15) current or queued mission becomes `Assign_Mission(Guard)`;
     /// - `0x007017C0..0x00701849`, unless in limbo (`+0x81`), a
@@ -6840,12 +6854,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
         };
-        let category = entity.category();
-        let current = entity.mission.current().known();
-        let object = self.object_type(entity.type_ref(), rules);
-        let factory_unloading = category == EntityCategory::Structure
-            && current == Some(MissionType::Unload)
-            && object.is_some_and(|object| object.weapons_factory);
+        let factory_unloading = self.weapons_factory_unloading(stable_id, rules);
         let in_limbo = entity.lifecycle.in_limbo();
         let now = self.session.binary_frame();
         let rescue = self.substrate.entities.get(stable_id).is_some_and(|e| {
@@ -6873,6 +6882,17 @@ impl Simulation {
         self.assign_null_destination(stable_id, rules, None, effects);
         let _ = self.assign_target_represented(stable_id, None, rules, None, effects);
         enter_idle_mode(self, stable_id, rules, None, effects);
+    }
+
+    /// A `WeaponsFactory=` building whose current mission is Unload: one
+    /// still letting its product out of the bay.
+    fn weapons_factory_unloading(&self, stable_id: u64, rules: &RuleSet) -> bool {
+        use crate::sim::mission::MissionType;
+        self.substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.mission.current().known() == Some(MissionType::Unload))
+            && self.is_weapons_factory(stable_id, rules)
     }
 
     /// Restore externally-derived cache fields after validated snapshot

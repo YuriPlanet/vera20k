@@ -1927,3 +1927,107 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
         &[product]
     );
 }
+
+/// #3593, a VERA deviation from gamemd: a factory captured while its door is
+/// still opening keeps Unload, so the product drives out for the new owner
+/// instead of staying in the bay forever.
+#[test]
+fn a_factory_captured_while_its_door_opens_still_lets_the_product_out() {
+    use crate::sim::mission::MissionType;
+    use crate::sim::world::FrameEffects;
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    for capture_after in [1usize, 20] {
+        let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 0x0044_8260, 48);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
+        sim.session
+            .set_current_house_for_test(sim.interner.get("Americans"));
+        sim.session.game_options_mut_for_test().short_game = false;
+        let grid = sim
+            .path_grid_snapshot()
+            .map(|grid| (*grid).clone())
+            .unwrap();
+        let factory = sim
+            .spawn_object("GAWEAP", "Russians", 20, 20, 0, &rules)
+            .unwrap();
+        // A plant each keeps both houses in the game.
+        sim.spawn_object("NAPOWR", "Russians", 14, 30, 0, &rules)
+            .unwrap();
+        sim.spawn_object("GAPOWR", "Americans", 34, 30, 0, &rules)
+            .unwrap();
+        let tank = sim
+            .construct_object_limbo_at_height(
+                "HTNK",
+                "Russians",
+                0,
+                0,
+                0,
+                0,
+                &rules,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        assert!(matches!(
+            crate::sim::production::exit_produced_object(
+                &mut sim,
+                &rules,
+                factory,
+                tank,
+                (0, 0),
+                None,
+                FrameEffects::default(),
+            ),
+            crate::sim::ai_base_building::BuildingExit::Placed
+        ));
+        let tick = |sim: &mut Simulation| {
+            let commands = sim.take_due_commands();
+            sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 33);
+        };
+        for _ in 0..capture_after {
+            tick(&mut sim);
+        }
+        let producer = sim.substrate.entities.get(factory).unwrap();
+        assert_eq!(
+            producer.mission.current().known(),
+            Some(MissionType::Unload)
+        );
+        assert!(
+            producer.mission.handler_state() <= 2,
+            "the capture lands before the product starts driving"
+        );
+        let americans = sim.interner.get("Americans").unwrap();
+        sim.change_owner_with_rules(factory, americans, &rules, None, FrameEffects::default());
+        let left = (0..600).any(|_| {
+            tick(&mut sim);
+            let unit = sim.substrate.entities.get(tank).unwrap();
+            sim.substrate.occupancy.first_building_on_layer(
+                unit.position.rx(),
+                unit.position.ry(),
+                crate::sim::movement::locomotor::MovementLayer::Ground,
+            ) != Some(factory)
+        });
+        assert!(
+            left,
+            "captured after {capture_after} frames, the tank stayed in the bay"
+        );
+        let finished = (0..300).any(|_| {
+            tick(&mut sim);
+            sim.substrate
+                .entities
+                .get(factory)
+                .unwrap()
+                .mission
+                .current()
+                .known()
+                != Some(MissionType::Unload)
+        });
+        assert!(finished, "the captured factory never finished unloading");
+        assert_eq!(sim.substrate.entities.get(tank).unwrap().owner(), americans);
+    }
+}
