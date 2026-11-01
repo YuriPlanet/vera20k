@@ -752,7 +752,8 @@ pub const REPLAY_VERSION: u32 = 4;
 
 /// The resolved launch and draw-free initial cursor projection contain no
 /// service session, ticket, network endpoint, authentication key or password.
-/// Startup version 2 reconstructs the normal App's batched-path policy.
+/// Startup version 3 reconstructs the normal App's batched path searches and
+/// target scans; version 2 replays, recorded with live scans, are refused.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReplayStartup {
     version: u32,
@@ -809,8 +810,8 @@ impl ReplayStartup {
             "standalone replay requires a started frame-zero world"
         );
         anyhow::ensure!(
-            sim.path_batch_stats().is_some(),
-            "standalone replay requires the normal App's batched paths"
+            sim.path_batch_stats().is_some() && sim.target_scans_batched(),
+            "standalone replay requires the normal App's batched paths and target scans"
         );
         anyhow::ensure!(
             launch.mode.class != crate::skirmish_modes::MpModeClass::Cooperative,
@@ -850,7 +851,7 @@ impl ReplayStartup {
         let mut launch = launch.clone();
         launch.selected_map_file = Some(map_name.to_owned());
         Ok(Self {
-            version: 2,
+            version: 3,
             native_id_prefix: Some(
                 sim.native_identity_prefix_checkpoint()
                     .context("replay native-ID prefix")?,
@@ -871,8 +872,8 @@ impl ReplayStartup {
 
     fn validate_header(&self, header: &ReplayHeader) -> Result<()> {
         anyhow::ensure!(
-            header.version == REPLAY_VERSION && self.version == 2,
-            "unsupported standalone replay version; startup version 2 with native-ID prefix is required"
+            header.version == REPLAY_VERSION && self.version == 3,
+            "unsupported standalone replay version; startup version 3 with native-ID prefix is required"
         );
         self.native_id_prefix()?;
         anyhow::ensure!(
@@ -1286,9 +1287,11 @@ impl ReplayRunner {
             None,
         )
         .map_err(anyhow::Error::msg)?;
-        // The ordinary App handoff enables the path-search owner before
-        // recording frame zero. It changes movement timing and is hashed.
+        // The ordinary App handoff enables the path-search and target-scan
+        // batches before recording frame zero. They change movement and
+        // acquisition timing and are hashed.
         loaded.runtime.simulation.batch_path_searches();
+        loaded.runtime.simulation.batch_target_scans();
         let mut playback = ReplayPlayback::prepare(
             &mut loaded.runtime,
             std::sync::Arc::new(replay.clone()),
@@ -1552,8 +1555,9 @@ mod tests {
         );
         let sim = &mut scene.runtime.simulation;
         // Model the ordinary App handoff, including its authoritative path
-        // policy; the headless reconstruction must install the same owner.
+        // and scan policy; the headless reconstruction must install the same.
         sim.batch_path_searches();
+        sim.batch_target_scans();
         assert_eq!(
             sim.houses()[&sim.session().current_house().unwrap()].native_scenario_name(),
             Some("ReplayGuest")
