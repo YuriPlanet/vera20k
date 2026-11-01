@@ -250,6 +250,13 @@ pub struct WeaponType {
     /// range; `None` inherits `[CombatDamage]`.
     #[cfg(feature = "phobos")]
     pub rof_random_delay: Option<crate::rules::ini_value::PartialIntPair>,
+    /// Phobos `WeaponTypeExt::Burst_NoDelay` (`Ext/WeaponType/Body.cpp:122`,
+    /// `Valueable<bool>`, default false): an infantry or vehicle firer empties
+    /// the whole burst in one frame instead of one shot per frame. Only the
+    /// `InfantryClass::Fire_AG` and `UnitClass::Fire_AG` firing paths read it
+    /// (hooks `0x5209EE` / `0x736F67`), and only when `Burst` is above 1.
+    #[cfg(feature = "phobos")]
+    pub phobos_burst_no_delay: bool,
     /// Phobos `WeaponTypeExt::CanTargetHouses` (`AffectedHouse::All` default),
     /// read for `Splits.UseWeaponTargeting`.
     #[cfg(feature = "phobos")]
@@ -584,6 +591,8 @@ impl WeaponType {
             #[cfg(feature = "phobos")]
             laser_position_update_stop_on_firer_convert: section
                 .read_phobos_nullable_bool("LaserPositionUpdate.StopOnFirerConvert", None),
+            #[cfg(feature = "phobos")]
+            phobos_burst_no_delay: section.read_ares_bool("Burst.NoDelay", false),
         }
     }
 }
@@ -632,6 +641,47 @@ mod tests {
             rules.weapon("FREE").unwrap().ammo_cost(),
             if cfg!(feature = "ares") { 0 } else { 1 }
         );
+    }
+
+    /// Phobos `Burst.NoDelay`: the constructor's false default, then the key
+    /// through the production reader, including a later pass that says no.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn burst_no_delay_reads_with_a_false_default() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let base = "[VehicleTypes]\n0=UNIT\n[UNIT]\nPrimary=Slow\nSecondary=Fast\n\
+                    [Slow]\nDamage=1\nBurst=3\n\
+                    [Fast]\nDamage=1\nBurst=3\nBurst.NoDelay=yes\n";
+        let rules = RuleSet::from_ini(&IniFile::from_str(base)).unwrap();
+        assert!(
+            !rules.weapon("Slow").unwrap().phobos_burst_no_delay,
+            "the absent key keeps the constructor default"
+        );
+        assert!(
+            rules.weapon("Fast").unwrap().phobos_burst_no_delay,
+            "yes is read"
+        );
+
+        // A later rules pass can turn it on for a weapon the base left unset.
+        let mut layers = RulesLayerStack::new(IniFile::from_str(base));
+        layers.push(
+            RulesLayerKind::GameMode,
+            IniFile::from_str("[Slow]\nBurst.NoDelay=yes\n"),
+        );
+        let rules = RuleSet::from_rules_layers(&layers).unwrap();
+        assert!(rules.weapon("Slow").unwrap().phobos_burst_no_delay);
+
+        // `no` is a value, not a cleared field: the pass that authored it reads
+        // false.
+        let mut layers = RulesLayerStack::new(IniFile::from_str(base));
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[Fast]\nBurst.NoDelay=no\n"),
+        );
+        let rules = RuleSet::from_rules_layers(&layers).unwrap();
+        assert!(!rules.weapon("Fast").unwrap().phobos_burst_no_delay);
     }
 
     /// Retail `RevealOnFire=` through the production reader: the constructor's

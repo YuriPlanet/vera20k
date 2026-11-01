@@ -56,6 +56,11 @@ pub(super) struct FireReach {
     /// routine's tail ([`infantry_fire_tail`]) follows whether the shot fired
     /// or was refused.
     pub(super) infantry_fire_frame: bool,
+    /// `Burst.NoDelay` asked for the rest of the burst and the first shot left
+    /// the burst unfinished, so the class firing update repeats the dispatch
+    /// (Phobos hooks `0x736F67` / `0x5209EE`, which are the `UpdateFiring`
+    /// callers of this routine — not `TechnoClass::Fire` itself).
+    pub(super) burst_repeat: bool,
 }
 
 pub(super) fn resolve_attacker_fire(
@@ -70,7 +75,7 @@ pub(super) fn resolve_attacker_fire(
     effects: FrameEffects<'_>,
 ) -> FireReach {
     let mut reach = FireReach::default();
-    if let Some(shot) = admit_attacker_fire(
+    let Some(shot) = admit_attacker_fire(
         world,
         rules,
         overlay_registry,
@@ -81,18 +86,138 @@ pub(super) fn resolve_attacker_fire(
         &mut reach,
         out,
         effects,
-    ) {
+    ) else {
+        return reach;
+    };
+    // Phobos `Burst.NoDelay` applies to an infantry or vehicle firing a weapon
+    // whose `Burst` is above 1; the two hooks exist only for those classes
+    // (`0x5209EE` / `0x736F67`), and aircraft already empty their burst within
+    // one visit (`aircraft_release::release`). The hooks' second clause tests
+    // `DelayedFire.Duration`, which VERA has not ported, so it is satisfied as
+    // the unset branch.
+    #[cfg(feature = "phobos")]
+    let burst_no_delay = shot.selected.weapon.phobos_burst_no_delay
+        && shot.selected.weapon.burst > 1
+        && matches!(
+            snap.category,
+            EntityCategory::Unit | EntityCategory::Infantry
+        );
+    #[cfg(not(feature = "phobos"))]
+    let burst_no_delay = false;
+    // Phobos's hooks test `pThis->Fire(...)`, whose false answer means the shot
+    // never happened. The burst index is VERA's observable for that: a launched
+    // shot steps it, a refused launch leaves it where it was.
+    let burst_before = weapon_burst_index(world, snap.stable_id);
+    emit_admitted_fire(
+        world,
+        rules,
+        shot,
+        binary_frame,
+        out,
+        overlay_registry,
+        effects,
+    );
+    let burst_after = weapon_burst_index(world, snap.stable_id);
+    reach.burst_repeat = burst_no_delay
+        && matches!(burst_after, Some(index) if Some(index) != burst_before && index != 0);
+    reach
+}
+
+/// The firer's `CurrentBurstIndex` (`TechnoClass+0x3B8`), or `None` once it is
+/// gone from the store.
+fn weapon_burst_index(world: &Simulation, id: u64) -> Option<i32> {
+    world
+        .substrate
+        .entities
+        .get(id)
+        .map(|entity| entity.weapon_burst.index())
+}
+
+/// The loop both Phobos hooks run after their first shot
+/// (`UnitClass_UpdateFiring_BurstNoDelay @ 0x736F67`,
+/// `InfantryClass_UpdateFiring_BurstNoDelay @ 0x5209EE`): capture the rearm the
+/// shot armed, start `RearmTimer` at 0 so `GetFireError`'s T45 admits another,
+/// and keep calling Fire while the burst has not wrapped, the error test still
+/// answers OK and the launch itself succeeded. Then restore the last captured
+/// rearm, which is the full ROF once the burst completed — so the mid-burst
+/// `BurstDelay` values are skipped entirely rather than shortened. A burst
+/// interrupted by an error keeps its remaining shots for later frames, because
+/// the restore is the last shot's own value.
+#[allow(clippy::too_many_arguments)]
+fn fire_remaining_burst_this_frame(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    snap: &AttackerSnapshot,
+    fog_enabled: bool,
+    binary_frame: u32,
+    has_active_wave: bool,
+    reach: &mut FireReach,
+    out: &mut CombatEmit,
+    effects: FrameEffects<'_>,
+) {
+    let firer = snap.stable_id;
+    let frame = binary_frame as i32;
+    let mut rearm = world
+        .substrate
+        .entities
+        .get(firer)
+        .map_or(0, |entity| entity.rearm_timer.remaining(frame));
+    loop {
+        world
+            .substrate
+            .entities
+            .get_mut(firer)
+            .expect("firer")
+            .rearm_timer
+            .start(frame, 0);
+        let Some(next) = admit_attacker_fire(
+            world,
+            rules,
+            overlay_registry,
+            snap,
+            fog_enabled,
+            binary_frame,
+            has_active_wave,
+            reach,
+            out,
+            effects,
+        ) else {
+            break;
+        };
+        let before = weapon_burst_index(world, firer);
         emit_admitted_fire(
             world,
             rules,
-            shot,
+            next,
             binary_frame,
             out,
             overlay_registry,
             effects,
         );
+        let after = weapon_burst_index(world, firer);
+        // `&& pThis->Fire(pTarget, weaponIndex)`: a shot that never happened ends
+        // the run, and so does the wrap that completes the burst.
+        let Some(after) = after else { break };
+        if Some(after) == before {
+            break;
+        }
+        rearm = world
+            .substrate
+            .entities
+            .get(firer)
+            .map_or(0, |entity| entity.rearm_timer.remaining(frame));
+        if after == 0 {
+            break;
+        }
     }
-    reach
+    world
+        .substrate
+        .entities
+        .get_mut(firer)
+        .expect("firer")
+        .rearm_timer
+        .start(frame, rearm);
 }
 
 /// `TechnoClass::Fire`'s per-shot report (`0x006FF349..0x006FF38F`, every
@@ -2638,7 +2763,7 @@ pub(crate) fn visit_fire(
                         hull_destination: None,
                         turret_destination_is_idle_return: false,
                     });
-                    fire_error = resolve_attacker_fire(
+                    let mut reach = resolve_attacker_fire(
                         world,
                         rules,
                         overlay_registry,
@@ -2648,8 +2773,22 @@ pub(crate) fn visit_fire(
                         world.active_wave_id(id).is_some(),
                         emit,
                         run.effects(),
-                    )
-                    .code;
+                    );
+                    if reach.burst_repeat {
+                        fire_remaining_burst_this_frame(
+                            world,
+                            rules,
+                            overlay_registry,
+                            &snap,
+                            fog_enabled,
+                            world.session.binary_frame(),
+                            world.active_wave_id(id).is_some(),
+                            &mut reach,
+                            emit,
+                            run.effects(),
+                        );
+                    }
+                    fire_error = reach.code;
                 }
                 unit_tail = Some((id, fire_error));
             }
@@ -2659,7 +2798,7 @@ pub(crate) fn visit_fire(
             let target = actor.and_then(|actor| actor.attack_target.target());
             if let (Some(actor), Some(target)) = (actor, target) {
                 let snap = build_attacker_snapshot(actor, target, None);
-                let reach = resolve_attacker_fire(
+                let mut reach = resolve_attacker_fire(
                     world,
                     rules,
                     overlay_registry,
@@ -2670,6 +2809,20 @@ pub(crate) fn visit_fire(
                     emit,
                     run.effects(),
                 );
+                if reach.burst_repeat {
+                    fire_remaining_burst_this_frame(
+                        world,
+                        rules,
+                        overlay_registry,
+                        &snap,
+                        fog_enabled,
+                        world.session.binary_frame(),
+                        world.active_wave_id(id).is_some(),
+                        &mut reach,
+                        emit,
+                        run.effects(),
+                    );
+                }
                 infantry_tail = reach.infantry_fire_frame.then_some(id);
             } else if let Some(actor) = world.substrate.entities.get_mut(id) {
                 //520AD2: absence of TarCom clears the raw firing latch.
