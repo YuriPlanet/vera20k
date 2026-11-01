@@ -305,8 +305,9 @@ pub struct ChooseMapModalLayout {
     pub game_map_heading: RectPx,
     pub status_help: RectPx,
     pub preview: RectPx,
-    /// VERA: the selected map's author, under the preview where `0x102`
-    /// shows its game type ([`game_type_rect`]). `0x6B` has no such line.
+    /// VERA: the selected map's author under the preview, two pixels above
+    /// where `0x102` shows its game type ([`game_type_rect`]), to sit closer
+    /// to the preview. `0x6B` has no such line.
     pub author: RectPx,
 }
 
@@ -770,7 +771,7 @@ pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMa
             screen_w,
             screen_h,
         ),
-        author: game_type_rect(screen_w, screen_h),
+        author: game_type_rect(screen_w, screen_h).translate(0, -2),
     }
 }
 
