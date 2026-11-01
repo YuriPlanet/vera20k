@@ -106,7 +106,7 @@ impl App {
     pub(crate) fn release_in_game_pointer_state(state: &mut AppState) {
         state.match_state.input.tactical_mouse.reset_on_focus_loss();
         state.match_state.input.selection_state.cancel_drag();
-        state.match_state.input.minimap_dragging = false;
+        state.match_state.input.cancel_minimap_press();
         // A touch stream can end without an `Ended` when the window loses
         // focus with fingers down, and the live gesture owns the edge-scroll
         // inhibit, so it dies on the same edge as the rest of the pointer

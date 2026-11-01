@@ -11,6 +11,7 @@ use crate::sim::snapshot::saved_local_view::{
     SavedCursorModes, SavedLocalView, SavedLocalViewError, SavedTargeting,
 };
 use std::collections::HashSet;
+use winit::event::MouseButton;
 use winit::keyboard::{KeyCode, ModifiersState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,8 +231,9 @@ pub(crate) struct MatchInputState {
     pub(crate) cursor_coordinates: bool,
     /// One-shot Shift+S request, consumed at the next render submission.
     pub(crate) retail_screenshot_requested: bool,
-    /// True while left-dragging on minimap (camera pan mode).
-    pub(crate) minimap_dragging: bool,
+    /// Button owning the pending radar press. VERA right-click controls use
+    /// Right; retail input uses Left. Other button edges cannot steal it.
+    minimap_press_button: Option<MouseButton>,
     /// Touch gestures translated into mouse input (Windows touchscreens). Its
     /// sticky gesture lives here, beside the other pointer bytes, so the match
     /// teardown ladder resets it with them.
@@ -395,7 +397,7 @@ impl MatchInputState {
     pub(crate) fn new(hotkey_bindings: crate::app::input::hotkeys::HotkeyBindings) -> Self {
         Self {
             cursor_visibility: Default::default(),
-            minimap_dragging: false,
+            minimap_press_button: None,
             touch_mapper: crate::app::input::touch::TouchMouseMapper::new(),
             cursor_from_touch: false,
             selection_state: crate::sim::selection::SelectionState::new(),
@@ -661,13 +663,45 @@ impl MatchInputState {
         }
     }
 
+    pub(crate) fn minimap_press_active(&self) -> bool {
+        self.minimap_press_button.is_some()
+    }
+
+    pub(crate) fn minimap_press_button(&self) -> Option<MouseButton> {
+        self.minimap_press_button
+    }
+
+    pub(crate) fn begin_minimap_press(&mut self, button: MouseButton) -> bool {
+        if self
+            .minimap_press_button
+            .is_some_and(|owner| owner != button)
+        {
+            return false;
+        }
+        self.minimap_press_button = Some(button);
+        self.selection_state.cancel_drag();
+        true
+    }
+
+    pub(crate) fn finish_minimap_press(&mut self, button: MouseButton) -> bool {
+        if self.minimap_press_button != Some(button) {
+            return false;
+        }
+        self.cancel_minimap_press();
+        true
+    }
+
+    pub(crate) fn cancel_minimap_press(&mut self) {
+        self.minimap_press_button = None;
+    }
+
     /// Deactivate683EB0/4AEAD0's drag/capture teardown: the tactical capture
     /// byte, the band rectangle and the minimap gesture. Armed cursor modes
     /// (building placement, superweapon targeting, repair/sell) and physical
     /// held-button state survive this call — the pause overlay cancels a drag,
     /// never a pending placement.
     pub(crate) fn cancel_tactical_drag(&mut self) {
-        self.minimap_dragging = false;
+        self.cancel_minimap_press();
         self.selection_state.cancel_drag();
         self.tactical_mouse.cancel_mouse_drag();
         // The touch gesture is the mapper's; without this a finger still down

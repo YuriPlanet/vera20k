@@ -15,10 +15,10 @@ use super::{
     LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP,
     MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
     OptionsPage, PhysicalControlFrame, RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL,
-    SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_STARTUP_LOGO_HELP,
-    SKIP_STARTUP_LOGO_LABEL, SidebarSize, VERA_OPTIONS_HELP, VERA_OPTIONS_LABEL,
-    WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL,
-    ZOOM_HELP, ZOOM_LABEL, Zoom,
+    RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL,
+    SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_STARTUP_LOGO_HELP, SKIP_STARTUP_LOGO_LABEL, SidebarSize,
+    VERA_OPTIONS_HELP, VERA_OPTIONS_LABEL, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL,
+    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale, center_offset, child_window, dlu_rect};
@@ -246,8 +246,9 @@ impl LauncherOptionsLayout {
                     ),
                 ],
             ),
-            // VERA's page keeps the main page's bands and rows: one column
-            // of boxes at the UI Options boxes' place, 15 DLUs apart.
+            // VERA's page keeps the main page's bands and rows: boxes at the
+            // UI Options boxes' place, 15 DLUs apart. A band whose left column
+            // is full continues at x 238, the main page's Scroll slider column.
             OptionsPage::Vera => (
                 vec![
                     (LauncherComboId::Sidebar, sidebar_combo),
@@ -267,6 +268,7 @@ impl LauncherOptionsLayout {
                     (LauncherCheckboxId::ShiftQueue, dlu(93, 128, 130, 10)),
                     (LauncherCheckboxId::MouseWheelZoom, dlu(93, 143, 130, 10)),
                     (LauncherCheckboxId::LockCursor, dlu(93, 158, 130, 10)),
+                    (LauncherCheckboxId::RightClickOrders, dlu(238, 113, 130, 10)),
                     // Developer Options, in the main page's UI Options band.
                     (LauncherCheckboxId::FpsCounter, dlu(93, 188, 130, 10)),
                     (LauncherCheckboxId::SkipStartupLogo, dlu(93, 203, 130, 10)),
@@ -478,6 +480,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::YrOriginalStyle => YR_ORIGINAL_STYLE_LABEL,
             LauncherCheckboxId::RenderInterpolation => RENDER_INTERPOLATION_LABEL,
             LauncherCheckboxId::MouseWheelZoom => MOUSE_WHEEL_ZOOM_LABEL,
+            LauncherCheckboxId::RightClickOrders => RIGHT_CLICK_ORDERS_LABEL,
             LauncherCheckboxId::LockCursor => LOCK_CURSOR_LABEL,
             LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
             LauncherCheckboxId::WolTestService => WOL_TEST_SERVICE_LABEL,
@@ -531,6 +534,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::YrOriginalStyle => self.values.yr_original_style,
             LauncherCheckboxId::RenderInterpolation => self.values.render_interpolation,
             LauncherCheckboxId::MouseWheelZoom => self.values.mouse_wheel_zoom,
+            LauncherCheckboxId::RightClickOrders => self.values.right_click_orders,
             LauncherCheckboxId::LockCursor => self.values.lock_cursor,
             LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
             LauncherCheckboxId::WolTestService => self.values.wol_test_service,
@@ -731,6 +735,9 @@ impl OptionsDialogState {
                 }
                 LauncherCheckboxId::MouseWheelZoom => {
                     LauncherStatusHelp::Text(MOUSE_WHEEL_ZOOM_HELP)
+                }
+                LauncherCheckboxId::RightClickOrders => {
+                    LauncherStatusHelp::Text(RIGHT_CLICK_ORDERS_HELP)
                 }
                 LauncherCheckboxId::LockCursor => LauncherStatusHelp::Text(LOCK_CURSOR_HELP),
                 LauncherCheckboxId::ShiftQueue => LauncherStatusHelp::Text(SHIFT_QUEUE_HELP),
@@ -1097,7 +1104,7 @@ mod tests {
             .chain(&layout.checkboxes)
             .map(|(id, _)| *id)
             .collect();
-        assert_eq!(all.len(), 12);
+        assert_eq!(all.len(), 13);
         for id in &all {
             assert_eq!(all.iter().filter(|other| *other == id).count(), 1, "{id:?}");
         }
@@ -1137,6 +1144,7 @@ mod tests {
             (ShiftQueue, ui, developer),
             (MouseWheelZoom, ui, developer),
             (LockCursor, ui, developer),
+            (RightClickOrders, ui, developer),
             (FpsCounter, developer, accessibility),
             (SkipStartupLogo, developer, accessibility),
         ] {
@@ -1298,6 +1306,7 @@ mod tests {
             (ShiftQueue, SHIFT_QUEUE_HELP),
             (MouseWheelZoom, MOUSE_WHEEL_ZOOM_HELP),
             (LockCursor, LOCK_CURSOR_HELP),
+            (RightClickOrders, RIGHT_CLICK_ORDERS_HELP),
             (FpsCounter, FPS_COUNTER_HELP),
             (SkipStartupLogo, SKIP_STARTUP_LOGO_HELP),
         ] {
@@ -1645,6 +1654,11 @@ mod tests {
                 LockCursor,
                 LOCK_CURSOR_LABEL,
                 LauncherOptionsEvent::LockCursorChanged,
+            ),
+            (
+                RightClickOrders,
+                RIGHT_CLICK_ORDERS_LABEL,
+                LauncherOptionsEvent::RightClickOrdersChanged,
             ),
             (
                 FpsCounter,

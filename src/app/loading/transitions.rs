@@ -637,7 +637,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // Clear_Scene6851F0 -> 534450 resets BeaconManagerClass (53499B).
     // Display Init_Clear4A88C0 clears +11B0..+11B2, not beacon mode +11B4.
     state.match_state.match_presentation.beacons = Default::default();
-    state.match_state.input.minimap_dragging = false;
+    state.match_state.input.cancel_minimap_press();
     state.match_state.input.tactical_mouse.reset_for_new_view();
     state.match_state.input.keys_held.clear();
     state.match_state.input.cursor_x = tactical_width as f32 * 0.5;

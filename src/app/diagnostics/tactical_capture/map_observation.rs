@@ -3665,7 +3665,7 @@ impl TacticalCaptureSession {
                         let routed = gadgets.out.consumed_by.or(gadgets.focus.sticky);
                         expected.is_some() && routed == expected && !mouse.captured
                     } else if scheduled.gesture.is_minimap() {
-                        state.match_state.input.minimap_dragging && !mouse.captured
+                        state.match_state.input.minimap_press_active() && !mouse.captured
                     } else {
                         mouse.captured
                     };

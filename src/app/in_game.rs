@@ -421,7 +421,7 @@ impl App {
             // while the overlay owns the mouse never reaches the tactical
             // body, so anything still armed here would stay latched for the
             // rest of the match: tactical capture freezes edge auto-scroll,
-            // `minimap_dragging` swallows every cursor move, and a stale
+            // an active minimap press swallows every cursor move, and a stale
             // gadget sticky capture eats the next click.
             state.match_state.input.cancel_tactical_drag();
             state

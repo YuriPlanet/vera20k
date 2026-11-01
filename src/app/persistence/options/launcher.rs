@@ -36,6 +36,7 @@ pub(crate) fn launcher_values_from_profile(
         yr_original_style: profile.yr_original_style,
         render_interpolation: profile.render_interpolation,
         mouse_wheel_zoom: profile.mouse_wheel_zoom,
+        right_click_orders: profile.right_click_orders,
         lock_cursor: profile.lock_cursor,
         shift_queue: profile.shift_queue,
         wol_test_service: profile.wol_test_service,
@@ -97,6 +98,7 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_yr_original_style(&mut self, yr_original_style: bool);
     fn store_render_interpolation(&mut self, enabled: bool);
     fn store_mouse_wheel_zoom(&mut self, enabled: bool);
+    fn store_right_click_orders(&mut self, enabled: bool);
     fn store_lock_cursor(&mut self, locked: bool);
     fn store_shift_queue(&mut self, shift_queue: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
@@ -132,6 +134,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         }
         LauncherOptionsEvent::MouseWheelZoomChanged(enabled) => {
             operations.store_mouse_wheel_zoom(enabled);
+        }
+        LauncherOptionsEvent::RightClickOrdersChanged(enabled) => {
+            operations.store_right_click_orders(enabled);
         }
         LauncherOptionsEvent::LockCursorChanged(locked) => operations.store_lock_cursor(locked),
         LauncherOptionsEvent::ShiftQueueChanged(shift_queue) => {
