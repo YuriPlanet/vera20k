@@ -973,3 +973,51 @@ fn alliance_callbacks_recheck_gap_operation_without_overwriting_the_building_sam
         sample
     );
 }
+
+#[test]
+fn alliance_callbacks_skip_only_the_allied_map_between_gap_maps() {
+    // House order a, b, c. c's gap generator takes the Map4ADEE0/4ADCD0 gap
+    // callbacks on a's map and its own; b, which c counts an ally, takes the
+    // allied-Building arm instead and no gap callback (4ADFBF/4ADE21).
+    let (mut sim, rules, a, b, c) = fixture();
+    insert(&mut sim, &rules, 1, c, "GAGAP", 12, 12);
+    insert(&mut sim, &rules, 2, c, "POWER", 16, 12);
+    sim.session.set_current_house_for_test(Some(a));
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    *sim.house_alliances_mut_for_test() = crate::map::houses::HouseAllianceMap::from([(
+        "THIRD".to_string(),
+        std::collections::BTreeSet::from(["SOVIET".to_string()]),
+    )]);
+    power(&mut sim, &rules);
+    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    let maps = |sim: &Simulation| {
+        [a, b, c].map(|viewer| {
+            (
+                sim.fog.is_cell_gap_covered(viewer, 12, 12),
+                sim.fog.is_cell_gap_fog(viewer, 12, 12),
+            )
+        })
+    };
+    let built = maps(&sim);
+    assert!(built[1].1, "the allied map counts the friendly gap");
+    let context = UninitContext::with_rules(&rules);
+    sim.release_alliance_sight(context);
+    let released = maps(&sim);
+    assert_eq!(
+        (built[0].0, released[0].0),
+        (true, false),
+        "the enemy map's gap is released"
+    );
+    assert_eq!(
+        released[1], built[1],
+        "the allied map takes no gap callback"
+    );
+    assert_eq!(
+        (built[2].1, released[2].1),
+        (true, false),
+        "the owner's own gap fog is released"
+    );
+    sim.admit_alliance_sight(context);
+    assert_eq!(maps(&sim), built);
+}

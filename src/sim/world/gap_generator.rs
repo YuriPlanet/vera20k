@@ -578,16 +578,9 @@ impl Simulation {
         admit: bool,
         rules: &RuleSet,
     ) {
-        let Some(entity) = self.substrate.entities.get(id) else {
+        let Some(radius) = self.map_callback_gap_radius(id, rules) else {
             return;
         };
-        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
-            return;
-        };
-        if !object.gap_generator {
-            return;
-        }
-        let radius = i32::from(object.gap_radius_in_cells);
         if admit && self.building_operational_state(id, rules) != Some(true) {
             return;
         }
@@ -603,6 +596,35 @@ impl Simulation {
             admit,
             radius,
         );
+    }
+
+    /// [`Self::refresh_map_callback_gap`] for each of `viewers` in order. A
+    /// callback for an object that is no gap generator changes nothing, so
+    /// one read settles the whole run; a gap generator takes each callback
+    /// with its own reread, as before.
+    pub(super) fn refresh_map_callback_gaps(
+        &mut self,
+        id: u64,
+        viewers: &[InternedId],
+        admit: bool,
+        rules: &RuleSet,
+    ) {
+        if viewers.is_empty() || self.map_callback_gap_radius(id, rules).is_none() {
+            return;
+        }
+        for &viewer in viewers {
+            self.refresh_map_callback_gap(id, viewer, admit, rules);
+        }
+    }
+
+    /// The gap radius the map callbacks act on: `None` unless the object
+    /// exists and its type is a `GapGenerator=`.
+    fn map_callback_gap_radius(&self, id: u64, rules: &RuleSet) -> Option<i32> {
+        let entity = self.substrate.entities.get(id)?;
+        let object = self.interner.object_type(entity.type_ref(), rules)?;
+        object
+            .gap_generator
+            .then(|| i32::from(object.gap_radius_in_cells))
     }
 }
 
