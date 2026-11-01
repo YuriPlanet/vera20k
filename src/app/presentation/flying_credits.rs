@@ -96,6 +96,11 @@ impl FlyingCredits {
         self.live.clear();
     }
 
+    /// Whether no record is live: each build ages every live record.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.live.is_empty()
+    }
+
     ///10064430..10064514: append order, no fade; only the final70 draws
     /// rise one pixel each. Offscreen records still age in the draw tail.
     pub(crate) fn build_instances(

@@ -93,6 +93,20 @@ pub struct BitFont {
     pub(crate) darken_texture: Option<BatchTexture>,
 }
 
+/// The units behind a TextLabel's reveal count that blend toward white.
+pub(crate) const TEXT_LABEL_HIGHLIGHT_UNITS: u32 = 8;
+
+/// The Path-A reveal a TextLabel draws for its inclusive count (see
+/// [`BitFont::build_text_label`]); zero draws the whole text plainly.
+pub(crate) fn text_label_reveal(count: u32, base_rgb: [u8; 3]) -> PathAReveal {
+    PathAReveal {
+        count: if count == 0 { 0 } else { count + 1 },
+        range: TEXT_LABEL_HIGHLIGHT_UNITS,
+        base_rgb,
+        highlight_rgb: [255; 3],
+    }
+}
+
 impl BitFont {
     pub(crate) fn capture_observation(&self) -> BitFontCaptureObservation<'_> {
         BitFontCaptureObservation {
@@ -252,12 +266,7 @@ impl BitFont {
             depth,
             camera_offset,
             0,
-            PathAReveal {
-                count: if count == 0 { 0 } else { count + 1 },
-                range: 8,
-                base_rgb,
-                highlight_rgb: [255; 3],
-            },
+            text_label_reveal(count, base_rgb),
         )
         .0
     }

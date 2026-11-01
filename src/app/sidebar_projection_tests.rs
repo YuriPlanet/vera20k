@@ -165,6 +165,33 @@ fn kept_sidebar_inputs_last_only_while_the_world_revision_holds() {
     assert!(!Arc::ptr_eq(&derived, &inputs(&sim, true)));
 }
 
+/// The view revision is the redraw gate's sidebar input: an equal view
+/// republished by the per-pass gadget refresh keeps it, any change moves it.
+#[test]
+fn only_a_changed_view_moves_the_view_revision() {
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini("[Countries]\n0=Americans\n"),
+        &crate::rules::ini_parser::IniFile::empty(),
+    )
+    .unwrap();
+    let (sim, owner) = world(&rules, &[]);
+    let options = all_build_options_for_owner(&sim, &rules, "Americans");
+    let mut projection = SidebarProjectionState::default();
+    projection.reconcile_fixture(owner, &[], 4);
+    let drawn = view(&sim, &options, &projection, SidebarTab::Building, 600.0);
+    projection.replace_view(Some(drawn.clone()));
+    let first = projection.view_revision();
+    projection.replace_view(Some(drawn.clone()));
+    assert_eq!(projection.view_revision(), first);
+    let mut richer = drawn;
+    richer.credits += 25;
+    projection.replace_view(Some(richer));
+    let second = projection.view_revision();
+    assert_ne!(second, first);
+    projection.replace_view(None);
+    assert_ne!(projection.view_revision(), second);
+}
+
 fn view(
     sim: &Simulation,
     options: &[BuildOption],

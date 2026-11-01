@@ -146,6 +146,9 @@ pub(crate) struct GameRenderOutput {
     pub instance_counts: GameRenderInstanceCounts,
     pub times: GameRenderTimes,
     pub particle_draws: Option<Vec<crate::app::presentation::instances::ParticleDrawObservation>>,
+    /// Whether the next draw would differ even with nothing else changed: an
+    /// effect that steps once per draw or reads the wall clock was drawn.
+    pub motion: bool,
     /// Phase spans of this render, for the diagnostics meter.
     #[cfg(feature = "telemetry-dashboard")]
     pub phases: Option<RenderPhases>,
@@ -355,7 +358,7 @@ pub(crate) fn render_game(
     let after_sidebar = render_started.map(|_| Instant::now());
 
     // Phase 6: Upload all instances to GPU buffer pool.
-    upload_to_gpu(state, &world, &debug, &ui, &sidebar);
+    let mut motion = upload_to_gpu(state, &world, &debug, &ui, &sidebar);
     #[cfg(feature = "telemetry-dashboard")]
     let after_upload = render_started.map(|_| Instant::now());
     state
@@ -562,8 +565,17 @@ pub(crate) fn render_game(
                 )
             })
     };
+    // These effects step once per draw or move with the wall clock, so a
+    // draw that shows one is followed by another; liveness is read before the
+    // step, since the draw that retires an effect still showed it.
+    motion |= ui.timed_lines
+        || radials.animated
+        || !presentation.electric_bolts.is_empty()
+        || presentation.line_trails.fading()
+        || !presentation.radiation_beams.is_empty()
+        || crate::app::presentation::airstrike_lines::animated(&ui.tactical_line_calls);
     let bolt_lines = {
-        presentation.lasers.composite(&mut main);
+        motion |= presentation.lasers.composite(&mut main);
         presentation
             .electric_bolts
             .composite(viewport, palette, &mut main, |birth| {
@@ -655,7 +667,7 @@ pub(crate) fn render_game(
             .map(crate::render::surface_line::SurfaceDraw::Line),
         segments,
         presentation.radiation_beams.draws(),
-        &radials,
+        &radials.draws,
         viewport,
         |color| {
             if matches!(color, crate::render::laser::LaserDrawColor::House(_)) {
@@ -771,6 +783,7 @@ pub(crate) fn render_game(
         sidebar_view: sidebar.view,
         times,
         particle_draws: world.particle_draws,
+        motion,
         #[cfg(feature = "telemetry-dashboard")]
         phases,
     })
@@ -799,13 +812,15 @@ pub(crate) fn tactical_surface_line_viewport(
 ///
 /// The pool reuses GPU buffers across frames to avoid per-frame allocation.
 /// Buffer names here must match the keys used in `draw_passes::dispatch_draw_passes`.
+/// Returns whether it drew a record that steps once per draw (Ares flying
+/// credits).
 fn upload_to_gpu(
     state: &mut AppState,
     world: &WorldInstances,
     debug: &DebugInstances,
     ui: &UiInstances,
     sidebar: &SidebarInstances,
-) {
+) -> bool {
     // A5 chat/system message lines (GAME.FNT atlas) — chat draws before the
     // tooltip (O10). Prepare once: nonsilent TextLabel72A4A0 advances its
     // raw-wall reveal and requests typing audio once per successful paint.
@@ -830,20 +845,28 @@ fn upload_to_gpu(
         crate::app::presentation::build_text::build_instances(state);
 
     #[cfg(feature = "ares")]
-    let bounty_text = {
+    let (bounty_text, motion) = {
         let presentation = &state.match_state.match_presentation;
         if presentation.chrono_screen.overrides_tactical_draw() {
-            Vec::new()
+            (Vec::new(), false)
         } else {
             let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
-            presentation.flying_credits.borrow_mut().build_instances(
+            let mut credits = presentation.flying_credits.borrow_mut();
+            let live = !credits.is_empty();
+            let text = credits.build_instances(
                 &state.renderer.bit_font,
-                [state.match_state.input.camera_x, state.match_state.input.camera_y],
+                [
+                    state.match_state.input.camera_x,
+                    state.match_state.input.camera_y,
+                ],
                 state.match_state.input.zoom_level,
                 [width, height],
-            )
+            );
+            (text, live)
         }
     };
+    #[cfg(not(feature = "ares"))]
+    let motion = false;
 
     let pool: &mut InstanceBufferPool = &mut state.renderer.instance_pool;
 
@@ -997,6 +1020,7 @@ fn upload_to_gpu(
     pool.upload(&state.renderer.gpu, "tooltip_fill", &tooltip_fill);
     pool.upload(&state.renderer.gpu, "tooltip_border", &tooltip_border);
     pool.upload(&state.renderer.gpu, "tooltip_text", &tooltip_text);
+    motion
 }
 
 #[cfg(test)]

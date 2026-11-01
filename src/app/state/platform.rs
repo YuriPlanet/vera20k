@@ -132,7 +132,7 @@ impl PlatformState {
             pause_on_focus_loss,
             window_hidden: false,
             frame_pacer: LocalFramePacer::new(),
-            redraw_gate: Default::default(),
+            redraw_gate: crate::app::match_runtime::redraw_gate::RedrawGate::from_environment(),
             game_config,
             capture_client_size,
             recenter_windowed: false,

@@ -1014,6 +1014,7 @@ impl App {
                     detail: Default::default(),
                     hidden_super_anims: Default::default(),
                     super_timer_blinks: Default::default(),
+                    super_timer_next_flip_ms: None,
                     super_timer_dock: Default::default(),
                     minimap: None,
                     radar_anim: None,

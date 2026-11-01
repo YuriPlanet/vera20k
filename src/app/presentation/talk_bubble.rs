@@ -24,10 +24,15 @@ impl TalkBubble {
     }
 
     pub(crate) fn frame_for(&self, actor: u64, wall_ms: u64) -> Option<usize> {
-        (self.actor == Some(actor)
+        (self.actor == Some(actor) && self.shown(wall_ms)).then(|| (self.value - 1) as usize)
+    }
+
+    /// Whether DrawExtras (6F5E8D) draws the bubble over its actor at
+    /// `wall_ms`: a positive value whose wall-clock timer still runs.
+    pub(crate) fn shown(&self, wall_ms: u64) -> bool {
+        self.actor.is_some()
             && self.value > 0
-            && self.timer.remaining(((wall_ms as u32) >> 4) as i32) > 0)
-            .then(|| (self.value - 1) as usize)
+            && self.timer.remaining(((wall_ms as u32) >> 4) as i32) > 0
     }
 
     /// Native stores the actor in process globalB0EB38. Its setter/draw
