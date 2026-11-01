@@ -61,8 +61,9 @@ BIN=$(ls -t target/owned-worktrees/*/fast/vera20k | head -n 1)
 A launcher can copy `version`, `rules_digest` and `map.source_sha256` into
 `[Settings] ExpectedVersion`, `ExpectedRulesDigest`, `ExpectedMapDigest`.
 `rules_digest` is Battle's. `[Settings] GameMode` selects a stock `MPModesMD.ini`
-row (default 1, Cooperative refused), and the digest covers that row's INI, so
-another mode takes its digest from the report's `game_modes`.
+row (default 1), and the digest covers that row's INI, so another mode takes its
+digest from the report's `game_modes`. Cooperative plays one mission: the launcher
+writes its enemy AI houses, and no next mission or progress follows.
 
 Useful log lines: `Direct spawn: source=`, `Direct spawn: every guest answered`,
 `Relay spawn:`, `Spawn test hook: pressing Leave`, `Match end ready for local
