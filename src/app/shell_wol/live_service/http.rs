@@ -326,6 +326,10 @@ impl RequestFailure {
                 status,
                 code: 0x8004_006E,
             },
+            Some("name_unavailable") if status == 409 => Self::ChannelRejected {
+                status,
+                code: crate::app::shell_wol::lobby::ROOM_NAME_TAKEN,
+            },
             Some("room_unavailable") if status == 409 => Self::ChannelRejected {
                 status,
                 code: 0x8004_0070,
@@ -1238,6 +1242,11 @@ mod tests {
         assert_eq!(
             kept_out.command_failure("join"),
             CommandFailure::Rejected(crate::app::shell_wol::lobby::KEPT_OUT_JOIN_ERROR)
+        );
+        let taken = RequestFailure::response(409, br#"{"error":{"code":"name_unavailable"}}"#);
+        assert_eq!(
+            taken.command_failure("create"),
+            CommandFailure::Rejected(crate::app::shell_wol::lobby::ROOM_NAME_TAKEN)
         );
         let full = RequestFailure::response(409, br#"{"error":{"code":"room_full"}}"#);
         assert_eq!(
