@@ -1699,9 +1699,12 @@ fn advance_one_simulation_frame(
                     // must not crash a LAN/online match. The frame did not
                     // commit, so this timeline never runs again; the checksum
                     // box's Stop returns to the shell. Offline, only internal
-                    // defects reach here, so they stay a loud panic.
+                    // defects reach here, so they stay a loud panic. A
+                    // checksum mismatch never arrives here (it suspends the
+                    // frame instead), so neither the log nor the box
+                    // (`network_failure::vera_body`) calls this a desync.
                     if network && let Err(error) = &advanced {
-                        log::error!("{error}");
+                        log::error!("Network match stopped by an error, not a desync: {error}");
                         state.match_state.frame_stopped = true;
                         return false;
                     }

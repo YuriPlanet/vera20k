@@ -205,8 +205,18 @@ pub enum SequencedError {
     HistoryExpired,
     #[error("online command timeline is invalid")]
     InvalidTimeline,
-    #[error("online simulation differs at frame {frame}")]
-    Desync { frame: u32 },
+    /// Worded like the LAN path's `ChecksumMismatch`, so either reads the
+    /// same in a log: the House whose report differs and both checksums.
+    #[error(
+        "online simulation differs for house {house} at frame {frame}: \
+         local {local:#010x}, remote {remote:#010x}"
+    )]
+    Desync {
+        frame: u32,
+        house: i8,
+        local: u32,
+        remote: u32,
+    },
     #[error("online ordering service cannot recover this match")]
     Unavailable,
     #[error("online command queue is full")]
@@ -227,7 +237,8 @@ struct Submission {
 struct CommittedFrame {
     frame: u32,
     records: Vec<CommandRecord>,
-    reports: Vec<(u32, u32)>,
+    // Each batch's (House, sample frame, checksum).
+    reports: Vec<(i8, u32, u32)>,
     // Remote Houses whose connection the relay ended in this frame.
     lost: Vec<i8>,
     // A rate marker after the previous frame.
@@ -1006,7 +1017,7 @@ impl SequencedSession {
                     let decoded = bytes
                         .as_ref()
                         .and_then(|bytes| decode_batch(bytes.as_bytes(), house, frame).ok());
-                    let Some((records, report)) = decoded else {
+                    let Some((records, (sample_frame, checksum))) = decoded else {
                         // VERA relay adaptation: every client reads the same
                         // ordered bytes, so each refuses the same batch. Its
                         // sender leaves at this frame, as by Leave, instead
@@ -1029,7 +1040,9 @@ impl SequencedSession {
                         return Err(SequencedError::QueueFull);
                     }
                     self.assembling.records.extend(records);
-                    self.assembling.reports.push(report);
+                    self.assembling
+                        .reports
+                        .push((house, sample_frame, checksum));
                 }
                 OrderEntry::Departure {
                     frame,
@@ -1366,16 +1379,7 @@ impl SequencedSession {
             return Ok(NetworkQueuePass::Waiting);
         }
         let frame = self.frames.pop_front().unwrap();
-        for (sample_frame, checksum) in frame.reports {
-            if let Some((_, local)) = self.samples.iter().find(|(f, _)| *f == sample_frame)
-                && checksum != *local
-            {
-                return Err(SequencedError::Desync {
-                    frame: sample_frame,
-                }
-                .into());
-            }
-        }
+        compare_reports(&self.samples, &frame.reports)?;
         for record in frame.records {
             if !queues.admit_received(record) {
                 return Err(SequencedError::QueueFull.into());
@@ -1390,6 +1394,28 @@ impl SequencedSession {
         self.current = Some((context, true));
         Ok(NetworkQueuePass::Dispatch)
     }
+}
+
+/// Compare each batch's checksum report with this client's own sample of that
+/// frame; the first that differs is a desync. A report for a frame the sample
+/// cache no longer holds is not compared.
+fn compare_reports(
+    samples: &VecDeque<(u32, u32)>,
+    reports: &[(i8, u32, u32)],
+) -> Result<(), SequencedError> {
+    for &(house, frame, remote) in reports {
+        if let Some(&(_, local)) = samples.iter().find(|(sample, _)| *sample == frame)
+            && remote != local
+        {
+            return Err(SequencedError::Desync {
+                frame,
+                house,
+                local,
+                remote,
+            });
+        }
+    }
+    Ok(())
 }
 
 fn gameplay_opcode(opcode: u8) -> bool {
@@ -1461,6 +1487,26 @@ mod service_clock_tests {
         assert!(service_due(Some(1018), 1118, 100));
         assert!(!service_due(Some(u32::MAX - 50), 48, 100));
         assert!(service_due(Some(u32::MAX - 50), 49, 100));
+    }
+}
+
+#[cfg(test)]
+mod desync_tests {
+    use super::{VecDeque, compare_reports};
+
+    /// The log names the House whose report differs and both checksums, so
+    /// each player's log shows which side went out of sync.
+    #[test]
+    fn a_differing_report_names_its_house_and_both_checksums() {
+        let samples = VecDeque::from([(40, 0x1111), (41, 0x2222)]);
+        // Equal reports, and one for a frame no longer sampled, both pass.
+        assert!(compare_reports(&samples, &[(0, 41, 0x2222), (1, 39, 0x9999)]).is_ok());
+        let error = compare_reports(&samples, &[(0, 40, 0x1111), (1, 41, 0x2a2a)]).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "online simulation differs for house 1 at frame 41: \
+             local 0x00002222, remote 0x00002a2a"
+        );
     }
 }
 
