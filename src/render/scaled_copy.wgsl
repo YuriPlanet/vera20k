@@ -70,7 +70,7 @@ fn bicubic(centre: vec2f) -> vec4f {
 }
 
 // ---------------------------------------------------------------------------
-// FSR1 EASU (AMD FidelityFX), ported from `FSR_EASU.hlsl` in TC2's effect pack.
+// FSR1 EASU (AMD FidelityFX), from the `FSR_EASU` reference shader.
 // The twelve taps are loaded at their integer positions around the sample
 // point instead of through `Gather`, which removes the API-specific gather
 // ordering. FidelityFX works on gamma-encoded colour, so each tap is encoded

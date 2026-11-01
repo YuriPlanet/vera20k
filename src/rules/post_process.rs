@@ -249,11 +249,11 @@ impl Default for FxaaRules {
     }
 }
 
-/// SMAA 1x (Jimenez et al. 2013), ported from TC2's `SMAA.hlsli` with the
-/// AreaTex/SearchTex lookup tables. Diagonals stay off, i.e. the same tier as
-/// SMAA's Medium preset: luma edge detection, run-length search, area lookup
-/// and corner rounding. The threshold is in gamma luma; `search_steps` caps
-/// how far the run search walks.
+/// SMAA 1x (Jimenez et al. 2013) with the AreaTex/SearchTex lookup tables.
+/// Diagonals stay off, i.e. the same tier as SMAA's Medium preset: luma edge
+/// detection, run-length search, area lookup and corner rounding. The
+/// threshold is in gamma luma; `search_steps` caps how far the run search
+/// walks.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SmaaRules {
     pub threshold: f32,
@@ -334,46 +334,6 @@ impl Default for SharpenRules {
     }
 }
 
-/// `SuperResolution.Anime4K`: which Anime4K network reconstructs the reduced
-/// battlefield render. The networks upsample by exactly 2x, so they only apply
-/// to `RenderScale=0.5`; at any other scale the plain reconstruction stays.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Anime4kTier {
-    /// No network: bicubic (or FSR1 EASU, see `SuperResolution.Fsr`).
-    #[default]
-    Off,
-    S,
-    L,
-    Vl,
-    Ul,
-}
-
-impl Anime4kTier {
-    pub fn parse(text: &str) -> Self {
-        match text.trim().to_ascii_lowercase().as_str() {
-            "s" => Self::S,
-            "l" => Self::L,
-            "vl" => Self::Vl,
-            "ul" => Self::Ul,
-            _ => Self::Off,
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Off => "OFF",
-            Self::S => "S",
-            Self::L => "L",
-            Self::Vl => "VL",
-            Self::Ul => "UL",
-        }
-    }
-
-    pub fn enabled(self) -> bool {
-        !matches!(self, Self::Off)
-    }
-}
-
 /// Contrast-adaptive sharpen in the style of the ReShade `SuperResolution.fx`
 /// edge-enhancement shader: the gain follows local contrast, so flat areas stay
 /// clean and edges tighten without ringing.
@@ -389,8 +349,6 @@ pub struct SuperResolutionRules {
     /// RCAS sharpen. `no` keeps the bicubic reconstruction and the CAS-style
     /// sharpener.
     pub fsr: bool,
-    /// Anime4K network for the world upscale; only used at `render_scale` 0.5.
-    pub anime4k: Anime4kTier,
 }
 
 impl Default for SuperResolutionRules {
@@ -399,7 +357,6 @@ impl Default for SuperResolutionRules {
             sharpness: 0.7,
             render_scale: 1.0,
             fsr: false,
-            anime4k: Anime4kTier::Off,
         }
     }
 }
@@ -715,7 +672,7 @@ impl Default for PirateBloomRules {
 /// The terrain (Z-depth) shader offsets water-tile UVs by the field this
 /// generates, so bridges, units, overlays and UI drawn later are never
 /// displaced. The amplitude/wavelength/speed pair drives the field itself;
-/// `anim_interval_ms` keeps TC2's stepped `DistortionAnimInterval` cadence.
+/// `anim_interval_ms` steps the field's animation instead of scrolling it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WaterRippleRules {
     /// Peak sampling offset in frame pixels.
@@ -725,7 +682,7 @@ pub struct WaterRippleRules {
     /// Animation speed, in cells per second.
     pub speed: f32,
     /// Step the distortion animation this many milliseconds per frame; 0
-    /// scrolls continuously (TC2 `DistortionAnimInterval`).
+    /// scrolls continuously.
     pub anim_interval_ms: f32,
     /// Tint masked texels magenta, to verify mask alignment.
     pub debug: bool,
@@ -844,11 +801,6 @@ impl PostProcessRules {
                         defaults.render_scale,
                     ),
                     fsr: section.read_bool("SuperResolution.Fsr", defaults.fsr),
-                    anime4k: Anime4kTier::parse(&section.read_string(
-                        "SuperResolution.Anime4K",
-                        "off",
-                        8,
-                    )),
                 }
             }),
             deband: section.read_bool("Deband", false).then(|| {

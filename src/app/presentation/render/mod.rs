@@ -226,18 +226,6 @@ pub(crate) fn render_game(
         .post_process_rules()
         .super_resolution
         .is_some_and(|super_resolution| super_resolution.fsr);
-    // `SuperResolution.Anime4K`: the network reconstructs a half-resolution
-    // world (a 2x copy) instead of the bicubic or EASU reconstruction. The
-    // networks upsample by exactly 2x, so a native render keeps the copy that
-    // wheel zoom needs for its pixel-exact blocks.
-    let anime4k = if render_scale <= 0.5 {
-        state
-            .post_process_rules()
-            .super_resolution
-            .map_or(crate::rules::post_process::Anime4kTier::Off, |sr| sr.anime4k)
-    } else {
-        crate::rules::post_process::Anime4kTier::Off
-    };
     if world_scale == 1.0 {
         state.renderer.world_zoom_pass = None;
     } else {
@@ -245,7 +233,7 @@ pub(crate) fn render_game(
         let gpu = &renderer.gpu;
         let target = [sw as u32, sh as u32];
         if let Some(pass) = renderer.world_zoom_pass.as_mut() {
-            pass.set_view(&gpu.device, &gpu.queue, target, world_scale, fsr, anime4k);
+            pass.set_view(&gpu.device, &gpu.queue, target, world_scale, fsr);
         } else {
             renderer.world_zoom_pass = Some(crate::render::upscale_pass::WorldZoomPass::new(
                 &gpu.device,
@@ -254,7 +242,6 @@ pub(crate) fn render_game(
                 target,
                 world_scale,
                 fsr,
-                anime4k,
             ));
         }
         renderer.batch_renderer.set_native_world_resolution(

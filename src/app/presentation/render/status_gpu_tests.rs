@@ -92,7 +92,6 @@ fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
                 size,
                 zoom,
                 false,
-                crate::rules::post_process::Anime4kTier::Off,
             )
         });
         let source_size = resolve.as_ref().map_or(size, WorldZoomPass::source_size);

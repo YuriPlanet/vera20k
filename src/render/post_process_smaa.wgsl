@@ -1,4 +1,4 @@
-// SMAA 1x (Jimenez et al. 2013), ported from TC2's `SMAA.hlsli`.
+// SMAA 1x (Jimenez et al. 2013).
 //
 // Two helper passes: luma edge detection writes an RG edge map, then the
 // blending-weight pass searches along each edge (using the SearchTex run-length
@@ -6,8 +6,7 @@
 // the weights in `post_process.wgsl`.
 //
 // Diagonals are disabled (SMAA's Medium preset): only the horizontal/vertical
-// and corner paths are ported, which is the quality tier TC2's SMAA_Medium
-// script uses.
+// and corner paths are implemented.
 
 struct SmaaParams {
     // (edge threshold, search steps, diagonal steps, unused)

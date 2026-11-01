@@ -26,11 +26,10 @@
 //!   ReShade bloom shaders: a display-luma bright pass, box downsamples and
 //!   additive tent upsamples into RGBA16Float levels, then a composite over
 //!   the graded frame.
-//! - `SMAA` is the real SMAA 1x port from TC2's `SMAA.hlsli`: the edge pass
-//!   marks luma steps, the weight pass searches runs with `SearchTex` and
-//!   looks coverage up in `AreaTex` (both shipped as `.dds`), and the
-//!   presentation pass blends across the weights. Diagonals are off, which is
-//!   SMAA's Medium tier.
+//! - `SMAA` is SMAA 1x (Jimenez et al. 2013): the edge pass marks luma steps,
+//!   the weight pass searches runs with `SearchTex` and looks coverage up in
+//!   `AreaTex` (both shipped as `.dds`), and the presentation pass blends
+//!   across the weights. Diagonals are off, which is SMAA's Medium tier.
 //! - `Lut` stacks up to three `.cube` tables in binding order 5/7/8, each mixed
 //!   by its own strength, so later tables refine the colour earlier ones made.
 //! - `Lut.Atlas` samples `MultiLUT`'s sheet: 17 stacked 32x32 LUTs at binding 9,
@@ -60,8 +59,9 @@ const SHADER_SRC: &str = include_str!("post_process.wgsl");
 const BLOOM_SHADER_SRC: &str = include_str!("post_process_bloom.wgsl");
 const BLOOM_COMPOSITE_SRC: &str = include_str!("post_process_bloom_composite.wgsl");
 const SMAA_SHADER_SRC: &str = include_str!("post_process_smaa.wgsl");
-/// SMAA's coverage table (160x560 RGBA8) and run-length table (64x16 R8),
-/// shipped as the raw `.dds` files TC2's effect pack carries.
+/// SMAA's coverage table (160x560 RG8) and run-length table (64x16 R8), the
+/// reference `Textures/AreaTexDX9.dds` and `Textures/SearchTex.dds` from
+/// Jimenez et al.'s SMAA repository.
 const SMAA_AREA_TEX: &[u8] = include_bytes!("smaa_area_tex.dds");
 const SMAA_SEARCH_TEX: &[u8] = include_bytes!("smaa_search_tex.dds");
 /// `MultiLut_atlas1.png`: the sheet the `MultiLUT` arm samples when
@@ -1031,7 +1031,7 @@ impl PostChain {
             device,
             queue,
             SMAA_AREA_TEX,
-            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu::TextureFormat::Rg8Unorm,
             "SMAA area",
         );
         let (smaa_search_view, smaa_search_texture) = create_smaa_table(
@@ -1962,11 +1962,9 @@ fn create_smaa_table(
     );
     let height = u32::from_le_bytes(dds[12..16].try_into().expect("DDS height"));
     let width = u32::from_le_bytes(dds[16..20].try_into().expect("DDS width"));
-    let bytes_per_texel = if format == wgpu::TextureFormat::R8Unorm {
-        1
-    } else {
-        4
-    };
+    let bytes_per_texel = format
+        .block_copy_size(None)
+        .expect("SMAA's tables are uncompressed") as usize;
     let row = width as usize * bytes_per_texel;
     let padded = row.div_ceil(256) * 256;
     let payload = &dds[128..];

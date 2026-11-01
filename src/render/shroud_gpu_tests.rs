@@ -74,7 +74,6 @@ fn production_world_zoom_resolves_before_screen_fixed_ui() {
         [10, 8],
         1.25,
         false,
-        crate::rules::post_process::Anime4kTier::Off,
     );
     zoom.set_view(
         &gpu.device,
@@ -82,7 +81,6 @@ fn production_world_zoom_resolves_before_screen_fixed_ui() {
         size,
         0.8,
         false,
-        crate::rules::post_process::Anime4kTier::Off,
     );
     let source_size = zoom.source_size();
     assert_eq!(source_size, [15, 10]);

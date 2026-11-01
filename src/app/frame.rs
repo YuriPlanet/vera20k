@@ -1889,14 +1889,11 @@ fn post_panel_text(rules: &crate::rules::post_process::PostProcessRules) -> Stri
             .count()
     });
     let line3 = format!(
-        "SR {}  FSR {}  A4K {}  DLAA {}  CLARITY {}  VIBRANCE {}",
+        "SR {}  FSR {}  DLAA {}  CLARITY {}  VIBRANCE {}",
         flag(rules.super_resolution.is_some()),
         flag(rules
             .super_resolution
             .is_some_and(|super_resolution| super_resolution.fsr)),
-        rules
-            .super_resolution
-            .map_or("OFF", |super_resolution| super_resolution.anime4k.label()),
         flag(rules.dlaa.is_some()),
         flag(rules.clarity.is_some()),
         flag(rules.vibrance.is_some())

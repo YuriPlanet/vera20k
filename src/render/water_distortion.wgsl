@@ -5,8 +5,8 @@
 // slowly scrolling displacement field encoded around 0.5 — RG hold the offset
 // in [-1, 1] scaled by 0.5 — and outside water it writes the neutral 0.5 so the
 // post-process pass can sample the whole frame without a mask lookup of its
-// own. This is the buffer TC2's `DISTORT` semantic texture represents; the
-// displacement is engine-owned rather than guessed from colour or depth.
+// own. The displacement is engine-owned rather than guessed from colour or
+// depth.
 //
 // The field is two octaves of smooth value noise, scrolled by a time-speed
 // drift, so water moves as a broad swell instead of one analytic sine pattern

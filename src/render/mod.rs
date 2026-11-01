@@ -20,7 +20,6 @@
 //! - render/ does NOT depend on: app/, audio/, net/
 
 pub(crate) mod aircraft_shadow;
-pub(crate) mod anime4k;
 pub(crate) mod arcane_bloom;
 pub(crate) mod atlas_growth;
 #[cfg(test)]

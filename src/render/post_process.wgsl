@@ -695,8 +695,8 @@ fn atlas_lut_pass(c: vec3f) -> vec3f {
     return chroma * luma;
 }
 
-// SMAA 1x neighborhood blending, ported from `SMAA.hlsli`. The weight map's
-// R/G are the lateral weights, B/A the vertical ones; this picks the stronger
+// SMAA 1x neighborhood blending. The weight map's R/G are the lateral weights,
+// B/A the vertical ones; this picks the stronger
 // axis and blends with the two texels the weights point at.
 fn smaa_pass(color: vec3f, pi: vec2i) -> vec3f {
     let dims = vec2f(textureDimensions(t_source));
