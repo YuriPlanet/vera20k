@@ -79,7 +79,8 @@ impl CloakStepTimer {
 /// Active `TechnoClass` cloak fields consumed by radar and tactical draw.
 ///
 /// `CloakingTick @ 0x006FB740`, `StartCloaking @ 0x00703770`,
-/// `StartUncloaking @ 0x007036C0`, and `GetVisualState @ 0x00703860` establish
+/// `StartUncloaking @ 0x007036C0`, `NoInit @ 0x006F4300`, and
+/// `GetVisualState @ 0x00703860` establish
 /// every state/progress/timer write below. Stock YR exercises this continuously
 /// through DLPH/SUB/SQD/BSUB.
 pub struct CloakRuntime {
@@ -347,6 +348,15 @@ impl CloakRuntime {
             step_timer: CloakStepTimer::started(current_frame, 0),
             recloak_delay: CdTimer::started(current_frame, 0),
         }
+    }
+
+    /// Original gamemd.exe TechnoClass::Constructor_NoInit @006F4300,
+    /// 006F4335..006F4365: reset the progress and its clock after reading the
+    /// object, retaining the cloak state and the separate re-cloak delay.
+    pub(crate) fn restart_progress_after_player_load(&mut self, binary_frame: i32) {
+        self.depth = 0;
+        self.step_delta = 1;
+        self.step_timer = CloakStepTimer::started(binary_frame, 0);
     }
 
     /// UnitClass::Unlimbo @ 0x00737BA0 sets only state 2 when runtime cloak
