@@ -291,21 +291,24 @@ impl App {
             state.platform.recenter_windowed = false;
         } else {
             let leaving_full_screen = state.persistence.options_profile.full_screen;
-            let displays = crate::app::display_target::current_displays(&state.platform.window);
-            let on_choice = crate::app::display_target::window_is_on(
-                &state.platform.window,
-                &displays,
-                &state.persistence.options_profile.display,
-            );
-            let pending = leaving_full_screen || state.platform.recenter_windowed;
-            if pending && !on_choice {
-                crate::app::display_target::center_windowed(
+            // Only a placement still owed asks the system for its screens: the
+            // list costs a display-list query, too much for every pass.
+            if leaving_full_screen || state.platform.recenter_windowed {
+                let displays = crate::app::display_target::current_displays(&state.platform.window);
+                let on_choice = crate::app::display_target::window_is_on(
                     &state.platform.window,
                     &displays,
                     &state.persistence.options_profile.display,
                 );
+                if !on_choice {
+                    crate::app::display_target::center_windowed(
+                        &state.platform.window,
+                        &displays,
+                        &state.persistence.options_profile.display,
+                    );
+                }
+                state.platform.recenter_windowed = !on_choice;
             }
-            state.platform.recenter_windowed = pending && !on_choice;
         }
         state.persistence.options_profile.full_screen = full_screen;
         if let Some(dialog) = state.frontend.options_dialog.as_mut() {
