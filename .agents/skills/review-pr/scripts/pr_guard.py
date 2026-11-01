@@ -4,9 +4,9 @@ Usage: python pr_guard.py <number> [--repo OWNER/NAME] [--maintainer LOGIN]
 
 Reads the PR through `gh` and never runs its code. It reports maintainer-only
 AGENTS.md edits (exit 2), private watch-list matches (exit 3), protected paths,
-risky added lines, dependency changes, binary files, hidden Unicode, and
-branding and identity lines. Hits are leads for reading in context, not
-verdicts; a clean report is not a malware clearance.
+touched sim-scale deviations, risky added lines, dependency changes, binary
+files, hidden Unicode, and branding and identity lines. Hits are leads for
+reading in context, not verdicts; a clean report is not a malware clearance.
 """
 
 from __future__ import annotations
@@ -31,6 +31,9 @@ PROTECTED = re.compile(
     r'|(^|/)Cargo\.(toml|lock)$|^rust-toolchain|^\.git(attributes|modules|ignore)$'
     r'|^tools/(cargo_run|prepare_checkout|run_tests|skill_sync)\.py$|\.(sh|ps1|bat|cmd)$')
 MAINTAINER_ONLY = re.compile(r'(^|/)AGENTS\.md$')
+# Code marked this way differs from gamemd on purpose, for speed at 20,000 units.
+# AGENTS.md keeps it, and a PR seldom says that it undoes one.
+SIM_SCALE = 'sim-scale deviation'
 
 RISKY = [
     ('process', r'\bsubprocess\b|os\.(system|popen|exec\w*|spawn\w*)\(|std::process|\bCommand::new\b'
@@ -163,6 +166,16 @@ def maintainer_only_findings(paths: list[str], author: str, commit_authors: set[
     return []
 
 
+def sim_scale_files(paths: list[str], ref: str, cwd: str | None = None) -> list[str]:
+    """Touched Rust files whose `ref` version holds a sim-scale deviation note."""
+    found = subprocess.run(['git', 'grep', '-l', '-i', '-F', SIM_SCALE, ref, '--', '*.rs'], cwd=cwd,
+                           capture_output=True, text=True, encoding='utf-8')
+    if found.returncode > 1:
+        return [f'(could not search {ref}: {found.stderr.strip()[:120]})']
+    marked = {line.split(':', 1)[1] for line in found.stdout.splitlines()}
+    return [path for path in paths if path in marked]
+
+
 def gh(*args: str) -> str:
     return subprocess.run(['gh', *args], check=True, capture_output=True, text=True,
                           encoding='utf-8').stdout
@@ -176,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     view = json.loads(gh('pr', 'view', args.number, '--repo', args.repo, '--json',
-                         'author,body,commits,files,headRefName,headRefOid,headRepositoryOwner,'
+                         'author,baseRefName,body,commits,files,headRefName,headRefOid,headRepositoryOwner,'
                          'maintainerCanModify,title'))
     files = parse_diff(gh('pr', 'diff', args.number, '--repo', args.repo))
     paths = sorted({f['path'] for f in view['files']} | set(files))
@@ -208,6 +221,8 @@ def main(argv: list[str] | None = None) -> int:
         ('STOP: AGENTS.md commits on the default branch not by the maintainer', foreign_history),
         ('STOP: private watch-list matches (show the user)', watched),
         ('Protected paths (read every changed line)', [p for p in paths if PROTECTED.search(p)]),
+        ('Sim-scale deviations touched (AGENTS.md keeps them; skill step 4)',
+         sim_scale_files(paths, f'origin/{view["baseRefName"]}')),
         ('Binary files', [p for p, f in files.items() if f['binary']]),
         ('Files over 100 KB (AGENTS.md test-data limit)', large_additions(files)),
         ('Dependency lines', [f'{p}:{n} {t.strip()}' for p, f in files.items() if p.endswith('Cargo.toml')

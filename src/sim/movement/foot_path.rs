@@ -401,7 +401,7 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> Result<FootPathOutcome, String> {
         // A batched request waits for the next frame's batch as if the +640
-        // timer still ran (`path_batch`, a proposed deviation): 75AF4B..75AF66
+        // timer still ran (`path_batch`, a sim-scale deviation): 75AF4B..75AF66
         // calls the owner's vt+0x548 and returns. So does the admission
         // retry's recursion, whose +640 the retry just expired, unless it is
         // the Foot's first request in a frame the batch answered. A request
