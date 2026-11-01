@@ -115,6 +115,8 @@ mod ifv_fireat_tests;
 /// oracle cases in `bridge_launch_tests` and `world::projectile_collision`.
 #[cfg(test)]
 mod impact_height_tests;
+#[cfg(all(test, feature = "phobos"))]
+mod infantry_flh_tests;
 #[cfg(test)]
 mod laser_tests;
 #[cfg(all(test, feature = "phobos"))]

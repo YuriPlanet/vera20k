@@ -347,10 +347,18 @@ pub(crate) fn build_track(
         };
         #[cfg(feature = "phobos")]
         {
+            let (deployed, crawling) = super::fire_coord::infantry_flh_states(source);
             base_flh = object
                 .burst_flh(
                     weapon_index,
                     source.veterancy.rank() >= super::veterancy::RANK_ELITE_U16,
+                    if deployed {
+                        crate::rules::weapon_offsets::InfantryFlhState::Deployed
+                    } else if crawling {
+                        crate::rules::weapon_offsets::InfantryFlhState::Crouched
+                    } else {
+                        crate::rules::weapon_offsets::InfantryFlhState::Ordinary
+                    },
                     burst_index,
                 )
                 .unwrap_or_else(record_flh);

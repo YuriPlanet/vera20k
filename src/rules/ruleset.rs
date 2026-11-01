@@ -8687,13 +8687,13 @@ impl RuleSet {
                 .object_list
                 .iter()
                 .filter_map(|object| {
-                    let (base, elite) = object.burst_flh_rows();
-                    (!base.is_empty()).then(|| {
-                        (
-                            object.id.to_ascii_uppercase(),
-                            (base.to_vec(), elite.to_vec()),
-                        )
-                    })
+                    let rows = object
+                        .burst_flh_rows()
+                        .into_iter()
+                        .map(|set| (set.normal().to_vec(), set.elite().to_vec()))
+                        .collect::<Vec<_>>();
+                    (rows.iter().any(|(normal, _)| !normal.is_empty()))
+                        .then(|| (object.id.to_ascii_uppercase(), rows))
                 })
                 .collect::<BTreeMap<_, _>>();
             if !burst_rows.is_empty() {
