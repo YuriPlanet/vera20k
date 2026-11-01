@@ -19,7 +19,11 @@ fn frame(sim: &mut Simulation, rules: &RuleSet) {
 }
 
 fn scene() -> Option<(RuleSet, Simulation, InternedId, u64)> {
-    let rules = crate::rules::retail_ini_fixture::retail_battle_rules()?.rules;
+    let mut rules = crate::rules::retail_ini_fixture::retail_battle_rules()?.rules;
+    // The map loader binds the canopy's SHP; without it no canopy attaches,
+    // Object+84 stays clear (SetOwnerObject 0x00424B50) and the man free-falls.
+    // Retail ra2.mix/conquer.mix/PARACH.SHP has 140 raw frames.
+    rules.bind_anim_frame_count_for_test("PARACH", 140);
     let (rules, mut sim, owner) =
         crate::sim::superweapon::chronosphere_tests::world_with(rules, 64, &[]);
     sim.session
