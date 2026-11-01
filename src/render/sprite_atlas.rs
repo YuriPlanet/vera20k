@@ -1545,9 +1545,8 @@ fn insert_object_keys(
             // shorter than 2*GateStages+1 instead falls to the packing-time
             // facing/frame-0 substitution further down in render_shp_frame, a
             // pre-existing exposure the CanBeOccupied frames 2/3 already
-            // share. Retail G?GATE_A and GAGATE_B only look undamaged at low
-            // health because their frames 10..19 are byte-identical copies of
-            // 0..9.
+            // share. Retail G?GATE_A only looks undamaged at low health because
+            // its frames 10..19 are byte-identical copies of 0..9.
             if let Some((rules, object)) = rules.zip(object).filter(|(_, object)| object.gate) {
                 let stages = rules
                     .art()
