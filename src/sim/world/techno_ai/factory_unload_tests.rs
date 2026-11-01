@@ -2016,6 +2016,18 @@ fn a_factory_captured_while_its_door_opens_still_lets_the_product_out() {
             left,
             "captured after {capture_after} frames, the tank stayed in the bay"
         );
+        let finished = (0..300).any(|_| {
+            tick(&mut sim);
+            sim.substrate
+                .entities
+                .get(factory)
+                .unwrap()
+                .mission
+                .current()
+                .known()
+                != Some(MissionType::Unload)
+        });
+        assert!(finished, "the captured factory never finished unloading");
         assert_eq!(sim.substrate.entities.get(tank).unwrap().owner(), americans);
     }
 }

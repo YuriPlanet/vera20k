@@ -6315,10 +6315,15 @@ impl Simulation {
         }
         // VERA deviation from gamemd (#3593): native queues this Guard on a
         // war factory still letting its product out, too. The building is
-        // ready at once (`+0x6DD`), so Guard replaces Unload and a product
-        // captured before the door opens never leaves the bay. Keeping Unload
-        // lets it drive out for the new owner; the `0x007017CE` check in
-        // `change_owner_mission_half` already skips the idle reset for it.
+        // ready at once (`+0x6DD`), so Guard replaces Unload: a product
+        // captured before the door opens never leaves the bay, and one already
+        // driving out leaves the door open behind it. Keeping Unload lets the
+        // product out for the new owner and closes the door; the `0x007017CE`
+        // check in `change_owner_mission_half` already skips the idle reset.
+        // RESIDUAL: in the one frame between `exit_produced_object` and the
+        // Unload commit (Unload only queued), a capture still strands the
+        // product as in gamemd: the `0x007017CE` tail reads the current
+        // mission only. At most once per product.
         let factory_unloading = self.weapons_factory_unloading(stable_id, rules);
         if current != Some(MissionType::Selling) && !simple_deployer_unloading && !factory_unloading
         {
