@@ -25,6 +25,7 @@ on:
       - 'src/assets/mix_archive.rs'
       - 'src/map/source**'
       - 'src/sim/mod.rs'
+      - 'src/sim/parallel.rs'
       - 'src/sim/parallel_web.rs'
       - 'src/render/frame_readback.rs'
       - 'src/render/gpu.rs'

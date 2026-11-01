@@ -90,7 +90,8 @@
     const ws = state.ws;
     if (!ws || ws.readyState !== WebSocket.OPEN
       || ws.bufferedAmount + bytes.length > MAX_SEND_BYTES) return 1;
-    try { ws.send(bytes); return 0; }
+    // bytes views Wasm memory, and send() refuses a view of the threaded build's shared memory.
+    try { ws.send(bytes.slice()); return 0; }
     catch { reconnect(state); return 1; }
   };
 

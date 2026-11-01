@@ -44,6 +44,9 @@ wasm = ["vera20k-core/wasm", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "de
 wasm-net = ["wasm", "vera20k-core/wasm-net"]
 # Browser LAN play over WebRTC; the gateway only coordinates the handshake.
 wasm-lan = ["wasm-net", "vera20k-core/wasm-lan"]
+# Browser simulation work on a Web Worker pool. It needs shared Wasm memory, so
+# tools/wasm/build.py --threads builds it with a pinned nightly and its own std.
+wasm-threads = ["wasm", "vera20k-core/wasm-threads", "dep:wasm-bindgen-rayon"]
 # Development builds carry the Ctrl+Shift dev chord. The release workflow builds
 # with `--no-default-features`, so shipped binaries do not.
 default = ["dev-overlays"]
@@ -144,6 +147,9 @@ js-sys = { version = "0.3", optional = true }
 web-sys = { version = "0.3", optional = true, features = ["Window", "Document", "HtmlCanvasElement", "Element", "HtmlElement", "AudioBuffer", "AudioBufferSourceNode", "AudioContext", "AudioDestinationNode", "AudioNode", "AudioScheduledSourceNode", "BaseAudioContext", "CompositionEvent", "CssStyleDeclaration", "DomRect", "Event", "EventTarget", "FocusEvent", "HtmlTextAreaElement", "KeyboardEvent", "KeyboardEventInit", "Node", "UiEvent"] }
 console_log = { version = "1", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
+# Starts rayon's pool on Web Workers. `no-bundler` fits the plain `--target web`
+# package; the crate also turns on rayon's `web_spin_lock`.
+wasm-bindgen-rayon = { version = "1.3", optional = true, features = ["no-bundler"] }
 # Browser WebGL2 fallback for pages without WebGPU; desktop backends are unchanged.
 wgpu = { version = "30.0.1", features = ["webgl"] }
 
