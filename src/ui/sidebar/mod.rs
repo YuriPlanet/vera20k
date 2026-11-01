@@ -247,6 +247,29 @@ pub struct SidebarLayout {
     pub side2_tile_count: usize,
 }
 
+/// One Phobos sidebar text indicator drawn by
+/// `CreditsClass_GraphicLogic_HarvesterCounter @ 0x4A25E0`: the string the hook
+/// formats, the colour it picks and the anchor it draws at, all in unscaled
+/// sidebar-surface pixels. `app::presentation::sidebar_render` resolves these on
+/// the same per-frame pass as the power bar, because the native hook runs inside
+/// the credits tick rather than on a cameo transition.
+#[cfg(feature = "phobos")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SidebarIndicator {
+    /// The formatted label and value, e.g. `⚡+12` or the blackout label alone.
+    pub text: String,
+    /// The colour `Drawing::RGB_To_Int` would pack, one byte per channel.
+    pub rgb: [u8; 3],
+    /// X added to the sidebar surface midpoint — the hook's own base, `-70` for
+    /// the power delta, `+50` for the harvester and weeds counters — plus the
+    /// side's `Sidebar.*.Offset` X.
+    pub anchor_x: i32,
+    /// Y from the top of the sidebar surface; the hook passes the literal `2`.
+    pub anchor_y: i32,
+    /// The alignment bits Phobos ORs into the `TextPrintType` flags.
+    pub align: crate::rules::phobos_sidebar_indicators::SidebarTextAlign,
+}
+
 #[derive(Debug, Clone)]
 pub struct SidebarView {
     pub panel_rect: Rect,

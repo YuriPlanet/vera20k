@@ -1034,6 +1034,13 @@ impl App {
                     #[cfg(feature = "phobos")]
                     center_pause_menu_background: false,
                     #[cfg(feature = "phobos")]
+                    sidebar_indicators:
+                        crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi::default(),
+                    #[cfg(feature = "phobos")]
+                    sidebar_indicator_text: Vec::new(),
+                    #[cfg(feature = "phobos")]
+                    show_power_delta: phobos_client.show_power_delta,
+                    #[cfg(feature = "phobos")]
                     show_power_plant_enhancer_range: phobos_client
                         .show_power_plant_enhancer_range,
                     #[cfg(feature = "phobos")]

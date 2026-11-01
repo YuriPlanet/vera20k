@@ -722,9 +722,135 @@ pub(crate) fn active_minimap_screen_rect(state: &AppState) -> crate::ui::sidebar
     }
 }
 
+/// Resolve every Phobos sidebar indicator for this frame and hand the list to
+/// the sidebar text lane. gamemd's hook runs inside the credits tick, so the
+/// caller is the per-frame pass that also ticks the power bar
+/// (`match_runtime::sim_tick`), not the cameo-driven projection refresh.
+#[cfg(feature = "phobos")]
+pub(crate) fn refresh_sidebar_indicators(state: &mut AppState) {
+    let resolved = (|| {
+        let sim = state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation)?;
+        let rules = state.rules()?;
+        let owner_name = preferred_local_owner_name(state)?;
+        let owner = sim.interner().get(&owner_name).unwrap_or_default();
+        let (produced, drained) = production::power_balance_for_owner(sim, rules, &owner_name);
+        let presentation = &state.match_state.match_presentation;
+        Some(
+            [power_delta_indicator(
+                sim,
+                rules,
+                current_sidebar_side(state),
+                owner,
+                &presentation.sidebar_indicators,
+                presentation.show_power_delta,
+                produced,
+                drained,
+            )]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>(),
+        )
+    })();
+    let presentation = &mut state.match_state.match_presentation;
+    match resolved {
+        Some(resolved) => presentation.sidebar_indicator_text = resolved,
+        // No local house: the hook never runs for this player.
+        None => presentation.sidebar_indicator_text.clear(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Chrome / theme helpers
 // ---------------------------------------------------------------------------
+
+/// The hook's own base column for the power delta: `0x4A25E0` passes
+/// `DSurface::Sidebar->GetWidth() / 2 - 70`, while the harvester and weeds
+/// branches use `+ 50` and overlap each other by design.
+#[cfg(feature = "phobos")]
+const POWER_DELTA_ANCHOR_X: i32 = -70;
+/// The literal `y = 2` row every indicator branch passes, the same anchor row
+/// as the credits counter.
+#[cfg(feature = "phobos")]
+const INDICATOR_SURFACE_Y: i32 = 2;
+
+/// The power-delta branch of Phobos's shared sidebar indicator hook
+/// (`CreditsClass_GraphicLogic_HarvesterCounter @ 0x4A25E0`,
+/// `src/Misc/Hooks.UI.cpp:137-173`).
+///
+/// Three conjuncts open it: `uimd.ini [Sidebar] PowerDelta.Show`, the
+/// `[Phobos] ShowPowerDelta` client switch and a non-empty House+68; a defeated
+/// player returns before the whole hook. The colour tracks the *drain-to-output
+/// ratio*, never the displayed delta: `percent < ConditionYellow` is green,
+/// Phobos' epsilon-tolerant `LESS_EQUAL(percent, ConditionRed)` — `(x - y) <=
+/// 0.001` — is yellow, and zero output with any drain doubles the red threshold
+/// so that branch lands on red. Zero output with zero drain keeps the yellow
+/// fallback. A blackout (`HouseClass::PowerBlackoutTimer`, started by spy
+/// infiltration at `House50BC90` and by the force shield) drops the number
+/// entirely and draws `PowerBlackoutLabel` in `ColorGrey`.
+#[cfg(feature = "phobos")]
+fn power_delta_indicator(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    side: i32,
+    owner: crate::sim::intern::InternedId,
+    ui: &crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi,
+    client_enabled: bool,
+    power_produced: i32,
+    power_drained: i32,
+) -> Option<crate::ui::sidebar::SidebarIndicator> {
+    let thresholds = ui.power_delta;
+    let house = sim.houses().get(&owner)?;
+    if !(thresholds.show && client_enabled)
+        || house.is_defeated()
+        || house.tracking().buildings() <= 0
+    {
+        return None;
+    }
+    let side_settings = rules.side_power_delta(side);
+    let frame = sim.session().binary_frame();
+    let blacked_out = sim
+        .power_states()
+        .get(&owner)
+        .is_some_and(|power| power.blackout_remaining(frame) > 0);
+    let (text, rgb) = if blacked_out {
+        (ui.power_blackout_label.clone(), side_settings.color_grey)
+    } else {
+        let percent = if power_produced != 0 {
+            f64::from(power_drained) / f64::from(power_produced)
+        } else if power_drained != 0 {
+            thresholds.condition_red * 2.0
+        } else {
+            thresholds.condition_yellow
+        };
+        let rgb = if percent < thresholds.condition_yellow {
+            side_settings.color_green
+        } else if percent - thresholds.condition_red <= 0.001 {
+            side_settings.color_yellow
+        } else {
+            side_settings.color_red
+        };
+        // `%ls%+d`: the label then the signed net power, always with a sign.
+        (
+            format!(
+                "{}{:+}",
+                ui.power_label,
+                power_produced.wrapping_sub(power_drained)
+            ),
+            rgb,
+        )
+    };
+    Some(crate::ui::sidebar::SidebarIndicator {
+        text,
+        rgb,
+        anchor_x: POWER_DELTA_ANCHOR_X + side_settings.offset[0],
+        anchor_y: INDICATOR_SURFACE_Y + side_settings.offset[1],
+        align: side_settings.align,
+    })
+}
 
 pub(crate) fn current_sidebar_theme(
     state: &AppState,
@@ -917,6 +1043,10 @@ pub(crate) fn begin_main_load_pass<'a>(
         multiview_mask: None,
     })
 }
+
+#[cfg(all(test, feature = "phobos"))]
+#[path = "sidebar_indicator_tests.rs"]
+mod sidebar_indicator_tests;
 
 #[cfg(test)]
 mod tests {

@@ -145,6 +145,8 @@ pub mod phobos_crit;
 #[cfg(feature = "phobos")]
 pub mod phobos_power_plant_enhancer;
 #[cfg(feature = "phobos")]
+pub mod phobos_sidebar_indicators;
+#[cfg(feature = "phobos")]
 pub mod phobos_selection_flash;
 #[cfg(feature = "phobos")]
 pub mod phobos_sw_sidebar;

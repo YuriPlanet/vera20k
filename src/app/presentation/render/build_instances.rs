@@ -1313,6 +1313,23 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         );
     }
 
+    // Phobos draws its sidebar indicators on the same surface, from the same
+    // credits tick and with the same BitFont as the credits counter.
+    #[cfg(feature = "phobos")]
+    if let Some(v) = view.as_ref() {
+        text_layers.status.extend(
+            crate::app::presentation::sidebar_text::build_sidebar_indicator_instances(
+                &state.renderer.bit_font,
+                &state.match_state.match_presentation.sidebar_indicator_text,
+                v.panel_rect,
+                [
+                    state.match_state.input.camera_x,
+                    state.match_state.input.camera_y,
+                ],
+            ),
+        );
+    }
+
     // Preserve the pixels actually drawn online for a possible pre-due loss.
     // This is display history, separate from ongoing internal minimap updates.
     let origin = [

@@ -642,6 +642,22 @@ pub(crate) fn finish_presentation_assets(
         .map(crate::rules::phobos_pause_menu::PauseMenuUi::from_uimd_bytes)
         .unwrap_or_default()
         .center_background;
+    // The same loaded `uimd.ini` carries the indicator switches and the two
+    // `[ToolTips]` labels; Phobos resolves a label key through the string table
+    // it has already loaded by then (`GeneralUtils::LoadStringOrDefault`).
+    #[cfg(feature = "phobos")]
+    let sidebar_indicators = uimd_bytes
+        .map(|bytes| {
+            crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi::from_uimd_bytes(
+                bytes,
+                &|label| {
+                    csf.as_ref()
+                        .and_then(|table| table.get(label))
+                        .map(|text| text.to_string())
+                },
+            )
+        })
+        .unwrap_or_default();
     #[cfg(feature = "phobos")]
     let sw_sidebar_art = sw_sidebar_ui
         .enabled
@@ -723,6 +739,8 @@ pub(crate) fn finish_presentation_assets(
         sw_sidebar_ui,
         #[cfg(feature = "phobos")]
         center_pause_menu_background,
+        #[cfg(feature = "phobos")]
+        sidebar_indicators,
         #[cfg(feature = "phobos")]
         sw_sidebar_art,
         outcome_banner_side_art,

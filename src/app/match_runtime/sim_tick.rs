@@ -1091,6 +1091,11 @@ fn advance_in_game_runtime_mode(
 
     crate::app::presentation::building_anim::update_radar_state(state);
     crate::app::presentation::building_anim::update_power_bar_anim(state, wall_ms);
+    // Phobos draws its sidebar indicators from that same credits tick, so the
+    // net power text follows the per-frame power bar rather than a cameo
+    // transition.
+    #[cfg(feature = "phobos")]
+    crate::app::presentation::sidebar_render::refresh_sidebar_indicators(state);
     crate::app::presentation::sidebar_gadgets::update_sidebar_gadget_state(state);
     // Per-frame gadget idle tick (G22 rows 2/3 drag-off/drag-back tracking).
     crate::app::input::gadget_input::idle_tick(state);
