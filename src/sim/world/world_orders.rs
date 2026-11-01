@@ -153,7 +153,7 @@ impl Simulation {
         };
         if target.category() != EntityCategory::Unit
             || crate::sim::combat::combat_weapon::is_ally_by_object(
-                Some(self.house_alliances.as_map()),
+                Some(&self.house_alliances),
                 &self.interner,
                 actor.owner(),
                 target.owner(),
@@ -389,11 +389,10 @@ impl Simulation {
         }
         let target = self.substrate.entities.get(target_id)?;
         let target_type = self.object_type(target.type_ref(), rules)?;
-        if !crate::map::houses::is_allied_with(
-            self.house_alliances.as_map(),
-            self.interner.resolve(actor.owner()),
-            self.interner.resolve(target.owner()),
-        ) {
+        if !self
+            .house_alliances
+            .is_allied(&self.interner, actor.owner(), target.owner())
+        {
             return Some(UnitRepairAction::Move);
         }
         // The target's vt+80 (`0x0073FDBD`); every GameEntity is a Techno
@@ -470,7 +469,7 @@ impl Simulation {
         if actor.category() != EntityCategory::Unit
             || !self.house_is_human_player(actor.owner())
             || !combat::combat_weapon::is_ally_by_object(
-                Some(self.house_alliances.as_map()),
+                Some(&self.house_alliances),
                 &self.interner,
                 target.owner(),
                 actor.owner(),
@@ -626,7 +625,7 @@ impl Simulation {
             _ => return None,
         };
         if !combat::combat_weapon::is_ally_by_object(
-            Some(self.house_alliances.as_map()),
+            Some(&self.house_alliances),
             &self.interner,
             actor.owner(),
             target.owner(),
@@ -957,11 +956,9 @@ impl Simulation {
             return None;
         }
         if !object.bridge_repair_hut {
-            let allied = crate::map::houses::is_allied_with(
-                self.house_alliances.as_map(),
-                self.interner.resolve(actor.owner()),
-                self.interner.resolve(target.owner()),
-            );
+            let allied =
+                self.house_alliances
+                    .is_allied(&self.interner, actor.owner(), target.owner());
             let passive_occupation = self
                 .houses
                 .get(&target.owner())
@@ -1060,11 +1057,9 @@ impl Simulation {
             return false;
         };
         infiltrator_admits(infantry, building)
-            && !crate::map::houses::is_allied_with(
-                self.house_alliances.as_map(),
-                self.interner.resolve(actor.owner()),
-                self.interner.resolve(target.owner()),
-            )
+            && !self
+                .house_alliances
+                .is_allied(&self.interner, actor.owner(), target.owner())
     }
 
     /// `InfantryClass::Assign_Target`'s infiltration arm
@@ -1361,11 +1356,9 @@ impl Simulation {
             return Ok(BuildingEntryResult::default());
         };
         if !object.bridge_repair_hut {
-            let allied = crate::map::houses::is_allied_with(
-                self.house_alliances.as_map(),
-                self.interner.resolve(owner),
-                self.interner.resolve(building.owner()),
-            );
+            let allied = self
+                .house_alliances
+                .is_allied(&self.interner, owner, building.owner());
             //519D6E's passive-occupation repair branch has no warp gate.
             let repair = allied
                 || (object.can_be_occupied

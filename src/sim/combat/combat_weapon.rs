@@ -31,7 +31,6 @@
 use super::TargetKind;
 use super::veterancy::RANK_ELITE_U16;
 use crate::map::entities::EntityCategory;
-use crate::map::houses::{HouseAllianceMap, is_allied_with};
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::armor::ArmorId;
 use crate::rules::locomotor_type::SpeedType;
@@ -42,6 +41,7 @@ use crate::rules::warhead_type::WarheadType;
 use crate::rules::weapon_type::WeaponType;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
+use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::mission::MissionType;
 use crate::sim::world::Simulation;
@@ -993,15 +993,12 @@ pub(crate) fn resolve_weapon_index<'a>(
 /// same house, or the asker's alliance bit for the other house. Without an
 /// alliance map only the same-house case is knowable.
 pub fn is_ally_by_object(
-    alliances: Option<&HouseAllianceMap>,
+    alliances: Option<&HouseAlliances>,
     interner: &StringInterner,
     asker: InternedId,
     other: InternedId,
 ) -> bool {
-    asker == other
-        || alliances.is_some_and(|map| {
-            is_allied_with(map, interner.resolve(asker), interner.resolve(other))
-        })
+    asker == other || alliances.is_some_and(|alliances| alliances.is_allied(interner, asker, other))
 }
 
 /// Arm G's pair (`0x006F33D9`) and the DeployFire infantry arm's
@@ -1119,7 +1116,7 @@ pub(crate) fn select_weapon_against<'a>(
     world: &Simulation,
     interner: &StringInterner,
     terrain: Option<&ResolvedTerrainGrid>,
-    alliances: Option<&HouseAllianceMap>,
+    alliances: Option<&HouseAlliances>,
 ) -> Option<(i32, Option<SelectedWeapon<'a>>)> {
     let cells = terrain.map(NativeCellQuery::canonical);
     select_weapon_against_in_query(
@@ -1146,7 +1143,7 @@ pub fn select_weapon_against_in_query<'a>(
     world: &Simulation,
     interner: &StringInterner,
     cells: Option<&NativeCellQuery<'_>>,
-    alliances: Option<&HouseAllianceMap>,
+    alliances: Option<&HouseAlliances>,
 ) -> Option<(i32, Option<SelectedWeapon<'a>>)> {
     let index = select_weapon_index_against_in_query(
         rules,
@@ -1185,7 +1182,7 @@ pub(crate) fn select_weapon_index_against_in_query(
     world: &Simulation,
     interner: &StringInterner,
     cells: Option<&NativeCellQuery<'_>>,
-    alliances: Option<&HouseAllianceMap>,
+    alliances: Option<&HouseAlliances>,
 ) -> Option<i32> {
     let terrain = cells.map(NativeCellQuery::terrain);
     let target_facts = match target.copied() {

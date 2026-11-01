@@ -283,7 +283,7 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
             rules,
             &world.interner,
             &world.houses,
-            world.house_alliances.as_map(),
+            &world.house_alliances,
             world.session.no_damage(),
             u64::from(world.session.binary_frame()),
             world.resolved_terrain.as_ref(),

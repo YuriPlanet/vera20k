@@ -547,7 +547,7 @@ impl Simulation {
         if !actor_type.vehicle_thief
             || can_drive_country
             || crate::sim::combat::combat_weapon::is_ally_by_object(
-                Some(self.house_alliances.as_map()),
+                Some(&self.house_alliances),
                 &self.interner,
                 actor.owner(),
                 target.owner(),

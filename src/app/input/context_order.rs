@@ -1726,7 +1726,7 @@ pub(super) fn guard_area_admitted(
                 && actor.category() != EntityCategory::Aircraft
                 && sim.entities().get(target_id).is_some_and(|target| {
                     crate::map::houses::is_allied_with(
-                        sim.house_alliances(),
+                        sim.house_alliances().as_map(),
                         sim.interner().resolve(actor.owner()),
                         sim.interner().resolve(target.owner()),
                     )

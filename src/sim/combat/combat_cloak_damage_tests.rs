@@ -21,6 +21,7 @@
 //! Dolphin is the trigger for (2).
 
 use super::*;
+use crate::map::houses::HouseAllianceMap;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::cloak_disguise::CloakRuntime;
 use crate::sim::game_entity::GameEntity;

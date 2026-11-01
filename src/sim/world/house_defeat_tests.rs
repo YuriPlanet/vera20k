@@ -1133,6 +1133,7 @@ fn a_computer_defeat_turns_the_computers_left_paranoid() {
     assert!(sim.houses[&houses[3]].is_defeated());
     let allies = |n: usize| {
         sim.house_alliances()
+            .as_map()
             .get(&format!("HOUSE{n}"))
             .cloned()
             .unwrap_or_default()

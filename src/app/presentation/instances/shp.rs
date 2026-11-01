@@ -284,7 +284,7 @@ pub(crate) fn build_shp_instances_from_inputs(
             local_owner,
             local_owner_id,
             sim.fog(),
-            sim.house_alliances(),
+            sim.house_alliances().as_map(),
             ignore_visibility,
             sim.session().binary_frame(),
             super::units::house_color_to_remap_row(hc),

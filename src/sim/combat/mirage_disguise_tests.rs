@@ -227,7 +227,7 @@ fn damage_receiver_matches_original_packet_result_and_disguise_consequence() {
             &rules,
             &world.interner,
             &world.houses,
-            world.house_alliances.as_map(),
+            &world.house_alliances,
             false,
             u64::from(frame),
             None,

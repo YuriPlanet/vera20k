@@ -182,7 +182,7 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
         Some(owner_name),
         Some(owner_id),
         sim.fog(),
-        sim.house_alliances(),
+        sim.house_alliances().as_map(),
         false,
         sim.session().binary_frame(),
         u32::from(house_color.0) + 1,

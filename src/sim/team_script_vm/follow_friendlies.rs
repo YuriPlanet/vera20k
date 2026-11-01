@@ -7,7 +7,6 @@
 use super::TeamTarget;
 use super::team_ai::{member_is_live, member_is_live_joined};
 use crate::map::entities::EntityCategory;
-use crate::map::houses::is_allied_with;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::combat_weapon::is_armed;
@@ -35,7 +34,6 @@ impl Simulation {
         let Some(from) = self.team_target_coord(TeamTarget::Object(head)) else {
             return (None, None);
         };
-        let owner = self.interner.resolve(team.owner);
         let mut best = None;
         let mut best_distance = -1;
         for category in [EntityCategory::Unit, EntityCategory::Infantry] {
@@ -44,11 +42,9 @@ impl Simulation {
                     || self.team_script_vm.member_team.get(&candidate.stable_id()) == Some(&team_id)
                     // 6EAF7E/6EB079: the CANDIDATE asks whether the team
                     // owner is allied. Do not turn this into a mutual test.
-                    || !is_allied_with(
-                        self.house_alliances.as_map(),
-                        self.interner.resolve(candidate.owner()),
-                        owner,
-                    )
+                    || !self
+                        .house_alliances
+                        .is_allied(&self.interner, candidate.owner(), team.owner)
                 {
                     continue;
                 }

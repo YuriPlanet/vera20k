@@ -212,7 +212,7 @@ pub(crate) fn hover_object_by_id(
     // What_Action asks the actor's house, here the local player's
     // (HouseClass::Is_Ally_ByObject4F9A90 at 7003C4).
     let is_friendly = crate::map::houses::is_allied_with(
-        sim.house_alliances(),
+        sim.house_alliances().as_map(),
         local_owner,
         sim.interner().resolve(entity.owner()),
     );
@@ -1658,7 +1658,7 @@ mod tests {
                     band_rect_contains_drawn_object(
                         source,
                         &[1],
-                        Some((sim.fog(), sim.house_alliances())),
+                        Some((sim.fog(), sim.house_alliances().as_map())),
                         Some("viewer"),
                         bx - 1.,
                         by - 1.,
@@ -1747,7 +1747,7 @@ mod tests {
                 Some("Americans"),
                 Some(viewer),
                 sim.fog(),
-                sim.house_alliances(),
+                sim.house_alliances().as_map(),
                 false,
                 0,
                 0,
@@ -1771,7 +1771,7 @@ mod tests {
                 let band = band_rect_contains_drawn_object(
                     source,
                     &[id],
-                    Some((sim.fog(), sim.house_alliances())),
+                    Some((sim.fog(), sim.house_alliances().as_map())),
                     Some("Americans"),
                     x - 1.,
                     y - 1.,

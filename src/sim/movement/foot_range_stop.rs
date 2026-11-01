@@ -85,7 +85,7 @@ impl Simulation {
                 &combat::line_of_fire::LineOfFireInputs {
                     overlay_grid: self.overlay_grid.as_ref(),
                     overlay_registry: registry,
-                    alliances: Some(self.house_alliances.as_map()),
+                    alliances: Some(&self.house_alliances),
                 },
                 Some(&self.substrate.entities),
             )

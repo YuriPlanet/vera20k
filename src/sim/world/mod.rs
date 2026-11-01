@@ -252,6 +252,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::map::entities::EntityCategory;
+#[cfg(any(test, feature = "test-support"))]
 use crate::map::houses::HouseAllianceMap;
 use crate::map::overlay::OverlayEntry;
 use crate::map::playfield::PlayfieldBounds;
@@ -2526,7 +2527,7 @@ impl Simulation {
         // (0x00469C93 -> 0x00422702/0x00424D5A) accesses the live smudge map
         // before returning. Keep that authority resident through recursion.
         // Evidence: active gamemd.exe bodies and caller instructions.
-        let house_alliances = self.house_alliances.as_map().clone();
+        let house_alliances = self.house_alliances.clone();
         let current_tick = u64::from(self.session.binary_frame());
         let scenario_no_damage = self.session.no_damage();
         let mut effects = crate::sim::combat::DeathEffects::default();
@@ -3150,7 +3151,6 @@ impl Simulation {
             if game_mode_nonzero && victim_passive {
                 continue;
             }
-            let victim_name = interner.resolve(event.owner).to_string();
             let listeners: Vec<InternedId> = houses
                 .order()
                 .iter()
@@ -3158,11 +3158,7 @@ impl Simulation {
                 .filter(|&listener| {
                     listener != event.owner
                         && houses.get(&listener).is_some_and(|house| house.is_human())
-                        && crate::map::houses::is_allied_with(
-                            house_alliances.as_map(),
-                            &victim_name,
-                            interner.resolve(listener),
-                        )
+                        && house_alliances.is_allied(interner, event.owner, listener)
                 })
                 .collect();
             for listener in listeners {
@@ -3392,8 +3388,8 @@ impl Simulation {
         &self.fog
     }
 
-    pub fn house_alliances(&self) -> &HouseAllianceMap {
-        self.house_alliances.as_map()
+    pub fn house_alliances(&self) -> &HouseAlliances {
+        &self.house_alliances
     }
 
     pub fn sound_events(&self) -> &[SimSoundEvent] {

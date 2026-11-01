@@ -2712,7 +2712,7 @@ impl Simulation {
     ) -> bool {
         if anim.owner_house.is_some_and(|house| {
             crate::sim::combat::combat_weapon::is_ally_by_object(
-                Some(self.house_alliances.as_map()),
+                Some(&self.house_alliances),
                 &self.interner,
                 viewer,
                 house,

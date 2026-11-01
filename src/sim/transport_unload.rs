@@ -151,7 +151,11 @@ fn cell_has_structural_bridge(sim: &Simulation, cell: (u16, u16)) -> bool {
 ///   transport's House (`HouseClass::Is_Ally` by object, `0x004F9A90`).
 ///
 /// Without map cells no cell is open.
-fn octant_cell_open(sim: &Simulation, cell: (u16, u16), transport_owner: &str) -> bool {
+fn octant_cell_open(
+    sim: &Simulation,
+    cell: (u16, u16),
+    transport_owner: crate::sim::intern::InternedId,
+) -> bool {
     let Some(terrain) = sim.resolved_terrain.as_ref() else {
         return false;
     };
@@ -174,11 +178,8 @@ fn octant_cell_open(sim: &Simulation, cell: (u16, u16), transport_owner: &str) -
     sim.nearest_cell_object(cell, MovementLayer::Ground, None)
         .and_then(|id| sim.substrate.entities.get(id))
         .is_none_or(|object| {
-            crate::map::houses::is_allied_with(
-                sim.house_alliances.as_map(),
-                transport_owner,
-                sim.interner.resolve(object.owner()),
-            )
+            sim.house_alliances
+                .is_allied(&sim.interner, transport_owner, object.owner())
         })
 }
 
@@ -200,7 +201,7 @@ fn octant_cell_open(sim: &Simulation, cell: (u16, u16), transport_owner: &str) -
 /// octant instead (`0x00740DC5`) is not represented: no stock YR unit sets
 /// the key and it is not parsed.
 fn pick_exit_octant(sim: &Simulation, entity: &GameEntity) -> Option<((u16, u16), usize)> {
-    let owner = sim.interner.resolve(entity.owner());
+    let owner = entity.owner();
     let base = (entity.position.rx(), entity.position.ry());
     // `0x00740B9F..BAD`: the body's `Current()` (`+0x388`), full 16 bits.
     let facing16 = entity.body_facing_current(sim.session.binary_frame());

@@ -1213,11 +1213,10 @@ impl Simulation {
                     return;
                 };
                 //4B3B52..4B3B62: the mover's House asks about the object.
-                if crate::map::houses::is_allied_with(
-                    self.house_alliances.as_map(),
-                    self.interner.resolve(actor.owner()),
-                    self.interner.resolve(target.owner()),
-                ) {
+                if self
+                    .house_alliances
+                    .is_allied(&self.interner, actor.owner(), target.owner())
+                {
                     return;
                 }
                 self.track_override(id, TargetKind::Entity(blocker), rules, frame_effects);

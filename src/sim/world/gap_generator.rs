@@ -497,7 +497,7 @@ impl Simulation {
             .collect();
         vision::publish_gap_generator_event(
             fog,
-            house_alliances.as_map(),
+            house_alliances,
             viewer,
             source,
             active,

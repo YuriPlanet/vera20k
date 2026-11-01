@@ -3,11 +3,12 @@
 //! HouseTracking and Economy retain ownership of counts and money.
 
 use crate::{
-    map::{entities::EntityCategory, houses::HouseAllianceMap},
+    map::entities::EntityCategory,
     rules::ruleset::RuleSet,
     sim::{
         combat::veterancy::VeterancyRank,
         entity_store::EntityStore,
+        house_diplomacy::HouseAlliances,
         houses::Houses,
         intern::StringInterner,
         projectile::ProjectileCoord,
@@ -121,7 +122,7 @@ pub(crate) fn award(
     entities: &mut EntityStore,
     houses: &mut Houses,
     interner: &StringInterner,
-    alliances: &HouseAllianceMap,
+    alliances: &HouseAlliances,
     rules: &RuleSet,
     victim_id: u64,
     attacker_id: u64,
@@ -142,11 +143,7 @@ pub(crate) fn award(
     let victim_owner = victim.owner();
     //10043244..10043273 asks the VICTIM's ally bits for the attacker's
     // index. Original kill XP makes the opposite one-way test afterward.
-    if crate::map::houses::is_allied_with(
-        alliances,
-        interner.resolve(victim_owner),
-        interner.resolve(attacker_owner),
-    ) {
+    if alliances.is_allied(interner, victim_owner, attacker_owner) {
         return;
     }
     let Some(victim_country) = houses.get(&victim_owner).and_then(|house| house.country()) else {

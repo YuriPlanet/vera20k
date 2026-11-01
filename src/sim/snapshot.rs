@@ -5771,7 +5771,7 @@ mod tests {
         sim.fog.reveal_all_for_owner(owner);
         crate::sim::vision::apply_gap_generators(
             &mut sim.fog,
-            sim.house_alliances.as_map(),
+            &sim.house_alliances,
             &[(gapper, 6, 6, 2)],
             &sim.interner,
         );
