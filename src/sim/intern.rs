@@ -124,6 +124,19 @@ impl StringInterner {
         self.types.handle(self, id, rules)
     }
 
+    /// The native array index (`+0xDF8`) of the type `id` names in
+    /// `category`'s array, as `rules.type_array_index(category,
+    /// self.resolve(id))` answers, the same way.
+    #[inline]
+    pub fn type_array_index(
+        &self,
+        id: InternedId,
+        category: crate::rules::object_type::ObjectCategory,
+        rules: &RuleSet,
+    ) -> Option<i32> {
+        self.types.array_index(self, id, category, rules)
+    }
+
     /// Intern a string, returning its ID. If already interned (case-insensitive),
     /// returns the existing ID. Otherwise assigns the next sequential ID.
     pub fn intern(&mut self, s: &str) -> InternedId {

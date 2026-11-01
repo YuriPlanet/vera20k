@@ -150,6 +150,39 @@ fn a_recruiting_team_survives_save_load() {
     assert_eq!(trigger_weight(&original), trigger_weight(&restored));
 }
 
+/// `TeamClass::Recruit @ 0x006EAA90` takes only its team's house's objects
+/// (`Can_Add @ 0x006EA610` refuses another house's): an infantryman of
+/// another house nearer the team's origin is passed over, one handed to the
+/// team's house is recruited first, and a member handed away is not.
+#[test]
+fn recruitment_takes_the_house_s_objects_through_ownership_changes() {
+    let (mut sim, rules, team_id, members) = recruiting_team_fixture();
+    let owner = sim.interner.get("Computer").expect("Computer interned");
+    let rival = sim.interner.intern("Rival");
+    sim.houses
+        .register(HouseState::new(rival, 1, None, false, 0, 10));
+    // The team has no centre yet, so it recruits nearest the origin.
+    let [_, handed_over] = [(2, 2), (4, 4)].map(|(rx, ry)| {
+        sim.spawn_object_at_height("E1", "Rival", rx, ry, 0, 0, &rules)
+            .expect("E1 spawns")
+    });
+    sim.change_owner(handed_over, owner);
+    sim.change_owner(members[0], rival);
+
+    sim.advance_tick(&[], Some(&rules), None, None, 67);
+    let team = sim.team_script_vm.team(team_id).expect("the team recruits");
+    assert_eq!(team.members().collect::<Vec<_>>(), [handed_over]);
+    sim.advance_tick(&[], Some(&rules), None, None, 67);
+    let mut recruited: Vec<u64> = sim
+        .team_script_vm
+        .team(team_id)
+        .expect("the team is full")
+        .members()
+        .collect();
+    recruited.sort_unstable();
+    assert_eq!(recruited, [members[1], handed_over]);
+}
+
 #[test]
 fn team_member_order_is_hashed() {
     let mut forward = Simulation::with_seed(7);

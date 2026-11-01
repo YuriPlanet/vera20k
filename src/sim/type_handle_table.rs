@@ -4,12 +4,14 @@
 //! `&ObjectType` by name is two hops: `interner.resolve(id)` (an array index) then
 //! `RuleSet::object(name)` (a hash lookup of the name). This table collapses the
 //! second hop to a precomputed array index, so resolution is two array indexes
-//! with no hashing.
+//! with no hashing. It keeps each id's native class-array indexes
+//! (`RuleSet::type_array_index`) the same way.
 //!
 //! The `StringInterner` owns it: `StringInterner::bind_types` builds it from a
 //! `RuleSet` and the strings interned so far (after
 //! `Simulation::intern_rule_type_ids`, so every type id is present), and
-//! `StringInterner::object_type` reads it. It answers exactly as the name path
+//! `StringInterner::object_type` and `StringInterner::type_array_index` read
+//! it. It answers exactly as the name path
 //! does: an id interned after the build, or a `RuleSet` other than the one it
 //! was built from, takes the name path. A derived cache: never serialized or
 //! hashed; a load rebuilds it.
@@ -18,9 +20,18 @@
 //! - Part of sim/; depends on rules/ (one-way) and `sim::intern`. NEVER on
 //!   render/ui/audio/net.
 
-use crate::rules::object_type::ObjectType;
+use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::{RuleSet, TypeHandle};
 use crate::sim::intern::{InternedId, StringInterner};
+
+/// The class arrays, in the order [`TypeHandleTable`] keeps each id's
+/// indexes in them.
+const CLASS_ARRAYS: [ObjectCategory; 4] = [
+    ObjectCategory::Infantry,
+    ObjectCategory::Vehicle,
+    ObjectCategory::Aircraft,
+    ObjectCategory::Building,
+];
 
 /// Maps an interned type id to its object handle. Dense by `InternedId` index;
 /// `None` means the id was interned but names no object (an orphan `type_ref`,
@@ -28,6 +39,10 @@ use crate::sim::intern::{InternedId, StringInterner};
 #[derive(Debug, Clone, Default)]
 pub struct TypeHandleTable {
     by_interned: Vec<Option<TypeHandle>>,
+    /// Each id's native array index (`+0xDF8`) in each class array, in
+    /// [`CLASS_ARRAYS`] order, as [`RuleSet::type_array_index`] answers for
+    /// its name. Dense by `InternedId` index, like `by_interned`.
+    array_indices: Vec<[Option<i32>; 4]>,
     /// [`RuleSet::serial`] of the set the handles came from; 0 while unbuilt,
     /// which no set has.
     rules_serial: u64,
@@ -37,11 +52,36 @@ impl TypeHandleTable {
     /// Build from every string currently in the interner. Each id that resolves
     /// to an object (case-insensitively) gets its handle; the rest stay `None`.
     pub fn build(rules: &RuleSet, interner: &StringInterner) -> Self {
+        let names =
+            || (0..interner.len() as u32).map(|idx| interner.resolve(InternedId::from_index(idx)));
         Self {
-            by_interned: (0..interner.len() as u32)
-                .map(|idx| rules.type_handle(interner.resolve(InternedId::from_index(idx))))
+            by_interned: names().map(|name| rules.type_handle(name)).collect(),
+            array_indices: names()
+                .map(|name| CLASS_ARRAYS.map(|category| rules.type_array_index(category, name)))
                 .collect(),
             rules_serial: rules.serial(),
+        }
+    }
+
+    /// `id`'s native array index in `category`'s array, as
+    /// `rules.type_array_index(category, interner.resolve(id))` answers: from
+    /// the table when it was built from `rules` and covers `id`, else by name.
+    #[inline]
+    pub fn array_index(
+        &self,
+        interner: &StringInterner,
+        id: InternedId,
+        category: ObjectCategory,
+        rules: &RuleSet,
+    ) -> Option<i32> {
+        match self.array_indices.get(id.index() as usize) {
+            Some(indices) if self.rules_serial == rules.serial() => {
+                indices[CLASS_ARRAYS
+                    .iter()
+                    .position(|&array| array == category)
+                    .expect("every category has a class array")]
+            }
+            _ => rules.type_array_index(category, interner.resolve(id)),
         }
     }
 
@@ -173,6 +213,25 @@ mod tests {
         }
         assert!(table.object(&interner, e1, &other).is_some());
         assert!(table.object(&interner, later, &rules).is_some());
+        // The class array indexes answer as the name lookup does, too.
+        for set in [&rules, &other] {
+            for id in [e1, later] {
+                for category in CLASS_ARRAYS {
+                    assert_eq!(
+                        table.array_index(&interner, id, category, set),
+                        set.type_array_index(category, interner.resolve(id))
+                    );
+                }
+            }
+        }
+        assert_eq!(
+            table.array_index(&interner, e1, ObjectCategory::Infantry, &rules),
+            Some(0)
+        );
+        assert_eq!(
+            table.array_index(&interner, later, ObjectCategory::Infantry, &rules),
+            Some(1)
+        );
         assert_eq!(
             TypeHandleTable::default()
                 .object(&interner, e1, &rules)

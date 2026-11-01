@@ -327,8 +327,8 @@ fn candidates(
     let category = kind.category();
     let type_count = rules.type_array_ids(category).len();
     let type_index = |id: InternedId| {
-        rules
-            .type_array_index(category, sim.interner.resolve(id))
+        sim.interner
+            .type_array_index(id, category, rules)
             // NPSE 2.0 C33B30 filters needed vehicle types before their
             // recruitment, CanBuild, cost and random-choice consumers.
             .filter(|&index| {
@@ -342,7 +342,7 @@ fn candidates(
             .filter(|&index| index < type_count)
     };
     let vm = &sim.team_script_vm;
-    let teams = vm
+    let teams: Vec<(i32, Vec<usize>)> = vm
         .teams_in_order()
         .filter(|team| {
             team.owner() == owner
@@ -363,15 +363,22 @@ fn candidates(
                 .filter_map(|member_type| type_index(member_type.id))
                 .collect();
             (team.created_frame(), needed)
-        });
+        })
+        .collect();
+    // With no need tallied, the tally asks IsRecruitable of no object and
+    // CanBuild and Cost_Of of no type, and keeps no candidate whatever the
+    // objects are, so VERA skips their walk. The pick still draws.
+    if teams.iter().all(|(_, needed)| needed.is_empty()) {
+        return Vec::new();
+    }
     let class = EntityCategory::from(category);
     // IsRecruitable refuses other houses' objects, so only `owner`'s are
-    // tallied.
-    let objects = sim
-        .substrate
-        .entities
-        .values()
-        .filter(|entity| entity.category() == class && entity.owner() == owner)
+    // tallied, in the same order.
+    let entities = &sim.substrate.entities;
+    let objects = entities
+        .owned_ids(owner, class)
+        .iter()
+        .filter_map(|&id| entities.get(id))
         .filter_map(|entity| Some((type_index(entity.type_ref())?, entity)));
     let money = crate::sim::credit_income::available_money(&sim.houses, owner);
     let class_type = |index: usize| rules.type_array_at(category, index as i32);
