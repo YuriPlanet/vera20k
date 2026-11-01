@@ -241,3 +241,147 @@ fn retail_gate_make_body_uses_native_gate_and_selling_reflections() {
         "the Selling reflection follows and cancels the gate reflection"
     );
 }
+
+/// A completed gate's body is frame 0 above ConditionYellow and
+/// `GateStages + 1` at or below it (`GetCurrentFrame @ 0x0043EF90`,
+/// `0x0043F0BD..0x0043F0F5`), with no undamaged fallback. With that frame
+/// resident in the atlas the damaged retail GAGATE_A keeps its body instead
+/// of vanishing (#3592).
+#[test]
+fn retail_gate_completed_body_selects_the_damaged_stage_frame() {
+    use crate::map::houses::HouseColorMap;
+    use crate::map::lighting::CellLightGrid;
+    use crate::render::batch::DepthAxis;
+    use crate::render::sprite_atlas::{
+        ShpPaletteContext, ShpSpriteEntry, ShpSpriteKey, SpriteAtlas,
+    };
+    use crate::render::tactical_draw_plan::BuildingPieceKind;
+    use crate::render::unit_atlas::BarrelImagePitches;
+    use std::cell::RefCell;
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let object = rules.object("GAGATE_A").expect("retail gate type");
+    assert!(object.gate);
+    let gate_stages = rules
+        .art()
+        .resolve_metadata_entry("GAGATE_A", &object.image)
+        .expect("retail gate ART entry")
+        .building_gate_stages;
+    assert_eq!(gate_stages, 9);
+    assert_eq!(object.strength, 100);
+
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x3592);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let gate = sim
+        .spawn_object("GAGATE_A", "Americans", 10, 10, 0, &rules)
+        .expect("retail gate placement");
+    sim.entities_mut_for_test()
+        .get_mut(gate)
+        .unwrap()
+        .finish_building_construction_for_test();
+
+    // Every frame a completed gate can select: stages 0..=8 and their damaged
+    // counterparts 10..=18, each on its own page so the emitted page names
+    // the frame.
+    let keys = (0..=u16::try_from(2 * gate_stages).unwrap())
+        .map(|frame| {
+            (
+                ShpSpriteKey {
+                    palette_context: ShpPaletteContext::Legacy,
+                    type_id: "GAGATE_A".to_owned(),
+                    facing: 0,
+                    frame,
+                    house_color: crate::rules::house_colors::NO_REMAP,
+                },
+                ShpSpriteEntry {
+                    uv_origin: [f32::from(frame), 0.0],
+                    uv_size: [1.0, 1.0],
+                    pixel_size: [8.0, 8.0],
+                    offset_x: 0.0,
+                    offset_y: 0.0,
+                    canvas_rect: [0.0, 0.0, 8.0, 8.0],
+                    extended: false,
+                    page: u8::try_from(frame).expect("small retail gate body"),
+                    source_palette: 1,
+                },
+            )
+        })
+        .collect();
+    let atlas = SpriteAtlas::from_test_entries(keys);
+    let mut runtime = SimRuntime::from_simulation(sim);
+    runtime.resources.rules = rules.clone();
+    let house_colors =
+        HouseColorMap::from([("Americans".to_owned(), crate::rules::house_colors::NO_REMAP)]);
+
+    let emitted_body_frame = |runtime: &SimRuntime| -> u16 {
+        let interpolation = RenderInterpolation::new(false);
+        let lighting = CellLightGrid::new();
+        let barrel_image_pitches = RefCell::new(BarrelImagePitches::default());
+        let input = ShpInputs {
+            runtime,
+            atlas: Some(&atlas),
+            overlay_atlas: None,
+            unit_atlas: None,
+            barrel_image_pitches: &barrel_image_pitches,
+            interpolation: &interpolation,
+            camera: [-1000.0, -1000.0],
+            render_size: [5000, 5000],
+            zoom: 1.0,
+            building_viewport: crate::app::presentation::render::tactical_world_viewport(
+                [-1000.0; 2],
+                [0, 0, 5000, 5000],
+                None,
+            ),
+            axis: DepthAxis::NONE,
+            local_owner: None,
+            ignore_visibility: true,
+            lighting: &lighting,
+            house_colors: &house_colors,
+            building_zshape: false,
+        };
+        let order = NativeDisplayOrder::from_display(runtime.simulation.display_layers());
+        let mut planned = Vec::new();
+        build_shp_instances_from_inputs(&input, &mut planned, &order);
+        let building = planned
+            .iter()
+            .find(|planned| planned.parent.id == gate)
+            .expect("gate reaches the production SHP emitter");
+        let body = building
+            .building_pieces
+            .as_ref()
+            .expect("gate uses building piece owner")
+            .iter()
+            .find(|piece| piece.kind == BuildingPieceKind::Body)
+            .expect("completed gate emits its body");
+        match body.target {
+            ObjectTexture::ShpPage(frame) => u16::try_from(frame).unwrap(),
+            target => panic!("unexpected gate body target: {target:?}"),
+        }
+    };
+
+    let entity = runtime.simulation.entities().get(gate).unwrap();
+    assert!(!entity.in_construction_bstate() && !entity.building_down());
+    assert!(entity.building_art.actually_placed());
+    assert_eq!(
+        emitted_body_frame(&runtime),
+        0,
+        "a healthy completed gate draws body frame 0"
+    );
+
+    // 40 of 100 is at or below retail ConditionYellow (50%).
+    runtime
+        .simulation
+        .entities_mut_for_test()
+        .get_mut(gate)
+        .unwrap()
+        .health
+        .set_for_test(40);
+    assert_eq!(
+        emitted_body_frame(&runtime),
+        u16::try_from(gate_stages + 1).unwrap(),
+        "a damaged completed gate draws body frame GateStages + 1, not frame 0 or 1"
+    );
+}
