@@ -1621,7 +1621,7 @@ fn launch_coordinate(
         } else {
             1
         },
-        (burst & 1) as u8,
+        burst as u8,
         base,
     );
     let mut coord = crate::sim::components::DriveCoord {

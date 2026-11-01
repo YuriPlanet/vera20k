@@ -8680,6 +8680,27 @@ impl RuleSet {
             })
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
+        // GetFLH's burst-specific offsets are projectile-origin inputs too.
+        #[cfg(feature = "phobos")]
+        {
+            let burst_rows = self
+                .object_list
+                .iter()
+                .filter_map(|object| {
+                    let (base, elite) = object.burst_flh_rows();
+                    (!base.is_empty()).then(|| {
+                        (
+                            object.id.to_ascii_uppercase(),
+                            (base.to_vec(), elite.to_vec()),
+                        )
+                    })
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !burst_rows.is_empty() {
+                b"phobos-art-burst-flh-v1".hash(&mut hasher);
+                burst_rows.hash(&mut hasher);
+            }
+        }
         self.hash_building_body_config(&mut hasher);
         self.hash_building_slot_config(&mut hasher);
         hasher.finish()

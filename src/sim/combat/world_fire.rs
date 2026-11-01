@@ -1616,8 +1616,9 @@ pub(super) fn emit_admitted_fire(
         .get(snap.stable_id)
         .map(|entity| entity.weapon_burst)
         .unwrap_or_default();
-    // FLH uses only odd/even parity; retain the signed dword in its owner.
-    let burst_index = (burst.index() & 1) as u8;
+    // The frozen burst index selects a Phobos burst ART offset; GetFLH's
+    // lateral shift reads only its parity. Retain the signed dword in its owner.
+    let burst_index = burst.index() as u8;
     let tarcom = fireat_tarcom(world, snap);
     // One fire coordinate per shot: the bullet origin, the muzzle animation and
     // the report sound all take it (`combat::fire_coord`).

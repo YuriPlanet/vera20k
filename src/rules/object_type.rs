@@ -2538,6 +2538,23 @@ impl ObjectType {
         self.weapon_offsets.weapon(index, use_elite)
     }
 
+    /// Phobos `GetBurstFLH`: a burst-index-specific ART offset for this slot,
+    /// selected by live veterancy. `None` leaves the slot's FLH in force.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn burst_flh(
+        &self,
+        index: i32,
+        elite: bool,
+        burst_index: u8,
+    ) -> Option<crate::rules::flh::Flh> {
+        self.weapon_offsets.burst(index, elite, burst_index)
+    }
+
+    #[cfg(feature = "phobos")]
+    pub(crate) fn burst_flh_rows(&self) -> (&[Vec<[i32; 3]>], &[Vec<[i32; 3]>]) {
+        self.weapon_offsets.burst_rows()
+    }
+
     /// GetFLH6F3AF5: an open transport lends its zero-based cargo port.
     pub fn alternate_fire_flh(&self, port: usize) -> crate::rules::flh::Flh {
         self.weapon_offsets.alternate(port)
