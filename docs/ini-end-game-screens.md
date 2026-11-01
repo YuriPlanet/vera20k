@@ -89,20 +89,25 @@ cropped from the wallpapers to fill the dialog.
 With `Custom End Game Movie` **on** and a beaten computer commander that has a
 losing clip:
 
-1. the last opponent falls and the result becomes eligible;
-2. the verdict's theme starts — the battlefield's music changes there;
-3. the clip plays **over a battlefield that is still fighting**;
-4. the clip ends: the result is published, the card rises, the screen holds for
-   3 seconds;
+1. the last opponent falls: the retail banner goes up and the clip starts in
+   the radar window. The result's own line ("You are victorious" or "You have
+   lost") waits for the clip to end, so the clip cannot cut it; when the kill
+   earns no clip, the line is said at once;
+2. the battlefield keeps running for the retail `SavourDelay`, then the result
+   is published and the battlefield stops, on the same frame as with the switch
+   off, in a replay or in a headless run;
+3. the verdict's theme starts, and the rest of the clip plays over the stopped
+   battlefield;
+4. the clip ends: the result's line is said if it is still waiting, the card
+   rises, and the screen holds for 3 seconds;
 5. the retail teardown fades out and the score page takes over with its own
    theme.
 
-With the switch **off** the clip is cut at the kill frame and the retail
-sequence runs unchanged, minus the card and its 3 seconds.
+With the switch **off** the clip is cut when the result is published, and the
+retail sequence runs unchanged, minus the card and its 3 seconds.
 
-Because the world keeps running under the clip, **combat during the clip
-counts**: kills, losses and elapsed time in the score include it. That is the
-price of not freezing the board the clip is played over.
+The score counts nothing after the result: kills, losses and the elapsed time
+stop on the frame it is published.
 
 ## Switches
 
@@ -113,26 +118,17 @@ default:
 |---|---|---|
 | Custom End Game Banner | `CustomEndGameBanner=` | the card and its theme |
 | Custom End Game Score | `CustomEndGameScore=` | the score page's background and theme |
-| Custom End Game Movie | `CustomEndGameMovie=` | whether the result waits for the losing commander's clip |
+| Custom End Game Movie | `CustomEndGameMovie=` | whether the card and score page wait for the losing commander's clip |
 
-The two picture switches only paint and play; the movie switch is the one that
-changes *when* the result is announced, so it is single-player only (see below).
+None of them changes the simulation: the result is published on the same frame
+whatever they say.
 
 ## Which modes get what
 
 | | Verdict card | Score page art | Verdict theme | Losing commander's clip |
 |---|---|---|---|---|
-| Skirmish | yes | yes | yes | yes, and the result waits for it |
-| LAN / WOL | yes | yes | yes | no — the result is never held, so the score dialog appears 3 s later than retail |
+| Skirmish | yes | yes | yes | yes, and the card and score page wait for it |
+| LAN / WOL | yes | yes | yes | no, but the card's 3 s still put the score dialog 3 s later than retail |
 | Campaign | no | no | no | no — missions use their own result dialogs |
 | Replay playback | no | no | no | no — the recorded stream owns the timing |
 | Observer | no card of its own | retail page | retail theme | no |
-
-## Known limitation
-
-The clip-induced delay is presentation state and is not part of the recorded
-stream, so a replay of a match played with the movie switch on publishes the
-result at the first eligible tick instead of where the recording did. The match
-still plays; the last seconds of that replay run over a world that has already
-stopped, and a capture receipt's `recorded_final_state_hash` will not match.
-Nothing else is affected.

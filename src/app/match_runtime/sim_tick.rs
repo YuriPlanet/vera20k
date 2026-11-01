@@ -92,14 +92,15 @@ fn replay_flush_facts(state: &AppState) -> (u64, u64) {
     (session_tick, now)
 }
 
-/// Route an admitted native result after its in-House Vox wait and callbacks./// The pending wait is serviced through the suspended frame's client boundary.
+/// Route an admitted native result after its in-House Vox wait and callbacks.
+/// The pending wait is serviced through the suspended frame's client boundary.
 pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64) {
     if !matches!(state.frontend.screen, GameScreen::InGame)
         || state.match_state.scenario_exit.is_some()
     {
         return;
     }
-    let Some(owner) = state.match_state.local_player_owner() else {
+    let Some(owner) = state.match_state.local_player_owner().map(str::to_owned) else {
         return;
     };
     let outcome = state
@@ -110,29 +111,18 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
         .filter(|sim| sim.pending_outcome_wait().is_none())
         .and_then(|sim| {
             sim.interner()
-                .get(owner)
+                .get(&owner)
                 .and_then(|owner| sim.ready_outcome_for_owner(owner))
         });
     let Some(outcome) = outcome.map(|outcome| outcome.kind) else {
         return;
     };
-    // The loser gets the last word on a battlefield that is still fighting.
-    //
-    // This is deliberately *not* the native outcome wait. `wait_complete`
-    // (HouseClass::Update4F860F/4F8736) holds the frame itself: answered false,
-    // the frame does not commit and comes back with its cursor, which is right
-    // for a sub-second Vox line and wrong for a twenty-second movie — it froze
-    // the tactical view and the radar window never got serviced, so the clip
-    // was not even decoded. What is held here is only this process's *reaction*
-    // to a result the simulation published on its own schedule: the world keeps
-    // ticking, the clip plays in the radar window over live units, and the
-    // verdict is taken the frame after the loser has stopped talking.
-    // With `Custom End Game Movie` on the result is not published until the
-    // loser's clip has played (`OutcomeWaitBoundary::hold_outcome`), so this
-    // is the frame the engine finally let go — the verdict is taken here and
-    // nowhere else. The guard stays for the paths that publish regardless
-    // (campaign, network, a clip that never came).
-    if crate::app::commander_feedback::owe_the_verdict_a_clip(state, wall_ms) {
+    // The loser gets the last word. The simulation published this result on
+    // its own frame, the same one a headless or replay run publishes, and no
+    // further frame runs while it waits. With `Custom End Game Movie` on, only
+    // what follows here waits for the losing commander's clip: the card, the
+    // teardown and the score page.
+    if crate::app::commander_feedback::owe_the_verdict_a_clip(state, outcome, wall_ms) {
         return;
     }
     log::info!(
@@ -150,26 +140,22 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
             }
         },
     );
-    //685670/685DC0 clear5BF450 before either outcome fade. The losing
-    // commander's clip is not in this queue by now: with `Custom End Game
-    // Movie` on, this route waited for it
-    // (`commander_feedback::owe_the_verdict_a_clip`), so the verdict below is
-    // the first thing said after the loser. With the switch off the clip was
-    // cut on the kill frame, exactly as gamemd does, and this retires it here.
+    //685670/685DC0 clear5BF450 before either outcome fade. With `Custom End
+    // Game Movie` on, this route waited for the losing commander's clip, so
+    // the verdict below is the first thing said after the loser. With the
+    // switch off, this cuts a clip still playing.
     crate::app::radar_movie::retire(state, wall_ms);
     crate::app::chrono_screen::retire(state, wall_ms);
-    // The result's own line, said where the card goes up.
+    // The result's own line, when a clip was still in its way.
     //
     // The simulation emitted it on the kill frame (`Flag_To_Win 0x004FCBA9` /
-    // `Flag_To_Lose 0x004FCDA1`) and it was queued there — but a clip that
-    // followed it into the radar window cleared the whole EVA queue on its way
-    // in (`RadarMovieCommand::Announce` -> `clear_eva_queues` + `suspend_eva`),
-    // so the player never heard it. This layer is the one that delayed the
-    // verdict for that clip, so it is the one that owes the line back: say it
-    // now, after `retire` has released the clip's EVA hold, over the
-    // battlefield the card is about to cover. A verdict this layer never held
-    // keeps the kill frame's own line and is not said twice.
-    if crate::app::commander_feedback::verdict_was_held_for_a_clip(state) {
+    // `Flag_To_Lose 0x004FCDA1`). With `Custom End Game Movie` on it was not
+    // delivered there, because the clip that kill earns would have cleared it
+    // (`RadarMovieCommand::Announce` -> `clear_eva_queues` + `suspend_eva`).
+    // The clip layer says it as soon as no clip is in the way; one still
+    // playing when the result was published leaves it to here, after `retire`
+    // has released the clip's EVA hold. Either way it is said once.
+    if crate::app::commander_feedback::take_withheld_verdict_line(state) {
         play_outcome_eva(state, outcome);
     }
     state.frontend.finished_game_count = state.frontend.finished_game_count.saturating_add(1);
@@ -195,18 +181,17 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
     // battlefield before the teardown takes the screen. Requiring the picture
     // here instead skipped the beat entirely, and with it the retail banner —
     // the frame froze and went straight to the score page.
-    let hold_banner = state.persistence.options_profile.custom_end_game_banner
-        && entry.is_some();
+    let hold_banner = state.persistence.options_profile.custom_end_game_banner && entry.is_some();
     log::info!(
         "Match end: verdict entry={} card={} hold_banner={hold_banner}",
         entry.is_some(),
         banner.is_some(),
     );
     // The theme belongs to the verdict, not to the card: with `Custom End Game
-    // Movie` on it already started on the kill frame, above, so the clip had the
-    // new music under it and restarting here would cut that track back to its
-    // first bar. One beat later the score page asks for its own `Score*` half,
-    // which is a no-op when this name is already playing.
+    // Movie` on it started when the clip wait opened, so the rest of the clip
+    // had the new music under it and restarting here would cut that track
+    // back to its first bar. One beat later the score page asks for its own
+    // `Score*` half, which is a no-op when this name is already playing.
     if !crate::app::commander_feedback::verdict_was_held_for_a_clip(state) {
         start_verdict_theme(state, outcome, wall_ms);
     }
@@ -246,16 +231,15 @@ fn local_end_game_entry(
     state: &AppState,
     outcome: crate::sim::house_state::HouseOutcomeKind,
 ) -> Option<crate::rules::end_game::EndGamePresentation<'_>> {
-    let sim = &state
-        .match_state
-        .sim_runtime
-        .as_ref()?
-        .simulation;
+    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
     // A mission owns its own result screens; the match card is a match's.
     if !sim.session().game_mode_nonzero() {
         return None;
     }
-    let house = sim.session().current_house().and_then(|owner| sim.houses().get(&owner))?;
+    let house = sim
+        .session()
+        .current_house()
+        .and_then(|owner| sim.houses().get(&owner))?;
     let kind = match outcome {
         crate::sim::house_state::HouseOutcomeKind::Victory => {
             crate::rules::end_game::EndGameKind::Victory
@@ -265,17 +249,18 @@ fn local_end_game_entry(
         }
     };
     let country = sim.resolve(house.country()?);
-    state.rules()?.end_game_screens().presentation(country, kind)
+    state
+        .rules()?
+        .end_game_screens()
+        .presentation(country, kind)
 }
 
-/// The battlefield's own theme for the result (`[EndGameScreens] *Music=`),
-/// started as soon as the result is eligible for publication.
+/// The battlefield's own theme for the result (`[EndGameScreens] *Music=`).
 ///
-/// With `Custom End Game Movie` on this runs on that frame — the one the
-/// engine first says it may publish — so the music changes while the
-/// battlefield is still fighting and the loser's clip plays over the new
-/// track. With the movie off there is no hold, and this runs when the verdict
-/// is taken, one beat before the score page asks for its own `Score*` half.
+/// With `Custom End Game Movie` on this runs when the result is published and
+/// the clip wait opens, so the rest of the loser's clip plays over the new
+/// track. Otherwise it runs when the verdict is taken, one beat before the
+/// score page asks for its own `Score*` half.
 pub(crate) fn start_verdict_theme(
     state: &mut AppState,
     outcome: crate::sim::house_state::HouseOutcomeKind,
@@ -301,15 +286,18 @@ pub(crate) fn start_verdict_theme(
 /// `HouseClass::Flag_To_Win 0x004FCBA9` / `Flag_To_Lose 0x004FCDA1` say it with
 /// `EDX = -1`; [`crate::app::match_runtime::sound_dispatch::outcome_eva_event`]
 /// owns that selection for the simulation's event, and this replays the same
-/// selection for the exit router when a clip took the original away.
-fn play_outcome_eva(state: &mut AppState, outcome: crate::sim::house_state::HouseOutcomeKind) {
+/// selection when the frame's delivery withheld the original for a clip
+/// ([`crate::app::commander_feedback::withholds_verdict_line`]).
+pub(crate) fn play_outcome_eva(
+    state: &mut AppState,
+    outcome: crate::sim::house_state::HouseOutcomeKind,
+) {
     let campaign = !state
         .match_state
         .sim_runtime
         .as_ref()
         .is_some_and(|runtime| runtime.simulation.session().game_mode_nonzero());
-    let event =
-        crate::app::match_runtime::sound_dispatch::outcome_eva_event(outcome, campaign);
+    let event = crate::app::match_runtime::sound_dispatch::outcome_eva_event(outcome, campaign);
     let (Some(sfx), Some(catalog), Some(assets)) = (
         state.audio.sfx_player.as_mut(),
         state.process_assets.audio_catalog(),
@@ -769,7 +757,9 @@ pub(crate) fn service_audio_outputs(state: &mut AppState, now_ms: u64) {
 /// the Win32 message pump `0x005D4D50`) runs neither, so it is not pumped.
 /// Network modes also pump in the throttle spin, and the in-game menu's
 /// modal pump (`0x00623120`) and the exit and outcome waits pump from their
-/// own loops, so those passes keep the per-pass pump.
+/// own loops, so those passes keep the per-pass pump. So does a published
+/// result the exit router leaves waiting for a commander clip: no Main_Tick
+/// runs while it waits (`App::service_match_runtime_once`).
 pub(crate) fn main_tick_owns_audio_pump(state: &AppState, simulation_allowed: bool) -> bool {
     let match_state = &state.match_state;
     audio_pump_follows_main_tick(
@@ -780,7 +770,8 @@ pub(crate) fn main_tick_owns_audio_pump(state: &AppState, simulation_allowed: bo
         match_state.match_presentation.in_game_menu.is_open()
             || match_state.debug_pause
             || match_state.scenario_exit.is_some()
-            || match_state.scenario_outcome.is_some(),
+            || match_state.scenario_outcome.is_some()
+            || crate::app::App::local_outcome_exit_ready(state),
     )
 }
 
@@ -1451,15 +1442,10 @@ fn advance_one_simulation_frame(
         live.begin_processing(super::frame_pacer::wall_clock_ms() as u32);
     }
     let mut refresh_atlases_after_tick = false;
-    // Whether the verdict's beat belongs to the losing commander's clip.
-    //
-    // `HouseClass::Update 4F860F` holds the frame while the whole Vox queue
-    // is busy, and a held frame draws nothing: the battlefield stood still
-    // for the length of whatever was talking. With `Custom End Game Movie` on
-    // the result's own line belongs to the card — it is said where the card
-    // goes up, after the clip — so it is not admitted on the kill frame, and
-    // the frame is not held for the clip's own transmission line either.
-    let defer_verdict_to_clip = crate::app::commander_feedback::holds_published_outcome(state);
+    // With `Custom End Game Movie` on, the result's own EVA line waits until
+    // no commander clip is in its way. See
+    // [`super::FrameClientBoundary::with_deferred_verdict`].
+    let defer_verdict_to_clip = crate::app::commander_feedback::withholds_verdict_line(state);
     // Trigger definitions are runtime-bound (F07), so a live runtime is the
     // only activity source; the old trigger-only fixture mode is unrepresentable.
     let runtime_active = state.match_state.sim_runtime.is_some();
@@ -1607,9 +1593,6 @@ fn advance_one_simulation_frame(
                         &mut elapsed_clock.borrow_mut(),
                     );
                 };
-                // Read before the per-frame owners are borrowed mutably: the
-                // answer decides whether this frame's victory waits for the
-                // losing commander's clip (`Custom End Game Movie`).
                 let playback = match (
                     state.audio.sfx_player.as_mut(),
                     state.process_assets.manager(),
@@ -1901,9 +1884,7 @@ fn advance_one_simulation_frame(
                 frame_sound_events
                     .into_iter()
                     .skip(sound_events_delivered)
-                    // The verdict's own line is withheld from the kill frame
-                    // when the card is going to say it. The frame boundary
-                    // already dropped it; this is the same rule for the facts
+                    // The same rule as the frame boundary's, for the facts
                     // that arrived after that boundary's last pass.
                     .filter(|event| {
                         !(defer_verdict_to_clip

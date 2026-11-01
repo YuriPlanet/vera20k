@@ -97,7 +97,7 @@ pub(crate) const CUSTOM_END_GAME_BANNER_HELP: &str = "Show the victory or defeat
 pub(crate) const CUSTOM_END_GAME_SCORE_LABEL: &str = "Custom End Game Score";
 pub(crate) const CUSTOM_END_GAME_SCORE_HELP: &str = "Use the same country picture as the score screen's background and its music as the score theme. Untick to keep the standard score screen.";
 pub(crate) const CUSTOM_END_GAME_MOVIE_LABEL: &str = "Custom End Game Movie";
-pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "Play a beaten computer commander's losing clip before the victory or defeat verdict, and works in single player only — a network game cannot wait for every other player's clip, so it ends at once there while the two picture switches above still apply. Untick to end every match at once, which cuts the clip.";
+pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "Let a beaten computer commander's losing clip finish before the victory or defeat picture and the score screen. Skirmish only. Untick to show them at once, which cuts the clip.";
 pub(crate) const SHIFT_QUEUE_HELP: &str =
     "Shift-click an infantry, vehicle or aircraft cameo to queue several at once.";
 pub(crate) const DISPLAY_LABEL: &str = "Display";

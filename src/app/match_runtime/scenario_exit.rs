@@ -282,7 +282,7 @@ pub(crate) struct ScenarioExitCascade {
 /// How long the verdict stays up before the score page replaces it.
 ///
 /// The card is the verdict, and the clip that explains it has already played
-/// (the sim publishes the result only after that clip ends). Without the beat
+/// (the router takes the result only after that clip ends). Without the beat
 /// the teardown's own 1000 ms fade would be all the player gets of the picture
 /// they asked for.
 pub(crate) const BANNER_HOLD_MS: u64 = 3_000;
@@ -321,10 +321,7 @@ impl ScenarioExitCascade {
 
     /// Record the verdict the router took, for the beat's own picture and the
     /// retail text that replaces it. [`Self::verdict`] is the only reader.
-    pub(crate) fn with_verdict(
-        mut self,
-        kind: crate::sim::house_state::HouseOutcomeKind,
-    ) -> Self {
+    pub(crate) fn with_verdict(mut self, kind: crate::sim::house_state::HouseOutcomeKind) -> Self {
         self.verdict = Some(kind);
         self
     }

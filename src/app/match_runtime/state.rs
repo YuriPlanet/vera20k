@@ -117,6 +117,7 @@ impl MatchState {
             self.sim_runtime
                 .as_ref()
                 .is_some_and(|runtime| runtime.simulation.session().scenario_paused()),
+            self.match_presentation.commander_feedback.result_waits(),
         )
     }
 
@@ -203,15 +204,21 @@ fn multiplayer_pause_reached(
     pause.available && pause.paused && next_frame > pause.frame && !transaction_pending
 }
 
+/// `result_waits` is VERA's: a published result the exit router leaves
+/// waiting for a commander clip. Native routes a result after the frame that
+/// publishes it, so its score time ends on that frame; the clip's own pause
+/// and resume must not restart the clock.
 fn elapsed_clock_pause_for_screen(
     screen: &crate::ui::game_screen::GameScreen,
     mode: super::session::SessionMode,
     menu_open: bool,
     movie_paused: bool,
     scenario_paused: bool,
+    result_waits: bool,
 ) -> bool {
     matches!(screen, crate::ui::game_screen::GameScreen::InGame)
         && (movie_paused
+            || result_waits
             || (menu_open && !mode.is_network())
             || super::scenario_pause::blocks_main_tick(mode, scenario_paused))
 }
@@ -291,12 +298,31 @@ mod tests {
         );
     }
 
+    /// A result the exit router leaves waiting for a commander clip keeps the
+    /// score clock stopped, although the clip itself does not pause the match.
+    #[test]
+    fn a_result_waiting_for_a_clip_keeps_the_score_clock_stopped() {
+        let paused = |result_waits| {
+            elapsed_clock_pause_for_screen(
+                &GameScreen::InGame,
+                SessionMode::Skirmish,
+                false,
+                false,
+                false,
+                result_waits,
+            )
+        };
+        assert!(!paused(false));
+        assert!(paused(true));
+    }
+
     #[test]
     fn retained_pause_does_not_leak_into_result_or_shell_audio() {
         assert!(elapsed_clock_pause_for_screen(
             &GameScreen::InGame,
             SessionMode::Skirmish,
             true,
+            false,
             false,
             false
         ));
@@ -305,13 +331,15 @@ mod tests {
             SessionMode::Wol,
             true,
             false,
-            true
+            true,
+            false
         ));
         assert!(elapsed_clock_pause_for_screen(
             &GameScreen::InGame,
             SessionMode::Wol,
             true,
             true,
+            false,
             false
         ));
         let mut sim = Simulation::with_seed(0);

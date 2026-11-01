@@ -54,21 +54,15 @@ pub(crate) struct FrameClientBoundary<'a> {
     logic_frame_rate: u32,
     outcome_wait: Option<RefCell<&'a mut Option<super::scenario_exit::ScenarioOutcomeVoiceWait>>>,
     scenario_pause: Option<RefCell<ScenarioPauseOwners<'a>>>,
-    /// Whether the verdict's beat belongs to the losing commander's clip.
+    /// Whether the result's own EVA line is withheld for a commander clip
+    /// (`Custom End Game Movie`,
+    /// [`crate::app::commander_feedback::withholds_verdict_line`]).
     ///
-    /// `HouseClass::Update 4F860F` holds the frame while the whole Vox queue
-    /// is busy, and a held frame draws nothing: the battlefield stands still
-    /// for the length of whatever is talking. With `Custom End Game Movie` on
-    /// the result's own line belongs to the card — it is said where the card
-    /// goes up, after the clip — so it is not admitted on the kill frame at
-    /// all.
-    ///
-    /// The same switch stops the wait from holding the frame for the clip's
-    /// *own* transmission line: `RadarMovieCommand::Announce` leaves that
-    /// line queued (`VoxClass::suspend` holds it, it does not unqueue it), and
-    /// `VoxClass::PumpAndCheckActive` counts a queued line as active. Holding
-    /// the frame there froze the battlefield for the length of the
-    /// transmission, before the clip had even been drawn.
+    /// The clip's entrance clears the EVA queue
+    /// (`RadarMovieCommand::Announce`), so a line admitted on the kill frame
+    /// would be cut. The clip layer says it once no clip is in its way, or the
+    /// exit router after the clip. Only sound delivery and the result's Vox
+    /// wait read this; the simulation never sees it.
     defer_verdict_to_clip: bool,
 }
 
@@ -96,7 +90,7 @@ impl<'a> FrameClientBoundary<'a> {
         }
     }
 
-    /// Give the verdict's beat to the losing commander's clip. See
+    /// Hold the result's EVA line for the losing commander's clip. See
     /// [`FrameClientBoundary::defer_verdict_to_clip`].
     pub(crate) fn with_deferred_verdict(mut self, deferred: bool) -> Self {
         self.defer_verdict_to_clip = deferred;
@@ -225,23 +219,6 @@ impl<'a> FrameClientBoundary<'a> {
 }
 
 impl OutcomeWaitBoundary for FrameClientBoundary<'_> {
-    /// The clip owns the beat, so the result is not published until it has
-    /// played — and the frame commits and runs on in the meantime.
-    ///
-    /// This is the only one of the three possible answers that keeps the
-    /// battlefield alive: [`Self::wait_complete`] answering false suspends the
-    /// frame itself (nothing moves, nothing draws), and answering true
-    /// publishes a result that `Main_Tick` treats as the match's last frame —
-    /// `commit_frame_tail` then refuses to commit again and the world stops
-    /// dead, which is exactly what "the units froze" looked like.
-    fn hold_outcome(
-        &self,
-        _owner: crate::sim::intern::InternedId,
-        _kind: crate::sim::house_state::HouseOutcomeKind,
-    ) -> bool {
-        self.defer_verdict_to_clip
-    }
-
     fn apply_prefix_effect(&self, effect: &crate::sim::trigger_runtime::TriggerEffect) -> bool {
         self.apply_prefix_effect_at(effect, super::frame_pacer::wall_clock_ms())
     }
@@ -254,6 +231,15 @@ impl OutcomeWaitBoundary for FrameClientBoundary<'_> {
         let Some(pending) = &self.outcome_wait else {
             return true;
         };
+        // A line still withheld here waits for a clip that is playing, and
+        // the clip's entrance suspends EVA, so this wait could only run into
+        // its ceiling with the clip frozen. Ending it now changes wall time
+        // only: the frame, its result and its hash are the same, as in replay
+        // playback.
+        if self.defer_verdict_to_clip {
+            **pending.borrow_mut() = None;
+            return true;
+        }
         let wall_ms = super::frame_pacer::wall_clock_ms();
         // The outer event loop services the existing AudioServiceClock and
         // network owners between visits. This is only native7529E0's Vox poll.
@@ -407,8 +393,7 @@ impl SoundBoundary for FrameClientBoundary<'_> {
             let mut admit_radar = self.admit_radar.borrow_mut();
             dispatch_sim_sound_events(
                 pending.iter().cloned().filter(|event| {
-                    // The verdict's own line is withheld on purpose when the
-                    // card is going to say it: see
+                    // The router says this line after the clip: see
                     // [`FrameClientBoundary::defer_verdict_to_clip`].
                     !(self.defer_verdict_to_clip
                         && matches!(event, SimSoundEvent::MatchOutcome { .. }))

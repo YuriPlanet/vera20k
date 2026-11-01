@@ -194,12 +194,12 @@ pub(crate) struct RetailOptionsProfile {
     /// `WinTheme`/`LoseTheme`. Separate from the verdict switch so a player can
     /// keep one and drop the other. Presentation only.
     pub(crate) custom_end_game_score: bool,
-    /// `[VERA] CustomEndGameMovie=`: hold the match result while a destroyed
-    /// computer commander's losing clip plays, so the movie comes first and
-    /// the verdict after it. Off restores gamemd's immediate handoff, which
-    /// cuts the clip. Presentation only, and skirmish only: the clip layer's
-    /// own `CommanderFeedback=` switch still decides whether clips exist at
-    /// all, and a network match is never held.
+    /// `[VERA] CustomEndGameMovie=`: let a destroyed computer commander's
+    /// losing clip finish before the card and the score page. The simulation
+    /// still publishes the result on its own frame; only the exit waits. Off
+    /// restores gamemd's immediate handoff, which cuts the clip. Presentation
+    /// only, and skirmish only: the clip layer's own `CommanderFeedback=`
+    /// switch still decides whether clips exist at all.
     pub(crate) custom_end_game_movie: bool,
     /// `[VERA] TranslateChat=`: the language received online chat is
     /// translated into, or `None`, the default, for off. Only the `/translate`
