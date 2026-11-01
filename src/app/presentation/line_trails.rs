@@ -80,16 +80,9 @@ impl LineTrails {
         self.segments.clear();
     }
 
-    /// Whether the next composite changes a trail without a sim frame: it
-    /// subtracts each trail's decrement from every slot (`0x00556B70`) and
-    /// retires a detached trail once its head has faded.
-    pub(crate) fn fading(&self) -> bool {
-        self.trails.iter().any(|trail| {
-            trail.owner.is_none()
-                || trail.samples.iter().any(|sample| {
-                    sample.strength.wrapping_sub(trail.decrement).max(0) != sample.strength
-                })
-        })
+    /// The last composite's segments, in world coordinates.
+    pub(crate) fn shown(&self) -> &[LineTrailSegment] {
+        &self.segments
     }
 
     /// Exactly one call per tactical composite, even when no sim frame passed.

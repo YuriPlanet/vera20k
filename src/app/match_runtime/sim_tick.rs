@@ -1144,6 +1144,12 @@ fn advance_in_game_runtime_mode(
             .platform
             .frame_pacer
             .record_admitted_frame(frame_start_ms);
+        // The early return still draws the tactical view (0x0055D84F).
+        state
+            .match_state
+            .match_presentation
+            .tactical_composite
+            .note_main_tick();
     }
     let mut decision = decide_runtime_pass(RuntimePassInputs {
         exact_step: matches!(mode, RuntimeAdvanceMode::ExactOneStep),
@@ -1192,6 +1198,13 @@ fn advance_in_game_runtime_mode(
         .scroll_input
         .then(|| crate::app::input::camera::poll_mouse_scroll(state));
     if decision.run_sim {
+        // One Main_Tick, one tactical composite (RenderFrame 0x0055D8F2),
+        // however many frames debug speed runs in this pass.
+        state
+            .match_state
+            .match_presentation
+            .tactical_composite
+            .note_main_tick();
         let tick_lane = decision.tick_lane;
         let resume = if resume_wait {
             FrameResume::NetworkWait

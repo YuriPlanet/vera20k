@@ -47,14 +47,20 @@ impl SuperweaponRangePulse {
         }
         self.phase
     }
+
+    /// The outer phase after `steps` composites; a draw between composites
+    /// shows the last one's.
+    fn advance_by(&mut self, steps: u32) -> i32 {
+        for _ in 0..steps {
+            self.advance();
+        }
+        self.phase
+    }
 }
 
 /// One draw's radial indicators.
 pub(crate) struct RadialIndicators {
     pub(crate) draws: Vec<RadialIndicatorDraw>,
-    /// The draw advanced the superweapon range pulse or read the clock for a
-    /// concentric ring, so the next draw differs without a game frame.
-    pub(crate) animated: bool,
 }
 
 pub(crate) fn build(
@@ -69,13 +75,10 @@ pub(crate) fn build(
     colors: &HouseColorMap,
     viewport: SurfaceLineViewport,
     time_ms: u64,
+    steps: u32,
 ) -> RadialIndicators {
-    let mut animated = false;
     let (Some(sim), Some(rules)) = (sim, rules) else {
-        return RadialIndicators {
-            draws: Vec::new(),
-            animated,
-        };
+        return RadialIndicators { draws: Vec::new() };
     };
     #[cfg(not(feature = "phobos"))]
     let _ = (armed_building, show_power_plant_enhancer_range);
@@ -135,9 +138,8 @@ pub(crate) fn build(
             draws.push(draw);
             continue;
         }
-        //4567EE uses the frame owner's one timeGetTime input (also used by
-        //radar). It never starts a simulation timer or advances a new clock.
-        animated = true;
+        //4567EE uses the last composite's timeGetTime (`time_ms`). It never
+        //starts a simulation timer or advances a new clock.
         let phase = ((time_ms as u32) >> 1) & 0x3ff;
         let mut outer = draw;
         outer.fade = false;
@@ -237,12 +239,11 @@ pub(crate) fn build(
         && let Some(super_weapon) = rules.super_weapon(section)
         && super_weapon.range > 0.0
     {
-        // Native outer pulse state advances once per active draw, before the
-        // line-multiplier branch; Range<=0 and no armed SW freeze it.
-        let outer_factor = superweapon_pulse.advance();
-        animated = true;
+        // Native outer pulse state advances once per active composite,
+        // before the line-multiplier branch; Range<=0 and no armed SW freeze it.
+        let outer_factor = superweapon_pulse.advance_by(steps);
         if !super_weapon.range.is_finite() {
-            return RadialIndicators { draws, animated };
+            return RadialIndicators { draws };
         }
         let position = cursor_cell.and_then(|(cell_x, cell_y)| {
             let center = || {
@@ -317,7 +318,7 @@ pub(crate) fn build(
                 if X::compare(final_index, X::load_i32(MAX_SUPERWEAPON_RINGS))
                     != crate::util::native_x87::X87Ordering::Less
                 {
-                    return RadialIndicators { draws, animated };
+                    return RadialIndicators { draws };
                 }
                 // Native stores outer phase/direction once, then advances only
                 // these local registers for each positive-LM ring.
@@ -357,7 +358,7 @@ pub(crate) fn build(
             }
         }
     }
-    RadialIndicators { draws, animated }
+    RadialIndicators { draws }
 }
 
 #[cfg(test)]

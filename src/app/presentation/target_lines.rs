@@ -142,11 +142,8 @@ pub(crate) fn build_target_line_instances(
         alpha_at,
         None,
     )
-    .0
 }
 
-/// Also returns whether a drawn line moves with `wall_ms`: a mind-control
-/// link (704E40) or a psychic detection line (4DC340).
 pub(crate) fn build_target_line_instances_sampled(
     line_state: &TargetLineState,
     planning_active: bool,
@@ -159,9 +156,9 @@ pub(crate) fn build_target_line_instances_sampled(
     mut after_entity: Option<&mut dyn FnMut(u64, &mut Vec<SpriteInstance>)>,
     alpha_at: &mut dyn FnMut([i32; 2]) -> u8,
     interpolation: Option<&super::interpolation::RenderInterpolation>,
-) -> (Vec<SpriteInstance>, bool) {
+) -> Vec<SpriteInstance> {
     let Some(sim) = sim else {
-        return (Vec::new(), false);
+        return Vec::new();
     };
     // Tactical6D4764..6D478E: a Techno the local player does not control
     // draws its psychic detection line before the planning gate. Skip the
@@ -179,7 +176,6 @@ pub(crate) fn build_target_line_instances_sampled(
             p.y as i32 - viewport.camera[1] + viewport.clip[1],
         ]
     };
-    let psychic_drawn = std::cell::Cell::new(false);
     let mut psychic_line_for = |entity: &GameEntity, instances: &mut Vec<SpriteInstance>| {
         let Some((rules, viewer, sites)) = psychic.as_ref() else {
             return;
@@ -206,7 +202,6 @@ pub(crate) fn build_target_line_instances_sampled(
         let owner = sim.interner().resolve(entity.owner());
         let color = house_colors.get(owner).copied().unwrap_or(NO_REMAP);
         let rgb = crate::render::palette_light::house_color_rgb(&rules.house_color_ramps, color);
-        psychic_drawn.set(true);
         emit_psychic_detection_line(
             project(line.start),
             project(line.end),
@@ -226,7 +221,7 @@ pub(crate) fn build_target_line_instances_sampled(
                 psychic_line_for(entity, &mut instances);
             }
         }
-        return (instances, psychic_drawn.get());
+        return instances;
     }
     let colors = line_state
         .is_selected_action_active(sim.session().binary_frame())
@@ -253,9 +248,8 @@ pub(crate) fn build_target_line_instances_sampled(
         })
         .unwrap_or_default();
     if colors.is_none() && control.is_empty() && after_entity.is_none() && psychic.is_none() {
-        return (Vec::new(), false);
+        return Vec::new();
     }
-    let links_drawn = !control.is_empty();
     let line_for = |entity: &GameEntity| {
         selected_action_line_for_entity(entity, sim, rules, cells.as_ref()).map(|line| {
             let line = sample_action_line(line, entity, sim, interpolation);
@@ -292,20 +286,17 @@ pub(crate) fn build_target_line_instances_sampled(
                 callback(entity.stable_id(), &mut instances);
             }
         }
-        return (instances, links_drawn || psychic_drawn.get());
+        return instances;
     }
     let Some(colors) = colors else {
-        return (Vec::new(), false);
+        return Vec::new();
     };
     let lines = sim
         .entities()
         .values()
         .filter_map(line_for)
         .collect::<Vec<_>>();
-    (
-        build_selected_action_line_instances(&lines, colors, viewport),
-        false,
-    )
+    build_selected_action_line_instances(&lines, colors, viewport)
 }
 
 fn sample_action_line(

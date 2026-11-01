@@ -22,8 +22,8 @@ fn coord(value: &Value) -> ProjectileCoord {
     ProjectileCoord::new(x, y, z)
 }
 
-#[test]
-fn concealment_keeps_bolt_phase_lifetime_and_main_draws() {
+/// The native `lifetime_same_frame` bolt, an in-view camera and a palette.
+fn lifetime_bolt() -> (ElectricBoltBirth, SurfaceLineViewport, ElectricBoltPalette) {
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/procedural_drawing_oracle/electric_bolt.json",
     ))
@@ -57,6 +57,59 @@ fn concealment_keeps_bolt_phase_lifetime_and_main_draws() {
         alternate: 0x001f,
         center: 0xffff,
     };
+    (birth, viewport, palette)
+}
+
+/// Manager4C2830 runs once per tactical composite, and Main_Tick composites
+/// once per tick: drawn three times a tick, a bolt still lives seventeen
+/// ticks. A draw between composites takes no Main draw and shows the last
+/// composite's lines under the moved camera.
+#[test]
+fn a_bolt_lives_seventeen_composite_ticks_however_often_it_is_drawn() {
+    use crate::app::presentation::tactical_composite::{CompositeCadence, TacticalComposite};
+    let (birth, mut viewport, palette) = lifetime_bolt();
+    let mut bolts = ElectricBolts::default();
+    bolts.create(birth);
+    let main = MainRng::new(1);
+    let mut composite = TacticalComposite::default();
+    let mut ticks = 0;
+    while !bolts.live.is_empty() {
+        composite.note_main_tick();
+        ticks += 1;
+        let mut first: Option<Vec<crate::render::surface_line::SurfaceLine>> = None;
+        for draw in 0..3 {
+            viewport.camera[0] += 1;
+            let before = main.native_state_hex();
+            for _ in 0..composite.begin_draw(CompositeCadence::PerMainTick, 0, false) {
+                bolts.composite(viewport, Some(palette), &mut main.draws(), |_| true);
+            }
+            let lines = bolts.shown(viewport.camera).to_vec();
+            if draw > 0 {
+                assert_eq!(main.native_state_hex(), before, "tick {ticks} draw {draw}");
+                let shifted: Vec<_> = first
+                    .iter()
+                    .flatten()
+                    .map(|line| {
+                        let mut line = *line;
+                        line.follow_camera(
+                            [viewport.camera[0] - draw, viewport.camera[1]],
+                            viewport.camera,
+                        );
+                        line
+                    })
+                    .collect();
+                assert_eq!(lines, shifted, "tick {ticks} draw {draw}");
+            } else {
+                first = Some(lines);
+            }
+        }
+    }
+    assert_eq!(ticks, 17);
+}
+
+#[test]
+fn concealment_keeps_bolt_phase_lifetime_and_main_draws() {
+    let (birth, viewport, palette) = lifetime_bolt();
     let mut shown = ElectricBolts::default();
     let mut hidden = ElectricBolts::default();
     shown.create(birth);

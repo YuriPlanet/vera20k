@@ -1202,12 +1202,28 @@ impl App {
                     tooltip_ms,
                     message_ms,
                 };
+                // Offline, Main_Tick draws the tactical view once per tick;
+                // online, ThrottleFrame also draws while it waits
+                // (`tactical_composite`). Captures and the actor observer
+                // record every draw's composite.
+                let cadence = if shell_capture.is_some()
+                    || tactical_capture.is_some()
+                    || state.match_state.live_network.is_some()
+                    || state
+                        .match_state
+                        .match_diagnostics
+                        .actor_presentation_observer_active()
+                {
+                    crate::app::presentation::tactical_composite::CompositeCadence::PerDraw
+                } else {
+                    crate::app::presentation::tactical_composite::CompositeCadence::PerMainTick
+                };
                 let game_output = if state.renderer.upscale_pass.is_some() {
                     // Render game to intermediate texture, then upscale to swapchain.
                     let up = state.renderer.upscale_pass.as_ref().unwrap();
                     let game_depth = up.depth_view().clone();
                     let saved_depth = std::mem::replace(&mut state.renderer.depth_view, game_depth);
-                    let result = render::render_game(state, &mut encoder, times);
+                    let result = render::render_game(state, &mut encoder, times, cadence);
                     state.renderer.depth_view = saved_depth;
                     let render_output = result?;
                     state.renderer.copy_game_frame_to(
@@ -1221,7 +1237,7 @@ impl App {
                         .draw(&mut encoder, &view);
                     render_output
                 } else {
-                    let render_output = render::render_game(state, &mut encoder, times)?;
+                    let render_output = render::render_game(state, &mut encoder, times, cadence)?;
                     state
                         .renderer
                         .copy_game_frame_to(&mut encoder, &output.texture);
@@ -1500,20 +1516,12 @@ impl App {
             } else {
                 [0, 0]
             });
-        // A draw that showed a self-moving effect leaves no still picture.
-        let still = if game_render_output
-            .as_ref()
-            .is_some_and(|output| output.motion)
-        {
-            None
-        } else {
-            crate::app::match_runtime::redraw_gate::still_frame(
-                state,
-                shell_capture.is_some() || tactical_capture.is_some(),
-                runtime_pass.screen_shake_offset,
-                picture_clock,
-            )
-        };
+        let still = crate::app::match_runtime::redraw_gate::still_frame(
+            state,
+            shell_capture.is_some() || tactical_capture.is_some(),
+            runtime_pass.screen_shake_offset,
+            picture_clock,
+        );
         state.platform.redraw_gate.record_presented(still);
         if let Some(readback) = pending_gate_audit {
             let pixels = readback.finish(
