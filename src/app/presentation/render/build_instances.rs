@@ -250,14 +250,6 @@ pub(super) fn build_world_instances(
     // The SHP builder therefore adds it to the same contiguous Ground parent
     // instead of leaking it into an atlas-level tie.
     instances::build_shp_instances(state, &mut planned_objects, &display_order);
-    // Prepare slot binding/light pieces without querying the shared FPS latch.
-    // Each Anim's retained Display encounter admits and appends its pieces.
-    let mut building_anim_instances = Vec::new();
-    instances::build_building_anim_instances(state, &mut building_anim_instances, &display_order);
-    let prepared_building_anims = building_anim_instances
-        .into_iter()
-        .map(|parent| (parent.parent.id, parent))
-        .collect();
     let mut particle_draws = state.diagnostic_presentation_ms().map(|_| Vec::new());
     let display_inputs = state.match_state.sim_runtime.as_ref().map(|runtime| {
         let presentation = &state.match_state.match_presentation;
@@ -289,6 +281,21 @@ pub(super) fn build_world_instances(
         }
     });
     if let Some(input) = display_inputs.as_ref() {
+        // Prepare slot binding/light pieces without querying the shared FPS
+        // latch. Each Anim's retained Display encounter admits and appends its
+        // pieces; preparation shares that encounter's view.
+        let mut building_anim_instances = Vec::new();
+        instances::build_building_anim_instances(
+            state,
+            input.camera,
+            input.projection_viewport(),
+            &mut building_anim_instances,
+            &display_order,
+        );
+        let prepared_building_anims = building_anim_instances
+            .into_iter()
+            .map(|parent| (parent.parent.id, parent))
+            .collect();
         particle_draws = instances::build_display_effect_instances(
             input,
             &mut planned_objects,
@@ -698,6 +705,7 @@ fn build_smudge_instances(state: &AppState, sw: f32, sh: f32) -> Vec<SpriteInsta
         resolved_terrain,
         state.match_state.match_presentation.lighting.grid(),
         &lookup,
+        atlas.art_extent(),
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
         sw,

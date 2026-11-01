@@ -184,6 +184,7 @@ fn emit(
         sim,
         local_owner,
         building,
+        &|anim| super::super::overlays::slot_anim_admissible(sim, anim, camera, [800.0, 600.0]),
         &|_| 0,
         crate::render::batch::DepthAxis::NONE.origin_y,
         crate::render::batch::DepthAxis::NONE.world_height,

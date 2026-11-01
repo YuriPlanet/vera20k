@@ -549,7 +549,7 @@ impl ResolvedTerrainGrid {
                 }
 
                 if level_override != -1 {
-                    self.cells[index].level = level_override as u8;
+                    self.set_cell_level(index, level_override as u8);
                 }
                 self.cells[index].height_in_pixels = retained_height_in_pixels;
 

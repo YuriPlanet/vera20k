@@ -655,6 +655,7 @@ impl SlotScene {
             sim,
             viewer_id,
             building,
+            &|_| true,
             anim_word,
             crate::render::batch::DepthAxis::NONE.origin_y,
             crate::render::batch::DepthAxis::NONE.world_height,

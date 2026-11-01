@@ -380,6 +380,8 @@ pub struct OverlayAtlas {
     pub texture: BatchTexture,
     /// Lookup: (name, frame) → UV rectangle + offset data.
     entries: HashMap<OverlaySpriteKey, OverlaySpriteEntry>,
+    /// Union of every entry's rectangle, fixed with `entries` at construction.
+    art_extent: crate::render::cell_window::ArtExtent,
     zshapes: Option<OverlayZShapes>,
 }
 
@@ -410,6 +412,12 @@ impl OverlayAtlas {
     /// Look up the atlas entry for a given (name, frame) pair.
     pub fn get(&self, key: &OverlaySpriteKey) -> Option<&OverlaySpriteEntry> {
         self.entries.get(key)
+    }
+
+    /// The union of every sprite's rectangle; bounds the cells whose art can
+    /// reach a view (`render::cell_window`).
+    pub fn art_extent(&self) -> crate::render::cell_window::ArtExtent {
+        self.art_extent
     }
 
     /// Terrain body frame `frame` and its second-half stencil from one SHP.
@@ -1226,6 +1234,7 @@ fn pack_overlay_sprites(
     );
     OverlayAtlas {
         texture,
+        art_extent: crate::render::cell_window::ArtExtent::of(entries.values()),
         entries,
         zshapes: None,
     }
@@ -1318,6 +1327,7 @@ impl OverlayAtlas {
         Self {
             texture,
             entries: HashMap::new(),
+            art_extent: Default::default(),
             zshapes: None,
         }
     }
