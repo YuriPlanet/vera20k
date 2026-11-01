@@ -238,7 +238,21 @@ pub(super) fn dispatch_draw_passes(
         .as_ref()
         .map_or(&state.renderer.depth_view, |zoom| zoom.depth_view())
         .clone();
-    let mut pass = begin_main_pass(encoder, view, &world_depth);
+    // Water refraction is its own screen-space pass so it only moves terrain
+    // pixels: the terrain layer renders into an offscreen target, that pass
+    // warps it into the composition target, and every later object draw lands
+    // untouched on top. Screen-space sampling keeps the displacement continuous
+    // across tile borders and cannot expose the diamonds' transparent corners.
+    // Read the live `[PostProcess]` overrides (not the match's startup snapshot)
+    // so INI edits move the water without a restart.
+    let water_ripple = state.post_process_rules().water_ripple;
+    let water_amplitude = water_ripple.map_or(0.0, |ripple| ripple.amplitude);
+    let terrain_target = state
+        .renderer
+        .terrain_warp
+        .as_ref()
+        .map_or(view, |warp| warp.colour_view());
+    let mut pass = begin_main_pass(encoder, terrain_target, &world_depth);
 
     // Everything from here to the screen-fixed chrome block is battlefield: it
     // belongs to the tactical viewport and must not be able to paint a pixel
@@ -280,6 +294,28 @@ pub(super) fn dispatch_draw_passes(
         state.match_state.match_presentation.overlay_atlas.as_ref(),
         "smudge",
     );
+
+    // Close the terrain layer and refract it into the composition target, then
+    // resume the object pass on the composition attachments.
+    drop(pass);
+    if let Some(warp) = state.renderer.terrain_warp.as_ref() {
+        let field = state
+            .renderer
+            .water_distortion
+            .as_ref()
+            .map(|field| field.view());
+        warp.draw(
+            &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
+            encoder,
+            view,
+            field,
+            water_amplitude,
+            warp.size(),
+        );
+    }
+    pass = begin_main_load_pass(encoder, view, &world_depth);
+    pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
 
     // --- Step 2: The cell body sweep (SHP depth read + write) ---
     // High bridges, walls and ordinary overlays are 0x4E00 CC_Draw_Shape

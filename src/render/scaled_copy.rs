@@ -43,7 +43,9 @@ impl ScaledSurface {
         let (depth_texture, depth_view) = create_depth_target(device, label, size);
         let params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some(label),
-            size: 16, // vec2f origin + f32 scale + f32 sharp flag
+            // vec2f origin + f32 scale + f32 sharp, then the f32 EASU flag and
+            // three padding lanes (32 bytes keeps std140 alignment simple).
+            size: 32,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -91,6 +93,17 @@ impl ScaledSurface {
             &self.params_buffer,
             0,
             bytemuck::cast_slice(&[origin.0, origin.1, scale, if sharp { 1.0f32 } else { 0.0 }]),
+        );
+    }
+
+    /// Run the FSR1 EASU reconstruction instead of the bicubic on upscale.
+    /// Kept apart from [`Self::place`] so surfaces that never upscale keep the
+    /// same 16-byte write.
+    pub(crate) fn set_fsr(&self, queue: &wgpu::Queue, fsr: bool) {
+        queue.write_buffer(
+            &self.params_buffer,
+            16,
+            bytemuck::cast_slice(&[if fsr { 1.0f32 } else { 0.0 }, 0.0, 0.0, 0.0]),
         );
     }
 

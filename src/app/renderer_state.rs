@@ -53,6 +53,31 @@ pub(crate) struct RendererState {
     /// Previous presented pre-cursor composition, retained for input-time
     /// screenshot parity.
     pub(crate) retail_screenshot_frame_cache: crate::render::screenshot::PresentedFrameCache,
+    /// Full-frame post-processing at the presentation boundary. `None` keeps
+    /// the 1:1 texture copy (`present_game_frame`), which is the retail path.
+    pub(crate) post_chain: Option<crate::render::post_process::PostChain>,
+    /// Water mask the post chain samples for displacement. Created and dropped
+    /// together with `post_chain`.
+    pub(crate) water_mask: Option<crate::render::water_mask::WaterMask>,
+    /// Water distortion field generated from that mask. The terrain warp pass
+    /// samples it to refract water in screen space.
+    pub(crate) water_distortion:
+        Option<crate::render::water_distortion::WaterDistortion>,
+    /// Terrain-only refraction target: the terrain pass renders here, then
+    /// `terrain_warp` warps it into the composition target before objects.
+    pub(crate) terrain_warp: Option<crate::render::terrain_warp::TerrainWarp>,
+    /// Live `[PostProcess]` overrides, re-read from the player's VERARULES.INI
+    /// when its timestamp changes. `None` keeps the match's own rules.
+    pub(crate) post_rules: Option<crate::rules::post_process::PostProcessRules>,
+    /// The `.cube` tables the live rules name, loaded with those rules.
+    /// MultiLUT stacks up to three; unused slots stay empty.
+    pub(crate) post_luts: [Option<crate::render::post_process::PostLut>; 3],
+    /// The `MultiLUT` atlas sheet the live rules name (or the built-in one).
+    pub(crate) post_atlas: Option<crate::render::post_process::PostAtlas>,
+    /// Timestamp of the VERARULES.INI last parsed into `post_rules`.
+    pub(crate) post_rules_stamp: Option<std::time::SystemTime>,
+    /// F9's read-only POST FX panel: the live effect set and its values.
+    pub(crate) post_panel_visible: bool,
 }
 
 impl RendererState {
@@ -62,6 +87,55 @@ impl RendererState {
             || self.combat_light_renderer.composition_texture(),
             |zoom| zoom.color_texture(),
         )
+    }
+
+    /// Hand the composed match frame to `destination`.
+    ///
+    /// The retail path is the 1:1 texture copy. With a post chain configured
+    /// the same frame goes through its passes instead; the copy remains the
+    /// fallback, so a build with no effects configured keeps the exact
+    /// behaviour and cost it had before the hook existed.
+    pub(crate) fn present_game_frame(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Texture,
+    ) {
+        let (source_view, destination_view, size, format) = {
+            let source = self.game_frame_texture();
+            debug_assert_eq!(destination.size(), source.size());
+            let size = source.size();
+            (
+                source.create_view(&wgpu::TextureViewDescriptor::default()),
+                destination.create_view(&wgpu::TextureViewDescriptor::default()),
+                (size.width, size.height),
+                source.format(),
+            )
+        };
+        // The depth-driven arms read the battlefield Z, which may be smaller
+        // than the presented frame (wheel zoom / reduced render scale).
+        let depth = self
+            .world_zoom_pass
+            .as_ref()
+            .map_or_else(|| self.depth_view.clone(), |zoom| zoom.depth_view().clone());
+        let Some(chain) = self.post_chain.as_mut() else {
+            self.copy_game_frame_to(encoder, destination);
+            return;
+        };
+        let Some(mask) = self.water_mask.as_ref() else {
+            self.copy_game_frame_to(encoder, destination);
+            return;
+        };
+        debug_assert_eq!(chain.format(), format);
+        chain.draw_with_depth(
+            &self.gpu.device,
+            &self.gpu.queue,
+            encoder,
+            &source_view,
+            mask.view(),
+            Some(&depth),
+            &destination_view,
+            size,
+        );
     }
 
     pub(crate) fn copy_game_frame_to(

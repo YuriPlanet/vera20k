@@ -211,29 +211,43 @@ pub(crate) fn render_game(
     let vsw = sw / z;
     let vsh = sh / z;
 
+    // `SuperResolution.RenderScale` renders the battlefield at a fraction of
+    // the frame and reconstructs it when compositing, so only the world carries
+    // the lower resolution. UI keeps its own pixels. Captures stay native.
+    let render_scale = state.battlefield_render_scale();
+
     // Wheel zoom is a presentation copy of the fully resolved world. Keep all
     // native source/depth/packed operations on the same one-texel lattice;
     // filtering each sprite (or its palette indices) loses edges and details.
-    if z == 1.0 {
+    let world_scale = z / render_scale;
+    // `SuperResolution.Fsr`: the reduced world layer is reconstructed by the
+    // FSR1 EASU pass instead of the plain bicubic.
+    let fsr = state
+        .post_process_rules()
+        .super_resolution
+        .is_some_and(|super_resolution| super_resolution.fsr);
+    if world_scale == 1.0 {
         state.renderer.world_zoom_pass = None;
     } else {
         let renderer = &mut state.renderer;
         let gpu = &renderer.gpu;
         let target = [sw as u32, sh as u32];
         if let Some(pass) = renderer.world_zoom_pass.as_mut() {
-            pass.set_view(&gpu.device, &gpu.queue, target, z);
+            pass.set_view(&gpu.device, &gpu.queue, target, world_scale, fsr);
         } else {
             renderer.world_zoom_pass = Some(crate::render::upscale_pass::WorldZoomPass::new(
                 &gpu.device,
                 &gpu.queue,
                 gpu.surface_format,
                 target,
-                z,
+                world_scale,
+                fsr,
             ));
         }
         renderer.batch_renderer.set_native_world_resolution(
             &gpu.queue,
             renderer.world_zoom_pass.as_ref().unwrap().source_size(),
+            render_scale,
         );
     }
     let world_camera = state.renderer.batch_renderer.camera_uniform();
@@ -278,6 +292,61 @@ pub(crate) fn render_game(
     #[cfg(feature = "telemetry-dashboard")]
     let phase1_started = render_started.map(|_| Instant::now());
     let mut world = build_instances::build_world_instances(state, vsw, vsh, bracket_palette);
+    // Water mask for `[PostProcess] WaterRipple`: the same visible-cell sweep
+    // that built the terrain instances also collected the water diamonds.
+    if let Some(mask) = state.renderer.water_mask.as_mut() {
+        // The diamonds are world-space offsets; a reduced render scale draws
+        // them at `render_scale` battlefield texels per world pixel.
+        if render_scale != 1.0 {
+            let quads: Vec<[f32; 4]> = world
+                .terrain
+                .water
+                .iter()
+                .map(|quad| {
+                    [
+                        quad[0] * render_scale,
+                        quad[1] * render_scale,
+                        quad[2] * render_scale,
+                        quad[3] * render_scale,
+                    ]
+                })
+                .collect();
+            mask.draw(&state.renderer.gpu.queue, encoder, &quads);
+        } else {
+            mask.draw(
+                &state.renderer.gpu.queue,
+                encoder,
+                &world.terrain.water,
+            );
+        }
+    }
+    // The terrain pass samples this field from its own shader, so it must be
+    // ready before the world draws. Only revealed water is in the mask; fog
+    // stays neutral and therefore never moves.
+    let water_ripple = state.post_process_rules().water_ripple;
+    if let (Some(field), Some(mask), Some(ripple)) = (
+        state.renderer.water_distortion.as_mut(),
+        state.renderer.water_mask.as_ref(),
+        water_ripple,
+    ) {
+        let step = ripple.anim_interval_ms.max(0.0) as u64;
+        let time_ms = if step > 0 {
+            (times.radar_ms / step) * step
+        } else {
+            times.radar_ms
+        };
+        field.generate(
+            &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
+            encoder,
+            mask.view(),
+            crate::render::water_distortion::DistortionParams::new(
+                ripple.wavelength,
+                ripple.speed,
+                time_ms as f32 / 1000.0,
+            ),
+        );
+    }
     for layer in &mut world.object_layers {
         object_extras::defer_health_to_frame(layer, world_camera.camera_pos, z);
     }

@@ -93,6 +93,111 @@ impl AppState {
         self.render_dimensions().1
     }
 
+    /// The live presentation rules: the player's edited `[PostProcess]` when
+    /// VERARULES.INI was (re)read, else the match's own resolved rules.
+    pub(crate) fn post_process_rules(&self) -> crate::rules::post_process::PostProcessRules {
+        self.renderer
+            .post_rules
+            .clone()
+            .or_else(|| self.rules().map(|rules| rules.post_process.clone()))
+            .unwrap_or_default()
+    }
+
+    /// Re-read the player's `[PostProcess]` overrides when VERARULES.INI's
+    /// timestamp changed, so FX edits apply without restarting the game.
+    /// The `.cube` table the new rules name is reloaded with them.
+    pub(crate) fn refresh_post_process_rules(&mut self) {
+        let Some(path) = crate::app::persistence::rules_profile::watched_path() else {
+            return;
+        };
+        let Ok(stamp) = std::fs::metadata(&path).and_then(|meta| meta.modified()) else {
+            return;
+        };
+        if self.renderer.post_rules_stamp == Some(stamp) {
+            return;
+        }
+        let Ok(bytes) = std::fs::read(&path) else {
+            return;
+        };
+        let Ok(text) = std::str::from_utf8(&bytes) else {
+            return;
+        };
+        let ini = crate::rules::ini_parser::IniFile::from_str(text);
+        self.renderer.post_rules_stamp = Some(stamp);
+        // Editing the section away hands the frame back to the match's own
+        // rules instead of forcing the player's all-off defaults onto it.
+        if ini.section("PostProcess").is_none() {
+            self.renderer.post_rules = None;
+            self.renderer.post_luts = [None, None, None];
+            self.renderer.post_atlas = None;
+            log::info!("[PostProcess] live edits cleared from {}", path.display());
+            return;
+        }
+        let rules = crate::rules::post_process::PostProcessRules::from_ini(&ini);
+        let mut luts: [Option<crate::render::post_process::PostLut>; 3] = [None, None, None];
+        if let Some(lut) = rules.lut.as_ref() {
+            let tables = [
+                (&lut.file, lut.strength),
+                (&lut.file2, lut.strength2),
+                (&lut.file3, lut.strength3),
+            ];
+            for (slot, (file, strength)) in luts.iter_mut().zip(tables) {
+                if file.is_empty() || strength <= 0.0 {
+                    continue;
+                }
+                let Some(directory) = path.parent() else {
+                    break;
+                };
+                let Ok(table) = std::fs::read_to_string(directory.join(file)) else {
+                    continue;
+                };
+                *slot = crate::render::post_process::PostLut::from_cube(
+                    &self.renderer.gpu.device,
+                    &self.renderer.gpu.queue,
+                    &table,
+                );
+            }
+        }
+        self.renderer.post_luts = luts;
+        // The `MultiLUT` sheet: an empty path loads the one the renderer ships,
+        // otherwise the PNG beside VERARULES.INI is decoded.
+        let atlas = rules.lut_atlas.as_ref().and_then(|atlas| {
+            if atlas.file.is_empty() {
+                crate::render::post_process::PostAtlas::builtin(
+                    &self.renderer.gpu.device,
+                    &self.renderer.gpu.queue,
+                )
+            } else {
+                let bytes = std::fs::read(path.parent()?.join(&atlas.file)).ok()?;
+                crate::render::post_process::PostAtlas::from_png(
+                    &self.renderer.gpu.device,
+                    &self.renderer.gpu.queue,
+                    &bytes,
+                )
+            }
+        });
+        self.renderer.post_atlas = atlas;
+        self.renderer.post_rules = Some(rules);
+        log::info!(
+            "[PostProcess] applied live edits from {}",
+            path.display()
+        );
+    }
+
+    /// `[PostProcess] SuperResolution.RenderScale`: the battlefield's render
+    /// resolution as a fraction of the frame. 1 is native; captures stay
+    /// native so their pixels keep their retail meaning.
+    pub(crate) fn battlefield_render_scale(&self) -> f32 {
+        if self.platform.capture_client_size.is_some() {
+            return 1.0;
+        }
+        self.post_process_rules()
+            .super_resolution
+            .map_or(1.0, |super_resolution| {
+                super_resolution.render_scale.clamp(0.5, 1.0)
+            })
+    }
+
     /// The sidebar's place and size in the match frame (`ui::sidebar::frame`).
     pub(crate) fn sidebar_frame(&self) -> crate::ui::sidebar::SidebarFrame {
         self.sidebar_frame_for(self.render_width(), self.render_height())

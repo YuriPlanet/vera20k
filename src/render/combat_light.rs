@@ -1,4 +1,4 @@
-//! Native transient tactical combat-light presentation.
+﻿//! Native transient tactical combat-light presentation.
 //!
 //! gamemd does not create an animation, particle, or map light for an
 //! IronCurtain/ForceShield impact. It appends a small record to a dedicated

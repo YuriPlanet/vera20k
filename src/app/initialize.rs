@@ -333,6 +333,9 @@ impl App {
                             .map_err(|error| {
                                 anyhow::Error::new(error).context("Could not prepare VERA.INI")
                             })?;
+                        crate::app::persistence::rules_profile::remember_settings_dir(
+                            config.paths.settings_dir(),
+                        );
                         let bytes = crate::app::persistence::rules_profile::load_or_create(
                             config.paths.settings_dir(),
                         )
@@ -1227,6 +1230,15 @@ impl App {
                 outcome_banner_art,
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),
+                post_chain: None,
+                water_mask: None,
+                water_distortion: None,
+                terrain_warp: None,
+                post_rules: None,
+                post_luts: [None, None, None],
+                post_atlas: None,
+                post_rules_stamp: None,
+                post_panel_visible: false,
             },
             process_assets,
             audio: startup_audio_runtime,

@@ -1,4 +1,4 @@
-//! Headless checks of the production Batch upload, TerrainDrawRenderer snapshot,
+﻿//! Headless checks of the production Batch upload, TerrainDrawRenderer snapshot,
 //! piece edit, and shared camera/instance ABI. Synthetic native leaf goldens are
 //! produced by tools/terrain_draw_oracle/leaf.py, not by the Rust implementation.
 

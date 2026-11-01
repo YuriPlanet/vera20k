@@ -1,4 +1,4 @@
-//! Sprite batch renderer — draws many textured quads per frame using GPU instancing.
+﻿//! Sprite batch renderer — draws many textured quads per frame using GPU instancing.
 //!
 //! One draw call renders hundreds of sprites, each with its own screen position,
 //! size, and UV coordinates. Essential for terrain tiles (hundreds per viewport).
@@ -146,6 +146,8 @@ pub struct CameraUniform {
     /// Tactical viewport origin in unscaled native row units. Dirty-clip
     /// rebasing cancels the dirty origin (005F4CD9..CED /00437C49..5C).
     pub native_z_origin_y: f32,
+    /// Legacy scratch lane; the water displacement lives in the terrain warp
+    /// pass now.
     pub _native_z_pad: f32,
 }
 
@@ -1559,10 +1561,19 @@ impl BatchRenderer {
     /// Render the world at native texel resolution while UI keeps frame pixels.
     /// These are distinct GPU buffers; no camera is rewritten between encoded
     /// passes, since queue writes would otherwise affect every draw this frame.
-    pub(crate) fn set_native_world_resolution(&self, queue: &wgpu::Queue, size: [u32; 2]) {
+    ///
+    /// `zoom` is the world scale the smaller target is drawn at: 1 draws one
+    /// world pixel per texel, and a lower value (the `[PostProcess]`
+    /// `SuperResolution.RenderScale`) draws the same view with fewer texels.
+    pub(crate) fn set_native_world_resolution(
+        &self,
+        queue: &wgpu::Queue,
+        size: [u32; 2],
+        zoom: f32,
+    ) {
         let mut uploaded = self.uploaded_camera.write().expect("camera owner lock");
         uploaded.world.screen_size = size.map(|v| v as f32);
-        uploaded.world.zoom = 1.0;
+        uploaded.world.zoom = zoom;
         queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uploaded.world));
     }
 

@@ -1339,6 +1339,22 @@ impl ApplicationHandler for App {
                         return;
                     }
 
+                    // Enter starts the setup the same way the Start Game button
+                    // does; validation (including the solo-skirmish option) is
+                    // shared, and the modals above have already consumed it.
+                    if screen == ScreenPage::Skirmish
+                        && event.state.is_pressed()
+                        && !event.repeat
+                        && matches!(code, KeyCode::Enter | KeyCode::NumpadEnter)
+                    {
+                        Self::handle_skirmish_shell_action(
+                            state,
+                            crate::ui::skirmish_shell::SkirmishShellAction::StartGame,
+                        );
+                        state.platform.window.request_redraw();
+                        return;
+                    }
+
                     if screen == ScreenPage::Wol {
                         Self::handle_wol_key(
                             state,

@@ -28,12 +28,13 @@ pub(crate) struct WorldZoomPass {
     world_depth: wgpu::TextureView,
     source_size: [u32; 2],
     scale: f32,
+    fsr: bool,
 }
 
 /// The world target for `target` at `scale`: `ceil(target / scale)`, clamped
 /// to the device's 2D texture limit (the minimum-zoom clamp on a very wide
 /// window can otherwise round one texel past it).
-fn world_source_size(device: &wgpu::Device, target: [u32; 2], scale: f32) -> [u32; 2] {
+pub(crate) fn world_source_size(device: &wgpu::Device, target: [u32; 2], scale: f32) -> [u32; 2] {
     let max = device.limits().max_texture_dimension_2d;
     target.map(|v| ((v as f32 / scale).ceil().max(1.0) as u32).min(max))
 }
@@ -45,6 +46,7 @@ impl WorldZoomPass {
         format: wgpu::TextureFormat,
         target: [u32; 2],
         scale: f32,
+        fsr: bool,
     ) -> Self {
         let source_size = world_source_size(device, target, scale);
         let (_, world_depth) =
@@ -57,11 +59,13 @@ impl WorldZoomPass {
             Some(wgpu::TextureFormat::Depth32Float),
         );
         surface.place(queue, (0.0, 0.0), scale, scale.fract() == 0.0);
+        surface.set_fsr(queue, fsr);
         Self {
             surface,
             world_depth,
             source_size,
             scale,
+            fsr,
         }
     }
 
@@ -71,9 +75,11 @@ impl WorldZoomPass {
         queue: &wgpu::Queue,
         target: [u32; 2],
         scale: f32,
+        fsr: bool,
     ) {
         let source_size = world_source_size(device, target, scale);
-        if source_size != self.source_size {
+        let resized = source_size != self.source_size;
+        if resized {
             let (_, depth) =
                 create_depth_target(device, "Wheel zoom world", (source_size[0], source_size[1]));
             self.world_depth = depth;
@@ -81,9 +87,12 @@ impl WorldZoomPass {
         }
         self.surface.resize(device, (target[0], target[1]));
         if scale != self.scale {
-            self.surface
-                .place(queue, (0.0, 0.0), scale, scale.fract() == 0.0);
+            self.surface.place(queue, (0.0, 0.0), scale, scale.fract() == 0.0);
             self.scale = scale;
+        }
+        if fsr != self.fsr {
+            self.surface.set_fsr(queue, fsr);
+            self.fsr = fsr;
         }
     }
 

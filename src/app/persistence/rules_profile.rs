@@ -7,6 +7,21 @@ use crate::util::case_insensitive_path::find;
 
 pub(crate) const FILENAME: &str = "VERARULES.INI";
 
+/// The writable profile root the running game loaded its rules from, so the
+/// presentation can watch the same file for live edits.
+static SETTINGS_DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+pub(crate) fn remember_settings_dir(directory: &Path) {
+    let _ = SETTINGS_DIR.set(directory.to_path_buf());
+}
+
+/// The player's `VERARULES.INI`, joined even when it does not exist yet.
+pub(crate) fn watched_path() -> Option<std::path::PathBuf> {
+    SETTINGS_DIR
+        .get()
+        .map(|directory| find(directory, FILENAME).unwrap_or_else(|| directory.join(FILENAME)))
+}
+
 const STARTER: &[u8] = b"; Personal gameplay changes. Original game files are never changed.
 ; Restart VERA and start a new game after editing this file.
 ; Remove the leading ; from a section and its settings to enable them.

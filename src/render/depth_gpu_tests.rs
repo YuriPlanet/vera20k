@@ -1,4 +1,4 @@
-//! Offscreen regression coverage for the actual tactical depth shaders.
+﻿//! Offscreen regression coverage for the actual tactical depth shaders.
 //!
 //! These tests upload production `SpriteInstance`/`CameraUniform` data and
 //! execute the checked-in WGSL. They do not replace shader math with a CPU
@@ -939,6 +939,7 @@ fn stock_cliff_decoder_and_terrain_instances_occlude_shp_and_indexed_voxels() {
         60.0,
         60.0,
         Some(&lookup),
+        None,
         None,
     )
     .normal;

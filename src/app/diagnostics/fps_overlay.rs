@@ -1,4 +1,4 @@
-//! Final-window FPS readout, hidden at every launch until Ctrl+Alt+F or the
+﻿//! Final-window FPS readout, hidden at every launch until Ctrl+Alt+F or the
 //! Options page's FPS Counter box shows it.
 //! Independent of tactical cameras, optional dev overlays, retail fonts, and
 //! shell/offscreen composition.
@@ -100,6 +100,20 @@ impl FpsOverlay {
             8.0,
             "window_fps",
         );
+    }
+
+    /// The F9 POST FX panel: a read-only text block in the same window font,
+    /// independent of the FPS readout's own visibility.
+    pub(crate) fn encode_panel(
+        &self,
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Texture,
+        text: &str,
+    ) {
+        let mut frame = self.frame.lock().expect("post panel frame lock");
+        self.encode_text(gpu, batch, encoder, destination, &mut frame, text, 8.0, "post_fx");
     }
 
     /// Persistent replay/recovery facts share the final-window font/camera.
