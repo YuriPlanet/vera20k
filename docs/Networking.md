@@ -139,7 +139,7 @@ caught up; local orders given until then are dropped, and effects and voices sta
 silent. The relay refuses a different world as an agreement mismatch. Abort Mission
 during this replay leaves as it does while Reconnecting.
 
-Authored Battle matches record reconstructible JSON replays in `replays/`.
+Authored matches, Cooperative aside, record reconstructible JSON replays in `replays/`.
 `vera20k --replay <replay.json> --ra2-dir <retail-directory>` opens read-only
 playback with camera controls and Escape to close.
 `vera20k --replay-verify <replay.json> --ra2-dir <retail-directory>` reconstructs the
