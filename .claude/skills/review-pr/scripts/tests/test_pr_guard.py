@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
@@ -75,6 +76,19 @@ class PrGuardTest(unittest.TestCase):
         self.assertEqual(pr_guard.maintainer_only_findings(paths, 'hrusten', {'hrusten', 'bot'}, 'hrusten'),
                          ['src/AGENTS.md changed by bot'])
         self.assertEqual(pr_guard.maintainer_only_findings(['src/lib.rs'], 'other', {'other'}, 'hrusten'), [])
+
+    def test_sim_scale_files_lists_touched_rust_files_marked_on_the_base(self):
+        files = {'src/sim/batch.rs': '//! Proposed Sim-scale deviation from native order.\n',
+                 'src/sim/plain.rs': '//! Native order.\n', 'AGENTS.md': 'Keep each sim-scale deviation.\n'}
+        with tempfile.TemporaryDirectory() as tmp:
+            for path, text in files.items():
+                Path(tmp, path).parent.mkdir(parents=True, exist_ok=True)
+                Path(tmp, path).write_text(text, encoding='utf-8')
+            for args in (['init', '-q'], ['add', '.'], ['-c', 'user.name=t', '-c', 'user.email=t@t',
+                                                        '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'base']):
+                subprocess.run(['git', '-C', tmp, *args], check=True, capture_output=True)
+            self.assertEqual(pr_guard.sim_scale_files(sorted(files), 'HEAD', cwd=tmp), ['src/sim/batch.rs'])
+            self.assertIn('could not search', pr_guard.sim_scale_files(sorted(files), 'origin/none', cwd=tmp)[0])
 
     def test_protected_paths(self):
         for path in ('AGENTS.md', 'docs/CLAUDE.md', '.claude/settings.json', '.github/workflows/ci.yml',

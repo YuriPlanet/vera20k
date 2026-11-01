@@ -13,9 +13,9 @@ oracles, scripts) until steps 1 and 2 are clean.
 
 1. **Guard.** From a checkout, run
    `python <this skill>/scripts/pr_guard.py <number>`. It reads the PR through `gh`
-   and lists protected paths, risky added lines, dependency changes, binaries,
-   hidden Unicode, branding and identity lines, and `AGENTS.md` commits on `main`
-   not made by the maintainer.
+   and lists protected paths, touched sim-scale deviations, risky added lines,
+   dependency changes, binaries, hidden Unicode, branding and identity lines, and
+   `AGENTS.md` commits on `main` not made by the maintainer.
    - **Watch list.** The guard also reads a private list, `.git/info/pr-watchlist`
      in the main checkout: one case-insensitive name, domain or Git identity per
      line, `#` for comments. Exit code 3 means the PR's text, commits, paths or
@@ -74,6 +74,12 @@ oracles, scripts) until steps 1 and 2 are clean.
      Rust output.
    - Search for the address and native name: the PR must not add a second port,
      a wrapper or a competing owner.
+   - Code marked as a sim-scale deviation differs from gamemd on purpose, for
+     speed at 20,000 units, and AGENTS.md keeps it. The guard lists touched files
+     that hold one; PRs seldom say they undo one. Hold a PR that moves one back
+     toward native order or timing and tell the user, unless it includes a
+     `--release` sim-bench run at 20,000 units and 30 houses showing frames are
+     no slower.
 
    Report each claim as native-established, Rust-tested or unverified, with the
    addresses you read.

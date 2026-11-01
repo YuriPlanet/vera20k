@@ -13,7 +13,7 @@
 //! world as it stands, up to a cap (below), and the Foot's request then runs
 //! its Find_Path with the answer.
 //!
-//! Proposed sim-scale deviation from native order (update order and
+//! Sim-scale deviation from native order (update order and
 //! same-frame effects), pending side-by-side play: a Foot's path search runs
 //! a frame later (more under the cap below), from the world at the start of
 //! the pass rather than at its own turn, so a Foot starts along a new route
@@ -64,7 +64,7 @@
 //! (`BuildingClass::UpdateBunker` 0x458E50 at 0x45920B), would never raise
 //! its walls (#2448).
 //!
-//! A second proposed sim-scale deviation (update order), pending side-by-side
+//! A second sim-scale deviation (update order), pending side-by-side
 //! play, caps the work: a pass answers at most [`SEARCHES_PER_PASS`]
 //! registrations besides its urgency-2 re-paths (below), taking them in
 //! ascending Foot id from where the last capped pass stopped and wrapping
@@ -78,7 +78,7 @@
 //! start their routes in bands of ascending id; and the cap is shared, so
 //! one House's mass order delays every House's requests.
 //!
-//! A third proposed sim-scale deviation (update order), pending side-by-side
+//! A third sim-scale deviation (update order), pending side-by-side
 //! play, bounds the urgency-2 re-paths' work. They take their own turn: a
 //! pass takes at most [`SEARCHES_PER_PASS`] of them, first those the last
 //! pass left out and then the rest, each in ascending Foot id; it starts
@@ -131,9 +131,9 @@
 //! terrain object's multi-cell foundation test sees the Foot still in its
 //! cell when the foundation covers it.
 
+use crate::util::time::{Duration, Instant};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use crate::util::time::{Duration, Instant};
 
 use super::foot_path::MoverLift;
 use super::movement_path::MovePathFailure;

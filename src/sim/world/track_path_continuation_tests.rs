@@ -723,7 +723,7 @@ fn a_teleporter_its_redirect_stops_waits_behind_a_moving_tank_without_a_destinat
 
 /// With batched path searches (on in matches and sim-bench), the miner's
 /// no-queue request waits a frame, and then its ladder waits for the next
-/// batch as any code-2 re-path does (`path_batch`, a proposed deviation).
+/// batch as any code-2 re-path does (`path_batch`, a sim-scale deviation).
 /// That request reads the null coordinate and gets no answer, and the next
 /// Process_Movement returns on the null destination: no NULL destination is
 /// set, so the redirect's NavCom stays for the queued Enter.
