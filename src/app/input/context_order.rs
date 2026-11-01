@@ -522,6 +522,12 @@ pub(super) fn base_action(
     let Some(actor) = sim.entities().get(actor_id) else {
         return AttackAction::None;
     };
+    // gamemd.exe TechnoClass::What_Action_OnCell @0x00700600 (700609)
+    // and What_Action_OnObject @0x006FFEC0 (6FFEC9) refuse berserk before
+    // modifier and weapon checks. The class wrappers own action 0's fallback.
+    if actor.berserk.is_active() {
+        return AttackAction::None;
+    }
     let Some(kind) = sim.interner().object_type(actor.type_ref(), rules) else {
         return AttackAction::None;
     };

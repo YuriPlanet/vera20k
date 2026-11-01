@@ -36,6 +36,109 @@ fn reveal_rows(sim: &mut Simulation, owner: crate::sim::intern::InternedId, rows
     );
 }
 
+/// Techno700609 rejects berserk before Ctrl's Attack rung; Infantry51FADD
+/// then answers NoMove. Real ChaosAttack exposure retains the prior selection.
+#[test]
+fn selected_retail_gassed_infantry_ctrl_ground_shows_no_move() {
+    use crate::sim::command::Command;
+    use crate::sim::world::{FrameEffects, TickLane};
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let mut rules = retail.rules;
+    let roots = crate::rules::effect_asset_catalog::anim_class_roots(&rules);
+    rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
+    let mut sim = arena(&rules);
+    sim.session_mut_for_test()
+        .game_options_mut_for_test()
+        .short_game = false;
+    let enemy = sim.intern("YuriCountry");
+    sim.houses_mut_for_test()
+        .register(HouseState::new(enemy, 2, None, true, 0, 10));
+    sim.resolve_rule_animation_lists(&rules);
+    let gi = sim
+        .spawn_object("E1", "Americans", 12, 10, 0, &rules)
+        .unwrap();
+    let drone = sim
+        .spawn_object("CAOS", "YuriCountry", 10, 10, 0, &rules)
+        .unwrap();
+    sim.fog_mut_for_test().reveal_all_for_owner(enemy);
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::Select {
+            entity_ids: vec![gi],
+            additive: false,
+        },
+        Some(&rules)
+    ));
+    assert!(sim.apply_command(
+        "YuriCountry",
+        &Command::Attack {
+            attacker_id: drone,
+            target_id: gi,
+        },
+        Some(&rules)
+    ));
+    let mut fired = false;
+    for _ in 0..160 {
+        let output = sim
+            .advance_app_frame(
+                &[],
+                &rules,
+                None,
+                33,
+                TickLane::Ordinary,
+                FrameEffects::default(),
+            )
+            .expect("ordinary Chaos gas frame");
+        fired |= output.fire_events.iter().any(|shot| {
+            shot.attacker_id == drone && sim.interner().resolve(shot.weapon_id) == "ChaosAttack"
+        });
+        if sim.entities().get(gi).unwrap().berserk.is_active() {
+            break;
+        }
+    }
+    assert!(fired && sim.entities().get(gi).unwrap().berserk.is_active());
+    let selected = crate::app::input::dispatch::selected_stable_ids_in_order(
+        Some(&sim),
+        Some(&rules),
+        &[],
+        false,
+    );
+    assert_eq!(selected, [gi], "gas keeps the existing selection");
+    assert!(
+        sim.click_order_receivers(&selected).is_empty(),
+        "the click is refused"
+    );
+    let before = sim.state_hash();
+    let query = ActionQuery {
+        sim: &sim,
+        rules: Some(&rules),
+        overlays: None,
+        viewer: sim.session().current_house(),
+        selected: &selected,
+        modifier: OrderModifier::ForceFire,
+        force_move_key: false,
+        order_mode: crate::app::types::OrderMode::Move,
+        planning: false,
+        mouse_over: true,
+        full_visibility: true,
+    };
+    assert_eq!(
+        query.selection_action((12, 12), None),
+        Some(CursorFeedbackKind::Invalid)
+    );
+    assert_eq!(
+        sim.state_hash(),
+        before,
+        "cursor query preserves gameplay and RNG"
+    );
+}
+
 #[cfg(feature = "ares")]
 #[test]
 fn ares_vehicle_capture_cursor_shares_manual_action_and_preserves_shift_selection() {
