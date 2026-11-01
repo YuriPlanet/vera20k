@@ -300,6 +300,15 @@ impl App {
             (Some(_), Some(_)) => anyhow::bail!("multiple capture modes were active"),
         }
     }
+
+    /// Save the running match's diagnostic replay once a panic has ended the
+    /// event loop. Every other way out saves it in `exiting`, which a panic
+    /// skips. The panic hook has already written the log and `except.txt`.
+    pub fn save_replay_after_panic(&mut self) {
+        if let Some(state) = self.state.as_mut() {
+            crate::app::match_runtime::sim_tick::flush_replay_log(state);
+        }
+    }
 }
 
 #[cfg(test)]

@@ -49,7 +49,24 @@ pub(crate) fn labels(
 /// An online match's connection failure is the relay's ordered stream, not
 /// another player (their silence removes only their House), so it names the
 /// game server rather than "the other system".
+///
+/// VERA-only: a frame that failed in a network match (`frame_stopped`) is an
+/// error, not a desync, so the box says so and points at the log instead of
+/// the checksum box's own out-of-sync text.
 pub(crate) fn vera_body(state: &AppState) -> Option<String> {
+    if state.match_state.frame_stopped {
+        let mut body = String::from(
+            "VERA20k ran into an internal error, so this match cannot continue. \
+             The players did not go out of sync.",
+        );
+        if let Some(path) = crate::util::logging::log_file() {
+            body.push_str(&format!(
+                "\n\nThe log file has the details:\n{}",
+                path.display()
+            ));
+        }
+        return Some(body);
+    }
     match interruption(state)? {
         NetworkInterruption::NewerClientRequired => Some(format!(
             "This online match needs a newer VERA20k. Download it from {}",

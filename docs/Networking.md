@@ -140,6 +140,8 @@ silent. The relay refuses a different world as an agreement mismatch. Abort Miss
 during this replay leaves as it does while Reconnecting.
 
 Authored matches, Cooperative aside, record reconstructible JSON replays in `replays/`.
+A replay is written when its match ends or the game closes, and also when an
+internal error (a panic) closes the game; the folder keeps the newest 20.
 `vera20k --replay <replay.json> --ra2-dir <retail-directory>` opens read-only
 playback with camera controls and Escape to close.
 `vera20k --replay-verify <replay.json> --ra2-dir <retail-directory>` reconstructs the

@@ -23,7 +23,8 @@ pub(crate) struct MatchState {
     pub(crate) network_failure: Option<super::network_failure::NetworkFailureModal>,
     /// VERA-only: a network frame failed before commit (`FrameAdvanceError`).
     /// The world keeps partial writes, so it never advances again; the same
-    /// checksum box ends the match instead of resuming a suspended frame.
+    /// checksum box ends the match instead of resuming a suspended frame, with
+    /// a body that calls it an error rather than a desync.
     pub(crate) frame_stopped: bool,
     /// Physical byte transport and packet progress for an installed match.
     /// Session owns the accepted participant roster and checksum history.

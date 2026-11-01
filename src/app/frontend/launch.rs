@@ -145,20 +145,27 @@ pub struct ReplayLaunchRequest {
     pub(crate) retail_dir: PathBuf,
     pub(crate) capture_output: Option<PathBuf>,
     pub(crate) replay_sha256: String,
-    /// The recorded map beside the replay file: a -SPAWN game's map exists in
-    /// no game folder. A file with other bytes is ignored.
+    /// The recorded map beside the replay file or one folder up: a -SPAWN
+    /// game's map exists in no game folder. A file with other bytes is ignored.
     pub(crate) map_beside: Option<String>,
 }
 
+/// The replay's own folder, then the one above it. A `-SPAWN` launch keeps
+/// its map beside `spawn.ini` in the folder it runs in (`resolve_client_map`),
+/// and the game writes its replays to `replays/` there.
 fn map_beside_replay(replay: &Path, map_name: &str, map_sha256: &str) -> Result<Option<String>> {
+    // A rooted path's scenario name is only its file name, so a logical
+    // name with a directory must keep resolving through the game folder.
+    if map_name.contains(['/', '\\']) {
+        return Ok(None);
+    }
     Ok(replay
         .canonicalize()?
-        .parent()
-        // A rooted path's scenario name is only its file name, so a logical
-        // name with a directory must keep resolving through the game folder.
-        .filter(|_| !map_name.contains(['/', '\\']))
+        .ancestors()
+        .skip(1)
+        .take(2)
         .map(|directory| directory.join(map_name))
-        .filter(|map| {
+        .find(|map| {
             std::fs::read(map)
                 .is_ok_and(|bytes| crate::util::sha256::sha256_hex(&bytes) == map_sha256)
         })
@@ -617,6 +624,29 @@ mod tests {
             map_beside_replay(&replay, "spawnmap.ini", &sha256).unwrap(),
             None
         );
+        std::fs::write(&map, b"map").unwrap();
+        let found = map_beside_replay(&replay, "spawnmap.ini", &sha256)
+            .unwrap()
+            .unwrap();
+        assert_eq!(PathBuf::from(found), map.canonicalize().unwrap());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A `-SPAWN` game saves its replay to `replays/` in the folder that
+    /// holds its `spawnmap.ini`; two folders up is not searched.
+    #[test]
+    fn a_spawn_games_replay_finds_the_map_in_the_folder_above() {
+        let root = test_directory("replay-map-above");
+        std::fs::create_dir_all(root.join("game/replays")).unwrap();
+        let replay = root.join("game/replays/replay_tick90_1.json");
+        std::fs::write(&replay, b"{}").unwrap();
+        let sha256 = crate::util::sha256::sha256_hex(b"map");
+        std::fs::write(root.join("spawnmap.ini"), b"map").unwrap();
+        assert_eq!(
+            map_beside_replay(&replay, "spawnmap.ini", &sha256).unwrap(),
+            None
+        );
+        let map = root.join("game/spawnmap.ini");
         std::fs::write(&map, b"map").unwrap();
         let found = map_beside_replay(&replay, "spawnmap.ini", &sha256)
             .unwrap()
