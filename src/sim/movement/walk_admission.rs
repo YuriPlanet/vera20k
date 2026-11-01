@@ -6,8 +6,8 @@
 //! tools/spatial_oracle/walk_prehead_response (callee boundaries documented there).
 //!
 //! The shared Cell Scatter owner retains its existing per-occupant displacement
-//! residuals. JumpJet=true Infantry's +4F4/+4F8 conversion is a separate
-//! locomotor mechanism; its unrepresented continuation is reported explicitly.
+//! residuals. Infantry's +4F8 handoff from an unpiggybacked Jumpjet to Walk is
+//! a separate locomotor mechanism; its continuation is reported explicitly.
 
 use super::foot_path::{FindPathResult, coord_cell};
 use super::ground_pose;
@@ -18,6 +18,7 @@ use super::track_fresh::BlockingObject;
 use crate::map::cell_index::NativeCellIdentity;
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::NativeCellQuery;
+use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_kernel::native_xyz_distance;
@@ -493,8 +494,9 @@ impl Simulation {
     }
 
     /// Foot4DC030 (Infantry521DD0 prefix, Unit+4F4): Hunt alone clears
-    ///TarCom then calls the class NULL destination setter. No RNG or timers
-    ///are introduced by this receiver; the setter owns any timer effects.
+    /// TarCom then calls the class NULL destination setter. Original gamemd.exe
+    /// InfantryClass +4F4 @00521DD0 only queries and discards the locomotor's
+    /// GetClassID afterward; it adds no conversion, RNG or timer writes.
     pub(super) fn walk_failed_path_receiver(
         &mut self,
         id: u64,
@@ -511,27 +513,12 @@ impl Simulation {
                 .map_err(|error| format!("{error:?}"))?;
             self.assign_null_destination(id, rules, None, frame_effects);
         }
-        let actor = self
-            .substrate
-            .entities
-            .get(id)
-            .ok_or("retired Walk failed-path receiver")?;
-        if actor.category() == EntityCategory::Infantry
-            && self
-                .interner
-                .object_type(actor.type_ref(), rules)
-                .is_some_and(|object| object.jumpjet)
-        {
-            return Err(
-                "Infantry+4F4 JumpJet close-navigation continuation requires its locomotor owner"
-                    .into(),
-            );
-        }
         Ok(())
     }
 
-    /// Infantry521EB0 / Unit41C080. Ordinary Infantry and every Unit return
-    ///false; JumpJet=true Infantry has a separate short-path takeoff body.
+    /// Original gamemd.exe InfantryClass +4F8 @00521EB0 / Unit41C080.
+    /// Infantry with a current Walk returns false even with JumpJet=true;
+    /// only a current unpiggybacked Jumpjet admits the separate handoff body.
     pub(super) fn walk_short_path_receiver(&self, id: u64, rules: &RuleSet) -> Result<(), String> {
         let actor = self
             .substrate
@@ -539,6 +526,9 @@ impl Simulation {
             .get(id)
             .ok_or("retired Walk short-path receiver")?;
         if actor.category() == EntityCategory::Infantry
+            && actor.locomotor.as_ref().is_some_and(|locomotor| {
+                locomotor.active_kind() == LocomotorKind::Jumpjet && locomotor.piggyback().is_none()
+            })
             && actor.navigation.path_replay().remaining_directions().len() < 4
             && self
                 .interner
@@ -616,6 +606,10 @@ pub(super) fn clear_walk_doing(actor: &mut crate::sim::game_entity::GameEntity) 
             .expect("-1 is in the Doing table");
     }
 }
+
+#[cfg(test)]
+#[path = "walk_jumpjet_flag_tests.rs"]
+mod jumpjet_flag_tests;
 
 #[cfg(test)]
 mod tests {
