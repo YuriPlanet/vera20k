@@ -530,7 +530,10 @@ pub(crate) fn render_multiplayer_setup(
                 if let Some(spec) = view.page().button(button.id) {
                     texts.push(shell_text::draw_in_rect_scaled(
                         font,
-                        &localized_label(state, spec.csf_key, spec.csf_key),
+                        &view.dialog.button_label(button.id).map_or_else(
+                            || localized_label(state, spec.csf_key, spec.csf_key),
+                            str::to_owned,
+                        ),
                         button_text_rect(button.rect, pressed, scale),
                         super::text::button_label_color_for_disabled(!view.enabled(button.id)),
                         ShellAlign::H_CENTER | ShellAlign::V_CENTER,
