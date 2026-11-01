@@ -868,6 +868,18 @@ impl ResolvedTerrainGrid {
         )
     }
 
+    /// The index of the real cell at `coord` ([`Self::native_cell_coord`])
+    /// on a regular terrain, whose real cells each have their own
+    /// coordinate, the one their index gives: a real cell is at `coord`
+    /// exactly when it has this index. `None` on any other terrain, or when
+    /// no real cell is at `coord`.
+    pub(crate) fn regular_cell_index(&self, (x, y): (i16, i16)) -> Option<usize> {
+        let width = usize::from(self.width);
+        let (x, y) = (usize::try_from(x).ok()?, usize::try_from(y).ok()?);
+        let index = y * width + x;
+        (x < width && index < self.cells.len() && self.is_regular()).then_some(index)
+    }
+
     pub(crate) fn native_cell_coord(&self, cell: NativeCellIdentity) -> (i16, i16) {
         match cell {
             NativeCellIdentity::Real(index) if self.is_regular() => {

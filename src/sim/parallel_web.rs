@@ -2,12 +2,15 @@
 pub(crate) fn map<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) -> Vec<R> {
     items.iter().map(work).collect()
 }
-pub(crate) fn map_in_order<T: Sync, B, R: Send>(
+pub(crate) fn map_in_order<T: Sync, R: Send>(
     items: &[T],
-    before: impl Fn() -> B + Sync,
-    work: impl Fn(&T, B) -> R + Sync,
+    work: impl Fn(usize, &T) -> R + Sync,
 ) -> Vec<R> {
-    items.iter().map(|item| work(item, before())).collect()
+    items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| work(index, item))
+        .collect()
 }
 pub(crate) fn map_with<T: Sync, S: Clone + Send, R: Send>(
     items: &[T],
@@ -47,8 +50,8 @@ mod tests {
         let input = [7, 1, 9, 0, 4];
         assert_eq!(map(&input, |x| x * x), native::map(&input, |x| x * x));
         assert_eq!(
-            map_in_order(&input, || 3, |x, n| x + n),
-            native::map_in_order(&input, || 3, |x, n| x + n)
+            map_in_order(&input, |index, x| x * 10 + index as i32),
+            native::map_in_order(&input, |index, x| x * 10 + index as i32)
         );
         let work = |scratch: &mut Vec<i32>, x: &i32| {
             scratch.clear();

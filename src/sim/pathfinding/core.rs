@@ -135,20 +135,21 @@ fn with_pathfind_workspace<R>(
 }
 
 thread_local! {
-    /// The expansions this thread's searches ([`astar_search`]) have made,
-    /// for [`count_search_steps`].
+    /// The expansions this thread's finished searches ([`astar_search`])
+    /// have made, for [`search_steps`].
     static SEARCH_STEPS: Cell<u64> = const { Cell::new(0) };
 }
 
-/// `work`'s result and the expansions the searches it ran on this thread
-/// made. VERA-only: the path batch measures its searches' work by it. Work
+/// The expansions this thread's finished searches have made. VERA-only: the
+/// path batch measures a search's work by the difference across it. Work
 /// that waits on the worker pool may run other items on this thread, whose
 /// searches would count too.
-pub(crate) fn count_search_steps<R>(work: impl FnOnce() -> R) -> (R, u64) {
-    let before = SEARCH_STEPS.with(Cell::get);
-    let result = work();
-    (result, SEARCH_STEPS.with(Cell::get) - before)
+pub(crate) fn search_steps() -> u64 {
+    SEARCH_STEPS.with(Cell::get)
 }
+
+/// The expansions between two asks of [`SearchFootEntry::keeps_searching`].
+const PROGRESS_STRIDE: u32 = 1024;
 
 /// The expansions a search may make. `AStar_main_loop` takes its limit as an
 /// argument and resolves a negative one to `0xFFF7` (`0x00429D51..0x00429D59`);
@@ -621,13 +622,81 @@ fn explicit_tube_edge(
 /// gamemd tests the actual Cell pointer (`0x00429E19..0x00429E21`) before
 /// its layer, zone and +1AC tests, for compass and tube candidates alike;
 /// `astar_search` asks its closed lists first. This lookup must not stamp the
-/// shared Dummy. Native controls: astar_structural_height.json.
+/// shared Dummy. Native controls: astar_structural_height.json. A compass
+/// neighbour of an interior cell ([`ResolvedTerrainGrid::interior_cells`]) is
+/// allocated, so the search skips the test for it.
 fn search_cell_allocated(terrain: Option<&ResolvedTerrainGrid>, coord: (u16, u16)) -> bool {
     terrain.is_none_or(|terrain| {
         terrain
             .native_fixed_cell_index(coord.0 as i16, coord.1 as i16)
             .is_some()
     })
+}
+
+/// The first test an expansion of `cell` at path `height` makes of its
+/// neighbour one `direction` away: whether it asks about it at all, and
+/// whether its bridge closed list is the one selected. Closed-list selection
+/// (`0x00429E54`) compares the CURRENT node's height with the candidate
+/// ([`PathGrid::selects_bridge_list_at`]); Foot+1AC's own `0x004D9C60` list
+/// choice stays local to the class. A neighbour off the grid is passed over,
+/// and so is one closed in its selected list unless it is the goal: such a
+/// cell never gets a node or ends the route here (the retry below only
+/// re-asks gamemd's class and edge cost, a recorded residual), and every
+/// test gamemd makes before its closed test only passes a candidate over.
+#[inline(always)]
+fn neighbour_test(
+    grid: &PathGrid,
+    ground: &ClosedLayer,
+    bridge: &ClosedLayer,
+    cell: (u16, u16),
+    direction: usize,
+    height: i16,
+    goal: (u16, u16),
+) -> (bool, bool) {
+    let (dx, dy) = DIRECTION_DELTAS[direction];
+    let (x, y) = (i32::from(cell.0) + dx, i32::from(cell.1) + dy);
+    let width = i32::from(grid.width());
+    let inside = (x >= 0) & (y >= 0) & (x < width) & (y < i32::from(grid.height()));
+    // Off the grid, the bits read are the expanded cell's, and unused.
+    let index = if inside {
+        y * width + x
+    } else {
+        i32::from(cell.1) * width + i32::from(cell.0)
+    } as usize;
+    // Both lists' bits are read before the choice is known, so neither read
+    // waits on the planes that make it.
+    let ground_closed = ground.contains(index);
+    let bridge_closed = bridge.contains(index);
+    let use_bridge = grid.selects_bridge_list_at(index, height);
+    let closed = if use_bridge {
+        bridge_closed
+    } else {
+        ground_closed
+    };
+    let is_goal = (x, y) == (i32::from(goal.0), i32::from(goal.1));
+    (inside & (!closed | is_goal), use_bridge)
+}
+
+/// [`neighbour_test`] of every direction, as bits by direction
+/// ([`DIRECTION_DELTAS`]): the neighbours the expansion asks about, and those
+/// whose bridge closed list is selected.
+#[inline(always)]
+fn expansion_neighbours(
+    grid: &PathGrid,
+    ground: &ClosedLayer,
+    bridge: &ClosedLayer,
+    cell: (u16, u16),
+    height: i16,
+    goal: (u16, u16),
+) -> (u8, u8) {
+    let mut asked = 0;
+    let mut bridge_lists = 0;
+    for direction in 0..DIRECTION_DELTAS.len() {
+        let (ask, use_bridge) = neighbour_test(grid, ground, bridge, cell, direction, height, goal);
+        asked |= u8::from(ask) << direction;
+        bridge_lists |= u8::from(use_bridge) << direction;
+    }
+    (asked, bridge_lists)
 }
 
 /// Configuration for the unified A* search.
@@ -737,6 +806,14 @@ pub trait SearchFootEntry {
     /// such a search never takes the blocked-goal tail.
     fn is_passive_unit(&self) -> bool {
         false
+    }
+    /// VERA-only, never native: asked after every [`PROGRESS_STRIDE`]
+    /// expansions with the expansions this cell search has made. `false`
+    /// stops it with [`PathSearchFailure::Stopped`], which no retry
+    /// follows. Going on changes nothing. The path batch stops an urgency-2
+    /// re-path whose answer its budget cuts whatever the search finds.
+    fn keeps_searching(&self, _expanded: u32) -> bool {
+        true
     }
 }
 
@@ -904,6 +981,10 @@ pub fn astar_search(
         // `[ESP+0x13]` (`0x00429D2F..0x00429D4C`): the Foot is a Unit whose
         // type is `Passive=`.
         let passive_unit = options.foot_entry.is_passive_unit();
+        // Every neighbour of an interior cell is allocated.
+        let interior_cells = options
+            .resolved_terrain
+            .and_then(ResolvedTerrainGrid::interior_cells);
 
         // --- Main loop ---
         let tail = 'search: loop {
@@ -945,50 +1026,49 @@ pub fn astar_search(
             let mut held = None;
 
             // --- Neighbor expansion ---
-            for (dir_index, &(dx, dy)) in DIRECTION_DELTAS.iter().enumerate() {
-                let nx_i = cx as i32 + dx;
-                let ny_i = cy as i32 + dy;
-                if nx_i < 0
-                    || ny_i < 0
-                    || nx_i >= grid.width() as i32
-                    || ny_i >= grid.height() as i32
-                {
-                    continue;
-                }
-                let nx = nx_i as u16;
-                let ny = ny_i as u16;
+            // Every neighbour's closed test is made first, into one bit per
+            // direction, and the neighbours asked about are then taken in
+            // ascending direction: in a flood most neighbours are closed in
+            // a changing pattern, which a branch per neighbour mispredicts.
+            // Nothing a neighbour below does changes another's test: the one
+            // closed bit it sets is its own, and the planes and the current
+            // height stay as they are.
+            let (mut asked, bridge_lists) =
+                expansion_neighbours(grid, ground, bridge, (cx, cy), current.height, goal);
+            let interior = interior_cells.is_some_and(|cells| cells.contains((cx, cy)));
+            while asked != 0 {
+                let dir_index = asked.trailing_zeros() as usize;
+                asked &= asked - 1;
+                debug_assert_eq!(
+                    neighbour_test(
+                        grid,
+                        ground,
+                        bridge,
+                        (cx, cy),
+                        dir_index,
+                        current.height,
+                        goal
+                    ),
+                    (true, bridge_lists >> dir_index & 1 != 0),
+                    "an earlier neighbour changed the test of direction {dir_index}"
+                );
+                let (dx, dy) = DIRECTION_DELTAS[dir_index];
+                let nx = (cx as i32 + dx) as u16;
+                let ny = (cy as i32 + dy) as u16;
                 let n_idx = ny as usize * w + nx as usize;
-
-                // Closed-list selection (0x00429E54): the CURRENT node's height
-                // against the candidate. Foot+1AC's own 0x004D9C60 list choice
-                // stays local to the class.
-                // Both lists' bits are read before the choice is known, so
-                // neither read waits on the planes that make it.
-                let ground_closed = ground.contains(n_idx);
-                let bridge_closed = bridge.contains(n_idx);
-                let neighbor_use_bridge = grid.selects_bridge_list_at(n_idx, current.height);
+                let neighbor_use_bridge = bridge_lists >> dir_index & 1 != 0;
                 let layer = if neighbor_use_bridge {
                     &*bridge
                 } else {
                     &*ground
                 };
-                // A closed cell other than the goal never gets a node or ends
-                // the route here (the retry below only re-asks gamemd's class
-                // and edge cost, a recorded residual), and every test gamemd
-                // makes before its closed test only passes a candidate over,
-                // so such a cell is passed over first. Most candidates are
-                // closed, so this reads only the closed bits.
                 let is_goal = (nx, ny) == goal;
-                let is_closed = if neighbor_use_bridge {
-                    bridge_closed
-                } else {
-                    ground_closed
-                };
-                if is_closed && !is_goal {
-                    continue;
-                }
                 let closed = if is_goal { layer.get(n_idx) } else { None };
-                if !search_cell_allocated(options.resolved_terrain, (nx, ny)) {
+                debug_assert!(
+                    !interior || search_cell_allocated(options.resolved_terrain, (nx, ny)),
+                    "an interior cell's neighbour ({nx},{ny}) is allocated"
+                );
+                if !interior && !search_cell_allocated(options.resolved_terrain, (nx, ny)) {
                     continue;
                 }
                 let neighbor_cell = grid.cell(nx, ny).unwrap_or(&DEFAULT_BLOCKED_CELL);
@@ -1220,6 +1300,11 @@ pub fn astar_search(
             }
 
             expanded += 1;
+            if expanded.is_multiple_of(PROGRESS_STRIDE)
+                && !options.foot_entry.keeps_searching(expanded)
+            {
+                return Err(PathSearchFailure::Stopped);
+            }
             current = next_node(held, open).ok_or(PathSearchFailure::CellSearchExhausted)?;
         };
 

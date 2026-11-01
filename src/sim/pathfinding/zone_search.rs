@@ -137,6 +137,10 @@ pub enum PathSearchFailure {
     ///AStar returned no route: its cell search ran out, or never ran because
     ///the start cell and height are the goal's (0x429BF3..0x429C0A).
     CellSearchExhausted,
+    /// VERA-only: the receiver stopped the cell search
+    /// ([`super::SearchFootEntry::keeps_searching`]). Only the path batch
+    /// stops a search, one whose answer it drops.
+    Stopped,
 }
 
 /// Whether the path entry may answer reachability from the zone ladder before

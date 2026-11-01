@@ -151,6 +151,13 @@ fn east(sim: &Simulation, height: i32) -> InfantryEntryArgs {
 #[test]
 fn a_plain_step_answers_as_the_full_body() {
     let (mut sim, rules, registry) = fixture();
+    // An interior target, whose backstep is found by its index.
+    let terrain = sim.resolved_terrain.as_ref().unwrap();
+    assert!(
+        terrain
+            .interior_cells()
+            .is_some_and(|interior| interior.contains((16, 15)))
+    );
     let answered = |sim: &Simulation, id, height| {
         let (plain, full) = step(sim, &rules, &registry, id, east(sim, height));
         assert_eq!(plain.map(Ok), Some(full.clone()), "mover {id}");

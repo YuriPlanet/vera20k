@@ -117,6 +117,149 @@ fn a_closed_goal_refused_from_a_cheaper_neighbor_ends_the_route_there() {
     );
 }
 
+/// Admits every cell but `walls` (class 7), recording each ask as its
+/// expanded cell, candidate and direction.
+struct AskLog {
+    walls: Vec<(u16, u16)>,
+    asks: RefCell<Vec<((u16, u16), (u16, u16), i32)>>,
+}
+
+impl SearchFootEntry for AskLog {
+    fn classify(&self, query: SearchEntryQuery) -> Result<u8, String> {
+        let SearchEntryCandidate::CopiedCoord(candidate) = query.candidate else {
+            panic!("A* asks copied coordinates");
+        };
+        let from = query.from.expect("A* asks from the expanded cell");
+        self.asks
+            .borrow_mut()
+            .push((from, candidate, query.direction));
+        Ok(if self.walls.contains(&candidate) {
+            7
+        } else {
+            0
+        })
+    }
+}
+
+/// An expansion asks about each allocated neighbour on the grid that has no
+/// node yet, in ascending direction, and about no other
+/// (`0x00429E19..0x00429F54`). An admitted cell gets its node at once, so it
+/// is never asked again, while a refused wall is asked from each side. The
+/// hole's neighbours are not interior, so their allocation is tested. The
+/// goal is left out: a closed goal may be asked again (`0x00429EE2`).
+#[test]
+fn an_expansion_asks_its_allocated_neighbours_without_a_node_in_order() {
+    let mut terrain = crate::map::resolved_terrain::test_grid(8, 8, make_resolved_cell);
+    let hole = (2, 2);
+    let allocated: Vec<_> = (0..8)
+        .flat_map(|y| (0..8).map(move |x| (x, y)))
+        .filter(|&cell| cell != hole)
+        .collect();
+    terrain.test_set_native_allocated_cells(&allocated);
+    let grid = PathGrid::from_resolved_terrain(&terrain);
+    let entry = AskLog {
+        walls: (1..8).map(|y| (4, y)).collect(),
+        asks: RefCell::default(),
+    };
+    let (start, goal) = ((1, 4), (6, 4));
+    astar_search(
+        &grid,
+        start,
+        MovementLayer::Ground,
+        goal,
+        &AStarOptions {
+            resolved_terrain: Some(&terrain),
+            ..AStarOptions::new(&entry)
+        },
+    )
+    .expect("a route round the wall");
+    let mut admitted = vec![start];
+    for expansion in entry.asks.borrow().chunk_by(|a, b| a.0 == b.0) {
+        let from = expansion[0].0;
+        let expected: Vec<i32> = (0..8)
+            .filter(|&direction| {
+                let (dx, dy) = DIRECTION_DELTAS[direction as usize];
+                let (x, y) = (i32::from(from.0) + dx, i32::from(from.1) + dy);
+                let cell = (x as u16, y as u16);
+                (0..8).contains(&x)
+                    && (0..8).contains(&y)
+                    && allocated.contains(&cell)
+                    && cell != goal
+                    && !admitted.contains(&cell)
+            })
+            .collect();
+        let asked: Vec<i32> = expansion
+            .iter()
+            .filter(|ask| ask.1 != goal)
+            .map(|ask| ask.2)
+            .collect();
+        assert_eq!(asked, expected, "the expansion of {from:?}");
+        admitted.extend(
+            expansion
+                .iter()
+                .map(|ask| ask.1)
+                .filter(|cell| !entry.walls.contains(cell)),
+        );
+    }
+    let beside_hole =
+        |cell: (u16, u16)| cell.0.abs_diff(hole.0) <= 1 && cell.1.abs_diff(hole.1) <= 1;
+    assert!(
+        entry.asks.borrow().iter().any(|ask| beside_hole(ask.0)),
+        "the flood expands cells beside the hole"
+    );
+}
+
+/// Admits every cell and stops the search at its `stop_at`th ask whether it
+/// goes on, recording the expansions each ask reports.
+struct Stopper {
+    stop_at: usize,
+    asked: RefCell<Vec<u32>>,
+}
+
+impl SearchFootEntry for Stopper {
+    fn classify(&self, _query: SearchEntryQuery) -> Result<u8, String> {
+        Ok(0)
+    }
+    fn keeps_searching(&self, expanded: u32) -> bool {
+        let mut asked = self.asked.borrow_mut();
+        asked.push(expanded);
+        asked.len() < self.stop_at
+    }
+}
+
+/// VERA-only: the receiver is asked after every 1,024 expansions whether
+/// the search goes on. A stop fails it there, with those expansions made;
+/// going on changes nothing.
+#[test]
+fn a_receiver_stops_the_search_after_a_stride_of_expansions() {
+    // In a corridor each expansion reaches one new cell.
+    let grid = PathGrid::new(3_000, 1);
+    let search = |stop_at| {
+        let entry = Stopper {
+            stop_at,
+            asked: RefCell::default(),
+        };
+        let before = search_steps();
+        let found = astar_search(
+            &grid,
+            (0, 0),
+            MovementLayer::Ground,
+            (2_999, 0),
+            &AStarOptions::new(&entry),
+        );
+        (
+            found.map(|path| path.len()),
+            search_steps() - before,
+            entry.asked.into_inner(),
+        )
+    };
+    assert_eq!(
+        search(2),
+        (Err(PathSearchFailure::Stopped), 2_048, vec![1_024, 2_048])
+    );
+    assert_eq!(search(usize::MAX), (Ok(3_000), 2_999, vec![1_024, 2_048]));
+}
+
 /// Refuses only the goal, as a Unit whose type may be `Passive=`.
 struct RefusedGoal {
     goal: (u16, u16),

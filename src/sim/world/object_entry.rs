@@ -192,7 +192,9 @@ impl EntryCell {
     }
 
     /// `layer`'s object list at `p`, the coordinate already read for this
-    /// cell ([`crate::sim::occupancy::OccupancyGrid::cell_objects`]).
+    /// cell ([`crate::sim::occupancy::OccupancyGrid::cell_objects`]). Kept
+    /// facts skip a list that yields nothing, and the terrain object search
+    /// of a cell that has none: a search walks most cells' lists empty.
     fn objects<'a>(
         &self,
         live: &EntryReadContext<'a>,
@@ -205,12 +207,12 @@ impl EntryCell {
         };
         let at = (p.0 as u16, p.1 as u16);
         let sim = live.sim;
-        let terrain_objects = sim
-            .terrain_objects
-            .members_at(at)
-            .filter(move |_| terrain_object);
         listed
             .then(|| {
+                let terrain_objects = terrain_object
+                    .then(|| sim.terrain_objects.members_at(at))
+                    .into_iter()
+                    .flatten();
                 sim.substrate
                     .occupancy
                     .cell_objects(at.0, at.1, layer, terrain_objects)
@@ -703,6 +705,9 @@ struct EntryMover<'a> {
     obj: &'a ObjectType,
     weapon0: Option<&'a crate::rules::weapon_type::WeaponType>,
     crusher: bool,
+    /// The mover's SpeedType's land row in a [`PlainCell`]
+    /// ([`PlainCell::speed_row`]).
+    speed_row: Option<u32>,
     /// Answers of `allied(mover owner, house)` already asked, and blocker
     /// types already resolved by concrete class and name. Alliances and rules
     /// are fixed for the receiver's lifetime. A search asks these for every blocker it
@@ -756,6 +761,7 @@ impl<'a> EntryMover<'a> {
             obj,
             weapon0,
             crusher,
+            speed_row: PlainCell::speed_row(obj.speed_type),
             allies: InternedCache::new(),
             types: std::array::from_fn(|_| InternedCache::new()),
             damage: std::cell::OnceCell::new(),
@@ -941,12 +947,7 @@ fn plain_entry(
     if !to.empty() || args.height != i32::from(to.level()) {
         return None;
     }
-    if !live.plain_cell(facts, source).flat()
-        || crate::sim::movement::infantry_entry::backstep_cell(
-            &live.prelude_reads(),
-            cell,
-            args.direction,
-        ) != Cell::Real(source)
+    if !live.plain_cell(facts, source).flat() || !backstep_is(live, target, args.direction, source)
     {
         return None;
     }
@@ -963,8 +964,38 @@ fn plain_entry(
     if infantry && mover.e.tether.partner().is_some() {
         return Some(0);
     }
-    let nonzero = to.row_nonzero(mover.obj.speed_type)?;
+    let nonzero = to.row_nonzero(mover.speed_row?)?;
     Some(if nonzero { 0 } else { 7 })
+}
+
+/// Whether the backstep of a `direction` step to real cell `target`
+/// ([`crate::sim::movement::infantry_entry::backstep_cell`]) is real cell
+/// `source`. Around an interior target the backstep's lookup finds the cell
+/// its coordinate gives without a side effect, so its index is compared
+/// without the lookup; any other target is looked up.
+fn backstep_is(live: &EntryReadContext<'_>, target: usize, direction: i32, source: usize) -> bool {
+    let back = crate::util::direction::DIRECTION_DELTAS[((direction - 4) & 7) as usize];
+    let Some(backstep) = live
+        .terrain()
+        .interior_cells()
+        .and_then(|interior| interior.neighbour_index(target, back))
+    else {
+        return crate::sim::movement::infantry_entry::backstep_cell(
+            &live.prelude_reads(),
+            Cell::Real(target),
+            direction,
+        ) == Cell::Real(source);
+    };
+    debug_assert_eq!(
+        Cell::Real(backstep),
+        crate::sim::movement::infantry_entry::backstep_cell(
+            &live.prelude_reads(),
+            Cell::Real(target),
+            direction
+        ),
+        "an interior cell's neighbour is the one its coordinate gives"
+    );
+    backstep == source
 }
 
 /// Infantry 0x0051BF90 / Unit 0x0073F0A0, every branch. [`plain_entry`]
