@@ -230,17 +230,6 @@ impl ExpiryListeners {
         reached
     }
 
-    /// Dedicated Anim callbacks select Parasite holders through the same
-    /// entity-reference index, without a generic Object callback broadcast.
-    pub(crate) fn entities_reached_by(
-        &mut self,
-        entities: &mut EntityStore,
-        expired: u64,
-    ) -> Vec<u64> {
-        self.refresh_entities(entities);
-        self.entities.reaching(expired).collect()
-    }
-
     fn refresh_entities(&mut self, entities: &mut EntityStore) {
         let ids = self.entities.rereads(
             entities.take_touched(TouchReader::ExpiryListeners),
@@ -460,8 +449,8 @@ mod tests {
         reached.into_iter().map(|(id, _)| id).collect()
     }
 
-    fn anim(id: u64, owner: Option<u64>) -> AnimObject {
-        let mut anim = AnimObject::new_unattached_for_test(
+    fn anim(id: u64) -> AnimObject {
+        AnimObject::new_unattached_for_test(
             id,
             id as i32,
             InternedId::from_index(0),
@@ -479,9 +468,7 @@ mod tests {
                 paused: false,
                 temporal_paused: false,
             },
-        );
-        anim.set_owner_entity_for_test(owner);
-        anim
+        )
     }
 
     fn bullet(stores: &mut Stores, id: u64, source: u64, target: ProjectileTarget) {
@@ -641,8 +628,9 @@ mod tests {
         // An anim owned by 3 and one owning nothing; a system on 3 owned by
         // 4; a bullet from 4 at 3 and one from no attacker at a cell; a wave
         // from 3 at 4.
-        stores.anims.insert(anim(10, Some(3)));
-        stores.anims.insert(anim(11, None));
+        stores.anims.insert(anim(10));
+        stores.anims.set_owner_entity_for_test(10, Some(3));
+        stores.anims.insert(anim(11));
         let mut system =
             ParticleSystem::test_fixture(20, ParticleSystemTypeId(0), glam::IVec3::ZERO);
         system.set_target_ref_for_test(Some(crate::sim::combat::TargetKind::Entity(3)));
@@ -668,11 +656,7 @@ mod tests {
         assert_eq!(reach(&mut index, &mut stores, RAD_NO_ATTACKER), [0u64; 0]);
         // A new owner, a retarget, a cleared target and a removal are read
         // back on the next expiry.
-        stores
-            .anims
-            .get_mut(11)
-            .unwrap()
-            .set_owner_entity_for_test(Some(4));
+        stores.anims.set_owner_entity_for_test(11, Some(4));
         stores
             .projectiles
             .get_mut(30)

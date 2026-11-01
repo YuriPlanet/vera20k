@@ -202,7 +202,7 @@ impl crate::sim::world::Simulation {
             self.substrate
                 .entities
                 .get_mut(owner_id)?
-                .set_parachute_animation(None);
+                .clear_parachute_animation();
             return None;
         };
         let type_name = self.interner.intern(canopy);
@@ -226,8 +226,9 @@ impl crate::sim::world::Simulation {
                 // the Anim owner. Keep a single held identity, not a type scan.
                 self.substrate
                     .entities
-                    .get_mut(owner_id)?
-                    .set_parachute_animation(Some(anim_id));
+                    .write_held_anim(owner_id, |owner, authority| {
+                        owner.hold_parachute_animation(anim_id, authority)
+                    })?;
                 self.set_anim_owner_object(anim_id, Some(owner_id), rules);
                 // Native Paradrop calls SetOwnerObject, then GetRemapColour
                 // through the owner's vtable and stores that ConvertClass at
@@ -248,7 +249,7 @@ impl crate::sim::world::Simulation {
                 self.substrate
                     .entities
                     .get_mut(owner_id)?
-                    .set_parachute_animation(None);
+                    .clear_parachute_animation();
                 // An art type that never bound draws nothing natively either.
                 log::debug!("parachute anim did not construct: {error}");
                 None
@@ -488,7 +489,7 @@ mod canopy_tests {
         sim.notify_anim_pointer_expired(canopy);
         assert_ne!(sim.state_hash(), expected);
         let restored: GameEntity = serde_json::from_slice(&bytes).unwrap();
-        *sim.substrate.entities.get_mut(id).unwrap() = restored;
+        sim.substrate.entities.insert(restored);
         assert_eq!(sim.state_hash(), expected);
         assert_eq!(
             sim.entities().get(id).unwrap().parachute_animation(),
@@ -498,7 +499,7 @@ mod canopy_tests {
         assert_eq!(
             sim.entities().get(id).unwrap().parachute_animation(),
             None,
-            "the derived expiry index re-reads restored entity state"
+            "the anim-holder index notes a restored entity's held canopy"
         );
     }
 
