@@ -4,6 +4,36 @@ use super::*;
 use crate::util::save_codec;
 
 #[test]
+fn player_at_supports_thirty_slots_without_constructing_countries() {
+    let root = IniFile::from_str("[Countries]\n0=Americans\n");
+    for (token, selector) in [
+        ("<Player @ I>", 0x1183),
+        ("<Player @ Z>", 0x1194),
+        ("<Player @ AA>", 0x1195),
+        ("<Player @ AD>", 0x1198),
+    ] {
+        let settings = IniFile::from_str(&format!("[MultiPlayer]\nSide={token}\n"));
+        let (index, trace) = read_native_multiplayer_country(
+            NativeRulesRegistryState::default(),
+            &root,
+            &settings,
+            -1,
+        );
+        assert_eq!(index, selector, "{token}");
+        assert_eq!(
+            trace
+                .into_registry_state_discarding_events()
+                .country_projection()
+                .count(),
+            1
+        );
+    }
+    assert_eq!(house_type_player_at("<Player @ AE>"), None);
+    assert_eq!(house_type_player_at("<Player @ [>"), None);
+    assert_eq!(house_type_player_at("<player @ a>"), None);
+}
+
+#[test]
 fn airburst_retained_flag_matches_native_reads_and_registry_restore() {
     let native = crate::test_fixture::json("tools/projectile_oracle/airburst_retained.json");
     let initial = IniFile::from_str(

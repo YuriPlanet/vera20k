@@ -741,11 +741,13 @@ pub enum CoopSave {
 pub const COOP_SAVE_INI: &str = "coopsave.ini";
 
 /// `INIClass::Put_HouseType` (`0x00475610`): a HouseType's ID, the
-/// `<Player @ A>`..`<Player @ H>` pseudo-Houses `0x117B..0x1182`,
+/// player pseudo-Houses (VERA extends A..H to A..AD),
 /// `<random>` for -2 and -3, else `<none>`.
 pub(crate) fn house_type_text(index: i32, roster: &[CooperativeCountryRosterEntry]) -> String {
+    if let Some(token) = crate::rules::native_processing::house_type_player_at_text(index) {
+        return token;
+    }
     match index {
-        0x117B..=0x1182 => format!("<Player @ {}>", (b'A' + (index - 0x117B) as u8) as char),
         -3 | -2 => "<random>".to_owned(),
         _ => usize::try_from(index)
             .ok()
@@ -2747,5 +2749,10 @@ mod tests {
         assert_eq!(house_type_text(9, &roster), "<none>");
         assert_eq!(house_type_text(0x117B, &roster), "<Player @ A>");
         assert_eq!(house_type_text(0x1182, &roster), "<Player @ H>");
+        assert_eq!(house_type_text(0x1183, &roster), "<Player @ I>");
+        assert_eq!(house_type_text(0x1194, &roster), "<Player @ Z>");
+        assert_eq!(house_type_text(0x1195, &roster), "<Player @ AA>");
+        assert_eq!(house_type_text(0x1198, &roster), "<Player @ AD>");
+        assert_eq!(house_type_text(0x1199, &roster), "<none>");
     }
 }

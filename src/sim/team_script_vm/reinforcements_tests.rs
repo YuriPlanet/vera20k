@@ -28,6 +28,33 @@ use crate::sim::rng::SimRng;
 use crate::sim::world::{FrameEffects, Simulation};
 use crate::util::save_codec;
 
+#[test]
+fn player_at_thirtieth_slot_resolves_team_owner_through_start_mapping() {
+    let rules = RuleSet::from_ini(&IniFile::from_str("[Countries]\n0=Americans\n")).unwrap();
+    let map = IniFile::from_str(
+        "[TeamTypes]\n0=TT\n[TT]\nHouse=<Player @ AD>\nScript=S\nTaskForce=F\nMax=-1\n\
+         [ScriptTypes]\n0=S\n[S]\n0=5,0\n[TaskForces]\n0=F\n",
+    );
+    let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, false);
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern("LastPlayer");
+    sim.session
+        .start_slot_houses_mut_for_test()
+        .insert(29, owner);
+    let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut sim.interner, &rules);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    sim.team_script_vm = vm;
+    let team_type = sim.interner.get("TT").unwrap();
+    assert_eq!(sim.house_by_trigger_selector(0x1198, &rules), Some(owner));
+    assert_eq!(sim.house_by_trigger_selector(0x1199, &rules), None);
+    let team = sim
+        .create_team(team_type, None, &rules)
+        .expect("slot 30 team");
+    assert_eq!(sim.team_script_vm.team(team).unwrap().owner(), owner);
+    sim.session.start_slot_houses_mut_for_test().remove(&29);
+    assert!(sim.create_team(team_type, None, &rules).is_none());
+}
+
 fn rows(kind: &str, count: usize) -> Vec<Value> {
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/team_creation.json",

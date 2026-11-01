@@ -6080,17 +6080,19 @@ impl Simulation {
     }
 
     /// Original House510F60 -> Scenario510ED0, otherwise502D30. Only the
-    /// literal Player@A..H selectors0x117B..0x1182 use the start-slot mapping.
+    /// player selectors use the start-slot mapping; VERA extends A..H to
+    /// A..AD for thirty players, with the same session-owned mapping.
     /// Executed Steam gamemd controls: trigger_all_change_house.json.
     pub(crate) fn house_by_trigger_selector(
         &self,
         selector: i32,
         rules: &RuleSet,
     ) -> Option<InternedId> {
-        if (0x117B..=0x1182).contains(&selector) {
+        let players = crate::rules::native_processing::HOUSE_TYPE_PLAYER_AT_SELECTORS;
+        if players.contains(&selector) {
             self.session
                 .start_slot_houses()
-                .get(&((selector - 0x117B) as u32))
+                .get(&((selector - players.start) as u32))
                 .copied()
         } else {
             let country = u16::try_from(selector).ok()?;
