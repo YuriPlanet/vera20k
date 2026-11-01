@@ -255,7 +255,7 @@ fn admit_attacker_fire<'r>(
     };
 
     let infantry_fire = snap.category == EntityCategory::Infantry;
-    let sequences = rules.animation_sequence(world.interner.resolve(snap.type_id));
+    let sequences = world.interner.animation_sequence(snap.type_id, rules);
     let firing_at_entry = infantry_fire
         && world
             .substrate

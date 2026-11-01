@@ -3803,7 +3803,7 @@ fn authored_load_lat_reads_live_cardinals_in_north_east_south_west_order() {
         cells[ny * 3 + nx].final_tile_index = 99;
         let mut grid = ResolvedTerrainGrid::from_cells(3, 3, cells);
         let mut state = LoadCellRecalcState::synthetic(&registry, grid.cells.len());
-        state.lat_config = Some(lat_config.clone());
+        state.lat_config = Some(std::borrow::Cow::Owned(lat_config.clone()));
         state.slope_config = Some(lat::SlopeFixupConfig {
             ramp_base: -1,
             ramp_smooth: -1,
@@ -3820,7 +3820,7 @@ fn authored_load_lat_reads_live_cardinals_in_north_east_south_west_order() {
 
     let mut edge = ResolvedTerrainGrid::from_cells(1, 1, vec![make_test_cell(0, 0)]);
     let mut state = LoadCellRecalcState::synthetic(&registry, 1);
-    state.lat_config = Some(lat_config);
+    state.lat_config = Some(std::borrow::Cow::Owned(lat_config));
     state.slope_config = Some(lat::SlopeFixupConfig {
         ramp_base: -1,
         ramp_smooth: -1,
@@ -3840,9 +3840,9 @@ fn authored_load_lat_reads_live_cardinals_in_north_east_south_west_order() {
     guarded.cells[0].final_tile_index = 99;
     guarded.stamp_dummy_cell_requested_coord(7, 8);
     let mut state = LoadCellRecalcState::synthetic(&registry, 1);
-    state.lat_config = Some(lat::LatConfig::from_tile_ids(
+    state.lat_config = Some(std::borrow::Cow::Owned(lat::LatConfig::from_tile_ids(
         &crate::map::rmg::tiles::TileIds::from_keys(&theater.rmg_tiles),
-    ));
+    )));
     state.slope_config = Some(lat::SlopeFixupConfig {
         ramp_base: 100,
         ramp_smooth: 500,
