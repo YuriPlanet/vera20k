@@ -35,6 +35,7 @@ required-features = ["test-support"]
 wasm = ["dep:web-time", "dep:getrandom", "dep:js-sys"]
 wasm-net = ["wasm", "dep:wasm-bindgen"]
 wasm-lan = ["wasm-net"]
+wasm-threads = ["wasm", "dep:rayon"]
 # Compile the supported Ares behavior; INIs cannot enable an absent capability.
 ares = []
 # Compile the supported Phobos behavior; INIs cannot enable an absent capability.
@@ -106,6 +107,8 @@ rayon = "1.11"
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 web-time = { version = "1", optional = true }
+# The browser's main thread may not block, so rayon's own locks spin there.
+rayon = { version = "1.11", optional = true, features = ["web_spin_lock"] }
 getrandom = { version = "=0.3.4", optional = true, features = ["wasm_js"] }
 js-sys = { version = "0.3", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }

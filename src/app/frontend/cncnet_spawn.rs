@@ -7,11 +7,12 @@
 //! `GameLobbyBase.WriteSpawnIni` and `CampaignSelector.LaunchMission`:
 //! https://github.com/CnCNet/xna-cncnet-client/tree/develop/DXMainClient/DXGUI
 //!
-//! This boundary admits one local human, Battle and stock YR campaigns. Ares
-//! builds also carry allocated custom Country identities into Battle startup.
-//! External campaigns pass an explicit Scenario independently of record0.
-//! Multiplayer Battle files (`PlayerCount>1` or `[Relay]`, docs/spawn.md) normalize
-//! into a canonical source-ordered session plus a relay or direct transport.
+//! This boundary admits one local human, the stock YR modes and stock YR
+//! campaigns. Ares builds also carry allocated custom Country identities
+//! into Battle startup. External campaigns pass an explicit Scenario independently
+//! of record0. Multiplayer files (`PlayerCount>1` or `[Relay]`, docs/spawn.md)
+//! normalize into a canonical source-ordered session plus a relay or direct
+//! transport.
 //! It does not load native saves or load extension DLLs.
 
 use std::net::{Ipv4Addr, SocketAddrV4};
@@ -26,6 +27,7 @@ use crate::skirmish_launch::{
     SkirmishHumanSlot, SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLaunchSession,
     SkirmishLocalSlot,
 };
+use crate::skirmish_modes::ModeStartEffect;
 
 #[derive(Debug)]
 pub(crate) struct SpawnRequest {
@@ -37,10 +39,46 @@ pub(crate) struct SpawnRequest {
     pub(crate) expected: SpawnExpectations,
 }
 
-/// The stock Battle row every spawn selects (`GameMode=1`); the multiplayer
-/// rules agreement and `--probe` digest the rules through its mode file.
+/// The stock Battle row, `GameMode`'s default; `--probe` digests the rules
+/// through its mode file.
 pub(crate) fn spawn_battle_mode() -> SkirmishLaunchMode {
     SkirmishLaunchMode::stock(crate::skirmish_launch::BATTLE_MODE_ID).expect("stock Battle row")
+}
+
+/// The stock rows a spawn may select. A Cooperative launch is one mission: it
+/// holds no campaign progress record for its Start (`0x005C1D80`) to bind, so
+/// `+0xA0` (`0x005C3710`) records nothing and no next mission follows.
+pub(crate) fn spawn_modes() -> impl Iterator<Item = SkirmishLaunchMode> {
+    (1..=9).filter_map(SkirmishLaunchMode::stock)
+}
+
+/// `[Settings] GameMode`. The launcher owns which maps a mode may use: the file
+/// names one fixed map, so `IsValidMap` (`0x005D63E0`) has no list to filter.
+fn spawn_mode(settings: &IniSection) -> Result<SkirmishLaunchMode> {
+    let id = integer(settings, "GameMode", crate::skirmish_launch::BATTLE_MODE_ID)?;
+    spawn_modes()
+        .find(|mode| mode.id == id)
+        .with_context(|| format!("GameMode={id} is not a stock YR mode"))
+}
+
+/// The team choices network setup offers a mode (`view.rs`' Team column and
+/// `team_choices`): none without AlliesAllowed, no "None" with MustAlly.
+fn validate_mode_teams(mode: &SkirmishLaunchMode, teams: &[LaunchTeam]) -> Result<()> {
+    if !mode.allies_allowed {
+        ensure!(
+            teams.iter().all(|team| *team == LaunchTeam::None),
+            "GameMode={} does not allow teams",
+            mode.id
+        );
+    }
+    if mode.must_ally {
+        ensure!(
+            !teams.contains(&LaunchTeam::None),
+            "GameMode={} requires every house on a team",
+            mode.id
+        );
+    }
+    Ok(())
 }
 
 /// `[Settings] ExpectedVersion`, `ExpectedRulesDigest`, `ExpectedMapDigest`
@@ -427,10 +465,7 @@ fn skirmish(
     game_speed: i32,
     player_count: usize,
 ) -> Result<SkirmishLaunchSession> {
-    ensure!(
-        integer(settings, "GameMode", 1)? == 1,
-        "only stock YR Battle (GameMode=1) is supported"
-    );
+    let mode = spawn_mode(settings)?;
     // The supplied client profile writes No. SpecialHouseIsAlly is a Spawner
     // extension, not part of the stock offline Session's alliance owner.
     ensure!(
@@ -438,6 +473,13 @@ fn skirmish(
         "SpecialHouseIsAlly=Yes is unsupported; use the VERA client profile"
     );
     let multiplayer = player_count > 1 || ini.section("Relay").is_some();
+    // Skirmish lists only these classes (`0x005D6263`), and network setup
+    // offers AI rows only under them (`view.rs`' add-AI gate).
+    ensure!(
+        multiplayer || mode.class.lists_in_skirmish(),
+        "GameMode={} needs more than one human",
+        mode.id
+    );
     let house_slots = if multiplayer {
         NETWORK_PLAYER_SLOT_COUNT
     } else {
@@ -619,6 +661,33 @@ fn skirmish(
     for (opponent, team) in opponents.iter_mut().zip(&teams[player_count..]) {
         opponent.team = *team;
     }
+    // Cooperative's AI rows come from its mode+68 (`0x005C30C0`), whose rows the
+    // launcher writes here, so it admits them though setup offers none by hand.
+    ensure!(
+        ai_count == 0 || mode.class.lists_in_skirmish() || mode.class.uses_cooperative_setup(),
+        "GameMode={} cannot include AI players",
+        mode.id
+    );
+    // Vtable+BC (`0x005C4F00`) and +98 (`0x005C42C0`).
+    ensure!(
+        mode.class.allows_observers() || humans.iter().all(|human| !human.is_observer()),
+        "GameMode={} cannot have spectators",
+        mode.id
+    );
+    if let Some(limit) = mode.class.setup_player_limit() {
+        ensure!(
+            humans.len() <= limit,
+            "GameMode={} admits {limit} human players",
+            mode.id
+        );
+    }
+    let playing_teams: Vec<_> = humans
+        .iter()
+        .filter(|human| !human.is_observer())
+        .map(|human| human.slot.team)
+        .chain(opponents.iter().map(|opponent| opponent.team))
+        .collect();
+    validate_mode_teams(&mode, &playing_teams)?;
 
     let options = SkirmishLaunchOptions {
         starting_credits: ranged(settings, "Credits", 10000, 0, i32::MAX)?,
@@ -634,8 +703,8 @@ fn skirmish(
         crates: boolean(settings, "Crates", false)?,
         mcv_redeploy: boolean(settings, "MCVRedeploy", true)?,
         fog_of_war: boolean(settings, "FogOfWar", false)?,
-        // Spawner does not write these stock rules-owned switches. Battle's
-        // retail defaults remain shroud/growth enabled.
+        // Spawner does not write these stock rules-owned switches, and no stock
+        // mode INI sets them: shroud/growth stay enabled.
         shroud: true,
         tiberium_grows: true,
         multi_engineer: boolean(settings, "MultiEngineer", false)?,
@@ -643,7 +712,7 @@ fn skirmish(
         ally_change_allowed: boolean(settings, "AlliesAllowed", false)?,
     };
     let mut session = SkirmishLaunchSession {
-        mode: spawn_battle_mode(),
+        mode,
         selected_map_file: Some(scenario),
         humans,
         local_player_index,
@@ -653,6 +722,31 @@ fn skirmish(
         pre_fill_house_roster: PreFillHouseRoster::new(Vec::new(), Vec::new()),
         options,
     };
+    // The gates network setup's host runs before its assignments: the mode's
+    // Start (`validate_setup_start`, vtable+14), then TXT_CANNOT_ALLY.
+    let roles: Vec<_> = session
+        .humans
+        .iter()
+        .map(|human| human.role.native_value())
+        .collect();
+    match session
+        .mode
+        .class
+        .validate_setup_start(session.options.bases, &roles)
+    {
+        Ok(ModeStartEffect::FreeForAllSourceRoles) => {
+            for (source, role) in session.free_for_all_source_roles() {
+                session.humans[source].role = role;
+            }
+        }
+        // No progress record to bind the partners into (see `spawn_modes`).
+        Ok(ModeStartEffect::None | ModeStartEffect::CooperativePartners) => {}
+        Err(_) => bail!(
+            "GameMode={} cannot start with these settings",
+            session.mode.id
+        ),
+    }
+    ensure!(!session.all_allied(), "every house is on one team");
     session.rebuild_house_roster();
     Ok(session)
 }

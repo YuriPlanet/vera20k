@@ -13,6 +13,9 @@ const FRAME_BUCKET_MS: u64 = 1 << FRAME_BUCKET_SHIFT;
 /// bucket, so an admitted frame is never late by more than half a bucket.
 pub(crate) const HIDDEN_SERVICE_WAKE: std::time::Duration =
     std::time::Duration::from_millis(FRAME_BUCKET_MS / 2);
+/// A refresh gap the pacer forgives, so a pass at 60 Hz still finds a
+/// one-bucket (GameSpeed 1, 60 FPS) frame on time.
+const CADENCE_SLACK_BUCKETS: u32 = 2;
 const MIN_TIMED_GAME_SPEED: u8 = 1;
 const MAX_TIMED_GAME_SPEED: u8 = 6;
 const ELAPSED_CLOCK_STOPPED: u32 = u32::MAX;
@@ -675,15 +678,17 @@ impl LocalFramePacer {
     /// Main__ThrottleFrame (`0x0055E2B4` buckets, `0x0055E1BC` milliseconds)
     /// waits until the interval elapses, so the next Main_Tick arms its timer
     /// (`0x0055D7A8` buckets, `0x0055D568` milliseconds) at the due moment.
-    /// VERA checks only once per presented pass: a frame found late by less
-    /// than one interval keeps its due time, so the display refresh cannot
-    /// stretch the cadence. Later frames restart from now, as native does.
+    /// VERA checks only between presented passes, and `service_match_runtime`
+    /// runs every frame due by then. A frame found late by less than its
+    /// interval, or by less than `CADENCE_SLACK_BUCKETS` (one 60 Hz refresh
+    /// plus jitter, for intervals shorter than that), keeps its due time, so
+    /// the display refresh cannot stretch the cadence. Later frames restart
+    /// from now, as native does.
     ///
     /// Residuals: native restarts from now after any overrun, so a hitch
-    /// shorter than one interval here leaves the next frame due up to one
-    /// interval earlier than native. Native also runs input and rendering
-    /// inside the millisecond wait (55E23F..55E271) and keeps that overshoot.
-    /// Intervals shorter than one refresh still run once per pass.
+    /// shorter than that window here runs the missed frames next instead.
+    /// Native also runs input and rendering inside the millisecond wait
+    /// (55E23F..55E271) and keeps that overshoot.
     pub(crate) fn admitted_frame_start_ms(
         &self,
         now_ms: u64,
@@ -696,7 +701,7 @@ impl LocalFramePacer {
             return now_ms;
         };
         let late = i64::from(timer.elapsed(now_ms, start)) - i64::from(timer.length);
-        if !(0..i64::from(timer.length)).contains(&late) {
+        if !(0..i64::from(timer.cadence_window())).contains(&late) {
             return now_ms;
         }
         // Only the low 32-bit millisecond word is recorded, as natively.
@@ -755,6 +760,16 @@ impl PacingTimer {
         } else {
             start.wrapping_add(self.length)
         }
+    }
+
+    /// Lateness, in the timer's unit, that still keeps the due time.
+    fn cadence_window(self) -> u32 {
+        let slack = if self.buckets {
+            CADENCE_SLACK_BUCKETS
+        } else {
+            CADENCE_SLACK_BUCKETS << FRAME_BUCKET_SHIFT
+        };
+        self.length.max(slack)
     }
 
     fn length_ms(self) -> u32 {
@@ -1114,7 +1129,8 @@ mod tests {
         assert!(pacer.should_admit(8, 6, Some((30, 0)), false));
     }
 
-    /// Frames admitted over `duration_ms` by one pass per display refresh.
+    /// Frames admitted over `duration_ms` by one pass per display refresh,
+    /// each running its due frames as `service_match_runtime` does.
     fn frames_at_refresh(
         hz: u64,
         duration_ms: u64,
@@ -1125,10 +1141,14 @@ mod tests {
         let mut frames = 0;
         for pass in 0..=duration_ms * hz / 1000 {
             let now = 1_000 + pass * 1000 / hz;
-            if pacer.should_admit(now, game_speed, network_fps, false) {
+            let mut attempts = 0;
+            while pacer.should_admit(now, game_speed, network_fps, false)
+                && LocalFramePacer::permits_catch_up(attempts, std::time::Duration::ZERO)
+            {
                 let start = pacer.admitted_frame_start_ms(now, game_speed, network_fps);
                 pacer.record_admitted_frame(start);
                 frames += 1;
+                attempts += 1;
             }
         }
         frames
@@ -1143,6 +1163,14 @@ mod tests {
     }
 
     #[test]
+    fn a_60_hz_refresh_runs_intervals_shorter_than_a_refresh() {
+        // GameSpeed 1 waits one bucket: buckets 62, 63, ..., 250.
+        assert_eq!(frames_at_refresh(60, 3_000, 1, None), 189);
+        // 60 FPS arms 16 ms: frames start at 1000 + 16k up to 4000.
+        assert_eq!(frames_at_refresh(60, 3_000, 0, Some((60, 0))), 188);
+    }
+
+    #[test]
     fn a_frame_late_by_a_whole_interval_restarts_from_now() {
         let mut pacer = LocalFramePacer::new();
         pacer.record_admitted_frame(1_000);
@@ -1151,9 +1179,12 @@ mod tests {
             1_022
         );
         assert_eq!(
-            pacer.admitted_frame_start_ms(1_044, 0, Some((45, 0))),
-            1_044
+            pacer.admitted_frame_start_ms(1_054, 0, Some((45, 0))),
+            1_054
         );
+        // A one-bucket interval still forgives one 60 Hz refresh gap.
+        assert_eq!(pacer.admitted_frame_start_ms(1_030, 1, None), 1_008);
+        assert_eq!(pacer.admitted_frame_start_ms(1_040, 1, None), 1_040);
         assert_eq!(pacer.admitted_frame_start_ms(1_050, 3, None), 1_040);
         assert_eq!(pacer.admitted_frame_start_ms(1_090, 3, None), 1_090);
         pacer.record_admitted_frame(u64::from(u32::MAX - 7));

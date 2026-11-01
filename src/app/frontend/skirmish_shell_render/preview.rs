@@ -237,7 +237,9 @@ pub(super) fn decode_preview_for_map_entry(
     }
 
     if let Some(ra2_dir) = ra2_dir {
-        let ini_path = ra2_dir.join(&entry.file_name);
+        // The game folder, then VERA's Maps folder, as every map lookup.
+        let ini_path = crate::map::source::local_map_path(ra2_dir, &entry.file_name)
+            .unwrap_or_else(|_| ra2_dir.join(&entry.file_name));
         if let Some(ini) = crate::map::source::read_map_ini_for_metadata(&ini_path)
             && let Some(preview) = decode_preview_from_ini(&ini, &entry.file_name)
         {
@@ -400,9 +402,13 @@ pub(super) fn ensure_map_preview_texture(state: &mut AppState, selected_map_idx:
                 .manager()
                 .map(|assets| assets.ra2_dir())
         });
-    let decoded = selected_entry.as_ref().and_then(|entry| {
-        decode_preview_for_map_entry(entry, ra2_dir, state.process_assets.manager())
-    });
+    let decoded = selected_entry
+        .as_ref()
+        .and_then(|entry| {
+            decode_preview_for_map_entry(entry, ra2_dir, state.process_assets.manager())
+        })
+        // An online library row has no file: its catalog header holds it.
+        .or_else(|| crate::app::map_library::online_preview(state, selected_map_idx));
 
     let Some(decoded) = decoded.as_ref() else {
         state.frontend.skirmish_preview_texture = None;

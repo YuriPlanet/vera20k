@@ -16,6 +16,18 @@ ROOT = HOST.parents[1]
 sys.path.insert(0, str(ROOT))
 from tools.cargo_run import build_store, owned_target
 
+# The standard library ships without Wasm atomics, and rebuilding it needs nightly.
+THREADS_TOOLCHAIN = 'nightly-2026-10-15'
+# wasm-bindgen needs shared, imported memory and these thread-local symbols. A
+# retail install needs the full 4 GiB of address space.
+THREADS_RUSTFLAGS = ' '.join((
+    '-C target-feature=+atomics,+bulk-memory',
+    *(f'-C link-arg={arg}' for arg in (
+        '--shared-memory', '--import-memory', '--max-memory=4294967296',
+        '--export=__wasm_init_tls', '--export=__tls_size', '--export=__tls_align', '--export=__tls_base',
+    )),
+))
+
 
 def validate_proxy_url(value):
     """Validate a supplied build override; the Rust owner supplies the default."""
@@ -35,7 +47,7 @@ def validate_proxy_url(value):
         raise ValueError('WS_PROXY_URL must be a wss:// origin (ws:// is allowed only on loopback)')
 
 
-def build_label(profile, network, lan):
+def build_label(profile, network, lan, threads=False):
     """Name this package in the page footer and diagnostics: source revision, profile and mode."""
     try:
         revision = subprocess.check_output(['git', 'describe', '--tags', '--always', '--dirty'],
@@ -43,7 +55,7 @@ def build_label(profile, network, lan):
     except (OSError, subprocess.CalledProcessError):
         revision = 'unknown revision'
     mode = 'LAN' if lan else 'online' if network else 'single player'
-    return f'Build {revision} · {profile} · {mode}'
+    return f'Build {revision} · {profile} · {mode}' + (' · threads' if threads else '')
 
 
 def package_host(stage, destination, network, lan=False, label=None):
@@ -77,6 +89,7 @@ def main():
     parser.add_argument('--profile', choices=['fast', 'release'], default='fast')
     parser.add_argument('--network', action='store_true', help='Enable the optional WS/UDP browser transport')
     parser.add_argument('--lan', action='store_true', help='Also enable browser LAN play over WebRTC (requires --network)')
+    parser.add_argument('--threads', action='store_true', help=f'Run simulation work on a Web Worker pool (builds with {THREADS_TOOLCHAIN})')
     args = parser.parse_args()
     if args.lan and not args.network:
         parser.error('--lan requires --network')
@@ -90,12 +103,15 @@ def main():
     cli = shutil.which('wasm-bindgen')
     if not cli or subprocess.check_output([cli, '--version'], text=True).strip() != f'wasm-bindgen {version}':
         parser.error(f'Install the matching binding CLI: cargo install wasm-bindgen-cli --version {version} --locked')
+    features = 'wasm-lan' if args.lan else 'wasm-net' if args.network else 'wasm'
+    threads = ['-Z', 'build-std=std,panic_abort'] if args.threads else []
+    env = {**os.environ, 'RUSTUP_TOOLCHAIN': THREADS_TOOLCHAIN, 'RUSTFLAGS': THREADS_RUSTFLAGS} if args.threads else None
     subprocess.run([
-        sys.executable, '-m', 'tools.cargo_run', '--', 'rustc', '-p', 'vera20k', '--lib',
-        '--target', 'wasm32-unknown-unknown', '--no-default-features', '--features', 'wasm-lan' if args.lan else 'wasm-net' if args.network else 'wasm',
+        sys.executable, '-m', 'tools.cargo_run', '--', 'rustc', '-p', 'vera20k', '--lib', *threads,
+        '--target', 'wasm32-unknown-unknown', '--no-default-features', '--features', f'{features},wasm-threads' if args.threads else features,
         '--profile', args.profile, '--locked', '--crate-type', 'cdylib',
         '--', '-C', 'link-arg=-zstack-size=8388608',
-    ], cwd=ROOT, check=True)
+    ], cwd=ROOT, env=env, check=True)
     target = owned_target(ROOT, build_store(ROOT)[1])
     binary = target / 'wasm32-unknown-unknown' / args.profile / 'vera20k.wasm'
     (ROOT / 'target').mkdir(exist_ok=True)
@@ -104,9 +120,10 @@ def main():
         subprocess.run([cli, '--target', 'web', '--out-dir', str(stage / 'pkg'), str(binary)], check=True)
         destination = ROOT / 'target/wasm-dist'
         # Only generated public files; retail data never enters the package.
-        package_host(stage, destination, args.network, args.lan, build_label(args.profile, args.network, args.lan))
+        package_host(stage, destination, args.network, args.lan, build_label(args.profile, args.network, args.lan, args.threads))
         shutil.copytree(stage / 'pkg', destination / 'pkg', dirs_exist_ok=True)
-    print(f'Browser build: {destination}\nServe with: python3 -m http.server 8000 --bind 127.0.0.1 --directory target/wasm-dist')
+    serve = 'python3 tools/wasm/serve.py' if args.threads else 'python3 -m http.server 8000 --bind 127.0.0.1 --directory target/wasm-dist'
+    print(f'Browser build: {destination}\nServe with: {serve}')
 
 
 if __name__ == '__main__':

@@ -886,6 +886,47 @@ impl ShellRandomAssignmentState {
 }
 
 impl SkirmishLaunchSession {
+    /// The all-allied scan (BC 5DD0EA, C2 0x79071E after team copy 5E9E00):
+    /// only a nonobserver human in raw row 0 seeds the comparison. An observer
+    /// there bypasses this native gate; do not invent all-pairs.
+    pub fn all_allied(&self) -> bool {
+        let Some(LaunchTeam::Team(team)) = self
+            .humans
+            .iter()
+            .find(|human| human.raw_slot_index == Some(0) && !human.is_observer())
+            .map(|human| human.slot.team)
+        else {
+            return false;
+        };
+        let same_humans = self
+            .humans
+            .iter()
+            .filter(|human| human.raw_slot_index.is_some() && !human.is_observer())
+            .all(|human| human.slot.team == LaunchTeam::Team(team));
+        let same_ai = self
+            .opponents
+            .iter()
+            .all(|ai| ai.team == LaunchTeam::Team(team));
+        same_humans && same_ai && !self.mode.class.permits_all_allied()
+    }
+
+    /// FreeForAll5C5D40's roles: each non-observer node+6B is its source index.
+    pub fn free_for_all_source_roles(&self) -> Vec<(usize, LaunchHumanRole)> {
+        self.humans
+            .iter()
+            .enumerate()
+            .filter(|(_, human)| !human.is_observer())
+            .map(|(source, _)| {
+                (
+                    source,
+                    LaunchHumanRole::Player {
+                        group: source as i32,
+                    },
+                )
+            })
+            .collect()
+    }
+
     /// Gather688415..42F combines source-human nonobservers with Session's
     /// declared AI count, independently of how many AI rows construct Houses.
     pub fn required_start_count(&self) -> usize {

@@ -1,4 +1,6 @@
 import init, { import_file, prepare_audio, restore_user_file, set_persistence_callbacks, start_game } from './pkg/vera20k.js';
+// Only a --threads package exports initThreadPool.
+import * as engine from './pkg/vera20k.js';
 
 const $ = selector => document.querySelector(selector);
 const status = $('#status');
@@ -34,6 +36,7 @@ const TEXT = {
         insecure: 'Open this page over HTTPS or from localhost; WebGPU needs a secure page.',
         noGpu: 'This browser has no WebGPU. Use a recent Chrome or Edge.',
         engineFailed: error => `Could not load the engine: ${error}`,
+        notIsolated: 'This multi-threaded build needs COOP and COEP headers; the site is not sending them.',
         reading: 'Reading folder…',
         found: folder => `Using the game folder inside “${folder}”.`,
         noFiles: 'No game files found in that folder. Pick the Yuri’s Revenge install folder.',
@@ -71,6 +74,7 @@ const TEXT = {
         insecure: '请通过 HTTPS 或 localhost 打开本页；WebGPU 需要安全页面。',
         noGpu: '当前浏览器不支持 WebGPU，请使用新版 Chrome 或 Edge。',
         engineFailed: error => `引擎加载失败：${error}`,
+        notIsolated: '多线程版本需要 COOP 和 COEP 响应头，但当前网站没有发送。',
         reading: '正在读取文件夹…',
         found: folder => `已使用“${folder}”中的游戏目录。`,
         noFiles: '该文件夹中没有游戏文件，请选择《尤里的复仇》安装目录。',
@@ -140,6 +144,7 @@ fullscreen.addEventListener('change', () => {
     try { localStorage.setItem('vera20k-fullscreen', fullscreen.checked ? '1' : '0'); } catch {}
 });
 
+let workers = 0;
 // A plain-text report for bug reports: build, browser, GPU, memory, storage and the folder check.
 async function diagnosticReport() {
     const lines = [
@@ -147,6 +152,7 @@ async function diagnosticReport() {
         `Browser: ${navigator.userAgent}`,
         `Screen: ${screen.width}×${screen.height} @${devicePixelRatio}x, window ${innerWidth}×${innerHeight}`,
         `CPU threads: ${navigator.hardwareConcurrency ?? '?'}, memory: ${navigator.deviceMemory ?? '?'} GB, secure: ${isSecureContext}`,
+        `Workers: ${workers}, cross-origin isolated: ${globalThis.crossOriginIsolated ?? '?'}`,
     ];
     try {
         const adapter = await navigator.gpu?.requestAdapter();
@@ -408,6 +414,11 @@ async function launch() {
 
 try {
     await init();
+    if (engine.initThreadPool) {
+        // The main thread spins while the pool works, so it counts as one of the CPU threads.
+        workers = Math.max(1, (navigator.hardwareConcurrency ?? 2) - 1);
+        await engine.initThreadPool(workers);
+    }
     try { await restore(); } catch (error) { storageError(error); }
     set_persistence_callbacks((path, bytes, modified) => {
         // Copy before returning: the source may refer to transient Wasm memory.
@@ -491,7 +502,8 @@ try {
     }
 } catch (error) {
     setStep(steps.browser, 'error');
-    setStatus('err', 'engineFailed', String(error));
+    const unisolated = engine.initThreadPool && !globalThis.crossOriginIsolated;
+    setStatus('err', 'engineFailed', unisolated ? TEXT[lang].notIsolated : String(error));
 }
 window.addEventListener('beforeunload', event => {
     if (pending || storageFailed) { event.preventDefault(); event.returnValue = ''; }

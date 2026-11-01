@@ -305,29 +305,72 @@ pub(super) fn push_message_box_backdrop_instances(
     push_lower_strip_instance(out, atlas, layout);
 }
 
-/// Use Map's two-button eject box.
-pub(super) fn push_eject_box_instances(
+/// VERA's download boxes show how much has arrived: an outlined bar under
+/// the box's text, filled in the label colour.
+pub(super) fn push_download_progress_bar(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    body: RectPx,
+    (completed, total): (u64, u64),
+    depth: f32,
+) {
+    let track = RectPx::new(body.x, body.y + body.h + 6, body.w, 10);
+    push_rect_outline(out, atlas, track, SHELL_LABEL_TEXT_RGB, depth);
+    let inner = track.w - 4;
+    let filled = (inner as u64 * completed.min(total) / total.max(1)) as i32;
+    if filled > 0 {
+        push_solid_rect(
+            out,
+            atlas,
+            RectPx::new(track.x + 2, track.y + 2, filled, track.h - 4),
+            SHELL_LABEL_TEXT_RGB,
+            depth,
+        );
+    }
+}
+
+/// Use Map's two-button box. gamemd's eject-AI question draws gamemd's art;
+/// VERA's map-library download boxes draw Red Alert 2's, like its other
+/// online-service boxes.
+pub(super) fn push_choose_map_prompt_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
     screen: RectPx,
-    prompt: crate::ui::skirmish_shell::EjectPrompt,
+    prompt: crate::ui::skirmish_shell::ChooseMapPrompt,
+    progress: Option<(u64, u64)>,
 ) {
     let boxed = crate::ui::shell::modal::quit_confirm_layout(screen.w, screen.h);
+    if prompt.kind == crate::ui::skirmish_shell::ChooseMapPromptKind::Downloading
+        && let Some(progress) = progress
+    {
+        push_download_progress_bar(
+            out,
+            atlas,
+            boxed.body,
+            progress,
+            VALIDATION_MODAL_SPRITE_DEPTHS.button,
+        );
+    }
     let pressed = |button| prompt.pressed == Some(button);
     let buttons = [
         shell_paint::ModalButton {
             rect: boxed.ok,
-            pressed: pressed(crate::ui::skirmish_shell::EjectPromptButton::Ok),
-            enabled: true,
+            pressed: pressed(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok),
+            enabled: prompt.button_enabled(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok),
         },
         shell_paint::ModalButton {
             rect: boxed.cancel,
-            pressed: pressed(crate::ui::skirmish_shell::EjectPromptButton::Cancel),
+            pressed: pressed(crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel),
             enabled: true,
         },
     ];
+    let background = match prompt.kind {
+        crate::ui::skirmish_shell::ChooseMapPromptKind::EjectAi => None,
+        _ => atlas.ra2_dialog_background,
+    }
+    .or_else(|| atlas.mode_two_dialog_background(None));
     out.extend(shell_paint::paint_modal_sprites(
-        atlas.mode_two_dialog_background(None),
+        background,
         super::chrome::type3_button_frames(atlas),
         boxed.dialog,
         &buttons,

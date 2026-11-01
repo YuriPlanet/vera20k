@@ -116,7 +116,9 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
         .frontend
         .multiplayer_setup
         .as_ref()
-        .filter(|ui| routed && ui.focused_control == CHAT && !ui.options_open)
+        .filter(|ui| {
+            routed && ui.focused_control == CHAT && !ui.options_open && ui.map_offer.is_none()
+        })
         .map(|_| layout(state).chat)
 }
 
@@ -153,7 +155,17 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     // inert; Enter appends CRLF before shared5EDD00/5DE360 submission.
     // VERA's Game Options popup takes the keys first and closes on Escape
     // or Enter.
-    let action = if ui.options_open {
+    let action = if let Some(offer) = &ui.map_offer {
+        match code {
+            // Keys meant for the chat just before it opened do not answer it.
+            _ if !offer.takes_keys(Instant::now()) => None,
+            Some(KeyCode::Enter | KeyCode::NumpadEnter) if !offer.downloading => {
+                Some(SetupAction::MapOffer { download: true })
+            }
+            Some(KeyCode::Escape) => Some(SetupAction::MapOffer { download: false }),
+            _ => None,
+        }
+    } else if ui.options_open {
         matches!(
             code,
             Some(KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter)
@@ -394,6 +406,8 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 NEXT_ROWS => Some(SetupAction::RosterPage { forward: true }),
                 GAME_OPTIONS => Some(SetupAction::GameOptions { open: true }),
                 GAME_OPTIONS_OK => Some(SetupAction::GameOptions { open: false }),
+                MAP_OFFER_DOWNLOAD => Some(SetupAction::MapOffer { download: true }),
+                MAP_OFFER_LEAVE => Some(SetupAction::MapOffer { download: false }),
                 _ => None,
             };
         }

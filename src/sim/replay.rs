@@ -8,8 +8,8 @@
 //!
 //! [`ReplayLog`] is the Rust command/hash recording. Version 4 regenerates
 //! shared PlanMgr events at their native publication rungs instead of importing
-//! them as frame input. It retains the resolved authored Battle startup for
-//! standalone verification through the normal loader and frame owner.
+//! them as frame input. It retains the resolved authored startup, Cooperative
+//! aside, for standalone verification through the normal loader and frame owner.
 //! It is separate from [`NativeReplay`]. Production
 //! does not record or play native streams yet; only tests build
 //! [`NativeReplay`], which is kept for native recording playback.
@@ -813,8 +813,8 @@ impl ReplayStartup {
             "standalone replay requires the normal App's batched paths"
         );
         anyhow::ensure!(
-            launch.mode.class == crate::skirmish_modes::MpModeClass::Battle,
-            "standalone replay currently supports authored Battle launches"
+            launch.mode.class != crate::skirmish_modes::MpModeClass::Cooperative,
+            "standalone replay does not support Cooperative launches"
         );
         let map_name = launch
             .selected_map_file
@@ -893,7 +893,7 @@ impl ReplayStartup {
         );
         crate::map::source::validate_network_map_name(&header.map_name)?;
         anyhow::ensure!(
-            self.launch.mode.class == crate::skirmish_modes::MpModeClass::Battle,
+            self.launch.mode.class != crate::skirmish_modes::MpModeClass::Cooperative,
             "unsupported replay launch mode"
         );
         anyhow::ensure!(
@@ -916,9 +916,10 @@ impl ReplayLog {
     /// Validate the immutable startup before a CLI or rendered loader opens
     /// assets. Diagnostic-only segments cannot silently become new matches.
     pub fn standalone_startup(&self) -> Result<&ReplayStartup> {
-        let startup = self.startup.as_deref().context(
-            "diagnostic log has no standalone startup; record a fresh authored Battle match",
-        )?;
+        let startup = self
+            .startup
+            .as_deref()
+            .context("diagnostic log has no standalone startup; record a fresh authored match")?;
         startup.validate_header(&self.header)?;
         anyhow::ensure!(
             self.ticks.iter().any(|tick| tick.state_hash.is_some()),
@@ -1461,6 +1462,17 @@ mod tests {
     #[test]
     #[ignore = "slow; authored retail Battle load and standalone replay reconstruction"]
     fn authored_ai_match_reconstructs_and_checks_actual_command_hashes() {
+        authored_match_reconstructs(crate::skirmish_launch::BATTLE_MODE_ID);
+    }
+
+    /// A class other than Battle, with its own mode INI, through the same owner.
+    #[test]
+    #[ignore = "slow; authored retail FreeForAll load and standalone replay reconstruction"]
+    fn authored_free_for_all_match_reconstructs() {
+        authored_match_reconstructs(2);
+    }
+
+    fn authored_match_reconstructs(mode_id: i32) {
         use crate::sim::world::{FrameEffects, TickLane};
         let root = std::path::PathBuf::from(std::env::var_os("RA2_DIR").expect("retail RA2_DIR"));
         let mut launch = crate::headless_scenario::battle_session(
@@ -1471,6 +1483,7 @@ mod tests {
             )],
         );
         launch.humans[0].name = "ReplayGuest".to_owned();
+        launch.mode = crate::skirmish_launch::SkirmishLaunchMode::stock(mode_id).unwrap();
         let assets = crate::assets::asset_manager::AssetManager::new(
             &root,
             crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
@@ -1668,7 +1681,8 @@ mod tests {
         assert_eq!(verified.final_tick, 32);
         assert_eq!(verified.final_state_hash, scene.sim().state_hash());
         // A -SPAWN replay's map exists only beside the replay file.
-        let beside = std::env::temp_dir().join(format!("vera20k-replay-{}", std::process::id()));
+        let beside =
+            std::env::temp_dir().join(format!("vera20k-replay-{}-{mode_id}", std::process::id()));
         std::fs::create_dir_all(&beside).unwrap();
         let map = beside.join("XMP03T4.MAP");
         std::fs::write(&map, assets.get("XMP03T4.MAP").unwrap()).unwrap();

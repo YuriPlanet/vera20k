@@ -654,6 +654,85 @@ fn thirty_humans_fill_every_network_row_and_reuse_colours() {
     assert!(SpawnRequest::parse(&clash).is_err());
 }
 
+fn in_mode(mode: i32, text: String) -> String {
+    text.replacen("[Settings]\n", &format!("[Settings]\nGameMode={mode}\n"), 1)
+}
+
+#[test]
+fn game_mode_selects_its_stock_row_and_start_effect() {
+    assert_eq!(parse_network(&network_spawn(2, 0, "")).session.mode.id, 1);
+    let mega = parse_network(&in_mode(5, network_spawn(2, 0, ""))).session;
+    assert_eq!(mega.mode.override_file, "MPMWMD.ini");
+    // FreeForAll5C5D40: each player's role is its source, in every file.
+    for local in 0..2 {
+        let free = parse_network(&in_mode(2, network_spawn(2, local, ""))).session;
+        let roles: Vec<_> = free.humans.iter().map(|h| h.role.native_value()).collect();
+        assert_eq!(roles, [0, 1]);
+    }
+    // 10 has no MPModesMD row.
+    assert!(SpawnRequest::parse(&in_mode(10, network_spawn(2, 0, ""))).is_err());
+}
+
+#[test]
+fn game_mode_admits_only_its_setup_choices() {
+    let parses = |mode: i32, extra: &str| {
+        SpawnRequest::parse(&in_mode(mode, network_spawn(2, 0, extra))).is_ok()
+    };
+    let split = "[HouseTeams]\nMulti1=0\nMulti2=1\n";
+    let same = "[HouseTeams]\nMulti1=0\nMulti2=0\n";
+    assert!(parses(9, split));
+    assert!(!parses(9, ""), "MustAlly has no None team");
+    assert!(!parses(9, same), "TXT_CANNOT_ALLY");
+    assert!(!parses(2, split), "FreeForAll's AlliesAllowed=no");
+    assert!(!parses(5, same), "every other mode refuses it too");
+    // Only row 0 seeds the scan: a watching host bypasses it.
+    let watching = "[HouseTeams]\nMulti2=0\nMulti3=0\n[IsSpectator]\nMulti1=Yes\n";
+    assert!(SpawnRequest::parse(&in_mode(9, network_spawn(3, 0, watching))).is_ok());
+    let ai = "[HouseHandicaps]\nMulti3=1\n[HouseCountries]\nMulti3=3\n[HouseColors]\nMulti3=6\n";
+    let with_ai = |mode| {
+        SpawnRequest::parse(&in_mode(mode, network_spawn(2, 0, ai)).replacen(
+            "[Settings]\n",
+            "[Settings]\nAIPlayers=1\n",
+            1,
+        ))
+        .is_ok()
+    };
+    assert!(with_ai(2));
+    assert!(!with_ai(5), "ManBattle has no AI rows");
+    // Unholy5D6310's Start answers false without bases.
+    assert!(
+        SpawnRequest::parse(&in_mode(4, network_spawn(2, 0, "")).replacen(
+            "[Settings]\n",
+            "[Settings]\nBases=No\n",
+            1,
+        ),)
+        .is_err()
+    );
+}
+
+/// One mission of a Co-op campaign: the launcher's enemy rows, at most two
+/// humans (`0x005C42C0`), no spectators (`0x005C4F00`), and no teams, since the
+/// bootstrap allies each side (`AlliesAllowed=no`, `permits_all_allied`).
+#[test]
+fn cooperative_admits_its_enemy_rows_and_two_humans() {
+    let enemies = "[HouseHandicaps]\nMulti3=1\nMulti4=1\n[HouseCountries]\nMulti3=8\nMulti4=7\n\
+         [HouseColors]\nMulti3=2\nMulti4=3\n";
+    let with_ai = |count, extra: &str| {
+        in_mode(3, network_spawn(count, 0, &format!("{enemies}{extra}"))).replacen(
+            "[Settings]\n",
+            "[Settings]\nAIPlayers=2\n",
+            1,
+        )
+    };
+    let session = parse_network(&with_ai(2, "")).session;
+    assert_eq!(session.mode.override_file, "MPCoopMD.ini");
+    assert_eq!(session.opponents.len(), 2);
+    assert!(!session.all_allied());
+    assert!(SpawnRequest::parse(&with_ai(2, "[IsSpectator]\nMulti2=Yes\n")).is_err());
+    assert!(SpawnRequest::parse(&with_ai(2, "[HouseTeams]\nMulti1=0\nMulti2=0\n")).is_err());
+    assert!(SpawnRequest::parse(&in_mode(3, network_spawn(3, 0, ""))).is_err());
+}
+
 #[test]
 fn network_ai_houses_follow_every_human() {
     let session = parse_network(

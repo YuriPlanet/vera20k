@@ -1185,6 +1185,12 @@ impl ApplicationHandler for App {
                     crate::app::shell_lan::key(state, &event);
                     return;
                 }
+                // VERA: typing in Choose Map fills its search line.
+                if matches!(screen, ScreenPage::NetworkSetup | ScreenPage::Skirmish)
+                    && Self::choose_map_search_key(state, &event)
+                {
+                    return;
+                }
                 if screen == ScreenPage::NetworkSetup {
                     if state
                         .frontend
@@ -1206,7 +1212,7 @@ impl ApplicationHandler for App {
                                 code,
                                 KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter
                             ) {
-                                Self::cancel_choose_map_eject_prompt(state);
+                                Self::answer_choose_map_prompt_key(state, code != KeyCode::Escape);
                             }
                         }
                     }
@@ -1303,7 +1309,7 @@ impl ApplicationHandler for App {
                             code,
                             KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter
                         )
-                        && Self::cancel_choose_map_eject_prompt(state)
+                        && Self::answer_choose_map_prompt_key(state, code != KeyCode::Escape)
                     {
                         return;
                     }
@@ -1877,6 +1883,10 @@ impl ApplicationHandler for App {
                 crate::app::input::sound::poll_scroll_repeat(state),
                 Self::poll_movie_list_scroll(state),
                 Self::poll_choose_map_scroll(state),
+                // Captures replay sealed input; they never read the library.
+                (self.shell_capture.is_none() && self.tactical_capture.is_none())
+                    .then(|| crate::app::map_library::poll(state))
+                    .flatten(),
                 Self::poll_campaign(state),
                 Self::campaign_score_animation_deadline(state),
                 // Captures replay sealed input; they never check or ask.

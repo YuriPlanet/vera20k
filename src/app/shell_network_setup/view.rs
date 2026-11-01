@@ -562,6 +562,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 .multiplayer_setup
                 .as_ref()
                 .is_some_and(|ui| ui.options_open),
+        map_offer_open: state
+            .frontend
+            .multiplayer_setup
+            .as_ref()
+            .is_some_and(|ui| ui.map_offer.is_some()),
         mode_label: label(
             state,
             if launch.selected_map_file.is_none() {

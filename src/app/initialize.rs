@@ -353,6 +353,9 @@ impl App {
                 Ok(config)
             });
         let game_config = startup_asset_or_error(game_config, &mut main_menu_shell_error);
+        if let Some(config) = &game_config {
+            crate::map::source::set_downloaded_maps_dir(config.paths.downloaded_maps_dir());
+        }
         let startup_files = StartupFiles {
             config_file: GameConfig::path(),
             problem: startup_problem,
@@ -1125,6 +1128,7 @@ impl App {
                     crate::app::loading::pump::LoadingProgressState::standard_skirmish(),
                 frontend_rules: startup_rules,
                 shell_preview_overlay_registry: None,
+                map_library: Default::default(),
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 updater: Default::default(),
                 skirmish_shell_state,

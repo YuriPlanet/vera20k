@@ -422,6 +422,18 @@ impl App {
                 state.frontend.scenario_catalog.records(),
                 &layout,
             ));
+        // VERA: online rooms list the online map library under its own row.
+        if crate::app::map_library::listed_in_choose_map(state) {
+            let favorites = state.frontend.map_library.favorites().clone();
+            if let Some(modal) = state
+                .frontend
+                .skirmish_shell_state
+                .choose_map_modal
+                .as_mut()
+            {
+                modal.add_online_maps_row(favorites);
+            }
+        }
         Self::list_cooperative_campaigns(state, false);
     }
 
@@ -459,6 +471,7 @@ impl App {
             Self::remap_record_index(selected_file.as_deref(), current_record_index, &records);
         state.frontend.scenario_catalog =
             crate::app::scenario_catalog::ScenarioCatalog::from_records(records);
+        crate::app::map_library::append_online_records(state);
         remapped
     }
 
@@ -752,6 +765,11 @@ impl App {
                 let Some(selection) = modal.accept_selection() else {
                     return true;
                 };
+                // VERA: an Online map is downloaded first; the rest of Use
+                // Map runs once it is here (`map_library`).
+                if crate::app::map_library::prompt_download(state, selection) {
+                    return true;
+                }
                 if Self::prompt_choose_map_eject(state, selection) {
                     return true;
                 }
@@ -759,6 +777,20 @@ impl App {
             }
             crate::ui::skirmish_shell::ChooseMapModalButton::Cancel0x5c0 => {
                 crate::app::frontend::shell_transition::ShellExitThen::ChooseMapCancel
+            }
+            // Under Online Maps this button stars or unstars the map.
+            crate::ui::skirmish_shell::ChooseMapModalButton::CreateRandomMap0x583
+                if modal.online_maps_selected() =>
+            {
+                if let Some((sha256, starred)) = modal.toggle_favorite(
+                    &state.frontend.skirmish_modes,
+                    state.frontend.scenario_catalog.records(),
+                    &layout,
+                ) {
+                    crate::app::map_library::set_favorite(state, sha256, starred);
+                }
+                state.platform.window.request_redraw();
+                return true;
             }
             crate::ui::skirmish_shell::ChooseMapModalButton::CreateRandomMap0x583 => {
                 crate::app::frontend::shell_transition::ShellExitThen::ChooseMapRandomMap
@@ -783,9 +815,10 @@ impl App {
             .choose_map_modal
             .as_mut()
         {
-            modal.eject_prompt = Some(crate::ui::skirmish_shell::EjectPrompt {
+            modal.message_box = Some(crate::ui::skirmish_shell::ChooseMapPrompt {
                 selection,
                 pressed: None,
+                kind: crate::ui::skirmish_shell::ChooseMapPromptKind::EjectAi,
             });
         }
         state.platform.window.request_redraw();
@@ -825,38 +858,39 @@ impl App {
     }
 
     /// The eject box's two buttons (the two-button message box `0x120`).
-    fn choose_map_eject_button_at(
+    fn choose_map_prompt_button_at(
         state: &AppState,
         x: i32,
         y: i32,
-    ) -> Option<crate::ui::skirmish_shell::EjectPromptButton> {
+    ) -> Option<crate::ui::skirmish_shell::ChooseMapPromptButton> {
         let layout = crate::ui::shell::modal::quit_confirm_layout(
             state.render_width() as i32,
             state.render_height() as i32,
         );
         if layout.ok.contains(x, y) {
-            Some(crate::ui::skirmish_shell::EjectPromptButton::Ok)
+            Some(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok)
         } else if layout.cancel.contains(x, y) {
-            Some(crate::ui::skirmish_shell::EjectPromptButton::Cancel)
+            Some(crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel)
         } else {
             None
         }
     }
 
-    /// A press while the eject box shows: its owner-draw buttons play the
-    /// press sound (`0x00612B70`).
-    pub(super) fn handle_choose_map_eject_mouse_down(state: &mut AppState) -> bool {
+    /// A press while Use Map's box shows: its owner-draw buttons play the
+    /// press sound (`0x00612B70`). Download takes no press while it runs.
+    pub(super) fn handle_choose_map_prompt_mouse_down(state: &mut AppState) -> bool {
         let (x, y) = state.match_state.input.cursor_px();
-        let button = Self::choose_map_eject_button_at(state, x, y);
+        let button = Self::choose_map_prompt_button_at(state, x, y);
         let Some(prompt) = state
             .frontend
             .skirmish_shell_state
             .choose_map_modal
             .as_mut()
-            .and_then(|modal| modal.eject_prompt.as_mut())
+            .and_then(|modal| modal.message_box.as_mut())
         else {
             return false;
         };
+        let button = button.filter(|button| prompt.button_enabled(*button));
         prompt.pressed = button;
         if button.is_some() {
             Self::play_main_menu_button_sound(state);
@@ -865,11 +899,11 @@ impl App {
         true
     }
 
-    /// A release while the eject box shows: OK goes on to Use Map's close,
-    /// Cancel keeps the chooser.
-    pub(super) fn handle_choose_map_eject_mouse_up(state: &mut AppState) -> bool {
+    /// A release while Use Map's box shows: OK goes on to Use Map's close,
+    /// Download fetches the map, and Cancel keeps the chooser.
+    pub(super) fn handle_choose_map_prompt_mouse_up(state: &mut AppState) -> bool {
         let (x, y) = state.match_state.input.cursor_px();
-        let released = Self::choose_map_eject_button_at(state, x, y);
+        let released = Self::choose_map_prompt_button_at(state, x, y);
         let Some(modal) = state
             .frontend
             .skirmish_shell_state
@@ -878,7 +912,7 @@ impl App {
         else {
             return false;
         };
-        let Some(prompt) = modal.eject_prompt.as_mut() else {
+        let Some(prompt) = modal.message_box.as_mut() else {
             return false;
         };
         let pressed = prompt.pressed.take();
@@ -887,23 +921,84 @@ impl App {
             return true;
         }
         let selection = prompt.selection;
-        if pressed == Some(crate::ui::skirmish_shell::EjectPromptButton::Ok) {
+        let download = prompt.kind != crate::ui::skirmish_shell::ChooseMapPromptKind::EjectAi;
+        if download {
+            if pressed == Some(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok) {
+                crate::app::map_library::start_download(state, selection);
+            } else {
+                modal.close_prompt();
+                crate::app::map_library::cancel_download(state);
+            }
+            state.platform.window.request_redraw();
+            return true;
+        }
+        if pressed == Some(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok) {
             // A chooser the random-map run hid closes without a slide
             // (`0x00608070` returns while it is invisible).
-            modal.eject_prompt = None;
+            modal.message_box = None;
             Self::leave_shell_dialog(
                 state,
                 crate::app::frontend::shell_transition::ShellExitThen::ChooseMapUse(selection),
             );
         } else {
-            modal.decline_eject();
+            modal.close_prompt();
         }
         state.platform.window.request_redraw();
         true
     }
 
-    /// Enter or Escape on the eject box answer Cancel (`0x005D370D`).
-    pub(super) fn cancel_choose_map_eject_prompt(state: &mut AppState) -> bool {
+    /// VERA: a printable key or Backspace while Choose Map shows edits its
+    /// search line. False for other keys, and while a box or the random-map
+    /// run is over the chooser.
+    pub(super) fn choose_map_search_key(
+        state: &mut AppState,
+        event: &winit::event::KeyEvent,
+    ) -> bool {
+        if !event.state.is_pressed() {
+            return false;
+        }
+        let layout = Self::skirmish_choose_map_layout(state);
+        let frontend = &mut state.frontend;
+        let Some(modal) = frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_mut()
+            .filter(|modal| modal.message_box.is_none() && !modal.is_hidden())
+        else {
+            return false;
+        };
+        let mut text = modal.search.clone();
+        if event.physical_key
+            == winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Backspace)
+        {
+            text.pop();
+        } else {
+            let typed: String = event
+                .text
+                .as_deref()
+                .unwrap_or_default()
+                .chars()
+                .filter(|ch| !ch.is_control())
+                .collect();
+            if typed.is_empty() {
+                return false;
+            }
+            text.push_str(&typed);
+        }
+        modal.set_search(
+            text,
+            &frontend.skirmish_modes,
+            frontend.scenario_catalog.records(),
+            &layout,
+        );
+        state.platform.window.request_redraw();
+        true
+    }
+
+    /// Enter or Escape on Use Map's box answer Cancel (`0x005D370D`). VERA's
+    /// download box takes Enter as Download, as the room's missing-map offer
+    /// does; while the download runs, Enter does nothing and Escape cancels.
+    pub(super) fn answer_choose_map_prompt_key(state: &mut AppState, enter: bool) -> bool {
         let Some(modal) = state
             .frontend
             .skirmish_shell_state
@@ -912,9 +1007,21 @@ impl App {
         else {
             return false;
         };
-        if !modal.decline_eject() {
+        use crate::ui::skirmish_shell::ChooseMapPromptKind as Kind;
+        if enter
+            && let Some(prompt) = modal.message_box
+            && prompt.kind != Kind::EjectAi
+        {
+            if prompt.kind != Kind::Downloading {
+                crate::app::map_library::start_download(state, prompt.selection);
+                state.platform.window.request_redraw();
+            }
+            return true;
+        }
+        if !modal.close_prompt() {
             return false;
         }
+        crate::app::map_library::cancel_download(state);
         state.platform.window.request_redraw();
         true
     }
@@ -1081,7 +1188,9 @@ impl App {
             .skirmish_shell_state
             .choose_map_modal
             .as_mut()
-            && modal.statics.hover(&text, crate::util::time::Instant::now())
+            && modal
+                .statics
+                .hover(&text, crate::util::time::Instant::now())
         {
             state.platform.window.request_redraw();
         }
@@ -1214,7 +1323,7 @@ impl App {
     pub(super) fn handle_skirmish_shell_mouse_down(state: &mut AppState) {
         // A message box runs over the dialogs; else the dialog on top.
         if Self::route_validation_modal_mouse_down(state)
-            || Self::handle_choose_map_eject_mouse_down(state)
+            || Self::handle_choose_map_prompt_mouse_down(state)
         {
             return;
         }
@@ -1287,7 +1396,7 @@ impl App {
 
     pub(super) fn handle_skirmish_shell_mouse_up(state: &mut AppState) {
         if Self::route_validation_modal_mouse_up(state)
-            || Self::handle_choose_map_eject_mouse_up(state)
+            || Self::handle_choose_map_prompt_mouse_up(state)
         {
             return;
         }
