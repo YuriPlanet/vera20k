@@ -46,9 +46,9 @@ class ReleaseDownloadsTests(unittest.TestCase):
     def puts(self):
         return [args[args.index("--key") + 1] for tool, args in self.calls() if tool == "aws" and "put-object" in args]
 
-    def prior_pointer(self, version="0.2.1"):
+    def prior_pointer(self, version="0.2.1", platforms=("windows", "macos", "linux")):
         data = {"version": version, "tag": "v" + version, "commit": "c" * 40,
-                "files": {platform: {} for platform in ("windows", "macos", "linux")}}
+                "files": {platform: {} for platform in platforms}}
         (self.root / "objects/latest.json").write_text(json.dumps(data))
         return (self.root / "objects/latest.json").read_bytes()
 
@@ -84,6 +84,21 @@ class ReleaseDownloadsTests(unittest.TestCase):
         again = self.run_publisher()
         self.assertEqual(again.returncode, 0, again.stderr)
         self.assertEqual(len(self.puts()), 6, "an identical retry must not overwrite any object")
+
+    def test_a_release_with_an_intel_mac_image_publishes_it_for_intel_macs(self):
+        name = "vera20k-0.2.2-macos-x64.dmg"
+        data = (name + "\n").encode()
+        (self.root / "assets" / name).write_bytes(data)
+        self.config["release"]["assets"].append({"id": 4, "name": name, "size": len(data),
+                                                 "digest": "sha256:" + hashlib.sha256(data).hexdigest(),
+                                                 "state": "uploaded"})
+        self.prior_pointer()
+        result = self.run_publisher()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        files = json.loads((self.root / "objects/latest.json").read_text())["files"]
+        self.assertEqual(set(files), {"windows", "macos", "macos-x64", "linux"})
+        self.assertEqual(files["macos-x64"]["name"], name)
+        self.assertEqual((self.root / "objects" / files["macos-x64"]["key"]).read_bytes(), data)
 
     def test_signed_manifest_lists_the_release_pages_changes(self):
         # As .github/release/notes.sh writes it, saved from GitHub's editor.
@@ -205,7 +220,8 @@ class ReleaseDownloadsTests(unittest.TestCase):
                 self.assertNotIn("latest.json", self.puts())
 
     def test_roll_back_moves_the_pointer_back_only_to_githubs_latest_release(self):
-        newer = self.prior_pointer("0.2.3")
+        # Back from a release with an Intel Mac image to one from before them.
+        newer = self.prior_pointer("0.2.3", ("windows", "macos", "macos-x64", "linux"))
         self.config["latest_tag"] = "v0.2.3"
         result = self.run_publisher(roll_back=True)
         self.assertNotEqual(result.returncode, 0)

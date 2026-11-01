@@ -2,8 +2,9 @@ name: Release
 
 # Downloadable builds of the game for players who do not compile it: one
 # installer per platform and nothing else (a Windows setup program, a macOS disk
-# image and a Linux AppImage). This project changes too fast for every main
-# commit to be a release, so there are two kinds, both started by hand (and
+# image each for Apple Silicon and Intel Macs, and a Linux AppImage). This
+# project changes too fast for every main commit to be a release, so there are
+# two kinds, both started by hand (and
 # nightly.yml starts a dev build of main each day that main has changed):
 #
 #   dev build -- dispatch from main with `promote` empty. Builds all platforms and runs the
@@ -178,6 +179,11 @@ jobs:
             program: vera20k
           - os: macos-latest
             target: macos-arm64
+            program: vera20k
+          # Intel Macs, built and started on GitHub's last Intel image, which
+          # it supports until about August 2027.
+          - os: macos-15-intel
+            target: macos-x64
             program: vera20k
     steps:
       # The program embeds text files (shaders, the capture contract); keep
@@ -576,7 +582,7 @@ jobs:
           echo 'Linux AppImage: complete, and starting in its data folder.'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ runner.os == 'macOS' && 'macos-unsigned' || matrix.target }}
+          name: ${{ runner.os == 'macOS' && format('{0}-unsigned', matrix.target) || matrix.target }}
           path: |
             dist/*-setup.exe
             dist/*.dmg
@@ -586,8 +592,10 @@ jobs:
   # A fresh runner signs the built image without executing its app, Cargo,
   # Swift or package installation with credentials present. The environment's
   # exact-main branch policy is the security boundary, outside workflow YAML.
+  # Both Mac images wait for approval together, once every build has passed,
+  # and are notarized side by side.
   macos-sign:
-    name: sign and notarize macOS
+    name: sign and notarize (${{ matrix.target }})
     needs: [prepare, build]
     if: inputs.promote == '' && github.ref == 'refs/heads/main'
     runs-on: macos-latest
@@ -596,13 +604,17 @@ jobs:
     environment: macos-signing
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [macos-arm64, macos-x64]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: macos-unsigned
+          name: ${{ matrix.target }}-unsigned
           path: unsigned
       - name: Sign, notarize and staple the disk image
         shell: bash
@@ -621,14 +633,14 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
-          name: macos-notarization
+          name: ${{ matrix.target }}-notarization
           path: |
             notarization/*.json
             ready/*.dmg
           if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: macos-arm64
+          name: ${{ matrix.target }}
           path: ready/*.dmg
           if-no-files-found: error
 
@@ -667,6 +679,9 @@ jobs:
             program: vera20k
           - os: macos-latest
             target: macos-arm64
+            program: vera20k
+          - os: macos-15-intel
+            target: macos-x64
             program: vera20k
     steps:
       - name: Check out with LF line endings
@@ -761,6 +776,12 @@ jobs:
             echo "::notice::This build raises updater-version from $theirs to $ours; $tag offers it as a download by hand."
             exit 0
           fi
+          # Releases before the first Intel Mac build have no macos-x64 installer.
+          if [ "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq \
+              "[.assets[].name | select(startswith(\"vera20k-${tag#v}-${{ matrix.target }}\"))] | length")" = 0 ]; then
+            echo "::notice::$tag has no ${{ matrix.target }} installer, so no player updates from it."
+            exit 0
+          fi
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "vera20k-${tag#v}-${{ matrix.target }}*" \
             --dir previous-release
           # Outside this checkout, so nothing of this one applies to its build.
@@ -814,7 +835,7 @@ jobs:
         # not the build's 22.04: rust-cache keys on the OS family, not its
         # version, so a cache saved on the newer image could hand 22.04 build
         # scripts linked against a glibc it lacks.
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        os: [windows-latest, ubuntu-latest, macos-latest, macos-15-intel]
     uses: ./.github/workflows/test.yml
     with:
       os: ${{ matrix.os }}
@@ -853,8 +874,9 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          # Only the final Windows and Linux installers, not Mac staging or
-          # failure diagnostics. The next step adds the final Mac installer.
+          # Only the final installers: Windows, Linux and the signed Intel Mac
+          # image, not Mac staging or failure diagnostics. The next step adds
+          # the signed Apple Silicon image.
           pattern: '*-x64'
           path: dist
           merge-multiple: true
@@ -867,16 +889,16 @@ jobs:
         run: |
           set -euo pipefail
           # `gh release create TAG dist/*` uploads every match, so dist/ must hold
-          # exactly the three installers, as regular files.
+          # exactly the four installers, as regular files.
           cd dist
           ls -l
           for pattern in 'vera20k-*-windows-x64-*-setup.exe' 'vera20k-*-macos-arm64-*.dmg' \
-            'vera20k-*-linux-x64-*.AppImage'; do
+            'vera20k-*-macos-x64-*.dmg' 'vera20k-*-linux-x64-*.AppImage'; do
             test "$(find . -maxdepth 1 -type f -name "$pattern" | wc -l)" -eq 1 \
               || { echo "!! dist/ needs exactly one $pattern" >&2; exit 1; }
           done
-          test "$(find . -mindepth 1 | wc -l)" -eq 3 \
-            || { echo '!! dist/ holds more than the three installers' >&2; exit 1; }
+          test "$(find . -mindepth 1 | wc -l)" -eq 4 \
+            || { echo '!! dist/ holds more than the four installers' >&2; exit 1; }
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: dist/vera20k-*
@@ -991,12 +1013,12 @@ jobs:
           # and nothing else: an asset added to the dev build by hand fails here
           # rather than reach players.
           ls -l
-          if [ "$(find . -mindepth 1 | wc -l)" -ne 3 ]; then
-            echo "!! $FROM must hold exactly its three installers" >&2
+          if [ "$(find . -mindepth 1 | wc -l)" -ne 4 ]; then
+            echo "!! $FROM must hold exactly its four installers" >&2
             exit 1
           fi
           shopt -s nullglob
-          for kind in 'windows-x64 -setup.exe' 'macos-arm64 .dmg' 'linux-x64 .AppImage'; do
+          for kind in 'windows-x64 -setup.exe' 'macos-arm64 .dmg' 'macos-x64 .dmg' 'linux-x64 .AppImage'; do
             read -r platform ext <<< "$kind"
             found=(vera20k-"$version"-"$platform"-"$stamp"-*"$ext")
             if [ "${#found[@]}" -ne 1 ]; then
@@ -1018,8 +1040,10 @@ jobs:
         run: |
           set -euo pipefail
           images=(dist/*.dmg)
-          test "${#images[@]}" -eq 1
-          python3 .github/release/macos/notarize.py verify "${images[0]}"
+          test "${#images[@]}" -eq 2
+          for image in "${images[@]}"; do
+            python3 .github/release/macos/notarize.py verify "$image"
+          done
       - name: Write release notes
         shell: bash
         env:

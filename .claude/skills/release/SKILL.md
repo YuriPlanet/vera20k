@@ -1,6 +1,6 @@
 ---
 name: release
-description: "Make a VERA20K dev build or release with the Release workflow, keeping the release page to the three installers, a really small changes list in plain words and the install lines."
+description: "Make a VERA20K dev build or release with the Release workflow, keeping the release page to the four installers, a really small changes list in plain words and the install lines."
 ---
 
 # Release
@@ -10,8 +10,9 @@ builds and releases. This skill is the maintainer's order of steps and the page 
 
 ## Page style
 
-- Downloads: only the Windows setup, the macOS `.dmg` and the Linux AppImage. The workflow
-  uploads nothing else; GitHub adds the source code archives itself.
+- Downloads: only the Windows setup, the two macOS `.dmg`s (`macos-arm64` for Apple Silicon,
+  `macos-x64` for Intel) and the Linux AppImage. The workflow uploads nothing else; GitHub
+  adds the source code archives itself.
 - Text: a really small list of what changed, then the install lines and the license line
   that `.github/release/notes.sh` writes. No commit dumps, tables, checksums or other legal
   text.
@@ -32,20 +33,20 @@ disabled (`gh workflow list --all` shows its state). By hand:
 
 1. `gh workflow run release.yml --ref main -f publish=prerelease`; `draft` to look before
    publishing, `none` to only build and test.
-2. After the builds, its `sign and notarize macOS` job waits in the `macos-signing`
-   environment until the maintainer approves it on the run's page (Review deployments); a
-   nightly's does too. Tell the maintainer when you start the run, and don't approve it
-   yourself.
+2. After the builds, its two `sign and notarize` jobs, one per Mac image, wait in the
+   `macos-signing` environment until the maintainer approves them on the run's page (Review
+   deployments); a nightly's do too. Tell the maintainer when you start the run, and don't
+   approve them yourself.
 3. Wait with one background `gh run watch <run> --exit-status`.
 
 ## Release
 
 1. Tag the commit of the published dev build that was tested with its version, using the
    maintainer's login, then promote the build. The workflow checks that the tag names that
-   commit and copies the build's three installers under plain release filenames.
-   Before creating the draft, it verifies the Mac installer's signatures, stapled
-   Apple notarization ticket and Gatekeeper acceptance. An old unnotarized dev
-   build cannot be promoted:
+   commit and copies the build's four installers under plain release filenames.
+   Before creating the draft, it verifies both Mac installers' signatures, stapled
+   Apple notarization tickets and Gatekeeper acceptance. An old unnotarized dev
+   build, or one from before the Intel Mac image, cannot be promoted:
 
    ```bash
    git fetch origin tag <dev build tag>
@@ -57,7 +58,7 @@ disabled (`gh workflow list --all` shows its state). By hand:
 2. Replace the draft's change list with the plain-words list, keeping the install and license
    lines (`gh release edit vX.Y.Z --notes-file <file>`), read the rendered draft, then publish it:
    `gh release edit vX.Y.Z --draft=false --latest`.
-3. Check that it is Latest, holds the three installers, and that
+3. Check that it is Latest, holds the four installers, and that
    `gh attestation verify <download> --repo YuriPlanet/vera20k` passes for each.
 4. The `downloads.yml` run it started waits for approval in the `downloads` environment.
    Check that it is this release's run (event `release`, the new tag), then approve it on
@@ -76,7 +77,7 @@ disabled (`gh workflow list --all` shows its state). By hand:
    `https://downloads.vera20k.org/releases/vX.Y.Z/`:
 
    ```bash
-   for p in windows macos linux; do
+   for p in windows macos macos-x64 linux; do
      curl -s -o /dev/null -w '%{redirect_url}\n' "https://vera20k.org/download/$p"
    done
    ```
