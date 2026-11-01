@@ -1392,7 +1392,7 @@ pub enum AresCameoRefusal {
 }
 
 /// View struct for sidebar display — no sim internals exposed.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SuperWeaponView {
     pub type_id: InternedId,
     /// Immutable selection flag projected from the common Rules owner.

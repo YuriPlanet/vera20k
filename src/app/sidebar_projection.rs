@@ -10,10 +10,16 @@
 //! between rebuilds.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
+use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
-use crate::sim::production::{FactoryView, ProductionCategory, ProductionFactoryVisit};
-use crate::sim::world::{LifecycleOutput, TickLane};
+use crate::sim::production::{
+    BuildOption, FactoryView, ProductionCategory, ProductionFactoryVisit, QueueItemView,
+    ReadyBuildingView,
+};
+use crate::sim::superweapon::SuperWeaponView;
+use crate::sim::world::{LifecycleOutput, Simulation, TickLane};
 use crate::ui::sidebar::cameo_order::{
     Cameo, CameoId, CameoKey, CameoRequestState, CameoStrips, pending_production_affordability,
     pending_production_prediction_rate, pending_production_smoothed_stage,
@@ -58,6 +64,73 @@ pub(crate) struct SidebarProjectionState {
     /// These references are independent of Factory completion and the one
     /// current/saved placement transaction. They are not serialized.
     ready_buildings: [Option<u64>; 2],
+    /// The last derived [`SidebarSimInputs`] and the derivation they belong to.
+    sim_inputs: Option<(SimInputsKey, Arc<SidebarSimInputs>)>,
+    /// The cameo candidates of those inputs, with the right strip's
+    /// superweapons they were derived with.
+    kept_cameos: Option<(SimInputsKey, Vec<SuperWeaponView>, Arc<Vec<Cameo>>)>,
+}
+
+/// What one projection refresh reads from the simulation for the local owner.
+/// These queries walk every rules type, the owner's buildings and factories,
+/// so a pass that only republishes the view reuses them while the world's
+/// [`Simulation::revision`], the rules and the owner are those they were
+/// derived for: between revisions no house, production, power or
+/// superweapon state changes. A new world always comes with its own rules,
+/// and so does a new process string table. Debug builds check each reuse
+/// against a fresh derivation.
+#[derive(Debug, PartialEq)]
+pub(crate) struct SidebarSimInputs {
+    pub(crate) build_options: Vec<BuildOption>,
+    pub(crate) queue_items: Vec<QueueItemView>,
+    pub(crate) ready_buildings: Vec<ReadyBuildingView>,
+    pub(crate) credits: i32,
+    pub(crate) power_produced: i32,
+    pub(crate) power_drained: i32,
+    pub(crate) sw_views: Vec<SuperWeaponView>,
+}
+
+impl SidebarSimInputs {
+    fn derive(sim: &Simulation, rules: &RuleSet, owner: &str) -> Self {
+        use crate::sim::production;
+        let (power_produced, power_drained) =
+            production::power_balance_for_owner(sim, rules, owner);
+        Self {
+            build_options: production::all_build_options_for_owner(sim, rules, owner),
+            queue_items: production::queue_view_for_owner(sim, rules, owner),
+            ready_buildings: production::ready_buildings_for_owner(sim, rules, owner),
+            credits: crate::app::presentation::sidebar_render::counter_credits(sim, owner),
+            power_produced,
+            power_drained,
+            sw_views: crate::sim::superweapon::superweapon_views_for_owner(
+                sim,
+                rules,
+                &sim.interner().get(owner).unwrap_or_default(),
+            ),
+        }
+    }
+}
+
+/// The world revision, rules and owner a kept derivation belongs to.
+#[derive(Debug)]
+struct SimInputsKey {
+    rules: u64,
+    revision: u64,
+    owner: String,
+}
+
+impl SimInputsKey {
+    fn new(sim: &Simulation, rules: &RuleSet, owner: &str) -> Self {
+        Self {
+            rules: rules.serial(),
+            revision: sim.revision(),
+            owner: owner.to_owned(),
+        }
+    }
+
+    fn holds(&self, sim: &Simulation, rules: &RuleSet, owner: &str) -> bool {
+        self.rules == rules.serial() && self.revision == sim.revision() && self.owner == owner
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,6 +160,83 @@ impl PreparedSidebarOrder {
 }
 
 impl SidebarProjectionState {
+    /// The simulation inputs for `owner`: the kept ones when `reuse` and they
+    /// belong to this world revision, rules and owner, else derived anew.
+    pub(crate) fn sim_inputs(
+        &mut self,
+        sim: &Simulation,
+        rules: &RuleSet,
+        owner: &str,
+        reuse: bool,
+    ) -> Arc<SidebarSimInputs> {
+        if reuse
+            && let Some((key, kept)) = &self.sim_inputs
+            && key.holds(sim, rules, owner)
+        {
+            if crate::sim::live_read_check_enabled() {
+                assert_eq!(
+                    **kept,
+                    SidebarSimInputs::derive(sim, rules, owner),
+                    "sidebar inputs changed within world revision {}",
+                    sim.revision()
+                );
+            }
+            return Arc::clone(kept);
+        }
+        let inputs = Arc::new(SidebarSimInputs::derive(sim, rules, owner));
+        self.sim_inputs = Some((SimInputsKey::new(sim, rules, owner), Arc::clone(&inputs)));
+        inputs
+    }
+
+    /// [`cameo_candidates`] of `inputs` and the right strip's `supers`, kept
+    /// on the same terms as [`Self::sim_inputs`].
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn cameo_candidates(
+        &mut self,
+        sim: &Simulation,
+        rules: &RuleSet,
+        csf: Option<&crate::assets::csf_file::CsfFile>,
+        owner: InternedId,
+        owner_name: &str,
+        inputs: &SidebarSimInputs,
+        supers: &[SuperWeaponView],
+        reuse: bool,
+    ) -> Arc<Vec<Cameo>> {
+        let derive = || {
+            cameo_candidates(
+                sim,
+                rules,
+                csf,
+                owner,
+                &inputs.build_options,
+                &inputs.ready_buildings,
+                supers,
+            )
+        };
+        if reuse
+            && let Some((key, kept_supers, kept)) = &self.kept_cameos
+            && key.holds(sim, rules, owner_name)
+            && kept_supers.as_slice() == supers
+        {
+            if crate::sim::live_read_check_enabled() {
+                assert_eq!(
+                    **kept,
+                    derive(),
+                    "sidebar cameos changed within world revision {}",
+                    sim.revision()
+                );
+            }
+            return Arc::clone(kept);
+        }
+        let cameos = Arc::new(derive());
+        self.kept_cameos = Some((
+            SimInputsKey::new(sim, rules, owner_name),
+            supers.to_vec(),
+            Arc::clone(&cameos),
+        ));
+        cameos
+    }
+
     /// Read the retained view without changing credit cadence, targeting, or
     /// scroll state.
     pub(crate) fn view(&self) -> Option<&SidebarView> {
