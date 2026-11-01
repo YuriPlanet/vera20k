@@ -167,6 +167,13 @@ impl PowerState {
         self.total_output = value;
     }
 
+    /// [`Self::start_blackout`] for a fixture that places an outage without
+    /// running the spy or force-shield chain.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn start_blackout_for_test(&mut self, binary_frame: u32, duration: i32) {
+        self.start_blackout(binary_frame, duration);
+    }
+
     pub(crate) fn invalidate(&mut self, radar: bool) {
         self.power_dirty = true;
         self.radar_dirty |= radar;

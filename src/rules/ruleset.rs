@@ -4547,6 +4547,12 @@ pub struct RuleSet {
     /// Phobos `[SIDE] SuperWeaponSidebar.*PCX=` names, in `[Sides]` order.
     #[cfg(feature = "phobos")]
     side_sw_sidebar_art: Vec<crate::rules::phobos_sw_sidebar::SuperWeaponSidebarSideArt>,
+    /// Phobos `[SIDE] Sidebar.PowerDelta.*`, in `[Sides]` order: the per-side
+    /// offset, colours and alignment of the power-delta sidebar indicator.
+    #[cfg(feature = "phobos")]
+    side_power_delta: Vec<
+        crate::rules::phobos_sidebar_indicators::PowerDeltaSideSettings,
+    >,
     /// Effective side for each country after `[Sides]` membership and the
     /// per-country `Side=` override have both run.
     country_sides: Vec<Option<SideIdx>>,
@@ -6174,6 +6180,23 @@ impl RuleSet {
                     .unwrap_or_default()
             })
             .collect();
+        // Phobos `SideClass_LoadAllFromINI 0x679A10` asks every registered side
+        // section for its own indicator settings; a side with no section keeps
+        // the constructor defaults.
+        #[cfg(feature = "phobos")]
+        let side_power_delta: Vec<
+            crate::rules::phobos_sidebar_indicators::PowerDeltaSideSettings,
+        > = country_side_registry
+            .side_ids
+            .iter()
+            .map(|name| {
+                ini.section(name)
+                    .map(
+                        crate::rules::phobos_sidebar_indicators::PowerDeltaSideSettings::from_section,
+                    )
+                    .unwrap_or_default()
+            })
+            .collect();
         let color_schemes = crate::rules::color_scheme::parse_color_schemes(ini);
         let house_color_ramps =
             crate::rules::house_colors::HouseColorRamps::from_schemes(&color_schemes);
@@ -6483,6 +6506,8 @@ impl RuleSet {
             phobos_airburst,
             #[cfg(feature = "phobos")]
             side_sw_sidebar_art,
+            #[cfg(feature = "phobos")]
+            side_power_delta,
             #[cfg(feature = "ares")]
             side_extensions: country_side_registry.side_extensions,
             side_indices: country_side_registry.side_indices,
@@ -7368,6 +7393,11 @@ impl RuleSet {
         {
             b"phobos-sidebar-gdi-positions-v1".hash(&mut hasher);
             self.side_gdi_positions.hash(&mut hasher);
+        }
+        #[cfg(feature = "phobos")]
+        {
+            b"phobos-sidebar-power-delta-v1".hash(&mut hasher);
+            self.side_power_delta.hash(&mut hasher);
         }
         #[cfg(feature = "phobos")]
         {
@@ -9365,6 +9395,21 @@ impl RuleSet {
         usize::try_from(index)
             .ok()
             .and_then(|index| self.side_sw_sidebar_art.get(index))
+    }
+
+    /// Phobos `[SIDE] Sidebar.PowerDelta.*` for a native side index. A side
+    /// outside `[Sides]` keeps the constructor defaults, the way `SideExt`
+    /// leaves a side with no section untouched.
+    #[cfg(feature = "phobos")]
+    pub fn side_power_delta(
+        &self,
+        index: i32,
+    ) -> crate::rules::phobos_sidebar_indicators::PowerDeltaSideSettings {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.side_power_delta.get(index))
+            .copied()
+            .unwrap_or_default()
     }
 
     /// Resolve a side index back to its source spelling.

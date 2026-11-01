@@ -127,10 +127,24 @@ pub(crate) struct MatchPresentationState {
     /// applied to the active-game shell's background rectangle.
     #[cfg(feature = "phobos")]
     pub(crate) center_pause_menu_background: bool,
+    /// Phobos `uimd.ini [Sidebar] PowerDelta.*` plus the `[ToolTips]` power
+    /// labels, the mod half of the sidebar indicator switches.
+    #[cfg(feature = "phobos")]
+    pub(crate) sidebar_indicators:
+        crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi,
+    /// Phobos `0x4A25E0`'s indicator strings resolved for this frame. The
+    /// native hook runs in the credits tick, so this follows the same per-frame
+    /// pass as the power bar rather than the cameo-driven projection refresh.
+    #[cfg(feature = "phobos")]
+    pub(crate) sidebar_indicator_text: Vec<crate::ui::sidebar::SidebarIndicator>,
     /// Phobos `[Phobos] ShowPowerPlantEnhancerRange` (source default false):
     /// the client half of the placement-time enhancer ring switch.
     #[cfg(feature = "phobos")]
     pub(crate) show_power_plant_enhancer_range: bool,
+    /// Phobos `[Phobos] ShowPowerDelta=` (source default `yes`): the client
+    /// half of the power-delta indicator; the `uimd.ini` switch must be on too.
+    #[cfg(feature = "phobos")]
+    pub(crate) show_power_delta: bool,
     /// Phobos placement preview SHP cache for the current placing type.
     #[cfg(feature = "phobos")]
     pub(crate) placement_preview_art:

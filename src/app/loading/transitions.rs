@@ -90,6 +90,9 @@ pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {
             #[cfg(feature = "phobos")]
             center_pause_menu_background: false,
             #[cfg(feature = "phobos")]
+            sidebar_indicators:
+                crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi::default(),
+            #[cfg(feature = "phobos")]
             sw_sidebar_art: None,
             outcome_banner_side_art: None,
             software_cursor: None,
@@ -221,6 +224,7 @@ pub(crate) fn install_world_presentation(
             .match_presentation
             .center_pause_menu_background = assets.center_pause_menu_background;
         state.match_state.match_presentation.sw_sidebar_art = assets.sw_sidebar_art;
+        state.match_state.match_presentation.sidebar_indicators = assets.sidebar_indicators;
         let significance = state
             .match_state
             .match_presentation

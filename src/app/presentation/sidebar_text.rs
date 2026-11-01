@@ -21,6 +21,8 @@ use crate::render::bit_font::BitFont;
 use crate::ui::sidebar::SidebarView;
 // Generic credit glyph generation is render-owned (F06); this module keeps
 // only the sidebar-view adapter below. Re-exported for existing callers.
+#[cfg(feature = "phobos")]
+use crate::render::sidebar_text::build_indicator_instances;
 pub use crate::render::sidebar_text::{build_credits_instances, credits_tint};
 /// Per-frame wrapper over [`build_credits_instances`] taking the sidebar view.
 pub fn build_sidebar_credits_instances(
@@ -30,6 +32,33 @@ pub fn build_sidebar_credits_instances(
     camera_offset: [f32; 2],
 ) -> Vec<SpriteInstance> {
     build_credits_instances(font, view.credits, view.panel_rect, tint, camera_offset)
+}
+
+/// Every Phobos sidebar indicator resolved for this frame, in the order the
+/// per-frame owner stored them. Each carries its own colour, so unlike the
+/// credits counter this takes no theme tint.
+#[cfg(feature = "phobos")]
+pub fn build_sidebar_indicator_instances(
+    font: &BitFont,
+    indicators: &[crate::ui::sidebar::SidebarIndicator],
+    panel_rect: crate::ui::sidebar::Rect,
+    camera_offset: [f32; 2],
+) -> Vec<SpriteInstance> {
+    indicators
+        .iter()
+        .flat_map(|indicator| {
+            build_indicator_instances(
+                font,
+                &indicator.text,
+                panel_rect,
+                indicator.anchor_x,
+                indicator.anchor_y,
+                indicator.align,
+                indicator.rgb,
+                camera_offset,
+            )
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -61,6 +90,54 @@ mod tests {
             w: 168.0,
             h: 600.0,
         }
+    }
+
+    /// `0x4A25E0` anchors an indicator on `width / 2` plus its own base column,
+    /// and the `TextPrintType` bits decide how the measured string sits there:
+    /// left starts at the anchor, centre pulls it back half its width, right
+    /// ends at it. `"12"` measures `3 + 6 + 2 * spacing = 11`.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn indicator_anchor_and_alignment_use_the_native_print_bits() {
+        use crate::rules::phobos_sidebar_indicators::SidebarTextAlign;
+        use crate::ui::sidebar::SidebarIndicator;
+
+        let font = digit_font();
+        let resolved = |anchor_x: i32, align| SidebarIndicator {
+            text: "12".to_string(),
+            rgb: [0, 255, 0],
+            anchor_x,
+            anchor_y: 5,
+            align,
+        };
+        let build = |indicator: &SidebarIndicator| {
+            build_sidebar_indicator_instances(
+                &font,
+                std::slice::from_ref(indicator),
+                panel(),
+                [0.0; 2],
+            )
+        };
+
+        // 632 + (84 + 50) = 766 for a left-anchored string.
+        let left = build(&resolved(50, SidebarTextAlign::Left));
+        assert_eq!(left[0].position[0], 766.0);
+        assert_eq!(
+            left[1].position[0] - left[0].position[0],
+            3.0 + CHAR_SPACING as f32
+        );
+        // The hook's own row, offset included: 0 + 5.
+        assert_eq!(left[0].position[1], 5.0);
+        assert_eq!(left[0].tint, [0.0, 1.0, 0.0], "ColorGreen packs 0,255,0");
+
+        let centre = build(&resolved(50, SidebarTextAlign::Center));
+        assert_eq!(centre[0].position[0], 761.0, "11 measured, integer halving");
+        let right = build(&resolved(50, SidebarTextAlign::Right));
+        assert_eq!(right[0].position[0], 755.0);
+
+        // The power delta sits in its own column, 120 px left of the harvester's.
+        let delta = build(&resolved(-70, SidebarTextAlign::Left));
+        assert_eq!(delta[0].position[0], 646.0);
     }
 
     #[test]

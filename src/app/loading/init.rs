@@ -1508,6 +1508,11 @@ pub struct PresentationLoadAssets {
     /// same file as the superweapon sidebar settings.
     #[cfg(feature = "phobos")]
     pub center_pause_menu_background: bool,
+    /// Phobos `uimd.ini [Sidebar] PowerDelta.*` and the `[ToolTips]` power
+    /// labels, read from the same file as the other sidebar settings.
+    #[cfg(feature = "phobos")]
+    pub sidebar_indicators:
+        crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi,
     #[cfg(feature = "phobos")]
     pub sw_sidebar_art: Option<crate::render::sw_sidebar_art::SwSidebarArt>,
     /// This match's Ares `GraphicalText.Image/Palette` overlay art. `None`

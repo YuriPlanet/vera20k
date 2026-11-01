@@ -226,6 +226,43 @@ pub fn build_credits_instances(
     font.build_text(&text, x, y, 1.0, CREDITS_DEPTH, tint, camera_offset)
 }
 
+/// Build one Phobos sidebar indicator string as GAME.FNT glyph quads.
+///
+/// `CreditsClass_GraphicLogic_HarvesterCounter @ 0x4A25E0` anchors every
+/// indicator on the sidebar surface midpoint plus its own hardcoded base
+/// (`-70` for the power delta, `+50` for the harvester and weeds counters), on
+/// the literal row `y = 2` — the same row as the credits counter. `align`
+/// carries the bits Phobos ORs in from `Sidebar.PowerDelta.Align`: left starts
+/// the string at the anchor, centre pulls it back half its *measured* width and
+/// right ends it at the anchor.
+#[cfg(feature = "phobos")]
+pub fn build_indicator_instances(
+    font: &BitFont,
+    text: &str,
+    panel_rect: Rect,
+    anchor_x: i32,
+    anchor_y: i32,
+    align: crate::rules::phobos_sidebar_indicators::SidebarTextAlign,
+    rgb: [u8; 3],
+    camera_offset: [f32; 2],
+) -> Vec<SpriteInstance> {
+    use crate::rules::phobos_sidebar_indicators::SidebarTextAlign;
+    let text_w = font.text_width(text) as i32;
+    let surface_w = panel_rect.w.round() as i32;
+    // The alignment pulls the measured string back from the anchor: nothing for
+    // left, half its width for centre, all of it for right. Each term is an
+    // integer, as the native flag helper's halvings are.
+    let pull = match align {
+        SidebarTextAlign::Left => 0,
+        SidebarTextAlign::Center => text_w / 2,
+        SidebarTextAlign::Right => text_w,
+    };
+    let x = panel_rect.x.round() + (surface_w / 2 + anchor_x - pull) as f32;
+    let y = panel_rect.y.round() + anchor_y as f32;
+    let tint = rgb.map(|value| f32::from(value) / 255.0);
+    font.build_text(text, x, y, 1.0, CREDITS_DEPTH, tint, camera_offset)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

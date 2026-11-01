@@ -25,6 +25,10 @@ pub(crate) struct PhobosClientSettings {
     /// `[Phobos] ShowPowerPlantEnhancerRange=`, default `no`: the client switch
     /// for the placement-time enhancer rings; the rules switch must also be on.
     pub(crate) show_power_plant_enhancer_range: bool,
+    /// `[Phobos] ShowPowerDelta=`, default `yes` (`Phobos.INI.cpp:108`): the
+    /// client half of the power-delta sidebar indicator. The `uimd.ini` switch
+    /// must also be on.
+    pub(crate) show_power_delta: bool,
 }
 
 impl Default for PhobosClientSettings {
@@ -37,6 +41,7 @@ impl Default for PhobosClientSettings {
             superweapon_sidebar_required_significance: 0,
             show_flash_on_selecting: false,
             show_power_plant_enhancer_range: false,
+            show_power_delta: true,
         }
     }
 }
@@ -70,6 +75,7 @@ pub(crate) fn read(settings_dir: &Path) -> PhobosClientSettings {
             "ShowPowerPlantEnhancerRange",
             defaults.show_power_plant_enhancer_range,
         ),
+        show_power_delta: section.read_bool("ShowPowerDelta", defaults.show_power_delta),
     }
 }
 
@@ -104,7 +110,7 @@ mod tests {
         let dir = profile_with(
             "[Phobos]\nShowPlacementPreview=no\nDigitalDisplay.Enable=yes\n\
              SuperWeaponSidebar.RequiredSignificance=2\nShowFlashOnSelecting=yes\n\
-             ShowPowerPlantEnhancerRange=yes\n",
+             ShowPowerPlantEnhancerRange=yes\nShowPowerDelta=no\n",
         );
         assert_eq!(
             read(&dir),
@@ -114,6 +120,7 @@ mod tests {
                 superweapon_sidebar_required_significance: 2,
                 show_flash_on_selecting: true,
                 show_power_plant_enhancer_range: true,
+                show_power_delta: false,
             }
         );
         std::fs::remove_dir_all(dir).unwrap();
