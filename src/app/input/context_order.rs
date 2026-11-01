@@ -566,19 +566,15 @@ pub(super) fn base_action(
     };
     // An object being warped out (vt+0x1D4) answers before the attack rung:
     // 0 on a Cell (`0x00700731`; warping in too, `0x00700743`), and over an
-    // object the tail's Select, else 0. A berserk one answers 0 before that
-    // (`0x006FFEC9`). The class tails below still run on the answer; none
-    // turns its 0 into NoMove, as the object is not controllable (vt+0xA0,
-    // `0x00700C40`), but a Building's Cell tail still answers its rally.
+    // object the tail's Select, else 0. The class tails below still run on
+    // the answer; none turns its 0 into NoMove, as the object is not
+    // controllable (vt+0xA0, `0x00700C40`), but a Building's Cell tail still
+    // answers its rally.
     let warping =
         actor.is_warped_out() || (actor.is_warping_in() && matches!(target, TargetKind::Cell(..)));
     let mut action = if warping {
         match *target {
-            TargetKind::Entity(target_id)
-                if !actor.berserk.is_active() && selects(target_id, false) =>
-            {
-                AttackAction::Select
-            }
+            TargetKind::Entity(target_id) if selects(target_id, false) => AttackAction::Select,
             _ => AttackAction::None,
         }
     } else if admitted
