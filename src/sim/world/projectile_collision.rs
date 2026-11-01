@@ -18,7 +18,7 @@ pub(super) struct ProjectileCollisionWorld<'a> {
     pub terrain_objects:
         &'a std::collections::BTreeMap<u64, crate::sim::terrain_object::TerrainObjectState>,
     pub interner: &'a crate::sim::intern::StringInterner,
-    pub alliances: &'a HouseAllianceMap,
+    pub alliances: &'a HouseAlliances,
     pub overlays: Option<&'a crate::sim::overlay_grid::OverlayGrid>,
     pub overlay_registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
     pub rules: &'a RuleSet,
@@ -76,11 +76,8 @@ impl ProjectileCollisionWorld<'_> {
         let Some(other) = self.entities.get(other) else {
             return false;
         };
-        crate::map::houses::is_allied_with(
-            self.alliances,
-            self.interner.resolve(source.owner()),
-            self.interner.resolve(other.owner()),
-        )
+        self.alliances
+            .is_allied(self.interner, source.owner(), other.owner())
     }
 
     fn overlay(&self, cell: &CellRef<'_>) -> (Option<u8>, Option<crate::sim::intern::InternedId>) {
@@ -689,7 +686,7 @@ mod tests {
             entities: &sim.substrate.entities,
             terrain_objects: sim.terrain_objects.objects(),
             interner: &sim.interner,
-            alliances: sim.house_alliances.as_map(),
+            alliances: &sim.house_alliances,
             overlays: sim.overlay_grid.as_ref(),
             overlay_registry: None,
             rules: crate::rules::ruleset::RuleSet::empty_for_test(),

@@ -1273,11 +1273,8 @@ impl Simulation {
                     && only_viewer
                         .or(self.session.current_house())
                         .is_some_and(|viewer| {
-                            crate::map::houses::is_allied_with(
-                                self.house_alliances.as_map(),
-                                self.interner.resolve(entity.owner()),
-                                self.interner.resolve(viewer),
-                            )
+                            self.house_alliances
+                                .is_allied(&self.interner, entity.owner(), viewer)
                         })
                 {
                     Some((reveal_fog, false))
@@ -1787,13 +1784,7 @@ impl Simulation {
             .iter()
             .copied()
             .filter(|&viewer| {
-                vision::reveal_admits(
-                    self.house_alliances.as_map(),
-                    owner,
-                    viewer,
-                    config,
-                    &self.interner,
-                )
+                vision::reveal_admits(&self.house_alliances, owner, viewer, config, &self.interner)
             })
             .collect();
         // Register each accepted map contribution before walking any cells.
@@ -1882,7 +1873,7 @@ impl Simulation {
                 continue;
             };
             if !vision::reveal_admits(
-                self.house_alliances.as_map(),
+                &self.house_alliances,
                 source.owner,
                 viewer,
                 config,
@@ -2405,7 +2396,7 @@ impl Simulation {
             && entity.category() == EntityCategory::Structure
             && entity.owner() != viewer
             && vision::reveal_admits(
-                self.house_alliances.as_map(),
+                &self.house_alliances,
                 entity.owner(),
                 viewer,
                 config,

@@ -30,7 +30,7 @@ fn hut_hover(sim: &Simulation, engineer: u64, hut: u64) -> HoverTargetKindWithId
     let actor = sim.entities().get(engineer).unwrap();
     let target = sim.entities().get(hut).unwrap();
     let friendly = crate::map::houses::is_allied_with(
-        sim.house_alliances(),
+        sim.house_alliances().as_map(),
         sim.resolve(actor.owner()),
         sim.resolve(target.owner()),
     );

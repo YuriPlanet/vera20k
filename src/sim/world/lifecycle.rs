@@ -4316,7 +4316,7 @@ impl Simulation {
         let allied_with = |sim: &Self, contact: u64| {
             sim.substrate.entities.get(contact).is_some_and(|contact| {
                 crate::sim::combat::combat_weapon::is_ally_by_object(
-                    Some(sim.house_alliances.as_map()),
+                    Some(&sim.house_alliances),
                     &sim.interner,
                     owner,
                     contact.owner(),

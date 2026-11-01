@@ -50,6 +50,7 @@ fn sim_with(rules: &RuleSet, houses: &[(&str, &str, bool)]) -> (Simulation, Vec<
 /// Each house's allies, by its graph key.
 fn allies(sim: &Simulation, name: &str) -> BTreeSet<String> {
     sim.house_alliances()
+        .as_map()
         .get(&name.to_ascii_uppercase())
         .cloned()
         .unwrap_or_default()
@@ -257,6 +258,71 @@ fn ally_writes_reach_the_remembered_reveal_viewers() {
     sim.make_enemy(ids[1], ids[2], &rules, None, FrameEffects::default(), false);
     assert_eq!(viewers(&mut sim), (alone.clone(), alone));
     sim.reveal_viewers.end();
+}
+
+/// The ally matrix answers as the graph does by name (`is_allied_with`),
+/// one way, through MakeAlly and MakeEnemy, which write it in place.
+/// Computer1's mask also holds Late, whose id is interned after the matrix
+/// is built, so the graph answers for it by name.
+#[test]
+fn ally_matrix_answers_as_the_graph_through_ally_writes() {
+    let rules = rules();
+    let (mut sim, mut ids) = sim_with(
+        &rules,
+        &[
+            ("Player", "Americans", true),
+            ("Computer1", "Russians", false),
+            ("Computer2", "Russians", false),
+        ],
+    );
+    let one_way = HouseAllianceMap::from([("COMPUTER1".to_string(), set(&["Computer2", "Late"]))]);
+    sim.install_house_alliances(
+        crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(one_way),
+        &rules,
+    );
+    let agree = |sim: &Simulation, ids: &[InternedId]| {
+        let alliances = &sim.house_alliances;
+        for &other in ids {
+            let allied_to = alliances.allied_to(&sim.interner, other);
+            for &asker in ids {
+                let by_name = crate::map::houses::is_allied_with(
+                    alliances.as_map(),
+                    sim.interner.resolve(asker),
+                    sim.interner.resolve(other),
+                );
+                assert_eq!(alliances.is_allied(&sim.interner, asker, other), by_name);
+                assert_eq!(allied_to(asker), by_name);
+            }
+        }
+    };
+    let allied =
+        |sim: &Simulation, asker, other| sim.house_alliances.is_allied(&sim.interner, asker, other);
+    let (first, second) = (ids[1], ids[2]);
+    assert!(
+        sim.house_alliances.matrix(&sim.interner).is_some(),
+        "the sim's own interner reads the matrix"
+    );
+    agree(&sim, &ids);
+    assert!(allied(&sim, first, second) && !allied(&sim, second, first));
+    let late = sim.interner.intern("Late");
+    ids.push(late);
+    agree(&sim, &ids);
+    assert!(allied(&sim, first, late));
+
+    sim.make_ally(second, first, &rules, None, FrameEffects::default(), false);
+    assert!(
+        sim.house_alliances
+            .matrix
+            .get()
+            .is_some_and(Option::is_some),
+        "a write between two rows keeps the matrix"
+    );
+    agree(&sim, &ids);
+    assert!(allied(&sim, second, first));
+    sim.make_enemy(first, second, &rules, None, FrameEffects::default(), false);
+    agree(&sim, &ids);
+    assert!(!allied(&sim, first, second) && !allied(&sim, second, first));
+    assert!(allied(&sim, first, late));
 }
 
 /// MakeEnemy adds the anger first (`0x004F9FDD`), while the house is still

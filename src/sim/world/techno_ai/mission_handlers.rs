@@ -1729,7 +1729,7 @@ fn area_guard_post_off_building(sim: &mut Simulation, id: u64) {
     };
     let owner = entity.owner();
     if !crate::sim::combat::combat_weapon::is_ally_by_object(
-        Some(sim.house_alliances.as_map()),
+        Some(&sim.house_alliances),
         &sim.interner,
         owner,
         building_owner,

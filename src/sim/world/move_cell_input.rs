@@ -526,11 +526,9 @@ impl Simulation {
         let enemy_owned = overlay_cell
             .and_then(|cell| cell.wall_owner)
             .is_some_and(|owner| {
-                !crate::map::houses::is_allied_with(
-                    self.house_alliances.as_map(),
-                    self.interner.resolve(owner),
-                    self.interner.resolve(entity.owner()),
-                )
+                !self
+                    .house_alliances
+                    .is_allied(&self.interner, owner, entity.owner())
             });
         enemy_owned
             && overlay.wall

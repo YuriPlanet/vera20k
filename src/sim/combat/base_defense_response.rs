@@ -10,7 +10,6 @@
 //! Foot4DBDF0/4DDC40 and Map56D100; the response never selects NavCom instead.
 
 use crate::map::entities::EntityCategory;
-use crate::map::houses::is_allied_with;
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::mission::authority::queue_entity_mission_deferred;
@@ -441,11 +440,9 @@ pub(crate) fn respond_to_base_attack(
         .wrapping_mul(rules.general.computer_base_defense_response);
     let current_frame = world.session.binary_frame() as i32;
 
-    if is_allied_with(
-        world.house_alliances.as_map(),
-        interner.resolve(victim_owner),
-        interner.resolve(attacker_owner),
-    )
+    if world
+        .house_alliances
+        .is_allied(interner, victim_owner, attacker_owner)
         // gamemd.exe, RespondToBaseAttack @ 0x00708080 (call at 0x007080F9):
         // HouseClass::IsControlledByHuman @ 0x0050B730 also rejects campaign
         // PlayerControl, before suspension, responder RNG and cooldown writes.

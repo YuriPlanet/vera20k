@@ -403,7 +403,7 @@ fn apply_one(
             source,
             target_owner,
             &world.houses,
-            world.house_alliances.as_map(),
+            &world.house_alliances,
             &world.interner,
         ) {
             return false;

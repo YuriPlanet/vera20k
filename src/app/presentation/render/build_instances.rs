@@ -812,7 +812,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
                         .as_deref()
                         .and_then(|owner| view.interner().get(owner)),
                     view.fog(),
-                    view.house_alliances(),
+                    view.house_alliances().as_map(),
                     full_visibility,
                     view.session().game_mode_nonzero(),
                     Some(&runtime.resources.rules),

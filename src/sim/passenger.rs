@@ -777,7 +777,7 @@ pub fn can_enter_transport(
     // 0x00737430). A Grinder answers ROGER but carries no one.
     transport_obj.passengers > 0
         && crate::sim::combat::combat_weapon::is_ally_by_object(
-            Some(sim.house_alliances.as_map()),
+            Some(&sim.house_alliances),
             &sim.interner,
             passenger.owner(),
             transport.owner(),

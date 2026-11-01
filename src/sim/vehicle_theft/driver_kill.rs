@@ -109,7 +109,7 @@ impl Simulation {
                 .zip(target_owner)
                 .is_some_and(|(source, target)| {
                     crate::sim::combat::combat_weapon::is_ally_by_object(
-                        Some(self.house_alliances.as_map()),
+                        Some(&self.house_alliances),
                         &self.interner,
                         source,
                         target,

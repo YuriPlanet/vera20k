@@ -532,11 +532,9 @@ pub(crate) fn drain_common_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
             .entities
             .get(victim_id)
             .map(|victim| victim.owner())
-        && crate::map::houses::is_allied_with(
-            sim.house_alliances.as_map(),
-            sim.interner.resolve(target_owner),
-            sim.interner.resolve(owner),
-        )
+        && sim
+            .house_alliances
+            .is_allied(&sim.interner, target_owner, owner)
     {
         stop_drain(sim, stable_id, rules);
     }

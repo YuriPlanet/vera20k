@@ -101,7 +101,7 @@ pub(crate) fn fired(
         world,
         &world.interner,
         world.resolved_terrain.as_ref(),
-        Some(world.house_alliances.as_map()),
+        Some(&world.house_alliances),
     ) else {
         return;
     };

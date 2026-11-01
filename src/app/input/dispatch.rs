@@ -680,7 +680,7 @@ fn tactical_left_up(state: &mut AppState) {
                 let fog_ref = if state.match_state.sandbox_full_visibility {
                     None
                 } else {
-                    Some((sim.fog(), sim.house_alliances()))
+                    Some((sim.fog(), sim.house_alliances().as_map()))
                 };
                 let z = state.match_state.input.zoom_level;
                 let (min_x, min_y, max_x, max_y) = (
@@ -828,7 +828,7 @@ fn band_caught_drawn_object(
     let fog_ref = if state.match_state.sandbox_full_visibility {
         None
     } else {
-        Some((sim.fog(), sim.house_alliances()))
+        Some((sim.fog(), sim.house_alliances().as_map()))
     };
     crate::app::input::entity_pick::band_rect_contains_drawn_object(
         crate::app::input::entity_pick::presented(state, sim),
@@ -1673,7 +1673,7 @@ fn execute_type_select_tap(state: &mut AppState) {
             state.match_state.input.selection_order_pending,
         );
         let fog = (!state.match_state.sandbox_full_visibility)
-            .then_some((sim.fog(), sim.house_alliances()));
+            .then_some((sim.fog(), sim.house_alliances().as_map()));
         compute_type_select_tap_with_playfield(
             sim.entities(),
             &screen_order,

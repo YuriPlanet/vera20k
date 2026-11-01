@@ -547,7 +547,7 @@ impl Simulation {
         //4B2BDA..4B2BE4: the Foot's own House asks (Is_Ally_ByObject).
         let allied = self.substrate.entities.get(blocker).is_some_and(|b| {
             crate::sim::combat::combat_weapon::is_ally_by_object(
-                Some(self.house_alliances.as_map()),
+                Some(&self.house_alliances),
                 &self.interner,
                 actor.owner(),
                 b.owner(),

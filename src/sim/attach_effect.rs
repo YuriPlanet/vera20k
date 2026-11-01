@@ -1472,7 +1472,7 @@ impl Simulation {
                     self,
                     &self.interner,
                     self.resolved_terrain.as_ref(),
-                    Some(self.house_alliances.as_map()),
+                    Some(&self.house_alliances),
                 )?;
                 let range = selected.map_or(-1, |selected| {
                     let source = range_modifier_source(
@@ -2505,7 +2505,7 @@ impl Simulation {
                             source,
                             target,
                             &self.houses,
-                            self.house_alliances.as_map(),
+                            &self.house_alliances,
                             &self.interner,
                         ),
                         _ => false,
@@ -3224,14 +3224,7 @@ fn affects_house(
     let Some(source) = source else {
         return flags.contains(AffectedHouse::ENEMIES);
     };
-    crate::sim::combat::can_target_house(
-        flags,
-        source,
-        target,
-        houses,
-        alliances.as_map(),
-        interner,
-    )
+    crate::sim::combat::can_target_house(flags, source, target, houses, alliances, interner)
 }
 
 #[cfg(all(test, feature = "phobos"))]

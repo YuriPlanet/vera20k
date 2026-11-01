@@ -910,7 +910,7 @@ pub(super) fn dispatch_sim_sound_events(
                 let aux_satisfied =
                     crate::sim::superweapon::super_weapon_available(sim, rules, owner, &type_name);
                 if !eva_producers::super_weapon_detected_allowed(
-                    sim.house_alliances(),
+                    sim.house_alliances().as_map(),
                     &owner_name,
                     local_name,
                     local_defeated,

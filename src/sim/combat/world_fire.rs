@@ -246,7 +246,7 @@ fn admit_attacker_fire<'r>(
             world,
             &world.interner,
             world.resolved_terrain.as_ref(),
-            fog_enabled.then_some(world.house_alliances.as_map()),
+            fog_enabled.then_some(&world.house_alliances),
         ) else {
             out.remove_attack.push(snap.stable_id);
             return None;
@@ -294,7 +294,7 @@ fn admit_attacker_fire<'r>(
                 world,
                 rules,
                 overlay_registry,
-                fog: fog_enabled.then(|| world.fog.fire_view(world.house_alliances.as_map())),
+                fog: fog_enabled.then(|| world.fog.fire_view(&world.house_alliances)),
                 firer,
                 obj,
                 target: Some(snap.target),
@@ -532,13 +532,13 @@ fn admit_attacker_fire<'r>(
             world,
             &world.interner,
             world.resolved_terrain.as_ref(),
-            fog_enabled.then_some(world.house_alliances.as_map()),
+            fog_enabled.then_some(&world.house_alliances),
         )?;
         let code = fire_error_world::FireSubject {
             world,
             rules,
             overlay_registry,
-            fog: fog_enabled.then(|| world.fog.fire_view(world.house_alliances.as_map())),
+            fog: fog_enabled.then(|| world.fog.fire_view(&world.house_alliances)),
             firer: actor,
             obj,
             target,
@@ -765,7 +765,7 @@ pub(super) fn retaliation_reaches(
         world,
         rules,
         overlay_registry,
-        fog: Some(world.fog.fire_view(world.house_alliances.as_map())),
+        fog: Some(world.fog.fire_view(&world.house_alliances)),
         firer: victim,
         obj: victim_type,
         target: Some(TargetKind::Entity(source_id)),

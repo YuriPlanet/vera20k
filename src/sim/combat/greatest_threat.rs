@@ -98,7 +98,6 @@ use super::threat_mask::{self, InfantryScanner};
 use super::threat_range::{ScanRange, scan_range};
 use crate::map::cell_index::{NativeCellIdentity, square_ring_cells};
 use crate::map::entities::EntityCategory;
-use crate::map::houses::HouseAllianceMap;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::object_type::{ObjectType, VhpScan};
 use crate::rules::ruleset::RuleSet;
@@ -106,6 +105,7 @@ use crate::rules::weapon_type::WeaponType;
 use crate::sim::components::DriveCoord;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::{DistributedFireCandidate, GameEntity};
+use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::mission::MissionType;
 use crate::sim::movement::ground_pose::{object_get_coords, position_world_coord};
@@ -331,7 +331,7 @@ pub(crate) fn calculate_threat_score(
     rules: &RuleSet,
     interner: &StringInterner,
     terrain: Option<&ResolvedTerrainGrid>,
-    alliances: Option<&HouseAllianceMap>,
+    alliances: Option<&HouseAlliances>,
     coefficients: ThreatCoefficients,
     reference: ThreatReference,
     scorer_enemy_house: Option<InternedId>,
@@ -749,7 +749,7 @@ impl ScanContext<'_> {
         })
     }
 
-    fn alliances(&self) -> Option<&HouseAllianceMap> {
+    fn alliances(&self) -> Option<&HouseAlliances> {
         self.los.alliances
     }
 
@@ -2706,9 +2706,7 @@ fn probe_is_illegal(
         world,
         rules: ctx.rules,
         overlay_registry: ctx.los.overlay_registry,
-        fog: ctx
-            .fog
-            .map(|fog| fog.fire_view(world.house_alliances.as_map())),
+        fog: ctx.fog.map(|fog| fog.fire_view(&world.house_alliances)),
         firer,
         obj: ctx.attacker_obj,
         target: Some(super::TargetKind::Entity(candidate.stable_id())),
