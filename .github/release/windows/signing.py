@@ -25,10 +25,12 @@ PACKAGE_FILES = {
 }
 SIGNED_FILES = {"vera20k.exe", "uninstaller.exe"}
 UNINSTALLER_NAME = re.compile(r"uninst-7\.1\.0-[0-9a-f]{10}\.e(?:32|64)", re.IGNORECASE)
+# Compiler.Compile.NotifyError calls Shared.CommonFunc.GetExceptMessage, which
+# adds the final period before ISCC writes the compiler error to stderr JSONL.
 SIGNATURE_NEEDED = (
     "Signed uninstaller mode is enabled. Using an external code-signing tool, "
     "please attach your digital signature to the following executable file:\n\n{}\n\n"
-    "and compile again"
+    "and compile again."
 )
 
 
@@ -136,7 +138,9 @@ def generated_uninstaller(result, directory):
     except (UnicodeError, ValueError, KeyError, TypeError, AttributeError):
         raise RuntimeError("Unexpected Inno Setup compiler diagnostics") from None
     if result.returncode != 2 or errors != [SIGNATURE_NEEDED.format(candidate), "Compile aborted."]:
-        raise RuntimeError("Inno Setup failed for a reason other than the expected unsigned uninstaller")
+        details = json.dumps({"returncode": result.returncode, "errors": errors}, ensure_ascii=True)
+        raise RuntimeError("Inno Setup failed for a reason other than the expected unsigned uninstaller: "
+                           + details)
     return candidate
 
 

@@ -46,7 +46,7 @@ def waiting_result(directory, data):
     candidate.write_bytes(data)
     message = ("Signed uninstaller mode is enabled. Using an external code-signing tool, "
                "please attach your digital signature to the following executable file:\r\n\r\n"
-               f"{candidate}\r\n\r\nand compile again")
+               f"{candidate}\r\n\r\nand compile again.")
     error = "\n".join(json.dumps({"severity": "error", "message": text})
                       for text in (message, "Compile aborted."))
     return candidate, subprocess.CompletedProcess([], 2, b"", error.encode())
@@ -58,6 +58,13 @@ class WindowsSigningTests(unittest.TestCase):
             directory = Path(temporary)
             candidate, result = waiting_result(directory, pe_fixture())
             self.assertEqual(signing.generated_uninstaller(result, directory), candidate)
+            # Inno's GetExceptMessage adds this period to the raw message constant.
+            result.stderr = result.stderr.replace(b"and compile again.", b"and compile again")
+            with self.assertRaisesRegex(RuntimeError, "other than the expected") as caught:
+                signing.generated_uninstaller(result, directory)
+            self.assertIn('"returncode": 2', str(caught.exception))
+            self.assertIn(r"\n\n", str(caught.exception))
+            self.assertIn(candidate.name, str(caught.exception))
             # A compiler error must not be mistaken for a successful prepare just
             # because it left an uninstaller file behind.
             result.stderr = json.dumps({"severity": "error", "message": "Out of memory"}).encode()

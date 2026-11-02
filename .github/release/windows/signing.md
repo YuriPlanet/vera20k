@@ -88,6 +88,11 @@ and the diagnostic:
 Inno documents why the signed uninstaller also matters for temporary setup
 self-copies: [SignedUninstaller](https://jrsoftware.org/ishelp/topic_setup_signeduninstaller.htm).
 
+For an Inno compiler regression, dispatch the workflow with `packaging_only`
+enabled. It checks ordinary packaging and uninstaller preparation with inert
+fixture bytes, without compiling the game, accessing a signing token, or
+uploading the fixture to SignPath. Use the default mode for the real signing test.
+
 ## Production follow-up
 
 After a successful test, request SignPath's configuration review and production
