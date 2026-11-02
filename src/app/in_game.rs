@@ -465,6 +465,13 @@ impl App {
         if Self::house_outcome_wait_pending(state) {
             return false;
         }
+        // A result that is already published and waiting for its commander
+        // clip is decided, but the player may still want out of the clip: the
+        // menu has to open for them. Leaving through it cuts the clip instead
+        // of queueing an EXIT event the stopped world could never execute.
+        if crate::app::commander_feedback::verdict_is_waiting_for_clip(state) {
+            return true;
+        }
         let sim = state
             .match_state
             .sim_runtime
@@ -572,6 +579,21 @@ impl App {
     /// back to the shell. Confirmation itself only constructs and queues the
     /// event; teardown begins after the event-tail dispatcher executes it.
     fn exit_match_to_shell(state: &mut AppState) {
+        // The result is already decided and only its commander clip is left.
+        // Leaving now cuts that clip: the card, the theme and the score page
+        // follow exactly as they would after it — the terminal frame latched
+        // the score before this point. Queueing the native EXIT event instead
+        // would go nowhere: no frame runs after a published result, so the
+        // event would never execute.
+        if crate::app::commander_feedback::verdict_is_waiting_for_clip(state) {
+            let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+            crate::app::commander_feedback::skip_verdict_clip(state, wall_ms);
+            Self::enter_in_game_menu_state(
+                state,
+                crate::ui::pause_menu::InGameMenuState::Closed,
+            );
+            return;
+        }
         log::info!("Abort Mission confirmed — queueing EXIT event");
         // 0x0048CAA1 clears the admission latch after queueing EXIT, even
         // when the event ring is full: until EXIT runs, State_Machine opens

@@ -297,6 +297,29 @@ pub(crate) fn verdict_card_shown_at_ms(state: &AppState) -> Option<u64> {
         .verdict_card_at_ms
 }
 
+/// Cut the losing commander's clip short because the player asked to leave the
+/// battlefield before it ends.
+///
+/// The match is already decided at this point: the simulation published the
+/// result, latched its terminal score and stopped the score clock on that same
+/// frame (`finalize_terminal_score_snapshot`, `MasterFrame`), so skipping the
+/// clip changes nothing about the numbers. It retires the clip's FIFO and ends
+/// the wait, and the exit router takes the verdict on its next pass — the same
+/// card, the same theme and the same score page the clip would have led to.
+pub(crate) fn skip_verdict_clip(state: &mut AppState, wall_ms: u64) {
+    if !verdict_is_waiting_for_clip(state) {
+        return;
+    }
+    // The clip's own EVA hold and both queues belong to this FIFO.
+    crate::app::radar_movie::retire(state, wall_ms);
+    let feedback = &mut state.match_state.match_presentation.commander_feedback;
+    feedback.queue.clear();
+    feedback.verdict_wait = None;
+    // Never re-open: the verdict is the router's now.
+    feedback.verdict_released = true;
+    log::info!("The commander clip is skipped; the verdict goes out now");
+}
+
 /// The feature's own admit test. Only a live skirmish draws clips, and only
 /// while the switches say so: the player's own option, and the rules' — a mod
 /// or a map that ships its own scripted AI writes
