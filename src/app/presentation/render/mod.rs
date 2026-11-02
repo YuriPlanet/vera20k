@@ -997,6 +997,16 @@ fn upload_to_gpu(
     );
     pool.upload(
         &state.renderer.gpu,
+        "sidebar_label_overlay",
+        &sidebar.label_overlay,
+    );
+    pool.upload(
+        &state.renderer.gpu,
+        "sidebar_label_text",
+        &sidebar.label_text,
+    );
+    pool.upload(
+        &state.renderer.gpu,
         "sidebar_cameo_overlay",
         &sidebar.cameo_overlay,
     );

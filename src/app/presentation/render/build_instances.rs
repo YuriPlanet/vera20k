@@ -95,6 +95,8 @@ pub(super) struct SidebarInstances {
     pub cameo_overlay: Vec<SpriteInstance>,
     pub queue_overlay: Vec<SpriteInstance>,
     pub queue_text: Vec<SpriteInstance>,
+    pub label_overlay: Vec<SpriteInstance>,
+    pub label_text: Vec<SpriteInstance>,
     pub text: Vec<SpriteInstance>,
     #[cfg(feature = "phobos")]
     pub sw_sidebar_chrome: Vec<SpriteInstance>,
@@ -122,7 +124,7 @@ impl SidebarInstances {
             self.minimap.len(),
             self.viewport_rect.len(),
             self.radar_anim.len(),
-            self.text.len() + self.queue_text.len(),
+            self.text.len() + self.queue_text.len() + self.label_text.len(),
         )
     }
 }
@@ -1357,6 +1359,8 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         cameo_overlay: cameo_layers.overlay,
         queue_overlay: cameo_layers.queue_overlay,
         queue_text: text_layers.queue,
+        label_overlay: cameo_layers.label_overlay,
+        label_text: text_layers.label,
         text: text_layers.status,
         #[cfg(feature = "phobos")]
         sw_sidebar_chrome: sw_sidebar.chrome,
