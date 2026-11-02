@@ -265,9 +265,8 @@ impl<'a> FireSubject<'a> {
             .passenger_role
             .inside_transport_id()
             .and_then(|id| self.world.substrate.entities.get(id));
-        // U5 reads the `+0x418` tether byte that radio `0x18` sets, whose
-        // stand-in is the dock-entered projection (VERA owns no exact tether
-        // byte, `radio/receive.rs`), and `RadioLinks[0]`.
+        // U5 reads the `+0x418` tether latch (`radio::tether`) and
+        // `RadioLinks[0]`.
         let radio_link = firer
             .radio_contacts
             .slot(0)
@@ -443,6 +442,8 @@ impl<'a> FireSubject<'a> {
                         warped_out: entity.is_warped_out(),
                         chrono_warp_latch: entity.chrono_warp_latch(),
                         bunkered: entity.bunker.link().installed_in().is_some(),
+                        // T18 reads the target's `+0x418` tether latch.
+                        tethered: entity.tether.partner().is_some(),
                         health: entity.health,
                         parasite_lock_until: entity.parasite.launch_lock() as i32,
                         deploying: entity.unit_deploying(),
