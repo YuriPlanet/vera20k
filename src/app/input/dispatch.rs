@@ -1053,44 +1053,41 @@ pub(crate) fn wheel_action(delta_lines: f32) -> WheelAction {
     }
 }
 
-/// Apply one wheel notch to a strip's scroll row.
+/// The sidebar command a Winit wheel event issues, if any.
 ///
-/// The native scroll refuses to move above row 0 or past the strip's computed
-/// visible capacity, so both ends saturate rather than wrap.
-pub(crate) fn wheel_scrolled_row(current: usize, max_rows: usize, delta_lines: f32) -> usize {
-    // Winit also forwards touchpad phase boundaries and horizontal-only events.
-    // Their zero vertical delta is no wheel notch, so it must not reach the
-    // native sign mapping (which would interpret zero as SidebarUp).
-    // winit 0.30.13, macOS View::scroll_wheel:
-    // https://github.com/rust-windowing/winit/blob/v0.30.13/src/platform_impl/macos/view.rs#L663-L701
-    if delta_lines == 0.0 {
-        return current;
-    }
-    match wheel_action(delta_lines) {
-        WheelAction::SidebarUp => current.saturating_sub(1),
-        WheelAction::SidebarDown => (current + 1).min(max_rows),
-    }
+/// Winit also forwards touchpad phase boundaries and horizontal-only events.
+/// Their zero vertical delta is no wheel notch, so it must not reach the
+/// native sign mapping (which would interpret zero as SidebarUp).
+/// winit 0.30.13, macOS View::scroll_wheel:
+/// https://github.com/rust-windowing/winit/blob/v0.30.13/src/platform_impl/macos/view.rs#L663-L701
+pub(crate) fn wheel_notch(delta_lines: f32) -> Option<WheelAction> {
+    (delta_lines != 0.0).then(|| wheel_action(delta_lines))
 }
 
-/// Scroll the active build strip by one row.
+/// SidebarUp / SidebarDown (the wheel and their hotkeys): one row on the
+/// active build strip.
 ///
-/// The cursor position is deliberately not consulted. The retail binding is a
-/// window message routed straight to a command, not a hit-tested gadget, so the
-/// wheel scrolls the sidebar from anywhere on the screen — and there is no world
-/// zoom in gamemd for the wheel to reach instead.
-pub(crate) fn sidebar_wheel_scroll(state: &mut AppState, delta_lines: f32) {
+/// SidebarClass::Scroll `0x006A6A00` queues the row in the strip's
+/// PendingScroll; StripClass::AI moves it on the next Sidebar Action, like
+/// the scroll arrows. The cursor position is deliberately not consulted. The
+/// retail binding is a window message routed straight to a command, not a
+/// hit-tested gadget, so the wheel scrolls the sidebar from anywhere on the
+/// screen — and there is no world zoom in gamemd for the wheel to reach instead.
+pub(crate) fn sidebar_scroll_command(state: &mut AppState, action: WheelAction) {
     if crate::app::input::campaign_input::is_locked(state) {
         return;
     }
-    let Some(view) = current_sidebar_view(state).cloned() else {
+    let Some(visible_rows) = current_sidebar_view(state).map(|view| view.layout.side2_tile_count)
+    else {
         return;
     };
-    let row = wheel_scrolled_row(view.scroll_rows, view.max_scroll_rows, delta_lines);
     let presentation = &mut state.match_state.match_presentation;
-    presentation
-        .sidebar_projection
-        .set_scroll_row(presentation.active_sidebar_tab, row);
-    crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+    presentation.sidebar_projection.queue_scroll(
+        presentation.active_sidebar_tab,
+        action == WheelAction::SidebarDown,
+        visible_rows,
+        1,
+    );
 }
 
 /// The local player's queue of record, in queue order (empty without a sim).
@@ -1894,10 +1891,10 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::TeamCenter(slot) => {
             handle_control_group_command(state, slot, Some(GroupPressAction::Center))
         }
-        // Native SidebarUp/Down execute the same one-row saturated sidebar
-        // owner as wheel input (up=1, down=0).
-        HotkeyCommand::SidebarUp => sidebar_wheel_scroll(state, 1.0),
-        HotkeyCommand::SidebarDown => sidebar_wheel_scroll(state, -1.0),
+        // Native SidebarUp/Down execute SidebarClass::Scroll 0x6A6A00 on the
+        // active strip (up=true/false, tab -1), as the wheel does.
+        HotkeyCommand::SidebarUp => sidebar_scroll_command(state, WheelAction::SidebarUp),
+        HotkeyCommand::SidebarDown => sidebar_scroll_command(state, WheelAction::SidebarDown),
         HotkeyCommand::Options => handle_options_hotkey(state),
         HotkeyCommand::CenterView => crate::app::input::camera::center_view_on_selection(state),
         HotkeyCommand::Follow => crate::app::input::camera::toggle_follow_target(state),
@@ -2210,7 +2207,7 @@ fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCod
 
 #[cfg(test)]
 mod wheel_tests {
-    use super::{WheelAction, wheel_action, wheel_scrolled_row};
+    use super::{WheelAction, wheel_action, wheel_notch};
 
     /// One notch is one row, whichever way it turns and however large the OS
     /// reports the delta. gamemd tests only the sign of the wheel delta and then
@@ -2233,19 +2230,10 @@ mod wheel_tests {
     }
 
     #[test]
-    fn rows_move_one_at_a_time_and_saturate_at_both_ends() {
-        assert_eq!(wheel_scrolled_row(0, 4, -1.0), 1);
-        assert_eq!(wheel_scrolled_row(3, 4, -1.0), 4);
-        // Refuses to move past the strip's computed capacity.
-        assert_eq!(wheel_scrolled_row(4, 4, -1.0), 4);
-        assert_eq!(wheel_scrolled_row(2, 4, 1.0), 1);
-        // Refuses to move above row 0.
-        assert_eq!(wheel_scrolled_row(0, 4, 1.0), 0);
-        // A strip that fits entirely on screen cannot scroll at all.
-        assert_eq!(wheel_scrolled_row(0, 0, -1.0), 0);
-        // Gesture boundaries and horizontal-only events keep the current row.
-        assert_eq!(wheel_scrolled_row(1, 4, 0.0), 1);
-        assert_eq!(wheel_scrolled_row(1, 4, -0.0), 1);
+    fn zero_motion_events_issue_no_command() {
+        assert_eq!(wheel_notch(0.0), None);
+        assert_eq!(wheel_notch(-0.0), None);
+        assert_eq!(wheel_notch(-1.0), Some(WheelAction::SidebarDown));
     }
 }
 

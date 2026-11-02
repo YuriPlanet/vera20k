@@ -1107,16 +1107,17 @@ impl SidebarProjectionState {
             .set_scroll_row(tab, row);
     }
 
-    /// A fired scroll arrow; see [`CameoStrips::queue_page_scroll`].
-    pub(crate) fn queue_page_scroll(
+    /// A fired scroll arrow or scroll command; see [`CameoStrips::queue_scroll`].
+    pub(crate) fn queue_scroll(
         &mut self,
         tab: crate::ui::sidebar::SidebarTab,
         down: bool,
         visible_rows: usize,
+        rows: usize,
     ) -> bool {
         self.cameos
             .as_mut()
-            .is_some_and(|(_, strips)| strips.queue_page_scroll(tab, down, visible_rows))
+            .is_some_and(|(_, strips)| strips.queue_scroll(tab, down, visible_rows, rows))
     }
 
     /// Roll queued scroll rows for `visits` Sidebar Actions (one per

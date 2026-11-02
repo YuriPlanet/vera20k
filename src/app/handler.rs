@@ -1812,7 +1812,9 @@ impl ApplicationHandler for App {
                     // Every wheel notch scrolls the active build strip by one
                     // row. gamemd routes the wheel message straight to the
                     // SidebarUp / SidebarDown commands and has no world zoom.
-                    dispatch::sidebar_wheel_scroll(state, lines);
+                    if let Some(action) = dispatch::wheel_notch(lines) {
+                        dispatch::sidebar_scroll_command(state, action);
+                    }
                 }
             }
             WindowEvent::Ime(ime) => crate::app::input::ime::event(state, ime),
