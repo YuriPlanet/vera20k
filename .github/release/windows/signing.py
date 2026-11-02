@@ -364,7 +364,11 @@ def reuse_info(run_id, current_sha):
 
 def metadata(payload):
     manifest = check_payload(payload, payload)
-    return {"version": manifest["version"], "name": manifest["name"]}
+    # Inno 7.1.0's UpdateStringValue leaves the 50-character ProductVersion
+    # resource padded with spaces. JSON quotes preserve them through Actions
+    # outputs and the SignPath action's JSON-string parameter parser.
+    return {"version": manifest["version"], "name": manifest["name"],
+            "inno_version_json": json.dumps(manifest["version"].ljust(50))}
 
 
 def main():

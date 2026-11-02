@@ -46,7 +46,14 @@ the XML signing instructions as `<authenticode-sign />`; do not set `description
 or `description-url`, which would override that enforced watermark.
 
 The metadata restrictions require the product name `VERA20k` and the build's
-product version. The installer can keep its visible `VERA` name. ZIP archives
+product version. Inno 7.1.0 leaves its uninstaller and setup resources padded with
+spaces: ProductName occupies 60 characters and ProductVersion occupies 50.
+The Inno XML matchers include that exact padding; the game's matchers remain
+unpadded. The helper emits `inno_version_json` as a JSON string so Actions and
+the SignPath parameter parser preserve the trailing spaces. See Inno's
+[resource writer](https://github.com/jrsoftware/issrc/blob/is-7_1_0/Projects/Src/Compiler.ExeUpdateFunc.pas)
+and [version resources](https://github.com/jrsoftware/issrc/blob/is-7_1_0/Projects/Src/Setup.version.rc).
+The installer can keep its visible `VERA` name. ZIP archives
 contain the files directly at their root, as GitHub's artifact upload creates
 them. See [SignPath's GitHub integration](https://docs.signpath.io/trusted-build-systems/github)
 and [artifact configuration reference](https://docs.signpath.io/artifact-configuration/reference).

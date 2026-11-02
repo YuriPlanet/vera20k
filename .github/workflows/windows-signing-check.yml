@@ -70,6 +70,7 @@ jobs:
     timeout-minutes: 60
     outputs:
       version: ${{ steps.package.outputs.version }}
+      inno_version_json: ${{ steps.package.outputs.inno_version_json }}
       name: ${{ steps.package.outputs.name }}
       artifact: ${{ steps.upload.outputs.artifact-id }}
     steps:
@@ -197,6 +198,7 @@ jobs:
           output-artifact-directory: signed-payload
           parameters: |
             version: "${{ needs.build.outputs.version }}"
+            inno_version: ${{ needs.build.outputs.inno_version_json }}
       - name: Build the installer from the signed payload
         shell: pwsh
         run: |
@@ -225,7 +227,7 @@ jobs:
           wait-for-completion-timeout-in-seconds: 3600
           output-artifact-directory: signed-installer
           parameters: |
-            version: "${{ needs.build.outputs.version }}"
+            inno_version: ${{ needs.build.outputs.inno_version_json }}
             installer: "${{ needs.build.outputs.name }}-setup.exe"
       - name: Verify the installed game, uninstaller and setup
         timeout-minutes: 10

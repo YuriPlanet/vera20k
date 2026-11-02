@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+import xml.etree.ElementTree as ET
 
 
 SOURCE = Path(__file__).resolve().parents[1] / ".github/release/windows/signing.py"
@@ -86,7 +87,31 @@ class WindowsSigningTests(unittest.TestCase):
 
             with patch.object(signing, "compile_setup", side_effect=prepare_compile):
                 signing.prepare(package, staging, "0.2.5", "20261102-120000", "vera20k-check", "ISCC")
-            self.assertEqual(signing.metadata(staging), {"version": "0.2.5", "name": "vera20k-check"})
+            metadata = signing.metadata(staging)
+            self.assertEqual(metadata["version"], "0.2.5")
+            self.assertEqual(metadata["name"], "vera20k-check")
+            # GITHUB_OUTPUT carries JSON, and the SignPath action trims outside
+            # its quotes before JSON.parse. The 50-character value survives.
+            output_line = "inno_version_json=" + metadata["inno_version_json"]
+            inno_version = json.loads(output_line.split("=", 1)[1].strip())
+            self.assertEqual(inno_version, "0.2.5" + " " * 45)
+            self.assertEqual(len(inno_version), 50)
+            namespace = {"s": "http://signpath.io/artifact-configuration/v1"}
+            for filename in ("signpath-payload.xml", "signpath-installer.xml"):
+                xml = ET.parse(SOURCE.with_name(filename))
+                files = xml.findall(".//s:pe-file", namespace)
+                for file in files:
+                    if file.get("path") == "vera20k.exe":
+                        self.assertEqual(file.get("product-name"), "VERA20k")
+                        self.assertEqual(file.get("product-version"), "${version}")
+                    else:
+                        self.assertEqual(file.get("product-name"), "VERA20k" + " " * 53)
+                        self.assertEqual(file.get("product-version"), "${inno_version}")
+                parameters = {p.get("name"): p.get("required")
+                              for p in xml.findall(".//s:parameter", namespace)}
+                self.assertEqual(parameters["inno_version"], "true")
+                if filename == "signpath-installer.xml":
+                    self.assertNotIn("version", parameters)
             manifest = json.loads((staging / "manifest.json").read_text())
             original_bytes = {path.name: path.read_bytes() for path in staging.iterdir()}
             signed = root / "signed"
