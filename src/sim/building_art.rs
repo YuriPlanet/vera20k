@@ -700,6 +700,9 @@ impl Simulation {
         if !enabled && object.powered && self.building_anim_power_flags(id, slot, rules).powered {
             self.substrate.anims.get_mut(new_id)?.pause();
         }
+        // RESIDUAL (dormant): `0x00451AFB..0x00451B10` hides a slot-9 anim
+        // (Anim `+0x19D`) of a `BarrelAnimIsVoxel=` type. VERA reads no such
+        // key (its other arm: `fire_coord.rs`); no retail rules layer sets it.
         // 0x00451B17..0x00451B25: a building being erased (`vt+0x1D4`,
         // Techno `+0x270`) freezes the new anim.
         if self.substrate.entities.get(id)?.is_warped_out() {
