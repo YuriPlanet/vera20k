@@ -229,7 +229,7 @@ impl HouseAlliances {
 
 /// [`HouseAlliances`]' graph as ally masks, read through one interner: a row
 /// per house name with an ally or in an ally set (the launch graph also keys
-/// every roster house and slot, most with no ally) and the row of each id the
+/// every slot, most with no ally) and the row of each id the
 /// interner held at the build, by the same key ([`with_house_key`]) the
 /// by-name test uses. It cannot answer for an id interned later or from
 /// another interner, and is not built for more names than a mask has bits;
