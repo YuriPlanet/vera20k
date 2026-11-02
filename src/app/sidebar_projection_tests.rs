@@ -791,22 +791,16 @@ fn touchpad_release_keeps_scrolled_cameos_selectable_after_refresh() {
     let first = view(&sim, &options, &projection, tab, 360.0);
     assert!(first.max_scroll_rows > 0, "the strip must overflow");
 
-    let row = crate::app::input::dispatch::wheel_scrolled_row(
-        first.scroll_rows,
-        first.max_scroll_rows,
-        -1.0,
-    );
-    projection.set_scroll_row(tab, row);
+    let visible_rows = first.layout.side2_tile_count;
+    assert!(projection.queue_scroll(tab, true, visible_rows, 1));
+    projection.step_pending_scroll(visible_rows, 1);
+    let row = first.scroll_rows + 1;
     let scrolled = view(&sim, &options, &projection, tab, 360.0);
+    assert_eq!(scrolled.scroll_rows, row);
     let selected = scrolled.items[0].type_id.clone();
 
     // macOS sends a zero-motion wheel event when the touchpad gesture ends.
-    let released = crate::app::input::dispatch::wheel_scrolled_row(
-        scrolled.scroll_rows,
-        scrolled.max_scroll_rows,
-        0.0,
-    );
-    projection.set_scroll_row(tab, released);
+    assert_eq!(crate::app::input::dispatch::wheel_notch(0.0), None);
     projection.reconcile_fixture(owner, &candidates, 3);
     let after = view(&sim, &options, &projection, tab, 360.0);
     assert_eq!(

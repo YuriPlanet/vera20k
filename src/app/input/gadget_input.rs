@@ -679,9 +679,10 @@ fn apply_gadget_result(state: &mut AppState, view: &SidebarView, result: u16) {
         // plays ScoldSound and queues nothing. StripClass::AI rolls the queue.
         ID_SCROLL_DOWN | ID_SCROLL_UP => {
             let presentation = &mut state.match_state.match_presentation;
-            let queued = presentation.sidebar_projection.queue_page_scroll(
+            let queued = presentation.sidebar_projection.queue_scroll(
                 presentation.active_sidebar_tab,
                 id == ID_SCROLL_DOWN,
+                view.layout.side2_tile_count,
                 view.layout.side2_tile_count,
             );
             let sound = state.rules().and_then(|rules| {

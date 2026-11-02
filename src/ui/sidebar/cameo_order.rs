@@ -460,23 +460,27 @@ impl CameoStrips {
         self.scroll_rows[tab.tab_index()] = row;
     }
 
-    /// Sidebar Action `0x006A7780`, R-DN (`0xC9`) / R-UP (`0xC8`) branch:
-    /// queue one page (the visible row count) while rows remain below
-    /// TopRow, or TopRow is above 0. False is the ScoldSound branch, which
-    /// queues nothing. The observer branch (page 1) has no VERA strip.
-    pub(crate) fn queue_page_scroll(
+    /// Queue `rows` scroll rows on a strip while rows remain below TopRow
+    /// (down), or TopRow is above 0 (up); false queues nothing. Both native
+    /// writers of PendingScroll gate on TopRow alone, not the queue:
+    /// Sidebar Action `0x006A7780`, R-DN (`0xC9`) / R-UP (`0xC8`) branch,
+    /// queues one page (the visible row count) and plays ScoldSound on false;
+    /// SidebarClass::Scroll `0x006A6A00` (SidebarUp/SidebarDown, the wheel)
+    /// queues one row. The observer branches have no VERA strip.
+    pub(crate) fn queue_scroll(
         &mut self,
         tab: SidebarTab,
         down: bool,
         visible_rows: usize,
+        rows: usize,
     ) -> bool {
         let index = tab.tab_index();
         let top = self.scroll_rows[index];
-        let page = visible_rows as i32;
+        let rows = rows as i32;
         if down && (top + visible_rows) * 2 < self.strips[index].len() {
-            self.pending_scroll[index] += page;
+            self.pending_scroll[index] += rows;
         } else if !down && top != 0 {
-            self.pending_scroll[index] -= page;
+            self.pending_scroll[index] -= rows;
         } else {
             return false;
         }
