@@ -2100,6 +2100,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         cloak.step_timer().timer().duration().hash(hasher);
         cloak.recloak_delay().start_frame().hash(hasher);
         cloak.recloak_delay().duration().hash(hasher);
+        cloak.building_stage().hash(hasher);
     } else {
         0u8.hash(hasher);
     }

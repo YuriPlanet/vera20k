@@ -148,8 +148,8 @@ pub struct DrawDecision {
     pub visible: bool,
     pub state: DrawState,
     /// The unmodified `TechnoClass::GetVisualState` result supplied by the
-    /// existing GameEntity visual-character owner. Building4544A0 delegates
-    /// to that owner for its ordinary stage-zero path; callers that need the
+    /// existing GameEntity visual-character owner, which also answers a
+    /// fading Building's override (Building4544A0); callers that need the
     /// native enum must not infer it from the GPU-ready `state` fields.
     pub(crate) native_visual_state: u8,
 }
@@ -290,13 +290,36 @@ impl DrawState {
     /// `+0x270`; an erased building's anims take their translucency from
     /// their own `+0x119` (`0x004521C0`), and one created during the erase
     /// draws opaque (`0x00451B25`).
+    ///
+    /// A fading Building writes its stage (`+0x6ED`) into each slot Anim's
+    /// `+0x178`, or 16 at stage 15 when its own GetVisualState(0, 0) is 5
+    /// (`BuildingClass::UpdateCloak @ 0x00454E3A..0x00454E70`, and the same
+    /// sequence at creation `0x004519B9` and the lighting refreshes).
+    /// `AnimClass::DrawIt` (`0x004231C1..0x004231EE`) draws 1-5 at 25%,
+    /// 6-15 at 50% and nothing above 15. Residual: native caches the value
+    /// at those writes; this derives it every frame, so a sensor gained while
+    /// the stage holds at 15 shows the anims at once.
     pub(crate) fn for_building_slot_anims(
         building: &GameEntity,
         current_frame: u32,
         remap_row: u32,
         observer: ObserverDrawContext,
     ) -> DrawDecision {
-        Self::entity_decision(building, current_frame, remap_row, observer, false)
+        let decision = Self::entity_decision(building, current_frame, remap_row, observer, false);
+        let stage = building.building_cloak_stage();
+        if stage == 0 {
+            return decision;
+        }
+        let selector = if stage <= 5 {
+            TRANSLUCENCY_25
+        } else {
+            TRANSLUCENCY_50
+        };
+        DrawDecision {
+            visible: !(stage == 15 && decision.native_visual_state == 5),
+            state: Self::from_native_selector(remap_row, selector),
+            native_visual_state: decision.native_visual_state,
+        }
     }
 
     fn entity_decision(
@@ -570,6 +593,48 @@ mod tests {
             DrawState::for_building_slot_anims(&building, 0, 3, ObserverDrawContext::default())
                 .state;
         assert_eq!((anims.fx_flags, anims.fx_params[0]), (0, 1.0));
+    }
+
+    /// A fading building's body follows its GetVisualState (`0x004544A0`)
+    /// and its slot anims their own stage bands (`AnimClass::DrawIt`,
+    /// `0x004231C1..0x004231EE`): at stage 11 an unsensed enemy's body is
+    /// gone while its anims still draw at 50%; at 15 both are gone.
+    #[test]
+    fn a_fading_building_draws_its_slot_anims_by_their_own_stage_bands() {
+        let mut building = entity();
+        building.set_category_for_test(EntityCategory::Structure);
+        let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
+        for (stage, body, anims) in [
+            (3, Some(0.75), Some(0.75)),
+            (6, Some(0.5), Some(0.5)),
+            (11, None, Some(0.5)),
+            (15, None, None),
+        ] {
+            cloak.set_building_stage_for_test(stage);
+            building.cloak = Some(cloak);
+            let shown =
+                |decision: DrawDecision| decision.visible.then_some(decision.state.fx_params[0]);
+            assert_eq!(
+                shown(DrawState::for_entity(
+                    &building,
+                    0,
+                    3,
+                    ObserverDrawContext::default()
+                )),
+                body,
+                "stage {stage} body"
+            );
+            assert_eq!(
+                shown(DrawState::for_building_slot_anims(
+                    &building,
+                    0,
+                    3,
+                    ObserverDrawContext::default()
+                )),
+                anims,
+                "stage {stage} anims"
+            );
+        }
     }
 
     #[test]

@@ -42,14 +42,19 @@ fn stock_cloak_tick_facts(
 ) -> Option<crate::sim::cloak_disguise::CloakTickFacts> {
     let entity = sim.substrate.entities.get(id)?;
     // Foot vtables (Unit7F5C70, Infantry7EB058, Aircraft7E22A4) all
-    // dispatch +410 to CloakingTick6FB740. Buildings use their own +410.
+    // dispatch +410 to CloakingTick6FB740; the Building's +410 (454DB0) asks
+    // CanAutoCloak and ShouldUncloak through its own +2A0/+2A4 overrides.
     if !matches!(
         entity.category(),
-        EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+        EntityCategory::Unit
+            | EntityCategory::Infantry
+            | EntityCategory::Aircraft
+            | EntityCategory::Structure
     ) || entity.cloak.is_none()
     {
         return None;
     }
+    let is_building = entity.category() == EntityCategory::Structure;
     let object = sim.interner.object_type(entity.type_ref(), rules)?;
     let rank_cloak = has_weapon_ability(entity.veterancy.rank_kind(), object, Ability::Cloak);
     // Phobos `TechnoClass_IsReadyToCloak_Wrapper` / `ShouldNotCloak_Wrapper`
@@ -63,7 +68,8 @@ fn stock_cloak_tick_facts(
     // `HasStealthAbility() && !(CloakStop(+0xC93) && locomotor->Is_Moving_Now())`,
     // the locomotor's ILocomotion+0x80 at `0x004DBDDD`, asked only under
     // CloakStop.
-    let moving_blocks_cloak = if intrinsic_cloak && object.cloak_stop {
+    // The Building's +288 (`0x0070C5A0`) is the raw +3D2 byte alone.
+    let moving_blocks_cloak = if intrinsic_cloak && object.cloak_stop && !is_building {
         if crate::rules::ARES_ENABLED {
             // FootClass_IsCloakable_CloakStop10048250 dispatches ILocomotion
             // +10, not stock +80. Missing locomotor is an invalid native state.
@@ -169,9 +175,9 @@ fn stock_cloak_tick_facts(
         && !entity.attack_target.target().is_some_and(|target| {
             sim.techno_can_fire_at_target(id, target, rules, registry)
         })
-        // CanAutoCloak @006FBDC0 exempts Buildings from this progress gate;
-        // all three Foot categories admitted above use the zero-progress gate.
-        && cloak_progress == 0
+        // CanAutoCloak @006FBDC0 (6FBF0A..6FBF1C) exempts Buildings (WhatAmI
+        // 6) from this progress gate; the three Foot categories use it.
+        && (is_building || cloak_progress == 0)
         // 6. CloakDelay countdown at +0x240/+0x248, after the range query.
         && entity
             .cloak
@@ -228,11 +234,148 @@ fn stock_cloak_tick_facts(
         object.cloaking_speed,
         rules.general.cloak_delay_frames,
         rules.general.cloaking_stages,
-        object.invisible
-            || (entity.category() == EntityCategory::Structure && object.invisible_in_game),
+        object.invisible || (is_building && object.invisible_in_game),
         sim.shared_owned_by_current_house(entity),
-        entity.category() == EntityCategory::Structure,
+        is_building,
     ))
+}
+
+/// The cell scan `BuildingClass::CanCloak @ 0x00457770` (vt+0x2A0) and
+/// `BuildingClass::ShouldUncloak @ 0x004578C0` (vt+0x2A4) share: over the
+/// foundation and a one-cell ring around it (X outer, then Y, each from -1
+/// to the width or height past the Location's cell, vt+0x1B8), the cell's
+/// nearest object (`CellClass::Find_Nearest_Object @ 0x0047C3D0` from
+/// (0, 0), ground list) — or, where that is this building, the cell's first
+/// infantry (`CellClass::GetInfantry @ 0x0047EC40`, ground list) — of another
+/// owner whose type has `Sensors=` (`+0xC9D`). The owner test is a raw
+/// inequality, so an ally's sensor counts.
+fn enemy_sensor_by_foundation(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
+    let Some(building) = sim.substrate.entities.get(id) else {
+        return false;
+    };
+    let Some(object) = sim.interner.object_type(building.type_ref(), rules) else {
+        return false;
+    };
+    let owner = building.owner();
+    let (width, height) = crate::sim::ai_base_site::foundation_size(object);
+    let (rx, ry) = (
+        i32::from(building.position.rx()),
+        i32::from(building.position.ry()),
+    );
+    for dx in -1..=width {
+        for dy in -1..=height {
+            // MapClass::Get_CellClass hands an off-map cell its empty dummy.
+            let (Ok(x), Ok(y)) = (u16::try_from(rx + dx), u16::try_from(ry + dy)) else {
+                continue;
+            };
+            let found = match sim.nearest_cell_object((x, y), MovementLayer::Ground, None) {
+                Some(nearest) if nearest == id => sim
+                    .cell_objects((x, y), MovementLayer::Ground)
+                    .find_map(|member| match member {
+                        crate::sim::occupancy::CellObjectMember::Entity(other) => sim
+                            .substrate
+                            .entities
+                            .get(other)
+                            .filter(|other| other.category() == EntityCategory::Infantry)
+                            .map(|_| other),
+                        crate::sim::occupancy::CellObjectMember::Terrain(_) => None,
+                    }),
+                found => found,
+            };
+            let senses = found
+                .and_then(|other| sim.substrate.entities.get(other))
+                .filter(|other| other.owner() != owner)
+                .and_then(|other| sim.interner.object_type(other.type_ref(), rules))
+                .is_some_and(|other| other.sensors);
+            if senses {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// `BuildingClass::UpdateCloak @ 0x00454DB0`, the Building's vt+0x410 that
+/// TechnoClass::AI_Update reaches at `0x006FA946`, for a building with a cloak
+/// ability (a Cloak crate's grant, as no retail building is `Cloakable=`).
+/// One fade stage per visit ([`CloakRuntime::step_building_fade`]); then a
+/// fully cloaked building with [`enemy_sensor_by_foundation`] or Techno
+/// ShouldUncloak starts uncloaking, and an uncloaked one whose CanAutoCloak
+/// passes with no such sensor starts cloaking, each with `CloakSound`.
+/// Unlike CloakingTick there is no ConditionRed draw and no completion
+/// Detach/Scatter.
+///
+/// Residual: the 1 -> 2 edge also removes, and the 3 -> 0 edge restarts, the
+/// building's `NaturalParticleSystem=` (`+0x30C`). VERA has no building
+/// natural particle system and no retail type sets the key.
+///
+/// [`CloakRuntime::step_building_fade`]: crate::sim::cloak_disguise::CloakRuntime::step_building_fade
+fn tick_building_cloak(
+    sim: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    effects: FrameEffects<'_>,
+) {
+    let Some(state) = sim
+        .substrate
+        .entities
+        .get_mut(id)
+        .and_then(|entity| entity.cloak.as_mut())
+        .map(|cloak| {
+            cloak.step_building_fade();
+            cloak.state()
+        })
+    else {
+        return;
+    };
+    if !matches!(state, 0 | 2) {
+        return;
+    }
+    let Some(facts) = stock_cloak_tick_facts(sim, id, rules, registry) else {
+        return;
+    };
+    let now = facts.current_frame;
+    if state == 2 {
+        // 454FDE..454FF3: vt+0x2A4, then vt+0x45C(0) (7036C0).
+        if !facts.should_uncloak && !enemy_sensor_by_foundation(sim, id, rules) {
+            return;
+        }
+        let start = sim
+            .substrate
+            .entities
+            .get_mut(id)
+            .and_then(|entity| entity.cloak.as_mut())
+            .map(|cloak| {
+                cloak.start_uncloaking(
+                    now,
+                    facts.cloaking_speed,
+                    rules.general.cloaking_stages,
+                    false,
+                )
+            });
+        if start.is_some_and(|start| start.play_sound) {
+            emit_configured_cloak_sound(&sim.substrate, &mut sim.sound_events, id, rules);
+        }
+        return;
+    }
+    // 454FF5..45500B: vt+0x2A0 (457770 asks CanAutoCloak before its scan),
+    // then vt+0x460(0) (703770).
+    if !facts.can_auto_cloak || enemy_sensor_by_foundation(sim, id, rules) {
+        return;
+    }
+    let start = sim
+        .substrate
+        .entities
+        .get_mut(id)
+        .and_then(|entity| entity.cloak.as_mut())
+        .map(|cloak| cloak.start_cloaking(now, facts.cloaking_speed, false));
+    if start.is_some_and(|start| start.transitioned) {
+        start_cloaking_detach(sim, id, rules, registry, effects);
+    }
+    if start.is_some_and(|start| start.play_sound) {
+        emit_configured_cloak_sound(&sim.substrate, &mut sim.sound_events, id, rules);
+    }
 }
 
 /// `CellClass::IsVisibleToHouse @ 0x004870B0` for the object's own owner — the
@@ -682,8 +825,8 @@ fn original_health_ratio_corpus_populates_cloak_tick_facts() {
     }
 }
 
-/// Produce the world-dependent virtual results consumed by
-/// `TechnoClass::CloakingTick @ 0x006FB740` for Foot objects;
+/// The cloak virtual (vt+0x410): `TechnoClass::CloakingTick @ 0x006FB740`
+/// for Foot objects, [`tick_building_cloak`] for a Building;
 /// the shared caller runs this after mission/targeting, Bomb, SlaveManager,
 /// CaptureManager, IsAlive and healing (Techno6FA941..6FA946), before Spawn.
 pub(super) fn tick_stock_cloak_producer(
@@ -712,7 +855,10 @@ pub(super) fn tick_stock_cloak_producer(
     };
     if !matches!(
         category,
-        EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+        EntityCategory::Unit
+            | EntityCategory::Infantry
+            | EntityCategory::Aircraft
+            | EntityCategory::Structure
     ) {
         return;
     }
@@ -733,6 +879,10 @@ pub(super) fn tick_stock_cloak_producer(
     let frame = sim.session.binary_frame() as i32;
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         crate::sim::cloak_disguise::CloakRuntime::install_if_absent(&mut entity.cloak, frame);
+    }
+    if category == EntityCategory::Structure {
+        tick_building_cloak(sim, id, rules, registry, effects);
+        return;
     }
 
     let Some(facts) = stock_cloak_tick_facts(sim, id, rules, registry) else {

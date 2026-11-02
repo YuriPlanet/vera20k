@@ -1305,11 +1305,37 @@ pub(crate) fn pick_object_at_point<'a>(
     match picked {
         CellObjectMember::Entity(id) => {
             let entity = entities.get(id)?;
-            (entity.discovery.owned_by_current_house() || !source.type_invisible(entity))
-                .then_some(picked)
+            (entity.discovery.owned_by_current_house()
+                || !source.type_invisible(entity) && !faded_out_unsensed(entity, fog, player))
+            .then_some(picked)
         }
         CellObjectMember::Terrain(_) => Some(picked),
     }
+}
+
+/// ProcessClickCoords' Building arm (`0x00692585..0x006925E6`): a nonlocal
+/// Building faded out (`+0x6ED` 15) is no object unless the player's sensors
+/// cover the cell of its GetCoords (vt+0x48, `CellClass::SensorCountForHouse
+/// @ 0x004870D0`). DetermineAction (`0x006926DB..0x0069272C`) and
+/// BandBox_LeftUp (`0x004ABE18..0x004ABE48`, through vt+0x328) repeat this
+/// test on the object it returns.
+fn faded_out_unsensed(
+    entity: &crate::sim::game_entity::GameEntity,
+    fog: Option<&FogState>,
+    player: Option<InternedId>,
+) -> bool {
+    if entity.category() != EntityCategory::Structure || entity.building_cloak_stage() != 15 {
+        return false;
+    }
+    let [x, y] = crate::sim::movement::ground_pose::object_center_xy(entity);
+    let cell = (
+        u16::try_from(crate::util::lepton::lepton_to_cell(x)),
+        u16::try_from(crate::util::lepton::lepton_to_cell(y)),
+    );
+    fog.zip(player).is_some_and(|(fog, player)| match cell {
+        (Ok(rx), Ok(ry)) => !fog.has_sensor_for_house(player, rx, ry),
+        _ => true,
+    })
 }
 
 /// With nothing selected, DetermineAction (`0x00692610`, its no-selection arm

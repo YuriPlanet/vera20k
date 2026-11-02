@@ -13,11 +13,12 @@ fn rules() -> RuleSet {
         "[General]\nCloakingStages=9\nCloakDelay=.02\n\
          [AudioVisual]\nCloakSound=NavalUnitEmerge\n\
          [VehicleTypes]\n0=SUB\n1=RANKED\n2=DEST\n\
-         [BuildingTypes]\n0=NAYARD\n\
+         [BuildingTypes]\n0=NAYARD\n1=GAPOWR\n\
          [SUB]\nStrength=600\nSpeed=4\nCloakable=yes\nCloakingSpeed=1\nSensorsSight=7\n\
          [DEST]\nStrength=600\nSpeed=6\nSensors=yes\nSensorsSight=8\n\
          [RANKED]\nStrength=600\nSpeed=4\nVeteranAbilities=CLOAK\nEliteAbilities=CLOAK\n\
-         [NAYARD]\nStrength=1000\nWeaponsFactory=yes\n",
+         [NAYARD]\nStrength=1000\nWeaponsFactory=yes\n\
+         [GAPOWR]\nStrength=750\n",
     ))
     .expect("stock cloak rules")
 }
@@ -1202,4 +1203,71 @@ fn attach_effect_cloakable_and_force_decloak_move_the_gates() {
     let facts = stock_cloak_tick_facts(&sim, sub, &rules, None).expect("sub facts");
     assert!(!facts.can_auto_cloak, "ForceDecloak vetoes the ready check");
     assert!(facts.should_uncloak, "ForceDecloak requests the decloak");
+}
+
+/// `BuildingClass::UpdateCloak @ 0x00454DB0` for a building a Cloak crate
+/// granted: it starts cloaking on its first visit, fades one stage per visit
+/// (`+0x6ED`) and is fully cloaked at 15. An enemy `Sensors=` unit beside its
+/// foundation (`BuildingClass::ShouldUncloak @ 0x004578C0`) starts the
+/// uncloak; it fades back and, with the sensor still there, stays uncloaked
+/// (`BuildingClass::CanCloak @ 0x00457770`).
+#[test]
+fn a_cloak_granted_building_fades_out_and_a_sensor_beside_it_brings_it_back() {
+    use crate::sim::cloak_disguise::VisualCharacterQuery;
+
+    let (mut sim, rules, sub) = spawned_sub();
+    let (rx, ry) = sim
+        .substrate
+        .entities
+        .get(sub)
+        .map(|entity| (entity.position.rx(), entity.position.ry()))
+        .unwrap();
+    let id = sim
+        .spawn_object_at_height("GAPOWR", "Soviet", rx + 4, ry, 0, 0, &rules)
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .stealth_ability
+        .grant();
+    let visit = |sim: &mut Simulation| {
+        tick_stock_cloak_producer(
+            sim,
+            id,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        let entity = sim.substrate.entities.get(id).unwrap();
+        let cloak = entity.cloak.as_ref().unwrap();
+        // GetFireError's query (0x006FC25B): the firer's house holds no
+        // sensor here.
+        let seen = entity.visual_character(
+            rules.general.cloaking_stages,
+            false,
+            false,
+            VisualCharacterQuery::sensor(true, false, false),
+        );
+        (cloak.state(), cloak.building_stage(), seen)
+    };
+    assert_eq!(visit(&mut sim), (1, 0, 0));
+    let sounds = sim.sound_events.len();
+    assert_eq!(sounds, 1);
+    let fade: Vec<_> = (1..=15).map(|_| visit(&mut sim)).collect();
+    assert_eq!(fade[4], (1, 5, 1));
+    assert_eq!(fade[5], (1, 6, 2));
+    assert_eq!(fade[10], (1, 11, 5));
+    assert_eq!(fade[14], (2, 15, 5));
+    assert_eq!(visit(&mut sim), (2, 15, 5), "no sensor beside it");
+
+    sim.spawn_object_at_height("DEST", "Americans", rx + 5, ry, 0, 0, &rules)
+        .unwrap();
+    assert_eq!(visit(&mut sim), (3, 15, 5));
+    assert_eq!(sim.sound_events.len(), sounds + 1);
+    let back: Vec<_> = (1..=15).map(|_| visit(&mut sim)).collect();
+    assert_eq!(back[13], (3, 1, 1));
+    assert_eq!(back[14], (0, 0, 0));
+    assert_eq!(visit(&mut sim), (0, 0, 0), "the sensor blocks a new cloak");
+    assert_eq!(sim.sound_events.len(), sounds + 1);
 }

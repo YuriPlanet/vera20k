@@ -241,7 +241,7 @@ pub(super) struct RadarBuildingVisibilityFacts {
     pub fresh_in_playfield: bool,
     pub both_corners_shrouded: bool,
     pub cloak_state: i32,
-    /// BuildingClass+0x6ED. No Rust production writer exists yet.
+    /// BuildingClass+0x6ED, the fade stage.
     pub building_cloak_stage: u8,
     /// BuildingClass+0x6E7, the FogOfWar freeze flag set by the fogged-object
     /// constructor (`0x004D10D5`): `freeze_building_in_fog` and `clean_fog`
@@ -413,9 +413,7 @@ pub(super) fn build_radar_object_update(
             fresh_in_playfield,
             both_corners_shrouded,
             cloak_state,
-            // +0x6ED (cloak translucency) has no Rust writer: no retail
-            // building is Cloakable=.
-            building_cloak_stage: 0,
+            building_cloak_stage: entity.building_cloak_stage(),
             fogged: !full_visibility
                 && local_owner.is_some_and(|local| fog.is_object_fogged(local, entity.stable_id())),
             has_sensor,

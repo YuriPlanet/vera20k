@@ -1585,9 +1585,9 @@ pub(crate) fn build_building_anim_instances(
             observer,
         );
         // Retain the preexisting material visibility policy while moving
-        // ordering. RESIDUAL: original Anim+178/199 visual-character producers
-        // are not all retained separately; cloaked/observer-dependent slots
-        // still borrow their building's material rather than native Anim state.
+        // ordering. RESIDUAL: the Anim+199 producer is not retained
+        // separately; slots take their building's material, with +178 derived
+        // from its fade stage (`for_building_slot_anims`).
         // This does not gate on body viewport, lifecycle or anchor shroud.
         if !material.visible {
             continue;
