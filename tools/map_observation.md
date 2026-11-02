@@ -1196,6 +1196,15 @@ gesture driver does not advance that poll. Mouse modifiers and held gestures
 across steps are also outside this profile contract. Null, unknown and wrong-case
 button values are rejected before launch.
 
+## Held cursor during a drag
+
+Each `drag` receipt adds `held_cursor`: the cursor the production draw picks
+(`ui_overlays::shown_cursor_id`) at the press point and at `to` before
+release, as `CursorId` names (`null` when no software cursor is loaded). A
+drag that ends over the sidebar shows whether a held left button keeps the
+last cursor there, as `SBGadget::Action` (`0x006ABA40`) resets it only on
+LEFTUP. Captures made before this field omit it and still validate.
+
 ## Minimap presses
 
 A v2/v3 gesture `{"kind":"minimap","position":[740,120]}` sends an ordinary

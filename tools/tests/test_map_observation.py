@@ -600,6 +600,21 @@ class MapObservationTests(unittest.TestCase):
         self.assertEqual(transcript['commands'][0]['payload'], {'Stop': {'entity_id': 7}})
         self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
 
+    def test_drag_receipts_keep_held_cursors_and_reject_them_elsewhere(self):
+        self.gesture_profile()
+        self.gesture_receipts[1]['held_cursor'] = {'press': 'Select', 'before_release': 'Select'}
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        receipts = report['capture']['observations']['gesture_input']['receipts']
+        self.assertEqual(receipts[1]['held_cursor'], {'press': 'Select', 'before_release': 'Select'})
+        bad = [(1, {'press': 'Select'}), (1, {'press': '', 'before_release': None}), (0, {})]
+        for index, (ordinal, held) in enumerate(bad):
+            with self.subTest(ordinal=ordinal, held=held):
+                self.output = self.root / f'bad-held-cursor-{index}'
+                self.change = lambda manifest, ordinal=ordinal, held=held: manifest['observations'][
+                    'gesture_input']['receipts'][ordinal].update(held_cursor=held)
+                self.assertEqual(self.run_capture()['status'], 'INVALID')
+
     def test_observed_commands_preserve_serde_unit_variants_and_reject_missing_tags(self):
         self.gesture_profile()
         self.gesture_receipts[0]['queued_commands'][0]['payload'] = 'Cheer'
@@ -2186,7 +2201,7 @@ class MapObservationTests(unittest.TestCase):
                    lambda data: data.update(policy='unknown'),
                    lambda data: data.update(extra=True),
                    lambda data: data.update(tactical_extent=[9, 6]),
-                   lambda data: data.update(tactical_extent=[5, 5]),
+                   lambda data: data.update(tactical_extent=[3, 3]),
                    lambda data: data.update(tactical_extent=[True, 6]),
                    lambda data: data['receipts'].reverse(),
                    lambda data: data['receipts'].pop(),
