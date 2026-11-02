@@ -40,13 +40,25 @@ fn blend(source: u32, destination: u32) -> u32 {
     let d = (destination >> 2u) & 0x39e7u;
     return select(s + d * 3u, s * 3u + d, selector == 2u) & 0xffffu;
 }
-fn resolve_pixel(p: vec2u, feedback: bool) {
+fn neighbor_linear(p: vec2u) -> i32 {
+    return i32(p.y * params.surface_width + p.x) + params.offset_words;
+}
+fn neighbor_of(linear: i32) -> vec2i {
+    return vec2i(linear % i32(params.surface_width), linear / i32(params.surface_width));
+}
+// A non-negative offset reads only snapshot words, never an earlier store of
+// this transaction, so the resolve fragment blends it directly.
+fn snapshot_word(p: vec2u) -> u32 {
+    let destination = textureLoad(old_words, neighbor_of(neighbor_linear(p)), 0).r;
+    return blend(textureLoad(source_words, vec2i(p), 0).r & 0xffffu, destination);
+}
+fn resolve_pixel(p: vec2u) {
     if !admitted(p) { return; }
-    let linear = i32(p.y * params.surface_width + p.x) + params.offset_words;
-    let neighbor = vec2i(linear % i32(params.surface_width), linear / i32(params.surface_width));
+    let linear = neighbor_linear(p);
+    let neighbor = neighbor_of(linear);
     var destination = textureLoad(old_words, neighbor, 0).r;
     // Earlier stores in this exact native span are visible to a negative offset.
-    if feedback && linear >= 0 && inside(vec2u(neighbor)) && admitted(vec2u(neighbor)) {
+    if linear >= 0 && inside(vec2u(neighbor)) && admitted(vec2u(neighbor)) {
         destination = results[local_index(vec2u(neighbor))];
     }
     results[local_index(p)] = blend(textureLoad(source_words, vec2i(p), 0).r & 0xffffu, destination);
@@ -58,22 +70,17 @@ fn cs_main(@builtin(global_invocation_id) invocation: vec3u,
     // so this visits each linear pixel/residue once even across multiple rows.
     // https://www.w3.org/TR/WGSL/#builtin-values
     let index = invocation.x + invocation.y * (groups.x * 64u);
-    let offset = params.offset_words;
-    if offset >= 0 {
-        if index >= params.rect.z * params.rect.w { return; }
-        resolve_pixel(params.rect.xy + vec2u(index % params.rect.z, index / params.rect.z), false);
-        return;
-    }
-    // Independent residue chains preserve native left-to-right, top-to-bottom
-    // word order without imposing a serial whole-frame GPU dispatch.
-    let stride = u32(-offset);
+    // Only negative offsets dispatch. Independent residue chains preserve
+    // native left-to-right, top-to-bottom word order without imposing a
+    // serial whole-frame GPU dispatch.
+    let stride = u32(-params.offset_words);
     if index >= stride { return; }
     let start = params.rect.y * params.surface_width + params.rect.x;
     let end = (params.rect.y + params.rect.w - 1u) * params.surface_width + params.rect.x + params.rect.z;
     var linear = start + ((index + stride - (start % stride)) % stride);
     while linear < end {
         let p = vec2u(linear % params.surface_width, linear / params.surface_width);
-        if inside(p) { resolve_pixel(p, true); }
+        if inside(p) { resolve_pixel(p); }
         linear += stride;
     }
 }
@@ -87,7 +94,8 @@ struct Resolve { @location(0) color: vec4f, @builtin(frag_depth) depth: f32 };
 fn fs_resolve(@builtin(position) position: vec4f) -> Resolve {
     let p = vec2u(position.xy);
     if !admitted(p) { discard; }
-    let word = results[local_index(p)];
+    var word = snapshot_word(p);
+    if params.offset_words < 0 { word = results[local_index(p)]; }
     let encoded = vec3f(f32(RETAIL_FIVE[(word >> 11u) & 31u]),
         f32(RETAIL_SIX[(word >> 5u) & 63u]), f32(RETAIL_FIVE[word & 31u])) / 255.0;
     return Resolve(vec4f(srgb_decode(encoded),1.0), stored_native_depth(i32(textureLoad(candidates,vec2i(p),0).r)));
