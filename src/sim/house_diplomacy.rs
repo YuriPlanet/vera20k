@@ -546,7 +546,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
         announce: bool,
-        paranoid: Option<&mut ParanoidMaps>,
+        mut paranoid: Option<&mut ParanoidMaps>,
     ) {
         // Keep the live and initialization arms in this same graph owner.
         if !self.can_ally(owner, other, rules) {
@@ -561,7 +561,7 @@ impl Simulation {
             })
             && !self.may_drop_targets(owner);
         let edge_maps = self.maps_keyed_like(other);
-        let walks = self.open_alliance_walks(paranoid.as_deref(), edge_maps, quiet, context);
+        let walks = self.open_alliance_walks(paranoid.as_deref_mut(), edge_maps, quiet, context);
         // 0x004F9B9F..0x004F9BB3, then the threat rebuild (0x004F9BB9).
         Self::set_ally_bit(
             &self.interner,
@@ -700,7 +700,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
         announce: bool,
-        paranoid: Option<&mut ParanoidMaps>,
+        mut paranoid: Option<&mut ParanoidMaps>,
     ) {
         // The current graph/anger writes also run during initialization.
         // Initial saved-mask stores 0x004FA03A/0x004FA0B0 share the map-INI export
@@ -723,7 +723,7 @@ impl Simulation {
             edge_maps = self.maps_keyed_like(other);
             edge_maps.extend(self.maps_keyed_like(owner));
         }
-        let walks = self.open_alliance_walks(paranoid.as_deref(), edge_maps, true, context);
+        let walks = self.open_alliance_walks(paranoid.as_deref_mut(), edge_maps, true, context);
         // 0x004F9FDD..0x004F9FE2.
         update_anger_nodes(
             &mut self.houses,

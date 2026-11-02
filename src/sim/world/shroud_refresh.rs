@@ -26,12 +26,57 @@ use crate::sim::{pathfinding::PathGrid, vision};
 /// bracket walks every map when the last one left no such record (a call's
 /// first bracket, or one after a write beyond the maps), when one of its
 /// maps hears cell notifications, or when its live tail may assign targets.
+///
+/// Off the map, the walks' lookups stamp the shared Dummy cell
+/// (`NativeCellQuery::lookup`), and a skipped walk stamps nothing. So while
+/// something retains the Dummy ([`Simulation::shared_cell_dummy_retained`]),
+/// every bracket walks every map. Otherwise the Dummy's coordinate may end
+/// where native's does not, and nothing reads it.
+///
+/// A bracket that walks every map right after one that journaled every map
+/// leaves that journal unused. After such a miss, the brackets that walk
+/// every map skip the journal: one after the first miss, twice as many after
+/// each next, until a bracket walks fewer maps again. This bounds the
+/// journal's cost where the maps never settle, as under a computer's
+/// `RevealToAll=` building.
 #[derive(Debug, Default)]
 pub(crate) struct ParanoidMaps {
     /// The maps the last bracket changed or whose alliances it changed;
     /// `None` until a journaled bracket shows which, or after one that wrote
     /// beyond the maps.
     unsettled: Option<std::collections::BTreeSet<InternedId>>,
+    /// Whether something retains the shared Dummy cell, once a journaled
+    /// bracket asks; `None` again after a bracket that may change it.
+    dummy_retained: Option<bool>,
+    /// Whether the last bracket journaled every map.
+    learning: bool,
+    /// How many more brackets that walk every map skip the journal.
+    pause: u32,
+    /// Unused journals since a bracket last walked fewer maps.
+    misses: u32,
+}
+
+impl ParanoidMaps {
+    /// A bracket walks fewer maps than every map.
+    fn restrict(&mut self) {
+        self.learning = false;
+        self.misses = 0;
+    }
+
+    /// A bracket walks every map; whether it journals them.
+    fn walk_every_map(&mut self, quiet: bool) -> bool {
+        if std::mem::take(&mut self.learning) {
+            // The last bracket's journal went unused.
+            self.pause = 1 << self.misses.min(16);
+            self.misses += 1;
+        }
+        if self.pause > 0 {
+            self.pause -= 1;
+            return false;
+        }
+        self.learning = quiet;
+        quiet
+    }
 }
 
 /// How one alliance bracket walks ([`Simulation::open_alliance_walks`]).
@@ -2480,7 +2525,7 @@ impl Simulation {
     /// runs the matching Map4ADCD0.
     pub(crate) fn open_alliance_walks(
         &mut self,
-        paranoid: Option<&ParanoidMaps>,
+        paranoid: Option<&mut ParanoidMaps>,
         edge_maps: std::collections::BTreeSet<InternedId>,
         quiet: bool,
         context: UninitContext<'_>,
@@ -2494,19 +2539,26 @@ impl Simulation {
         let paranoid = paranoid.filter(|_| !WALK_EVERY_MAP.get());
         // A bracket inside a journaled one (a notification's trigger) walks
         // every map into the outer journal.
-        if let Some(paranoid) = paranoid.filter(|_| quiet && !self.fog.journaling()) {
-            walks.journaled = true;
-            if let Some(unsettled) = &paranoid.unsettled {
-                let walked = |house: &InternedId| {
-                    unsettled.contains(house) || walks.edge_maps.contains(house)
-                };
-                // A map that hears cell notifications hands them to
-                // receivers beyond the maps: walk every map with it.
-                if !self.fog_clients_current_first().iter().any(walked) {
-                    let maps: Vec<_> = self.houses.order().iter().copied().filter(walked).collect();
-                    walks.journaled = !maps.is_empty();
-                    walks.maps = Some(maps);
-                }
+        if let Some(paranoid) = paranoid.filter(|_| !self.fog.journaling()) {
+            let walked = |house: &InternedId| {
+                paranoid
+                    .unsettled
+                    .as_ref()
+                    .is_some_and(|unsettled| unsettled.contains(house))
+                    || walks.edge_maps.contains(house)
+            };
+            // A map that hears cell notifications hands them to receivers
+            // beyond the maps: walk every map with it.
+            if quiet
+                && paranoid.unsettled.is_some()
+                && !self.fog_clients_current_first().iter().any(walked)
+            {
+                let maps: Vec<_> = self.houses.order().iter().copied().filter(walked).collect();
+                walks.journaled = !maps.is_empty();
+                walks.maps = Some(maps);
+                paranoid.restrict();
+            } else {
+                walks.journaled = paranoid.walk_every_map(quiet);
             }
         }
         if walks.journaled {
@@ -2532,27 +2584,37 @@ impl Simulation {
             return;
         }
         self.walk_map_sight(context, false, walks.maps.as_deref(), false);
+        let outcome = walks.journaled.then(|| {
+            let entities = &self.substrate.entities;
+            let outcome = self.fog.end_journal(|id, viewer| {
+                let deposit = entities.get(id)?.gap_generator.viewers().get(&viewer)?;
+                Some((deposit.active(), deposit.radius()))
+            });
+            if let Some(maps) = &walks.maps {
+                debug_assert!(
+                    outcome.written.iter().all(|viewer| maps.contains(viewer)),
+                    "walks on some maps wrote another"
+                );
+            }
+            outcome
+        });
         let Some(paranoid) = paranoid else {
             return;
         };
-        if !walks.journaled {
-            paranoid.unsettled = None;
+        paranoid.unsettled = None;
+        // A live tail or a write beyond the maps may change what retains
+        // the Dummy.
+        let Some(outcome) = outcome.filter(|outcome| !outcome.shared) else {
+            paranoid.dummy_retained = None;
             return;
+        };
+        if !*paranoid
+            .dummy_retained
+            .get_or_insert_with(|| self.shared_cell_dummy_retained())
+        {
+            // The next bracket changes these maps' walks: their edges changed.
+            paranoid.unsettled = Some(outcome.changed.into_iter().chain(walks.edge_maps).collect());
         }
-        let entities = &self.substrate.entities;
-        let outcome = self.fog.end_journal(|id, viewer| {
-            let deposit = entities.get(id)?.gap_generator.viewers().get(&viewer)?;
-            Some((deposit.active(), deposit.radius()))
-        });
-        if let Some(maps) = &walks.maps {
-            debug_assert!(
-                outcome.written.iter().all(|viewer| maps.contains(viewer)),
-                "walks on some maps wrote another"
-            );
-        }
-        // The next bracket changes these maps' walks: their edges changed.
-        paranoid.unsettled =
-            (!outcome.shared).then(|| outcome.changed.into_iter().chain(walks.edge_maps).collect());
     }
 
     /// Fill_In_Data684F89 -> Map4ADCD0(1,0), before the first Logic frame.

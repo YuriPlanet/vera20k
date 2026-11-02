@@ -721,6 +721,33 @@ impl Simulation {
         self.hash_projectiles(hasher);
     }
 
+    /// Whether something retains the shared dummy cell, so that its live
+    /// coordinate is state ([`Self::hash_shared_cell_dummy`] folds it then).
+    /// Otherwise nothing reads the coordinate: the next lookup that hands
+    /// the dummy out stamps it first.
+    pub(super) fn shared_cell_dummy_retained(&self) -> bool {
+        let entities: Vec<_> = self.substrate.entities.values().collect();
+        self.cells_anchor_dummy()
+            || self.entities_target_dummy(&entities)
+            || self.dummy_retained_beyond_cells_and_entities(&self.effective_shared_cell_dummy())
+    }
+
+    /// Whether the dummy's own bridge anchor, a Team script or a projectile
+    /// retains it.
+    fn dummy_retained_beyond_cells_and_entities(
+        &self,
+        dummy: &crate::map::resolved_terrain::SharedCellDummy,
+    ) -> bool {
+        dummy.native_anchor() == Some(crate::map::cell_index::NativeCellIdentity::Dummy)
+            || self
+                .resolved_terrain
+                .as_ref()
+                .is_some_and(|terrain| self.team_script_vm.retains_dummy_cell(terrain))
+            || self.projectiles.iter().any(|(_, projectile)| {
+                projectile.target() == crate::sim::projectile::ProjectileTarget::DummyCell
+            })
+    }
+
     /// The shared dummy cell's state, and its live coordinate while its own
     /// bridge anchor, a real cell's bridge anchor or an entity's target
     /// (`cells_or_entities_retain_dummy`), or a projectile retains it.
@@ -732,8 +759,6 @@ impl Simulation {
         let shared_dummy_handle = self.effective_shared_cell_dummy();
         let shared_dummy = shared_dummy_handle.snapshot();
         let gap_flags = shared_dummy_handle.retained_bridge_flags() & 0xC00;
-        let bridge_keeps_dummy = shared_dummy_handle.native_anchor()
-            == Some(crate::map::cell_index::NativeCellIdentity::Dummy);
         {
             let extra_flags = shared_dummy_handle.raw_flags()
                 & !crate::map::bridge_facts::RETAINED_CELLCLASS_BRIDGE_FLAG_MASK;
@@ -773,15 +798,8 @@ impl Simulation {
         // live-state authority rather than Scenario payload authority.
         b"shared-cell-dummy-overlay-v1".hash(hasher);
         shared_dummy_overlay.hash(hasher);
-        if bridge_keeps_dummy
-            || cells_or_entities_retain_dummy
-            || self
-                .resolved_terrain
-                .as_ref()
-                .is_some_and(|terrain| self.team_script_vm.retains_dummy_cell(terrain))
-            || self.projectiles.iter().any(|(_, projectile)| {
-                projectile.target() == crate::sim::projectile::ProjectileTarget::DummyCell
-            })
+        if cells_or_entities_retain_dummy
+            || self.dummy_retained_beyond_cells_and_entities(&shared_dummy_handle)
         {
             // Retained Cell pointers make the live coordinate affect future
             // range, Team orders, approach and projectile behavior.
