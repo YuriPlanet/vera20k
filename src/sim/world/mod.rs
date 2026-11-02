@@ -2172,21 +2172,6 @@ impl Simulation {
                 {
                     return;
                 }
-                if category == EntityCategory::Structure
-                    && self
-                        .substrate
-                        .entities
-                        .get(stable_id)
-                        .and_then(|building| building.bunker.occupant())
-                        .is_some()
-                {
-                    crate::sim::docking::bunker_link::release_sell_destroy(
-                        self,
-                        stable_id,
-                        rules,
-                        uninit_context.effects(),
-                    );
-                }
                 // `BuildingClass::AfterDestruction @ 0x00441F60` follows the
                 // dying building's UnInit and reads its type and Location.
                 let destroyed_building = (category == EntityCategory::Structure)
