@@ -112,7 +112,7 @@ impl HeadlessScenario {
             team: crate::skirmish_launch::LaunchTeam::None,
             is_human: true,
             observer: false,
-            source_human_index: None,
+            controllers: Vec::new(),
             handle: None,
             difficulty: crate::sim::house_state::HouseDifficulty::Normal,
             commander: None,

@@ -168,7 +168,14 @@ fn open_edit(state: &mut AppState, target: ChatTarget) -> bool {
     let Some(local) = local_house(state) else {
         return false;
     };
-    let Some(name) = crate::app::presentation::house_ui::house_ui_name(state, local) else {
+    // VERA shared control: a shared House's player writes under its own name.
+    let session = &state.match_state.session;
+    let Some(name) = crate::app::match_runtime::network_match::local_source(session)
+        .and_then(|source| {
+            crate::app::match_runtime::network_match::shared_house_player_name(session, source)
+        })
+        .or_else(|| crate::app::presentation::house_ui::house_ui_name(state, local))
+    else {
         return false;
     };
     let template = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_FROM").into_owned();
@@ -267,9 +274,11 @@ fn route(state: &AppState, local: InternedId, target: ChatTarget) -> Option<(Vec
                 local,
                 house,
             ),
-            peer: session
-                .network_owner_source(sim.interner().resolve(house))
-                .filter(|source| connected.contains(source) && Some(*source) != local_source),
+            peers: session
+                .network_owner_sources(sim.interner().resolve(house))
+                .into_iter()
+                .filter(|source| connected.contains(source) && Some(*source) != local_source)
+                .collect(),
         })
         .collect();
     Some(route_houses(
@@ -289,14 +298,16 @@ pub(crate) fn listener_peers(state: &AppState, local: InternedId) -> Vec<usize> 
 }
 
 /// One Multiplay House as the send block sees it.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct ChatHouse {
     /// House array index, the chat mask's index.
     index: usize,
     /// IsAlliedWith(local House, this House).
     allied: bool,
-    /// The connected peer whose connection carries this House's name.
-    peer: Option<usize>,
+    /// The connected peers whose connections carry this House's name: one,
+    /// or each other player sharing it (VERA shared control), so a line to
+    /// the local House reaches its teammates.
+    peers: Vec<usize>,
 }
 
 fn route_houses(
@@ -320,7 +331,7 @@ fn route_houses(
     let recipients = houses
         .iter()
         .filter(|house| inside(house))
-        .filter_map(|house| house.peer)
+        .flat_map(|house| house.peers.iter().copied())
         .collect();
     (recipients, false)
 }
@@ -433,17 +444,17 @@ mod tests {
             ChatHouse {
                 index: 0,
                 allied: true,
-                peer: None,
+                peers: Vec::new(),
             },
             ChatHouse {
                 index: 1,
                 allied: true,
-                peer: Some(1),
+                peers: vec![1],
             },
             ChatHouse {
                 index: 2,
                 allied: false,
-                peer: Some(2),
+                peers: vec![2],
             },
         ]
     }
@@ -493,12 +504,12 @@ mod tests {
             ChatHouse {
                 index: 8,
                 allied: false,
-                peer: Some(7),
+                peers: vec![7],
             },
             ChatHouse {
                 index: 31,
                 allied: true,
-                peer: Some(29),
+                peers: vec![29],
             },
         ];
         assert_eq!(

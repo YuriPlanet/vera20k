@@ -252,7 +252,7 @@ impl AiActivity {
             .filter(|slot| !slot.is_human && !slot.observer)
             .collect::<Vec<_>>();
         ensure!(
-            ai.len() == 1 && ai[0].source_human_index.is_none(),
+            ai.len() == 1 && ai[0].source_human_index().is_none(),
             "AI acquired a human source"
         );
         let sim = &state
@@ -1808,7 +1808,7 @@ fn local_owner(state: &AppState) -> Result<String> {
         .context("network setup")?;
     crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
         .into_iter()
-        .find(|slot| slot.source_human_index == Some(launch.local_player_index))
+        .find(|slot| slot.is_controlled_by(launch.local_player_index))
         .map(|slot| slot.owner_name)
         .context("local normalized House")
 }
