@@ -116,11 +116,9 @@ pub struct MapEntity {
     /// entire Unit reader. Missing data has no initialized native operand;
     /// it must not be silently treated as the explicit -1 no-link value.
     pub follows: Option<i32>,
-    /// Authored `[Structures]` upgrade type names for native slots 0..2.
-    /// Slots beyond the line's declared upgrade count and unresolved `None`/
-    /// `-1` entries remain empty. Non-structure categories always hold three
-    /// empty slots.
-    pub structure_upgrades: [Option<String>; 3],
+    /// `[Structures]` fields 10..14: upgrade count, light behaviour and the
+    /// upgrade-type tokens. The defaults for other categories.
+    pub structure_columns: StructureColumns,
     /// `[Structures]` field 7, AI Sellable: `BuildingClass::ReadFromINI @
     /// 0x0044F820` stores its `atoi != 0` in the building's `+0x6DC`
     /// (`0x0044FB5B`), false when the line stops short. False for other
@@ -138,6 +136,32 @@ pub struct MapEntity {
     /// raw CRT token passed to TagType6E5E70 ID-or-display-name lookup.
     /// The loader attaches the shared live Tag before class Unlimbo.
     pub trigger_tag: Option<String>,
+}
+
+/// The `[Structures]` columns `CCINIClass::ReadScenarioBuildings @
+/// 0x0044F820` applies after the building's Unlimbo, kept as authored. The
+/// spawner owns the reader's upgrade slots, which carry over between lines.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructureColumns {
+    /// Field 10, the upgrade count: CRT `atoi`, 0 when the line stops short
+    /// (`0x0044FA39..0x0044FA56`), no clamp.
+    pub upgrade_count: i32,
+    /// Field 11, the BuildingLight behaviour: CRT `atoi`, 1 when the line
+    /// stops short (`0x0044FA61..0x0044FA7E`).
+    pub light_behaviour: i32,
+    /// Fields 12..14, `None` where the line stops short. Each present token
+    /// overwrites its reader slot (`0x0044FA82..0x0044FAAB`).
+    pub upgrade_tokens: [Option<String>; 3],
+}
+
+impl Default for StructureColumns {
+    fn default() -> Self {
+        Self {
+            upgrade_count: 0,
+            light_behaviour: 1,
+            upgrade_tokens: [None, None, None],
+        }
+    }
 }
 
 /// Field index of the `MISSION=` column in `[Units]`, `[Infantry]` and
@@ -279,7 +303,7 @@ fn parse_infantry_section(section: &IniSection, entities: &mut Vec<MapEntity>) {
             recruitable_b: recruitment_flag(fields.get(13).copied()),
             group: fields.get(10).map_or(-1, |value| crt_atoi(value)),
             follows: None,
-            structure_upgrades: [None, None, None],
+            structure_columns: StructureColumns::default(),
             structure_ai_sellable: false,
             structure_ai_repairable: false,
             structure_online: true,
@@ -304,7 +328,13 @@ fn parse_structures_section(section: &IniSection, entities: &mut Vec<MapEntity>)
         let Some(mut entity) = parse_common_fields(&fields, EntityCategory::Structure, key) else {
             continue;
         };
-        entity.structure_upgrades = parse_structure_upgrades(&fields);
+        entity.structure_columns = StructureColumns {
+            upgrade_count: fields.get(10).map_or(0, |value| crt_atoi(value)),
+            light_behaviour: fields.get(11).map_or(1, |value| crt_atoi(value)),
+            upgrade_tokens: std::array::from_fn(|slot| {
+                fields.get(12 + slot).map(|value| (*value).to_owned())
+            }),
+        };
         entity.structure_ai_sellable = atoi_flag(fields.get(7).copied());
         entity.structure_ai_repairable = atoi_flag(fields.get(15).copied());
         entity.structure_online = fields.get(9).is_none_or(|value| crt_atoi(value) != 0);
@@ -403,7 +433,7 @@ fn parse_common_fields(fields: &[&str], category: EntityCategory, key: &str) -> 
         } else {
             None
         },
-        structure_upgrades: [None, None, None],
+        structure_columns: StructureColumns::default(),
         structure_ai_sellable: false,
         structure_ai_repairable: false,
         structure_online: true,
@@ -414,28 +444,6 @@ fn parse_common_fields(fields: &[&str], category: EntityCategory, key: &str) -> 
                 7
             })
             .map(|value| (*value).to_owned()),
-    })
-}
-
-/// Active `BuildingClass::ReadFromINI @ 0x0044F820` stores the declared
-/// installed-upgrade count at retail `[Structures]` field 10; its loop at
-/// `0x0044FD50..0x0044FDC3` visits type selectors 12..14 only within that
-/// prefix and skips selectors resolving to `-1` before construction.
-fn parse_structure_upgrades(fields: &[&str]) -> [Option<String>; 3] {
-    let declared = fields
-        .get(10)
-        .map_or(0, |value| crt_atoi(value))
-        .clamp(0, 3) as usize;
-    std::array::from_fn(|slot| {
-        if slot >= declared {
-            return None;
-        }
-        let value = *fields.get(12 + slot)?;
-        if value.eq_ignore_ascii_case("none") || value == "-1" {
-            None
-        } else {
-            Some(value.to_string())
-        }
     })
 }
 
@@ -560,20 +568,31 @@ mod tests {
         assert!(entities.iter().all(|entity| entity.veterancy.is_none()));
     }
 
+    /// `0x0044FA39..0x0044FAAB`: fields 10..14 stay as authored; a short line
+    /// keeps count 0, light behaviour 1 and no upgrade tokens.
     #[test]
-    fn techno_constructor_structure_upgrades_follow_declared_slot_prefix() {
+    fn structures_keep_upgrade_and_light_columns_as_authored() {
         let ini = IniFile::from_str(
             "[Structures]\n\
-             0=Americans,GAPOWR,256,15,25,0,None,1,0,1,2,0,GAPOWRUP,None,IGNORED,0,1\n",
+             0=Americans,GAPOWR,256,15,25,0,None,1,0,1,2,0,GAPOWRUP,None,IGNORED,0,1\n\
+             1=Americans,GAPOWR,256,17,25,0,None,1,0,1\n",
         );
 
         let entities = parse_map_entities(&ini);
 
-        assert_eq!(entities.len(), 1);
         assert_eq!(
-            entities[0].structure_upgrades,
-            [Some("GAPOWRUP".to_string()), None, None]
+            entities[0].structure_columns,
+            StructureColumns {
+                upgrade_count: 2,
+                light_behaviour: 0,
+                upgrade_tokens: [
+                    Some("GAPOWRUP".to_owned()),
+                    Some("None".to_owned()),
+                    Some("IGNORED".to_owned()),
+                ],
+            }
         );
+        assert_eq!(entities[1].structure_columns, StructureColumns::default());
     }
 
     /// Aircraft lines have no HIGH/FOLLOWS columns: `0x0041B110` reads the
