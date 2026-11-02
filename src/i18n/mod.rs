@@ -2,11 +2,11 @@
 //! module, compiled into the binary.
 //!
 //! `[VERA] Language=` (VERA.INI, default `en`) selects one file for the whole
-//! process at startup; changing it takes a restart. Every key the selected
-//! file holds overrides the retail `ra2md.csf` text for that label, so a
-//! translation may also replace retail strings. English fills only labels
-//! that neither the selected file nor the CSF has, which keeps VERA's own
-//! `VERA:` labels readable in a half-translated language.
+//! process at startup; changing it takes a restart. The files sit behind the
+//! retail `ra2md.csf`: a label the CSF has keeps its CSF text, and the
+//! selected file answers only labels the CSF lacks, such as VERA's own
+//! `VERA:` labels. English fills labels that neither the CSF nor the
+//! selected file has, which keeps them readable in a half-translated language.
 //!
 //! File format, UTF-8: a `[Strings]` section of `Label=Text` lines; `;`
 //! starts a comment line, `\n` in a text is a line break, and `{name}` marks
@@ -77,22 +77,21 @@ fn parse(text: &str) -> HashMap<String, String> {
     strings
 }
 
-/// Layer the selected language over a freshly loaded CSF. Called by the one
+/// Put the selected language behind a freshly loaded CSF. Called by the one
 /// CSF loader, so every retail and VERA lookup sees the same text.
 pub fn apply(csf: &mut CsfFile) {
     apply_language(csf, selected_index());
 }
 
 fn apply_language(csf: &mut CsfFile, index: usize) {
+    // English first, so a translation replaces it label by label. Both stay
+    // behind the loaded table, which answers first at lookup.
     for (key, value) in table(0) {
-        if csf.get(key).is_none() {
-            csf.set_override(key, value);
-        }
+        csf.set_fallback(key, value);
     }
-    // A translation then wins over both the CSF and the English fill.
     if index != 0 {
         for (key, value) in table(index) {
-            csf.set_override(key, value);
+            csf.set_fallback(key, value);
         }
     }
 }
@@ -124,18 +123,18 @@ mod tests {
     use crate::assets::csf_file::test_csf;
 
     #[test]
-    fn selected_language_overrides_csf_and_english_fills_only_gaps() {
+    fn csf_text_wins_and_language_files_fill_only_gaps() {
         let zh = language_index("zh-cn").unwrap();
         let mut csf = test_csf(&[("GUI:Ok", "OK"), ("VERA:Pausing", "csf pausing")]);
         apply_language(&mut csf, zh);
-        // A key in the selected file wins over the retail table.
-        assert_eq!(csf.text("VERA:Pausing"), table(zh)["VERA:PAUSING"]);
-        // Retail labels the file lacks keep their CSF text.
+        // A label the CSF has keeps its CSF text, even when the selected file has it.
+        assert_eq!(csf.text("VERA:Pausing"), "csf pausing");
         assert_eq!(csf.text("GUI:Ok"), "OK");
+        // The selected file answers a label the CSF lacks, ahead of English.
+        assert_eq!(csf.text("VERA:Resuming"), table(zh)["VERA:RESUMING"]);
 
         let mut csf = test_csf(&[("VERA:Pausing", "csf pausing")]);
         apply_language(&mut csf, 0);
-        // English is only a fallback: it never replaces a CSF label.
         assert_eq!(csf.text("VERA:Pausing"), "csf pausing");
         assert_eq!(csf.text("VERA:Resuming"), "Resuming...");
     }
