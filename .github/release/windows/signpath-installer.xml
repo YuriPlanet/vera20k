@@ -6,7 +6,7 @@
   </parameters>
   <zip-file>
     <pe-file path="${installer}" product-name="VERA20k" product-version="${version}">
-      <authenticode-sign description="VERA20k installer" description-url="https://vera20k.org" />
+      <authenticode-sign />
     </pe-file>
   </zip-file>
 </artifact-configuration>

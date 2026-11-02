@@ -13,21 +13,29 @@ install its test root on players' computers.
 
 ## Account and project
 
-Accept the invitation to **VERA20k [OSS]**, then confirm the notification address
-of its existing **CI builds** user. Do not configure a separate self-service
-workspace. Enable MFA for the interactive maintainer account.
+Use the invited **VERA20k [OSS]** organization and its existing **CI builds**
+user. Do not configure a separate self-service workspace. Enable MFA for the
+interactive maintainer account.
 
-Create project `vera20k` with repository URL
-`https://github.com/YuriPlanet/vera20k` and link the predefined trusted build
-system **GitHub.com**. Add the two artifact configurations in this directory:
+Use the prepared project `vera20k`, its supplied test certificate, and the
+predefined trusted build system **GitHub.com**. Its repository URL is
+`https://github.com/YuriPlanet/vera20k`. Add the two artifact configurations in
+this directory:
 
 - `payload`: `signpath-payload.xml`
 - `installer`: `signpath-installer.xml`
 
-Use a `test-signing` policy with the provided self-signed certificate. Assign the
-CI user only submission permission for this project/policy, and the maintainer
-approval permission. Keep manual approval enabled. If the SignPath GitHub App is
-required for the organization's policy, install it for this repository only.
+Use the prepared `test-signing` policy with the provided self-signed certificate.
+The policy permits only builds from `main` using exactly
+`.github/workflows/windows-signing-check.yml`, and requires maintainer approval.
+The CI user has only submission permission for this project/policy; the
+maintainer approves the requests. Do not approve them on the maintainer's behalf.
+If the SignPath GitHub App is required for the organization's policy, install it
+for this repository only.
+
+The OSS subscription supplies its Authenticode watermark automatically. Keep
+the XML signing instructions as `<authenticode-sign />`; do not set `description`
+or `description-url`, which would override that enforced watermark.
 
 The metadata restrictions require the product name `VERA20k` and the build's
 product version. The installer can keep its visible `VERA` name. ZIP archives
