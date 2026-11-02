@@ -1687,6 +1687,8 @@ impl Simulation {
             // Building440D2D, after native House building registration.
             entity.reset_building_health_sample_at_unlimbo();
         }
+        // Residual (invisible): native marks at 0x00440C34, before
+        // 0x00440D07..0x00440D2D above; only House AI reads the marks.
         self.mark_building_base_reservation_with_arg(stable_id, false, context);
         self.discover_building_owner_after_unlimbo(stable_id, context);
         self.construct_spotlight(stable_id, context.rules());
