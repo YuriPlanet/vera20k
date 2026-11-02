@@ -1960,6 +1960,12 @@ fn active_cursor_sequence(state: &AppState) -> Option<(CursorId, &SoftwareCursor
     cursor.get(id).map(|sequence| (id, sequence))
 }
 
+/// The cursor id the production draw shows now. Like a draw, it notes the
+/// shown cursor, so a held button over the sidebar keeps it.
+pub(crate) fn shown_cursor_id(state: &AppState) -> Option<CursorId> {
+    active_cursor_sequence(state).map(|(id, _)| id)
+}
+
 /// Observation of the same cursor selection used by the production draw.
 /// Map captures admit only a static arrow, so cursor wall time cannot alter it.
 pub(crate) fn static_default_cursor(state: &AppState) -> bool {

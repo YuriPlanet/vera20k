@@ -709,11 +709,13 @@ impl MapCaptureProfile {
                 "gestures must be ordered by issue_after_step before the final step"
             );
             if let Some((from, to)) = gesture.gesture.points() {
-                for [x, y] in [from, to] {
-                    if gesture.gesture.is_minimap() {
+                // A drag may end over the sidebar to observe the held cursor.
+                let drag = matches!(gesture.gesture, MapGesture::Drag { .. });
+                for (index, [x, y]) in [from, to].into_iter().enumerate() {
+                    if gesture.gesture.is_minimap() || (drag && index == 1) {
                         ensure!(
                             x > 0 && x < self.width - 1 && y > 0 && y < self.height - 1,
-                            "minimap gesture must be inside the render target's outermost pixels"
+                            "minimap point or drag end must be inside the render target's outermost pixels"
                         );
                     } else {
                         ensure!(
@@ -2026,6 +2028,18 @@ struct MapGestureReceipt {
     command_bar: Option<MapCommandBarGestureReceipt>,
     #[serde(skip_serializing_if = "Option::is_none")]
     minimap: Option<MapMinimapGestureReceipt>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    held_cursor: Option<MapHeldCursorReceipt>,
+}
+
+/// Cursors a drag's draws pick while its button is held: one at the press
+/// point, one at the drag end before release. Each is the production draw's
+/// own selection (`ui_overlays::shown_cursor_id`), which also notes it as
+/// the last shown cursor, as a drawn frame does.
+#[derive(Debug, Serialize)]
+struct MapHeldCursorReceipt {
+    press: Option<String>,
+    before_release: Option<String>,
 }
 
 fn disguise_inputs(
@@ -3509,6 +3523,7 @@ impl TacticalCaptureSession {
             let before = MapInputObservation::capture(state, local_input)?;
             let right = scheduled.gesture.is_right_button();
             let mut minimap = None;
+            let mut held_cursor = None;
             let (
                 left_press_captured,
                 right_press_captured,
@@ -3670,7 +3685,16 @@ impl TacticalCaptureSession {
                         mouse.captured
                     };
                 if matches!(scheduled.gesture, MapGesture::Drag { .. }) {
+                    let shown = |state: &AppState| {
+                        crate::app::presentation::ui_overlays::shown_cursor_id(state)
+                            .map(|id| format!("{id:?}"))
+                    };
+                    let press = shown(state);
                     move_cursor(state, to);
+                    held_cursor = Some(MapHeldCursorReceipt {
+                        press,
+                        before_release: shown(state),
+                    });
                 }
                 let band_box_before_release =
                     state.match_state.input.selection_state.is_band_box_active();
@@ -3836,6 +3860,7 @@ impl TacticalCaptureSession {
                 keyboard,
                 command_bar,
                 minimap,
+                held_cursor,
             });
         }
     }
@@ -5660,6 +5685,15 @@ mod tests {
             to: [100, 100],
         };
         profile.validate().unwrap();
+        // A drag may end over the sidebar, but it starts on the battlefield.
+        for (from, to, ok) in [
+            ([10, 10], [720, 300], true),
+            ([720, 300], [10, 10], false),
+            ([10, 10], [profile.width - 1, 300], false),
+        ] {
+            profile.gestures.as_mut().unwrap()[0].gesture = MapGesture::Drag { from, to };
+            assert_eq!(profile.validate().is_ok(), ok, "{from:?} -> {to:?}");
+        }
         // A radar gesture uses the same ordinary mouse edges, but its live
         // production admission is outside the tactical rectangle.
         profile.gestures.as_mut().unwrap()[0].gesture = MapGesture::Minimap {
@@ -6066,6 +6100,7 @@ mod tests {
                 keyboard: None,
                 command_bar: None,
                 minimap: None,
+                held_cursor: None,
             });
         }
         assert!(map.pending_gesture(&profile, 1).unwrap().is_none());

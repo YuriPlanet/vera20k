@@ -345,7 +345,8 @@ def _screen_point(value: Any, label: str, extent: tuple[int, int]) -> list[int]:
     return point
 
 
-def _gesture(value: Any, label: str, extent: tuple[int, int]) -> None:
+def _gesture(value: Any, label: str, extent: tuple[int, int],
+             drag_end_extent: tuple[int, int] | None = None) -> None:
     gesture = require_object(value, label)
     if 'button' in gesture:
         if gesture.get('kind') not in ('click', 'sidebar') or gesture['button'] not in ('left', 'right'):
@@ -359,7 +360,7 @@ def _gesture(value: Any, label: str, extent: tuple[int, int]) -> None:
     elif gesture.get('kind') == 'drag':
         require_exact_keys(gesture, ('kind', 'from', 'to'), label)
         start = _screen_point(gesture['from'], f'{label}.from', extent)
-        end = _screen_point(gesture['to'], f'{label}.to', extent)
+        end = _screen_point(gesture['to'], f'{label}.to', drag_end_extent or extent)
         if start == end:
             raise ValidationError(f'{label} drag endpoints must differ')
     elif gesture.get('kind') == 'key':
@@ -2616,6 +2617,7 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any], segments=()) -
         keyboard = request['gesture']['kind'] == 'key'
         command_bar = request['gesture']['kind'] == 'command_bar'
         minimap = request['gesture']['kind'] in ('minimap', 'minimap_object')
+        drag = request['gesture']['kind'] == 'drag'
         right = _right_button_gesture(request['gesture'])
         require_exact_keys(row, ('ordinal', 'issue_after_step', 'issued_simulation_tick',
                                  'issued_binary_frame', 'gesture', 'before', 'after',
@@ -2625,7 +2627,8 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any], segments=()) -
                                  *(('sidebar',) if sidebar else ()),
                                  *(('command_bar',) if command_bar else ()),
                                  *(('keyboard',) if keyboard else ()),
-                                 *(('minimap',) if minimap else ())), row_label)
+                                 *(('minimap',) if minimap else ()),
+                                 *(('held_cursor',) if drag and 'held_cursor' in row else ())), row_label)
         tick, frame = _segment_clock(request['issue_after_step'], segments, after_inputs=True, gesture_ordinal=index)
         for key, expected in (('ordinal', index), ('issue_after_step', request['issue_after_step']),
                               ('issued_simulation_tick', tick), ('issued_binary_frame', frame)):
@@ -2633,7 +2636,9 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any], segments=()) -
         _require_equal(row['gesture'], request['gesture'], f'{row_label}.gesture')
         gesture_extent = ((profile['width'], profile['height'])
                           if minimap else extent)
-        _gesture(row['gesture'], f'{row_label}.gesture', gesture_extent)
+        # A drag starts on the battlefield and may end over the sidebar.
+        _gesture(row['gesture'], f'{row_label}.gesture', gesture_extent,
+                 (profile['width'], profile['height']))
         if command_bar:
             sample_count += _command_bar_gesture(row['command_bar'], request['gesture']['command'],
                 f'{row_label}.command_bar', (profile['width'], profile['height']))
@@ -2651,6 +2656,13 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any], segments=()) -
             require_value(row[key], expected, f'{row_label}.{key}')
         if right:
             require_value(row['right_press_captured'], True, f'{row_label}.right_press_captured')
+        if drag and 'held_cursor' in row:
+            # Captures made before the field existed omit it.
+            held = require_object(row['held_cursor'], f'{row_label}.held_cursor')
+            require_exact_keys(held, ('press', 'before_release'), f'{row_label}.held_cursor')
+            for key in ('press', 'before_release'):
+                if held[key] is not None and not require_string(held[key], f'{row_label}.held_cursor.{key}'):
+                    raise ValidationError(f'{row_label}.held_cursor.{key} is empty')
         for key in ('before', 'after'):
             sample_count += _input_observation(row[key], f'{row_label}.{key}', local_input=local_input)
         if minimap:
