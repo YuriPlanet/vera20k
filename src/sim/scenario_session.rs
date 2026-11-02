@@ -802,8 +802,9 @@ pub struct ScenarioSession {
     /// sender is then its House index, as in gamemd. Launch installs it once.
     #[serde(default)]
     shared_house_sources: Vec<u8>,
-    /// This process's own sender while players share Houses; otherwise its
-    /// current House's index. Local identity, like `current_house`.
+    /// This process's own sender while players share Houses; `None`
+    /// otherwise, when its sender is its current House's index. Local
+    /// identity, like `current_house`.
     #[serde(default)]
     local_shared_house_source: Option<i8>,
     /// Scenario+11E4 is included in Save689372's complete Scenario block and
@@ -1178,6 +1179,15 @@ impl ScenarioSession {
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_current_house_for_test(&mut self, value: Option<InternedId>) {
         self.current_house = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn install_shared_house_sources_for_test(
+        &mut self,
+        source_houses: Vec<u8>,
+        local_source: Option<i8>,
+    ) {
+        self.install_shared_house_sources(source_houses, local_source);
     }
 
     #[cfg(any(test, feature = "test-support"))]

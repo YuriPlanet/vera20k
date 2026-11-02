@@ -824,16 +824,17 @@ impl Simulation {
     }
 
     /// EVENT_REMOVEPLAYER's record: the header House is the sender, the
-    /// dword payload the removed House's index (`0x004C6720`).
+    /// dword payload the removed sender (`0x004C6720`), its House's index
+    /// unless players share Houses.
     pub fn encode_remove_player_record(
         &self,
         command_owner: crate::sim::intern::InternedId,
-        house_index: i32,
+        source: i32,
     ) -> Option<CommandRecord> {
         self.encode_int_event(
             command_owner,
             crate::sim::command::REMOVE_PLAYER_OPCODE,
-            house_index,
+            source,
         )
     }
 
@@ -902,7 +903,7 @@ impl Simulation {
 
     /// VERA shared control: whether House `owner` still has an admitted
     /// sender other than `sender`. A House nobody shares has one sender, so
-    /// its EXIT or loss always ends it, as in gamemd.
+    /// its EXIT, DESTRUCT or loss always ends it, as in gamemd.
     fn house_keeps_other_sender(&self, owner: InternedId, sender: i8) -> bool {
         let (Some(timing), Some(house)) = (
             self.session.network_command_timing(),
@@ -915,6 +916,28 @@ impl Simulation {
             .any(|(other, other_house)| {
                 other_house == house && other != sender && timing.admits_source(other)
             })
+    }
+
+    /// The sender of the executing command: its record's header byte, or a
+    /// semantic envelope's House index (offline, where nobody shares).
+    fn executing_sender(&self, owner: InternedId) -> Option<i8> {
+        self.executing_record_sender.or_else(|| {
+            self.houses
+                .index_of(owner)
+                .and_then(|index| i8::try_from(index).ok())
+        })
+    }
+
+    /// VERA shared control: whether another player still controls the local
+    /// player's House.
+    pub fn local_house_has_teammate(&self) -> bool {
+        match (
+            self.session.local_shared_house_source(),
+            self.session.current_house(),
+        ) {
+            (Some(sender), Some(owner)) => self.house_keeps_other_sender(owner, sender),
+            _ => false,
+        }
     }
 
     /// Decode one synchronized record after its queue has admitted the stamped
@@ -2267,6 +2290,15 @@ impl Simulation {
                 let Some(owner) = self.interner.get(command_owner) else {
                     return false;
                 };
+                // VERA shared control: one player resigning (B6 Leave beside
+                // Observe, Surrender's OK) leaves a House other players still
+                // control in the game; the EXIT that follows retires only them.
+                if self
+                    .executing_sender(owner)
+                    .is_some_and(|sender| self.house_keeps_other_sender(owner, sender))
+                {
+                    return true;
+                }
                 // Type-8 entry 0x004C7BDF: Flag_To_Die on the header House,
                 // with no human or mode test. Destruction waits for the
                 // House rung (Update 0x004F87C2).
@@ -2280,13 +2312,7 @@ impl Simulation {
                 if !self.houses.contains_key(&owner) {
                     return false;
                 }
-                // The sender: the record's header byte, or the House's index
-                // for a semantic EXIT.
-                let sender = self.executing_record_sender.or_else(|| {
-                    self.houses
-                        .index_of(owner)
-                        .and_then(|index| i8::try_from(index).ok())
-                });
+                let sender = self.executing_sender(owner);
                 // VERA shared control: a House another player still controls
                 // stays in the game; only this sender leaves.
                 let house_left =

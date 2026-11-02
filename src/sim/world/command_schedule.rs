@@ -702,10 +702,7 @@ impl Simulation {
     ) -> Option<InternedId> {
         if let Command::SynchronizedRecord { record } = &command.payload {
             let event = crate::sim::command::PlaceRecord::decode(record)?;
-            let owner = *self
-                .houses
-                .order()
-                .get(usize::try_from(event.house_id).ok()?)?;
+            let owner = self.command_sender_owner(event.house_id)?;
             let category = crate::sim::production::ProductionSelection {
                 rtti: event.rtti,
                 type_index: event.type_index,
