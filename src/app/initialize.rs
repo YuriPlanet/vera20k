@@ -1018,6 +1018,7 @@ impl App {
                     radiation_beams: Default::default(),
                     tactical_composite: Default::default(),
                     airstrike_shades: Default::default(),
+                    placement_range_pulse: Default::default(),
                     superweapon_range_pulse: Default::default(),
                     detail: Default::default(),
                     hidden_super_anims: Default::default(),
