@@ -256,7 +256,11 @@ fn router_verdict(state: &AppState) -> Option<HouseOutcomeKind> {
 /// flag does not: House4F8657 clears Won when the whole-Vox wait ends
 /// (`complete_outcome`), before Main_Game routes the result, while
 /// 4F8780..4F87BB keeps Lost. So the banner reads the router's verdict, then
-/// [`sim_outcome`].
+/// [`sim_outcome`] — the result the simulation already published.
+///
+/// Nothing is withheld while the losing commander's clip plays: the card is
+/// the verdict from the kill frame on, exactly as the native text is, and it
+/// stays on screen through the clip until the score page takes the picture.
 fn local_outcome(state: &AppState) -> Option<HouseOutcomeKind> {
     router_verdict(state)
         .or_else(|| sim_outcome(&state.match_state.sim_runtime.as_ref()?.simulation))
@@ -294,7 +298,12 @@ pub(crate) fn active_art(state: &AppState) -> Option<&OutcomeBannerArt> {
     {
         return None;
     }
-    let kind = router_verdict(state)?;
+    // The same answer the instances draw from. Reading the router only would
+    // leave the card unavailable for the whole clip wait — the router has not
+    // taken the result yet — and the draw would fall back to the retail text
+    // the simulation's own published flag already selects. The two must agree
+    // about which half is on screen, so both ask [`local_outcome`].
+    let kind = local_outcome(state)?;
     state
         .match_state
         .match_presentation

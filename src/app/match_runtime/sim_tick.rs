@@ -205,12 +205,12 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
         title,
         detail,
         || build_campaign_score_screen_model(state, elapsed_score_ticks),
-        || build_score_screen_model(state, elapsed_seconds),
+        || build_score_screen_model(state, elapsed_seconds, false),
     );
     // Native campaign victories enter the standalone dialog `0x103`; campaign
     // defeats take a separate prompt path. Only GameMode!=0 takes the generic
     // `ScoreDialog__Run 0x5C9720` / SCORE-theme handoff.
-    state.match_state.scenario_exit = Some(
+    let cascade =
         crate::app::match_runtime::scenario_exit::ScenarioExitCascade::start_holding_banner(
             wall_ms,
             destination,
@@ -220,8 +220,18 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
         // `complete_outcome` clears the House's Won flag the moment the sim's
         // own Vox wait ends, which is long before this router runs. Native
         // keeps the choice in its screen text object for the same reason.
-        .with_verdict(outcome),
-    );
+        .with_verdict(outcome);
+    // The card has been up since the result was published. If a clip played
+    // under it, that beat is already spent and the fade may start as soon as
+    // the clip ends; a verdict with no clip still gets the full beat from
+    // here.
+    let cascade = match crate::app::commander_feedback::verdict_card_shown_at_ms(state) {
+        Some(card_at) => cascade.with_banner_hold_until(
+            card_at.saturating_add(crate::app::match_runtime::scenario_exit::BANNER_HOLD_MS),
+        ),
+        None => cascade,
+    };
+    state.match_state.scenario_exit = Some(cascade);
 }
 
 /// The local player's own `[EndGameScreens]` entry for the result just
@@ -520,6 +530,7 @@ fn score_title_key(mode: SessionMode) -> &'static str {
 fn build_score_screen_model(
     state: &AppState,
     elapsed_seconds: i32,
+    aborted: bool,
 ) -> crate::ui::score_shell::ScoreScreenModel {
     use crate::ui::score_shell::ScoreScreenModel;
 
@@ -531,10 +542,20 @@ fn build_score_screen_model(
     else {
         return ScoreScreenModel::default();
     };
-    let Some(raw_snapshot) = sim.terminal_score_snapshot() else {
-        log::error!("Natural match exit reached the score screen without a sim snapshot");
-        return ScoreScreenModel::default();
+    // A natural exit reads the snapshot the terminal edge latched. An aborted
+    // match never reached that edge, so it reads the live rows instead: the
+    // page still shows what the player earned, and leaving consumes none of
+    // the Scenario RNG draws the latch owns.
+    let snapshot = if aborted {
+        sim.live_score_snapshot()
+    } else {
+        let Some(snapshot) = sim.terminal_score_snapshot() else {
+            log::error!("Natural match exit reached the score screen without a sim snapshot");
+            return ScoreScreenModel::default();
+        };
+        snapshot.clone()
     };
+    let raw_snapshot = &snapshot;
     let computer = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER");
     let rows = resolve_score_rows(
         sim,
@@ -549,6 +570,10 @@ fn build_score_screen_model(
         .and_then(|owner| sim.interner().get(owner));
     let local_house = local_owner.and_then(|owner| sim.houses().get(&owner));
     let side = local_house.map_or(0, |house| house.side_index());
+    // Leaving the match is a defeat: the player ended it, so the lose half of
+    // the side's theme and of `[EndGameScreens]` is the one that fits. A match
+    // that ended by itself keeps its own flag.
+    let defeated = aborted || local_house.is_some_and(|house| house.is_defeated());
     // `Global_DrawScoreScreen_ScoreTheme` (0x1002F4B0, patch site 0x5C9B75)
     // selects the side's win or lose theme on the local player's
     // HouseClass+0x1F5 defeated flag; the literal it otherwise pushes is
@@ -558,12 +583,9 @@ fn build_score_screen_model(
     let observing = local_owner.is_some_and(|owner| sim.session().is_observer_house(owner));
     let theme = (!observing)
         .then(|| {
-            state.process_assets.side_score_theme(
-                side,
-                crate::rules::ruleset::ScoreTheme::Multiplayer {
-                    defeated: local_house.is_some_and(|house| house.is_defeated()),
-                },
-            )
+            state
+                .process_assets
+                .side_score_theme(side, crate::rules::ruleset::ScoreTheme::Multiplayer { defeated })
         })
         .flatten()
         .map(str::to_owned);
@@ -591,7 +613,7 @@ fn build_score_screen_model(
     let (country_music, background) = (!observing)
         .then(|| {
             let house = local_house?;
-            let kind = if house.is_defeated() {
+            let kind = if defeated {
                 crate::rules::end_game::EndGameKind::Defeat
             } else {
                 crate::rules::end_game::EndGameKind::Victory
@@ -635,6 +657,20 @@ fn build_score_screen_model(
         background,
         rows,
     }
+}
+
+/// The score page for a match the player left on purpose.
+///
+/// Retail returns to the shell; the score a skirmish has earned up to that
+/// point is still meaningful, and the games this mode follows (RA3, SC2, AoE2)
+/// show it after a resign. The rows come from [`Simulation::live_score_snapshot`]
+/// — the raw counters, no survivor bonus — because an abandoned match has no
+/// terminal edge to latch and leaving must not advance the Scenario RNG.
+pub(crate) fn build_aborted_score_screen_model(
+    state: &AppState,
+    elapsed_seconds: i32,
+) -> crate::ui::score_shell::ScoreScreenModel {
+    build_score_screen_model(state, elapsed_seconds, true)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
