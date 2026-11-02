@@ -1364,7 +1364,6 @@ impl LiveRoundFlow {
                         RoundPhase::Lobby
                     } else {
                         core.phase = Phase::Lobby;
-                        core.kick_observed = true;
                         RoundPhase::LanEntry
                     };
                 }
@@ -1520,8 +1519,6 @@ fn reset_round(core: &mut LiveLanCapture) {
     core.stop_observation = super::StopObservation::default();
     core.stopped = false;
     core.last_wait = None;
-    core.kick_observed = false;
-    core.entered_setup = false;
     core.country_selected = false;
     if core.latency.is_some() {
         core.latency = Some(super::latency::LatencyCapture::default());
