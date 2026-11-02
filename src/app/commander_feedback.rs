@@ -217,6 +217,12 @@ pub(crate) struct CommanderFeedback {
     verdict_held: bool,
     /// Set once the wait has ended, so it never re-opens.
     verdict_released: bool,
+    /// When the result's card first went up: the frame the result was
+    /// published, which is also the frame the wait opened. Survives the
+    /// release, so the exit router can charge the card's beat against the time
+    /// it has already been on screen — a clip that played under it has spent
+    /// that beat, and the card is not held again after the clip ends.
+    verdict_card_at_ms: Option<u64>,
     /// Whether the result's own EVA line has been said after the frame's
     /// sound delivery withheld it. See [`withholds_verdict_line`].
     verdict_line_said: bool,
@@ -276,6 +282,19 @@ pub(crate) fn verdict_is_waiting_for_clip(state: &AppState) -> bool {
         .match_presentation
         .commander_feedback
         .result_waits()
+}
+
+/// When the result's card first went up, if a clip held the result back.
+///
+/// The card goes up on the frame the simulation publishes, which is the frame
+/// the clip wait opens. The verdict's beat is measured from here, so a clip
+/// that played under the card has already spent it.
+pub(crate) fn verdict_card_shown_at_ms(state: &AppState) -> Option<u64> {
+    state
+        .match_state
+        .match_presentation
+        .commander_feedback
+        .verdict_card_at_ms
 }
 
 /// The feature's own admit test. Only a live skirmish draws clips, and only
@@ -420,6 +439,7 @@ pub(crate) fn owe_the_verdict_a_clip(
         );
         let feedback = &mut state.match_state.match_presentation.commander_feedback;
         feedback.verdict_held = true;
+        feedback.verdict_card_at_ms = Some(wall_ms);
         feedback.verdict_wait = Some(VerdictWait {
             since_ms: wall_ms,
             start_passes: feedback.passes,

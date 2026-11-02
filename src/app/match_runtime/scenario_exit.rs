@@ -319,10 +319,30 @@ impl ScenarioExitCascade {
         }
     }
 
+    /// Mark this exit as the battle-abort path, whatever destination it ends
+    /// at. `0x00686570` says `EVA_BattleControlTerminated` as an INTERRUPT
+    /// before waiting for the master fade; a skirmish that leaves through the
+    /// score page keeps the cue its main-menu exit would have had.
+    pub(crate) fn with_battle_control_terminated(mut self) -> Self {
+        self.start_voice_action = Some(ScenarioExitVoiceAction::InterruptBattleControlTerminated);
+        self
+    }
+
     /// Record the verdict the router took, for the beat's own picture and the
     /// retail text that replaces it. [`Self::verdict`] is the only reader.
     pub(crate) fn with_verdict(mut self, kind: crate::sim::house_state::HouseOutcomeKind) -> Self {
         self.verdict = Some(kind);
+        self
+    }
+
+    /// Move the beat's deadline. The card goes up when the result is
+    /// published, not when the router finally takes it, so a clip that played
+    /// under the card has already given the player the beat [`BANNER_HOLD_MS`]
+    /// exists for. Charging the deadline against the card's own first frame
+    /// keeps the beat for a verdict with no clip and removes it for one that
+    /// had a clip — no extra three seconds after the movie.
+    pub(crate) fn with_banner_hold_until(mut self, until_ms: u64) -> Self {
+        self.banner_hold_until_ms = until_ms;
         self
     }
 
