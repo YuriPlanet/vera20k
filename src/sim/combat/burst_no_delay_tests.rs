@@ -196,3 +196,41 @@ fn a_refused_repeat_restores_the_last_shots_rearm() {
         );
     }
 }
+
+/// The hooks gate the repeat on the delayed-fire keys as well:
+/// `!Duration.isset() || OnlyOnInitialBurst`. A weapon that authors
+/// `DelayedFire.Duration=` without the second key keeps native's one shot per
+/// frame even with `Burst.NoDelay=yes`, and authoring both opens the repeat
+/// again - so each key is tested against a case the other one fails.
+#[test]
+fn a_delayed_fire_weapon_keeps_its_burst_cadence() {
+    for category in ["VehicleTypes", "InfantryTypes"] {
+        let (mut sim, rules, firer, target) =
+            arena(category, "Burst.NoDelay=yes\nDelayedFire.Duration=5\n", "");
+        assert_eq!(
+            visit(&mut sim, &rules, firer, target, category),
+            1,
+            "{category}: a set Duration with OnlyOnInitialBurst unset refuses the repeat"
+        );
+        assert_eq!(
+            sim.entities()
+                .get(firer)
+                .expect("firer")
+                .weapon_burst
+                .index(),
+            1,
+            "{category}: the burst stepped once, as an ordinary burst does"
+        );
+
+        let (mut sim, rules, firer, target) = arena(
+            category,
+            "Burst.NoDelay=yes\nDelayedFire.Duration=5\nDelayedFire.OnlyOnInitialBurst=yes\n",
+            "",
+        );
+        assert_eq!(
+            visit(&mut sim, &rules, firer, target, category),
+            3,
+            "{category}: OnlyOnInitialBurst opens the gate again"
+        );
+    }
+}

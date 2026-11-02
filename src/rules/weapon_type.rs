@@ -257,6 +257,17 @@ pub struct WeaponType {
     /// (hooks `0x5209EE` / `0x736F67`), and only when `Burst` is above 1.
     #[cfg(feature = "phobos")]
     pub phobos_burst_no_delay: bool,
+    /// Phobos `WeaponTypeExt::DelayedFire_Duration` (`Ext/WeaponType/Body.cpp:189`,
+    /// `Nullable<PartialVector2D<int>>`). Only its `isset` state is consulted
+    /// here, as the `Burst.NoDelay` hooks do: the pause sequence, the saved
+    /// `DelayedFireTimer` and the animation family are unported. A key authored
+    /// with no parsable field stays unset, which is what `Nullable::Read` leaves.
+    #[cfg(feature = "phobos")]
+    pub(crate) phobos_delayed_fire_duration: Option<crate::rules::ini_value::PartialIntPair>,
+    /// Phobos `WeaponTypeExt::DelayedFire_OnlyOnInitialBurst` (`Body.cpp:197`,
+    /// `Valueable<bool>`, default false): the second half of that gate.
+    #[cfg(feature = "phobos")]
+    pub(crate) phobos_delayed_fire_only_on_initial_burst: bool,
     /// Phobos `WeaponTypeExt::CanTargetHouses` (`AffectedHouse::All` default),
     /// read for `Splits.UseWeaponTargeting`.
     #[cfg(feature = "phobos")]
@@ -311,6 +322,16 @@ impl WeaponType {
         &self,
     ) -> crate::rules::phobos_airburst::PhobosWeaponTargeting {
         self.phobos_weapon_targeting
+    }
+
+    /// The second clause both `Burst.NoDelay` hooks test alongside the key:
+    /// `!DelayedFire_Duration.isset() || DelayedFire_OnlyOnInitialBurst`
+    /// (`src/Ext/Unit/Hooks.Firing.cpp:125`,
+    /// `src/Ext/Infantry/Hooks.Firing.cpp:189`).
+    #[cfg(feature = "phobos")]
+    pub(crate) const fn delayed_fire_allows_burst_repeat(&self) -> bool {
+        self.phobos_delayed_fire_duration.is_none()
+            || self.phobos_delayed_fire_only_on_initial_burst
     }
 
     pub(crate) fn ammo_cost(&self) -> i32 {
@@ -593,6 +614,19 @@ impl WeaponType {
                 .read_phobos_nullable_bool("LaserPositionUpdate.StopOnFirerConvert", None),
             #[cfg(feature = "phobos")]
             phobos_burst_no_delay: section.read_ares_bool("Burst.NoDelay", false),
+            #[cfg(feature = "phobos")]
+            phobos_delayed_fire_duration: {
+                let unset = crate::rules::ini_value::PartialIntPair {
+                    low: 0,
+                    high: 0,
+                    values: 0,
+                };
+                let read = section.read_ares_partial_int_pair("DelayedFire.Duration", unset);
+                (read.values > 0).then_some(read)
+            },
+            #[cfg(feature = "phobos")]
+            phobos_delayed_fire_only_on_initial_burst: section
+                .read_ares_bool("DelayedFire.OnlyOnInitialBurst", false),
         }
     }
 }

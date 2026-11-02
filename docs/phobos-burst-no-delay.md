@@ -53,14 +53,22 @@ both categories: with the key a `Burst=3` weapon launches three projectiles in
 that single visit, the burst index wraps to 0 and `RearmTimer` ends on the full
 ROF; without it the same visit launches one, the index steps to 1 and the
 mid-burst gap stands. A third test pins the placement: the same weapon through
-`FireVisit::Direct` still launches one shot.
+`FireVisit::Direct` still launches one shot. A fourth reaches the restore after a
+*refused* attempt: a firer with `Ammo=1` spends its round on the first shot,
+`GetFireError`'s ammo arm then refuses the repeat, and removing the write-back
+fails that test alone while the completed-burst test still passes. A fifth gates
+on the delayed-fire keys: `DelayedFire.Duration` with `OnlyOnInitialBurst` unset
+holds the cadence to one shot per frame, and adding `OnlyOnInitialBurst=yes`
+opens the repeat again.
 
 ## Residuals
 
-- The restore after an early loop exit - the case where the last successful
-  shot's `RearmTimer` value has to be written back because the next attempt was
-  refused - has no fixture that reaches it deterministically. Disabling it in
-  the completed-burst case is invisible, because the final shot already armed
-  that value.
-- `DelayedFire.Duration` is not ported, so the hooks' second clause is taken as
-  satisfied (its unset branch).
+- The delayed-fire subsystem is unported: `HandleDelayedFireWithPauseSequence`
+  (`src/Ext/Techno/Body.cpp:699-749`, called from the infantry firing update at
+  `src/Ext/Infantry/Hooks.Firing.cpp:118`), its nine other `DelayedFire.*` keys,
+  the saved `DelayedFireTimer` / `DelayedFireWeaponIndex` /
+  `DelayedFireSequencePaused` fields, the `GetRangedRandomOrSingleValue` draw and
+  `CreateDelayedFireAnim`. VERA reads `DelayedFire.Duration` and
+  `DelayedFire.OnlyOnInitialBurst` only for the repeat gate, so a weapon with
+  `Duration` set keeps native's one shot per frame but neither pauses its firing
+  sequence nor plays the delayed-fire animation.

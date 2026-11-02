@@ -92,11 +92,14 @@ pub(super) fn resolve_attacker_fire(
     // Phobos `Burst.NoDelay` applies to an infantry or vehicle firing a weapon
     // whose `Burst` is above 1; the two hooks exist only for those classes
     // (`0x5209EE` / `0x736F67`), and aircraft already empty their burst within
-    // one visit (`aircraft_release::release`). The hooks' second clause tests
-    // `DelayedFire.Duration`, which VERA has not ported, so it is satisfied as
-    // the unset branch.
+    // one visit (`aircraft_release::release`). The hooks' second clause is the
+    // delayed-fire gate: a weapon that authors `DelayedFire.Duration` without
+    // `DelayedFire.OnlyOnInitialBurst=yes` keeps its one-shot-per-frame cadence
+    // even with the key on, through
+    // [`crate::rules::weapon_type::WeaponType::delayed_fire_allows_burst_repeat`].
     #[cfg(feature = "phobos")]
     let burst_no_delay = shot.selected.weapon.phobos_burst_no_delay
+        && shot.selected.weapon.delayed_fire_allows_burst_repeat()
         && shot.selected.weapon.burst > 1
         && matches!(
             snap.category,
