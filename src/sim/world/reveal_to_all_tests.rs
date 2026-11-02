@@ -17,8 +17,14 @@ const FAR: (u16, u16) = (60, 60);
 /// Retail rules on a Size64x64 diamond in128x128 storage: the human current house
 /// `Americans` and the computer houses `Russians` and `Confederation`.
 fn world() -> Option<(RuleSet, Simulation, InternedId)> {
-    use crate::sim::superweapon::chronosphere_tests::{retail_rules_binding, world_with};
-    let (rules, mut sim, americans) = world_with(retail_rules_binding(&[])?, 128, &[]);
+    use crate::sim::superweapon::chronosphere_tests::retail_rules_binding;
+    Some(world_on(retail_rules_binding(&[])?))
+}
+
+/// [`world`] under `rules`.
+pub(super) fn world_on(rules: RuleSet) -> (RuleSet, Simulation, InternedId) {
+    use crate::sim::superweapon::chronosphere_tests::world_with;
+    let (rules, mut sim, americans) = world_with(rules, 128, &[]);
     //578350 starts at(1,SizeW), not at a rectangular grid's first cell.
     //Native Size64x64 spans packed coordinates1..127, just as the existing
     //shroud_refresh Size6x4 fixture uses10x10 storage for its allocated walk.
@@ -50,7 +56,7 @@ fn world() -> Option<(RuleSet, Simulation, InternedId)> {
         .collect();
     assert!(allocated.contains(&SITE) && allocated.contains(&FAR));
     assert!(!allocated.contains(&(0, 0)));
-    Some((rules, sim, americans))
+    (rules, sim, americans)
 }
 
 fn radar_events(sim: &Simulation) -> Vec<RadarEventRequest> {
