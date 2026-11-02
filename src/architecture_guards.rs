@@ -446,7 +446,11 @@ fn engine_per_client_reads_have_pinned_callers() {
         ),
         (
             "is_human_player",
-            &[("sim/world/crash.rs", 1), ("sim/world/world_orders.rs", 2)],
+            &[
+                ("sim/world/crash.rs", 1),
+                ("sim/world/mod.rs", 1),
+                ("sim/world/world_orders.rs", 2),
+            ],
         ),
         (
             "house_is_human_player",

@@ -2052,6 +2052,7 @@ fn advance_one_simulation_frame(
                 | LifecycleOutput::BuildingPlacementRetry { .. }
                 | LifecycleOutput::BuildingPlacementSucceeded { .. }
                 | LifecycleOutput::BuildingProductionAbandoned { .. }
+                | LifecycleOutput::ConstructionYardCaptured { .. }
                 | LifecycleOutput::FollowReleased { .. }
                 | LifecycleOutput::ObjectSelected { .. } => {}
                 LifecycleOutput::ObjectPointerExpired { stable_id } => {

@@ -777,6 +777,13 @@ pub enum LifecycleOutput {
     BuildingProductionAbandoned {
         owner: InternedId,
     },
+    /// BuildingChangeOwner448C9A..448CD6: a Construction Yard leaving a
+    /// human player (IsHumanPlayer50B6F0) clears that player's current
+    /// placement (Display PendingObject/Type/House) and cursor (4A8BF0).
+    /// The saved retry and the ready product stay.
+    ConstructionYardCaptured {
+        owner: InternedId,
+    },
     /// Logic55AFB0 increments the process FPS sample even on terminal frames.
     LogicVisit,
     /// Logic55B5C3 updates existing lasers before the live object visits.

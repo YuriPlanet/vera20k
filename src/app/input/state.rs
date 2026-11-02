@@ -624,6 +624,7 @@ impl MatchInputState {
                 self.finish_building_placement();
             }
             LifecycleOutput::BuildingProductionAbandoned { owner }
+            | LifecycleOutput::ConstructionYardCaptured { owner }
                 if local_house == Some(owner) =>
             {
                 self.clear_building_placement();

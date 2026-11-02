@@ -516,6 +516,36 @@ fn arm_gapowr_with_preview(fixture: &mut Fixture) -> production::BuildingPlaceme
     preview
 }
 
+/// `BuildingClass::ChangeOwner` (`0x00448C9A..0x00448CD6`): a captured
+/// Construction Yard clears only the local player's current placement; both
+/// ready products stay for a later cameo click.
+#[test]
+fn a_captured_construction_yard_clears_the_local_placement() {
+    let Some(mut fixture) = paid_ready_fixture() else {
+        return;
+    };
+    arm_gapowr_with_preview(&mut fixture);
+    let owner = fixture.owner;
+    let other = fixture.sim.intern("Russians");
+    consume_lifecycle_output(
+        &mut fixture,
+        &LifecycleOutput::ConstructionYardCaptured { owner: other },
+        Some(owner),
+    );
+    assert_eq!(fixture.input.building_placement_issuer(), Some(owner));
+    consume_lifecycle_output(
+        &mut fixture,
+        &LifecycleOutput::ConstructionYardCaptured { owner },
+        Some(owner),
+    );
+    assert_eq!(fixture.input.building_placement_issuer(), None);
+    assert!(fixture.input.building_placement_preview.is_none());
+    assert_eq!(
+        production::ready_buildings_for_owner(&fixture.sim, &fixture.rules, "Americans").len(),
+        2
+    );
+}
+
 fn ready_identities(fixture: &Fixture) -> [(InternedId, u64); 2] {
     ["GAPOWR", "GAPILL"].map(|name| {
         let type_id = fixture.sim.interner().get(name).unwrap();
