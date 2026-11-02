@@ -4,7 +4,7 @@
 
 use super::fire_coord::{FireSource, fire_coordinate};
 use super::laser;
-use super::{TargetKind, fire_coord};
+use super::TargetKind;
 use crate::map::entities::EntityCategory;
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::flh::Flh;
@@ -80,6 +80,17 @@ fn spawn(sim: &mut Simulation, id: u64, kind: &str, deployed: bool, prone: bool)
 /// `kind` under the given states, against a control type that carries the
 /// expected offset in its ordinary primary slot at the same coordinate.
 fn assert_flh_matches(kind: &str, deployed: bool, prone: bool, control: &str, what: &str) {
+    assert_flh_matches_at_burst(kind, deployed, prone, control, 0, what);
+}
+
+fn assert_flh_matches_at_burst(
+    kind: &str,
+    deployed: bool,
+    prone: bool,
+    control: &str,
+    burst_index: u8,
+    what: &str,
+) {
     let mut sim = Simulation::new();
     let rules = rules();
     spawn(&mut sim, 1, kind, deployed, prone);
@@ -92,7 +103,7 @@ fn assert_flh_matches(kind: &str, deployed: bool, prone: bool, control: &str, wh
             &FireSource::of_entity(source),
             rules.object(if id == 1 { kind } else { control }).unwrap(),
             0,
-            0,
+            burst_index,
             Flh::default(),
         )
         .coord
@@ -136,6 +147,21 @@ fn a_state_vector_without_rows_falls_to_the_simple_override() {
 }
 
 #[test]
+fn the_simple_override_takes_the_odd_burst_mirror() {
+    // The mirror sits inside the `!found` arm (`Hooks.Firing.cpp:1050-1059`),
+    // so it shifts the state override exactly like a record FLH of the same
+    // triple — only `GetBurstFLH`'s own answer is absolute.
+    assert_flh_matches_at_burst(
+        "SIMP",
+        true,
+        false,
+        "SIMC",
+        1,
+        "GetSimpleFLH is mirrored on an odd burst",
+    );
+}
+
+#[test]
 fn a_tracked_laser_freezes_the_deployed_burst_offset() {
     let mut sim = Simulation::new();
     let rules = rules();
@@ -150,6 +176,48 @@ fn a_tracked_laser_freezes_the_deployed_burst_offset() {
         rules.weapon("GUN").unwrap(),
         0,
     );
+    assert_eq!(
+        frozen_local_flh(&sim),
+        Flh::from([300, 60, 70]),
+        "SetLaserTrackingData stores GetBurstFLH's deployed row"
+    );
+}
+
+/// `SetLaserTrackingData` recomputes the triple it stores and applies no parity
+/// shift to the record fallback (`Hooks.LaserDraw.cpp:147-160`); the separately
+/// mirrored `SavedLocalFLH` at `:277-287` is written and reset but never read
+/// into `TrackingData`. SIMC authors no burst rows, so its `500,10,10` record is
+/// what gets stored, odd burst or even.
+#[test]
+fn a_tracked_laser_stores_the_record_offset_unmirrored() {
+    let mut sim = Simulation::new();
+    let rules = rules();
+    spawn(&mut sim, 1, "SIMC", false, false);
+    spawn(&mut sim, 2, "CHASER", false, false);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .expect("firer")
+        .weapon_burst
+        .advance();
+    laser::fired(
+        &mut sim,
+        &rules,
+        1,
+        TargetKind::Entity(2),
+        0,
+        rules.weapon("GUN").unwrap(),
+        0,
+    );
+    assert_eq!(
+        frozen_local_flh(&sim),
+        Flh::from([500, 10, 10]),
+        "the stored record fallback keeps its lateral on an odd saved burst"
+    );
+}
+
+/// The stored local FLH of the last laser that took firer tracking.
+fn frozen_local_flh(sim: &Simulation) -> Flh {
     let birth = *sim
         .lifecycle_outputs
         .iter()
@@ -159,10 +227,5 @@ fn a_tracked_laser_freezes_the_deployed_burst_offset() {
         })
         .last()
         .expect("laser birth");
-    let track = birth.track.expect("Firer tracking");
-    assert_eq!(
-        track.local_flh(),
-        Flh::from([300, 60, 70]),
-        "SetLaserTrackingData stores GetBurstFLH's deployed row"
-    );
+    birth.track.expect("Firer tracking").local_flh()
 }

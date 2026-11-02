@@ -265,7 +265,9 @@ pub fn turret_pivot_coordinate(
 /// Non-buildings: `TechnoClass::GetFLH @ 0x006F3AD0`, the type's `FLH` rotated
 /// by the aim facing about the turret offset. Its base argument
 /// (`base_coords`) adds to the FLH's forward, lateral and height before the
-/// burst mirror and the rotation (`0x006F3B37..0x006F3B58`). Fire_At
+/// burst mirror and the rotation (`0x006F3B37..0x006F3B58`). Under `phobos` the
+/// hook reverses those two: the selected FLH is mirrored first
+/// (`Hooks.Firing.cpp:1058`), then the base is added (`:1083`). Fire_At
 /// (`0x006FE24B..0x006FE260`), the aircraft approach and the Prism support
 /// pass zero; the spawn launch passes `SecondSpawnOffset=`. The Building
 /// (`0x00453840`) and Infantry (`0x00523250`) overrides call it with zero
@@ -345,8 +347,10 @@ pub(crate) fn fire_coordinate(
     let art = base.art;
 
     // Phobos `TechnoClass::GetFLH @ 0x006F3AEB`: a burst-index-specific ART
-    // offset replaces the slot's FLH, then an infantry deployed/prone offset,
-    // and neither takes the lateral burst shift the GetWeapon fallback keeps.
+    // offset replaces the slot's FLH, then an infantry deployed/prone override,
+    // and only the burst offset is absolute — the hook mirrors whatever it
+    // selected when `GetBurstFLH` found nothing (`Hooks.Firing.cpp:1050-1059`),
+    // which covers the state override as well as the GetWeapon record.
     #[cfg(feature = "phobos")]
     let (deployed, crawling) = world
         .substrate
@@ -394,21 +398,33 @@ pub(crate) fn fire_coordinate(
         };
         record.map_or_else(Flh::default, |record| record.flh)
     };
+    // Phobos's hook negates the lateral of the FLH it selected
+    // (`Hooks.Firing.cpp:1058`) and only then adds the base argument (`:1083`),
+    // so the base is never mirrored, and its alternate arm (`weaponIndex < 0`,
+    // `:1062-1071`) takes no mirror at all. The unhooked body VERA ports
+    // otherwise adds the base first and mirrors the combined triple
+    // (`0x006F3B37..0x006F3B58`, `0x006F3C82`).
+    #[cfg(feature = "phobos")]
+    let (mirrored_lateral, burst_parity) = (
+        if burst_flh.is_some() || weapon_index < 0 {
+            flh.lateral
+        } else {
+            crate::util::flh_transform::flh_lateral_for_burst(flh.lateral, burst_index)
+        },
+        0,
+    );
+    #[cfg(not(feature = "phobos"))]
+    let (mirrored_lateral, burst_parity) = (flh.lateral, burst_index);
     let flh = Flh {
         forward: flh.forward.wrapping_add(base_coords.forward),
-        lateral: flh.lateral.wrapping_add(base_coords.lateral),
+        lateral: mirrored_lateral.wrapping_add(base_coords.lateral),
         height: flh.height.wrapping_add(base_coords.height),
     };
     let flh_delta = flh_world_delta(
         art.map_or(0, |art| art.turret_offset),
         flh,
         base.facings,
-        if burst_flh.is_some() || simple_flh.is_some() {
-            // Even parity: an absolute offset is not shifted.
-            0
-        } else {
-            burst_index
-        },
+        burst_parity,
         base.locomotor_basis,
     )
     .unwrap_or((0, 0, 0));
@@ -855,9 +871,10 @@ fn flh_world_delta(
 /// transport's GetFLH (vtable `+0xB0`, `TechnoClass::GetFLH` for a Unit) for
 /// weapon `-k` with a zero offset: `AlternateFLH[k-1]` of the transport's
 /// type for `k <= 5`, else a zero FLH (`0x006F3AF5..0x006F3B21`), through
-/// the transport's matrix, facings and burst parity (`+0x3B8`) from the
-/// transport's coordinate. The shot keeps the rider's aim facing for its
-/// muzzle animation (`Fire_At` picks it from the firer).
+/// the transport's matrix and facings and, in the unhooked body, its burst
+/// parity (`+0x3B8`), from the transport's coordinate. The shot keeps the
+/// rider's aim facing for its muzzle animation (`Fire_At` picks it from the
+/// firer).
 fn open_topped_port_coordinate(
     world: &Simulation,
     rules: &RuleSet,
@@ -877,12 +894,18 @@ fn open_topped_port_coordinate(
     let source = FireSource::of_entity(transport);
     let base = fire_coordinate_base(world, rules, &source, transport_obj);
     let flh = transport_obj.alternate_fire_flh(port);
-    let burst_index = transport.weapon_burst.index() as u8;
+    // Phobos's consolidated hook takes `AlternateFLHs[index]` and skips the
+    // burst parity entirely (`Hooks.Firing.cpp:1062-1071`), so a port offset
+    // keeps its lateral on every shot; the unhooked body mirrors it.
+    #[cfg(feature = "phobos")]
+    let burst_parity = 0;
+    #[cfg(not(feature = "phobos"))]
+    let burst_parity = transport.weapon_burst.index() as u8;
     let delta = flh_world_delta(
         base.art.map_or(0, |art| art.turret_offset),
         flh,
         base.facings,
-        burst_index,
+        burst_parity,
         base.locomotor_basis,
     )
     .unwrap_or((0, 0, 0));
@@ -985,14 +1008,16 @@ mod tests {
     fn rules() -> RuleSet {
         let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
             &IniFile::from_str(
-                "[InfantryTypes]\n0=E1\n1=INIT\n[VehicleTypes]\n[AircraftTypes]\n\
+                "[InfantryTypes]\n0=E1\n1=INIT\n[VehicleTypes]\n0=ALT\n[AircraftTypes]\n\
              [BuildingTypes]\n0=BUNK\n1=TOWER\n\
              [E1]\nStrength=125\nImage=GI\nPrimary=M60\nSecondary=ONE\n\
              [INIT]\nStrength=125\nPrimary=JAB\n\
+             [ALT]\nStrength=200\nPrimary=CANNON\n\
              [BUNK]\nStrength=500\nCanBeOccupied=yes\n\
              [TOWER]\nStrength=500\nPrimary=M60\nSecondary=BARE\n\
              [M60]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\nOccupantAnim=UCFLASH\n\
              Anim=F0,F1,F2,F3,F4,F5,F6,F7\n\
+             [CANNON]\nDamage=10\nROF=20\nRange=5\nWarhead=SA\n\
              [ONE]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\nAnim=GUNFIRE,SPARE\n\
              [BARE]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\n\
              [JAB]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\nOpenToppedAnim=GUNFIRE\n\
@@ -1000,6 +1025,7 @@ mod tests {
             ),
             &IniFile::from_str(
                 "[GI]\nPrimaryFireFLH=0,0,105\nSecondaryFireFLH=0,0,90\n\
+             [ALT]\nPrimaryFireFLH=100,20,30\n\
              [BUNK]\nMuzzleFlash0=30,15\nMuzzleFlash1=-30,15\n\
              [TOWER]\nPrimaryFirePixelOffset=30,15\nPrimaryFireDualOffset=yes\n",
             ),
@@ -1007,6 +1033,7 @@ mod tests {
         .unwrap();
         rules.replace_art_registry_for_test(ArtRegistry::from_ini(&IniFile::from_str(
             "[GI]\nPrimaryFireFLH=0,0,105\nSecondaryFireFLH=0,0,90\n\
+             [ALT]\nPrimaryFireFLH=100,20,30\n\
              [BUNK]\nMuzzleFlash0=30,15\nMuzzleFlash1=-30,15\n\
              [TOWER]\nPrimaryFirePixelOffset=30,15\nPrimaryFireDualOffset=yes\n",
         )));
@@ -1215,30 +1242,116 @@ mod tests {
             rules.art().get("BSUB").unwrap().second_spawn_offset,
             Flh::from(triple(&native["types"]["BSUB"]["second_spawn_offset"]))
         );
-        let [x, y, z] = triple(&native["supplied"]["origin"]);
-        let heading = native["supplied"]["primary_and_secondary_heading"]
-            .as_u64()
-            .unwrap() as u16;
-        let mut shooter = source(EntityCategory::Unit);
-        (shooter.rx, shooter.ry) = ((x / 256) as u16, (y / 256) as u16);
-        (shooter.sub_x, shooter.sub_y) = (SimFixed::from_num(x % 256), SimFixed::from_num(y % 256));
-        shooter.exact_z_leptons = Some(z);
-        shooter.hull_facing = crate::sim::movement::FacingClass::new(heading, 0);
+        let shooter = supplied_get_flh_shooter(&native["supplied"]);
         let world = Simulation::new();
         for row in native["get_flh"].as_array().unwrap() {
             let obj = rules.object(row["owner"].as_str().unwrap()).unwrap();
+            let burst_index = int(&row["burst_index"]) as u8;
+            let base = Flh::from(triple(&row["base"]));
+            #[cfg(feature = "phobos")]
+            if burst_index % 2 == 1 && base.lateral != 0 {
+                // Phobos's hook mirrors the FLH it selected and adds the base
+                // afterwards (`Hooks.Firing.cpp:1058` then `:1083`), so this
+                // unhooked row is not its expectation.
+                // `phobos_get_flh_adds_the_base_after_the_mirror` pins the
+                // hooked order on the synthetic `[ALT]` fixture, which is the
+                // only place this ordering has an executable check.
+                continue;
+            }
             let shot = fire_coordinate(
                 &world,
                 &rules,
                 &shooter,
                 obj,
                 int(&row["weapon_index"]),
-                int(&row["burst_index"]) as u8,
-                Flh::from(triple(&row["base"])),
+                burst_index,
+                base,
             );
             let [x, y, z] = triple(&row["coordinate"]);
             assert_eq!(shot.coord, ProjectileCoord::new(x, y, z), "{row}");
         }
+    }
+
+    /// The firer the capture supplied: the BSUB origin and hull heading it used.
+    fn supplied_get_flh_shooter(supplied: &serde_json::Value) -> FireSource {
+        let int = |value: &serde_json::Value| value.as_i64().unwrap() as i32;
+        let [x, y, z] = [
+            int(&supplied["origin"][0]),
+            int(&supplied["origin"][1]),
+            int(&supplied["origin"][2]),
+        ];
+        let mut shooter = source(EntityCategory::Unit);
+        (shooter.rx, shooter.ry) = ((x / 256) as u16, (y / 256) as u16);
+        (shooter.sub_x, shooter.sub_y) = (SimFixed::from_num(x % 256), SimFixed::from_num(y % 256));
+        shooter.exact_z_leptons = Some(z);
+        shooter.hull_facing = crate::sim::movement::FacingClass::new(
+            supplied["primary_and_secondary_heading"].as_u64().unwrap() as u16,
+            0,
+        );
+        shooter
+    }
+
+    /// Phobos's `TechnoClass::GetFLH @ 0x006F3AEB` negates the selected FLH's
+    /// lateral (`src/Ext/Techno/Hooks.Firing.cpp:1058`) and adds the base
+    /// argument after it (`:1083`), so an odd shot with a base of twice the
+    /// lateral lands on exactly the same triple as an even shot with no base.
+    /// The unhooked body mirrors `FLH + base`, where those two never meet.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn phobos_get_flh_adds_the_base_after_the_mirror() {
+        let rules = rules();
+        let world = Simulation::new();
+        let shooter = source(EntityCategory::Unit);
+        let obj = rules.object("ALT").unwrap();
+        let shot = |burst_index: u8, base: Flh| {
+            fire_coordinate(&world, &rules, &shooter, obj, 0, burst_index, base).coord
+        };
+        assert_ne!(
+            shot(0, Flh::default()),
+            shot(1, Flh::default()),
+            "the fixture's 20-lepton lateral FLH has to alternate"
+        );
+        assert_eq!(
+            shot(1, Flh::from([0, 40, 0])),
+            shot(0, Flh::default()),
+            "-20 + 40 and +20 + 0 are the same triple before the rotation"
+        );
+    }
+
+    /// The hook's alternate arm (`weaponIndex < 0`, `Hooks.Firing.cpp:1062-1071`)
+    /// reads `AlternateFLHs[index]` outside the `!found` block, so it takes no
+    /// burst parity at all and a port offset keeps its lateral on every shot.
+    /// The unhooked body mirrors it, which is what `open_topped_port_coordinate`
+    /// keeps for a non-phobos build.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn phobos_alternate_flh_takes_no_burst_mirror() {
+        let rules = rules();
+        let world = Simulation::new();
+        let shooter = source(EntityCategory::Unit);
+        let obj = rules.object("ALT").unwrap();
+        let shot = |index: i32, burst_index: u8| {
+            fire_coordinate(
+                &world,
+                &rules,
+                &shooter,
+                obj,
+                index,
+                burst_index,
+                Flh::default(),
+            )
+            .coord
+        };
+        assert_ne!(
+            shot(0, 0),
+            shot(0, 1),
+            "the record arm still alternates, so the fixture has a lateral to mirror"
+        );
+        assert_eq!(
+            shot(-1, 0),
+            shot(-1, 1),
+            "the alternate arm takes no parity shift"
+        );
     }
 
     #[test]
@@ -1578,6 +1691,26 @@ mod control_link_port_tests {
             .as_u64()
             .unwrap() as u16;
         for row in data["cases"].as_array().unwrap() {
+            // Phobos's hook takes `AlternateFLHs[index]` in its negative arm
+            // (`src/Ext/Techno/Hooks.Firing.cpp:1062-1071`) with no odd-burst
+            // mirror, so an odd row whose port has a lateral is the unhooked
+            // expectation. `phobos_alternate_flh_takes_no_burst_mirror` pins the
+            // hooked behavior on the synthetic fixture.
+            #[cfg(feature = "phobos")]
+            let unhooked_only = {
+                let port = (-1 - row["weapon_index"].as_i64().unwrap()).max(0) as usize;
+                row["burst_index"].as_u64().unwrap() % 2 == 1
+                    && row["alternate_flh"]
+                        .get(port)
+                        .and_then(|flh| flh.get(1))
+                        .and_then(serde_json::Value::as_i64)
+                        .unwrap_or(0)
+                        != 0
+            };
+            #[cfg(feature = "phobos")]
+            if unhooked_only {
+                continue;
+            }
             let mut art = retail_art.clone();
             let mut overrides = String::from("[DRED]\n");
             for (port, flh) in row["alternate_flh"].as_array().unwrap().iter().enumerate() {

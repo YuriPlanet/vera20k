@@ -348,6 +348,11 @@ pub(crate) fn build_track(
         #[cfg(feature = "phobos")]
         {
             let (deployed, crawling) = super::fire_coord::infantry_flh_states(source);
+            // `SetLaserTrackingData` (Hooks.LaserDraw.cpp:147-160) recomputes
+            // the stored triple itself: `GetBurstFLH`, else the weapon record
+            // with no parity shift. The separately mirrored `SavedLocalFLH` in
+            // the 0x006FD210 hook (:277-287) is only written and reset, never
+            // read into `TrackingData`.
             base_flh = object
                 .burst_flh(
                     weapon_index,
