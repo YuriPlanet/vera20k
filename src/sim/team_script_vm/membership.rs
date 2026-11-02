@@ -75,7 +75,7 @@ pub(super) struct RecruitCandidate {
 /// wins when it passes its own tests, its key is below the best (signed) or
 /// the best is still -1, and `can_add` admits it.
 pub(super) fn recruit_pick(
-    candidates: &[RecruitCandidate],
+    candidates: impl IntoIterator<Item = RecruitCandidate>,
     origin: [i32; 2],
     group: i32,
     recruiter: bool,
@@ -541,25 +541,27 @@ impl Simulation {
         if class == EntityCategory::Structure {
             return false;
         }
-        let owner = team.owner;
-        let candidates: Vec<RecruitCandidate> = self
-            .substrate
-            .entities
-            .iter_sorted()
-            .filter(|(_, entity)| entity.category() == class)
+        // VERA walks only the team's house's objects of the class, in the
+        // same order. Another house's object can neither win nor move the
+        // best key: the unit search's own house test fails it, and for an
+        // infantryman or aircraft `Can_Add` refuses it, before any write.
+        let entities = &self.substrate.entities;
+        let candidates = entities
+            .owned_ids(team.owner, class)
+            .iter()
+            .filter_map(|&id| entities.get(id).map(|entity| (id, entity)))
             .map(|(id, entity)| RecruitCandidate {
                 id,
                 xy: position_world_xy(&entity.position),
                 // gamemd.exe Recruit6EAA90 reads Techno+214, including
                 // authored campaign groups (6EAC7A for Infantry).
                 group: entity.object_group(),
-                // The unit search's own house and type test.
+                // The unit search's own house and type test; every object
+                // walked is the team's house's.
                 matches: class != EntityCategory::Unit
-                    || (entity.owner() == owner
-                        && member_type_identity(entity) == entry.member_type),
-            })
-            .collect();
-        let winner = recruit_pick(&candidates, origin, group, recruiter, |id| {
+                    || member_type_identity(entity) == entry.member_type,
+            });
+        let winner = recruit_pick(candidates, origin, group, recruiter, |id| {
             self.team_can_add(team_id, id, false, rules).is_some()
         });
         let Some(winner) = winner else {

@@ -93,10 +93,7 @@ pub fn build_atlas(
         };
     }
 
-    // The shared shelf plan sorts tallest first and keeps input order between
-    // equal heights, so key order breaks those ties deterministically.
-    let mut sorted_keys: Vec<TileKey> = tiles.keys().copied().collect();
-    sorted_keys.sort_by_key(|key| (key.tile_id, key.sub_tile));
+    let sorted_keys = packing_order(tiles.keys().copied());
     let sizes: Vec<[u32; 2]> = sorted_keys
         .iter()
         .map(|key| [tiles[key].width, tiles[key].height])
@@ -230,5 +227,34 @@ fn blit_tile(rgba: &mut [u8], atlas_width: u32, px: u32, py: u32, tile: &TileIma
         if src_end <= tile.rgba.len() && dst_end <= rgba.len() {
             rgba[dst_start..dst_end].copy_from_slice(&tile.rgba[src_start..src_end]);
         }
+    }
+}
+
+/// The order tiles enter the shared shelf plan. The plan sorts tallest first
+/// and keeps input order between equal heights, so the whole key, variant
+/// included, breaks those ties: the tile map's own order differs per run.
+fn packing_order(keys: impl IntoIterator<Item = TileKey>) -> Vec<TileKey> {
+    let mut keys: Vec<TileKey> = keys.into_iter().collect();
+    keys.sort_by_key(|key| (key.tile_id, key.sub_tile, key.variant));
+    keys
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Variants of one sub-tile pack in variant order whatever order the tile
+    /// map hands them over, so the atlas layout is the same on every run.
+    #[test]
+    fn variants_of_one_sub_tile_pack_in_variant_order() {
+        let key = |tile_id, sub_tile, variant| TileKey {
+            tile_id,
+            sub_tile,
+            variant,
+        };
+        assert_eq!(
+            packing_order([key(4, 1, 2), key(4, 1, 0), key(3, 9, 1), key(4, 1, 1)]),
+            [key(3, 9, 1), key(4, 1, 0), key(4, 1, 1), key(4, 1, 2)]
+        );
     }
 }

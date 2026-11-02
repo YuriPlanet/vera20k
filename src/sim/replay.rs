@@ -713,6 +713,8 @@ pub enum ScenarioServiceInput {
 
 impl ScenarioServiceInput {
     pub fn apply(self, sim: &mut Simulation) -> Vec<crate::sim::trigger_runtime::TriggerEffect> {
+        // These write the world outside a frame step.
+        sim.note_revision();
         match self {
             Self::Pause => sim.session.pause_scenario(0),
             Self::Resume => sim.session.resume_scenario(),

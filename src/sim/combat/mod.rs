@@ -206,7 +206,6 @@ use std::collections::BTreeSet;
 use self::combat_targeting::{AttackerSnapshot, GarrisonSnapshot};
 use self::combat_weapon::WeaponSlot;
 use crate::map::entities::EntityCategory;
-use crate::map::houses::HouseAllianceMap;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::animation_sequence::SequenceSet;
 use crate::rules::object_type::ObjectType;
@@ -218,6 +217,7 @@ use crate::sim::bridge_state::BridgeDamageEvent;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::bridge_state::BridgeRuntimeState;
 use crate::sim::entity_store::EntityStore;
+use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::house_state::HouseState;
 use crate::sim::house_strategy::update_anger_nodes;
 use crate::sim::infantry;
@@ -410,7 +410,7 @@ pub fn can_target_house(
     source: InternedId,
     target: InternedId,
     houses: &crate::sim::houses::Houses,
-    alliances: &crate::map::houses::HouseAllianceMap,
+    alliances: &HouseAlliances,
     interner: &StringInterner,
 ) -> bool {
     use crate::rules::phobos_shields::AffectedHouse;
@@ -427,11 +427,7 @@ pub fn can_target_house(
     {
         return true;
     }
-    if crate::map::houses::is_allied_with(
-        alliances,
-        interner.resolve(source),
-        interner.resolve(target),
-    ) {
+    if alliances.is_allied(interner, source, target) {
         flags.contains(AffectedHouse::ALLIES)
     } else {
         flags.contains(AffectedHouse::ENEMIES)

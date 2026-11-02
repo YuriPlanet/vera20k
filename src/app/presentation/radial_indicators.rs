@@ -1,4 +1,4 @@
-//! Tactical selected-list6DBE20 -> Building456750 -> Game456980.
+//! Tactical::DrawUnitActionVisuals @0x006DBE20 -> Building456750 -> Game456980.
 //! Reads the existing selection, online, current-house, coordinate, color and
 //! clock and presentation-pulse owners. No RNG draws, timer writes or detach calls.
 
@@ -14,18 +14,20 @@ use crate::sim::world::Simulation;
 /// outer pulse still advances and no simulation value is clamped.
 const MAX_SUPERWEAPON_RINGS: i32 = 64;
 
-/// Process-lived Tactical superweapon range fade state. Native
-/// Tactical::DrawUnitActionVisuals @0x006DBE20 advances these globals only
-/// after the selected superweapon passes its positive-Range gate. Positive
+/// One process-lived Tactical range fade state. Native
+/// Tactical::DrawUnitActionVisuals @0x006DBE20 keeps two: the placement ring's
+/// (`0x00B0E648`/`0x00842950`), advanced once the placing building's sensor
+/// range is positive, and the superweapon ring's (`0x00B0E64C`/`0x00842954`),
+/// advanced once the armed superweapon's Range is positive. Positive
 /// LineMultiplier rings advance a local copy; those per-ring steps do not
 /// change this persistent phase/direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SuperweaponRangePulse {
+pub(crate) struct RangePulse {
     phase: i32,
     direction: i32,
 }
 
-impl Default for SuperweaponRangePulse {
+impl Default for RangePulse {
     fn default() -> Self {
         Self {
             phase: 0,
@@ -34,8 +36,9 @@ impl Default for SuperweaponRangePulse {
     }
 }
 
-impl SuperweaponRangePulse {
-    /// Native 0x006DC25A..0x006DC28C and its positive-LM local ring step.
+impl RangePulse {
+    /// Native 0x006DBF15..0x006DBF4A (placement), 0x006DC25A..0x006DC28C
+    /// (superweapon) and the superweapon's positive-LM local ring step.
     /// The direction changes after reaching either endpoint; the phase itself
     /// remains at 0/100 for the following step to move inward.
     fn advance(&mut self) -> i32 {
@@ -47,6 +50,20 @@ impl SuperweaponRangePulse {
         }
         self.phase
     }
+
+    /// The outer phase after `steps` composites; a draw between composites
+    /// shows the last one's.
+    fn advance_by(&mut self, steps: u32) -> i32 {
+        for _ in 0..steps {
+            self.advance();
+        }
+        self.phase
+    }
+}
+
+/// One draw's radial indicators.
+pub(crate) struct RadialIndicators {
+    pub(crate) draws: Vec<RadialIndicatorDraw>,
 }
 
 pub(crate) fn build(
@@ -57,16 +74,19 @@ pub(crate) fn build(
     armed_building: Option<&str>,
     cursor_cell: Option<(u16, u16)>,
     show_power_plant_enhancer_range: bool,
-    superweapon_pulse: &mut SuperweaponRangePulse,
+    unit_action_lines: bool,
+    placement_pulse: &mut RangePulse,
+    superweapon_pulse: &mut RangePulse,
     colors: &HouseColorMap,
     viewport: SurfaceLineViewport,
     time_ms: u64,
-) -> Vec<RadialIndicatorDraw> {
+    steps: u32,
+) -> RadialIndicators {
     let (Some(sim), Some(rules)) = (sim, rules) else {
-        return Vec::new();
+        return RadialIndicators { draws: Vec::new() };
     };
     #[cfg(not(feature = "phobos"))]
-    let _ = (armed_building, show_power_plant_enhancer_range);
+    let _ = show_power_plant_enhancer_range;
     let mut draws = Vec::new();
     //6DBE39..72 walks CurrentObjects FORWARD. Overlapping destination edits
     //must retain this order, independently of EntityStore allocation order.
@@ -80,78 +100,14 @@ pub(crate) fn build(
         if !object.has_radial_indicator() || entity.category() != EntityCategory::Structure {
             continue;
         }
-        let weapon = crate::sim::combat::combat_weapon::current_weapon(
-            entity,
-            object,
-            sim.entities(),
-            rules,
-            sim.interner(),
+        push_building_indicator(
+            &mut draws, sim, rules, entity, object, true, colors, viewport, time_ms,
         );
-        let range = object.building_sensor_range(
-            entity.gap_supercharged(),
-            weapon.map(|weapon| weapon.range_leptons),
-        );
-        //456768 reads+660, the existing temporal online query;
-        //it does NOT sample4555D0 operational/power or a fog predicate.
-        if range <= 0 || !entity.building_online() || !sim.house_is_human_player(entity.owner()) {
-            continue;
-        }
-        let position =
-            crate::sim::movement::ground_pose::object_get_coords(entity, sim.resolved_terrain());
-        let (x, y) =
-            crate::util::lepton::absolute_leptons_to_screen(position.x, position.y, position.z);
-        let center = [
-            x as i32 - viewport.camera[0] + viewport.clip[0],
-            y as i32 - viewport.camera[1] + viewport.clip[1],
-        ];
-        let index = colors
-            .get(sim.interner().resolve(entity.owner()))
-            .copied()
-            .unwrap_or(crate::rules::house_colors::NO_REMAP);
-        let rgb = crate::render::palette_light::house_color_rgb(&rules.house_color_ramps, index);
-        let draw = RadialIndicatorDraw {
-            center,
-            radius: range as f32,
-            truncate_radius: true,
-            pixel_radius: false,
-            rgb,
-            fade: true,
-            rays: true,
-            frame: sim.session().binary_frame() as i32,
-        };
-        if !object.concentric_radial_indicator() {
-            draws.push(draw);
-            continue;
-        }
-        //4567EE uses the frame owner's one timeGetTime input (also used by
-        //radar). It never starts a simulation timer or advances a new clock.
-        let phase = ((time_ms as u32) >> 1) & 0x3ff;
-        let mut outer = draw;
-        outer.fade = false;
-        outer.rays = false;
-        if phase & 0x200 == 0 {
-            if phase & 0x100 == 0 {
-                outer.rgb = crate::render::native_surface_format::interpolate_rgb8(
-                    rgb,
-                    [255; 3],
-                    (!phase) & 255,
-                );
-            }
-            draws.push(outer);
-        }
-        let Some(pixels) = radius_pixels(range as f32, true) else {
-            continue;
-        };
-        let expanding = (pixels as u32).wrapping_mul(phase) >> 10;
-        if expanding > 32 {
-            draws.push(RadialIndicatorDraw {
-                radius: expanding as f32,
-                truncate_radius: true,
-                pixel_radius: true,
-                rgb,
-                ..outer
-            });
-        }
+    }
+    // 0x006DBE74: with Unit Action Lines off (Options+0x1E) the pass ends
+    // here, before the placement and superweapon rings.
+    if !unit_action_lines {
+        return RadialIndicators { draws };
     }
     // Phobos "Show power plant enhancer range": while a building is being
     // placed, the current player's active enhancers that name the placing type
@@ -220,57 +176,46 @@ pub(crate) fn build(
             });
         }
     }
+    // 0x006DBE81: while a building is being placed (Display+0x11A4), the
+    // placement rings replace the superweapon ring.
+    if let Some(armed) = armed_building {
+        if let Some(cell) = cursor_cell {
+            push_placement_rings(
+                &mut draws,
+                sim,
+                rules,
+                armed,
+                cell,
+                placement_pulse,
+                colors,
+                viewport,
+                time_ms,
+                steps,
+            );
+        }
+        return RadialIndicators { draws };
+    }
     if let Some(section) = armed_super_weapon
         && let Some(super_weapon) = rules.super_weapon(section)
         && super_weapon.range > 0.0
     {
-        // Native outer pulse state advances once per active draw, before the
-        // line-multiplier branch; Range<=0 and no armed SW freeze it.
-        let outer_factor = superweapon_pulse.advance();
+        // Native outer pulse state advances once per active composite,
+        // before the line-multiplier branch; Range<=0 and no armed SW freeze it.
+        let outer_factor = superweapon_pulse.advance_by(steps);
         if !super_weapon.range.is_finite() {
-            return draws;
+            return RadialIndicators { draws };
         }
-        let position = cursor_cell.and_then(|(cell_x, cell_y)| {
-            let center = || {
-                crate::sim::cell_rect::get_cellclass_fallback(
-                    sim.resolved_terrain(),
-                    i32::from(cell_x),
-                    i32::from(cell_y),
-                )
-                .center_coordinate()
-            };
-            // Missing-cell drawing may read the fallback's retained height,
-            // but its coordinate stamp must stay private to presentation.
-            match sim.resolved_terrain() {
-                Some(terrain) => terrain.shared_cell_dummy().detached(center),
-                None => center(),
-            }
-        });
-        if let Some(position) = position {
-            // Tactical::DrawUnitActionVisuals @0x006DBE20 reads the current
-            // CurrentFoundationCenter, subtracts 0x7E from its ground cell center,
-            // and calls Game::DrawRadialIndicator @0x00456980. Use the launch
-            // cursor-cell owner supplied by render_game, preserving Z.
-            let (x, y) = crate::util::lepton::absolute_leptons_to_screen(
+        if let Some(position) = cursor_cell.and_then(|cell| foundation_center_coords(sim, cell)) {
+            // 0x006DC1E1..0x006DC21C subtracts 0x7E from the
+            // CurrentFoundationCenter cell's center coordinates, preserving Z.
+            let center = screen_center(
+                viewport,
                 position.x.wrapping_sub(126),
                 position.y.wrapping_sub(126),
                 position.z,
             );
-            let center = [
-                x as i32 - viewport.camera[0] + viewport.clip[0],
-                y as i32 - viewport.camera[1] + viewport.clip[1],
-            ];
-            // The native caller selects CurrentPlayerPtr's HouseClass RGB. The
-            // current house's existing map/ramp projection owns that same color.
-            let color_index = sim
-                .session()
-                .current_house()
-                .and_then(|house| colors.get(sim.interner().resolve(house)).copied())
-                .unwrap_or(crate::rules::house_colors::NO_REMAP);
-            let house_rgb = crate::render::palette_light::house_color_rgb(
-                &rules.house_color_ramps,
-                color_index,
-            );
+            // The native caller selects CurrentPlayerPtr's HouseClass RGB.
+            let house_rgb = current_house_rgb(sim, rules, colors);
             let base = RadialIndicatorDraw {
                 center,
                 radius: super_weapon.range,
@@ -303,7 +248,7 @@ pub(crate) fn build(
                 if X::compare(final_index, X::load_i32(MAX_SUPERWEAPON_RINGS))
                     != crate::util::native_x87::X87Ordering::Less
                 {
-                    return draws;
+                    return RadialIndicators { draws };
                 }
                 // Native stores outer phase/direction once, then advances only
                 // these local registers for each positive-LM ring.
@@ -343,7 +288,225 @@ pub(crate) fn build(
             }
         }
     }
-    draws
+    RadialIndicators { draws }
+}
+
+/// `BuildingClass::DrawRadialIndicator @ 0x00456750(rays)`: the building's
+/// sensor range ring, or its concentric pair. `rays` reaches only the plain
+/// ring (`0x00456959`); the concentric rings always pass 0.
+#[allow(clippy::too_many_arguments)]
+fn push_building_indicator(
+    draws: &mut Vec<RadialIndicatorDraw>,
+    sim: &Simulation,
+    rules: &RuleSet,
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+    rays: bool,
+    colors: &HouseColorMap,
+    viewport: SurfaceLineViewport,
+    time_ms: u64,
+) {
+    let weapon = crate::sim::combat::combat_weapon::current_weapon(
+        entity,
+        object,
+        sim.entities(),
+        rules,
+        sim.interner(),
+    );
+    let range = object.building_sensor_range(
+        entity.gap_supercharged(),
+        weapon.map(|weapon| weapon.range_leptons),
+    );
+    //456768 reads+660, the existing temporal online query;
+    //it does NOT sample4555D0 operational/power or a fog predicate.
+    if range <= 0 || !entity.building_online() || !sim.house_is_human_player(entity.owner()) {
+        return;
+    }
+    let position =
+        crate::sim::movement::ground_pose::object_get_coords(entity, sim.resolved_terrain());
+    let center = screen_center(viewport, position.x, position.y, position.z);
+    let index = colors
+        .get(sim.interner().resolve(entity.owner()))
+        .copied()
+        .unwrap_or(crate::rules::house_colors::NO_REMAP);
+    let rgb = crate::render::palette_light::house_color_rgb(&rules.house_color_ramps, index);
+    let draw = RadialIndicatorDraw {
+        center,
+        radius: range as f32,
+        truncate_radius: true,
+        pixel_radius: false,
+        rgb,
+        fade: true,
+        rays,
+        frame: sim.session().binary_frame() as i32,
+    };
+    if !object.concentric_radial_indicator() {
+        draws.push(draw);
+        return;
+    }
+    //4567EE uses the last composite's timeGetTime (`time_ms`). It never
+    //starts a simulation timer or advances a new clock.
+    let phase = ((time_ms as u32) >> 1) & 0x3ff;
+    let mut outer = draw;
+    outer.fade = false;
+    outer.rays = false;
+    if phase & 0x200 == 0 {
+        if phase & 0x100 == 0 {
+            outer.rgb = crate::render::native_surface_format::interpolate_rgb8(
+                rgb,
+                [255; 3],
+                (!phase) & 255,
+            );
+        }
+        draws.push(outer);
+    }
+    let Some(pixels) = radius_pixels(range as f32, true) else {
+        return;
+    };
+    let expanding = (pixels as u32).wrapping_mul(phase) >> 10;
+    if expanding > 32 {
+        draws.push(RadialIndicatorDraw {
+            radius: expanding as f32,
+            truncate_radius: true,
+            pixel_radius: true,
+            rgb,
+            ..outer
+        });
+    }
+}
+
+/// The placing building's range ring and the rings of its nearest same-type
+/// buildings, `0x006DBEA3..0x006DC1A1`.
+#[allow(clippy::too_many_arguments)]
+fn push_placement_rings(
+    draws: &mut Vec<RadialIndicatorDraw>,
+    sim: &Simulation,
+    rules: &RuleSet,
+    armed: &str,
+    (cell_x, cell_y): (u16, u16),
+    pulse: &mut RangePulse,
+    colors: &HouseColorMap,
+    viewport: SurfaceLineViewport,
+    time_ms: u64,
+    steps: u32,
+) {
+    let Some(object) = rules.object(armed) else {
+        return;
+    };
+    // GetSensorRange 0x004566B0 of the placing object, which is not on the
+    // map yet: no Gap supercharge, and its first weapon.
+    let range = object.building_sensor_range(
+        false,
+        crate::sim::combat::combat_weapon::fresh_object_current_weapon(object, rules)
+            .map(|weapon| weapon.range_leptons),
+    );
+    if range <= 0 {
+        return;
+    }
+    let phase = pulse.advance_by(steps);
+    // 0x006DBEB2..0x006DBFAE: the CurrentFoundationCenter cell's center,
+    // without the superweapon ring's 0x7E shift; the owner's color toward
+    // black by the pulse; Game::DrawRadialIndicator(0, 1, .., range, 0, 1).
+    if let Some(position) = foundation_center_coords(sim, (cell_x, cell_y)) {
+        draws.push(RadialIndicatorDraw {
+            center: screen_center(viewport, position.x, position.y, position.z),
+            radius: range as f32,
+            truncate_radius: true,
+            pixel_radius: false,
+            rgb: crate::render::native_surface_format::interpolate_rgb8(
+                current_house_rgb(sim, rules, colors),
+                [0; 3],
+                phase as u32,
+            ),
+            fade: true,
+            rays: false,
+            frame: sim.session().binary_frame() as i32,
+        });
+    }
+    // 0x006DBFB3..0x006DC1A1: CurrentPlayer's alive buildings of the same type
+    // within 2 * range cells; every one at the smallest whole-cell distance
+    // (Sqrt_Approx, ftol, short) draws its own ring without rays. Stable-id
+    // order stands in for the house's Buildings vector; only overlap differs.
+    let Some(player) = sim.session().current_house() else {
+        return;
+    };
+    let center = (cell_x as i16, cell_y as i16);
+    let nearby: Vec<_> = sim
+        .entities()
+        .iter_sorted()
+        .filter_map(|(_, entity)| {
+            if entity.category() != EntityCategory::Structure
+                || entity.owner() != player
+                || !entity.lifecycle.object_alive()
+            {
+                return None;
+            }
+            let kind = sim.interner().object_type(entity.type_ref(), rules)?;
+            if !std::ptr::eq(kind, object) {
+                return None;
+            }
+            let coords = crate::sim::movement::ground_pose::object_get_coords(
+                entity,
+                sim.resolved_terrain(),
+            );
+            let dx = center.0.wrapping_sub((coords.x / 256) as i16);
+            let dy = center.1.wrapping_sub((coords.y / 256) as i16);
+            let distance =
+                crate::util::native_x87::sqrt_approx_length([i32::from(dx), i32::from(dy)]) as i16;
+            Some((entity, kind, i32::from(distance)))
+        })
+        .collect();
+    let nearest = nearby
+        .iter()
+        .map(|&(_, _, distance)| distance)
+        .filter(|&distance| distance <= 2 * range)
+        .min();
+    for &(entity, kind, distance) in &nearby {
+        if Some(distance) == nearest {
+            push_building_indicator(
+                draws, sim, rules, entity, kind, false, colors, viewport, time_ms,
+            );
+        }
+    }
+}
+
+/// The CurrentFoundationCenter cell's center coordinates (`0x005657A0`,
+/// `0x00480A30`). Missing-cell drawing may read the fallback's retained
+/// height, but its coordinate stamp must stay private to presentation.
+fn foundation_center_coords(
+    sim: &Simulation,
+    (cell_x, cell_y): (u16, u16),
+) -> Option<crate::sim::components::DriveCoord> {
+    let center = || {
+        crate::sim::cell_rect::get_cellclass_fallback(
+            sim.resolved_terrain(),
+            i32::from(cell_x),
+            i32::from(cell_y),
+        )
+        .center_coordinate()
+    };
+    match sim.resolved_terrain() {
+        Some(terrain) => terrain.shared_cell_dummy().detached(center),
+        None => center(),
+    }
+}
+
+/// CurrentPlayer's HouseClass RGB through the house color map and ramps.
+fn current_house_rgb(sim: &Simulation, rules: &RuleSet, colors: &HouseColorMap) -> [u8; 3] {
+    let index = sim
+        .session()
+        .current_house()
+        .and_then(|house| colors.get(sim.interner().resolve(house)).copied())
+        .unwrap_or(crate::rules::house_colors::NO_REMAP);
+    crate::render::palette_light::house_color_rgb(&rules.house_color_ramps, index)
+}
+
+fn screen_center(viewport: SurfaceLineViewport, x: i32, y: i32, z: i32) -> [i32; 2] {
+    let (x, y) = crate::util::lepton::absolute_leptons_to_screen(x, y, z);
+    [
+        x as i32 - viewport.camera[0] + viewport.clip[0],
+        y as i32 - viewport.camera[1] + viewport.clip[1],
+    ]
 }
 
 #[cfg(test)]

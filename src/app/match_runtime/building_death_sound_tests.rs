@@ -301,7 +301,7 @@ fn history(
     );
     assert!(!object.can_be_occupied && !object.explodes);
     assert!(!crate::map::houses::is_allied_with(
-        sim.house_alliances(),
+        sim.house_alliances().as_map(),
         sim.resolve(neutral),
         &local
     ));

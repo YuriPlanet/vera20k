@@ -9,9 +9,10 @@ use crate::util::time::{Duration, Instant};
 
 const FRAME_BUCKET_SHIFT: u32 = 4;
 const FRAME_BUCKET_MS: u64 = 1 << FRAME_BUCKET_SHIFT;
-/// Wake interval of the hidden-window match service loop: half a pacer
+/// Wake interval of a match service pass that draws nothing (a hidden
+/// window, or a visible one whose picture still stands): half a pacer
 /// bucket, so an admitted frame is never late by more than half a bucket.
-pub(crate) const HIDDEN_SERVICE_WAKE: std::time::Duration =
+pub(crate) const SERVICE_WAKE: std::time::Duration =
     std::time::Duration::from_millis(FRAME_BUCKET_MS / 2);
 /// A refresh gap the pacer forgives, so a pass at 60 Hz still finds a
 /// one-bucket (GameSpeed 1, 60 FPS) frame on time.

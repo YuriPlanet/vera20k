@@ -135,7 +135,7 @@ fn super_weapon_pointer_target_is_valid(
         .is_some_and(|target| {
             target.category() == crate::map::entities::EntityCategory::Structure
                 && crate::map::houses::is_allied_with(
-                    sim.house_alliances(),
+                    sim.house_alliances().as_map(),
                     sim.interner().resolve(target.owner()),
                     sim.interner().resolve(viewer),
                 )

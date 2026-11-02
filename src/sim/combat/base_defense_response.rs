@@ -10,7 +10,6 @@
 //! Foot4DBDF0/4DDC40 and Map56D100; the response never selects NavCom instead.
 
 use crate::map::entities::EntityCategory;
-use crate::map::houses::is_allied_with;
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::mission::authority::queue_entity_mission_deferred;
@@ -441,11 +440,9 @@ pub(crate) fn respond_to_base_attack(
         .wrapping_mul(rules.general.computer_base_defense_response);
     let current_frame = world.session.binary_frame() as i32;
 
-    if is_allied_with(
-        world.house_alliances.as_map(),
-        interner.resolve(victim_owner),
-        interner.resolve(attacker_owner),
-    )
+    if world
+        .house_alliances
+        .is_allied(interner, victim_owner, attacker_owner)
         // gamemd.exe, RespondToBaseAttack @ 0x00708080 (call at 0x007080F9):
         // HouseClass::IsControlledByHuman @ 0x0050B730 also rejects campaign
         // PlayerControl, before suspension, responder RNG and cooldown writes.
@@ -503,22 +500,22 @@ pub(crate) fn respond_to_base_attack(
     let attacker_coord = ground_pose::object_get_coords(attacker, sim.resolved_terrain.as_ref());
     let attacker_coord = [attacker_coord.x, attacker_coord.y, attacker_coord.z];
     let victim_is_self_anchor = victim.archive_target() == Some(TargetKind::Entity(victim_id));
-    let candidate_ids = entities.keys_sorted();
     for class in [ResponderClass::Infantry, ResponderClass::Unit] {
-        for &candidate_id in &candidate_ids {
+        let expected_category = match class {
+            ResponderClass::Infantry => EntityCategory::Infantry,
+            ResponderClass::Unit => EntityCategory::Unit,
+        };
+        // VERA walks only the victim's house's objects of the class, in the
+        // same order: admission (`0x007081D4`, `0x0070840A`) refuses every
+        // other house's after reading only its liveness, before any map
+        // query, score or draw.
+        for &candidate_id in entities.owned_ids(victim.owner(), expected_category) {
             if !selection.can_scan() {
                 break;
             }
-            let expected_category = match class {
-                ResponderClass::Infantry => EntityCategory::Infantry,
-                ResponderClass::Unit => EntityCategory::Unit,
-            };
             let Some(candidate) = entities.get(candidate_id) else {
                 continue;
             };
-            if candidate.category() != expected_category {
-                continue;
-            }
             let Some(candidate_object) = sim.interner.object_type(candidate.type_ref(), rules)
             else {
                 continue;

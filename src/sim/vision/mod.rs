@@ -62,8 +62,9 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::map::houses::{HouseAllianceMap, is_allied_with};
+use crate::map::houses::HouseAllianceMap;
 use crate::sim::entity_store::EntityStore;
+use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::movement::ground_pose;
 use crate::sim::pathfinding::PathGrid;
@@ -648,7 +649,7 @@ pub(crate) struct GapGeneratorSource {
 /// ([`FogState::fire_view`]).
 #[derive(Clone, Copy)]
 pub(crate) struct FireFog<'a> {
-    pub(crate) alliances: &'a HouseAllianceMap,
+    pub(crate) alliances: &'a HouseAlliances,
     sensors_by_house: &'a BTreeMap<InternedId, Vec<i16>>,
     width: u16,
     height: u16,
@@ -1606,7 +1607,7 @@ impl FogState {
     }
 
     /// What a fire check reads of this fog and the houses' ally graph.
-    pub(crate) fn fire_view<'a>(&'a self, alliances: &'a HouseAllianceMap) -> FireFog<'a> {
+    pub(crate) fn fire_view<'a>(&'a self, alliances: &'a HouseAlliances) -> FireFog<'a> {
         FireFog {
             alliances,
             sensors_by_house: &self.sensors_by_house,
@@ -2921,14 +2922,13 @@ fn reveal_candidates(
 /// of its index, `0x00567AC1..0x00567ADB`) is mapped too, allied or not;
 /// VERA keeps no radar-spy bits.
 pub(crate) fn reveal_admits(
-    alliances: &HouseAllianceMap,
+    alliances: &HouseAlliances,
     owner: InternedId,
     viewer: InternedId,
     config: &VisionConfig,
     interner: &StringInterner,
 ) -> bool {
-    viewer == owner
-        || ally_reveal_test(alliances, owner, config, interner)(interner.resolve(viewer))
+    viewer == owner || (config.ally_reveal && alliances.is_allied(interner, owner, viewer))
 }
 
 /// [`reveal_admits`]'s allied arm for one `owner`, to ask of many viewers by
@@ -3014,7 +3014,7 @@ pub fn apply_spy_sat(
 #[cfg(any(test, feature = "test-support"))]
 pub fn apply_gap_generators(
     fog: &mut FogState,
-    alliances: &HouseAllianceMap,
+    alliances: &HouseAlliances,
     gap_generators: &[(InternedId, u16, u16, i32)],
     interner: &StringInterner,
 ) {
@@ -3035,7 +3035,7 @@ pub fn apply_gap_generators(
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn apply_gap_generator_sources(
     fog: &mut FogState,
-    alliances: &HouseAllianceMap,
+    alliances: &HouseAlliances,
     gap_generators: &[GapGeneratorSource],
     interner: &StringInterner,
 ) {
@@ -3054,7 +3054,7 @@ pub(crate) fn apply_gap_generator_sources(
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn apply_gap_generator_sources_with_spy_sat(
     fog: &mut FogState,
-    alliances: &HouseAllianceMap,
+    alliances: &HouseAlliances,
     gap_generators: &[GapGeneratorSource],
     interner: &StringInterner,
     spy_sat_active_owners: &std::collections::BTreeSet<InternedId>,
@@ -3138,7 +3138,7 @@ impl GapGeometry {
 /// outside the rectangular map retain the existing bounded mapping.
 pub(crate) fn publish_gap_generator_event(
     fog: &mut FogState,
-    alliances: &HouseAllianceMap,
+    alliances: &HouseAlliances,
     viewer: InternedId,
     source: GapGeneratorSource,
     active: bool,
@@ -3153,12 +3153,7 @@ pub(crate) fn publish_gap_generator_event(
     let height = usize::from(fog.height);
     if let Some(vis) = fog.by_owner.get_mut(&viewer) {
         let receipts = fog.gap_sources.entry(viewer).or_default();
-        let friendly = viewer_defeated
-            || is_allied_with(
-                alliances,
-                interner.resolve(source.owner),
-                interner.resolve(viewer),
-            );
+        let friendly = viewer_defeated || alliances.is_allied(interner, source.owner, viewer);
         if friendly {
             for &index in fog.gap_geometry.cells(source, width, height) {
                 vis.count_friendly_gap_cell(index, active);

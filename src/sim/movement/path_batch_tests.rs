@@ -509,8 +509,8 @@ fn batched_answers_do_not_depend_on_the_threads() {
     let ready = &sim.path_batch.as_ref().unwrap().ready;
     let mut routes = 0;
     for &(id, request) in &movers {
-        let alone =
-            dummy.detached(|| sim.batched_search(id, request, &rules, None, &grid, counts, None));
+        let alone = dummy
+            .detached(|| sim.batched_search(id, request, &rules, None, &grid, counts, None, None));
         routes += usize::from(alone.as_ref().is_some_and(|answer| answer.found.is_ok()));
         assert_eq!(ready[&id].answer, alone, "mover {id}");
     }
@@ -1047,6 +1047,20 @@ fn eight_ladders(rules: &RuleSet) -> (Simulation, Vec<u64>) {
     (sim, ladders)
 }
 
+/// Registers an urgency-2 re-path for each of `ids`.
+fn register(sim: &mut Simulation, ids: &[u64]) {
+    for &id in ids {
+        assert!(crate::sim::world::Simulation::defer_path_search(
+            &mut sim.path_batch,
+            &sim.resolved_terrain,
+            &sim.overlay_grid,
+            &sim.substrate.entities,
+            id,
+            URGENT
+        ));
+    }
+}
+
 /// A pass answers its urgency-2 re-paths in their turn's order while the
 /// ones before stay under its budget of expansions; the rest register again
 /// at urgency 2 and go first at the next pass. Which ones it answers does not
@@ -1062,18 +1076,6 @@ fn a_pass_answers_urgency2_repaths_within_its_budget() {
             .expect("a worker pool");
         pool.install(|| {
             let (mut sim, ladders) = eight_ladders(&rules);
-            let register = |sim: &mut Simulation, ids: &[u64]| {
-                for &id in ids {
-                    assert!(crate::sim::world::Simulation::defer_path_search(
-                        &mut sim.path_batch,
-                        &sim.resolved_terrain,
-                        &sim.overlay_grid,
-                        &sim.substrate.entities,
-                        id,
-                        URGENT
-                    ));
-                }
-            };
             // Without a budget every re-path is answered; alone, each makes
             // the expansions it makes in the batch.
             register(&mut sim, &ladders);
@@ -1085,11 +1087,11 @@ fn a_pass_answers_urgency2_repaths_within_its_budget() {
             let alone: Vec<(Option<BatchedSearch>, u64)> = ladders
                 .iter()
                 .map(|&id| {
-                    count_search_steps(|| {
-                        dummy.detached(|| {
-                            sim.batched_search(id, URGENT, &rules, None, &grid, counts, None)
-                        })
-                    })
+                    let before = search_steps();
+                    let answer = dummy.detached(|| {
+                        sim.batched_search(id, URGENT, &rules, None, &grid, counts, None, None)
+                    });
+                    (answer, search_steps() - before)
                 })
                 .collect();
             assert!(
@@ -1151,6 +1153,97 @@ fn a_pass_answers_urgency2_repaths_within_its_budget() {
         })
     };
     assert_eq!(run(1), run(4));
+}
+
+/// With a budget of one expansion a pass answers only the first urgency-2
+/// re-path, on any number of threads, and the ones after it stop or do not
+/// start. Three infantrymen walk a serpentine of one-cell lanes, over two
+/// strides of expansions each. On one worker the second and third do not
+/// start. On two the second may run beside the first and stop at an ask;
+/// the third is taken only once one of them is done, so it stops at its
+/// first ask if it starts at all.
+#[test]
+fn a_repath_past_the_budget_stops_or_does_not_start() {
+    const SIZE: u16 = 65;
+    let rules = rules();
+    let run = |threads: usize| {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .expect("a worker pool");
+        pool.install(|| {
+            let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 0x4D3920, SIZE);
+            // Water rows between the lanes, open at alternate ends.
+            let water = (1..SIZE).step_by(2).flat_map(|y| {
+                let gap = if y % 4 == 1 { SIZE - 1 } else { 0 };
+                (0..SIZE).filter(move |&x| x != gap).map(move |x| (x, y))
+            });
+            crate::sim::arena_fixture::flood(&mut sim, &rules, SIZE, water);
+            sim.overlay_grid = Some(OverlayGrid::new(SIZE, SIZE));
+            let foots: Vec<u64> = (0..3)
+                .map(|_| {
+                    let id = spawn(&mut sim, &rules, "E1", (0, 0));
+                    send(&mut sim, &rules, id, (SIZE - 1, SIZE - 1));
+                    id
+                })
+                .collect();
+            sim.batch_path_searches();
+            // A pass without a budget builds the blocker plane the searches
+            // alone read.
+            register(&mut sim, &foots);
+            sim.answer_path_searches_within(&rules, None, u64::MAX);
+            let grid = sim.path_grid_snapshot().unwrap();
+            let counts = sim.movement_pass_cache.current_blocker_plane();
+            let dummy = sim.resolved_terrain.as_ref().unwrap().shared_cell_dummy();
+            let search = |id, keep_searching: Option<&dyn Fn(u32) -> bool>| {
+                let before = search_steps();
+                let answer = dummy.detached(|| {
+                    sim.batched_search(
+                        id,
+                        URGENT,
+                        &rules,
+                        None,
+                        &grid,
+                        counts,
+                        None,
+                        keep_searching,
+                    )
+                });
+                (answer, search_steps() - before)
+            };
+            let alone: Vec<(Option<BatchedSearch>, u64)> =
+                foots.iter().map(|&id| search(id, None)).collect();
+            for (answer, steps) in &alone {
+                assert!(answer.as_ref().is_some_and(|answer| answer.found.is_ok()));
+                assert!(*steps >= 2048, "{steps} expansions ask twice");
+            }
+            // Stopped at its first ask, a search ends there with no answer.
+            assert_eq!(search(foots[0], Some(&|_: u32| false)), (None, 1024));
+
+            sim.finish_batched_path_searches();
+            register(&mut sim, &foots);
+            sim.answer_path_searches_within(&rules, None, 1);
+            let batch = sim.path_batch.as_ref().unwrap();
+            assert_eq!(batch.answered, foots[..1]);
+            assert_eq!(batch.ready[&foots[0]].answer, alone[0].0);
+            let waiting: Vec<_> = batch
+                .left_out_code2
+                .iter()
+                .map(|(&id, &urgency)| (id, urgency))
+                .collect();
+            assert_eq!(waiting, [(foots[1], 2), (foots[2], 2)]);
+            let made = sim.path_batch_stats().unwrap().urgency2_steps;
+            let alone: Vec<u64> = alone.into_iter().map(|(_, steps)| steps).collect();
+            (made, alone)
+        })
+    };
+    let (made, alone) = run(1);
+    assert_eq!(made, alone[0], "only the first starts");
+    let (made, alone) = run(2);
+    assert!(
+        made < alone.iter().sum::<u64>(),
+        "the third does not search to its end"
+    );
 }
 
 /// Urgency-2 re-paths take their own turn: when the budget and the cap both

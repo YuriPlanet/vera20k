@@ -105,6 +105,7 @@ impl Simulation {
     }
 
     pub fn clear_debug_tools(&mut self) {
+        self.note_revision();
         let old_tech_owner = self
             .debug_tools
             .owner
@@ -195,6 +196,7 @@ impl Simulation {
 
     pub fn set_cheat_flags(&mut self, flags: CheatFlags) -> Result<(), DebugToolsError> {
         let owner = self.trainer_write_owner()?;
+        self.note_revision();
         let flags = flags.normalized();
         self.debug_tools.modified |= flags.active();
         let old = self.debug_tools.flags;
@@ -211,6 +213,7 @@ impl Simulation {
 
     pub fn request_trainer_action(&mut self, action: TrainerAction) -> Result<(), DebugToolsError> {
         self.debug_tools.owner = Some(self.trainer_write_owner()?);
+        self.note_revision();
         self.debug_tools.pending |= match action {
             TrainerAction::HealAll => 1,
             TrainerAction::VeteranAll => 2,
@@ -222,6 +225,7 @@ impl Simulation {
 
     /// At the existing master-frame boundary; queued actions are consumed once.
     pub fn apply_debug_tools(&mut self, rules: &crate::rules::ruleset::RuleSet) {
+        self.note_revision();
         Self::refresh_debug_event_selection(&mut self.debug_tools, &mut self.substrate);
         let Ok(owner) = self.trainer_write_owner() else {
             if self.debug_tools.owner.is_some() || self.debug_tools.pending != 0 {

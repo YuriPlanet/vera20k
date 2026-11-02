@@ -43,6 +43,21 @@ pub(crate) struct SurfaceLine {
     pub blend: SurfaceLineBlend,
 }
 
+impl SurfaceLine {
+    /// The same line after the camera moved from `from` to `to`: a composite
+    /// projected it as world minus camera, and a later draw of the same
+    /// Main_Tick shows it again under the moved view.
+    pub(crate) fn follow_camera(&mut self, from: [i32; 2], to: [i32; 2]) {
+        let shift = [from[0].wrapping_sub(to[0]), from[1].wrapping_sub(to[1])];
+        for point in [&mut self.from, &mut self.to] {
+            *point = [
+                point[0].wrapping_add(shift[0]),
+                point[1].wrapping_add(shift[1]),
+            ];
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SurfaceDraw {
     /// Opaque XSurface stores, already resolved to logical surface rectangles.

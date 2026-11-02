@@ -1401,9 +1401,10 @@ pub enum Command {
     SellBuilding { entity_id: u64 },
     /// Toggle repair mode on a building (spend credits to heal over time).
     ToggleRepair { entity_id: u64 },
-    /// Eject the occupant of a friendly occupied tank bunker. Targets the bunker
-    /// (the hidden occupant is not selectable in this slice); the occupant
-    /// reappears on a passable cell SW of the bunker and drives out.
+    /// VERA-only: release a tank bunker's occupant through
+    /// `bunker_link::release_normal` at command time. No player input sends
+    /// it; the D key and a click on the tank reach the same release through
+    /// the tank's Unload mission (`0x0073D66D`). Removal: #3675.
     EjectBunker { bunker_id: u64 },
     /// Order a transport or garrison to unload: the Unload mission of its class.
     UnloadPassengers { transport_id: u64 },

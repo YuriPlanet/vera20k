@@ -329,7 +329,7 @@ fn viewer_bucket(
             return false;
         };
         crate::map::houses::is_allied_with(
-            simulation.house_alliances(),
+            simulation.house_alliances().as_map(),
             simulation.interner().resolve(owner),
             simulation.interner().resolve(viewer),
         )

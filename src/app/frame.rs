@@ -44,6 +44,17 @@ pub(super) enum FrameRenderOutcome {
     Presented,
     Unavailable,
     Deferred,
+    /// A probe found the presented picture still standing and drew nothing.
+    Unchanged,
+}
+
+/// What one pass of `render_frame` may do once the match is serviced.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FramePass {
+    Draw,
+    /// Service the match, then draw only if the presented picture no longer
+    /// stands (`match_runtime::redraw_gate`).
+    Probe,
 }
 
 /// The composition's full-height battlefield/command-bar region. Native
@@ -659,6 +670,7 @@ impl App {
         mut tactical_capture: Option<
             &mut crate::app::diagnostics::tactical_capture::session::TacticalCaptureSession,
         >,
+        pass: FramePass,
     ) -> Result<FrameRenderOutcome> {
         if let Some(presented) = crate::app::persistence::commands::pump_saved_game_load(state) {
             return Ok(if presented {
@@ -798,6 +810,23 @@ impl App {
                 runtime_pass.main_tick_admitted || tactical_capture.is_some(),
             )
         };
+        // A changed picture is drawn in this same pass, so each drawn frame
+        // still follows exactly one match service. The picture is judged by
+        // the clock before the draw (`redraw_gate::PictureClock`).
+        let picture_clock = crate::app::match_runtime::redraw_gate::PictureClock::now();
+        let unchanged = pass == FramePass::Probe
+            && state.platform.redraw_gate.still_presented(
+                crate::app::match_runtime::redraw_gate::still_frame(
+                    state,
+                    false,
+                    runtime_pass.screen_shake_offset,
+                    picture_clock,
+                ),
+            );
+        // The gate's audit draws the pass anyway and checks its pixels.
+        if unchanged && !state.platform.redraw_gate.auditing() {
+            return Ok(FrameRenderOutcome::Unchanged);
+        }
         let next_canonical = ordinary_online
             .then(|| Self::next_online_render_frame(state))
             .flatten();
@@ -1173,12 +1202,28 @@ impl App {
                     tooltip_ms,
                     message_ms,
                 };
+                // Offline, Main_Tick draws the tactical view once per tick;
+                // online, ThrottleFrame also draws while it waits
+                // (`tactical_composite`). Captures and the actor observer
+                // record every draw's composite.
+                let cadence = if shell_capture.is_some()
+                    || tactical_capture.is_some()
+                    || state.match_state.live_network.is_some()
+                    || state
+                        .match_state
+                        .match_diagnostics
+                        .actor_presentation_observer_active()
+                {
+                    crate::app::presentation::tactical_composite::CompositeCadence::PerDraw
+                } else {
+                    crate::app::presentation::tactical_composite::CompositeCadence::PerMainTick
+                };
                 let game_output = if state.renderer.upscale_pass.is_some() {
                     // Render game to intermediate texture, then upscale to swapchain.
                     let up = state.renderer.upscale_pass.as_ref().unwrap();
                     let game_depth = up.depth_view().clone();
                     let saved_depth = std::mem::replace(&mut state.renderer.depth_view, game_depth);
-                    let result = render::render_game(state, &mut encoder, times);
+                    let result = render::render_game(state, &mut encoder, times, cadence);
                     state.renderer.depth_view = saved_depth;
                     let render_output = result?;
                     state.renderer.copy_game_frame_to(
@@ -1192,7 +1237,7 @@ impl App {
                         .draw(&mut encoder, &view);
                     render_output
                 } else {
-                    let render_output = render::render_game(state, &mut encoder, times)?;
+                    let render_output = render::render_game(state, &mut encoder, times, cadence)?;
                     state
                         .renderer
                         .copy_game_frame_to(&mut encoder, &output.texture);
@@ -1382,6 +1427,18 @@ impl App {
         } else {
             None
         };
+        let pending_gate_audit = if state.platform.redraw_gate.auditing() {
+            Some(crate::render::frame_readback::PendingBgra8Readback::encode(
+                &state.renderer.gpu.device,
+                &mut encoder,
+                &output.texture,
+                state.renderer.gpu.config.format,
+                state.renderer.gpu.config.width,
+                state.renderer.gpu.config.height,
+            )?)
+        } else {
+            None
+        };
         let retail_screenshot_current_frame =
             std::mem::take(&mut state.match_state.input.retail_screenshot_requested);
         let screenshot_central_rect = shake_central_rect(state, &output.texture);
@@ -1459,6 +1516,24 @@ impl App {
             } else {
                 [0, 0]
             });
+        let still = crate::app::match_runtime::redraw_gate::still_frame(
+            state,
+            shell_capture.is_some() || tactical_capture.is_some(),
+            runtime_pass.screen_shake_offset,
+            picture_clock,
+        );
+        state.platform.redraw_gate.record_presented(still);
+        if let Some(readback) = pending_gate_audit {
+            let pixels = readback.finish(
+                &state.renderer.gpu.device,
+                submission.clone(),
+                crate::render::screenshot::READBACK_TIMEOUT,
+            )?;
+            state
+                .platform
+                .redraw_gate
+                .audit_presented(pixels, unchanged);
+        }
         // A family renderer that drew a timer-driven 0x71C frame this pass
         // advances it now that the frame reached the screen.
         state.frontend.shell_monitor.commit_presented();

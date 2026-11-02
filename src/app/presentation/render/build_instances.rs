@@ -247,14 +247,6 @@ pub(super) fn build_world_instances(
     // The SHP builder therefore adds it to the same contiguous Ground parent
     // instead of leaking it into an atlas-level tie.
     instances::build_shp_instances(state, &mut planned_objects, &display_order);
-    // Prepare slot binding/light pieces without querying the shared FPS latch.
-    // Each Anim's retained Display encounter admits and appends its pieces.
-    let mut building_anim_instances = Vec::new();
-    instances::build_building_anim_instances(state, &mut building_anim_instances, &display_order);
-    let prepared_building_anims = building_anim_instances
-        .into_iter()
-        .map(|parent| (parent.parent.id, parent))
-        .collect();
     let mut particle_draws = state.diagnostic_presentation_ms().map(|_| Vec::new());
     let display_inputs = state.match_state.sim_runtime.as_ref().map(|runtime| {
         let presentation = &state.match_state.match_presentation;
@@ -286,6 +278,21 @@ pub(super) fn build_world_instances(
         }
     });
     if let Some(input) = display_inputs.as_ref() {
+        // Prepare slot binding/light pieces without querying the shared FPS
+        // latch. Each Anim's retained Display encounter admits and appends its
+        // pieces; preparation shares that encounter's view.
+        let mut building_anim_instances = Vec::new();
+        instances::build_building_anim_instances(
+            state,
+            input.camera,
+            input.projection_viewport(),
+            &mut building_anim_instances,
+            &display_order,
+        );
+        let prepared_building_anims = building_anim_instances
+            .into_iter()
+            .map(|parent| (parent.parent.id, parent))
+            .collect();
         particle_draws = instances::build_display_effect_instances(
             input,
             &mut planned_objects,
@@ -695,6 +702,7 @@ fn build_smudge_instances(state: &AppState, sw: f32, sh: f32) -> Vec<SpriteInsta
         resolved_terrain,
         state.match_state.match_presentation.lighting.grid(),
         &lookup,
+        atlas.art_extent(),
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
         sw,
@@ -812,7 +820,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
                         .as_deref()
                         .and_then(|owner| view.interner().get(owner)),
                     view.fog(),
-                    view.house_alliances(),
+                    view.house_alliances().as_map(),
                     full_visibility,
                     view.session().game_mode_nonzero(),
                     Some(&runtime.resources.rules),
@@ -839,6 +847,9 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
 
 /// Build in-game UI overlay instances: health bars,
 /// drag rectangle, building placement preview, and software cursor.
+/// `wall_ms` is the last tactical composite's timeGetTime: planning dashes
+/// (63D8B8), mind-control links (704E40), psychic detection lines (4DC340)
+/// and the airstrike wobble move with it once per composite.
 pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances {
     let software_cursor = build_software_cursor_instances(state);
     let drag = match &state.match_state.match_presentation.selection_overlay {
@@ -925,36 +936,35 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
         use crate::app::presentation::airstrike_lines::{TacticalLineCall, drain_opaque};
         drain_opaque(&mut tactical_line_calls, instances, camera);
         if let Some((coords, style)) = designations.remove(&id) {
-            tactical_line_calls.push(TacticalLineCall::Designation { coords, style });
+            tactical_line_calls.push(TacticalLineCall::Designation { id, coords, style });
         }
     };
-    let (mut target_line, planning_highlights) = planning_lines::build(state, view);
-    target_line.extend(
-        crate::app::presentation::target_lines::build_target_line_instances_sampled(
-            &state.match_state.match_presentation.target_lines,
-            state.match_state.input.planning.active(),
-            state
-                .match_state
-                .sim_runtime
-                .as_ref()
-                .map(|rt| &rt.simulation),
-            state.rules(),
-            state
-                .process_assets
-                .manager()
-                .and_then(|assets| assets.get_ref("palette.pal")),
-            &state.match_state.match_presentation.house_color_map,
-            wall_ms,
-            view,
-            if interleave_enabled {
-                Some(&mut after_entity)
-            } else {
-                None
-            },
-            &mut shroud_alpha,
-            Some(&state.match_state.match_presentation.interpolation),
-        ),
+    let (mut target_line, planning_highlights) = planning_lines::build(state, view, wall_ms);
+    let action_lines = crate::app::presentation::target_lines::build_target_line_instances_sampled(
+        &state.match_state.match_presentation.target_lines,
+        state.match_state.input.planning.active(),
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation),
+        state.rules(),
+        state
+            .process_assets
+            .manager()
+            .and_then(|assets| assets.get_ref("palette.pal")),
+        &state.match_state.match_presentation.house_color_map,
+        wall_ms,
+        view,
+        if interleave_enabled {
+            Some(&mut after_entity)
+        } else {
+            None
+        },
+        &mut shroud_alpha,
+        Some(&state.match_state.match_presentation.interpolation),
     );
+    target_line.extend(action_lines);
     target_line.extend(planning_highlights);
     let selected = crate::app::input::dispatch::selected_stable_ids_in_order(
         state

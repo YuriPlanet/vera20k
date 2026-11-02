@@ -406,7 +406,8 @@ impl MapFile {
             }
         }
         let iso_map_pack = parse_iso_map_pack(&ini, header.cell_grid())?;
-        let entities: Vec<MapEntity> = entities::parse_map_entities(&ini);
+        let entities: Vec<MapEntity> =
+            entities::parse_map_entities(&ini, basic.new_ini_format.unwrap_or(0));
         let overlay::ParsedOverlayPacks {
             identity: overlay_identity,
             entries: overlays,

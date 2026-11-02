@@ -60,6 +60,11 @@ impl ScenarioCatalog {
         &self.records
     }
 
+    /// The first row with a file here. Online rows name no local file.
+    pub(crate) fn first_local_index(&self) -> Option<usize> {
+        self.records.iter().position(|record| !record.is_online())
+    }
+
     pub(crate) fn shell_maps(&self) -> &[MapMenuEntry] {
         &self.shell_maps
     }
@@ -281,6 +286,20 @@ mod tests {
     use super::*;
     use crate::map::skirmish_scenarios::SkirmishScenarioSource;
     use crate::map::source::test_support::TestDirectory;
+
+    #[test]
+    fn first_local_index_skips_online_rows() {
+        let record = |online: bool| {
+            let mut record = SkirmishScenarioRecord::random_map_sentinel(0, "Map", 4);
+            if online {
+                record.source = SkirmishScenarioSource::Online("a".repeat(64));
+            }
+            record
+        };
+        let index = |rows| ScenarioCatalog::from_records(rows).first_local_index();
+        assert_eq!(index(vec![record(true), record(false)]), Some(1));
+        assert_eq!(index(vec![record(true)]), None);
+    }
 
     #[test]
     fn the_random_map_record_publishes_the_generator_option_digest() {

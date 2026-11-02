@@ -580,7 +580,7 @@ impl crate::sim::game_entity::GameEntity {
         &self,
         observer: InternedId,
         fog: Option<&crate::sim::vision::FogState>,
-        alliances: Option<&crate::map::houses::HouseAllianceMap>,
+        alliances: Option<&crate::sim::house_diplomacy::HouseAlliances>,
         interner: &crate::sim::intern::StringInterner,
     ) -> bool {
         let Some(disguise) = self.disguise.as_ref() else {
@@ -649,7 +649,7 @@ impl crate::sim::game_entity::GameEntity {
         &self,
         player: InternedId,
         fog: Option<&crate::sim::vision::FogState>,
-        alliances: Option<&crate::map::houses::HouseAllianceMap>,
+        alliances: Option<&crate::sim::house_diplomacy::HouseAlliances>,
         interner: &crate::sim::intern::StringInterner,
     ) -> bool {
         self.disguise_house(true, Some(player), false).is_none()
@@ -1095,7 +1095,7 @@ impl crate::sim::world::Simulation {
                         )
                         .and_then(|other| self.substrate.entities.get(other))
                         && !crate::sim::combat::combat_weapon::is_ally_by_object(
-                            Some(self.house_alliances.as_map()),
+                            Some(&self.house_alliances),
                             &self.interner,
                             entity.owner(),
                             neighbor.owner(),

@@ -31,8 +31,8 @@
 //!   RepairBullet) are live; `+0x304` (`0x006FF1A7`, UseFireParticles) and
 //!   `+0x314` (railgun) are not produced, so those shots rearm on ROF alone.
 //! - Dormant in retail: T44 (FiringSyncFrame), U1 (DeathFrames),
-//!   U3 (DirectRocker), U4 (DeployToFire), U7 (MobileFire=no), I3 (Pushy).
-//! - B3: EMPulseCannon, whose cannon fires only through its superweapon.
+//!   U3 (DirectRocker), U4 (DeployToFire), U7 (MobileFire=no), I3 (Pushy),
+//!   B3 (`EMPulseCannon=`, read live; no retail building sets it).
 //! - B7: the upgrade turret (`0x004527D0`'s upgrade walk; `turret_upgrade`).
 //! - A1: a paradrop plane's payload (`+0x6C9`, `paradrop_payload`).
 //!

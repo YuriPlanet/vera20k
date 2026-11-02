@@ -207,6 +207,12 @@ impl PowerBarAnimState {
         }
     }
 
+    /// Whether a visit would still slide a segment or step a flash; each
+    /// visit takes at most one step on its wall-clock timers.
+    pub fn in_motion(&self) -> bool {
+        self.animating || self.flashes_remaining > 0
+    }
+
     pub fn is_flashing(&self) -> bool {
         self.flashes_remaining > 0 && self.flashes_remaining % 2 == 0
     }

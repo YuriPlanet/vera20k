@@ -247,11 +247,9 @@ impl Simulation {
             .current_house()
             .filter(|&current| {
                 placed
-                    && crate::map::houses::is_allied_with(
-                        self.house_alliances.as_map(),
-                        self.interner.resolve(owner),
-                        self.interner.resolve(current),
-                    )
+                    && self
+                        .house_alliances
+                        .is_allied(&self.interner, owner, current)
             })
             .map(|_| origin);
         //65DB9C returns true regardless of PlaceMembers' result. Ordinary
@@ -496,11 +494,8 @@ impl Simulation {
             self.session
                 .current_house()
                 .filter(|&current| {
-                    crate::map::houses::is_allied_with(
-                        self.house_alliances.as_map(),
-                        self.interner.resolve(owner),
-                        self.interner.resolve(current),
-                    )
+                    self.house_alliances
+                        .is_allied(&self.interner, owner, current)
                 })
                 .map(|_| origin)
         });

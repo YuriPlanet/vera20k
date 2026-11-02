@@ -39,7 +39,6 @@
 mod tests;
 
 use crate::map::entities::EntityCategory;
-use crate::map::houses::is_allied_with;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::object_type::{FactoryType, ObjectType};
@@ -1122,11 +1121,9 @@ fn hostile_and_low(
     object: &GameEntity,
 ) -> bool {
     object.owner() != owner
-        && !is_allied_with(
-            sim.house_alliances.as_map(),
-            sim.interner.resolve(owner),
-            sim.interner.resolve(object.owner()),
-        )
+        && !sim
+            .house_alliances
+            .is_allied(&sim.interner, owner, object.owner())
         && !crate::sim::movement::air_movement::is_high_flying(
             object,
             Some(terrain),

@@ -3,7 +3,7 @@
 //! Event priority and consumption order are player-visible contracts; this
 //! module keeps the original handler body intact.
 
-use super::frame::FrameRenderOutcome;
+use super::frame::{FramePass, FrameRenderOutcome};
 use super::input::dispatch;
 use super::input::precedence::{InputLayer, ModalPage, ScreenPage};
 use super::{
@@ -291,21 +291,24 @@ impl App {
             state.platform.recenter_windowed = false;
         } else {
             let leaving_full_screen = state.persistence.options_profile.full_screen;
-            let displays = crate::app::display_target::current_displays(&state.platform.window);
-            let on_choice = crate::app::display_target::window_is_on(
-                &state.platform.window,
-                &displays,
-                &state.persistence.options_profile.display,
-            );
-            let pending = leaving_full_screen || state.platform.recenter_windowed;
-            if pending && !on_choice {
-                crate::app::display_target::center_windowed(
+            // Only a placement still owed asks the system for its screens: the
+            // list costs a display-list query, too much for every pass.
+            if leaving_full_screen || state.platform.recenter_windowed {
+                let displays = crate::app::display_target::current_displays(&state.platform.window);
+                let on_choice = crate::app::display_target::window_is_on(
                     &state.platform.window,
                     &displays,
                     &state.persistence.options_profile.display,
                 );
+                if !on_choice {
+                    crate::app::display_target::center_windowed(
+                        &state.platform.window,
+                        &displays,
+                        &state.persistence.options_profile.display,
+                    );
+                }
+                state.platform.recenter_windowed = !on_choice;
             }
-            state.platform.recenter_windowed = pending && !on_choice;
         }
         state.persistence.options_profile.full_screen = full_screen;
         if let Some(dialog) = state.frontend.options_dialog.as_mut() {
@@ -576,6 +579,12 @@ impl ApplicationHandler for App {
             .is_some_and(|state| state.frontend.network_goodbye_deadline.is_some())
         {
             return;
+        }
+        // Any event but a redraw may change the next picture.
+        if !matches!(event, WindowEvent::RedrawRequested)
+            && let Some(state) = self.state.as_mut()
+        {
+            state.platform.redraw_gate.note_input();
         }
         // Every screen remembers where the player puts the window.
         if matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_))
@@ -1808,7 +1817,7 @@ impl ApplicationHandler for App {
             }
             WindowEvent::Ime(ime) => crate::app::input::ime::event(state, ime),
             WindowEvent::RedrawRequested => {
-                match Self::render_frame(state, event_loop, None, None) {
+                match Self::render_frame(state, event_loop, None, None, FramePass::Draw) {
                     Ok(FrameRenderOutcome::Deferred) => {
                         event_loop.set_control_flow(ControlFlow::Poll);
                         state.platform.window.request_redraw();
@@ -1925,7 +1934,13 @@ impl ApplicationHandler for App {
         }
         if let (Some(state), Some(session)) = (self.state.as_mut(), self.tactical_capture.as_mut())
         {
-            let outcome = match Self::render_frame(state, event_loop, None, Some(&mut *session)) {
+            let outcome = match Self::render_frame(
+                state,
+                event_loop,
+                None,
+                Some(&mut *session),
+                FramePass::Draw,
+            ) {
                 Ok(outcome) => outcome,
                 Err(err) => {
                     log::error!("Tactical capture render: {err:#}");
@@ -1948,7 +1963,13 @@ impl ApplicationHandler for App {
         } else if let (Some(state), Some(session)) =
             (self.state.as_mut(), self.shell_capture.as_mut())
         {
-            let outcome = match Self::render_frame(state, event_loop, Some(&mut *session), None) {
+            let outcome = match Self::render_frame(
+                state,
+                event_loop,
+                Some(&mut *session),
+                None,
+                FramePass::Draw,
+            ) {
                 Ok(outcome) => outcome,
                 Err(err) => {
                     log::error!("Shell capture render: {err:#}");
@@ -1987,9 +2008,14 @@ impl ApplicationHandler for App {
             }
             if Self::invisible_spawn_window(state) {
                 // An invisible window receives no RedrawRequested; drive the
-                // same frame directly, as the hidden capture drivers do.
+                // same frame directly, as the hidden capture drivers do. It
+                // stands for a visible window, so a still picture is probed.
+                let pass = match state.platform.redraw_gate.next_pass() {
+                    crate::app::match_runtime::redraw_gate::NextPass::Probe => FramePass::Probe,
+                    crate::app::match_runtime::redraw_gate::NextPass::Draw => FramePass::Draw,
+                };
                 let deferred = matches!(
-                    Self::render_frame(state, event_loop, None, None),
+                    Self::render_frame(state, event_loop, None, None, pass),
                     Ok(FrameRenderOutcome::Deferred)
                 );
                 event_loop.set_control_flow(if deferred {
@@ -2026,8 +2052,7 @@ impl ApplicationHandler for App {
                         return;
                     }
                     event_loop.set_control_flow(ControlFlow::WaitUntil(
-                        Instant::now()
-                            + crate::app::match_runtime::frame_pacer::HIDDEN_SERVICE_WAKE,
+                        Instant::now() + crate::app::match_runtime::frame_pacer::SERVICE_WAKE,
                     ));
                 } else {
                     // Nothing on screen to keep fresh. Park the redraw loop
@@ -2035,10 +2060,45 @@ impl ApplicationHandler for App {
                     // wakes it, rather than rendering frames no one can see.
                     event_loop.set_control_flow(ControlFlow::Wait);
                 }
-            } else {
-                if let Some(deadline) = shell_scroll_wake {
-                    event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+            } else if state.platform.redraw_gate.next_pass()
+                == crate::app::match_runtime::redraw_gate::NextPass::Probe
+            {
+                // The presented picture still stands. Service the match as the
+                // hidden loop does; the pass draws only once the picture
+                // changed. Window events and explicit redraw requests still
+                // draw at once, and a picture that starts moving goes back to
+                // a redraw per refresh from the next refresh.
+                match Self::render_frame(state, event_loop, None, None, FramePass::Probe) {
+                    Ok(FrameRenderOutcome::Deferred) => {
+                        event_loop.set_control_flow(ControlFlow::Poll);
+                        state.platform.window.request_redraw();
+                    }
+                    outcome => {
+                        if let Err(err) = outcome {
+                            log::error!("Render: {err:#}");
+                        }
+                        if state.platform.redraw_gate.next_pass()
+                            == crate::app::match_runtime::redraw_gate::NextPass::Draw
+                        {
+                            event_loop.set_control_flow(
+                                shell_scroll_wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil),
+                            );
+                            state.platform.window.request_redraw();
+                        } else {
+                            let wake = Instant::now()
+                                + crate::app::match_runtime::frame_pacer::SERVICE_WAKE;
+                            event_loop.set_control_flow(ControlFlow::WaitUntil(
+                                shell_scroll_wake.map_or(wake, |service| service.min(wake)),
+                            ));
+                        }
+                    }
                 }
+            } else {
+                // A probe's wake must not outlive it: a past deadline would
+                // spin this loop between refreshes.
+                event_loop.set_control_flow(
+                    shell_scroll_wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil),
+                );
                 state.platform.window.request_redraw();
             }
         }

@@ -196,9 +196,7 @@ fn retail_parachute_emitter_interpolates_absolute_attachment_once_and_resets_own
         .runtime
         .simulation
         .anims_mut_for_test()
-        .get_mut(scene.canopy)
-        .unwrap()
-        .set_owner_entity_for_test(Some(other));
+        .set_owner_entity_for_test(scene.canopy, Some(other));
     scene
         .runtime
         .simulation

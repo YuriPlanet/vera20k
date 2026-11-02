@@ -187,7 +187,7 @@ fn retail_electric_assault_enables_the_coils_overpowered_weapon() {
         &f.sim,
         &f.sim.interner,
         f.sim.resolved_terrain.as_ref(),
-        Some(f.sim.house_alliances.as_map()),
+        Some(&f.sim.house_alliances),
     )
     .unwrap();
     assert_eq!(

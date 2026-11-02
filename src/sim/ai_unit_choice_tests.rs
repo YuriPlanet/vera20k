@@ -143,6 +143,54 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
     panic!("the physical GI Die1 sequence must retire and permit its replacement");
 }
 
+/// The aircraft chooser (`0x004FF210`) of a house whose teams need no
+/// aircraft has no candidates, and still draws once ([`pick`]), keeping its
+/// choice at -1.
+#[test]
+fn a_class_no_team_needs_still_draws_once() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::team_ai_ini::TeamAiIniRegistry;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\n\
+         [AircraftTypes]\n0=ORCA\n[ORCA]\nStrength=100\n",
+    ))
+    .expect("minimal rules");
+    let aimd = IniFile::from_str(
+        "[TeamTypes]\n0=TT\n[TT]\nScript=S\nTaskForce=F\n\
+         [ScriptTypes]\n0=S\n[S]\n0=5,1\n\
+         [TaskForces]\n0=F\n[F]\n0=2,E1\n",
+    );
+    let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+    let mut sim = Simulation::with_seed(0x4FF210);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.install_team_ai_registry(&registry, &rules)
+        .expect("clean fixed AIMD installs");
+    let owner = sim.interner.intern("Computer");
+    sim.houses
+        .register(HouseState::new(owner, 0, None, false, 0, 10));
+    let team_type = sim.interner.get("TT").expect("TT interned");
+    sim.create_team(team_type, Some(owner), &rules)
+        .expect("no Max= limit");
+    let mut expected = sim.scenario_rng.clone();
+    expected.next_range_i32_inclusive(0, 0x7FFF_FFFE);
+
+    choose(&mut sim, &rules, owner, UnitChoiceKind::Aircraft);
+
+    assert_eq!(
+        sim.houses[&owner]
+            .ai_unit_choices()
+            .get(UnitChoiceKind::Aircraft),
+        -1
+    );
+    assert_eq!(
+        sim.scenario_rng.logical_state(),
+        expected.logical_state(),
+        "one draw"
+    );
+}
+
 #[test]
 fn the_choosers_match_the_original() {
     for (number, row) in rows("choosers").iter().enumerate() {

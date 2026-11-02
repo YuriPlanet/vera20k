@@ -340,7 +340,7 @@ pub(super) fn resolve_receive_damage(
     rules: &RuleSet,
     interner: &StringInterner,
     houses: &crate::sim::houses::Houses,
-    alliances: &HouseAllianceMap,
+    alliances: &HouseAlliances,
     scenario_no_damage: bool,
     current_tick: u64,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
@@ -373,7 +373,7 @@ pub(super) fn resolve_receive_damage_with_input(
     rules: &RuleSet,
     interner: &StringInterner,
     houses: &crate::sim::houses::Houses,
-    alliances: &HouseAllianceMap,
+    alliances: &HouseAlliances,
     scenario_no_damage: bool,
     current_tick: u64,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
@@ -438,13 +438,7 @@ pub(super) fn resolve_receive_damage_with_input(
     // result is Techno's original-sign snapshot for the IC/FS gate; the Phobos
     // shield stage may have replaced it with the surviving damage.
 
-    let allied = |asker: InternedId, other: InternedId| {
-        crate::map::houses::is_allied_with(
-            alliances,
-            interner.resolve(asker),
-            interner.resolve(other),
-        )
-    };
+    let allied = |asker: InternedId, other: InternedId| alliances.is_allied(interner, asker, other);
     let attacker_is_allied = source_house.is_some_and(|owner| allied(owner, target.owner()));
     let source_house_is_allied = source_house.is_some_and(|owner| allied(target.owner(), owner));
     // Installed Ares TechnoClass_ReceiveDamage_Abilities1004A950, at1004AA5F:
@@ -584,7 +578,7 @@ pub(crate) fn wave_post_object_damage(
     rules: &RuleSet,
     interner: &StringInterner,
     houses: &crate::sim::houses::Houses,
-    alliances: &HouseAllianceMap,
+    alliances: &HouseAlliances,
     scenario_no_damage: bool,
     current_tick: u64,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
@@ -777,7 +771,7 @@ mod house_damage_tests {
             &rules,
             &sim.interner,
             &sim.houses,
-            sim.house_alliances.as_map(),
+            &sim.house_alliances,
             false,
             0,
             sim.resolved_terrain(),

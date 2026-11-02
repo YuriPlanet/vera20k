@@ -777,7 +777,7 @@ pub fn can_enter_transport(
     // 0x00737430). A Grinder answers ROGER but carries no one.
     transport_obj.passengers > 0
         && crate::sim::combat::combat_weapon::is_ally_by_object(
-            Some(sim.house_alliances.as_map()),
+            Some(&sim.house_alliances),
             &sim.interner,
             passenger.owner(),
             transport.owner(),
@@ -798,6 +798,11 @@ pub fn can_enter_transport(
 /// RESIDUALS: the `Assaulter=` arm (`0x00457DAD..0x00457DD3`: an
 /// assaulter may enter an occupied building of a house it is not allied
 /// with) is not represented. No retail infantry is an assaulter.
+/// Native tests the current mission `+0xAC` for Construction and Selling
+/// (`0x00457D07..0x00457D19`); `building_up`/`building_down` ask the
+/// effective mission, so a building whose current mission is still -1 with
+/// either queued (its placement frame, a sale's queue frame) refuses one
+/// frame early.
 pub fn can_dock_occupier_garrison(
     passenger: &GameEntity,
     building: &GameEntity,

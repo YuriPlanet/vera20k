@@ -124,11 +124,9 @@ impl Simulation {
             return;
         };
         let (capacity, refinery) = (object.storage, object.refinery);
-        let silo = rules
-            .art()
-            .resolve_metadata_entry(self.interner.resolve(entity.type_ref()), &object.image)
-            .is_some_and(|art| art.silo_damage);
-        if silo {
+        // The type's ART resolved from its own ID, which names it as the
+        // entity's type reference does.
+        if object.silo_damage(rules) {
             let frame = entity.building_art.storage.silo_frame(capacity);
             if frame == 0 {
                 self.clear_building_anim_slot(id, 10);

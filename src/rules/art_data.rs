@@ -16,6 +16,7 @@ use thiserror::Error;
 use crate::rules::flh::Flh;
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::object_type::{BuildingHiddenOccupancyProfile, HIDDEN_OCCUPY_SLOT_COUNT};
+use crate::util::lookup_hash::LookupMap;
 use crate::util::native_x87::NativeF64Bits;
 
 /// A war factory's unload art, read by `BuildingTypeClass::LoadVisualAssets
@@ -921,8 +922,9 @@ pub struct ArtRegistry {
     can_hide_things: HashMap<String, bool>,
     /// section ID (uppercase) -> `OccupyHeight=`, defaulting to art `Height=`.
     occupy_heights: HashMap<String, i32>,
-    /// section ID (uppercase) -> generic AnimType runtime metadata.
-    anim_runtime_configs: HashMap<String, AnimTypeRuntimeConfig>,
+    /// section ID (uppercase) -> generic AnimType runtime metadata. Every
+    /// anim reads its type's here each frame; only looked up.
+    anim_runtime_configs: LookupMap<String, AnimTypeRuntimeConfig>,
     /// First native Anim slot's immutable image projection. Unlike orphan
     /// ART metadata, these requests came from the retained ProcessedType.
     anim_type_images: HashMap<String, crate::rules::object_image::ObjectImageState>,
@@ -1051,7 +1053,8 @@ impl ArtRegistry {
         let mut entry_names: HashMap<String, String> = HashMap::new();
         let mut can_hide_things: HashMap<String, bool> = HashMap::new();
         let mut occupy_heights: HashMap<String, i32> = HashMap::new();
-        let mut anim_runtime_configs: HashMap<String, AnimTypeRuntimeConfig> = HashMap::new();
+        let mut anim_runtime_configs: LookupMap<String, AnimTypeRuntimeConfig> =
+            LookupMap::default();
         let mut anim_theater_flags = HashMap::new();
         let mut damage_fire_offsets_valid = true;
 
@@ -1342,7 +1345,7 @@ impl ArtRegistry {
             entry_names: HashMap::new(),
             can_hide_things: HashMap::new(),
             occupy_heights: HashMap::new(),
-            anim_runtime_configs: HashMap::new(),
+            anim_runtime_configs: LookupMap::default(),
             anim_type_images: HashMap::new(),
             anim_theater_flags: HashMap::new(),
             scheduler_anim_types: BTreeSet::new(),
@@ -1370,7 +1373,16 @@ impl ArtRegistry {
 
     /// Generic native-like AnimType runtime metadata for an art section.
     pub fn anim_runtime_config(&self, image_id: &str) -> Option<&AnimTypeRuntimeConfig> {
-        self.anim_runtime_configs.get(&image_id.to_uppercase())
+        // An ASCII name without a lowercase letter is its own uppercase and
+        // needs no uppercase copy.
+        if image_id
+            .bytes()
+            .all(|byte| byte.is_ascii() && !byte.is_ascii_lowercase())
+        {
+            self.anim_runtime_configs.get(image_id)
+        } else {
+            self.anim_runtime_configs.get(&image_id.to_uppercase())
+        }
     }
 
     /// Apply the canonical RulesClass processing receipt before asset binding.

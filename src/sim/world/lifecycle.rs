@@ -777,6 +777,13 @@ pub enum LifecycleOutput {
     BuildingProductionAbandoned {
         owner: InternedId,
     },
+    /// BuildingChangeOwner448C9A..448CD6: a Construction Yard leaving a
+    /// human player (IsHumanPlayer50B6F0) clears that player's current
+    /// placement (Display PendingObject/Type/House) and cursor (4A8BF0).
+    /// The saved retry and the ready product stay.
+    ConstructionYardCaptured {
+        owner: InternedId,
+    },
     /// Logic55AFB0 increments the process FPS sample even on terminal frames.
     LogicVisit,
     /// Logic55B5C3 updates existing lasers before the live object visits.
@@ -4316,7 +4323,7 @@ impl Simulation {
         let allied_with = |sim: &Self, contact: u64| {
             sim.substrate.entities.get(contact).is_some_and(|contact| {
                 crate::sim::combat::combat_weapon::is_ally_by_object(
-                    Some(sim.house_alliances.as_map()),
+                    Some(&sim.house_alliances),
                     &sim.interner,
                     owner,
                     contact.owner(),
@@ -4699,14 +4706,7 @@ impl Simulation {
     /// VERA-only: feeds the expiry-listener index (`ExpiryListeners`) so the
     /// `0x007258D0` broadcast skips entities; the listener's fields are the truth.
     pub(super) fn entity_expiry_holds(listener: &GameEntity, mut name: impl FnMut(u64)) -> bool {
-        if let Some(anim) = listener.parachute_animation() {
-            name(anim);
-        }
-        if let Some(anim) = listener.emp_sparkle() {
-            name(anim);
-        }
-        #[cfg(feature = "ares")]
-        listener.attached_effect_anims().for_each(&mut name);
+        listener.held_anims().for_each(&mut name);
         for target in [
             listener.attack_target.target(),
             listener.suspended_attack_target.target(),
@@ -4762,12 +4762,6 @@ impl Simulation {
         .into_iter()
         .flatten()
         .for_each(&mut name);
-        listener
-            .parasite
-            .class()
-            .and_then(|class| class.grapple_anim())
-            .into_iter()
-            .for_each(&mut name);
         listener.mega_mission.referenced_ids().for_each(&mut name);
         listener.distributed_fire_references().for_each(&mut name);
         // The SpawnManager, CaptureManager and TemporalClass forwards act on
@@ -5628,9 +5622,11 @@ impl Simulation {
         if !self.substrate.anims.contains_key(expired_id) {
             return;
         }
-        let holders = self
-            .expiry_listeners
-            .entities_reached_by(&mut self.substrate.entities, expired_id);
+        // VERA-only: each callback below clears only its own entity's fields
+        // that name the Anim (`GameEntity::held_anims`) and draws nothing, so
+        // visiting just the entities the anim-holder index finds, ascending,
+        // changes exactly what visiting every entity would.
+        let holders = self.substrate.entities.take_anim_holders(expired_id);
         for owner in holders {
             if let Some(entity) = self.substrate.entities.get_mut(owner) {
                 // Techno's Anim callback710455 reaches Object5F6DA0.

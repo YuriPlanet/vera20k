@@ -183,7 +183,7 @@ fn custom_armor_positive_receive_and_estimate_share_the_effective_record() {
         &rules,
         &sim.interner,
         &sim.houses,
-        sim.house_alliances.as_map(),
+        &sim.house_alliances,
         false,
         0,
         sim.resolved_terrain.as_ref(),
@@ -205,7 +205,7 @@ fn custom_armor_threat_score_consumes_both_effectiveness_terms() {
             &rules,
             &sim.interner,
             sim.resolved_terrain.as_ref(),
-            Some(sim.house_alliances.as_map()),
+            Some(&sim.house_alliances),
             greatest_threat::ThreatCoefficients {
                 my_effectiveness: mine,
                 target_effectiveness: theirs,

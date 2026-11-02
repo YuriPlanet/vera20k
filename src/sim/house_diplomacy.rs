@@ -46,7 +46,12 @@
 //!   graph and fog each frame.
 //! - IsParanoid (`+0x24A`, `0x005016D5`) has no reader and is not stored.
 
-use crate::map::houses::{HouseAllianceMap, HouseRoster, normalize_house_name};
+use std::collections::BTreeSet;
+use std::sync::{Arc, OnceLock};
+
+use crate::map::houses::{
+    HouseAllianceMap, HouseRoster, is_allied_with, normalize_house_name, with_house_key,
+};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
@@ -54,6 +59,7 @@ use crate::sim::combat::combat_weapon::is_ally_by_object;
 use crate::sim::house_strategy::update_anger_nodes;
 use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
+use crate::sim::touch_log::live_read_check_enabled;
 use crate::sim::vision::RevealViewers;
 use crate::sim::world::{FrameEffects, Simulation};
 
@@ -69,22 +75,144 @@ pub(crate) enum HouseAllianceAdmission<'a> {
 /// Only this module writes it: the install, MakeAlly and MakeEnemy, each of
 /// which also forgets the reveal viewers. Serialized and hashed exactly as
 /// the bare map it wraps.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+///
+/// Simulation readers ask it by house id ([`Self::is_allied`],
+/// [`Self::allied_to`]) and get the by-name answer from a derived
+/// [`AllyMatrix`], built at the first question after a change. The graph is
+/// its source of truth: a replaced graph or the test accessor drops it, a
+/// load or a new graph starts without it, and a bit write updates it in
+/// place, or drops it when a new ally has no row. Debug builds check it
+/// against the graph when it is built and at each answer it gives. Never
+/// saved, hashed or compared.
+///
+/// A clone shares the graph and the matrix until a write copies the one it
+/// changes, so the wave damage pass's snapshot copies neither.
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub(crate) struct HouseAlliances(HouseAllianceMap);
+pub struct HouseAlliances {
+    #[serde(serialize_with = "save_graph", deserialize_with = "load_graph")]
+    graph: Arc<HouseAllianceMap>,
+    #[serde(skip)]
+    matrix: OnceLock<Option<Arc<AllyMatrix>>>,
+}
+
+fn save_graph<S: serde::Serializer>(
+    graph: &Arc<HouseAllianceMap>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serde::Serialize::serialize(&**graph, serializer)
+}
+
+fn load_graph<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Arc<HouseAllianceMap>, D::Error> {
+    <HouseAllianceMap as serde::Deserialize>::deserialize(deserializer).map(Arc::new)
+}
+
+impl std::fmt::Debug for HouseAlliances {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("HouseAlliances").field(&self.graph).finish()
+    }
+}
+
+impl PartialEq for HouseAlliances {
+    fn eq(&self, other: &Self) -> bool {
+        self.graph == other.graph
+    }
+}
+
+impl Eq for HouseAlliances {}
 
 impl HouseAlliances {
-    pub(crate) fn as_map(&self) -> &HouseAllianceMap {
-        &self.0
+    /// A graph with no matrix built yet.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn new(graph: HouseAllianceMap) -> Self {
+        Self {
+            graph: Arc::new(graph),
+            matrix: OnceLock::new(),
+        }
+    }
+
+    /// The graph by normalized house name, as saved and hashed.
+    pub fn as_map(&self) -> &HouseAllianceMap {
+        &self.graph
+    }
+
+    /// `HouseClass::IsAlliedWith @ 0x004F9A50`: whether `asker`'s own ally
+    /// mask holds `other`, one-way; a house is its own ally. It answers as
+    /// [`is_allied_with`] does for the two names.
+    pub fn is_allied(
+        &self,
+        interner: &StringInterner,
+        asker: InternedId,
+        other: InternedId,
+    ) -> bool {
+        self.allied_to(interner, other)(asker)
+    }
+
+    /// [`Self::is_allied`] of many askers about one `other`, which looks up
+    /// `other`'s matrix bit once: whether each asker counts `other` an ally.
+    pub(crate) fn allied_to<'a>(
+        &'a self,
+        interner: &'a StringInterner,
+        other: InternedId,
+    ) -> impl Fn(InternedId) -> bool + 'a {
+        let other_bit = self
+            .matrix(interner)
+            .and_then(|matrix| Some((matrix, row_bit(matrix.row(other)?))));
+        move |asker| {
+            // The by-name test's case-insensitive self arm: one interner's
+            // distinct ids never name strings equal under ASCII case folding.
+            if asker == other {
+                return true;
+            }
+            let Some(allied) = other_bit.and_then(|(matrix, bit)| matrix.holds_bit(asker, bit))
+            else {
+                return self.by_name(interner, asker, other);
+            };
+            debug_assert!(
+                !live_read_check_enabled() || allied == self.by_name(interner, asker, other),
+                "ally matrix differs from the graph: {} -> {}",
+                interner.resolve(asker),
+                interner.resolve(other),
+            );
+            allied
+        }
+    }
+
+    /// The graph's answer by name ([`is_allied_with`]).
+    fn by_name(&self, interner: &StringInterner, asker: InternedId, other: InternedId) -> bool {
+        is_allied_with(
+            &self.graph,
+            interner.resolve(asker),
+            interner.resolve(other),
+        )
+    }
+
+    /// The matrix, built on first use, when it answers for `interner`'s ids.
+    fn matrix(&self, interner: &StringInterner) -> Option<&AllyMatrix> {
+        self.matrix
+            .get_or_init(|| AllyMatrix::build(&self.graph, interner).map(Arc::new))
+            .as_deref()
+            .filter(|matrix| matrix.interner == interner.serial())
     }
 
     fn replace(&mut self, alliances: HouseAllianceMap) {
-        self.0 = alliances;
+        self.graph = Arc::new(alliances);
+        self.matrix = OnceLock::new();
     }
 
     /// Write `owner_key`'s ally bit for `other_key` (normalized house names).
     fn set_ally_bit(&mut self, owner_key: String, other_key: String, allied: bool) {
-        let allies = self.0.entry(owner_key).or_default();
+        let kept = self.matrix.get_mut().is_none_or(|built| {
+            built
+                .as_mut()
+                .is_some_and(|matrix| Arc::make_mut(matrix).set(&owner_key, &other_key, allied))
+        });
+        if !kept {
+            self.matrix = OnceLock::new();
+        }
+        let allies = Arc::make_mut(&mut self.graph).entry(owner_key).or_default();
         if allied {
             allies.insert(other_key);
         } else {
@@ -94,7 +222,125 @@ impl HouseAlliances {
 
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn as_map_mut_for_test(&mut self) -> &mut HouseAllianceMap {
-        &mut self.0
+        self.matrix = OnceLock::new();
+        Arc::make_mut(&mut self.graph)
+    }
+}
+
+/// [`HouseAlliances`]' graph as ally masks, read through one interner: a row
+/// per house name with an ally or in an ally set (the launch graph also keys
+/// every roster house and slot, most with no ally) and the row of each id the
+/// interner held at the build, by the same key ([`with_house_key`]) the
+/// by-name test uses. It cannot answer for an id interned later or from
+/// another interner, and is not built for more names than a mask has bits;
+/// those questions go to the graph by name.
+#[derive(Debug, Clone)]
+struct AllyMatrix {
+    /// The [`StringInterner::serial`] the id rows were read through.
+    interner: u64,
+    /// Those house names in graph order; a name's index is its row.
+    names: Vec<String>,
+    /// By `InternedId::index`: the row of the id's name, or [`NO_ROW`].
+    rows: Vec<u8>,
+    /// Bit `c` of `allies[r]`: row `r`'s ally set holds row `c`'s name.
+    allies: [u64; MATRIX_ROWS],
+}
+
+const MATRIX_ROWS: usize = u64::BITS as usize;
+/// An id whose name has no ally and is in no ally set: it is allied with
+/// nobody but itself, and nobody else is allied with it.
+const NO_ROW: u8 = u8::MAX;
+
+/// Row `row`'s bit in a mask; none for [`NO_ROW`].
+fn row_bit(row: u8) -> u64 {
+    1u64.checked_shl(u32::from(row)).unwrap_or(0)
+}
+
+impl AllyMatrix {
+    fn build(graph: &HouseAllianceMap, interner: &StringInterner) -> Option<Self> {
+        let names: BTreeSet<&String> = graph
+            .iter()
+            .filter(|(_, allies)| !allies.is_empty())
+            .flat_map(|(house, allies)| std::iter::once(house).chain(allies))
+            .collect();
+        if names.len() > MATRIX_ROWS {
+            return None;
+        }
+        let mut matrix = Self {
+            interner: interner.serial(),
+            names: names.into_iter().cloned().collect(),
+            rows: Vec::new(),
+            allies: [0; MATRIX_ROWS],
+        };
+        matrix.rows = (0..interner.len() as u32)
+            .map(|index| {
+                let name = interner.resolve(InternedId::from_index(index));
+                with_house_key(name, |key| matrix.name_row(key)).unwrap_or(NO_ROW)
+            })
+            .collect();
+        for (house, allies) in graph {
+            for ally in allies {
+                matrix.set(house, ally, true);
+            }
+        }
+        if live_read_check_enabled() {
+            let housed: Vec<_> = (0..matrix.rows.len() as u32)
+                .map(InternedId::from_index)
+                .filter(|&id| matrix.row(id) != Some(NO_ROW))
+                .collect();
+            for &asker in &housed {
+                for &other in &housed {
+                    assert_eq!(
+                        asker == other || matrix.holds(asker, other) == Some(true),
+                        is_allied_with(graph, interner.resolve(asker), interner.resolve(other)),
+                        "ally matrix built unlike the graph: {} -> {}",
+                        interner.resolve(asker),
+                        interner.resolve(other),
+                    );
+                }
+            }
+        }
+        Some(matrix)
+    }
+
+    fn name_row(&self, name: &str) -> Option<u8> {
+        self.names
+            .binary_search_by(|probe| probe.as_str().cmp(name))
+            .ok()
+            .map(|row| row as u8)
+    }
+
+    /// `id`'s row, when the matrix covers it.
+    fn row(&self, id: InternedId) -> Option<u8> {
+        self.rows.get(id.index() as usize).copied()
+    }
+
+    /// Whether `asker`'s ally set holds `other`, when both are covered.
+    fn holds(&self, asker: InternedId, other: InternedId) -> Option<bool> {
+        let bit = row_bit(self.row(other)?);
+        self.holds_bit(asker, bit)
+    }
+
+    /// Whether `asker`'s ally set holds the name whose [`row_bit`] is `bit`,
+    /// when `asker` is covered.
+    fn holds_bit(&self, asker: InternedId, bit: u64) -> Option<bool> {
+        let allies = self.allies.get(usize::from(self.row(asker)?)).copied();
+        Some(allies.is_some_and(|allies| allies & bit != 0))
+    }
+
+    /// Write the bit; false for a new ally without a row. A name without a
+    /// row has no ally and is in no set, so it has no bit to clear.
+    fn set(&mut self, owner: &str, other: &str, allied: bool) -> bool {
+        let (Some(owner), Some(other)) = (self.name_row(owner), self.name_row(other)) else {
+            return !allied;
+        };
+        let (owner, other) = (usize::from(owner), usize::from(other));
+        if allied {
+            self.allies[owner] |= 1 << other;
+        } else {
+            self.allies[owner] &= !(1 << other);
+        }
+        true
     }
 }
 
@@ -308,7 +554,7 @@ impl Simulation {
             .unwrap_or(0);
         update_anger_nodes(
             &mut self.houses,
-            self.house_alliances.as_map(),
+            &self.house_alliances,
             &self.interner,
             owner,
             other,
@@ -360,7 +606,7 @@ impl Simulation {
                 };
                 if let Some(target_owner) = self.substrate.entities.get(target).map(|t| t.owner())
                     && is_ally_by_object(
-                        Some(self.house_alliances.as_map()),
+                        Some(&self.house_alliances),
                         &self.interner,
                         owner,
                         target_owner,
@@ -404,19 +650,14 @@ impl Simulation {
         // 0x004F9FDD..0x004F9FE2.
         update_anger_nodes(
             &mut self.houses,
-            self.house_alliances.as_map(),
+            &self.house_alliances,
             &self.interner,
             owner,
             other,
             1,
         );
         // 0x004F9FE7..0x004FA01A: only an alliance is broken.
-        if is_ally_by_object(
-            Some(self.house_alliances.as_map()),
-            &self.interner,
-            owner,
-            other,
-        ) {
+        if is_ally_by_object(Some(&self.house_alliances), &self.interner, owner, other) {
             Self::set_ally_bit(
                 &self.interner,
                 &mut self.house_alliances,
@@ -429,12 +670,7 @@ impl Simulation {
             // 0x004FA067..0x004FA0DF: the other house breaks its side too, then
             // rescans its enemy: native passes it as both house and peer, and a
             // house holds no anger node of its own.
-            let both = is_ally_by_object(
-                Some(self.house_alliances.as_map()),
-                &self.interner,
-                other,
-                owner,
-            );
+            let both = is_ally_by_object(Some(&self.house_alliances), &self.interner, other, owner);
             if both {
                 Self::set_ally_bit(
                     &self.interner,
@@ -447,7 +683,7 @@ impl Simulation {
                 self.rebuild_house_spatial_threat(other, rules);
                 update_anger_nodes(
                     &mut self.houses,
-                    self.house_alliances.as_map(),
+                    &self.house_alliances,
                     &self.interner,
                     other,
                     other,
@@ -488,12 +724,7 @@ impl Simulation {
         let line = game_mode_nonzero && human && (!formed || !passive_target);
         let local = self.session.current_house();
         let allied = |asker, house| {
-            is_ally_by_object(
-                Some(self.house_alliances.as_map()),
-                &self.interner,
-                asker,
-                house,
-            )
+            is_ally_by_object(Some(&self.house_alliances), &self.interner, asker, house)
         };
         // Every voice sits inside the line's gate (0x004F9D72..0x004F9D8D and
         // 0x004FA0EB..0x004FA106 jump past both).
@@ -540,12 +771,7 @@ impl Simulation {
     /// `HouseClass::Can_Ally @ 0x00501540`, including its initialization gate.
     fn can_ally(&self, owner: InternedId, other: InternedId, rules: &RuleSet) -> bool {
         // 0x00501548..0x00501579: itself, or an existing ally.
-        if is_ally_by_object(
-            Some(self.house_alliances.as_map()),
-            &self.interner,
-            owner,
-            other,
-        ) {
+        if is_ally_by_object(Some(&self.house_alliances), &self.interner, owner, other) {
             return false;
         }
         let (Some(house), Some(_)) = (self.houses.get(&owner), self.houses.get(&other)) else {
@@ -579,12 +805,7 @@ impl Simulation {
                 continue;
             }
             live += 1;
-            if is_ally_by_object(
-                Some(self.house_alliances.as_map()),
-                &self.interner,
-                owner,
-                peer,
-            ) {
+            if is_ally_by_object(Some(&self.house_alliances), &self.interner, owner, peer) {
                 friends += 1;
             }
         }

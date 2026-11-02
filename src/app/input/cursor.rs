@@ -1663,6 +1663,8 @@ pub(crate) struct CursorAnimation {
     shape: Option<CursorId>,
     frame: usize,
     anchor_ms: u64,
+    /// When the next draw steps the frame; `None` for a still shape.
+    next_step_ms: Option<u64>,
 }
 
 impl CursorAnimation {
@@ -1671,6 +1673,7 @@ impl CursorAnimation {
             shape: None,
             frame: 0,
             anchor_ms: 0,
+            next_step_ms: None,
         }
     }
 
@@ -1682,21 +1685,32 @@ impl CursorAnimation {
         interval_ms: u64,
         now_ms: u64,
     ) -> usize {
+        let animated = frame_count > 1 && interval_ms > 0;
         if self.shape != Some(id) {
             self.shape = Some(id);
             self.frame = 0;
             self.anchor_ms = now_ms;
+            self.next_step_ms = animated.then(|| now_ms.saturating_add(interval_ms));
             return 0;
         }
-        if frame_count <= 1 || interval_ms == 0 {
+        if !animated {
+            self.next_step_ms = None;
             return 0;
         }
         if now_ms.saturating_sub(self.anchor_ms) >= interval_ms {
             self.frame = (self.frame + 1) % frame_count;
             self.anchor_ms = now_ms;
         }
+        self.next_step_ms = Some(self.anchor_ms.saturating_add(interval_ms));
         self.frame
     }
+}
+
+/// Whether the drawn software cursor's next frame is due: the next draw
+/// would step it.
+pub(crate) fn animation_step_due() -> bool {
+    let next = CURSOR_ANIMATION.with(|cell| cell.get().next_step_ms);
+    next.is_some_and(|next| cursor_animation_now_ms() >= next)
 }
 
 thread_local! {
@@ -1721,11 +1735,7 @@ pub(crate) fn software_cursor_frame_for(
     if sequence.frames.is_empty() {
         return None;
     }
-    let now_ms: u64 = cursor_animation_start()
-        .elapsed()
-        .as_millis()
-        .try_into()
-        .unwrap_or(u64::MAX);
+    let now_ms = cursor_animation_now_ms();
     let frame_idx = CURSOR_ANIMATION.with(|cell| {
         let mut animation = cell.get();
         let idx = animation.advance(id, sequence.frames.len(), sequence.interval_ms, now_ms);
@@ -1743,9 +1753,14 @@ pub(crate) fn current_software_cursor_frame(
     software_cursor_frame_for(CursorId::Default, sequence)
 }
 
-fn cursor_animation_start() -> &'static Instant {
+fn cursor_animation_now_ms() -> u64 {
     static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
-    START.get_or_init(Instant::now)
+    START
+        .get_or_init(Instant::now)
+        .elapsed()
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX)
 }
 
 pub(crate) fn current_sidebar_view_hit(state: &AppState) -> bool {
@@ -3827,9 +3842,13 @@ mod cursor_animation_tests {
         let mut anim = CursorAnimation::new();
         anim.advance(CursorId::Move, 10, INTERVAL_MS, 0);
         assert_eq!(anim.advance(CursorId::Move, 10, INTERVAL_MS, 63), 0);
+        // The redraw gate's deadline: the draw that steps the frame.
+        assert_eq!(anim.next_step_ms, Some(64));
         assert_eq!(anim.advance(CursorId::Move, 10, INTERVAL_MS, 64), 1);
+        assert_eq!(anim.next_step_ms, Some(128));
         // A 1-second stall still yields a single step.
         assert_eq!(anim.advance(CursorId::Move, 10, INTERVAL_MS, 1_064), 2);
+        assert_eq!(anim.next_step_ms, Some(1_128));
     }
 
     #[test]
@@ -3876,6 +3895,10 @@ mod cursor_animation_tests {
         let mut anim = CursorAnimation::new();
         anim.advance(CursorId::IronCurtain, 5, 0, 0);
         assert_eq!(anim.advance(CursorId::IronCurtain, 5, 0, 10_000), 0);
+        assert_eq!(
+            anim.next_step_ms, None,
+            "nothing for the redraw gate to wait on"
+        );
     }
 
     /// Harvest shares cursor row 21 with an out-of-range attack, and is not the

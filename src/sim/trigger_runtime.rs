@@ -1738,9 +1738,10 @@ impl Simulation {
                             self.interner.resolve(kind),
                         )
                         .is_some()
-                    && rules.type_array_index(
+                    && self.interner.type_array_index(
+                        kind,
                         crate::rules::object_type::ObjectCategory::Infantry,
-                        self.interner.resolve(kind),
+                        rules,
                     ) == Some(condition.value);
                 if matched {
                     *persistence = true;

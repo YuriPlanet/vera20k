@@ -314,6 +314,7 @@ impl Probe {
             if piece != CellRasterPiece::Body {
                 let (atlas, _) = shadow.as_ref().expect("native shadow comparison resources");
                 crate::app::presentation::instances::bridges::build_bridge_shadow_instances_inner(
+                    crate::render::cell_window::CellWindow::Whole,
                     terrain,
                     atlas,
                     &self.names,

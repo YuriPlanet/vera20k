@@ -3161,7 +3161,7 @@ mod tests {
         for row in corpus["type_inputs"].as_array().unwrap() {
             let object = rules.object(row["id"].as_str().unwrap()).unwrap();
             assert_eq!(
-                rules.house_type_mask(&object.owner),
+                object.owner_mask(&rules),
                 row["owner_mask"].as_u64().unwrap() as u32,
                 "{} Owner mask",
                 row["id"],
@@ -3302,7 +3302,7 @@ mod tests {
             let rules = RuleSet::from_ini(&ini).unwrap();
             let object = rules.object(type_id).unwrap();
             assert_eq!(
-                rules.house_type_mask(&object.owner),
+                object.owner_mask(&rules),
                 gate["owner_mask"].as_u64().unwrap() as u32
             );
             assert_eq!(
@@ -4742,9 +4742,10 @@ mod tests {
             ry: 40,
         };
         let mut map = one_start_prefix_map(start);
-        map.entities = crate::map::entities::parse_map_entities(&IniFile::from_str(
-            "[Structures]\n0=Neutral,CABHUT,256,30,30,0,None\n",
-        ));
+        map.entities = crate::map::entities::parse_map_entities(
+            &IniFile::from_str("[Structures]\n0=Neutral,CABHUT,256,30,30,0,None\n"),
+            4,
+        );
         let roster = HouseRoster::default();
         let overlays = OverlayTypeRegistry::empty();
         for (handle, with_ai, owner_key) in [
@@ -5770,7 +5771,7 @@ mod tests {
             recruitable_b: true,
             group: -1,
             follows: None,
-            structure_upgrades: [None, None, None],
+            structure_columns: Default::default(),
             structure_ai_sellable: false,
             structure_ai_repairable: false,
             structure_online: true,
@@ -6246,7 +6247,7 @@ mod tests {
         let overlays = OverlayTypeRegistry::from_ini(&ini, None);
         let map = MapFile::from_bytes(
             b"[Map]\nTheater=TEMPERATE\nSize=0,0,40,40\nLocalSize=2,2,36,32\n\
-              [Basic]\nName=GSI 04.12 owner fixture\n\
+              [Basic]\nName=GSI 04.12 owner fixture\nNewINIFormat=4\n\
               [Structures]\n\
               0=Neutral,CABHUT,256,30,30,0,None\n\
               1=Neutral,CATHOSP,256,32,32,0,None\n\

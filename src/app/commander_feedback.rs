@@ -538,7 +538,7 @@ impl CommanderFeedback {
             .is_some_and(|house| house.is_defeated());
         // The alliance map the tactical presentation itself reads: the same
         // answer the player sees on screen decides who is a friendly commander.
-        let alliances = sim.house_alliances();
+        let alliances = sim.house_alliances().as_map();
         let local_name = sim.resolve(local);
         // First contact is the local player's own sight test, so it runs on its
         // own cadence and stops as soon as every opponent has been met. Allies

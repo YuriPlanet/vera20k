@@ -351,7 +351,7 @@ impl Simulation {
         let occupancy = &self.substrate.occupancy;
         let entities = &self.substrate.entities;
         let interner = &self.interner;
-        let house_alliances = self.house_alliances.as_map();
+        let house_alliances = &self.house_alliances;
         let collision_world = super::projectile_collision::ProjectileCollisionWorld {
             terrain,
             dummy: &shared_cell_dummy,
@@ -552,9 +552,7 @@ impl Simulation {
         // An infantry corpse is no dying object: it keeps IsAlive at Health 0
         // and takes the ordinary visit below (`world::infantry_death`).
         if entity.death.is_dying() {
-            let type_ref = entity.type_ref();
-            let type_name = self.interner.resolve(type_ref);
-            let sequence_set = rules.animation_sequence(type_name);
+            let sequence_set = self.interner.animation_sequence(entity.type_ref(), rules);
             let finished = crate::sim::animation::tick_dying_animation(
                 self.substrate
                     .entities
@@ -1280,9 +1278,11 @@ fn self_heal_step(
     let Some(entity) = substrate.entities.get(id) else {
         return;
     };
+    // As `rules.object(name)` answers; an id the interner never made names
+    // nothing.
     let Some(object) = interner
         .try_resolve(entity.type_ref())
-        .and_then(|type_id| rules.object(type_id))
+        .and_then(|_| interner.object_type(entity.type_ref(), rules))
     else {
         return;
     };
@@ -1375,7 +1375,6 @@ fn drop_unsensed_cloaked_target_step(
         return;
     };
     let owner = entity.owner();
-    let owner_str = sim.interner.resolve(owner).to_owned();
     let Some(target) = sim.substrate.entities.get(target_id) else {
         return;
     };
@@ -1387,11 +1386,10 @@ fn drop_unsensed_cloaked_target_step(
         return;
     }
     let target_cell = (target.position.rx(), target.position.ry());
-    if crate::map::houses::is_allied_with(
-        sim.house_alliances.as_map(),
-        &owner_str,
-        sim.interner.resolve(target.owner()),
-    ) {
+    if sim
+        .house_alliances
+        .is_allied(&sim.interner, owner, target.owner())
+    {
         return;
     }
     if sim
@@ -1868,7 +1866,7 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         return;
     };
     if !combat_weapon::is_ally_by_object(
-        Some(sim.house_alliances.as_map()),
+        Some(&sim.house_alliances),
         &sim.interner,
         house,
         target.owner(),
@@ -2062,7 +2060,7 @@ fn screen_visual_character(
     use crate::sim::combat::combat_weapon::is_ally_by_object;
     let viewer = sim.session.current_house();
     let owner = entity.owner();
-    let allied = |a, b| is_ally_by_object(Some(sim.house_alliances.as_map()), &sim.interner, a, b);
+    let allied = |a, b| is_ally_by_object(Some(&sim.house_alliances), &sim.interner, a, b);
     let invisible = sim
         .interner
         .object_type(entity.type_ref(), rules)
@@ -2135,7 +2133,7 @@ fn healer_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         };
         sim.substrate.entities.get(target_id).is_some_and(|object| {
             combat_weapon::is_ally_by_object(
-                Some(sim.house_alliances.as_map()),
+                Some(&sim.house_alliances),
                 &sim.interner,
                 entity.owner(),
                 object.owner(),
@@ -3343,7 +3341,7 @@ mod tests {
             recruitable_b: true,
             group: -1,
             follows: None,
-            structure_upgrades: [None, None, None],
+            structure_columns: Default::default(),
             structure_ai_sellable: false,
             structure_ai_repairable: false,
             structure_online: true,

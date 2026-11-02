@@ -4,4 +4,4 @@ unicorn==2.1.4
 # Static native instruction inspection and synthetic scan tests.
 capstone==5.0.7
 # Image decoding and resampling for tools/end_game_cards.py and its tests.
-Pillow==12.3.0
+Pillow==13.0.0

@@ -59,9 +59,47 @@ struct FootSearchEntry<'a> {
     /// The unlifted mover's own cell. Lifting it would change any answer
     /// about that cell, so asking one marks the search.
     own_cell: Option<(i16, i16)>,
+    /// The own cell's index on a regular terrain, where a real candidate is
+    /// at the own cell exactly when it has that index
+    /// ([`crate::map::resolved_terrain::ResolvedTerrainGrid::regular_cell_index`]).
+    own_index: Option<usize>,
     read_own_cell: std::cell::Cell<bool>,
+    /// The cell asked from: an expansion asks about up to eight neighbours
+    /// from one cell.
+    previous: LastRealCell,
     /// A Unit whose type is `Passive=`.
     passive_unit: bool,
+    /// The path batch's test whether a re-path goes on
+    /// ([`crate::sim::pathfinding::SearchFootEntry::keeps_searching`]);
+    /// none for every other search.
+    keep_searching: Option<&'a dyn Fn(u32) -> bool>,
+}
+
+/// The last coordinate whose lookup found a real cell, with that cell. Such
+/// a lookup has no side effect, so it is not repeated; one that misses
+/// stamps the shared Dummy, so it is made at each ask.
+#[derive(Default)]
+struct LastRealCell(std::cell::Cell<Option<((u16, u16), NativeCellIdentity)>>);
+
+impl LastRealCell {
+    /// `terrain`'s cell at `coord`
+    /// ([`crate::map::resolved_terrain::ResolvedTerrainGrid::native_cell_identity`]).
+    fn lookup(
+        &self,
+        terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
+        coord: (u16, u16),
+    ) -> NativeCellIdentity {
+        if let Some((kept, cell)) = self.0.get()
+            && kept == coord
+        {
+            return cell;
+        }
+        let cell = terrain.native_cell_identity((coord.0 as i16, coord.1 as i16));
+        if let NativeCellIdentity::Real(_) = cell {
+            self.0.set(Some((coord, cell)));
+        }
+        cell
+    }
 }
 
 /// Whether Mark0 has lifted the searching mover off its cell.
@@ -86,9 +124,7 @@ impl crate::sim::pathfinding::SearchFootEntry for FootSearchEntry<'_> {
             .as_ref()
             .ok_or("Foot search requires map cells")?;
         let receiver = self.receiver.as_ref().map_err(Clone::clone)?;
-        let previous = query
-            .from
-            .map(|coord| terrain.native_cell_identity((coord.0 as i16, coord.1 as i16)));
+        let previous = query.from.map(|coord| self.previous.lookup(terrain, coord));
         let candidate = match query.candidate {
             crate::sim::pathfinding::SearchEntryCandidate::CopiedCoord(coord) => {
                 terrain.native_cell_identity((coord.0 as i16, coord.1 as i16))
@@ -96,10 +132,16 @@ impl crate::sim::pathfinding::SearchFootEntry for FootSearchEntry<'_> {
             crate::sim::pathfinding::SearchEntryCandidate::RetainedNativeCell(cell) => cell,
         };
         if let Some(own) = self.own_cell
-            && let NativeCellIdentity::Real(_) = candidate
-            && terrain.native_cell_coord(candidate) == own
+            && let NativeCellIdentity::Real(index) = candidate
         {
-            self.read_own_cell.set(true);
+            let at_own = self.own_index.map_or_else(
+                || terrain.native_cell_coord(candidate) == own,
+                |own_index| index == own_index,
+            );
+            debug_assert_eq!(at_own, terrain.native_cell_coord(candidate) == own);
+            if at_own {
+                self.read_own_cell.set(true);
+            }
         }
         receiver.can_enter(
             candidate,
@@ -137,6 +179,10 @@ impl crate::sim::pathfinding::SearchFootEntry for FootSearchEntry<'_> {
     }
     fn is_passive_unit(&self) -> bool {
         self.passive_unit
+    }
+    fn keeps_searching(&self, expanded: u32) -> bool {
+        self.keep_searching
+            .is_none_or(|keep_searching| keep_searching(expanded))
     }
     fn finishing_threat_coefficient(
         &self,
@@ -605,6 +651,7 @@ impl Simulation {
                         counts,
                         MoverLift::Marked,
                         None,
+                        None,
                     )
                     .0
                 }
@@ -678,6 +725,9 @@ impl Simulation {
                 Err("Find_Path core requires PathGrid; no native failure inferred".into())
             }
             Err(MovePathFailure::Search(Search::CellEntryUnavailable(cause))) => Err(cause),
+            Err(MovePathFailure::Search(Search::Stopped)) => {
+                Err("Find_Path's own search stopped; only batched searches stop".into())
+            }
         }
     }
 
@@ -824,6 +874,7 @@ impl Simulation {
         counts: &crate::sim::pathfinding::BlockerNeighborCounts,
         lift: MoverLift,
         facts: Option<&crate::sim::world::EntryFacts>,
+        keep_searching: Option<&dyn Fn(u32) -> bool>,
     ) -> (
         Result<Vec<(u16, u16)>, super::movement_path::MovePathFailure>,
         bool,
@@ -879,12 +930,19 @@ impl Simulation {
             threat_coefficient: self.foot_path_threat_coefficient(id),
             unlisted,
             own_cell: unlisted.map(|_| (own_cell.0 as i16, own_cell.1 as i16)),
+            own_index: unlisted
+                .and(self.resolved_terrain.as_ref())
+                .and_then(|terrain| {
+                    terrain.regular_cell_index((own_cell.0 as i16, own_cell.1 as i16))
+                }),
             read_own_cell: std::cell::Cell::new(false),
+            previous: LastRealCell::default(),
             passive_unit: actor.category() == EntityCategory::Unit
                 && self
                     .interner
                     .object_type(actor.type_ref(), rules)
                     .is_some_and(|object| object.passive),
+            keep_searching,
         };
         let searched = request.search(
             goal,
@@ -1589,6 +1647,31 @@ impl Simulation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A lookup that found a real cell is kept; one that missed is made
+    /// again, stamping the shared Dummy at each ask.
+    #[test]
+    fn only_a_lookup_that_found_a_real_cell_is_kept() {
+        use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+        let mut terrain = test_grid(4, 4, test_flat_cell);
+        let hole = (3, 3);
+        let allocated: Vec<_> = (0..4)
+            .flat_map(|y| (0..4).map(move |x| (x, y)))
+            .filter(|&cell| cell != hole)
+            .collect();
+        terrain.test_set_native_allocated_cells(&allocated);
+        let dummy = terrain.shared_cell_dummy();
+        let last = LastRealCell::default();
+        let real = terrain.native_cell_identity((1, 2));
+        assert!(matches!(real, NativeCellIdentity::Real(_)));
+        assert_eq!(last.lookup(&terrain, (1, 2)), real);
+        assert_eq!(last.lookup(&terrain, (1, 2)), real);
+        for _ in 0..2 {
+            dummy.stamp_coord(-5, -6);
+            assert_eq!(last.lookup(&terrain, hole), NativeCellIdentity::Dummy);
+            assert_eq!(dummy.snapshot().coord, (3, 3), "the miss stamps again");
+        }
+    }
 
     #[test]
     fn signed_lepton_cell_conversion_truncates_toward_zero() {

@@ -536,11 +536,12 @@ impl Simulation {
         let all_allied = alive.iter().all(|left| {
             alive.iter().all(|right| {
                 left == right
-                    || crate::map::houses::are_houses_mutually_allied(
-                        self.house_alliances.as_map(),
-                        self.interner.resolve(*left),
-                        self.interner.resolve(*right),
-                    )
+                    || (self
+                        .house_alliances
+                        .is_allied(&self.interner, *left, *right)
+                        && self
+                            .house_alliances
+                            .is_allied(&self.interner, *right, *left))
             })
         });
         if !all_allied && alive.len() != 1 && living_humans != 0 {

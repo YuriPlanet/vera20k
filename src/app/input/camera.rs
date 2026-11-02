@@ -1600,6 +1600,12 @@ pub(crate) fn cursor_over_battlefield(state: &AppState) -> bool {
     x >= 0.0 && y >= 0.0 && x < width as f32 && y < height as f32
 }
 
+/// Whether [`animate_zoom`] would leave the zoom and camera as they are.
+pub(crate) fn zoom_settled(state: &AppState) -> bool {
+    let input = &state.match_state.input;
+    (input.zoom_level - input.zoom_target).abs() <= 1e-7
+}
+
 /// Animate zoom_level toward zoom_target each frame, adjusting the camera so
 /// the anchor world point stays at the anchor screen position.
 pub(crate) fn animate_zoom(state: &mut AppState) {

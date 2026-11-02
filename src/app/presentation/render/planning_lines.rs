@@ -17,9 +17,11 @@ use crate::sim::world::{PlanningBadgeKind, PlanningDrawSegment};
 // Original static bytes836880;63D8B8 negates the presentation wall clock.
 const PATTERN: [u8; 16] = [1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0];
 
+/// `wall_ms` is the last tactical composite's timeGetTime.
 pub(super) fn build(
     state: &AppState,
     view: TacticalViewport,
+    wall_ms: u32,
 ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
     let mut out = Vec::new();
     let mut highlights = Vec::new();
@@ -118,7 +120,7 @@ pub(super) fn build(
             *c = projected_nodes.get(&(c.x, c.y, c.z)).copied().unwrap_or(*c);
         }
     }
-    let phase = ((crate::app::input::tooltips::now_ms(state) as i32).wrapping_neg() >> 5) & 15;
+    let phase = ((wall_ms as i32).wrapping_neg() >> 5) & 15;
     let color = |owner, bright| {
         let name = sim.interner().resolve(owner);
         let index = state

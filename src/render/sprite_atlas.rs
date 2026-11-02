@@ -1518,12 +1518,48 @@ fn insert_object_keys(
             // CanBeOccupied bodies additionally select frames2/3. Missing
             // entries retain the existing garrison-body fallback in the draw
             // consumer; this does not invent a frame for a shorter SHP.
-            let can_be_occupied = rules
-                .and_then(|r| r.object(type_str))
-                .is_some_and(|obj| obj.can_be_occupied);
+            let object = rules.and_then(|r| r.object(type_str));
+            let can_be_occupied = object.is_some_and(|obj| obj.can_be_occupied);
             if can_be_occupied {
                 for frame in 2u16..=3 {
                     insert(frame);
+                }
+            }
+            // A Gate=yes body selects more than frames 0/1. GetCurrentFrame
+            // 43EF90's completed gate arm (0x0043F0BD..0x0043F0F5) returns 0
+            // above ConditionYellow and GateStages+1 at or below it, with no
+            // undamaged fallback; DrawBody's Mission Open arm
+            // (0x0043D546..0x0043D68F) draws ftol(progress*GateStages) clamped
+            // to 0..GateStages-1, plus GateStages+1 when damaged. The body
+            // therefore reaches exactly {0..GateStages-1} u {GateStages+1..=
+            // 2*GateStages}, never GateStages itself. Without these keys a
+            // damaged retail GAGATE_A requested frame 10, missed the atlas and
+            // vanished (#3592); the type-level coverage check never re-admits
+            // a type once frames 0/1 are present.
+            //
+            // No draw-side fallback accompanies this: ShapeFile::GetFrameData
+            // (0x0069E740) returns NULL for an index past the SHP (0x0069E7B2
+            // -> 0x0069E7D0) and DrawSHP draws nothing, which the consumer's
+            // skip of an absent Structure key already mirrors. A mod gate with
+            // authored damaged stages must show them. A gate SHP physically
+            // shorter than 2*GateStages+1 instead falls to the packing-time
+            // facing/frame-0 substitution further down in render_shp_frame, a
+            // pre-existing exposure the CanBeOccupied frames 2/3 already
+            // share. Retail G?GATE_A only looks undamaged at low health because
+            // its frames 10..19 are byte-identical copies of 0..9.
+            if let Some((rules, object)) = rules.zip(object).filter(|(_, object)| object.gate) {
+                let stages = rules
+                    .art()
+                    .resolve_metadata_entry(type_str, &object.image)
+                    .map_or(9, |entry| entry.building_gate_stages);
+                if let Some(stages) = u16::try_from(stages)
+                    .ok()
+                    .filter(|&stages| stages > 0 && stages <= u16::MAX / 2)
+                {
+                    // Frames 0 and 1 are already requested above.
+                    for frame in (2..stages).chain(stages + 1..=stages * 2) {
+                        insert(frame);
+                    }
                 }
             }
         }

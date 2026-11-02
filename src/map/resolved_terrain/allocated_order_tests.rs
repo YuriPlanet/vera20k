@@ -158,6 +158,40 @@ fn interior_cells_are_those_whose_neighbourhood_looks_up_itself() {
             }
         }
     }
+    // A step from an interior cell's index finds the cell its neighbour's
+    // lookup does, down to the first cell and up to the last; a cell that is
+    // not interior gives none, though its neighbour is there.
+    let interior = terrain.interior_cells().expect("regular terrain");
+    let query = crate::map::resolved_terrain::NativeCellQuery::isolated(&terrain);
+    let step = |(x, y): (u16, u16), (dx, dy): (i32, i32)| {
+        let index = usize::from(y) * usize::from(terrain.width()) + usize::from(x);
+        let found = interior.neighbour_index(index, (dx, dy));
+        let lookup = query.lookup((x as i16 + dx as i16, y as i16 + dy as i16));
+        (found.map(NativeCellIdentity::Real), lookup)
+    };
+    for (cell, by) in [((1, 1), (-1, -1)), ((1, 1), (1, -1)), ((10, 8), (1, 1))] {
+        let (found, lookup) = step(cell, by);
+        assert_eq!(found, Some(lookup), "{cell:?} by {by:?}");
+    }
+    assert_eq!(step((0, 1), (1, 0)).0, None);
     let wide = test_grid(512, 8, test_flat_cell);
     assert!(wide.interior_cells().is_none());
+}
+
+/// On a regular terrain a coordinate on the map gives its cell's index; one
+/// off the map, or any coordinate on another terrain, gives none.
+#[test]
+fn a_regular_terrain_gives_a_coordinate_its_cells_index() {
+    let terrain = test_grid(5, 4, test_flat_cell);
+    assert_eq!(terrain.regular_cell_index((2, 1)), Some(7));
+    assert_eq!(
+        terrain.native_cell_coord(NativeCellIdentity::Real(7)),
+        (2, 1)
+    );
+    assert_eq!(terrain.regular_cell_index((-1, 1)), None);
+    // Not the next row's first cell.
+    assert_eq!(terrain.regular_cell_index((5, 0)), None);
+    assert_eq!(terrain.regular_cell_index((0, 4)), None);
+    let wide = test_grid(512, 8, test_flat_cell);
+    assert_eq!(wide.regular_cell_index((1, 1)), None);
 }

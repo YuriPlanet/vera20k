@@ -168,6 +168,7 @@ pub(crate) fn install_world_presentation(
         .match_presentation
         .electric_bolts
         .clear_on_load();
+    state.match_state.match_presentation.airstrike_shades = Default::default();
     if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
         state
             .match_state
@@ -197,6 +198,10 @@ pub(crate) fn install_world_presentation(
         .match_presentation
         .super_timer_blinks
         .clear();
+    state
+        .match_state
+        .match_presentation
+        .super_timer_next_flip_ms = None;
     state
         .match_state
         .match_presentation

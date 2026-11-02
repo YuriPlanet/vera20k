@@ -716,7 +716,7 @@ pub(super) fn push_saved_browser_modal_instances<I: Clone + PartialEq>(
                 background: Some(SHELL_MODAL_PANEL_RGB),
                 frame_depth: SHELL_DROPDOWN_DEPTH - 0.00011,
                 caret_depth: SHELL_DROPDOWN_DEPTH - 0.00012,
-                caret_visible: browser.opened_at.elapsed().as_millis() % 2000 < 1000,
+                caret_visible: browser.caret_blink_on(),
             },
             layout.scale,
         );

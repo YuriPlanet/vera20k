@@ -517,14 +517,10 @@ impl Simulation {
             sim.scatter_crew(rules, registry, id, effects);
 
             // `HouseClass::IsAlliedWith(object) @ 0x004F9AF0` on the building owner.
-            let owner_name = sim.interner.resolve(owner);
             let enemy_planter = c4_source.filter(|&planter| {
                 sim.substrate.entities.get(planter).is_some_and(|planter| {
-                    !crate::map::houses::is_allied_with(
-                        sim.house_alliances.as_map(),
-                        owner_name,
-                        sim.interner.resolve(planter.owner()),
-                    )
+                    !sim.house_alliances
+                        .is_allied(&sim.interner, owner, planter.owner())
                 })
             });
             let mission = if enemy_planter.is_some() {

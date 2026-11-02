@@ -207,7 +207,7 @@ fn admitted_techno_observer(
         local_owner,
         local_owner_id,
         sim.fog(),
-        sim.house_alliances(),
+        sim.house_alliances().as_map(),
         false,
         sim.session().binary_frame(),
         0,
@@ -256,7 +256,7 @@ fn entity_status_pips_drawable(
     // House4F9A50 reads the ASKING owner's ally bits (6F6A58..8C).
     building_type.is_some_and(|object| object.can_be_occupied || object.pips_draw_for_all())
         || crate::map::houses::is_allied_with(
-            sim.house_alliances(),
+            sim.house_alliances().as_map(),
             sim.interner().resolve(entity.owner()),
             sim.interner().resolve(current_house_id),
         )
@@ -637,7 +637,7 @@ pub(crate) fn build_building_status_render_instances(
             || !entity.lifecycle.cell_marked()
             || !entity.selection.is_selected()
             || !crate::map::houses::is_allied_with(
-                sim.house_alliances(),
+                sim.house_alliances().as_map(),
                 sim.interner().resolve(entity.owner()),
                 current_house,
             )

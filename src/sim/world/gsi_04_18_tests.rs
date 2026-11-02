@@ -340,7 +340,7 @@ fn gsi_04_18_spy_sat_latch_and_persisted_fog_are_hash_authority() {
     let gapper = sim.interner.intern("Soviet");
     crate::sim::vision::apply_gap_generators(
         &mut sim.fog,
-        sim.house_alliances.as_map(),
+        &sim.house_alliances,
         &[(gapper, 12, 12, 3)],
         &sim.interner,
     );

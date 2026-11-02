@@ -487,7 +487,7 @@ pub(crate) fn build_unit_instances(
             local_owner.as_deref(),
             local_owner_id,
             sim.fog(),
-            sim.house_alliances(),
+            sim.house_alliances().as_map(),
             ignore_visibility,
             sim.session().binary_frame(),
             house_color_to_remap_row(hc),

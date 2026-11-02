@@ -93,6 +93,12 @@ impl SetupDialog {
     pub(crate) const fn wol(self) -> bool {
         matches!(self.flavor, SetupFlavor::Wol)
     }
+    /// VERA's room captions BC's map button "Choose Map": retail's
+    /// `GUI:ChooseMap` text, "Customize Battle", reads as the game settings
+    /// the room keeps under Game Options. `None` keeps the CSF caption.
+    pub(crate) fn button_label(self, id: u16) -> Option<&'static str> {
+        (self.modern && id == CHOOSE_MAP).then_some("Choose Map")
+    }
     /// Rows one roster page shows.
     pub(crate) const fn rows_per_page(self) -> usize {
         if self.modern {
@@ -1137,6 +1143,21 @@ mod tests {
         assert_eq!(lan_host, buttons(true, SetupFlavor::Lan, false));
         let choose_map = lan_host[&CHOOSE_MAP];
         assert_eq!(options.y - choose_map.y, choose_map.y - lan_host[&START].y);
+    }
+
+    #[test]
+    fn only_the_vera_room_relabels_customize_battle() {
+        for flavor in [SetupFlavor::Lan, SetupFlavor::Wol] {
+            assert_eq!(
+                dialog(true, flavor, true).button_label(CHOOSE_MAP),
+                Some("Choose Map")
+            );
+            assert_eq!(dialog(true, flavor, false).button_label(CHOOSE_MAP), None);
+        }
+        assert_eq!(
+            dialog(true, SetupFlavor::Wol, true).button_label(START),
+            None
+        );
     }
 
     /// The open popup takes every press, over the room's rows too; closed,

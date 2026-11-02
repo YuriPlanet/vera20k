@@ -2,6 +2,7 @@
 //! This module and its temporary world transfers do not exist in production.
 
 use super::*;
+use crate::map::houses::HouseAllianceMap;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;

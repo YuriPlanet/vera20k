@@ -793,6 +793,80 @@ fn registered_underscore_building_requests_make_frames_from_buildup_asset() {
     assert!(!make_frame_counts.contains_key("YAMOBILE_MAKE"));
 }
 
+/// A completed `Gate=yes` body is frame 0 above ConditionYellow and
+/// `GateStages + 1` at or below it (`GetCurrentFrame @ 0x0043EF90`,
+/// `0x0043F0BD..0x0043F0F5`); DrawBody's Mission Open arm
+/// (`0x0043D546..0x0043D68F`) draws stages `0..GateStages - 1`, plus
+/// `GateStages + 1` when damaged. Every one of those frames, and its embedded
+/// shadow, must be admitted with the type: a key the atlas lacks draws
+/// nothing, which hid the whole retail GAGATE_A once its health dropped
+/// (#3592). Before this coverage only frames 0/1 and their shadows were.
+#[test]
+fn gate_structure_keys_cover_every_stage_and_damaged_stage_frame() {
+    use crate::rules::ini_parser::IniFile;
+
+    let art_ini = IniFile::from_str("[GAGATE_A]\nImage=GAGATE_A\nGateStages=9\n");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str("[BuildingTypes]\n0=GAGATE_A\n[GAGATE_A]\nStrength=100\nGate=yes\n"),
+        &art_ini,
+    )
+    .expect("gate atlas rules");
+    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+    assert!(rules.object("GAGATE_A").unwrap().gate);
+    assert_eq!(
+        rules
+            .art()
+            .resolve_metadata_entry("GAGATE_A", "GAGATE_A")
+            .unwrap()
+            .building_gate_stages,
+        9
+    );
+
+    // Retail G?GATE_A: 42 physical frames, 21 bodies then their 21 shadows.
+    let directory = StoredFrameTestDirectory::new();
+    let frames: Vec<_> = (0..42).map(|frame| ([2, 2], (frame + 1) as u8)).collect();
+    std::fs::write(directory.0.join("GTGATE_A.SHP"), raw_shp(&frames))
+        .expect("write gate body SHP fixture");
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    let (world, interner) = one_object_world("GAGATE_A", EntityCategory::Structure);
+    let color = HouseColorIndex(2);
+    let pairs = HashSet::from([("GAGATE_A".to_string(), color)]);
+    let mut needed = HashSet::new();
+    let sources = insert_new_object_keys(
+        &mut needed,
+        &pairs,
+        &world,
+        Some(&interner),
+        &assets,
+        "tem",
+        "TEMPERATE",
+        Some(&rules),
+        Some(rules.art()),
+    );
+    assert_eq!(
+        sources[&(ShpImageKind::Object, "GAGATE_A".to_owned())]
+            .as_ref()
+            .expect("gate body SHP is the shadow half's owner")
+            .shp
+            .frames
+            .len(),
+        42
+    );
+
+    let frames: HashSet<u16> = needed
+        .iter()
+        .filter(|key| key.type_id == "GAGATE_A" && key.house_color == color)
+        .map(|key| key.frame)
+        .collect();
+    // Bodies: stages 0..=8 and their damaged counterparts 10..=18; frame 9
+    // is never selected. Shadows: each body plus half the physical count.
+    let expected: HashSet<u16> = (0..=8)
+        .chain(10..=18)
+        .flat_map(|frame| [frame, frame + 21])
+        .collect();
+    assert_eq!(frames, expected);
+}
+
 /// BuildingType45F230's final image pass, after the base ObjectType load.
 /// Stock YAYARD omits NewTheater: the original requests YTYARD.SHP, then
 /// YGYARD.SHP. A plain-name file or a different extension is not a third try.

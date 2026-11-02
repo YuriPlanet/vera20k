@@ -88,7 +88,7 @@ pub(crate) fn observer_draw_context(
 ) -> crate::render::draw_state::ObserverDrawContext {
     let owner = sim.interner().resolve(entity.owner());
     let allied = local_owner.is_some_and(|observer| {
-        crate::map::houses::is_allied_with(sim.house_alliances(), observer, owner)
+        crate::map::houses::is_allied_with(sim.house_alliances().as_map(), observer, owner)
     });
     let object = rules.and_then(|r| sim.interner().object_type(entity.type_ref(), r));
     let disguise_cell = entity
@@ -110,7 +110,7 @@ pub(crate) fn observer_draw_context(
         owner_is_allied: allied,
         owner_is_mutually_allied: allied
             && local_owner.is_some_and(|observer| {
-                crate::map::houses::is_allied_with(sim.house_alliances(), owner, observer)
+                crate::map::houses::is_allied_with(sim.house_alliances().as_map(), owner, observer)
             }),
         observer_present: local_owner_id.is_some(),
         detects_cloak: local_owner_id.is_some_and(|observer| {
@@ -316,7 +316,7 @@ fn compose_tactical_screen_entity_encounter_order(
                         local_owner,
                         local_owner_id,
                         fog,
-                        sim.house_alliances(),
+                        sim.house_alliances().as_map(),
                         ignore_visibility,
                         current_frame,
                         0,
@@ -587,7 +587,7 @@ pub(crate) fn translucent_fog_conceals(
         Some(interner.resolve(viewer)),
         Some(viewer),
         sim.fog(),
-        sim.house_alliances(),
+        sim.house_alliances().as_map(),
         &entity.position,
         interner.resolve(entity.owner()),
         sim.session().game_options().fog_of_war,
@@ -611,7 +611,7 @@ pub(crate) fn translucent_fog_conceals_bullet(
         .map(|entity| sim.interner().resolve(entity.owner()));
     let allied = source_owner.is_some_and(|owner| {
         local_owner.is_some_and(|local| {
-            crate::map::houses::is_allied_with(sim.house_alliances(), local, owner)
+            crate::map::houses::is_allied_with(sim.house_alliances().as_map(), local, owner)
         })
     });
     if allied {
@@ -1049,7 +1049,7 @@ mod tests {
             &preflight,
             &ordinary,
             &[],
-            Some((sim.fog(), sim.house_alliances())),
+            Some((sim.fog(), sim.house_alliances().as_map())),
             Some("Americans"),
             bounds.0,
             bounds.1,
@@ -1163,7 +1163,7 @@ mod tests {
             &preflight,
             &visible,
             &[],
-            Some((sim.fog(), sim.house_alliances())),
+            Some((sim.fog(), sim.house_alliances().as_map())),
             Some("Americans"),
             building_anchor.0 - 1.0,
             building_anchor.1 - 1.0,
@@ -1187,7 +1187,7 @@ mod tests {
                 &preflight,
                 &visible,
                 &[],
-                Some((sim.fog(), sim.house_alliances())),
+                Some((sim.fog(), sim.house_alliances().as_map())),
                 Some("Americans"),
                 mobile_anchor.0 - 1.0,
                 mobile_anchor.1 - 1.0,

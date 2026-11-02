@@ -738,11 +738,8 @@ impl Simulation {
         }
         let allied = |actor: u64| {
             self.substrate.entities.get(actor).is_some_and(|entity| {
-                crate::map::houses::is_allied_with(
-                    self.house_alliances.as_map(),
-                    self.interner.resolve(entity.owner()),
-                    self.interner.resolve(viewer),
-                )
+                self.house_alliances
+                    .is_allied(&self.interner, entity.owner(), viewer)
             })
         };
         let record_coord = |record: &CommandRecord| {

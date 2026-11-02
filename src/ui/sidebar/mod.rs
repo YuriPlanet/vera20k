@@ -145,7 +145,7 @@ pub enum SidebarAction {
     Deploy,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SidebarItem {
     pub rect: Rect,
     pub type_id: String,
@@ -194,7 +194,7 @@ impl SidebarItem {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SidebarTabButton {
     pub tab: SidebarTab,
     pub rect: Rect,
@@ -213,7 +213,7 @@ pub struct SidebarTabButton {
 /// Rect for hit-testing, action to dispatch on click, frame index for the
 /// 5-frame SHP state table. Native never disables either button
 /// (see [`gadget_flash::SidebarGadgetState::repair_frame`]).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SidebarToggleButton {
     pub rect: Rect,
     pub action: SidebarAction,
@@ -224,7 +224,7 @@ pub struct SidebarToggleButton {
 }
 
 /// View entry for one of the two SHP-driven strip scroll buttons.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SidebarScrollButton {
     pub rect: Rect,
     /// Retained gadget disabled bit. Scroll capacity comes from `6A6610`.
@@ -234,7 +234,7 @@ pub struct SidebarScrollButton {
 }
 
 /// Computed vertical offsets for each chrome section, based on screen height.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SidebarLayout {
     pub sidebar_x: f32,
     pub radar_y: f32,
@@ -247,7 +247,7 @@ pub struct SidebarLayout {
     pub side2_tile_count: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SidebarView {
     pub panel_rect: Rect,
     pub layout: SidebarLayout,

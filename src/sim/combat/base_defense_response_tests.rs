@@ -391,6 +391,69 @@ fn gsi_04_05_positive_transaction_queues_in_order_and_arms_only_on_overshoot() {
     );
 }
 
+/// The scan takes only the victim's house's objects (admission refuses
+/// another house's): a nearer, lower-id defender of the attacker's house is
+/// not recruited, one handed to the victim's house is, and one handed away
+/// is not; each responder takes one draw.
+#[test]
+fn gsi_04_05_the_scan_takes_the_victim_house_s_objects_through_ownership_changes() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nBaseDefenseDelay=.25\n[AI]\nComputerBaseDefenseResponse=3\n\
+         [VehicleTypes]\n0=ATTACKER\n1=DEFENDER\n\
+         [BuildingTypes]\n0=VICTIM\n\
+         [ATTACKER]\nStrength=100\nArmor=heavy\nCost=50\nThreatPosed=50\n\
+         [DEFENDER]\nStrength=100\nArmor=heavy\nCost=100\nThreatPosed=100\nSpeed=4\nMovementZone=Normal\nPrimary=DEFENDERGUN\n\
+         [VICTIM]\nStrength=100\nArmor=wood\n\
+         [DEFENDERGUN]\nDamage=10\nRange=5\nWarhead=DEFENDERWH\n\
+         [DEFENDERWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .expect("positive response fixture");
+    let mut sim = response_world(41, (5, 0));
+    with_clear_map(&mut sim);
+    let (victim_house, enemy) = (test_intern("Victim"), test_intern("Enemy"));
+    // The attacker stands at x 5; 3 and 4 start as its house's.
+    for (id, x, owner) in [
+        (3, 3, enemy),
+        (4, 2, enemy),
+        (5, 6, victim_house),
+        (6, 1, victim_house),
+    ] {
+        let mut defender = response_defender(id, "DEFENDER", x);
+        defender.set_owner_for_test(owner);
+        sim.substrate.entities.insert(defender);
+    }
+    sim.substrate.entities.change_owner(4, victim_house);
+    sim.substrate.entities.change_owner(5, enemy);
+    let seed = 0x504F_5349;
+    sim.scenario_rng = SimRng::new(seed);
+    let mut expected_rng = SimRng::new(seed);
+    for _ in 0..2 {
+        expected_rng.next_range_u32_inclusive(0, 99);
+    }
+
+    respond(&mut sim, &rules);
+
+    let target_of = |id: u64| {
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .attack_target
+            .target()
+    };
+    for (id, responds) in [(3, false), (4, true), (5, false), (6, true)] {
+        assert_eq!(
+            target_of(id),
+            responds.then_some(TargetKind::Entity(2)),
+            "defender {id}"
+        );
+    }
+    assert_eq!(
+        sim.scenario_rng.logical_state(),
+        expected_rng.logical_state()
+    );
+}
+
 /// The weapon-0 peek is GetFireError itself (vt+0x3BC at `0x007084B8`), and
 /// only ILLEGAL refuses. A `LandTargeting=1` defender's shot at an attacker
 /// on land is ILLEGAL (T40), so it is never recruited; an ordinary defender

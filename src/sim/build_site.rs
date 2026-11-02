@@ -303,11 +303,9 @@ pub(crate) fn flush_for_placement(
         let Some(object) = sim.substrate.entities.get(id) else {
             continue;
         };
-        let allied = crate::map::houses::is_allied_with(
-            sim.house_alliances.as_map(),
-            sim.interner.resolve(object.owner()),
-            sim.interner.resolve(house),
-        );
+        let allied = sim
+            .house_alliances
+            .is_allied(&sim.interner, object.owner(), house);
         if object.category() == EntityCategory::Structure {
             // Flush45EF68..45EF7B skips this host, then scans the remaining
             // foundation cells. Overlay admission above still applies.

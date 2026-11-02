@@ -2901,7 +2901,7 @@ impl Simulation {
             entity.disguise_hides_house_from(
                 house,
                 Some(&self.fog),
-                Some(self.house_alliances.as_map()),
+                Some(&self.house_alliances),
                 &self.interner,
             )
         }) {
@@ -3337,7 +3337,7 @@ impl Simulation {
         };
         if substrate.entities.get(actor_id).is_some_and(|actor| {
             combat::combat_weapon::is_ally_by_object(
-                Some(house_alliances.as_map()),
+                Some(house_alliances),
                 interner,
                 player,
                 actor.owner(),
