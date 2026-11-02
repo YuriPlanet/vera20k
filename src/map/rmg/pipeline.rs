@@ -185,7 +185,7 @@ pub fn run_pipeline(
         water::run(&mut ctx, &args);
     }
     observe(Stage::Water, grid, &waypoints, &terrain);
-    water_finalize::run(grid, inputs.ids, inputs.blocks, rng);
+    water_finalize::run(grid, scratch, inputs.ids, inputs.blocks, rng);
     observe(Stage::WaterFinalize, grid, &waypoints, &terrain);
 
     // ---- Regions -----------------------------------------------------------

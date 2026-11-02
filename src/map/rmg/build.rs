@@ -487,17 +487,46 @@ mod tests {
     type ObservedRun = (GeneratedMap, Vec<GenerationPoint>, Vec<GenerationSnapshot>);
 
     fn observe_run(options: &RmgOptions) -> ObservedRun {
-        let resolved = resolved();
-        let blocks = one_by_one();
-        let settings = RmgSettings::default();
+        observe_run_with(options, &RmgSettings::default(), &resolved(), &one_by_one())
+    }
+
+    fn observe_run_with(
+        options: &RmgOptions,
+        settings: &RmgSettings,
+        resolved: &ResolvedTheaterInputs,
+        blocks: &dyn TileBlocks,
+    ) -> ObservedRun {
         let mut points = Vec::new();
         let mut snapshots = Vec::new();
         let generated =
-            generate_map_observed(options, &settings, &resolved, &blocks, &[], &mut |view| {
+            generate_map_observed(options, settings, resolved, blocks, &[], &mut |view| {
                 points.push(view.point());
                 snapshots.push(view.snapshot());
             });
         (generated, points, snapshots)
+    }
+
+    /// Retail TEMPERATE generator inputs, or `None` when the install skips.
+    ///
+    /// The synthetic fixture has no relief ahead of the island passes (its
+    /// rivers are off) and admits no connector, so the witnesses of those two
+    /// stages read retail data instead.
+    fn retail_inputs() -> Option<(
+        RmgSettings,
+        ResolvedTheaterInputs,
+        crate::map::rmg::theater_blocks::TheaterTileBlocks,
+    )> {
+        let (_, mut assets) = crate::rules::retail_ini_fixture::retail_assets()?;
+        let rules = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini")?;
+        let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE")
+            .expect("retail TEMPERATE theater");
+        let resolved =
+            ResolvedTheaterInputs::from_theater(&theater, &TerrainRules::from_ini(&rules));
+        let blocks =
+            crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
+                assets.get(name)
+            });
+        Some((RmgSettings::load(&assets), resolved, blocks))
     }
 
     /// [`observe_run`] of `options(map_type, theater)`, run once per test
@@ -613,8 +642,8 @@ mod tests {
     // ---- The generation matrix -------------------------------------------
     //
     // Everything below is a REGRESSION RATCHET, never parity evidence: the
-    // inputs are synthetic and both sides of every comparison come from this
-    // build. It can expose a panic, a gate regression, or nondeterminism. It
+    // inputs are synthetic (retail for the island-pass and accessibility
+    // witnesses) and both sides of every comparison come from this build. It can expose a panic, a gate regression, or nondeterminism. It
     // cannot show the generator agrees with the original.
     //
     // The synthetic fixture leaves whole systems inert, so the matrix must not
@@ -663,8 +692,12 @@ mod tests {
     #[test]
     #[ignore = "slow; run when changing what it covers"]
     fn accessibility_moves_island_maps_and_leaves_the_others_alone() {
-        let cells = |m: &GeneratedMap| {
-            m.map_file
+        let Some((settings, resolved, blocks)) = retail_inputs() else {
+            return;
+        };
+        let cells = |options: &RmgOptions| {
+            generate_map(options, &settings, &resolved, &blocks, &[])
+                .map_file
                 .cells
                 .iter()
                 .map(|c| c.tile_index)
@@ -675,7 +708,7 @@ mod tests {
             low.accessibility = 0;
             let mut high = matrix_options(map_type, 0, seed);
             high.accessibility = 100;
-            cells(&run_cell(&low)) != cells(&run_cell(&high))
+            cells(&low) != cells(&high)
         };
 
         for map_type in [3, 4] {
@@ -837,8 +870,16 @@ mod tests {
     #[test]
     #[ignore = "slow; run when changing what it covers"]
     fn island_passes_reshape_only_the_island_map_types() {
+        let Some((settings, resolved, blocks)) = retail_inputs() else {
+            return;
+        };
         let changed = |map_type, seed| {
-            let (_, points, snapshots) = observe_run(&matrix_options(map_type, 0, seed));
+            let (_, points, snapshots) = observe_run_with(
+                &matrix_options(map_type, 0, seed),
+                &settings,
+                &resolved,
+                &blocks,
+            );
             let index_of = |point: GenerationPoint| {
                 points
                     .iter()
