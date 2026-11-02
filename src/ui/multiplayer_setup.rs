@@ -891,14 +891,15 @@ impl MultiplayerSetupLayout {
         let scale = self.page.scale;
         let base = |x, y, w, h| scale.scale_rect(RectPx::new(x, y, w, h));
         let popup = |x, y, w, h| base(GAME_OPTIONS_BOX.x + x, GAME_OPTIONS_BOX.y + y, w, h);
-        // Each trackbar right of its label, then the checkboxes, all past
-        // x 215 of the box, where the art's Desolator ends.
+        // The same two columns as the checkboxes below: each trackbar's
+        // label in the left one, the trackbar (its art's own width) starting
+        // the right one.
         for (index, (_, label)) in self.option_labels.iter_mut().enumerate() {
-            *label = popup(215, 32 + 30 * index as i32, 85, 17);
+            *label = popup(24, 32 + 30 * index as i32, 185, 17);
         }
         for (id, bar) in &mut self.trackbars {
             if let Some(index) = OPTION_TRACKBARS.iter().position(|option| option == id) {
-                *bar = popup(304, 30 + 30 * index as i32, 129, 21);
+                *bar = popup(215, 30 + 30 * index as i32, 129, 21);
             }
         }
         // Two columns of six under the trackbars, the left one over the art:
@@ -1213,10 +1214,10 @@ mod tests {
             .chain([GAME_OPTIONS_OK])
         {
             let rect = popup_layout.control_rect(id).unwrap();
-            let left = if CHECKBOXES.contains(&id) || ROOM_CHECKBOXES.contains(&id) {
-                0
-            } else {
+            let left = if OPTION_TRACKBARS.contains(&id) || id == GAME_OPTIONS_OK {
                 215
+            } else {
+                0
             };
             assert!(
                 rect.x >= popup.dialog.x + left
