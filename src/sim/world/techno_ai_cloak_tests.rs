@@ -945,9 +945,11 @@ fn completing_the_cloak_scatters_only_a_computer_owned_unit() {
     // refuses an active Teleport locomotor.
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[General]\nCloakingStages=9\nCloakDelay=.02\n\
-         [VehicleTypes]\n0=SUB\n\
+         [VehicleTypes]\n0=SUB\n[InfantryTypes]\n0=CLOAKER\n\
          [SUB]\nStrength=600\nSpeed=4\nCloakable=yes\nCloakingSpeed=1\n\
-         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+         [CLOAKER]\nStrength=100\nSpeed=4\nCloakable=yes\nCloakingSpeed=1\n\
+         Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n",
     ))
     .expect("ground cloak rules");
     let mut sim = Simulation::with_seed(0xC10A_C002);
@@ -964,6 +966,10 @@ fn completing_the_cloak_scatters_only_a_computer_owned_unit() {
         .unwrap();
     let computer = sim
         .spawn_object_at_height("SUB", "Russians", 20, 20, 0, 0, &rules)
+        .unwrap();
+    // `0x006FBC0B..0x006FBC15`: only a Unit scatters.
+    let infantry = sim
+        .spawn_object_at_height("CLOAKER", "Russians", 30, 30, 0, 0, &rules)
         .unwrap();
     let state = |sim: &Simulation, id| {
         sim.substrate
@@ -987,12 +993,20 @@ fn completing_the_cloak_scatters_only_a_computer_owned_unit() {
     for _ in 0..30 {
         assert!(!nav(&sim, computer), "no NavCom before the completion");
         sim.advance_tick(&[], Some(&rules), Some(&grid), None, 33);
-        if state(&sim, computer) == 2 {
+        if state(&sim, computer) == 2 && state(&sim, infantry) == 2 {
             break;
         }
     }
-    assert_eq!((state(&sim, human), state(&sim, computer)), (2, 2));
+    assert_eq!(
+        (
+            state(&sim, human),
+            state(&sim, computer),
+            state(&sim, infantry)
+        ),
+        (2, 2, 2)
+    );
     assert!(!nav(&sim, human));
+    assert!(!nav(&sim, infantry), "a cloaked infantryman stays put");
     assert!(
         nav(&sim, computer),
         "the computer's sub scatters on completion"
