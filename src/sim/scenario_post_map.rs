@@ -34,7 +34,12 @@ pub struct ScenarioPostMapOutput {
     pub navigation_published: bool,
     pub crates: Option<CratePlacement>,
     pub(crate) ore_twinkle: crate::sim::ore_twinkle::OreTwinkleReceipt,
+    /// Scenario View1..4: a campaign's HomeCell, otherwise the Cell of
+    /// [`Self::opening_view_coord`].
     pub opening_view_cell: Option<(u16, u16)>,
+    /// A non-campaign scenario's exact opening view coordinate, in leptons.
+    /// A campaign opens on the centre of [`Self::opening_view_cell`].
+    pub opening_view_coord: Option<[i32; 3]>,
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) skirmish_order: [Option<ScenarioPostMapStep>; 3],
 }
@@ -107,6 +112,20 @@ impl Simulation {
                     input.rules,
                 );
             }
+            None
+        };
+
+        // Post_Map_Init runs for non-campaign scenarios only. Its camera step
+        // (`0x006869A6`) follows the starting units and crates; the AI credits
+        // and alliances after it change no owner or Limbo state it reads. The
+        // base query is PlayerPtr's, so a network game stamps no shared Dummy.
+        let player_view = if self.session.game_mode_nonzero() {
+            let network = self.session.game_mode().is_network();
+            let cells = self.resolved_terrain.as_ref().map(|terrain| {
+                crate::map::resolved_terrain::NativeCellQuery::for_local_input(terrain, network)
+            });
+            self.opening_view_on_player_technos(cells.as_ref())
+        } else {
             None
         };
 
@@ -230,7 +249,8 @@ impl Simulation {
             navigation_published,
             crates,
             ore_twinkle,
-            opening_view_cell,
+            opening_view_cell: opening_view_cell.or(player_view.map(|(_, cell)| cell)),
+            opening_view_coord: player_view.map(|(coord, _)| coord),
             #[cfg(any(test, feature = "test-support"))]
             skirmish_order,
         }
@@ -517,6 +537,10 @@ mod tests {
                 output.opening_view_cell,
                 Some(expected),
                 "incoming={incoming}, current={current}"
+            );
+            assert_eq!(
+                output.opening_view_coord, None,
+                "campaigns open on HomeCell"
             );
             assert_eq!(loaded.rng_state(), before);
         }
