@@ -4,14 +4,55 @@ name: Check Windows signing
 # publishes a release, and its test certificate is trusted only on its fresh VM.
 on:
   workflow_dispatch:
+    inputs:
+      packaging_only:
+        description: Check Inno packaging with inert fixtures, without building or signing the game
+        type: boolean
+        default: false
 
 permissions:
   contents: read
   actions: read
 
 jobs:
+  packaging:
+    if: github.ref == 'refs/heads/main' && inputs.packaging_only
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - name: Install Inno Setup 7.1.0
+        shell: pwsh
+        run: .github/release/windows/install-inno.ps1
+      - name: Check ordinary packaging and unsigned-uninstaller preparation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from datetime import datetime, timezone
+          import os
+          from pathlib import Path
+          from tools.test_windows_signing import pe_fixture, signing
+          package = Path('packaging-fixture')
+          package.mkdir()
+          for filename in signing.PACKAGE_FILES:
+              data = pe_fixture() if filename.endswith('.exe') else b'Inert packaging fixture.\n'
+              (package / filename).write_bytes(data)
+          stamp = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
+          iscc = Path(os.environ['INNO_SETUP_ISCC'])
+          signing.plain(package, Path('plain-installer'), '0.0.0', stamp, 'packaging-fixture', iscc)
+          signing.prepare(package, Path('unsigned-payload'), '0.0.0', stamp, 'packaging-fixture', iscc)
+          print('Inno packaging and unsigned-uninstaller preparation passed.')
+          PY
+
   build:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && !inputs.packaging_only
     runs-on: windows-latest
     timeout-minutes: 60
     outputs:
