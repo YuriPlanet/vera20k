@@ -1718,10 +1718,10 @@ impl Simulation {
         placed
     }
 
-    /// Foot4DF510 (all three Foot-class vtables' +490), Steam gamemd.
+    /// Foot4DF510 (all three Foot-class vtables' +490).
     /// Temporarily Limbo non-Building Technos on the target ground Cell,
     /// then call the concrete ordinary Unlimbo. Refusal restores old Locations;
-    /// success restores old objects nearby, with allowBridge=false (4DF732).
+    /// success restores old objects nearby, bridge cells allowed (4DF729).
     /// Building458A80 owns its separate foundation/overlay prelude.
     pub(crate) fn place_foot_with_cleared_cell(
         &mut self,
