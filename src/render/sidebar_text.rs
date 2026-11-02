@@ -25,6 +25,8 @@ pub fn side_highlight_color(theme: SidebarTheme) -> [f32; 3] {
 }
 
 /// Packed `RadarClass+0x1208` color expanded back to the presentation frame.
+/// StripClass::Draw packs the same B0FA1C colour for its labels
+/// (6A9BF3..6A9C46) and its hover outline (6A9A4F).
 ///
 /// `SetSidebarTextColor @ 0x0072F440` selects the exact RGB table above;
 /// `RadarClass::Init_For_House @ 0x00652E90` then packs it through the active
@@ -185,12 +187,10 @@ pub fn format_credits(credits: i32) -> String {
 }
 
 /// Colour the credits counter is drawn in: the side-dependent sidebar text
-/// colour, the same one the cameo status labels use. gamemd packs that colour
-/// through the surface's loss/shift masks before the draw; VERA keeps it
-/// linear RGB. Named here so the choice is one testable decision rather than
-/// an argument the render lane happens to pass.
+/// colour, the same one the cameo status labels use, packed through the
+/// surface's loss/shift masks before the draw like every B0FA1C user.
 pub fn credits_tint(theme: crate::render::sidebar_chrome::SidebarTheme) -> [f32; 3] {
-    crate::render::sidebar_text::side_highlight_color(theme)
+    native_radar_outline_color(theme)
 }
 
 /// Build the credits counter as GAME.FNT glyph quads.
@@ -243,6 +243,7 @@ mod tests {
             let tint = native_radar_outline_color(theme);
             let bytes = tint.map(|c| (c * 255.0).round() as u8);
             assert_eq!(bytes, display_bytes, "theme={theme:?}");
+            assert_eq!(credits_tint(theme), tint, "theme={theme:?}");
             assert_eq!(
                 [bytes[0] & 0xf8, bytes[1] & 0xfc, bytes[2] & 0xf8],
                 packed_bytes

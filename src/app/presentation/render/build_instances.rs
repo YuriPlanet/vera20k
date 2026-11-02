@@ -1289,11 +1289,11 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         charging: charging_text.as_ref(),
         active: active_text.as_ref(),
     };
-    // Residual: StripClass::Draw packs the B0FA1C side colour into the 16-bit
-    // surface format first (6A9BF3..6A9C46), about one level off this tint.
+    // StripClass::Draw packs the B0FA1C side colour into the 16-bit surface
+    // format before drawing its labels (6A9BF3..6A9C46).
     let ready_tint = {
         let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
-        crate::render::sidebar_text::side_highlight_color(theme)
+        crate::render::sidebar_text::native_radar_outline_color(theme)
     };
     let cameo_layers = view
         .as_ref()
