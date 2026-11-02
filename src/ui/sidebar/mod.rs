@@ -70,6 +70,9 @@ pub enum SidebarTab {
 }
 
 impl SidebarTab {
+    /// TypeToTab 6ABC60 / GetObjectTabIdx 6ABCD0: buildings 0, or 1 with a
+    /// combat BuildCat (production_tech's Defense), infantry 2, units and
+    /// aircraft 3. Super weapons take strip 1 in `CameoStrips`.
     pub(crate) fn for_category(category: ProductionCategory) -> Self {
         match category {
             ProductionCategory::Building => Self::Building,
@@ -301,6 +304,8 @@ pub(crate) fn compute_layout_with_spec(
     // Residual: native keeps 60 select buttons per strip (0x3C stride,
     // InitSelectZones 6A8220), so above 30 rows (a ~1810 px tall screen) its
     // zones run into the next strip's array. VERA leaves the count uncapped.
+    // GetVisibleSlotCount 6AC430 and StripClass Activate 6A8330 count 2 * rows
+    // the same way: footer 26, or 18 when Scenario +0x34B8 (the side) is set.
     let rows = ((screen_h as i32 - 227 - spec.footer_allowance - 7) / 50).max(0) as usize;
     SidebarLayout {
         sidebar_x: screen_w - spec.sidebar_width,

@@ -174,6 +174,9 @@ impl CameoKey {
 /// projections supply the current members and comparison inputs; surviving
 /// entries keep their positions, even if costs or other keys change. Match
 /// replacement and local-house replacement discard this derived projection.
+/// `Default` is the SidebarClass constructor 6A4E60 and StripClass
+/// constructor 6A80A0 / Init_Clear 6A81B0 state: no entries, TopRow 0, nothing
+/// queued. Their Stage and Unknown_40 drive nothing (Unknown_40 is only -1).
 #[derive(Debug, Clone, Default)]
 pub(crate) struct CameoStrips {
     strips: [Vec<Cameo>; 4],
