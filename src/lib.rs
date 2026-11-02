@@ -57,6 +57,9 @@ pub mod render;
 // Menus, dialogs and the in-game sidebar: layout and state, drawn by app/ and render/.
 pub mod ui;
 
+// VERA's own localized text, layered over the retail CSF (`[VERA] Language=`).
+pub mod i18n;
+
 // Sound/music via rodio.
 pub mod audio;
 

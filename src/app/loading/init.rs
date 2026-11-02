@@ -2376,7 +2376,7 @@ impl MapLoadInitial {
 pub(crate) fn load_csf(
     asset_manager: &AssetManager,
 ) -> anyhow::Result<crate::assets::csf_file::CsfFile> {
-    let (csf, supplements) =
+    let (mut csf, supplements) =
         crate::assets::csf_file::CsfFile::load_active(|name| asset_manager.get_ref(name)).map_err(
             |err| match err {
                 crate::assets::error::AssetError::AssetNotFound { .. } => {
@@ -2386,6 +2386,7 @@ pub(crate) fn load_csf(
             },
         )?;
     log::info!("Loaded CSF string table: ra2md.csf; supplements={supplements:?}");
+    crate::i18n::apply(&mut csf);
     Ok(csf)
 }
 

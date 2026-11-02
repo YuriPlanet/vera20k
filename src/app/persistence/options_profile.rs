@@ -209,6 +209,10 @@ pub(crate) struct RetailOptionsProfile {
     /// translated into, or `None`, the default, for off. Only the `/translate`
     /// chat command changes it ([`Self::commit_chat_translation`]).
     pub(crate) translate_chat: Option<crate::ui::chat_translation::ChatLanguage>,
+    /// `[VERA] Language=`: the language tag of VERA's own text
+    /// ([`crate::i18n`]), `en` by default. Edited in VERA.INI only, so the
+    /// writer leaves the player's line as it is; read once at startup.
+    pub(crate) language: String,
     /// `[VERA] SkipUpdate=`: the release the player chose to skip when the
     /// updater offered it; empty, the default, offers every newer release.
     /// Only the updater changes it ([`Self::commit_skipped_update`]).
@@ -309,6 +313,7 @@ impl Default for RetailOptionsProfile {
             custom_end_game_score: true,
             custom_end_game_movie: true,
             translate_chat: None,
+            language: crate::i18n::DEFAULT_LANGUAGE.to_owned(),
             skipped_update: String::new(),
             display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
             window_placement: None,
@@ -557,6 +562,9 @@ impl RetailOptionsProfile {
                 vera.read_bool("CustomEndGameMovie", self.custom_end_game_movie);
             if let Some(value) = vera.read_name("TranslateChat", 16) {
                 self.translate_chat = crate::ui::chat_translation::ChatLanguage::from_tag(value);
+            }
+            if let Some(value) = vera.read_name("Language", 16) {
+                self.language = value.to_owned();
             }
             if let Some(value) = vera.read_name("SkipUpdate", 16) {
                 self.skipped_update = value.to_owned();
