@@ -901,19 +901,16 @@ impl MultiplayerSetupLayout {
                 *bar = popup(304, 30 + 30 * index as i32, 129, 21);
             }
         }
-        // Two columns where the labels fit: short options pair up, the long
-        // Build Off Ally ConYards, Destroyable Bridges and In-game Allying
-        // take whole rows, and the four bans follow a small gap.
-        let row = |index: i32| 120 + 20 * index + if index >= 5 { 6 } else { 0 };
-        let left = |index| popup(215, row(index), 113, 17);
-        let right = |index| popup(330, row(index), 111, 17);
-        let whole = |index| popup(215, row(index), 226, 17);
-        // Short Game, MCV Repacks, Crates Appear, Superweapons, Build Off Ally.
-        let native = [left(0), right(0), left(1), right(1), whole(2)];
-        for (checkbox, rect) in self.checkboxes.iter_mut().zip(native) {
-            *checkbox = rect;
+        // Two columns of six under the trackbars, the left one over the art:
+        // the native five and Destroyable Bridges, then In-game Allying and
+        // the four bans.
+        let row = |index: i32| 124 + 22 * index;
+        let left = |index| popup(24, row(index), 185, 17);
+        let right = |index| popup(215, row(index), 226, 17);
+        for (index, checkbox) in self.checkboxes.iter_mut().enumerate() {
+            *checkbox = left(index as i32);
         }
-        self.room_checkboxes = [whole(3), whole(4), left(5), right(5), left(6), right(6)];
+        self.room_checkboxes = [left(5), right(0), right(1), right(2), right(3), right(4)];
         self.game_options = Some(GameOptionsLayout {
             dialog: popup(0, 0, GAME_OPTIONS_BOX.w, GAME_OPTIONS_BOX.h),
             ok: popup(276, 292, 124, 24),
@@ -1208,14 +1205,21 @@ mod tests {
         let popup_layout =
             MultiplayerSetupLayout::new(dialog(true, SetupFlavor::Wol, true), 800, 600, false);
         let popup = popup_layout.game_options.unwrap();
+        // The checkboxes may cover the art; the trackbars and OK stay right of it.
         for id in CHECKBOXES
             .into_iter()
+            .chain(ROOM_CHECKBOXES)
             .chain(OPTION_TRACKBARS)
             .chain([GAME_OPTIONS_OK])
         {
             let rect = popup_layout.control_rect(id).unwrap();
+            let left = if CHECKBOXES.contains(&id) || ROOM_CHECKBOXES.contains(&id) {
+                0
+            } else {
+                215
+            };
             assert!(
-                rect.x >= popup.dialog.x + 215
+                rect.x >= popup.dialog.x + left
                     && rect.x + rect.w <= popup.dialog.x + popup.dialog.w
                     && rect.y + rect.h <= popup.dialog.y + popup.dialog.h,
                 "{id:#x} at {rect:?}"
