@@ -1126,7 +1126,6 @@ const DEFICIENT_START_RECT_H: u16 = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkirmishLaunchApplyResult {
-    pub local_owner: Option<String>,
     pub spawned_mcvs: u32,
     pub active_slots: usize,
 }
@@ -1525,10 +1524,6 @@ fn apply_resolved_skirmish_launch_session(
     project_pre_fill_start_assignment(sim, &slots, &start_assignment);
     let assignments = &start_assignment.placements;
     let mut spawned_mcvs = 0;
-    let mut local_owner = slots
-        .iter()
-        .find(|slot| slot.source_human_index == Some(session.local_player_index))
-        .map(|slot| slot.owner_name.clone());
 
     if session.options.bases {
         for (slot_idx, waypoint) in assignments {
@@ -1584,9 +1579,6 @@ fn apply_resolved_skirmish_launch_session(
                     waypoint.rx,
                     waypoint.ry
                 );
-                if slot.source_human_index == Some(session.local_player_index) {
-                    local_owner = None;
-                }
             }
         }
 
@@ -1623,7 +1615,6 @@ fn apply_resolved_skirmish_launch_session(
     );
 
     SkirmishLaunchApplyResult {
-        local_owner,
         spawned_mcvs,
         active_slots: slots.len(),
     }
@@ -4888,10 +4879,6 @@ mod tests {
                     } else {
                         1 + u32::from(with_ai)
                     }
-                );
-                assert_eq!(
-                    result.local_owner.as_deref(),
-                    (!block_placement).then_some(owner_key)
                 );
                 assert_eq!(
                     sim.entities().len(),
