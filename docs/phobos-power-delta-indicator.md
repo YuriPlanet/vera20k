@@ -84,10 +84,16 @@ string, and the value is a degenerate spelling no retail layer authors.
 ## Residuals
 
 - Trigger: the label glyph, or any digit, is a codepoint the loaded font table
-  has no entry for. Effect: VERA draws its missing-glyph placeholder. Retail
-  `GAME.FNT` has no `⚡` (U+26A1); Phobos documents the same and points at its
-  enhanced font pack, so a real check of this indicator needs that pack and a
-  running game.
+  has no entry for. Effect: VERA draws its **own** stand-in — the inverted `°`
+  that `render/bit_font.rs:622-635` synthesizes from `MISSING_GLYPH_CODEPOINT`
+  (`0xB0`), chosen in `b5c4768d1` with no native citation behind it. What gamemd
+  does with an out-of-range codepoint is not established: the `GAME.FNT` name has
+  no file-backed literal in the inspected image (the engine reaches the font
+  through its MIX name table), so the string-draw entry point is still unlocated.
+  Retail `GAME.FNT` has no `⚡` (U+26A1) either; Phobos documents the same and
+  points at its enhanced font pack, so a real check of this indicator needs that
+  pack and a running game. Tracked as #3613 — do not treat the placeholder as
+  native behavior.
 - Trigger: `Sidebar.PowerDelta.Align=none`. Effect: VERA treats it as rejected
   text and keeps the previous alignment, where Phobos ORs `TextAlign::None`
   (`0xFFF`) into the flags, which also sets its font-size bits. Kept on purpose,
