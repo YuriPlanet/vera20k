@@ -250,36 +250,38 @@ fn stock_cloak_tick_facts(
 /// owner whose type has `Sensors=` (`+0xC9D`). The owner test is a raw
 /// inequality, so an ally's sensor counts.
 fn enemy_sensor_by_foundation(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
+    use crate::map::cell_index::NativeCellIdentity;
+    use crate::map::resolved_terrain::NativeCellQuery;
     let Some(building) = sim.substrate.entities.get(id) else {
         return false;
     };
     let Some(object) = sim.interner.object_type(building.type_ref(), rules) else {
         return false;
     };
+    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+        return false;
+    };
     let owner = building.owner();
     let (width, height) = crate::sim::ai_base_site::foundation_size(object);
-    let (rx, ry) = (
-        i32::from(building.position.rx()),
-        i32::from(building.position.ry()),
-    );
+    let (rx, ry) = (building.position.rx() as i16, building.position.ry() as i16);
+    let query = NativeCellQuery::canonical(terrain);
     for dx in -1..=width {
         for dy in -1..=height {
-            // MapClass::Get_CellClass hands an off-map cell its empty dummy.
-            let (Ok(x), Ok(y)) = (u16::try_from(rx + dx), u16::try_from(ry + dy)) else {
+            let cell = query.lookup((rx.wrapping_add(dx as i16), ry.wrapping_add(dy as i16)));
+            // The shared fallback Cell has no registered object list.
+            if matches!(cell, NativeCellIdentity::Dummy) {
                 continue;
-            };
+            }
+            let (x, y) = query.coord(cell);
+            let (x, y) = (x as u16, y as u16);
             let found = match sim.nearest_cell_object((x, y), MovementLayer::Ground, None) {
-                Some(nearest) if nearest == id => sim
-                    .cell_objects((x, y), MovementLayer::Ground)
-                    .find_map(|member| match member {
-                        crate::sim::occupancy::CellObjectMember::Entity(other) => sim
-                            .substrate
-                            .entities
-                            .get(other)
-                            .filter(|other| other.category() == EntityCategory::Infantry)
-                            .map(|_| other),
-                        crate::sim::occupancy::CellObjectMember::Terrain(_) => None,
-                    }),
+                Some(nearest) if nearest == id => sim.substrate.occupancy.first_category_on_layer(
+                    x,
+                    y,
+                    MovementLayer::Ground,
+                    EntityCategory::Infantry,
+                    &sim.substrate.entities,
+                ),
                 found => found,
             };
             let senses = found

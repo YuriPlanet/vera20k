@@ -9,8 +9,9 @@ use crate::sim::world::{DelayedFire, PendingBuildingFire};
 use crate::util::fixed_math::SimFixed;
 
 fn rules() -> RuleSet {
-    RuleSet::from_ini(&IniFile::from_str(
-        "[General]\nCloakingStages=9\nCloakDelay=.02\n\
+    RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(
+            "[General]\nCloakingStages=9\nCloakDelay=.02\n\
          [AudioVisual]\nCloakSound=NavalUnitEmerge\n\
          [VehicleTypes]\n0=SUB\n1=RANKED\n2=DEST\n\
          [BuildingTypes]\n0=NAYARD\n1=GAPOWR\n\
@@ -19,7 +20,9 @@ fn rules() -> RuleSet {
          [RANKED]\nStrength=600\nSpeed=4\nVeteranAbilities=CLOAK\nEliteAbilities=CLOAK\n\
          [NAYARD]\nStrength=1000\nWeaponsFactory=yes\n\
          [GAPOWR]\nStrength=750\n",
-    ))
+        ),
+        &IniFile::from_str("[GAPOWR]\nFoundation=2x2\n"),
+    )
     .expect("stock cloak rules")
 }
 
@@ -1216,12 +1219,16 @@ fn a_cloak_granted_building_fades_out_and_a_sensor_beside_it_brings_it_back() {
     use crate::sim::cloak_disguise::VisualCharacterQuery;
 
     let (mut sim, rules, sub) = spawned_sub();
+    sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_retail_clear_grid(
+        64, 64,
+    ));
     let (rx, ry) = sim
         .substrate
         .entities
         .get(sub)
         .map(|entity| (entity.position.rx(), entity.position.ry()))
         .unwrap();
+    // A 2x2 power plant at (rx + 4, ry): the scan's last column is rx + 6.
     let id = sim
         .spawn_object_at_height("GAPOWR", "Soviet", rx + 4, ry, 0, 0, &rules)
         .unwrap();
@@ -1261,7 +1268,7 @@ fn a_cloak_granted_building_fades_out_and_a_sensor_beside_it_brings_it_back() {
     assert_eq!(fade[14], (2, 15, 5));
     assert_eq!(visit(&mut sim), (2, 15, 5), "no sensor beside it");
 
-    sim.spawn_object_at_height("DEST", "Americans", rx + 5, ry, 0, 0, &rules)
+    sim.spawn_object_at_height("DEST", "Americans", rx + 6, ry + 1, 0, 0, &rules)
         .unwrap();
     assert_eq!(visit(&mut sim), (3, 15, 5));
     assert_eq!(sim.sound_events.len(), sounds + 1);

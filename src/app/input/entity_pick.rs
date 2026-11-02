@@ -477,8 +477,8 @@ pub(crate) fn band_rect_contains_drawn_object(
 
 /// Whether `Tactical::PickObjectAtScreenPoint @ 0x006DA380` considers a
 /// Techno under the cursor: alive and out of limbo, and, unless the player
-/// owns it (`+0x41A`), not cloaked (CloakState 2) or on a cell the player's
-/// sensors cover. `+0x41A` is the owned-by-the-local-player byte
+/// owns it (`+0x41A`), not cloaked (CloakState 2) or with the cell of its
+/// GetCoords (`0x006DA425`) under the player's sensors. `+0x41A` is the owned-by-the-local-player byte
 /// (`TechnoClass::PointerExpired @ 0x007077C0` clears it with `pOwner`), so
 /// an ally's cloaked object is not exempt. `DisplayClass::ProcessClickCoords`
 /// asks the cloak test again of the object it returns (`0x00692529..0x0069257F`),
@@ -509,7 +509,7 @@ pub(crate) fn pick_admits_object(
             .cloak
             .as_ref()
             .is_some_and(|cloak| cloak.is_fully_cloaked())
-        || fog.has_sensor_for_house(player, entity.position.rx(), entity.position.ry())
+        || fog.senses_object_for_house(player, entity)
 }
 
 /// Would the local player see this object drawn right now? Presentation's
@@ -1324,18 +1324,11 @@ fn faded_out_unsensed(
     fog: Option<&FogState>,
     player: Option<InternedId>,
 ) -> bool {
-    if entity.category() != EntityCategory::Structure || entity.building_cloak_stage() != 15 {
-        return false;
-    }
-    let [x, y] = crate::sim::movement::ground_pose::object_center_xy(entity);
-    let cell = (
-        u16::try_from(crate::util::lepton::lepton_to_cell(x)),
-        u16::try_from(crate::util::lepton::lepton_to_cell(y)),
-    );
-    fog.zip(player).is_some_and(|(fog, player)| match cell {
-        (Ok(rx), Ok(ry)) => !fog.has_sensor_for_house(player, rx, ry),
-        _ => true,
-    })
+    entity.category() == EntityCategory::Structure
+        && entity.building_cloak_stage() == 15
+        && fog
+            .zip(player)
+            .is_some_and(|(fog, player)| !fog.senses_object_for_house(player, entity))
 }
 
 /// With nothing selected, DetermineAction (`0x00692610`, its no-selection arm

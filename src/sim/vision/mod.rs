@@ -1606,6 +1606,23 @@ impl FogState {
         )
     }
 
+    /// `TechnoClass::IsSensorVisibleToPlayer @ 0x0070D420` (vt+0x328) for
+    /// `house`: its sensors cover the cell of the object's GetCoords (vt+0x48),
+    /// which is a building's foundation centre. A coordinate off the map reads
+    /// the dummy cell, which no sensor counts.
+    pub fn senses_object_for_house(
+        &self,
+        house: InternedId,
+        entity: &crate::sim::game_entity::GameEntity,
+    ) -> bool {
+        let [x, y] = crate::sim::movement::ground_pose::object_center_xy(entity);
+        let cell = |v| u16::try_from(crate::util::lepton::lepton_to_cell(v));
+        match (cell(x), cell(y)) {
+            (Ok(rx), Ok(ry)) => self.has_sensor_for_house(house, rx, ry),
+            _ => false,
+        }
+    }
+
     /// What a fire check reads of this fog and the houses' ally graph.
     pub(crate) fn fire_view<'a>(&'a self, alliances: &'a HouseAlliances) -> FireFog<'a> {
         FireFog {

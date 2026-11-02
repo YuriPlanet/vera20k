@@ -291,14 +291,9 @@ impl DrawState {
     /// their own `+0x119` (`0x004521C0`), and one created during the erase
     /// draws opaque (`0x00451B25`).
     ///
-    /// A fading Building writes its stage (`+0x6ED`) into each slot Anim's
-    /// `+0x178`, or 16 at stage 15 when its own GetVisualState(0, 0) is 5
-    /// (`BuildingClass::UpdateCloak @ 0x00454E3A..0x00454E70`, and the same
-    /// sequence at creation `0x004519B9` and the lighting refreshes).
-    /// `AnimClass::DrawIt` (`0x004231C1..0x004231EE`) draws 1-5 at 25%,
-    /// 6-15 at 50% and nothing above 15. Residual: native caches the value
-    /// at those writes; this derives it every frame, so a sensor gained while
-    /// the stage holds at 15 shows the anims at once.
+    /// A fading Building's slot anims never read its GetVisualState: they
+    /// draw as at stage zero and fade through their own `+0x178`
+    /// ([`building_slot_anim_ramp`]).
     pub(crate) fn for_building_slot_anims(
         building: &GameEntity,
         current_frame: u32,
@@ -306,19 +301,22 @@ impl DrawState {
         observer: ObserverDrawContext,
     ) -> DrawDecision {
         let decision = Self::entity_decision(building, current_frame, remap_row, observer, false);
-        let stage = building.building_cloak_stage();
-        if stage == 0 {
+        if building.building_cloak_stage() == 0 {
             return decision;
         }
-        let selector = if stage <= 5 {
-            TRANSLUCENCY_25
-        } else {
-            TRANSLUCENCY_50
-        };
         DrawDecision {
-            visible: !(stage == 15 && decision.native_visual_state == 5),
-            state: Self::from_native_selector(remap_row, selector),
             native_visual_state: decision.native_visual_state,
+            ..Self::resolve(
+                DrawStateInput {
+                    cloak: None,
+                    disguise: None,
+                    warp_out: false,
+                    warp_in: false,
+                    double_thick_building: observer.double_thick_building,
+                },
+                current_frame,
+                remap_row,
+            )
         }
     }
 
@@ -397,6 +395,22 @@ impl DrawState {
     ) -> bool {
         Self::disguise_input(entity, current_frame, observer)
             .is_some_and(|input| !input.shows_real_type(current_frame))
+    }
+}
+
+/// The `+0x178` a Building writes into each slot Anim: its fade stage
+/// (`+0x6ED`), or 16 at stage 15 when its own GetVisualState(0, 0) is 5
+/// (`BuildingClass::UpdateCloak @ 0x00454E3A..0x00454E70`; a slot created
+/// mid-fade gets the same at `0x004519B9`). `AnimClass::DrawIt` turns it into
+/// 25%, 50% or no draw ([`crate::sim::anim_class::anim_translucency_selection`]).
+/// The 16 depends on the local player's sensors, so presentation derives it
+/// and the simulation never stores it. Residual: native writes it only when
+/// the stage changes, so a sensor gained or lost while the stage holds at 15
+/// reaches the anims at the next write; this follows it at once.
+pub(crate) fn building_slot_anim_ramp(building: &GameEntity, building_visual_state: u8) -> u8 {
+    match building.building_cloak_stage() {
+        15 if building_visual_state == 5 => 16,
+        stage => stage,
     }
 }
 
@@ -596,43 +610,35 @@ mod tests {
     }
 
     /// A fading building's body follows its GetVisualState (`0x004544A0`)
-    /// and its slot anims their own stage bands (`AnimClass::DrawIt`,
-    /// `0x004231C1..0x004231EE`): at stage 11 an unsensed enemy's body is
-    /// gone while its anims still draw at 50%; at 15 both are gone.
+    /// while its slot anims draw as at stage zero and fade only through the
+    /// `+0x178` it writes them (`0x00454E3A..0x00454E70`): at stage 11 an
+    /// unsensed enemy's body is gone and its anims still draw; at 15 their
+    /// ramp is 16 unless the player senses the building.
     #[test]
-    fn a_fading_building_draws_its_slot_anims_by_their_own_stage_bands() {
+    fn a_fading_building_hands_its_slot_anims_a_ramp_not_its_visual_state() {
         let mut building = entity();
         building.set_category_for_test(EntityCategory::Structure);
         let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
-        for (stage, body, anims) in [
-            (3, Some(0.75), Some(0.75)),
-            (6, Some(0.5), Some(0.5)),
-            (11, None, Some(0.5)),
-            (15, None, None),
+        let sensed = ObserverDrawContext {
+            detects_cloak: true,
+            ..ObserverDrawContext::default()
+        };
+        for (stage, observer, body_visible, ramp) in [
+            (11, ObserverDrawContext::default(), false, 11),
+            (15, ObserverDrawContext::default(), false, 16),
+            (15, sensed, true, 15),
         ] {
             cloak.set_building_stage_for_test(stage);
             building.cloak = Some(cloak);
-            let shown =
-                |decision: DrawDecision| decision.visible.then_some(decision.state.fx_params[0]);
+            let body = DrawState::for_entity(&building, 0, 3, observer);
+            let anims = DrawState::for_building_slot_anims(&building, 0, 3, observer);
+            assert_eq!(body.visible, body_visible, "stage {stage} body");
+            assert!(anims.visible, "stage {stage} anims");
+            assert_eq!(anims.state.fx_params[0], 1.0, "stage {stage} anim material");
             assert_eq!(
-                shown(DrawState::for_entity(
-                    &building,
-                    0,
-                    3,
-                    ObserverDrawContext::default()
-                )),
-                body,
-                "stage {stage} body"
-            );
-            assert_eq!(
-                shown(DrawState::for_building_slot_anims(
-                    &building,
-                    0,
-                    3,
-                    ObserverDrawContext::default()
-                )),
-                anims,
-                "stage {stage} anims"
+                building_slot_anim_ramp(&building, anims.native_visual_state),
+                ramp,
+                "stage {stage} ramp"
             );
         }
     }
