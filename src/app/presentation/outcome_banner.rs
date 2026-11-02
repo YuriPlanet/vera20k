@@ -258,6 +258,15 @@ fn router_verdict(state: &AppState) -> Option<HouseOutcomeKind> {
 /// 4F8780..4F87BB keeps Lost. So the banner reads the router's verdict, then
 /// [`sim_outcome`].
 fn local_outcome(state: &AppState) -> Option<HouseOutcomeKind> {
+    // The clip owns the battlefield until it ends. The simulation has already
+    // published the result there (`ready_outcome_for_owner`), but the card is
+    // the exit router's verdict, and that router has not taken it yet — so the
+    // retail text would be drawn from the published flag over a movie the
+    // player is still watching, and the country card would replace it 45
+    // seconds later. Nothing is drawn until the wait lets go.
+    if crate::app::commander_feedback::verdict_is_waiting_for_clip(state) {
+        return None;
+    }
     router_verdict(state)
         .or_else(|| sim_outcome(&state.match_state.sim_runtime.as_ref()?.simulation))
 }

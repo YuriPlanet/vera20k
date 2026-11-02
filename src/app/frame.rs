@@ -791,11 +791,19 @@ impl App {
         // teardown starts, is drawn by the ordinary game frame. The native
         // gates below stop drawing once the router has taken the result, so
         // the beat needs this exception.
+        //
+        // The losing commander's clip needs the same exception while the
+        // result waits for it: `RadarClass::Draw 653100` advances the movie,
+        // and a gate that answers `Unavailable` here never reaches it. The
+        // clip then sits on its first frame until the wait times out, which is
+        // the freeze this exception prevents. Nothing is drawn over the movie
+        // in that window — see `outcome_banner::local_outcome`.
         let showing_verdict = state
             .match_state
             .scenario_exit
             .as_ref()
-            .is_some_and(|exit| exit.holding_banner());
+            .is_some_and(|exit| exit.holding_banner())
+            || crate::app::commander_feedback::verdict_is_waiting_for_clip(state);
         if Self::house_outcome_wait_pending(state)
             || (state.frontend.screen == GameScreen::InGame
                 && state.match_state.scenario_exit.is_some()

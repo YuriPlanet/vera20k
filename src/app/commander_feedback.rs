@@ -262,6 +262,22 @@ impl CommanderFeedback {
     }
 }
 
+/// Whether the published result is being held back for the losing commander's
+/// clip.
+///
+/// The tactical frame has to keep drawing while this is true: `RadarClass::Draw
+/// 653100` is what advances the clip (`crate::render::radar::anim`), so a frame
+/// the outcome gates throw away leaves the movie on its first frame until the
+/// wait gives up. It is also the reason the verdict banner draws nothing yet —
+/// the card belongs to the beat after the clip, not to the movie.
+pub(crate) fn verdict_is_waiting_for_clip(state: &AppState) -> bool {
+    state
+        .match_state
+        .match_presentation
+        .commander_feedback
+        .result_waits()
+}
+
 /// The feature's own admit test. Only a live skirmish draws clips, and only
 /// while the switches say so: the player's own option, and the rules' — a mod
 /// or a map that ships its own scripted AI writes
