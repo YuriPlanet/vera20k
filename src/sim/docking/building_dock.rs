@@ -1468,7 +1468,9 @@ pub(crate) fn mission_repair(
         if status == 2 {
             building.mission.set_handler_state(1);
         }
-        if status == 0 || (status == 1 && building.building_art.anim_slots()[18].is_none()) {
+        // `0x0044C17D`: state1 waits for SpecialAnimThree (slot 12, +0x58C),
+        // the one-shot anim raising the arm, to end before asking for Guard.
+        if status == 0 || (status == 1 && building.building_art.anim_slots()[12].is_none()) {
             // State0 Queue44C6EA preserves +6DD; only state1's no-contact
             // arm44C18E sets ready before asking Queue to commence Guard.
             if status == 1 {
@@ -1490,7 +1492,9 @@ pub(crate) fn mission_repair(
             .get_mut(depot)?
             .mission_leaf
             .set_building_ready_latch(0);
-        let hover_or_teleport = sim
+        // `0x0044C75E..0x0044C78F`: the 200-lepton radius is for the Hover
+        // (CLSID literal at 0x7E9A40) and Ship (0x7E9AB0) locomotors.
+        let hover_or_ship = sim
             .substrate
             .entities
             .get(unit)
@@ -1499,13 +1503,13 @@ pub(crate) fn mission_repair(
                 matches!(
                     l.active_kind(),
                     crate::rules::locomotor_type::LocomotorKind::Hover
-                        | crate::rules::locomotor_type::LocomotorKind::Teleport
+                        | crate::rules::locomotor_type::LocomotorKind::Ship
                 )
             });
         if radio::transmit_to_contact(sim, depot, RadioMessage::NeedToMove, rules, frame_effects)
             == RadioResponse::Roger
             && distance_to_pad(sim, rules, depot, unit)
-                .is_some_and(|d| d < if hover_or_teleport { 200 } else { 100 })
+                .is_some_and(|d| d < if hover_or_ship { 200 } else { 100 })
         {
             sim.substrate
                 .entities
@@ -2144,6 +2148,7 @@ mod tests {
              [VehicleTypes]\n\
              0=MTNK\n\
              1=HARV\n\
+             2=DEST\n\
              [AircraftTypes]\n\
              [BuildingTypes]\n\
              0=GADEPT\n\
@@ -2160,6 +2165,11 @@ mod tests {
              Speed=4\n\
              Locomotor={{4A582741-9839-11d1-B709-00A024DDAFD1}}\n\
              Harvester=yes\n\
+             [DEST]\n\
+             Name=Destroyer\n\
+             Strength=600\n\
+             Speed=6\n\
+             Locomotor={{2BEA74E1-7CCA-11d3-BE14-00104B62A16C}}\n\
              [GADEPT]\n\
              Name=Depot\n\
              UnitRepair=yes\n\
@@ -3267,6 +3277,100 @@ mod tests {
         assert!(!linked(&sim, MINER));
         assert_eq!(e.mission.queued().known(), Some(MissionType::Move));
         assert_eq!(harvest_cursor(&sim, MINER), cursor_at_order);
+    }
+
+    /// `0x0044C75E..0x0044C78F`: state0 admits a Ship (CLSID literal at
+    /// 0x7E9AB0) within 200 leptons of the pad, as it does a Hover; a Drive
+    /// would need 100.
+    #[test]
+    fn state0_admits_a_ship_within_two_hundred_leptons() {
+        let (mut sim, rules) = setup(0);
+        spawn_entity(&mut sim, 1, "DEST", EntityCategory::Unit, 12, 11, 400);
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .position
+            .set_sub_x_for_test(crate::util::fixed_math::SimFixed::from_num(22));
+        let distance = distance_to_pad(&sim, &rules, DEPOT, 1).unwrap();
+        assert!((100..200).contains(&distance), "{distance}");
+        link_for_service(&mut sim, 1);
+        sim.substrate
+            .mission_assign_exact(DEPOT, MissionId::from_known(MissionType::Repair), 0)
+            .unwrap();
+        assert_eq!(
+            mission_repair(
+                &mut sim,
+                &rules,
+                DEPOT,
+                None,
+                crate::sim::world::FrameEffects::default()
+            ),
+            Some(3)
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(DEPOT)
+                .unwrap()
+                .mission
+                .handler_state(),
+            1
+        );
+    }
+
+    /// `0x0044C17D`: with no contact, state1 asks for Guard only once
+    /// SpecialAnimThree (slot 12, the one-shot arm-raising anim) has ended.
+    /// The IdleAnim slot 18 stays empty meanwhile: service cleared it and
+    /// only slot 12's completion restores it (`0x00451CD2`).
+    #[test]
+    fn state1_waits_for_the_arm_to_rise_before_guard() {
+        use crate::rules::art_data::ArtRegistry;
+        let (mut sim, _) = setup(0);
+        let art_ini = IniFile::from_str(
+            "[GADEPT]\nFoundation=3x3\nSpecialAnimThree=LOWER\n[LOWER]\nEnd=10\n",
+        );
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[BuildingTypes]\n0=GADEPT\n[GADEPT]\nStrength=1000\nUnitRepair=yes\n\
+                 [Animations]\n0=LOWER\n",
+            ),
+            &art_ini,
+        )
+        .unwrap();
+        let mut art = ArtRegistry::from_ini(&art_ini);
+        art.bind_anim_frame_count_for_test("LOWER", 10);
+        rules.install_art_data(art);
+        sim.substrate
+            .mission_assign_exact(DEPOT, MissionId::from_known(MissionType::Repair), 0)
+            .unwrap();
+        sim.substrate
+            .entities
+            .get_mut(DEPOT)
+            .unwrap()
+            .mission
+            .set_handler_state(1);
+        sim.set_building_anim_slot(DEPOT, 12, false, false, 0, &rules)
+            .unwrap();
+        let guard = MissionId::from_known(MissionType::Guard);
+        let asked_for_guard = |sim: &Simulation| {
+            let mission = &sim.substrate.entities.get(DEPOT).unwrap().mission;
+            mission.queued() == guard || mission.current() == guard
+        };
+        let visit = |sim: &mut Simulation| {
+            mission_repair(
+                sim,
+                &rules,
+                DEPOT,
+                None,
+                crate::sim::world::FrameEffects::default(),
+            )
+        };
+        assert_eq!(visit(&mut sim), Some(1));
+        assert!(!asked_for_guard(&sim), "the arm is still rising");
+        sim.clear_building_anim_slot(DEPOT, 12);
+        assert_eq!(visit(&mut sim), Some(1));
+        assert!(asked_for_guard(&sim));
     }
 
     /// Original44C0BD skips reconstruction when state1 has neither service
