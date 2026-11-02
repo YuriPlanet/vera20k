@@ -6849,9 +6849,15 @@ impl Simulation {
     /// CMIN and SMIN are `ImmuneToPsionics=yes`.
     ///
     /// RESIDUAL: no stock aircraft can be captured, so the Aircraft
-    /// Enter_Idle_Mode (`0x004176F0`) here is dormant; the trailing
-    /// `+0x423`-gated `vt+0x498`/`vt+0x494` and `vt+0x488(0, 0, 0, 0, 0)`
-    /// calls are unidentified.
+    /// Enter_Idle_Mode (`0x004176F0`) here is dormant.
+    ///
+    /// The tail (`0x0070184F..0x0070187B`): a radar-registered object
+    /// (`+0x423`) calls `UnregisterFromRadar` (vt+0x498, `0x0070CCC0`) and
+    /// `RegisterOnRadar` (vt+0x494, `0x0070CC90`), which the client radar
+    /// tracker does when it sees the owner change
+    /// (`render/radar/tracker.rs`, `registration_identity_changed`); then
+    /// `UpdateReveal(0, 0, 0, 0, 0)` (vt+0x488, `0x0070AF50`), ported in
+    /// `change_owner_inherited`.
     ///
     /// `+0x484` census (`search_instructions CALL [+0x484]`), the sites a
     /// miner can reach besides Move arrival, this owner change and the depot
