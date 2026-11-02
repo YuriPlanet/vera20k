@@ -509,7 +509,10 @@ fn a_tournament_players_exit_flags_their_house_on_the_remaining_peers() {
     assert_eq!(result.executed_commands, 1);
     let house = sim.houses.get(&leaver).unwrap();
     assert!(house.is_to_die() || house.has_lost());
-    assert_eq!(sim.take_departed_owners(), [leaver]);
+    assert_eq!(
+        sim.take_departed_senders(),
+        [sim.houses.index_of(leaver).unwrap() as i8]
+    );
 }
 
 #[test]

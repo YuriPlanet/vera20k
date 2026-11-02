@@ -1489,10 +1489,11 @@ pub enum Command {
     /// Observe results 3/4 (`0x0048CA34`, `0x0048CAB2`) queue it for the
     /// local House. Appended to preserve existing serialized variant indices.
     Destruct,
-    /// EVENT_REMOVEPLAYER for the House at registration index `house_index`
+    /// EVENT_REMOVEPLAYER for the lost network source `source`, its House's
+    /// registration index unless players share Houses
     /// (`EventClass::Execute 0x004C7B73`): Flag_To_Die when it is human.
     /// Appended to preserve existing serialized variant indices.
-    RemovePlayer { house_index: i32 },
+    RemovePlayer { source: i32 },
     /// The MoveFlash a Move click on a Cell spawns there
     /// (`FootClass::ClickedAction_Cell`, `0x004D7EB5..0x004D8065`). Native
     /// constructs it at the click, outside the event queue; VERA carries it

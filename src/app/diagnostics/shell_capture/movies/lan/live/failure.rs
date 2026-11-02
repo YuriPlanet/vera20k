@@ -336,10 +336,10 @@ impl FailureCapture {
         for event in sim.pending_command_snapshot() {
             match event.payload {
                 Command::ExitMatch => anyhow::bail!("failure route queued semantic EXIT"),
-                Command::RemovePlayer { house_index } => {
+                Command::RemovePlayer { source } => {
                     ensure!(self.mode == Mode::Timeout, "EA Quit queued REMOVEPLAYER");
                     ensure!(
-                        Some(house_index) == self.peer_house,
+                        Some(source) == self.peer_house,
                         "REMOVEPLAYER selected another House"
                     );
                 }

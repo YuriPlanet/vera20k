@@ -42,7 +42,7 @@ fn generated_houses(rules: &RuleSet, native: &Value) -> Simulation {
                 team: LaunchTeam::None,
                 is_human: house["generated_kind"] == "human",
                 observer: false,
-                source_human_index: None,
+                controllers: Vec::new(),
                 handle: None,
                 difficulty: HouseDifficulty::Normal,
                 commander: None,

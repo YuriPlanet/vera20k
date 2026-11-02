@@ -1305,7 +1305,8 @@ mod tests {
         assert!(!result.roster);
         let slot = &lan.network_setup().unwrap().humans[1].slot;
         assert!(slot.color_random);
-        assert_eq!(slot.start_position, LaunchStartPosition::Auto);
+        // VERA shared control: the guest shares the host's start and House.
+        assert_eq!(slot.start_position, LaunchStartPosition::Position(3));
         assert_eq!(slot.team, LaunchTeam::Team(7));
         assert_eq!(slot.country, LaunchCountry::Yuri);
         wol.accept_network_peer_choices(1, request, false, Some(&[LaunchCountry::America]))

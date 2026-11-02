@@ -74,13 +74,17 @@ impl Simulation {
     /// is the first remaining admitted human in shared House order, after
     /// synchronized EXIT/REMOVEPLAYER retires the old timing row. Neither a
     /// local peer list nor a second cached host participates in this decision.
+    ///
+    /// The result is a command sender, which is its House's index unless
+    /// players share Houses (VERA shared control).
     pub fn network_timing_host_house(&self) -> Option<i8> {
         let timing = self.session.network_command_timing()?;
         let wol = self.session.game_mode() == crate::sim::scenario_session::ScenarioGameMode::Wol;
-        let eligible = |house_id: i8| {
-            timing.admits_source(house_id)
-                && usize::try_from(house_id)
-                    .ok()
+        let eligible = |sender: i8| {
+            timing.admits_source(sender)
+                && self
+                    .session
+                    .network_source_house(sender)
                     .and_then(|index| self.houses.order().get(index))
                     .and_then(|owner| self.houses.get(owner))
                     .is_some_and(|house| {
@@ -90,12 +94,10 @@ impl Simulation {
         if wol && eligible(timing.host_house()) {
             return Some(timing.host_house());
         }
-        self.houses
-            .order()
-            .iter()
-            .enumerate()
-            .filter_map(|(index, _)| i8::try_from(index).ok())
-            .find(|&house| eligible(house))
+        self.session
+            .network_sources(self.houses.order().len())
+            .map(|(sender, _)| sender)
+            .find(|&sender| eligible(sender))
     }
 
     /// Borrow the existing EventClass queues for a post-Logic network pass.
@@ -114,7 +116,7 @@ impl Simulation {
     pub fn network_mirror_allowance(&self) -> usize {
         let synchronized = self.synchronized_network_command_count();
         if self.session.game_mode().is_network() {
-            let source_house = self.local_command_house().unwrap_or(0);
+            let source_house = self.local_command_source().unwrap_or(0);
             NETWORK_COMMAND_CAPACITY.saturating_sub(synchronized).min(
                 NETWORK_SOURCE_DOLIST_CAPACITY
                     .saturating_sub(self.pending_commands.native_house_len(source_house)),

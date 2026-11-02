@@ -2156,13 +2156,28 @@ impl LanCapture {
                             combo.enabled && combo.visible,
                             "local {column:?} is disabled"
                         );
+                        // A start another player holds would share its House;
+                        // these routes play separate Houses.
+                        let launch = state.match_state.session.network_setup();
+                        let held = |value: i32| {
+                            column == SetupColumn::Start
+                                && launch.is_some_and(|launch| {
+                                    launch.humans.iter().any(|human| {
+                                        human.raw_slot_index.is_some_and(|other| other != row)
+                                            && human.slot.start_position
+                                                == LaunchStartPosition::Position(value as u8)
+                                    })
+                                })
+                        };
                         let (index, choice) = combo
                             .choices
                             .iter()
                             .enumerate()
                             .take(column.visible_rows())
                             .find(|(index, choice)| {
-                                choice.value >= 0 && Some(*index) != combo.selected
+                                choice.value >= 0
+                                    && Some(*index) != combo.selected
+                                    && !held(choice.value)
                             })
                             .context("different concrete choice on first popup page")?;
                         Some((control, index, choice.value))
@@ -2900,11 +2915,11 @@ impl LanCapture {
                     let slots = crate::sim::scenario_bootstrap::normalized_launch_slots(launch);
                     let peer_slot = slots
                         .iter()
-                        .find(|slot| slot.source_human_index == Some(peer))
+                        .find(|slot| slot.is_controlled_by(peer))
                         .context("canonical source-to-House binding")?;
                     let local_slot = slots
                         .iter()
-                        .find(|slot| slot.source_human_index == Some(local))
+                        .find(|slot| slot.is_controlled_by(local))
                         .context("canonical local binding")?;
                     let sim = &state
                         .match_state

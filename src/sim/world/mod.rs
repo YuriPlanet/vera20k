@@ -1641,9 +1641,15 @@ pub struct Simulation {
     executed_exit_owner: Option<InternedId>,
     /// Remote senders of executed EXIT events this frame, in execution
     /// order: the app runs DestroyConnection(house, 0) for each
-    /// (`0x0064C9B1`) and drains them.
+    /// (`0x0064C9B1`) and drains them. A sender is the record's header byte.
     #[serde(skip)]
-    departed_owners: Vec<InternedId>,
+    departed_senders: Vec<i8>,
+    /// The header byte of the native record whose command is executing;
+    /// `None` while a semantic envelope executes. The DoList host sets it
+    /// around each record. VERA shared control: EXIT reads it to tell apart
+    /// players sharing a House.
+    #[serde(skip)]
+    executing_record_sender: Option<i8>,
     #[serde(skip)]
     connection_lost: bool,
     /// Checksum computed by this frame's multiplayer tail, handed to the
@@ -4484,7 +4490,8 @@ impl Simulation {
             input_delay_ticks: u64::from(crate::util::config::default_input_delay_ticks()),
             quit_requested: false,
             executed_exit_owner: None,
-            departed_owners: Vec::new(),
+            departed_senders: Vec::new(),
+            executing_record_sender: None,
             connection_lost: false,
             frame_sync_checksum: None,
             state_hash_interval: every_frame(),

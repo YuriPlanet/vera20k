@@ -797,6 +797,15 @@ pub struct ScenarioSession {
     /// installs their roster once; a new scenario discards the old measurements.
     #[serde(default)]
     network_command_timing: Option<crate::sim::command_queue::NetworkCommandTiming>,
+    /// VERA shared control: the House index each command sender (network
+    /// source) controls, when players share Houses. Empty otherwise: every
+    /// sender is then its House index, as in gamemd. Launch installs it once.
+    #[serde(default)]
+    shared_house_sources: Vec<u8>,
+    /// This process's own sender while players share Houses; otherwise its
+    /// current House's index. Local identity, like `current_house`.
+    #[serde(default)]
+    local_shared_house_source: Option<i8>,
     /// Scenario+11E4 is included in Save689372's complete Scenario block and
     /// retained by Load6894A8/NoInit683560. Fresh Clear_Scene starts at4.
     #[serde(default)]
@@ -1298,6 +1307,53 @@ impl ScenarioSession {
             },
             ahead,
         );
+    }
+
+    pub(crate) fn install_shared_house_sources(
+        &mut self,
+        source_houses: Vec<u8>,
+        local_source: Option<i8>,
+    ) {
+        self.shared_house_sources = source_houses;
+        self.local_shared_house_source = local_source;
+    }
+
+    /// VERA shared control: whether any players share a House, so that
+    /// senders differ from House indices.
+    pub fn shares_houses(&self) -> bool {
+        !self.shared_house_sources.is_empty()
+    }
+
+    /// The House index a command record's sender controls. VERA shared
+    /// control: a sender is a network source, which is its House index
+    /// unless players share Houses.
+    pub fn network_source_house(&self, source: i8) -> Option<usize> {
+        let source = usize::try_from(source).ok()?;
+        if self.shared_house_sources.is_empty() {
+            return Some(source);
+        }
+        self.shared_house_sources
+            .get(source)
+            .map(|&house| usize::from(house))
+    }
+
+    /// Every command sender with the House index it controls, in source
+    /// order: each of the `house_count` Houses unless players share Houses.
+    pub fn network_sources(&self, house_count: usize) -> impl Iterator<Item = (i8, usize)> + '_ {
+        let count = if self.shared_house_sources.is_empty() {
+            house_count
+        } else {
+            self.shared_house_sources.len()
+        };
+        (0..count).filter_map(|source| {
+            let source = i8::try_from(source).ok()?;
+            Some((source, self.network_source_house(source)?))
+        })
+    }
+
+    /// This process's sender while players share Houses.
+    pub(crate) fn local_shared_house_source(&self) -> Option<i8> {
+        self.local_shared_house_source
     }
 
     /// Retire the existing admitted timing row at a shared EXIT/REMOVEPLAYER
@@ -1898,6 +1954,8 @@ impl ScenarioSession {
             observer_houses: Vec::new(),
             network_max_ahead_frames: None,
             network_command_timing: None,
+            shared_house_sources: Vec::new(),
+            local_shared_house_source: None,
             start_header: crate::map::preview::ScenarioStartHeader::default(),
             campaign: None,
             campaign_map_stage: 0,

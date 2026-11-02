@@ -135,7 +135,7 @@ fn computer_paranoid_needs_allies_allowed_and_no_computer_team() {
         team,
         is_human: human,
         observer: false,
-        source_human_index: None,
+        controllers: Vec::new(),
         handle: None,
         difficulty: crate::sim::house_state::HouseDifficulty::Normal,
         commander: None,

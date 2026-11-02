@@ -101,7 +101,7 @@ impl Simulation {
                 })
         });
         let limit = if network {
-            let source = self.local_command_house().or_else(|| {
+            let source = self.local_command_source().or_else(|| {
                 prepared
                     .iter()
                     .find_map(|(entry, _)| entry.record().map(|record| record.house_id()))
@@ -210,7 +210,7 @@ impl Simulation {
             return crate::sim::command_queue::OUT_LIST_CAPACITY
                 .saturating_sub(self.local_commands.native_len());
         }
-        let Some(house) = self.local_command_house() else {
+        let Some(house) = self.local_command_source() else {
             return 0;
         };
         self.local_command_slots_for(house, include_control_reserve)
@@ -229,7 +229,12 @@ impl Simulation {
             .saturating_sub(self.dispatch_reserved_slots.for_house(house))
     }
 
-    pub(super) fn local_command_house(&self) -> Option<i8> {
+    /// This process's command sender: its current House's index, or its own
+    /// network source while players share Houses.
+    pub(super) fn local_command_source(&self) -> Option<i8> {
+        if let Some(source) = self.session.local_shared_house_source() {
+            return Some(source);
+        }
         self.session
             .current_house()
             .and_then(|owner| {
@@ -521,8 +526,8 @@ impl Simulation {
     }
 
     /// Drain the remote EXIT senders the executor recorded.
-    pub fn take_departed_owners(&mut self) -> Vec<InternedId> {
-        std::mem::take(&mut self.departed_owners)
+    pub fn take_departed_senders(&mut self) -> Vec<i8> {
+        std::mem::take(&mut self.departed_senders)
     }
 
     /// Only local frame-ingress actions leave the FIFO before Logic. Native
@@ -1120,16 +1125,22 @@ impl Simulation {
         }
         let mut list = std::mem::take(&mut self.pending_commands);
         self.dispatch_reserved_slots = list.native_occupancy();
+        // One scan per command sender, in sender order. A sender is its
+        // House's index, as in gamemd's House scan, unless players share
+        // Houses (VERA): each of them then gets its own scan of that House.
+        let local_source = self.session.local_shared_house_source();
         let mut houses: Vec<_> = self
-            .houses
-            .order()
-            .iter()
-            .enumerate()
-            .filter_map(|(index, &owner)| {
-                let house_id = i8::try_from(index).ok()?;
+            .session
+            .network_sources(self.houses.order().len())
+            .filter_map(|(source, house)| {
+                let owner = *self.houses.order().get(house)?;
+                let current_player = match local_source {
+                    Some(local) => local == source,
+                    None => self.session.current_house() == Some(owner),
+                };
                 Some(
-                    CommandDispatchHouse::new(owner, house_id, true)
-                        .with_current_player(self.session.current_house() == Some(owner)),
+                    CommandDispatchHouse::new(owner, source, true)
+                        .with_current_player(current_player),
                 )
             })
             .collect();
@@ -1331,12 +1342,14 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
             QueuedCommand::Semantic { envelope, .. } => Some(envelope.clone()),
         };
         if let Some(command) = command {
+            self.sim.executing_record_sender = entry.record().map(|record| record.house_id());
             let (applied, spawned) = self.sim.apply_one_due_command(
                 &command,
                 self.rules,
                 self.overlay_registry,
                 self.frame_effects,
             );
+            self.sim.executing_record_sender = None;
             if let Some(record) = entry.record() {
                 self.frame_effects
                     .command_applied(self.sim, record, applied);
