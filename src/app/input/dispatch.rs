@@ -2079,7 +2079,14 @@ pub(crate) fn dispatch_command_bar(state: &mut AppState, command: usize, right: 
 // Native 653952 -> GameState1 -> 48C9BA/4F10E0 opens the pause menu.
 // The button and ordinary Options hotkey share this modal entry.
 fn open_pause_menu(state: &mut AppState) {
-    if state.match_state.multiplayer_paused() {
+    // Two states have no tick left to consume the event below: a network
+    // match that is waiting for the relay to resume, and a result that is
+    // already published and waiting for the losing commander's clip (no frame
+    // follows a published result). Both open the same dialog directly, so the
+    // button and the Options hotkey keep working there.
+    if state.match_state.multiplayer_paused()
+        || crate::app::commander_feedback::verdict_is_waiting_for_clip(state)
+    {
         // No future EventClass tail exists until the relay resumes. Open the
         // same local dialog directly so its shared Resume remains reachable.
         crate::app::App::enter_in_game_menu_state(

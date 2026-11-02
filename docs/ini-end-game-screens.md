@@ -89,22 +89,38 @@ cropped from the wallpapers to fill the dialog.
 With `Custom End Game Movie` **on** and a beaten computer commander that has a
 losing clip:
 
-1. the last opponent falls: the retail banner goes up and the clip starts in
-   the radar window. The result's own line ("You are victorious" or "You have
-   lost") waits for the clip to end, so the clip cannot cut it; when the kill
-   earns no clip, the line is said at once;
+1. the last opponent falls: the verdict's card goes up in the banner slot — the
+   country's own picture when the rules set names one, the retail picture
+   otherwise — and the clip starts in the radar window. The two share the
+   screen: the card is centred in the tactical view, the clip plays in the
+   radar window beside it;
 2. the battlefield keeps running for the retail `SavourDelay`, then the result
    is published and the battlefield stops, on the same frame as with the switch
-   off, in a replay or in a headless run;
-3. the verdict's theme starts, and the rest of the clip plays over the stopped
-   battlefield;
-4. the clip ends: the result's line is said if it is still waiting, the card
-   rises, and the screen holds for 3 seconds;
-5. the retail teardown fades out and the score page takes over with its own
-   theme.
+   off, in a replay or in a headless run. The result's own line ("You are
+   victorious" or "You have lost") is said as soon as no clip is in its way;
+3. the verdict's theme starts with the result, and the rest of the clip plays
+   over the stopped battlefield and under the card;
+4. the clip ends: the teardown fades out and the score page takes over. The
+   card's beat is counted from the frame the card appeared, so a clip that has
+   already played under it leaves no extra wait; a verdict with no clip keeps
+   the full three seconds.
 
-With the switch **off** the clip is cut when the result is published, and the
-retail sequence runs unchanged, minus the card and its 3 seconds.
+With the switch **off** there is no clip and no wait: the card goes up when the
+result is published, holds three seconds, and the retail teardown takes the
+screen.
+
+**Leaving early.** While the clip plays the in-game menu still opens (the
+sidebar menu button or Escape). Abort Mission there cuts the clip and goes
+straight to the same score page: the result was published, and its score
+latched, before the clip started, so none of the numbers change.
+
+**Abandoning a match.** Abort Mission during a skirmish ends on the score page
+instead of returning to the shell, with the counters the match had earned when
+the player left. Those rows are the raw statistics: an abandoned match has no
+terminal edge, so the survivor's victory bonus is not drawn for it (and the
+Scenario RNG is left untouched). The page takes the lose half of the side theme
+and of `[EndGameScreens]`. A map with `SkipScore` set, a campaign mission, a
+LAN/WOL match and a co-op round keep their own exits.
 
 The score counts nothing after the result: kills, losses and the elapsed time
 stop on the frame it is published.
@@ -127,8 +143,9 @@ whatever they say.
 
 | | Verdict card | Score page art | Verdict theme | Losing commander's clip |
 |---|---|---|---|---|
-| Skirmish | yes | yes | yes | yes, and the card and score page wait for it |
+| Skirmish | yes | yes | yes | yes, and the teardown waits for it |
 | LAN / WOL | yes | yes | yes | no, but the card's 3 s still put the score dialog 3 s later than retail |
 | Campaign | no | no | no | no — missions use their own result dialogs |
 | Replay playback | no | no | no | no — the recorded stream owns the timing |
 | Observer | no card of its own | retail page | retail theme | no |
+| Abandoned skirmish | no (the match's own exit) | yes | lose half | no — the score page is immediate |
