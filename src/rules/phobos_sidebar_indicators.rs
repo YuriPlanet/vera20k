@@ -11,13 +11,17 @@
 //!   (`src/Ext/Side/Body.cpp:21-47`, driven from the `SideClass_LoadAllFromINI`
 //!   hook at `0x679A10`).
 //!
-//! RESIDUAL: a label key the CSF table does not hold renders `MISSING:<key>`
-//! in native (`StringTable::LoadString`); VERA keeps the glyph default instead.
-//! `Sidebar.PowerDelta.Align=none` selects Phobos' `TextAlign::None` (`0xFFF`),
-//! whose extra bits are font flags; VERA treats unparsable text as rejected and
-//! keeps the previous value.
+//! The label keys go through `GeneralUtils::LoadStringOrDefault`, not
+//! `LoadStringUnlessMissing`, so a key the CSF table does not hold keeps native's
+//! visible `MISSING:'<key>'` text and only a blank value keeps the glyph default.
+//! RESIDUAL: `Sidebar.PowerDelta.Align=none` selects Phobos' `TextAlign::None`
+//! (`0xFFF`), which ORs the font nibble, all four shadow bits, both alignment
+//! bits and `Background` into the draw flags at once. VERA treats that spelling
+//! as rejected text and keeps the previous value, because no sidebar string in
+//! VERA decodes the `TextPrintType` font or shadow selection; recorded with its
+//! reason in `docs/phobos-power-delta-indicator.md`.
 
-use super::ini_parser::{IniFile, IniSection};
+use super::ini_parser::{IniFile, IniSection, is_native_none_type_name};
 
 /// The alignment bits `Sidebar.PowerDelta.Align=` selects, which Phobos ORs
 /// straight into the `TextPrintType` flags (`src/Utilities/Enum.h:234-241`).
@@ -188,10 +192,11 @@ const POWER_LABEL_DEFAULT: &str = "\u{26A1}";
 /// `⚡❌`, the `defaultValue` of `Phobos.INI.cpp:163`.
 const POWER_BLACKOUT_LABEL_DEFAULT: &str = "\u{26A1}\u{274C}";
 
-/// `GeneralUtils::LoadStringOrDefault` (`src/Utilities/GeneralUtils.cpp:37-43`)
-/// over `INI_EX::ReadString` with the `<none>` default: a blank value — absent,
-/// empty or the `<none>` token — keeps the glyph default, anything else asks
-/// the string table.
+/// `GeneralUtils::LoadStringOrDefault` (`src/Utilities/GeneralUtils.cpp:37-43`):
+/// `IsValidString` (`:12-17`) rejects null, empty and `INIClass::IsBlank` text —
+/// `<none>` and bare `none`, case-insensitive (`CCINIClass.h`), the same pair the
+/// type factories answer null for — and only those keep the default. Anything
+/// else is asked of the string table, whose miss stays visible.
 fn load_string_or_default(
     section: &IniSection,
     key: &str,
@@ -199,7 +204,7 @@ fn load_string_or_default(
     lookup: &dyn Fn(&str) -> Option<String>,
 ) -> String {
     let raw = section.read_string(key, "<none>", 2048);
-    if raw.is_empty() || raw.eq_ignore_ascii_case("<none>") {
+    if raw.is_empty() || is_native_none_type_name(&raw) {
         return default.to_string();
     }
     lookup(&raw).unwrap_or_else(|| default.to_string())

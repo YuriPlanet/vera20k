@@ -54,11 +54,13 @@ are exactly the `TextPrintType` left/centre/right bits, so Phobos ORs them
 straight into the draw flags; the harvester and weeds branches hardcode centre.
 `read<TextAlign>` (`src/Utilities/TemplateDef.h:1089-1110`) also spells a fifth
 value, `none` = `TextAlign::None` = `0xFFF` (`src/Utilities/Enum.h:234-241`),
-which ORs both alignment bits *and* the low font/size nibble into the same flags
-(`src/Misc/Hooks.UI.cpp:169-172`). VERA keeps that spelling as rejected text and
-records it here permanently: drawing it means decoding the whole `TextPrintType`
-font and size selection, which VERA does not model for any sidebar string, and
-the value is a degenerate spelling no retail layer authors.
+which the hook ORs whole into the same draw flags (`src/Misc/Hooks.UI.cpp:169-172`):
+the font nibble (`Fonts = 0xF`), all four shadow choices (`0x10`, `0x20`, `0x40`,
+`0x80`), both alignment bits `0x100|0x200` and `Background` `0x400` at once
+(YRpp `GeneralDefinitions.h:245-271`). VERA keeps that spelling as rejected text
+and records it here permanently: drawing it means decoding the whole
+`TextPrintType` font and shadow selection, which VERA models for no sidebar
+string, and the value is a degenerate spelling no retail layer authors.
 
 ## Where VERA20K owns it
 

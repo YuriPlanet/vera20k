@@ -42,11 +42,13 @@ fn the_sidebar_switch_and_thresholds_default_to_off_and_the_source_fractions() {
 
 #[test]
 fn the_glyph_default_covers_blank_values_and_a_missing_key_shows_the_marker() {
-    // Absent section, absent key and `<none>` all keep the literal glyph.
+    // Absent section, absent key, empty text and both `IsBlank` spellings keep
+    // the literal glyph; `IsValidString` never asks the table for them.
     for text in [
         "",
         "[Sidebar]\n",
         "[ToolTips]\nPowerLabel=<none>\nPowerBlackoutLabel=\n",
+        "[ToolTips]\nPowerLabel=NONE\nPowerBlackoutLabel=<None>\n",
     ] {
         let ui = uimd(text);
         assert_eq!(ui.power_label, "\u{26A1}");

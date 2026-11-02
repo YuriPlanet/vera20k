@@ -809,9 +809,7 @@ mod tests {
     #[test]
     fn a_missing_indicator_label_resolves_to_the_native_marker() {
         use super::sidebar_label_lookup;
-        use crate::assets::csf_file::CsfFile;
-        let bytes = crate::assets::csf_file::build_test_csf("UI:PHOBOS:PowerLabel", "PWR");
-        let table = CsfFile::from_bytes(&bytes).expect("test CSF");
+        let table = crate::assets::csf_file::test_csf(&[("UI:PHOBOS:PowerLabel", "PWR")]);
         let lookup = sidebar_label_lookup(Some(&table));
         assert_eq!(lookup("UI:PHOBOS:PowerLabel").as_deref(), Some("PWR"));
         assert_eq!(

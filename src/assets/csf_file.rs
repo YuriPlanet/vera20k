@@ -570,7 +570,7 @@ fn encode_csf_string(s: &str) -> Vec<u8> {
 
 /// Build a minimal CSF file with one label entry.
 #[cfg(any(test, feature = "test-support"))]
-pub fn build_test_csf(label: &str, value: &str) -> Vec<u8> {
+fn build_test_csf(label: &str, value: &str) -> Vec<u8> {
     let encoded_value: Vec<u8> = encode_csf_string(value);
     let char_count: u32 = value.encode_utf16().count() as u32;
 
