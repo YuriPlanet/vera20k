@@ -456,7 +456,7 @@ fn map_veterancy_seed_matches_native_percent_and_rank() {
             line.push_str(token);
         }
         let ini = IniFile::from_str(&format!("[{section}]\n0={line}\n"));
-        let placements = crate::map::entities::parse_map_entities(&ini);
+        let placements = crate::map::entities::parse_map_entities(&ini, 4);
         assert_eq!(placements.len(), 1, "{id}: {token:?}");
         let native_percent = row["parsed_percent"]
             .as_i64()
@@ -2396,7 +2396,7 @@ fn authored_retail_upgrade_scene(
         .set_current_house_for_test(sim.interner.get("Americans"));
     // This bounded arena gives the opponent a tank, without a starting base.
     sim.session.game_options_mut_for_test().short_game = false;
-    let placements = crate::map::entities::parse_map_entities(&map);
+    let placements = crate::map::entities::parse_map_entities(&map, 4);
     assert_eq!(sim.spawn_from_map(&placements, Some(&rules)), 2);
     let host = sim.substrate.entities.get(1).unwrap();
     assert!(host.building_upgrades().count() > 0);
@@ -3098,9 +3098,10 @@ fn map_spawn_attaches_the_type_attach_effect_list() {
          AttachEffect.InitialDelays=3\n",
     ))
     .expect("attach effect rules");
-    let placements = parse_map_entities(&IniFile::from_str(
-        "[Units]\n0=Americans,MTNK,256,30,40,0,Guard,None\n",
-    ));
+    let placements = parse_map_entities(
+        &IniFile::from_str("[Units]\n0=Americans,MTNK,256,30,40,0,Guard,None\n"),
+        4,
+    );
     assert_eq!(placements.len(), 1, "the map reader keeps the Unit line");
 
     let mut sim = Simulation::with_seed(0xAE6);
@@ -3147,11 +3148,14 @@ fn a_short_structures_line_reuses_the_previous_lines_upgrade_types() {
          [UP1]\nStrength=100\nPowersUpBuilding=BASE\n",
     ))
     .unwrap();
-    let entities = crate::map::entities::parse_map_entities(&IniFile::from_str(
-        "[Structures]\n\
+    let entities = crate::map::entities::parse_map_entities(
+        &IniFile::from_str(
+            "[Structures]\n\
          0=Americans,BASE,256,10,12,0,None,0,0,1,1,0,UP1,None,None,0,0\n\
          1=Americans,BASE,256,14,12,0,None,0,0,1,1,0\n",
-    ));
+        ),
+        4,
+    );
     let mut sim = Simulation::with_seed(0xC701_0007);
 
     assert_eq!(sim.spawn_from_map(&entities, Some(&rules)), 4);
@@ -3175,11 +3179,14 @@ fn structures_field_11_sets_the_building_lights_behaviour() {
         "[BuildingTypes]\n0=LIGHT\n[LIGHT]\nHasSpotlight=yes\nStrength=100\nFoundation=1x1\n",
     ))
     .unwrap();
-    let entities = crate::map::entities::parse_map_entities(&IniFile::from_str(
-        "[Structures]\n\
+    let entities = crate::map::entities::parse_map_entities(
+        &IniFile::from_str(
+            "[Structures]\n\
          0=Americans,LIGHT,256,4,4,0,None,0,0,1,0,0,None,None,None,0,0\n\
          1=Americans,LIGHT,256,7,4,0,None,0,0,1\n",
-    ));
+        ),
+        4,
+    );
     let mut sim = Simulation::with_seed(0xC701_0008);
     install_constructor_test_playfield(&mut sim);
     install_american_house(&mut sim);

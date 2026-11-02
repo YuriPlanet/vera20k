@@ -4742,9 +4742,10 @@ mod tests {
             ry: 40,
         };
         let mut map = one_start_prefix_map(start);
-        map.entities = crate::map::entities::parse_map_entities(&IniFile::from_str(
-            "[Structures]\n0=Neutral,CABHUT,256,30,30,0,None\n",
-        ));
+        map.entities = crate::map::entities::parse_map_entities(
+            &IniFile::from_str("[Structures]\n0=Neutral,CABHUT,256,30,30,0,None\n"),
+            4,
+        );
         let roster = HouseRoster::default();
         let overlays = OverlayTypeRegistry::empty();
         for (handle, with_ai, owner_key) in [
@@ -6246,7 +6247,7 @@ mod tests {
         let overlays = OverlayTypeRegistry::from_ini(&ini, None);
         let map = MapFile::from_bytes(
             b"[Map]\nTheater=TEMPERATE\nSize=0,0,40,40\nLocalSize=2,2,36,32\n\
-              [Basic]\nName=GSI 04.12 owner fixture\n\
+              [Basic]\nName=GSI 04.12 owner fixture\nNewINIFormat=4\n\
               [Structures]\n\
               0=Neutral,CABHUT,256,30,30,0,None\n\
               1=Neutral,CATHOSP,256,32,32,0,None\n\
