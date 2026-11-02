@@ -421,7 +421,10 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 // variant, render offset and radar colours (tag v2): hash composition only.
 // A temporary control restoring the v1 fold gave the previous value, with
 // every tripwire above green. Control removed. Previous: 0x8934_6F95_0887_B80C.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x0722_C90C_F923_6AA2;
+// #3710 folds the game options' room bans (all off here): hash composition
+// only. A temporary control omitting that fold gave the previous value, with
+// every tripwire above green. Control removed. Previous: 0x0722_C90C_F923_6AA2.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x8962_19D2_2722_4F7D;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so
