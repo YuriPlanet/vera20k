@@ -393,16 +393,17 @@ fn gsi_04_05_positive_transaction_queues_in_order_and_arms_only_on_overshoot() {
 
 /// A defender already firing at the attacker debits its ThreatPosed from the
 /// budget (`0x007085CC`). Debited to exactly zero, nothing arms; below zero,
-/// the shared exit (`0x0070875C`) starts the attacker's cooldown with no
-/// assignment or draw.
+/// or negative from the start, the shared exit (`0x0070875C`) starts the
+/// attacker's cooldown with no assignment or draw.
 #[test]
-fn gsi_04_05_engaged_defenders_driving_the_budget_negative_start_the_cooldown() {
-    for (defender_threat, expected_cooldown) in [
-        (50, CdTimer::from_raw(-1, 0)),
-        (51, CdTimer::started(41, 225)),
+fn gsi_04_05_a_negative_budget_starts_the_cooldown_without_an_assignment() {
+    for (response, defender_threat, expected_cooldown) in [
+        (1, 50, CdTimer::from_raw(-1, 0)),
+        (1, 51, CdTimer::started(41, 225)),
+        (-1, 50, CdTimer::started(41, 225)),
     ] {
         let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-            "[General]\nBaseDefenseDelay=.25\n[AI]\nComputerBaseDefenseResponse=1\n\
+            "[General]\nBaseDefenseDelay=.25\n[AI]\nComputerBaseDefenseResponse={response}\n\
              [VehicleTypes]\n0=ATTACKER\n1=DEFENDER\n\
              [BuildingTypes]\n0=VICTIM\n\
              [ATTACKER]\nStrength=100\nArmor=heavy\nCost=50\nThreatPosed=50\n\
@@ -430,7 +431,7 @@ fn gsi_04_05_engaged_defenders_driving_the_budget_negative_start_the_cooldown() 
         assert_eq!(
             entities.get(2).unwrap().base_defense_response.cooldown,
             expected_cooldown,
-            "defender ThreatPosed {defender_threat}"
+            "response {response}, defender ThreatPosed {defender_threat}"
         );
     }
 }
