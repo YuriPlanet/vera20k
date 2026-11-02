@@ -343,6 +343,17 @@ fn cameo_status_text<'a>(
     }
 }
 
+/// Whether the status label is the `[esp+0x40]` text drawn before the clock.
+///
+/// `StripClass::Draw` draws that slot, production `TXT_READY` and every
+/// `SuperClass::NameReadiness` label, at `0x006A9D94..0x006A9E36` and only
+/// then the clock at `0x006A9E97`, so a held or charge-drain superweapon's
+/// clock covers its label. The production Hold label is resolved after the
+/// clock (`0x006A9ECC..0x006AA014`) and draws over it.
+fn status_text_precedes_clock(item: &crate::ui::sidebar::SidebarItem) -> bool {
+    item.super_weapon_display.is_some() || item.is_ready
+}
+
 /// Whether a Building or Defense cameo may draw a queue count at all.
 ///
 /// gamemd's badge path resolves the requested type's House Factory with a
@@ -494,6 +505,9 @@ pub(crate) struct SidebarCameoInstances {
     pub flash: Vec<SpriteInstance>,
     pub gclock: Vec<SpriteInstance>,
     pub queue_overlay: Vec<SpriteInstance>,
+    /// Strips behind the labels drawn before the clock.
+    pub label_overlay: Vec<SpriteInstance>,
+    /// Strips behind the production Hold label, drawn after the clock.
     pub overlay: Vec<SpriteInstance>,
 }
 
@@ -584,6 +598,7 @@ pub(crate) fn build_sidebar_cameo_instances(
     let mut gclock_instances = Vec::new();
     let mut overlay_instances = Vec::new();
     let mut queue_overlay = Vec::new();
+    let mut label_overlay = Vec::new();
     let mut unavailable = Vec::new();
     let mut flash = Vec::new();
     let co = [
@@ -682,7 +697,12 @@ pub(crate) fn build_sidebar_cameo_instances(
             } else {
                 slot.x + (slot.w - strip_w) * 0.5 + co[0]
             };
-            overlay_instances.push(SpriteInstance {
+            let strips = if status_text_precedes_clock(item) {
+                &mut label_overlay
+            } else {
+                &mut overlay_instances
+            };
+            strips.push(SpriteInstance {
                 position: [strip_x, slot.y + co[1]],
                 size: [strip_w, strip_h.min(slot.h)],
                 uv_origin: [0.0, 0.0],
@@ -723,6 +743,7 @@ pub(crate) fn build_sidebar_cameo_instances(
         flash,
         gclock: gclock_instances,
         queue_overlay,
+        label_overlay,
         overlay: overlay_instances,
     }
 }
@@ -733,8 +754,11 @@ pub(crate) fn build_sidebar_cameo_instances(
 
 #[derive(Default)]
 pub(crate) struct SidebarTextInstances {
+    /// The production Hold label, drawn after the clock.
     pub status: Vec<SpriteInstance>,
     pub queue: Vec<SpriteInstance>,
+    /// Ready and superweapon labels, drawn before the clock.
+    pub label: Vec<SpriteInstance>,
 }
 
 pub(crate) fn build_sidebar_text_instances(
@@ -753,6 +777,7 @@ pub(crate) fn build_sidebar_text_instances(
     ];
     let mut instances = Vec::new();
     let mut queue = Vec::new();
+    let mut label = Vec::new();
 
     for item in &view.items {
         let slot = item.rect;
@@ -772,7 +797,12 @@ pub(crate) fn build_sidebar_text_instances(
             // gamemd anchors text at `cameo_y + y_pad`; the strip extends
             // y_pad above and (cell_height - glyph_height + y_pad) below.
             let text_y = slot.y + READY_PAD_Y;
-            instances.extend(state.renderer.bit_font.build_text(
+            let glyphs = if status_text_precedes_clock(item) {
+                &mut label
+            } else {
+                &mut instances
+            };
+            glyphs.extend(state.renderer.bit_font.build_text(
                 status_text,
                 text_x,
                 text_y,
@@ -803,6 +833,7 @@ pub(crate) fn build_sidebar_text_instances(
     SidebarTextInstances {
         status: instances,
         queue,
+        label,
     }
 }
 
@@ -1146,6 +1177,34 @@ mod tests {
         item.is_ready = true;
         item.progress = 1.0;
         assert!(!shows_build_clock(&item), "ready");
+    }
+
+    /// 0x006A9D94 draws Ready and every Super label before the 0x006A9E97
+    /// clock; the production Hold label waits for 0x006AA014.
+    #[test]
+    fn super_labels_precede_their_clock_and_production_hold_follows_it() {
+        use super::{shows_build_clock, status_text_precedes_clock};
+        use crate::sim::superweapon::{SuperWeaponDisplay, SuperWeaponStatus};
+        let mut held = badge_item(
+            crate::sim::production::ProductionCategory::Vehicle,
+            0,
+            false,
+            false,
+        );
+        held.is_on_hold = true;
+        assert!(shows_build_clock(&held) && !status_text_precedes_clock(&held));
+        let mut ready = held.clone();
+        ready.is_on_hold = false;
+        ready.is_ready = true;
+        assert!(status_text_precedes_clock(&ready));
+        let mut super_held = held.clone();
+        super_held.is_on_hold = false;
+        super_held.super_weapon_display = Some(SuperWeaponDisplay {
+            stage: 20,
+            draw_progress: true,
+            status: Some(SuperWeaponStatus::Hold),
+        });
+        assert!(shows_build_clock(&super_held) && status_text_precedes_clock(&super_held));
     }
 
     /// The `StripClass::Draw` badge inputs for one cameo.
