@@ -263,6 +263,13 @@ fn object_target_is_legal(
 /// `cell_move_action` and `ordinary_cell_move_goal`. Any other house's object
 /// answers 0 there (`0x00700AB7..0x00700AC4`).
 ///
+/// DORMANT: before that tail, a second rung (`0x00700A46..0x00700AA8`)
+/// answers Attack when vt+0x398 (`0x0070EF00`) accepts the cell, which it
+/// does for an `IsARock=` overlay under a `TerrainFire=` weapon, and control
+/// (vt+0xA0) or range (vt+0x164) holds. Not ported: retail's only
+/// `TerrainFire=` weapon, `TankMakeupKit`, is unreferenced (`[MGTK]` has
+/// `;Primary=TankMakeupKit` commented out).
+///
 /// This asks no ROF or reload. Over an object a Foot's shroud rung comes
 /// next ([`shrouded_object_action`]); so far it is [`base_action`]. Then
 /// the class post-processing below. See

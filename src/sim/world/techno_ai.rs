@@ -1404,6 +1404,16 @@ fn drop_unsensed_cloaked_target_step(
 /// Tick the common `+0xC4` per-mission AI counter once per object visit
 /// (`0x006FA646..0x006FA64F`), then enter `MissionClass::AI @ 0x005B3060`
 /// (`0x006FA655`), whose first call is `ObjectClass::AI`'s sound block.
+///
+/// RESIDUAL: when the fall kills the object, this returns false and the
+/// callers leave the whole Techno body. Native continues through the passive
+/// scan (`0x006FA65A..0x006FA6EE`: `PassiveAcquireGate @ 0x00709290`, then
+/// `Retaliate_And_Scan @ 0x00709820`), the attached bomb's tick
+/// (`0x006FA6F5..0x006FA712`) and the Slave and Capture managers
+/// (`0x006FA717..0x006FA730`) before its IsAlive test at `0x006FA735`.
+/// Trigger: an object that dies landing from a fall. Effect: those blocks
+/// skip that one visit of a dead object; a scan draw would shift the RNG
+/// stream. Frequency: rare; no retail faller owns a slave or capture manager.
 fn mission_counter_step(
     sim: &mut Simulation,
     id: u64,

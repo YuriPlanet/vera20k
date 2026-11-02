@@ -4608,11 +4608,22 @@ impl Simulation {
     /// then its Foot-class gate. Techno ctor `0x006F2B40` ORs AbstractFlags
     /// bit 0 at `0x006F3228`; Foot ctor `0x004D31E0` ORs bit 2 (`4`) at
     /// `0x004D34DA`, so the native `+0x14 & 4` test identifies Foot, not an
-    /// active-state predicate. Only a Foot with `+0x6AD == 0` runs
-    /// Kill_All_Spawns (`0x006B7100`), ClearAllTargets (`0x006B7BB0`) and
-    /// Detach_All(1); Deselect follows on every class. Foot's constructor
-    /// clears `+0x6AD` at `0x004D3414`; ImbueLocomotor sets the lift latch at
-    /// `0x00710352`, and the Jumpjet landing paths clear it.
+    /// active-state predicate. A non-Foot object (`JZ 0x006FCD7B`) and a Foot
+    /// with `+0x6AD == 0` run Kill_All_Spawns (`0x006B7100`), ClearAllTargets
+    /// (`0x006B7BB0`) and Detach_All(1); only a lifted Foot skips them.
+    /// Deselect follows on every class. Foot's constructor clears `+0x6AD` at
+    /// `0x004D3414`; ImbueLocomotor sets the lift latch at `0x00710352`, and
+    /// the Jumpjet landing paths clear it.
+    ///
+    /// RESIDUAL: VERA runs the block for Foot only. Trigger: a Building's
+    /// Stun, which VERA reaches only from `TechnoClass::ReceiveDamage`'s death
+    /// arm (`0x00702206..0x00702210`), after `ObjectClass::ReceiveDamage`'s
+    /// Destroy callback already ran Detach_All(1) on it
+    /// (`0x005F5765..0x005F57AF`). Effect: native's second Detach_All(1),
+    /// and the spawn kill and target clear that Destroy's pointer expiry
+    /// already did, are skipped. Frequency: every building death; no retail
+    /// building sets `Spawns=`. Downstream: none seen; a holder that
+    /// re-acquired the building between the two passes would keep it.
     fn techno_stun(&mut self, stable_id: u64, context: UninitContext<'_>) {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
@@ -4644,8 +4655,9 @@ impl Simulation {
         }
         crate::sim::radio::broadcast_break(self, stable_id, context.rules(), context.effects());
         // `0x006FCD6B..0x006FCD79`: a lifted Foot keeps its spawns, their
-        // targets and its listeners. The `+0x14 & 4` test guards the whole
-        // block before the Foot-only `+0x6AD` read.
+        // targets and its listeners. The `+0x14 & 4` test only guards the
+        // Foot-only `+0x6AD` read; native runs the block for non-Foot objects
+        // too (residual above).
         let foot_lifted = self
             .substrate
             .entities

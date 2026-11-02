@@ -926,6 +926,12 @@ pub(super) fn tick_stock_cloak_producer(
         // whose owner is not human-controlled (`HouseClass::IsControlledByHuman
         // @ 0x0050B730`) Scatter(null coordinate, forced, not no-kidding), so
         // a computer's freshly cloaked sub, dolphin or squid drifts off.
+        // DORMANT: the WhatAmI()==Unit test (`0x006FBC0B..0x006FBC15`) is not
+        // asked, and a Unit carrying a CTF flag (`+0x6CC != -1`, `0x006FBADF`)
+        // would call StartUncloaking (vt+0xFC, `0x00703850`) instead of the
+        // Detach_All above. Retail `Cloakable=` types are all Units (DLPH,
+        // SUB, SQD, BSUB), no type grants a CLOAK ability, and only the
+        // desupported CaptureTheFlag option attaches flags (`foot_speed.rs`).
         let owner = sim.substrate.entities.get(id).map(|entity| entity.owner());
         if owner.is_some_and(|owner| !sim.owner_is_human(owner)) {
             sim.scatter(
