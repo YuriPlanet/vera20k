@@ -391,6 +391,9 @@ impl Simulation {
             // ReadScenarioBuildings sets its three upgrade slots to -1 once,
             // before the loop (`0x0044F838..0x0044F846`): a line that stops
             // short of a token keeps the slot the previous admitted line wrote.
+            // Residual: native also writes them for a line whose Unlimbo then
+            // fails off-map; the map reader drops a negative cell line first,
+            // so its tokens never reach these slots (custom maps only).
             let mut upgrade_slots: [Option<String>; 3] = Default::default();
 
             for (entity_index, map_ent) in entities.iter().enumerate() {
