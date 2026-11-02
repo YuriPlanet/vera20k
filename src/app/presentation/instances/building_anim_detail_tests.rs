@@ -190,6 +190,7 @@ fn emit(
         crate::render::batch::DepthAxis::NONE.world_height,
         viewport,
         material.state,
+        0,
         detail_level as i32,
     );
     let prepared = prepared

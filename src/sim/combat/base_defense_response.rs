@@ -232,59 +232,66 @@ impl ResponseSelection {
     ) -> i32 {
         let current_frame = world.session.binary_frame() as i32;
         let (budget, responders) = self.into_ranked();
-        if budget <= 0 {
-            return 0;
-        }
-
         let mut accumulated = 0;
-        for responder in responders {
-            let in_base_defense_team = world
-                .team_script_vm
-                .team_for_member(responder.entity_id)
-                .is_some_and(|(_, is_base_defense)| is_base_defense);
-            let draw = world.scenario_rng.next_range_u32_inclusive(0, 99);
-            let mission = match response_mission(draw, in_base_defense_team) {
-                ResponseMission::Rescue => MissionType::Rescue,
-                ResponseMission::AreaGuard => MissionType::AreaGuard,
-            };
-            let Some(responder_entity) = world.substrate.entities.get_mut(responder.entity_id)
-            else {
-                continue;
-            };
-            queue_entity_mission_deferred(responder_entity, MissionId::from_known(mission));
-            responder_entity.set_archive_target(Some(TargetKind::Entity(victim_id)));
-            world
-                .assign_target_represented(
-                    responder.entity_id,
-                    Some(TargetKind::Entity(attacker_id)),
-                    rules,
-                    None,
-                    FrameEffects::default(),
-                )
-                .expect("selected responder remains present during synchronous target assignment");
-            let Some(responder_entity) = world.substrate.entities.get(responder.entity_id) else {
-                continue;
-            };
-            let threat = live_threat_posed(
-                responder_entity,
+        // `0x0070863F`: a nonpositive budget skips the sort and assignments.
+        if budget > 0 {
+            for responder in responders {
+                let in_base_defense_team = world
+                    .team_script_vm
+                    .team_for_member(responder.entity_id)
+                    .is_some_and(|(_, is_base_defense)| is_base_defense);
+                let draw = world.scenario_rng.next_range_u32_inclusive(0, 99);
+                let mission = match response_mission(draw, in_base_defense_team) {
+                    ResponseMission::Rescue => MissionType::Rescue,
+                    ResponseMission::AreaGuard => MissionType::AreaGuard,
+                };
+                let Some(responder_entity) = world.substrate.entities.get_mut(responder.entity_id)
+                else {
+                    continue;
+                };
+                queue_entity_mission_deferred(responder_entity, MissionId::from_known(mission));
+                responder_entity.set_archive_target(Some(TargetKind::Entity(victim_id)));
                 world
-                    .interner
-                    .object_type(responder_entity.type_ref(), rules),
-                &world.substrate.entities,
-                rules,
-                &world.interner,
-            );
-            let (next, overshot) = add_assigned_threat(accumulated, threat, budget);
-            accumulated = next;
-            if overshot {
-                if let Some(attacker) = world.substrate.entities.get_mut(attacker_id) {
-                    attacker.base_defense_response.cooldown.start(
-                        current_frame,
-                        response_delay_frames(rules.general.base_defense_delay_minutes),
+                    .assign_target_represented(
+                        responder.entity_id,
+                        Some(TargetKind::Entity(attacker_id)),
+                        rules,
+                        None,
+                        FrameEffects::default(),
+                    )
+                    .expect(
+                        "selected responder remains present during synchronous target assignment",
                     );
+                let Some(responder_entity) = world.substrate.entities.get(responder.entity_id)
+                else {
+                    continue;
+                };
+                let threat = live_threat_posed(
+                    responder_entity,
+                    world
+                        .interner
+                        .object_type(responder_entity.type_ref(), rules),
+                    &world.substrate.entities,
+                    rules,
+                    &world.interner,
+                );
+                let (next, overshot) = add_assigned_threat(accumulated, threat, budget);
+                accumulated = next;
+                if overshot {
+                    break;
                 }
-                break;
             }
+        }
+        // `0x0070875C..0x007087A9`: the shared exit starts the attacker's
+        // cooldown whenever the sum strictly exceeds the budget, so a budget
+        // that engaged defenders drove negative arms it with no assignment.
+        if accumulated > budget
+            && let Some(attacker) = world.substrate.entities.get_mut(attacker_id)
+        {
+            attacker.base_defense_response.cooldown.start(
+                current_frame,
+                response_delay_frames(rules.general.base_defense_delay_minutes),
+            );
         }
         accumulated
     }
@@ -322,8 +329,9 @@ use admission::{
 /// Persistent TechnoClass state used by the active House base-defence
 /// responder. The two recruitment admission bytes are constructor-true; an
 /// authored object's scenario line ([`Self::author_recruitable`]) and
-/// `TeamClass::Add_Member` ([`Self::set_team_recruitable`]) write them. Cooldown
-/// writes occur only after a responder assignment or strict budget overshoot. The
+/// `TeamClass::Add_Member` ([`Self::set_team_recruitable`]) write them. The
+/// cooldown starts only when the assigned sum strictly exceeds the budget: an
+/// assignment overshoot, or a scan whose engaged defenders left it negative. The
 /// ArchiveTarget (`+0x218`) stored here is the general Techno field, which
 /// responders, miners, the slave manager and the rally click all write.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -484,10 +492,9 @@ pub(crate) fn respond_to_base_attack(
         rules,
         frame_effects,
     );
+    // A nonpositive budget still reaches the shared cooldown exit through
+    // `dispatch`; each class loop below stops first (`0x007081BF`, `0x007083F5`).
     let mut selection = ResponseSelection::new(budget);
-    if !selection.can_scan() {
-        return;
-    }
 
     // Admission retains native lazy map-query effects on shared Dummy. Entity
     // and mission mutations follow the scan.

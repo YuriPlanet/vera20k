@@ -2840,26 +2840,23 @@ impl Simulation {
     }
 
     /// Building44377E admits HasRallyPoint OR UndeploysInto; the latter
-    /// archives the move goal before SELL. ConstructionYards must also pass
-    /// the cell click's44374F..443778 redeploy gates.
+    /// archives the move goal before SELL. The click's admission is the
+    /// owner's and vt+0xA0's ([`Self::techno_player_controllable`]):
+    /// What_Action_OnCell asks it at `0x00447617`, and the cell click's
+    /// ConstructionYard gates (`0x0044374F..0x00443778`) repeat its own.
+    /// Neither reads build-up or sale, so a yard building up or repacking
+    /// still takes the click: SELL during build-up starts the repack
+    /// (Sell_Back `0x00447110` queues Selling unless already Selling), and a
+    /// repack's MCV then drives to the new cell.
     pub fn takes_rally_point(&self, stable_id: u64, owner: &str, rules: &RuleSet) -> bool {
-        let Some(entity) = self.substrate.entities.get(stable_id) else {
-            return false;
-        };
-        if entity.category() != crate::map::entities::EntityCategory::Structure
-            || !owner.eq_ignore_ascii_case(self.interner.resolve(entity.owner()))
-        {
-            return false;
-        }
-        let Some(object) = self.object_type(entity.type_ref(), rules) else {
-            return false;
-        };
-        if object.undeploys_into.is_some() {
-            self.can_undeploy_building_runtime(stable_id, rules)
-                && (!object.construction_yard || self.session.game_mode_nonzero())
-        } else {
-            object.has_rally_line()
-        }
+        self.substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| {
+                entity.category() == crate::map::entities::EntityCategory::Structure
+                    && owner.eq_ignore_ascii_case(self.interner.resolve(entity.owner()))
+            })
+            && self.techno_player_controllable(stable_id, rules)
     }
 
     /// Replace the current selection with exactly the given stable entity IDs.

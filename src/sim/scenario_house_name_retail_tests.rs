@@ -134,7 +134,12 @@ fn rejected_authored_buildings_match_original_without_constructing() {
             row["basic"]["NewINIFormat"].as_str().unwrap(),
             row["structures"]["0"].as_str().unwrap()
         ));
-        let entities = crate::map::entities::parse_map_entities(&ini);
+        let entities = crate::map::entities::parse_map_entities(
+            &ini,
+            crate::map::basic::parse_basic_section(&ini)
+                .new_ini_format
+                .unwrap_or(0),
+        );
         assert_eq!(entities.len(), 1);
         let before = sim.state_hash();
         let rng = sim.rng_state();
@@ -178,7 +183,7 @@ fn mobile_readers_admit_current_house_and_resolve_first_computer() {
     let ini = IniFile::from_str(
         "[Units]\n0=<human player>,HTNK,256,8,8,0,Guard,None\n1=Computer,HTNK,256,12,8,0,Guard,None\n[Infantry]\n0=<human player>,E2,256,8,12,0,Guard,0,None\n[Aircraft]\n0=<human player>,BEAG,256,12,12,0,Guard,None\n",
     );
-    let entities = crate::map::entities::parse_map_entities(&ini);
+    let entities = crate::map::entities::parse_map_entities(&ini, 4);
     assert_eq!(sim.spawn_from_map(&entities, Some(&retail.rules)), 4);
     for (cell, owner, type_name) in [
         ((8, 8), human, "HTNK"),
@@ -220,7 +225,12 @@ fn a_network_game_keeps_the_current_houses_map_structure() {
         let ini = IniFile::from_str(
             "[Basic]\nNewINIFormat=4\n[Structures]\n0=<human player>,NAHAND,256,20,20,0,None,0,0,1,0\n",
         );
-        let entities = crate::map::entities::parse_map_entities(&ini);
+        let entities = crate::map::entities::parse_map_entities(
+            &ini,
+            crate::map::basic::parse_basic_section(&ini)
+                .new_ini_format
+                .unwrap_or(0),
+        );
         assert_eq!(
             sim.spawn_from_map(&entities, Some(&retail.rules)),
             spawned,

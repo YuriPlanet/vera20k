@@ -1225,16 +1225,18 @@ impl ArtRegistry {
             // BuildingTypeClass reads Height first, then passes that resolved
             // field value as the default for OccupyHeight.
             let occupy_height: i32 = section.read_int("OccupyHeight", height);
-            // `MuzzleFlash%d=` is ReadMinMax (`0x0046033F`).
+            // `MuzzleFlash%d=` is ReadMinMax (`0x0046033F`) for every index
+            // below MaxNumberOccupants (`0x00460285..0x00460382`): it reads
+            // past a missing index, and (0xFFFF, 0xFFFF), the default, becomes
+            // (0, 0). The type holds ten. Residual: a MaxNumberOccupants above
+            // ten overruns that array natively; no retail type sets one.
             let muzzle_flash_positions: Vec<(i32, i32)> = (0..10)
-                .map_while(|i| {
-                    let key = format!("MuzzleFlash{i}");
-                    if !section.is_present(&key) {
-                        return None;
-                    }
-                    let [x, y] = section.read_minmax(&key, [0, 0]);
-                    Some((x, y))
-                })
+                .map(
+                    |i| match section.read_minmax(&format!("MuzzleFlash{i}"), [0xFFFF, 0xFFFF]) {
+                        [0xFFFF, 0xFFFF] => (0, 0),
+                        [x, y] => (x, y),
+                    },
+                )
                 .collect();
             let add_occupy = parse_numbered_cell_offsets(section, "AddOccupy");
             let remove_occupy = parse_numbered_cell_offsets(section, "RemoveOccupy");

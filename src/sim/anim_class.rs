@@ -263,11 +263,13 @@ pub fn anim_translucency_selection(input: AnimTranslucencyInput) -> AnimTransluc
             flags: flags | translucency_flag(input.explicit_translucency),
         };
     }
-    if input.instance_ramp > 15 {
-        return AnimTranslucencyResult { draw: false, flags };
-    }
-    if input.instance_ramp > 5 {
-        flags |= 4;
+    // `0x004231C1..0x004231EE`: a ramp of 1-5 draws at 25%, 6-15 at 50%,
+    // and anything above 15 not at all.
+    match input.instance_ramp {
+        16.. => return AnimTranslucencyResult { draw: false, flags },
+        6..=15 => flags |= 4,
+        1..=5 => flags |= 2,
+        _ => {}
     }
     AnimTranslucencyResult { draw: true, flags }
 }
@@ -4110,6 +4112,38 @@ mod long_tail_contract_tests {
         ] {
             let result = anim_translucency_selection(input(double_thick, explicit, ramp));
             assert_eq!((result.draw, result.flags), expected);
+        }
+    }
+
+    /// `0x004231C1..0x004231EE`: the `+0x178` bands a fading building
+    /// writes into its slot anims.
+    #[test]
+    fn instance_ramp_bands_draw_at_25_then_50_then_not_at_all() {
+        for (instance_ramp, expected) in [
+            (0, (true, 0)),
+            (1, (true, 2)),
+            (5, (true, 2)),
+            (6, (true, 4)),
+            (15, (true, 4)),
+            (16, (false, 0)),
+        ] {
+            let result = anim_translucency_selection(AnimTranslucencyInput {
+                base_flags: 0,
+                forced_translucent: false,
+                double_thick: false,
+                translucency_detail_level: 0,
+                game_detail_level: 2,
+                translucent_ramp: false,
+                current_frame: 0,
+                end_frame: 10,
+                explicit_translucency: 0,
+                instance_ramp,
+            });
+            assert_eq!(
+                (result.draw, result.flags),
+                expected,
+                "ramp {instance_ramp}"
+            );
         }
     }
 

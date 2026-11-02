@@ -1128,7 +1128,6 @@ const DEFICIENT_START_RECT_H: u16 = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkirmishLaunchApplyResult {
-    pub local_owner: Option<String>,
     pub spawned_mcvs: u32,
     pub active_slots: usize,
 }
@@ -1401,14 +1400,12 @@ fn install_shared_house_sources(
 /// Commit the explicit launch-session diplomacy graph at the post-crate boundary.
 pub(crate) fn apply_skirmish_launch_alliances(
     sim: &mut Simulation,
-    house_roster: &HouseRoster,
     session: &SkirmishLaunchSession,
     rules: &RuleSet,
 ) {
     let slots = normalized_launch_slots(session);
     sim.install_house_alliances(
         crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(launch_alliance_map(
-            house_roster,
             &slots,
             &session.mode,
         )),
@@ -1584,10 +1581,6 @@ fn apply_resolved_skirmish_launch_session(
     project_pre_fill_start_assignment(sim, &slots, &start_assignment);
     let assignments = &start_assignment.placements;
     let mut spawned_mcvs = 0;
-    let mut local_owner = slots
-        .iter()
-        .find(|slot| slot.is_controlled_by(session.local_player_index))
-        .map(|slot| slot.owner_name.clone());
 
     if session.options.bases {
         for (slot_idx, waypoint) in assignments {
@@ -1643,9 +1636,6 @@ fn apply_resolved_skirmish_launch_session(
                     waypoint.rx,
                     waypoint.ry
                 );
-                if slot.is_controlled_by(session.local_player_index) {
-                    local_owner = None;
-                }
             }
         }
 
@@ -1682,7 +1672,6 @@ fn apply_resolved_skirmish_launch_session(
     );
 
     SkirmishLaunchApplyResult {
-        local_owner,
         spawned_mcvs,
         active_slots: slots.len(),
     }
@@ -2084,12 +2073,17 @@ pub fn apply_skirmish_ai_opening_credits(houses: &mut crate::sim::houses::Houses
     }
 }
 
+/// The launch diplomacy graph: team and co-op alliances between the slots.
+///
+/// A map House's `Allies=` takes no part. `HouseClass::Read_INI @ 0x005009B0`,
+/// its only reader on an authored map, runs only when `Session.GameMode` is 0
+/// (campaign; `0x0068776E..0x006877B9`), and `ScenarioClass::Create_Houses
+/// @ 0x00687F10` builds Neutral and Special with no allies.
 pub fn launch_alliance_map(
-    house_roster: &HouseRoster,
     slots: &[NormalizedSkirmishSlot],
     mode: &crate::skirmish_launch::SkirmishLaunchMode,
 ) -> crate::map::houses::HouseAllianceMap {
-    let mut alliances = house_roster.alliance_map();
+    let mut alliances = crate::map::houses::HouseAllianceMap::new();
     for slot in slots {
         alliances
             .entry(normalize_house_name(&slot.owner_name))
@@ -4873,9 +4867,10 @@ mod tests {
             ry: 40,
         };
         let mut map = one_start_prefix_map(start);
-        map.entities = crate::map::entities::parse_map_entities(&IniFile::from_str(
-            "[Structures]\n0=Neutral,CABHUT,256,30,30,0,None\n",
-        ));
+        map.entities = crate::map::entities::parse_map_entities(
+            &IniFile::from_str("[Structures]\n0=Neutral,CABHUT,256,30,30,0,None\n"),
+            4,
+        );
         let roster = HouseRoster::default();
         let overlays = OverlayTypeRegistry::empty();
         for (handle, with_ai, owner_key) in [
@@ -5018,10 +5013,6 @@ mod tests {
                     } else {
                         1 + u32::from(with_ai)
                     }
-                );
-                assert_eq!(
-                    result.local_owner.as_deref(),
-                    (!block_placement).then_some(owner_key)
                 );
                 assert_eq!(
                     sim.entities().len(),
@@ -5904,7 +5895,7 @@ mod tests {
             recruitable_b: true,
             group: -1,
             follows: None,
-            structure_upgrades: [None, None, None],
+            structure_columns: Default::default(),
             structure_ai_sellable: false,
             structure_ai_repairable: false,
             structure_online: true,
@@ -6380,7 +6371,7 @@ mod tests {
         let overlays = OverlayTypeRegistry::from_ini(&ini, None);
         let map = MapFile::from_bytes(
             b"[Map]\nTheater=TEMPERATE\nSize=0,0,40,40\nLocalSize=2,2,36,32\n\
-              [Basic]\nName=GSI 04.12 owner fixture\n\
+              [Basic]\nName=GSI 04.12 owner fixture\nNewINIFormat=4\n\
               [Structures]\n\
               0=Neutral,CABHUT,256,30,30,0,None\n\
               1=Neutral,CATHOSP,256,32,32,0,None\n\

@@ -19,8 +19,9 @@ use super::{
     OptionsPage, PhysicalControlFrame, RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL,
     RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL,
     SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_STARTUP_LOGO_HELP, SKIP_STARTUP_LOGO_LABEL, SidebarSize,
-    VERA_OPTIONS_HELP, VERA_OPTIONS_LABEL, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL,
-    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    VERA_ICON_HELP, VERA_ICON_LABEL, VERA_OPTIONS_HELP, VERA_OPTIONS_LABEL, WOL_TEST_SERVICE_HELP,
+    WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL,
+    Zoom,
 };
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale, center_offset, child_window, dlu_rect};
@@ -271,6 +272,7 @@ impl LauncherOptionsLayout {
                     (LauncherCheckboxId::MouseWheelZoom, dlu(93, 143, 130, 10)),
                     (LauncherCheckboxId::LockCursor, dlu(93, 158, 130, 10)),
                     (LauncherCheckboxId::RightClickOrders, dlu(238, 113, 130, 10)),
+                    (LauncherCheckboxId::VeraIcon, dlu(238, 128, 130, 10)),
                     // Developer Options, in the main page's UI Options band.
                     // This band carries five rows where the others carry
                     // three, so it uses a 13 DLU pitch instead of 15:
@@ -508,6 +510,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::MouseWheelZoom => MOUSE_WHEEL_ZOOM_LABEL,
             LauncherCheckboxId::RightClickOrders => RIGHT_CLICK_ORDERS_LABEL,
             LauncherCheckboxId::LockCursor => LOCK_CURSOR_LABEL,
+            LauncherCheckboxId::VeraIcon => VERA_ICON_LABEL,
             LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
             LauncherCheckboxId::WolTestService => WOL_TEST_SERVICE_LABEL,
             LauncherCheckboxId::FpsCounter => FPS_COUNTER_LABEL,
@@ -565,6 +568,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::MouseWheelZoom => self.values.mouse_wheel_zoom,
             LauncherCheckboxId::RightClickOrders => self.values.right_click_orders,
             LauncherCheckboxId::LockCursor => self.values.lock_cursor,
+            LauncherCheckboxId::VeraIcon => self.values.vera_icon,
             LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
             LauncherCheckboxId::WolTestService => self.values.wol_test_service,
             LauncherCheckboxId::FpsCounter => self.values.fps_counter,
@@ -772,6 +776,7 @@ impl OptionsDialogState {
                     LauncherStatusHelp::Text(RIGHT_CLICK_ORDERS_HELP)
                 }
                 LauncherCheckboxId::LockCursor => LauncherStatusHelp::Text(LOCK_CURSOR_HELP),
+                LauncherCheckboxId::VeraIcon => LauncherStatusHelp::Text(VERA_ICON_HELP),
                 LauncherCheckboxId::ShiftQueue => LauncherStatusHelp::Text(SHIFT_QUEUE_HELP),
                 LauncherCheckboxId::WolTestService => {
                     LauncherStatusHelp::Text(WOL_TEST_SERVICE_HELP)
@@ -1145,7 +1150,7 @@ mod tests {
             .chain(&layout.checkboxes)
             .map(|(id, _)| *id)
             .collect();
-        assert_eq!(all.len(), 16);
+        assert_eq!(all.len(), 17);
         for id in &all {
             assert_eq!(all.iter().filter(|other| *other == id).count(), 1, "{id:?}");
         }
@@ -1186,6 +1191,7 @@ mod tests {
             (MouseWheelZoom, ui, developer),
             (LockCursor, ui, developer),
             (RightClickOrders, ui, developer),
+            (VeraIcon, ui, developer),
             (FpsCounter, developer, accessibility),
             (SkipStartupLogo, developer, accessibility),
             (CustomEndGameBanner, developer, accessibility),
@@ -1351,6 +1357,7 @@ mod tests {
             (MouseWheelZoom, MOUSE_WHEEL_ZOOM_HELP),
             (LockCursor, LOCK_CURSOR_HELP),
             (RightClickOrders, RIGHT_CLICK_ORDERS_HELP),
+            (VeraIcon, VERA_ICON_HELP),
             (FpsCounter, FPS_COUNTER_HELP),
             (SkipStartupLogo, SKIP_STARTUP_LOGO_HELP),
             (CustomEndGameBanner, CUSTOM_END_GAME_BANNER_HELP),
@@ -1706,6 +1713,11 @@ mod tests {
                 RightClickOrders,
                 RIGHT_CLICK_ORDERS_LABEL,
                 LauncherOptionsEvent::RightClickOrdersChanged,
+            ),
+            (
+                VeraIcon,
+                VERA_ICON_LABEL,
+                LauncherOptionsEvent::VeraIconChanged,
             ),
             (
                 FpsCounter,

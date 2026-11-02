@@ -115,6 +115,23 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         self.platform.cursor_confined = locked;
         crate::app::input::cursor::apply_cursor_confinement(self);
     }
+    fn store_vera_icon(&mut self, vera_icon: bool) {
+        // Saved, and shown at once. Unticked in an install without the red
+        // star, the window keeps VERA's icon until the next launch, which
+        // starts with the program's own.
+        self.persistence.options_profile.vera_icon = vera_icon;
+        if self.platform.window.is_visible() == Some(false) {
+            return;
+        }
+        let ra2_dir = self
+            .platform
+            .game_config
+            .as_ref()
+            .map(|config| config.paths.ra2_dir.as_path());
+        if let Some(icon) = crate::app::window_icon::WindowIcon::chosen(vera_icon, ra2_dir) {
+            icon.show_on(&self.platform.window);
+        }
+    }
     fn store_right_click_orders(&mut self, enabled: bool) {
         self.persistence.options_profile.right_click_orders = enabled;
     }

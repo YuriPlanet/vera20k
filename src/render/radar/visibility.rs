@@ -241,12 +241,12 @@ pub(super) struct RadarBuildingVisibilityFacts {
     pub fresh_in_playfield: bool,
     pub both_corners_shrouded: bool,
     pub cloak_state: i32,
-    /// BuildingClass+0x6ED. No Rust production writer exists yet.
+    /// BuildingClass+0x6ED, the fade stage.
     pub building_cloak_stage: u8,
-    /// BuildingClass+0x6E7, the FogOfWar freeze flag. `freeze_building_in_fog`
-    /// and `clean_fog` write it as `FogState::is_object_fogged`; the radar
-    /// registration below does not feed it from there yet.
-    pub building_cloak_flag: bool,
+    /// BuildingClass+0x6E7, the FogOfWar freeze flag set by the fogged-object
+    /// constructor (`0x004D10D5`): `freeze_building_in_fog` and `clean_fog`
+    /// keep it as `FogState::is_object_fogged` for the local player.
+    pub fogged: bool,
     pub has_sensor: bool,
     /// The current player's house asks (`PlayerPtr->IsAlliedWith(Owner)`,
     /// `0x00457196`, `HouseClass::IsAlliedWith @ 0x004F9A50`).
@@ -272,7 +272,7 @@ pub(super) fn radar_building_registration_visibility(
     }
     if facts.cloak_state != 2
         && facts.building_cloak_stage != 15
-        && !facts.building_cloak_flag
+        && !facts.fogged
         && !facts.both_corners_shrouded
     {
         return RadarVisibilityResult::VISIBLE;
@@ -281,9 +281,7 @@ pub(super) fn radar_building_registration_visibility(
         return RadarVisibilityResult::HIDDEN;
     }
     let out_code = u8::from(
-        !facts.allied_with_current_player
-            && !facts.building_cloak_flag
-            && !facts.both_corners_shrouded,
+        !facts.allied_with_current_player && !facts.fogged && !facts.both_corners_shrouded,
     );
     RadarVisibilityResult {
         visible: true,
@@ -415,10 +413,9 @@ pub(super) fn build_radar_object_update(
             fresh_in_playfield,
             both_corners_shrouded,
             cloak_state,
-            // Exact predicate fields are explicit. +0x6ED has no Rust writer;
-            // +0x6E7's FogOfWar writer is not consulted here yet.
-            building_cloak_stage: 0,
-            building_cloak_flag: false,
+            building_cloak_stage: entity.building_cloak_stage(),
+            fogged: !full_visibility
+                && local_owner.is_some_and(|local| fog.is_object_fogged(local, entity.stable_id())),
             has_sensor,
             allied_with_current_player,
         })
@@ -490,7 +487,7 @@ mod tests {
             both_corners_shrouded: false,
             cloak_state: 0,
             building_cloak_stage: 0,
-            building_cloak_flag: false,
+            fogged: false,
             has_sensor: false,
             allied_with_current_player: false,
         }
@@ -920,6 +917,45 @@ mod tests {
             location,
             (3, 2),
         ));
+    }
+
+    /// `0x00457170`: an AI building the local player sees only as a fogged
+    /// image (+0x6E7, set by the fogged-object constructor `0x004D10D5`)
+    /// needs a sensor to register on the radar, like a shrouded one.
+    #[test]
+    fn radar_visibility_a_fogged_ai_building_needs_a_sensor() {
+        let local = crate::sim::intern::test_intern("Local");
+        let mut building =
+            crate::sim::game_entity::GameEntity::test_default(2, "BLDG", "Enemy", 10, 10);
+        building.set_category_for_test(EntityCategory::Structure);
+        building
+            .type_facts
+            .set_foundation_for_test("2x2".to_string().into());
+        building.lifecycle.set_in_limbo_for_test(false);
+        let mut fog = FogState::default();
+        fog.mark_visible_for_owner(local, 10, 10);
+        let visible = |fog: &FogState| {
+            build_radar_object_update(
+                &building,
+                &crate::sim::houses::Houses::default(),
+                Some(local),
+                fog,
+                &Default::default(),
+                false,
+                true,
+                None,
+                None,
+                visibility_projection(),
+                None,
+                None,
+            )
+            .visibility
+            .evaluate(false)
+            .visible
+        };
+        assert!(visible(&fog));
+        fog.set_object_fogged_for_test(local, 2, true);
+        assert!(!visible(&fog));
     }
 
     /// `0x0070D30E..0x0070D34B` and `0x00457117..0x0045714B` ask

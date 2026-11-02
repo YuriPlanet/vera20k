@@ -391,6 +391,51 @@ fn gsi_04_05_positive_transaction_queues_in_order_and_arms_only_on_overshoot() {
     );
 }
 
+/// A defender already firing at the attacker debits its ThreatPosed from the
+/// budget (`0x007085CC`). Debited to exactly zero, nothing arms; below zero,
+/// or negative from the start, the shared exit (`0x0070875C`) starts the
+/// attacker's cooldown with no assignment or draw.
+#[test]
+fn gsi_04_05_a_negative_budget_starts_the_cooldown_without_an_assignment() {
+    for (response, defender_threat, expected_cooldown) in [
+        (1, 50, CdTimer::from_raw(-1, 0)),
+        (1, 51, CdTimer::started(41, 225)),
+        (-1, 50, CdTimer::started(41, 225)),
+    ] {
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[General]\nBaseDefenseDelay=.25\n[AI]\nComputerBaseDefenseResponse={response}\n\
+             [VehicleTypes]\n0=ATTACKER\n1=DEFENDER\n\
+             [BuildingTypes]\n0=VICTIM\n\
+             [ATTACKER]\nStrength=100\nArmor=heavy\nCost=50\nThreatPosed=50\n\
+             [DEFENDER]\nStrength=100\nArmor=heavy\nCost=100\nThreatPosed={defender_threat}\nSpeed=4\nMovementZone=Normal\nPrimary=DEFENDERGUN\n\
+             [VICTIM]\nStrength=100\nArmor=wood\n\
+             [DEFENDERGUN]\nDamage=10\nRange=5\nWarhead=DEFENDERWH\n\
+             [DEFENDERWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        )))
+        .expect("engaged defender fixture");
+        let mut sim = response_world(41, (5, 0));
+        with_clear_map(&mut sim);
+        let mut defender = response_defender(3, "DEFENDER", 2);
+        defender
+            .attack_target
+            .set_for_test(Some(TargetKind::Entity(2)));
+        sim.substrate.entities.insert(defender);
+        sim.scenario_rng = SimRng::new(0x0405);
+        let rng_before = sim.scenario_rng.logical_state();
+
+        respond(&mut sim, &rules);
+
+        assert_eq!(sim.scenario_rng.logical_state(), rng_before);
+        let entities = &sim.substrate.entities;
+        assert_eq!(entities.get(3).unwrap().archive_target(), None);
+        assert_eq!(
+            entities.get(2).unwrap().base_defense_response.cooldown,
+            expected_cooldown,
+            "response {response}, defender ThreatPosed {defender_threat}"
+        );
+    }
+}
+
 /// The scan takes only the victim's house's objects (admission refuses
 /// another house's): a nearer, lower-id defender of the attacker's house is
 /// not recruited, one handed to the victim's house is, and one handed away

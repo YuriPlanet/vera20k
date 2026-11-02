@@ -518,9 +518,12 @@ fn authored_retail_harrier_patrol_reaches_dispatch_without_a_destination() {
         .register(crate::sim::house_state::HouseState::new(
             owner, 0, None, true, 0, 10,
         ));
-    let entries = crate::map::entities::parse_map_entities(&IniFile::from_str(
-        "[Basic]\nNewINIFormat=4\n[Aircraft]\n0=Americans,ORCA,256,10,10,0,pAtRoL,None,0,-1,1,1\n",
-    ));
+    let entries = crate::map::entities::parse_map_entities(
+        &IniFile::from_str(
+            "[Basic]\nNewINIFormat=4\n[Aircraft]\n0=Americans,ORCA,256,10,10,0,pAtRoL,None,0,-1,1,1\n",
+        ),
+        4,
+    );
     assert_eq!(entries[0].mission, Some(MissionType::Patrol));
     assert_eq!(sim.spawn_from_map(&entries, Some(&rules)), 1);
     let plane = sim

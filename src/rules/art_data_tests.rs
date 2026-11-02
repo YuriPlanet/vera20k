@@ -185,6 +185,16 @@ fn test_object_shp_candidates_dedupe_when_substitution_matches_original() {
     );
 }
 
+/// `0x00460285..0x00460382` reads every MuzzleFlash index; a missing one is
+/// (0, 0) and does not end the list.
+#[test]
+fn muzzle_flash_reads_past_a_missing_index() {
+    let ini = IniFile::from_str("[GAOBS]\nMuzzleFlash0=1,2\nMuzzleFlash2=5,6\n");
+    let reg = ArtRegistry::from_ini(&ini);
+    let ports = &reg.get("GAOBS").unwrap().muzzle_flash_positions;
+    assert_eq!(ports[..3], [(1, 2), (0, 0), (5, 6)]);
+}
+
 #[test]
 fn gsi_04_05_hidden_absent_occupy_height_inherits_resolved_height() {
     let ini: IniFile = IniFile::from_str(

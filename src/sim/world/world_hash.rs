@@ -676,6 +676,10 @@ impl Simulation {
             b"path-batch-v2".hash(hasher);
             batch.hash(hasher);
         }
+        // Whether target scans are batched; their answers live within a pass.
+        if self.scan_batch.is_some() {
+            b"scan-batch-v1".hash(hasher);
+        }
 
         self.substrate.fold_raw_cell_occupation(hasher);
         self.substrate.fold_hidden_occupation(hasher);
@@ -2096,6 +2100,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         cloak.step_timer().timer().duration().hash(hasher);
         cloak.recloak_delay().start_frame().hash(hasher);
         cloak.recloak_delay().duration().hash(hasher);
+        cloak.building_stage().hash(hasher);
     } else {
         0u8.hash(hasher);
     }

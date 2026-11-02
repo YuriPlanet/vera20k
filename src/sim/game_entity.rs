@@ -1179,8 +1179,8 @@ impl GameEntity {
     /// `owned_by_current_house` is that +41A as the caller reads it: drawing
     /// the actual byte, shared decisions
     /// [`Simulation::shared_owned_by_current_house`](crate::sim::world::Simulation::shared_owned_by_current_house).
-    /// Building4544A0 delegates here only with its +6ED override stage zero.
-    /// The nonzero building override has no Rust producer and remains separate.
+    /// A Building with a nonzero fade stage (`+0x6ED`) answers through its
+    /// own override (`BuildingClass::GetVisualState @ 0x004544A0`).
     pub fn visual_character(
         &self,
         cloaking_stages: i32,
@@ -1188,6 +1188,15 @@ impl GameEntity {
         owned_by_current_house: bool,
         query: crate::sim::cloak_disguise::VisualCharacterQuery,
     ) -> u8 {
+        let stage = self.building_cloak_stage();
+        if stage != 0 {
+            return crate::sim::cloak_disguise::building_stage_visual_character(
+                stage,
+                owned_by_current_house,
+                true,
+                query,
+            );
+        }
         let (state, progress) = self
             .cloak
             .as_ref()
@@ -1202,6 +1211,14 @@ impl GameEntity {
             true,
             query,
         )
+    }
+
+    /// A Building's fade stage, `BuildingClass+0x6ED` (0 opaque, 15 faded
+    /// out); 0 for every other object.
+    pub fn building_cloak_stage(&self) -> u8 {
+        self.cloak
+            .as_ref()
+            .map_or(0, crate::sim::cloak_disguise::CloakRuntime::building_stage)
     }
 
     /// `Techno70BE50`: actual COM410220 reads Abstract+10, then native7C5F00

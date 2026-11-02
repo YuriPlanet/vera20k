@@ -277,6 +277,8 @@ fn live_occupant_at(sim: &Simulation, building_id: u64, index: usize) -> Option<
         .copied()
 }
 
+/// SellBuilding's exit probe and ejection loop. `None` when no exit cell
+/// was found and the occupants went through KillOccupants instead.
 fn eject_garrison_passengers_at_edges(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -287,16 +289,16 @@ fn eject_garrison_passengers_at_edges(
     height: u16,
     mode: GarrisonEjectMode,
     uninit_context: UninitContext<'_>,
-) -> usize {
+) -> Option<usize> {
     if width == 0 || height == 0 {
-        return 0;
+        return Some(0);
     }
     let Some(building) = sim.substrate.entities.get(building_id) else {
-        return 0;
+        return Some(0);
     };
     let occupants = building.passenger_role.occupants();
     let Some(&first_occupant_id) = occupants.ids().first() else {
-        return 0;
+        return Some(0);
     };
     let initial_count = occupants.ids().len();
 
@@ -319,12 +321,10 @@ fn eject_garrison_passengers_at_edges(
     let mut ejected: usize = 0;
 
     let Some((exit_rx, exit_ry)) = exit_cell else {
-        for index in (0..initial_count).rev() {
-            if let Some(id) = live_occupant_at(sim, building_id, index) {
-                uninit_garrison_passenger_without_exit(sim, id, uninit_context);
-            }
-        }
-        return 0;
+        // 458180..458190: no exit and not interior -> KillOccupants(NULL),
+        // then return without the placement bracket or the 4581D6 refresh.
+        kill_building_occupants(sim, building_id, uninit_context);
+        return None;
     };
 
     // `0x0045806A..0x00458078`: the exit Cell's GetCoords, every occupant's
@@ -360,7 +360,7 @@ fn eject_garrison_passengers_at_edges(
         }
     });
 
-    ejected
+    Some(ejected)
 }
 
 /// KillOccupants4585C0(NULL): reset +69C, UnInit the live vector last
@@ -421,7 +421,7 @@ pub(crate) fn sell_building_occupants(
             return 0;
         }
     }
-    let ejected = eject_garrison_passengers_at_edges(
+    let Some(ejected) = eject_garrison_passengers_at_edges(
         sim,
         rules,
         building_id,
@@ -431,7 +431,9 @@ pub(crate) fn sell_building_occupants(
         height,
         mode,
         UninitContext::new(rules, registry).with_effects(frame_effects),
-    );
+    ) else {
+        return 0;
+    };
 
     if let Some(building) = sim.substrate.entities.get_mut(building_id) {
         building.passenger_role.occupants_mut().clear();

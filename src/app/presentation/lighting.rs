@@ -182,21 +182,26 @@ pub(crate) fn aircraft_extra_light(
 }
 
 /// Building DrawBody's body and bib (`0x0043D812..0x0043D85F`), whichever
-/// image GetImage returned, Buildup included; TerrainPalette overrides both
-/// scalar and Convert in 00705EC7..00705F52. Only the gate branch
-/// (`0x0043D644`, [`crate::sim::building_art::gate_open_body_frame`])
-/// omits ExtraLight; VERA keeps it there (retail's gate sets none).
+/// image GetImage returned, Buildup included: the cell's light plus the
+/// type's ExtraLight (`+0x1548`, `0x0043D824..0x0043D82D`). The gate branch
+/// (`gate_branch`, [`crate::sim::building_art::gate_open_body_frame`]) passes
+/// the cell's light alone (`0x0043D644..0x0043D654`). TerrainPalette
+/// overrides both scalar and Convert in 00705EC7..00705F52.
 pub(crate) fn building_palette_light(
     grid: &CellLightGrid,
     cell: (u16, u16),
     art: Option<&crate::rules::art_data::ArtEntry>,
+    gate_branch: bool,
 ) -> crate::render::palette_light::PaletteLight {
     use crate::render::palette_light::PaletteLight;
     if art.is_some_and(|a| a.terrain_palette) {
         return PaletteLight::cell(grid, cell, false);
     }
     let top = grid.cell_light_at(cell).map_or(1000, |l| l.top_scalar);
-    let extra = art.map_or(0, |a| i32::from(a.extra_light as i16));
+    let extra = match art {
+        Some(art) if !gate_branch => i32::from(art.extra_light as i16),
+        _ => 0,
+    };
     PaletteLight::color_scheme(grid.color_scheme_rgb(), top.wrapping_add(extra))
 }
 

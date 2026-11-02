@@ -719,6 +719,8 @@ struct ScanContext<'a> {
     /// VERA-only: the draws so far, so side-by-side scoring can tell which
     /// candidate drew ([`flat_scores`]).
     scenario_draws: std::cell::Cell<u32>,
+    /// VERA-only: [`ThreatScanOutcome`]'s `met_idle_disguise`.
+    met_idle_disguise: std::cell::Cell<bool>,
 }
 
 impl ScanContext<'_> {
@@ -1104,6 +1106,10 @@ pub(crate) struct ThreatScanOutcome {
     /// The Scenario stream after the scan's draws, `None` when it drew
     /// nothing ([`ScanContext::computer_detects_disguise`]).
     scenario_rng: Option<SimRng>,
+    /// VERA-only: the scan refused a disguised candidate only because it was
+    /// not blinking, so a blink starting later would have it roll
+    /// (`techno_ai::scan_batch`).
+    met_idle_disguise: bool,
 }
 
 impl ThreatScanOutcome {
@@ -1114,6 +1120,16 @@ impl ThreatScanOutcome {
     /// The Scenario stream the scan left, for the caller to commit.
     pub(crate) fn take_scenario_rng(&mut self) -> Option<SimRng> {
         self.scenario_rng.take()
+    }
+
+    /// The scan drew from the Scenario stream.
+    pub(crate) const fn drew_scenario_rng(&self) -> bool {
+        self.scenario_rng.is_some()
+    }
+
+    /// See [`Self::met_idle_disguise`]'s field.
+    pub(crate) const fn met_idle_disguise(&self) -> bool {
+        self.met_idle_disguise
     }
 
     pub(crate) const fn target(&self) -> Option<u64> {
@@ -1245,6 +1261,7 @@ pub(crate) fn greatest_threat(
                 foot_wrapper_entered: false,
                 collected: None,
                 scenario_rng: None,
+                met_idle_disguise: false,
             };
         }
     };
@@ -1253,6 +1270,7 @@ pub(crate) fn greatest_threat(
         foot_wrapper_entered,
         collected,
         scenario_rng: ctx.scenario_rng.take(),
+        met_idle_disguise: ctx.met_idle_disguise.get(),
     };
     // Base GreatestThreat6F8F80..6F8FA5 clears these two lists, retaining
     // history. Class returns before the base must preserve the prior lists.
@@ -1373,6 +1391,7 @@ pub(crate) fn greatest_threat(
         },
         scenario_rng: Default::default(),
         scenario_draws: Default::default(),
+        met_idle_disguise: Default::default(),
     };
 
     if flat {
@@ -1766,15 +1785,19 @@ fn flat_scores(
             let draws = ctx.scenario_draws.get();
             let (score, stamped) = dummy.detached_stamps(|| flat_score(ctx, walk, candidate));
             let drew = ctx.scenario_draws.get() != draws;
-            (score, stamped, drew)
+            (score, stamped, drew, ctx.met_idle_disguise.replace(false))
         });
-        if scored.iter().all(|&(_, stamped, drew)| drew || !stamped) {
+        if scored.iter().all(|&(_, stamped, drew, _)| drew || !stamped) {
             let stream = ctx.scenario_rng.borrow().clone();
             let draws = ctx.scenario_draws.get();
+            let met_idle_disguise = ctx.met_idle_disguise.get();
             let scores: Option<Vec<_>> = scored
                 .into_iter()
                 .zip(candidates)
-                .map(|((score, _, drew), candidate)| {
+                .map(|((score, _, drew, met), candidate)| {
+                    if met {
+                        ctx.met_idle_disguise.set(true);
+                    }
                     if !drew {
                         return Some(score);
                     }
@@ -1790,6 +1813,7 @@ fn flat_scores(
             }
             *ctx.scenario_rng.borrow_mut() = stream;
             ctx.scenario_draws.set(draws);
+            ctx.met_idle_disguise.set(met_idle_disguise);
         }
     }
     candidates
@@ -2377,6 +2401,15 @@ fn evaluate_candidate(
     ) {
         crate::sim::cloak_disguise::DisguiseGateOutcome::Accept => {}
         crate::sim::cloak_disguise::DisguiseGateOutcome::Reject => {
+            // VERA-only: a computer scanner refused this candidate only for
+            // want of a blink (`techno_ai::scan_batch`).
+            if candidate_disguised_to_attacker
+                && !ctx.attacker_obj.detect_disguise
+                && blink == 0
+                && !ctx.standing.human
+            {
+                ctx.met_idle_disguise.set(true);
+            }
             return None;
         }
         crate::sim::cloak_disguise::DisguiseGateOutcome::AiDetectionRoll => {
