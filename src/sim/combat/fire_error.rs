@@ -24,8 +24,6 @@
 //!
 //! RESIDUAL rows: each is ported and fires on its field, but VERA has no
 //! producer for that field yet, so it holds the constructor value:
-//! - T18: balloon docking.
-//! - T20: EMP.
 //! - T37/T46: particle systems. The Sonic wave, the damage-spark system and
 //!   Fire's `+0x308` spark system (`0x006FF1AD`, UseSparkParticles, the IFV's
 //!   RepairBullet) are live; `+0x304` (`0x006FF1A7`, UseFireParticles) and
