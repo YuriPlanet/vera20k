@@ -245,13 +245,14 @@ pub(super) fn dispatch_draw_passes(
     // across tile borders and cannot expose the diamonds' transparent corners.
     // Read the live `[PostProcess]` overrides (not the match's startup snapshot)
     // so INI edits move the water without a restart.
-    let water_ripple = state.post_process_rules().water_ripple;
-    let water_amplitude = water_ripple.map_or(0.0, |ripple| ripple.amplitude);
+    #[cfg(feature = "post-process")]
     let terrain_target = state
         .renderer
         .terrain_warp
         .as_ref()
         .map_or(view, |warp| warp.colour_view());
+    #[cfg(not(feature = "post-process"))]
+    let terrain_target = view;
     let mut pass = begin_main_pass(encoder, terrain_target, &world_depth);
 
     // Everything from here to the screen-fixed chrome block is battlefield: it
@@ -298,7 +299,12 @@ pub(super) fn dispatch_draw_passes(
     // Close the terrain layer and refract it into the composition target, then
     // resume the object pass on the composition attachments.
     drop(pass);
+    #[cfg(feature = "post-process")]
     if let Some(warp) = state.renderer.terrain_warp.as_ref() {
+        let water_amplitude = state
+            .post_process_rules()
+            .water_ripple
+            .map_or(0.0, |ripple| ripple.amplitude);
         let field = state
             .renderer
             .water_distortion

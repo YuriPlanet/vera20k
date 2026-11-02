@@ -333,6 +333,7 @@ impl App {
                             .map_err(|error| {
                                 anyhow::Error::new(error).context("Could not prepare VERA.INI")
                             })?;
+                        #[cfg(feature = "post-process")]
                         crate::app::persistence::rules_profile::remember_settings_dir(
                             config.paths.settings_dir(),
                         );
@@ -1230,14 +1231,23 @@ impl App {
                 outcome_banner_art,
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),
+                #[cfg(feature = "post-process")]
                 post_chain: None,
+                #[cfg(feature = "post-process")]
                 water_mask: None,
+                #[cfg(feature = "post-process")]
                 water_distortion: None,
+                #[cfg(feature = "post-process")]
                 terrain_warp: None,
+                #[cfg(feature = "post-process")]
                 post_rules: None,
+                #[cfg(feature = "post-process")]
                 post_luts: [None, None, None],
+                #[cfg(feature = "post-process")]
                 post_atlas: None,
+                #[cfg(feature = "post-process")]
                 post_rules_stamp: None,
+                #[cfg(feature = "post-process")]
                 post_panel_visible: false,
             },
             process_assets,

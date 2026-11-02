@@ -853,6 +853,7 @@ impl App {
             return Ok(FrameRenderOutcome::Unavailable);
         };
         // Live [PostProcess] edits: re-read VERARULES.INI when it changes.
+        #[cfg(feature = "post-process")]
         state.refresh_post_process_rules();
         let view: wgpu::TextureView = output.texture.create_view(&Default::default());
         let mut encoder: wgpu::CommandEncoder =
@@ -1197,6 +1198,8 @@ impl App {
                         .draw(&mut encoder, &view);
                     render_output
                 } else {
+                    #[cfg(feature = "post-process")]
+                    {
                     // `[PostProcess]` owns the chain's lifetime: the first frame
                     // that has a configured effect creates it, later frames
                     // update its uniforms, and a rules set without effects
@@ -1448,6 +1451,7 @@ impl App {
                     } else {
                         state.renderer.terrain_warp = None;
                     }
+                    }
                     let render_output = render::render_game(state, &mut encoder, times)?;
                     state
                         .renderer
@@ -1522,6 +1526,7 @@ impl App {
             &mut encoder,
             &output.texture,
         );
+        #[cfg(feature = "post-process")]
         if state.renderer.post_panel_visible {
             let text = post_panel_text(&state.post_process_rules());
             state.renderer.fps_overlay.encode_panel(
@@ -1865,6 +1870,7 @@ mod tests {
 
 /// The F9 panel's read-only summary of the live [PostProcess] set. Editing
 /// VERARULES.INI applies on the next frame; this only reports.
+#[cfg(feature = "post-process")]
 fn post_panel_text(rules: &crate::rules::post_process::PostProcessRules) -> String {
     let flag = |enabled: bool| if enabled { "ON" } else { "OFF" };
     let line1 = format!(

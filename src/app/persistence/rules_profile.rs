@@ -9,13 +9,16 @@ pub(crate) const FILENAME: &str = "VERARULES.INI";
 
 /// The writable profile root the running game loaded its rules from, so the
 /// presentation can watch the same file for live edits.
+#[cfg(feature = "post-process")]
 static SETTINGS_DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
 
+#[cfg(feature = "post-process")]
 pub(crate) fn remember_settings_dir(directory: &Path) {
     let _ = SETTINGS_DIR.set(directory.to_path_buf());
 }
 
 /// The player's `VERARULES.INI`, joined even when it does not exist yet.
+#[cfg(feature = "post-process")]
 pub(crate) fn watched_path() -> Option<std::path::PathBuf> {
     SETTINGS_DIR
         .get()

@@ -95,6 +95,7 @@ impl AppState {
 
     /// The live presentation rules: the player's edited `[PostProcess]` when
     /// VERARULES.INI was (re)read, else the match's own resolved rules.
+    #[cfg(feature = "post-process")]
     pub(crate) fn post_process_rules(&self) -> crate::rules::post_process::PostProcessRules {
         self.renderer
             .post_rules
@@ -106,6 +107,7 @@ impl AppState {
     /// Re-read the player's `[PostProcess]` overrides when VERARULES.INI's
     /// timestamp changed, so FX edits apply without restarting the game.
     /// The `.cube` table the new rules name is reloaded with them.
+    #[cfg(feature = "post-process")]
     pub(crate) fn refresh_post_process_rules(&mut self) {
         let Some(path) = crate::app::persistence::rules_profile::watched_path() else {
             return;
@@ -191,11 +193,18 @@ impl AppState {
         if self.platform.capture_client_size.is_some() {
             return 1.0;
         }
-        self.post_process_rules()
-            .super_resolution
-            .map_or(1.0, |super_resolution| {
-                super_resolution.render_scale.clamp(0.5, 1.0)
-            })
+        #[cfg(feature = "post-process")]
+        {
+            self.post_process_rules()
+                .super_resolution
+                .map_or(1.0, |super_resolution| {
+                    super_resolution.render_scale.clamp(0.5, 1.0)
+                })
+        }
+        #[cfg(not(feature = "post-process"))]
+        {
+            1.0
+        }
     }
 
     /// The sidebar's place and size in the match frame (`ui::sidebar::frame`).

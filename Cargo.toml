@@ -59,6 +59,9 @@ phobos = ["vera20k-core/phobos"]
 npatch = ["vera20k-core/npatch"]
 # VERA20K's own first-party extension capability; VeraX-gated chains read it.
 verax = ["vera20k-core/verax"]
+# VERA-only full-frame post-processing chain. Neither default nor shipping
+# builds enable this; a build without it keeps the retail 1:1 frame copy.
+post-process = ["vera20k-core/post-process"]
 # Optional NPBUG bug-fix extension; neither default nor shipping builds enable
 # it.
 npbug = ["vera20k-core/npbug"]

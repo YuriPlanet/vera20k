@@ -4545,6 +4545,7 @@ pub struct RuleSet {
     /// VERA-only `[PostProcess]` presentation effects (`ColorGrade=` and its
     /// parameters). Empty by default, so the frame stays on the retail 1:1
     /// copy path; gamemd reads no such section.
+    #[cfg(feature = "post-process")]
     pub post_process: crate::rules::post_process::PostProcessRules,
     /// `[General] RevealTriggerRadius`, Rules+62C: ctor665EDE stores5;
     /// ReadGeneral67181C..671836 uses ReadInt5276D0 over the retained field,
@@ -6487,6 +6488,7 @@ impl RuleSet {
             color_add,
             production,
             general,
+            #[cfg(feature = "post-process")]
             post_process: crate::rules::post_process::PostProcessRules::from_ini(ini),
             reveal_trigger_radius: ini
                 .section_or_empty("General")

@@ -222,10 +222,13 @@ pub(crate) fn render_game(
     let world_scale = z / render_scale;
     // `SuperResolution.Fsr`: the reduced world layer is reconstructed by the
     // FSR1 EASU pass instead of the plain bicubic.
+    #[cfg(feature = "post-process")]
     let fsr = state
         .post_process_rules()
         .super_resolution
         .is_some_and(|super_resolution| super_resolution.fsr);
+    #[cfg(not(feature = "post-process"))]
+    let fsr = false;
     if world_scale == 1.0 {
         state.renderer.world_zoom_pass = None;
     } else {
@@ -294,6 +297,7 @@ pub(crate) fn render_game(
     let mut world = build_instances::build_world_instances(state, vsw, vsh, bracket_palette);
     // Water mask for `[PostProcess] WaterRipple`: the same visible-cell sweep
     // that built the terrain instances also collected the water diamonds.
+    #[cfg(feature = "post-process")]
     if let Some(mask) = state.renderer.water_mask.as_mut() {
         // The diamonds are world-space offsets; a reduced render scale draws
         // them at `render_scale` battlefield texels per world pixel.
@@ -323,7 +327,9 @@ pub(crate) fn render_game(
     // The terrain pass samples this field from its own shader, so it must be
     // ready before the world draws. Only revealed water is in the mask; fog
     // stays neutral and therefore never moves.
+    #[cfg(feature = "post-process")]
     let water_ripple = state.post_process_rules().water_ripple;
+    #[cfg(feature = "post-process")]
     if let (Some(field), Some(mask), Some(ripple)) = (
         state.renderer.water_distortion.as_mut(),
         state.renderer.water_mask.as_ref(),

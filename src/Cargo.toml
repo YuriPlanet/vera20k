@@ -45,6 +45,8 @@ phobos = []
 npatch = []
 # VERA20K's own first-party extension capability.
 verax = []
+# VERA-only full-frame post-processing; the client forwards it.
+post-process = []
 # VERA20K's opt-in bug-fix extension adopting the NPExt changelog corrections;
 # builds without it keep every native path.
 npbug = []

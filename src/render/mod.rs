@@ -20,6 +20,7 @@
 //! - render/ does NOT depend on: app/, audio/, net/
 
 pub(crate) mod aircraft_shadow;
+#[cfg(feature = "post-process")]
 pub(crate) mod arcane_bloom;
 pub(crate) mod atlas_growth;
 #[cfg(test)]
@@ -37,6 +38,7 @@ pub mod combat_light;
 pub mod cursor_atlas;
 #[cfg(test)]
 pub(crate) mod depth_gpu_tests;
+#[cfg(feature = "post-process")]
 pub(crate) mod dlaa;
 pub mod draw_state;
 pub(crate) mod electric_bolt;
@@ -55,15 +57,20 @@ pub mod overlay_atlas;
 pub mod palette_light;
 pub mod palette_textures;
 pub mod pixel_fx_sparkles;
+#[cfg(feature = "post-process")]
 pub(crate) mod pirate_bloom;
+#[cfg(feature = "post-process")]
 pub(crate) mod post_process;
 pub mod radar;
 pub(crate) mod radial_indicator;
 pub(crate) mod radiation_beam;
 pub(crate) mod scaled_copy;
 pub(crate) mod screen_presentation;
+#[cfg(feature = "post-process")]
 pub(crate) mod terrain_warp;
+#[cfg(feature = "post-process")]
 pub(crate) mod water_distortion;
+#[cfg(feature = "post-process")]
 pub(crate) mod water_mask;
 pub mod screenshot;
 pub mod selection_overlay;

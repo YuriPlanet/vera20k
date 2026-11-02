@@ -2182,7 +2182,10 @@ fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCod
             report_black_cell_causes(state);
         }
         KeyCode::F9 => {
-            state.renderer.post_panel_visible = !state.renderer.post_panel_visible;
+            #[cfg(feature = "post-process")]
+            {
+                state.renderer.post_panel_visible = !state.renderer.post_panel_visible;
+            }
         }
         KeyCode::KeyJ => {
             toggle_debug_pause(state);

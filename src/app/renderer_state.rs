@@ -55,28 +55,37 @@ pub(crate) struct RendererState {
     pub(crate) retail_screenshot_frame_cache: crate::render::screenshot::PresentedFrameCache,
     /// Full-frame post-processing at the presentation boundary. `None` keeps
     /// the 1:1 texture copy (`present_game_frame`), which is the retail path.
+    #[cfg(feature = "post-process")]
     pub(crate) post_chain: Option<crate::render::post_process::PostChain>,
     /// Water mask the post chain samples for displacement. Created and dropped
     /// together with `post_chain`.
+    #[cfg(feature = "post-process")]
     pub(crate) water_mask: Option<crate::render::water_mask::WaterMask>,
     /// Water distortion field generated from that mask. The terrain warp pass
     /// samples it to refract water in screen space.
+    #[cfg(feature = "post-process")]
     pub(crate) water_distortion:
         Option<crate::render::water_distortion::WaterDistortion>,
     /// Terrain-only refraction target: the terrain pass renders here, then
     /// `terrain_warp` warps it into the composition target before objects.
+    #[cfg(feature = "post-process")]
     pub(crate) terrain_warp: Option<crate::render::terrain_warp::TerrainWarp>,
     /// Live `[PostProcess]` overrides, re-read from the player's VERARULES.INI
     /// when its timestamp changes. `None` keeps the match's own rules.
+    #[cfg(feature = "post-process")]
     pub(crate) post_rules: Option<crate::rules::post_process::PostProcessRules>,
     /// The `.cube` tables the live rules name, loaded with those rules.
     /// MultiLUT stacks up to three; unused slots stay empty.
+    #[cfg(feature = "post-process")]
     pub(crate) post_luts: [Option<crate::render::post_process::PostLut>; 3],
     /// The `MultiLUT` atlas sheet the live rules name (or the built-in one).
+    #[cfg(feature = "post-process")]
     pub(crate) post_atlas: Option<crate::render::post_process::PostAtlas>,
     /// Timestamp of the VERARULES.INI last parsed into `post_rules`.
+    #[cfg(feature = "post-process")]
     pub(crate) post_rules_stamp: Option<std::time::SystemTime>,
     /// F9's read-only POST FX panel: the live effect set and its values.
+    #[cfg(feature = "post-process")]
     pub(crate) post_panel_visible: bool,
 }
 
@@ -100,6 +109,21 @@ impl RendererState {
         encoder: &mut wgpu::CommandEncoder,
         destination: &wgpu::Texture,
     ) {
+        #[cfg(feature = "post-process")]
+        if self.draw_post_chain(encoder, destination) {
+            return;
+        }
+        self.copy_game_frame_to(encoder, destination);
+    }
+
+    /// Run the configured post chain into `destination`; false falls back to
+    /// the 1:1 copy (no chain, or no water mask to feed it).
+    #[cfg(feature = "post-process")]
+    fn draw_post_chain(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Texture,
+    ) -> bool {
         let (source_view, destination_view, size, format) = {
             let source = self.game_frame_texture();
             debug_assert_eq!(destination.size(), source.size());
@@ -118,12 +142,10 @@ impl RendererState {
             .as_ref()
             .map_or_else(|| self.depth_view.clone(), |zoom| zoom.depth_view().clone());
         let Some(chain) = self.post_chain.as_mut() else {
-            self.copy_game_frame_to(encoder, destination);
-            return;
+            return false;
         };
         let Some(mask) = self.water_mask.as_ref() else {
-            self.copy_game_frame_to(encoder, destination);
-            return;
+            return false;
         };
         debug_assert_eq!(chain.format(), format);
         chain.draw_with_depth(
@@ -136,6 +158,7 @@ impl RendererState {
             &destination_view,
             size,
         );
+        true
     }
 
     pub(crate) fn copy_game_frame_to(
