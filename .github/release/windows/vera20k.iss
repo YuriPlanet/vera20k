@@ -40,6 +40,13 @@ AppPublisherURL=https://github.com/YuriPlanet/vera20k
 AppSupportURL=https://github.com/YuriPlanet/vera20k/issues
 AppUpdatesURL=https://github.com/YuriPlanet/vera20k/releases
 VersionInfoVersion={#AppVersion}
+VersionInfoProductName=VERA20k
+VersionInfoProductVersion={#AppVersion}
+#ifdef SignedUninstallerDir
+; External signing preserves Inno's generated cache filename across compiles.
+SignedUninstaller=yes
+SignedUninstallerDir={#SignedUninstallerDir}
+#endif
 ; Per user: {autopf} is %LOCALAPPDATA%\Programs, which the program can write to.
 PrivilegesRequired=lowest
 DefaultDirName={autopf}\VERA

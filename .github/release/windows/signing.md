@@ -1,0 +1,89 @@
+# SignPath onboarding
+
+`windows-signing-check.yml` is a manual, non-publishing diagnostic for the
+SignPath Foundation onboarding review. It builds the Windows game on a GitHub
+runner, signs its executable and Inno uninstaller, rebuilds the installer, then
+signs and installs that final installer. Its output uses the supplied **test
+certificate** and is not a public download.
+
+The normal Release workflow still produces its existing Windows installer until
+SignPath has reviewed the test and supplied a production certificate. Never put
+the test certificate or test-signed installers into public releases, and never
+install its test root on players' computers.
+
+## Account and project
+
+Accept the invitation to **VERA20k [OSS]**, then confirm the notification address
+of its existing **CI builds** user. Do not configure a separate self-service
+workspace. Enable MFA for the interactive maintainer account.
+
+Create project `vera20k` with repository URL
+`https://github.com/YuriPlanet/vera20k` and link the predefined trusted build
+system **GitHub.com**. Add the two artifact configurations in this directory:
+
+- `payload`: `signpath-payload.xml`
+- `installer`: `signpath-installer.xml`
+
+Use a `test-signing` policy with the provided self-signed certificate. Assign the
+CI user only submission permission for this project/policy, and the maintainer
+approval permission. Keep manual approval enabled. If the SignPath GitHub App is
+required for the organization's policy, install it for this repository only.
+
+The metadata restrictions require the product name `VERA20k` and the build's
+product version. The installer can keep its visible `VERA` name. ZIP archives
+contain the files directly at their root, as GitHub's artifact upload creates
+them. See [SignPath's GitHub integration](https://docs.signpath.io/trusted-build-systems/github)
+and [artifact configuration reference](https://docs.signpath.io/artifact-configuration/reference).
+
+## Protected GitHub environment
+
+Use `windows-signing`, restricted to the exact `main` branch and with the
+maintainer as a required reviewer. Do not approve runs on the maintainer's behalf.
+
+Environment secret:
+
+- `SIGNPATH_API_TOKEN`: the CI user's submitter token, never an administrator token.
+
+Environment variables:
+
+- `SIGNPATH_ORGANIZATION_ID`: the invited OSS organization UUID.
+- `SIGNPATH_PROJECT_SLUG`: `vera20k`.
+- `SIGNPATH_TEST_POLICY_SLUG`: `test-signing`.
+- `SIGNPATH_TEST_CERTIFICATE_BASE64`: base64 of the public test certificate in DER format.
+- `SIGNPATH_TEST_CERTIFICATE_SHA256`: SHA256 fingerprint of those DER bytes.
+
+Keep the token only in the private deployment store and this environment. Never
+paste it into a workflow argument, log, issue, or pull request. The public test
+certificate is not a secret. The diagnostic checks its fingerprint before
+trusting it on the temporary runner, and verifies every signature against that
+same fingerprint.
+
+## Installer signing order
+
+[`signing.py`](signing.py) owns the compiler commands for both ordinary packaging
+and the diagnostic:
+
+1. `prepare` copies the package and asks Inno 7.1.0 to generate its uninstaller.
+   It accepts only the compiler's specific signature-needed result; unrelated
+   compiler failures still fail the build. A manifest records the original
+   files and Inno cache name.
+2. SignPath signs `vera20k.exe` and `uninstaller.exe` in that ZIP.
+3. `package` compares the returned files and manifest with the retained original
+   payload, verifies both signatures, restores the Inno cache name, and compiles
+   with the signed uninstaller.
+4. SignPath signs the final `*-setup.exe` in a second ZIP.
+5. The diagnostic requires the expected setup filename, compares its executable
+   content with the original unsigned installer, and verifies its signature.
+   It then installs against the existing synthetic game fixture, verifies the
+   installed game and uninstaller, and uninstalls it.
+
+Inno documents why the signed uninstaller also matters for temporary setup
+self-copies: [SignedUninstaller](https://jrsoftware.org/ishelp/topic_setup_signeduninstaller.htm).
+
+## Production follow-up
+
+After a successful test, request SignPath's configuration review and production
+certificate. Public signing still requires the public code-signing/privacy
+policies and any remaining Foundation requirements. Only then wire production
+signing and signature verification into Release's publication and promotion
+gates; the production path must not trust the test certificate.

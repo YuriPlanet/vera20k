@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="vera20k.exe" product-name="VERA20k" product-version="${version}">
+      <authenticode-sign description="VERA20k" description-url="https://vera20k.org" />
+    </pe-file>
+    <pe-file path="uninstaller.exe" product-name="VERA20k" product-version="${version}">
+      <authenticode-sign description="VERA20k uninstaller" description-url="https://vera20k.org" />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>
