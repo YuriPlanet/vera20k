@@ -3853,6 +3853,7 @@ mod identity_tests {
         guest.name = "VG6f7a8b9c0d".into();
         guest.raw_slot_index = Some(1);
         guest.slot.color_index = 2;
+        guest.slot.start_position = crate::skirmish_launch::LaunchStartPosition::Auto;
         launch.humans.push(guest);
         launch.local_player_index = 1;
         if local_first {

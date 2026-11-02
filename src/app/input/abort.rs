@@ -37,12 +37,21 @@ fn secondary_for(
             .count()
     });
     let local_defeated = sim.is_some_and(|sim| sim.local_player_defeated());
-    AbortSecondary::for_mode(
+    let secondary = AbortSecondary::for_mode(
         (mode == SessionMode::Campaign).then_some(campaign_installed),
         mode.is_network(),
         live_humans,
         local_defeated,
-    )
+    );
+    // VERA shared control: Observe would leave this player controlling the
+    // House their teammate still plays, so B6 offers a plain Leave (EXIT).
+    if secondary == AbortSecondary::Observe
+        && sim.is_some_and(crate::sim::world::Simulation::local_house_has_teammate)
+    {
+        AbortSecondary::Hidden
+    } else {
+        secondary
+    }
 }
 
 /// B6 init runs once per dialog: its stored results and control712 stay
@@ -155,5 +164,38 @@ mod tests {
             .unwrap()
             .set_is_defeated_for_test(true);
         assert_eq!(secondary(&sim, SessionMode::Lan), AbortSecondary::Hidden);
+    }
+
+    #[test]
+    fn a_player_whose_teammate_still_plays_their_house_only_leaves() {
+        // Senders 0 and 1 share House 0; sender 2 plays House 1.
+        let secondary = |admitted: &[i8]| {
+            let mut sim = Simulation::new();
+            let ids = ["Shared", "Rival"].map(|name| sim.intern(name));
+            for (index, id) in ids.iter().enumerate() {
+                sim.houses_mut_for_test().register(HouseState::new(
+                    *id,
+                    index as i32,
+                    None,
+                    true,
+                    0,
+                    10,
+                ));
+            }
+            let session = sim.session_mut_for_test();
+            session.set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+            session.install_network_timing(10);
+            session.set_current_house_for_test(Some(ids[0]));
+            session.install_shared_house_sources_for_test(vec![0, 0, 1], Some(0));
+            sim.network_command_queues().install_timing(
+                0,
+                std::num::NonZeroU8::new(5).unwrap(),
+                admitted.iter().copied(),
+            );
+            secondary_for(SessionMode::Lan, false, Some(&sim))
+        };
+        assert_eq!(secondary(&[0, 1, 2]), AbortSecondary::Hidden);
+        // Once the teammate has left, the last player may Observe again.
+        assert_eq!(secondary(&[0, 2]), AbortSecondary::Observe);
     }
 }

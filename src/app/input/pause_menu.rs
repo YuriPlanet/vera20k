@@ -252,6 +252,7 @@ pub(crate) fn current_layout(state: &AppState) -> Option<PauseMenuLayout> {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct MultiplayerPauseControl {
+    /// [`crate::i18n`] labels, resolved where they are drawn.
     pub(crate) caption: &'static str,
     pub(crate) enabled: bool,
     pub(crate) status: Option<&'static str>,
@@ -264,25 +265,16 @@ fn multiplayer_control_for(
     pause.available.then(|| {
         let (caption, status) = if pause.pending {
             if pause.paused {
-                (
-                    "Resuming...",
-                    Some("Resume requested - waiting for the relay"),
-                )
+                ("VERA:Resuming", Some("VERA:ResumeRequested"))
             } else {
-                (
-                    "Pausing...",
-                    Some("Pause requested - waiting for the relay"),
-                )
+                ("VERA:Pausing", Some("VERA:PauseRequested"))
             }
         } else if pause.paused && !stopped_here {
-            ("Pausing...", Some("Finishing the shared pause frame"))
+            ("VERA:Pausing", Some("VERA:FinishingPause"))
         } else if pause.paused {
-            (
-                "Resume All Players",
-                Some("Paused for all players - Pause or Options to resume"),
-            )
+            ("VERA:ResumeAllPlayers", Some("VERA:PausedForAllPlayers"))
         } else {
-            ("Pause All Players", None)
+            ("VERA:PauseAllPlayers", None)
         };
         MultiplayerPauseControl {
             caption,
@@ -654,7 +646,7 @@ mod tests {
         };
         let running = multiplayer_control_for(pause, false).unwrap();
         assert!(running.enabled);
-        assert_eq!(running.caption, "Pause All Players");
+        assert_eq!(running.caption, "VERA:PauseAllPlayers");
         pause.pending = true;
         assert!(!multiplayer_control_for(pause, false).unwrap().enabled);
         pause.paused = true;
@@ -662,11 +654,11 @@ mod tests {
         assert!(!multiplayer_control_for(pause, false).unwrap().enabled);
         let stopped = multiplayer_control_for(pause, true).unwrap();
         assert!(stopped.enabled);
-        assert_eq!(stopped.caption, "Resume All Players");
+        assert_eq!(stopped.caption, "VERA:ResumeAllPlayers");
         pause.pending = true;
         assert_eq!(
             multiplayer_control_for(pause, true).unwrap().caption,
-            "Resuming..."
+            "VERA:Resuming"
         );
         pause.available = false;
         assert!(multiplayer_control_for(pause, true).is_none());

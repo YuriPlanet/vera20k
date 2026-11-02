@@ -888,21 +888,23 @@ impl ShellRandomAssignmentState {
 impl SkirmishLaunchSession {
     /// The all-allied scan (BC 5DD0EA, C2 0x79071E after team copy 5E9E00):
     /// only a nonobserver human in raw row 0 seeds the comparison. An observer
-    /// there bypasses this native gate; do not invent all-pairs.
+    /// there bypasses this native gate; do not invent all-pairs. VERA shared
+    /// control: a player sharing a House plays its leader's team.
     pub fn all_allied(&self) -> bool {
+        let house_team = |index: usize| self.humans[self.house_leader(index)].slot.team;
         let Some(LaunchTeam::Team(team)) = self
             .humans
             .iter()
-            .find(|human| human.raw_slot_index == Some(0) && !human.is_observer())
-            .map(|human| human.slot.team)
+            .position(|human| human.raw_slot_index == Some(0) && !human.is_observer())
+            .map(house_team)
         else {
             return false;
         };
-        let same_humans = self
-            .humans
-            .iter()
-            .filter(|human| human.raw_slot_index.is_some() && !human.is_observer())
-            .all(|human| human.slot.team == LaunchTeam::Team(team));
+        let same_humans = (0..self.humans.len())
+            .filter(|&index| {
+                self.humans[index].raw_slot_index.is_some() && !self.humans[index].is_observer()
+            })
+            .all(|index| house_team(index) == LaunchTeam::Team(team));
         let same_ai = self
             .opponents
             .iter()
@@ -927,8 +929,37 @@ impl SkirmishLaunchSession {
             .collect()
     }
 
+    /// VERA shared control: the human whose House human `index` plays in.
+    /// Outside Cooperative, players who pick the same start share one House,
+    /// led by the first of them in row order; everyone else leads their own.
+    /// gamemd's setup refuses a taken start (`0x005E9720`), so it never sees
+    /// a shared one.
+    pub fn house_leader(&self, index: usize) -> usize {
+        let human = &self.humans[index];
+        if !self.shares_start(human) {
+            return index;
+        }
+        self.humans
+            .iter()
+            .enumerate()
+            .filter(|(_, other)| {
+                self.shares_start(other) && other.slot.start_position == human.slot.start_position
+            })
+            .min_by_key(|(other_index, other)| other.house_source_order(*other_index))
+            .map_or(index, |(leader, _)| leader)
+    }
+
+    /// A seated player's explicit start, outside Cooperative, can be shared.
+    pub fn shares_start(&self, human: &SkirmishHumanSlot) -> bool {
+        self.mode.class != crate::skirmish_modes::MpModeClass::Cooperative
+            && human.raw_slot_index.is_some()
+            && !human.is_observer()
+            && matches!(human.slot.start_position, LaunchStartPosition::Position(_))
+    }
+
     /// Gather688415..42F combines source-human nonobservers with Session's
     /// declared AI count, independently of how many AI rows construct Houses.
+    /// A shared House counts once.
     pub fn required_start_count(&self) -> usize {
         (self.pre_fill_house_roster.nonobserver_human_count() as i32)
             .wrapping_add(self.ai_player_count)
@@ -937,11 +968,13 @@ impl SkirmishLaunchSession {
 
     /// Rebuild the constructor cache after accepted roster/choice changes.
     /// Human identity and observer state remain authoritative in `humans`.
+    /// A shared House is one node, its leader's.
     pub fn rebuild_house_roster(&mut self) {
         let humans = self
             .humans
             .iter()
             .enumerate()
+            .filter(|(index, _)| self.house_leader(*index) == *index)
             .map(|(index, human)| PreFillHumanHouse {
                 priority: i32::from(human.slot.color_index),
                 source_order: human.house_source_order(index),

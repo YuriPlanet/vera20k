@@ -194,12 +194,7 @@ impl Simulation {
         {
             return None;
         }
-        let house_id = self
-            .houses
-            .order()
-            .iter()
-            .position(|&owner| owner == command_owner)
-            .and_then(|index| i8::try_from(index).ok())?;
+        let house_id = self.command_sender(command_owner)?;
         let typed = ScatterRecord {
             house_id,
             frame: self.session.binary_frame() as i32,
@@ -395,10 +390,7 @@ impl Simulation {
         record: &CommandRecord,
         rules: &RuleSet,
     ) -> Option<(InternedId, Command)> {
-        let owner = *self
-            .houses
-            .order()
-            .get(usize::try_from(record.house_id()).ok()?)?;
+        let owner = self.command_sender_owner(record.house_id())?;
         if !self.houses.contains_key(&owner) {
             return None;
         }
@@ -762,12 +754,7 @@ impl Simulation {
         {
             return None;
         }
-        let house_id = self
-            .houses
-            .order()
-            .iter()
-            .position(|&owner| owner == command_owner)
-            .and_then(|index| i8::try_from(index).ok())?;
+        let house_id = self.command_sender(command_owner)?;
         let typed = MegaMissionRecord {
             auxiliary: MegaMissionTarget::Null,
             house_id,
@@ -791,12 +778,7 @@ impl Simulation {
         if !self.houses.contains_key(&command_owner) {
             return None;
         }
-        let house_id = self
-            .houses
-            .order()
-            .iter()
-            .position(|&owner| owner == command_owner)
-            .and_then(|index| i8::try_from(index).ok())?;
+        let house_id = self.command_sender(command_owner)?;
         SellWallAtCellRecord {
             house_id,
             frame: self.session.binary_frame(),
@@ -842,16 +824,17 @@ impl Simulation {
     }
 
     /// EVENT_REMOVEPLAYER's record: the header House is the sender, the
-    /// dword payload the removed House's index (`0x004C6720`).
+    /// dword payload the removed sender (`0x004C6720`), its House's index
+    /// unless players share Houses.
     pub fn encode_remove_player_record(
         &self,
         command_owner: crate::sim::intern::InternedId,
-        house_index: i32,
+        source: i32,
     ) -> Option<CommandRecord> {
         self.encode_int_event(
             command_owner,
             crate::sim::command::REMOVE_PLAYER_OPCODE,
-            house_index,
+            source,
         )
     }
 
@@ -886,12 +869,7 @@ impl Simulation {
         if !self.houses.contains_key(&command_owner) {
             return None;
         }
-        let house_id = self
-            .houses
-            .order()
-            .iter()
-            .position(|&owner| owner == command_owner)
-            .and_then(|index| i8::try_from(index).ok())?;
+        let house_id = self.command_sender(command_owner)?;
         CommandRecord::encode(
             opcode,
             i32::from(house_id),
@@ -899,6 +877,67 @@ impl Simulation {
             &[],
         )
         .ok()
+    }
+
+    /// The sender byte this process writes for `command_owner`'s commands:
+    /// its own network source for the House it shares (VERA shared
+    /// control), otherwise the House's index.
+    pub(crate) fn command_sender(&self, command_owner: InternedId) -> Option<i8> {
+        if let Some(source) = self.session.local_shared_house_source()
+            && self.session.current_house() == Some(command_owner)
+        {
+            return Some(source);
+        }
+        self.houses
+            .index_of(command_owner)
+            .and_then(|index| i8::try_from(index).ok())
+    }
+
+    /// The House a command record's sender byte names. VERA shared control:
+    /// the sender is a network source, which is its House index unless
+    /// players share Houses (`ScenarioSession::network_source_house`).
+    pub(crate) fn command_sender_owner(&self, sender: i8) -> Option<InternedId> {
+        let index = self.session.network_source_house(sender)?;
+        self.houses.order().get(index).copied()
+    }
+
+    /// VERA shared control: whether House `owner` still has an admitted
+    /// sender other than `sender`. A House nobody shares has one sender, so
+    /// its EXIT, DESTRUCT or loss always ends it, as in gamemd.
+    fn house_keeps_other_sender(&self, owner: InternedId, sender: i8) -> bool {
+        let (Some(timing), Some(house)) = (
+            self.session.network_command_timing(),
+            self.houses.index_of(owner),
+        ) else {
+            return false;
+        };
+        self.session
+            .network_sources(self.houses.order().len())
+            .any(|(other, other_house)| {
+                other_house == house && other != sender && timing.admits_source(other)
+            })
+    }
+
+    /// The sender of the executing command: its record's header byte, or a
+    /// semantic envelope's House index (offline, where nobody shares).
+    fn executing_sender(&self, owner: InternedId) -> Option<i8> {
+        self.executing_record_sender.or_else(|| {
+            self.houses
+                .index_of(owner)
+                .and_then(|index| i8::try_from(index).ok())
+        })
+    }
+
+    /// VERA shared control: whether another player still controls the local
+    /// player's House.
+    pub fn local_house_has_teammate(&self) -> bool {
+        match (
+            self.session.local_shared_house_source(),
+            self.session.current_house(),
+        ) {
+            (Some(sender), Some(owner)) => self.house_keeps_other_sender(owner, sender),
+            _ => false,
+        }
     }
 
     /// Decode one synchronized record after its queue has admitted the stamped
@@ -910,20 +949,14 @@ impl Simulation {
         execute_tick: u64,
     ) -> Option<CommandEnvelope> {
         if let Some(event) = RepairRecord::decode(record) {
-            let owner = *self
-                .houses
-                .order()
-                .get(usize::try_from(event.house_id).ok()?)?;
+            let owner = self.command_sender_owner(event.house_id)?;
             let entity_id = u64::try_from(event.entity_id).ok()?;
             return self.houses.contains_key(&owner).then(|| {
                 CommandEnvelope::new(owner, execute_tick, Command::ToggleRepair { entity_id })
             });
         }
         if let Some(event) = ArchiveRecord::decode(record) {
-            let owner = *self
-                .houses
-                .order()
-                .get(usize::try_from(event.house_id).ok()?)?;
+            let owner = self.command_sender_owner(event.house_id)?;
             if !self.houses.contains_key(&owner) {
                 return None;
             }
@@ -947,10 +980,7 @@ impl Simulation {
             return Some(CommandEnvelope::new(owner, execute_tick, payload));
         }
         if let Some(event) = ObjectActionRecord::decode(record) {
-            let owner = *self
-                .houses
-                .order()
-                .get(usize::try_from(event.house_id).ok()?)?;
+            let owner = self.command_sender_owner(event.house_id)?;
             let entity_id = u64::try_from(event.entity_id).ok()?;
             let command = match event.action {
                 ObjectAction::Sell => Command::SellBuilding { entity_id },
@@ -965,10 +995,7 @@ impl Simulation {
                 .then(|| CommandEnvelope::new(owner, execute_tick, command));
         }
         if let Some(event) = CycleProducerRecord::decode(record) {
-            let owner = *self
-                .houses
-                .order()
-                .get(usize::try_from(event.house_id).ok()?)?;
+            let owner = self.command_sender_owner(event.house_id)?;
             return self.houses.contains_key(&owner).then(|| {
                 CommandEnvelope::new(
                     owner,
@@ -984,10 +1011,7 @@ impl Simulation {
             || SpecialPlaceRecord::decode(record).is_some()
             || PaidSuperRecord::decode(record).is_some()
         {
-            let owner = *self
-                .houses
-                .order()
-                .get(usize::try_from(record.house_id()).ok()?)?;
+            let owner = self.command_sender_owner(record.house_id())?;
             // Keep selectors raw: a category-only semantic view loses Naval,
             // RTTI aliases and the -1 wildcard before the House receiver runs.
             return self.houses.contains_key(&owner).then(|| {
@@ -1001,10 +1025,7 @@ impl Simulation {
             });
         }
         if let Some(typed) = DeployRecord::decode(record) {
-            let owner = *self
-                .houses
-                .order()
-                .get(usize::try_from(typed.house_id).ok()?)?;
+            let owner = self.command_sender_owner(typed.house_id)?;
             let entity_id = u64::try_from(typed.entity_id).ok()?;
             self.substrate.entities.get(entity_id)?;
             return self.houses.contains_key(&owner).then(|| {
@@ -1015,8 +1036,7 @@ impl Simulation {
             record.opcode(),
             crate::sim::command::OPTIONS_OPCODE | crate::sim::command::LATENCY_FUDGE_OPCODE
         ) {
-            let house_index = usize::try_from(record.house_id()).ok()?;
-            let owner = *self.houses.order().get(house_index)?;
+            let owner = self.command_sender_owner(record.house_id())?;
             let command = if record.opcode() == crate::sim::command::OPTIONS_OPCODE {
                 Command::OpenOptions
             } else {
@@ -1035,8 +1055,7 @@ impl Simulation {
             || (record.opcode() == crate::sim::command::MEGAMISSION_OPCODE
                 && matches!(record.payload()[22], 1 | 2))
         {
-            let house_index = usize::try_from(record.house_id()).ok()?;
-            let owner = *self.houses.order().get(house_index)?;
+            let owner = self.command_sender_owner(record.house_id())?;
             return self.houses.contains_key(&owner).then(|| {
                 CommandEnvelope::new(
                     owner,
@@ -1048,8 +1067,7 @@ impl Simulation {
             });
         }
         if let Some(typed) = StopRecord::decode(record) {
-            let house_index = usize::try_from(typed.house_id).ok()?;
-            let owner = *self.houses.order().get(house_index)?;
+            let owner = self.command_sender_owner(typed.house_id)?;
             if !self.houses.contains_key(&owner) {
                 return None;
             }
@@ -1062,8 +1080,7 @@ impl Simulation {
             ));
         }
         if let Some(typed) = ScatterRecord::decode(record) {
-            let house_index = usize::try_from(typed.house_id).ok()?;
-            let owner = *self.houses.order().get(house_index)?;
+            let owner = self.command_sender_owner(typed.house_id)?;
             if !self.houses.contains_key(&owner) {
                 return None;
             }
@@ -1076,8 +1093,7 @@ impl Simulation {
             ));
         }
         if let Some(typed) = MegaMissionRecord::decode(record) {
-            let house_index = usize::try_from(typed.house_id).ok()?;
-            let owner = *self.houses.order().get(house_index)?;
+            let owner = self.command_sender_owner(typed.house_id)?;
             if !self.houses.contains_key(&owner) {
                 return None;
             }
@@ -1161,8 +1177,7 @@ impl Simulation {
         // Event2D4C6E2E resolves its House and calls50C8C0 without input
         //lock, cooldown, selection or product admission being repeated.
         if record.opcode() == crate::sim::command::CHEER_OPCODE {
-            let index = usize::try_from(record.house_id()).ok()?;
-            let owner = *self.houses.order().get(index)?;
+            let owner = self.command_sender_owner(record.house_id())?;
             return self
                 .houses
                 .contains_key(&owner)
@@ -1170,8 +1185,7 @@ impl Simulation {
         }
 
         if let Some(typed) = ExitRecord::decode(record) {
-            let house_index = usize::try_from(typed.house_id).ok()?;
-            let owner = *self.houses.order().get(house_index)?;
+            let owner = self.command_sender_owner(typed.house_id)?;
             return self
                 .houses
                 .contains_key(&owner)
@@ -1180,14 +1194,13 @@ impl Simulation {
 
         let house_index_event: Option<fn(i32) -> Command> = match record.opcode() {
             crate::sim::command::REMOVE_PLAYER_OPCODE => {
-                Some(|house_index| Command::RemovePlayer { house_index })
+                Some(|source| Command::RemovePlayer { source })
             }
             crate::sim::command::ALLY_OPCODE => Some(|house_index| Command::Ally { house_index }),
             _ => None,
         };
         if let Some(command) = house_index_event {
-            let house_index = usize::try_from(record.house_id()).ok()?;
-            let owner = *self.houses.order().get(house_index)?;
+            let owner = self.command_sender_owner(record.house_id())?;
             let other = i32::from_le_bytes(record.payload()[..4].try_into().ok()?);
             return self
                 .houses
@@ -1196,8 +1209,7 @@ impl Simulation {
         }
 
         if record.opcode() == crate::sim::command::DESTRUCT_OPCODE {
-            let house_index = usize::try_from(record.house_id()).ok()?;
-            let owner = *self.houses.order().get(house_index)?;
+            let owner = self.command_sender_owner(record.house_id())?;
             return self
                 .houses
                 .contains_key(&owner)
@@ -1208,8 +1220,7 @@ impl Simulation {
         // payload dword at Event+7 is the new GameSpeed setting; the changer is
         // the header house. It is SetGameSpeed's live-network twin.
         if let Some(typed) = GameSpeedRecord::decode(record) {
-            let house_index = usize::try_from(typed.house_id).ok()?;
-            let owner = *self.houses.order().get(house_index)?;
+            let owner = self.command_sender_owner(typed.house_id)?;
             let speed = u8::try_from(typed.speed).ok()?;
             return self.houses.contains_key(&owner).then(|| {
                 CommandEnvelope::new(owner, execute_tick, Command::LiveGameSpeed { speed })
@@ -1228,8 +1239,7 @@ impl Simulation {
             let Some(typed) = BuildingOnLineRecord::decode(record) else {
                 return None;
             };
-            let house_index = usize::try_from(typed.house_id).ok()?;
-            let owner = *self.houses.order().get(house_index)?;
+            let owner = self.command_sender_owner(typed.house_id)?;
             let entity_id = u64::try_from(typed.entity_id).ok()?;
             self.substrate.entities.get(entity_id)?;
             return self.houses.contains_key(&owner).then(|| {
@@ -1245,8 +1255,7 @@ impl Simulation {
         }
 
         let typed = SellWallAtCellRecord::decode(record)?;
-        let house_index = usize::try_from(typed.house_id).ok()?;
-        let owner = *self.houses.order().get(house_index)?;
+        let owner = self.command_sender_owner(typed.house_id)?;
         self.houses.contains_key(&owner).then(|| {
             CommandEnvelope::new(
                 owner,
@@ -1543,10 +1552,8 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
-        let Some(owner) = usize::try_from(record.house_id())
-            .ok()
-            .and_then(|index| self.houses.order().get(index))
-            .copied()
+        let Some(owner) = self
+            .command_sender_owner(record.house_id())
             .filter(|owner| self.houses.contains_key(owner))
         else {
             return false;
@@ -2283,6 +2290,15 @@ impl Simulation {
                 let Some(owner) = self.interner.get(command_owner) else {
                     return false;
                 };
+                // VERA shared control: one player resigning (B6 Leave beside
+                // Observe, Surrender's OK) leaves a House other players still
+                // control in the game; the EXIT that follows retires only them.
+                if self
+                    .executing_sender(owner)
+                    .is_some_and(|sender| self.house_keeps_other_sender(owner, sender))
+                {
+                    return true;
+                }
                 // Type-8 entry 0x004C7BDF: Flag_To_Die on the header House,
                 // with no human or mode test. Destruction waits for the
                 // House rung (Update 0x004F87C2).
@@ -2293,31 +2309,43 @@ impl Simulation {
                 let Some(owner) = self.interner.get(command_owner) else {
                     return false;
                 };
-                let Some(house) = self.houses.get_mut(&owner) else {
+                if !self.houses.contains_key(&owner) {
                     return false;
-                };
+                }
+                let sender = self.executing_sender(owner);
+                // VERA shared control: a House another player still controls
+                // stays in the game; only this sender leaves.
+                let house_left =
+                    !sender.is_some_and(|sender| self.house_keeps_other_sender(owner, sender));
                 // Execute_DoList's EXIT block (0x0064C7BF..0x0064C862), for
                 // every sender: House+0x248, then Flag_To_Die when no other
                 // human House is undefeated (0x005E2BA0).
-                house.mark_left_game();
+                if house_left {
+                    self.houses
+                        .get_mut(&owner)
+                        .expect("checked House")
+                        .mark_left_game();
+                }
                 // Execute_DoList64C9B1 destroys this source on every peer.
                 // Retire its existing NodeNameTag timing row at the same shared
                 // event, before later records may choose another publisher.
-                if let Some(index) = self.houses.index_of(owner)
-                    && let Ok(house_id) = i8::try_from(index)
-                {
-                    self.session.retire_network_command_source(house_id);
+                if let Some(sender) = sender {
+                    self.session.retire_network_command_source(sender);
                 }
-                if self.other_undefeated_humans(owner) == 0 {
+                if house_left && self.other_undefeated_humans(owner) == 0 {
                     self.flag_house_to_die(owner);
                 }
                 // A Simulation without a current House (diagnostic and replay
-                // drivers) has no remote senders.
-                if self
-                    .session
-                    .current_house()
-                    .is_none_or(|local| local == owner)
-                {
+                // drivers) has no remote senders. A shared House's senders
+                // are told apart by their own sources.
+                let local = match (self.session.local_shared_house_source(), sender) {
+                    (Some(local), Some(sender)) => local == sender,
+                    _ => self
+                        .session
+                        .current_house()
+                        .is_none_or(|local| local == owner),
+                };
+                if local {
                     // The local sender's EventClass__Execute (0x004C7903)
                     // writes the termination byte at 0x004C7917. The app
                     // consumes the owner-tagged edge after this tail.
@@ -2331,10 +2359,10 @@ impl Simulation {
                     // Its WOL tournament tail (0x005DA8F7..0x005DA90F) kills
                     // the leaver's House here, where replays run it too; the
                     // app runs the connection and message work.
-                    if self.session.wol_tournament_game() {
+                    if house_left && self.session.wol_tournament_game() {
                         self.flag_house_to_die(owner);
                     }
-                    self.departed_owners.push(owner);
+                    self.departed_senders.extend(sender);
                 }
                 true
             }
@@ -2362,17 +2390,17 @@ impl Simulation {
                 }
                 true
             }
-            Command::RemovePlayer { house_index } => {
+            Command::RemovePlayer { source } => {
                 // EventClass::Execute 0x004C7B73: IsHumanControlled
                 // (0x0050B730, House+0x1EC outside mode 0), then
                 // Flag_To_Die (0x004C7BE1). A WOL tournament game skips the
                 // human test (0x004C7BBF..0x004C7BCE).
                 // RESIDUAL: mode 4's ladder-stats call (0x004C7BA0..0x004C7BBA)
                 // is backend.
-                let Some(owner) = usize::try_from(*house_index)
-                    .ok()
-                    .and_then(|index| self.houses.order().get(index).copied())
-                else {
+                let Ok(source) = i8::try_from(*source) else {
+                    return false;
+                };
+                let Some(owner) = self.command_sender_owner(source) else {
                     return false;
                 };
                 if !self.session.wol_tournament_game()
@@ -2383,12 +2411,14 @@ impl Simulation {
                 {
                     return false;
                 }
-                self.flag_house_to_die(owner);
+                // VERA shared control: a House another player still controls
+                // survives losing one of them.
+                if !self.house_keeps_other_sender(owner, source) {
+                    self.flag_house_to_die(owner);
+                }
                 // REMOVEPLAYER is synchronized source loss, distinct from
                 // DESTRUCT/defeat: a connected WOL observer remains a publisher.
-                if let Ok(house_id) = i8::try_from(*house_index) {
-                    self.session.retire_network_command_source(house_id);
-                }
+                self.session.retire_network_command_source(source);
                 true
             }
             // Event4C6ED2 resolves Techno and detaches planning6386E0 above,

@@ -46,6 +46,10 @@ pub struct CsfFile {
     // Ares's override hook frees the old value before reading its replacement.
     // A malformed body can therefore leave a registered label with a null value.
     entries: CsfEntries,
+    /// VERA's localization layer (`[VERA] Language=`), searched only for
+    /// labels the table has no text for. Lookup-only: `len`/`entries` still
+    /// describe the loaded files.
+    fallbacks: HashMap<String, CsfText>,
 }
 
 /// Raw diagnostics retain the existing map semantics. The active Ares table
@@ -137,6 +141,7 @@ impl CsfFile {
             version,
             language,
             entries: CsfEntries::Raw(entries),
+            fallbacks: HashMap::new(),
         })
     }
 
@@ -255,13 +260,32 @@ impl CsfFile {
             .map(|text| (text.stored_key.as_str(), text.raw.as_str()))
     }
 
+    /// Install VERA's localized text for `key` behind the loaded table: it
+    /// answers only when the table has no text for that label. The text is
+    /// used as written: CSF whitespace normalization is a property of the
+    /// binary table, not of VERA's string files.
+    pub fn set_fallback(&mut self, key: &str, value: &str) {
+        let stored_key = key.to_ascii_uppercase();
+        self.fallbacks.insert(
+            stored_key.clone(),
+            CsfText {
+                value: value.to_owned(),
+                raw: value.to_owned(),
+                stored_key,
+            },
+        );
+    }
+
     fn lookup_text(&self, key: &str) -> Option<&CsfText> {
         let key = key.to_ascii_uppercase();
-        match &self.entries {
-            CsfEntries::Raw(entries) => entries.get(&key)?.as_ref(),
+        let loaded = match &self.entries {
+            CsfEntries::Raw(entries) => entries.get(&key).and_then(Option::as_ref),
             #[cfg(feature = "ares")]
-            CsfEntries::Ares(labels) => labels[native_label_search(labels, &key)?].1.as_ref(),
-        }
+            CsfEntries::Ares(labels) => {
+                native_label_search(labels, &key).and_then(|slot| labels[slot].1.as_ref())
+            }
+        };
+        loaded.or_else(|| self.fallbacks.get(&key))
     }
 
     /// Native initialized-table lookup. Missing labels are visible, not an
