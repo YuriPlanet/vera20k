@@ -1417,7 +1417,7 @@ mod tests {
         let mut world = Simulation::new();
         assert_eq!(
             world.spawn_from_map(
-                &crate::map::entities::parse_map_entities(&ini),
+                &crate::map::entities::parse_map_entities(&ini, 4),
                 Some(&rules)
             ),
             3

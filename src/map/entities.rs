@@ -13,6 +13,8 @@
 //!   the mission selector vocabulary in rules/mission_data (the `MISSION=` column is
 //!   the same 32-name table the scenario reader resolves through).
 
+use std::borrow::Cow;
+
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::ini_value::{crt_atoi, strtok};
 use crate::rules::mission_data::MissionType;
@@ -186,20 +188,21 @@ fn parse_mission_field(fields: &[&str]) -> Option<MissionType> {
 /// loader's fixed order, independent of their order in the file.
 /// Malformed lines are skipped with a warning log. Returns an empty Vec
 /// if none of these sections exist (e.g., empty skirmish maps).
-pub fn parse_map_entities(ini: &IniFile) -> Vec<MapEntity> {
+/// `signed_new_ini_format` is ReadBasic's retained `NewINIFormat` (default 0).
+pub fn parse_map_entities(ini: &IniFile, signed_new_ini_format: i32) -> Vec<MapEntity> {
     let mut entities: Vec<MapEntity> = Vec::new();
 
     if let Some(section) = ini.section("Units") {
-        parse_units_section(section, &mut entities);
+        parse_units_section(section, signed_new_ini_format, &mut entities);
     }
     if let Some(section) = ini.section("Aircraft") {
-        parse_aircraft_section(section, &mut entities);
+        parse_aircraft_section(section, signed_new_ini_format, &mut entities);
     }
     if let Some(section) = ini.section("Infantry") {
-        parse_infantry_section(section, &mut entities);
+        parse_infantry_section(section, signed_new_ini_format, &mut entities);
     }
     if let Some(section) = ini.section("Structures") {
-        parse_structures_section(section, &mut entities);
+        parse_structures_section(section, signed_new_ini_format, &mut entities);
     }
 
     log::info!(
@@ -232,17 +235,41 @@ pub fn parse_map_entities(ini: &IniFile) -> Vec<MapEntity> {
 /// 0x80 bytes and walk it with `strtok(",")`, numeric fields through CRT
 /// `atoi`. Native reads past the last token as `atoi(NULL)`; Rust rejects a
 /// line shorter than its required columns instead.
-fn object_line_fields<'a>(section: &'a IniSection, key: &str) -> Vec<&'a str> {
-    section
-        .read_name(key, 0x80)
-        .map_or_else(Vec::new, |value| strtok(value, &[',']).collect())
+///
+/// Below `NewINIFormat=4` each reader takes the cell from one packed token,
+/// X = `value % 128` and Y = `value / 128` (Unit `0x00743391`, Infantry
+/// `0x0051FBEF`, Aircraft `0x0041B201`, Building `0x0044F91D`), so every later
+/// column sits one token earlier. The packed token becomes the two cell
+/// columns here, giving every reader the current layout.
+fn object_line_fields<'a>(
+    section: &'a IniSection,
+    key: &str,
+    signed_new_ini_format: i32,
+) -> Vec<Cow<'a, str>> {
+    let mut fields: Vec<Cow<'a, str>> =
+        section.read_name(key, 0x80).map_or_else(Vec::new, |value| {
+            strtok(value, &[',']).map(Cow::Borrowed).collect()
+        });
+    if signed_new_ini_format < 4 && fields.len() > 3 {
+        let packed = crt_atoi(&fields[3]);
+        fields.splice(
+            3..4,
+            [packed % 128, packed / 128].map(|value| Cow::Owned(value.to_string())),
+        );
+    }
+    fields
 }
 
 /// Parse [Units] section: INDEX=OWNER,ID,HEALTH,X,Y,FACING,MISSION,TAG,...
 /// Minimum 6 fields needed (owner, id, health, x, y, facing).
-fn parse_units_section(section: &IniSection, entities: &mut Vec<MapEntity>) {
+fn parse_units_section(
+    section: &IniSection,
+    signed_new_ini_format: i32,
+    entities: &mut Vec<MapEntity>,
+) {
     for key in section.keys() {
-        let fields = object_line_fields(section, key);
+        let line = object_line_fields(section, key, signed_new_ini_format);
+        let fields: Vec<&str> = line.iter().map(AsRef::as_ref).collect();
         if fields.len() < 6 {
             log::warn!(
                 "[Units] key {}: expected >= 6 fields, got {}",
@@ -260,9 +287,14 @@ fn parse_units_section(section: &IniSection, entities: &mut Vec<MapEntity>) {
 
 /// Parse [Infantry] section: INDEX=OWNER,ID,HEALTH,X,Y,SUB_CELL,MISSION,FACING,...
 /// Note: infantry has SUB_CELL at index 5 and FACING at index 7 (different from units).
-fn parse_infantry_section(section: &IniSection, entities: &mut Vec<MapEntity>) {
+fn parse_infantry_section(
+    section: &IniSection,
+    signed_new_ini_format: i32,
+    entities: &mut Vec<MapEntity>,
+) {
     for key in section.keys() {
-        let fields = object_line_fields(section, key);
+        let line = object_line_fields(section, key, signed_new_ini_format);
+        let fields: Vec<&str> = line.iter().map(AsRef::as_ref).collect();
         if fields.len() < 8 {
             log::warn!(
                 "[Infantry] key {}: expected >= 8 fields, got {}",
@@ -314,9 +346,14 @@ fn parse_infantry_section(section: &IniSection, entities: &mut Vec<MapEntity>) {
 
 /// Parse [Structures] section: INDEX=OWNER,ID,HEALTH,X,Y,FACING,TAG,...
 /// Minimum 6 fields needed.
-fn parse_structures_section(section: &IniSection, entities: &mut Vec<MapEntity>) {
+fn parse_structures_section(
+    section: &IniSection,
+    signed_new_ini_format: i32,
+    entities: &mut Vec<MapEntity>,
+) {
     for key in section.keys() {
-        let fields = object_line_fields(section, key);
+        let line = object_line_fields(section, key, signed_new_ini_format);
+        let fields: Vec<&str> = line.iter().map(AsRef::as_ref).collect();
         if fields.len() < 6 {
             log::warn!(
                 "[Structures] key {}: expected >= 6 fields, got {}",
@@ -344,9 +381,14 @@ fn parse_structures_section(section: &IniSection, entities: &mut Vec<MapEntity>)
 
 /// Parse [Aircraft] section: INDEX=OWNER,ID,HEALTH,X,Y,FACING,MISSION,TAG,...
 /// Minimum 6 fields needed.
-fn parse_aircraft_section(section: &IniSection, entities: &mut Vec<MapEntity>) {
+fn parse_aircraft_section(
+    section: &IniSection,
+    signed_new_ini_format: i32,
+    entities: &mut Vec<MapEntity>,
+) {
     for key in section.keys() {
-        let fields = object_line_fields(section, key);
+        let line = object_line_fields(section, key, signed_new_ini_format);
+        let fields: Vec<&str> = line.iter().map(AsRef::as_ref).collect();
         if fields.len() < 6 {
             log::warn!(
                 "[Aircraft] key {}: expected >= 6 fields, got {}",
@@ -487,7 +529,7 @@ mod tests {
                 let ini = IniFile::from_str(&format!(
                     "[{section}]\n0=Americans,TYPE,{health},30,40,0,Guard,0,None,0,-1,false,true,false\n"
                 ));
-                let entities = parse_map_entities(&ini);
+                let entities = parse_map_entities(&ini, 4);
                 assert_eq!(entities.len(), 1, "{section}");
                 assert_eq!(entities[0].health, health, "{section}");
             }
@@ -501,7 +543,7 @@ mod tests {
              0=Americans,MTNK,256,30,40,64,Guard,None,0,-1,0,-1,1,0\n\
              1=Soviet,HTNK,200,50,60,128,Guard,None,100,-1,0,-1,0,0\n",
         );
-        let entities: Vec<MapEntity> = parse_map_entities(&ini);
+        let entities: Vec<MapEntity> = parse_map_entities(&ini, 4);
         assert_eq!(entities.len(), 2);
 
         assert_eq!(entities[0].owner, "Americans");
@@ -533,7 +575,7 @@ mod tests {
             "[Structures]\n0=A,B,256,1,1,0\n1=A,B,256,2,1,0,None,0,0,0\n2=A,B,256,3,1,0,None,0,0,-7tail\n3=A,B,256,4,1,0,None,0,0,bogus\n",
         );
         assert_eq!(
-            parse_map_entities(&ini)
+            parse_map_entities(&ini, 4)
                 .iter()
                 .map(|e| e.structure_online)
                 .collect::<Vec<_>>(),
@@ -553,7 +595,7 @@ mod tests {
              2=Americans,GAPOWR,256,19,25,0,None\n\
              3=Americans,GAPOWR,256,21,25,0,None,true\n",
         );
-        let entities = parse_map_entities(&ini);
+        let entities = parse_map_entities(&ini, 4);
         let sellable: Vec<bool> = entities
             .iter()
             .map(|entity| entity.structure_ai_sellable)
@@ -578,7 +620,7 @@ mod tests {
              1=Americans,GAPOWR,256,17,25,0,None,1,0,1\n",
         );
 
-        let entities = parse_map_entities(&ini);
+        let entities = parse_map_entities(&ini, 4);
 
         assert_eq!(
             entities[0].structure_columns,
@@ -595,6 +637,29 @@ mod tests {
         assert_eq!(entities[1].structure_columns, StructureColumns::default());
     }
 
+    /// Below `NewINIFormat=4` (`0x0044F91D`, `0x00743391`, `0x0051FBEF`) one
+    /// packed token holds the cell, `x + 128 * y`, and later columns shift.
+    #[test]
+    fn old_format_object_lines_read_one_packed_cell() {
+        // 10372 = 4 + 128 * 81.
+        let ini = IniFile::from_str(
+            "[Units]\n0=Americans,MTNK,256,10372,64,Guard,None,0,-1,0,-1,1,1\n\
+             [Infantry]\n0=Americans,E1,256,10372,2,Guard,32,None,0,-1,0,1,1\n\
+             [Structures]\n0=Americans,GAPOWR,256,10372,96,None,1,0,1,0,0,None,None,None,0,1\n",
+        );
+
+        let old = parse_map_entities(&ini, 3);
+        let cells: Vec<_> = old.iter().map(|e| (e.cell_x, e.cell_y)).collect();
+        assert_eq!(cells, [(4, 81); 3]);
+        assert_eq!((old[0].facing, old[1].facing, old[1].sub_cell), (64, 32, 2));
+        assert_eq!(
+            (old[2].facing, old[2].structure_columns.light_behaviour),
+            (96, 0)
+        );
+        // NewINIFormat=4 keeps X and Y as separate columns.
+        assert!(parse_map_entities(&ini, 4).iter().all(|e| e.cell_y != 81));
+    }
+
     /// Aircraft lines have no HIGH/FOLLOWS columns: `0x0041B110` reads the
     /// recruitment bytes from fields 10 and 11 (retail `mapsmd03.mix`
     /// `[Aircraft]` lines end `0,-1,1,1`).
@@ -606,7 +671,7 @@ mod tests {
              1=Soviet,DRON,256,51,50,0,Guard,None,0,-1,1,0\n\
              2=Soviet,DRON,256,52,50,0,Guard,None,0,-1\n",
         );
-        let entities: Vec<MapEntity> = parse_map_entities(&ini);
+        let entities: Vec<MapEntity> = parse_map_entities(&ini, 4);
         assert_eq!(entities.len(), 3);
         assert_eq!(entities[0].type_id, "DRON");
         assert_eq!(entities[0].category, EntityCategory::Aircraft);
@@ -626,7 +691,7 @@ mod tests {
              [Infantry]\n\
              0=Soviet,E1,256,10,20,2,Guard,192,None,200,-1,1,0\n",
         );
-        let entities: Vec<MapEntity> = parse_map_entities(&ini);
+        let entities: Vec<MapEntity> = parse_map_entities(&ini, 4);
         assert_eq!(entities.len(), 2);
         assert!(entities[0].high);
         assert!(entities[1].high);
@@ -642,7 +707,7 @@ mod tests {
              3=Americans,MTNK,256,33,40,64,Guard,None,0,-1\n\
              4=Americans,MTNK,256,34,40,64,Guard,None,0,-1,garbage,-1,false,false\n",
         );
-        let entities: Vec<MapEntity> = parse_map_entities(&ini);
+        let entities: Vec<MapEntity> = parse_map_entities(&ini, 4);
         assert_eq!(entities.len(), 5);
 
         assert!(!entities[0].high, "High=yes parses as atoi 0");
@@ -658,7 +723,7 @@ mod tests {
             "[Units]\n0=Americans,MTNK,256,30,40,64,Guard,None,0,-1\n\
              [Infantry]\n0=Soviet,E1,256,10,20,2,Guard,192\n",
         );
-        let entities = parse_map_entities(&ini);
+        let entities = parse_map_entities(&ini, 4);
         assert_eq!(entities.len(), 2);
         for entity in entities {
             assert!(entity.recruitable_a);
@@ -679,7 +744,7 @@ mod tests {
              [Infantry]\n\
              0=Neutral,CIVBTM,256,113,68,2,Sticky,192,None,0,-1,0,1,1\n",
         );
-        let entities: Vec<MapEntity> = parse_map_entities(&ini);
+        let entities: Vec<MapEntity> = parse_map_entities(&ini, 4);
         assert_eq!(entities.len(), 3);
 
         assert_eq!(entities[0].type_id, "PTRUCK");
@@ -711,7 +776,7 @@ mod tests {
              [Structures]\n\
              0=Americans,GAPOWR,256,15,25,0,None,true,false,true,0,0,None,None,None,false,true\n",
         );
-        let entities: Vec<MapEntity> = parse_map_entities(&ini);
+        let entities: Vec<MapEntity> = parse_map_entities(&ini, 4);
 
         let units: Vec<&MapEntity> = entities
             .iter()
@@ -754,7 +819,7 @@ mod tests {
              0=Americans,MTNK\n\
              1=Soviet,HTNK,256,50,60,128,Guard,None,0,-1,false,-1,false,false\n",
         );
-        let entities: Vec<MapEntity> = parse_map_entities(&ini);
+        let entities: Vec<MapEntity> = parse_map_entities(&ini, 4);
         // First line has only 2 fields (< 6 minimum), should be skipped.
         assert_eq!(entities.len(), 1);
         assert_eq!(entities[0].type_id, "HTNK");
@@ -772,7 +837,7 @@ mod tests {
              [Units]\n\
              0=Americans,MTNK,256,30,40,64,Guard,None,0,-1,0,-1,1,0\n",
         );
-        let entities: Vec<MapEntity> = parse_map_entities(&ini);
+        let entities: Vec<MapEntity> = parse_map_entities(&ini, 4);
         assert_eq!(entities.len(), 4);
         assert_eq!(
             entities
