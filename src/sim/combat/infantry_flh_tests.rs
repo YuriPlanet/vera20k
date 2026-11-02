@@ -4,7 +4,7 @@
 
 use super::fire_coord::{FireSource, fire_coordinate};
 use super::laser;
-use super::{TargetKind, fire_coord};
+use super::TargetKind;
 use crate::map::entities::EntityCategory;
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::flh::Flh;
