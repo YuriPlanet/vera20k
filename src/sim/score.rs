@@ -75,6 +75,21 @@ pub struct CooperativeScoreRow {
     pub score: i32,
 }
 
+/// `Houses[]` order without passive types or the observer House
+/// (`0x005C98CD..0x005C98EB`).
+///
+/// The terminal latch and the live projection must select the same Houses, and
+/// this module's one per-client read stays in one place: the architecture
+/// guard pins `is_observer_house` here to a single site, because a value that
+/// differs per client must not steer anything a peer shares.
+fn score_contenders(houses: &Houses, session: &ScenarioSession) -> Vec<InternedId> {
+    houses
+        .in_order()
+        .filter(|house| !house.multiplay_passive() && !session.is_observer_house(house.name()))
+        .map(|house| house.name())
+        .collect()
+}
+
 impl Simulation {
     /// `0x0046DA70`/`0x0049B7E0`: one row per House that is not
     /// `MultiplayPassive` and is human (`+0x1EC`, `0x0050B730` in GameMode
@@ -124,14 +139,14 @@ impl Simulation {
     pub fn live_score_snapshot(&self) -> TerminalScoreSnapshot {
         let session = self.session();
         let mut rows = Vec::new();
-        for house in self.houses.in_order() {
-            if house.multiplay_passive() || session.is_observer_house(house.name()) {
+        for owner in score_contenders(&self.houses, session) {
+            let Some(house) = self.houses.get(&owner) else {
                 continue;
-            }
+            };
             let raw_score = house.economy().score();
             let stats = house.stats();
             rows.push(TerminalScoreRowSnapshot {
-                owner: house.name(),
+                owner,
                 country: house.country(),
                 survived: !house.is_defeated(),
                 kills: stats.kills(),
@@ -169,11 +184,7 @@ impl Simulation {
         }
 
         // Houses[] order, without passive types or observer Houses.
-        let contenders: Vec<InternedId> = houses
-            .in_order()
-            .filter(|house| !house.multiplay_passive() && !session.is_observer_house(house.name()))
-            .map(|house| house.name())
-            .collect();
+        let contenders = score_contenders(houses, session);
         let mut rows = Vec::with_capacity(contenders.len());
         for owner in contenders {
             let Some((country, survived, stats, raw_score)) = houses.get(&owner).map(|house| {
