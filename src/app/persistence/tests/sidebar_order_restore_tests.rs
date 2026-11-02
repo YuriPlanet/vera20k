@@ -301,12 +301,11 @@ fn sidebar_order_prepares_and_commits_unsorted_history_without_reinserting_survi
 }
 
 #[test]
-fn nonzero_rows_on_every_strip_roundtrip_prepare_commit_and_refresh() {
+fn load_keeps_every_strip_order_and_shows_its_top_row() {
     let (sim, rules, owner, candidates) = scrolling_fixture();
     let saved = scrolled_projection(owner, &candidates)
         .saved_order()
         .unwrap();
-    assert_eq!(saved.clone().into_parts().2, SAVED_SCROLL_ROWS);
     let hash = sim.state_hash();
     let bytes = save(&sim, &rules, Some(&saved));
     let loaded = GameSnapshot::load_validated(
@@ -319,14 +318,8 @@ fn nonzero_rows_on_every_strip_roundtrip_prepare_commit_and_refresh() {
     assert_eq!(loaded.sidebar_order(), Some(&saved));
     assert_eq!(loaded.sim.state_hash(), hash);
 
-    let mut outgoing = SidebarProjectionState::default();
-    assert!(
-        !outgoing
-            .reconcile_fixture(owner, &candidates, 1)
-            .build_inserted()
-    );
+    let mut outgoing = scrolled_projection(owner, &candidates);
     let before = outgoing.saved_order();
-    assert_eq!(outgoing.cameo_strips().scroll_rows(), [0; 4]);
     let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
     runtime
         .simulation
@@ -347,8 +340,10 @@ fn nonzero_rows_on_every_strip_roundtrip_prepare_commit_and_refresh() {
     assert_eq!(runtime.simulation.rng_state(), outgoing_rng);
     let committed = prepared.commit_into(&mut runtime);
     outgoing.restore_order(committed.sidebar_order);
+    // Load_Game_From_File 67E68F -> SidebarClass Init 6A5310 -> ToggleSidebar
+    // 6A7D70 zeroes TopRow on every strip.
     let strips = outgoing.cameo_strips();
-    assert_eq!(strips.scroll_rows(), SAVED_SCROLL_ROWS);
+    assert_eq!(strips.scroll_rows(), [0; 4]);
     assert_eq!(strips.saved_identities(), *saved.strips());
     assert_eq!(
         runtime.simulation.houses()[&owner].economy().credits(),
@@ -361,35 +356,7 @@ fn nonzero_rows_on_every_strip_roundtrip_prepare_commit_and_refresh() {
             .build_inserted()
     );
     assert_eq!(outgoing.saved_order(), Some(saved));
-    for (tab, row) in SidebarTab::all().into_iter().zip(SAVED_SCROLL_ROWS) {
-        assert_eq!(outgoing.cameo_strips().scroll_row(tab), row);
-    }
-}
-
-#[test]
-fn out_of_range_saved_rows_preserve_outgoing_scroll_and_running_world() {
-    let (sim, rules, owner, candidates) = scrolling_fixture();
-    let outgoing = scrolled_projection(owner, &candidates);
-    let before = outgoing.saved_order();
-    let valid = before.clone().unwrap();
-    let hash = sim.state_hash();
-    let rng = sim.rng_state();
-    for tab in SidebarTab::all() {
-        for invalid_row in [SAVED_SCROLL_ROWS[tab.tab_index()] + 1, usize::MAX] {
-            let mut rows = SAVED_SCROLL_ROWS;
-            rows[tab.tab_index()] = invalid_row;
-            let invalid = SavedSidebarOrder::new(owner, valid.strips().clone(), rows);
-            let result = prepare(&save(&sim, &rules, Some(&invalid)), &sim, &rules);
-            let Err(PreparedLoadError::SidebarOrder(reason)) = result else {
-                panic!("out-of-range row {invalid_row} for {tab:?} must reject preparation");
-            };
-            assert!(reason.contains("invalid scroll row"), "{reason}");
-            assert_eq!(outgoing.saved_order(), before);
-            assert_eq!(outgoing.cameo_strips().scroll_rows(), SAVED_SCROLL_ROWS);
-            assert_eq!(sim.state_hash(), hash);
-            assert_eq!(sim.rng_state(), rng);
-        }
-    }
+    assert_eq!(outgoing.cameo_strips().scroll_rows(), [0; 4]);
 }
 
 #[test]
@@ -412,16 +379,12 @@ fn invalid_sidebar_payload_preserves_outgoing_projection_and_running_world() {
     let mut over_capacity = std::array::from_fn(|_| Vec::new());
     over_capacity[0] = vec![SavedCameoId::Object(types[0]); 77];
     let invalid = [
-        SavedSidebarOrder::new(
-            InternedId::from_index(u32::MAX),
-            valid.strips().clone(),
-            [0; 4],
-        ),
-        SavedSidebarOrder::new(owner, duplicate, [0; 4]),
-        SavedSidebarOrder::new(owner, wrong_strip, [0; 4]),
-        SavedSidebarOrder::new(owner, unknown, [0; 4]),
-        SavedSidebarOrder::new(owner, wrong_kind, [0; 4]),
-        SavedSidebarOrder::new(owner, over_capacity, [0; 4]),
+        SavedSidebarOrder::new(InternedId::from_index(u32::MAX), valid.strips().clone()),
+        SavedSidebarOrder::new(owner, duplicate),
+        SavedSidebarOrder::new(owner, wrong_strip),
+        SavedSidebarOrder::new(owner, unknown),
+        SavedSidebarOrder::new(owner, wrong_kind),
+        SavedSidebarOrder::new(owner, over_capacity),
     ];
     for order in invalid {
         assert!(matches!(
