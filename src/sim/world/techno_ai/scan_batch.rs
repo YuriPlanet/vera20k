@@ -360,7 +360,7 @@ impl Simulation {
     /// (`HouseClass::Is_Ally_ByObject @ 0x004F9A90`).
     fn scanner_allies(&self, scanner: &GameEntity, owner: InternedId) -> bool {
         is_ally_by_object(
-            Some(self.house_alliances.as_map()),
+            Some(&self.house_alliances),
             &self.interner,
             scanner.owner(),
             owner,
