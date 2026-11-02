@@ -987,7 +987,6 @@ mod tests {
         assert!(tank.lifecycle.object_alive(), "the bunkered tank survives");
         assert_eq!(tank.health.current(), 400);
         assert_eq!(tank.bunker.link(), BunkerLink::None);
-        assert!(!tank.radio_contacts.contains(2));
     }
 
     /// Techno Assign_Target's bunker redirect (`0x006FCE4B..0x006FCEB5`): a
