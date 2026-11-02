@@ -98,13 +98,15 @@ impl Simulation {
             }
             crate::sim::scenario_bootstrap::apply_skirmish_launch_alliances(
                 self,
-                input.house_roster,
                 session,
                 input.rules,
             );
             Some(placement)
         } else {
-            if self.session.campaign_mission_counter().is_none() {
+            // A map House's Allies= is read only in GameMode0 (0x006877B9).
+            if self.session.campaign_mission_counter().is_none()
+                && !self.session.game_mode_nonzero()
+            {
                 self.install_house_alliances(
                     crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(
                         input.house_roster.alliance_map(),

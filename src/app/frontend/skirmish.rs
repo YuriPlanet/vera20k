@@ -1472,8 +1472,7 @@ mod tests {
             difficulty: Default::default(),
         });
         let slots = normalized_launch_slots(&session);
-        let alliances =
-            launch_alliance_map(&roster_with_neutral_and_playable(), &slots, &session.mode);
+        let alliances = launch_alliance_map(&slots, &session.mode);
 
         assert!(
             alliances
@@ -1508,8 +1507,7 @@ mod tests {
         });
         let slots = normalized_launch_slots(&session);
 
-        let alliances =
-            launch_alliance_map(&roster_with_neutral_and_playable(), &slots, &session.mode);
+        let alliances = launch_alliance_map(&slots, &session.mode);
 
         assert!(
             alliances

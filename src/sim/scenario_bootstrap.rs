@@ -1341,14 +1341,12 @@ pub fn initialize_skirmish_launch_houses(
 /// Commit the explicit launch-session diplomacy graph at the post-crate boundary.
 pub(crate) fn apply_skirmish_launch_alliances(
     sim: &mut Simulation,
-    house_roster: &HouseRoster,
     session: &SkirmishLaunchSession,
     rules: &RuleSet,
 ) {
     let slots = normalized_launch_slots(session);
     sim.install_house_alliances(
         crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(launch_alliance_map(
-            house_roster,
             &slots,
             &session.mode,
         )),
@@ -1994,12 +1992,17 @@ pub fn apply_skirmish_ai_opening_credits(houses: &mut crate::sim::houses::Houses
     }
 }
 
+/// The launch diplomacy graph: team and co-op alliances between the slots.
+///
+/// A map House's `Allies=` takes no part. `HouseClass::Read_INI @ 0x005009B0`,
+/// its only reader on an authored map, runs only when `Session.GameMode` is 0
+/// (campaign; `0x0068776E..0x006877B9`), and `ScenarioClass::Create_Houses
+/// @ 0x00687F10` builds Neutral and Special with no allies.
 pub fn launch_alliance_map(
-    house_roster: &HouseRoster,
     slots: &[NormalizedSkirmishSlot],
     mode: &crate::skirmish_launch::SkirmishLaunchMode,
 ) -> crate::map::houses::HouseAllianceMap {
-    let mut alliances = house_roster.alliance_map();
+    let mut alliances = crate::map::houses::HouseAllianceMap::new();
     for slot in slots {
         alliances
             .entry(normalize_house_name(&slot.owner_name))
