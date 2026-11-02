@@ -411,6 +411,20 @@ pub(crate) fn build_shp_instances_from_inputs(
             }
             _ => None,
         };
+        // DrawBody's gate branch (`0x0043D546..0x0043D68F`) replaces
+        // GetCurrentFrame while the gate opens, stands open or closes.
+        let gate_open_frame = match (rules, object_type, current_frame, gate_stages) {
+            (Some(rules), Some(obj), Some(_), Some(gate_stages)) => {
+                crate::sim::building_art::gate_open_body_frame(
+                    entity,
+                    gate_stages,
+                    obj.strength,
+                    rules.general.condition_yellow,
+                    sim.session().binary_frame(),
+                )
+            }
+            _ => None,
+        };
         let (shp_frame, make_type_id): (u16, Option<String>) = if is_building_up {
             make_frame(false)
         } else if is_building_down {
@@ -418,21 +432,8 @@ pub(crate) fn build_shp_instances_from_inputs(
         } else {
             match entity.category() {
                 EntityCategory::Structure => {
-                    let frame = if let (Some(rules), Some(obj), Some(current)) =
-                        (rules, object_type, current_frame)
-                    {
-                        // DrawBody's gate branch replaces GetCurrentFrame while
-                        // the gate opens, stands open or closes.
-                        let gate_frame = gate_stages.map(|gate_stages| {
-                            crate::sim::building_art::gate_open_body_frame(
-                                entity,
-                                gate_stages,
-                                obj.strength,
-                                rules.general.condition_yellow,
-                                sim.session().binary_frame(),
-                            )
-                        });
-                        u16::try_from(gate_frame.flatten().unwrap_or(current)).unwrap_or(0)
+                    let frame = if let Some(current) = current_frame {
+                        u16::try_from(gate_open_frame.unwrap_or(current)).unwrap_or(0)
                     } else {
                         0
                     };
@@ -644,7 +645,12 @@ pub(crate) fn build_shp_instances_from_inputs(
             let foundation: (u16, u16) = object_type
                 .map(|o| o.foundation.dimensions())
                 .unwrap_or((1, 1));
-            let zshape = input.building_zshape && foundation.0 <= ZSHAPE_MAX_FOUNDATION_WIDTH;
+            // The gate branch's DrawSHP (`0x0043D683`) passes a null z-shape
+            // (a12, pushed at `0x0043D633`); the ordinary body passes
+            // BUILDNGZ (`0x0043D806`).
+            let zshape = input.building_zshape
+                && foundation.0 <= ZSHAPE_MAX_FOUNDATION_WIDTH
+                && gate_open_frame.is_none();
             let origin = native_z::zshape_origin(
                 (sx.round() as i32, sy.round() as i32),
                 foundation,

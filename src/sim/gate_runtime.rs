@@ -109,6 +109,18 @@ pub(crate) fn request_gate_open_for_cell(
     true
 }
 
+/// Client-crate fixtures: `mover_id` asks the Gate on `cell` to open through
+/// [`request_gate_open_for_cell`].
+#[cfg(any(test, feature = "test-support"))]
+pub fn request_gate_open_for_test(
+    sim: &mut Simulation,
+    cell: (u16, u16),
+    mover_id: u64,
+    rules: &RuleSet,
+) -> bool {
+    request_gate_open_for_cell(sim, cell, mover_id, rules)
+}
+
 ///44E3A0: GetFoundation(false), then main Ground lists. Any pointer other
 ///than the Gate obstructs; bridge-layer occupants and Health are not queried.
 fn footprint_has_other_object(

@@ -65,13 +65,10 @@ fn a_sale_hides_slot_anims_in_its_build_down_and_drops_the_zshape_move() {
 #[test]
 fn retail_gate_make_body_uses_native_gate_and_selling_reflections() {
     use crate::map::houses::HouseColorMap;
-    use crate::map::lighting::CellLightGrid;
-    use crate::render::batch::DepthAxis;
     use crate::render::sprite_atlas::{
         ShpPaletteContext, ShpSpriteEntry, ShpSpriteKey, SpriteAtlas,
     };
-    use crate::render::unit_atlas::BarrelImagePitches;
-    use std::cell::RefCell;
+    use crate::render::tactical_draw_plan::BuildingPieceKind::BuildupOrSpecial;
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
@@ -142,59 +139,6 @@ fn retail_gate_make_body_uses_native_gate_and_selling_reflections() {
     let house_colors =
         HouseColorMap::from([("Americans".to_owned(), crate::rules::house_colors::NO_REMAP)]);
 
-    fn emitted_make_frame(
-        runtime: &SimRuntime,
-        atlas: &SpriteAtlas,
-        gate: u64,
-        colors: &HouseColorMap,
-    ) -> u16 {
-        let interpolation = RenderInterpolation::new(false);
-        let lighting = CellLightGrid::new();
-        let barrel_image_pitches = RefCell::new(BarrelImagePitches::default());
-        let input = ShpInputs {
-            runtime,
-            atlas: Some(atlas),
-            overlay_atlas: None,
-            unit_atlas: None,
-            barrel_image_pitches: &barrel_image_pitches,
-            interpolation: &interpolation,
-            camera: [-1000.0, -1000.0],
-            render_size: [5000, 5000],
-            zoom: 1.0,
-            building_viewport: crate::app::presentation::render::tactical_world_viewport(
-                [-1000.0; 2],
-                [0, 0, 5000, 5000],
-                None,
-            ),
-            axis: DepthAxis::NONE,
-            local_owner: None,
-            ignore_visibility: true,
-            lighting: &lighting,
-            house_colors: colors,
-            building_zshape: false,
-        };
-        let order = NativeDisplayOrder::from_display(runtime.simulation.display_layers());
-        let mut planned = Vec::new();
-        build_shp_instances_from_inputs(&input, &mut planned, &order);
-        let building = planned
-            .iter()
-            .find(|planned| planned.parent.id == gate)
-            .expect("gate reaches the production SHP emitter");
-        let body = building
-            .building_pieces
-            .as_ref()
-            .expect("gate uses building piece owner")
-            .iter()
-            .find(|piece| {
-                piece.kind == crate::render::tactical_draw_plan::BuildingPieceKind::BuildupOrSpecial
-            })
-            .expect("gate emits its make SHP body");
-        match body.target {
-            ObjectTexture::ShpPage(frame) => u16::try_from(frame).unwrap(),
-            target => panic!("unexpected gate make target: {target:?}"),
-        }
-    }
-
     let initial_stage = runtime
         .simulation
         .entities()
@@ -203,7 +147,7 @@ fn retail_gate_make_body_uses_native_gate_and_selling_reflections() {
         .construction_stage_value();
     assert_eq!(initial_stage, 0);
     assert_eq!(
-        emitted_make_frame(&runtime, &atlas, gate, &house_colors),
+        gate_piece(&runtime, &atlas, gate, &house_colors, BuildupOrSpecial).0,
         u16::try_from(control[0] + control[1] - initial_stage - 1).unwrap(),
         "GetCurrentFrame reflects a gate's BState-0 build-up"
     );
@@ -236,8 +180,151 @@ fn retail_gate_make_body_uses_native_gate_and_selling_reflections() {
     assert!(entity.building_down() && entity.in_construction_bstate());
     let sale_stage = entity.construction_stage_value();
     assert_eq!(
-        emitted_make_frame(&runtime, &atlas, gate, &house_colors),
+        gate_piece(&runtime, &atlas, gate, &house_colors, BuildupOrSpecial).0,
         u16::try_from(sale_stage).unwrap(),
         "the Selling reflection follows and cancels the gate reflection"
     );
+}
+
+/// The atlas frame and Z gradient of the gate's `kind` piece, from the
+/// production SHP emitter with BUILDNGZ loaded.
+fn gate_piece(
+    runtime: &SimRuntime,
+    atlas: &crate::render::sprite_atlas::SpriteAtlas,
+    gate: u64,
+    colors: &crate::map::houses::HouseColorMap,
+    kind: crate::render::tactical_draw_plan::BuildingPieceKind,
+) -> (u16, u32) {
+    use crate::map::lighting::CellLightGrid;
+    use crate::render::batch::DepthAxis;
+    use crate::render::unit_atlas::BarrelImagePitches;
+    use std::cell::RefCell;
+    let interpolation = RenderInterpolation::new(false);
+    let lighting = CellLightGrid::new();
+    let barrel_image_pitches = RefCell::new(BarrelImagePitches::default());
+    let input = ShpInputs {
+        runtime,
+        atlas: Some(atlas),
+        overlay_atlas: None,
+        unit_atlas: None,
+        barrel_image_pitches: &barrel_image_pitches,
+        interpolation: &interpolation,
+        camera: [-1000.0, -1000.0],
+        render_size: [5000, 5000],
+        zoom: 1.0,
+        building_viewport: crate::app::presentation::render::tactical_world_viewport(
+            [-1000.0; 2],
+            [0, 0, 5000, 5000],
+            None,
+        ),
+        axis: DepthAxis::NONE,
+        local_owner: None,
+        ignore_visibility: true,
+        lighting: &lighting,
+        house_colors: colors,
+        building_zshape: true,
+    };
+    let order = NativeDisplayOrder::from_display(runtime.simulation.display_layers());
+    let mut planned = Vec::new();
+    build_shp_instances_from_inputs(&input, &mut planned, &order);
+    let piece = planned
+        .iter()
+        .find(|planned| planned.parent.id == gate)
+        .expect("gate reaches the production SHP emitter")
+        .building_pieces
+        .as_ref()
+        .expect("gate uses building piece owner")
+        .iter()
+        .find(|piece| piece.kind == kind)
+        .expect("gate emits the piece");
+    match piece.target {
+        ObjectTexture::ShpPage(frame) => (u16::try_from(frame).unwrap(), piece.instance.z_gradient),
+        target => panic!("unexpected gate target: {target:?}"),
+    }
+}
+
+/// DrawBody's gate branch (`0x0043D546..0x0043D68F`) draws an opening gate
+/// through DrawSHP with a null z-shape (`0x0043D633`, a12), so it neither
+/// subtracts nor clips to BUILDNGZ; the closed gate's ordinary body
+/// (`0x0043D806`) does.
+#[test]
+fn an_opening_gate_draws_without_the_buildngz_zshape() {
+    use crate::map::houses::HouseColorMap;
+    use crate::render::native_z::{Z_GRADIENT_ZSHAPE_CLIP_FLAG, Z_GRADIENT_ZSHAPE_FLAG};
+    use crate::render::sprite_atlas::{
+        ShpPaletteContext, ShpSpriteEntry, ShpSpriteKey, SpriteAtlas,
+    };
+    use crate::render::tactical_draw_plan::BuildingPieceKind::Body;
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x2246);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let gate = sim
+        .spawn_object("GAGATE_A", "Americans", 10, 10, 0, &rules)
+        .expect("retail gate placement");
+    let tank = sim
+        .spawn_object("MTNK", "Americans", 10, 12, 0, &rules)
+        .expect("allied tank");
+    let keys = (0..18u16)
+        .map(|frame| {
+            (
+                ShpSpriteKey {
+                    palette_context: ShpPaletteContext::Legacy,
+                    type_id: "GAGATE_A".to_owned(),
+                    facing: 0,
+                    frame,
+                    house_color: crate::rules::house_colors::NO_REMAP,
+                },
+                ShpSpriteEntry {
+                    uv_origin: [f32::from(frame), 0.0],
+                    uv_size: [1.0, 1.0],
+                    pixel_size: [8.0, 8.0],
+                    offset_x: 0.0,
+                    offset_y: 0.0,
+                    canvas_rect: [0.0, 0.0, 8.0, 8.0],
+                    extended: false,
+                    page: u8::try_from(frame).unwrap(),
+                    source_palette: 1,
+                },
+            )
+        })
+        .collect();
+    let atlas = SpriteAtlas::from_test_entries(keys);
+    let mut runtime = SimRuntime::from_simulation(sim);
+    runtime.resources.rules = rules.clone();
+    let colors =
+        HouseColorMap::from([("Americans".to_owned(), crate::rules::house_colors::NO_REMAP)]);
+    let zshape = Z_GRADIENT_ZSHAPE_FLAG | Z_GRADIENT_ZSHAPE_CLIP_FLAG;
+
+    let (frame, closed) = gate_piece(&runtime, &atlas, gate, &colors, Body);
+    assert_eq!(frame, 0);
+    assert_eq!(
+        closed & zshape,
+        Z_GRADIENT_ZSHAPE_CLIP_FLAG,
+        "closed gate clips to BUILDNGZ"
+    );
+
+    crate::sim::gate_runtime::request_gate_open_for_test(
+        &mut runtime.simulation,
+        (10, 10),
+        tank,
+        &rules,
+    );
+    let mut opening = None;
+    for _ in 0..60 {
+        runtime
+            .simulation
+            .advance_tick(&[], Some(&rules), None, None, 67);
+        let (frame, gradient) = gate_piece(&runtime, &atlas, gate, &colors, Body);
+        if frame > 0 {
+            opening = Some(gradient);
+            break;
+        }
+    }
+    let opening = opening.expect("the gate opens");
+    assert_eq!(opening & zshape, 0, "opening gate draws without BUILDNGZ");
+    assert_eq!(opening & !zshape, closed & !zshape, "same gradient entry");
 }
