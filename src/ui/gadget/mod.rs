@@ -56,8 +56,10 @@ pub const HIT_SEED_AREA: i32 = 1024 * 768;
 pub const STICKY_CTOR_MASK: u16 = 0x0005;
 
 /// SelectClass cameo construction mask (A2, study cameo lane §3): LEFTPRESS |
-/// LEFTUP | RIGHTPRESS. The cameo Action acts on the press bits and discards
-/// LEFTUP; there is no release bit, so cameos fire on mouse-DOWN.
+/// LEFTUP | RIGHTPRESS. Sidebar__InitializeStaticCameoControls 6A4DC0 builds
+/// the 240 60x48 select buttons with it. The cameo Action acts on the press
+/// bits and discards LEFTUP; there is no release bit, so cameos fire on
+/// mouse-DOWN.
 pub const CAMEO_FLAGS: u16 = FLAG_LEFT_PRESS | FLAG_LEFT_UP | FLAG_RIGHT_PRESS; // 0x19
 
 /// Full-tactical catcher mask (A3, study tactical lane §3): all mouse bits
