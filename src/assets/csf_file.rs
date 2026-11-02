@@ -46,6 +46,9 @@ pub struct CsfFile {
     // Ares's override hook frees the old value before reading its replacement.
     // A malformed body can therefore leave a registered label with a null value.
     entries: CsfEntries,
+    /// VERA's localization layer (`[VERA] Language=`), searched before the
+    /// table. Lookup-only: `len`/`entries` still describe the loaded files.
+    overrides: HashMap<String, CsfText>,
 }
 
 /// Raw diagnostics retain the existing map semantics. The active Ares table
@@ -137,6 +140,7 @@ impl CsfFile {
             version,
             language,
             entries: CsfEntries::Raw(entries),
+            overrides: HashMap::new(),
         })
     }
 
@@ -255,8 +259,26 @@ impl CsfFile {
             .map(|text| (text.stored_key.as_str(), text.raw.as_str()))
     }
 
+    /// Install VERA's localized text for `key` ahead of the loaded table.
+    /// The text is used as written: CSF whitespace normalization is a
+    /// property of the binary table, not of VERA's string files.
+    pub fn set_override(&mut self, key: &str, value: &str) {
+        let stored_key = key.to_ascii_uppercase();
+        self.overrides.insert(
+            stored_key.clone(),
+            CsfText {
+                value: value.to_owned(),
+                raw: value.to_owned(),
+                stored_key,
+            },
+        );
+    }
+
     fn lookup_text(&self, key: &str) -> Option<&CsfText> {
         let key = key.to_ascii_uppercase();
+        if let Some(text) = self.overrides.get(&key) {
+            return Some(text);
+        }
         match &self.entries {
             CsfEntries::Raw(entries) => entries.get(&key)?.as_ref(),
             #[cfg(feature = "ares")]

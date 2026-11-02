@@ -370,6 +370,8 @@ impl App {
         );
         let profile_screen = options_load.startup_shell_screen;
         let mut options_profile = options_load.retained_profile;
+        // Before the first CSF load below, which layers this language over it.
+        crate::i18n::select_language(&options_profile.language);
         options_profile.render_interpolation =
             crate::app::presentation::interpolation::startup_enabled(
                 options_profile.render_interpolation,
