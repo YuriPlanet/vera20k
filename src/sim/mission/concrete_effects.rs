@@ -672,6 +672,12 @@ pub(crate) fn represented_assign_target(
 /// also tears down linked effects. Remaining bare-storage callers do not yet dispatch the complete
 /// class setter; neither this base write set nor apply_target claims those
 /// larger linked-effect/C4/Ivan branches.
+///
+/// DORMANT: the fire-particle teardown (`0x006FCF61..0x006FCF86`): with a
+/// live `+0x304` system that vt+0x3AC rejects for the new target, native
+/// calls its vt+0xF8 and clears `+0x304`. VERA never produces `+0x304`;
+/// retail's only `UseFireParticles=yes` weapon, `FireballLauncher`, is on no
+/// type.
 pub(crate) fn represented_assign_target_admitted(
     entity: &mut crate::sim::game_entity::GameEntity,
     requested: Option<TargetKind>,
