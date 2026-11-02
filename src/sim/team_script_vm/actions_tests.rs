@@ -1963,6 +1963,46 @@ fn script_action_51_plays_an_animation_and_finishes_the_step() {
 }
 
 #[test]
+fn script_action_52_shows_a_talk_bubble_over_the_first_member_and_finishes_the_step() {
+    // TeamClass action 52 (`0x006E9D42..0x006E9D5B`): TalkBubble
+    // SetObjectAndFrame (`0x0070F120`) over the first member, then the step
+    // finishes. Unported, the refusal froze the team on this step. The scene
+    // returns after step 0's visit, so the observed frame runs step 1.
+    let Some((mut scene, team, member)) = crate::sim::team_script_vm::packed_cell_tests::scene(
+        "0=52,0\n1=52,7\n2=5,300",
+        "E2",
+        false,
+        |_| {},
+    ) else {
+        return;
+    };
+    let commands = scene.runtime.simulation.take_due_commands();
+    let output = scene
+        .runtime
+        .advance_frame(
+            &commands,
+            22,
+            crate::sim::world::TickLane::Ordinary,
+            FrameEffects::default(),
+        )
+        .unwrap();
+    let state = scene.sim().team_script_vm.team(team).unwrap();
+    assert!(state.refusal().is_none(), "{:?}", state.refusal());
+    assert!(state.cursor() >= 1, "action 52 finishes its step");
+    let bubbles: Vec<_> = output
+        .trigger_effects
+        .iter()
+        .filter_map(|effect| match effect {
+            crate::sim::trigger_runtime::TriggerEffect::TalkBubble { actor, value, .. } => {
+                Some((*actor, *value))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(bubbles, vec![(Some(member), 7)]);
+}
+
+#[test]
 fn script_action_51_binds_the_art_of_an_anim_only_a_script_names() {
     // Loading roots the AnimType action 51 (`0x006EF610`) indexes with its
     // argument's low 16 bits. No other root reaches PARABOMB: unbound, it

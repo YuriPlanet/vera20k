@@ -130,8 +130,9 @@ pub enum TriggerEffect {
     HomeCamera {
         coord: Option<[i32; 3]>,
     },
-    /// Execute105/70F120: the app owns the process wall-clock bubble. Reveal
-    /// is synchronous in sim; this ordered cue never becomes gameplay state.
+    /// 70F120 from trigger action 105 or team script action 52: the app owns
+    /// the process wall-clock bubble. Reveal is synchronous in sim; this
+    /// ordered cue never becomes gameplay state.
     TalkBubble {
         actor: Option<u64>,
         value: i32,
@@ -977,6 +978,36 @@ struct TriggerActionContext {
 pub const SCENARIO_GLOBAL_COUNT: usize = 50;
 
 impl Simulation {
+    /// `TalkBubble::SetObjectAndFrame @ 0x0070F120`, called by trigger
+    /// action 105 and team script action 52. A null object or frame 0 clears
+    /// the bubble (`0x0070F194..0x0070F1CC`); otherwise it shows `frame` over
+    /// `actor` for `TalkBubbleTime` (Rules `+0x1800`).
+    pub(crate) fn talk_bubble_set_object_and_frame(
+        &mut self,
+        actor: Option<u64>,
+        frame: i32,
+        context: crate::sim::world::UninitContext<'_>,
+    ) {
+        let actor = actor.filter(|_| frame != 0);
+        let duration = if actor.is_some() {
+            context.rules().general.talk_bubble_time
+        } else {
+            0
+        };
+        //70F134/13A/173 commits the request BEFORE Map callbacks. A nested
+        //105 from discovery must win.
+        self.publish_trigger_effects(vec![TriggerEffect::TalkBubble {
+            actor,
+            value: if actor.is_some() { frame } else { 0 },
+            duration,
+        }]);
+        if let Some(actor) = actor {
+            //70F159..70F189: flags0/0/0/1/1, current player (not the Team
+            //owner), literal radius2, including negative values.
+            self.reveal_talk_bubble_actor(actor, context);
+        }
+    }
+
     /// Validate this owner's retained identities before the restore coordinator
     /// publishes a candidate. No map re-read or live constructor runs on load.
     /// Destruction may leave orphan Triggers until their shared725C70 tickets
@@ -4812,31 +4843,15 @@ impl Simulation {
                 } else {
                     None
                 };
-                let value = value.unwrap_or(0);
-                let actor = actor.filter(|_| value != 0);
-                let duration = if actor.is_some() {
-                    rules.general.talk_bubble_time
-                } else {
-                    0
-                };
-                effects.push(TriggerEffect::TalkBubble {
-                    actor,
-                    value: if actor.is_some() { value } else { 0 },
-                    duration,
-                });
-                //70F134/13A/173 commits the request BEFORE Map callbacks.
-                //A nested105 from discovery must win. Commit earlier cues
-                //to the one frame-output queue before entering that receiver.
+                // Commit earlier cues to the one frame-output queue before
+                // the bubble's own cue and reveal.
                 self.publish_trigger_effects(std::mem::take(effects));
-                if let Some(actor) = actor {
-                    //70F159..70F189: flags0/0/0/1/1, current player (not
-                    //the Team owner), literal radius2, including negative values.
-                    self.reveal_talk_bubble_actor(
-                        actor,
-                        crate::sim::world::UninitContext::new(rules, overlay_registry)
-                            .with_effects(frame_effects),
-                    );
-                }
+                self.talk_bubble_set_object_and_frame(
+                    actor,
+                    value.unwrap_or(0),
+                    crate::sim::world::UninitContext::new(rules, overlay_registry)
+                        .with_effects(frame_effects),
+                );
             }
             106 => {
                 // Active inline Execute6DF5D1, not the similarly annotated

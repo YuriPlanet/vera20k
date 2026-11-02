@@ -167,6 +167,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 49
             | 50
             | 51
+            | 52
             | 53
             | 54
             | 55
@@ -871,6 +872,14 @@ impl Simulation {
                 }
             }
             51 => self.team_action_play_animation(team_id, first, action.argument, rules),
+            52 => self.team_action_talk_bubble(
+                team_id,
+                first,
+                action.argument,
+                rules,
+                registry,
+                frame_effects,
+            ),
             53 => self.team_action_gather_at_enemy_base(
                 team_id,
                 first,
@@ -1013,6 +1022,40 @@ impl Simulation {
                 }
             }
         }
+        if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+            team.advance_pending = true;
+        }
+    }
+
+    /// Team script action 52: a talk bubble over the team's first member.
+    ///
+    /// gamemd `TeamClass::AI`'s action chain at `0x006E9D42..0x006E9D5B`: on
+    /// the step's first visit it calls `TalkBubble::SetObjectAndFrame @
+    /// 0x0070F120` with the team's first member (`+0x54`) and the argument as
+    /// the frame, then finishes the step (`+0x80 = 1`). A later visit returns
+    /// at `0x006E95AB` without finishing.
+    fn team_action_talk_bubble(
+        &mut self,
+        team_id: u64,
+        first: bool,
+        argument: i32,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        if !first {
+            return;
+        }
+        let actor = self
+            .team_script_vm
+            .teams
+            .get(&team_id)
+            .and_then(|team| team.members().next());
+        self.talk_bubble_set_object_and_frame(
+            actor,
+            argument,
+            crate::sim::world::UninitContext::new(rules, registry).with_effects(frame_effects),
+        );
         if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
             team.advance_pending = true;
         }
