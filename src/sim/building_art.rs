@@ -978,11 +978,8 @@ pub fn body_frame(
 /// back from GateStages while closing, `GateStages - 1` once open, clamped
 /// to `0..GateStages`, plus `GateStages + 1` at ConditionYellow health or
 /// below (`0x005F5C60` against Rules `+0x1700`). The branch then returns, so
-/// no bib is drawn. None outside it.
-///
-/// RESIDUAL: the branch lights the body without the type's `ExtraLight=`
-/// (its vt+0x1D0 call adds no `+0x1548`); VERA keeps the ordinary body
-/// light. Retail's only gate, GAGATE_A, sets no ExtraLight.
+/// no bib is drawn, and the body is lit without the type's `ExtraLight=`.
+/// None outside it.
 pub fn gate_open_body_frame(
     entity: &GameEntity,
     gate_stages: i32,

@@ -589,6 +589,7 @@ pub(crate) fn build_shp_instances_from_inputs(
                 input.lighting,
                 (pos.rx(), pos.ry()),
                 art,
+                gate_open_frame.is_some(),
             )
         } else {
             selected_palette_light
