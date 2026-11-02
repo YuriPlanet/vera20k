@@ -179,8 +179,11 @@ fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
         let output = if let Some(resolve) = &resolve {
             resolve.composite(
                 &gpu.device,
+                &gpu.queue,
                 &mut encoder,
                 &color,
+                [0.0, 0.0],
+                1.0,
                 [0, 0, size[0], size[1]],
                 wgpu::Color::BLACK,
             );

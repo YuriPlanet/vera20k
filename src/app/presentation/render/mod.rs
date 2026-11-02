@@ -229,6 +229,16 @@ pub(crate) fn render_game(
         .is_some_and(|super_resolution| super_resolution.fsr);
     #[cfg(not(feature = "post-process"))]
     let fsr = false;
+    // `SuperResolution.Temporal`: accumulate the reduced world over frames
+    // before it is scaled back up (camera reprojection, no per-object vectors).
+    #[cfg(feature = "post-process")]
+    let (temporal, temporal_alpha) = {
+        let super_resolution = state.post_process_rules().super_resolution;
+        (
+            super_resolution.is_some_and(|rules| rules.temporal),
+            super_resolution.map_or(0.1, |rules| rules.temporal_alpha),
+        )
+    };
     if world_scale == 1.0 {
         state.renderer.world_zoom_pass = None;
     } else {
@@ -246,6 +256,10 @@ pub(crate) fn render_game(
                 world_scale,
                 fsr,
             ));
+        }
+        #[cfg(feature = "post-process")]
+        if let Some(pass) = renderer.world_zoom_pass.as_ref() {
+            pass.set_temporal(&gpu.device, temporal, temporal_alpha);
         }
         renderer.batch_renderer.set_native_world_resolution(
             &gpu.queue,

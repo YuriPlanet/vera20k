@@ -227,8 +227,11 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
     }
     world_zoom.composite(
         &gpu.device,
+        &gpu.queue,
         &mut encoder,
         &color,
+        [0.0, 0.0],
+        1.0,
         [0, 0, 856, 736],
         background,
     );

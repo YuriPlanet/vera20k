@@ -58,6 +58,8 @@ pub mod palette_light;
 pub mod palette_textures;
 pub mod pixel_fx_sparkles;
 #[cfg(feature = "post-process")]
+pub(crate) mod magic_bloom;
+#[cfg(feature = "post-process")]
 pub(crate) mod pirate_bloom;
 #[cfg(feature = "post-process")]
 pub(crate) mod post_process;
@@ -66,6 +68,8 @@ pub(crate) mod radial_indicator;
 pub(crate) mod radiation_beam;
 pub(crate) mod scaled_copy;
 pub(crate) mod screen_presentation;
+#[cfg(feature = "post-process")]
+pub(crate) mod temporal_upscale;
 #[cfg(feature = "post-process")]
 pub(crate) mod terrain_warp;
 #[cfg(feature = "post-process")]

@@ -56,6 +56,8 @@
 //! SuperResolution.Sharpness=0.7
 //! SuperResolution.RenderScale=1
 //! SuperResolution.Fsr=no
+//! SuperResolution.Temporal=no
+//! SuperResolution.TemporalAlpha=0.1
 //! Deband=no
 //! Deband.Radius=4
 //! Deband.Threshold=0.02
@@ -93,6 +95,15 @@
 //! Bloom.Intensity=0.4
 //! Bloom.Radius=1
 //! ArcaneBloom=no
+//! MagicBloom=no
+//! MagicBloom.Intensity=1
+//! MagicBloom.Threshold=2
+//! MagicBloom.Exposure=0.5
+//! MagicBloom.Adapt.Speed=0.1
+//! MagicBloom.Adapt.Sensitivity=1
+//! MagicBloom.Adapt.LimitMin=0
+//! MagicBloom.Adapt.LimitMax=1
+//! MagicBloom.Adapt.Precision=2
 //! PirateBloom=no
 //! PirateBloom.Threshold=0.5
 //! PirateBloom.Strength=0.5
@@ -156,6 +167,9 @@ pub struct PostProcessRules {
     /// luluco250's `ArcaneBloom`: five Gaussian levels plus an optional
     /// luminance-adaptation exposure; `None` leaves it out.
     pub arcane_bloom: Option<ArcaneBloomRules>,
+    /// luluco250's `MagicBloom`: eight Gaussian levels, threshold on the first,
+    /// adapted tone-map and screen blend.
+    pub magic_bloom: Option<MagicBloomRules>,
     /// `Pirate_Bloom.fx`: two thresholded box-blur pass pairs at quarter
     /// resolution, composited back over the frame; `None` leaves it out.
     pub pirate_bloom: Option<PirateBloomRules>,
@@ -334,6 +348,45 @@ impl Default for SharpenRules {
     }
 }
 
+/// `MagicBloom.fx` (luluco250, MIT): eight 9x9 Gaussian levels thresholded on
+/// the first one, summed after an adapted Uncharted 2 tone-map and screen-blended
+/// over the frame. Lens dirt is not ported (it needs a texture the game does
+/// not ship).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MagicBloomRules {
+    /// Bloom gain applied to the first (thresholded) level.
+    pub intensity: f32,
+    /// Exponential threshold: `pow(abs(colour), threshold)`, so higher values
+    /// darken everything below the highlights. 1.0 keeps every pixel.
+    pub threshold: f32,
+    /// Target exposure the adapted bloom tone-maps to (0.5 is the author's
+    /// recommendation).
+    pub exposure: f32,
+    /// Per-frame adaptation lerp toward the measured luminance.
+    pub adapt_speed: f32,
+    /// Multiplier on the average luminance before it clamps.
+    pub adapt_sensitivity: f32,
+    /// Clamp on the adapted luminance.
+    pub adapt_limit: [f32; 2],
+    /// Luminance level to read: 0 averages the whole image, higher picks a
+    /// finer level (capped at the chain's 6).
+    pub adapt_precision: u32,
+}
+
+impl Default for MagicBloomRules {
+    fn default() -> Self {
+        Self {
+            intensity: 1.0,
+            threshold: 2.0,
+            exposure: 0.5,
+            adapt_speed: 0.1,
+            adapt_sensitivity: 1.0,
+            adapt_limit: [0.0, 1.0],
+            adapt_precision: 2,
+        }
+    }
+}
+
 /// Contrast-adaptive sharpen in the style of the ReShade `SuperResolution.fx`
 /// edge-enhancement shader: the gain follows local contrast, so flat areas stay
 /// clean and edges tighten without ringing.
@@ -349,6 +402,12 @@ pub struct SuperResolutionRules {
     /// RCAS sharpen. `no` keeps the bicubic reconstruction and the CAS-style
     /// sharpener.
     pub fsr: bool,
+    /// Accumulate the reduced world over frames before the upscale: the field
+    /// is reprojected by the camera delta and blended into a clamped history,
+    /// which steadies edges the low-resolution frame cannot resolve alone.
+    pub temporal: bool,
+    /// Current-frame weight in that blend; lower keeps more history.
+    pub temporal_alpha: f32,
 }
 
 impl Default for SuperResolutionRules {
@@ -357,6 +416,8 @@ impl Default for SuperResolutionRules {
             sharpness: 0.7,
             render_scale: 1.0,
             fsr: false,
+            temporal: false,
+            temporal_alpha: 0.1,
         }
     }
 }
@@ -801,6 +862,11 @@ impl PostProcessRules {
                         defaults.render_scale,
                     ),
                     fsr: section.read_bool("SuperResolution.Fsr", defaults.fsr),
+                    temporal: section.read_bool("SuperResolution.Temporal", defaults.temporal),
+                    temporal_alpha: section.read_float(
+                        "SuperResolution.TemporalAlpha",
+                        defaults.temporal_alpha,
+                    ),
                 }
             }),
             deband: section.read_bool("Deband", false).then(|| {
@@ -861,6 +927,32 @@ impl PostProcessRules {
                     exposure: section.read_float("ArcaneBloom.Exposure", defaults.exposure),
                     max_brightness: section
                         .read_float("ArcaneBloom.MaxBrightness", defaults.max_brightness),
+                }
+            }),
+            magic_bloom: section.read_bool("MagicBloom", false).then(|| {
+                let defaults = MagicBloomRules::default();
+                MagicBloomRules {
+                    intensity: section
+                        .read_float("MagicBloom.Intensity", defaults.intensity),
+                    threshold: section
+                        .read_float("MagicBloom.Threshold", defaults.threshold),
+                    exposure: section.read_float("MagicBloom.Exposure", defaults.exposure),
+                    adapt_speed: section
+                        .read_float("MagicBloom.Adapt.Speed", defaults.adapt_speed),
+                    adapt_sensitivity: section.read_float(
+                        "MagicBloom.Adapt.Sensitivity",
+                        defaults.adapt_sensitivity,
+                    ),
+                    adapt_limit: [
+                        section.read_float("MagicBloom.Adapt.LimitMin", defaults.adapt_limit[0]),
+                        section.read_float("MagicBloom.Adapt.LimitMax", defaults.adapt_limit[1]),
+                    ],
+                    adapt_precision: section
+                        .read_int(
+                            "MagicBloom.Adapt.Precision",
+                            defaults.adapt_precision as i32,
+                        )
+                        .clamp(0, 6) as u32,
                 }
             }),
             pirate_bloom: section.read_bool("PirateBloom", false).then(|| {

@@ -150,8 +150,11 @@ fn production_world_zoom_resolves_before_screen_fixed_ui() {
     }
     zoom.composite(
         &gpu.device,
+        &gpu.queue,
         &mut encoder,
         composition.composition_texture(),
+        [0.0, 0.0],
+        1.0,
         tactical,
         wgpu::Color::BLACK,
     );

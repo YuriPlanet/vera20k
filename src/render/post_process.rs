@@ -52,7 +52,9 @@
 //!
 //! Depends on: `render/gpu.rs` (through the caller) and wgpu only.
 
-use crate::rules::post_process::{ArcaneBloomRules, DlaaRules, PirateBloomRules};
+use crate::rules::post_process::{
+    ArcaneBloomRules, DlaaRules, MagicBloomRules, PirateBloomRules,
+};
 use wgpu::util::DeviceExt;
 
 const SHADER_SRC: &str = include_str!("post_process.wgsl");
@@ -796,6 +798,10 @@ pub(crate) struct PostChain {
     /// composites into the destination.
     pirate: Option<crate::render::pirate_bloom::PirateBloom>,
     pirate_rules: Option<PirateBloomRules>,
+    /// luluco250's `MagicBloom`, built on first use. It is an alternative to
+    /// the Arcane/Pirate pair rather than a stage after them.
+    magic: Option<crate::render::magic_bloom::MagicBloom>,
+    magic_rules: Option<MagicBloomRules>,
     /// The frame the chain draws into when DLAA finishes the presentation.
     _dlaa_output: Option<wgpu::Texture>,
     dlaa_output_view: Option<wgpu::TextureView>,
@@ -1096,6 +1102,8 @@ impl PostChain {
             arcane_output_view: None,
             pirate: None,
             pirate_rules: None,
+            magic: None,
+            magic_rules: None,
             _dlaa_output: None,
             dlaa_output_view: None,
             dlaa: None,
@@ -1117,6 +1125,15 @@ impl PostChain {
         self.pirate_rules = rules;
         if rules.is_none() {
             self.pirate = None;
+        }
+    }
+
+    /// Select luluco250's `MagicBloom` as the bloom stage. It takes precedence
+    /// over ArcaneBloom/Pirate_Bloom, the way a preset enables one bloom.
+    pub(crate) fn set_magic_bloom(&mut self, rules: Option<MagicBloomRules>) {
+        self.magic_rules = rules;
+        if rules.is_none() {
+            self.magic = None;
         }
     }
 
@@ -1301,9 +1318,10 @@ impl PostChain {
         } else {
             self.neutral_weights.clone()
         };
-        let bloom_stage = self.arcane_rules.is_some() || self.pirate_rules.is_some();
-        let simple_bloom = self.bloom_enabled && !bloom_stage;
-        if !bloom_stage && !simple_bloom {
+        let magic_stage = self.magic_rules.is_some();
+        let bloom_stage = !magic_stage && (self.arcane_rules.is_some() || self.pirate_rules.is_some());
+        let simple_bloom = self.bloom_enabled && !bloom_stage && !magic_stage;
+        if !bloom_stage && !simple_bloom && !magic_stage {
             let bind_group = self.source_bind_group(device, source, mask, &depth, &weights);
             self.run_pass(
                 encoder,
@@ -1333,6 +1351,17 @@ impl PostChain {
         );
 
         let scene = intermediate.clone();
+
+        if let Some(rules) = self.magic_rules {
+            // MagicBloom reads the graded frame and screen-blends its summed
+            // levels straight into the destination; DLAA may still finish after.
+            let magic = self
+                .magic
+                .get_or_insert_with(|| crate::render::magic_bloom::MagicBloom::new(device, self.format));
+            magic.prepare(device, queue, size, &rules, self.viewport);
+            magic.draw(device, encoder, &scene, destination, size);
+            return;
+        }
 
         if bloom_stage {
             // ArcaneBloom and Pirate_Bloom chain in the preset's order:

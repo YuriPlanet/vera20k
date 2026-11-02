@@ -1285,6 +1285,7 @@ impl App {
                     // it keeps the chain alive on its own.
                     let arcane_bloom = post_rules.arcane_bloom;
                     let pirate_bloom = post_rules.pirate_bloom;
+                    let magic_bloom = post_rules.magic_bloom;
                     let dlaa = post_rules.dlaa;
                     // A sheet contributes only when it loaded; an empty slot
                     // leaves the atlas arm off.
@@ -1354,6 +1355,7 @@ impl App {
                         (presentation || deband.is_some() || clarity.is_some() || vibrance.is_some()
                             || curve.is_some() || lut_atlas.is_some()
                             || arcane_bloom.is_some() || pirate_bloom.is_some()
+                            || magic_bloom.is_some()
                             || dlaa.is_some())
                             .then(|| {
                                 crate::render::post_process::PostParams::identity()
@@ -1397,6 +1399,7 @@ impl App {
                         );
                         chain.set_arcane_bloom(arcane_bloom);
                         chain.set_pirate_bloom(pirate_bloom);
+                        chain.set_magic_bloom(magic_bloom);
                         chain.set_dlaa(dlaa);
                     }
                     // The mask and field serve two independent consumers: the
@@ -1905,13 +1908,14 @@ fn post_panel_text(rules: &crate::rules::post_process::PostProcessRules) -> Stri
         flag(rules.vibrance.is_some())
     );
     let line4 = format!(
-        "DOF {}  SSAO {}  TONEMAP {}  DEBAND {}  AB {}  PB {}  SCALE {:.2}",
+        "DOF {}  SSAO {}  TONEMAP {}  DEBAND {}  AB {}  PB {}  MB {}  SCALE {:.2}",
         flag(rules.depth_of_field.is_some()),
         flag(rules.ssao.is_some()),
         flag(rules.tonemap.is_some()),
         flag(rules.deband.is_some()),
         flag(rules.arcane_bloom.is_some()),
         flag(rules.pirate_bloom.is_some()),
+        flag(rules.magic_bloom.is_some()),
         rules.super_resolution.map_or(1.0, |sr| sr.render_scale)
     );
     let line5 = format!(

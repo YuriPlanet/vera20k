@@ -29,6 +29,13 @@ pub(crate) struct WorldZoomPass {
     source_size: [u32; 2],
     scale: f32,
     fsr: bool,
+    #[cfg(feature = "post-process")]
+    format: wgpu::TextureFormat,
+    /// Temporal accumulation of the reduced world before the scaled copy.
+    #[cfg(feature = "post-process")]
+    temporal: std::cell::RefCell<Option<crate::render::temporal_upscale::TemporalUpscale>>,
+    #[cfg(feature = "post-process")]
+    temporal_alpha: std::cell::Cell<f32>,
 }
 
 /// The world target for `target` at `scale`: `ceil(target / scale)`, clamped
@@ -66,6 +73,12 @@ impl WorldZoomPass {
             source_size,
             scale,
             fsr,
+            #[cfg(feature = "post-process")]
+            format,
+            #[cfg(feature = "post-process")]
+            temporal: std::cell::RefCell::new(None),
+            #[cfg(feature = "post-process")]
+            temporal_alpha: std::cell::Cell::new(0.1),
         }
     }
 
@@ -99,6 +112,28 @@ impl WorldZoomPass {
     pub(crate) fn source_size(&self) -> [u32; 2] {
         self.source_size
     }
+
+    /// Configure `SuperResolution.Temporal`: accumulate the reduced world over
+    /// frames before the scaled copy. The pass follows the source size, so a
+    /// resize restarts the history.
+    #[cfg(feature = "post-process")]
+    pub(crate) fn set_temporal(&self, device: &wgpu::Device, enabled: bool, alpha: f32) {
+        self.temporal_alpha.set(alpha);
+        let mut temporal = self.temporal.borrow_mut();
+        if !enabled {
+            *temporal = None;
+            return;
+        }
+        let size = (self.source_size[0], self.source_size[1]);
+        if let Some(current) = temporal.as_mut() {
+            current.resize(device, size);
+        } else {
+            *temporal = Some(crate::render::temporal_upscale::TemporalUpscale::new(
+                device, self.format, size,
+            ));
+        }
+    }
+
     pub(crate) fn depth_view(&self) -> &wgpu::TextureView {
         &self.world_depth
     }
@@ -126,14 +161,43 @@ impl WorldZoomPass {
         ]
     }
 
+    /// Draw the completed world into `color_view`, upscaling it by `scale`.
+    /// `camera` and `render_scale` describe the reduced frame for the temporal
+    /// accumulation; other paths ignore them.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn composite(
         &self,
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         source: &wgpu::Texture,
+        camera: [f32; 2],
+        render_scale: f32,
         tactical: [u32; 4],
         clear: wgpu::Color,
     ) {
+        #[cfg(feature = "post-process")]
+        let resolved: Option<wgpu::Texture> = {
+            let mut temporal = self.temporal.borrow_mut();
+            temporal.as_mut().map(|temporal| {
+                let source_view = source.create_view(&Default::default());
+                temporal
+                    .resolve(
+                        device,
+                        queue,
+                        encoder,
+                        &source_view,
+                        camera,
+                        render_scale,
+                        self.temporal_alpha.get(),
+                    )
+                    .clone()
+            })
+        };
+        #[cfg(not(feature = "post-process"))]
+        let _ = (queue, camera, render_scale);
+        #[cfg(feature = "post-process")]
+        let source = resolved.as_ref().unwrap_or(source);
         let bind_group = self.surface.bind_group_for(device, source);
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Wheel zoom completed world"),

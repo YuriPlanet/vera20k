@@ -913,9 +913,12 @@ pub(super) fn dispatch_draw_passes(
     let view = if let Some(zoom) = state.renderer.world_zoom_pass.as_ref() {
         composite_world_with_drag_rect(
             &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
             encoder,
             state.renderer.combat_light_renderer.composition_texture(),
             zoom,
+            [state.match_state.input.camera_x, state.match_state.input.camera_y],
+            state.battlefield_render_scale(),
             [tac_x, tac_y, tac_w, tac_h],
             &state.renderer.batch_renderer,
             pool,
@@ -1323,15 +1326,20 @@ fn draw_pooled_passthrough_overlay<'a>(
 /// Wheel zoom's boundary between world pixels and the screen-fixed band box.
 fn composite_world_with_drag_rect(
     device: &wgpu::Device,
+    queue: &wgpu::Queue,
     encoder: &mut wgpu::CommandEncoder,
     world: &wgpu::Texture,
     zoom: &crate::render::upscale_pass::WorldZoomPass,
+    camera: [f32; 2],
+    render_scale: f32,
     tactical: [u32; 4],
     batch: &BatchRenderer,
     pool: &InstanceBufferPool,
     drag: Option<&BatchTexture>,
 ) {
-    zoom.composite(device, encoder, world, tactical, super::CLEAR_COLOR);
+    zoom.composite(
+        device, queue, encoder, world, camera, render_scale, tactical, super::CLEAR_COLOR,
+    );
     // Draw on the final pixel grid: a 1px border must not become a subpixel
     // span on the world attachment and disappear before the filtered copy.
     if drag.is_some() && pool.get("drag").is_some_and(|(_, count)| count != 0) {
