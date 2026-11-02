@@ -981,7 +981,7 @@ pub fn cell_is_in_playfield_height_aware(
 
 /// Map578540 mode1 reads an already-retained Cell pointer. Unlike578460,
 /// it does not look up the coordinates or stamp the shared dummy again.
-pub(crate) fn retained_cell_is_in_playfield(
+pub fn retained_cell_is_in_playfield(
     cell: crate::map::cell_index::NativeCellIdentity,
     bounds: Option<PlayfieldBounds>,
     cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
