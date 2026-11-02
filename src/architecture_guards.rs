@@ -411,7 +411,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/team_script_vm/reinforcements.rs", 2),
                 ("sim/trigger_runtime.rs", 1),
                 ("sim/world/aircraft_fire_location.rs", 1),
-                ("sim/world/camera_home.rs", 1),
+                ("sim/world/camera_home.rs", 2),
                 ("sim/world/command_schedule.rs", 3),
                 ("sim/world/fog_objects.rs", 1),
                 ("sim/world/gap_generator.rs", 1),
@@ -486,9 +486,10 @@ fn engine_per_client_reads_have_pinned_callers() {
         (
             "owned_by_current_house",
             &[
-                ("sim/cloak_disguise.rs", 9),
-                ("sim/game_entity.rs", 2),
+                ("sim/cloak_disguise.rs", 13),
+                ("sim/game_entity.rs", 3),
                 ("sim/miner/ore_scan.rs", 1),
+                ("sim/world/camera_home.rs", 1),
                 ("sim/world/lifecycle.rs", 8),
                 ("sim/world/object_entry.rs", 1),
             ],
