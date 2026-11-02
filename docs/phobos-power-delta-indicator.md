@@ -52,6 +52,13 @@ the same timer `HouseClass::CreatePowerOutage @ 0x50BC90` starts for a spy.
 `Sidebar.PowerDelta.Align` is a `TextAlign` whose values (`0x000/0x100/0x200`)
 are exactly the `TextPrintType` left/centre/right bits, so Phobos ORs them
 straight into the draw flags; the harvester and weeds branches hardcode centre.
+`read<TextAlign>` (`src/Utilities/TemplateDef.h:1089-1110`) also spells a fifth
+value, `none` = `TextAlign::None` = `0xFFF` (`src/Utilities/Enum.h:234-241`),
+which ORs both alignment bits *and* the low font/size nibble into the same flags
+(`src/Misc/Hooks.UI.cpp:169-172`). VERA keeps that spelling as rejected text and
+records it here permanently: drawing it means decoding the whole `TextPrintType`
+font and size selection, which VERA does not model for any sidebar string, and
+the value is a degenerate spelling no retail layer authors.
 
 ## Where VERA20K owns it
 
@@ -81,9 +88,9 @@ straight into the draw flags; the harvester and weeds branches hardcode centre.
   running game.
 - Trigger: `Sidebar.PowerDelta.Align=none`. Effect: VERA treats it as rejected
   text and keeps the previous alignment, where Phobos ORs `TextAlign::None`
-  (`0xFFF`) into the flags, which also sets its font-size bits.
-- Trigger: a label key the CSF table does not hold. Effect: VERA keeps the glyph
-  default where native renders `MISSING:'<key>'`.
+  (`0xFFF`) into the flags, which also sets its font-size bits. Kept on purpose,
+  with the whole bit set listed above; #3614 resolves on that record rather than
+  on a guess.
 - The harvester counter (`[HarvesterCounter](phobos-harvester-counter.md)`) and
   the weeds counter (`WeedsCounter.*`) are the other two branches of `0x4A25E0`.
   The weeds branch still needs the unported TS weeds mechanic for its number.
