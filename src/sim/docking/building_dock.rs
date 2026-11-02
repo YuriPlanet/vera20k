@@ -1398,6 +1398,56 @@ fn release_contact(
 /// as a plain `Bunker=` type.
 const PLAIN_REPAIR_DELAY_FRAMES: i32 = 0xF;
 
+/// BuildingClass::MissionRepairAndProduce's ConstructionYard arm
+/// (`0x0044B7BC..0x0044B86F`), entered through Receive_Radio's 0xB message
+/// (`0x0043CC39`). Status 0 begins the Active body (Begin_Mode(2),
+/// `0x0044B806`), starts slot 7, PreProduction, in its damaged variant at or
+/// below ConditionYellow (`0x0044B80D..0x0044B854`) and moves to status 2.
+/// Status 2 waits while the yard is in radio contact (`0x0065AE30`), then
+/// queues Guard without commencing and clears slot 7
+/// (`0x0044B7DE..0x0044B7F0`). Every visit returns 1.
+fn construction_yard_repair(sim: &mut Simulation, rules: &RuleSet, yard: u64) -> i32 {
+    let now = sim.session.binary_frame();
+    let Some(building) = sim.substrate.entities.get(yard) else {
+        return 1;
+    };
+    match building.mission.handler_state() {
+        0 => {
+            let damaged = sim
+                .object_type(building.type_ref(), rules)
+                .is_some_and(|object| {
+                    crate::sim::building_art::requested_damage_state(
+                        building.health,
+                        object.strength,
+                        rules.general.condition_yellow,
+                    )
+                });
+            if let Some(building) = sim.substrate.entities.get_mut(yard) {
+                building.begin_building_body(
+                    crate::sim::building_construction::BuildingBodyMode::Active,
+                    now as i32,
+                );
+            }
+            sim.set_building_anim_slot(yard, 7, damaged, false, 0, rules);
+            if let Some(building) = sim.substrate.entities.get_mut(yard) {
+                building.mission.set_handler_state(2);
+            }
+        }
+        2 if building.radio_contacts.is_empty() => {
+            let _ = sim.mission_queue_exact(
+                yard,
+                MissionId::from_known(MissionType::Guard),
+                0,
+                now,
+                &LiveReadyInputProvider { rules },
+            );
+            sim.clear_building_anim_slot(yard, 7);
+        }
+        _ => {}
+    }
+    1
+}
+
 /// BuildingClass::MissionRepairAndProduce44B780's UnitRepair arm. MissionCom
 /// owns status/dispatch; BuildingMissionLeaf owns the independent+620 progress;
 /// Techno RepairTick owns heal/payment. Original corpus: building_repair.depot_service.
@@ -1419,8 +1469,12 @@ pub(crate) fn mission_repair(
     if object.bunker {
         super::bunker_install::update_bunker(sim, rules, registry, depot, frame_effects);
     }
+    // 0x0044B7A8: the ConstructionYard arm comes before every other family.
+    if object.construction_yard {
+        return Some(construction_yard_repair(sim, rules, depot));
+    }
     let building = sim.substrate.entities.get(depot)?;
-    if object.hospital && !object.construction_yard {
+    if object.hospital {
         return Some(super::hospital::mission_repair(
             sim,
             rules,
@@ -1431,7 +1485,7 @@ pub(crate) fn mission_repair(
     }
     if !object.unit_repair {
         // The ConstructionYard, Hospital and Armory arms come first.
-        if object.unit_reload && !object.construction_yard && !object.hospital && !object.armory() {
+        if object.unit_reload && !object.hospital && !object.armory() {
             return Some(super::airfield_reload::mission_reload(
                 sim,
                 rules,
@@ -1441,8 +1495,7 @@ pub(crate) fn mission_repair(
             ));
         }
         // 0x0044C836 -> 0x0044C970: a type in none of the five families.
-        let plain =
-            !(object.unit_reload || object.construction_yard || object.hospital || object.armory());
+        let plain = !(object.unit_reload || object.hospital || object.armory());
         return plain.then_some(PLAIN_REPAIR_DELAY_FRAMES);
     }
     let status = building.mission.handler_state();
@@ -3371,6 +3424,75 @@ mod tests {
         sim.clear_building_anim_slot(DEPOT, 12);
         assert_eq!(visit(&mut sim), Some(1));
         assert!(asked_for_guard(&sim));
+    }
+
+    /// A yard sent radio 0xB runs Repair's ConstructionYard arm
+    /// (`0x0044B7BC..0x0044B86F`): status 0 starts PreProduction (slot 7) and
+    /// moves to status 2; out of radio contact, status 2 queues Guard and
+    /// clears the slot.
+    #[test]
+    fn a_yard_in_repair_plays_preproduction_until_out_of_contact() {
+        use crate::rules::art_data::ArtRegistry;
+        let (mut sim, _) = setup(1);
+        let art_ini = IniFile::from_str(
+            "[GADEPT]\nFoundation=3x3\nPreProductionAnim=CRANE\n[CRANE]\nLoopCount=-1\n",
+        );
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[BuildingTypes]\n0=GADEPT\n[GADEPT]\nStrength=1000\nConstructionYard=yes\n\
+                 [Animations]\n0=CRANE\n",
+            ),
+            &art_ini,
+        )
+        .unwrap();
+        let mut art = ArtRegistry::from_ini(&art_ini);
+        art.bind_anim_frame_count_for_test("CRANE", 10);
+        rules.install_art_data(art);
+        sim.substrate
+            .mission_assign_exact(DEPOT, MissionId::from_known(MissionType::Repair), 0)
+            .unwrap();
+        let visit = |sim: &mut Simulation| {
+            mission_repair(
+                sim,
+                &rules,
+                DEPOT,
+                None,
+                crate::sim::world::FrameEffects::default(),
+            )
+        };
+
+        assert_eq!(visit(&mut sim), Some(1));
+        let yard = sim.substrate.entities.get(DEPOT).unwrap();
+        assert_eq!(yard.mission.handler_state(), 2);
+        assert!(yard.building_art.anim_slots()[7].is_some());
+
+        // 0x0065AE30 finds a contact: the yard keeps waiting.
+        let contacts = |sim: &mut Simulation, add: bool| {
+            let yard = sim.substrate.entities.get_mut(DEPOT).unwrap();
+            if add {
+                yard.radio_contacts.insert(1).unwrap();
+            } else {
+                yard.radio_contacts.remove(1).unwrap();
+            }
+        };
+        contacts(&mut sim, true);
+        assert_eq!(visit(&mut sim), Some(1));
+        let yard = sim.substrate.entities.get(DEPOT).unwrap();
+        assert_eq!(yard.mission.handler_state(), 2);
+        assert_ne!(
+            yard.mission.queued(),
+            MissionId::from_known(MissionType::Guard)
+        );
+        assert!(yard.building_art.anim_slots()[7].is_some());
+
+        contacts(&mut sim, false);
+        assert_eq!(visit(&mut sim), Some(1));
+        let yard = sim.substrate.entities.get(DEPOT).unwrap();
+        assert_eq!(
+            yard.mission.queued(),
+            MissionId::from_known(MissionType::Guard)
+        );
+        assert!(yard.building_art.anim_slots()[7].is_none());
     }
 
     /// Original44C0BD skips reconstruction when state1 has neither service
