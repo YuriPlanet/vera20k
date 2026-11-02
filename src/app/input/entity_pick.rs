@@ -45,6 +45,31 @@ pub(crate) trait PickSource: Copy {
     fn conceals(&self, _entity: &crate::sim::game_entity::GameEntity) -> bool {
         false
     }
+    /// `HouseClass::IsHumanPlayer @ 0x0050B6F0` of the object's owning house,
+    /// the one owner test on the band path. `DisplayClass::BandBox_LeftUp @
+    /// 0x004AB9B0` hands the per-object callback `0x004AC2B0` to the band
+    /// walk (`0x004ABCE6` → `0x006D9FF0`, which normalises the rectangle and
+    /// calls `Tactical::Select_These @ 0x006DA5C0` at `0x006DA05A`). The walk
+    /// calls that callback for every live drawn object inside the rectangle
+    /// (`0x006DA67E..0x006DA684`, `0x006DA729`), and the callback
+    /// asks `+0x3C` GetOwningHouse (`0x004AC2B5`) then `0x50B6F0` of it
+    /// (`0x004AC2BE..0x004AC2C5`) before the selectability virtuals `+0x138`
+    /// and `+0x13C`, the limbo byte `+0x81` and `Select` `+0x14C`. The
+    /// callback-less arm of Select_These asks the same question
+    /// (`0x006DA6B3..0x006DA6C7`). Nothing on this path compares the owner
+    /// with the local player's House pointer, so a campaign House flagged
+    /// `PlayerControl=yes` (SOV04's Germans, Premier Romanov's owner)
+    /// band-selects exactly like the player's own House.
+    ///
+    /// `Simulation::house_is_human_player` is that leaf: with a nonzero game
+    /// mode (`A8B238`, `0x0050B6F0`) the House is compared with the saved
+    /// current House `A83D4C` (`0x0050B716`); in mode zero it is the House's
+    /// `+0x1EC` IsHuman (`0x0050B6F9`) or `+0x1ED` PlayerControl
+    /// (`0x0050B703`). A bare EntityStore has no house table and answers
+    /// `None`; its fixtures keep exact local-owner identity.
+    fn owner_is_human_player(&self, _owner: InternedId) -> Option<bool> {
+        None
+    }
 }
 impl PickSource for &EntityStore {
     fn entities(&self) -> &EntityStore {
@@ -71,6 +96,9 @@ impl PickSource for &crate::sim::world::Simulation {
             cell.1,
             crate::sim::movement::locomotor::MovementLayer::Ground,
         )
+    }
+    fn owner_is_human_player(&self, owner: InternedId) -> Option<bool> {
+        Some(self.house_is_human_player(owner))
     }
 }
 impl PickWorld for &crate::sim::world::Simulation {
@@ -112,6 +140,9 @@ impl PickSource for PresentedWorld<'_> {
         self.translucent_viewer.is_some_and(|viewer| {
             crate::app::presentation::instances::translucent_fog_conceals(self.sim, viewer, entity)
         })
+    }
+    fn owner_is_human_player(&self, owner: InternedId) -> Option<bool> {
+        Some(self.sim.house_is_human_player(owner))
     }
 }
 impl PickWorld for PresentedWorld<'_> {
@@ -351,9 +382,11 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
     // 0x004ABDC5..0x004ABE4A is the one that clears first) asks
     // `HouseClass__IsHumanPlayer(CurrentObjects[0]->Owner)` — 0x004ABD42 loads
     // `CurrentObjects[0]`, calls its owner virtual `+0x3C`, and 0x004ABD50 calls
-    // 0x0050B6F0, whose real test is `house == g_PlayerPtr`; a false answer at
-    // 0x004ABD57 jumps to the replace path. It is a test on what is ALREADY
-    // selected, never on whether the clicked object matches it.
+    // 0x0050B6F0 (`house == g_PlayerPtr` in a nonzero game mode, 0x0050B716;
+    // the House's IsHuman/PlayerControl bytes in a campaign, 0x0050B6F9 and
+    // 0x0050B703); a false answer at 0x004ABD57 jumps to the replace path. It
+    // is a test on what is ALREADY selected, never on whether the clicked
+    // object matches it.
     //
     // Enemy clicks genuinely reach this arm. `TechnoClass__What_Action_OnObject`
     // 0x006FFEC0 short-circuits to toggle-select (`mov eax, 8` at 0x00700107)
@@ -1054,6 +1087,7 @@ fn entities_in_rect(
             let owner_str = interner.map_or("", |i| i.resolve(entity.owner()));
             let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
             if !is_local_band_candidate(
+                source,
                 local_owner,
                 owner_str,
                 entity,
@@ -1332,9 +1366,11 @@ pub(crate) fn no_selection_refuses_select(
 
 /// Final object admission shared by selection callers. Ownership and the
 /// band/TypeSelect dynamic virtual are caller gates: an ordinary discovered
-/// nonlocal click may reach this gate, while band and TypeSelect collect only
-/// exact-local candidates. Newly selected objects still have to be alive,
-/// present, statically selectable, and outside active warp-out.
+/// nonlocal click may reach this gate, the band collects the candidates whose
+/// House `IsHumanPlayer` admits ([`PickSource::owner_is_human_player`]), and
+/// TypeSelect collects only exact-local candidates. Newly selected objects
+/// still have to be alive, present, statically selectable, and outside
+/// active warp-out.
 fn static_selection_gate(
     entity: &crate::sim::game_entity::GameEntity,
     entity_type: &str,
@@ -1358,7 +1394,13 @@ fn type_is_selectable(entity_type: &str, rules: Option<&RuleSet>) -> bool {
     rules.is_none_or(|r| r.object(entity_type).is_none_or(|obj| obj.selectable))
 }
 
+/// The band callback `0x004AC2B0` in VERA's order: the owning House's
+/// `IsHumanPlayer` (`0x004AC2BE`, see [`PickSource::owner_is_human_player`])
+/// and then the static admission. A world without a local player keeps the
+/// band open to every owner, as the headless fixtures always have; a source
+/// without a house table falls back to exact local-owner identity.
 fn is_local_band_candidate(
+    source: impl PickSource,
     local_owner: Option<&str>,
     entity_owner: &str,
     entity: &crate::sim::game_entity::GameEntity,
@@ -1366,8 +1408,11 @@ fn is_local_band_candidate(
     rules: Option<&RuleSet>,
     require_playfield_membership: bool,
 ) -> bool {
-    local_owner.is_none_or(|local| entity_owner.eq_ignore_ascii_case(local))
-        && static_selection_gate(entity, entity_type, rules, require_playfield_membership)
+    local_owner.is_none_or(|local| {
+        source
+            .owner_is_human_player(entity.owner())
+            .unwrap_or_else(|| entity_owner.eq_ignore_ascii_case(local))
+    }) && static_selection_gate(entity, entity_type, rules, require_playfield_membership)
 }
 
 #[cfg(test)]
@@ -1385,6 +1430,10 @@ mod group_as_tests;
 #[cfg(test)]
 #[path = "entity_pick_invisible_tests.rs"]
 mod invisible_tests;
+
+#[cfg(test)]
+#[path = "entity_pick_band_owner_tests.rs"]
+mod band_owner_tests;
 
 #[cfg(test)]
 mod tests {
