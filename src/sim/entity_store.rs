@@ -35,6 +35,11 @@ pub(crate) struct OwnerChangeAuthority(());
 /// airborne set ([`EntityStore::airborne`]) changes with it.
 pub(crate) struct AirMembershipAuthority(());
 
+/// Only this module can store an Anim in a field [`GameEntity::held_anims`]
+/// names, so the anim-holder index notes the holder
+/// ([`EntityStore::write_held_anim`]).
+pub(crate) struct AnimHolderAuthority(());
+
 /// Container for all game entities, keyed by stable_id.
 ///
 /// All iteration methods return entities in ascending stable_id order, which
@@ -106,6 +111,18 @@ pub struct EntityStore {
     /// membership's one live writer, writes both. Rebuilt on load, never
     /// saved or hashed.
     airborne: BTreeSet<(u16, u64, u64)>,
+    /// VERA-only: `(Anim, holder)` for each Anim a stored entity may hold in
+    /// a field [`GameEntity::held_anims`] names, so an Anim's expiry
+    /// (`Simulation::notify_anim_pointer_expired`, through
+    /// [`Self::take_anim_holders`]) visits those entities instead of
+    /// re-reading every entity handed out since the last expiry. A superset;
+    /// the entities' fields are the truth. [`Self::insert`] and
+    /// [`Self::write_held_anim`], the only route to storing an Anim in one of
+    /// those fields, add pairs; the expiry takes an Anim's pairs, its
+    /// callbacks clearing every field that names it; a removal drops the
+    /// removed entity's. A field cleared otherwise leaves its pair until
+    /// then. Rebuilt on load, never saved or hashed.
+    anim_holders: BTreeSet<(u64, u64)>,
     /// Which entities may have changed since each reader last took its log
     /// ([`Self::take_touched`]). Every route to a `&mut GameEntity` goes
     /// through the store, so an entity missing from a log has not changed.
@@ -144,6 +161,7 @@ impl Clone for EntityStore {
             techno_registry: self.techno_registry.clone(),
             building_registry: self.building_registry.clone(),
             airborne: self.airborne.clone(),
+            anim_holders: self.anim_holders.clone(),
             touched: TouchLogs::everything(),
         }
     }
@@ -175,6 +193,7 @@ impl EntityStore {
             techno_registry: Vec::new(),
             building_registry: Vec::new(),
             airborne: BTreeSet::new(),
+            anim_holders: BTreeSet::new(),
             touched: TouchLogs::everything(),
         }
     }
@@ -206,6 +225,8 @@ impl EntityStore {
         if let Some(entry) = airborne_entry(&entity) {
             self.airborne.insert(entry);
         }
+        self.anim_holders
+            .extend(entity.held_anims().map(|anim| (anim, id)));
         let entity = Some(Box::new(entity));
         if let Some(&slot) = self.slot_of.get(&id) {
             self.entities[slot as usize] = entity;
@@ -272,6 +293,9 @@ impl EntityStore {
             self.unlist_owned(stable_id, (entity.owner(), entity.category()));
             if let Some(entry) = airborne_entry(entity) {
                 self.airborne.remove(&entry);
+            }
+            for anim in entity.held_anims() {
+                self.anim_holders.remove(&(anim, stable_id));
             }
         }
         self.touched.note(stable_id, self.len());
@@ -570,6 +594,62 @@ impl EntityStore {
         self.entities.iter_mut().filter_map(Option::as_deref_mut)
     }
 
+    /// Store an Anim in one of `holder`'s fields [`GameEntity::held_anims`]
+    /// names through `write`, that field's own write, then note every Anim
+    /// the holder holds for [`Self::take_anim_holders`]. The only route to
+    /// such a store: those writes take an [`AnimHolderAuthority`], which
+    /// only this module makes. Clearing a field needs no note. `None` when
+    /// `holder` is not stored.
+    pub(crate) fn write_held_anim<R>(
+        &mut self,
+        holder: u64,
+        write: impl FnOnce(&mut GameEntity, AnimHolderAuthority) -> R,
+    ) -> Option<R> {
+        let slot = *self.slot_of.get(&holder)?;
+        self.touched.note(holder, self.slot_of.len());
+        let entity = self.entities[slot as usize].as_deref_mut()?;
+        let written = write(entity, AnimHolderAuthority(()));
+        self.anim_holders
+            .extend(entity.held_anims().map(|anim| (anim, holder)));
+        Some(written)
+    }
+
+    /// The stored entities that may hold `anim` in a field
+    /// [`GameEntity::held_anims`] names, ascending, leaving none noted for
+    /// it: the caller, `Simulation::notify_anim_pointer_expired`, clears
+    /// every such field naming it. Debug builds check that every stored
+    /// entity holding it is among them (the live-read check).
+    pub(crate) fn take_anim_holders(&mut self, anim: u64) -> Vec<u64> {
+        let noted: Vec<u64> = self
+            .anim_holders
+            .range((anim, 0)..=(anim, u64::MAX))
+            .map(|&(_, holder)| holder)
+            .collect();
+        for &holder in &noted {
+            self.anim_holders.remove(&(anim, holder));
+        }
+        let holders: Vec<u64> = noted
+            .into_iter()
+            .filter(|&holder| self.contains(holder))
+            .collect();
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled()
+                || self
+                    .par_select(|_, entity| entity.held_anims().any(|held| held == anim))
+                    .iter()
+                    .all(|holder| holders.binary_search(holder).is_ok()),
+            "an entity holds Anim {anim} without a noted pair"
+        );
+        holders
+    }
+
+    /// `(Anim, holder)` for every Anim a stored entity holds.
+    fn walk_anim_holders(&self) -> BTreeSet<(u64, u64)> {
+        self.stored()
+            .flat_map(|(id, entity)| entity.held_anims().map(move |anim| (anim, id)))
+            .collect()
+    }
+
     /// Move an entity to a new owner. It does NOT touch the houses' tracking
     /// or lists; `Simulation::change_owner`, the only production caller,
     /// moves them.
@@ -822,6 +902,7 @@ impl<'de> serde::Deserialize<'de> for EntityStore {
         }
         store.rebuild_class_registries();
         store.airborne = store.walk_airborne();
+        store.anim_holders = store.walk_anim_holders();
         Ok(store)
     }
 }
@@ -1299,6 +1380,34 @@ mod tests {
         building.set_category_for_test(EntityCategory::Structure);
         store.insert(building);
         assert_eq!(store.foot_registry, [2, 4]);
+    }
+
+    /// An Anim's expiry reaches each stored entity holding the Anim, once
+    /// and ascending, whether a held-Anim write stored it, the entity was
+    /// stored holding it or a load restored it, and no removed holder.
+    #[test]
+    fn anim_holders_reach_every_holder_through_writes_inserts_and_loads() {
+        let hold = |entity: &mut GameEntity, authority: AnimHolderAuthority| {
+            entity.hold_parachute_animation(50, authority)
+        };
+        let mut store = EntityStore::new();
+        let mut stored_holding = make_entity(3);
+        hold(&mut stored_holding, AnimHolderAuthority(()));
+        store.insert(stored_holding);
+        for id in [1, 2, 4] {
+            store.insert(make_entity(id));
+        }
+        for id in [1, 4] {
+            store.write_held_anim(id, hold).unwrap();
+        }
+        store.remove(4);
+        let loaded: EntityStore = crate::util::save_codec::deserialize(
+            &crate::util::save_codec::serialize(&store).unwrap(),
+        )
+        .unwrap();
+        for mut copy in [store.clone(), loaded] {
+            assert_eq!(copy.take_anim_holders(50), [1, 3]);
+        }
     }
 
     #[test]

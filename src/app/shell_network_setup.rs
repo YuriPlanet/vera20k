@@ -646,13 +646,24 @@ fn open_service_lobby(state: &mut AppState, dialog: SetupDialog) {
     }
 }
 
+fn abandon_host_setup(state: &mut AppState, dialog: SetupDialog) {
+    if dialog.wol() {
+        crate::app::shell_wol::lobby::host_setup_left(state);
+    }
+    open_service_lobby(state, dialog);
+}
+
 impl App {
     /// BC/C2 creation: restore the service's own setup profile. LAN BC then
     /// consumes Main -> CRT seed initialization at005DEC3B..5C; C2 draws no
     /// RNG (no 65C7E0/7CB49D/7CB4AA callee in 0078F7F0). Assignment still
     /// uses the retained Scenario cursor; gameplay reseeds both streams later
     /// at0052E619.
-    pub(crate) fn open_host_setup(state: &mut AppState, observe: bool) {
+    ///
+    /// Returns whether the setup opened. VERA: map archives are optional, so a
+    /// catalog can have no eligible map; a WOL host then leaves the channel it
+    /// just created.
+    pub(crate) fn open_host_setup(state: &mut AppState, observe: bool) -> bool {
         let dialog = SetupDialog {
             host: true,
             ..dialog(state)
@@ -688,8 +699,8 @@ impl App {
             Ok(value) => value,
             Err(error) => {
                 log::error!("Could not restore network setup: {error:#}");
-                open_service_lobby(state, dialog);
-                return;
+                abandon_host_setup(state, dialog);
+                return false;
             }
         };
         if let Err(error) = install_setup(
@@ -700,8 +711,8 @@ impl App {
             Some(if observe { 0 } else { 7 }),
         ) {
             log::error!("Could not admit local network setup: {error:#}");
-            open_service_lobby(state, dialog);
-            return;
+            abandon_host_setup(state, dialog);
+            return false;
         }
         // The WOL C2's own +20/+18 calls (0x791293, 0x7912A3) belong to a
         // later chain; LAN BC runs them here.
@@ -729,6 +740,7 @@ impl App {
             .session
             .set_network_player_ready(0, true)
             .expect("BC owns the local host node");
+        true
     }
 
     /// Packet7 closes BB before full host options arrive. Retained options

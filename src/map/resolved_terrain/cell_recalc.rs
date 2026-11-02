@@ -24,7 +24,9 @@ pub(crate) struct LoadCellRecalcState<'a> {
     terrain_rules: Option<&'a TerrainRules>,
     overlay_types: &'a OverlayTypeRegistry,
     playfield: Option<PlayfieldBounds>,
-    pub(super) lat_config: Option<lat::LatConfig>,
+    /// Authored loading owns its LAT groups; the runtime bridge path borrows
+    /// its catalog's, as every foot mark's Recalc reaches it.
+    pub(super) lat_config: Option<std::borrow::Cow<'a, lat::LatConfig>>,
     pub(super) slope_config: Option<lat::SlopeFixupConfig>,
     pub(super) cliff_back_impassability: u8,
     metadata_cache: HashMap<TileKey, TileMetadata>,
@@ -45,7 +47,8 @@ impl<'a> LoadCellRecalcState<'a> {
         pixel_conversion_bounds: PixelConversionBounds,
     ) -> Self {
         let ids = crate::map::rmg::tiles::TileIds::from_keys(&theater_data.rmg_tiles);
-        let lat_config = lat_enabled.then(|| lat::LatConfig::from_tile_ids(&ids));
+        let lat_config =
+            lat_enabled.then(|| std::borrow::Cow::Owned(lat::LatConfig::from_tile_ids(&ids)));
         let slope_config = lat_enabled.then(|| lat::SlopeFixupConfig::from_tile_ids(&ids));
         Self {
             theater_data: Some(theater_data),
@@ -172,7 +175,7 @@ impl<'a> LoadCellRecalcState<'a> {
             terrain_rules: Some(&catalog.terrain_rules),
             overlay_types,
             playfield: bounds,
-            lat_config: catalog.lat_config.clone(),
+            lat_config: catalog.lat_config.as_ref().map(std::borrow::Cow::Borrowed),
             slope_config: catalog.slope_config,
             cliff_back_impassability: catalog.cliff_back_impassability,
             metadata_cache: HashMap::new(),
@@ -635,7 +638,7 @@ impl ResolvedTerrainGrid {
             (x, y.wrapping_add(1)),
             (x.wrapping_sub(1), y),
         ];
-        let lat_tile = state.lat_config.as_ref().map_or(tile, |lat_config| {
+        let lat_tile = state.lat_config.as_deref().map_or(tile, |lat_config| {
             lat::lat_fixed_tile_live(tile, lat_config, || {
                 cardinal_coords.map(|(nx, ny)| self.authored_load_neighbor_tile(nx, ny))
             })

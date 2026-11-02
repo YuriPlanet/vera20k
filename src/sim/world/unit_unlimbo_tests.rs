@@ -624,10 +624,13 @@ fn retail_authored_unit_high_matches_original_pose_scope_and_lists() {
         );
         let id = if input["scope"] == 2 {
             projected += 1;
-            let entities = parse_map_entities(&IniFile::from_str(&format!(
-                "[Units]\n0=Americans,MTNK,256,{},{},128,Guard,None,0,-1,{},-1,1,1\n",
-                cell.0, cell.1, input["parsed_high"],
-            )));
+            let entities = parse_map_entities(
+                &IniFile::from_str(&format!(
+                    "[Units]\n0=Americans,MTNK,256,{},{},128,Guard,None,0,-1,{},-1,1,1\n",
+                    cell.0, cell.1, input["parsed_high"],
+                )),
+                4,
+            );
             assert_eq!(entities.len(), 1);
             assert_eq!(entities[0].high, input["parsed_high"] != 0);
             let terrain = sim.resolved_terrain.as_ref().unwrap().clone();

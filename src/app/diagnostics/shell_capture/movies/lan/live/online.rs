@@ -29,6 +29,8 @@ enum RoundPhase {
     EndRound,
     Results,
     Returning,
+    LeaveRoom,
+    LeaveLobby,
     ExitFault,
     ExitSignIn,
     MainReturn,
@@ -59,6 +61,8 @@ pub(super) struct LiveRoundFlow {
     loading_cancellation: Option<Value>,
     profile: Option<super::profile::ProfileCheck>,
     ai_input: super::profile::SetupComboInput,
+    /// The host saw its guest back in the reopened room after this match.
+    guest_back: bool,
 }
 
 impl LiveRoundFlow {
@@ -106,6 +110,7 @@ impl LiveRoundFlow {
             loading_cancellation: None,
             profile,
             ai_input: Default::default(),
+            guest_back: false,
         }
     }
 
@@ -667,6 +672,20 @@ impl LiveRoundFlow {
         if self.phase == RoundPhase::LanEntry && core.phase == Phase::Running {
             self.record(frame, "Real LAN loading reached synchronized gameplay");
             self.phase = RoundPhase::Running;
+        }
+        // The host leaves its reopened room only after the guest came back
+        // and left again. Note the visit even while the room still slides in.
+        if self.config.is_none()
+            && core.host()
+            && matches!(self.phase, RoundPhase::Returning | RoundPhase::LeaveRoom)
+            && rendered == PresentedShell::NetworkSetup
+            && state
+                .match_state
+                .session
+                .network_setup()
+                .is_some_and(|launch| launch.humans.len() == 2)
+        {
+            self.guest_back = true;
         }
         match self.phase {
             RoundPhase::Main
@@ -1264,16 +1283,19 @@ impl LiveRoundFlow {
             RoundPhase::Returning
                 if if self.config.is_some() {
                     lobby_ready(state, rendered)
+                } else if returns_to_room(core, state) {
+                    room_returned(core, state, rendered)
                 } else {
                     rendered == PresentedShell::LanLobby && lobby_settled(state)
                 } =>
             {
+                let room = self.config.is_none() && returns_to_room(core, state);
                 ensure!(
                     state.match_state.live_network.is_none(),
                     "finished round retained live command owner"
                 );
                 ensure!(
-                    state.match_state.session.network_setup().is_none(),
+                    room || state.match_state.session.network_setup().is_none(),
                     "finished round retained setup"
                 );
                 // The exit fault targets logout only after the final match's
@@ -1302,7 +1324,11 @@ impl LiveRoundFlow {
                     .current_round
                     .take()
                     .context("completed round result")?;
-                round["returned_to_lobby"] = json!(true);
+                round[if room {
+                    "returned_to_room"
+                } else {
+                    "returned_to_lobby"
+                }] = json!(true);
                 self.rounds.push(round);
                 self.record(
                     frame,
@@ -1318,6 +1344,8 @@ impl LiveRoundFlow {
                         } else {
                             "Expected connection Quit returned to the authenticated online lobby"
                         }
+                    } else if room {
+                        "Returned to VERA's reopened room through normal result continuation"
                     } else {
                         "Returned to service lobby through normal result continuation"
                     },
@@ -1342,6 +1370,10 @@ impl LiveRoundFlow {
                         self.phase = RoundPhase::ExitFault;
                         return Ok(());
                     }
+                    if room {
+                        self.phase = RoundPhase::LeaveRoom;
+                        return Ok(());
+                    }
                     if self.config.is_some() {
                         let rect = crate::app::shell_wol::lobby::layout(state)
                             .page
@@ -1360,14 +1392,62 @@ impl LiveRoundFlow {
                     );
                 } else {
                     reset_round(core);
+                    self.guest_back = false;
                     self.phase = if self.config.is_some() {
                         RoundPhase::Lobby
+                    } else if room {
+                        // Already in the room: the host sets up the next
+                        // match again and the guest waits for its Start.
+                        core.phase = if core.host() {
+                            Phase::HostSetup
+                        } else {
+                            Phase::GuestSetup
+                        };
+                        core.event(frame, "next match set up in VERA's reopened room");
+                        RoundPhase::LanEntry
                     } else {
                         core.phase = Phase::Lobby;
-                        core.kick_observed = true;
                         RoundPhase::LanEntry
                     };
                 }
+            }
+            RoundPhase::LeaveRoom
+                if rendered == PresentedShell::NetworkSetup
+                    && setup_settled(state, core.host())
+                    && (!core.host()
+                        || self.guest_back
+                            && state
+                                .match_state
+                                .session
+                                .network_setup()
+                                .is_some_and(|launch| launch.humans.len() == 1)) =>
+            {
+                setup_button(state, crate::ui::multiplayer_setup::BACK)?;
+                MoviesCapture::restore_neutral_pointer(state);
+                self.record(
+                    frame,
+                    if core.host() {
+                        "Guest came back and left; host left the reopened room through Back"
+                    } else {
+                        "Guest left the reopened room through Back"
+                    },
+                );
+                self.phase = RoundPhase::LeaveLobby;
+            }
+            RoundPhase::LeaveLobby
+                if rendered == PresentedShell::LanLobby && lobby_settled(state) =>
+            {
+                ensure!(
+                    state.match_state.session.network_setup().is_none(),
+                    "Back from the reopened room retained its setup"
+                );
+                lobby_button(state, crate::ui::lan_shell::BACK)?;
+                MoviesCapture::restore_neutral_pointer(state);
+                self.record(
+                    frame,
+                    "Final settled lobby Back clicked through ordinary input",
+                );
+                self.phase = RoundPhase::MainReturn;
             }
             RoundPhase::ExitFault => {
                 if self.exit_block_applied(state, rendered, frame)? {
@@ -1520,8 +1600,6 @@ fn reset_round(core: &mut LiveLanCapture) {
     core.stop_observation = super::StopObservation::default();
     core.stopped = false;
     core.last_wait = None;
-    core.kick_observed = false;
-    core.entered_setup = false;
     core.country_selected = false;
     if core.latency.is_some() {
         core.latency = Some(super::latency::LatencyCapture::default());
@@ -1535,6 +1613,24 @@ fn reset_round(core: &mut LiveLanCapture) {
     if core.ai.is_some() {
         core.ai = Some(AiActivity::default());
     }
+}
+
+/// VERA's LAN room comes back after a match (`return_after_match`): its host
+/// opens it again at once and the guest joins it again once it is open. The
+/// original-style room returns to BB, and the desync route keeps its own
+/// return check.
+fn returns_to_room(core: &LiveLanCapture, state: &AppState) -> bool {
+    core.failure.is_none() && !state.frontend.native_shell_ui
+}
+
+fn room_returned(core: &LiveLanCapture, state: &AppState, rendered: PresentedShell) -> bool {
+    rendered == PresentedShell::NetworkSetup
+        && setup_settled(state, core.host())
+        && state
+            .match_state
+            .session
+            .network_setup()
+            .is_some_and(|launch| core.host() || launch.humans.len() == 2)
 }
 
 fn lobby_ready(state: &AppState, rendered: PresentedShell) -> bool {

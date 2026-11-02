@@ -33,6 +33,16 @@ impl GameEntity {
     pub(crate) fn emp_sparkle(&self) -> Option<u64> {
         self.emp.sparkle
     }
+    /// UpdateSparkle10062FE0 holds its new sparkle, through
+    /// [`EntityStore::write_held_anim`](crate::sim::entity_store::EntityStore::write_held_anim).
+    #[cfg(feature = "ares")]
+    pub(crate) fn hold_emp_sparkle(
+        &mut self,
+        anim: u64,
+        _: crate::sim::entity_store::AnimHolderAuthority,
+    ) {
+        self.emp.sparkle = Some(anim);
+    }
     pub(crate) fn emp_anim_pointer_expired(&mut self, expired: u64) {
         if self.emp.sparkle == Some(expired) {
             self.emp.sparkle = None;
@@ -721,9 +731,11 @@ mod receiver {
             };
             if let Ok(anim) = self.spawn_anim_at_world(rules, descriptor, world) {
                 self.set_anim_owner_object(anim, Some(target), rules);
-                if let Some(entity) = self.substrate.entities.get_mut(target) {
-                    entity.emp.sparkle = Some(anim);
-                }
+                self.substrate
+                    .entities
+                    .write_held_anim(target, |entity, authority| {
+                        entity.hold_emp_sparkle(anim, authority)
+                    });
             }
         }
         fn retire_ares_emp_sparkle(&mut self, target: u64) {
@@ -2726,8 +2738,13 @@ mod receiver {
                     .loop_remaining,
                 0
             );
+            sim.substrate
+                .entities
+                .write_held_anim(target, |victim, authority| {
+                    victim.hold_emp_sparkle(held, authority)
+                })
+                .unwrap();
             let victim = sim.substrate.entities.get_mut(target).unwrap();
-            victim.emp.sparkle = Some(held);
             victim.emp_anim_pointer_expired(held + 1);
             assert_eq!(victim.emp_sparkle(), Some(held));
             sim.notify_anim_pointer_expired(held);

@@ -1494,8 +1494,8 @@ pub struct Simulation {
     /// Batched path searches (`movement::path_batch`); `None`
     /// searches in native order. Its registrations wait across a save.
     pub(crate) path_batch: Option<crate::sim::movement::path_batch::PathBatch>,
-    /// Retired target-scan request, retained only for positional save layout
-    /// compatibility. Cleared during snapshot restoration; never read by scans.
+    /// Batched target scans (`techno_ai::scan_batch`); `None` scans in
+    /// native order. A save carries only the setting.
     pub(crate) scan_batch: Option<techno_ai::ScanBatch>,
     /// Retained native navigation base plane/raw movement rows plus the live
     /// derived hierarchy. ZoneGrid saves only its own retained base state;
@@ -1641,9 +1641,15 @@ pub struct Simulation {
     executed_exit_owner: Option<InternedId>,
     /// Remote senders of executed EXIT events this frame, in execution
     /// order: the app runs DestroyConnection(house, 0) for each
-    /// (`0x0064C9B1`) and drains them.
+    /// (`0x0064C9B1`) and drains them. A sender is the record's header byte.
     #[serde(skip)]
-    departed_owners: Vec<InternedId>,
+    departed_senders: Vec<i8>,
+    /// The header byte of the native record whose command is executing;
+    /// `None` while a semantic envelope executes. The DoList host sets it
+    /// around each record. VERA shared control: EXIT reads it to tell apart
+    /// players sharing a House.
+    #[serde(skip)]
+    executing_record_sender: Option<i8>,
     #[serde(skip)]
     connection_lost: bool,
     /// Checksum computed by this frame's multiplayer tail, handed to the
@@ -2171,21 +2177,6 @@ impl Simulation {
                     })
                 {
                     return;
-                }
-                if category == EntityCategory::Structure
-                    && self
-                        .substrate
-                        .entities
-                        .get(stable_id)
-                        .and_then(|building| building.bunker.occupant())
-                        .is_some()
-                {
-                    crate::sim::docking::bunker_link::release_sell_destroy(
-                        self,
-                        stable_id,
-                        rules,
-                        uninit_context.effects(),
-                    );
                 }
                 // `BuildingClass::AfterDestruction @ 0x00441F60` follows the
                 // dying building's UnInit and reads its type and Location.
@@ -4484,7 +4475,8 @@ impl Simulation {
             input_delay_ticks: u64::from(crate::util::config::default_input_delay_ticks()),
             quit_requested: false,
             executed_exit_owner: None,
-            departed_owners: Vec::new(),
+            departed_senders: Vec::new(),
+            executing_record_sender: None,
             connection_lost: false,
             frame_sync_checksum: None,
             state_hash_interval: every_frame(),
@@ -6499,6 +6491,19 @@ impl Simulation {
             }
             if let Some(house) = self.houses.get_mut(&new_owner) {
                 house.forget_lost_building(stable_id);
+            }
+            // `0x00448C9A..0x00448CD6`: a Construction Yard leaving a human
+            // player (`0x0050B6F0`) cancels that player's current placement.
+            if self
+                .substrate
+                .entities
+                .get(stable_id)
+                .and_then(|entity| self.object_type(entity.type_ref(), rules))
+                .is_some_and(|object| object.construction_yard)
+                && Self::is_human_player(&self.session, &self.houses, old_owner)
+            {
+                self.lifecycle_outputs
+                    .emit(LifecycleOutput::ConstructionYardCaptured { owner: old_owner });
             }
         }
         // A factory leaves the old house's counter (Recount, `0x0044870E`)

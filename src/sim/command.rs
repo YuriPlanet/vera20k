@@ -1401,9 +1401,10 @@ pub enum Command {
     SellBuilding { entity_id: u64 },
     /// Toggle repair mode on a building (spend credits to heal over time).
     ToggleRepair { entity_id: u64 },
-    /// Eject the occupant of a friendly occupied tank bunker. Targets the bunker
-    /// (the hidden occupant is not selectable in this slice); the occupant
-    /// reappears on a passable cell SW of the bunker and drives out.
+    /// VERA-only: release a tank bunker's occupant through
+    /// `bunker_link::release_normal` at command time. No player input sends
+    /// it; the D key and a click on the tank reach the same release through
+    /// the tank's Unload mission (`0x0073D66D`). Removal: #3675.
     EjectBunker { bunker_id: u64 },
     /// Order a transport or garrison to unload: the Unload mission of its class.
     UnloadPassengers { transport_id: u64 },
@@ -1489,10 +1490,11 @@ pub enum Command {
     /// Observe results 3/4 (`0x0048CA34`, `0x0048CAB2`) queue it for the
     /// local House. Appended to preserve existing serialized variant indices.
     Destruct,
-    /// EVENT_REMOVEPLAYER for the House at registration index `house_index`
+    /// EVENT_REMOVEPLAYER for the lost network source `source`, its House's
+    /// registration index unless players share Houses
     /// (`EventClass::Execute 0x004C7B73`): Flag_To_Die when it is human.
     /// Appended to preserve existing serialized variant indices.
-    RemovePlayer { house_index: i32 },
+    RemovePlayer { source: i32 },
     /// The MoveFlash a Move click on a Cell spawns there
     /// (`FootClass::ClickedAction_Cell`, `0x004D7EB5..0x004D8065`). Native
     /// constructs it at the click, outside the event queue; VERA carries it

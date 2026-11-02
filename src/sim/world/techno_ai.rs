@@ -552,9 +552,7 @@ impl Simulation {
         // An infantry corpse is no dying object: it keeps IsAlive at Health 0
         // and takes the ordinary visit below (`world::infantry_death`).
         if entity.death.is_dying() {
-            let type_ref = entity.type_ref();
-            let type_name = self.interner.resolve(type_ref);
-            let sequence_set = rules.animation_sequence(type_name);
+            let sequence_set = self.interner.animation_sequence(entity.type_ref(), rules);
             let finished = crate::sim::animation::tick_dying_animation(
                 self.substrate
                     .entities
@@ -1280,9 +1278,11 @@ fn self_heal_step(
     let Some(entity) = substrate.entities.get(id) else {
         return;
     };
+    // As `rules.object(name)` answers; an id the interner never made names
+    // nothing.
     let Some(object) = interner
         .try_resolve(entity.type_ref())
-        .and_then(|type_id| rules.object(type_id))
+        .and_then(|_| interner.object_type(entity.type_ref(), rules))
     else {
         return;
     };
@@ -2075,10 +2075,7 @@ fn screen_visual_character(
         crate::sim::cloak_disguise::VisualCharacterQuery::screen(
             true,
             viewer.is_some(),
-            viewer.is_some_and(|viewer| {
-                sim.fog
-                    .has_sensor_for_house(viewer, entity.position.rx(), entity.position.ry())
-            }),
+            viewer.is_some_and(|viewer| sim.fog.senses_object_for_house(viewer, entity)),
             viewer.is_some_and(|viewer| allied(viewer, owner) && allied(owner, viewer)),
             !sim.session.game_mode_nonzero(),
             false,
@@ -3341,7 +3338,7 @@ mod tests {
             recruitable_b: true,
             group: -1,
             follows: None,
-            structure_upgrades: [None, None, None],
+            structure_columns: Default::default(),
             structure_ai_sellable: false,
             structure_ai_repairable: false,
             structure_online: true,

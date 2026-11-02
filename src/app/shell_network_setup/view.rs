@@ -7,7 +7,7 @@ use crate::app::frontend::skirmish_shell_render::{
 };
 use crate::app::match_runtime::session::NetworkVacancy;
 use crate::skirmish_launch::{AiDifficulty, LaunchStartPosition, LaunchTeam};
-use crate::skirmish_modes::mode_by_id;
+use crate::skirmish_modes::{MpModeClass, mode_by_id};
 use crate::ui::multiplayer_setup::*;
 use crate::ui::shell::trackbar::TrackbarRange;
 use crate::ui::skirmish_shell::{
@@ -423,7 +423,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 .into_iter()
                 .map(|item| choice(state, item))
                 .collect::<Vec<_>>();
-        let start_claims = launch
+        // VERA shared control: outside Cooperative a player may pick a start
+        // another player holds, which joins that player's House. Such starts
+        // stay listed, marked "+".
+        let shares = human.is_some() && mode.class != MpModeClass::Cooperative;
+        let human_starts = launch
             .humans
             .iter()
             .filter(|human| {
@@ -432,16 +436,26 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     && !human.is_observer()
             })
             .map(|human| human.slot.start_position)
-            .chain(
-                launch
-                    .opponents
-                    .iter()
-                    .filter(|ai| ai.raw_slot_index != row)
-                    .map(|ai| ai.start_position),
-            );
+            .collect::<Vec<_>>();
+        let start_claims = human_starts.iter().copied().filter(|_| !shares).chain(
+            launch
+                .opponents
+                .iter()
+                .filter(|ai| ai.raw_slot_index != row)
+                .map(|ai| ai.start_position),
+        );
         let starts = skirmish_shell::available_start_choices(Some(start), start_claims, capacity)
             .into_iter()
-            .map(|item| choice(state, item))
+            .map(|item| {
+                let mut choice = choice(state, item);
+                if shares
+                    && let SkirmishComboItem::Start(held @ LaunchStartPosition::Position(_)) = item
+                    && human_starts.contains(&held)
+                {
+                    choice.text.push('+');
+                }
+                choice
+            })
             .collect::<Vec<_>>();
         let teams = skirmish_shell::team_choices(mode.must_ally)
             .into_iter()

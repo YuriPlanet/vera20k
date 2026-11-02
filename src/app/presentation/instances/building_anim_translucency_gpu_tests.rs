@@ -661,6 +661,7 @@ impl SlotScene {
             crate::render::batch::DepthAxis::NONE.world_height,
             viewport,
             material.state,
+            0,
             2,
         );
         assert_eq!((sim.state_hash(), sim.rng_state()), before);

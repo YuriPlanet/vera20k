@@ -79,10 +79,10 @@ pub(crate) struct MatchPresentationState {
     pub(crate) tactical_composite: super::tactical_composite::TacticalComposite,
     /// The airstrike flare shades of the last composite, by designating Techno.
     pub(crate) airstrike_shades: super::airstrike_lines::AirstrikeShades,
-    /// Process-lived native Tactical superweapon ring fade state. Map loads
-    /// replace map resources but keep this presentation owner alive.
-    pub(crate) superweapon_range_pulse:
-        crate::app::presentation::radial_indicators::SuperweaponRangePulse,
+    /// Process-lived native Tactical placement and superweapon ring fade
+    /// states. Map loads replace map resources but keep these owners alive.
+    pub(crate) placement_range_pulse: crate::app::presentation::radial_indicators::RangePulse,
+    pub(crate) superweapon_range_pulse: crate::app::presentation::radial_indicators::RangePulse,
     /// Native process-lived FPS counter and detail hysteresis, never sim state.
     pub(crate) detail: std::cell::RefCell<super::detail::DetailState>,
     /// The client's AnimClass `+0x19D` for Supers' ChronoPlacement anims

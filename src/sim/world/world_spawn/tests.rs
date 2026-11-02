@@ -394,7 +394,7 @@ fn map_entity(type_id: &str, category: EntityCategory, cell: (u16, u16)) -> MapE
         recruitable_b: true,
         group: -1,
         follows: None,
-        structure_upgrades: [None, None, None],
+        structure_columns: Default::default(),
         structure_ai_sellable: false,
         structure_ai_repairable: false,
         structure_online: true,
@@ -456,7 +456,7 @@ fn map_veterancy_seed_matches_native_percent_and_rank() {
             line.push_str(token);
         }
         let ini = IniFile::from_str(&format!("[{section}]\n0={line}\n"));
-        let placements = crate::map::entities::parse_map_entities(&ini);
+        let placements = crate::map::entities::parse_map_entities(&ini, 4);
         assert_eq!(placements.len(), 1, "{id}: {token:?}");
         let native_percent = row["parsed_percent"]
             .as_i64()
@@ -2396,7 +2396,7 @@ fn authored_retail_upgrade_scene(
         .set_current_house_for_test(sim.interner.get("Americans"));
     // This bounded arena gives the opponent a tank, without a starting base.
     sim.session.game_options_mut_for_test().short_game = false;
-    let placements = crate::map::entities::parse_map_entities(&map);
+    let placements = crate::map::entities::parse_map_entities(&map, 4);
     assert_eq!(sim.spawn_from_map(&placements, Some(&rules)), 2);
     let host = sim.substrate.entities.get(1).unwrap();
     assert!(host.building_upgrades().count() > 0);
@@ -2670,7 +2670,9 @@ fn techno_constructor_authored_upgrades_consume_temporaries_with_native_ids() {
         .current_raw();
     let mut expected = SimRng::new(seed);
     let mut base = map_entity("BASE", EntityCategory::Structure, (10, 12));
-    base.structure_upgrades = [Some("UP1".to_string()), Some("UP2".to_string()), None];
+    base.structure_columns.upgrade_count = 2;
+    base.structure_columns.upgrade_tokens =
+        [Some("UP1".to_string()), Some("UP2".to_string()), None];
     let words = [
         (expected.next_u32() & 0xFFFF) as u16,
         (expected.next_u32() & 0xFFFF) as u16,
@@ -3096,9 +3098,10 @@ fn map_spawn_attaches_the_type_attach_effect_list() {
          AttachEffect.InitialDelays=3\n",
     ))
     .expect("attach effect rules");
-    let placements = parse_map_entities(&IniFile::from_str(
-        "[Units]\n0=Americans,MTNK,256,30,40,0,Guard,None\n",
-    ));
+    let placements = parse_map_entities(
+        &IniFile::from_str("[Units]\n0=Americans,MTNK,256,30,40,0,Guard,None\n"),
+        4,
+    );
     assert_eq!(placements.len(), 1, "the map reader keeps the Unit line");
 
     let mut sim = Simulation::with_seed(0xAE6);
@@ -3132,3 +3135,75 @@ fn map_spawn_attaches_the_type_attach_effect_list() {
 
 #[path = "country_veterancy_tests.rs"]
 mod country_veterancy_tests;
+
+/// ReadScenarioBuildings sets its upgrade slots to -1 once, before the loop
+/// (`0x0044F838..0x0044F846`), and overwrites one only for a present token
+/// (`0x0044FA82..0x0044FAAB`): a line that stops after its count reuses the
+/// previous line's upgrade types.
+#[test]
+fn a_short_structures_line_reuses_the_previous_lines_upgrade_types() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=BASE\n1=UP1\n\
+         [BASE]\nStrength=500\nFoundation=2x2\nUpgrades=1\n\
+         [UP1]\nStrength=100\nPowersUpBuilding=BASE\n",
+    ))
+    .unwrap();
+    let entities = crate::map::entities::parse_map_entities(
+        &IniFile::from_str(
+            "[Structures]\n\
+         0=Americans,BASE,256,10,12,0,None,0,0,1,1,0,UP1,None,None,0,0\n\
+         1=Americans,BASE,256,14,12,0,None,0,0,1,1,0\n",
+        ),
+        4,
+    );
+    let mut sim = Simulation::with_seed(0xC701_0007);
+
+    assert_eq!(sim.spawn_from_map(&entities, Some(&rules)), 4);
+    let up1 = sim.interner.get("UP1");
+    for parent in sim
+        .substrate
+        .entities
+        .values()
+        .filter(|entity| sim.interner.resolve(entity.type_ref()) == "BASE")
+    {
+        assert_eq!(*parent.building_upgrades().types(), [up1, None, None]);
+    }
+}
+
+/// `0x0044FC07..0x0044FC16` hands field 11 to the light Unlimbo gave a
+/// HasSpotlight building (BuildingLightClass::SetBehaviour `0x00436BE0`); a
+/// line that stops short passes 1. Retail maps author 0, which stops the light.
+#[test]
+fn structures_field_11_sets_the_building_lights_behaviour() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=LIGHT\n[LIGHT]\nHasSpotlight=yes\nStrength=100\nFoundation=1x1\n",
+    ))
+    .unwrap();
+    let entities = crate::map::entities::parse_map_entities(
+        &IniFile::from_str(
+            "[Structures]\n\
+         0=Americans,LIGHT,256,4,4,0,None,0,0,1,0,0,None,None,None,0,0\n\
+         1=Americans,LIGHT,256,7,4,0,None,0,0,1\n",
+        ),
+        4,
+    );
+    let mut sim = Simulation::with_seed(0xC701_0008);
+    install_constructor_test_playfield(&mut sim);
+    install_american_house(&mut sim);
+
+    assert_eq!(sim.spawn_from_map(&entities, Some(&rules)), 2);
+    let drawn: Vec<bool> = [(4, 4), (7, 4)]
+        .into_iter()
+        .map(|cell| {
+            let light = sim
+                .substrate
+                .entities
+                .values()
+                .find(|entity| (entity.position.rx(), entity.position.ry()) == cell)
+                .and_then(|entity| entity.building_light.light())
+                .expect("HasSpotlight building owns a light");
+            sim.building_spotlight(light, &rules).is_some()
+        })
+        .collect();
+    assert_eq!(drawn, [false, true]);
+}

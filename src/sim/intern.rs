@@ -60,7 +60,7 @@ pub struct StringInterner {
     to_id: BTreeMap<String, InternedId>,
     /// ID (index) → display string (first-seen casing).
     to_str: Vec<String>,
-    /// Derived: each id's object handle in the bound rules
+    /// Derived: each id's object handles in the bound rules
     /// ([`Self::bind_types`]). Never serialized; a load binds again.
     types: TypeHandleTable,
     /// [`Self::serial`]; never serialized.
@@ -107,14 +107,17 @@ impl StringInterner {
 
     /// Resolve an already known concrete family. Native GetTechnoType returns
     /// the constructor's typed pointer (Infantry51FAF0), even when another
-    /// class registry contains the same name. The name-only cache stays broad.
+    /// class registry contains the same name. As
+    /// `rules.object_in_category(category, self.try_resolve(id)?)` answers,
+    /// through the bound handles where they apply.
+    #[inline]
     pub fn object_type_in_category<'r>(
         &self,
         id: InternedId,
         category: crate::rules::object_type::ObjectCategory,
         rules: &'r RuleSet,
     ) -> Option<&'r ObjectType> {
-        rules.object_in_category(category, self.try_resolve(id)?)
+        self.types.object_in_category(self, id, category, rules)
     }
 
     /// The handle of the object type `id` names in `rules`, as
@@ -122,6 +125,17 @@ impl StringInterner {
     #[inline]
     pub fn type_handle(&self, id: InternedId, rules: &RuleSet) -> Option<TypeHandle> {
         self.types.handle(self, id, rules)
+    }
+
+    /// The sequences of the object type `id` names in `rules`, as
+    /// `rules.animation_sequence(self.resolve(id))` answers, the same way.
+    #[inline]
+    pub fn animation_sequence<'r>(
+        &self,
+        id: InternedId,
+        rules: &'r RuleSet,
+    ) -> Option<&'r crate::rules::animation_sequence::SequenceSet> {
+        rules.animation_sequence_by_handle(self.type_handle(id, rules)?)
     }
 
     /// The native array index (`+0xDF8`) of the type `id` names in

@@ -146,6 +146,10 @@ pub(crate) struct RetailOptionsProfile {
     /// `[VERA] LockCursor=`: keep the pointer inside the game window. On
     /// unless the player turns it off.
     pub(crate) lock_cursor: bool,
+    /// `[VERA] VeraIcon=`: the window, taskbar and Dock show VERA's artwork
+    /// instead of Red Alert 2's red star. Off by default; the installed
+    /// program's own icon stays the red star either way.
+    pub(crate) vera_icon: bool,
     /// `[VERA] WindowMaximized=`: whether the window was last left maximised.
     /// [`Self::window_placement`] keeps the size it returns to.
     pub(crate) window_maximized: bool,
@@ -205,6 +209,10 @@ pub(crate) struct RetailOptionsProfile {
     /// translated into, or `None`, the default, for off. Only the `/translate`
     /// chat command changes it ([`Self::commit_chat_translation`]).
     pub(crate) translate_chat: Option<crate::ui::chat_translation::ChatLanguage>,
+    /// `[VERA] Language=`: the language tag of VERA's own text
+    /// ([`crate::i18n`]), `en` by default. Edited in VERA.INI only, so the
+    /// writer leaves the player's line as it is; read once at startup.
+    pub(crate) language: String,
     /// `[VERA] SkipUpdate=`: the release the player chose to skip when the
     /// updater offered it; empty, the default, offers every newer release.
     /// Only the updater changes it ([`Self::commit_skipped_update`]).
@@ -293,6 +301,7 @@ impl Default for RetailOptionsProfile {
             mouse_wheel_zoom: false,
             right_click_orders: false,
             lock_cursor: true,
+            vera_icon: false,
             window_maximized: false,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
@@ -304,6 +313,7 @@ impl Default for RetailOptionsProfile {
             custom_end_game_score: true,
             custom_end_game_movie: true,
             translate_chat: None,
+            language: crate::i18n::DEFAULT_LANGUAGE.to_owned(),
             skipped_update: String::new(),
             display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
             window_placement: None,
@@ -323,7 +333,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 25],
+    pub(crate) vera: [(&'static str, String); 26],
 }
 
 impl RetailOptionsLoad {
@@ -528,6 +538,7 @@ impl RetailOptionsProfile {
             self.mouse_wheel_zoom = vera.read_bool("MouseWheelZoom", self.mouse_wheel_zoom);
             self.right_click_orders = vera.read_bool("RightClickOrders", self.right_click_orders);
             self.lock_cursor = vera.read_bool("LockCursor", self.lock_cursor);
+            self.vera_icon = vera.read_bool("VeraIcon", self.vera_icon);
             self.window_maximized = vera.read_bool("WindowMaximized", self.window_maximized);
             // A non-numeric value answers 0, which the clamp lifts to the
             // retail strength rather than to a negative boost.
@@ -551,6 +562,9 @@ impl RetailOptionsProfile {
                 vera.read_bool("CustomEndGameMovie", self.custom_end_game_movie);
             if let Some(value) = vera.read_name("TranslateChat", 16) {
                 self.translate_chat = crate::ui::chat_translation::ChatLanguage::from_tag(value);
+            }
+            if let Some(value) = vera.read_name("Language", 16) {
+                self.language = value.to_owned();
             }
             if let Some(value) = vera.read_name("SkipUpdate", 16) {
                 self.skipped_update = value.to_owned();
@@ -708,6 +722,7 @@ impl RetailOptionsProfile {
                     format_bool(self.window_maximized).to_string(),
                 ),
                 ("LockCursor", format_bool(self.lock_cursor).to_string()),
+                ("VeraIcon", format_bool(self.vera_icon).to_string()),
             ],
         }
     }
@@ -1597,16 +1612,18 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         let unset = RetailOptionsProfile::default().transform_settings(b"");
         let unset = load_snapshot(&startup, &unset).retained_profile;
         assert_eq!(unset.window_placement, None);
-        // The lock starts on and a window starts unmaximised; both round-trip.
-        assert!(unset.lock_cursor && !unset.window_maximized);
+        // The lock starts on, a window starts unmaximised and its icon is the
+        // red star; all three round-trip.
+        assert!(unset.lock_cursor && !unset.window_maximized && !unset.vera_icon);
         let changed = RetailOptionsProfile {
             lock_cursor: false,
             window_maximized: true,
+            vera_icon: true,
             ..RetailOptionsProfile::default()
         }
         .transform_settings(b"");
         let changed = load_snapshot(&startup, &changed).retained_profile;
-        assert!(!changed.lock_cursor && changed.window_maximized);
+        assert!(!changed.lock_cursor && changed.window_maximized && changed.vera_icon);
     }
 
     #[test]

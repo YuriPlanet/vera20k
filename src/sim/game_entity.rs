@@ -1179,8 +1179,8 @@ impl GameEntity {
     /// `owned_by_current_house` is that +41A as the caller reads it: drawing
     /// the actual byte, shared decisions
     /// [`Simulation::shared_owned_by_current_house`](crate::sim::world::Simulation::shared_owned_by_current_house).
-    /// Building4544A0 delegates here only with its +6ED override stage zero.
-    /// The nonzero building override has no Rust producer and remains separate.
+    /// A Building with a nonzero fade stage (`+0x6ED`) answers through its
+    /// own override (`BuildingClass::GetVisualState @ 0x004544A0`).
     pub fn visual_character(
         &self,
         cloaking_stages: i32,
@@ -1188,6 +1188,15 @@ impl GameEntity {
         owned_by_current_house: bool,
         query: crate::sim::cloak_disguise::VisualCharacterQuery,
     ) -> u8 {
+        let stage = self.building_cloak_stage();
+        if stage != 0 {
+            return crate::sim::cloak_disguise::building_stage_visual_character(
+                stage,
+                owned_by_current_house,
+                true,
+                query,
+            );
+        }
         let (state, progress) = self
             .cloak
             .as_ref()
@@ -1202,6 +1211,14 @@ impl GameEntity {
             true,
             query,
         )
+    }
+
+    /// A Building's fade stage, `BuildingClass+0x6ED` (0 opaque, 15 faded
+    /// out); 0 for every other object.
+    pub fn building_cloak_stage(&self) -> u8 {
+        self.cloak
+            .as_ref()
+            .map_or(0, crate::sim::cloak_disguise::CloakRuntime::building_stage)
     }
 
     /// `Techno70BE50`: actual COM410220 reads Abstract+10, then native7C5F00
@@ -2205,12 +2222,44 @@ impl GameEntity {
         self.fall.parachute_animation()
     }
 
-    pub(crate) fn set_parachute_animation(&mut self, animation: Option<u64>) {
-        self.fall.set_parachute_animation(animation);
+    /// Paradrop5F5AF1 publishes the new canopy at Object+88, through
+    /// [`EntityStore::write_held_anim`](crate::sim::entity_store::EntityStore::write_held_anim).
+    pub(crate) fn hold_parachute_animation(
+        &mut self,
+        animation: u64,
+        _: crate::sim::entity_store::AnimHolderAuthority,
+    ) {
+        self.fall.set_parachute_animation(Some(animation));
+    }
+
+    /// Paradrop without a constructed canopy leaves Object+88 empty.
+    pub(crate) fn clear_parachute_animation(&mut self) {
+        self.fall.set_parachute_animation(None);
     }
 
     pub(crate) fn parachute_animation_expired(&mut self, animation: u64) {
         self.fall.parachute_animation_expired(animation);
+    }
+
+    /// The Anims held in the fields `Simulation::notify_anim_pointer_expired`
+    /// clears when an Anim expires: Object+88's parachute (the owner's
+    /// Detach710410 reaching5F6DA0), the Ares EMP sparkle, the Ares
+    /// attached-effect Anims (10058770) and its ParasiteClass's grapple Anim
+    /// (Anim4's holder announcement725A16..725A4C, PointerExpired
+    /// 62A484..62A490). A field one of those callbacks compares must be
+    /// named here, and stored only through
+    /// [`EntityStore::write_held_anim`](crate::sim::entity_store::EntityStore::write_held_anim).
+    pub(crate) fn held_anims(&self) -> impl Iterator<Item = u64> + '_ {
+        let held = [
+            self.parachute_animation(),
+            self.emp_sparkle(),
+            self.parasite.class().and_then(|class| class.grapple_anim()),
+        ]
+        .into_iter()
+        .flatten();
+        #[cfg(feature = "ares")]
+        let held = held.chain(self.attached_effect_anims());
+        held
     }
 
     /// Retail gamemd.exe TechnoClass::Detach710410, then

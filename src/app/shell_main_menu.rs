@@ -115,6 +115,23 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         self.platform.cursor_confined = locked;
         crate::app::input::cursor::apply_cursor_confinement(self);
     }
+    fn store_vera_icon(&mut self, vera_icon: bool) {
+        // Saved, and shown at once. Unticked in an install without the red
+        // star, the window keeps VERA's icon until the next launch, which
+        // starts with the program's own.
+        self.persistence.options_profile.vera_icon = vera_icon;
+        if self.platform.window.is_visible() == Some(false) {
+            return;
+        }
+        let ra2_dir = self
+            .platform
+            .game_config
+            .as_ref()
+            .map(|config| config.paths.ra2_dir.as_path());
+        if let Some(icon) = crate::app::window_icon::WindowIcon::chosen(vera_icon, ra2_dir) {
+            icon.show_on(&self.platform.window);
+        }
+    }
     fn store_right_click_orders(&mut self, enabled: bool) {
         self.persistence.options_profile.right_click_orders = enabled;
     }
@@ -1036,16 +1053,18 @@ impl App {
             &state.frontend.skirmish_modes,
         );
         // VERA: a saved index on an Online row (the list grew since it was
-        // saved) names no file here; it falls back like an index past the end.
+        // saved) names no file here. It moves to the first local map; with none,
+        // it goes past the end, which Start reports as no selected map.
         let shell = &mut state.frontend.skirmish_shell_state;
-        if state
-            .frontend
-            .scenario_catalog
+        let catalog = &state.frontend.scenario_catalog;
+        if catalog
             .records()
             .get(shell.selected_map_idx)
             .is_some_and(|record| record.is_online())
         {
-            shell.selected_map_idx = 0;
+            shell.selected_map_idx = catalog
+                .first_local_index()
+                .unwrap_or(catalog.records().len());
         }
         crate::ui::skirmish_shell::repair_teams_for_selected_mode(
             &mut state.frontend.skirmish_shell_state,
@@ -1853,7 +1872,11 @@ impl App {
         ) {
             return;
         }
-        if state.frontend.shell_route.wol_visit() {
+        // WOL_Main's mode loop runs the whole online visit, its game rooms
+        // included, so the lobby music keeps playing there; only leaving the
+        // visit returns to PrepareSession's INTRO (0x0052E28E). VERA's room
+        // uses the NetworkSetup route, so ask for the visit, not the route.
+        if state.frontend.wol.is_some() {
             return;
         }
         if let Some(assets) = state.process_assets.manager() {

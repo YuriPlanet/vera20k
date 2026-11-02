@@ -2463,6 +2463,14 @@ impl ShellCaptureSession {
             .is_some_and(|capture| capture.owns_simulation_steps(state))
     }
 
+    /// The live LAN and online battle observers check every committed frame,
+    /// so the runtime runs one frame per render for them.
+    pub(crate) fn observes_every_frame(&self) -> bool {
+        self.movies
+            .as_ref()
+            .is_some_and(|capture| capture.observes_every_frame())
+    }
+
     pub(crate) fn prepare_state(&mut self, state: &mut AppState) {
         state.match_state.input.cursor_x = self.request.cursor_x as f32;
         state.match_state.input.cursor_y = self.request.cursor_y as f32;

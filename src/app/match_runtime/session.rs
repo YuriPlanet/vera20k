@@ -2758,22 +2758,70 @@ impl MatchSession {
         }
     }
 
-    /// The frozen launch's owner key of network participant `source_index`.
+    /// The frozen launch's owner key of the House network participant
+    /// `source_index` controls, its own or one it shares.
     pub(crate) fn network_source_owner(&self, source_index: usize) -> Option<String> {
         let launch = self.network_setup()?;
         crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
             .into_iter()
-            .find(|slot| slot.source_human_index == Some(source_index))
+            .find(|slot| slot.is_controlled_by(source_index))
             .map(|slot| slot.owner_name)
     }
 
-    /// The network participant whose House has owner key `owner`.
-    pub(crate) fn network_owner_source(&self, owner: &str) -> Option<usize> {
-        let launch = self.network_setup()?;
+    /// The network participants controlling the House with owner key `owner`.
+    pub(crate) fn network_owner_sources(&self, owner: &str) -> Vec<usize> {
+        let Some(launch) = self.network_setup() else {
+            return Vec::new();
+        };
         crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
             .into_iter()
             .find(|slot| slot.owner_name == owner)
-            .and_then(|slot| slot.source_human_index)
+            .map_or_else(Vec::new, |slot| {
+                slot.controllers
+                    .iter()
+                    .map(|controller| controller.human_index)
+                    .collect()
+            })
+    }
+
+    /// Network participant `source_index`'s command sender: the header byte
+    /// of its records and its timing row. That is its House's index unless
+    /// players share Houses.
+    pub(crate) fn network_source_sender(&self, source_index: usize) -> Option<i8> {
+        let launch = self.network_setup()?;
+        crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
+            .iter()
+            .flat_map(|slot| &slot.controllers)
+            .find(|controller| controller.human_index == source_index)
+            .map(|controller| controller.source)
+    }
+
+    /// The network participant sending as `sender`.
+    pub(crate) fn network_sender_source(&self, sender: i8) -> Option<usize> {
+        let launch = self.network_setup()?;
+        crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
+            .iter()
+            .flat_map(|slot| &slot.controllers)
+            .find(|controller| controller.source == sender)
+            .map(|controller| controller.human_index)
+    }
+
+    /// VERA shared control: whether another connected participant controls
+    /// the House participant `source_index` controls.
+    pub(crate) fn network_teammate_connected(&self, source_index: usize) -> bool {
+        let Some(launch) = self.network_setup() else {
+            return false;
+        };
+        let connected = self.network_connected_source_indices();
+        crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
+            .iter()
+            .find(|slot| slot.is_controlled_by(source_index))
+            .is_some_and(|slot| {
+                slot.controllers.iter().any(|controller| {
+                    controller.human_index != source_index
+                        && connected.contains(&controller.human_index)
+                })
+            })
     }
 
     /// `IPXManager::Delete_Connection 0x00540F00` and the node removal of
@@ -3096,10 +3144,14 @@ fn network_start_in_use(
     let crate::skirmish_launch::LaunchStartPosition::Position(position) = start else {
         return false;
     };
-    launch
-        .humans
-        .iter()
-        .any(|human| human.raw_slot_index.is_some() && human.slot.start_position == start)
+    // VERA shared control: outside Cooperative a player may take a start
+    // other players hold, to share their House.
+    let shared = launch.mode.class != crate::skirmish_modes::MpModeClass::Cooperative;
+    !shared
+        && launch
+            .humans
+            .iter()
+            .any(|human| human.raw_slot_index.is_some() && human.slot.start_position == start)
         || launch.opponents.iter().any(|ai| ai.start_position == start)
         || inactive.iter().enumerate().any(|(row, raw)| {
             raw.start == i32::from(position)
@@ -4072,6 +4124,42 @@ mod tests {
         third.raw_slot_index = Some(2);
         session.add_network_participant(third).unwrap();
         assert!(session.network_over_capacity());
+    }
+
+    /// VERA shared control: outside Cooperative a player may take a start
+    /// another player holds, never an AI's (`0x5E9720`).
+    #[test]
+    fn a_player_may_share_a_players_start_but_not_an_ais() {
+        use crate::skirmish_launch::LaunchStartPosition::Position;
+        let mut launch = network_fixture();
+        launch.humans[0].slot.start_position = Position(0);
+        launch
+            .opponents
+            .push(crate::skirmish_launch::SkirmishAiSlot {
+                raw_slot_index: 2,
+                country: crate::skirmish_launch::LaunchCountry::America,
+                country_random: false,
+                color_index: 3,
+                color_random: false,
+                start_position: Position(1),
+                team: crate::skirmish_launch::LaunchTeam::None,
+                difficulty: crate::skirmish_launch::AiDifficulty::Hard,
+            });
+        let inactive = [super::NetworkAiOptions {
+            difficulty: -1,
+            country: -2,
+            color: -2,
+            start: -2,
+            team: -2,
+        }; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT];
+        assert!(!super::network_start_in_use(
+            &launch,
+            &inactive,
+            Position(0)
+        ));
+        assert!(super::network_start_in_use(&launch, &inactive, Position(1)));
+        launch.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
+        assert!(super::network_start_in_use(&launch, &inactive, Position(0)));
     }
 
     #[test]

@@ -51,7 +51,7 @@ fn make_test_entity(type_id: &str, category: EntityCategory) -> MapEntity {
         recruitable_b: true,
         group: -1,
         follows: None,
-        structure_upgrades: [None, None, None],
+        structure_columns: Default::default(),
         structure_ai_sellable: false,
         structure_ai_repairable: false,
         structure_online: true,
@@ -509,7 +509,10 @@ fn a_tournament_players_exit_flags_their_house_on_the_remaining_peers() {
     assert_eq!(result.executed_commands, 1);
     let house = sim.houses.get(&leaver).unwrap();
     assert!(house.is_to_die() || house.has_lost());
-    assert_eq!(sim.take_departed_owners(), [leaver]);
+    assert_eq!(
+        sim.take_departed_senders(),
+        [sim.houses.index_of(leaver).unwrap() as i8]
+    );
 }
 
 #[test]
@@ -5902,7 +5905,7 @@ fn move_event_issuer_does_not_replace_actor_owner() {
             recruitable_b: true,
             group: -1,
             follows: None,
-            structure_upgrades: [None, None, None],
+            structure_columns: Default::default(),
             structure_ai_sellable: false,
             structure_ai_repairable: false,
             structure_online: true,
@@ -6094,7 +6097,7 @@ fn attack_move_fight(rules: &RuleSet) -> Simulation {
                 recruitable_b: true,
                 group: -1,
                 follows: None,
-                structure_upgrades: [None, None, None],
+                structure_columns: Default::default(),
                 structure_ai_sellable: false,
                 structure_ai_repairable: false,
                 structure_online: true,
@@ -6116,7 +6119,7 @@ fn attack_move_fight(rules: &RuleSet) -> Simulation {
                 recruitable_b: true,
                 group: -1,
                 follows: None,
-                structure_upgrades: [None, None, None],
+                structure_columns: Default::default(),
                 structure_ai_sellable: false,
                 structure_ai_repairable: false,
                 structure_online: true,

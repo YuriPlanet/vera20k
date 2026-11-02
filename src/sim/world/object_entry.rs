@@ -752,8 +752,7 @@ impl<'a> EntryMover<'a> {
     /// `0x0073F49B`), and `Crusher=` (`+0xD28`) or `HasWeaponAbility(0x11)` (`0x0073FC6C`).
     fn new(live: &EntryReadContext<'a>, id: u64, e: &'a GameEntity, obj: &'a ObjectType) -> Self {
         let weapon0 = combat_weapon::weapon_for_index(obj, e.veterancy.rank(), 0)
-            .and_then(|record| record.weapon_id)
-            .and_then(|name| live.rules.weapon(name));
+            .and_then(|record| record.weapon(live.rules));
         let crusher = crate::sim::combat::veterancy::is_crusher(e.veterancy.rank_kind(), obj);
         Self {
             id,
@@ -1238,8 +1237,7 @@ fn full_foot_entry<'a>(
                     },
                 );
                 let weapon = combat_weapon::weapon_for_index(obj, e.veterancy.rank(), selected)
-                    .and_then(|record| record.weapon_id)
-                    .and_then(|name| live.rules.weapon(name));
+                    .and_then(|record| record.weapon(live.rules));
                 if !weapon
                     .and_then(|w| w.warhead.as_deref())
                     .and_then(|name| live.rules.warhead(name))

@@ -10,11 +10,14 @@
 //! The `StringInterner` owns it: `StringInterner::bind_types` builds it from a
 //! `RuleSet` and the strings interned so far (after
 //! `Simulation::intern_rule_type_ids`, so every type id is present), and
-//! `StringInterner::object_type` and `StringInterner::type_array_index` read
-//! it. It answers exactly as the name path
-//! does: an id interned after the build, or a `RuleSet` other than the one it
-//! was built from, takes the name path. A derived cache: never serialized or
-//! hashed; a load rebuilds it.
+//! `StringInterner::object_type`, `StringInterner::object_type_in_category`
+//! and `StringInterner::type_array_index` read it. It answers exactly as the
+//! name path does: a `RuleSet`'s name indexes never change after it is built,
+//! and an id interned after the build, or a `RuleSet` other than the one it
+//! was built from, takes the name path. Debug builds compare every table
+//! answer with the name path
+//! ([`live_read_check_enabled`](crate::sim::touch_log::live_read_check_enabled)).
+//! A derived cache: never serialized or hashed; a load rebuilds it.
 //!
 //! ## Dependency rules
 //! - Part of sim/; depends on rules/ (one-way) and `sim::intern`. NEVER on
@@ -23,15 +26,26 @@
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::{RuleSet, TypeHandle};
 use crate::sim::intern::{InternedId, StringInterner};
+use crate::sim::touch_log::live_read_check_enabled;
 
 /// The class arrays, in the order [`TypeHandleTable`] keeps each id's
-/// indexes in them.
+/// indexes and handles in them ([`class_slot`]).
 const CLASS_ARRAYS: [ObjectCategory; 4] = [
     ObjectCategory::Infantry,
     ObjectCategory::Vehicle,
     ObjectCategory::Aircraft,
     ObjectCategory::Building,
 ];
+
+/// `category`'s position in [`CLASS_ARRAYS`].
+const fn class_slot(category: ObjectCategory) -> usize {
+    match category {
+        ObjectCategory::Infantry => 0,
+        ObjectCategory::Vehicle => 1,
+        ObjectCategory::Aircraft => 2,
+        ObjectCategory::Building => 3,
+    }
+}
 
 /// Maps an interned type id to its object handle. Dense by `InternedId` index;
 /// `None` means the id was interned but names no object (an orphan `type_ref`,
@@ -43,6 +57,10 @@ pub struct TypeHandleTable {
     /// [`CLASS_ARRAYS`] order, as [`RuleSet::type_array_index`] answers for
     /// its name. Dense by `InternedId` index, like `by_interned`.
     array_indices: Vec<[Option<i32>; 4]>,
+    /// Each id's handle in each class registry, in [`CLASS_ARRAYS`] order, as
+    /// [`RuleSet::type_handle_in_category`] answers for its name. Dense by
+    /// `InternedId` index, like `by_interned`.
+    category_handles: Vec<[Option<TypeHandle>; 4]>,
     /// [`RuleSet::serial`] of the set the handles came from; 0 while unbuilt,
     /// which no set has.
     rules_serial: u64,
@@ -58,6 +76,11 @@ impl TypeHandleTable {
             by_interned: names().map(|name| rules.type_handle(name)).collect(),
             array_indices: names()
                 .map(|name| CLASS_ARRAYS.map(|category| rules.type_array_index(category, name)))
+                .collect(),
+            category_handles: names()
+                .map(|name| {
+                    CLASS_ARRAYS.map(|category| rules.type_handle_in_category(category, name))
+                })
                 .collect(),
             rules_serial: rules.serial(),
         }
@@ -76,13 +99,44 @@ impl TypeHandleTable {
     ) -> Option<i32> {
         match self.array_indices.get(id.index() as usize) {
             Some(indices) if self.rules_serial == rules.serial() => {
-                indices[CLASS_ARRAYS
-                    .iter()
-                    .position(|&array| array == category)
-                    .expect("every category has a class array")]
+                let index = indices[class_slot(category)];
+                debug_assert!(
+                    !live_read_check_enabled()
+                        || index == rules.type_array_index(category, interner.resolve(id)),
+                    "type table answers {category:?} index {index:?} for {id:?}, unlike its name"
+                );
+                index
             }
             _ => rules.type_array_index(category, interner.resolve(id)),
         }
+    }
+
+    /// The object `id` names in `category`'s registry of `rules`, as
+    /// `rules.object_in_category(category, name)` answers for the name
+    /// `interner.try_resolve(id)` gives (none for an id the interner never
+    /// made): from the table when it was built from `rules` and covers `id`,
+    /// else by name.
+    #[inline]
+    pub fn object_in_category<'r>(
+        &self,
+        interner: &StringInterner,
+        id: InternedId,
+        category: ObjectCategory,
+        rules: &'r RuleSet,
+    ) -> Option<&'r ObjectType> {
+        let handle = match self.category_handles.get(id.index() as usize) {
+            Some(handles) if self.rules_serial == rules.serial() => {
+                let handle = handles[class_slot(category)];
+                debug_assert!(
+                    !live_read_check_enabled()
+                        || handle == rules.type_handle_in_category(category, interner.resolve(id)),
+                    "type table answers {category:?} {handle:?} for {id:?}, unlike its name"
+                );
+                handle
+            }
+            _ => rules.type_handle_in_category(category, interner.try_resolve(id)?),
+        };
+        handle.map(|handle| rules.object_by_handle(handle))
     }
 
     /// The object `id` names in `rules`, as `rules.object(interner.resolve(id))`
@@ -109,7 +163,13 @@ impl TypeHandleTable {
         rules: &RuleSet,
     ) -> Option<TypeHandle> {
         match self.by_interned.get(id.index() as usize) {
-            Some(&handle) if self.rules_serial == rules.serial() => handle,
+            Some(&handle) if self.rules_serial == rules.serial() => {
+                debug_assert!(
+                    !live_read_check_enabled() || handle == rules.type_handle(interner.resolve(id)),
+                    "type table answers {handle:?} for {id:?}, unlike its name"
+                );
+                handle
+            }
             _ => rules.type_handle(interner.resolve(id)),
         }
     }
@@ -238,5 +298,51 @@ mod tests {
                 .map(std::ptr::from_ref),
             name_path(e1, &rules)
         );
+    }
+
+    /// The per-registry lookup answers as `RuleSet::object_in_category` does
+    /// for the id's name: a name two registries list keeps both types, from
+    /// the table for the set it was bound to and by name for another set or
+    /// an id interned after binding; an id the interner never made names
+    /// nothing.
+    #[test]
+    fn category_lookup_answers_as_the_name_path() {
+        let ini = IniFile::from_str(
+            "[InfantryTypes]\n0=TWIN\n[VehicleTypes]\n0=TWIN\n[AircraftTypes]\n0=SOLO\n\
+             [TWIN]\nStrength=100\n[SOLO]\nStrength=50\n",
+        );
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        let other = RuleSet::from_ini(&ini).unwrap();
+        let mut interner = StringInterner::new();
+        let twin = interner.intern("twin");
+        interner.bind_types(&rules);
+        let later = interner.intern("SOLO");
+        for set in [&rules, &other] {
+            let typed = |id, category| {
+                interner
+                    .object_type_in_category(id, category, set)
+                    .map(|object| (std::ptr::from_ref(object), object.category))
+            };
+            for id in [twin, later] {
+                for category in CLASS_ARRAYS {
+                    assert_eq!(
+                        typed(id, category).map(|(object, _)| object),
+                        set.object_in_category(category, interner.resolve(id))
+                            .map(std::ptr::from_ref)
+                    );
+                }
+            }
+            let category = |category| typed(twin, category).map(|(_, category)| category);
+            assert_eq!(
+                category(ObjectCategory::Infantry),
+                Some(ObjectCategory::Infantry)
+            );
+            assert_eq!(
+                category(ObjectCategory::Vehicle),
+                Some(ObjectCategory::Vehicle)
+            );
+            assert!(typed(later, ObjectCategory::Aircraft).is_some());
+            assert!(typed(InternedId::from_index(99), ObjectCategory::Vehicle).is_none());
+        }
     }
 }

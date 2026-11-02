@@ -176,8 +176,9 @@ fn animated_base_replays_in_fixed_passes_with_strict_order_pixels() {
         "colour equals strict parent order"
     );
     assert!(output[1] == expected[1], "Z equals strict parent order");
-    // Ordinary buildings, packed bodies, Z-tested shadows, no-Z shadows, the
-    // last sprite: one transaction each, independent of the Anim count.
-    assert!(serial > GROUPS * 9, "strict order: {serial}");
-    assert_eq!(staged, 1 + 4 + 4 + 4 + 1);
+    // Ordinary buildings, packed bodies (3 passes), Z-tested shadows (a
+    // 4-pass read-only interval), no-Z shadows (packed), the last sprite: one
+    // transaction each, independent of the Anim count.
+    assert!(serial > GROUPS * 7, "strict order: {serial}");
+    assert_eq!(staged, 1 + 3 + 4 + 3 + 1);
 }

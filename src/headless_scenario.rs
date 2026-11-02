@@ -112,7 +112,7 @@ impl HeadlessScenario {
             team: crate::skirmish_launch::LaunchTeam::None,
             is_human: true,
             observer: false,
-            source_human_index: None,
+            controllers: Vec::new(),
             handle: None,
             difficulty: crate::sim::house_state::HouseDifficulty::Normal,
             commander: None,
@@ -3640,6 +3640,38 @@ mod launch_special_flags_tests {
         assert!(
             !plain.sim().session.harvester_immune(),
             "the default skirmish session leaves the bit clear"
+        );
+    }
+}
+
+#[cfg(test)]
+mod launch_alliance_tests {
+    use super::{battle_session, load_session};
+
+    /// A skirmish launch never reads a map House's `Allies=`: gamemd reads it
+    /// in `HouseClass::Read_Scenario_INI @ 0x00500B40`, which an authored map
+    /// reaches only through `HouseClass::Read_INI @ 0x005009B0`, called in
+    /// campaigns alone (`0x0068776E..0x006877B9`). FaceDown's `[Neutral]`
+    /// names Special.
+    #[test]
+    fn a_skirmish_launch_leaves_neutral_without_the_maps_allies() {
+        let Some((root, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let session = battle_session(
+            "FaceDown.map",
+            &[(
+                crate::skirmish_launch::LaunchCountry::America,
+                crate::skirmish_launch::AiDifficulty::Easy,
+            )],
+        );
+        let scene = load_session(&root, "FaceDown.map", 0x1234_5678, session).unwrap();
+        let sim = scene.sim();
+        let neutral = sim.interner().get("Neutral").unwrap();
+        let special = sim.interner().get("Special").unwrap();
+        assert!(
+            !sim.house_alliances()
+                .is_allied(sim.interner(), neutral, special)
         );
     }
 }

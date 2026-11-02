@@ -1616,7 +1616,7 @@ fn production_tree_piece_workload_timing() {
     let mut results = Vec::new();
     // Original frozen800x600 workloads remain literal. The added32-pair
     // disjoint grids fit this target;512 full-size disjoint pairs cannot.
-    // Pixel-disjoint rectangles can still share conservative dependency tiles.
+    // Pixel-disjoint rectangles share dependency tiles but not waves.
     for count in [1usize, 32, 128, 512] {
         for layout in ["dispersed", "repeated", "pixel_disjoint", "tile_disjoint"] {
             if layout.ends_with("disjoint") && count != 32 {
@@ -1711,13 +1711,13 @@ fn production_tree_piece_workload_timing() {
                     if batched {
                         let expected_waves = match layout {
                             "repeated" => 2 * count,
-                            "pixel_disjoint" => 22,
+                            "pixel_disjoint" => 2,
                             "tile_disjoint" => 2,
                             _ => match count {
                                 1 => 2,
-                                32 => 24,
-                                128 => 34,
-                                512 => 58,
+                                32 => 20,
+                                128 => 23,
+                                512 => 54,
                                 _ => unreachable!(),
                             },
                         };

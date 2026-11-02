@@ -255,7 +255,7 @@ fn admit_attacker_fire<'r>(
     };
 
     let infantry_fire = snap.category == EntityCategory::Infantry;
-    let sequences = rules.animation_sequence(world.interner.resolve(snap.type_id));
+    let sequences = world.interner.animation_sequence(snap.type_id, rules);
     let firing_at_entry = infantry_fire
         && world
             .substrate
@@ -2183,6 +2183,7 @@ pub(super) fn emit_admitted_fire(
             .and_then(|entity| entity.disguise.as_mut())
     {
         disguise.start_fire_blink(binary_frame, weapon.disguise_fake_blink_time);
+        world.note_disguise_blink_started();
     }
     Some(bullet_id)
 }

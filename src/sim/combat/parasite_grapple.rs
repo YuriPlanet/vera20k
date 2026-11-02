@@ -13,13 +13,31 @@ use crate::util::retail_trig::TrigTable;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(super) struct GrappleState {
     /// +44, cleared synchronously by the dedicated Anim expiry callback.
-    pub(super) anim: Option<u64>,
+    /// Only [`GrappleState::begin`] stores an Anim here.
+    anim: Option<u64>,
     /// +48: entry0, initial animation1, roll2/3, impact4.
     phase: i32,
     stage: i32,
     delay: i32,
     /// +54: the held animation expired; not an independent liveness query.
     invalidated: bool,
+}
+
+impl GrappleState {
+    /// +44, the held Anim.
+    pub(super) fn anim(&self) -> Option<u64> {
+        self.anim
+    }
+
+    /// UpdateSquidGrapple6297F0's entry phase publishes its Anim at +44
+    /// (none when the type is absent) and starts phase 1, through
+    /// [`EntityStore::write_held_anim`](crate::sim::entity_store::EntityStore::write_held_anim).
+    fn begin(&mut self, anim: Option<u64>, _: crate::sim::entity_store::AnimHolderAuthority) {
+        self.anim = anim;
+        self.phase = 1;
+        self.stage = 0;
+        self.delay = 0;
+    }
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -209,18 +227,17 @@ impl Simulation {
                 } else {
                     None
                 };
-                let state = self
-                    .substrate
+                self.substrate
                     .entities
-                    .get_mut(owner)
-                    .unwrap()
-                    .parasite
-                    .class_mut()
+                    .write_held_anim(owner, |entity, authority| {
+                        entity
+                            .parasite
+                            .class_mut()
+                            .unwrap()
+                            .grapple
+                            .begin(anim, authority)
+                    })
                     .unwrap();
-                state.grapple.anim = anim;
-                state.grapple.phase = 1;
-                state.grapple.stage = 0;
-                state.grapple.delay = 0;
                 Self::advance_grapple_stage(&self.session, &mut self.substrate, owner, victim);
             }
             1 => {

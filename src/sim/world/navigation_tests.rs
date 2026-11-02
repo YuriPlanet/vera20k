@@ -293,7 +293,8 @@ fn held_factory_and_consumed_upgrade_stay_off_navigation_through_frame_and_resto
     let mut yard = make_test_entity("YARD", EntityCategory::Structure);
     yard.cell_x = 6;
     yard.cell_y = 6;
-    yard.structure_upgrades = [Some("UPGRADE".to_owned()), None, None];
+    yard.structure_columns.upgrade_count = 1;
+    yard.structure_columns.upgrade_tokens = [Some("UPGRADE".to_owned()), None, None];
     assert_eq!(sim.spawn_from_map(&[yard], Some(&rules)), 2);
     sim.resolve_type_handles(&rules);
     let parent_id = sim
