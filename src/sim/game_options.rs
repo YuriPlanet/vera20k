@@ -55,8 +55,12 @@ pub struct GameOptions {
     pub multi_engineer: bool,
     /// Harvesters immune to enemy fire. Rules+0x14B3.
     pub harvester_truce: bool,
-    /// Alliances can be changed mid-game. Rules+0x14BB (YR addition).
+    /// Alliances can be changed mid-game. Rules+0x14BB (YR addition). VERA's
+    /// room sets it per match with its In-game Allying checkbox.
     pub ally_change_allowed: bool,
+    /// VERA's room bans; none outside its game rooms.
+    #[serde(default)]
+    pub bans: RoomBans,
 
     // --- Used at init (Create_Houses, spawn units) ---
     /// Default starting credits per player. Rules+0x1484.
@@ -92,6 +96,7 @@ impl Default for GameOptions {
             multi_engineer: false,
             harvester_truce: false,
             ally_change_allowed: true,
+            bans: RoomBans::default(),
             starting_credits: 10000,
             unit_count: 10,
             tech_level: 10,
@@ -99,6 +104,58 @@ impl Default for GameOptions {
             ai_difficulty: 0,
             ai_players: 0,
         }
+    }
+}
+
+/// VERA's game-room bans: its own room options, which gamemd's dialogs never
+/// had. The host ticks them in the room's Game Options, and every player's
+/// match reads the same copy.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(deny_unknown_fields)]
+pub struct RoomBans {
+    /// No Yuri: no player gets a country of the third `[Sides]` entry
+    /// (retail's `ThirdSide`, Yuri's only country), chosen or Random.
+    pub yuri: bool,
+    /// No France: no player gets the `French` country, chosen or Random.
+    pub france: bool,
+    /// No Spy: nobody builds an `Agent=yes` type (retail's Spy).
+    pub spy: bool,
+    /// No Stolen Tech: nobody builds a `RequiresStolen*Tech=yes` type
+    /// (retail's Chrono Commando, Chrono Ivan and Psi Commando), even after
+    /// a spy steals the tech.
+    pub stolen_tech: bool,
+}
+
+impl RoomBans {
+    /// The third `[Sides]` entry, the side `RequiresStolenThirdTech=` names.
+    const THIRD_SIDE: crate::rules::ruleset::SideIdx = crate::rules::ruleset::SideIdx(2);
+
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// Whether no player may build `obj`.
+    pub fn bans_type(&self, obj: &crate::rules::object_type::ObjectType) -> bool {
+        (self.spy && obj.agent)
+            || (self.stolen_tech
+                && (obj.requires_stolen_allied_tech
+                    || obj.requires_stolen_soviet_tech
+                    || obj.requires_stolen_third_tech))
+    }
+
+    /// Whether no player may play `country`, a `[Countries]` index.
+    pub fn bans_country(
+        &self,
+        rules: &crate::rules::ruleset::RuleSet,
+        country: crate::rules::ruleset::CountryIdx,
+    ) -> bool {
+        let Some(id) = rules.country_name(country) else {
+            return false;
+        };
+        (self.yuri && rules.country_side_index(id) == Some(Self::THIRD_SIDE))
+            || (self.france && id.eq_ignore_ascii_case("French"))
     }
 }
 
@@ -205,8 +262,30 @@ impl GameOptions {
 
 #[cfg(test)]
 mod tests {
-    use super::GameOptions;
+    use super::{GameOptions, RoomBans};
     use crate::rules::ini_parser::IniFile;
+
+    #[test]
+    fn retail_room_bans_take_only_yuri_and_france() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+            return;
+        };
+        let banned = |bans: RoomBans| {
+            ["YuriCountry", "French", "Americans", "Russians"]
+                .map(|id| bans.bans_country(&rules, rules.trigger_house_type_index(id).unwrap()))
+        };
+        let yuri = RoomBans {
+            yuri: true,
+            ..RoomBans::default()
+        };
+        let france = RoomBans {
+            france: true,
+            ..RoomBans::default()
+        };
+        assert_eq!(banned(RoomBans::default()), [false; 4]);
+        assert_eq!(banned(yuri), [true, false, false, false]);
+        assert_eq!(banned(france), [false, true, false, false]);
+    }
 
     #[test]
     fn in_game_speed_transition_accepts_six_and_rejects_seven_without_clamping() {

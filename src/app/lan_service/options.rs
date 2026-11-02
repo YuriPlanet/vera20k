@@ -88,6 +88,13 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
             .clone(),
         random_map: random_map.clone(),
         admissions,
+        room: Some(
+            session
+                .network_setup()
+                .expect("projected setup")
+                .options
+                .room_options(),
+        ),
     })?;
     let admitted = queue_payload(
         state,
@@ -120,6 +127,9 @@ struct ExtendedOptions {
     effective_digest: String,
     random_map: Option<crate::app::shell_network_setup::maps::GeneratedMapManifest>,
     admissions: Vec<ExtendedAdmission>,
+    /// VERA's room options, which the native options text has no field for.
+    #[serde(default)]
+    room: Option<crate::skirmish_launch::RoomOptions>,
 }
 
 /// Host-authored admission projection for native Type3 assembly, derived from
@@ -152,6 +162,7 @@ pub(super) fn reapply_received_options(state: &mut AppState) -> Result<()> {
         options.source_sha256,
         options.effective_digest,
         options.selected_map_file,
+        options.room,
     )
 }
 
@@ -222,6 +233,7 @@ fn receive_options_text(
     source_sha256: String,
     effective_digest: String,
     selected_map_file: String,
+    room: Option<crate::skirmish_launch::RoomOptions>,
 ) -> Result<()> {
     ensure!(
         source_sha256.is_empty() || crate::map::source::valid_source_sha256(&source_sha256),
@@ -238,6 +250,9 @@ fn receive_options_text(
     options.launch.selected_map_file = Some(selected_map_file);
     options.map_metadata.source_sha256 = source_sha256;
     options.map_metadata.effective_digest = effective_digest;
+    if let Some(room) = room {
+        options.launch.options.set_room_options(room);
+    }
     crate::app::shell_network_setup::service_event(state, NetworkSetupEvent::HostSetup(options))?;
     state
         .match_state
@@ -431,6 +446,7 @@ pub(super) fn receive_extended(
                 options.source_sha256,
                 options.effective_digest,
                 options.selected_map_file,
+                options.room,
             )?;
             super::maps::received_options(state, scope, options.random_map)
         }

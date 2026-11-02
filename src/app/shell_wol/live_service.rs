@@ -372,7 +372,17 @@ impl RetryingCommand {
 struct PendingChoices {
     request_id: u64,
     expected_human: Value,
+    /// The same row with a Random country: the host's answer when one of
+    /// VERA's room bans takes the asked country.
+    expected_random: Value,
     deadline: Instant,
+}
+
+impl PendingChoices {
+    fn answered_by(&self, accepted: &Value) -> bool {
+        accepted_human_matches(accepted, &self.expected_human)
+            || accepted_human_matches(accepted, &self.expected_random)
+    }
 }
 
 /// One outgoing Start transaction. Its frozen request is not editable setup
@@ -1617,7 +1627,9 @@ fn request_setup(
             human.raw_slot_index = Some(row);
             human.slot = slot.clone();
             human.set_observer(observer);
-            let expected_human = serde_json::to_value(human)?;
+            let expected_human = serde_json::to_value(&human)?;
+            human.slot.country_random = true;
+            let expected_random = serde_json::to_value(human)?;
             let request_id = service.command_with_id(
                 "choices",
                 json!({"row":row,"slot":slot,"observer":observer}),
@@ -1630,6 +1642,7 @@ fn request_setup(
             .then_some(PendingChoices {
                 request_id,
                 expected_human,
+                expected_random,
                 deadline: Instant::now() + RELAY_TIMEOUT,
             });
         }
@@ -2275,7 +2288,7 @@ fn apply_event(
             if service
                 .pending_choices
                 .as_ref()
-                .is_some_and(|choices| accepted_human_matches(&canonical, &choices.expected_human))
+                .is_some_and(|choices| choices.answered_by(&canonical))
             {
                 service.pending_choices = None;
             }
@@ -3374,6 +3387,31 @@ mod completion_tests {
         let echoed = json!({"launch":session.network_setup()});
         assert!(local_choices_match(&session, &echoed));
         assert!(accepted_human_matches(&echoed, &expected));
+    }
+
+    #[test]
+    fn a_host_answering_with_random_settles_a_banned_country_choice() {
+        let mut session = setup_session();
+        let mut human = session.network_setup().unwrap().local_player().clone();
+        human.slot.country_random = false;
+        let expected_human = serde_json::to_value(&human).unwrap();
+        human.slot.country_random = true;
+        let pending = PendingChoices {
+            request_id: 1,
+            expected_human,
+            expected_random: serde_json::to_value(&human).unwrap(),
+            deadline: Instant::now() + RELAY_TIMEOUT,
+        };
+        let mut launch = session.network_setup().unwrap().clone();
+        launch.local_player_mut().slot = human.slot.clone();
+        launch.rebuild_house_roster();
+        session
+            .accept_network_setup(launch, true, None, false)
+            .unwrap();
+        assert!(pending.answered_by(&json!({"launch":session.network_setup()})));
+        let mut launch = session.network_setup().unwrap().clone();
+        launch.local_slot_mut().color_random = !launch.local_slot().color_random;
+        assert!(!pending.answered_by(&json!({"launch":launch})));
     }
 
     #[test]

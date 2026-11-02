@@ -710,6 +710,7 @@ fn skirmish(
         multi_engineer: boolean(settings, "MultiEngineer", false)?,
         harvester_truce: boolean(settings, "HarvesterTruce", false)?,
         ally_change_allowed: boolean(settings, "AlliesAllowed", false)?,
+        bans: Default::default(),
     };
     let mut session = SkirmishLaunchSession {
         mode,
