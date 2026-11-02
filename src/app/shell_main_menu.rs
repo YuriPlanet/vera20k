@@ -1872,7 +1872,11 @@ impl App {
         ) {
             return;
         }
-        if state.frontend.shell_route.wol_visit() {
+        // WOL_Main's mode loop runs the whole online visit, its game rooms
+        // included, so the lobby music keeps playing there; only leaving the
+        // visit returns to PrepareSession's INTRO (0x0052E28E). VERA's room
+        // uses the NetworkSetup route, so ask for the visit, not the route.
+        if state.frontend.wol.is_some() {
             return;
         }
         if let Some(assets) = state.process_assets.manager() {
