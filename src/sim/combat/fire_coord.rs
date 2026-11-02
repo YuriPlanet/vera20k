@@ -345,8 +345,10 @@ pub(crate) fn fire_coordinate(
     let art = base.art;
 
     // Phobos `TechnoClass::GetFLH @ 0x006F3AEB`: a burst-index-specific ART
-    // offset replaces the slot's FLH, then an infantry deployed/prone offset,
-    // and neither takes the lateral burst shift the GetWeapon fallback keeps.
+    // offset replaces the slot's FLH, then an infantry deployed/prone override,
+    // and only the burst offset is absolute — the hook mirrors whatever it
+    // selected when `GetBurstFLH` found nothing (`Hooks.Firing.cpp:1050-1059`),
+    // which covers the state override as well as the GetWeapon record.
     #[cfg(feature = "phobos")]
     let (deployed, crawling) = world
         .substrate
@@ -403,8 +405,8 @@ pub(crate) fn fire_coordinate(
         art.map_or(0, |art| art.turret_offset),
         flh,
         base.facings,
-        if burst_flh.is_some() || simple_flh.is_some() {
-            // Even parity: an absolute offset is not shifted.
+        if burst_flh.is_some() {
+            // Even parity: `GetBurstFLH` sets `found`, which skips the mirror.
             0
         } else {
             burst_index

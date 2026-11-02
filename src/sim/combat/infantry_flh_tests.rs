@@ -80,6 +80,17 @@ fn spawn(sim: &mut Simulation, id: u64, kind: &str, deployed: bool, prone: bool)
 /// `kind` under the given states, against a control type that carries the
 /// expected offset in its ordinary primary slot at the same coordinate.
 fn assert_flh_matches(kind: &str, deployed: bool, prone: bool, control: &str, what: &str) {
+    assert_flh_matches_at_burst(kind, deployed, prone, control, 0, what);
+}
+
+fn assert_flh_matches_at_burst(
+    kind: &str,
+    deployed: bool,
+    prone: bool,
+    control: &str,
+    burst_index: u8,
+    what: &str,
+) {
     let mut sim = Simulation::new();
     let rules = rules();
     spawn(&mut sim, 1, kind, deployed, prone);
@@ -92,7 +103,7 @@ fn assert_flh_matches(kind: &str, deployed: bool, prone: bool, control: &str, wh
             &FireSource::of_entity(source),
             rules.object(if id == 1 { kind } else { control }).unwrap(),
             0,
-            0,
+            burst_index,
             Flh::default(),
         )
         .coord
@@ -133,6 +144,21 @@ fn a_state_vector_without_rows_falls_to_the_simple_override() {
     // SIMPART has DeployedPrimaryFireFLH but no deployed burst row, so
     // GetBurstFLH finds nothing and GetSimpleFLH supplies the offset.
     assert_flh_matches("SIMP", true, false, "SIMC", "InfantryExt::GetSimpleFLH");
+}
+
+#[test]
+fn the_simple_override_takes_the_odd_burst_mirror() {
+    // The mirror sits inside the `!found` arm (`Hooks.Firing.cpp:1050-1059`),
+    // so it shifts the state override exactly like a record FLH of the same
+    // triple — only `GetBurstFLH`'s own answer is absolute.
+    assert_flh_matches_at_burst(
+        "SIMP",
+        true,
+        false,
+        "SIMC",
+        1,
+        "GetSimpleFLH is mirrored on an odd burst",
+    );
 }
 
 #[test]
