@@ -120,6 +120,9 @@ pub enum BuildingPieceKind {
     Body,
     Shadow,
     Bib,
+    /// The bib's own DrawSHP shadow half, drawn right after the bib
+    /// (`TechnoClass_DrawSHP @ 0x00705E00` from `0x0043D8E9`).
+    BibShadow,
     /// A war factory's `UnderDoorAnim=` and its shadow, drawn after the bib
     /// (`BuildingClass::DrawIt @ 0x0043D8EE`).
     UnderDoor,
@@ -230,9 +233,10 @@ fn building_piece_order(kind: BuildingPieceKind) -> u8 {
         BuildingPieceKind::Body => 2,
         BuildingPieceKind::Shadow => 3,
         BuildingPieceKind::Bib => 4,
-        BuildingPieceKind::UnderDoor => 5,
-        BuildingPieceKind::PoweredOrActiveOverlay => 6,
-        BuildingPieceKind::SplitFront => 7,
+        BuildingPieceKind::BibShadow => 5,
+        BuildingPieceKind::UnderDoor => 6,
+        BuildingPieceKind::PoweredOrActiveOverlay => 7,
+        BuildingPieceKind::SplitFront => 8,
     }
 }
 
