@@ -301,9 +301,12 @@ pub(crate) fn compute_layout_with_spec(
 ) -> SidebarLayout {
     // Original 6A5090/6A5130: capacity depends on screen height and side,
     // never on build-item count. Integer division truncates toward zero.
-    // Residual: native keeps 60 select buttons per strip (0x3C stride,
-    // InitSelectZones 6A8220), so above 30 rows (a ~1810 px tall screen) its
-    // zones run into the next strip's array. VERA leaves the count uncapped.
+    // Native keeps 60 select buttons per strip (0x3C stride, InitSelectZones
+    // 6A8220). Above 30 rows (screens 1810 px or taller) strips 0..2 write into
+    // the next strip's buttons, and the Vehicle strip runs past the array's
+    // end at B0B300 (a static coordinate, then the R-DN ShapeButton at B0B328).
+    // Activate 6A8330 then adds that vtable-less memory as gadgets. Native has
+    // no defined result here, so VERA keeps a working uncapped grid.
     // GetVisibleSlotCount 6AC430 and StripClass Activate 6A8330 count 2 * rows
     // the same way: footer 26, or 18 when Scenario +0x34B8 (the side) is set.
     let rows = ((screen_h as i32 - 227 - spec.footer_allowance - 7) / 50).max(0) as usize;
