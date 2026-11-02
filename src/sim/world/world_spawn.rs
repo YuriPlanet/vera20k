@@ -1833,7 +1833,7 @@ impl Simulation {
     }
 
     ///458A80 and4DF510 share their reverse ordinary Unlimbo/F8 owner.
-    /// Both native nearby callers reject bridge cells. Raw Location is read after
+    /// Both native nearby callers allow bridge cells. Raw Location is read after
     /// previous callbacks, not captured before Limbo or the new placement.
     fn restore_displaced_placement_technos(
         &mut self,
@@ -1864,19 +1864,18 @@ impl Simulation {
                             i32::from(crate::util::lepton::lepton_to_cell_packed(location.x)),
                             i32::from(crate::util::lepton::lepton_to_cell_packed(location.y)),
                         ),
-                        NearbyArgs {
-                            // Both original callers push0:458CF8/4DF732.
-                            allow_bridge_cells: false,
-                            ..NearbyArgs::plain(
-                                PassabilityArgs {
-                                    speed_type: object.speed_type,
-                                    required_zone_id: None,
-                                    movement_zone: MovementZone::Normal,
-                                    bridge_aware_zone: false,
-                                },
-                                NearbyFootprint::SINGLE,
-                            )
-                        },
+                        // Both callers push 1 as FNPC's argument 12
+                        // (`0x00458CEF`, `0x004DF729`), the bridge filter's
+                        // allow flag (`0x0056DE6C`).
+                        NearbyArgs::plain(
+                            PassabilityArgs {
+                                speed_type: object.speed_type,
+                                required_zone_id: None,
+                                movement_zone: MovementZone::Normal,
+                                bridge_aware_zone: false,
+                            },
+                            NearbyFootprint::SINGLE,
+                        ),
                     )
                     // Original FNPC's failed output is Cell::Empty, and this
                     // caller still performs its Map lookup and Unlimbo.

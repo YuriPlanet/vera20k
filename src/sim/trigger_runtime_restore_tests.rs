@@ -310,7 +310,7 @@ fn restore130_still_repairs_only_existing_buildings() {
 }
 
 #[test]
-fn foot_and_building_clearance_submit_the_same_native_no_bridge_nearby_arguments() {
+fn foot_and_building_clearance_submit_the_same_native_nearby_arguments() {
     use crate::rules::locomotor_type::{MovementZone, SpeedType};
     use crate::sim::find_nearby_cell::NearbyFootprint;
     use fresh_oracle_seam::FreshCallRecord;
@@ -326,7 +326,8 @@ fn foot_and_building_clearance_submit_the_same_native_no_bridge_nearby_arguments
             if building { "CABHUT" } else { "TAGUNIT" },
         );
         // Supplied callee answer; expected arguments come from458CE0..458D2D
-        // and4DF71A..4DF76A, including literal0 at458CF8/4DF732.
+        // and4DF71A..4DF76A. FNPC reads argument 12 (literal 1 at 458CEF and
+        // 4DF729) as its bridge allow flag at 0x0056DE6C.
         fresh_oracle_seam::install_nearby_only(vec![Some((16, 15))]);
         let placed = if building {
             sim.place_building_with_cleared_foundation(
@@ -363,7 +364,7 @@ fn foot_and_building_clearance_submit_the_same_native_no_bridge_nearby_arguments
                 movement_zone: MovementZone::Normal,
                 bridge_aware_zone: false,
                 footprint: NearbyFootprint::SINGLE,
-                allow_bridge_cells: false,
+                allow_bridge_cells: true,
                 check_height: false,
                 check_occupancy: false,
                 target_cell: None,
