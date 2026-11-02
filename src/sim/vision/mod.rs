@@ -39,6 +39,7 @@
 mod cell_reveal;
 mod fog_objects;
 pub use fog_objects::{FoggedDrawKind, FoggedDrawRecord, FrozenBuilding};
+mod map_journal;
 mod map_reveal;
 pub(crate) use map_reveal::MapTransition;
 mod planes;
@@ -775,6 +776,10 @@ pub struct FogState {
     /// selection uses the original x86-masked bit index (`h & 31`).
     #[serde(default)]
     cloaked_by_houses: Vec<u32>,
+    /// While journaling ([`Self::journal`]), what each map held before its
+    /// first write. Never saved or hashed.
+    #[serde(skip)]
+    journal: Option<Box<map_journal::MapJournal>>,
 }
 
 impl FogState {
@@ -926,6 +931,7 @@ impl FogState {
     ) {
         // In this map `latched` means only that this viewer's derived source
         // counts are active. Its native +250 lives in `sight_sources`.
+        self.note_sight(id, viewer);
         admission.latched = true;
         let map = if alternate {
             &mut self.alternate_sight_admissions
@@ -972,6 +978,7 @@ impl FogState {
         // alternate House received the actual map contribution (70B0CB..B12C).
         let mut source = SightSource::from(admission);
         source.owner = source_owner;
+        self.note_sight(id, viewer);
         self.sight_sources.insert((id, viewer), source);
     }
 
@@ -983,6 +990,7 @@ impl FogState {
         id: u64,
         viewer: InternedId,
     ) -> Option<SightSource> {
+        self.note_sight(id, viewer);
         let source = self.sight_sources.get_mut(&(id, viewer))?;
         if !source.latched {
             return None;
@@ -1001,6 +1009,7 @@ impl FogState {
         viewer: InternedId,
         alternate: bool,
     ) -> Option<SightAdmission> {
+        self.note_sight(id, viewer);
         let map = if alternate {
             &mut self.alternate_sight_admissions
         } else {
@@ -1028,6 +1037,7 @@ impl FogState {
         id: u64,
         viewer: InternedId,
     ) -> Option<SightAdmission> {
+        self.note_sight(id, viewer);
         self.sight_admissions.remove(&(id, viewer))
     }
 
@@ -1069,6 +1079,7 @@ impl FogState {
     /// Destructor cleanup of cached250/254/260 and per-viewer derived indexes.
     /// Native UnInit/Limbo must have released their live contributions first.
     pub(crate) fn forget_sight_source(&mut self, id: u64) {
+        self.note_shared_write();
         while let Some((&key, _)) = self.sight_sources.range(source_keys(id)).next() {
             self.sight_sources.remove(&key);
         }
@@ -1282,6 +1293,7 @@ impl FogState {
         occupied_cells: Vec<(u16, u16)>,
         drawing: Option<FrozenBuilding>,
     ) -> FoggedObjectId {
+        self.note_shared_write();
         let id = self.next_fogged_object_id.max(1);
         self.next_fogged_object_id = id.wrapping_add(1);
         let record = FoggedObjectFootprintRecord {
@@ -1307,6 +1319,7 @@ impl FogState {
     }
 
     pub(crate) fn set_object_fogged(&mut self, viewer: InternedId, id: u64, fogged: bool) {
+        self.note_shared_write();
         if fogged {
             self.fogged_live_objects.insert((viewer, id));
         } else {
@@ -1322,6 +1335,7 @@ impl FogState {
     }
 
     pub(crate) fn forget_fogged_live_object(&mut self, id: u64) {
+        self.note_shared_write();
         self.fogged_live_objects.retain(|(_, candidate)| *candidate != id);
     }
 
@@ -1347,6 +1361,7 @@ impl FogState {
         rx: u16,
         ry: u16,
     ) -> Vec<FoggedObjectFootprintRecord> {
+        self.note_shared_write();
         let Some(mut ids) = self.fogged_object_cells.remove(&(viewer, rx, ry)) else {
             return Vec::new();
         };
@@ -1375,6 +1390,7 @@ impl FogState {
     /// deposits are owned by `sim::sensor_lifecycle`; this remains the explicit
     /// map-storage recreation edge.
     pub fn reset_sensor_counts(&mut self) {
+        self.note_shared_write();
         self.sensors_by_house.clear();
         self.disguise_detect_by_house.clear();
     }
@@ -2150,6 +2166,7 @@ impl FogState {
         // whose clear visited every cell re-marks every footprint this frame.
         let mut frame = SightFrame::default();
         if self.width != width || self.height != height {
+            self.note_shared_write();
             #[cfg(any(test, feature = "test-support"))]
             {
                 frame.sized = true;
@@ -3165,6 +3182,7 @@ pub(crate) fn publish_gap_generator_event(
 ) {
     // Both complete6FB170/6FB470 leaves clear local House240 after an
     // admitted269 transition, including friendly events with no hostile cells.
+    fog.note_map(viewer);
     fog.whole_map_revealed_owners.remove(&viewer);
     let width = usize::from(fog.width);
     let height = usize::from(fog.height);

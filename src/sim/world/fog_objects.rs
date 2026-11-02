@@ -169,6 +169,7 @@ impl Simulation {
         if !self.session.game_options().fog_of_war {
             return;
         }
+        self.fog.note_shared_write();
         for rung in 0..7i16 {
             let candidate = {
                 let Some(terrain) = context.terrain().or(self.resolved_terrain.as_ref()) else {

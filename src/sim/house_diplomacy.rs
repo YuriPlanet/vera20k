@@ -61,7 +61,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
 use crate::sim::touch_log::live_read_check_enabled;
 use crate::sim::vision::RevealViewers;
-use crate::sim::world::{FrameEffects, Simulation};
+use crate::sim::world::{FrameEffects, ParanoidMaps, Simulation};
 
 /// The native ScenarioInit counter is nonzero during ReadScenarioINI's House
 /// pass (ordinary campaign prior2). CanAlly501540 then bypasses live-world
@@ -425,6 +425,8 @@ impl Simulation {
             return;
         }
         let game_mode_nonzero = self.session.game_mode_nonzero();
+        // Each bracket's walks visit only the maps that may change.
+        let mut maps = ParanoidMaps::default();
         // Both walks reload the House count after each call (0x005016DB,
         // 0x00501736).
         let mut index = 0;
@@ -444,10 +446,11 @@ impl Simulation {
                     continue;
                 };
                 // Itself too: CanAlly refuses it.
+                let maps = Some(&mut maps);
                 if peer.is_controlled_by_human(game_mode_nonzero) {
-                    self.make_enemy(owner, other, rules, registry, effects, false);
+                    self.make_enemy_with(owner, other, rules, registry, effects, false, maps);
                 } else {
-                    self.make_ally(owner, other, rules, registry, effects, false);
+                    self.make_ally_with(owner, other, rules, registry, effects, false, maps);
                 }
             }
         }
@@ -529,12 +532,36 @@ impl Simulation {
         effects: FrameEffects<'_>,
         announce: bool,
     ) {
+        self.make_ally_with(owner, other, rules, registry, effects, announce, None);
+    }
+
+    /// [`Self::make_ally`], within a Paranoid call walking only `paranoid`'s
+    /// maps that may change.
+    #[allow(clippy::too_many_arguments)]
+    fn make_ally_with(
+        &mut self,
+        owner: InternedId,
+        other: InternedId,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+        announce: bool,
+        mut paranoid: Option<&mut ParanoidMaps>,
+    ) {
         // Keep the live and initialization arms in this same graph owner.
         if !self.can_ally(owner, other, rules) {
             return;
         }
         let context = crate::sim::world::UninitContext::new(rules, registry).with_effects(effects);
-        self.release_alliance_sight(context);
+        // 0x004F9B9A. Its write adds `other` to `owner`'s mask. Of the live
+        // tail only Paranoid and Assign_Target write state the walks read.
+        let quiet = paranoid.is_some()
+            && !self.houses.get(&owner).is_some_and(|house| {
+                house.is_controlled_by_human(self.session.game_mode_nonzero())
+            })
+            && !self.may_drop_targets(owner);
+        let edge_maps = self.maps_keyed_like(other);
+        let walks = self.open_alliance_walks(paranoid.as_deref_mut(), edge_maps, quiet, context);
         // 0x004F9B9F..0x004F9BB3, then the threat rebuild (0x004F9BB9).
         Self::set_ally_bit(
             &self.interner,
@@ -618,7 +645,34 @@ impl Simulation {
             self.announce_alliance(owner, other, true, announce);
         }
         // 0x004F9F46..0x004F9F4F: both arms end in the re-admission bracket.
-        self.admit_alliance_sight(context);
+        self.close_alliance_walks(walks, paranoid, context);
+    }
+
+    /// Whether Make_Ally's live tail may pass one of `owner`'s Technos to
+    /// Assign_Target (`0x004F9C7F..0x004F9D48`): one out of limbo with a
+    /// Techno target, whoever owns it.
+    fn may_drop_targets(&self, owner: InternedId) -> bool {
+        self.logic_order().iter().any(|&id| {
+            self.substrate.entities.get(id).is_some_and(|entity| {
+                entity.owner() == owner
+                    && entity.is_ai_alive()
+                    && !entity.lifecycle.in_limbo()
+                    && matches!(entity.attack_target.target(), Some(TargetKind::Entity(_)))
+            })
+        })
+    }
+
+    /// The maps whose alliance reads change when a House's mask gains or
+    /// loses `house`: each House the graph keys by `house`'s name
+    /// ([`normalize_house_name`]).
+    fn maps_keyed_like(&self, house: InternedId) -> BTreeSet<InternedId> {
+        let key = normalize_house_name(self.interner.resolve(house));
+        self.houses
+            .order()
+            .iter()
+            .copied()
+            .filter(|&peer| normalize_house_name(self.interner.resolve(peer)) == key)
+            .collect()
     }
 
     /// `HouseClass::Make_Enemy @ 0x004F9F90`. Only the ALLY event passes
@@ -631,6 +685,22 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
         announce: bool,
+    ) {
+        self.make_enemy_with(owner, other, rules, registry, effects, announce, None);
+    }
+
+    /// [`Self::make_enemy`], within a Paranoid call walking only `paranoid`'s
+    /// maps that may change.
+    #[allow(clippy::too_many_arguments)]
+    fn make_enemy_with(
+        &mut self,
+        owner: InternedId,
+        other: InternedId,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+        announce: bool,
+        mut paranoid: Option<&mut ParanoidMaps>,
     ) {
         // The current graph/anger writes also run during initialization.
         // Initial saved-mask stores 0x004FA03A/0x004FA0B0 share the map-INI export
@@ -646,7 +716,14 @@ impl Simulation {
             return;
         }
         let context = crate::sim::world::UninitContext::new(rules, registry).with_effects(effects);
-        self.release_alliance_sight(context);
+        // 0x004F9FD8. Breaking an alliance takes `other` from `owner`'s mask
+        // and may take `owner` from `other`'s.
+        let mut edge_maps = BTreeSet::new();
+        if is_ally_by_object(Some(&self.house_alliances), &self.interner, owner, other) {
+            edge_maps = self.maps_keyed_like(other);
+            edge_maps.extend(self.maps_keyed_like(owner));
+        }
+        let walks = self.open_alliance_walks(paranoid.as_deref_mut(), edge_maps, true, context);
         // 0x004F9FDD..0x004F9FE2.
         update_anger_nodes(
             &mut self.houses,
@@ -695,7 +772,7 @@ impl Simulation {
             }
         }
         //4FA1DA is shared by changed-edge and no-edge paths.
-        self.admit_alliance_sight(context);
+        self.close_alliance_walks(walks, paranoid, context);
     }
 
     /// The human tail of MakeAlly (`0x004F9D4E..0x004F9F35`) and MakeEnemy
