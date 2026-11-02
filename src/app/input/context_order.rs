@@ -987,20 +987,10 @@ fn unit_repair_branch_orders(
             UnitRepairAction::Repair => {
                 output.consumed = true;
                 // Repair29 replaced Ctrl+Alt's base action before the mission
-                // producer; it sends Attack1, not the legacy Guard adapter.
-                let attack_modifier = if modifier == OrderModifier::GuardArea {
-                    OrderModifier::Normal
-                } else {
-                    modifier
-                };
-                let Some(command) = object_click_payload(
-                    sim,
-                    rules,
-                    order_mode,
-                    attack_modifier,
-                    id,
-                    target.stable_id,
-                ) else {
+                // producer; it sends Attack1, not a Guard.
+                let Some(command) =
+                    object_click_payload(sim, rules, order_mode, id, target.stable_id)
+                else {
                     continue;
                 };
                 command
@@ -1188,14 +1178,9 @@ fn attack_branch_orders(
                                 continue;
                             }
                             _ => {
-                                let Some(command) = object_click_payload(
-                                    sim,
-                                    rules,
-                                    order_mode,
-                                    OrderModifier::Normal,
-                                    id,
-                                    target_id,
-                                ) else {
+                                let Some(command) =
+                                    object_click_payload(sim, rules, order_mode, id, target_id)
+                                else {
                                     continue;
                                 };
                                 command
@@ -1721,9 +1706,10 @@ pub(super) fn guard_area_admitted(
         return false;
     }
     match target_id {
+        // The ally test (`Is_Ally_ByObject @ 0x004F9A90`) has no identity
+        // check: in a group, Ctrl+Alt on a member guards that member.
         Some(target_id) => {
-            actor_id != target_id
-                && actor.category() != EntityCategory::Aircraft
+            actor.category() != EntityCategory::Aircraft
                 && sim.entities().get(target_id).is_some_and(|target| {
                     crate::map::houses::is_allied_with(
                         sim.house_alliances().as_map(),
@@ -1817,16 +1803,9 @@ fn object_click_payload(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     order_mode: OrderMode,
-    modifier: OrderModifier,
     attacker_id: u64,
     target_id: u64,
 ) -> Option<Command> {
-    if modifier == OrderModifier::GuardArea {
-        return Some(Command::Guard {
-            entity_id: attacker_id,
-            target: Some(TargetKind::Entity(target_id)),
-        });
-    }
     let actor = sim.entities().get(attacker_id)?;
     // gamemd.exe InfantryClass::ClickedAction_Object 0x0051F190 (51F1C7)
     // and UnitClass::ClickedAction_Object 0x00738890 (7388D5) reject self Attack.
@@ -1860,9 +1839,11 @@ fn object_click_payload(
     })
 }
 
-/// The order one receiver commits for a click on another house's object:
-/// its own What_Action there, which the selection's click loop hands to its
-/// ClickedAction (`0x004AE829..0x004AE844`).
+/// The order one receiver commits for a click on another house's object,
+/// or an Alt or Ctrl+Alt click on any Techno: its own What_Action there,
+/// which the selection's click loop hands to its ClickedAction
+/// (`0x004AE829..0x004AE844`). The key rungs answer first
+/// ([`object_key_action`]).
 ///
 /// Unforced, that is [`attack_action`]'s answer. NoMove moves the receiver
 /// to the object or a Cell near it (Foot `0x004D74E0`), as an attack-move
@@ -1910,10 +1891,14 @@ fn object_attack_click_command(
             destination,
         ))
     };
-    if modifier == OrderModifier::GuardArea {
-        // The receiver's own key answer ([`object_key_action`]): the guard
-        // rung, else Alt's Move, which Foot's shroud rung may make NoMove.
-        return match object_key_action(
+    // The receiver's own key rungs ([`object_key_action`]) come before its
+    // attack rung: Ctrl+Alt's guard rung, else Alt's Move, which Foot's
+    // shroud rung may make NoMove. Shift's ToggleSelect belongs to the
+    // selection click, which handles it before this.
+    let key_action = if modifier == OrderModifier::Shift {
+        None
+    } else {
+        object_key_action(
             sim,
             rules,
             attacker_id,
@@ -1921,23 +1906,41 @@ fn object_attack_click_command(
             Some(target_id),
             modifier,
             force_move_key,
-        ) {
-            Some(ObjectKeyAction::GuardArea) => Some(Command::Guard {
-                entity_id: attacker_id,
-                target: Some(TargetKind::Entity(target_id)),
-            }),
-            Some(ObjectKeyAction::NoMove) => move_near(crate::sim::world::MoveAction::NoMove),
-            _ => move_near(crate::sim::world::MoveAction::Move),
-        };
+        )
+    };
+    match key_action {
+        // Foot ClickedAction_Object's AreaGuard case (`0x004D7543`) asks
+        // IsActive (vt+0x9C, `0x007010D0`) first and orders nothing
+        // without it, so an unarmed member of the group stays put.
+        Some(ObjectKeyAction::GuardArea) => {
+            return sim
+                .techno_is_active(attacker_id, rules)
+                .then_some(Command::Guard {
+                    entity_id: attacker_id,
+                    target: Some(TargetKind::Entity(target_id)),
+                });
+        }
+        Some(ObjectKeyAction::NoMove) => {
+            return move_near(crate::sim::world::MoveAction::NoMove);
+        }
+        Some(_) => return move_near(crate::sim::world::MoveAction::Move),
+        None => {}
     }
-    // Guard was classified above with hover. Every other receiver asks its
-    // own action, including Ctrl; forcing does not invent Attack admission.
+    // A receiver the player may not control (vt+0xA0) passes both key
+    // rungs (`0x00700191..0x00700217`) to the attack rung (`0x0070021A`),
+    // Ctrl still forcing it under Ctrl+Alt.
+    let forced = matches!(
+        modifier,
+        OrderModifier::ForceFire | OrderModifier::GuardArea
+    );
+    // Every other receiver asks its own action, including Ctrl; forcing
+    // does not invent Attack admission.
     match attack_action(
         sim,
         rules,
         attacker_id,
         &TargetKind::Entity(target_id),
-        modifier == OrderModifier::ForceFire,
+        forced,
         Some(overlay_registry),
     ) {
         // NoIvanBomb (`0x0051EB24`) orders nothing.
@@ -1960,6 +1963,11 @@ fn object_attack_click_command(
             return move_near(crate::sim::world::MoveAction::NoMove);
         }
         Some(InfantryAttackAction::Select) => return None,
+        // Residual (dormant): Foot's Capture and Sabotage cases
+        // (`0x004D7716`, `0x004D7788`) also refuse a receiver the player may
+        // not control (vt+0xA0); these arms do not ask. No retail Engineer,
+        // Spy or C4 infantryman can be bunkered, deactivated, paralysed or
+        // EMP'd, the states that reach the attack rung under Alt.
         Some(InfantryAttackAction::Infiltrate) => {
             return Some(Command::CaptureBuilding {
                 engineer_id: attacker_id,
@@ -1974,7 +1982,7 @@ fn object_attack_click_command(
         }
         _ => {}
     }
-    object_click_payload(sim, rules, order_mode, modifier, attacker_id, target_id)
+    object_click_payload(sim, rules, order_mode, attacker_id, target_id)
 }
 
 /// What `DisplayClass::BandBox_LeftUp @ 0x004AB9B0` does with the action
@@ -2987,6 +2995,26 @@ pub(crate) fn try_queue_context_order(
                 });
             let force_move_target = force_move_object.map(|(object, _)| object);
             consumed_attack_action |= force_move_target.is_some();
+            // When the cursor owner's key rungs refuse the Techno (vt+0xA0,
+            // `0x00700191..0x00700217`), its What_Action takes the attack
+            // rung (`0x0070021A`), Ctrl still forcing it under Ctrl+Alt, and
+            // that answer decides the release, as for a plain click.
+            let owner_key_refused = |target_id| {
+                cursor_owner(sim, &resources.rules, &current_objects, target_id).is_some_and(
+                    |owner| {
+                        object_key_action(
+                            sim,
+                            &resources.rules,
+                            owner,
+                            target_id,
+                            Some(target_id),
+                            key_modifier,
+                            force_move_key,
+                        )
+                        .is_none()
+                    },
+                )
+            };
 
             // Scroll693271..69328B gives the same picked object to action
             // and release. Re-picking with an empty viewer for Ctrl lost the
@@ -3007,6 +3035,11 @@ pub(crate) fn try_queue_context_order(
                                 target.kind,
                                 HoverTargetKind::EnemyUnit | HoverTargetKind::EnemyStructure
                             ))
+                        || (force_move
+                            && key_modifier != OrderModifier::Shift
+                            && force_move_object.is_none()
+                            && target.kind != HoverTargetKind::HiddenEnemy
+                            && owner_key_refused(target.stable_id))
                 })
                 .map(|target| target.stable_id);
             // Foot4DDDE0's hidden-cell wrapper rewrites a nonzero action
@@ -3015,15 +3048,17 @@ pub(crate) fn try_queue_context_order(
             // Attack5. The ordinary MTNK fall-through below takes Move; other
             // class/shroud combinations remain part of the shared-cell audit.
             if let Some(target_id) = attack_target {
+                // The cursor owner's attack rung, forced or not, decides
+                // the release; its guard or Alt Move rung dispatches.
+                let release_forced = match modifier {
+                    OrderModifier::Normal | OrderModifier::AttackMove => Some(false),
+                    OrderModifier::ForceFire => Some(true),
+                    OrderModifier::GuardArea => owner_key_refused(target_id).then_some(true),
+                    OrderModifier::ForceMove => Some(false),
+                    OrderModifier::Shift => None,
+                };
                 // Entries already dispatched the release.
-                if !consumed_entry_action
-                    && matches!(
-                        modifier,
-                        OrderModifier::Normal
-                            | OrderModifier::AttackMove
-                            | OrderModifier::ForceFire
-                    )
-                {
+                if !consumed_entry_action && let Some(forced) = release_forced {
                     // A selected building is a receiver as well: when it
                     // owns the cursor, its own answer decides the release.
                     match object_click_release(
@@ -3033,7 +3068,7 @@ pub(crate) fn try_queue_context_order(
                         &selected_ids,
                         target_id,
                         &resources.overlay_registry,
-                        modifier == OrderModifier::ForceFire,
+                        forced,
                     ) {
                         LeftRelease::Select => return false,
                         LeftRelease::Nothing => return true,
@@ -3056,6 +3091,26 @@ pub(crate) fn try_queue_context_order(
                         owner_id,
                         order_mode,
                         modifier,
+                        force_move_key,
+                        stable_id,
+                        target_id,
+                    ) else {
+                        continue;
+                    };
+                    payload
+                } else if let Some((_, Some(target_id))) = force_move_object
+                    && key_modifier != OrderModifier::Shift
+                {
+                    // Alt over a Techno: each receiver's own key rungs, and
+                    // the attack rung for one whose rungs refuse
+                    // ([`object_attack_click_command`]).
+                    let Some(payload) = object_attack_click_command(
+                        sim,
+                        &resources.rules,
+                        &resources.overlay_registry,
+                        owner_id,
+                        order_mode,
+                        key_modifier,
                         force_move_key,
                         stable_id,
                         target_id,
@@ -7132,11 +7187,9 @@ mod tests {
         let helicopter = sim
             .spawn_object("SHAD", "Americans", 16, 20, 0, rules)
             .unwrap();
-        let click = |mode, modifier, actor| {
-            object_click_payload(&sim, rules, mode, modifier, actor, target)
-        };
+        let click = |mode, actor| object_click_payload(&sim, rules, mode, actor, target);
         assert_eq!(
-            click(OrderMode::AttackMove, OrderModifier::Normal, tank),
+            click(OrderMode::AttackMove, tank),
             Some(Command::AttackMove {
                 entity_id: tank,
                 target: Some(TargetKind::Entity(target)),
@@ -7144,37 +7197,20 @@ mod tests {
             })
         );
         assert_eq!(
-            click(OrderMode::AttackMove, OrderModifier::Normal, helicopter),
+            click(OrderMode::AttackMove, helicopter),
             Some(Command::Attack {
                 attacker_id: helicopter,
                 target_id: target,
             })
         );
-        // Plain click and guard area are untouched by the promotion; force
-        // fire is promoted only in the attack-move mode, whose chord test
-        // passes before any key read (`0x00731BF0`).
-        for modifier in [OrderModifier::Normal, OrderModifier::ForceFire] {
-            assert_eq!(
-                click(OrderMode::Move, modifier, tank),
-                Some(Command::Attack {
-                    attacker_id: tank,
-                    target_id: target,
-                })
-            );
-        }
+        // Outside the attack-move mode the Attack stays plain, forced or
+        // not: the mode's chord test passes before any key read
+        // (`0x00731BF0`).
         assert_eq!(
-            click(OrderMode::AttackMove, OrderModifier::ForceFire, tank),
-            Some(Command::AttackMove {
-                entity_id: tank,
-                target: Some(TargetKind::Entity(target)),
-                destination: None,
-            })
-        );
-        assert_eq!(
-            click(OrderMode::Move, OrderModifier::GuardArea, tank),
-            Some(Command::Guard {
-                entity_id: tank,
-                target: Some(TargetKind::Entity(target)),
+            click(OrderMode::Move, tank),
+            Some(Command::Attack {
+                attacker_id: tank,
+                target_id: target,
             })
         );
     }
