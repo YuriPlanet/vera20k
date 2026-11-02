@@ -30,8 +30,16 @@ The policy permits only builds from `main` using exactly
 `.github/workflows/windows-signing-check.yml`, and requires maintainer approval.
 The CI user has only submission permission for this project/policy; the
 maintainer approves the requests. Do not approve them on the maintainer's behalf.
-If the SignPath GitHub App is required for the organization's policy, install it
-for this repository only.
+
+The diagnostic pins SignPath's official v2.3 action and its classic connector,
+which accepts the job's temporary, read-only GitHub token for basic origin
+verification. Keep the repository, branch, workflow and approval restrictions
+enabled. Review any connector-generation upgrade before changing this pin:
+the v3 connector requested the SignPath GitHub App for this organization, and
+that app requests repository and organization Administration write permissions.
+Such an installation requires a separate access decision even when its selected
+repository is limited to VERA20k. See the [GitHub integration documentation](https://docs.signpath.io/trusted-build-systems/github)
+and [connector history](https://docs.signpath.io/changelog/).
 
 The OSS subscription supplies its Authenticode watermark automatically. Keep
 the XML signing instructions as `<authenticode-sign />`; do not set `description`
