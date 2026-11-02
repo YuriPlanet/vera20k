@@ -19,6 +19,9 @@ import tempfile
 
 
 SCRIPT = Path(__file__).with_name("vera20k.iss")
+REPOSITORY = "YuriPlanet/vera20k"
+WORKFLOW = ".github/workflows/windows-signing-check.yml"
+PAYLOAD_ARTIFACT = "windows-signing-payload-unsigned"
 PACKAGE_FILES = {
     "vera20k.exe", "config.toml.example", "README.txt", "LICENSE-GPL",
     "LGPL-2.1-or-later.txt", "THIRD_PARTY_LICENSES.html",
@@ -288,6 +291,82 @@ def plain(package, output, version, build, name, iscc):
     return compiled_image(output, name)
 
 
+def github_json(endpoint):
+    """GH_TOKEN stays in the inherited environment; CLI diagnostics stay private."""
+    try:
+        result = subprocess.run(["gh", "api", endpoint], capture_output=True, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        raise RuntimeError("GitHub API request failed; CLI diagnostics suppressed.") from None
+    if result.returncode:
+        raise RuntimeError("GitHub API request failed; CLI diagnostics suppressed.")
+    try:
+        return json.loads(result.stdout)
+    except (ValueError, UnicodeError):
+        raise RuntimeError("GitHub API returned invalid JSON; CLI diagnostics suppressed.") from None
+
+
+def github_list(endpoint, key):
+    response = github_json(endpoint)
+    values = response.get(key) if isinstance(response, dict) else None
+    if (not isinstance(values, list) or response.get("total_count") != len(values)
+            or any(not isinstance(value, dict) for value in values)):
+        raise RuntimeError(f"Expected a complete GitHub {key} list.")
+    return values
+
+
+def reuse_info(run_id, current_sha):
+    """Select a preserved historical main payload for a non-publishing signing retry."""
+    if not re.fullmatch(r"[1-9][0-9]*", run_id) or not re.fullmatch(r"[0-9a-fA-F]{40}", current_sha):
+        raise RuntimeError("Expected a numeric run ID and full 40-hex current commit SHA.")
+    run_path = f"repos/{REPOSITORY}/actions/runs/{run_id}"
+    run = github_json(run_path)
+    repositories = [run.get(key) for key in ("repository", "head_repository")] if isinstance(run, dict) else []
+    if (not isinstance(run, dict) or run.get("id") != int(run_id)
+            or run.get("status") != "completed" or run.get("event") != "workflow_dispatch"
+            or run.get("head_branch") != "main" or run.get("path") != WORKFLOW
+            or len(repositories) != 2 or any(not isinstance(repo, dict)
+                or repo.get("full_name") != REPOSITORY or type(repo.get("id")) is not int
+                or repo["id"] <= 0 for repo in repositories)
+            or not isinstance(run.get("head_sha"), str)
+            or not re.fullmatch(r"[0-9a-fA-F]{40}", run["head_sha"])):
+        raise RuntimeError("Reuse requires a completed dispatch of the repository's main workflow.")
+    source_sha = run["head_sha"].lower()
+    comparison = github_json(f"repos/{REPOSITORY}/compare/{source_sha}...{current_sha.lower()}")
+    if not isinstance(comparison, dict) or comparison.get("status") not in {"ahead", "identical"}:
+        raise RuntimeError("The source commit must be an ancestor of the current commit.")
+    jobs = github_list(run_path + "/jobs?filter=latest&per_page=100", "jobs")
+    builds = [job for job in jobs if job.get("name") == "build"]
+    if (len(builds) != 1 or builds[0].get("run_id") != int(run_id)
+            or builds[0].get("status") != "completed" or builds[0].get("conclusion") != "success"):
+        raise RuntimeError("The source run must have one completed successful build job.")
+    # Recovery must trace directly to a compilation, not to another reuse job.
+    steps = builds[0].get("steps", [])
+    for name in ("Build Windows game and notices", "Prepare the game and uninstaller for signing"):
+        matches = [step for step in steps if isinstance(step, dict) and step.get("name") == name]
+        if (len(matches) != 1 or matches[0].get("status") != "completed"
+                or matches[0].get("conclusion") != "success"):
+            raise RuntimeError("The source run must have successful compilation and preparation steps.")
+    artifacts = github_list(run_path + "/artifacts?per_page=100", "artifacts")
+    candidates = [artifact for artifact in artifacts
+                  if artifact.get("name") == PAYLOAD_ARTIFACT and artifact.get("expired") is False]
+    if len(candidates) != 1:
+        raise RuntimeError("Expected exactly one nonexpired unsigned signing payload artifact.")
+    artifact = candidates[0]
+    linkage = artifact.get("workflow_run")
+    if (type(artifact.get("id")) is not int or artifact["id"] <= 0 or not isinstance(linkage, dict)
+            or linkage.get("id") != int(run_id) or linkage.get("head_sha") != source_sha
+            or linkage.get("head_branch") != "main"
+            or linkage.get("repository_id") != repositories[0]["id"]
+            or linkage.get("head_repository_id") != repositories[1]["id"]):
+        raise RuntimeError("The unsigned artifact provenance does not match the source run.")
+    return {"artifact_id": str(artifact["id"]), "source_sha": source_sha}
+
+
+def metadata(payload):
+    manifest = check_payload(payload, payload)
+    return {"version": manifest["version"], "name": manifest["name"]}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -312,6 +391,11 @@ def main():
     command.add_argument("--original-installer", type=Path, required=True)
     command.add_argument("--signed-directory", type=Path, required=True)
     command.add_argument("--fingerprint", required=True)
+    command = commands.add_parser("reuse-info")
+    command.add_argument("--run-id", required=True)
+    command.add_argument("--current-sha", required=True)
+    command = commands.add_parser("metadata")
+    command.add_argument("--payload", type=Path, required=True)
     args = vars(parser.parse_args())
     operation = args.pop("command")
     if operation == "package":
@@ -323,6 +407,12 @@ def main():
         result = "Authenticode signatures and signing certificate verified."
     elif operation == "verify-installer":
         result = verify_installer(**args)
+    elif operation in {"reuse-info", "metadata"}:
+        values = {"reuse-info": reuse_info, "metadata": metadata}[operation](**args)
+        if operation == "reuse-info":
+            print(f"Testing preserved payload from main run {args['run_id']} "
+                  f"(source SHA {values['source_sha']}).", file=sys.stderr)
+        result = "\n".join(f"{key}={value}" for key, value in values.items())
     else:
         result = {"prepare": prepare, "plain": plain}[operation](**args)
     print(result)

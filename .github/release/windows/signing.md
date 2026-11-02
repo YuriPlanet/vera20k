@@ -66,6 +66,11 @@ certificate is not a secret. The diagnostic checks its fingerprint before
 trusting it on the temporary runner, and verifies every signature against that
 same fingerprint.
 
+The runner imports that public test certificate into `LocalMachine\Root`,
+with its exact SHA256 checked before and after import. A `CurrentUser\Root`
+import can wait for an interactive trust prompt. This trust is confined to the
+disposable test VM; it is never installed on a player's machine.
+
 ## Installer signing order
 
 [`signing.py`](signing.py) owns the compiler commands for both ordinary packaging
@@ -88,10 +93,19 @@ and the diagnostic:
 Inno documents why the signed uninstaller also matters for temporary setup
 self-copies: [SignedUninstaller](https://jrsoftware.org/ishelp/topic_setup_signeduninstaller.htm).
 
-For an Inno compiler regression, dispatch the workflow with `packaging_only`
-enabled. It checks ordinary packaging and uninstaller preparation with inert
-fixture bytes, without compiling the game, accessing a signing token, or
-uploading the fixture to SignPath. Use the default mode for the real signing test.
+For a runner or Inno compiler regression, dispatch with `packaging_only`
+enabled. It checks noninteractive trust with a throwaway certificate, then
+ordinary packaging and uninstaller preparation with inert fixture bytes.
+It does not compile the game, access a signing token, or send fixtures to SignPath.
+
+To retry signing an existing game build, set `reuse_run_id` to its original
+compilation run's ID. The helper requires a completed main-branch run of this workflow with a
+successful build, a retained unsigned payload, and a source commit ancestral
+to the current run. It validates the original payload and preserves its name,
+version and build time. The log records the original source commit: this is a
+test of that earlier build, not a fresh build of the current source. The new
+signing job still requires maintainer approval. Leave this input empty for a
+fresh game build.
 
 ## Production follow-up
 

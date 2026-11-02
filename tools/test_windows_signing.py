@@ -1,5 +1,6 @@
 """Focused checks for staged Windows signing and strict certificate validation."""
 
+import copy
 import importlib.util
 import json
 from pathlib import Path
@@ -85,6 +86,7 @@ class WindowsSigningTests(unittest.TestCase):
 
             with patch.object(signing, "compile_setup", side_effect=prepare_compile):
                 signing.prepare(package, staging, "0.2.5", "20261102-120000", "vera20k-check", "ISCC")
+            self.assertEqual(signing.metadata(staging), {"version": "0.2.5", "name": "vera20k-check"})
             manifest = json.loads((staging / "manifest.json").read_text())
             original_bytes = {path.name: path.read_bytes() for path in staging.iterdir()}
             signed = root / "signed"
@@ -156,6 +158,43 @@ class WindowsSigningTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "Unexpected files"):
                     signing.verify_installer(original, image.parent, FINGERPRINT)
                 verifier.assert_not_called()
+
+    def test_reuse_requires_successful_main_build_and_ancestor_artifact(self):
+        source, current = "a" * 40, "b" * 40
+        run = {"id": 123, "status": "completed", "event": "workflow_dispatch", "head_branch": "main",
+               "head_sha": source, "path": ".github/workflows/windows-signing-check.yml",
+               "repository": {"id": 45, "full_name": "YuriPlanet/vera20k"},
+               "head_repository": {"id": 45, "full_name": "YuriPlanet/vera20k"}}
+        jobs = {"total_count": 1, "jobs": [{"run_id": 123, "name": "build",
+            "status": "completed", "conclusion": "success", "steps": [
+                {"name": "Build Windows game and notices", "status": "completed", "conclusion": "success"},
+                {"name": "Prepare the game and uninstaller for signing", "status": "completed",
+                 "conclusion": "success"}]}]}
+        artifacts = {"total_count": 1, "artifacts": [{"id": 678, "expired": False,
+            "name": "windows-signing-payload-unsigned", "workflow_run": {"id": 123,
+            "head_branch": "main", "head_sha": source, "repository_id": 45, "head_repository_id": 45}}]}
+        with patch.object(signing, "github_json", side_effect=[run, {"status": "ahead"}, jobs, artifacts]):
+            self.assertEqual(signing.reuse_info("123", current), {"artifact_id": "678", "source_sha": source})
+        wrong_branch = dict(run, head_branch="feature/elsewhere")
+        failed_build = copy.deepcopy(jobs)
+        failed_build["jobs"][0]["conclusion"] = "failure"
+        skipped_build = copy.deepcopy(jobs)
+        skipped_build["jobs"][0]["steps"][0]["conclusion"] = "skipped"
+        changed_artifact = copy.deepcopy(artifacts)
+        changed_artifact["artifacts"][0]["workflow_run"]["head_sha"] = current
+        for replies, reason in [([wrong_branch], "main workflow"),
+                                ([run, {"status": "diverged"}], "ancestor"),
+                                ([run, {"status": "ahead"}, failed_build], "successful build"),
+                                ([run, {"status": "ahead"}, skipped_build], "compilation and preparation"),
+                                ([run, {"status": "ahead"}, jobs, changed_artifact], "artifact provenance")]:
+            with self.subTest(reason=reason), patch.object(signing, "github_json", side_effect=replies):
+                with self.assertRaisesRegex(RuntimeError, reason):
+                    signing.reuse_info("123", current)
+        failed = subprocess.CompletedProcess([], 1, b"private CLI diagnostic", b"private CLI diagnostic")
+        with patch.object(signing.subprocess, "run", return_value=failed):
+            with self.assertRaises(RuntimeError) as caught:
+                signing.github_json("repos/YuriPlanet/vera20k/actions/runs/123")
+            self.assertNotIn("private CLI diagnostic", str(caught.exception))
 
 
 if __name__ == "__main__":
