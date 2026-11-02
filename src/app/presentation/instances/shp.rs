@@ -1585,14 +1585,18 @@ pub(crate) fn build_building_anim_instances(
             observer,
         );
         // Retain the preexisting material visibility policy while moving
-        // ordering. RESIDUAL: original Anim+178/199 visual-character producers
-        // are not all retained separately; cloaked/observer-dependent slots
-        // still borrow their building's material rather than native Anim state.
+        // ordering. RESIDUAL: the Anim+199 producer is not retained
+        // separately; slots take their building's material, and a fading
+        // building's +178 (`building_slot_anim_ramp`).
         // This does not gate on body viewport, lifecycle or anchor shroud.
         if !material.visible {
             continue;
         }
         let draw_state = material.state;
+        let fade_ramp = crate::render::draw_state::building_slot_anim_ramp(
+            building,
+            material.native_visual_state,
+        );
         let cell = (building.position.rx(), building.position.ry());
         let tint = grid.building_body_tint_at(cell);
         let extra_light = crate::app::presentation::lighting::body_extra_light(
@@ -1624,6 +1628,7 @@ pub(crate) fn build_building_anim_instances(
             axis.world_height,
             viewport,
             draw_state,
+            fade_ramp,
             state
                 .match_state
                 .match_presentation
@@ -1676,6 +1681,7 @@ fn emit_building_anims(
     world_height: f32,
     viewport: [f32; 4],
     draw_state: DrawState,
+    fade_ramp: u8,
     detail_level: i32,
 ) {
     let rules_image: &str = rules
@@ -1712,7 +1718,12 @@ fn emit_building_anims(
             continue;
         }
         // DrawIt's translucency selection (`0x00423061`): a building being
-        // erased draws its slot anims at 50%, or 75% for `DoubleThick=`.
+        // erased draws its slot anims at 50%, or 75% for `DoubleThick=`, and
+        // a fading one by the `+0x178` it wrote them.
+        let draw_runtime = crate::sim::anim_class::AnimDrawRuntime {
+            translucency_ramp: fade_ramp,
+            ..instance.draw_runtime()
+        };
         let Some(flags) = super::overlays::anim_instance_flags(
             Some(runtime_config),
             instance.draw_flags(),
@@ -1725,7 +1736,7 @@ fn emit_building_anims(
                 .unwrap_or(0),
             ),
             detail_level,
-            instance.draw_runtime(),
+            draw_runtime,
         ) else {
             continue;
         };

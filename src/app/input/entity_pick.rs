@@ -477,8 +477,8 @@ pub(crate) fn band_rect_contains_drawn_object(
 
 /// Whether `Tactical::PickObjectAtScreenPoint @ 0x006DA380` considers a
 /// Techno under the cursor: alive and out of limbo, and, unless the player
-/// owns it (`+0x41A`), not cloaked (CloakState 2) or on a cell the player's
-/// sensors cover. `+0x41A` is the owned-by-the-local-player byte
+/// owns it (`+0x41A`), not cloaked (CloakState 2) or with the cell of its
+/// GetCoords (`0x006DA425`) under the player's sensors. `+0x41A` is the owned-by-the-local-player byte
 /// (`TechnoClass::PointerExpired @ 0x007077C0` clears it with `pOwner`), so
 /// an ally's cloaked object is not exempt. `DisplayClass::ProcessClickCoords`
 /// asks the cloak test again of the object it returns (`0x00692529..0x0069257F`),
@@ -509,7 +509,7 @@ pub(crate) fn pick_admits_object(
             .cloak
             .as_ref()
             .is_some_and(|cloak| cloak.is_fully_cloaked())
-        || fog.has_sensor_for_house(player, entity.position.rx(), entity.position.ry())
+        || fog.senses_object_for_house(player, entity)
 }
 
 /// Would the local player see this object drawn right now? Presentation's
@@ -1305,11 +1305,30 @@ pub(crate) fn pick_object_at_point<'a>(
     match picked {
         CellObjectMember::Entity(id) => {
             let entity = entities.get(id)?;
-            (entity.discovery.owned_by_current_house() || !source.type_invisible(entity))
-                .then_some(picked)
+            (entity.discovery.owned_by_current_house()
+                || !source.type_invisible(entity) && !faded_out_unsensed(entity, fog, player))
+            .then_some(picked)
         }
         CellObjectMember::Terrain(_) => Some(picked),
     }
+}
+
+/// ProcessClickCoords' Building arm (`0x00692585..0x006925E6`): a nonlocal
+/// Building faded out (`+0x6ED` 15) is no object unless the player's sensors
+/// cover the cell of its GetCoords (vt+0x48, `CellClass::SensorCountForHouse
+/// @ 0x004870D0`). DetermineAction (`0x006926DB..0x0069272C`) and
+/// BandBox_LeftUp (`0x004ABE18..0x004ABE48`, through vt+0x328) repeat this
+/// test on the object it returns.
+fn faded_out_unsensed(
+    entity: &crate::sim::game_entity::GameEntity,
+    fog: Option<&FogState>,
+    player: Option<InternedId>,
+) -> bool {
+    entity.category() == EntityCategory::Structure
+        && entity.building_cloak_stage() == 15
+        && fog
+            .zip(player)
+            .is_some_and(|(fog, player)| !fog.senses_object_for_house(player, entity))
 }
 
 /// With nothing selected, DetermineAction (`0x00692610`, its no-selection arm

@@ -2075,10 +2075,7 @@ fn screen_visual_character(
         crate::sim::cloak_disguise::VisualCharacterQuery::screen(
             true,
             viewer.is_some(),
-            viewer.is_some_and(|viewer| {
-                sim.fog
-                    .has_sensor_for_house(viewer, entity.position.rx(), entity.position.ry())
-            }),
+            viewer.is_some_and(|viewer| sim.fog.senses_object_for_house(viewer, entity)),
             viewer.is_some_and(|viewer| allied(viewer, owner) && allied(owner, viewer)),
             !sim.session.game_mode_nonzero(),
             false,
