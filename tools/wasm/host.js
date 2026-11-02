@@ -23,6 +23,8 @@ const steps = { browser: $('#step-browser'), folder: $('#step-folder'), start: $
 // Ignore executable installers and development metadata. The same formats
 // may also appear in nested game resource folders.
 const RESOURCE = /\.(mix|mmx|yrm|map|ini|pkt|csf|fnt|wav|aud|shp|pal|vxl|hva|tmp|pcx|bik)$/i;
+// Red Alert 2's own map archive: the engine never mounts it, so it would only hold memory.
+const UNUSED = /^multi\.mix$/i;
 
 const TEXT = {
     en: {
@@ -302,7 +304,7 @@ function choose(entries) {
     selection = entries
         .filter(([path]) => path.startsWith(root))
         .map(([path, file]) => [path.slice(root.length), file])
-        .filter(([path]) => RESOURCE.test(path));
+        .filter(([path]) => RESOURCE.test(path) && !UNUSED.test(path));
 
     if (!selection.length) {
         showManifest(null);

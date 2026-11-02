@@ -1036,16 +1036,18 @@ impl App {
             &state.frontend.skirmish_modes,
         );
         // VERA: a saved index on an Online row (the list grew since it was
-        // saved) names no file here; it falls back like an index past the end.
+        // saved) names no file here. It moves to the first local map; with none,
+        // it goes past the end, which Start reports as no selected map.
         let shell = &mut state.frontend.skirmish_shell_state;
-        if state
-            .frontend
-            .scenario_catalog
+        let catalog = &state.frontend.scenario_catalog;
+        if catalog
             .records()
             .get(shell.selected_map_idx)
             .is_some_and(|record| record.is_online())
         {
-            shell.selected_map_idx = 0;
+            shell.selected_map_idx = catalog
+                .first_local_index()
+                .unwrap_or(catalog.records().len());
         }
         crate::ui::skirmish_shell::repair_teams_for_selected_mode(
             &mut state.frontend.skirmish_shell_state,
