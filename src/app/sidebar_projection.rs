@@ -363,7 +363,7 @@ impl SidebarProjectionState {
                     })
                     .collect()
             });
-            crate::sim::snapshot::SavedSidebarOrder::new(*owner, identities, strips.scroll_rows())
+            crate::sim::snapshot::SavedSidebarOrder::new(*owner, identities)
                 .with_flash(deadlines, redraw_until)
                 .with_requests(strips.saved_requests())
                 .with_factory_links(factory_links)
@@ -1333,7 +1333,7 @@ pub(crate) fn prepare_saved_order(
     if prediction_categories.len() != saved.prediction_categories().len() {
         return Err("saved sidebar has duplicate prediction categories".into());
     }
-    let (owner, saved_strips, scroll_rows) = saved.into_parts();
+    let (owner, saved_strips) = saved.into_parts();
     if sim.session().current_house() != Some(owner) || !sim.houses().contains_key(&owner) {
         return Err("saved sidebar owner differs from the loaded current house".into());
     }
@@ -1364,11 +1364,6 @@ pub(crate) fn prepare_saved_order(
         if identities.len() > 76 {
             return Err(format!(
                 "saved sidebar strip {index} exceeds native admission capacity"
-            ));
-        }
-        if scroll_rows[index] > identities.len().div_ceil(2).saturating_sub(1) {
-            return Err(format!(
-                "saved sidebar strip {index} has an invalid scroll row"
             ));
         }
         for (slot, id) in identities.into_iter().enumerate() {
@@ -1437,7 +1432,9 @@ pub(crate) fn prepare_saved_order(
             strips[index].push(item);
         }
     }
-    let mut strips = CameoStrips::from_retained(strips, scroll_rows);
+    // Load_Game_From_File 67E68F -> TabClass Init 6D03A0 -> SidebarClass Init
+    // 6A5310 -> ToggleSidebar 6A7D70 (0, then 1): every strip shows its top row.
+    let mut strips = CameoStrips::from_retained(strips, [0; 4]);
     strips.restore_flash(flash_deadlines, redraw_until);
     strips.restore_requests(request_states, sim.session().binary_frame() as i32);
     Ok(Some(PreparedSidebarOrder {
