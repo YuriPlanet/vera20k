@@ -48,9 +48,13 @@ or `description-url`, which would override that enforced watermark.
 The metadata restrictions require the product name `VERA20k` and the build's
 product version. Inno 7.1.0 leaves its uninstaller and setup resources padded with
 spaces: ProductName occupies 60 characters and ProductVersion occupies 50.
-The Inno XML matchers include that exact padding; the game's matchers remain
-unpadded. The helper emits `inno_version_json` as a JSON string so Actions and
-the SignPath parameter parser preserve the trailing spaces. See Inno's
+The Inno XML matchers include that exact padding after `${version}`; the game's
+matchers remain unpadded. Keep padding in the XML: SignPath strips trailing
+spaces from submitted parameter values. Before upload, `metadata` checks that
+both Inno matchers have the same ASCII-space suffix and that the expanded
+version occupies exactly 50 characters. If a version changes width (for example,
+`0.2.5` to `0.2.10`), adjust the suffix in both XML files and their SignPath portal
+configurations before retrying. See Inno's
 [resource writer](https://github.com/jrsoftware/issrc/blob/is-7_1_0/Projects/Src/Compiler.ExeUpdateFunc.pas)
 and [version resources](https://github.com/jrsoftware/issrc/blob/is-7_1_0/Projects/Src/Setup.version.rc).
 The installer can keep its visible `VERA` name. ZIP archives

@@ -16,6 +16,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 
 
 SCRIPT = Path(__file__).with_name("vera20k.iss")
@@ -364,11 +365,31 @@ def reuse_info(run_id, current_sha):
 
 def metadata(payload):
     manifest = check_payload(payload, payload)
-    # Inno 7.1.0's UpdateStringValue leaves the 50-character ProductVersion
-    # resource padded with spaces. JSON quotes preserve them through Actions
-    # outputs and the SignPath action's JSON-string parameter parser.
-    return {"version": manifest["version"], "name": manifest["name"],
-            "inno_version_json": json.dumps(manifest["version"].ljust(50))}
+    # Inno keeps a 50-character ProductVersion slot. SignPath trims parameter
+    # values, so the exact padding must be literal in both artifact XML files.
+    error = ("Update both SignPath XML files and both portal artifact configurations: "
+             "Inno ProductVersion requires ${version} plus the same ASCII-space suffix, "
+             "totaling 50 characters.")
+    suffixes = []
+    for filename, path in (("signpath-payload.xml", "uninstaller.exe"),
+                           ("signpath-installer.xml", "${installer}")):
+        try:
+            xml = ET.parse(SCRIPT.with_name(filename))
+        except (OSError, ET.ParseError):
+            raise RuntimeError(error) from None
+        matches = [file for file in xml.findall(".//{http://signpath.io/artifact-configuration/v1}pe-file")
+                   if file.get("path") == path]
+        if len(matches) != 1:
+            raise RuntimeError(error)
+        value = matches[0].get("product-version", "")
+        prefix = "${version}"
+        suffix = value[len(prefix):]
+        if not value.startswith(prefix) or suffix != " " * len(suffix):
+            raise RuntimeError(error)
+        suffixes.append(suffix)
+    if suffixes[0] != suffixes[1] or len(manifest["version"]) + len(suffixes[0]) != 50:
+        raise RuntimeError(error)
+    return {"version": manifest["version"], "name": manifest["name"]}
 
 
 def main():
