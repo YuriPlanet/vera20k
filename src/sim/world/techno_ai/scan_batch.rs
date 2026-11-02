@@ -164,6 +164,12 @@ struct ScannerKey {
     team: Option<(u64, bool)>,
     /// Its house's last lost building (`House+0x54E0`).
     lost_building: Option<u64>,
+    /// Its house's current enemy (`House+0x5600`), whose objects
+    /// `Calculate_Threat_Score @ 0x0070CD10` favours with
+    /// `EnemyHouseThreatBonus=`, and its All-To-Hunt latch (`House+0x249`).
+    /// A hit during the pass can move the enemy (ReceiveDamage `0x00701E68`
+    /// -> `HouseClass::UpdateAngerNodes @ 0x00504790`).
+    enemy: (Option<InternedId>, bool),
     /// GetFireError's firer half (`FireSubject::firer_part`), which the
     /// scan's candidate probes read: NavCom, speed, sequence, links and the
     /// rest.
@@ -173,6 +179,7 @@ struct ScannerKey {
 impl ScannerKey {
     fn of(world: &Simulation, entity: &GameEntity, obj: &ObjectType, rules: &RuleSet) -> Self {
         let position = &entity.position;
+        let house = world.houses.get(&entity.owner());
         Self {
             owner: entity.owner(),
             type_ref: entity.type_ref(),
@@ -202,10 +209,13 @@ impl ScannerKey {
                 entity,
             ),
             team: world.team_script_vm.team_for_member(entity.stable_id()),
-            lost_building: world
-                .houses
-                .get(&entity.owner())
-                .and_then(|house| house.lost_building()),
+            lost_building: house.and_then(|house| house.lost_building()),
+            enemy: house.map_or((None, false), |house| {
+                (
+                    house.enemy_house(),
+                    house.strategy_emergency().all_to_hunt_bias(),
+                )
+            }),
             fire: FireSubject {
                 world,
                 rules,

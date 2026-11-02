@@ -112,6 +112,67 @@ fn a_hunter_sees_a_hostile_admitted_during_the_pass_at_its_next_run() {
     assert_eq!(batched.batched_scans_used(), 2, "the next run's answer");
 }
 
+/// A hit during the pass can move the hunter's house's enemy (ReceiveDamage
+/// `0x00701E68` -> `HouseClass::UpdateAngerNodes @ 0x00504790`), whose
+/// objects `Calculate_Threat_Score @ 0x0070CD10` favours with
+/// `EnemyHouseThreatBonus=`. The pass-start answer scored the old enemy, so
+/// the hunter scans live and picks as native does at its turn.
+#[test]
+fn a_hunter_whose_house_changes_enemy_during_the_pass_scans_live() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &fixture.rules;
+    // Two sleeping tanks of two hostile houses, two cells west and east.
+    let scene = || {
+        let (mut sim, hunter) = hunting_tank_scene(rules);
+        let arabs = sim.interner.intern("Arabs");
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                arabs, 0, None, false, 0, 10,
+            ));
+        let west = sim
+            .spawn_object("HTNK", "Russians", 10, 12, 0, rules)
+            .unwrap();
+        let east = sim.spawn_object("HTNK", "Arabs", 14, 12, 0, rules).unwrap();
+        for id in [west, east] {
+            on_mission(&mut sim, id, MissionType::Sleep);
+        }
+        (sim, hunter, west, east)
+    };
+    let set_enemy = |sim: &mut Simulation, enemy: &str| {
+        let (owner, enemy) = (sim.interner.intern("Americans"), sim.interner.intern(enemy));
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .assign_enemy(Some(enemy));
+    };
+    let (mut serial, hunter, west, east) = scene();
+    let (mut batched, ..) = scene();
+    set_enemy(&mut batched, "Russians");
+    batched.batch_target_scans();
+    batched.answer_batched_scans(rules, None);
+    let batch = batched.scan_batch.as_ref().unwrap();
+    let answered = batch.answers.iter().find(|(id, _)| *id == hunter);
+    assert_eq!(
+        answered.and_then(|(_, answer)| answer.as_ref()?.outcome.target()),
+        Some(west),
+        "the pass-start answer picks the Russians' tank"
+    );
+    // An earlier turn's hit moves the enemy to the Arabs.
+    set_enemy(&mut serial, "Arabs");
+    set_enemy(&mut batched, "Arabs");
+    assert_eq!(
+        run_mission(&mut serial, rules, hunter),
+        Some(TargetKind::Entity(east))
+    );
+    assert_eq!(
+        run_mission(&mut batched, rules, hunter),
+        Some(TargetKind::Entity(east))
+    );
+    assert_eq!(batched.batched_scans_used(), 0, "the answer is not taken");
+}
+
 /// A save keeps the setting, in the bytes the retired empty struct wrote, but
 /// not a pass's answers; a game saved without batching resumes without it.
 #[test]
