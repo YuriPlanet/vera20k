@@ -10,7 +10,12 @@ Burst.NoDelay=false             ; boolean
 ```
 
 `Burst.NoDelay=yes` on a weapon with `Burst=2` or more makes an infantry or
-vehicle firer launch every remaining burst shot in the same frame. The
+vehicle firer launch every remaining burst shot in the same frame. Both hooks
+carry a second condition - `!DelayedFire.Duration.isset() ||
+DelayedFire.OnlyOnInitialBurst` (`src/Ext/Unit/Hooks.Firing.cpp:125`,
+`src/Ext/Infantry/Hooks.Firing.cpp:189`) - so a weapon that authors
+`DelayedFire.Duration=` without `OnlyOnInitialBurst=yes` keeps the ordinary one
+shot per frame. The
 `BurstDelay0..3` gaps are skipped, not shortened: the firer ends the frame with
 the rearm value that the *last* shot armed, which is the weapon's full `ROF`, so
 the next burst starts after a normal reload. Only infantry and vehicles are
@@ -38,7 +43,8 @@ loop it restarts `RearmTimer` with the last captured value.
   `Valueable<bool>` semantics) on `WeaponType`.
 - `sim/combat/world_fire.rs` - `resolve_attacker_fire` is `TechnoClass::Fire` and
   stays one shot per call, but it reports `FireReach::burst_repeat` when the
-  weapon carries the key, the category is infantry or vehicle, `Burst` is above
+  weapon carries the key, the delayed-fire gate above is open, the category is
+  infantry or vehicle, `Burst` is above
   1, the shot stepped the burst and the burst did not complete. The two class
   firing updates - `FireVisit::UnitTarget` and `FireVisit::InfantryTarget` in
   `visit_fire`, the sites Phobos hooks - answer that by running
@@ -64,7 +70,8 @@ opens the repeat again.
 ## Residuals
 
 - The delayed-fire subsystem is unported: `HandleDelayedFireWithPauseSequence`
-  (`src/Ext/Techno/Body.cpp:699-749`, called from the infantry firing update at
+  (`src/Ext/Techno/Body.cpp:699-749`, called from the unit firing update at
+  `src/Ext/Unit/Hooks.Firing.cpp:89` and `:103` and the infantry one at
   `src/Ext/Infantry/Hooks.Firing.cpp:118`), its nine other `DelayedFire.*` keys,
   the saved `DelayedFireTimer` / `DelayedFireWeaponIndex` /
   `DelayedFireSequencePaused` fields, the `GetRangedRandomOrSingleValue` draw and

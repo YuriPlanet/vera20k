@@ -265,7 +265,8 @@ pub struct WeaponType {
     #[cfg(feature = "phobos")]
     pub(crate) phobos_delayed_fire_duration: Option<crate::rules::ini_value::PartialIntPair>,
     /// Phobos `WeaponTypeExt::DelayedFire_OnlyOnInitialBurst` (`Body.cpp:197`,
-    /// `Valueable<bool>`, default false): the second half of that gate.
+    /// `Valueable<bool>` declared at `Body.h:105`, default false at `Body.h:201`):
+    /// the second half of that gate.
     #[cfg(feature = "phobos")]
     pub(crate) phobos_delayed_fire_only_on_initial_burst: bool,
     /// Phobos `WeaponTypeExt::CanTargetHouses` (`AffectedHouse::All` default),

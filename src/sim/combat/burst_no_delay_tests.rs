@@ -190,9 +190,15 @@ fn a_refused_repeat_restores_the_last_shots_rearm() {
             1,
             "{category}: the burst stopped mid-run instead of wrapping"
         );
+        let duration = entity.rearm_timer.duration();
         assert!(
-            entity.rearm_timer.remaining(100) > 0,
-            "{category}: the restore must write the first shot's gap back over the zero the refused attempt armed"
+            (1..=5).contains(&duration),
+            "{category}: the restore must write the first shot's mid-burst gap back, not the zero the refused attempt armed and not the full ROF"
+        );
+        assert_eq!(
+            entity.ammo().map(|ammo| ammo.current()),
+            Some(0),
+            "{category}: the repeat was refused by the spent round, not by another gate"
         );
     }
 }
