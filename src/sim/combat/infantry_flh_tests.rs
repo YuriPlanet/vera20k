@@ -176,6 +176,47 @@ fn a_tracked_laser_freezes_the_deployed_burst_offset() {
         rules.weapon("GUN").unwrap(),
         0,
     );
+    assert_eq!(
+        frozen_local_flh(&sim),
+        Flh::from([300, 60, 70]),
+        "SetLaserTrackingData stores GetBurstFLH's deployed row"
+    );
+}
+
+/// `Techno6FD210` mirrors the record fallback of the triple it stores
+/// (`Hooks.LaserDraw.cpp:277-287`) on the saved `CurrentBurstIndex`, and that
+/// stored triple is the base argument of the per-frame GetFLH sample. SIMC
+/// authors no burst rows, so its `500,10,10` record is what gets stored.
+#[test]
+fn a_tracked_laser_mirrors_the_record_offset_it_freezes() {
+    let mut sim = Simulation::new();
+    let rules = rules();
+    spawn(&mut sim, 1, "SIMC", false, false);
+    spawn(&mut sim, 2, "CHASER", false, false);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .expect("firer")
+        .weapon_burst
+        .advance();
+    laser::fired(
+        &mut sim,
+        &rules,
+        1,
+        TargetKind::Entity(2),
+        0,
+        rules.weapon("GUN").unwrap(),
+        0,
+    );
+    assert_eq!(
+        frozen_local_flh(&sim),
+        Flh::from([500, -10, 10]),
+        "an odd saved burst negates the stored record lateral"
+    );
+}
+
+/// The stored local FLH of the last laser that took firer tracking.
+fn frozen_local_flh(sim: &Simulation) -> Flh {
     let birth = *sim
         .lifecycle_outputs
         .iter()
@@ -185,10 +226,5 @@ fn a_tracked_laser_freezes_the_deployed_burst_offset() {
         })
         .last()
         .expect("laser birth");
-    let track = birth.track.expect("Firer tracking");
-    assert_eq!(
-        track.local_flh(),
-        Flh::from([300, 60, 70]),
-        "SetLaserTrackingData stores GetBurstFLH's deployed row"
-    );
+    birth.track.expect("Firer tracking").local_flh()
 }
