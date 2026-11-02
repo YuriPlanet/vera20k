@@ -269,6 +269,10 @@ directory, and the bind/peer endpoints exchanged. The output manifest's
 `lan.rounds[n].runtime.native_checksums` records per-frame checksums for each
 round. The live targets drive real Move/Stop input, results, lobby rematch and
 Main Menu return across two games.
+The `lan-live-timeout-host` and `lan-live-quit-host` targets pair with
+`lan-live-failure-guest` on the same endpoints. That guest plays the shared 300-frame
+prefix and then exits without leaving, so the host meets a real peer disappearance
+and either lets the connection time out or Quits from the wait dialog.
 This loopback example alone does not establish separate-machine or scale coverage.
 Normal players do not need these diagnostic flags. Validation results belong in
 the task's validation records, not the tree.

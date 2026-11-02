@@ -87,6 +87,10 @@ pub enum LanTarget {
     LiveGuest,
     LiveTimeoutHost,
     LiveQuitHost,
+    /// The timeout and quit hosts' guest: plays the shared 300-frame prefix,
+    /// then its process ends without leaving, so the host meets a real peer
+    /// disappearance.
+    LiveFailureGuest,
     LiveDesyncHost,
     LiveDesyncGuest,
     /// LAN Cooperative through BC6 Continue to the retried mission.
@@ -229,6 +233,7 @@ pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
     ("lan-live-guest", LanTarget::LiveGuest),
     ("lan-live-timeout-host", LanTarget::LiveTimeoutHost),
     ("lan-live-quit-host", LanTarget::LiveQuitHost),
+    ("lan-live-failure-guest", LanTarget::LiveFailureGuest),
     ("lan-live-desync-host", LanTarget::LiveDesyncHost),
     ("lan-live-desync-guest", LanTarget::LiveDesyncGuest),
     ("lan-live-coop-host", LanTarget::LiveCoopHost),
@@ -359,6 +364,7 @@ impl LanTarget {
                 | Self::LiveGuest
                 | Self::LiveTimeoutHost
                 | Self::LiveQuitHost
+                | Self::LiveFailureGuest
                 | Self::LiveDesyncHost
                 | Self::LiveDesyncGuest
                 | Self::LiveCoopHost
@@ -4369,6 +4375,11 @@ impl LanCapture {
                 | LanTarget::CoopNext
                 | LanTarget::CoopRetry
         )
+    }
+    pub(super) fn observes_every_frame(&self) -> bool {
+        self.live
+            .as_ref()
+            .is_some_and(|live| live.observes_every_frame())
     }
     pub(super) fn owns_simulation_steps(&self, state: &AppState) -> bool {
         if let Some(live) = &self.live {

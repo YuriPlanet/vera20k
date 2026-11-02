@@ -1733,6 +1733,12 @@ impl MoviesCapture {
         self.lan.as_ref()?.measurement_failure()
     }
 
+    pub(super) fn observes_every_frame(&self) -> bool {
+        self.lan
+            .as_ref()
+            .is_some_and(|lan| lan.observes_every_frame())
+    }
+
     pub(super) fn owns_simulation_steps(&self, state: &AppState) -> bool {
         if let Some(lan) = self.lan.as_ref() {
             return lan.owns_simulation_steps(state);

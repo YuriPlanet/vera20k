@@ -599,13 +599,10 @@ impl LiveLanCapture {
         })
     }
 
-    /// The hosts paired with `lan-live-guest` start only once it watched
+    /// The host paired with `lan-live-guest` starts only once it watched
     /// and plays again.
     fn waits_for_spectator(&self) -> bool {
-        matches!(
-            self.target,
-            LanTarget::LiveHost | LanTarget::LiveTimeoutHost | LanTarget::LiveQuitHost
-        )
+        self.target == LanTarget::LiveHost
     }
 
     /// In setup the guest picks Observer in its Side list: VERA's room
@@ -743,6 +740,14 @@ impl LiveLanCapture {
         self.rounds
             .as_ref()
             .map_or(self.phase == Phase::Finished, online::LiveRoundFlow::ready)
+    }
+
+    /// The battle observer checks each command at its execution boundary and
+    /// repair on consecutive frames. Ordinary pacing runs every due frame in
+    /// one pass, for example the next frame right after a network wait ends,
+    /// so the battle asks for one frame per render.
+    pub(super) fn observes_every_frame(&self) -> bool {
+        self.battle.is_some()
     }
 
     pub(super) fn owns_simulation_steps(&self, state: &AppState) -> bool {
@@ -1384,10 +1389,12 @@ impl LiveLanCapture {
             let battle = self.battle.as_mut().expect("battle target");
             battle.step(state, committed, host, &mut self.actions)?;
             if committed >= required_frames {
+                let missing = battle.missing(state)?;
                 ensure!(
-                    battle.finished(state)?,
-                    "Battle opening incomplete: {}",
-                    battle.phase()
+                    missing.is_empty(),
+                    "Battle opening incomplete: {}; missing {}",
+                    battle.phase(),
+                    missing.join(", ")
                 );
                 let live = state
                     .match_state
