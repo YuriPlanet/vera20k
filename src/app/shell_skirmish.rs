@@ -347,6 +347,10 @@ impl App {
                     "Must have more than one team to start a game!",
                 )
             }
+            // VERA: map archives are optional, so the list can be empty.
+            crate::skirmish_launch::LaunchValidationError::NoSelectedMap => {
+                "No maps were found. Add map files to the game folder.".to_string()
+            }
             _ => return None,
         };
         Some(crate::ui::skirmish_shell::SkirmishValidationModalState::new(message, ok))

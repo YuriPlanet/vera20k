@@ -168,6 +168,18 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+        let without_media = fixture();
+        for name in ["mapsmd03.mix", "multimd.mix", "movmd03.mix"] {
+            std::fs::remove_file(without_media.path().join(name)).unwrap();
+        }
+        assert_eq!(
+            check_and_write_report(without_media.path(), output.path()).unwrap(),
+            0
+        );
+        let optional = std::fs::read_to_string(output.path().join("optional.txt")).unwrap();
+        for name in ["mapsmd03.mix", "multimd.mix", "movies03.mix"] {
+            assert!(optional.contains(name), "missing {name} in {optional}");
+        }
         let valid = fixture();
         std::fs::write(
             valid.path().join("RA2MD.CSF"),

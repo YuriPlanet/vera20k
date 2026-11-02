@@ -2848,8 +2848,8 @@ fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>) {
             if quick_match {
                 // 0x0078A36C..0x0078A386: modes 1-3 skip C2; the game
                 // channel's nodes run without a dialog.
-                App::open_host_setup(state, false);
-                super::quick_match::created(state, true);
+                let opened = App::open_host_setup(state, false);
+                super::quick_match::created(state, opened);
             } else if buddy {
                 // 0x116 has ended: C2 opens over the empty backdrop.
                 commit_create(state, observe);
