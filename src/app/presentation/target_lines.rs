@@ -86,7 +86,6 @@ impl TargetLineState {
         self.unit_action_lines_enabled = enabled;
     }
 
-    #[cfg(test)]
     pub(crate) fn unit_action_lines_enabled(&self) -> bool {
         self.unit_action_lines_enabled
     }
