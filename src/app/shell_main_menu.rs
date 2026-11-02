@@ -1184,6 +1184,10 @@ impl App {
             state.audio.launcher_audio_available,
             displays,
         );
+        let mut dialog = dialog;
+        if let Some(tab) = state.frontend.options_reopen_at.take() {
+            dialog.show_tab(tab);
+        }
         state.frontend.options_dialog = Some(dialog);
     }
 
@@ -1285,6 +1289,18 @@ impl App {
         state: &mut AppState,
         result: crate::ui::main_menu_dialogs::options::LauncherParentResult,
     ) {
+        // The key page and Network settings are children of Options: closing
+        // one reopens the dialog on the tab the player left. Back and Terminal
+        // end the dialog for good.
+        state.frontend.options_reopen_at = match result {
+            crate::ui::main_menu_dialogs::options::LauncherParentResult::Network
+            | crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard => state
+                .frontend
+                .options_dialog
+                .as_ref()
+                .map(|dialog| dialog.tab()),
+            _ => None,
+        };
         let Some(dialog) = state.frontend.options_dialog.take() else {
             return;
         };
@@ -1309,7 +1325,7 @@ impl App {
             state.match_state.input.cursor_y as i32,
         );
         let layout =
-            crate::app::frontend::shell_layout::launcher_options_layout(state, dialog.page());
+            crate::app::frontend::shell_layout::launcher_options_layout(state, dialog.tab());
         match down {
             Some(true) => dialog.shell_mouse_down(x, y, &layout),
             Some(false) => dialog.shell_mouse_up(x, y, &layout),

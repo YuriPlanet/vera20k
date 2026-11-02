@@ -1360,7 +1360,7 @@ mod tests {
                 LauncherOptionsLayout::new(
                     width as i32,
                     height as i32,
-                    crate::ui::main_menu_dialogs::options::OptionsPage::Main,
+                    crate::ui::main_menu_dialogs::options::Category::Display,
                 )
                 .trackbars
                 .into_iter()

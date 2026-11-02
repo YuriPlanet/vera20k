@@ -155,9 +155,8 @@ impl ShellSlideKind {
 
     /// The dialog's slide column with the panel's `rows` tile rows. Every
     /// rendered shell has a `slide` table entry, so a miss is a programming
-    /// error. Options' two pages adjust `0xD5`'s retail column to VERA's
-    /// buttons: the main page slides Vera Options under Network too, and
-    /// VERA's page slides Check for Updates above Back.
+    /// error. Options is tabbed: its pages keep every control on the left, so
+    /// `0xD5`'s retail column drops its top buttons and slides Back alone.
     pub(crate) fn column(self, rows: u32, page: Option<&MenuPageSpec>) -> SlideColumn {
         let spec = crate::ui::shell::slide::slide_spec_for(self.dialog_id())
             .expect("rendered shell dialog must have a slide column");
@@ -165,12 +164,10 @@ impl ShellSlideKind {
         // WOL's simplified pages must slide only their visible buttons too.
         let top_buttons = page.map_or_else(
             || match self {
-                ShellSlideKind::Options => spec.top_buttons + 1,
-                ShellSlideKind::VeraOptions => {
-                    crate::ui::main_menu_dialogs::options::shell::VERA_OPTIONS_PAGE
-                        .stacked
-                        .len() as u32
-                }
+                // The tabbed page keeps every control on the left and only
+                // Back in the retail column, so the slide must not paint the
+                // old Keyboard, Network and Vera Options faces.
+                ShellSlideKind::Options | ShellSlideKind::VeraOptions => 0,
                 _ => spec.top_buttons,
             },
             |page| page.stacked.len() as u32,
@@ -1544,19 +1541,19 @@ mod tests {
         );
         assert_eq!(top_and_bottom(ShellSlideKind::MovieList), (1, true, false));
         assert_eq!(top_and_bottom(ShellSlideKind::Skirmish), (2, true, true));
-        // Retail `0xD5` slides Keyboard and Network; VERA's main page adds
-        // Vera Options under them, and VERA's page slides Check for Updates
-        // above Back.
+        // Retail `0xD5` slides Keyboard and Network, but this build's tabbed
+        // page keeps them on the left: only Back is left in the column, so
+        // the slide never paints the retired button faces.
         assert_eq!(
             crate::ui::shell::slide::slide_spec_for(DialogId(0x00D5))
                 .unwrap()
                 .top_buttons,
             2
         );
-        assert_eq!(top_and_bottom(ShellSlideKind::Options), (3, true, false));
+        assert_eq!(top_and_bottom(ShellSlideKind::Options), (0, true, false));
         assert_eq!(
             top_and_bottom(ShellSlideKind::VeraOptions),
-            (1, true, false)
+            (0, true, false)
         );
     }
 

@@ -1175,6 +1175,7 @@ impl App {
                 startup_intro_pending: false,
                 shell_message_box: None,
                 options_dialog: None,
+                options_reopen_at: None,
                 keyboard_dialog: None,
                 movie_list: None,
                 movie_list_selection: -1,
