@@ -78,6 +78,9 @@ pub(crate) const RIGHT_CLICK_ORDERS_HELP: &str =
 pub(crate) const LOCK_CURSOR_LABEL: &str = "Lock Cursor to Window";
 pub(crate) const LOCK_CURSOR_HELP: &str =
     "Keep the mouse inside the game window. Ctrl+Alt+L frees it until you click in the game.";
+pub(crate) const VERA_ICON_LABEL: &str = "VERA Icon";
+pub(crate) const VERA_ICON_HELP: &str =
+    "Show VERA's own icon instead of Red Alert 2's red star on the game window, taskbar and Dock.";
 pub(crate) const SHIFT_QUEUE_LABEL: &str = "Shift-Click Batch Queue";
 pub(crate) const DEVELOPER_OPTIONS_LABEL: &str = "Developer Options";
 pub(crate) const WOL_TEST_SERVICE_LABEL: &str = "Offline Internet Test Service";
@@ -517,6 +520,10 @@ pub(crate) enum LauncherCheckboxId {
     /// VERA's cursor lock: the pointer stays inside the game window. It
     /// applies at once and is saved.
     LockCursor,
+    /// VERA's own box: the window, taskbar and Dock show VERA's artwork
+    /// instead of Red Alert 2's red star (`app::window_icon`). It applies at
+    /// once and is saved; the installed program's own icon stays the red star.
+    VeraIcon,
     /// VERA's developer box: the window's FPS readout. Like Full Screen it
     /// shows and changes live state at once, and is never saved: the readout
     /// starts hidden at every launch.
@@ -577,6 +584,7 @@ pub(crate) enum LauncherOptionsEvent {
     MouseWheelZoomChanged(bool),
     RightClickOrdersChanged(bool),
     LockCursorChanged(bool),
+    VeraIconChanged(bool),
     FpsCounterChanged(bool),
     SkipStartupLogoChanged(bool),
     CustomEndGameBannerChanged(bool),
@@ -626,6 +634,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) mouse_wheel_zoom: bool,
     pub(crate) right_click_orders: bool,
     pub(crate) lock_cursor: bool,
+    pub(crate) vera_icon: bool,
     pub(crate) shift_queue: bool,
     pub(crate) wol_test_service: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
@@ -667,6 +676,7 @@ impl Default for LauncherOptionsValues {
             mouse_wheel_zoom: false,
             right_click_orders: false,
             lock_cursor: true,
+            vera_icon: false,
             shift_queue: false,
             wol_test_service: false,
             fps_counter: false,
@@ -1038,6 +1048,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::MouseWheelZoom => &mut self.values.mouse_wheel_zoom,
             LauncherCheckboxId::RightClickOrders => &mut self.values.right_click_orders,
             LauncherCheckboxId::LockCursor => &mut self.values.lock_cursor,
+            LauncherCheckboxId::VeraIcon => &mut self.values.vera_icon,
             LauncherCheckboxId::FpsCounter => &mut self.values.fps_counter,
             LauncherCheckboxId::SkipStartupLogo => &mut self.values.skip_startup_logo,
             LauncherCheckboxId::CustomEndGameBanner => &mut self.values.custom_end_game_banner,
@@ -1076,6 +1087,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::LockCursor => self
                 .pending_events
                 .push(LauncherOptionsEvent::LockCursorChanged(checked)),
+            LauncherCheckboxId::VeraIcon => self
+                .pending_events
+                .push(LauncherOptionsEvent::VeraIconChanged(checked)),
             LauncherCheckboxId::FpsCounter => self
                 .pending_events
                 .push(LauncherOptionsEvent::FpsCounterChanged(checked)),

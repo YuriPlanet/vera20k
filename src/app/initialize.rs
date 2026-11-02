@@ -446,11 +446,17 @@ impl App {
             window_attrs = window_attrs.with_borderless_game(true);
         }
         // Capture windows stay hidden, so only a visible session shows the icon.
-        let retail_icon = game_config
-            .as_ref()
-            .filter(|_| window_visible)
-            .and_then(|config| super::window_icon::RetailIcon::load(&config.paths.ra2_dir));
-        if let Some(icon) = &retail_icon {
+        let window_icon = window_visible
+            .then(|| {
+                super::window_icon::WindowIcon::chosen(
+                    options_profile.vera_icon,
+                    game_config
+                        .as_ref()
+                        .map(|config| config.paths.ra2_dir.as_path()),
+                )
+            })
+            .flatten();
+        if let Some(icon) = &window_icon {
             window_attrs = icon.apply(window_attrs);
         }
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
@@ -490,7 +496,7 @@ impl App {
         // `show_os_cursor_only_without_game_cursor` owns the cursor.
         window.set_cursor_visible(false);
         #[cfg(target_os = "macos")]
-        if let Some(icon) = &retail_icon {
+        if let Some(icon) = &window_icon {
             icon.set_dock_icon();
         }
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
