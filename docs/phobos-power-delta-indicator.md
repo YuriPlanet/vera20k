@@ -52,6 +52,15 @@ the same timer `HouseClass::CreatePowerOutage @ 0x50BC90` starts for a spy.
 `Sidebar.PowerDelta.Align` is a `TextAlign` whose values (`0x000/0x100/0x200`)
 are exactly the `TextPrintType` left/centre/right bits, so Phobos ORs them
 straight into the draw flags; the harvester and weeds branches hardcode centre.
+`read<TextAlign>` (`src/Utilities/TemplateDef.h:1089-1110`) also spells a fifth
+value, `none` = `TextAlign::None` = `0xFFF` (`src/Utilities/Enum.h:234-241`),
+which the hook ORs whole into the same draw flags (`src/Misc/Hooks.UI.cpp:169-172`):
+the font nibble (`Fonts = 0xF`), all four shadow choices (`0x10`, `0x20`, `0x40`,
+`0x80`), both alignment bits `0x100|0x200` and `Background` `0x400` at once
+(YRpp `GeneralDefinitions.h:245-271`). VERA keeps that spelling as rejected text
+and records it here permanently: drawing it means decoding the whole
+`TextPrintType` font and shadow selection, which VERA models for no sidebar
+string, and the value is a degenerate spelling no retail layer authors.
 
 ## Where VERA20K owns it
 
@@ -75,15 +84,21 @@ straight into the draw flags; the harvester and weeds branches hardcode centre.
 ## Residuals
 
 - Trigger: the label glyph, or any digit, is a codepoint the loaded font table
-  has no entry for. Effect: VERA draws its missing-glyph placeholder. Retail
-  `GAME.FNT` has no `⚡` (U+26A1); Phobos documents the same and points at its
-  enhanced font pack, so a real check of this indicator needs that pack and a
-  running game.
+  has no entry for. Effect: VERA draws its **own** stand-in — the inverted `°`
+  that `render/bit_font.rs:622-635` synthesizes from `MISSING_GLYPH_CODEPOINT`
+  (`0xB0`), chosen in `b5c4768d1` with no native citation behind it. What gamemd
+  does with an out-of-range codepoint is not established: the `GAME.FNT` name has
+  no file-backed literal in the inspected image (the engine reaches the font
+  through its MIX name table), so the string-draw entry point is still unlocated.
+  Retail `GAME.FNT` has no `⚡` (U+26A1) either; Phobos documents the same and
+  points at its enhanced font pack, so a real check of this indicator needs that
+  pack and a running game. Tracked as #3613 — do not treat the placeholder as
+  native behavior.
 - Trigger: `Sidebar.PowerDelta.Align=none`. Effect: VERA treats it as rejected
   text and keeps the previous alignment, where Phobos ORs `TextAlign::None`
-  (`0xFFF`) into the flags, which also sets its font-size bits.
-- Trigger: a label key the CSF table does not hold. Effect: VERA keeps the glyph
-  default where native renders `MISSING:'<key>'`.
+  (`0xFFF`) into the flags, which also sets its font-size bits. Kept on purpose,
+  with the whole bit set listed above; #3614 resolves on that record rather than
+  on a guess.
 - The harvester counter (`[HarvesterCounter](phobos-harvester-counter.md)`) and
   the weeds counter (`WeedsCounter.*`) are the other two branches of `0x4A25E0`.
   The weeds branch still needs the unported TS weeds mechanic for its number.

@@ -650,11 +650,7 @@ pub(crate) fn finish_presentation_assets(
         .map(|bytes| {
             crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi::from_uimd_bytes(
                 bytes,
-                &|label| {
-                    csf.as_ref()
-                        .and_then(|table| table.get(label))
-                        .map(|text| text.to_string())
-                },
+                &sidebar_label_lookup(csf.as_ref()),
             )
         })
         .unwrap_or_default();
@@ -754,6 +750,21 @@ pub(crate) fn finish_presentation_assets(
     })
 }
 
+/// The string-table half of `GeneralUtils::LoadStringOrDefault`
+/// (`src/Utilities/GeneralUtils.cpp:37-43`), which the indicator label reads use
+/// rather than `LoadStringUnlessMissing`: a non-blank key is asked of the loaded
+/// table, and a key the table does not hold answers with native's visible
+/// `MISSING:'<key>'` marker (`CsfFile::text`), so a mis-authored `uimd.ini` label
+/// shows up as that text instead of silently keeping the glyph default. With no
+/// table loaded at all there is nothing to ask, and the caller's default stands,
+/// as for the other `csf.text` loaders here.
+#[cfg(feature = "phobos")]
+pub(crate) fn sidebar_label_lookup(
+    table: Option<&crate::assets::csf_file::CsfFile>,
+) -> impl Fn(&str) -> Option<String> {
+    move |label| table.map(|table| table.text(label).into_owned())
+}
+
 #[cfg(test)]
 #[path = "init_helpers_retail_placement_oracle_tests.rs"]
 mod retail_placement_oracle_tests;
@@ -789,6 +800,25 @@ fn voxel_palette_demand(
 
 #[cfg(test)]
 mod tests {
+    /// `LoadStringOrDefault` asks the table for any non-blank key, and a key the
+    /// table does not hold answers with native's `MISSING:'<key>'` marker. The
+    /// indicator reads use that loader, not `LoadStringUnlessMissing`, so a
+    /// mis-authored `uimd.ini` label shows the marker instead of keeping its
+    /// glyph default.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn a_missing_indicator_label_resolves_to_the_native_marker() {
+        use super::sidebar_label_lookup;
+        let table = crate::assets::csf_file::test_csf(&[("UI:PHOBOS:PowerLabel", "PWR")]);
+        let lookup = sidebar_label_lookup(Some(&table));
+        assert_eq!(lookup("UI:PHOBOS:PowerLabel").as_deref(), Some("PWR"));
+        assert_eq!(
+            lookup("UI:PHOBOS:Typo").as_deref(),
+            Some("MISSING:'UI:PHOBOS:Typo'"),
+            "a key the table lacks stays visible, as native's StringTable leaves it"
+        );
+    }
+
     /// Building animations are tolerant roots, and only those the rules
     /// register as AnimTypes: art sections no rules list names (retail
     /// `[CAARAY]`) must not become required assets.

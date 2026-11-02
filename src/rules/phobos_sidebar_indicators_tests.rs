@@ -9,7 +9,11 @@ use crate::rules::ruleset::RuleSet;
 
 fn uimd(text: &str) -> SidebarIndicatorsUi {
     SidebarIndicatorsUi::from_ini(&IniFile::from_str(text), &|label| {
-        (label == "UI:PHOBOS:PowerLabel").then(|| "PWR".to_string())
+        Some(
+            (label == "UI:PHOBOS:PowerLabel")
+                .then(|| "PWR".to_string())
+                .unwrap_or_else(|| format!("MISSING:'{label}'")),
+        )
     })
 }
 
@@ -37,12 +41,14 @@ fn the_sidebar_switch_and_thresholds_default_to_off_and_the_source_fractions() {
 }
 
 #[test]
-fn the_labels_fall_back_to_the_glyphs_unless_the_key_resolves() {
-    // Absent section, absent key and `<none>` all keep the literal glyph.
+fn the_glyph_default_covers_blank_values_and_a_missing_key_shows_the_marker() {
+    // Absent section, absent key, empty text and both `IsBlank` spellings keep
+    // the literal glyph; `IsValidString` never asks the table for them.
     for text in [
         "",
         "[Sidebar]\n",
         "[ToolTips]\nPowerLabel=<none>\nPowerBlackoutLabel=\n",
+        "[ToolTips]\nPowerLabel=NONE\nPowerBlackoutLabel=<None>\n",
     ] {
         let ui = uimd(text);
         assert_eq!(ui.power_label, "\u{26A1}");
@@ -52,11 +58,12 @@ fn the_labels_fall_back_to_the_glyphs_unless_the_key_resolves() {
     // A key the string table holds is resolved at load, as Phobos does.
     let ui = uimd("[ToolTips]\nPowerLabel=UI:PHOBOS:PowerLabel\n");
     assert_eq!(ui.power_label, "PWR");
-    // An unknown key keeps the glyph default (VERA's documented stand-in for
-    // native's MISSING: text).
+    // A key it does not hold stays visible: `LoadStringOrDefault` returns
+    // whatever `StringTable::LoadString` produced, and Phobos deliberately does
+    // not use `LoadStringUnlessMissing` here (`GeneralUtils.cpp:37-48`).
     assert_eq!(
         uimd("[ToolTips]\nPowerLabel=UI:NO:SUCH\n").power_label,
-        "\u{26A1}"
+        "MISSING:'UI:NO:SUCH'"
     );
 }
 
