@@ -988,7 +988,11 @@ pub(super) fn capability_cursor_for_hover(
         if key_action == Some(super::context_order::ObjectKeyAction::NoMove) {
             return CursorFeedbackKind::Invalid;
         }
-        if modifier == OrderModifier::ForceFire {
+        // Ctrl+Alt's refused key rungs leave Ctrl forcing the attack rung
+        // (`0x00700191..0x0070021A`).
+        if modifier == OrderModifier::ForceFire
+            || (modifier == OrderModifier::GuardArea && key_action.is_none())
+        {
             if let Some(kind) = force_fire_feedback(
                 sim,
                 best_id,

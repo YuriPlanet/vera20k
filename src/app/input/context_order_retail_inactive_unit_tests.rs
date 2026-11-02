@@ -76,25 +76,11 @@ fn retail_inactive_gi_refuses_object_attack_but_keeps_cell_attack() {
         .deactivated
         .set_for_test(false);
     assert_eq!(
-        object_click_payload(
-            &sim,
-            rules,
-            OrderMode::Move,
-            OrderModifier::ForceFire,
-            gi,
-            gi
-        ),
+        object_click_payload(&sim, rules, OrderMode::Move, gi, gi),
         None
     );
     assert_eq!(
-        object_click_payload(
-            &sim,
-            rules,
-            OrderMode::Move,
-            OrderModifier::Normal,
-            gi,
-            enemy
-        ),
+        object_click_payload(&sim, rules, OrderMode::Move, gi, enemy),
         Some(Command::Attack {
             attacker_id: gi,
             target_id: enemy
