@@ -106,6 +106,8 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState) {
 /// 0x006CE1A0 for each Defense-strip Super and stops only when no entry passes.
 /// This is the single Rust update step combining that result with ready
 /// buildings before the shared SidebarGadgetState advances its flash phase.
+/// The house's active views are exactly the Defense strip's Super candidates,
+/// so polling them equals polling the strip below its 75-entry cap.
 fn update_tab_flashes_for_owner(
     gadgets: &mut SidebarGadgetState,
     ready_building_tabs: [bool; 2],
