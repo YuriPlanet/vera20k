@@ -125,6 +125,9 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
             crate::app::input::radar::cursor(state),
         ));
     }
+    // SBGadget::Action 6ABA40 sets the normal cursor, but its flags (8,
+    // 6A4C12) admit only LEFTUP. Residual: with the left button held over the
+    // sidebar native keeps the last cursor set; VERA shows the normal one.
     if current_sidebar_view_hit(state) {
         return None;
     }

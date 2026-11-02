@@ -14,6 +14,7 @@ use super::SidebarTab;
 
 /// The request retained by a cameo before its queued event reaches the Factory.
 /// Native Select6AB80D writes status1; Right6AB0C9 changes it to status2.
+/// Draw's status3 case (6A98DA) has no writer: Action stores only 0, 1 and 2.
 /// This is a local input/presentation state, not a second production queue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CameoRequestState {
