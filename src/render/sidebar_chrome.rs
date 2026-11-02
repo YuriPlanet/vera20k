@@ -60,6 +60,10 @@ const UNKNOWN_TOP_HOUSING_ID: i32 = 0x7AEBAE6Bu32 as i32;
 const UNKNOWN_MID_PANEL_ID: i32 = 0xB0259C24u32 as i32;
 const ALLIED_SIDE_ARCHIVE_ORDER: &[&str] = &["sidec01md.mix", "sidec01.mix", "sidenc01.mix"];
 const SIDE_TWO_ARCHIVE_ORDER: &[&str] = &["sidec02md.mix", "sidec02.mix", "sidenc02.mix"];
+// SidebarClass::LoadSHPs 6A5840 loads SIDE1..3, ADDON, GCLOCK2 and the button
+// shapes (FreeSHPs 6A5BF0 frees them). Its observer flag shapes feed only
+// StripClass::Draw's observer strip (6AA0DA), which ordinary skirmish never
+// shows: only network setups make an observer.
 const GENERIC_SIDEBAR_SHP_NAMES: &[&str] = &[
     "side1.shp",
     "side2.shp",
@@ -273,8 +277,8 @@ impl SidebarDarkenMask {
         assets: &AssetManager,
         palette: &Palette,
     ) -> Option<Self> {
-        // Original6A500B..6A5018: literal DARKEN.SHP through LoadFileFromMIX,
-        // not the side-only generic chrome resolver.
+        // SidebarClass::One_Time 6A5000 (6A500B..6A5018): literal DARKEN.SHP
+        // through LoadFileFromMIX, not the side-only generic chrome resolver.
         let source = assets.load_file_from_mix("DARKEN.SHP")?;
         log::info!("Sidebar DARKEN.SHP resolved from {}", source.source_archive);
         Self::from_bytes(&gpu.device, &gpu.queue, batch, &source.bytes, palette)

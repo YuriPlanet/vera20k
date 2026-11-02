@@ -487,6 +487,10 @@ fn sidebar_button_tip_text(
 /// between the name and the price, so a Grizzly Battle Tank cameo tip is four
 /// stacked lines — `Grizzly` / `Battle` / `Tank` / `$700` — not one line and
 /// not a name/price pair.
+///
+/// StripClass::GetCameoTooltip 6A92E0, which returns a super weapon's bare
+/// name. Its `TXT_MONEY_FORMAT_1` branch and DrawCameoText 6AC480 need
+/// ShowCameoNames (+0x53A4), which only the constructor 6A4E60 writes (0).
 fn cameo_tip_text(money_format: Option<&str>, name: &str, cost: Option<i64>) -> String {
     let formatted = match (money_format, cost) {
         (Some(fmt), Some(cost)) => format_csf(fmt, &[CsfArg::Str(name), CsfArg::Int(cost)]),

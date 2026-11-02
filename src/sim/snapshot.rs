@@ -60,7 +60,8 @@ pub enum SavedCameoId {
 /// the restored simulation, canonical rules and current process string table.
 /// Strip indices are building, defense, infantry and vehicle, respectively.
 ///
-/// Mouse Save5BE6D0 writes the whole 0x556C object at5BE715..5BE71C, including
+/// SidebarClass Save 6AC5E0 / Load 6AC5D0 only forward to RadarClass; Mouse
+/// Save5BE6D0 writes the whole 0x556C object at5BE715..5BE71C, including
 /// four strips at +1544, stride F94. Load5BDF70 reads it at5BE089..5BE092;
 /// no-init5BE9B0->6A4F20 resets progress6AC7C0, preserving count/type/order.
 /// Each strip's saved TopRow is absent: Load_Game_From_File calls TabClass Init
