@@ -6299,6 +6299,12 @@ impl Simulation {
         if category == EntityCategory::Structure {
             self.houses.leave_house_base_lists(stable_id, old_owner);
         }
+        // TechnoClass::ChangeOwner (`0x007014B9..0x007014CF`): the local
+        // player's selected object is deselected first (vt+0x150, every
+        // Techno class's `ObjectClass::Deselect @ 0x005F44A0`).
+        if self.session.current_house() == Some(old_owner) {
+            self.object_deselect(stable_id);
+        }
         // Ares7014D5 ->10049FB0/10049FD7 displays the old owner's queued
         // sum before target/destination callbacks and the actual owner store.
         #[cfg(feature = "ares")]
