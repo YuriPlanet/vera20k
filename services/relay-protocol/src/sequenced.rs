@@ -827,6 +827,8 @@ struct Pace {
     raise_wait: u64,
     // When a player last reported being behind or catching up.
     lagging_at: u64,
+    // Slowdowns the server has not yet counted for its journal report.
+    slowdowns: u32,
 }
 
 impl Pace {
@@ -909,6 +911,7 @@ impl OrderingRoom {
                 raised_at: None,
                 raise_wait: PACE_RAISE_MS,
                 lagging_at: 0,
+                slowdowns: 0,
             },
             head: 0,
             sealed: 0,
@@ -1176,6 +1179,7 @@ impl OrderingRoom {
             } else {
                 PACE_RAISE_MS
             };
+            pace.slowdowns += 1;
         }
         pace.rate = rate;
         pace.anchor = Some((self.head, now_ms));
@@ -2001,6 +2005,21 @@ mod tests {
         assert_eq!(ordering(&server).pace.rate, 30);
         server.advance_clock(150_000, unix(150_000));
         assert_eq!(ordering(&server).pace.rate, 45);
+    }
+
+    #[test]
+    fn the_journal_count_has_each_slowdown_once_and_no_speedup() {
+        use OrderPace::*;
+        let key = SecretKey::new([73; 32]);
+        let (mut server, mut first, mut second) = paced_room(&key);
+        pace_report(&mut server, &mut first, KeepingUp, 45, 1000);
+        pace_report(&mut server, &mut second, Behind, 40, 1000);
+        server.advance_clock(1000, unix(1000));
+        pace_report(&mut server, &mut second, KeepingUp, 30, 2000);
+        server.advance_clock(32_000, unix(32_000));
+        assert_eq!(ordering(&server).pace.rate, 45, "slowed, then sped up");
+        assert_eq!(server.take_slowdowns(), 1);
+        assert_eq!(server.take_slowdowns(), 0);
     }
 
     /// Released clients cannot be changed, so a newer relay may only append
@@ -4349,6 +4368,7 @@ impl RelayServer {
             {
                 let before = ordering.memory();
                 ordering.advance(now_ms, room.federation.as_mut());
+                self.slowdowns += u64::from(std::mem::take(&mut ordering.pace.slowdowns));
                 total = total
                     .saturating_sub(before)
                     .saturating_add(ordering.memory());
@@ -4425,6 +4445,7 @@ impl RelayServer {
         {
             let before = ordering.memory();
             ordering.advance(now_ms, room.federation.as_mut());
+            self.slowdowns += u64::from(std::mem::take(&mut ordering.pace.slowdowns));
             if ordering.memory() > before {
                 self.reserve_ordering(0);
             }

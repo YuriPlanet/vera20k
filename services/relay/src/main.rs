@@ -42,9 +42,11 @@ impl TrafficCounts {
         *count += 1;
     }
 
-    fn report(&self, seconds: u64, rooms: usize) {
+    /// `slowdowns` counts the times the clock slowed a match because a player
+    /// could not keep up.
+    fn report(&self, seconds: u64, rooms: usize, slowdowns: u64) {
         eprintln!(
-            "VERA20k relay interval_s={seconds} rooms={rooms} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={}",
+            "VERA20k relay interval_s={seconds} rooms={rooms} slowdowns={slowdowns} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={}",
             self.received,
             self.forwarded,
             self.send_errors,
@@ -106,7 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let elapsed = reported_at.elapsed().as_secs();
         if elapsed >= 60 {
-            counts.report(elapsed, server.room_count());
+            counts.report(elapsed, server.room_count(), server.take_slowdowns());
             counts = TrafficCounts::default();
             reported_at = Instant::now();
         }
