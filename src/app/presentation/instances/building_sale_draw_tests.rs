@@ -186,15 +186,15 @@ fn retail_gate_make_body_uses_native_gate_and_selling_reflections() {
     );
 }
 
-/// The atlas frame and Z gradient of the gate's `kind` piece, from the
-/// production SHP emitter with BUILDNGZ loaded.
+/// The atlas frame, Z gradient and palette brightness of the gate's `kind`
+/// piece, from the production SHP emitter with BUILDNGZ loaded.
 fn gate_piece(
     runtime: &SimRuntime,
     atlas: &crate::render::sprite_atlas::SpriteAtlas,
     gate: u64,
     colors: &crate::map::houses::HouseColorMap,
     kind: crate::render::tactical_draw_plan::BuildingPieceKind,
-) -> (u16, u32) {
+) -> (u16, u32, i32) {
     use crate::map::lighting::CellLightGrid;
     use crate::render::batch::DepthAxis;
     use crate::render::unit_atlas::BarrelImagePitches;
@@ -238,17 +238,22 @@ fn gate_piece(
         .find(|piece| piece.kind == kind)
         .expect("gate emits the piece");
     match piece.target {
-        ObjectTexture::ShpPage(frame) => (u16::try_from(frame).unwrap(), piece.instance.z_gradient),
+        ObjectTexture::ShpPage(frame) => (
+            u16::try_from(frame).unwrap(),
+            piece.instance.z_gradient,
+            piece.instance.palette_light.brightness(),
+        ),
         target => panic!("unexpected gate target: {target:?}"),
     }
 }
 
 /// DrawBody's gate branch (`0x0043D546..0x0043D68F`) draws an opening gate
 /// through DrawSHP with a null z-shape (`0x0043D633`, a12), so it neither
-/// subtracts nor clips to BUILDNGZ; the closed gate's ordinary body
-/// (`0x0043D806`) does.
+/// subtracts nor clips to BUILDNGZ, and lights it without the type's
+/// ExtraLight (`0x0043D644`); the closed gate's ordinary body does both
+/// (`0x0043D806`, `0x0043D824`).
 #[test]
-fn an_opening_gate_draws_without_the_buildngz_zshape() {
+fn an_opening_gate_draws_without_the_buildngz_zshape_or_extra_light() {
     use crate::map::houses::HouseColorMap;
     use crate::render::native_z::{Z_GRADIENT_ZSHAPE_CLIP_FLAG, Z_GRADIENT_ZSHAPE_FLAG};
     use crate::render::sprite_atlas::{
@@ -258,7 +263,14 @@ fn an_opening_gate_draws_without_the_buildngz_zshape() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
-    let rules = retail.rules;
+    let mut rules = retail.rules;
+    let Some((_, mut art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    art.merge(&crate::rules::ini_parser::IniFile::from_str(
+        "[GAGATE_A]\nExtraLight=200\n",
+    ));
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x2246);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -299,8 +311,9 @@ fn an_opening_gate_draws_without_the_buildngz_zshape() {
         HouseColorMap::from([("Americans".to_owned(), crate::rules::house_colors::NO_REMAP)]);
     let zshape = Z_GRADIENT_ZSHAPE_FLAG | Z_GRADIENT_ZSHAPE_CLIP_FLAG;
 
-    let (frame, closed) = gate_piece(&runtime, &atlas, gate, &colors, Body);
+    let (frame, closed, closed_light) = gate_piece(&runtime, &atlas, gate, &colors, Body);
     assert_eq!(frame, 0);
+    assert_eq!(closed_light, 1200, "closed gate adds ExtraLight");
     assert_eq!(
         closed & zshape,
         Z_GRADIENT_ZSHAPE_CLIP_FLAG,
@@ -318,13 +331,14 @@ fn an_opening_gate_draws_without_the_buildngz_zshape() {
         runtime
             .simulation
             .advance_tick(&[], Some(&rules), None, None, 67);
-        let (frame, gradient) = gate_piece(&runtime, &atlas, gate, &colors, Body);
+        let (frame, gradient, light) = gate_piece(&runtime, &atlas, gate, &colors, Body);
         if frame > 0 {
-            opening = Some(gradient);
+            opening = Some((gradient, light));
             break;
         }
     }
-    let opening = opening.expect("the gate opens");
+    let (opening, opening_light) = opening.expect("the gate opens");
+    assert_eq!(opening_light, 1000, "opening gate takes no ExtraLight");
     assert_eq!(opening & zshape, 0, "opening gate draws without BUILDNGZ");
     assert_eq!(opening & !zshape, closed & !zshape, "same gradient entry");
 }
