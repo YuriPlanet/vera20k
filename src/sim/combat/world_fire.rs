@@ -20,6 +20,10 @@ mod aircraft_release;
 
 /// FireAt6FF4CC..6FF647 has one exclusive effect ladder. Sonic's earlier
 /// Wave creation is independent; these flags select the later alternative.
+///
+/// DORMANT: `RadiationEruption` has no consumer; `SpawnRadEruption @
+/// 0x006FD800` is not ported. Retail's only `IsRadEruption=` key, on
+/// `RadEruptionWeapon`, is `no`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FireAtEffect {
     None,

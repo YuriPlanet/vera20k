@@ -29,6 +29,9 @@
 //!   Fire's `+0x308` spark system (`0x006FF1AD`, UseSparkParticles, the IFV's
 //!   RepairBullet) are live; `+0x304` (`0x006FF1A7`, UseFireParticles) and
 //!   `+0x314` (railgun) are not produced, so those shots rearm on ROF alone.
+//!   Dormant in retail with `ApplyRailgunLineDamage @ 0x0070C690`: the only
+//!   `UseFireParticles=yes` weapon (`FireballLauncher`) and the only
+//!   `IsRailgun=` one (`LtRail`) are on no type.
 //! - Dormant in retail: T44 (FiringSyncFrame), U1 (DeathFrames),
 //!   U3 (DirectRocker), U4 (DeployToFire), U7 (MobileFire=no), I3 (Pushy),
 //!   B3 (`EMPulseCannon=`, read live; no retail building sets it).

@@ -74,10 +74,14 @@
 //! - The ring walk's wall fallback (`0x006F8C10`, per ring cell, read not
 //!   executed) is not ported: for a computer house it can return a cell
 //!   holding a `Wall=` overlay that the scanner's `Wall=` warhead and AG
-//!   projectile can hit, gated by a per-difficulty Rules byte (`+0x1581 +
-//!   difficulty * 0x50`, identity UNCHECKED), as the scan's cell target
-//!   (`0x006F9B55..0x006F9B5F`). Trigger: a computer unit on Guard or Area
-//!   Guard whose rings reach a wall. Effect: it does not shoot the wall.
+//!   projectile can hit, gated by the house difficulty's `DestroyWalls=`
+//!   (`+0x1581 + difficulty * 0x50`: the bank at Rules `+0x1538`, stride
+//!   `0x50`, from `RulesClass::Process` `0x00668EFA..0x00668F26`; the byte at
+//!   `+0x49` from `ReadDifficulty @ 0x0066D270`, `0x0066D376..0x0066D388`), as
+//!   the scan's cell target (`0x006F9B55..0x006F9B5F`). DORMANT: retail
+//!   RULESMD sets `DestroyWalls=no` for Easy, Normal and Difficult. Trigger:
+//!   a layer setting it, then a computer unit on Guard or Area Guard whose
+//!   rings reach a wall. Effect: it does not shoot the wall.
 //! - The threat mask (the callsite literal, the class overrides and the
 //!   flags word) is [`super::threat_mask`]'s; its residuals are listed there.
 //!
@@ -2376,6 +2380,11 @@ fn evaluate_candidate(
     {
         return None;
     }
+
+    // G20 — DORMANT: `0x006F8487..0x006F84AB` refuses an `IsTrain=` (Type
+    // `+0xC94`) candidate to an Infantry scanner (vt+0x2C == 0xF) whose type
+    // is a `VehicleThief=` (`+0xEC6`). Not ported: retail RULESMD sets
+    // neither key on any type.
 
     // G21 — the disguise arm at `0x006F84B1..0x006F854B`, in its native slot.
     //
