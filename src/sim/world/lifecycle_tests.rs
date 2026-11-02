@@ -1191,7 +1191,7 @@ fn zero_speed_foot_drive_ship_payloads_survive_all_world_spawn_paths() {
         recruitable_b: true,
         group: -1,
         follows: None,
-        structure_upgrades: [None, None, None],
+        structure_columns: Default::default(),
         structure_ai_sellable: false,
         structure_ai_repairable: false,
         structure_online: true,

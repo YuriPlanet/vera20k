@@ -388,6 +388,10 @@ impl Simulation {
             let mut count: u32 = 0;
             let mut follows = Vec::new();
             let mut unit_reader_finished = false;
+            // ReadScenarioBuildings sets its three upgrade slots to -1 once,
+            // before the loop (`0x0044F838..0x0044F846`): a line that stops
+            // short of a token keeps the slot the previous admitted line wrote.
+            let mut upgrade_slots: [Option<String>; 3] = Default::default();
 
             for (entity_index, map_ent) in entities.iter().enumerate() {
                 // Full_Init687AA7 completes UnitReadINI743664 before entering
@@ -413,6 +417,24 @@ impl Simulation {
                     );
                     continue;
                 };
+                // Each present token goes through BuildingTypeClass's
+                // FindIndexByName (`0x0045E7B0`) into its slot after the House
+                // and Type admission and before the constructor
+                // (`0x0044FA82..0x0044FAAB`); an unknown name or `None` is -1.
+                if map_ent.category == EntityCategory::Structure {
+                    for (slot, token) in upgrade_slots
+                        .iter_mut()
+                        .zip(&map_ent.structure_columns.upgrade_tokens)
+                    {
+                        let Some(token) = token.as_deref() else {
+                            continue;
+                        };
+                        *slot = rules
+                            .object(token)
+                            .is_some_and(|object| object.category == ObjectCategory::Building)
+                            .then(|| token.to_owned());
+                    }
+                }
                 // Unit ReadUnits7434F3 writes OnBridge from HIGH itself; its
                 // 7434FB..743510 coordinate is Map578080 ground plus B1D0AC.
                 // HasBridge and navigation's bridge_walkable do not admit that
@@ -610,6 +632,20 @@ impl Simulation {
                 // ReadINI44FC1B..44FD23: the factory callback is inside
                 // an admitted transition, not unconditional after Unlimbo.
                 if map_ent.category == EntityCategory::Structure {
+                    // `0x0044FC07..0x0044FC16`: field 11 goes to the light
+                    // Unlimbo gave a HasSpotlight building, through
+                    // BuildingLightClass::SetBehaviour (`0x00436BE0`).
+                    if let Some(light) = sim
+                        .substrate
+                        .entities
+                        .get(stable_id)
+                        .and_then(|entity| entity.building_light.light())
+                    {
+                        sim.set_spotlight_behavior(
+                            light,
+                            map_ent.structure_columns.light_behaviour,
+                        );
+                    }
                     if map_ent.structure_online {
                         sim.go_building_online(stable_id, rules, FrameEffects::default());
                     } else {
@@ -624,21 +660,17 @@ impl Simulation {
                     // upgrade constructors even if a shared callback changed
                     // the parent owner. The raw authored name is not a key.
                     let original_owner = sim.interner.resolve(owner_id).to_owned();
-                    for upgrade_type in &map_ent.structure_upgrades {
+                    // `0x0044FD50..0x0044FDC3` walks `count` slots from the
+                    // first and skips -1. A count above three reads past
+                    // native's slot array into its coordinate locals; Rust
+                    // stops at three.
+                    let declared = usize::try_from(map_ent.structure_columns.upgrade_count)
+                        .unwrap_or(0)
+                        .min(3);
+                    for upgrade_type in &upgrade_slots[..declared] {
                         let Some(upgrade_type) = upgrade_type.as_deref() else {
                             continue;
                         };
-                        let valid_upgrade = rules
-                            .object(upgrade_type)
-                            .is_some_and(|object| object.category == ObjectCategory::Building);
-                        if !valid_upgrade {
-                            log::warn!(
-                                "Skipping unresolved authored upgrade {} on {}",
-                                upgrade_type,
-                                map_ent.type_id
-                            );
-                            continue;
-                        }
                         if sim
                             .spawn_authored_building_upgrade(
                                 upgrade_type,
