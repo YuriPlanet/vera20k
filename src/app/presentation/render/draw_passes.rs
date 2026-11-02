@@ -99,6 +99,14 @@ fn draw_sidebar_surface(
             .map(|atlas| &atlas.texture),
         "sidebar_cameo",
     );
+    // StripDraw6A9AF8 outlines the hovered slot before its masks.
+    draw(
+        presentation
+            .selection_overlay
+            .as_ref()
+            .map(|overlay| overlay.white_texture()),
+        "sidebar_cameo_hover",
+    );
     drop(pass);
 
     // Original StripDraw: icon6A9A3E -> unavailable4016A9B46 -> flash404
@@ -1558,6 +1566,7 @@ mod tests {
     fn gsi_04_01_retained_sidebar_radar_subpass_ends_with_content_boundary() {
         let chrome = source_offset("\"sidebar_chrome\"");
         let cameo = source_offset("\"sidebar_cameo\"");
+        let cameo_hover = source_offset("\"sidebar_cameo_hover\"");
         let gclock = source_offset("\"sidebar_gclock\"");
         let unavailable = source_offset("\"sidebar_unavailable\"");
         let flash = source_offset("\"sidebar_flash\"");
@@ -1572,7 +1581,8 @@ mod tests {
         let message = source_offset("\"message_text\"");
 
         assert!(chrome < cameo);
-        assert!(cameo < unavailable);
+        assert!(cameo < cameo_hover);
+        assert!(cameo_hover < unavailable);
         assert!(unavailable < flash);
         assert!(flash < queue_fill);
         assert!(queue_fill < queue_text);

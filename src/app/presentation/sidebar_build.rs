@@ -488,11 +488,54 @@ pub(crate) fn build_gclock_stage_instance(
 #[derive(Default)]
 pub(crate) struct SidebarCameoInstances {
     pub cameo: Vec<SpriteInstance>,
+    /// The hovered entry's outline, between the icon and the unavailable mask.
+    pub hover: Vec<SpriteInstance>,
     pub unavailable: Vec<SpriteInstance>,
     pub flash: Vec<SpriteInstance>,
     pub gclock: Vec<SpriteInstance>,
     pub queue_overlay: Vec<SpriteInstance>,
     pub overlay: Vec<SpriteInstance>,
+}
+
+/// The visible slot whose select button the mouse is over. Mouse_Enter6AB990
+/// and Mouse_Leave6AB9E0 keep that button's +0x34 flag; StripDraw6A972D
+/// reads it only for a filled slot and ignores it while input is locked
+/// (`[0xA8ED9C]`, 6A9734).
+fn hovered_cameo_slot(
+    gadgets: &crate::app::input::gadget_input::InGameGadgets,
+    entry_count: usize,
+    input_locked: bool,
+) -> Option<usize> {
+    let hovered = gadgets.focus.hovered?;
+    let slot = gadgets
+        .cameos
+        .iter()
+        .position(|&handle| handle == hovered)?;
+    (slot < entry_count && !input_locked).then_some(slot)
+}
+
+/// `XSurface::DrawRectEx @ 0x007BADC0`: a one-pixel outline whose last row
+/// and column lie inside the rectangle. StripDraw6A9AF8 draws the hovered
+/// 60x48 cameo slot with it; Phobos `SWButtonClass::Draw` uses the same rect.
+pub(crate) fn push_rect_outline(out: &mut Vec<SpriteInstance>, rect: Rect, tint: [f32; 3]) {
+    let border = 1.0;
+    for (x, y, w, h) in [
+        (rect.x, rect.y, rect.w, border),
+        (rect.x, rect.y + rect.h - border, rect.w, border),
+        (rect.x, rect.y, border, rect.h),
+        (rect.x + rect.w - border, rect.y, border, rect.h),
+    ] {
+        out.push(SpriteInstance {
+            position: [x, y],
+            size: [w, h],
+            uv_origin: [0.0, 0.0],
+            uv_size: [1.0, 1.0],
+            depth: 0.00044,
+            tint,
+            alpha: 1.0,
+            ..Default::default()
+        });
+    }
 }
 
 /// Original shape point is the cameo top-left; the caller clips at +60/+48
@@ -550,35 +593,56 @@ pub(crate) fn build_sidebar_cameo_instances(
     let chrome = crate::app::presentation::sidebar_render::current_sidebar_chrome(state);
     let gclock_frames: &[SidebarChromeEntry] =
         chrome.map(|a| a.gclock_frames.as_slice()).unwrap_or(&[]);
-    for item in &view.items {
+    let mut hover = Vec::new();
+    let hovered_slot = hovered_cameo_slot(
+        &state.match_state.match_presentation.in_game_gadgets,
+        view.items.len(),
+        crate::app::input::campaign_input::is_locked(state),
+    );
+    // SetSidebarTextColor72F440 writes B0FA1C, which Draw packs at 6A9A4F.
+    let hover_tint = crate::render::sidebar_text::native_radar_outline_color(
+        crate::app::presentation::sidebar_render::current_sidebar_theme(state),
+    );
+    for (slot_index, item) in view.items.iter().enumerate() {
         let entry = if item.is_superweapon {
             atlas.superweapon(&item.type_id)
         } else {
             atlas.cameo(&item.type_id, item.alt_cameo)
         };
-        let Some(entry) = entry else {
-            continue;
-        };
         let slot = item.cameo_rect();
-        let Some(cameo_rect) = place_canvas_crop_in_slot(
-            slot,
-            entry.canvas_size,
-            entry.crop_origin,
-            entry.pixel_size,
-            co,
-        ) else {
-            continue;
-        };
-        instances.push(SpriteInstance {
-            position: [cameo_rect.x, cameo_rect.y],
-            size: [cameo_rect.w, cameo_rect.h],
-            uv_origin: entry.uv_origin,
-            uv_size: entry.uv_size,
-            depth: 0.00044,
-            tint: [1.0, 1.0, 1.0],
-            alpha: 1.0,
-            ..Default::default()
-        });
+        // StripDraw6A99F3 skips only the shape when an entry has no cameo;
+        // its outline, masks, clock and text still draw.
+        if let Some(entry) = entry
+            && let Some(cameo_rect) = place_canvas_crop_in_slot(
+                slot,
+                entry.canvas_size,
+                entry.crop_origin,
+                entry.pixel_size,
+                co,
+            )
+        {
+            instances.push(SpriteInstance {
+                position: [cameo_rect.x, cameo_rect.y],
+                size: [cameo_rect.w, cameo_rect.h],
+                uv_origin: entry.uv_origin,
+                uv_size: entry.uv_size,
+                depth: 0.00044,
+                tint: [1.0, 1.0, 1.0],
+                alpha: 1.0,
+                ..Default::default()
+            });
+        }
+        if hovered_slot == Some(slot_index) {
+            push_rect_outline(
+                &mut hover,
+                Rect {
+                    x: slot.x + co[0],
+                    y: slot.y + co[1],
+                    ..slot
+                },
+                hover_tint,
+            );
+        }
         if shows_build_clock(item)
             && let Some(instance) = build_cameo_clock_instance(gclock_frames, item, slot, co)
         {
@@ -654,6 +718,7 @@ pub(crate) fn build_sidebar_cameo_instances(
     }
     SidebarCameoInstances {
         cameo: instances,
+        hover,
         unavailable,
         flash,
         gclock: gclock_instances,
@@ -743,7 +808,9 @@ pub(crate) fn build_sidebar_text_instances(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_gclock_instance, place_canvas_crop_in_slot};
+    use super::{
+        build_gclock_instance, hovered_cameo_slot, place_canvas_crop_in_slot, push_rect_outline,
+    };
     use crate::render::sidebar_chrome::SidebarChromeEntry;
     use crate::ui::sidebar::Rect;
 
@@ -778,6 +845,44 @@ mod tests {
         // 54 * 1.25 is 67.5; deriving size from the shared rounded edges
         // intentionally produces 67 rather than independently rounding to 68.
         assert_eq!(with_camera.w, 67.0);
+    }
+
+    #[test]
+    fn hover_outline_marks_only_a_filled_slot_while_input_is_unlocked() {
+        use crate::ui::gadget::GadgetHandle;
+        let mut gadgets = crate::app::input::gadget_input::InGameGadgets::new();
+        gadgets.cameos = vec![GadgetHandle(7), GadgetHandle(8), GadgetHandle(9)];
+        gadgets.focus.hovered = Some(GadgetHandle(8));
+        assert_eq!(hovered_cameo_slot(&gadgets, 2, false), Some(1));
+        // 6A9727: a pooled select button past EntryCount draws nothing.
+        assert_eq!(hovered_cameo_slot(&gadgets, 1, false), None);
+        // 6A9734: the input lock hides the outline but keeps the hover.
+        assert_eq!(hovered_cameo_slot(&gadgets, 2, true), None);
+        gadgets.focus.hovered = Some(GadgetHandle(3));
+        assert_eq!(hovered_cameo_slot(&gadgets, 3, false), None);
+    }
+
+    #[test]
+    fn rect_outline_includes_the_last_row_and_column_like_draw_rect_ex() {
+        let mut out = Vec::new();
+        let slot = Rect {
+            x: 878.0,
+            y: 228.0,
+            w: 60.0,
+            h: 48.0,
+        };
+        push_rect_outline(&mut out, slot, [1.0, 0.0, 0.0]);
+        let edges: Vec<_> = out.iter().map(|i| (i.position, i.size)).collect();
+        // 7BADC0 strokes x..x+w-1 and y..y+h-1.
+        assert_eq!(
+            edges,
+            [
+                ([878.0, 228.0], [60.0, 1.0]),
+                ([878.0, 275.0], [60.0, 1.0]),
+                ([878.0, 228.0], [1.0, 48.0]),
+                ([937.0, 228.0], [1.0, 48.0]),
+            ]
+        );
     }
 
     #[test]

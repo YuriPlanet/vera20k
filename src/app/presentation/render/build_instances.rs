@@ -88,6 +88,7 @@ pub(super) struct SidebarInstances {
     /// The bottom command bar's surface layer, in layout space too.
     pub command_bar: Vec<SpriteInstance>,
     pub cameo: Vec<SpriteInstance>,
+    pub cameo_hover: Vec<SpriteInstance>,
     pub unavailable: Vec<SpriteInstance>,
     pub flash: Vec<SpriteInstance>,
     pub gclock: Vec<SpriteInstance>,
@@ -1349,6 +1350,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         chrome,
         command_bar,
         cameo: cameo_layers.cameo,
+        cameo_hover: cameo_layers.hover,
         unavailable: cameo_layers.unavailable,
         flash: cameo_layers.flash,
         gclock: cameo_layers.gclock,
