@@ -901,20 +901,19 @@ impl MultiplayerSetupLayout {
                 *bar = popup(304, 30 + 30 * index as i32, 129, 21);
             }
         }
-        // The native five, then Destroyable Bridges and In-game Allying, then
-        // the four bans two to a row, every row 19 px down; OK under them.
-        let row = |index: i32| 120 + 19 * index;
-        for (index, checkbox) in self.checkboxes.iter_mut().enumerate() {
-            *checkbox = popup(215, row(index as i32), 226, 17);
+        // Two columns where the labels fit: short options pair up, the long
+        // Build Off Ally ConYards, Destroyable Bridges and In-game Allying
+        // take whole rows, and the four bans follow a small gap.
+        let row = |index: i32| 120 + 20 * index + if index >= 5 { 6 } else { 0 };
+        let left = |index| popup(215, row(index), 113, 17);
+        let right = |index| popup(330, row(index), 111, 17);
+        let whole = |index| popup(215, row(index), 226, 17);
+        // Short Game, MCV Repacks, Crates Appear, Superweapons, Build Off Ally.
+        let native = [left(0), right(0), left(1), right(1), whole(2)];
+        for (checkbox, rect) in self.checkboxes.iter_mut().zip(native) {
+            *checkbox = rect;
         }
-        self.room_checkboxes = [
-            popup(215, row(5), 226, 17),
-            popup(215, row(6), 226, 17),
-            popup(215, row(7), 105, 17),
-            popup(320, row(7), 121, 17),
-            popup(215, row(8), 105, 17),
-            popup(320, row(8), 121, 17),
-        ];
+        self.room_checkboxes = [whole(3), whole(4), left(5), right(5), left(6), right(6)];
         self.game_options = Some(GameOptionsLayout {
             dialog: popup(0, 0, GAME_OPTIONS_BOX.w, GAME_OPTIONS_BOX.h),
             ok: popup(276, 292, 124, 24),
