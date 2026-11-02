@@ -24,6 +24,7 @@
 //!
 //! RESIDUAL rows: each is ported and fires on its field, but VERA has no
 //! producer for that field yet, so it holds the constructor value:
+//! - T20: EMP. Only the `ares` EMP chain writes it; a default build holds 0.
 //! - T37/T46: particle systems. The Sonic wave, the damage-spark system and
 //!   Fire's `+0x308` spark system (`0x006FF1AD`, UseSparkParticles, the IFV's
 //!   RepairBullet) are live; `+0x304` (`0x006FF1A7`, UseFireParticles) and
@@ -460,7 +461,7 @@ pub(crate) struct TargetFacts {
     pub chrono_warp_latch: bool, // +0x27C
     pub bunkered: bool,          // +0x2E4
     pub sinking: bool,           // +0x3CD
-    pub docked: bool,            // +0x418
+    pub tethered: bool,          // +0x418
     pub health: Health,          // +0x6C
     /// Foot: `+0x698` the frame a Parasite launch lock ends.
     pub parasite_lock_until: i32,
@@ -915,8 +916,8 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
         {
             return Cant;
         }
-        // T18 `0x006FC2A3`: a docked balloon.
-        if target.docked && target_type.balloon_hover && !query.high_flying() {
+        // T18 `0x006FC2A3`: a tethered balloon.
+        if target.tethered && target_type.balloon_hover && !query.high_flying() {
             return Illegal;
         }
     }
