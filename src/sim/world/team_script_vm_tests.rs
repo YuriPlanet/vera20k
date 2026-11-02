@@ -269,7 +269,7 @@ fn team_lookup_ordinary_ai_recruits_and_moves_first_name() {
         [("FIRST", "SECOND", "FLAKT"), ("SECOND", "FIRST", "E2")]
     {
         let map = MapFile::from_ini(IniFile::from_str(&format!(
-            "[Basic]\nIgnoreGlobalAITriggers=yes\n\
+            "[Basic]\nNewINIFormat=4\nIgnoreGlobalAITriggers=yes\n\
              [Map]\nTheater=TEMPERATE\nSize=0,0,32,32\nLocalSize=0,0,32,32\n\
              [IsoMapPack5]\n1=CAAEABUAAAAAEQAA\n\
              [General]\nTeamDelays=30,30,30\n\
