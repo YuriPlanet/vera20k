@@ -616,7 +616,11 @@ mod tests {
     use crate::sim::world::RevealOutcome;
 
     pub(super) fn rules() -> RuleSet {
-        RuleSet::from_ini(&IniFile::from_str(
+        rules_with("")
+    }
+
+    fn rules_with(extra: &str) -> RuleSet {
+        RuleSet::from_ini(&IniFile::from_str(&format!(
             "[VehicleTypes]\n0=TANK\n1=NOGUN\n2=NOTURRET\n3=HOVER\n4=NOBUNKER\n\n\
              [InfantryTypes]\n0=GI\n\n[AircraftTypes]\n\n\
              [BuildingTypes]\n0=NATBNK\n\n\
@@ -628,8 +632,8 @@ mod tests {
              [NOBUNKER]\nStrength=400\nArmor=heavy\nSpeed=6\nTurret=yes\nPrimary=120mm\n\
              Bunkerable=no\n\n\
              [GI]\nStrength=125\nSpeed=4\nTurret=yes\nPrimary=120mm\n\n\
-             [NATBNK]\nStrength=1000\nArmor=heavy\nBunker=yes\n",
-        ))
+             [NATBNK]\nStrength=1000\nArmor=heavy\nBunker=yes\n{extra}",
+        )))
         .expect("rules parse")
     }
 
@@ -683,12 +687,22 @@ mod tests {
     }
 
     fn spawn_tank(sim: &mut Simulation, sid: u64, owner: &str, type_name: &str) {
+        spawn_tank_at(sim, sid, owner, type_name, (12, 12));
+    }
+
+    fn spawn_tank_at(
+        sim: &mut Simulation,
+        sid: u64,
+        owner: &str,
+        type_name: &str,
+        (rx, ry): (u16, u16),
+    ) {
         let owner_id = sim.interner.intern(owner);
         let type_id = sim.interner.intern(type_name);
         let mut ge = GameEntity::new_at_frame_zero_for_test(
             sid,
-            12,
-            12,
+            rx,
+            ry,
             0,
             0,
             owner_id,
@@ -908,6 +922,72 @@ mod tests {
         install_bunker_link(&mut sim, 2, 1, &rules);
         sim.sound_events.clear_for_test(); // drop the install up-sound; assert on down events
         sim
+    }
+
+    /// `BuildingClass::ReceiveDamage` NowDead (`0x004424A2..0x004424EA`):
+    /// the dying bunker drops its tank from the saved contacts and releases
+    /// it (`0x004593A0`) before the C4 loop at `0x00442511`. The tank sits
+    /// on the bunker, so it would otherwise take Strength*10 C4 and die.
+    #[test]
+    fn a_destroyed_bunker_releases_its_tank_before_the_contact_c4() {
+        use crate::sim::combat::{
+            EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags, world_receiver,
+        };
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::supply_native_map(&mut sim);
+        let rules = rules_with(
+            "[CombatDamage]\nC4Warhead=C4\n[Warheads]\n0=C4\n\
+             [C4]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        );
+        spawn_bunker(&mut sim, 2, "Americans");
+        spawn_tank_at(&mut sim, 1, "Americans", "TANK", (10, 10));
+        assert!(matches!(sim.reveal(1), RevealOutcome::Revealed { .. }));
+        install_bunker_link(&mut sim, 2, 1, &rules);
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .radio_contacts
+            .insert(1);
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .radio_contacts
+            .insert(2);
+        let event = EntityDamageEvent::direct_receiver(
+            2,
+            2000,
+            0,
+            RAD_NO_ATTACKER,
+            None,
+            sim.interner.intern("C4"),
+            ReceiverCallFlags {
+                ignore_defenses: true,
+                arg6: true,
+            },
+        );
+        world_receiver::commit_entities(
+            &mut sim,
+            &mut world_receiver::ReceiverRun::default(),
+            &[event],
+            None,
+            &rules,
+            Some(crate::sim::tiberium::test_support::overlay_registry()),
+        );
+        assert!(
+            !sim.substrate
+                .entities
+                .get(2)
+                .unwrap()
+                .lifecycle
+                .object_alive()
+        );
+        let tank = sim.substrate.entities.get(1).unwrap();
+        assert!(tank.lifecycle.object_alive(), "the bunkered tank survives");
+        assert_eq!(tank.health.current(), 400);
+        assert_eq!(tank.bunker.link(), BunkerLink::None);
+        assert!(!tank.radio_contacts.contains(2));
     }
 
     /// Techno Assign_Target's bunker redirect (`0x006FCE4B..0x006FCEB5`): a
