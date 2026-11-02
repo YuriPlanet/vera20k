@@ -183,12 +183,13 @@ fn a_tracked_laser_freezes_the_deployed_burst_offset() {
     );
 }
 
-/// `Techno6FD210` mirrors the record fallback of the triple it stores
-/// (`Hooks.LaserDraw.cpp:277-287`) on the saved `CurrentBurstIndex`, and that
-/// stored triple is the base argument of the per-frame GetFLH sample. SIMC
-/// authors no burst rows, so its `500,10,10` record is what gets stored.
+/// `SetLaserTrackingData` recomputes the triple it stores and applies no parity
+/// shift to the record fallback (`Hooks.LaserDraw.cpp:147-160`); the separately
+/// mirrored `SavedLocalFLH` at `:277-287` is written and reset but never read
+/// into `TrackingData`. SIMC authors no burst rows, so its `500,10,10` record is
+/// what gets stored, odd burst or even.
 #[test]
-fn a_tracked_laser_mirrors_the_record_offset_it_freezes() {
+fn a_tracked_laser_stores_the_record_offset_unmirrored() {
     let mut sim = Simulation::new();
     let rules = rules();
     spawn(&mut sim, 1, "SIMC", false, false);
@@ -210,8 +211,8 @@ fn a_tracked_laser_mirrors_the_record_offset_it_freezes() {
     );
     assert_eq!(
         frozen_local_flh(&sim),
-        Flh::from([500, -10, 10]),
-        "an odd saved burst negates the stored record lateral"
+        Flh::from([500, 10, 10]),
+        "the stored record fallback keeps its lateral on an odd saved burst"
     );
 }
 

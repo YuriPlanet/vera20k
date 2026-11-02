@@ -348,11 +348,11 @@ pub(crate) fn build_track(
         #[cfg(feature = "phobos")]
         {
             let (deployed, crawling) = super::fire_coord::infantry_flh_states(source);
-            // `Techno6FD210` (`TechnoClass_LaserZap_SetTrackingContext`) keeps
-            // the burst row as authored but mirrors the record fallback on the
-            // saved `CurrentBurstIndex` (`Hooks.LaserDraw.cpp:277-287`), and
-            // that stored triple is what the per-frame GetFLH receives as its
-            // base argument.
+            // `SetLaserTrackingData` (Hooks.LaserDraw.cpp:147-160) recomputes
+            // the stored triple itself: `GetBurstFLH`, else the weapon record
+            // with no parity shift. The separately mirrored `SavedLocalFLH` in
+            // the 0x006FD210 hook (:277-287) is only written and reset, never
+            // read into `TrackingData`.
             base_flh = object
                 .burst_flh(
                     weapon_index,
@@ -366,16 +366,7 @@ pub(crate) fn build_track(
                     },
                     burst_index,
                 )
-                .unwrap_or_else(|| {
-                    let record = record_flh();
-                    Flh {
-                        lateral: crate::util::flh_transform::flh_lateral_for_burst(
-                            record.lateral,
-                            burst_index,
-                        ),
-                        ..record
-                    }
-                });
+                .unwrap_or_else(record_flh);
         }
         #[cfg(not(feature = "phobos"))]
         {

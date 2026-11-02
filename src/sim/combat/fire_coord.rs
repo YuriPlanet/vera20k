@@ -1254,7 +1254,8 @@ mod tests {
                 // afterwards (`Hooks.Firing.cpp:1058` then `:1083`), so this
                 // unhooked row is not its expectation.
                 // `phobos_get_flh_adds_the_base_after_the_mirror` pins the
-                // hooked order on the same retail inputs.
+                // hooked order on the synthetic `[ALT]` fixture, which is the
+                // only place this ordering has an executable check.
                 continue;
             }
             let shot = fire_coordinate(
@@ -1318,10 +1319,10 @@ mod tests {
     }
 
     /// The hook's alternate arm (`weaponIndex < 0`, `Hooks.Firing.cpp:1062-1071`)
-    /// reads `AlternateFLHs[index]` and returns before any burst parity, so a
-    /// port offset keeps its lateral on every shot. The unhooked body mirrors
-    /// it, which is what `open_topped_port_coordinate` keeps for a non-phobos
-    /// build.
+    /// reads `AlternateFLHs[index]` outside the `!found` block, so it takes no
+    /// burst parity at all and a port offset keeps its lateral on every shot.
+    /// The unhooked body mirrors it, which is what `open_topped_port_coordinate`
+    /// keeps for a non-phobos build.
     #[cfg(feature = "phobos")]
     #[test]
     fn phobos_alternate_flh_takes_no_burst_mirror() {
@@ -1349,7 +1350,7 @@ mod tests {
         assert_eq!(
             shot(-1, 0),
             shot(-1, 1),
-            "the alternate arm returns before the parity shift"
+            "the alternate arm takes no parity shift"
         );
     }
 
@@ -1690,6 +1691,26 @@ mod control_link_port_tests {
             .as_u64()
             .unwrap() as u16;
         for row in data["cases"].as_array().unwrap() {
+            // Phobos's hook takes `AlternateFLHs[index]` in its negative arm
+            // (`src/Ext/Techno/Hooks.Firing.cpp:1062-1071`) with no odd-burst
+            // mirror, so an odd row whose port has a lateral is the unhooked
+            // expectation. `phobos_alternate_flh_takes_no_burst_mirror` pins the
+            // hooked behavior on the synthetic fixture.
+            #[cfg(feature = "phobos")]
+            let unhooked_only = {
+                let port = (-1 - row["weapon_index"].as_i64().unwrap()).max(0) as usize;
+                row["burst_index"].as_u64().unwrap() % 2 == 1
+                    && row["alternate_flh"]
+                        .get(port)
+                        .and_then(|flh| flh.get(1))
+                        .and_then(serde_json::Value::as_i64)
+                        .unwrap_or(0)
+                        != 0
+            };
+            #[cfg(feature = "phobos")]
+            if unhooked_only {
+                continue;
+            }
             let mut art = retail_art.clone();
             let mut overrides = String::from("[DRED]\n");
             for (port, flh) in row["alternate_flh"].as_array().unwrap().iter().enumerate() {
