@@ -1952,7 +1952,9 @@ fn active_cursor_sequence(state: &AppState) -> Option<(CursorId, &SoftwareCursor
         .match_presentation
         .software_cursor
         .as_ref()?;
-    let id: CursorId = current_cursor_feedback_kind(state)
+    let kind = current_cursor_feedback_kind(state);
+    state.match_state.input.note_shown_cursor(kind);
+    let id: CursorId = kind
         .and_then(cursor_id_for_feedback)
         .unwrap_or(CursorId::Default);
     cursor.get(id).map(|sequence| (id, sequence))

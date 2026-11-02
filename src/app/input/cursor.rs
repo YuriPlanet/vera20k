@@ -125,11 +125,8 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
             crate::app::input::radar::cursor(state),
         ));
     }
-    // SBGadget::Action 6ABA40 sets the normal cursor, but its flags (8,
-    // 6A4C12) admit only LEFTUP. Residual: with the left button held over the
-    // sidebar native keeps the last cursor set; VERA shows the normal one.
     if current_sidebar_view_hit(state) {
-        return None;
+        return state.match_state.input.sidebar_cursor();
     }
     let (x, y) = state.match_state.input.cursor_px();
     if state
@@ -2191,6 +2188,23 @@ mod tests {
         assert!(!super::cursor_clip_wanted(true, false));
         assert!(!super::cursor_clip_wanted(false, true));
         assert!(!super::cursor_clip_wanted(false, false));
+    }
+
+    /// SBGadget 6ABA40 and SelectClass 6AAD00 write the normal cursor only on
+    /// LEFTUP; a held left button over the sidebar keeps the last one.
+    #[test]
+    fn a_held_left_button_keeps_the_last_cursor_over_the_sidebar() {
+        let mut input = crate::app::input::state::MatchInputState::new(Default::default());
+        input.note_shown_cursor(Some(CursorFeedbackKind::Select));
+        assert_eq!(input.sidebar_cursor(), None);
+        input
+            .tactical_mouse
+            .record_physical_button(winit::event::MouseButton::Left, true);
+        assert_eq!(input.sidebar_cursor(), Some(CursorFeedbackKind::Select));
+        input
+            .tactical_mouse
+            .record_physical_button(winit::event::MouseButton::Left, false);
+        assert_eq!(input.sidebar_cursor(), None);
     }
 
     #[test]
