@@ -1,0 +1,188 @@
+name: Check Windows signing
+
+# SignPath Foundation first reviews a test-certificate run. This workflow never
+# publishes a release, and its test certificate is trusted only on its fresh VM.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      name: ${{ steps.package.outputs.name }}
+      artifact: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: cargo-about@0.9.2
+      - name: Install Inno Setup 7.1.0
+        shell: pwsh
+        run: .github/release/windows/install-inno.ps1
+      - name: Build Windows game and notices
+        shell: bash
+        env:
+          VERA20K_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cargo about generate --locked --fail -c .github/release/about.toml \
+            -o dist/THIRD_PARTY_LICENSES.html .github/release/about.hbs
+          cargo build --profile shipping --locked -p vera20k --no-default-features --bin vera20k
+      - name: Prepare the game and uninstaller for signing
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')"
+          stamp="$(date -u +%Y%m%d-%H%M%S)"
+          name="vera20k-${version}-windows-x64-${stamp}-${GITHUB_SHA:0:7}"
+          mkdir -p dist/package
+          cp target/shipping/vera20k.exe config.toml.example LICENSE-GPL \
+            LICENSES/LGPL-2.1-or-later.txt dist/THIRD_PARTY_LICENSES.html dist/package/
+          sed -e "s/@VERSION@/${version}/" -e "s/@BUILD@/${stamp}/" -e "s/@COMMIT@/${GITHUB_SHA}/" \
+            .github/release/README.txt.in > dist/package/README.txt
+          python .github/release/windows/signing.py prepare --package dist/package \
+            --staging unsigned-payload --version "$version" --build "$stamp" --name "$name" \
+            --iscc "$INNO_SETUP_ISCC"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: upload
+        with:
+          name: windows-signing-payload-unsigned
+          path: unsigned-payload/*
+          if-no-files-found: error
+          retention-days: 7
+
+  sign:
+    name: Sign and verify with the test certificate
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 150
+    environment: windows-signing
+    env:
+      TEST_CERTIFICATE_SHA256: ${{ vars.SIGNPATH_TEST_CERTIFICATE_SHA256 }}
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: windows-signing-payload-unsigned
+          path: original-payload
+      - name: Install Inno Setup 7.1.0
+        shell: pwsh
+        run: .github/release/windows/install-inno.ps1
+      - name: Trust only the configured test certificate on this temporary runner
+        shell: pwsh
+        env:
+          TEST_CERTIFICATE: ${{ vars.SIGNPATH_TEST_CERTIFICATE_BASE64 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:TEST_CERTIFICATE_SHA256 -notmatch '^[0-9A-Fa-f]{64}$') {
+            throw 'Configure the SignPath test certificate SHA256 fingerprint first'
+          }
+          $bytes = [Convert]::FromBase64String($env:TEST_CERTIFICATE)
+          $actual = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))
+          if ($actual -ne $env:TEST_CERTIFICATE_SHA256) { throw 'Test certificate fingerprint mismatch' }
+          $path = Join-Path $env:RUNNER_TEMP 'signpath-test.cer'
+          [IO.File]::WriteAllBytes($path, $bytes)
+          Import-Certificate -FilePath $path -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+      - name: Sign the game and uninstaller
+        id: payload
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_TEST_POLICY_SLUG }}
+          artifact-configuration-slug: payload
+          github-artifact-id: ${{ needs.build.outputs.artifact }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed-payload
+          parameters: |
+            version: "${{ needs.build.outputs.version }}"
+      - name: Build the installer from the signed payload
+        shell: pwsh
+        run: |
+          python .github/release/windows/signing.py package --signed-payload signed-payload `
+            --original-payload original-payload `
+            --output unsigned-installer --iscc "$env:INNO_SETUP_ISCC" `
+            --fingerprint "$env:TEST_CERTIFICATE_SHA256"
+          if ($LASTEXITCODE -ne 0) { throw 'Signed payload verification or installer packaging failed' }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: installer
+        with:
+          name: windows-signing-installer-unsigned
+          path: unsigned-installer/*-setup.exe
+          if-no-files-found: error
+          retention-days: 7
+      - name: Sign the final installer
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_TEST_POLICY_SLUG }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.installer.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed-installer
+          parameters: |
+            version: "${{ needs.build.outputs.version }}"
+            installer: "${{ needs.build.outputs.name }}-setup.exe"
+      - name: Verify the installed game, uninstaller and setup
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setupPath = python .github/release/windows/signing.py verify-installer `
+            --original-installer "unsigned-installer/${{ needs.build.outputs.name }}-setup.exe" `
+            --signed-directory signed-installer --fingerprint "$env:TEST_CERTIFICATE_SHA256"
+          if ($LASTEXITCODE -ne 0) { throw 'Installer contents or signature check failed' }
+          $root = Join-Path $env:RUNNER_TEMP 'signed-installer-test'
+          $app = Join-Path $root 'VERA'
+          $game = Join-Path $root 'Game'
+          New-Item -ItemType Directory -Force $game | Out-Null
+          Copy-Item '.github\release\windows\test-game\*' $game -Exclude README.md
+          $install = Start-Process $setupPath -Wait -PassThru -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$app`"", "/GAMEDIR=`"$game`"")
+          if ($install.ExitCode -ne 0) { throw "Signed setup failed: $($install.ExitCode)" }
+          $uninstallers = @(Get-ChildItem $app -Filter 'unins*.exe' -File)
+          if ($uninstallers.Count -ne 1) { throw 'Expected one signed uninstaller' }
+          python .github/release/windows/signing.py verify --fingerprint "$env:TEST_CERTIFICATE_SHA256" `
+            (Join-Path $app 'vera20k.exe') $uninstallers[0].FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Installed executable signature check failed' }
+          $uninstall = Start-Process $uninstallers[0].FullName -Wait -PassThru -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
+          if ($uninstall.ExitCode -ne 0) { throw "Signed uninstaller failed: $($uninstall.ExitCode)" }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-test-signed-installer-not-for-distribution
+          path: signed-installer/*-setup.exe
+          if-no-files-found: error
+          retention-days: 7

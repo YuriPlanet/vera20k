@@ -223,23 +223,7 @@ jobs:
       - name: Install Inno Setup 7.1.0
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          # Pin the official compiler instead of using the runner's older copy.
-          $installer = Join-Path $env:RUNNER_TEMP 'innosetup-7.1.0-x64.exe'
-          $compilerDir = Join-Path $env:RUNNER_TEMP 'innosetup-7.1.0'
-          Invoke-WebRequest -Uri 'https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe' -OutFile $installer
-          $expectedSha256 = '0362a383ed217d4c4239b5933866dd96d3eb2102737da92f80f6057a4b40df2f'
-          if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne $expectedSha256) {
-            throw 'Inno Setup download checksum mismatch'
-          }
-          $install = Start-Process $installer -Wait -PassThru -ArgumentList @(
-            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', '/TASKS=',
-            "/DIR=`"$compilerDir`"")
-          if ($install.ExitCode -ne 0) { throw "Inno Setup installation failed: $($install.ExitCode)" }
-          $iscc = Join-Path $compilerDir 'ISCC.exe'
-          if (-not (Test-Path $iscc -PathType Leaf)) { throw 'Inno Setup compiler was not installed' }
-          "INNO_SETUP_ISCC=$iscc" >> $env:GITHUB_ENV
+        run: .github/release/windows/install-inno.ps1
       - name: Build the game
         # Shipped binaries leave out the default `dev-overlays` (the Ctrl+Shift dev chord),
         # and use the whole-program `shipping` profile (Cargo.toml). The splash's
@@ -282,10 +266,10 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $dist = (Resolve-Path dist).Path
-          & $env:INNO_SETUP_ISCC "/DAppVersion=$env:VERSION" "/DBuild=$env:STAMP" `
-            "/DPackageDir=$dist\$env:NAME" "/DOutputDir=$dist" `
-            "/DOutputBaseFilename=$env:NAME-setup" .github\release\windows\vera20k.iss
-          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+          python .github/release/windows/signing.py plain --package "$dist\$env:NAME" `
+            --output "$dist" --version "$env:VERSION" --build "$env:STAMP" `
+            --name "$env:NAME" --iscc "$env:INNO_SETUP_ISCC"
+          if ($LASTEXITCODE -ne 0) { throw "Windows packaging failed with exit code $LASTEXITCODE" }
       # Install, upgrade and uninstall silently against stand-in game folders, so
       # a broken installer stops the release here instead of reaching players.
       - name: Test the Windows installer
