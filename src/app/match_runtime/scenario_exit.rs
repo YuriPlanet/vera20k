@@ -754,6 +754,45 @@ mod tests {
         assert!(exit.take_destination().is_none());
     }
 
+    /// A card that was up through the losing commander's clip has already had
+    /// its beat: the deadline is anchored to the frame the card appeared, so
+    /// the teardown starts on the first tick after the router takes the result
+    /// instead of holding the player for three more seconds.
+    #[test]
+    fn a_card_that_played_under_a_clip_has_no_extra_beat() {
+        let card_at = 10_000;
+        let router_at = card_at + 12_000;
+        let mut exit =
+            ScenarioExitCascade::start_holding_banner(router_at, score_destination(), true)
+                .with_banner_hold_until(card_at + BANNER_HOLD_MS);
+        assert!(exit.holding_banner());
+        let tick = exit.tick(router_at, false, false);
+        assert!(
+            tick.fade_sound_master,
+            "the card's own beat is spent by the clip under it"
+        );
+        assert!(!exit.holding_banner());
+    }
+
+    /// The same deadline still gives a verdict with no clip its full beat,
+    /// counted from the frame its card appeared rather than from the router.
+    #[test]
+    fn a_card_with_no_clip_keeps_its_beat_from_the_flag() {
+        let card_at = 10_000;
+        let mut exit = ScenarioExitCascade::start_holding_banner(card_at, score_destination(), true)
+            .with_banner_hold_until(card_at + BANNER_HOLD_MS);
+        assert!(exit.holding_banner());
+        assert!(
+            !exit
+                .tick(card_at + BANNER_HOLD_MS - 1, false, false)
+                .fade_sound_master
+        );
+        assert!(
+            exit.tick(card_at + BANNER_HOLD_MS, false, false)
+                .fade_sound_master
+        );
+    }
+
     /// An exit with no card to show is exactly the retail one: no beat, no
     /// phase, the fade starts on the first tick.
     #[test]
