@@ -1055,7 +1055,8 @@ enum FireDisclosurePath {
 /// FireAt6FDE73..6FDF5A /6FF66C..6FF73D. Both routes share the
 /// victim's Map5673A0(radius3, final0) and its shifted-XYZ border6.
 /// Spawner's fresh-XYZ border4 also runs when the victim/weapon leaf gates
-/// fail; normal fire requires those gates for both calls. Each human map
+/// fail on an Object target; normal fire requires those gates for both calls.
+/// A target that is no Object leaves both tails before either. Each human map
 /// represents that client's PlayerPtr; computer Houses have no client shroud.
 /// On each client the victim leaf asks IsHumanPlayer (`0x0050B6F0`) of the
 /// victim's House with that client's PlayerPtr
@@ -1072,9 +1073,10 @@ fn reveal_on_fire(
     enabled: bool,
     path: FireDisclosurePath,
 ) {
-    // RESIDUAL: a Spawner shot at a bare Cell returns here, but native still
-    // reaches border4: CellClass's Owner (vt7E4EEC+3C =4104A0) answers
-    // NULL, so6FDEFA jumps to6FDF35. Only shroud edge frames differ.
+    // A bare Cell is no Object: Fire_At keeps the target only when its
+    // AbstractFlags hold Object ([+14]&2, 6FDD7D..6FDDA1), and both tails test
+    // that copy first (Spawner 6FDEE9 -> exit 6FDE03, shot 6FF6D4), so a Cell
+    // reaches neither Owner nor a border.
     let TargetKind::Entity(target_id) = target else {
         return;
     };
