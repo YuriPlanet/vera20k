@@ -138,6 +138,10 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // A battle's next frame sizes the sidebar and radar from it.
         self.persistence.options_profile.hd_radar = enabled;
     }
+    fn store_smooth_sidebar(&mut self, enabled: bool) {
+        // A battle's next frame sizes the sidebar and scales its art from it.
+        self.persistence.options_profile.smooth_sidebar = enabled;
+    }
     fn store_mouse_wheel_zoom(&mut self, enabled: bool) {
         self.persistence.options_profile.mouse_wheel_zoom = enabled;
         if !enabled {

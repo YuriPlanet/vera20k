@@ -12,6 +12,7 @@ use crate::assets::shp_file::ShpFile;
 use crate::render::atlas_growth;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::gpu::GpuContext;
+use crate::render::sidebar_smoothing::{self, SmoothCopy, SmoothSource};
 use crate::rules::ruleset::RuleSet;
 
 const CAMEO_PADDING: u32 = 2;
@@ -38,9 +39,33 @@ pub struct SidebarCameoAtlas {
     alt_entries: HashMap<String, SidebarCameoEntry>,
     /// Per-SuperWeaponType icons, independent of object IDs and filenames.
     superweapon_entries: HashMap<String, SidebarCameoEntry>,
+    /// The atlas image and its cameos, kept for VERA's smooth sidebar
+    /// (`render::sidebar_smoothing`).
+    smooth_source: SmoothSource,
+    /// Their copy at the sidebar's draw scale while it is on.
+    smooth: Option<SmoothCopy>,
 }
 
 impl SidebarCameoAtlas {
+    /// Follow the smooth sidebar's scale; None draws the atlas's own pixels.
+    pub fn set_smooth_scale(
+        &mut self,
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        scale: Option<u32>,
+    ) {
+        sidebar_smoothing::follow_scale(&mut self.smooth, &self.smooth_source, scale, gpu, batch);
+    }
+
+    /// The texture the sidebar draws its cameos from: the smooth copy when
+    /// there is one. It keeps the atlas's layout, so entries map unchanged.
+    pub fn sidebar_texture(&self) -> &BatchTexture {
+        self.smooth
+            .as_ref()
+            .and_then(SmoothCopy::texture)
+            .unwrap_or(&self.texture)
+    }
+
     pub fn superweapon(&self, type_id: &str) -> Option<&SidebarCameoEntry> {
         self.superweapon_entries.get(&type_id.to_ascii_uppercase())
     }
@@ -82,6 +107,9 @@ struct RenderedCameo {
     canvas_height: u32,
     crop_x: u32,
     crop_y: u32,
+    /// Its baked-in name (`sidebar_smoothing::cameo_name_pixels`), one flag
+    /// per pixel of `rgba`; empty when it has none.
+    sharp: Vec<bool>,
 }
 
 pub fn build_sidebar_cameo_atlas(
@@ -433,6 +461,7 @@ fn render_pcx_cameo(
         canvas_height: 48,
         crop_x: 0,
         crop_y: 0,
+        sharp: Vec::new(),
     })
 }
 
@@ -450,8 +479,19 @@ fn render_shp_frame0(key: &str, data: &[u8], palette: &Palette) -> Option<Render
         return None;
     }
     let mut full_rgba = vec![0u8; (full_w * full_h * 4) as usize];
-    blit_frame_into_full_bounds(&mut full_rgba, full_w, full_h, frame, &frame_rgba);
-    rendered_cameo_from_canvas(key, full_rgba, full_w, full_h)
+    blit_frame_into_full_bounds(&mut full_rgba, full_w, full_h, frame, &frame_rgba, 4);
+    let mut cameo = rendered_cameo_from_canvas(key, full_rgba, full_w, full_h)?;
+    let mut indices = vec![0u8; (full_w * full_h) as usize];
+    blit_frame_into_full_bounds(&mut indices, full_w, full_h, frame, &frame.pixels, 1);
+    let name =
+        sidebar_smoothing::cameo_name_pixels(&indices, full_w as usize, full_h as usize, palette);
+    cameo.sharp = (cameo.crop_y..cameo.crop_y + cameo.height)
+        .flat_map(|y| {
+            let start = (y * full_w + cameo.crop_x) as usize;
+            name[start..start + cameo.width as usize].iter().copied()
+        })
+        .collect();
+    Some(cameo)
 }
 
 /// Phobos `[AudioVisual] MissingCameo=` for a type whose own cameo did not
@@ -534,12 +574,14 @@ fn push_unique(candidates: &mut Vec<String>, candidate: String) {
     }
 }
 
+/// Place a frame's pixels, `bytes` bytes each, on its SHP's full canvas.
 fn blit_frame_into_full_bounds(
-    full_rgba: &mut [u8],
+    full: &mut [u8],
     full_w: u32,
     full_h: u32,
     frame: &crate::assets::shp_file::ShpFrame,
-    frame_rgba: &[u8],
+    frame_pixels: &[u8],
+    bytes: u32,
 ) {
     let fw = frame.frame_width as u32;
     let fh = frame.frame_height as u32;
@@ -550,13 +592,13 @@ fn blit_frame_into_full_bounds(
         if dst_y >= full_h {
             break;
         }
-        let src_start = (y * fw * 4) as usize;
-        let dst_start = ((dst_y * full_w + fx) * 4) as usize;
+        let src_start = (y * fw * bytes) as usize;
+        let dst_start = ((dst_y * full_w + fx) * bytes) as usize;
         let copy_w = fw.min(full_w.saturating_sub(fx));
-        let byte_count = (copy_w * 4) as usize;
-        if src_start + byte_count <= frame_rgba.len() && dst_start + byte_count <= full_rgba.len() {
-            full_rgba[dst_start..dst_start + byte_count]
-                .copy_from_slice(&frame_rgba[src_start..src_start + byte_count]);
+        let byte_count = (copy_w * bytes) as usize;
+        if src_start + byte_count <= frame_pixels.len() && dst_start + byte_count <= full.len() {
+            full[dst_start..dst_start + byte_count]
+                .copy_from_slice(&frame_pixels[src_start..src_start + byte_count]);
         }
     }
 }
@@ -579,6 +621,7 @@ fn rendered_cameo_from_canvas(
         canvas_height,
         crop_x,
         crop_y,
+        sharp: Vec::new(),
     })
 }
 
@@ -686,6 +729,8 @@ fn pack_cameos(
         return None;
     }
     let mut rgba = vec![0u8; (atlas_width * atlas_height * 4) as usize];
+    let mut sharp = vec![false; (atlas_width * atlas_height) as usize];
+    let mut pieces = Vec::with_capacity(cameos.len());
     let mut entries = HashMap::with_capacity(cameos.len());
     let mut alt_entries = HashMap::new();
     let mut superweapon_entries = HashMap::new();
@@ -702,6 +747,11 @@ fn pack_cameos(
             rgba[dst_start..dst_start + byte_count]
                 .copy_from_slice(&cameo.rgba[src_start..src_start + byte_count]);
         }
+        for (y, flags) in cameo.sharp.chunks_exact(cameo.width as usize).enumerate() {
+            let start = ((py as usize + y) * atlas_width as usize) + px as usize;
+            sharp[start..start + flags.len()].copy_from_slice(flags);
+        }
+        pieces.push([px, py, cameo.width, cameo.height]);
         let target = match cameo.kind {
             CameoKind::Ordinary => &mut entries,
             CameoKind::Promoted => &mut alt_entries,
@@ -724,6 +774,9 @@ fn pack_cameos(
         entries,
         alt_entries,
         superweapon_entries,
+        smooth_source: SmoothSource::new(rgba, [atlas_width, atlas_height], pieces)
+            .with_sharp_pixels(sharp),
+        smooth: None,
     })
 }
 

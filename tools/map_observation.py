@@ -570,12 +570,14 @@ def _profile_extensions(profile: Mapping[str, Any], *, production_commands: bool
     if 'allow_load_segments' in profile and type(profile['allow_load_segments']) is not bool:
         raise ValidationError('profile.allow_load_segments must be a boolean')
     if 'presentation' in profile:
-        # The `[VERA]` Zoom/Sidebar/HdRadar values; Rust owns their effect on the frame.
+        # The `[VERA]` Zoom/Sidebar/HdRadar/SmoothSidebar values; Rust owns their
+        # effect on the frame.
         presentation = require_object(profile['presentation'], 'profile.presentation')
-        optional = ('hd_radar',) if 'hd_radar' in presentation else ()
+        optional = tuple(key for key in ('hd_radar', 'smooth_sidebar') if key in presentation)
         require_exact_keys(presentation, ('zoom', 'sidebar') + optional, 'profile.presentation')
-        if 'hd_radar' in presentation and type(presentation['hd_radar']) is not bool:
-            raise ValidationError('profile.presentation.hd_radar must be a boolean')
+        for key in optional:
+            if type(presentation[key]) is not bool:
+                raise ValidationError(f'profile.presentation.{key} must be a boolean')
         zoom = _bounded_int(presentation['zoom'], 'profile.presentation.zoom', 0, 10_000)
         if zoom != 0 and (zoom < 100 or zoom % 50):
             raise ValidationError('profile.presentation.zoom must be 0 (Auto) or a 50-step percent from 100')

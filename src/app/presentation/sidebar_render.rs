@@ -703,6 +703,25 @@ pub(crate) fn active_minimap_screen_rect(state: &AppState) -> crate::ui::sidebar
 // Chrome / theme helpers
 // ---------------------------------------------------------------------------
 
+/// Keep VERA's smooth sidebar (`render::sidebar_smoothing`) at this frame's
+/// draw scale, or drop its copies when the option is off or the sidebar draws
+/// at its own pixels.
+pub(crate) fn prepare_smooth_sidebar(state: &mut AppState) {
+    let scale = state
+        .smooth_sidebar()
+        .then(|| state.sidebar_frame().draw_scale())
+        .filter(|&scale| scale > 1);
+    let side = current_sidebar_side(state);
+    let (gpu, batch) = (&state.renderer.gpu, &state.renderer.batch_renderer);
+    let presentation = &mut state.match_state.match_presentation;
+    if let Some(atlas) = presentation.sidebar_cameo_atlas.as_mut() {
+        atlas.set_smooth_scale(gpu, batch, scale);
+    }
+    if let Some(set) = presentation.sidebar_chrome.as_mut() {
+        set.set_smooth_scale(side, gpu, batch, scale);
+    }
+}
+
 pub(crate) fn current_sidebar_theme(
     state: &AppState,
 ) -> crate::render::sidebar_chrome::SidebarTheme {

@@ -87,6 +87,10 @@ pub(super) struct SidebarInstances {
     pub chrome: Vec<SpriteInstance>,
     /// The bottom command bar's surface layer, in layout space too.
     pub command_bar: Vec<SpriteInstance>,
+    /// Whether `chrome` and `command_bar` draw from the smooth sidebar's copy
+    /// of the chrome (`render::sidebar_smoothing`) rather than the atlas.
+    pub smooth_chrome: bool,
+    pub smooth_command_bar: bool,
     pub cameo: Vec<SpriteInstance>,
     pub cameo_hover: Vec<SpriteInstance>,
     pub unavailable: Vec<SpriteInstance>,
@@ -1282,15 +1286,20 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         (Vec::new(), Vec::new(), Vec::new())
     };
 
-    let chrome = view
+    let mut chrome = view
         .as_ref()
         .map(|v| build_sidebar_chrome_instances(state, v))
         .unwrap_or_default();
     // The bottom bar draws into a surface of its own.
-    let command_bar = view
+    let mut command_bar = view
         .as_ref()
         .map(|_| build_command_bar_instances(state))
         .unwrap_or_default();
+    // The smooth sidebar's chrome copy packs the pieces apart from the atlas.
+    let chrome_atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state);
+    let smooth_chrome = chrome_atlas.is_some_and(|atlas| atlas.retarget_to_smooth(&mut chrome));
+    let smooth_command_bar =
+        chrome_atlas.is_some_and(|atlas| atlas.retarget_to_smooth(&mut command_bar));
 
     let ready_text = state
         .process_assets
@@ -1390,6 +1399,8 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     SidebarInstances {
         chrome,
         command_bar,
+        smooth_chrome,
+        smooth_command_bar,
         cameo: cameo_layers.cameo,
         cameo_hover: cameo_layers.hover,
         unavailable: cameo_layers.unavailable,

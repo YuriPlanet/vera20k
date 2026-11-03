@@ -152,6 +152,11 @@ pub(crate) struct RetailOptionsProfile {
     /// pixels, the radar draws at that multiple too (`render::radar::hd`).
     /// Off by default; presentation only.
     pub(crate) hd_radar: bool,
+    /// `[VERA] SmoothSidebar=`: when the sidebar draws at a whole multiple of
+    /// its pixels, its cameos and frame pieces draw from lightly smoothed xBR
+    /// copies at that multiple (`render::sidebar_smoothing`). Off by default;
+    /// presentation only.
+    pub(crate) smooth_sidebar: bool,
     /// `[VERA] WindowMaximized=`: whether the window was last left maximised.
     /// [`Self::window_placement`] keeps the size it returns to.
     pub(crate) window_maximized: bool,
@@ -308,6 +313,7 @@ impl Default for RetailOptionsProfile {
             lock_cursor: false,
             vera_icon: false,
             hd_radar: false,
+            smooth_sidebar: false,
             window_maximized: false,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
@@ -340,7 +346,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 28],
+    pub(crate) vera: [(&'static str, String); 29],
 }
 
 impl RetailOptionsLoad {
@@ -547,6 +553,7 @@ impl RetailOptionsProfile {
             self.lock_cursor = vera.read_bool("LockCursor", self.lock_cursor);
             self.vera_icon = vera.read_bool("VeraIcon", self.vera_icon);
             self.hd_radar = vera.read_bool("HdRadar", self.hd_radar);
+            self.smooth_sidebar = vera.read_bool("SmoothSidebar", self.smooth_sidebar);
             self.window_maximized = vera.read_bool("WindowMaximized", self.window_maximized);
             // A non-numeric value answers 0, which the clamp lifts to the
             // retail strength rather than to a negative boost.
@@ -735,6 +742,10 @@ impl RetailOptionsProfile {
                 ("VeraIcon", format_bool(self.vera_icon).to_string()),
                 ("HealthBars", self.health_bars.ini_value().to_string()),
                 ("HdRadar", format_bool(self.hd_radar).to_string()),
+                (
+                    "SmoothSidebar",
+                    format_bool(self.smooth_sidebar).to_string(),
+                ),
             ],
         }
     }
@@ -1555,20 +1566,22 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         let unset = load_snapshot(&startup, &unset).retained_profile;
         assert_eq!(unset.window_placement, None);
         // The lock starts off, a window starts unmaximised, its icon is the
-        // red star and the radar is native; all four round-trip.
+        // red star, the radar is native and the sidebar sharp; all five
+        // round-trip.
         assert!(!unset.lock_cursor && !unset.window_maximized && !unset.vera_icon);
-        assert!(!unset.hd_radar);
+        assert!(!unset.hd_radar && !unset.smooth_sidebar);
         let changed = RetailOptionsProfile {
             lock_cursor: true,
             window_maximized: true,
             vera_icon: true,
             hd_radar: true,
+            smooth_sidebar: true,
             ..RetailOptionsProfile::default()
         }
         .transform_settings(b"");
         let changed = load_snapshot(&startup, &changed).retained_profile;
         assert!(changed.lock_cursor && changed.window_maximized && changed.vera_icon);
-        assert!(changed.hd_radar);
+        assert!(changed.hd_radar && changed.smooth_sidebar);
     }
 
     #[test]
