@@ -74,8 +74,8 @@ impl BeamGeometry {
     }
 
     /// Kind2 RadBeam659CA0 for an active beam: 659EE0's update, then
-    /// segments0..count (none when count <= 0). Spacing stays the
-    /// constructor's20. 659EE0 re-derives the length, count and step from
+    /// segments0..count (none when count <= 0). `spacing` is the
+    /// constructor's, which kind2 never rewrites. 659EE0 re-derives the length, count and step from
     /// the endpoint delta after adding its travel offset, which is always zero
     /// (see [`crate::sim::combat::radiation_beam::erupted`]), so this
     /// first-draw geometry (659E30) is what it re-derives.
@@ -83,10 +83,11 @@ impl BeamGeometry {
         self,
         birth: RadiationBeamBirth,
         progress: i32,
+        spacing: i32,
         viewport: SurfaceLineViewport,
         mut emit: impl FnMut(SurfaceLine),
     ) {
-        let frame = SineFrame::eruption(self, birth, progress);
+        let frame = SineFrame::eruption(self, birth, progress, spacing);
         for index in 0..frame.count {
             frame.draw(index, viewport, &mut emit);
         }
@@ -187,13 +188,20 @@ impl SineFrame {
         }
     }
 
-    /// 659E30/659EE0: count = ftol(length / 20), and an amplitude that rises
-    /// over the first half of the duration and falls over the second. The
-    /// beam sweeps 180 degrees (659FF0's ratio*180, then the shared radian
-    /// factor; the product commutes with the straight frame's order).
-    fn eruption(geometry: BeamGeometry, birth: RadiationBeamBirth, progress: i32) -> Self {
+    /// 659E30/659EE0: count = ftol(length / spacing). The amplitude's height
+    /// is 2*progress before half the duration (signed /2), then duration less
+    /// 2*progress mod duration, over the duration: a rise and fall, uneven
+    /// for odd durations. The beam sweeps 180 degrees (659FF0's ratio*180,
+    /// then the shared radian factor; the product commutes with the straight
+    /// frame's order).
+    fn eruption(
+        geometry: BeamGeometry,
+        birth: RadiationBeamBirth,
+        progress: i32,
+        spacing: i32,
+    ) -> Self {
         let length = M::load_f64(geometry.length);
-        let count = M::ftol_i32_low_masked(M::div(length, M::load_i32(20)));
+        let count = M::ftol_i32_low_masked(M::div(length, M::load_i32(spacing)));
         let step = divide_coordinate(geometry.delta, count);
         let duration = birth.duration;
         let doubled = progress.wrapping_add(progress);

@@ -120,7 +120,13 @@ impl RadiationBeams {
                     beam.active = false;
                 }
                 if beam.active && visible(&beam.birth) {
-                    geometry.eruption_lines(beam.birth, beam.progress, viewport, &mut push);
+                    geometry.eruption_lines(
+                        beam.birth,
+                        beam.progress,
+                        beam.spacing,
+                        viewport,
+                        &mut push,
+                    );
                 }
             }
             let progress_before = beam.progress;

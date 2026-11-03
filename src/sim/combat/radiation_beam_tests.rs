@@ -629,47 +629,29 @@ fn an_eruption_shot_creates_eight_kind2_beams_around_the_firer() {
         ]
         .map(|(dx, dy)| (from.x / 256 + dx * 10, from.y / 256 + dy * 10));
         assert_eq!(births.len(), cells.len());
-        for (birth, (x, y)) in births.iter().zip(cells) {
+        for birth in &births {
             assert!(birth.eruption);
             assert_eq!(
                 (birth.from, birth.z_adjust, birth.color),
                 (from, 0, [0, 255, 0])
             );
-            assert!((birth.to.x - (x * 256 + 128)).abs() <= 128, "{birth:?}");
-            assert!((birth.to.y - (y * 256 + 128)).abs() <= 128, "{birth:?}");
-            assert!((5..=20).contains(&birth.duration));
-            let amplitude = f64::from_bits(birth.amplitude.bits());
-            assert!(amplitude.fract() == 0.0 && (100.0..=500.0).contains(&amplitude));
         }
-        // Five Main draws per beam: X, Y, duration, amplitude, travel rate.
+        // Per beam, Main draws X and Y jitter, duration, amplitude and the
+        // inert travel rate.
         sim.main_rng = SimRng::new(77).into();
         let mut main = SimRng::new(77);
         sim.lifecycle_outputs.clear_for_test();
         super::radiation_beam::erupted(&mut sim, rules, source, weapon);
-        let LifecycleOutput::RadiationBeamCreated(first) =
-            sim.lifecycle_outputs.iter().next().unwrap()
-        else {
-            panic!("eruption birth");
-        };
-        let jitter = [
-            main.next_range_i32_inclusive(-128, 128),
-            main.next_range_i32_inclusive(-128, 128),
-        ];
-        assert_eq!(
-            [
-                first.to.x - (cells[0].0 * 256 + 128),
-                first.to.y - (cells[0].1 * 256 + 128)
-            ],
-            jitter
-        );
-        assert_eq!(first.duration, main.next_range_i32_inclusive(5, 20));
-        let amplitude = f64::from(main.next_range_i32_inclusive(100, 500));
-        assert_eq!(first.amplitude.bits(), amplitude.to_bits());
-        main.next_range_i32_inclusive(0, 20);
-        for _ in 1..cells.len() {
-            for (low, high) in [(-128, 128), (-128, 128), (5, 20), (100, 500), (0, 20)] {
-                main.next_range_i32_inclusive(low, high);
-            }
+        for (output, (x, y)) in sim.lifecycle_outputs.iter().zip(cells) {
+            let LifecycleOutput::RadiationBeamCreated(birth) = output else {
+                panic!("eruption birth");
+            };
+            let mut draw = |low, high| main.next_range_i32_inclusive(low, high);
+            assert_eq!(birth.to.x, x * 256 + 128 + draw(-128, 128));
+            assert_eq!(birth.to.y, y * 256 + 128 + draw(-128, 128));
+            assert_eq!(birth.duration, draw(5, 20));
+            assert_eq!(birth.amplitude.bits(), f64::from(draw(100, 500)).to_bits());
+            draw(0, 20);
         }
         assert_eq!(sim.main_rng.logical_state(), main.logical_state());
         return;
