@@ -677,8 +677,9 @@ pub(super) fn infantry_arm_attacks(
 /// (`0x004DDDE0`) to Techno `0x00700600`, whose unforced Attack rung
 /// (`0x007008A6..0x007009F1`, [`Simulation::cell_attack_rung_admits`])
 /// answers over a destroyable cliff or another house's Wall its `Wall=`
-/// warhead may hit (retail Harrier and Black Eagle warheads have it), with
-/// the forced shot's tail at the Cell. A shrouded Cell takes the Attack back
+/// warhead may hit (retail Harrier and Black Eagle warheads have it), and
+/// whose TerrainFire rung (`0x00700A46`) answers over an `IsARock=` overlay for a
+/// `TerrainFire=` weapon, each with the forced shot's tail at the Cell. A shrouded Cell takes the Attack back
 /// (`0x004DDE64..0x004DDEBE`). Aircraft `0x00417FB1` and `0x00417DCD` keep
 /// it only with a weapon in slot 0 (vt+0x3F8). The Immune rung then
 /// tests the object (`0x00417F4A`), and the click sends the Attack to Foot

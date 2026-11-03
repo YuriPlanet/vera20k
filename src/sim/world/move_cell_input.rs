@@ -574,7 +574,9 @@ impl Simulation {
             .resolved_terrain
             .as_ref()
             .map(NativeCellQuery::isolated);
-        let Some(weapon) = combat_weapon::select_weapon_against_in_query(
+        // Only the WeaponType is tested (`0x0070EF1B..0x0070EF1F`), never
+        // its warhead.
+        let Some(weapon) = combat_weapon::select_weapon_index_against_in_query(
             rules,
             entity,
             object,
@@ -585,10 +587,19 @@ impl Simulation {
             cells.as_ref(),
             Some(&self.house_alliances),
         )
-        .and_then(|(_, weapon)| weapon) else {
+        .and_then(|index| {
+            combat_weapon::get_weapon(
+                entity,
+                object,
+                index,
+                &self.substrate.entities,
+                rules,
+                &self.interner,
+            )
+        }) else {
             return false;
         };
-        let terrain_fire = weapon.weapon.terrain_fire;
+        let terrain_fire = weapon.terrain_fire;
         match *target {
             TargetKind::Entity(target_id) if self.terrain_objects().get(target_id).is_some() => {
                 rules.general.tree_targeting || terrain_fire
