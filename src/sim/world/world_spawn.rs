@@ -631,7 +631,7 @@ impl Simulation {
                     // Unlimbo already ran (0x00440D61 / 0x00440E76) passed
                     // Is_Operational.
                 }
-                Self::commit_map_placement_mission(&sim.session, &mut sim.substrate, stable_id, map_ent.mission);
+                sim.commit_map_placement_mission(stable_id, map_ent.mission, rules);
                 // ReadINI44FC1B..44FD23: the factory callback is inside
                 // an admitted transition, not unconditional after Unlimbo.
                 if map_ent.category == EntityCategory::Structure {
@@ -913,54 +913,49 @@ impl Simulation {
         Some(stable_id)
     }
 
-    /// Commit the `MISSION=` column a map placement authored, at the position
-    /// the scenario reader does it: immediately after the object is unlimboed
-    /// onto the map.
-    ///
-    /// Retail runs `Queue_Mission(<name>, 0)` and then its readiness check plus
-    /// `Commence` on the same line, and `Queue` refuses the `-1` sentinel — so
-    /// an absent or unrecognised name leaves the object on the mission it was
-    /// born with. Because the queue slot is empty at birth, `Commence`'s field
-    /// writes are exactly `Assign`'s, which is the verb used here; the residual
-    /// is that retail's Unit path can leave the promotion one tick late when
-    /// its readiness predicate says no, and this cannot.
-    ///
-    /// Dispatchable miners keep the Harvest their Unlimbo idle mode gave them —
-    /// the native creation-mission family is its own recorded UNCHECKED and the
-    /// harvest FSM needs a truthful `current` from birth.
+    /// The `MISSION=` column of a map placement, right after the reader's
+    /// successful Unlimbo. `UnitClass::Read_INI` queues it (`Queue_Mission(m,
+    /// 0)`, vt+0x1E8, `0x0074361B..0x00743623`) and commences only when
+    /// Ready_To_Commence (vt+0x200) answers yes (`0x0074362D..0x0074363B`);
+    /// `InfantryClass::Read_INI` (`0x0051FEA6..0x0051FEB0`) and
+    /// `AircraftClass::Read_INI` (`0x0041B3EE..0x0041B3F8`, through the
+    /// Aircraft Queue filter `0x0041BA90`) queue and commence without asking.
+    /// Harvesters take the same path, so an authored Sleep miner sleeps. An
+    /// unrecognised name (`-1`), or the mission Unlimbo already made current,
+    /// queues nothing, and Commence then promotes only what Unlimbo left
+    /// queued.
     ///
     /// A building's `[Structures]` line has no mission column. Its existing
     /// discovery/GrandOpening and UpdateAnimation owners alone set readiness;
     /// the reader must not ready a campaign turret hidden in the shroud.
     fn commit_map_placement_mission(
-        session: &ScenarioSession,
-        substrate: &mut ObjectSubstrate,
+        &mut self,
         stable_id: u64,
         authored: Option<crate::sim::mission::MissionType>,
+        rules: &RuleSet,
     ) {
-        // A harvester keeps the Harvest that Unlimbo's idle mode gave it
-        // (`UnitClass::Enter_Idle_Mode @ 0x00738970`, harvester arm
-        // `0x00738BD8`, owned by `techno_unlimbo_idle_mode`).
-        let harvester = substrate
+        let Some(category) = self
+            .substrate
             .entities
             .get(stable_id)
-            .is_some_and(crate::sim::game_entity::GameEntity::is_harvester);
-        let building = substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| entity.category() == EntityCategory::Structure);
-        if harvester || building {
-            return;
-        }
-        let Some(mission) = authored else {
+            .map(GameEntity::category)
+        else {
             return;
         };
-        let now = session.binary_frame();
-        let _ = substrate.mission_assign_exact(
-            stable_id,
-            crate::sim::mission::MissionId::from_known(mission),
-            now,
+        if category == EntityCategory::Structure {
+            return;
+        }
+        let now = self.session.binary_frame();
+        let requested = authored.map_or(
+            crate::sim::mission::MissionId::NONE,
+            crate::sim::mission::MissionId::from_known,
         );
+        let readiness = crate::sim::mission::authority::LiveReadyInputProvider { rules };
+        let _ = self.mission_queue_exact(stable_id, requested, 0, now, &readiness);
+        if category == EntityCategory::Unit && !self.mission_ready_to_commence(stable_id, rules) {
+            return;
+        }
+        let _ = self.substrate.mission_commence_exact(stable_id, now);
     }
 
     /// `BuildingClass::Enter_Idle_Mode @ 0x0044D6A0` (vt+0x484), shared by

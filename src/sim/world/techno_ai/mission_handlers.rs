@@ -1194,8 +1194,8 @@ pub(crate) fn enter_idle_mode(
 /// 0x004176F0`, `BuildingClass::Enter_Idle_Mode @ 0x0044D6A0`), then
 /// Ready_To_Commence and Commence, so the mission it picks is current at once
 /// when the object is ready.
-/// A fresh object with nowhere to go takes Guard; a map placement then assigns
-/// its authored mission over it. A factory-built vehicle used to keep no
+/// A fresh object with nowhere to go takes Guard; a map placement then queues
+/// and commences its authored mission over it (`commit_map_placement_mission`). A factory-built vehicle used to keep no
 /// mission at all, so its dispatch took the missionless 450-frame arm instead
 /// of Mission_Guard's cadence. A placed building queues Construction; its
 /// ready byte (`+0x6DD`, `0x00454250`) is clear unless its cell-put discovery
