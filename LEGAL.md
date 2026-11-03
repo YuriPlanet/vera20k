@@ -3,20 +3,22 @@
 **Read this before you share, sell or fork VERA20K.**
 
 VERA20K is copyrighted software. You may copy, change and share its code only under the
-[GPLv3](LICENSE-GPL).
+[GPLv3](LICENSE-GPL) and the [additional terms](#additional-terms) below.
 
-- If you share VERA20K or a changed version without its full source code, or on terms other
-  than the GPLv3, you infringe our copyright, and your license ends automatically.
+- If you share a changed version without its full source code, pass it off as VERA20K, or share
+  VERA20K on terms other than these, you infringe our copyright, and your license ends
+  automatically.
 - Willful copyright infringement on a commercial scale is a crime in most countries.
-- The GPLv3 covers the code, not the VERA20K name. Forks and paid builds may not use the name;
-  see [The VERA20K name](#the-vera20k-name).
+- Forks and paid builds may not use the VERA20K name; see [The VERA20K name](#the-vera20k-name).
 - We report infringing copies to stores and hosts to get them taken down.
+- We may block anyone who breaks this notice from our lobby and relays; see
+  [Online play](#online-play).
 - Official builds come only from the [releases page](https://github.com/YuriPlanet/vera20k/releases)
   and [vera20k.org](https://vera20k.org/). Anything else is unofficial and may contain malware.
 
 ## The VERA20K name
 
-VERA20K™ is a trademark of Halvor Nikolai Rusten. The GPLv3 lets you copy and change the code,
+VERA20K™ is a trademark of Halvor Nikolai Rusten. The license lets you copy and change the code,
 but it gives you no right to the name.
 
 Without asking, you may:
@@ -36,6 +38,26 @@ Unless we agree in writing, you may not:
 A fork must use its own name everywhere except in the copyright and license notices, which it
 must keep. To ask for permission or report misuse,
 [open an issue](https://github.com/YuriPlanet/vera20k/issues).
+
+## Additional terms
+
+Section 7 of the GPLv3 allows these terms, so breaking them breaks the license. They apply to
+code whose copyright Halvor Nikolai Rusten holds and to code contributed after this notice was
+added:
+
+- You may not misrepresent where this code comes from. A changed version must be marked as
+  changed and must not be presented as VERA20K or as an official VERA20K build.
+- The license grants no rights under trademark law, including to the VERA20K name.
+
+## Online play
+
+We run VERA20K's official lobby and relay servers. The GPLv3 gives you the code, not access to
+our servers. You may use them for free to play VERA20K, under these rules:
+
+- Don't sell access to them, or a build or service that connects to them, without our written
+  permission.
+- Don't cheat, and don't attack or overload the servers.
+- We may block any client, account or address that breaks these rules or this notice.
 
 ## VERA20K's own art
 

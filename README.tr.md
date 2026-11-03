@@ -142,7 +142,8 @@ kaynak kodlarını GPL lisansıyla yayımlayan EA, World-Altering Editor, Final 
 Ares, Phobos ve daha nicelerine teşekkürler.
 
 Telif hakkı © 2026 Halvor Nikolai Rusten ve VERA20K'ya katkıda bulunanlar.
-[GPLv3](LICENSE-GPL) ile lisanslanmıştır. Bu depo hiçbir oyun dosyası içermez.
+[Ek koşullarla](LEGAL.md#additional-terms) birlikte [GPLv3](LICENSE-GPL) ile lisanslanmıştır.
+Bu depo hiçbir oyun dosyası içermez.
 Command & Conquer ve Red Alert, Electronic Arts Inc. şirketinin ticari markalarıdır.
 Ekran görüntülerindeki ve uygulama simgesindeki (Red Alert 2'nin kırmızı yıldızı) oyun grafikleri
 Electronic Arts'a aittir. VERA20K, Electronic Arts ile bağlantılı değildir ve Electronic Arts
