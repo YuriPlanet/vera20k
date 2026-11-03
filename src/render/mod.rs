@@ -21,6 +21,8 @@
 
 pub(crate) mod aircraft_shadow;
 #[cfg(feature = "post-process")]
+pub(crate) mod ambient_light;
+#[cfg(feature = "post-process")]
 pub(crate) mod arcane_bloom;
 pub(crate) mod atlas_growth;
 #[cfg(test)]

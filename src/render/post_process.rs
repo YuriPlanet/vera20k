@@ -53,7 +53,7 @@
 //! Depends on: `render/gpu.rs` (through the caller) and wgpu only.
 
 use crate::rules::post_process::{
-    ArcaneBloomRules, DlaaRules, MagicBloomRules, PirateBloomRules,
+    AmbientLightRules, ArcaneBloomRules, DlaaRules, MagicBloomRules, PirateBloomRules,
 };
 use wgpu::util::DeviceExt;
 
@@ -802,6 +802,13 @@ pub(crate) struct PostChain {
     /// the Arcane/Pirate pair rather than a stage after them.
     magic: Option<crate::render::magic_bloom::MagicBloom>,
     magic_rules: Option<MagicBloomRules>,
+    /// Ganossa's `AmbientLight`: the detected-light glow, run right after the
+    /// graded frame and fed to whatever follows it.
+    ambient: Option<crate::render::ambient_light::AmbientLight>,
+    ambient_rules: Option<AmbientLightRules>,
+    /// The frame AmbientLight writes when another stage follows it.
+    _ambient_output: Option<wgpu::Texture>,
+    ambient_output_view: Option<wgpu::TextureView>,
     /// The frame the chain draws into when DLAA finishes the presentation.
     _dlaa_output: Option<wgpu::Texture>,
     dlaa_output_view: Option<wgpu::TextureView>,
@@ -1104,6 +1111,10 @@ impl PostChain {
             pirate_rules: None,
             magic: None,
             magic_rules: None,
+            ambient: None,
+            ambient_rules: None,
+            _ambient_output: None,
+            ambient_output_view: None,
             _dlaa_output: None,
             dlaa_output_view: None,
             dlaa: None,
@@ -1134,6 +1145,14 @@ impl PostChain {
         self.magic_rules = rules;
         if rules.is_none() {
             self.magic = None;
+        }
+    }
+
+    /// Select Ganossa's `AmbientLight`. `None` drops it.
+    pub(crate) fn set_ambient_light(&mut self, rules: Option<AmbientLightRules>) {
+        self.ambient_rules = rules;
+        if rules.is_none() {
+            self.ambient = None;
         }
     }
 
@@ -1318,10 +1337,12 @@ impl PostChain {
         } else {
             self.neutral_weights.clone()
         };
+        let ambient_stage = self.ambient_rules.is_some();
         let magic_stage = self.magic_rules.is_some();
-        let bloom_stage = !magic_stage && (self.arcane_rules.is_some() || self.pirate_rules.is_some());
+        let bloom_stage =
+            !magic_stage && (self.arcane_rules.is_some() || self.pirate_rules.is_some());
         let simple_bloom = self.bloom_enabled && !bloom_stage && !magic_stage;
-        if !bloom_stage && !simple_bloom && !magic_stage {
+        if !bloom_stage && !simple_bloom && !magic_stage && !ambient_stage {
             let bind_group = self.source_bind_group(device, source, mask, &depth, &weights);
             self.run_pass(
                 encoder,
@@ -1350,7 +1371,23 @@ impl PostChain {
             wgpu::LoadOp::Clear(wgpu::Color::BLACK),
         );
 
-        let scene = intermediate.clone();
+        let mut scene = intermediate.clone();
+
+        if let Some(rules) = self.ambient_rules {
+            // AmbientLight runs on the graded frame and hands its result to the
+            // bloom stage, MagicBloom, or the plain destination.
+            let ambient = self
+                .ambient
+                .get_or_insert_with(|| crate::render::ambient_light::AmbientLight::new(device, self.format));
+            ambient.prepare(device, queue, size, &rules, self.viewport);
+            let output = self
+                .ambient_output_view
+                .as_ref()
+                .expect("targets exist after ensure_targets")
+                .clone();
+            ambient.draw(device, encoder, &scene, &output, size);
+            scene = output;
+        }
 
         if let Some(rules) = self.magic_rules {
             // MagicBloom reads the graded frame and screen-blends its summed
@@ -1716,6 +1753,25 @@ impl PostChain {
         self.arcane_output_view =
             Some(arcane_output.create_view(&wgpu::TextureViewDescriptor::default()));
         self._arcane_output = Some(arcane_output);
+
+        // The frame AmbientLight hands to the stages after it.
+        let ambient_output = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Post process ambient output"),
+            size: wgpu::Extent3d {
+                width: size.0,
+                height: size.1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        self.ambient_output_view =
+            Some(ambient_output.create_view(&wgpu::TextureViewDescriptor::default()));
+        self._ambient_output = Some(ambient_output);
 
         // The frame the chain draws into when DLAA finishes the presentation.
         let dlaa_output = device.create_texture(&wgpu::TextureDescriptor {

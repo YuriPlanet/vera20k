@@ -95,6 +95,16 @@
 //! Bloom.Intensity=0.4
 //! Bloom.Radius=1
 //! ArcaneBloom=no
+//! AmbientLight=no
+//! AmbientLight.Intensity=10.15
+//! AmbientLight.Threshold=15
+//! AmbientLight.Adaptation=yes
+//! AmbientLight.Adapt=0.7
+//! AmbientLight.Adapt.BaseMult=1
+//! AmbientLight.Adapt.BlackLevel=2
+//! AmbientLight.Dither=yes
+//! AmbientLight.Dirt=yes
+//! AmbientLight.Dirt.Intensity=1
 //! MagicBloom=no
 //! MagicBloom.Intensity=1
 //! MagicBloom.Threshold=2
@@ -167,6 +177,8 @@ pub struct PostProcessRules {
     /// luluco250's `ArcaneBloom`: five Gaussian levels plus an optional
     /// luminance-adaptation exposure; `None` leaves it out.
     pub arcane_bloom: Option<ArcaneBloomRules>,
+    /// Ganossa's `AmbientLight`: detected highlight glow; `None` leaves it out.
+    pub ambient_light: Option<AmbientLightRules>,
     /// luluco250's `MagicBloom`: eight Gaussian levels, threshold on the first,
     /// adapted tone-map and screen blend.
     pub magic_bloom: Option<MagicBloomRules>,
@@ -344,6 +356,46 @@ impl Default for SharpenRules {
         Self {
             strength: 0.35,
             clamp: 0.035,
+        }
+    }
+}
+
+/// AmbientLight (Ganossa, 2015): highlight detection, twelve 5-tap blur pairs
+/// at 1/16 resolution, and an adapted screen blend. The lens and dirt-texture
+/// arms are not ported (they need images the game does not ship).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AmbientLightRules {
+    /// Base intensity of the ambient mix.
+    pub intensity: f32,
+    /// Subtracts from the detected light's centre term, so dim areas stay out.
+    pub threshold: f32,
+    /// Apply the scene-luminance adaptation.
+    pub adaptation: bool,
+    /// Strength of the adaptation correction.
+    pub adapt: f32,
+    /// Multiplier on the adaptation applied to the original frame.
+    pub adapt_base_mult: f32,
+    /// Distinction level between black and white in that correction.
+    pub adapt_base_black_level: u32,
+    /// Apply the effect's dither.
+    pub dither: bool,
+    /// Enable the effect's texture-free dirt self-multiply.
+    pub dirt: bool,
+    pub dirt_intensity: f32,
+}
+
+impl Default for AmbientLightRules {
+    fn default() -> Self {
+        Self {
+            intensity: 10.15,
+            threshold: 15.0,
+            adaptation: true,
+            adapt: 0.7,
+            adapt_base_mult: 1.0,
+            adapt_base_black_level: 2,
+            dither: true,
+            dirt: true,
+            dirt_intensity: 1.0,
         }
     }
 }
@@ -927,6 +979,32 @@ impl PostProcessRules {
                     exposure: section.read_float("ArcaneBloom.Exposure", defaults.exposure),
                     max_brightness: section
                         .read_float("ArcaneBloom.MaxBrightness", defaults.max_brightness),
+                }
+            }),
+            ambient_light: section.read_bool("AmbientLight", false).then(|| {
+                let defaults = AmbientLightRules::default();
+                AmbientLightRules {
+                    intensity: section
+                        .read_float("AmbientLight.Intensity", defaults.intensity),
+                    threshold: section
+                        .read_float("AmbientLight.Threshold", defaults.threshold),
+                    adaptation: section
+                        .read_bool("AmbientLight.Adaptation", defaults.adaptation),
+                    adapt: section.read_float("AmbientLight.Adapt", defaults.adapt),
+                    adapt_base_mult: section.read_float(
+                        "AmbientLight.Adapt.BaseMult",
+                        defaults.adapt_base_mult,
+                    ),
+                    adapt_base_black_level: section
+                        .read_int(
+                            "AmbientLight.Adapt.BlackLevel",
+                            defaults.adapt_base_black_level as i32,
+                        )
+                        .clamp(0, 4) as u32,
+                    dither: section.read_bool("AmbientLight.Dither", defaults.dither),
+                    dirt: section.read_bool("AmbientLight.Dirt", defaults.dirt),
+                    dirt_intensity: section
+                        .read_float("AmbientLight.Dirt.Intensity", defaults.dirt_intensity),
                 }
             }),
             magic_bloom: section.read_bool("MagicBloom", false).then(|| {
