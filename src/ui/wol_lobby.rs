@@ -1018,6 +1018,7 @@ mod tests {
             keyed: false,
             limit_icon: None,
             ping: -1,
+            tag: None,
         };
         let mut lobby = WolLobbyState::new(false, false);
         lobby.replace_games(vec![row("a"), row("b")]);

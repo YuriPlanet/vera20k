@@ -129,6 +129,9 @@ Commands and their payloads:
 
 HostOptions is `{launch,map_metadata,vacancies,observer_row,cooperative_difficulty,seed}`.
 Generated maps add `random_map:{start_staging,preview:{source_sha256,byte_length}}`.
+Cooperative rooms add `cooperative_campaign`, the host's campaign record as the game's
+`C0` text (at most 512 bytes, starting `C0,`); a guest applies it before the options
+that carry it. Other modes omit the field.
 `start_staging` is the canonical 37-number native `W` record, bounded to512bytes;
 `staging_digest` is its lowercase SHA-256, or the empty string for authored maps.
 `launch` is the existing serde representation of `SkirmishLaunchSession` (including

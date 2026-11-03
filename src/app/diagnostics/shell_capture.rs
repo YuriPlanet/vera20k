@@ -1714,6 +1714,12 @@ where
                 "online account names must contain 1-24 letters, digits, underscores or hyphens"
             );
         }
+        // The host's room is "<host>'s_game", cut at the room name edit's 24
+        // units (`popups::ROOM_NAME_LIMIT`), and guests look for the whole name.
+        ensure!(
+            host.len() + "'s_game".len() <= 24,
+            "the online host name must leave room for 's_game in a 24-character room name"
+        );
         ensure!(
             online_start.is_none_or(
                 |start| start < crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as u32
@@ -1732,6 +1738,23 @@ where
                     && !online_mass
                     && online_frames.is_none_or(|frames| frames == 300)),
             "online failure capture requires two players, simple input and exactly300 prefix frames"
+        );
+        ensure!(
+            !matches!(checkpoint, ShellCaptureCheckpoint::Lan(target) if target.live_cooperative())
+                || (players == 2
+                    && online_map.is_none()
+                    && online_start.is_none()
+                    && online_ai.is_none()
+                    && online_mode_id.is_none()
+                    && !online_mass
+                    && !online_latency
+                    && !profile_check
+                    && online_network_checkpoint.is_none()
+                    && online_exit_checkpoint.is_none()
+                    && online_loading_host_loss.is_none()
+                    && online_startup_host_loss.is_none()
+                    && online_loading_cancel.is_none()),
+            "online co-op capture requires two players and no map, start, AI, mode or other diagnostic option; the campaign picks its maps"
         );
         ensure!(
             !online_latency
@@ -3685,6 +3708,29 @@ mod tests {
         assert!(parse_launch_args(values.clone()).is_err());
         *values.last_mut().unwrap() = "--online-create-account".into();
         assert!(parse_launch_args(values).is_err());
+    }
+
+    /// A guest looks for "<host>'s_game", which the room name edit cuts at
+    /// 24 characters.
+    #[test]
+    fn online_host_names_leave_room_for_the_room_suffix() {
+        let output = new_output_path("online-host-name");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-coop-guest".into();
+        values.extend(args(&[
+            "--online-account",
+            "Guest",
+            "--online-host",
+            "seventeen-chars-x",
+        ]));
+        assert!(parse_launch_args(values.clone()).is_ok());
+        *values.last_mut().unwrap() = "eighteen-chars-xyz".into();
+        assert!(
+            parse_launch_args(values)
+                .unwrap_err()
+                .to_string()
+                .contains("room for 's_game")
+        );
     }
 
     #[test]
