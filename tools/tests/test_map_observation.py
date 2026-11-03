@@ -1521,6 +1521,36 @@ class MapObservationTests(unittest.TestCase):
                 child.assert_not_called()
                 self.assertFalse(self.output.exists())
 
+    def test_modifier_clicks_use_the_local_input_policy_and_reject_bad_modifiers(self):
+        # Synthetic receipts: Rust holds the literal keys through the shared
+        # modifier owner; these values are not a click-routing comparator.
+        self.keyboard_profile()
+        for request, receipt in zip(self.profile['gestures'], self.gesture_receipts):
+            request['gesture'] = {'kind': 'click', 'position': [1, 1], 'modifiers': ['Ctrl', 'Alt']}
+            receipt['gesture'] = deepcopy(request['gesture'])
+            receipt.pop('keyboard')
+            receipt['left_press_captured'] = True
+        self.profile_path.write_text(json.dumps(self.profile))
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        data = report['capture']['observations']['gesture_input']
+        self.assertEqual(data['policy'], observation.KEYBOARD_GESTURE_POLICY)
+        self.assertEqual(data['receipts'][0]['gesture']['modifiers'], ['Ctrl', 'Alt'])
+        valid = deepcopy(self.profile)
+        invalid = [{'kind': 'click', 'position': [1, 1], 'modifiers': names}
+                   for names in (['Ctrl', 'Ctrl'], ['Control'], 'Ctrl', None)]
+        invalid += [{'kind': 'drag', 'from': [1, 1], 'to': [4, 4], 'modifiers': ['Shift']},
+                    {'kind': 'minimap', 'position': [6, 2], 'modifiers': ['Ctrl']}]
+        for index, gesture in enumerate(invalid):
+            with self.subTest(case=index), patch.object(observation, 'run_child') as child:
+                candidate = deepcopy(valid)
+                candidate['gestures'][0]['gesture'] = gesture
+                self.profile_path.write_text(json.dumps(candidate))
+                self.output = self.root / f'bad-click-modifiers-{index}'
+                with self.assertRaises(ValidationError):
+                    self.run_capture()
+                child.assert_not_called()
+
     def test_key_receipts_require_real_edges_binding_metadata_and_local_observations(self):
         self.keyboard_profile()
         changes = [lambda row: row.pop('keyboard'),

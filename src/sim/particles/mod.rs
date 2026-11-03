@@ -10,8 +10,8 @@
 //! Particles never enter global storage or the active-object vector: they are
 //! owned by their parent system.
 //!
-//! Smoke / Gas / Fire use the existing SHP render pipeline. Spark enters the
-//! shared live-object dispatch; Railgun admission remains unavailable.
+//! Smoke / Gas / Fire use the existing SHP render pipeline. Spark and Railgun
+//! enter the shared live-object dispatch and draw as coloured points.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on rules/ and util/ only.
@@ -22,7 +22,6 @@ use crate::rules::particle_type::{ParticleBehavesLike, ParticleType, ParticleTyp
 use crate::sim::intern::InternedId;
 use crate::sim::touch_log::{TouchLogs, Touched};
 use crate::sim::world::Simulation;
-use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 use glam::IVec3;
 use serde::{Deserialize, Serialize};
@@ -30,6 +29,7 @@ use std::collections::BTreeMap;
 
 pub mod fire;
 pub mod gas;
+pub mod railgun;
 pub mod smoke;
 pub mod spark;
 pub mod spark_spawn;
@@ -39,11 +39,15 @@ pub mod system_ai;
 pub mod wind;
 
 #[cfg(test)]
+mod fire_native_tests;
+#[cfg(test)]
 mod gas_native_tests;
 #[cfg(test)]
 mod native_fixture;
 #[cfg(test)]
 mod native_identity_tests;
+#[cfg(test)]
+mod railgun_native_tests;
 #[cfg(test)]
 mod virus_tests;
 
@@ -94,6 +98,11 @@ pub struct ParticleSystem {
     /// `Lifetime=-1` (which every stock Spark system has, since none authors
     /// `Lifetime=`) finish spawning, empty out, and then never retire.
     done_spawning: bool,
+    /// FireAt stored this system in its owner's `+0x304` (`0x006FF1A7`). The
+    /// owner's releases clear that slot; [`Self::apply_fire_link_release`]
+    /// gives the system the done byte their vt+0xF8 call sets.
+    #[serde(default)]
+    owner_fire_link: bool,
     alive: bool,
     in_limbo: bool,
 }
@@ -103,6 +112,20 @@ pub struct SparkRuntimeState {
     pub velocity_x: NativeF32Bits,
     pub velocity_y: NativeF32Bits,
     pub velocity_z: NativeF32Bits,
+    pub start_rgb: [u8; 3],
+    pub color_index: i32,
+    pub color_accumulator: NativeF64Bits,
+}
+
+/// Behavior-4 state. `ParticleSystemClass::AI_Railgun @ 0x0062F230` replaces
+/// the particle's direction (`+0x10C`) after construction; the constructor
+/// (`0x0062B707..0x0062B71B`) stores its coordinate as floats (`+0x118`), which
+/// `ParticleClass::AI_Railgun @ 0x0062C3A0` advances every frame. The colour
+/// fields are the constructor's `+0xB0` seed and the `+0xB4`/`+0xB8` step that
+/// Spark also uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct RailgunRuntimeState {
+    pub position: [NativeF32Bits; 3],
     pub start_rgb: [u8; 3],
     pub color_index: i32,
     pub color_accumulator: NativeF64Bits,
@@ -120,9 +143,10 @@ pub struct Particle {
     coords: IVec3,
     #[serde(with = "ivec3_serde")]
     origin: IVec3,
-    /// Constructor's normalized target vector (+10C), retained at the existing
-    /// Fire fixed-point boundary. It is distinct from the Gas motion words.
-    direction: [SimFixed; 3],
+    /// `+0x10C`: the constructor's normalized target vector, which Fire's AI
+    /// scales into its step and AI_Railgun replaces with its drift vector.
+    /// It is distinct from the Gas motion words.
+    direction: [NativeF32Bits; 3],
     /// Particle+CC/D0/D4. Constructor62B634 initializes (0,0,-1); Gas AI
     /// replaces these words before Move62D2A0 consumes them.
     motion: [NativeF32Bits; 3],
@@ -142,10 +166,13 @@ pub struct Particle {
     /// Authoritative behavior-3 state. Generic direction/velocity fields
     /// remain authoritative for the existing Smoke/Gas/Fire implementations only.
     spark: Option<SparkRuntimeState>,
+    /// Authoritative behavior-4 state; `None` for every other behavior.
+    #[serde(default)]
+    railgun: Option<RailgunRuntimeState>,
 
-    /// Fire-only scratch: per-tick velocity delta computed by fire AI and
-    /// consumed by `move_fire` (jitter * direction). Zero for smoke/gas.
-    prev_delta: [SimFixed; 3],
+    /// `+0x100`: Fire's step, written by its AI (`0x0062CBB0`) and added to
+    /// Location by its move (`0x0062D64E`). Zero for every other behavior.
+    prev_delta: [i32; 3],
 }
 
 impl Particle {
@@ -180,7 +207,7 @@ impl Particle {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub fn direction_mut_for_test(&mut self) -> &mut [SimFixed; 3] {
+    pub fn direction_mut_for_test(&mut self) -> &mut [NativeF32Bits; 3] {
         &mut self.direction
     }
 
@@ -190,7 +217,7 @@ impl Particle {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub fn prev_delta_mut_for_test(&mut self) -> &mut [SimFixed; 3] {
+    pub fn prev_delta_mut_for_test(&mut self) -> &mut [i32; 3] {
         &mut self.prev_delta
     }
 
@@ -221,7 +248,7 @@ impl Particle {
         self.origin
     }
 
-    pub const fn direction(&self) -> [SimFixed; 3] {
+    pub const fn direction(&self) -> [NativeF32Bits; 3] {
         self.direction
     }
 
@@ -269,7 +296,11 @@ impl Particle {
         self.spark
     }
 
-    pub const fn prev_delta(&self) -> [SimFixed; 3] {
+    pub const fn railgun(&self) -> Option<RailgunRuntimeState> {
+        self.railgun
+    }
+
+    pub const fn prev_delta(&self) -> [i32; 3] {
         self.prev_delta
     }
 
@@ -294,6 +325,7 @@ impl Particle {
     /// normalized direction and drift. Original Particle62B5E0 reaches
     /// Abstract410230 -> Scenario68BCB0 before its lifetime draw. Spark, Fire,
     /// Smoke and Gas all use this boundary; children never join global Logic.
+    /// Gas, Smoke and Fire read no colour, so the seed is dropped here.
     /// Executed constructor/CRC controls: tools/procedural_drawing_oracle/electric_bolt.
     pub(super) fn new(
         type_id: ParticleTypeId,
@@ -302,16 +334,18 @@ impl Particle {
         pt: &ParticleType,
         sim: &mut Simulation,
     ) -> Self {
-        let particle = Self::new_with_ground(type_id, coords, target, pt, sim, |sim, x, y| {
-            spark_world::constructor_ground_height(sim, x, y)
-        })
-        .expect("particle construction requires supported ground facts");
+        let (particle, _start_rgb) =
+            Self::new_with_ground(type_id, coords, target, pt, sim, |sim, x, y| {
+                spark_world::constructor_ground_height(sim, x, y)
+            })
+            .expect("particle construction requires supported ground facts");
         Simulation::reveal_particle(&mut sim.substrate, particle.stable_id);
         particle
     }
 
-    /// Constructor62B5E0 terrain seam used by the existing Spark controls.
-    /// Spark registers only after its conditional color initialization.
+    /// Constructor62B5E0 terrain seam used by the existing Spark controls,
+    /// with the start colour its seed (`0x0062BA51`) picks for any type with
+    /// a `ColorList`. Spark registers only after that colour initialization.
     pub(super) fn new_with_ground<E, F>(
         type_id: ParticleTypeId,
         coords: IVec3,
@@ -319,7 +353,7 @@ impl Particle {
         pt: &ParticleType,
         sim: &mut Simulation,
         mut ground: F,
-    ) -> Result<Self, E>
+    ) -> Result<(Self, [u8; 3]), E>
     where
         F: FnMut(&Simulation, i32, i32) -> Result<Option<i32>, E>,
     {
@@ -349,15 +383,15 @@ impl Particle {
         let location = floor_constructor_coords_with(coords, |x, y| ground(sim, x, y))?;
         let direction = spawn::native_velocity(coords, target);
         let advance = spawn::spawn_state_ai_advance(pt, coords, target, direction, velocity);
-        Ok(Particle {
+        let start_rgb = spark_spawn::constructor_start_color(sim, pt)
+            .expect("a ranged draw scales to a finite colour fraction");
+        let particle = Particle {
             stable_id,
             native_unique_id,
             type_id,
             coords: location,
             origin: coords,
-            direction: direction.map(|component| {
-                SimFixed::from_bits((f32::from_bits(component.bits()) * 65536.0) as i32)
-            }),
+            direction,
             motion: [
                 NativeF32Bits::POSITIVE_ZERO,
                 NativeF32Bits::POSITIVE_ZERO,
@@ -374,8 +408,10 @@ impl Particle {
             drift_y: 0,
             drift_z: 0,
             spark: None,
-            prev_delta: [SIM_ZERO; 3],
-        })
+            railgun: None,
+            prev_delta: [0; 3],
+        };
+        Ok((particle, start_rgb))
     }
 }
 
@@ -526,6 +562,31 @@ impl ParticleSystem {
         self.done_spawning = true;
     }
 
+    pub const fn owner_fire_link(&self) -> bool {
+        self.owner_fire_link
+    }
+
+    /// The owner's release of `+0x304` (Foot `0x004D954B`, Assign_Target
+    /// `0x006FCF78`, ReceiveDamage `0x00702220`) calls this system's vt+0xF8,
+    /// which only sets the done byte (`0x006301E0`), and clears the slot. Only
+    /// this system's AI reads that byte, whatever its behavior, so the system
+    /// sets it here, before each of those reads, once its owner no longer
+    /// holds it. An owner gone altogether also ends spawning: AI_Fire's owner
+    /// test sets the byte too.
+    pub(crate) fn apply_fire_link_release(&mut self, entities: &crate::sim::entity_store::EntityStore) {
+        if !self.owner_fire_link {
+            return;
+        }
+        let held = self
+            .owner_entity
+            .and_then(|owner| entities.get(owner))
+            .is_some_and(|owner| owner.fire_particle_system.system() == Some(self.stable_id));
+        if !held {
+            self.owner_fire_link = false;
+            self.done_spawning = true;
+        }
+    }
+
     /// The ids [`ParticleSystemStore::pointer_expired`] compares: the target
     /// (`+0xE4`), owner (`+0xE0`) and child vector (`+0xBC`). Feeds the pointer-expiry
     /// listener index (`ExpiryListeners`); a field that callback compares
@@ -602,6 +663,7 @@ impl ParticleSystem {
             target_coords: IVec3::ZERO,
             owner_house: None,
             done_spawning: false,
+            owner_fire_link: false,
             alive: true,
             in_limbo: false,
         }
@@ -618,7 +680,7 @@ impl Particle {
             type_id,
             coords,
             origin: coords,
-            direction: [SIM_ZERO; 3],
+            direction: [NativeF32Bits::POSITIVE_ZERO; 3],
             motion: [NativeF32Bits::POSITIVE_ZERO; 3],
             velocity: NativeF32Bits::POSITIVE_ZERO,
             lifetime_remaining: 0,
@@ -631,7 +693,8 @@ impl Particle {
             drift_y: 0,
             drift_z: 0,
             spark: None,
-            prev_delta: [SIM_ZERO; 3],
+            railgun: None,
+            prev_delta: [0; 3],
         }
     }
 }
@@ -780,6 +843,13 @@ impl ParticleSystemStore {
 
     pub fn get(&self, id: u64) -> Option<&ParticleSystem> {
         self.systems.get(&id)
+    }
+
+    /// FireAt's `+0x304` store (`0x006FF1A7`) of the system it just built.
+    pub(crate) fn link_to_owner_fire_slot(&mut self, id: u64) {
+        if let Some(system) = self.get_mut(id) {
+            system.owner_fire_link = true;
+        }
     }
 
     pub fn get_mut(&mut self, id: u64) -> Option<&mut ParticleSystem> {
@@ -989,7 +1059,7 @@ mod tests {
         system.particles.push({
             let mut particle = Particle::test_fixture(ParticleTypeId(4), IVec3::new(1, 2, 3));
             particle.origin = IVec3::new(7, 8, 9);
-            particle.direction = [SimFixed::from_num(1); 3];
+            particle.direction = [NativeF32Bits::from_bits(0x3f80_0000); 3];
             particle.velocity = NativeF32Bits::from_bits(0x4000_0000);
             particle.lifetime_remaining = 31;
             particle.damage_counter = 5;
@@ -999,7 +1069,7 @@ mod tests {
             particle.drift_x = -1;
             particle.drift_y = 2;
             particle.drift_z = -3;
-            particle.prev_delta = [SimFixed::from_num(4); 3];
+            particle.prev_delta = [4; 3];
             particle.stable_id = 24;
             particle.native_unique_id = -25;
             particle

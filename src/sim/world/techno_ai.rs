@@ -1405,15 +1405,12 @@ fn drop_unsensed_cloaked_target_step(
 /// (`0x006FA646..0x006FA64F`), then enter `MissionClass::AI @ 0x005B3060`
 /// (`0x006FA655`), whose first call is `ObjectClass::AI`'s sound block.
 ///
-/// RESIDUAL: when the fall kills the object, this returns false and the
-/// callers leave the whole Techno body. Native continues through the passive
-/// scan (`0x006FA65A..0x006FA6EE`: `PassiveAcquireGate @ 0x00709290`, then
-/// `Retaliate_And_Scan @ 0x00709820`), the attached bomb's tick
+/// Returns false only when the fall failed. An object the fall kills (a unit
+/// on a destroyed bridge) runs on: `MissionClass::AI` skips its handler on
+/// IsAlive and Health (`0x005B306C`, `0x005B30A7`), but `AI_Update` still
+/// runs the passive scan (`0x006FA65A..0x006FA6EE`), the bomb tick
 /// (`0x006FA6F5..0x006FA712`) and the Slave and Capture managers
 /// (`0x006FA717..0x006FA730`) before its IsAlive test at `0x006FA735`.
-/// Trigger: an object that dies landing from a fall. Effect: those blocks
-/// skip that one visit of a dead object; a scan draw would shift the RNG
-/// stream. Frequency: rare; no retail faller owns a slave or capture manager.
 fn mission_counter_step(
     sim: &mut Simulation,
     id: u64,
@@ -1424,6 +1421,9 @@ fn mission_counter_step(
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.mission.increment_ai_counter();
     }
+    // The sound block (`0x005F3E78..0x005F3F0C`) runs before the fall block
+    // (`0x005F3F11`), so a faller its landing kills still plays its sounds.
+    sim.object_ai_sounds(id, rules, ctx.effects);
     match sim.object_ai_fall(id, rules, ctx.overlay_registry, ctx.effects) {
         Ok((landed, changed)) => {
             outcome.landed |= landed;
@@ -1434,8 +1434,7 @@ fn mission_counter_step(
             return false;
         }
     }
-    sim.object_ai_sounds(id, rules, ctx.effects);
-    ai_alive(&sim.substrate, id)
+    true
 }
 
 // ===== TechnoClass common-body bracket =====

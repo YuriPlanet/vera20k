@@ -137,7 +137,10 @@ due at the new rate from that moment. Changes are at least 5 seconds apart.
 After 30 seconds with no fresh behind or catching-up report the clock tries one
 row faster; a slowdown within 30 seconds of a raise doubles that wait, up to 5
 minutes. Pauses displace these times like the start. Status keeps the
-certificate's rate. Federated rooms keep the certificate's rate.
+certificate's rate. Federated rooms keep the certificate's rate. The relay's
+per-minute journal line counts the slowdowns as `slowdowns`, and the reports of
+a player catching up or behind, about a second of catching up each, as
+`catching_up_s`. A paused, rejoining or hidden game reports keeping up.
 
 A federated match spreads its sources over up to six relays, each serving the
 players nearest it. The lobby-signed `VO1F` roster (see `../../docs/lobby-protocol.md`)

@@ -2585,16 +2585,12 @@ impl Simulation {
                 while let Some(receiver_object) = current {
                     let receiver = match receiver_object {
                         CellObject::Entity(target_id) => {
-                            let eligible =
-                                target_id != request.firer_id
-                                    && self.substrate.entities.get(target_id).is_some_and(
-                                        |entity| {
-                                            entity.is_alive()
-                                                && !entity.death.is_dying()
-                                                && !entity.lifecycle.in_limbo()
-                                                && entity.lifecycle.object_alive()
-                                        },
-                                    );
+                            let eligible = target_id != request.firer_id
+                                && self
+                                    .substrate
+                                    .entities
+                                    .get(target_id)
+                                    .is_some_and(|entity| entity.reachable_in_cell_list());
                             if !eligible {
                                 let order = current_order(
                                     &self.substrate.occupancy,
@@ -2738,122 +2734,15 @@ impl Simulation {
                 }
 
                 // The cliff tail is independent of damage magnitude and
-                // Warhead. Eligibility alone consumes one Scenario draw,
-                // including signed chances outside 0..=100.
-                let destroyable_cliff = self
-                    .resolved_terrain
-                    .as_ref()
-                    .is_some_and(|terrain| terrain.is_destroyable_cliff(rx, ry));
-                if destroyable_cliff {
-                    let chance_draw = self.scenario_rng.next_range_u32_inclusive(0, 99) as i32;
-                    if chance_draw < rules.combat_damage.collapse_chance
-                        && let Some(mutation) = self.resolved_terrain.as_mut().and_then(|terrain| {
-                            terrain.collapse_destroyable_cliff_terrain(rx, ry, |cell_x, cell_y| {
-                                if let Some(grid) = self.overlay_grid.as_mut() {
-                                    let _ = grid.clear_overlay(cell_x, cell_y);
-                                }
-                                if let Some(grid) = self.smudge_grid.as_mut() {
-                                    let _ = grid.clear_cell_slot(cell_x, cell_y);
-                                }
-                            })
-                        })
-                    {
-                        // Cliff stamps change Cell+11B without refreshing
-                        // retained lighting; publish geometry before any later
-                        // ordered source/owner callback samples these cells.
-                        self.publish_cell_lighting_levels(
-                            mutation
-                                .original_footprint
-                                .iter()
-                                .chain(&mutation.changed_cells)
-                                .copied(),
-                        );
-                        // Native performs one complete zone rebuild after the
-                        // two sparse stamps and before its three footprint
-                        // passes. The Rust navigation owner rebuilds all
-                        // movement zones as the corresponding single unit.
-                        self.rebuild_dynamic_navigation(rules);
-
-                        // Pass three's externally represented effects remain
-                        // strictly interleaved: detach this CellClass target,
-                        // then dirty this radar cell, in old-TMP row order.
-                        for &coord in &mutation.original_footprint {
-                            // Map5814D4/581BE6:70D4A0 then radar, per old footprint cell.
-                            let _receipt = self.stop_all_targeting_cell(
-                                coord.0, coord.1, rules, overlay_registry, frame_effects,
-                            );
-                            #[cfg(any(test, feature = "test-support"))]
-                            effects.cell_target_detaches.extend(_receipt.cell_detaches);
-                            self.dirty_cells.mark_radar([coord]);
-                        }
-                        for &coord in &mutation.original_footprint {
-                            self.dirty_cells.mark_tactical_once(coord);
-                        }
-
-                        // Resolve the three types in native order, then make
-                        // two row-major attempts at each of the 15 grid cells.
-                        // Every representable allocation is successful, so
-                        // each attempt consumes type, X, Y, and delay draws.
-                        let anim_types = crate::rules::effect_asset_catalog::CLIFF_COLLAPSE_ANIMS
-                            .map(|name| self.interner.intern(name));
-                        for &(cell_x, cell_y) in &mutation.animation_cells {
-                            for _ in 0..2 {
-                                let type_index =
-                                    self.scenario_rng.next_range_u32_inclusive(0, 2) as usize;
-                                let jitter_x =
-                                    self.scenario_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
-                                let jitter_y =
-                                    self.scenario_rng.next_range_u32_inclusive(0, 24) as i32 - 12;
-                                let level = self
-                                    .resolved_terrain
-                                    .as_ref()
-                                    .expect("collapse terrain retained")
-                                    .collapse_animation_level(cell_x, cell_y);
-                                let delay = self.scenario_rng.next_range_u32_inclusive(0, 2) as u16;
-                                let world_coord = crate::sim::anim_class::AnimWorldCoord {
-                                    x: i32::from(cell_x)
-                                        .wrapping_mul(256)
-                                        .wrapping_add(128)
-                                        .wrapping_add(jitter_x),
-                                    y: i32::from(cell_y)
-                                        .wrapping_mul(256)
-                                        .wrapping_add(128)
-                                        .wrapping_add(jitter_y),
-                                    z: i32::from(level).wrapping_mul(104),
-                                };
-                                let mut descriptor =
-                                    crate::sim::components::AnimClassSpawnDescriptor::new(
-                                        anim_types[type_index],
-                                        cell_x as u16,
-                                        cell_y as u16,
-                                        SimFixed::from_num(128 + jitter_x),
-                                        SimFixed::from_num(128 + jitter_y),
-                                        level as u8,
-                                    );
-                                descriptor.delay = delay;
-                                descriptor.loop_count = 1;
-                                descriptor.draw_flags = 0x600;
-                                descriptor.z_adjust = 0;
-                                descriptor.reverse = false;
-                                // AnimClass construction completes before the
-                                // next attempt selects its type. This matters
-                                // when the selected AnimType consumes Scenario
-                                // RNG for RandomRate during construction.
-                                let _ = self.spawn_anim_at_world(rules, descriptor, world_coord);
-                            }
-                        }
-
-                        let terrain = self
-                            .resolved_terrain
-                            .as_ref()
-                            .expect("collapse terrain retained");
-                        for &(cell_x, cell_y) in &mutation.changed_cells {
-                            if let Some(cell) = terrain.cell(cell_x, cell_y) {
-                                self.dynamic_terrain_cells.record(cell);
-                            }
-                        }
-                    }
-                }
+                // Warhead.
+                self.roll_cliff_collapse(
+                    rx,
+                    ry,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                    &mut effects,
+                );
             }
         }
 
@@ -2869,6 +2758,139 @@ impl Simulation {
             terrain_navigation_changed_cells,
             frame_effects,
         );
+    }
+
+    /// The destroyable-cliff roll Wave `DamageArea` and the railgun line
+    /// (`0x0070CAE9..0x0070CB2B` at the ground hit, `0x0070CC05..0x0070CC39`
+    /// on a Cell target) share. A cell whose tile is a destroyable cliff
+    /// (`CellClass::Tile_Is_DestroyableCliff @ 0x00486900`) spends one Scenario
+    /// `RandomRanged(0, 99)` draw, including signed chances outside 0..=100,
+    /// and collapses (`MapClass::CollapseCliff @ 0x00581140`) when the draw is
+    /// below `[CombatDamage] CollapseChance`.
+    pub(crate) fn roll_cliff_collapse(
+        &mut self,
+        rx: u16,
+        ry: u16,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+        #[cfg_attr(not(any(test, feature = "test-support")), allow(unused_variables))]
+        effects: &mut crate::sim::combat::DeathEffects,
+    ) {
+        let destroyable_cliff = self
+            .resolved_terrain
+            .as_ref()
+            .is_some_and(|terrain| terrain.is_destroyable_cliff(rx, ry));
+        if destroyable_cliff {
+            let chance_draw = self.scenario_rng.next_range_u32_inclusive(0, 99) as i32;
+            if chance_draw < rules.combat_damage.collapse_chance
+                && let Some(mutation) = self.resolved_terrain.as_mut().and_then(|terrain| {
+                    terrain.collapse_destroyable_cliff_terrain(rx, ry, |cell_x, cell_y| {
+                        if let Some(grid) = self.overlay_grid.as_mut() {
+                            let _ = grid.clear_overlay(cell_x, cell_y);
+                        }
+                        if let Some(grid) = self.smudge_grid.as_mut() {
+                            let _ = grid.clear_cell_slot(cell_x, cell_y);
+                        }
+                    })
+                })
+            {
+                // Cliff stamps change Cell+11B without refreshing
+                // retained lighting; publish geometry before any later
+                // ordered source/owner callback samples these cells.
+                self.publish_cell_lighting_levels(
+                    mutation
+                        .original_footprint
+                        .iter()
+                        .chain(&mutation.changed_cells)
+                        .copied(),
+                );
+                // Native performs one complete zone rebuild after the
+                // two sparse stamps and before its three footprint
+                // passes. The Rust navigation owner rebuilds all
+                // movement zones as the corresponding single unit.
+                self.rebuild_dynamic_navigation(rules);
+
+                // Pass three's externally represented effects remain
+                // strictly interleaved: detach this CellClass target,
+                // then dirty this radar cell, in old-TMP row order.
+                for &coord in &mutation.original_footprint {
+                    // Map5814D4/581BE6:70D4A0 then radar, per old footprint cell.
+                    let _receipt = self.stop_all_targeting_cell(
+                        coord.0, coord.1, rules, overlay_registry, frame_effects,
+                    );
+                    #[cfg(any(test, feature = "test-support"))]
+                    effects.cell_target_detaches.extend(_receipt.cell_detaches);
+                    self.dirty_cells.mark_radar([coord]);
+                }
+                for &coord in &mutation.original_footprint {
+                    self.dirty_cells.mark_tactical_once(coord);
+                }
+
+                // Resolve the three types in native order, then make
+                // two row-major attempts at each of the 15 grid cells.
+                // Every representable allocation is successful, so
+                // each attempt consumes type, X, Y, and delay draws.
+                let anim_types = crate::rules::effect_asset_catalog::CLIFF_COLLAPSE_ANIMS
+                    .map(|name| self.interner.intern(name));
+                for &(cell_x, cell_y) in &mutation.animation_cells {
+                    for _ in 0..2 {
+                        let type_index =
+                            self.scenario_rng.next_range_u32_inclusive(0, 2) as usize;
+                        let jitter_x =
+                            self.scenario_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
+                        let jitter_y =
+                            self.scenario_rng.next_range_u32_inclusive(0, 24) as i32 - 12;
+                        let level = self
+                            .resolved_terrain
+                            .as_ref()
+                            .expect("collapse terrain retained")
+                            .collapse_animation_level(cell_x, cell_y);
+                        let delay = self.scenario_rng.next_range_u32_inclusive(0, 2) as u16;
+                        let world_coord = crate::sim::anim_class::AnimWorldCoord {
+                            x: i32::from(cell_x)
+                                .wrapping_mul(256)
+                                .wrapping_add(128)
+                                .wrapping_add(jitter_x),
+                            y: i32::from(cell_y)
+                                .wrapping_mul(256)
+                                .wrapping_add(128)
+                                .wrapping_add(jitter_y),
+                            z: i32::from(level).wrapping_mul(104),
+                        };
+                        let mut descriptor =
+                            crate::sim::components::AnimClassSpawnDescriptor::new(
+                                anim_types[type_index],
+                                cell_x as u16,
+                                cell_y as u16,
+                                SimFixed::from_num(128 + jitter_x),
+                                SimFixed::from_num(128 + jitter_y),
+                                level as u8,
+                            );
+                        descriptor.delay = delay;
+                        descriptor.loop_count = 1;
+                        descriptor.draw_flags = 0x600;
+                        descriptor.z_adjust = 0;
+                        descriptor.reverse = false;
+                        // AnimClass construction completes before the
+                        // next attempt selects its type. This matters
+                        // when the selected AnimType consumes Scenario
+                        // RNG for RandomRate during construction.
+                        let _ = self.spawn_anim_at_world(rules, descriptor, world_coord);
+                    }
+                }
+
+                let terrain = self
+                    .resolved_terrain
+                    .as_ref()
+                    .expect("collapse terrain retained");
+                for &(cell_x, cell_y) in &mutation.changed_cells {
+                    if let Some(cell) = terrain.cell(cell_x, cell_y) {
+                        self.dynamic_terrain_cells.record(cell);
+                    }
+                }
+            }
+        }
     }
 
     /// Complete one direct object ReceiveDamage call before its caller resumes.

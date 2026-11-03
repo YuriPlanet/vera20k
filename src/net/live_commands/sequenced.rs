@@ -205,8 +205,18 @@ pub enum SequencedError {
     HistoryExpired,
     #[error("online command timeline is invalid")]
     InvalidTimeline,
-    #[error("online simulation differs at frame {frame}")]
-    Desync { frame: u32 },
+    /// Worded like the LAN path's `ChecksumMismatch`, so either reads the
+    /// same in a log: the House whose report differs and both checksums.
+    #[error(
+        "online simulation differs for house {house} at frame {frame}: \
+         local {local:#010x}, remote {remote:#010x}"
+    )]
+    Desync {
+        frame: u32,
+        house: i8,
+        local: u32,
+        remote: u32,
+    },
     #[error("online ordering service cannot recover this match")]
     Unavailable,
     #[error("online command queue is full")]
@@ -227,7 +237,8 @@ struct Submission {
 struct CommittedFrame {
     frame: u32,
     records: Vec<CommandRecord>,
-    reports: Vec<(u32, u32)>,
+    // Each batch's (House, sample frame, checksum).
+    reports: Vec<(i8, u32, u32)>,
     // Remote Houses whose connection the relay ended in this frame.
     lost: Vec<i8>,
     // A rate marker after the previous frame.
@@ -263,6 +274,9 @@ pub(super) struct SequencedSession {
     remote_next_sequence: u64,
     repair_gap_since: Option<u32>,
     pause: CanonicalPause,
+    /// VERA: the current pause found this game catching up, and it has not
+    /// reached the pause yet; see `take_caught_up_in_pause`.
+    pause_found_behind: bool,
     pause_relay_supported: bool,
     pause_supported_sources: u32,
     pause_active_sources: u32,
@@ -366,6 +380,7 @@ impl SequencedSession {
             remote_next_sequence: 1,
             repair_gap_since: None,
             pause: CanonicalPause::default(),
+            pause_found_behind: false,
             pause_relay_supported: false,
             pause_supported_sources: 0,
             pause_active_sources: mask,
@@ -966,9 +981,33 @@ impl SequencedSession {
         {
             return Some(super::NetworkRecoveryStatus::Reconnecting);
         }
+        self.catching_up_frames(current_frame)
+            .map(|frames| super::NetworkRecoveryStatus::CatchingUp { frames })
+    }
+
+    /// How far this game is behind the relay's head, when that is more than
+    /// half a second of frames: the Catching up status line.
+    fn catching_up_frames(&self, current_frame: u32) -> Option<u32> {
         let frames = self.head_frame.saturating_sub(current_frame);
-        (frames > u32::from(self.pace_fps) / 2)
-            .then_some(super::NetworkRecoveryStatus::CatchingUp { frames })
+        (frames > u32::from(self.pace_fps) / 2).then_some(frames)
+    }
+
+    /// VERA: true once, when this game reaches a pause that found it
+    /// catching up, so it can tell the others it has caught up. `reached` is
+    /// whether the simulation has reached the pause; a resume first sends
+    /// nothing, nor does a pause the relay has already ended, which a
+    /// rejoining game replays while still behind. gamemd's lockstep makes
+    /// everyone wait for a slow player, so it has no such line.
+    pub(super) fn take_caught_up_in_pause(&mut self, reached: bool, current_frame: u32) -> bool {
+        if !self.pause.paused {
+            self.pause_found_behind = false;
+        } else if reached {
+            return std::mem::take(&mut self.pause_found_behind)
+                && self.catching_up_frames(current_frame).is_none();
+        } else if self.catching_up_frames(current_frame).is_some() {
+            self.pause_found_behind = true;
+        }
+        false
     }
 
     fn assemble(&mut self) -> Result<(), SequencedError> {
@@ -1006,7 +1045,7 @@ impl SequencedSession {
                     let decoded = bytes
                         .as_ref()
                         .and_then(|bytes| decode_batch(bytes.as_bytes(), house, frame).ok());
-                    let Some((records, report)) = decoded else {
+                    let Some((records, (sample_frame, checksum))) = decoded else {
                         // VERA relay adaptation: every client reads the same
                         // ordered bytes, so each refuses the same batch. Its
                         // sender leaves at this frame, as by Leave, instead
@@ -1029,7 +1068,9 @@ impl SequencedSession {
                         return Err(SequencedError::QueueFull);
                     }
                     self.assembling.records.extend(records);
-                    self.assembling.reports.push(report);
+                    self.assembling
+                        .reports
+                        .push((house, sample_frame, checksum));
                 }
                 OrderEntry::Departure {
                     frame,
@@ -1366,16 +1407,7 @@ impl SequencedSession {
             return Ok(NetworkQueuePass::Waiting);
         }
         let frame = self.frames.pop_front().unwrap();
-        for (sample_frame, checksum) in frame.reports {
-            if let Some((_, local)) = self.samples.iter().find(|(f, _)| *f == sample_frame)
-                && checksum != *local
-            {
-                return Err(SequencedError::Desync {
-                    frame: sample_frame,
-                }
-                .into());
-            }
-        }
+        compare_reports(&self.samples, &frame.reports)?;
         for record in frame.records {
             if !queues.admit_received(record) {
                 return Err(SequencedError::QueueFull.into());
@@ -1390,6 +1422,28 @@ impl SequencedSession {
         self.current = Some((context, true));
         Ok(NetworkQueuePass::Dispatch)
     }
+}
+
+/// Compare each batch's checksum report with this client's own sample of that
+/// frame; the first that differs is a desync. A report for a frame the sample
+/// cache no longer holds is not compared.
+fn compare_reports(
+    samples: &VecDeque<(u32, u32)>,
+    reports: &[(i8, u32, u32)],
+) -> Result<(), SequencedError> {
+    for &(house, frame, remote) in reports {
+        if let Some(&(_, local)) = samples.iter().find(|(sample, _)| *sample == frame)
+            && remote != local
+        {
+            return Err(SequencedError::Desync {
+                frame,
+                house,
+                local,
+                remote,
+            });
+        }
+    }
+    Ok(())
 }
 
 fn gameplay_opcode(opcode: u8) -> bool {
@@ -1465,6 +1519,26 @@ mod service_clock_tests {
 }
 
 #[cfg(test)]
+mod desync_tests {
+    use super::{VecDeque, compare_reports};
+
+    /// The log names the House whose report differs and both checksums, so
+    /// each player's log shows which side went out of sync.
+    #[test]
+    fn a_differing_report_names_its_house_and_both_checksums() {
+        let samples = VecDeque::from([(40, 0x1111), (41, 0x2222)]);
+        // Equal reports, and one for a frame no longer sampled, both pass.
+        assert!(compare_reports(&samples, &[(0, 41, 0x2222), (1, 39, 0x9999)]).is_ok());
+        let error = compare_reports(&samples, &[(0, 40, 0x1111), (1, 41, 0x2a2a)]).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "online simulation differs for house 1 at frame 41: \
+             local 0x00002222, remote 0x00002a2a"
+        );
+    }
+}
+
+#[cfg(test)]
 mod restore_tests {
     use super::*;
     use vera20k_relay_protocol::OrderStatus;
@@ -1532,6 +1606,57 @@ mod stall_tests {
         );
         session.pause.paused = true;
         assert_eq!(session.recovery_status(1_000 + STALL_MS + 1, 40), None);
+    }
+
+    fn paused_at_100() -> SequencedSession {
+        let mut houses = [None; 30];
+        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
+        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        session.started = true;
+        session.head_frame = 100;
+        session.pause.paused = true;
+        session.pause.frame = 100;
+        session
+    }
+
+    /// A game the pause finds more than half a second behind says once that
+    /// it caught up, when it reaches the pause.
+    #[test]
+    fn a_game_a_pause_finds_catching_up_says_once_that_it_caught_up() {
+        let mut session = paused_at_100();
+        assert!(
+            !session.take_caught_up_in_pause(false, 84),
+            "16 frames behind"
+        );
+        assert!(session.take_caught_up_in_pause(true, 101));
+        assert!(!session.take_caught_up_in_pause(true, 101), "once a pause");
+    }
+
+    /// A game keeping up says nothing, nor does one a resume reaches first,
+    /// nor a rejoining one replaying a pause the relay has already ended.
+    #[test]
+    fn a_game_keeping_up_or_resumed_before_the_pause_says_nothing() {
+        let mut session = paused_at_100();
+        assert!(
+            !session.take_caught_up_in_pause(false, 85),
+            "15 frames behind"
+        );
+        assert!(!session.take_caught_up_in_pause(true, 101));
+        let mut session = paused_at_100();
+        assert!(!session.take_caught_up_in_pause(false, 60));
+        session.head_frame = 300;
+        assert!(
+            !session.take_caught_up_in_pause(true, 101),
+            "the relay has resumed and run on"
+        );
+        let mut session = paused_at_100();
+        assert!(!session.take_caught_up_in_pause(false, 60));
+        session.pause.paused = false;
+        assert!(!session.take_caught_up_in_pause(false, 70));
+        session.pause.paused = true;
+        session.head_frame = 200;
+        session.pause.frame = 200;
+        assert!(!session.take_caught_up_in_pause(true, 201), "a later pause");
     }
 
     /// Loading leaves the position still for many seconds; the start itself

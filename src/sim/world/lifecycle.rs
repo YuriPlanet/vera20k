@@ -4278,7 +4278,8 @@ impl Simulation {
     /// Callers:
     /// * `all`: the exact-zero Destroy callback of `ObjectClass::ReceiveDamage`
     ///   (`0x005F5765..0x005F57AF`), after the kill callback and before
-    ///   TechnoClass's death arm, and the Stun of a living object.
+    ///   TechnoClass's death arm, and every Stun (death, crash, sinking,
+    ///   lift release and sale).
     /// * not `all`: `TechnoClass::StartCloaking @ 0x00703770` and the cloak's
     ///   1 → 2 completion (`0x006FBA98`).
     ///
@@ -4613,17 +4614,13 @@ impl Simulation {
     /// (`0x006B7BB0`) and Detach_All(1); only a lifted Foot skips them.
     /// Deselect follows on every class. Foot's constructor clears `+0x6AD` at
     /// `0x004D3414`; ImbueLocomotor sets the lift latch at `0x00710352`, and
-    /// the Jumpjet landing paths clear it.
-    ///
-    /// RESIDUAL: VERA runs the block for Foot only. Trigger: a Building's
-    /// Stun, which VERA reaches only from `TechnoClass::ReceiveDamage`'s death
-    /// arm (`0x00702206..0x00702210`), after `ObjectClass::ReceiveDamage`'s
-    /// Destroy callback already ran Detach_All(1) on it
-    /// (`0x005F5765..0x005F57AF`). Effect: native's second Detach_All(1),
-    /// and the spawn kill and target clear that Destroy's pointer expiry
-    /// already did, are skipped. Frequency: every building death; no retail
-    /// building sets `Spawns=`. Downstream: none seen; a holder that
-    /// re-acquired the building between the two passes would keep it.
+    /// the Jumpjet landing paths clear it. A Building reaches this from
+    /// `TechnoClass::ReceiveDamage`'s death arm (`0x00702206..0x00702210`),
+    /// usually after the Destroy callback's own Detach_All(1)
+    /// (`0x005F5765..0x005F57AF`), so it detaches a second time like native.
+    /// A further hit on a building already at Health 0 skips Destroy
+    /// (`0x005F5752..0x005F575F`) but still takes the death arm, so this is
+    /// its only detach.
     fn techno_stun(&mut self, stable_id: u64, context: UninitContext<'_>) {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
@@ -4656,14 +4653,13 @@ impl Simulation {
         crate::sim::radio::broadcast_break(self, stable_id, context.rules(), context.effects());
         // `0x006FCD6B..0x006FCD79`: a lifted Foot keeps its spawns, their
         // targets and its listeners. The `+0x14 & 4` test only guards the
-        // Foot-only `+0x6AD` read; native runs the block for non-Foot objects
-        // too (residual above).
+        // Foot-only `+0x6AD` read; every other object runs the block.
         let foot_lifted = self
             .substrate
             .entities
             .get(stable_id)
             .is_some_and(|entity| entity.category().is_foot() && entity.lift.swap_active());
-        if category.is_foot() && !foot_lifted {
+        if !foot_lifted {
             crate::sim::spawn_manager::kill_all_spawns_with_context(self, stable_id, context);
             crate::sim::spawn_manager::clear_all_spawn_targets(
                 self,
@@ -4761,7 +4757,9 @@ impl Simulation {
             listener.passenger_role.inside_transport_id(),
             listener.pending_entry(),
             listener.spawn_owner_id.owner(),
+            listener.fire_particle_system.system(),
             listener.spark_particle_system.system(),
+            listener.railgun_particle_system.system(),
             listener.damage_smoke_system_id.system(),
             listener.ammo().and_then(|ammo| ammo.dock()),
             listener
@@ -5263,7 +5261,9 @@ impl Simulation {
         // exact match, including damage-Smoke+310. It precedes the control
         // gate707AE7 and is independent of the target's sensor/owner guards.
         let clear_damage_smoke = listener.damage_smoke_system_id.system() == Some(expired_id);
+        let clear_fire_system = listener.fire_particle_system.system() == Some(expired_id);
         let clear_spark_system = listener.spark_particle_system.system() == Some(expired_id);
+        let clear_railgun_system = listener.railgun_particle_system.system() == Some(expired_id);
         // Techno707AE7..707B03 clears ArchiveTarget+218 on control1. The
         // later Foot4D99F1..4D99FC clears a still-matching archive on both
         // controls, independent of sensors and same-owner target exemptions.
@@ -5354,7 +5354,9 @@ impl Simulation {
         let clear_spotlight = listener.category() == EntityCategory::Structure
             && listener.building_light.light() == Some(expired_id);
         if !(clear_suspended_target
+            || clear_fire_system
             || clear_spark_system
+            || clear_railgun_system
             || clear_damage_smoke
             || clear_archive_target
             || clear_suspended_nav_com
@@ -5384,8 +5386,14 @@ impl Simulation {
         if clear_damage_smoke {
             listener.damage_smoke_system_id.forget();
         }
+        if clear_fire_system {
+            listener.fire_particle_system.forget();
+        }
         if clear_spark_system {
             listener.spark_particle_system.forget();
+        }
+        if clear_railgun_system {
+            listener.railgun_particle_system.forget();
         }
         if clear_archive_target {
             listener.set_archive_target(None);

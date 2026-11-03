@@ -57,7 +57,8 @@
 //! - MPlayer_Defeated's capture-the-flag cleanup (Flag_Remove `0x004FBE40` at
 //!   `0x004FC112..0x004FC15E`, Scenario flag `0x10`) and the Harvester-Truce
 //!   UnInit loop (`0x004FC163`, Scenario flag `0x800`) are not ported; their
-//!   Scenario flags are off in stock skirmish.
+//!   Scenario flags are off in stock skirmish, and skirmish never sets `0x10`
+//!   (trace in `movement::foot_speed`).
 //! - The local-player branch (`0x004FC1B0..0x004FC307`) is ported for the
 //!   whole-map reveal, the radar and Session `+0x300` (see `mplayer_defeated`;
 //!   `local_player_defeated` names the ported readers). The borrowed client

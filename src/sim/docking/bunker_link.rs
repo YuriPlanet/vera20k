@@ -990,6 +990,336 @@ mod tests {
         assert_eq!(tank.bunker.link(), BunkerLink::None);
     }
 
+    /// Issue #3687. `Apply_area_damage` (`0x00489280`) collects the impact
+    /// cell's residents in `CellClass::AddContent` (`0x0047E8A0`) list order —
+    /// buildings are appended, so the installed tank precedes the bunker — and
+    /// dispatches in that order (`0x00489ABC` per record). The tank's receiver
+    /// therefore runs first, and `TechnoClass::ReceiveDamage` (`0x00701900`)
+    /// takes the installed non-Building arm (`0x00701BB6..0x00701BF3`): a
+    /// warhead without `PenetratesBunker` (retail V3HE, GrandCannonWH) is
+    /// nullified. The bunker's record then kills the building, whose NowDead
+    /// releases the tank (`0x004424A2..0x004424EA` → `0x004593A0`) before its
+    /// C4 loop.
+    #[test]
+    fn a_splash_killing_the_bunker_leaves_the_installed_tank_alive() {
+        use crate::sim::combat::{combat_aoe, world_receiver};
+        use crate::sim::projectile::ProjectileCoord;
+
+        let rules = rules_with(
+            "[CombatDamage]\nC4Warhead=C4\n[Warheads]\n0=C4\n1=SPLASH\n\
+             [C4]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+             [SPLASH]\nCellSpread=.9\nPercentAtMax=1\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        );
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::supply_native_map(&mut sim);
+        spawn_bunker(&mut sim, 2, "Americans");
+        // On the bunker's cell, like the C4 release test: the splash must
+        // collect both residents of that cell.
+        spawn_tank_at(&mut sim, 1, "Americans", "TANK", (10, 10));
+        assert!(matches!(sim.reveal(2), RevealOutcome::Revealed { .. }));
+        assert!(matches!(sim.reveal(1), RevealOutcome::Revealed { .. }));
+        install_bunker_link(&mut sim, 2, 1, &rules);
+
+        let warhead = rules.warhead("SPLASH").unwrap();
+        let warhead_ref = sim.interner.intern("SPLASH");
+        // A ballistic V3 impact lands on the target cell's centre.
+        let impact = ProjectileCoord::new(10 * 256 + 128, 10 * 256 + 128, 0);
+        let (rx, ry, sub_x, sub_y, z_leptons) =
+            crate::sim::combat::detonation_anim::projectile_impact_cell(impact);
+        let area = world_receiver::collect_area(
+            &mut sim,
+            &rules,
+            None,
+            (rx, ry),
+            2000,
+            warhead,
+            true,
+            (0, None, warhead_ref),
+            Some(combat_aoe::AoEAirImpact {
+                sub_x,
+                sub_y,
+                z_leptons,
+            }),
+            z_leptons.div_euclid(crate::util::lepton::LEPTONS_PER_LEVEL as i32),
+            crate::sim::world::FrameEffects::default(),
+        );
+        // Native cell-list order: the prepended tank's record precedes the
+        // bunker's, so the live receiver gate sees an intact link.
+        assert!(
+            matches!(
+                area.receivers.first(),
+                Some(combat_aoe::AreaDamageReceiver::Entity(event)) if event.target_id == 1
+            ),
+            "the tank's record dispatches first: {:?}",
+            area.receivers
+        );
+        let mut run = world_receiver::ReceiverRun::default();
+        let _ = world_receiver::commit_area_with_dispatch(
+            &mut sim,
+            &mut run,
+            &area.receivers,
+            &rules,
+            None,
+        );
+
+        assert!(
+            !sim.substrate
+                .entities
+                .get(2)
+                .unwrap()
+                .lifecycle
+                .object_alive(),
+            "the bunker dies to the splash"
+        );
+        let tank = sim.substrate.entities.get(1).unwrap();
+        assert!(tank.lifecycle.object_alive(), "the installed tank survives");
+        assert_eq!(
+            tank.health.current(),
+            400,
+            "the gate nullified, not reduced"
+        );
+        assert_eq!(tank.bunker.link(), BunkerLink::None, "ejected alive");
+    }
+
+    /// Issue #3687 against the retail flow. Retail NATBNK is `Foundation=2x2`
+    /// and its target coordinate is the foundation centre (`GetCoords`
+    /// `0x00447AC0`) — the installed tank's own cell — so the native sweep
+    /// (`OFFSET_TABLE`, offset (0,0) first, `0x00489592..0x004895A9`) collects
+    /// the tank's prepended record before any bunker-only foundation cell
+    /// record. The live gate (`0x00701BB6..0x00701BF3`) nullifies the V3-class splash;
+    /// the bunker's records then kill the building, whose NowDead releases
+    /// the tank (`0x004424A2..0x004424EA` → `0x004593A0`) before its C4 loop.
+    #[test]
+    fn retail_bunker_splash_at_the_target_coord_leaves_the_installed_tank_alive() {
+        use crate::sim::combat::{combat_aoe, world_receiver};
+        use crate::sim::command::{Command, CommandEnvelope};
+        use crate::sim::movement::ground_pose::object_center_xy;
+        use crate::sim::projectile::ProjectileCoord;
+
+        let Some(mut rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()
+        else {
+            return;
+        };
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+        let wall_names = ["NATBNK_A", "NATBNK_B", "NATBNK_AD", "NATBNK_BD"].map(str::to_owned);
+        assert_eq!(
+            rules.bind_anim_class_assets(&wall_names, &assets, "TEM", "TEMPERATE"),
+            0
+        );
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4594_70);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        sim.set_input_delay_ticks(0);
+        sim.session.set_binary_frame_for_test(1);
+        let bunker = sim
+            .spawn_object("NATBNK", "Americans", 10, 10, 0, &rules)
+            .unwrap();
+        let tank = sim
+            .spawn_object("LTNK", "Americans", 6, 10, 0, &rules)
+            .unwrap();
+        let owner = sim.interner.intern("Americans");
+        sim.queue_command(CommandEnvelope::new(
+            owner,
+            sim.session.tick() + 1,
+            Command::clicked_mission(
+                tank,
+                crate::sim::mission::MissionType::Enter,
+                crate::sim::combat::TargetKind::Entity(bunker),
+            ),
+        ));
+        for _ in 0..600 {
+            let commands = sim.take_due_commands();
+            let grid = sim.path_grid_snapshot();
+            sim.advance_tick(&commands, Some(&rules), grid.as_deref(), None, 33);
+            if sim
+                .substrate
+                .entities
+                .get(bunker)
+                .unwrap()
+                .bunker_runtime
+                .as_ref()
+                .unwrap()
+                .state()
+                == crate::sim::docking::bunker_install::BunkerState::Occupied
+            {
+                break;
+            }
+        }
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(bunker)
+                .unwrap()
+                .bunker_runtime
+                .as_ref()
+                .unwrap()
+                .state(),
+            crate::sim::docking::bunker_install::BunkerState::Occupied,
+            "install completed"
+        );
+        assert_eq!(
+            sim.substrate.entities.get(tank).unwrap().bunker.link(),
+            BunkerLink::Installed(bunker)
+        );
+        // The rival-arena drive can leave fixture damage; only the splash's
+        // own delta is asserted.
+        let tank_hp_before = sim.substrate.entities.get(tank).unwrap().health.current();
+
+        // The shot's impact: the bunker's target coordinate.
+        let impact = {
+            let bunker_entity = sim.substrate.entities.get(bunker).unwrap().clone();
+            let center = object_center_xy(&bunker_entity);
+            ProjectileCoord::new(center[0], center[1], 0)
+        };
+        let warhead = rules.warhead("V3WH").unwrap();
+        let warhead_ref = sim.interner.intern("V3WH");
+        let (rx, ry, sub_x, sub_y, z_leptons) =
+            crate::sim::combat::detonation_anim::projectile_impact_cell(impact);
+        let area = world_receiver::collect_area(
+            &mut sim,
+            &rules,
+            None,
+            (rx, ry),
+            2000,
+            warhead,
+            true,
+            (0, None, warhead_ref),
+            Some(combat_aoe::AoEAirImpact {
+                sub_x,
+                sub_y,
+                z_leptons,
+            }),
+            z_leptons.div_euclid(crate::util::lepton::LEPTONS_PER_LEVEL as i32),
+            crate::sim::world::FrameEffects::default(),
+        );
+        // The impact cell is the tank's own foundation-centre cell, so its
+        // prepended record precedes every bunker record of the transaction.
+        assert!(
+            matches!(
+                area.receivers.first(),
+                Some(combat_aoe::AreaDamageReceiver::Entity(event)) if event.target_id == tank
+            ),
+            "the tank's record dispatches first: {:?}",
+            area.receivers
+        );
+        let mut run = world_receiver::ReceiverRun::default();
+        let _ = world_receiver::commit_area_with_dispatch(
+            &mut sim,
+            &mut run,
+            &area.receivers,
+            &rules,
+            None,
+        );
+
+        assert!(
+            !sim.substrate
+                .entities
+                .get(bunker)
+                .unwrap()
+                .lifecycle
+                .object_alive(),
+            "the bunker dies to the splash"
+        );
+        let tank_after = sim.substrate.entities.get(tank).unwrap();
+        assert!(
+            tank_after.lifecycle.object_alive(),
+            "the installed tank survives the splash"
+        );
+        assert_eq!(
+            tank_after.health.current(),
+            tank_hp_before,
+            "the gate nullified the tank's record"
+        );
+        assert_eq!(
+            tank_after.bunker.link(),
+            BunkerLink::None,
+            "ejected when the bunker died"
+        );
+    }
+
+    /// The gate's inverse arm through the same splash: a warhead with
+    /// `PenetratesBunker=yes` (retail `[Super]`, the Issue #2231 killer)
+    /// skips the installed non-Building arm to `0x00701BF6` and kills the
+    /// tank. The tank's own record dispatches first, so its kill instant
+    /// (`0x00737D97` → `ClearBunker @ 0x00459470`) empties the building's
+    /// occupant before the bunker's record reads it live (`0x00701900`): an
+    /// empty bunker is an ordinary receiver and takes the same splash.
+    #[test]
+    fn a_penetrating_splash_kills_the_installed_tank_then_the_bunker() {
+        use crate::sim::combat::{combat_aoe, world_receiver};
+        use crate::sim::projectile::ProjectileCoord;
+
+        let rules = rules_with(
+            "[CombatDamage]\nC4Warhead=C4\n[Warheads]\n0=C4\n1=PENETRATOR\n\
+             [C4]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+             [PENETRATOR]\nCellSpread=.9\nPercentAtMax=1\nPenetratesBunker=yes\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        );
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::supply_native_map(&mut sim);
+        spawn_bunker(&mut sim, 2, "Americans");
+        spawn_tank_at(&mut sim, 1, "Americans", "TANK", (10, 10));
+        assert!(matches!(sim.reveal(2), RevealOutcome::Revealed { .. }));
+        assert!(matches!(sim.reveal(1), RevealOutcome::Revealed { .. }));
+        install_bunker_link(&mut sim, 2, 1, &rules);
+
+        let warhead = rules.warhead("PENETRATOR").unwrap();
+        let warhead_ref = sim.interner.intern("PENETRATOR");
+        let impact = ProjectileCoord::new(10 * 256 + 128, 10 * 256 + 128, 0);
+        let (rx, ry, sub_x, sub_y, z_leptons) =
+            crate::sim::combat::detonation_anim::projectile_impact_cell(impact);
+        let area = world_receiver::collect_area(
+            &mut sim,
+            &rules,
+            None,
+            (rx, ry),
+            2000,
+            warhead,
+            true,
+            (0, None, warhead_ref),
+            Some(combat_aoe::AoEAirImpact {
+                sub_x,
+                sub_y,
+                z_leptons,
+            }),
+            z_leptons.div_euclid(crate::util::lepton::LEPTONS_PER_LEVEL as i32),
+            crate::sim::world::FrameEffects::default(),
+        );
+        let mut run = world_receiver::ReceiverRun::default();
+        let _ = world_receiver::commit_area_with_dispatch(
+            &mut sim,
+            &mut run,
+            &area.receivers,
+            &rules,
+            None,
+        );
+
+        let tank = sim.substrate.entities.get(1).unwrap();
+        assert!(
+            !tank.lifecycle.object_alive(),
+            "the penetrating splash kills the installed tank"
+        );
+        assert_eq!(
+            tank.bunker.link(),
+            BunkerLink::None,
+            "the kill instant cleared the tank's link"
+        );
+        let bunker = sim.substrate.entities.get(2).unwrap();
+        assert!(
+            !bunker.lifecycle.object_alive(),
+            "the bunker's record read the emptied occupant and took the splash"
+        );
+        assert_eq!(
+            bunker.bunker.occupant(),
+            None,
+            "occupant cleared at the kill"
+        );
+    }
+
     /// Techno Assign_Target's bunker redirect (`0x006FCE4B..0x006FCEB5`): a
     /// bunkered tank becomes its bunker for an airstrike owner or an
     /// IsLocomotor weapon 0, not for an ordinary gun; the receiver itself

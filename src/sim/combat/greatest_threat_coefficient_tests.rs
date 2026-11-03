@@ -20,7 +20,8 @@ fn guard_pick(rules: &RuleSet) -> (Option<u64>, u64) {
     sim.spawn_object("E1", "Russians", 12, 12, 64, rules)
         .expect("healthy enemy GI in the same scan ring");
     (
-        sim.greatest_threat_represented(rules, None, gi, ScanMission::Guard, None),
+        sim.greatest_threat_represented(rules, None, gi, ScanMission::Guard, None)
+            .and_then(crate::sim::combat::TargetKind::object_id),
         tank,
     )
 }

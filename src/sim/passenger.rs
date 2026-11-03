@@ -1460,12 +1460,7 @@ fn rearm_transferred_gunner(
             actor.position.ry(),
         ));
     let snapshot = crate::sim::combat::build_attacker_snapshot(actor, target, None);
-    let live = crate::sim::combat::rof::LiveParticles {
-        spark: actor.spark_particle_system.system().is_some(),
-        // Retained Fire/Railgun links remain unported, as in the C4 caller.
-        // None of the selected stock FV/CLEG slots has these flags.
-        ..Default::default()
-    };
+    let live = actor.live_particles();
     let rof = crate::sim::combat::world_fire::snapshot_get_rof(
         scenario_rng,
         &*substrate,

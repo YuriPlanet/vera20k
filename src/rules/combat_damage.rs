@@ -39,6 +39,13 @@ pub struct CombatDamageDefaults {
     /// Signed, unclamped destroyable-cliff chance compared against one
     /// Scenario RandomRanged(0,99) draw. Native constructor default is 100.
     pub collapse_chance: i32,
+    /// `RailgunDamageRadius=`: the most a Techno may sit from a railgun line
+    /// and still be hit. `RulesClass::Constructor` writes 0x80
+    /// (`0x00665CDE`); `ReadCombatDamage` (`0x0066BC18..0x0066BC31`) reads a
+    /// plain signed int with that default, and
+    /// `TechnoClass::ApplyRailgunLineDamage @ 0x0070C690` compares it at
+    /// `0x0070C9DD`. Stock rulesmd.ini does not author it.
+    pub railgun_damage_radius: i32,
     /// `BallisticScatter=` in LEPTONS. `RulesClass::ReadCombatDamage
     /// @ 0x0066CD5B` reads it through `CCINIClass::ReadRange @ 0x00474620`
     /// into `RulesClass+0x1734`, so the authored cell count is multiplied by
@@ -152,6 +159,7 @@ impl CombatDamageDefaults {
             tiberium_explosion_damage: section.read_int("TiberiumExplosionDamage", 100),
             max_damage: section.read_int("MaxDamage", 1000),
             collapse_chance: section.read_int("CollapseChance", 100),
+            railgun_damage_radius: section.read_int("RailgunDamageRadius", 0x80),
             ballistic_scatter: section.read_range("BallisticScatter", 0x100),
             crush: section.read_range("Crush", 0x180),
             incoming: section.read_speed("Incoming", 0),
@@ -187,6 +195,7 @@ impl Default for CombatDamageDefaults {
             tiberium_explosion_damage: 100,
             max_damage: 1000,
             collapse_chance: 100,
+            railgun_damage_radius: 0x80,
             ballistic_scatter: 0x100,
             crush: 0x180,
             incoming: 0,

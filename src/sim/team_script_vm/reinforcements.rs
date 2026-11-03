@@ -960,6 +960,17 @@ impl Simulation {
         let mut placed_any = false;
         for &member in members {
             if cell == (0, 0) {
+                // Residual: a member that fails all eight directions, or whose
+                // search returns Cell (0,0) (65E5DC..65E5F4), is deleted at
+                //65E5A4; 65E5AE..65E5D7 moves on to the next member and the
+                //65E611 cleanup deletes only those after it, so native leaves
+                // that next member constructed in limbo and in the Team. VERA
+                // discards it too, and keeps the (0,0) member in limbo. Fresh
+                // members never get there: with A8E7AC raised, Unlimbo
+                // (Object5F4EC0, Foot Mark4D3780 ->5F5850, Infantry51E027
+                // priority spot) cannot refuse a cell-centre coordinate.
+                #[cfg(any(test, feature = "dev-overlays"))]
+                self.trace_placement_refused(cell);
                 self.discard_constructed_limbo(member, rules, effects);
                 continue;
             }
@@ -1035,6 +1046,8 @@ impl Simulation {
                                 .then_some(candidate)
                         });
                     if next.is_none() {
+                        #[cfg(any(test, feature = "dev-overlays"))]
+                        sim.trace_placement_refused(cell);
                         sim.discard_constructed_limbo(member, rules, effects);
                     }
                     (false, next)

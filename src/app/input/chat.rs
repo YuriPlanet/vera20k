@@ -200,24 +200,33 @@ fn apply_input(state: &mut AppState, key: EditKey) {
     match result {
         EditInput::Ended if key == EditKey::Escape => presentation.chat.target = ChatTarget::None,
         EditInput::Sent(text) => {
-            send(state, &text);
+            let target = state.match_state.match_presentation.chat.target;
+            send(state, target, &text);
             // 0x0055F1BD: result 3 clears the target.
             state.match_state.match_presentation.chat.target = ChatTarget::None;
         }
-        EditInput::Overflowed(chunk) => send(state, &chunk),
+        EditInput::Overflowed(chunk) => {
+            let target = state.match_state.match_presentation.chat.target;
+            send(state, target, &chunk);
+        }
         _ => {}
     }
 }
 
+/// VERA: a line this game sends to everyone by itself, sent and echoed like
+/// a typed one: the caught-up line (`network_match::post_caught_up`).
+pub(crate) fn send_to_all(state: &mut AppState, text: &str) {
+    send(state, ChatTarget::All, text);
+}
+
 /// The send block `0x0055EDBF..0x0055F110` for results 3 and 4.
-fn send(state: &mut AppState, text: &str) {
+fn send(state: &mut AppState, target: ChatTarget, text: &str) {
     if !state.match_state.session_mode().is_network() {
         return;
     }
     let Some(local) = local_house(state) else {
         return;
     };
-    let target = state.match_state.match_presentation.chat.target;
     let Some((recipients, refused)) = route(state, local, target) else {
         return;
     };

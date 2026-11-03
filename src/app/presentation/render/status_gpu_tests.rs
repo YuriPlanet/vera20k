@@ -410,6 +410,84 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
     );
 }
 
+/// `0x006F6A8E..0x006F6AB0`: the mobile scale row starts at the draw point
+/// (-10,+10) without `PixelSelectionBracketDelta=`, which only moves the
+/// health bar.
+#[test]
+#[ignore = "requires retail assets and GPU; bracket delta leaves the scale pips in place"]
+fn bracket_delta_moves_the_health_bar_but_not_the_scale_pips() {
+    use crate::rules::ini_parser::IniFile;
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+    let gpu = Gpu::new();
+    let batch = BatchRenderer::new_with_device(
+        &gpu.device,
+        &gpu.queue,
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+    );
+    let overlay = SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+    let strip = |delta: i32| {
+        let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+            "XMP03T4.MAP",
+            &IniFile::from_str(&format!(
+                "[MTNK]\nPipScale=Ammo\nAmmo=3\nPixelSelectionBracketDelta={delta}\n"
+            )),
+        )
+        .expect("physical Battle rules");
+        let mut sim = Simulation::new();
+        let owner = sim.intern("Americans");
+        sim.houses_mut_for_test()
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
+        let id = sim
+            .construct_object_limbo_at_height(
+                "MTNK",
+                "Americans",
+                20,
+                20,
+                0,
+                0,
+                &retail.rules,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
+        let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+        entity.lifecycle.set_in_limbo_for_test(false);
+        entity.discovery.set_owned_by_current_house_for_test(true);
+        entity.selection.set_selected_for_test(true);
+        entity.install_ammo_for_test(Some(crate::sim::ammo::TechnoAmmo::new(3)));
+        sim.resubmit_entity_display_for_test(id);
+        *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(64, 64);
+        sim.fog_mut_for_test().reveal_all_for_owner(owner);
+        let entity = sim.entities().get(id).unwrap();
+        let coord = crate::sim::movement::ground_pose::object_get_coords(entity, None);
+        let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
+        let extras = techno_extras_for_parent(
+            &sim,
+            entity,
+            Some(&retail.rules),
+            &overlay,
+            None,
+            Some("Americans"),
+            StatusViewport {
+                camera: [x - 64.0, y - 60.0],
+                size: [128.0, 96.0],
+                zoom: 1.0,
+                ignore_visibility: true,
+            },
+        );
+        let y = |list: &[crate::render::batch::SpriteInstance]| {
+            list.iter().map(|pip| pip.position).collect::<Vec<_>>()
+        };
+        (y(&extras.fills), y(&extras.scale))
+    };
+    let (flat_fills, flat_scale) = strip(0);
+    let (raised_fills, raised_scale) = strip(-12);
+    assert_eq!(flat_scale.len(), 3, "three Ammo pips");
+    assert_eq!(raised_scale, flat_scale, "the scale row ignores the delta");
+    assert_eq!(raised_fills[0][1], flat_fills[0][1] - 12.0, "the bar moves");
+}
+
 /// The disguised hover arm (`0x006F5E37..0x006F5E87`) through the strip
 /// production draws: an enemy Mirage worn as terrain (Unit `+0xD0(1)`
 /// `0x007465F0` NULL) draws no health while hovered until it is selected; a

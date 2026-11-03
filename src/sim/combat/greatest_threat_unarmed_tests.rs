@@ -13,7 +13,7 @@ use crate::sim::world::Simulation;
 /// `Threat_Range` of GuardRange or the (zero) weapon range, so a thief with
 /// neither keeps only the zero-range arm's same-cell compare.
 const EXTRA: &str = "[InfantryTypes]\n2=THIEFMAN\n3=SPYMAN\n4=PLAINMAN\n5=GUNMAN\n\
-     [VehicleTypes]\n0=SCOUTCAR\n\
+     [VehicleTypes]\n0=SCOUTCAR\n1=TRAINCAR\n\
      [THIEFMAN]\nVehicleThief=yes\nSpeed=4\nSpeedType=Foot\nStrength=75\nGuardRange=5\n\
      Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
      [SPYMAN]\nInfiltrate=yes\nSpeed=4\nSpeedType=Foot\nStrength=75\n\
@@ -25,6 +25,8 @@ const EXTRA: &str = "[InfantryTypes]\n2=THIEFMAN\n3=SPYMAN\n4=PLAINMAN\n5=GUNMAN
      [TestGun]\nDamage=10\nRange=6\nROF=60\nProjectile=TestShot\nWarhead=TestWH\n\
      [TestShot]\nROT=0\n[TestWH]\nVerses=100%\n\
      [SCOUTCAR]\nStrength=500\nSpeed=6\n\
+     Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+     [TRAINCAR]\nStrength=500\nSpeed=6\nIsTrain=yes\n\
      Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n";
 
 fn unarmed_scene() -> (
@@ -54,6 +56,7 @@ fn pick(
     mission: super::super::ScanMission,
 ) -> Option<u64> {
     sim.greatest_threat_represented(rules, Some(registry), scanner, mission, None)
+        .and_then(crate::sim::combat::TargetKind::object_id)
 }
 
 #[test]
@@ -91,6 +94,30 @@ fn unarmed_vehicle_thief_hunt_picks_the_enemy_vehicle_over_closer_infantry() {
     );
     assert_eq!(held, Some(car));
     assert_ne!(held, Some(closer_infantry));
+}
+
+/// `0x006F8487..0x006F84AB`: a vehicle thief passes over a closer train.
+#[test]
+fn vehicle_thief_hunt_skips_a_train_for_a_farther_car() {
+    let (mut sim, rules, registry) = unarmed_scene();
+    let thief = sim
+        .spawn_object("THIEFMAN", "Americans", 15, 15, 0, &rules)
+        .unwrap();
+    let train = sim
+        .spawn_object("TRAINCAR", "Russians", 16, 15, 0, &rules)
+        .unwrap();
+    let car = sim
+        .spawn_object("SCOUTCAR", "Russians", 19, 15, 0, &rules)
+        .unwrap();
+    let held = pick(
+        &mut sim,
+        &rules,
+        &registry,
+        thief,
+        super::super::ScanMission::Hunt,
+    );
+    assert_ne!(held, Some(train), "a thief never picks a train");
+    assert_eq!(held, Some(car));
 }
 
 #[test]

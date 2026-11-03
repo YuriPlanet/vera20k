@@ -643,7 +643,7 @@ pub(crate) fn render_game(
         );
         presentation
             .radiation_beams
-            .composite(frame_rate, viewport, |birth| {
+            .composite(frame_rate, viewport, &main, |birth| {
                 !effect_hidden(birth.to.x, birth.to.y)
             });
     }

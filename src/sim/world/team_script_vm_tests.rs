@@ -727,6 +727,7 @@ fn only_a_human_scanner_passes_over_an_unarmed_building() {
             id,
             crate::sim::combat::ScanMission::Guard,
         )
+        .and_then(crate::sim::combat::TargetKind::object_id)
     };
     assert_eq!(scan(computer), Some(plant));
     assert_eq!(scan(human), None);

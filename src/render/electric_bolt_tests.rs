@@ -74,6 +74,7 @@ fn laser(row: &Value) -> Option<LaserDraw> {
             color: LaserDrawColor::House(point::<3>(&laser["inner"]).map(|value| value as u8)),
             age: integer(&laser["age"]),
             duration: integer(&laser["duration"]),
+            fade_start: crate::util::native_x87::NativeF32Bits::ONE,
             fade_end: crate::util::native_x87::NativeF32Bits::from_bits(
                 laser["fade_end_bits"].as_u64().unwrap() as u32,
             ),

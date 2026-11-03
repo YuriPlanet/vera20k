@@ -44,7 +44,7 @@ pub(crate) struct Lasers {
 
 impl Lasers {
     /// 54FE60 copies inputs once; ctor timer is {Frame,1}, step/rate1,
-    /// fades=true, blinks=false and intensity start1. House RGB is bound
+    /// fades=true and blinks=false. House RGB is bound
     /// here once; future source death/recoloring cannot change the copy.
     pub(crate) fn create(
         &mut self,
@@ -132,6 +132,7 @@ impl Lasers {
             color: laser.color,
             age: laser.age,
             duration: laser.birth.duration,
+            fade_start: laser.birth.fade_start,
             fade_end: laser.birth.fade_end,
         })
     }

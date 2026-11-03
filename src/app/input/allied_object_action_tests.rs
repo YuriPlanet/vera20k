@@ -1037,3 +1037,45 @@ fn a_receiver_the_player_cannot_control_answers_its_attack_rung_under_alt() {
         cursor(OrderModifier::ForceFire)
     );
 }
+
+/// What_Action_OnObject's unforced rung also takes a type that is not
+/// `LegalTarget=` when vt+0x398 answers (`0x00700438`): with a map giving
+/// the Grizzly's 105mm `TerrainFire=` and clearing its `LegalTarget=`, an
+/// enemy Grizzly worn as a tree with no worn house
+/// (`0x0070EF8C..0x0070EFB2`) is attacked, and a plain one is not.
+#[test]
+fn a_terrain_fire_weapon_attacks_an_enemy_worn_as_a_tree() {
+    let patch = crate::rules::ini_parser::IniFile::from_str(
+        "[105mm]\nTerrainFire=yes\n[MTNK]\nLegalTarget=no\n",
+    );
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &patch,
+    ) else {
+        return;
+    };
+    let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &battle.processed_rules,
+        Some(&battle.fixed_art),
+    );
+    let (mut sim, actor, target) = object_pair(&battle.rules, "MTNK", "enemy");
+    let action = |sim: &Simulation| {
+        attack_action(
+            sim,
+            &battle.rules,
+            actor,
+            &TargetKind::Entity(target),
+            false,
+            Some(&overlays),
+        )
+    };
+    assert_ne!(action(&sim), AttackAction::Attack, "not LegalTarget=");
+    let tree = sim.intern("TREE01");
+    let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
+    disguise.acquire(0, Some(tree), None);
+    sim.entities_mut_for_test()
+        .get_mut(target)
+        .unwrap()
+        .disguise = Some(disguise);
+    assert_eq!(action(&sim), AttackAction::Attack);
+}

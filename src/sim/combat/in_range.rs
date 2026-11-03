@@ -909,6 +909,32 @@ pub fn can_fire_at_target(
 }
 
 impl crate::sim::world::Simulation {
+    /// `TechnoClass::Assign_Target`'s fire-particle teardown
+    /// (`0x006FCF61..0x006FCF86`) after an object or cell target was stored:
+    /// a live `+0x304` system is released unless CanFireAtTarget (vt+0x3AC)
+    /// accepts that target. The NULL case runs in the entity-local setter.
+    pub(crate) fn assign_target_fire_teardown(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    ) {
+        let Some(target) = self
+            .substrate
+            .entities
+            .get(id)
+            .filter(|entity| entity.fire_particle_system.system().is_some())
+            .and_then(|entity| entity.attack_target.target())
+        else {
+            return;
+        };
+        if !self.techno_can_fire_at_target(id, target, rules, registry)
+            && let Some(entity) = self.substrate.entities.get_mut(id)
+        {
+            entity.release_fire_particle_system();
+        }
+    }
+
     /// [`can_fire_at_target`] for the object `id` against `target`, on the
     /// live map with the house alliances; false without a map.
     pub(crate) fn techno_can_fire_at_target(

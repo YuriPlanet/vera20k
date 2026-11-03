@@ -37,6 +37,7 @@ fn birth(value: &Value) -> LaserBirth {
                 spread: std::array::from_fn(|i| integer(&value["spread"][i]) as u8),
             }
         },
+        fade_start: crate::util::native_x87::NativeF32Bits::ONE,
         fade_end: crate::util::native_x87::NativeF32Bits::from_bits(
             value["fade_end_bits"].as_u64().unwrap() as u32,
         ),
