@@ -596,9 +596,9 @@ impl Simulation {
         let mut retry = false;
         let mut process_tail = true;
         loop {
-            if let Some(request) = pending_movement.take_foot_path_request() {
+            if let Some(mut request) = pending_movement.take_foot_path_request() {
                 let outcome = sim
-                    .run_foot_path_request(&request, rules, overlay_registry, effects)
+                    .run_foot_path_request(&mut request, rules, overlay_registry, effects)
                     .map_err(|cause| frame_error(sim, cause))?;
                 if outcome == movement::FootPathOutcome::Resume {
                     pending_movement.reenter_mover(
