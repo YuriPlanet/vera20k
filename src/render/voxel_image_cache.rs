@@ -28,6 +28,22 @@
 //! caches of every type and rewinds the pool (`0x005F99E0`, from `0x00706AE0`
 //! and `0x00706E38`), then stores again.
 //!
+//! Every render, cached or not, runs on the renderer's shared buffers
+//! (`0x00753E00`): its first call (`0x008467E0`) clears the colour buffer
+//! (`0xB2FF78`) and the depth map (`0xB1D5E0`) whole. Each later call
+//! clears the colour buffer over the previous render's crop rect
+//! (`0xB2FB60..6C`, written by `0x007542F0` and `0x00754510`; whole when the
+//! rect leaves the buffer), and the depth map over the same rect, rows and
+//! columns inclusive, only while 0xB43180 is set. A render's pixels lie
+//! inside its own rect, so the colour buffer never shows an earlier render
+//! and is not kept here. Depth does: a `UseBuffer=` part render clears the
+//! flag after drawing, so the renders after it clear only colour until the
+//! flag is set again, and that clear covers only the last render's rect. A
+//! depth-tested render then keeps the earlier depth outside that rect, and
+//! its voxels there draw only where nearer (#3794: on retail SCHP, 1-2% of
+//! the next chopper image after a tank-sized render, 39% after a
+//! bullet-sized one). A miss stores that image, which later hits blit.
+//!
 //! Residuals:
 //! - Keys: a record stands for the native key through the atlas key drawn.
 //!   The Unit Jumpjet shadow key also carries `(Shadow_Point.y - 16) & 31`
@@ -40,18 +56,18 @@
 //!   native-raster part, the composed mask or template for a shadow. A turret
 //!   keyed by hull facing counts its atlas image each time. This moves a flush
 //!   by a few stores at most.
-//! - Building guns, voxel debris and bullets are drawn after the unit pass and
-//!   read the latch it left, not the latch at their display position. They
-//!   differ only in a frame where a `UseBuffer=` draw changes it.
-//! - The renderer's shared colour buffer, depth map and previous rect
-//!   (`0x00753E00`) are not kept: a depth-tested draw after an ordinary one
-//!   starts from a clear depth map, where native keeps stale depth outside the
-//!   previous rect. On retail SCHP that drops 1-2% of the next chopper image
-//!   after a tank-sized render, 39% after a bullet-sized one (#3794).
+//! - A posed body, and a barrel drawn without a turret, render their parts
+//!   as one image: one clear and one rect where native clears and records
+//!   one per part. Stock posed bodies have one part.
+//! - A depth clear of a rect that leaves the 256-square map runs on past it
+//!   natively (`0x00753EC5` does not clip); here it stops at the map's ends.
+//!   No stock voxel spans 248 pixels.
+//!
 
 use std::collections::HashMap;
 
-use super::unit_atlas::UnitSpriteKey;
+use super::unit_atlas::{UnitSpriteEntry, UnitSpriteKey};
+use super::vxl_raster::DepthMap;
 
 /// `0x0040F270`'s pool size.
 pub const POOL_BYTES: u32 = 4_000_000;
@@ -92,10 +108,13 @@ impl VoxelImageKey {
 }
 
 /// What a part draw blits.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CachedDraw {
     /// Rasterized with the flag set.
     pub depth_tested: bool,
+    /// The image rasterized over stale depth, which differs from a clean
+    /// render of its key; None when it matches one.
+    pub stale: Option<UnitSpriteEntry>,
     /// The barrel elevation step the image holds. A gun's key (the turret's
     /// step, the hull's when the type has a `TurretOffset=`, the locomotor's
     /// key and the turret frame, `0x0073B748..0x0073B79F`; a building's
@@ -107,7 +126,20 @@ pub struct CachedDraw {
     pub barrel_pitch: i8,
 }
 
-#[derive(Default)]
+/// How one part render rasterizes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PartRender {
+    /// Depth-tested: 0xB43180 is set.
+    pub depth_tested: bool,
+    /// The render must rasterize against [`VoxelImageCache::depth_map`]:
+    /// its rect holds stale depth, or it is a `UseBuffer=` part, whose depth
+    /// a later render can read.
+    pub live: bool,
+    /// Stale depth lies in its rect, so its image can differ from a clean
+    /// render's.
+    pub stale: bool,
+}
+
 pub struct VoxelImageCache {
     /// `0xB43180`.
     use_buffer: bool,
@@ -116,29 +148,73 @@ pub struct VoxelImageCache {
     images: HashMap<VoxelImageKey, CachedDraw>,
     /// Pool flushes so far; derived image stores keyed on it drop older fills.
     flushes: u32,
+    /// `0xB1D5E0`.
+    depth: Box<DepthMap>,
+    /// `0xB2FB60..6C`: the last render's crop x, y, width and height in the
+    /// 256-square buffers. `0x00753AF0` starts it at (0, 0, 255, 255).
+    previous: [i32; 4],
+    /// `0x008467E0`: the next clear is the first.
+    first_clear: bool,
+}
+
+impl Default for VoxelImageCache {
+    fn default() -> Self {
+        Self {
+            use_buffer: false,
+            pool_used: 0,
+            images: HashMap::new(),
+            flushes: 0,
+            depth: vec![0; 65536]
+                .into_boxed_slice()
+                .try_into()
+                .expect("64 KiB depth map"),
+            previous: [0, 0, 255, 255],
+            first_clear: true,
+        }
+    }
+}
+
+/// The crop rect `0x00754510` and `0x007542F0` give an image `size`
+/// (width, height) pixels: each extent less 8, centred at 124 - extent / 2.
+fn crop_rect([width, height]: [i32; 2]) -> [i32; 4] {
+    let start = |size: i32| 124 - (size - 8) / 2;
+    [start(width), start(height), width, height]
+}
+
+/// The depth map addresses `0x00753E00` clears for `rect`: its rows and
+/// columns inclusive, row by row from (x, y), within the map.
+fn rect_addresses([x, y, width, height]: [i32; 4]) -> impl Iterator<Item = std::ops::Range<usize>> {
+    (0..=height.max(-1)).map(move |row| {
+        let start = (y + row) * 256 + x;
+        let clamp = |address: i32| address.clamp(0, 65536) as usize;
+        clamp(start)..clamp(start + width + 1)
+    })
 }
 
 impl VoxelImageCache {
     /// A part draw through `0x00706640` keyed `image`: on a hit, the stored
-    /// image. On a miss it renders in the current style with the drawn
-    /// `pitch` and stores that; `bytes` is the image's pool size in that
-    /// style.
+    /// image. On a miss it renders an image `size` (width, height) pixels
+    /// in the current style with the drawn `pitch` and stores what `render`
+    /// returns: the stale image it rasterized, if any, and its pool bytes.
     pub fn draw(
         &mut self,
         image: VoxelImageKey,
         use_buffer_type: bool,
         pitch: i8,
-        bytes: impl FnOnce(bool) -> u32,
+        size: [i32; 2],
+        render: impl FnOnce(PartRender, &mut DepthMap) -> (Option<UnitSpriteEntry>, u32),
     ) -> CachedDraw {
         if let Some(stored) = self.images.get(&image) {
             return *stored;
         }
+        let part = self.render_part(use_buffer_type, size);
+        let (stale, bytes) = render(part, &mut self.depth);
         let drawn = CachedDraw {
-            depth_tested: self.render_part(use_buffer_type),
+            depth_tested: part.depth_tested,
+            stale,
             barrel_pitch: pitch,
         };
-        let size = bytes(drawn.depth_tested);
-        self.store(image, drawn, size);
+        self.store(image, drawn, bytes);
         drawn
     }
 
@@ -147,14 +223,41 @@ impl VoxelImageCache {
         self.images.get(image).copied()
     }
 
-    /// A part render, uncached or on a miss (`0x00706ED0`): whether it is
-    /// depth-tested.
-    pub fn render_part(&mut self, use_buffer_type: bool) -> bool {
+    /// Whether a part render now would be depth-tested.
+    pub fn part_style(&self, use_buffer_type: bool) -> bool {
+        use_buffer_type || self.use_buffer
+    }
+
+    /// A part render of an image `size` (width, height) pixels, uncached or
+    /// on a miss: `0x00706ED0`, Bullet `0x0046B0C0` and `VoxelAnimClass`
+    /// `0x00749B70`'s body. A `UseBuffer=` type's render sets the flag before
+    /// its clear and clears it after (`0x00706F12`, `0x0070724F`). Any other
+    /// render that is not stale need not touch the map: its depth lies in its
+    /// own rect, which the next render's clear erases while the flag stays
+    /// set.
+    pub fn render_part(&mut self, use_buffer_type: bool, size: [i32; 2]) -> PartRender {
+        if use_buffer_type {
+            self.use_buffer = true;
+        }
+        self.clear();
+        let rect = crop_rect(size);
+        let depth_tested = self.use_buffer;
+        let stale = depth_tested
+            && rect_addresses(rect).any(|addresses| self.depth[addresses].iter().any(|&z| z != 0));
+        self.previous = rect;
         if use_buffer_type {
             self.use_buffer = false;
-            return true;
         }
-        self.use_buffer
+        PartRender {
+            depth_tested,
+            live: stale || (depth_tested && use_buffer_type),
+            stale,
+        }
+    }
+
+    /// The depth map a live render rasterizes against.
+    pub fn depth_map(&mut self) -> &mut DepthMap {
+        &mut self.depth
     }
 
     /// Whether a shadow draw keyed `image` blits a stored image.
@@ -162,23 +265,41 @@ impl VoxelImageCache {
         self.images.contains_key(image)
     }
 
-    /// A shadow render (`0x00707280`) after a miss, or uncached with `None`:
-    /// stores `bytes` under `image`.
+    /// A shadow render of an image `size` (width, height) pixels: `0x00707280`
+    /// after a miss, or uncached with `None`, which stores `bytes` under
+    /// `image`; or `0x00749B70`'s. A `UseBuffer=` type's sets the flag before
+    /// its clear (`0x007072FC`) and leaves it set (`0x0070744B`). The stencil
+    /// ignores the flag and writes no depth.
     pub fn render_shadow(
         &mut self,
         image: Option<VoxelImageKey>,
         use_buffer_type: bool,
         bytes: u32,
+        size: [i32; 2],
     ) {
         if use_buffer_type {
             self.use_buffer = true;
         }
+        self.clear();
+        self.previous = crop_rect(size);
         if let Some(image) = image {
             let shadow = CachedDraw {
                 depth_tested: false,
+                stale: None,
                 barrel_pitch: 0,
             };
             self.store(image, shadow, bytes);
+        }
+    }
+
+    /// `0x00753E00`'s depth clear.
+    fn clear(&mut self) {
+        if std::mem::take(&mut self.first_clear) {
+            self.depth.fill(0);
+        } else if self.use_buffer {
+            for addresses in rect_addresses(self.previous) {
+                self.depth[addresses].fill(0);
+            }
         }
     }
 

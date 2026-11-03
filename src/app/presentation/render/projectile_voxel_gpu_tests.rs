@@ -143,6 +143,7 @@ fn stock_flat_torpedo_pose_upload_and_surface_replay_match_original_pixels() {
                         true,
                         VxlLighting::Diffuse,
                         false,
+                        None,
                     )
                     .unwrap();
                 let rect = &draw["body"]["rect"];
@@ -178,6 +179,7 @@ fn stock_flat_torpedo_pose_upload_and_surface_replay_match_original_pixels() {
                             true,
                             VxlLighting::Diffuse,
                             false,
+                            None,
                         )
                     },
                 );
@@ -477,7 +479,15 @@ fn kirov_pose_upload_and_replay(interpolated: bool) {
             }
             let matrix = painted.voxel_matrix().unwrap();
             let (expected, _) = model
-                .render_matrix(matrix, 0, true, VxlLighting::Diffuse, Some(&vpl), false)
+                .render_matrix(
+                    matrix,
+                    0,
+                    true,
+                    VxlLighting::Diffuse,
+                    Some(&vpl),
+                    false,
+                    None,
+                )
                 .unwrap();
             if let Some(previous) = previous_pixels.replace(expected.palette_indices.clone()) {
                 assert_ne!(
@@ -507,6 +517,7 @@ fn kirov_pose_upload_and_replay(interpolated: bool) {
                         true,
                         VxlLighting::Diffuse,
                         false,
+                        None,
                     )
                 },
             )
@@ -521,6 +532,7 @@ fn kirov_pose_upload_and_replay(interpolated: bool) {
                     true,
                     VxlLighting::Diffuse,
                     false,
+                    None,
                 )
                 .unwrap();
             assert_eq!(

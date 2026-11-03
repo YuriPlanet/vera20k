@@ -31,6 +31,17 @@ use crate::rules::ruleset::RuleSet;
 
 const PAGE_SIZE: u32 = 1024;
 
+/// Where [`VxlPoseFrameCache::render_live`] keeps its image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LivePage {
+    /// Nowhere: it matches a clean render, and the render only writes depth.
+    None,
+    /// A retained page, for a cache record.
+    Retained,
+    /// This frame's page, for an uncached render.
+    Frame,
+}
+
 #[derive(Default)]
 pub struct VxlPoseFrameCache {
     pages: Vec<PosePage>,
@@ -256,7 +267,7 @@ impl VxlPoseFrameCache {
             .entry(key.type_id.clone())
             .or_insert_with(|| UnitModel::load(asset_manager, &key.type_id, rules))
             .as_ref()?;
-        let (sprite, native_draw_bounds) = model.render_pose(key, vpl, tilt, depth_tested)?;
+        let (sprite, native_draw_bounds) = model.render_pose(key, vpl, tilt, depth_tested, None)?;
         let entry = self.place(&sprite, native_draw_bounds)?;
         self.unit_poses
             .entry(key.clone())
@@ -290,7 +301,7 @@ impl VxlPoseFrameCache {
             .entry(key.type_id.clone())
             .or_insert_with(|| UnitModel::load(asset_manager, &key.type_id, rules))
             .as_ref()
-            .and_then(|model| model.render_depth_tested(key, vpl))
+            .and_then(|model| model.render_depth_tested(key, vpl, None))
             .and_then(|(sprite, bounds)| {
                 let bytes = crate::render::voxel_image_cache::sprite_pool_bytes(
                     &sprite.palette_indices,
@@ -304,11 +315,56 @@ impl VxlPoseFrameCache {
         image
     }
 
+    /// A depth-tested render of a stable key (`tilt` None) or a posed body
+    /// on the shared `depth` map ([`crate::render::voxel_image_cache`]): its
+    /// image on `page`, with its pool bytes. None when `page` keeps none, or
+    /// the model or key does not draw.
+    pub fn render_live(
+        &mut self,
+        asset_manager: &AssetManager,
+        rules: Option<&RuleSet>,
+        key: &UnitSpriteKey,
+        tilt: Option<PoseTilt>,
+        depth: &mut crate::render::vxl_raster::DepthMap,
+        page: LivePage,
+    ) -> Option<(UnitSpriteEntry, u32)> {
+        let vpl = self
+            .vpl
+            .get_or_insert_with(|| {
+                asset_manager
+                    .get_ref("VOXELS.VPL")
+                    .and_then(|data| VplFile::from_bytes(data).ok())
+            })
+            .as_ref();
+        let model = self
+            .models
+            .entry(key.type_id.clone())
+            .or_insert_with(|| UnitModel::load(asset_manager, &key.type_id, rules))
+            .as_ref()?;
+        let (sprite, bounds) = match tilt {
+            Some(tilt) => model.render_pose(key, vpl, tilt, true, Some(depth))?,
+            None => model.render_depth_tested(key, vpl, Some(depth))?,
+        };
+        let retained = match page {
+            LivePage::None => return None,
+            LivePage::Retained => true,
+            LivePage::Frame => false,
+        };
+        let bytes = crate::render::voxel_image_cache::sprite_pool_bytes(
+            &sprite.palette_indices,
+            [sprite.width, sprite.height],
+            [sprite.offset_x, sprite.offset_y],
+            bounds,
+        );
+        Some((self.place_on(&sprite, bounds, retained)?, bytes))
+    }
+
     /// Rasterize one `VoxelAnimClass` piece's body and ground shadow at its
     /// bounce matrix and place both on this frame's page. `image` is the
     /// type's `ImageFile`, which names its model (`%s.VXL`, `0x0074B56C`).
     /// None when the model does not resolve, the piece is not drawable or the
-    /// sprite exceeds the page size.
+    /// sprite exceeds the page size. `depth` is the shared depth map the body
+    /// reads and writes; None draws it on a clear one.
     pub fn render_tumble(
         &mut self,
         asset_manager: &AssetManager,
@@ -316,6 +372,7 @@ impl VxlPoseFrameCache {
         section: i32,
         matrix: glam::Mat4,
         use_buffer: bool,
+        depth: Option<&mut crate::render::vxl_raster::DepthMap>,
     ) -> Option<(UnitSpriteEntry, Option<UnitSpriteEntry>)> {
         let vpl = self
             .vpl
@@ -334,7 +391,7 @@ impl VxlPoseFrameCache {
             })
             .model
             .as_ref()?;
-        let (body, shadow) = model.render_tumble(section, matrix, vpl, use_buffer)?;
+        let (body, shadow) = model.render_tumble(section, matrix, vpl, use_buffer, depth)?;
         let shadow = shadow.and_then(|sprite| self.place(&sprite, None));
         Some((self.place(&body, None)?, shadow))
     }
@@ -343,6 +400,9 @@ impl VxlPoseFrameCache {
     /// Draw46B0C0 requires the retained VXL/HVA pair and frame0; debris's
     /// no-HVA/shadow policy stays with `render_tumble`. Failed image attempts
     /// are cached too, and the match/asset owner replaces this entire cache.
+    /// `depth` is the shared depth map the draw reads and writes, whose image
+    /// no other draw shares; None draws on a clear one.
+    #[allow(clippy::too_many_arguments)]
     pub fn render_matrix(
         &mut self,
         asset_manager: &AssetManager,
@@ -352,7 +412,9 @@ impl VxlPoseFrameCache {
         use_hva: bool,
         lighting: VxlLighting,
         use_buffer: bool,
+        depth: Option<&mut crate::render::vxl_raster::DepthMap>,
     ) -> Option<UnitSpriteEntry> {
+        let live = depth.is_some();
         let key = MatrixPoseKey {
             matrix: matrix.to_cols_array().map(f32::to_bits),
             frame,
@@ -364,6 +426,7 @@ impl VxlPoseFrameCache {
             .image_models
             .get(image)
             .and_then(|model| model.poses.get(&key))
+            .filter(|_| !live)
         {
             return Some(*entry);
         }
@@ -385,9 +448,11 @@ impl VxlPoseFrameCache {
         let (sprite, bounds) = model
             .model
             .as_ref()?
-            .render_matrix(matrix, frame, use_hva, lighting, vpl, use_buffer)?;
+            .render_matrix(matrix, frame, use_hva, lighting, vpl, use_buffer, depth)?;
         let entry = self.place(&sprite, bounds)?;
-        self.image_models.get_mut(image)?.poses.insert(key, entry);
+        if !live {
+            self.image_models.get_mut(image)?.poses.insert(key, entry);
+        }
         Some(entry)
     }
 
@@ -473,6 +538,22 @@ impl VxlPoseFrameCache {
 
     pub fn page_texture(&self, page: usize) -> Option<&BatchTexture> {
         self.pages.get(page)?.texture.as_ref()
+    }
+
+    /// The pixels `entry` names on its page.
+    #[cfg(test)]
+    pub(crate) fn texels(&self, entry: UnitSpriteEntry) -> Vec<u8> {
+        let page = &self.pages[entry.page];
+        let x = (entry.uv_origin[0] * PAGE_SIZE as f32).round() as u32;
+        let y = (entry.uv_origin[1] * PAGE_SIZE as f32).round() as u32;
+        let width = entry.pixel_size[0] as u32;
+        let height = entry.pixel_size[1] as u32;
+        (0..height)
+            .flat_map(|row| {
+                let start = ((y + row) * PAGE_SIZE + x) as usize;
+                page.pixels[start..start + width as usize].iter().copied()
+            })
+            .collect()
     }
 
     #[cfg(test)]
@@ -750,7 +831,16 @@ mod tests {
         cache.begin_frame();
         assert_eq!(cache.fill_test_page().page, 0);
         let first = cache
-            .render_matrix(&assets, "ZBOMB", down, 0, true, VxlLighting::Diffuse, false)
+            .render_matrix(
+                &assets,
+                "ZBOMB",
+                down,
+                0,
+                true,
+                VxlLighting::Diffuse,
+                false,
+                None,
+            )
             .unwrap();
         assert!(
             first.page > 0,
@@ -758,7 +848,16 @@ mod tests {
         );
         let cursor = cache.pages[first.page].shelf;
         let repeated = cache
-            .render_matrix(&assets, "ZBOMB", down, 0, true, VxlLighting::Diffuse, false)
+            .render_matrix(
+                &assets,
+                "ZBOMB",
+                down,
+                0,
+                true,
+                VxlLighting::Diffuse,
+                false,
+                None,
+            )
             .unwrap();
         assert_same_entry(repeated, first);
         assert_eq!(
@@ -766,14 +865,32 @@ mod tests {
             "equal simultaneous bombs must not consume extra page space"
         );
         let changed = cache
-            .render_matrix(&assets, "ZBOMB", east, 0, true, VxlLighting::Diffuse, false)
+            .render_matrix(
+                &assets,
+                "ZBOMB",
+                east,
+                0,
+                true,
+                VxlLighting::Diffuse,
+                false,
+                None,
+            )
             .unwrap();
         assert_ne!(first.uv_origin, changed.uv_origin);
         assert_eq!(cache.image_models["ZBOMB"].poses.len(), 2);
         for missing in ["VERA_MISSING_BULLET_IMAGE", ""] {
             assert!(
                 cache
-                    .render_matrix(&assets, missing, down, 0, true, VxlLighting::Diffuse, false)
+                    .render_matrix(
+                        &assets,
+                        missing,
+                        down,
+                        0,
+                        true,
+                        VxlLighting::Diffuse,
+                        false,
+                        None
+                    )
                     .is_none()
             );
             assert!(cache.image_models[missing].model.is_none());
@@ -799,7 +916,16 @@ mod tests {
         );
         assert_eq!(cache.pages.iter().map(PosePage::used_rows).sum::<u32>(), 0);
         let next = cache
-            .render_matrix(&assets, "ZBOMB", east, 0, true, VxlLighting::Diffuse, false)
+            .render_matrix(
+                &assets,
+                "ZBOMB",
+                east,
+                0,
+                true,
+                VxlLighting::Diffuse,
+                false,
+                None,
+            )
             .unwrap();
         assert_eq!(next.page, 0, "the next frame reuses the first page");
         assert_eq!(
@@ -953,16 +1079,6 @@ mod tests {
     }
 
     fn pose_texels(cache: &VxlPoseFrameCache, entry: UnitSpriteEntry) -> Vec<u8> {
-        let page = &cache.pages[entry.page];
-        let x = (entry.uv_origin[0] * PAGE_SIZE as f32).round() as u32;
-        let y = (entry.uv_origin[1] * PAGE_SIZE as f32).round() as u32;
-        let width = entry.pixel_size[0] as u32;
-        let height = entry.pixel_size[1] as u32;
-        (0..height)
-            .flat_map(|row| {
-                let start = ((y + row) * PAGE_SIZE + x) as usize;
-                page.pixels[start..start + width as usize].iter().copied()
-            })
-            .collect()
+        cache.texels(entry)
     }
 }
