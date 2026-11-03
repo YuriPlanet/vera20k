@@ -1,13 +1,10 @@
 //! Particle spawn helpers.
 //!
-//! Three entry points:
+//! Two entry points:
 //!   - `Simulation::spawn_particle_system` — public API for combat / refinery /
 //!     gap-gen / area-damage to create a new system at a world coord.
 //!   - `spawn_particle` — ParticleSystem62E380's explicit child constructor.
 //!     Producers own their individual cap/cadence gates.
-//!   - `spawn_particle_with_insert` — Fire-only variant: append, then random-
-//!     shuffle within the last `insert_range` slots so the visual stream has
-//!     variety instead of strict FIFO.
 //!
 //! Every behavior's system enters the shared live Logic vector, and its owned
 //! particles run in that system visit.
@@ -28,9 +25,10 @@ use crate::util::native_x87::{
 };
 use glam::IVec3;
 
-/// A Techno's retained ParticleSystem link: `+0x308` the Spark system, shared
-/// by FireAt6FF1F5 and the Cyborg AI producer6FAEDA, and `+0x314` the Railgun
-/// system FireAt6FF26E creates. Constructor6F3231 clears them;
+/// A Techno's retained ParticleSystem link: `+0x304` the Fire system
+/// FireAt6FF1A7 creates, `+0x308` the Spark system, shared by FireAt6FF1F5
+/// and the Cyborg AI producer6FAEDA, and `+0x314` the Railgun system
+/// FireAt6FF26E creates. Constructor6F3231 clears them;
 /// PointerExpired707AC2..707AD7 clears an exact match for either control byte.
 /// The system's actual Logic/child lifetime owns expiry, not a Techno timer.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -357,6 +355,7 @@ impl Simulation {
             target_coords,
             owner_house,
             done_spawning: false,
+            owner_fire_link: false,
             alive: true,
             in_limbo: false,
         };
@@ -705,34 +704,6 @@ pub(super) fn spawn_state_ai_advance(
     advance as u8
 }
 
-/// Fire-only variant: spawn one particle, then random-shuffle it into the last
-/// `insert_range` slots so the stream looks varied. Returns `false` if the
-/// underlying `spawn_particle` failed (no `HoldsWhat`).
-pub(super) fn spawn_particle_with_insert(
-    sys: &mut ParticleSystem,
-    coords: IVec3,
-    insert_range: usize,
-    rules: &RuleSet,
-    sim: &mut Simulation,
-) -> bool {
-    if insert_range == 0 || !spawn_particle(sys, coords, sys.target_coords, rules, sim) {
-        return false;
-    }
-    let count = sys.particles.len();
-    if count < 2 {
-        return true;
-    }
-    let actual_range = insert_range.min(count);
-    let random_offset = sim.particle_rng().next_raw_abs_modulo(actual_range as u32) as usize;
-    let insert_pos = count.saturating_sub(2).saturating_sub(random_offset);
-    if insert_pos + 1 >= count {
-        return true;
-    }
-    let p = sys.particles.pop().unwrap();
-    sys.particles.insert(insert_pos + 1, p);
-    true
-}
-
 #[cfg(test)]
 mod tests {
     use crate::sim::rng::SimRng;
@@ -945,16 +916,11 @@ mod tests {
                 velocity,
                 "{name}"
             );
-            for (kept, bits) in particle.direction.into_iter().zip(velocity) {
-                let native = f64::from(f32::from_bits(bits));
-                let kept = kept.to_num::<f64>();
-                assert!(
-                    kept * native >= 0.0
-                        && kept.abs() <= native.abs()
-                        && native.abs() - kept.abs() < 1.0 / 65536.0,
-                    "{name}: {kept} for {native}"
-                );
-            }
+            assert_eq!(
+                particle.direction.map(NativeF32Bits::bits),
+                velocity,
+                "{name}"
+            );
             assert_eq!(
                 u64::from(particle.state_ai_advance),
                 row["advance"].as_u64().unwrap(),

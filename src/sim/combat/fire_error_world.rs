@@ -295,6 +295,8 @@ impl<'a> FireSubject<'a> {
                 Some(_) => Transporter::Plain,
             },
             wave_live: self.world.active_wave_id(firer.stable_id()).is_some(),
+            // FireError reads the actual Techno+304 Fire pointer.
+            fire_particles_live: firer.fire_particle_system.system().is_some(),
             // FireError6FC6D5/6FC9C7 reads the actual Techno+308 pointer.
             spark_particles_live: firer.spark_particle_system.system().is_some(),
             // FireError reads the actual Techno+314 Railgun pointer too.

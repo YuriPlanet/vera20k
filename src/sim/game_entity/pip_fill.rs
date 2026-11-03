@@ -62,10 +62,7 @@ impl GameEntity {
                 let Some(manager) = self.capture_manager.as_ref() else {
                     return 0;
                 };
-                (
-                    controlled_count.unwrap_or_else(|| manager.count()),
-                    maximum,
-                )
+                (controlled_count.unwrap_or_else(|| manager.count()), maximum)
             }
             PipScale::Tiberium => {
                 // Storage6C9650 repeatedly truncates its four float slots to

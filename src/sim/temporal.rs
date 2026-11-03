@@ -362,12 +362,14 @@ impl Simulation {
                             requested,
                             Some((rules, &self.interner)),
                         );
-                        if let Some(firer_entity) = self.substrate.entities.get_mut(firer) {
-                            crate::sim::mission::concrete_effects::represented_assign_target_admitted(
+                        if let Some(firer_entity) = self.substrate.entities.get_mut(firer)
+                            && crate::sim::mission::concrete_effects::represented_assign_target_admitted(
                                 firer_entity,
                                 requested,
                                 stored,
-                            );
+                            )
+                        {
+                            self.assign_target_fire_teardown(firer, rules, registry);
                         }
                         Some(bunker)
                     }

@@ -22,7 +22,7 @@ fn particle_state(particle: &super::Particle) -> Value {
     json!({
         "native_id": particle.native_unique_id(),
         "location": particle.coords().to_array(),
-        "direction_bits": railgun.direction.map(|axis| axis.bits()),
+        "direction_bits": particle.direction().map(|axis| axis.bits()),
         "speed_bits": particle.velocity().bits(),
         "position_bits": railgun.position.map(|axis| axis.bits()),
         "color": railgun.start_rgb,

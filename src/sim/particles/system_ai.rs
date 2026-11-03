@@ -1,10 +1,9 @@
 //! Per-tick particle-system AI dispatch.
 //!
-//! Drives each active system at its shared LogicVector slot. Gas and Smoke remain
-//! in storage because synchronous damage can append children to that same
-//! system; other behaviors temporarily take/reinsert their owned body.
-//! Ordinary Smoke, Spark, Gas and Railgun are connected. Fire retains
-//! movement/damage residuals.
+//! Drives each active system at its shared LogicVector slot. Gas, Smoke and
+//! Fire remain in storage because synchronous damage can append children to
+//! that same system; Spark and Railgun temporarily take/reinsert their owned
+//! body.
 
 use crate::rules::particle_system_type::ParticleSystemBehavesLike;
 use crate::rules::particle_type::ParticleBehavesLike;
@@ -59,14 +58,16 @@ pub(super) fn finish_lifetime(p: &mut super::Particle) {
 
 /// One AI_Dispatch62CE40 owner, selected by the PARTICLE's behavior rather
 /// than its containing system. Spark retains its begin/query/finish boundary.
+/// `source_house` and `owner` are the parent system's `+0xFC` and `+0xE0`.
 pub(super) fn tick_particle(
     p: &mut super::Particle,
     sim: &mut Simulation,
     rules: &RuleSet,
     source_house: Option<InternedId>,
+    owner: Option<u64>,
 ) {
     if let Err(error) =
-        tick_particle_with_query(p, sim, rules, source_house, |sim, rules, motion| {
+        tick_particle_with_query(p, sim, rules, source_house, owner, |sim, rules, motion| {
             SparkCollisionWorld::new(sim, rules)?.query(motion)
         })
     {
@@ -82,6 +83,7 @@ fn tick_particle_with_query<F>(
     sim: &mut Simulation,
     rules: &RuleSet,
     source_house: Option<InternedId>,
+    owner: Option<u64>,
     mut query: F,
 ) -> Result<(), SparkSystemTickError>
 where
@@ -106,7 +108,13 @@ where
             source_house,
             crate::sim::world::UninitContext::with_rules(rules),
         ),
-        ParticleBehavesLike::Fire => super::fire::tick_particle(p, pt, sim.particle_rng()),
+        ParticleBehavesLike::Fire => super::fire::tick_particle(
+            p,
+            sim,
+            rules,
+            owner,
+            &mut super::fire::LiveFire(crate::sim::world::UninitContext::with_rules(rules)),
+        ),
         ParticleBehavesLike::Spark => {
             let motion = begin_particle_tick(p, gravity_as_stored_f32(rules.general.gravity)?)?;
             let collision = query(sim, rules, motion)?;
@@ -127,6 +135,22 @@ where
     }
     finish_lifetime(p);
     Ok(())
+}
+
+/// `ParticleClass::Move_Dispatch @ 0x0062D5E0`, which AI_Gas, AI_Smoke and
+/// AI_Fire call for each particle, by the particle's own behavior: Gas
+/// (`0x0062D2A0`), Smoke (`0x0062D3F0`) or Fire (`0x0062D609`). Spark and
+/// Railgun particles do not move here.
+pub(super) fn move_dispatch(p: &mut super::Particle, sim: &Simulation, rules: &RuleSet) {
+    let pt = rules.particle_type(p.type_id);
+    match pt.behaves_like {
+        ParticleBehavesLike::Gas => super::gas::move_gas(p, sim, rules),
+        ParticleBehavesLike::Smoke => {
+            super::smoke::move_smoke(p, pt, rules.general.wind_direction(), sim)
+        }
+        ParticleBehavesLike::Fire => super::fire::move_fire(p, sim),
+        ParticleBehavesLike::Spark | ParticleBehavesLike::Railgun => {}
+    }
 }
 
 /// Dispatch one particle-system object at its current LogicVector slot.
@@ -150,13 +174,26 @@ pub(crate) fn tick_particle_system(
         super::gas::tick_system(sim, rules, id, context);
     } else if behavior == ParticleSystemBehavesLike::Smoke {
         super::smoke::tick_system(sim, rules, id);
+    } else if behavior == ParticleSystemBehavesLike::Fire {
+        super::fire::tick_system(sim, rules, id, context);
     } else {
         let mut sys = sim.substrate.particle_systems.take_for_tick(id).unwrap();
         tick_one_system(&mut sys, sim, rules);
         sim.substrate.particle_systems.reinsert_after_tick(sys);
     }
+    finish_system_visit(sim, id, context);
+    true
+}
+
+/// The tail of `ParticleSystemClass::AI @ 0x0062FD60` after the subtype AI:
+/// the lifetime count and the done-and-empty retirement.
+pub(super) fn finish_system_visit(
+    sim: &mut Simulation,
+    id: u64,
+    context: crate::sim::world::UninitContext<'_>,
+) {
     let Some(sys) = sim.substrate.particle_systems.get_mut(id) else {
-        return true;
+        return;
     };
 
     // `ParticleSystemClass::AI @ 0x0062FD60`: decrement `+0xEC`, and when the
@@ -174,7 +211,6 @@ pub(crate) fn tick_particle_system(
     if retires {
         sim.retire_particle_system(id, context);
     }
-    true
 }
 
 /// Compatibility batch entry for focused particle tests. Production
@@ -196,7 +232,7 @@ fn tick_one_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleS
     match behaves_like {
         ParticleSystemBehavesLike::Smoke => unreachable!("Smoke retains its body during callbacks"),
         ParticleSystemBehavesLike::Gas => unreachable!("Gas retains its body during callbacks"),
-        ParticleSystemBehavesLike::Fire => tick_fire(sys, sim, rules),
+        ParticleSystemBehavesLike::Fire => unreachable!("Fire retains its body during callbacks"),
         ParticleSystemBehavesLike::Spark => tick_spark(sys, sim, rules),
         ParticleSystemBehavesLike::Railgun => super::railgun::tick_system(sys, sim, rules),
     }
@@ -219,10 +255,6 @@ fn tick_spark(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleSet) {
             sys.stable_id
         );
     }
-}
-
-fn tick_fire(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleSet) {
-    super::fire::tick_system(sys, sim, rules);
 }
 
 /// The per-particle half of `AI_Spark`: `ParticleClass::AI_Dispatch` forward
@@ -255,7 +287,14 @@ where
     ) -> Result<SparkCollisionFacts, SparkWorldError>,
 {
     for particle in &mut sys.particles {
-        tick_particle_with_query(particle, sim, rules, sys.owner_house, &mut query)?;
+        tick_particle_with_query(
+            particle,
+            sim,
+            rules,
+            sys.owner_house,
+            sys.owner_entity,
+            &mut query,
+        )?;
     }
 
     // Native container cleanup walks backward so removals cannot perturb the

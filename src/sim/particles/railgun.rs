@@ -316,8 +316,8 @@ fn lay_spiral(
             .map(|axis| Fpu::store_f32(Fpu::load_i32(axis)))
             .into_iter()
             .collect::<Result<Vec<_>, _>>()?;
+        particle.direction = direction;
         particle.railgun = Some(RailgunRuntimeState {
-            direction,
             position: [position[0], position[1], position[2]],
             start_rgb,
             color_index: 0,
@@ -342,7 +342,7 @@ pub(super) fn tick_particle(
         .ok_or(RailgunParticleError::MissingRuntimeState)?;
     let speed = Fpu::load_f32(particle.velocity)?;
     let mut step = [NativeF32Bits::POSITIVE_ZERO; 3];
-    for (axis, direction) in state.direction.into_iter().enumerate() {
+    for (axis, direction) in particle.direction.into_iter().enumerate() {
         step[axis] = Fpu::store_f32(Fpu::mul(Fpu::load_f32(direction)?, speed))?;
     }
     let sample = rng.next_range_u32_inclusive(0, MAX_SAMPLE);

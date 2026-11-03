@@ -1035,6 +1035,9 @@ impl Simulation {
             sys.lifetime().hash(hasher);
             sys.facing().hash(hasher);
             sys.done_spawning().hash(hasher);
+            if sys.owner_fire_link() {
+                0x304_u16.hash(hasher);
+            }
             sys.alive().hash(hasher);
             sys.in_limbo().hash(hasher);
             // The rest of the saved system state. `in_logic_vector` is not
@@ -1578,13 +1581,13 @@ fn hash_particle(p: &crate::sim::particles::Particle, hasher: &mut impl Hasher) 
     p.translucency().hash(hasher);
     p.marked_for_deletion().hash(hasher);
     p.origin().to_array().hash(hasher);
-    p.direction().map(|v| v.to_bits()).hash(hasher);
+    p.direction().map(|v| v.bits()).hash(hasher);
     p.motion().map(|v| v.bits()).hash(hasher);
     p.velocity().bits().hash(hasher);
     p.damage_counter().hash(hasher);
     p.state_ai_advance().hash(hasher);
     (p.drift_x(), p.drift_y(), p.drift_z()).hash(hasher);
-    p.prev_delta().map(|v| v.to_bits()).hash(hasher);
+    p.prev_delta().hash(hasher);
     match p.spark() {
         None => 0_u8.hash(hasher),
         Some(spark) => {
@@ -1600,7 +1603,6 @@ fn hash_particle(p: &crate::sim::particles::Particle, hasher: &mut impl Hasher) 
     // Behavior-4 state, hashed only when present so other particles hash as
     // before.
     if let Some(railgun) = p.railgun() {
-        railgun.direction.map(|v| v.bits()).hash(hasher);
         railgun.position.map(|v| v.bits()).hash(hasher);
         railgun.start_rgb.hash(hasher);
         railgun.color_index.hash(hasher);
@@ -2497,6 +2499,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     // when set, so objects that never fired a railgun hash as before.
     if let Some(system) = entity.railgun_particle_system.system() {
         system.hash(hasher);
+    }
+    // The Fire `+0x304` link gates the next fire shot, hashed the same way.
+    if let Some(system) = entity.fire_particle_system.system() {
+        (0x304_u16, system).hash(hasher);
     }
 }
 
@@ -3696,7 +3702,6 @@ mod particle_hash_tests {
     use crate::rules::particle_system_type::ParticleSystemTypeId;
     use crate::rules::particle_type::ParticleTypeId;
     use crate::sim::particles::{Particle, ParticleSystem, SparkRuntimeState};
-    use crate::util::fixed_math::SimFixed;
     use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
     use glam::IVec3;
 
@@ -3805,7 +3810,8 @@ mod particle_hash_tests {
             Box::new(move |s| s.set_owner_house_for_test(Some(owner_house))),
             Box::new(|s| s.particles_mut_for_test()[0].set_origin_for_test(IVec3::new(0, 0, 1))),
             Box::new(|s| {
-                s.particles_mut_for_test()[0].direction_mut_for_test()[1] = SimFixed::from_num(1)
+                s.particles_mut_for_test()[0].direction_mut_for_test()[1] =
+                    crate::util::native_x87::NativeF32Bits::ONE
             }),
             Box::new(|s| {
                 s.particles_mut_for_test()[0].motion_mut_for_test()[1] =
@@ -3821,7 +3827,7 @@ mod particle_hash_tests {
             Box::new(|s| s.particles_mut_for_test()[0].set_drift_y_for_test(1)),
             Box::new(|s| s.particles_mut_for_test()[0].set_drift_z_for_test(1)),
             Box::new(|s| {
-                s.particles_mut_for_test()[0].prev_delta_mut_for_test()[2] = SimFixed::from_num(1)
+                s.particles_mut_for_test()[0].prev_delta_mut_for_test()[2] = 1
             }),
         ];
         for (index, edit) in edits.iter().enumerate() {

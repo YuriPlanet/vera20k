@@ -725,7 +725,8 @@ pub(crate) fn set_destination_internal_cell(
 
 /// Foot4D9510/4D9628 publishes the reference and dispatches its captured +4C
 /// coordinate. Cell and object orders reach the same active locomotor owner;
-/// `binary_frame` is the locomotor Move_To paralysis clock.
+/// `binary_frame` is the locomotor Move_To paralysis clock. Between the two,
+/// a non-null destination releases the Fire system link (`0x004D954B`).
 pub(crate) fn set_destination_internal_coord(
     entity: &mut GameEntity,
     target: NavTargetRef,
@@ -734,6 +735,7 @@ pub(crate) fn set_destination_internal_coord(
     binary_frame: u32,
 ) {
     publish_nav_com(entity, target);
+    entity.release_fire_particle_system();
 
     if is_drive_locomotor(entity) {
         drive_set_destination(entity, coord, resolved_terrain, binary_frame);

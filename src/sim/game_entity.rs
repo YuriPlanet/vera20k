@@ -887,6 +887,11 @@ pub struct GameEntity {
     /// FireAt and Cyborg AI; particles::spawn owns its mutations.
     #[serde(default)]
     pub(crate) spark_particle_system: crate::sim::particles::spawn::AttachedParticleSystem,
+    /// The Fire system link (`TechnoClass+0x304`) FireAt's
+    /// `UseFireParticles` arm creates (`0x006FF1A7`). It is released by
+    /// [`Self::release_fire_particle_system`].
+    #[serde(default)]
+    pub(crate) fire_particle_system: crate::sim::particles::spawn::AttachedParticleSystem,
     /// The Railgun system link (`TechnoClass+0x314`) FireAt's `IsRailgun`
     /// arm creates; it gates the next railgun shot until the system expires.
     #[serde(default)]
@@ -2117,6 +2122,7 @@ impl GameEntity {
             suspended_attack_target: Default::default(),
             base_defense_response: BaseDefenseResponseState::default(),
             spark_particle_system: Default::default(),
+            fire_particle_system: Default::default(),
             railgun_particle_system: Default::default(),
             damage_smoke_system_id: Default::default(),
             transport_unload_keep_count: Default::default(),
@@ -2397,10 +2403,20 @@ impl GameEntity {
     pub(crate) fn live_particles(&self) -> crate::sim::combat::rof::LiveParticles {
         crate::sim::combat::rof::LiveParticles {
             spark: self.spark_particle_system.system().is_some(),
-            // RESIDUAL: FireAt's `+0x304` Fire system link is not produced.
-            fire: false,
+            fire: self.fire_particle_system.system().is_some(),
             railgun: self.railgun_particle_system.system().is_some(),
         }
+    }
+
+    /// Release the Fire system link: Foot `Set_Destination_Internal` with a
+    /// destination (`0x004D954B`), `Assign_Target` to a target the object
+    /// cannot fire at (`0x006FCF61`) and the death arm of ReceiveDamage
+    /// (`0x00702216`) each call the system's vt+0xF8, which only sets its
+    /// done byte (`0x006301E0`), and clear `+0x304`. Only the system's own AI
+    /// reads that byte, so the system applies the release there
+    /// ([`crate::sim::particles::ParticleSystem::apply_fire_link_release`]).
+    pub(crate) fn release_fire_particle_system(&mut self) {
+        self.fire_particle_system.forget();
     }
 
     /// Whether a cell object-list walk that damages what it finds (Wave

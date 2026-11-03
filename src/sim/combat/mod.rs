@@ -102,6 +102,8 @@ mod electric_bolt_tests;
 #[cfg(test)]
 mod fireat_launch_tests;
 #[cfg(test)]
+mod fire_particles_tests;
+#[cfg(test)]
 mod garrison_oracle_tests;
 #[cfg(test)]
 mod homing_shipyard_tests;

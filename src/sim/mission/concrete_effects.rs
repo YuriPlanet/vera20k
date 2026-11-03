@@ -369,7 +369,9 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
             //51B2A2: a same-target assignment still invalidates Foot+5E0.
             entity.clear_live_path_head();
         }
-        represented_assign_target_admitted(entity, requested, stored);
+        if represented_assign_target_admitted(entity, requested, stored) {
+            sim.assign_target_fire_teardown(prepared.receiver, self.rules, self.overlay_registry);
+        }
         //51B2B1..51B33F: an Infiltrate= infantryman with no NavCom heads for
         // a building target it may enter (vt+0x480(target, 1)).
         if infantry
@@ -673,16 +675,16 @@ pub(crate) fn represented_assign_target(
 /// class setter; neither this base write set nor apply_target claims those
 /// larger linked-effect/C4/Ivan branches.
 ///
-/// DORMANT: the fire-particle teardown (`0x006FCF61..0x006FCF86`): with a
-/// live `+0x304` system that vt+0x3AC rejects for the new target, native
-/// calls its vt+0xF8 and clears `+0x304`. VERA never produces `+0x304`;
-/// retail's only `UseFireParticles=yes` weapon, `FireballLauncher`, is on no
-/// type.
+/// The fire-particle teardown (`0x006FCF61..0x006FCF86`) releases a live
+/// `+0x304` system when CanFireAtTarget (vt+0x3AC) rejects the stored target.
+/// A NULL target is never in range, so that release happens here; for an
+/// object or cell, the returned `true` (the store was reached) tells a caller
+/// with the world to run [`crate::sim::world::Simulation::assign_target_fire_teardown`].
 pub(crate) fn represented_assign_target_admitted(
     entity: &mut crate::sim::game_entity::GameEntity,
     requested: Option<TargetKind>,
     stored: Option<TargetKind>,
-) {
+) -> bool {
     // The original's target assignment clears the passive-acquire flag as
     // its first statement, ahead of any same-target short-circuit, so a
     // target assigned by an order or retaliation cannot inherit the provenance
@@ -692,7 +694,7 @@ pub(crate) fn represented_assign_target_admitted(
     // The same-target early-out (`0x006FCDCC`, Infantry `0x0051B201`) compares
     // the requested pointer, before the liveness refusal.
     if entity.attack_target.target() == requested {
-        return;
+        return false;
     }
     // `0x006FCDEB..0x006FCE46`, the aircraft arm: a spawned aircraft with
     // ammo, mid-run in Mission_Attack states 5..9, handed another target
@@ -723,6 +725,11 @@ pub(crate) fn represented_assign_target_admitted(
     }
     // The store (`0x006FCF3E`).
     entity.attack_target.set(requested);
+    // `0x006FCF61..0x006FCF86`: InRange refuses a NULL target (`0x006F7237`).
+    if requested.is_none() {
+        entity.release_fire_particle_system();
+    }
+    true
 }
 
 /// The represented `Assign_Destination` write set, entity-local, for either
