@@ -2108,9 +2108,10 @@ fn handle_options_hotkey(state: &mut AppState) {
 
 /// Dev/debug hotkeys require Ctrl+Shift, a chord stock binds to no command,
 /// and the Options page's Debug Tools box; none is reachable from the retail
-/// UI path. Pause, step, reveal and speed change the battle itself, so they
-/// work only offline ([`debug_offline`]). The quicksave/quickload and interim
-/// order arms stay in `dev-overlays` (developer) builds.
+/// UI path. Pause, step and reveal change the battle itself, so they work only
+/// offline ([`debug_offline`]); speed only in an offline Skirmish. The
+/// quicksave/quickload and interim order arms stay in `dev-overlays`
+/// (developer) builds.
 ///
 /// [`debug_offline`]: crate::app::match_runtime::sim_tick::debug_offline
 fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCode) {

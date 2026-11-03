@@ -1418,7 +1418,7 @@ pub(crate) fn debug_offline(state: &AppState) -> bool {
 }
 
 fn offline_debug_session(mode: SessionMode, live_network: bool) -> bool {
-    !live_network && matches!(mode, SessionMode::Skirmish | SessionMode::Campaign)
+    !live_network && mode.is_single_player()
 }
 
 /// Debug speed is limited to an offline Skirmish; online, LAN and campaign

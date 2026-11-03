@@ -99,13 +99,17 @@ are no integration test targets; `tests/` holds fixture data only.
 For the optional browser dashboard and separately gated trainer/event hooks,
 see the [offline debug build](telemetry-dashboard/README.md#offline-trainer-and-event-hooks).
 
-The default `dev-overlays` feature carries the Ctrl+Shift dev chord, including
-the renderer-native diagnostic overlays (cell grid, heightmap, pathgrid, foot
-path, fog), the debug pause and quicksave/quickload. Development builds,
-captures and tests keep it; captures send literal Ctrl+Shift+M/N for
-quicksave/quickload. The release workflow builds `vera20k` with
-`--no-default-features`, so shipped binaries carry no dev chord; build that
-configuration locally with:
+Every build carries the Ctrl+Shift dev chord: the renderer-native diagnostic
+overlays (cell grid, heightmap, pathgrid, foot path), reveal, the debug pause,
+frame step and 1x-10x speed. Its keys stay dead until Vera Options' Debug Tools
+box (`[VERA] DebugTools=`, off by default) is ticked; reveal, pause and step
+work only offline, speed only in an offline Skirmish. The default
+`dev-overlays` feature adds the developer-only arms: quicksave/quickload, the
+saved-game browser and the interim order keys. Development builds, captures and
+tests keep it; captures send literal Ctrl+Shift+M/N for quicksave/quickload and
+tick Debug Tools in memory for the run. The release workflow builds `vera20k`
+with `--no-default-features`, so shipped binaries carry no developer-only arms;
+build that configuration locally with:
 
 ```sh
 python -m tools.cargo_run -- build --locked --release --no-default-features --bin vera20k

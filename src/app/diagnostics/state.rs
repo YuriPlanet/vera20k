@@ -212,6 +212,17 @@ impl DiagnosticsState {
         }
     }
 
+    /// A new or restored world starts with every Debug Tools overlay off, so
+    /// none outlives the match it was switched on in, or the box itself.
+    pub(crate) fn reset_debug_overlays_for_new_world(&mut self) {
+        self.debug_frame_step_requested = false;
+        self.debug_show_pathgrid = false;
+        self.debug_terrain_cost_speed_type = None;
+        self.debug_show_cell_grid = false;
+        self.debug_show_heightmap = false;
+        self.debug_show_foot_path = false;
+    }
+
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) fn telemetry_active(&self) -> bool {
         self.telemetry_server

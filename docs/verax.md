@@ -55,9 +55,9 @@ related presentation work came from:
   unseen enemy objects, enemy projectiles and walls. It is not gated by the
   `verax` feature.
 - **Foot path steps** is a diagnostic overlay rather than an extension feature.
-  In `dev-overlays` builds, `Ctrl+Shift+O` draws the remaining path cells and
-  step labels for selected moving units (`src/app/diagnostics/debug_overlays.rs`).
-  Release builds (`--no-default-features`) do not include it. Its presentation
+  With Vera Options' Debug Tools box ticked, `Ctrl+Shift+O` draws the remaining
+  path cells and step labels for selected moving units
+  (`src/app/diagnostics/debug_overlays.rs`). It is off by default. Its presentation
   follows a video by Bilibili user [1995852436](https://space.bilibili.com/1995852436);
   no third-party binary or source is used.
 
