@@ -89,10 +89,10 @@ use std::ops::ControlFlow;
 
 use super::combat_targeting::AttackerSnapshot;
 use super::combat_weapon::{
-    AttackerFacts, SelectedWeapon, attacker_facts, controlled_transport_house, get_weapon,
-    is_ally_by_object, is_armed, is_occupied, occupied_reach_cells, passive_scan_class_bits,
-    primary_warhead_spares_medium_and_wood, resolve_selected_weapon, resolve_weapon_index,
-    techno_target_facts, weapon_damage_value, what_weapon_should_i_use,
+    AttackerFacts, SelectedWeapon, attacker_facts, controlled_transport_house, current_weapon,
+    get_weapon, is_ally_by_object, is_armed, is_occupied, occupied_reach_cells,
+    passive_scan_class_bits, primary_warhead_spares_medium_and_wood, resolve_selected_weapon,
+    resolve_weapon_index, techno_target_facts, weapon_damage_value, what_weapon_should_i_use,
 };
 use super::threat_mask::{self, InfantryScanner};
 use super::threat_range::{ScanRange, scan_range};
@@ -2762,10 +2762,75 @@ fn evaluate_candidate(
             ),
         },
     )?;
-    // `0x006F88BF..0x006F8924`: the ThreatAvoidance factor is 1.0 unless the
-    // scanner's current weapon is `Supress=` (`Weapon+0x146`), which no
-    // retail weapon is; VERA does not read the key.
-    finish_score(score)
+    finish_score(threat_avoidance(ctx, candidate, score))
+}
+
+/// `Evaluate_Candidate @ 0x006F88BF..0x006F8924`: the score times
+/// `TechnoClass::ThreatAvoidance_Modifier @ 0x006F79A0`'s factor, at the cell
+/// of the candidate's GetCoords (vt+0x48). The factor is 1.0, and the score
+/// kept, unless the scanner's current weapon (vt+0x3F4) is `Supress=`
+/// (`Weapon+0x146`); then it halves (`0x007E1738`) for every cell holding a
+/// building (`0x0047C520`) its owner is allied with (`0x004F9A90`, its own
+/// included), on the square rings 1 to `FireSupress=` cells less one around
+/// that cell. A row cell needs its X inside MapRect and one bound of its Y,
+/// a column cell the reverse (`0x006F7A28..0x006F7C61`), so a building
+/// counts once per foundation cell. `_ftol` (`0x007C5F00`) chops the
+/// product; halving is exact, so an integer divide gives the same score.
+///
+/// Dormant in retail: no weapon is `Supress=`, and `FireSupress=1` leaves
+/// no ring.
+fn threat_avoidance(ctx: &ScanContext<'_>, candidate: &GameEntity, score: i32) -> i32 {
+    // Native reads the weapon first; both reads are pure, and the ring count
+    // spares retail scans the weapon lookup per candidate.
+    let rings = ctx.rules.combat_damage.fire_supress / 256;
+    if rings <= 1
+        || !current_weapon(
+            ctx.scanner,
+            ctx.attacker_obj,
+            ctx.entities,
+            ctx.rules,
+            ctx.interner,
+        )
+        .is_some_and(|weapon| weapon.supress)
+    {
+        return score;
+    }
+    let Some([left, top, width, height]) = ctx.fire_world.and_then(|world| world.map_rect()) else {
+        return score;
+    };
+    let coords = object_get_coords(candidate, ctx.terrain);
+    let (cx, cy) = (lepton_to_cell(coords.x), lepton_to_cell(coords.y));
+    // `0x005657A0` stamps the Dummy on a miss, whose ground list is empty.
+    let cells = ctx.terrain.map(NativeCellQuery::canonical);
+    let allied_building = |x: i32, y: i32| {
+        let (x, y) = (x as i16, y as i16);
+        let (x, y) = match &cells {
+            Some(cells) => match cells.lookup((x, y)) {
+                NativeCellIdentity::Dummy => return false,
+                cell => cells.coord(cell),
+            },
+            None => (x, y),
+        };
+        ctx.cells
+            .first_building_on_layer(x as u16, y as u16, MovementLayer::Ground)
+            .and_then(|id| ctx.entities.get(id))
+            .is_some_and(|building| ctx.is_ally_owner(building.owner()))
+    };
+    // A row cell needs X inside MapRect and only its own side's Y bound; a
+    // column cell the reverse.
+    let inside = |(x, y): (i32, i32), ring: i32| {
+        let (columns, rows) = (left..left + width, top..top + height);
+        if (y - cy).abs() == ring {
+            columns.contains(&x) && if y < cy { y >= top } else { y < rows.end }
+        } else {
+            rows.contains(&y) && if x < cx { x >= left } else { x < columns.end }
+        }
+    };
+    let halvings = (1..rings)
+        .flat_map(|ring| square_ring_cells((cx, cy), ring).map(move |cell| (cell, ring)))
+        .filter(|&(cell, ring)| inside(cell, ring) && allied_building(cell.0, cell.1))
+        .count();
+    (i64::from(score) / (1i64 << halvings.min(40))) as i32
 }
 
 /// What `Evaluate_Candidate`'s quarry terms read of a candidate.
@@ -3343,3 +3408,7 @@ mod healer_guard_tests;
 #[cfg(test)]
 #[path = "greatest_threat_coefficient_tests.rs"]
 mod coefficient_tests;
+
+#[cfg(test)]
+#[path = "greatest_threat_avoidance_tests.rs"]
+mod avoidance_tests;
