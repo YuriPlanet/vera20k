@@ -39,6 +39,7 @@ pub mod cursor_atlas;
 pub(crate) mod depth_gpu_tests;
 pub mod draw_state;
 pub(crate) mod electric_bolt;
+pub(crate) mod entity_atlas_growth;
 pub(crate) mod foot_depth;
 pub mod frame_readback;
 pub mod gpu;

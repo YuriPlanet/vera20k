@@ -39,6 +39,8 @@ pub(crate) struct MatchPresentationState {
     /// Palette + per-house RGB ramp GPU resources for the voxel sprite shader.
     pub(crate) palette_set: Option<crate::render::palette_textures::PaletteSet>,
     pub(crate) sprite_atlas: Option<SpriteAtlas>,
+    /// The unit and sprite atlas growths rasterizing on workers.
+    pub(crate) atlas_growth: crate::render::entity_atlas_growth::EntityAtlasGrowth,
     pub(crate) overlay_atlas: Option<OverlayAtlas>,
     pub(crate) bridge_atlas: Option<BridgeAtlas>,
     pub(crate) sidebar_cameo_atlas: Option<SidebarCameoAtlas>,

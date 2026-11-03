@@ -439,6 +439,7 @@ fn incremental_repack_plan_retains_old_unloading_referent() {
         offset_y: 0.0,
         native_draw_bounds: Some([-4, -4, 14, 12]),
         shadow_center: None,
+        pool_bytes: 0,
     };
     // CMON is CMIN's stock UnloadingClass referent. It may be absent from the
     // current live-key collector but must remain in the rendered cache.
