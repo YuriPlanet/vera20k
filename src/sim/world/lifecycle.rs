@@ -4278,7 +4278,8 @@ impl Simulation {
     /// Callers:
     /// * `all`: the exact-zero Destroy callback of `ObjectClass::ReceiveDamage`
     ///   (`0x005F5765..0x005F57AF`), after the kill callback and before
-    ///   TechnoClass's death arm, and the Stun of a living object.
+    ///   TechnoClass's death arm, and every Stun (death, crash, sinking,
+    ///   lift release and sale).
     /// * not `all`: `TechnoClass::StartCloaking @ 0x00703770` and the cloak's
     ///   1 → 2 completion (`0x006FBA98`).
     ///
@@ -4615,8 +4616,11 @@ impl Simulation {
     /// `0x004D3414`; ImbueLocomotor sets the lift latch at `0x00710352`, and
     /// the Jumpjet landing paths clear it. A Building reaches this from
     /// `TechnoClass::ReceiveDamage`'s death arm (`0x00702206..0x00702210`),
-    /// after the Destroy callback's own Detach_All(1)
+    /// usually after the Destroy callback's own Detach_All(1)
     /// (`0x005F5765..0x005F57AF`), so it detaches a second time like native.
+    /// A further hit on a building already at Health 0 skips Destroy
+    /// (`0x005F5752..0x005F575F`) but still takes the death arm, so this is
+    /// its only detach.
     fn techno_stun(&mut self, stable_id: u64, context: UninitContext<'_>) {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
