@@ -42,11 +42,12 @@ CI build also updates without asking:
 `fixture` writes the signed manifest src/app/updater/manifest.rs tests read.
 Needs what the publisher needs (tools/release_fixture.py). The macOS and Linux
 games keep their files in the player's data folder; a run there uses the one
-that exists (or writes its config.toml) and changes only what the game does.
+that exists (or writes a config.toml for the run) and changes only what the game does.
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
 from dataclasses import dataclass, field
 import functools
 import hashlib
@@ -205,6 +206,34 @@ def remove_installed() -> None:
             print(f"cannot remove {path}: {error}", flush=True)
 
 
+def data_folder() -> Path:
+    """Where the macOS and Linux games keep config.toml, logs, saves and replays."""
+    return (Path.home() / "Library/Application Support/VERA20k" if platform() == "macos"
+            else Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "VERA20k")
+
+
+@contextlib.contextmanager
+def first_launch_config(game_folder: Path):
+    """The config.toml the first launch writes once the player names the game
+    folder, unless the data folder has one; the Windows installer writes its
+    own. A run removes the one it wrote: it names the run's temporary game
+    folder, so a later run that found it would start a game that asks for its
+    folder (0.2.4 on) instead of updating."""
+    config = data_folder() / "config.toml"
+    if platform() == "windows" or config.exists():
+        yield
+        return
+    config.parent.mkdir(parents=True, exist_ok=True)
+    text = (ROOT / "config.toml.example").read_text()
+    text = text.replace('ra2_dir = "C:/Westwood/RA2"', f'ra2_dir = "{game_folder.as_posix()}"')
+    text = text.replace('# settings_dir = "."', 'settings_dir = "."')
+    config.write_text(text)
+    try:
+        yield
+    finally:
+        config.unlink(missing_ok=True)
+
+
 def install(work: Path, release: Path, program: Path, game_folder: Path, quarantine: bool) -> Game:
     """`release`'s package installed as a player would, with `program` in
     place of its own."""
@@ -215,15 +244,7 @@ def install(work: Path, release: Path, program: Path, game_folder: Path, quarant
         shutil.copyfile(program, folder / "vera20k.exe")
         return Game(folder / "vera20k.exe", folder, [str(folder / "vera20k.exe")],
                     ["taskkill", "/F", "/IM", "vera20k.exe"], cwd=folder)
-    data = (Path.home() / "Library/Application Support/VERA20k" if platform() == "macos"
-            else Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "VERA20k")
-    if not (data / "config.toml").exists():
-        # What the first launch writes once the player names the game folder.
-        data.mkdir(parents=True, exist_ok=True)
-        config = (ROOT / "config.toml.example").read_text()
-        config = config.replace('ra2_dir = "C:/Westwood/RA2"', f'ra2_dir = "{game_folder.as_posix()}"')
-        config = config.replace('# settings_dir = "."', 'settings_dir = "."')
-        (data / "config.toml").write_text(config)
+    data = data_folder()
     if platform() == "macos":
         mount = work / "release-mount"
         mount.mkdir()
@@ -365,23 +386,24 @@ def command_run(args) -> None:
         # A run stopped early leaves its copy.
         remove_installed()
         game = None
-        try:
-            game = install(work, args.installed or args.release, args.program, game_folder, args.quarantine)
-            if args.quarantine:
-                print("macOS asks before the first start: allow it in System Settings, Privacy & Security.",
-                      flush=True)
-            for scenario in args.scenario:
-                shutil.rmtree(objects)
-                shutil.copytree(rekeyed if scenario == "rekey" else pristine, objects)
-                tamper(objects, scenario, args.version)
-                play(game, scenario, args.version, args.attended)
-        finally:
-            server.shutdown()
-            if game:
-                # A scenario that failed leaves the game running.
-                subprocess.run(game.stop, capture_output=True)
-                time.sleep(2)
-            remove_installed()
+        with first_launch_config(game_folder):
+            try:
+                game = install(work, args.installed or args.release, args.program, game_folder, args.quarantine)
+                if args.quarantine:
+                    print("macOS asks before the first start: allow it in System Settings, Privacy & Security.",
+                          flush=True)
+                for scenario in args.scenario:
+                    shutil.rmtree(objects)
+                    shutil.copytree(rekeyed if scenario == "rekey" else pristine, objects)
+                    tamper(objects, scenario, args.version)
+                    play(game, scenario, args.version, args.attended)
+            finally:
+                server.shutdown()
+                if game:
+                    # A scenario that failed leaves the game running.
+                    subprocess.run(game.stop, capture_output=True)
+                    time.sleep(2)
+                remove_installed()
     print(f"update test passed: {', '.join(args.scenario)}")
 
 
