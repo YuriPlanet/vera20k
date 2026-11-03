@@ -4,7 +4,8 @@ use super::*;
 use crate::app::presentation::interpolation::RenderInterpolation;
 use crate::map::{houses::HouseColorMap, lighting::CellLightGrid};
 use crate::render::sprite_atlas::SpriteAtlas;
-use crate::render::unit_atlas::{BarrelImagePitches, UnitAtlas, UnitSpriteEntry};
+use crate::render::unit_atlas::{UnitAtlas, UnitSpriteEntry};
+use crate::render::voxel_image_cache::VoxelImageCache;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::runtime::SimRuntime;
 use std::cell::RefCell;
@@ -112,14 +113,15 @@ impl Patriot {
     fn turret_drawn(&self) -> bool {
         let interpolation = RenderInterpolation::new(false);
         let lighting = CellLightGrid::new();
-        let pitches = RefCell::new(BarrelImagePitches::default());
+        let voxel_images = RefCell::new(VoxelImageCache::default());
         let colors = HouseColorMap::default();
         let input = ShpInputs {
             runtime: &self.runtime,
             atlas: Some(&self.shp),
             overlay_atlas: None,
             unit_atlas: Some(&self.voxel),
-            barrel_image_pitches: &pitches,
+            voxel_images: &voxel_images,
+            depth_tested_images: None,
             interpolation: &interpolation,
             camera: [-1000.0; 2],
             render_size: [5000; 2],

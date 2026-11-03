@@ -148,7 +148,14 @@ pub(crate) fn build_projectile_visual_instances(
             [width, height],
             axis,
             order,
+            // Bullet46B0C0 draws uncached in the style 0xB43180 holds.
             |image, matrix| {
+                let depth_tested = state
+                    .match_state
+                    .match_presentation
+                    .voxel_images
+                    .borrow_mut()
+                    .render_part(false);
                 pose_cache.render_matrix(
                     assets?,
                     image,
@@ -156,6 +163,7 @@ pub(crate) fn build_projectile_visual_instances(
                     0,
                     true,
                     crate::render::vxl_raster::VxlLighting::Diffuse,
+                    depth_tested,
                 )
             },
         ) {

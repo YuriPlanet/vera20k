@@ -973,7 +973,7 @@ impl App {
                             options_profile.render_interpolation,
                         ),
                     sinking_waterlines: Default::default(),
-                    barrel_image_pitches: Default::default(),
+                    voxel_images: Default::default(),
                     building_zshape: None,
                     power_bar_anim: crate::ui::sidebar::PowerBarAnimState::new(),
                     sidebar_gadget_state: crate::ui::sidebar::gadget_flash::SidebarGadgetState::new(

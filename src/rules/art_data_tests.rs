@@ -1326,19 +1326,35 @@ fn use_buffer_reads_the_type_id_section() {
     assert!(!reg.use_buffer("MISSING"));
 }
 
+/// Retail `UseBuffer=` marks the four helicopters; `DisableVoxelCache=` and
+/// `DisableShadowCache=` the Night Hawk, the paradrop plane and the spy plane.
 #[test]
 fn retail_use_buffer_types_are_the_four_helicopters() {
     let Some((_, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
         return;
     };
     let reg = ArtRegistry::from_ini(&art_ini);
-    let mut flagged: Vec<&str> = art_ini
-        .section_names()
-        .into_iter()
-        .filter(|name| reg.use_buffer(name))
-        .collect();
-    flagged.sort_unstable();
-    assert_eq!(flagged, ["HIND", "SCHD", "SCHP", "SHAD"]);
+    let flagged = |flag: fn(&ArtRegistry, &str) -> bool| {
+        let mut names: Vec<&str> = art_ini
+            .section_names()
+            .into_iter()
+            .filter(|name| flag(&reg, name))
+            .collect();
+        names.sort_unstable();
+        names
+    };
+    assert_eq!(
+        flagged(ArtRegistry::use_buffer),
+        ["HIND", "SCHD", "SCHP", "SHAD"]
+    );
+    assert_eq!(
+        flagged(ArtRegistry::disable_voxel_cache),
+        ["PDPLANE", "SHAD", "SPYP"]
+    );
+    assert_eq!(
+        flagged(ArtRegistry::disable_shadow_cache),
+        ["PDPLANE", "SHAD", "SPYP"]
+    );
 }
 
 /// ReadINI reads `CanBeHidden=` from the type ID's ART section with ReadBool

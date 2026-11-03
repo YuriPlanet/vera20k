@@ -50,6 +50,10 @@ mod unit_body_draw_tests;
 #[path = "aircraft_body_point_tests.rs"]
 mod aircraft_body_point_tests;
 
+#[cfg(test)]
+#[path = "voxel_image_draw_tests.rs"]
+mod voxel_image_draw_tests;
+
 const NATIVE_TURRET_FIRST_START: u8 = 32;
 const NATIVE_TURRET_FIRST_END_EXCLUSIVE: u8 = 160;
 
@@ -95,9 +99,103 @@ enum UnitRenderSlopeState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum UnitTextureSource {
+pub(super) enum UnitTextureSource {
     Stable(usize),
     Pose(usize),
+    /// A stable key's depth-tested image on a retained pose page.
+    DepthTested(usize),
+}
+
+impl UnitTextureSource {
+    pub(super) fn target(self) -> ObjectTexture {
+        match self {
+            Self::Stable(page) => ObjectTexture::UnitAtlasPage(page),
+            Self::Pose(page) | Self::DepthTested(page) => ObjectTexture::UnitPosePage(page),
+        }
+    }
+}
+
+/// The image cache flags of the object drawing a voxel, from its own type's
+/// art: `UseBuffer=`, `DisableVoxelCache=` (`+0xDBE`, `0x00706806`) and
+/// `DisableShadowCache=` (`+0xDBF`, `0x00706C33`).
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct VoxelDrawer {
+    pub use_buffer: bool,
+    pub disable_voxel_cache: bool,
+    pub disable_shadow_cache: bool,
+}
+
+impl VoxelDrawer {
+    pub(super) fn of(rules: Option<&crate::rules::ruleset::RuleSet>, type_id: &str) -> Self {
+        let Some(rules) = rules.filter(|rules| rules.object(type_id).is_some()) else {
+            return Self::default();
+        };
+        let art = rules.art();
+        Self {
+            use_buffer: art.use_buffer(type_id),
+            disable_voxel_cache: art.disable_voxel_cache(type_id),
+            disable_shadow_cache: art.disable_shadow_cache(type_id),
+        }
+    }
+}
+
+/// What a part draw needs to render a stable key depth-tested.
+pub(crate) struct DepthTestedImages<'a> {
+    pub pose_cache: &'a std::cell::RefCell<crate::render::unit_pose_cache::VxlPoseFrameCache>,
+    pub assets: &'a crate::assets::asset_manager::AssetManager,
+    pub rules: Option<&'a crate::rules::ruleset::RuleSet>,
+}
+
+impl<'a> DepthTestedImages<'a> {
+    pub(super) fn of(state: &'a AppState) -> Option<Self> {
+        Some(Self {
+            pose_cache: &state.renderer.vxl_pose_frame_cache,
+            assets: state.process_assets.manager()?,
+            rules: state.rules(),
+        })
+    }
+}
+
+/// One stable part drawn through `TechnoClass::Draw @ 0x00706640` under its
+/// cache record `image` (None: uncached). A hit blits the stored image; a
+/// miss or an uncached draw renders in the current style ([`VoxelImageCache`])
+/// and a miss stores it with `key`'s barrel pitch. A `UseBuffer=` type's
+/// atlas image is already depth-tested; any other type's depth-tested image
+/// lives on a retained pose page.
+///
+/// [`VoxelImageCache`]: crate::render::voxel_image_cache::VoxelImageCache
+pub(super) fn cached_part_entry(
+    images: &mut crate::render::voxel_image_cache::VoxelImageCache,
+    atlas: &crate::render::unit_atlas::UnitAtlas,
+    depth_tested_images: Option<&DepthTestedImages<'_>>,
+    drawer: VoxelDrawer,
+    image: Option<crate::render::voxel_image_cache::VoxelImageKey>,
+    key: &UnitSpriteKey,
+) -> Option<(UnitSpriteEntry, UnitTextureSource)> {
+    let (drawn, entry) = atlas_get_with_frame_fallback(atlas, key)?;
+    // The image a depth-tested draw of a type without `UseBuffer=` blits.
+    let variant = |depth_tested: bool| {
+        let images = depth_tested_images.filter(|_| depth_tested && !drawer.use_buffer)?;
+        images
+            .pose_cache
+            .borrow_mut()
+            .render_depth_tested(images.assets, images.rules, &drawn)
+    };
+    let depth_tested = match image.filter(|_| !drawer.disable_voxel_cache) {
+        Some(image) => {
+            images
+                .draw(image, drawer.use_buffer, key.barrel_pitch, |depth_tested| {
+                    variant(depth_tested)
+                        .map_or_else(|| atlas.pool_bytes(&drawn).unwrap_or(0), |(_, bytes)| bytes)
+                })
+                .depth_tested
+        }
+        None => images.render_part(drawer.use_buffer),
+    };
+    Some(match variant(depth_tested) {
+        Some((entry, _)) => (entry, UnitTextureSource::DepthTested(entry.page)),
+        None => (*entry, UnitTextureSource::Stable(entry.page)),
+    })
 }
 
 // Original755852..755875 initializes17..20 to identity, so the stable
@@ -597,6 +695,7 @@ pub(crate) fn build_unit_instances(
         // 0x73B140's split is inside the same native parent draw call.
         // Ground units, including those below bridges, keep LayerClass order.
         let mut pieces = Vec::new();
+        let drawer = VoxelDrawer::of(state.rules(), sim.interner().resolve(entity.type_ref()));
         // Aircraft4148A0 draws the unmasked ground shadow before its body
         // at4149D7. Unlike Unit's masked suffix, the body's later pixels
         // cover its own stencil when parked or low above the ground.
@@ -604,6 +703,7 @@ pub(crate) fn build_unit_instances(
             emit_aircraft_shadow_sprite(
                 state,
                 atlas,
+                drawer,
                 entity,
                 type_str,
                 anim_frame,
@@ -635,12 +735,32 @@ pub(crate) fn build_unit_instances(
                 slope_type: stable_slope_for_key(slope_state),
                 barrel_pitch: 0,
             };
+            // The Fly normal arm's key adds its pitch (4) and roll direction
+            // (1, 2) bits to the facing (`0x004CF610`).
+            let image = match tilt {
+                crate::render::unit_atlas::PoseTilt::FlyNormal { pitch, .. } => {
+                    use crate::sim::movement::facing_class::RotationDirection;
+                    let roll = match render_pose.fly_bank_direction {
+                        Some(RotationDirection::Positive) => 1,
+                        Some(RotationDirection::Negative) => 2,
+                        None => 0,
+                    };
+                    Some(crate::render::voxel_image_cache::VoxelImageKey {
+                        cache: crate::render::voxel_image_cache::VoxelCache::Body,
+                        sprite: key.clone(),
+                        extra: u32::from(pitch != 0.0) << 2 | roll,
+                    })
+                }
+                _ => None,
+            };
             emit_pose_sprite(
                 state,
                 sim,
                 cells.as_ref(),
                 &mut pieces,
                 entity,
+                drawer,
+                image,
                 &key,
                 tilt,
                 [center_x, center_y],
@@ -661,6 +781,7 @@ pub(crate) fn build_unit_instances(
             emit_turret_unit_sprites(
                 no_shadow,
                 atlas,
+                drawer,
                 art_reg,
                 entity,
                 type_str,
@@ -702,13 +823,19 @@ pub(crate) fn build_unit_instances(
                 slope_type: stable_slope_for_key(slope_state),
                 barrel_pitch: 0,
             };
-            if let Some((entry, texture_source)) = unit_entry_for_pose(state, atlas, &key, None) {
+            let image = crate::render::voxel_image_cache::VoxelImageKey::new(
+                crate::render::voxel_image_cache::VoxelCache::Body,
+                key.clone(),
+            );
+            if let Some((entry, texture_source)) =
+                voxel_part_entry(state, atlas, drawer, Some(image), &key, None)
+            {
                 let depth_y: f32 =
                     center_y + entry.offset_y + entry.pixel_size[1] + dock_depth_y_offset;
                 let depth: f32 = body_sort_depth(state, entity, depth_y, interp_z);
                 let voxel_adjust =
                     super::foot_depth::unit_z_adjust(state, entity, true, None) as f32;
-                let native_shadow = matches!(texture_source, UnitTextureSource::Stable(_))
+                let native_shadow = !matches!(texture_source, UnitTextureSource::Pose(_))
                     && prepare_unit_shadow(
                         state,
                         atlas,
@@ -718,10 +845,13 @@ pub(crate) fn build_unit_instances(
                         no_shadow,
                         slope_state,
                         band,
-                        [(entry, [0.0, 0.0])],
+                        [(entry, texture_source, [0.0, 0.0])],
                     );
                 if !native_shadow {
                     emit_unit_shadow_sprite(
+                        state,
+                        drawer,
+                        false,
                         native_shadow,
                         no_shadow,
                         voxel_adjust,
@@ -777,6 +907,9 @@ pub(crate) fn build_unit_instances(
                 push_unit_sprite(texture_source, sprite, &mut pieces);
                 if native_shadow {
                     emit_unit_shadow_sprite(
+                        state,
+                        drawer,
+                        false,
                         native_shadow,
                         no_shadow,
                         voxel_adjust,
@@ -799,6 +932,7 @@ pub(crate) fn build_unit_instances(
         emit_jumpjet_unit_shadow(
             state,
             atlas,
+            drawer,
             entity,
             type_str,
             [center_x, center_y],
@@ -1192,12 +1326,18 @@ fn ground_pose_with_angles(
 /// One posed body drawn on this frame's pose page. It joins its display
 /// layer in emission order like an atlas body. The concrete Unit and Aircraft
 /// callers emit their shadow separately in native order.
+///
+/// Only the Fly normal arm keys its image (`0x004CF610`); every other pose
+/// keys -1 and renders each draw. VERA renders the keyed one each frame too,
+/// in the style its record holds.
 fn emit_pose_sprite(
     state: &AppState,
     sim: &crate::sim::world::Simulation,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
     pieces: &mut Vec<ObjectPieceInstance>,
     entity: &crate::sim::game_entity::GameEntity,
+    drawer: VoxelDrawer,
+    image: Option<crate::render::voxel_image_cache::VoxelImageKey>,
     key: &UnitSpriteKey,
     tilt: crate::render::unit_atlas::PoseTilt,
     [center_x, center_y]: [f32; 2],
@@ -1209,13 +1349,30 @@ fn emit_pose_sprite(
     let Some(assets) = state.process_assets.manager() else {
         return;
     };
-    let Some(entry) =
-        state
-            .renderer
-            .vxl_pose_frame_cache
-            .borrow_mut()
-            .render(assets, state.rules(), key, tilt)
-    else {
+    let depth_tested = {
+        let mut images = state
+            .match_state
+            .match_presentation
+            .voxel_images
+            .borrow_mut();
+        match image.filter(|_| !drawer.disable_voxel_cache) {
+            // The atlas's composite stands for the keyed image's size.
+            Some(image) => {
+                let bytes = atlas_pool_bytes(state, key);
+                images
+                    .draw(image, drawer.use_buffer, 0, |_| bytes)
+                    .depth_tested
+            }
+            None => images.render_part(drawer.use_buffer),
+        }
+    };
+    let Some(entry) = state.renderer.vxl_pose_frame_cache.borrow_mut().render(
+        assets,
+        state.rules(),
+        key,
+        tilt,
+        depth_tested,
+    ) else {
         return;
     };
     let [center_x, center_y] =
@@ -1244,6 +1401,16 @@ fn emit_pose_sprite(
             zshape_origin: composite_rect,
         },
     });
+}
+
+fn atlas_pool_bytes(state: &AppState, key: &UnitSpriteKey) -> u32 {
+    state
+        .match_state
+        .match_presentation
+        .unit_atlas
+        .as_ref()
+        .and_then(|atlas| atlas.pool_bytes(key))
+        .unwrap_or(0)
 }
 
 /// Compute the screen-space offset for a turret pivot point from art.ini TurretOffset.
@@ -1290,11 +1457,7 @@ fn turret_images_cached(
 /// gamemd-derived: active YR `UnitClass__DrawVoxelBody @ 0x0073B470`, selector
 /// instructions `0x0073BC5B..0x0073BDAB`. Building draw43DA80 uses the same
 /// rounded-quadrant order (tools/voxel_oracle/building_barrel.json).
-pub(super) fn native_turret_barrel_order<T: Copy>(
-    turret_facing: u16,
-    turret: T,
-    barrel: T,
-) -> [T; 2] {
+pub(super) fn native_turret_barrel_order<T>(turret_facing: u16, turret: T, barrel: T) -> [T; 2] {
     let facing_high = (turret_facing >> 8) as u8;
     if (NATIVE_TURRET_FIRST_START..NATIVE_TURRET_FIRST_END_EXCLUSIVE).contains(&facing_high) {
         [turret, barrel]
@@ -1303,7 +1466,8 @@ pub(super) fn native_turret_barrel_order<T: Copy>(
     }
 }
 
-/// Look up a unit sprite from the atlas with cascading fallbacks:
+/// Look up a unit sprite from the atlas with cascading fallbacks, returning
+/// the key found:
 /// 1. Try the exact key (slope + frame).
 /// 2. Fall back to frame 0 if the requested frame doesn't exist (mismatched HVA counts).
 /// 3. Fall back to slope_type=0 if the tilted sprite isn't in the atlas yet
@@ -1311,52 +1475,50 @@ pub(super) fn native_turret_barrel_order<T: Copy>(
 /// 4. Fall back to a level barrel if the pitched one isn't in the atlas.
 ///
 /// This prevents units from disappearing during atlas rebuilds.
-fn atlas_get_with_frame_fallback<'a>(
+fn atlas_get_with_frame_fallback<'a, 'k>(
     atlas: &'a crate::render::unit_atlas::UnitAtlas,
-    key: &UnitSpriteKey,
-) -> Option<&'a crate::render::unit_atlas::UnitSpriteEntry> {
-    atlas.get(key).or_else(|| {
-        // Fallback 1: try frame 0 with same slope.
+    key: &'k UnitSpriteKey,
+) -> Option<(
+    Cow<'k, UnitSpriteKey>,
+    &'a crate::render::unit_atlas::UnitSpriteEntry,
+)> {
+    if let Some(entry) = atlas.get(key) {
+        return Some((Cow::Borrowed(key), entry));
+    }
+    let found = |key: UnitSpriteKey| atlas.get(&key).map(|entry| (Cow::Owned(key), entry));
+    let mut candidates = Vec::new();
+    if key.frame > 0 {
+        candidates.push(UnitSpriteKey {
+            frame: 0,
+            ..key.clone()
+        });
+    }
+    if key.slope_type != 0 {
+        candidates.push(UnitSpriteKey {
+            slope_type: 0,
+            ..key.clone()
+        });
         if key.frame > 0 {
-            let fallback = UnitSpriteKey {
+            candidates.push(UnitSpriteKey {
+                slope_type: 0,
                 frame: 0,
                 ..key.clone()
-            };
-            if let Some(entry) = atlas.get(&fallback) {
-                return Some(entry);
-            }
+            });
         }
-        // Fallback 2: try slope_type=0 (flat) with original frame.
-        if key.slope_type != 0 {
-            let flat_key = UnitSpriteKey {
-                slope_type: 0,
-                ..key.clone()
-            };
-            if let Some(entry) = atlas.get(&flat_key) {
-                return Some(entry);
-            }
-            // Fallback 3: slope_type=0 + frame 0.
-            if key.frame > 0 {
-                let flat_frame0 = UnitSpriteKey {
-                    slope_type: 0,
-                    frame: 0,
-                    ..key.clone()
-                };
-                if let Some(entry) = atlas.get(&flat_frame0) {
-                    return Some(entry);
-                }
-            }
-        }
-        // Fallback 4: the level barrel, through the same chain.
-        if key.barrel_pitch != 0 {
-            let level = UnitSpriteKey {
-                barrel_pitch: 0,
-                ..key.clone()
-            };
-            return atlas_get_with_frame_fallback(atlas, &level);
-        }
-        None
-    })
+    }
+    if let Some(entry) = candidates.into_iter().find_map(found) {
+        return Some(entry);
+    }
+    // The level barrel, through the same chain.
+    if key.barrel_pitch != 0 {
+        let level = UnitSpriteKey {
+            barrel_pitch: 0,
+            ..key.clone()
+        };
+        return atlas_get_with_frame_fallback(atlas, &level)
+            .map(|(key, entry)| (Cow::Owned(key.into_owned()), entry));
+    }
+    None
 }
 
 fn stable_slope_for_key(slope_state: UnitRenderSlopeState) -> u8 {
@@ -1385,25 +1547,41 @@ fn slope_blend_for_render_state(
     }
 }
 
-fn unit_entry_for_pose(
+/// One Unit part: rendered at its ground pose (`Draw_Matrix` key -1, so
+/// uncached), else the stable image through its cache record `image`.
+fn voxel_part_entry(
     state: &AppState,
     atlas: &crate::render::unit_atlas::UnitAtlas,
+    drawer: VoxelDrawer,
+    image: Option<crate::render::voxel_image_cache::VoxelImageKey>,
     key: &UnitSpriteKey,
     ground_pose: Option<crate::render::vxl_raster::GroundPose>,
 ) -> Option<(UnitSpriteEntry, UnitTextureSource)> {
+    let mut images = state
+        .match_state
+        .match_presentation
+        .voxel_images
+        .borrow_mut();
     if let Some(pose) = ground_pose {
         let assets = state.process_assets.manager()?;
+        let depth_tested = images.render_part(drawer.use_buffer);
         let entry = state.renderer.vxl_pose_frame_cache.borrow_mut().render(
             assets,
             state.rules(),
             key,
             crate::render::unit_atlas::PoseTilt::Ground(pose),
+            depth_tested,
         )?;
         return Some((entry, UnitTextureSource::Pose(entry.page)));
     }
-    atlas_get_with_frame_fallback(atlas, key)
-        .copied()
-        .map(|entry| (entry, UnitTextureSource::Stable(entry.page)))
+    cached_part_entry(
+        &mut images,
+        atlas,
+        DepthTestedImages::of(state).as_ref(),
+        drawer,
+        image,
+        key,
+    )
 }
 
 /// First-fill mask owner for the supported ordinary flat ground path. The
@@ -1418,11 +1596,24 @@ fn prepare_unit_shadow(
     no_shadow: bool,
     slope: UnitRenderSlopeState,
     band: EntityDrawBand,
-    parts: impl IntoIterator<Item = (crate::render::unit_atlas::UnitSpriteEntry, [f32; 2])>,
+    parts: impl IntoIterator<Item = (UnitSpriteEntry, UnitTextureSource, [f32; 2])>,
 ) -> bool {
     if !native_shadow_caller_eligible(entity, no_shadow, slope, band) {
         return false;
     }
+    let parts: Vec<_> = parts
+        .into_iter()
+        .map(
+            |(entry, source, offset)| crate::render::unit_atlas::UnitShadowPart {
+                entry,
+                point: [
+                    128 + entry.offset_x as i32 + offset[0] as i32,
+                    128 + entry.offset_y as i32 + offset[1] as i32,
+                ],
+                posed: !matches!(source, UnitTextureSource::Stable(_)),
+            },
+        )
+        .collect();
     let key = shadow_lookup_key(
         UnitSpriteKey {
             type_id: type_id.to_owned(),
@@ -1435,7 +1626,16 @@ fn prepare_unit_shadow(
         },
         true,
     );
-    atlas.prepare_native_shadow(&state.renderer.gpu.queue, &key, parts)
+    let flushes = state
+        .match_state
+        .match_presentation
+        .voxel_images
+        .borrow()
+        .flushes();
+    let pose_cache = state.renderer.vxl_pose_frame_cache.borrow();
+    atlas.prepare_native_shadow_with(&state.renderer.gpu.queue, &key, flushes, |body| {
+        pose_cache.stamp_shadow_parts(atlas, &parts, body)
+    })
 }
 
 fn native_shadow_caller_eligible(
@@ -1504,6 +1704,9 @@ fn shadow_lookup_key(mut key: UnitSpriteKey, native_shadow: bool) -> UnitSpriteK
 /// packed RGB565 half and full native cache lifecycle remain outside this fix.
 /// `shadow_slope` is [`unit_shadow_slope`]'s.
 fn emit_unit_shadow_sprite(
+    state: &AppState,
+    drawer: VoxelDrawer,
+    posed: bool,
     native_shadow: bool,
     no_shadow: bool,
     voxel_adjust: f32,
@@ -1533,9 +1736,32 @@ fn emit_unit_shadow_sprite(
         barrel_pitch: 0,
     };
     let lookup_key = shadow_lookup_key(key.clone(), native_shadow);
-    let Some(entry) = atlas.get(&lookup_key).or_else(|| atlas.get(&key)).copied() else {
+    let Some((drawn, entry)) = [&lookup_key, &key]
+        .into_iter()
+        .find_map(|drawn| atlas.get(drawn).map(|entry| (drawn, *entry)))
+    else {
         return;
     };
+    // The shadow key is the locomotor's key without its frame bits
+    // (`0x0073B619`), so a body drawn posed (key -1) keys `0x3FF`: one image
+    // per type. Ground units take the grounded bit (`0x0073C468`).
+    let image = if posed {
+        crate::render::voxel_image_cache::VoxelImageKey {
+            cache: crate::render::voxel_image_cache::VoxelCache::Shadow,
+            sprite: UnitSpriteKey {
+                facing: 0,
+                slope_type: 0,
+                ..key.clone()
+            },
+            extra: 1,
+        }
+    } else {
+        crate::render::voxel_image_cache::VoxelImageKey::new(
+            crate::render::voxel_image_cache::VoxelCache::Shadow,
+            drawn.clone(),
+        )
+    };
+    draw_voxel_shadow(state, atlas, drawer, Some(image), drawn);
     emit_shadow_stencil(
         entry,
         UnitTextureSource::Stable(entry.page),
@@ -1545,6 +1771,33 @@ fn emit_unit_shadow_sprite(
         draw_state,
         pieces,
     );
+}
+
+/// One shadow draw through `TechnoClass::DrawVoxelShadow @ 0x00706BD0`
+/// under its cache record `image` (None: key -1, uncached). A miss or an
+/// uncached draw renders (`0x00707280`); a `UseBuffer=` type's leaves
+/// 0xB43180 set. A miss stores the image of the `drawn` atlas key.
+fn draw_voxel_shadow(
+    state: &AppState,
+    atlas: &crate::render::unit_atlas::UnitAtlas,
+    drawer: VoxelDrawer,
+    image: Option<crate::render::voxel_image_cache::VoxelImageKey>,
+    drawn: &UnitSpriteKey,
+) {
+    let image = image.filter(|_| !drawer.disable_shadow_cache);
+    let mut images = state
+        .match_state
+        .match_presentation
+        .voxel_images
+        .borrow_mut();
+    if image.as_ref().is_some_and(|image| images.shadow_hit(image)) {
+        return;
+    }
+    let bytes = image
+        .as_ref()
+        .and_then(|_| atlas.shadow_pool_bytes(drawn))
+        .unwrap_or(0);
+    images.render_shadow(image, drawer.use_buffer, bytes);
 }
 
 /// Shared Techno706BD0 stencil emission. Aircraft4148A0 supplies no composed
@@ -1584,6 +1837,7 @@ fn emit_shadow_stencil(
 fn emit_jumpjet_unit_shadow(
     state: &AppState,
     atlas: &crate::render::unit_atlas::UnitAtlas,
+    drawer: VoxelDrawer,
     entity: &crate::sim::game_entity::GameEntity,
     type_id: &str,
     body_anchor: [f32; 2],
@@ -1624,6 +1878,40 @@ fn emit_jumpjet_unit_shadow(
     };
     pose.anchor[1] -= f32::from(entity.ion_blast_lift_pixels());
     let key = pose.key(type_id);
+    // `0x0073C21E..0x0073C287`, `0x0073C43F..0x0073C472`: a BalloonHover or
+    // Track/Wheel type keys its grounded mask apart and its low flight -1;
+    // any other type (stock SCHP, SHAD, HIND) keeps its plain key.
+    let keyed_by_mask = state
+        .rules()
+        .and_then(|rules| view.interner().object_type(entity.type_ref(), rules))
+        .is_some_and(|object| {
+            object.balloon_hover
+                || matches!(
+                    object.speed_type,
+                    crate::rules::locomotor_type::SpeedType::Track
+                        | crate::rules::locomotor_type::SpeedType::Wheel
+                )
+        });
+    let image = match (keyed_by_mask, pose.mask) {
+        (true, UnitShadowMask::Fresh) => None,
+        (true, _) => Some(key.clone()),
+        (false, _) => Some(UnitSpriteKey {
+            frame: 0,
+            ..key.clone()
+        }),
+    };
+    draw_voxel_shadow(
+        state,
+        atlas,
+        drawer,
+        image.map(|sprite| {
+            crate::render::voxel_image_cache::VoxelImageKey::new(
+                crate::render::voxel_image_cache::VoxelCache::Shadow,
+                sprite,
+            )
+        }),
+        &key,
+    );
     let Some(entry) = atlas
         .get(&key)
         .filter(|e| e.native_draw_bounds.is_some())
@@ -1661,9 +1949,15 @@ fn emit_jumpjet_unit_shadow(
                 })
             })
             .collect();
+        let flushes = state
+            .match_state
+            .match_presentation
+            .voxel_images
+            .borrow()
+            .flushes();
         let mut cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
         if pose.mask == UnitShadowMask::Retained {
-            if !atlas.prepare_native_shadow_with(&state.renderer.gpu.queue, &key, |body| {
+            if !atlas.prepare_native_shadow_with(&state.renderer.gpu.queue, &key, flushes, |body| {
                 cache.stamp_shadow_parts(atlas, &parts, body)
             }) {
                 return;
@@ -1755,6 +2049,7 @@ fn aircraft_draw_sample(
 fn emit_aircraft_shadow_sprite(
     state: &AppState,
     atlas: &crate::render::unit_atlas::UnitAtlas,
+    drawer: VoxelDrawer,
     entity: &crate::sim::game_entity::GameEntity,
     type_id: &str,
     frame: u32,
@@ -1771,6 +2066,17 @@ fn emit_aircraft_shadow_sprite(
         slope_type: pose.slope,
         barrel_pitch: 0,
     };
+    // `0x00414728` keys the shadow by facing, slope and body frame.
+    draw_voxel_shadow(
+        state,
+        atlas,
+        drawer,
+        Some(crate::render::voxel_image_cache::VoxelImageKey::new(
+            crate::render::voxel_image_cache::VoxelCache::Shadow,
+            key.clone(),
+        )),
+        &key,
+    );
     let Some(entry) = atlas
         .get(&key)
         .filter(|entry| entry.native_draw_bounds.is_some())
@@ -1800,12 +2106,8 @@ fn push_unit_sprite(
     sprite: SpriteInstance,
     pieces: &mut Vec<ObjectPieceInstance>,
 ) {
-    let target = match texture_source {
-        UnitTextureSource::Pose(page) => ObjectTexture::UnitPosePage(page),
-        UnitTextureSource::Stable(page) => ObjectTexture::UnitAtlasPage(page),
-    };
     pieces.push(ObjectPieceInstance {
-        target,
+        target: texture_source.target(),
         render_z: RenderZPolicy::ReadOnly,
         instance: sprite,
     });
@@ -1955,6 +2257,7 @@ fn composite_draw_state(state: &AppState, mut draw_state: DrawState, split: bool
 fn emit_turret_unit_sprites(
     no_shadow: bool,
     atlas: &crate::render::unit_atlas::UnitAtlas,
+    drawer: VoxelDrawer,
     art_reg: Option<&crate::rules::art_data::ArtRegistry>,
     entity: &crate::sim::game_entity::GameEntity,
     type_id: &str,
@@ -2026,25 +2329,39 @@ fn emit_turret_unit_sprites(
         turret_screen_offset(art_offset, body_facing, slope_state)
     };
 
-    // The barrel pitches by its elevation's step (`d32 - 8`, `0x0073BB85..
-    // 0x0073BB96`). A pose the turret image is cached under draws the pitch its
-    // type cached there; an uncached pose draws the unit's own.
-    let drawn_pitch = crate::render::vxl_raster::voxel_facing_step_u16(barrel_elevation) as i8 - 8;
-    barrel_key.barrel_pitch = if ground_pose.is_none() && turret_images_cached(entity, slope_state)
-    {
-        state
-            .match_state
-            .match_presentation
-            .barrel_image_pitches
-            .borrow_mut()
-            .pitch(
-                &turret_key,
-                (art_offset != 0).then_some(canonical_unit_facing(body_facing)),
-                drawn_pitch,
-            )
-    } else {
-        drawn_pitch
+    // The gun images' key (`0x0073B748..0x0073B79F`): the turret's facing
+    // step (the hull's for a type with a `TurretOffset=`), the locomotor's
+    // key and the turret frame; -1 while the hull is posed.
+    use crate::render::voxel_image_cache::{VoxelCache, VoxelImageKey};
+    let gun_images_cached = ground_pose.is_none() && turret_images_cached(entity, slope_state);
+    let gun_image = |cache| {
+        gun_images_cached.then(|| VoxelImageKey {
+            cache,
+            sprite: turret_key.clone(),
+            extra: if art_offset != 0 {
+                u32::from(canonical_unit_facing(body_facing))
+            } else {
+                0
+            },
+        })
     };
+    let turret_image = gun_image(VoxelCache::Turret);
+    let barrel_image = gun_image(VoxelCache::Barrel);
+    // The barrel pitches by its elevation's step (`d32 - 8`, `0x0073BB85..
+    // 0x0073BB96`); a stored barrel image keeps the pitch it was drawn at.
+    let drawn_pitch = crate::render::vxl_raster::voxel_facing_step_u16(barrel_elevation) as i8 - 8;
+    barrel_key.barrel_pitch = barrel_image
+        .as_ref()
+        .filter(|_| !drawer.disable_voxel_cache)
+        .and_then(|image| {
+            state
+                .match_state
+                .match_presentation
+                .voxel_images
+                .borrow()
+                .hit(image)
+        })
+        .map_or(drawn_pitch, |stored| stored.barrel_pitch);
     let (barrel_ox, barrel_oy) = if ground_pose.is_some() {
         (0., 0.)
     } else {
@@ -2063,7 +2380,10 @@ fn emit_turret_unit_sprites(
     // (body, then turret/barrel) controls visual stacking via stable sort.
     // Per-layer depth derived from each sprite's bounding box caused tie-break
     // collisions where body could sort over turret at certain facings.
-    let body_entry_opt = unit_entry_for_pose(state, atlas, &body_key, ground_pose);
+    let body_image = ground_pose
+        .is_none()
+        .then(|| VoxelImageKey::new(VoxelCache::Body, body_key.clone()));
+    let body_entry_opt = voxel_part_entry(state, atlas, drawer, body_image, &body_key, ground_pose);
     let entity_depth_y: f32 = match body_entry_opt {
         Some((e, _)) => center_y + e.offset_y + e.pixel_size[1] + dock_depth_y_offset,
         None => center_y + dock_depth_y_offset,
@@ -2077,20 +2397,20 @@ fn emit_turret_unit_sprites(
     // `zshape_origin` (the voxel shader's `z_rect`).
     let turret_layers: Vec<_> = native_turret_barrel_order(
         turret_facing,
-        (&turret_key, [tur_ox, tur_oy]),
-        (&barrel_key, [barrel_ox, barrel_oy]),
+        (&turret_key, turret_image, [tur_ox, tur_oy]),
+        (&barrel_key, barrel_image, [barrel_ox, barrel_oy]),
     )
     .into_iter()
-    .filter_map(|(key, offset)| {
-        unit_entry_for_pose(state, atlas, key, ground_pose)
+    .filter_map(|(key, image, offset)| {
+        voxel_part_entry(state, atlas, drawer, image, key, ground_pose)
             .map(|(entry, source)| (entry, source, offset))
     })
     .collect();
     let native_shadow = body_entry_opt
-        .is_some_and(|(_, source)| matches!(source, UnitTextureSource::Stable(_)))
+        .is_some_and(|(_, source)| !matches!(source, UnitTextureSource::Pose(_)))
         && turret_layers
             .iter()
-            .all(|(_, source, _)| matches!(source, UnitTextureSource::Stable(_)))
+            .all(|(_, source, _)| !matches!(source, UnitTextureSource::Pose(_)))
         && prepare_unit_shadow(
             state,
             atlas,
@@ -2102,15 +2422,14 @@ fn emit_turret_unit_sprites(
             band,
             body_entry_opt
                 .into_iter()
-                .map(|(entry, _)| (entry, [0.0, 0.0]))
-                .chain(
-                    turret_layers
-                        .iter()
-                        .map(|(entry, _, offset)| (*entry, *offset)),
-                ),
+                .map(|(entry, source)| (entry, source, [0.0, 0.0]))
+                .chain(turret_layers.iter().copied()),
         );
     if !native_shadow {
         emit_unit_shadow_sprite(
+            state,
+            drawer,
+            ground_pose.is_some(),
             native_shadow,
             no_shadow,
             voxel_adjust,
@@ -2182,6 +2501,9 @@ fn emit_turret_unit_sprites(
     }
     if native_shadow {
         emit_unit_shadow_sprite(
+            state,
+            drawer,
+            ground_pose.is_some(),
             native_shadow,
             no_shadow,
             voxel_adjust,
