@@ -487,6 +487,7 @@ fn engine_per_client_reads_have_pinned_callers() {
             "owned_by_current_house",
             &[
                 ("sim/cloak_disguise.rs", 13),
+                ("sim/combat/greatest_threat.rs", 1),
                 ("sim/game_entity.rs", 3),
                 ("sim/miner/ore_scan.rs", 1),
                 ("sim/world/camera_home.rs", 1),
@@ -497,6 +498,7 @@ fn engine_per_client_reads_have_pinned_callers() {
         (
             "discovered_by_current_house",
             &[
+                ("sim/combat/greatest_threat.rs", 1),
                 ("sim/combat/world_fire.rs", 1),
                 ("sim/house_state.rs", 5),
                 ("sim/power_system.rs", 2),
