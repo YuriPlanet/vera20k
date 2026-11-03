@@ -54,8 +54,9 @@ const CHECKPOINT_CAMPAIGN_0X94_ENTRY_PREFIX: &str = "campaign-0x94-entry-tick-";
 const CHECKPOINT_CAMPAIGN_ALL1_LOADING_FIRST: &str = "campaign-all1-loading-first-frame";
 const CHECKPOINT_CAMPAIGN_SOV1_LOADING_FIRST: &str = "campaign-sov1-loading-first-frame";
 const CHECKPOINT_CAMPAIGN_ALL1_FIRST_LIVE: &str = "campaign-all1-first-live-frame";
-/// `campaign-trigger-trace-<MAP>-tick-<N>`: a retail mission run without
-/// player input to tick N, recording every trigger Spring.
+/// `campaign-trigger-trace-<MAP>-tick-<N>[-push-<X>-<Y>]`: a retail mission
+/// run to tick N, recording every trigger Spring. Without `-push` there is no
+/// player input; with it the player's armed units attack-move toward Cell X,Y.
 const CHECKPOINT_CAMPAIGN_TRIGGER_TRACE_PREFIX: &str = "campaign-trigger-trace-";
 const CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE: &str = "campaign-sov1-first-live-frame";
 const CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN: &str = "campaign-all1-abort-return";
@@ -450,6 +451,17 @@ impl ShellCaptureCheckpoint {
                 .iter()
                 .find(|name| name.strip_suffix(".MAP").unwrap().eq_ignore_ascii_case(map))
                 .with_context(|| format!("{map:?} is not a retail campaign map"))?;
+            let (tick, push) = match tick.split_once("-push-") {
+                Some((tick, cell)) => {
+                    let (x, y) = cell
+                        .split_once('-')
+                        .context("trigger trace push is -push-<X>-<Y>")?;
+                    let x: u16 = x.parse().context("trigger trace push X")?;
+                    let y: u16 = y.parse().context("trigger trace push Y")?;
+                    (tick, Some((x, y)))
+                }
+                None => (tick, None),
+            };
             let tick: u64 = tick
                 .parse()
                 .context("trigger trace tick is not an integer")?;
@@ -457,9 +469,11 @@ impl ShellCaptureCheckpoint {
                 (1..=30000).contains(&tick),
                 "trigger trace tick must be 1..=30000"
             );
-            return Ok(Self::CampaignOpening(
-                movies::OpeningTarget::TriggerTrace { scenario, tick },
-            ));
+            return Ok(Self::CampaignOpening(movies::OpeningTarget::TriggerTrace {
+                scenario,
+                tick,
+                push,
+            }));
         }
         if let Some(tick) = value.strip_prefix("campaign-sov02-fortresses-tick-") {
             let tick: u64 = tick
@@ -4539,21 +4553,34 @@ mod tests {
     #[test]
     fn trigger_trace_checkpoint_selects_the_named_retail_mission_and_its_side() {
         use crate::ui::campaign_shell::CampaignSide;
-        for (name, side, scenario, tick) in [
+        for (name, side, scenario, tick, push) in [
             (
                 "campaign-trigger-trace-all04dmd-tick-9000",
                 CampaignSide::Allied,
                 "ALL04DMD.MAP",
                 9000,
+                None,
             ),
             (
                 "campaign-trigger-trace-SOV07TMD-tick-1",
                 CampaignSide::Soviet,
                 "SOV07TMD.MAP",
                 1,
+                None,
+            ),
+            (
+                "campaign-trigger-trace-ALL02UMD-tick-18000-push-83-88",
+                CampaignSide::Allied,
+                "ALL02UMD.MAP",
+                18000,
+                Some((83, 88)),
             ),
         ] {
-            let target = movies::OpeningTarget::TriggerTrace { scenario, tick };
+            let target = movies::OpeningTarget::TriggerTrace {
+                scenario,
+                tick,
+                push,
+            };
             assert_eq!(
                 ShellCaptureCheckpoint::parse(name).unwrap().movies_target(),
                 Some(movies::MoviesTarget::CampaignStart {
@@ -4567,6 +4594,8 @@ mod tests {
             "campaign-trigger-trace-ALL01UMD-tick-0",
             "campaign-trigger-trace-ALL01UMD-tick-30001",
             "campaign-trigger-trace-ALL01UMD",
+            "campaign-trigger-trace-ALL01UMD-tick-100-push-5",
+            "campaign-trigger-trace-ALL01UMD-tick-100-push--1-5",
         ] {
             assert!(ShellCaptureCheckpoint::parse(invalid).is_err());
         }

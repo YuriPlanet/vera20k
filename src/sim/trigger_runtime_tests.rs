@@ -781,6 +781,79 @@ fn scenario_timer_uses_the_sound_parameter_ordinal_before_expiring() {
     assert_eq!(sim.rng_state(), rng);
 }
 
+/// The dev trigger trace orders each Spring between its poll bounds and
+/// before the writes its actions make, so a native replay can rebuild the
+/// frame and tell trigger writes from world ones.
+#[test]
+fn trigger_trace_orders_a_spring_between_poll_bounds_and_before_its_write() {
+    let map = trigger_fixture_map(
+        "[Triggers]\nSET=Neutral,<none>,Set,0,1,1,1,0\n\
+         [Events]\nSET=1,13,0,0\n\
+         [Actions]\nSET=1,56,0,4,0,0,0,0,A\n\
+         [Tags]\nSET_TAG=0,Set,SET\n",
+    );
+    let mut sim = Simulation::new();
+    let rules = crate::rules::ruleset::RuleSet::empty_for_test();
+    sim.initialize_trigger_definitions(&map, &Default::default(), None, None, None);
+    sim.classify_map_triggers(rules);
+    sim.record_trigger_springs(true);
+    sim.advance_triggers(rules, None, FrameEffects::default());
+    let (springs, events) = sim.take_trigger_trace();
+    let spring = &springs[..];
+    assert_eq!(spring.len(), 1);
+    assert_eq!(
+        (spring[0].seq, spring[0].parent, spring[0].tag.clone()),
+        (2, None, Some((0, "SET_TAG".to_owned())))
+    );
+    let TriggerTraceEvent::Init {
+        seq: 0,
+        ref tags,
+        ref logic,
+        ..
+    } = events[0]
+    else {
+        panic!("the trace starts without its Init record: {:?}", events[0]);
+    };
+    assert_eq!(
+        (tags.as_slice(), logic.as_slice()),
+        (
+            [TraceTag {
+                tag: 0,
+                tag_type: "SET_TAG".to_owned(),
+                refs: 0,
+                triggers: vec![(0, "SET".to_owned(), true)],
+            }]
+            .as_slice(),
+            [0].as_slice()
+        )
+    );
+    // Event 13 is left to the replay: no Predicate record, and the poll's own
+    // raise is not a Dispatch record.
+    assert_eq!(
+        events[1..],
+        [
+            TriggerTraceEvent::Poll {
+                seq: 1,
+                binary_frame: 0,
+                end: false
+            },
+            TriggerTraceEvent::Variable {
+                seq: 3,
+                binary_frame: 0,
+                parent: Some((2, 0)),
+                global: false,
+                index: 4,
+                set: true
+            },
+            TriggerTraceEvent::Poll {
+                seq: 4,
+                binary_frame: 0,
+                end: true
+            },
+        ]
+    );
+}
+
 #[test]
 fn scenario_timer_extends_by_minus_one_for_an_untrimmed_unknown_sound() {
     let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(

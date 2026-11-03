@@ -969,6 +969,8 @@ impl Simulation {
                 // members never get there: with A8E7AC raised, Unlimbo
                 // (Object5F4EC0, Foot Mark4D3780 ->5F5850, Infantry51E027
                 // priority spot) cannot refuse a cell-centre coordinate.
+                #[cfg(any(test, feature = "dev-overlays"))]
+                self.trace_placement_refused(cell);
                 self.discard_constructed_limbo(member, rules, effects);
                 continue;
             }
@@ -1044,6 +1046,8 @@ impl Simulation {
                                 .then_some(candidate)
                         });
                     if next.is_none() {
+                        #[cfg(any(test, feature = "dev-overlays"))]
+                        sim.trace_placement_refused(cell);
                         sim.discard_constructed_limbo(member, rules, effects);
                     }
                     (false, next)
