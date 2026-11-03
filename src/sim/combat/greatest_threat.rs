@@ -2381,10 +2381,15 @@ fn evaluate_candidate(
         return None;
     }
 
-    // G20 — DORMANT: `0x006F8487..0x006F84AB` refuses an `IsTrain=` (Type
-    // `+0xC94`) candidate to an Infantry scanner (vt+0x2C == 0xF) whose type
-    // is a `VehicleThief=` (`+0xEC6`). Not ported: retail RULESMD sets
-    // neither key on any type.
+    // G20 — `0x006F8487..0x006F84AB` refuses an `IsTrain=` candidate (Type
+    // `+0xC94`) to an Infantry scanner (vt+0x2C == 0xF) whose type is a
+    // `VehicleThief=` (`InfantryType+0xEC6`): a thief never hunts a train.
+    // Dormant in retail data, which sets neither key; a map can set both.
+    // `vehicle_thief` is only read for `[InfantryTypes]`, so it carries the
+    // Infantry check.
+    if candidate_obj.is_train && ctx.attacker_obj.vehicle_thief {
+        return None;
+    }
 
     // G21 — the disguise arm at `0x006F84B1..0x006F854B`, in its native slot.
     //
