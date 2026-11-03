@@ -818,6 +818,9 @@ pub struct RelayServer {
     // Ordering rooms cleaned up before their certificate expired, until that
     // expiry: a late Ready gets Inactive instead of a new timeline.
     ended_orderings: HashMap<[u8; 16], u64>,
+    // Times the clock slowed a match for a player who could not keep up,
+    // since `take_slowdowns` last read them.
+    slowdowns: u64,
 }
 
 impl RelayServer {
@@ -841,6 +844,7 @@ impl RelayServer {
             push_after: None,
             journal_directory: None,
             ended_orderings: HashMap::new(),
+            slowdowns: 0,
         }
     }
 
@@ -862,6 +866,12 @@ impl RelayServer {
 
     pub fn room_count(&self) -> usize {
         self.rooms.len()
+    }
+
+    /// How many times the clock slowed a match because a player could not
+    /// keep up, since the last call; the relay's journal reports it.
+    pub fn take_slowdowns(&mut self) -> u64 {
+        std::mem::take(&mut self.slowdowns)
     }
 
     pub fn process(

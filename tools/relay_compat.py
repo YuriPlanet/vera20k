@@ -74,6 +74,23 @@ def commit_of(ref: str) -> str:
         return git("rev-parse", "--verify", f"{ref}^{{commit}}")
 
 
+def use_checkout_example(tree: Path) -> bytes | None:
+    """Puts the checkout's example in TREE; returns the copy TREE's release tracks, if any (v0.2.4 on)."""
+    example = tree / EXAMPLE
+    original = example.read_bytes() if example.exists() else None
+    example.parent.mkdir(exist_ok=True)
+    shutil.copyfile(ROOT / EXAMPLE, example)
+    return original
+
+
+def restore_example(tree: Path, original: bytes | None) -> None:
+    """Leaves TREE's example as its release has it, so `git worktree remove` finds nothing changed."""
+    if original is None:
+        (tree / EXAMPLE).unlink(missing_ok=True)
+    else:
+        (tree / EXAMPLE).write_bytes(original)
+
+
 def build(tree: Path, package: str, target: list[str], output: Path) -> Path:
     """Builds one target and copies its executable, named by Cargo's artifact report, to OUTPUT.
 
@@ -140,14 +157,13 @@ def main(argv: list[str] | None = None) -> int:
         relay = build(ROOT, "vera20k-relay", ["--bin", "vera20k-relay"], scratch / "relay")
         clients = {"checkout": build(ROOT, "vera20k-relay-protocol", ["--example", "relay_compat"],
                                      scratch / "checkout-client")}
-        trees = []
+        trees: dict[Path, bytes | None] = {}
         try:
             for commit, labels in by_commit.items():
                 tree = scratch / commit[:12]
                 git("worktree", "add", "--quiet", "--detach", str(tree), commit)
-                trees.append(tree)
-                (tree / EXAMPLE).parent.mkdir(exist_ok=True)
-                shutil.copyfile(ROOT / EXAMPLE, tree / EXAMPLE)
+                trees[tree] = None  # removed below even if the copy fails
+                trees[tree] = use_checkout_example(tree)
                 clients[" = ".join(labels)] = build(tree, "vera20k-relay-protocol", ["--example", "relay_compat"],
                                                     scratch / f"{commit[:12]}-client")
             server, address = start_relay(relay, scratch / "relay-state")
@@ -160,8 +176,8 @@ def main(argv: list[str] | None = None) -> int:
                 server.terminate()
                 server.wait(timeout=10)
         finally:
-            for tree in trees:
-                (tree / EXAMPLE).unlink(missing_ok=True)
+            for tree, original in trees.items():
+                restore_example(tree, original)
                 git("worktree", "remove", str(tree))
     for label, result in results.items():
         print(f"{'ok  ' if result['ok'] else 'FAIL'} {label}: {json.dumps(result)}")

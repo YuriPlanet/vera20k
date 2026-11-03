@@ -1,7 +1,10 @@
-"""Which released clients the relay compatibility check plays against."""
+"""Which released clients the relay compatibility check plays against, and how it cleans up."""
+from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 
-from tools.relay_compat import supported_clients
+from tools.relay_compat import EXAMPLE, ROOT, restore_example, supported_clients, use_checkout_example
 
 
 def release(tag, created, prerelease=False, draft=False):
@@ -19,6 +22,29 @@ class SupportedClientsTest(unittest.TestCase):
             release("v0.2.4-rc1", "2026-10-30T10:00:00Z", prerelease=True),
         ]
         self.assertEqual(supported_clients(rows), ["v0.2.3", "v0.2.3-20261029-101544"])
+
+
+class ReleasedTreeTest(unittest.TestCase):
+    def test_a_release_that_tracks_the_example_gets_its_own_back_and_its_tree_removes(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            repo, tree = Path(scratch) / "repo", Path(scratch) / "tree"
+            repo.mkdir()
+
+            def git(*args):
+                subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t",
+                                "-c", "commit.gpgsign=false", *args], check=True, capture_output=True)
+
+            git("init", "-q")
+            (repo / EXAMPLE).parent.mkdir(parents=True)
+            (repo / EXAMPLE).write_text("// the release's own example\n")
+            git("add", ".")
+            git("commit", "-qm", "release")
+            git("worktree", "add", "-q", "--detach", str(tree), "HEAD")
+            original = use_checkout_example(tree)
+            self.assertEqual((tree / EXAMPLE).read_bytes(), (ROOT / EXAMPLE).read_bytes())
+            restore_example(tree, original)
+            git("worktree", "remove", str(tree))
+            self.assertFalse(tree.exists())
 
 
 if __name__ == "__main__":
