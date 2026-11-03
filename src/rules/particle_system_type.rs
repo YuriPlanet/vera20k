@@ -13,16 +13,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::rules::ini_parser::IniSection;
 use crate::rules::particle_type::ParticleTypeId;
-use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 
-/// Default `ParticlesPerCoord` from the constructor (Railgun field, parsed
-/// for every system).
-const DEFAULT_PARTICLES_PER_COORD: SimFixed = SimFixed::lit("0.1");
-/// Default `SpiralDeltaPerCoord` from the constructor.
-const DEFAULT_SPIRAL_DELTA_PER_COORD: SimFixed = SimFixed::lit("0.025");
-/// Default `SpiralRadius` from the constructor.
-const DEFAULT_SPIRAL_RADIUS: SimFixed = SimFixed::lit("25");
+/// Railgun doubles written by `ParticleSystemTypeClass::Constructor @
+/// 0x006440A0` (`0x0064410E..0x0064414F`): `ParticlesPerCoord` 0.1,
+/// `SpiralDeltaPerCoord` 0.025 and `SpiralRadius` 25.0. The three
+/// perturbation coefficients start at 0.0.
+const DEFAULT_PARTICLES_PER_COORD: NativeF64Bits = NativeF64Bits::from_bits(0x3fb9_9999_9999_999a);
+const DEFAULT_SPIRAL_DELTA_PER_COORD: NativeF64Bits =
+    NativeF64Bits::from_bits(0x3f99_9999_9999_999a);
+const DEFAULT_SPIRAL_RADIUS: NativeF64Bits = NativeF64Bits::from_bits(0x4039_0000_0000_0000);
 
 /// Interned identifier for a `ParticleSystemType`. Resolved at INI parse time;
 /// consumers (TechnoType, WeaponType, RulesClass) store the ID, not the name.
@@ -60,9 +60,8 @@ impl ParticleSystemBehavesLike {
 
 /// A particle system definition parsed from a `[ParticleSystemName]` section.
 ///
-/// Tier 3 fields (Railgun spiral params, Spark percentages, laser color) are
-/// parsed but unused at Tier 2 — the binary parses them unconditionally and
-/// we mirror that so Tier 3 lights up cleanly later.
+/// The binary reads every behavior's keys for every system, so the Railgun
+/// and Spark fields are parsed whatever `BehavesLike=` says.
 #[derive(Debug, Clone)]
 pub struct ParticleSystemType {
     // ── Identity ─────────────────────────────────────────────────────
@@ -104,19 +103,20 @@ pub struct ParticleSystemType {
     /// Direction vector for spawning (CoordStruct).
     pub spawn_direction: IVec3,
 
-    // ── Railgun-only (Tier 3 — parsed but unused) ────────────────────
-    /// Particles spawned per coordinate unit along a railgun beam.
-    pub particles_per_coord: SimFixed,
-    /// Railgun spiral angle increment per coord.
-    pub spiral_delta_per_coord: SimFixed,
-    /// Radius of the railgun spiral pattern.
-    pub spiral_radius: SimFixed,
-    /// Random position offset scale.
-    pub position_perturbation_coefficient: SimFixed,
-    /// Random movement offset scale.
-    pub movement_perturbation_coefficient: SimFixed,
-    /// Random velocity perturbation scale.
-    pub velocity_perturbation_coefficient: SimFixed,
+    // ── Railgun-only: the exact `ReadDouble` doubles that
+    // `ParticleSystemClass::AI_Railgun @ 0x0062F230` reads ─────────────
+    /// Particles per lepton of beam length (`+0x2C8`).
+    pub particles_per_coord: NativeF64Bits,
+    /// Spiral angle per lepton of beam length (`+0x2D0`).
+    pub spiral_delta_per_coord: NativeF64Bits,
+    /// Spiral radius in leptons (`+0x2D8`).
+    pub spiral_radius: NativeF64Bits,
+    /// Random position offset scale (`+0x2E0`).
+    pub position_perturbation_coefficient: NativeF64Bits,
+    /// Random movement offset scale (`+0x2E8`).
+    pub movement_perturbation_coefficient: NativeF64Bits,
+    /// Random speed offset scale (`+0x2F0`).
+    pub velocity_perturbation_coefficient: NativeF64Bits,
 
     // ── Spark-only ───────────────────────────────────────────────────
     /// Probability of taking a spark burst this tick.
@@ -178,25 +178,22 @@ impl ParticleSystemType {
             ),
 
             // Double fields (`FSTP qword` at `0x006444B0..0x00644555`).
-            particles_per_coord: SimFixed::from_num(
-                section.read_double("ParticlesPerCoord", DEFAULT_PARTICLES_PER_COORD.to_num())
-                    as f32,
+            particles_per_coord: section
+                .read_double_bits("ParticlesPerCoord", DEFAULT_PARTICLES_PER_COORD),
+            spiral_delta_per_coord: section
+                .read_double_bits("SpiralDeltaPerCoord", DEFAULT_SPIRAL_DELTA_PER_COORD),
+            spiral_radius: section.read_double_bits("SpiralRadius", DEFAULT_SPIRAL_RADIUS),
+            position_perturbation_coefficient: section.read_double_bits(
+                "PositionPerturbationCoefficient",
+                NativeF64Bits::POSITIVE_ZERO,
             ),
-            spiral_delta_per_coord: SimFixed::from_num(section.read_double(
-                "SpiralDeltaPerCoord",
-                DEFAULT_SPIRAL_DELTA_PER_COORD.to_num(),
-            ) as f32),
-            spiral_radius: SimFixed::from_num(
-                section.read_double("SpiralRadius", DEFAULT_SPIRAL_RADIUS.to_num()) as f32,
+            movement_perturbation_coefficient: section.read_double_bits(
+                "MovementPerturbationCoefficient",
+                NativeF64Bits::POSITIVE_ZERO,
             ),
-            position_perturbation_coefficient: SimFixed::from_num(
-                section.read_double("PositionPerturbationCoefficient", 0.0) as f32,
-            ),
-            movement_perturbation_coefficient: SimFixed::from_num(
-                section.read_double("MovementPerturbationCoefficient", 0.0) as f32,
-            ),
-            velocity_perturbation_coefficient: SimFixed::from_num(
-                section.read_double("VelocityPerturbationCoefficient", 0.0) as f32,
+            velocity_perturbation_coefficient: section.read_double_bits(
+                "VelocityPerturbationCoefficient",
+                NativeF64Bits::POSITIVE_ZERO,
             ),
 
             spawn_spark_percentage: NativeF64Bits::from_bits(
@@ -235,9 +232,9 @@ mod tests {
         assert_eq!(pst.lifetime, -1);
         assert_eq!(pst.particle_cap, 50);
         assert_eq!(pst.spawn_frames, 1);
-        assert_eq!(pst.particles_per_coord, SimFixed::lit("0.1"));
-        assert_eq!(pst.spiral_delta_per_coord, SimFixed::lit("0.025"));
-        assert_eq!(pst.spiral_radius, SimFixed::lit("25"));
+        assert_eq!(pst.particles_per_coord.bits(), 0x3fb9_9999_9999_999a);
+        assert_eq!(pst.spiral_delta_per_coord.bits(), 0x3f99_9999_9999_999a);
+        assert_eq!(pst.spiral_radius.bits(), 0x4039_0000_0000_0000);
         assert_eq!(pst.slowdown, NativeF32Bits::POSITIVE_ZERO);
         assert_eq!(pst.spawn_radius, 0);
         assert_eq!(pst.spawn_direction, IVec3::ZERO);

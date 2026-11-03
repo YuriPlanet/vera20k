@@ -10,8 +10,8 @@
 //! Particles never enter global storage or the active-object vector: they are
 //! owned by their parent system.
 //!
-//! Smoke / Gas / Fire use the existing SHP render pipeline. Spark enters the
-//! shared live-object dispatch; Railgun admission remains unavailable.
+//! Smoke / Gas / Fire use the existing SHP render pipeline. Spark and Railgun
+//! enter the shared live-object dispatch and draw as coloured points.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on rules/ and util/ only.
@@ -30,6 +30,7 @@ use std::collections::BTreeMap;
 
 pub mod fire;
 pub mod gas;
+pub mod railgun;
 pub mod smoke;
 pub mod spark;
 pub mod spark_spawn;
@@ -44,6 +45,8 @@ mod gas_native_tests;
 mod native_fixture;
 #[cfg(test)]
 mod native_identity_tests;
+#[cfg(test)]
+mod railgun_native_tests;
 #[cfg(test)]
 mod virus_tests;
 
@@ -108,6 +111,21 @@ pub struct SparkRuntimeState {
     pub color_accumulator: NativeF64Bits,
 }
 
+/// Behavior-4 state. `ParticleSystemClass::AI_Railgun @ 0x0062F230` writes the
+/// normalized drift direction (`+0x10C`) after construction; the constructor
+/// (`0x0062B707..0x0062B71B`) stores its coordinate as floats (`+0x118`), which
+/// `ParticleClass::AI_Railgun @ 0x0062C3A0` advances every frame. The colour
+/// fields are the constructor's `+0xB0` seed and the `+0xB4`/`+0xB8` step that
+/// Spark also uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct RailgunRuntimeState {
+    pub direction: [NativeF32Bits; 3],
+    pub position: [NativeF32Bits; 3],
+    pub start_rgb: [u8; 3],
+    pub color_index: i32,
+    pub color_accumulator: NativeF64Bits,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Particle {
     /// Shared Object handle for its native Display AIR entry.
@@ -142,6 +160,9 @@ pub struct Particle {
     /// Authoritative behavior-3 state. Generic direction/velocity fields
     /// remain authoritative for the existing Smoke/Gas/Fire implementations only.
     spark: Option<SparkRuntimeState>,
+    /// Authoritative behavior-4 state; `None` for every other behavior.
+    #[serde(default)]
+    railgun: Option<RailgunRuntimeState>,
 
     /// Fire-only scratch: per-tick velocity delta computed by fire AI and
     /// consumed by `move_fire` (jitter * direction). Zero for smoke/gas.
@@ -269,6 +290,10 @@ impl Particle {
         self.spark
     }
 
+    pub const fn railgun(&self) -> Option<RailgunRuntimeState> {
+        self.railgun
+    }
+
     pub const fn prev_delta(&self) -> [SimFixed; 3] {
         self.prev_delta
     }
@@ -374,6 +399,7 @@ impl Particle {
             drift_y: 0,
             drift_z: 0,
             spark: None,
+            railgun: None,
             prev_delta: [SIM_ZERO; 3],
         })
     }
@@ -631,6 +657,7 @@ impl Particle {
             drift_y: 0,
             drift_z: 0,
             spark: None,
+            railgun: None,
             prev_delta: [SIM_ZERO; 3],
         }
     }

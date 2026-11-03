@@ -4758,6 +4758,7 @@ impl Simulation {
             listener.pending_entry(),
             listener.spawn_owner_id.owner(),
             listener.spark_particle_system.system(),
+            listener.railgun_particle_system.system(),
             listener.damage_smoke_system_id.system(),
             listener.ammo().and_then(|ammo| ammo.dock()),
             listener
@@ -5260,6 +5261,7 @@ impl Simulation {
         // gate707AE7 and is independent of the target's sensor/owner guards.
         let clear_damage_smoke = listener.damage_smoke_system_id.system() == Some(expired_id);
         let clear_spark_system = listener.spark_particle_system.system() == Some(expired_id);
+        let clear_railgun_system = listener.railgun_particle_system.system() == Some(expired_id);
         // Techno707AE7..707B03 clears ArchiveTarget+218 on control1. The
         // later Foot4D99F1..4D99FC clears a still-matching archive on both
         // controls, independent of sensors and same-owner target exemptions.
@@ -5351,6 +5353,7 @@ impl Simulation {
             && listener.building_light.light() == Some(expired_id);
         if !(clear_suspended_target
             || clear_spark_system
+            || clear_railgun_system
             || clear_damage_smoke
             || clear_archive_target
             || clear_suspended_nav_com
@@ -5382,6 +5385,9 @@ impl Simulation {
         }
         if clear_spark_system {
             listener.spark_particle_system.forget();
+        }
+        if clear_railgun_system {
+            listener.railgun_particle_system.forget();
         }
         if clear_archive_target {
             listener.set_archive_target(None);

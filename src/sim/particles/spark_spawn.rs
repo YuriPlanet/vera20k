@@ -330,31 +330,7 @@ where
         &mut ground_height,
     )?;
 
-    // The colour seed. Native reads the list only when it has entries, and
-    // takes the interpolated arm only when at least one of the six
-    // `StartColor1`/`StartColor2` bytes is non-zero (`0x0062B7C4` onward). The
-    // stock damage-spark types `[Spark]` and `[LargeSpark]` author neither, so
-    // they take the no-draw arm; `[WeldingSpark]` authors both and draws.
-    let start_rgb = if particle_type.color_list.is_empty() {
-        [0, 0, 0]
-    } else if particle_type.start_color_1 == [0, 0, 0] && particle_type.start_color_2 == [0, 0, 0] {
-        particle_type.color_list[0]
-    } else {
-        let sample = sim
-            .particle_rng()
-            .next_range_u32_inclusive(0, MAX_RANDOM_RANGED_SAMPLE);
-        // Original Particle62BADF..62BAEE narrows the scaled draw to float
-        // before661020. The helper owns weighted RGB arithmetic, not RNG.
-        let fraction = X87Chop53::store_f32(X87Chop53::mul(
-            X87Chop53::load_i32(sample as i32),
-            X87Chop53::load_f64(RANDOM_RANGED_UNIT_SCALE)?,
-        ))?;
-        crate::util::native_color::interpolate_rgb8(
-            particle_type.start_color_1,
-            particle_type.start_color_2,
-            fraction,
-        )?
-    };
+    let start_rgb = constructor_start_color(sim, particle_type)?;
 
     // Both coordinate arguments are the system's own coordinate, so direction
     // normalization is a no-op; the caller supplies the Spark velocity.
@@ -370,6 +346,39 @@ where
     Ok(particle)
 }
 
+/// The constructor's colour seed (`ParticleClass::Constructor @ 0x0062BA51`),
+/// for every behavior: native reads the list only when it has entries, and
+/// takes the interpolated arm only when at least one of the six
+/// `StartColor1`/`StartColor2` bytes is non-zero. The stock damage-spark types
+/// `[Spark]` and `[LargeSpark]` and both stock Railgun particles author
+/// neither, so they take the no-draw arm; `[WeldingSpark]` authors both and
+/// draws.
+pub(super) fn constructor_start_color(
+    sim: &mut Simulation,
+    particle_type: &ParticleType,
+) -> Result<[u8; 3], NativeX87Error> {
+    if particle_type.color_list.is_empty() {
+        return Ok([0, 0, 0]);
+    }
+    if particle_type.start_color_1 == [0, 0, 0] && particle_type.start_color_2 == [0, 0, 0] {
+        return Ok(particle_type.color_list[0]);
+    }
+    let sample = sim
+        .particle_rng()
+        .next_range_u32_inclusive(0, MAX_RANDOM_RANGED_SAMPLE);
+    // Original Particle62BADF..62BAEE narrows the scaled draw to float
+    // before661020. The helper owns weighted RGB arithmetic, not RNG.
+    let fraction = X87Chop53::store_f32(X87Chop53::mul(
+        X87Chop53::load_i32(sample as i32),
+        X87Chop53::load_f64(RANDOM_RANGED_UNIT_SCALE)?,
+    ))?;
+    crate::util::native_color::interpolate_rgb8(
+        particle_type.start_color_1,
+        particle_type.start_color_2,
+        fraction,
+    )
+}
+
 /// `Sqrt_Approx((x*x + y*y) + z*z)`.
 ///
 /// The grouping is read off the disassembly at `0x0062EA85`, not the
@@ -377,11 +386,11 @@ where
 /// only then `z*z`. x87 addition is not associative at this precision, so the
 /// order is load-bearing and the decompiler's commutative reordering
 /// (`z*z + y*y + x*x`) is wrong.
-fn magnitude(
+pub(super) fn magnitude(
     x: NativeF32Bits,
     y: NativeF32Bits,
     z: NativeF32Bits,
-) -> Result<NativeF32Bits, SparkSpawnError> {
+) -> Result<NativeF32Bits, NativeX87Error> {
     let x = X87Chop53::load_f32(x)?;
     let y = X87Chop53::load_f32(y)?;
     let z = X87Chop53::load_f32(z)?;
@@ -389,7 +398,7 @@ fn magnitude(
         X87Chop53::add(X87Chop53::mul(x, x), X87Chop53::mul(y, y)),
         X87Chop53::mul(z, z),
     );
-    Ok(sqrt_approx_f32(sum)?)
+    sqrt_approx_f32(sum)
 }
 
 fn add_i32(value: NativeF32Bits, addend: i32) -> Result<NativeF32Bits, SparkSpawnError> {
