@@ -333,6 +333,9 @@ fn is_object(sim: &Simulation, target: TargetKind) -> bool {
     matches!(target, TargetKind::Entity(id) if sim.substrate.entities.contains(id) || sim.terrain_objects.objects().contains_key(&id))
 }
 
+/// Each of Mission_Patrol's three scans (`0x004D4314`, `0x004D4686`,
+/// `0x004D49A3`) casts its pick to an object (`0x004D4326`, `0x004D4787`,
+/// `0x004D49B7`), so a wall cell reads as no candidate.
 fn scan(
     sim: &mut Simulation,
     id: u64,
@@ -347,6 +350,8 @@ fn scan(
         ScanMission::AreaGuard,
         Some([point.x, point.y, point.z]),
     )
+    .and_then(TargetKind::object_id)
+    .map(TargetKind::Entity)
 }
 
 fn threat_range(sim: &Simulation, id: u64, rules: &RuleSet) -> i32 {
