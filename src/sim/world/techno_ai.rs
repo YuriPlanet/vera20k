@@ -1421,6 +1421,9 @@ fn mission_counter_step(
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.mission.increment_ai_counter();
     }
+    // The sound block (`0x005F3E78..0x005F3F0C`) runs before the fall block
+    // (`0x005F3F11`), so a faller its landing kills still plays its sounds.
+    sim.object_ai_sounds(id, rules, ctx.effects);
     match sim.object_ai_fall(id, rules, ctx.overlay_registry, ctx.effects) {
         Ok((landed, changed)) => {
             outcome.landed |= landed;
@@ -1431,7 +1434,6 @@ fn mission_counter_step(
             return false;
         }
     }
-    sim.object_ai_sounds(id, rules, ctx.effects);
     true
 }
 

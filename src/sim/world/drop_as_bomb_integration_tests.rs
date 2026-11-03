@@ -216,6 +216,8 @@ fn a_tank_killed_by_its_bridge_fall_still_scans_on_that_visit() {
         .spawn_object("MTNK", "Americans", CELL.0, CELL.1, 0, &rules)
         .unwrap();
     put_on_deck(&mut sim, &rules, tank, false);
+    sim.object_custom_sounds
+        .insert(tank, "TestAmbient".to_owned());
     remove_deck(&mut sim);
     blow_up_bridge_cell_fallout(
         &mut sim,
@@ -228,6 +230,7 @@ fn a_tank_killed_by_its_bridge_fall_still_scans_on_that_visit() {
     for _ in 0..100 {
         let frame = sim.session.binary_frame() + 1;
         sim.session.set_binary_frame_for_test(frame);
+        sim.sound_events.clear_for_test();
         sim.substrate
             .entities
             .get_mut(tank)
@@ -242,6 +245,14 @@ fn a_tank_killed_by_its_bridge_fall_still_scans_on_that_visit() {
                 entity.passive_scan.last_scan_frame(),
                 frame,
                 "the dead faller's visit still runs the passive scan"
+            );
+            let owner = super::object_sound::custom_sound_owner(tank);
+            assert!(
+                sim.sound_events.as_slice().iter().any(|event| matches!(
+                    event,
+                    super::SimSoundEvent::AnimationStarted { anim_id, .. } if *anim_id == owner
+                )),
+                "its sound plays before the fall kills it"
             );
             return;
         }
