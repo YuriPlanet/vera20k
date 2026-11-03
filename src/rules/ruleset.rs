@@ -7155,6 +7155,12 @@ impl RuleSet {
         }
     }
 
+    /// Number of WeaponType global88756C allocation slots, including refused
+    /// ambiguous slots. Consumers must preserve these positions for Action42.
+    pub fn weapon_array_len(&self) -> usize {
+        self.weapon_array.len()
+    }
+
     /// WeaponType global88756C's allocation index, used by Action42 at
     /// 6E2390. Negative/out-of-range indices and ambiguous truncated
     /// Weapon/Warhead names refuse admission rather than selecting an alias.
@@ -9997,10 +10003,7 @@ impl RuleSet {
     }
 
     /// Resolve an ordinal in the native ParticleSystemType registry A83D6C.
-    pub(crate) fn particle_system_type_id_by_index(
-        &self,
-        index: i32,
-    ) -> Option<ParticleSystemTypeId> {
+    pub fn particle_system_type_id_by_index(&self, index: i32) -> Option<ParticleSystemTypeId> {
         let index = usize::try_from(index).ok()?;
         self.particle_system_types
             .get(index)
@@ -10250,7 +10253,7 @@ impl RuleSet {
     /// discovered before the master list and by later rules/ART readers.
     /// TAction41 indexes this registry at6E2357; `[Animations]` numeric
     /// labels and the membership-only BTreeSet are not ordinal catalogs.
-    pub(crate) fn anim_type_name_by_index(&self, index: i32) -> Option<&str> {
+    pub fn anim_type_name_by_index(&self, index: i32) -> Option<&str> {
         self.anim_type_art_read_states
             .get(usize::try_from(index).ok()?)
             .map(|(name, _)| name.as_str())
