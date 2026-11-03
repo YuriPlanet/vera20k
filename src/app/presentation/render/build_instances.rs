@@ -373,6 +373,7 @@ pub(super) fn build_world_instances(
                         zoom: state.match_state.input.zoom_level,
                         ignore_visibility: state.match_state.sandbox_full_visibility,
                     },
+                    state.health_bar_mode(),
                 );
                 status.group = group_labels.remove(&parent.parent.id).unwrap_or_default();
                 // Phobos DigitalDisplay: built here because the GAME.FNT atlas
