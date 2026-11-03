@@ -59,6 +59,14 @@ impl AppState {
             .is_some_and(|config| config.graphics.translucent_fog)
     }
 
+    /// `[VERA] HealthBars=`: the client health-strip policy. Presentation only;
+    /// the simulation never reads it.
+    pub(crate) fn health_bar_mode(
+        &self,
+    ) -> crate::app::persistence::options_profile::HealthBarMode {
+        self.persistence.options_profile.health_bars
+    }
+
     /// Is the match frozen because the window is not the foreground? Only the
     /// configured freeze, and only offline: `Main_Tick` (`0x0055D38D`) sleeps
     /// until reactivated in GameMode 0 or 5, but a network game sleeps 10 ms

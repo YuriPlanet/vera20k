@@ -7,6 +7,7 @@ use crate::app::input::commands::preferred_local_owner_name;
 use crate::app::input::cursor::{
     current_cursor_feedback_kind, cursor_id_for_feedback, software_cursor_frame_for,
 };
+use crate::app::persistence::options_profile::HealthBarMode;
 use crate::app::presentation::instances::in_view;
 use crate::app::types::{CursorId, HoverTargetKind, SoftwareCursorSequence};
 use crate::assets::csf_file::{CsfArg, format_csf};
@@ -79,6 +80,29 @@ pub(crate) fn health_hover_target(state: &AppState, local_owner: Option<&str>) -
 /// Returns `(draw_bracket_background, draw_health_pips)`.
 pub(crate) fn status_visibility(selected: bool, hovered: bool) -> (bool, bool) {
     (selected, selected || hovered)
+}
+
+/// VERA `[VERA] HealthBars=`: whether `DrawHealthBar`'s strip draws for this
+/// object. `native` is gamemd's selected-or-hovered admission from
+/// [`status_visibility`], `visible` is the local player's reveal gate for the
+/// selected mode, and `full` is [`crate::sim::combat::Health::is_full`].
+///
+/// Selecting always draws. Mode 1 also draws every visible object; mode 2 drops
+/// the full-health ones. Hovering is not selecting, so in mode 2 a hovered
+/// full-health object stays bare — the native hover arm is folded in only after
+/// the `full` test.
+pub(crate) fn health_strip_draws(
+    mode: HealthBarMode,
+    selected: bool,
+    native: bool,
+    visible: bool,
+    full: bool,
+) -> bool {
+    match mode {
+        HealthBarMode::Vanilla => native,
+        HealthBarMode::Always => selected || native || visible,
+        HealthBarMode::AlwaysExceptFull => selected || ((native || visible) && !full),
+    }
 }
 
 /// Health-bar admission shared by building pips, mobile pips and their extras.
@@ -1274,6 +1298,7 @@ pub(crate) fn techno_extras_for_parent(
     hovered_id: Option<u64>,
     local_owner: Option<&str>,
     viewport: StatusViewport,
+    health_bars: HealthBarMode,
 ) -> TechnoExtras {
     let mut strip = TechnoExtras::default();
     // DrawExtras6F51AA precedes every status family. Display/lifecycle/body
@@ -1455,8 +1480,29 @@ pub(crate) fn techno_extras_for_parent(
                 rank
             });
     }
-    let (draw_background, draw_health) =
+    let (draw_background, native_health) =
         health_strip_visibility(sim, entity, hovered_id, observer_id);
+    let selected = entity.selection.is_selected();
+    // VERA `[VERA] HealthBars=`: modes 1 and 2 widen the native selected/
+    // hovered pair to the objects the local player can see. The reveal gate is
+    // not optional: the strip's PIPS fills use the 600 material, which reads no
+    // A, so the shroud plane that blacks out an unexplored enemy's body leaves
+    // its pips alone. `object_shown_to_local_owner` is the same gate screen
+    // selection uses; `fog_of_war` matches how the bodies' A is resolved.
+    let visible = health_bars != HealthBarMode::Vanilla
+        && (viewport.ignore_visibility
+            || crate::app::presentation::instances::object_shown_to_local_owner(
+                local_owner,
+                observer_id,
+                sim.fog(),
+                sim.house_alliances().as_map(),
+                &entity.position,
+                sim.interner().resolve(entity.owner()),
+                sim.session().game_options().fog_of_war,
+            ));
+    let full_health = object.is_some_and(|object| entity.health.is_full(object.strength));
+    let draw_health =
+        health_strip_draws(health_bars, selected, native_health, visible, full_health);
     if !draw_health {
         return strip;
     }
@@ -2307,6 +2353,78 @@ mod tests {
             compared, 28,
             "ordinary selected/hover, anchor and disguise contrasts"
         );
+    }
+
+    /// VERA `[VERA] HealthBars=`: the two extension modes add the strip to the
+    /// objects the player can see and nothing else. Selecting still owns the
+    /// bracket; a full-health object that is only hovered stays bare in mode 2,
+    /// because hovering is not selecting.
+    #[test]
+    fn the_health_bar_modes_extend_only_the_seen_unselected_strip() {
+        use crate::app::persistence::options_profile::HealthBarMode;
+
+        // Vanilla is gamemd: the selected/hovered pair, nothing else.
+        assert!(health_strip_draws(
+            HealthBarMode::Vanilla,
+            true,
+            true,
+            true,
+            true
+        ));
+        assert!(health_strip_draws(
+            HealthBarMode::Vanilla,
+            false,
+            true,
+            true,
+            false
+        ));
+        assert!(!health_strip_draws(
+            HealthBarMode::Vanilla,
+            false,
+            false,
+            true,
+            false
+        ));
+
+        // Mode 1: every seen object, even a full-health one; an unseen enemy
+        // never gets a strip, which is what keeps shroud hidden.
+        assert!(health_strip_draws(
+            HealthBarMode::Always,
+            false,
+            false,
+            true,
+            true
+        ));
+        assert!(!health_strip_draws(
+            HealthBarMode::Always,
+            false,
+            false,
+            false,
+            false
+        ));
+
+        // Mode 2: full health hides the unselected strip, hover included.
+        assert!(!health_strip_draws(
+            HealthBarMode::AlwaysExceptFull,
+            false,
+            true,
+            true,
+            true
+        ));
+        assert!(health_strip_draws(
+            HealthBarMode::AlwaysExceptFull,
+            false,
+            true,
+            true,
+            false
+        ));
+        assert!(health_strip_draws(
+            HealthBarMode::AlwaysExceptFull,
+            true,
+            true,
+            true,
+            true
+        ));
     }
 
     /// The Unit and Infantry overrides of the disguised hover arm

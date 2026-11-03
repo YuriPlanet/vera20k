@@ -48,6 +48,48 @@ pub(crate) const RETAIL_SHELL_SIZE: ScreenSize = ScreenSize {
     height: 600,
 };
 
+/// The `[VERA] HealthBars=` health-strip policy.
+///
+/// gamemd draws a strip for the selected object and a bracket only when it is
+/// selected, so [`Self::Vanilla`] is the native rule. The other arms are VERA
+/// presentation extensions: they widen the same strip to the objects the local
+/// player can see. Nothing here reaches simulation state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum HealthBarMode {
+    /// gamemd: selected objects draw the strip and bracket, the hovered object
+    /// draws a bare strip, everything else draws nothing.
+    #[default]
+    Vanilla,
+    /// Every visible object draws a bare strip when it is not selected;
+    /// selected objects keep their bracket.
+    Always,
+    /// [`Self::Always`], except that an unselected object at full health draws
+    /// nothing. Hovering is not selecting, so a hovered full-health object
+    /// stays bare too.
+    AlwaysExceptFull,
+}
+
+impl HealthBarMode {
+    /// The `[VERA] HealthBars` value.
+    pub(crate) const fn ini_value(self) -> i32 {
+        match self {
+            Self::Vanilla => 0,
+            Self::Always => 1,
+            Self::AlwaysExceptFull => 2,
+        }
+    }
+
+    /// A value this build does not know reads as the native rule, so a
+    /// hand-edited INI never hides the original strip.
+    pub(crate) const fn from_ini_value(value: i32) -> Self {
+        match value {
+            1 => Self::Always,
+            2 => Self::AlwaysExceptFull,
+            _ => Self::Vanilla,
+        }
+    }
+}
+
 /// The process-lifetime subset of active-YR `OptionsClass` owned by
 /// `VERA.INI` `[Options]`, `[Video]`, and `[Audio]`.
 ///
@@ -205,6 +247,11 @@ pub(crate) struct RetailOptionsProfile {
     /// only, and skirmish only: the clip layer's own `CommanderFeedback=`
     /// switch still decides whether clips exist at all.
     pub(crate) custom_end_game_movie: bool,
+    /// `[VERA] HealthBars=`: which objects draw the health strip besides
+    /// gamemd's selected/hovered pair, as a [`HealthBarMode`] value. Defaults
+    /// to the native rule. Client presentation only: the simulation never
+    /// reads it, and the profile writer round-trips the value.
+    pub(crate) health_bars: HealthBarMode,
     /// `[VERA] TranslateChat=`: the language received online chat is
     /// translated into, or `None`, the default, for off. Only the `/translate`
     /// chat command changes it ([`Self::commit_chat_translation`]).
@@ -312,6 +359,7 @@ impl Default for RetailOptionsProfile {
             custom_end_game_banner: true,
             custom_end_game_score: true,
             custom_end_game_movie: true,
+            health_bars: HealthBarMode::Vanilla,
             translate_chat: None,
             language: crate::i18n::DEFAULT_LANGUAGE.to_owned(),
             skipped_update: String::new(),
@@ -333,7 +381,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 26],
+    pub(crate) vera: [(&'static str, String); 27],
 }
 
 impl RetailOptionsLoad {
@@ -560,6 +608,11 @@ impl RetailOptionsProfile {
                 vera.read_bool("CustomEndGameScore", self.custom_end_game_score);
             self.custom_end_game_movie =
                 vera.read_bool("CustomEndGameMovie", self.custom_end_game_movie);
+            // Absent keeps the current value; a value this build does not know
+            // reads as the native rule instead of hiding the original strip.
+            self.health_bars = HealthBarMode::from_ini_value(
+                vera.read_int("HealthBars", self.health_bars.ini_value()),
+            );
             if let Some(value) = vera.read_name("TranslateChat", 16) {
                 self.translate_chat = crate::ui::chat_translation::ChatLanguage::from_tag(value);
             }
@@ -723,6 +776,7 @@ impl RetailOptionsProfile {
                 ),
                 ("LockCursor", format_bool(self.lock_cursor).to_string()),
                 ("VeraIcon", format_bool(self.vera_icon).to_string()),
+                ("HealthBars", self.health_bars.ini_value().to_string()),
             ],
         }
     }
@@ -1792,6 +1846,37 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                     .retained_profile
                     .commander_feedback,
                 expected
+            );
+        }
+    }
+
+    /// `[VERA] HealthBars=` is the client health-strip policy: zero is the
+    /// native rule and the default, and a value this build does not know reads
+    /// as it, so a hand-edited INI never hides the original strip.
+    #[test]
+    fn health_bar_modes_read_and_round_trip() {
+        let startup = RetailStartupOptions::default();
+        assert_eq!(
+            load_snapshot(&startup, b"").retained_profile.health_bars,
+            HealthBarMode::Vanilla
+        );
+        for (value, expected) in [
+            (0, HealthBarMode::Vanilla),
+            (1, HealthBarMode::Always),
+            (2, HealthBarMode::AlwaysExceptFull),
+            (7, HealthBarMode::Vanilla),
+        ] {
+            let input = format!("[VERA]\nHealthBars={value}\nUnowned=keep\n");
+            let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
+            assert_eq!(profile.health_bars, expected, "HealthBars={value}");
+            let written = String::from_utf8(profile.transform_settings(input.as_bytes())).unwrap();
+            assert!(written.contains("Unowned=keep"), "{written}");
+            assert_eq!(
+                load_snapshot(&startup, written.as_bytes())
+                    .retained_profile
+                    .health_bars,
+                expected,
+                "HealthBars={value} survives the profile writer"
             );
         }
     }

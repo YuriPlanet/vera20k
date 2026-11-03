@@ -4,6 +4,7 @@
 use super::draw_plan_lowering::{
     NativeDisplayOrder, PlannedObjectInstance, lower_ground_object_instances,
 };
+use crate::app::persistence::options_profile::HealthBarMode;
 use crate::app::presentation::ui_overlays::{StatusViewport, techno_extras_for_parent};
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 use crate::map::entities::EntityCategory;
@@ -103,6 +104,7 @@ fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
                 zoom,
                 ignore_visibility: true,
             },
+            HealthBarMode::Vanilla,
         );
         assert!(status.background.is_some());
         let visible_pips = if category == EntityCategory::Infantry {
@@ -334,6 +336,7 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
             zoom: 1.0,
             ignore_visibility: true,
         },
+        HealthBarMode::Vanilla,
     );
     assert_eq!(strip.fills.len(), 17, "the empty shield adds no PIPS fills");
     let background = strip.shield_background.expect("selected shield border");
@@ -471,6 +474,7 @@ fn a_hovered_enemy_mirage_worn_as_terrain_draws_no_health_strip() {
                 zoom: 1.0,
                 ignore_visibility: false,
             },
+            HealthBarMode::Vanilla,
         )
         .fills
         .len()
@@ -640,6 +644,7 @@ fn native_self_heal_draw_fault_order() {
                     zoom: 1.0,
                     ignore_visibility: true,
                 },
+                HealthBarMode::Vanilla,
             )
         }));
         // The original HasSelfHeal query precedes the divide. Drawing does
@@ -746,6 +751,7 @@ fn production_self_heal_status_workload_timing() {
                                 zoom: 1.0,
                                 ignore_visibility: false,
                             },
+                            HealthBarMode::Vanilla,
                         );
                         assert_eq!(
                             strip
@@ -1899,6 +1905,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                         zoom: 1.0,
                         ignore_visibility: false,
                     },
+                    HealthBarMode::Vanilla,
                 );
                 if input["entry_boundary"] == "extras_prefix" {
                     // The original component stops6F534E before rank/health.
