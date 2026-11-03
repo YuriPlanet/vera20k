@@ -923,16 +923,22 @@ pub(super) fn tick_stock_cloak_producer(
             );
         }
         // `0x006FBC0B..0x006FBC32`: both completion paths then make a Unit
-        // whose owner is not human-controlled (`HouseClass::IsControlledByHuman
-        // @ 0x0050B730`) Scatter(null coordinate, forced, not no-kidding), so
-        // a computer's freshly cloaked sub, dolphin or squid drifts off.
-        // DORMANT: the WhatAmI()==Unit test (`0x006FBC0B..0x006FBC15`) is not
-        // asked, and a Unit carrying a CTF flag (`+0x6CC != -1`, `0x006FBADF`)
+        // (WhatAmI()==1, `0x006FBC0B..0x006FBC15`) whose owner is not
+        // human-controlled (`HouseClass::IsControlledByHuman @ 0x0050B730`)
+        // Scatter(null coordinate, forced, not no-kidding), so a computer's
+        // freshly cloaked sub, dolphin or squid drifts off. Infantry and
+        // Aircraft that a crate or a map's `Cloakable=` cloaks stay where
+        // they are (BuildingClass overrides this slot and never gets here).
+        // DORMANT: a Unit carrying a CTF flag (`+0x6CC != -1`, `0x006FBADF`)
         // would call StartUncloaking (vt+0xFC, `0x00703850`) instead of the
-        // Detach_All above. Retail `Cloakable=` types are all Units (DLPH,
-        // SUB, SQD, BSUB), no type grants a CLOAK ability, and only the
-        // desupported CaptureTheFlag option attaches flags (`foot_speed.rs`).
-        let owner = sim.substrate.entities.get(id).map(|entity| entity.owner());
+        // Detach_All above. Only the desupported CaptureTheFlag option
+        // attaches flags (`foot_speed.rs`).
+        let owner = sim
+            .substrate
+            .entities
+            .get(id)
+            .filter(|entity| entity.category() == EntityCategory::Unit)
+            .map(|entity| entity.owner());
         if owner.is_some_and(|owner| !sim.owner_is_human(owner)) {
             sim.scatter(
                 id,
