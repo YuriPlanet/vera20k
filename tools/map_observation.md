@@ -1192,9 +1192,37 @@ geometry; it does not infer cancellation or command admission from the button.
 Right is admitted only on tactical clicks and cameo targets. Right tabs,
 chrome controls, command-bar buttons and drags are rejected. Right dragging
 requires the ordinary camera's per-frame polling; the complete between-step
-gesture driver does not advance that poll. Mouse modifiers and held gestures
-across steps are also outside this profile contract. Null, unknown and wrong-case
-button values are rejected before launch.
+gesture driver does not advance that poll. Held gestures across steps are also
+outside this profile contract. Null, unknown and wrong-case button values are
+rejected before launch.
+
+A tactical `click` may also carry a unique `modifiers` list of `Ctrl`, `Shift`,
+`Alt` and/or `Super`, as a key gesture does. The driver presses them through the
+shared modifier-key owner before the cursor move, so the hover cursor and the
+click see them, and releases them in reverse order after the button release;
+`neutral_input_restored` requires every modifier released. A nonempty list opts
+the profile in to the `local_input` projection and `keyboard_bindings` table,
+like a key gesture, and the receipt echoes the list. Drags, minimap, sidebar and
+command-bar gestures reject it. For example, a Ctrl+Alt click on a unit:
+
+```json
+{"issue_after_step": 30,
+ "gesture": {"kind":"click","position":[316,254],"modifiers":["Ctrl","Alt"]}}
+```
+
+The [guard click profile](map_observation.guard-click.example.json) starts the
+[planning mode profile](map_observation.planning-mode.example.json)'s launch on XMP03T4
+with its six opening units, selects the AMCV (1371) and the three MTNK (1374, 1375,
+1376) through the ordinary Select command, then Ctrl+Alt-clicks MTNK 1375 after step
+10 and Alt-clicks MTNK 1376 after step 30. The first receipt queues `Guard` on 1375 for
+1375 itself, 1374 and 1376, and nothing for the unarmed AMCV, which stays in Guard while
+the tanks enter Area Guard: the guard rung
+(`TechnoClass::What_Action @ 0x00700191..0x007001DD`) has no identity test, and Foot
+`ClickedAction_Object` case 0x1A (`0x004D7543`) orders nothing without IsActive
+(`0x007010D0`). The second queues `MoveToObject` 1376 for all four (Alt's Move rung,
+`0x007001E9`). These are Rust production observations; the numeric IDs come from a
+run of the same launch without gestures, and no timing or pixel equivalence with
+gamemd is claimed.
 
 ## Held cursor during a drag
 
