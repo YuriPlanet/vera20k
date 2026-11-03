@@ -141,7 +141,7 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
             &order,
             |image, section, m| {
                 rendered = Some(m);
-                cache.render_tumble(&assets, image, section, m)
+                cache.render_tumble(&assets, image, section, m, false)
             },
         )
         .expect("an admitted piece in view draws");
@@ -303,7 +303,7 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
         palette,
         &view,
         &order,
-        |image, section, matrix| cache.render_tumble(&assets, image, section, matrix),
+        |image, section, matrix| cache.render_tumble(&assets, image, section, matrix, false),
     )
     .expect("an unowned admitted tyre reaches the physical TIRE pose page");
     assert_eq!(object.parent.layer.0, DisplayLayer::AIR.index());

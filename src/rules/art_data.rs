@@ -194,6 +194,15 @@ pub struct ArtEntry {
     /// not its `Image=`, the current byte as default. Read through
     /// [`ArtRegistry::use_buffer`]; it selects the depth-tested voxel raster.
     pub use_buffer: bool,
+    /// `DisableVoxelCache=` (TechnoType `+0xDBE`) and `DisableShadowCache=`
+    /// (`+0xDBF`): the constructor writes false to both (`0x00711658`,
+    /// `0x0071165E`); ReadINI reads them like `UseBuffer=`, with ReadBool
+    /// under the type's own ID, the current byte as default (`0x00715967`,
+    /// `0x0071598B`). Read through [`ArtRegistry::disable_voxel_cache`] and
+    /// [`ArtRegistry::disable_shadow_cache`]: they key a part or shadow draw
+    /// -1 (`0x00706806`, `0x00706C33`).
+    pub disable_voxel_cache: bool,
+    pub disable_shadow_cache: bool,
     /// `CanBeHidden=` (TechnoType `+0x724`): constructor `0x00711229` writes
     /// true; ReadINI (`0x007121EB..0x00712202`) reads it the same way as
     /// `UseBuffer=`, with ReadBool from the ART INI under the type's own ID.
@@ -1308,6 +1317,8 @@ impl ArtRegistry {
                     extra_light,
                     terrain_palette: section.read_bool("TerrainPalette", false),
                     use_buffer: section.read_bool("UseBuffer", false),
+                    disable_voxel_cache: section.read_bool("DisableVoxelCache", false),
+                    disable_shadow_cache: section.read_bool("DisableShadowCache", false),
                     can_be_hidden: section.read_bool("CanBeHidden", true),
                     queueing_cell,
                     pads,
@@ -1730,6 +1741,21 @@ impl ArtRegistry {
         self.entries
             .get(type_id)
             .is_some_and(|entry| entry.use_buffer)
+    }
+
+    /// A TechnoType's `DisableVoxelCache=`, from the ART section named by its
+    /// exact type ID; false without that section.
+    pub fn disable_voxel_cache(&self, type_id: &str) -> bool {
+        self.entries
+            .get(type_id)
+            .is_some_and(|entry| entry.disable_voxel_cache)
+    }
+
+    /// A TechnoType's `DisableShadowCache=`, read the same way.
+    pub fn disable_shadow_cache(&self, type_id: &str) -> bool {
+        self.entries
+            .get(type_id)
+            .is_some_and(|entry| entry.disable_shadow_cache)
     }
 
     /// A TechnoType's `CanBeHidden=`, from the ART section named by its exact

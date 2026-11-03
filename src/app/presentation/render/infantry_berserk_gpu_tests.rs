@@ -475,15 +475,16 @@ fn compare_original_body_pixels(mode: BodyReplay) {
             assert_eq!(gradient, int(&body["gradient"]) as u32);
             let mut objects = Vec::new();
             if production {
-                let pitches =
-                    RefCell::new(crate::render::unit_atlas::BarrelImagePitches::default());
+                let voxel_images =
+                    RefCell::new(crate::render::voxel_image_cache::VoxelImageCache::default());
                 build_shp_instances_from_inputs(
                     &ShpInputs {
                         runtime: &runtime,
                         atlas: Some(&atlas),
                         overlay_atlas: None,
                         unit_atlas: None,
-                        barrel_image_pitches: &pitches,
+                        voxel_images: &voxel_images,
+                        depth_tested_images: None,
                         interpolation: &RenderInterpolation::new(false),
                         camera: view.camera_pos,
                         render_size: size,

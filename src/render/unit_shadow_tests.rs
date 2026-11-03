@@ -227,7 +227,7 @@ fn jumpjet_native_masks_keep_ground_flight_and_frame_payloads_separate() {
     let mut grounded = key.clone();
     grounded.frame |= GROUNDED_SHADOW_FRAME_FLAG;
     assert!(
-        atlas.prepare_native_shadow_with(&gpu.queue, &grounded, |body| poses
+        atlas.prepare_native_shadow_with(&gpu.queue, &grounded, 0, |body| poses
             .stamp_shadow_parts(&atlas, &parts, body))
     );
     assert_eq!(
@@ -240,7 +240,7 @@ fn jumpjet_native_masks_keep_ground_flight_and_frame_payloads_separate() {
         "ground upload cannot mutate the high-flight stencil"
     );
     assert!(
-        atlas.prepare_native_shadow_with(&gpu.queue, &grounded, |_| panic!(
+        atlas.prepare_native_shadow_with(&gpu.queue, &grounded, 0, |_| panic!(
             "retained mask reread source"
         ))
     );
@@ -347,7 +347,7 @@ fn shadow_first_fill_hits_and_atlas_growth_keep_payloads() {
         super::super::pack_sprites_on_device(&gpu.device, &gpu.queue, &batch, &cache).unwrap();
     atlas.rendered_cache = cache;
     let body = *atlas.get(&body_key).unwrap();
-    assert!(atlas.prepare_native_shadow(&gpu.queue, &shadow_key, [(body, [0., 0.])]));
+    assert!(atlas.prepare_native_shadow(&gpu.queue, &shadow_key, 0, [(body, [0., 0.])]));
     let expected = vec![
         1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1,
     ];
@@ -355,7 +355,7 @@ fn shadow_first_fill_hits_and_atlas_growth_keep_payloads() {
     let bomb = std::iter::from_fn(|| -> Option<(UnitSpriteEntry, [f32; 2])> {
         panic!("cache hit read new body")
     });
-    assert!(atlas.prepare_native_shadow(&gpu.queue, &shadow_key, bomb));
+    assert!(atlas.prepare_native_shadow(&gpu.queue, &shadow_key, 0, bomb));
     // Growth appends to a new page and moves nothing already resident, so the
     // uploaded mask stays where queued draws reference it.
     let resident_shadow = *atlas.get(&shadow_key).unwrap();
@@ -368,7 +368,7 @@ fn shadow_first_fill_hits_and_atlas_growth_keep_payloads() {
         (resident_shadow.page, resident_shadow.uv_origin)
     );
     assert_ne!(atlas.get(&turret_key).unwrap().page, resident_shadow.page);
-    assert!(atlas.prepare_native_shadow(&gpu.queue, &shadow_key, []));
+    assert!(atlas.prepare_native_shadow(&gpu.queue, &shadow_key, 0, []));
     assert_eq!(sample_indices(&gpu, &atlas, &shadow_key), expected);
     assert_eq!(
         sample_indices(&gpu, &atlas, &body_key),
@@ -377,7 +377,7 @@ fn shadow_first_fill_hits_and_atlas_growth_keep_payloads() {
     assert_eq!(sample_indices(&gpu, &atlas, &turret_key), vec![57; 320]);
     let start = std::time::Instant::now();
     for _ in 0..20_000 {
-        assert!(atlas.prepare_native_shadow(&gpu.queue, &shadow_key, []));
+        assert!(atlas.prepare_native_shadow(&gpu.queue, &shadow_key, 0, []));
     }
     eprintln!(
         "20k stable shadow cache-hit CPU lookup: {:?}; no mask reads/uploads",

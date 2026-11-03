@@ -36,7 +36,9 @@ pub(crate) struct ShpInputs<'a> {
     pub atlas: Option<&'a crate::render::sprite_atlas::SpriteAtlas>,
     pub overlay_atlas: Option<&'a crate::render::overlay_atlas::OverlayAtlas>,
     pub unit_atlas: Option<&'a crate::render::unit_atlas::UnitAtlas>,
-    pub barrel_image_pitches: &'a std::cell::RefCell<crate::render::unit_atlas::BarrelImagePitches>,
+    pub voxel_images: &'a std::cell::RefCell<crate::render::voxel_image_cache::VoxelImageCache>,
+    /// Renders a building gun's depth-tested image; None draws the atlas's.
+    pub depth_tested_images: Option<super::units::DepthTestedImages<'a>>,
     pub interpolation: &'a crate::app::presentation::interpolation::RenderInterpolation,
     pub camera: [f32; 2],
     pub render_size: [u32; 2],
@@ -112,7 +114,8 @@ pub(crate) fn build_shp_instances(
             atlas: presentation.sprite_atlas.as_ref(),
             overlay_atlas: presentation.overlay_atlas.as_ref(),
             unit_atlas: presentation.unit_atlas.as_ref(),
-            barrel_image_pitches: &presentation.barrel_image_pitches,
+            voxel_images: &presentation.voxel_images,
+            depth_tested_images: super::units::DepthTestedImages::of(state),
             interpolation: &presentation.interpolation,
             camera,
             render_size: [state.render_width(), state.render_height()],
@@ -885,7 +888,9 @@ pub(crate) fn build_shp_instances_from_inputs(
                     );
                 emit_building_turret_vxl(
                     unit_atlas,
-                    &mut input.barrel_image_pitches.borrow_mut(),
+                    &mut input.voxel_images.borrow_mut(),
+                    input.depth_tested_images.as_ref(),
+                    super::units::VoxelDrawer::of(rules, type_str),
                     type_str,
                     render_pose.body,
                     render_pose.barrel,
@@ -1143,7 +1148,9 @@ fn building_voxel_turret_visible(
 /// instead would pull the turret over units standing in front of the building.
 fn emit_building_turret_vxl(
     unit_atlas: &crate::render::unit_atlas::UnitAtlas,
-    barrel_image_pitches: &mut crate::render::unit_atlas::BarrelImagePitches,
+    voxel_images: &mut crate::render::voxel_image_cache::VoxelImageCache,
+    depth_tested_images: Option<&super::units::DepthTestedImages<'_>>,
+    drawer: super::units::VoxelDrawer,
     type_id: &str,
     turret_facing: u16,
     barrel_elevation: u16,
@@ -1188,14 +1195,24 @@ fn emit_building_turret_vxl(
         frame: if has_turret { 0 } else { frame(barrel_frames) },
         ..turret_key.clone()
     };
-    let pitch = crate::render::vxl_raster::voxel_facing_step_u16(barrel_elevation) as i8 - 8;
-    barrel_key.barrel_pitch = if has_turret && recoil_active {
-        pitch
-    } else {
-        let mut cache_key = if has_turret { &turret_key } else { &barrel_key }.clone();
-        cache_key.frame &= 0xff;
-        barrel_image_pitches.pitch(&cache_key, None, pitch)
+    // The gun images' key: facing and frame low byte (`0x0043E2FA`), -1
+    // while a turret recoils. A stored barrel keeps the pitch it was drawn at.
+    use crate::render::voxel_image_cache::{VoxelCache, VoxelImageKey};
+    let gun_image = |cache| {
+        (!(has_turret && recoil_active)).then(|| {
+            let mut sprite = if has_turret { &turret_key } else { &barrel_key }.clone();
+            sprite.frame &= 0xff;
+            VoxelImageKey::new(cache, sprite)
+        })
     };
+    let turret_image = gun_image(VoxelCache::Turret);
+    let barrel_image = gun_image(VoxelCache::Barrel);
+    let pitch = crate::render::vxl_raster::voxel_facing_step_u16(barrel_elevation) as i8 - 8;
+    barrel_key.barrel_pitch = barrel_image
+        .as_ref()
+        .filter(|_| !drawer.disable_voxel_cache)
+        .and_then(|image| voxel_images.hit(image))
+        .map_or(pitch, |stored| stored.barrel_pitch);
     let offsets = if has_turret {
         crate::render::vxl_raster::building_gun_screen_offsets(
             turret_offset,
@@ -1206,12 +1223,19 @@ fn emit_building_turret_vxl(
     } else {
         [[0.0; 2]; 2]
     };
-    for (key, [ox, oy]) in super::units::native_turret_barrel_order(
+    for (key, image, [ox, oy]) in super::units::native_turret_barrel_order(
         turret_facing,
-        (&turret_key, offsets[0]),
-        (&barrel_key, offsets[1]),
+        (&turret_key, turret_image, offsets[0]),
+        (&barrel_key, barrel_image, offsets[1]),
     ) {
-        let Some(entry) = unit_atlas.get(key) else {
+        let Some((entry, source)) = super::units::cached_part_entry(
+            voxel_images,
+            unit_atlas,
+            depth_tested_images,
+            drawer,
+            image,
+            key,
+        ) else {
             continue;
         };
         // 43DA80 submits the building draw point plus TurretAnimX/Y. A cache
@@ -1227,7 +1251,7 @@ fn emit_building_turret_vxl(
             kind: BuildingPieceKind::PoweredOrActiveOverlay,
             z_bias: 0,
             policy,
-            target: ObjectTexture::UnitAtlasPage(entry.page),
+            target: source.target(),
             instance: SpriteInstance {
                 position: [tx, ty],
                 size: entry.pixel_size,

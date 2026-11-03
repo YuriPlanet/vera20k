@@ -94,6 +94,7 @@ pub mod unit_atlas;
 pub mod unit_pose_cache;
 pub(crate) mod unit_shadow;
 pub mod upscale_pass;
+pub mod voxel_image_cache;
 #[cfg(test)]
 mod voxel_parity_tests;
 pub mod vxl_normals;
