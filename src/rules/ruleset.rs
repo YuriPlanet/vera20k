@@ -9328,16 +9328,22 @@ impl RuleSet {
     /// return None here, never an invented entry0 binding.
     pub(crate) fn scenario_country_name(&self, country: Option<&str>) -> Option<&str> {
         let index = match country {
-            Some(name) => {
-                let index = house_type_index_of_name(name, self.country_lookup_members());
-                if index < 0 {
-                    return None;
-                }
-                CountryIdx(u16::try_from(index).expect("[Countries] exceeds u16 identity space"))
-            }
+            Some(name) => self.country_index_of_name(name)?,
             None => CountryIdx(0),
         };
         self.country_name(index)
+    }
+
+    /// `HouseTypeClass__FindIndexOfName @ 0x005117D0` as a registered Country.
+    /// The source-order scan checks each HouseType's `Name=` alias (`+0x64`)
+    /// before its registry ID (`+0x24`), ignoring case. The shared owner
+    /// retains `<random>`=-2 and unknown=-1; this typed projection returns
+    /// only registered Country identities.
+    pub(crate) fn country_index_of_name(&self, name: &str) -> Option<CountryIdx> {
+        let index = house_type_index_of_name(name, self.country_lookup_members());
+        (index >= 0).then(|| {
+            CountryIdx(u16::try_from(index).expect("[Countries] exceeds u16 identity space"))
+        })
     }
 
     /// Cooperative5C34F0/5C35F0 draw over the complete retained HouseType
@@ -9368,23 +9374,17 @@ impl RuleSet {
     /// Resolve a trigger owner token to the canonical HouseType registration.
     ///
     /// gamemd-derived: `TriggerTypeClass::Read` resolves token 1 through
-    /// `HouseTypeClass__FindIndexOfName @ 0x005117D0`. Before that scan,
+    /// `HouseTypeClass__FindIndexOfName @ 0x005117D0`
+    /// ([`Self::country_index_of_name`]). Before that scan,
     /// ReadINI727292..7272AA compares literal817474 (`<none>`) and selects
     /// Country zero. This is a TriggerType caller rule, not lookup behavior.
-    /// The source-order scan
-    /// checks each HouseType's `Name=` alias (`+0x64`) before its registry ID
-    /// (`+0x24`). The shared owner retains `<random>`=-2 and unknown=-1;
-    /// this typed projection returns only registered Country identities.
     /// Original caller controls: tools/input_oracle/campaign_start.py
     /// --houses, side_controls.trigger_type_reader_rows (+meta).
     pub fn trigger_house_type_index(&self, owner: &str) -> Option<CountryIdx> {
         if owner.eq_ignore_ascii_case("<none>") {
             return self.country_name(CountryIdx(0)).map(|_| CountryIdx(0));
         }
-        let index = house_type_index_of_name(owner, self.country_lookup_members());
-        (index >= 0).then(|| {
-            CountryIdx(u16::try_from(index).expect("[Countries] exceeds u16 identity space"))
-        })
+        self.country_index_of_name(owner)
     }
 
     /// Resolve a country index back to its source spelling.
