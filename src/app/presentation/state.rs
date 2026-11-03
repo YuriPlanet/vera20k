@@ -29,9 +29,9 @@ pub(crate) struct MatchPresentationState {
     /// Native Techno+3CA waterline cache, captured by drawing and retained in
     /// the snapshot presentation supplement rather than simulation authority.
     pub(crate) sinking_waterlines: std::cell::RefCell<crate::render::sinking::SinkingWaterlines>,
-    /// The pitch each unit type's cached barrel image was first drawn at.
-    pub(crate) barrel_image_pitches:
-        std::cell::RefCell<crate::render::unit_atlas::BarrelImagePitches>,
+    /// The original voxel image caches and UseBuffer flag every voxel draw
+    /// replays: which style and barrel pitch each type's stored images hold.
+    pub(crate) voxel_images: std::cell::RefCell<crate::render::voxel_image_cache::VoxelImageCache>,
     pub(crate) tile_atlas: Option<TileAtlas>,
     /// BUILDNGZ.SHA z-shape bound at group 2 of the Z-writing building draw.
     pub(crate) building_zshape: Option<crate::render::building_zshape::BuildingZShape>,

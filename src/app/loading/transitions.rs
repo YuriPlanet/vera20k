@@ -180,7 +180,7 @@ pub(crate) fn install_world_presentation(
     state
         .match_state
         .match_presentation
-        .barrel_image_pitches
+        .voxel_images
         .borrow_mut()
         .clear();
     state

@@ -278,6 +278,12 @@ impl LiveRoundFlow {
         self.phase == RoundPhase::Finished
     }
 
+    /// The online part of a co-op capture's receipt.
+    pub(super) fn cooperative_receipt(&self) -> Value {
+        json!({"account":self.config.as_ref().map(|config| &config.account),
+            "host":self.config.as_ref().map(|config| &config.host),"route":self.route})
+    }
+
     fn record(&mut self, frame: u32, action: &str) {
         log::info!("Network capture round {}: {action}", self.rounds.len() + 1);
         self.route
@@ -915,6 +921,14 @@ impl LiveRoundFlow {
                     self.last_refresh = Instant::now();
                 }
             }
+            RoundPhase::HostSetup if core.cooperative.is_some() => {
+                let run = core.cooperative.as_mut().context("co-op run")?;
+                if run.prepare_host(state, rendered, &mut self.route, frame)? {
+                    core.open_human_rows(state, None)?;
+                    self.record(frame, "Cooperative campaign chosen through Choose Map");
+                    self.phase = RoundPhase::HostReady;
+                }
+            }
             RoundPhase::HostSetup => {
                 let selected = self
                     .loading_host_loss
@@ -1060,6 +1074,9 @@ impl LiveRoundFlow {
                     "Quick Match reached gameplay before its room was checked"
                 );
                 core.startup = Some(startup_receipt(state)?);
+                if let Some(run) = core.cooperative.as_mut() {
+                    run.match_loaded(state);
+                }
                 if let Some(ai) = core.ai.as_mut() {
                     ai.observe(state)?;
                 }
@@ -1103,6 +1120,27 @@ impl LiveRoundFlow {
                 );
                 self.record(frame, "Matchbot pairing joined the host's room");
                 self.quick_match_room = Some(room.name);
+            }
+            RoundPhase::Running if core.cooperative.is_some() => {
+                let host = core.host();
+                let run = core.cooperative.as_mut().context("co-op run")?;
+                if rendered == PresentedShell::NetworkSetup
+                    && run.room_returned(state, host, &mut self.route, frame)?
+                {
+                    // The next stage starts from the room as a first start does.
+                    self.phase = if host {
+                        RoundPhase::HostReady
+                    } else {
+                        RoundPhase::GuestSetup
+                    };
+                    return Ok(());
+                }
+                run.step(state, &mut self.route, frame)?;
+                if run.done() {
+                    core.phase = Phase::Finished;
+                    self.record(frame, "The kept room's next stage ran");
+                    self.phase = RoundPhase::Finished;
+                }
             }
             RoundPhase::Running => {
                 let startup_failure = core

@@ -31,13 +31,13 @@ fn physical_destroyer_pose_uses_loaded_hull_and_omits_unregistered_guns() {
         barrel_pitch: 0,
     };
     let (body, body_bounds) = model
-        .render_pose(&key, Some(&vpl), PoseTilt::Ground(pose))
+        .render_pose(&key, Some(&vpl), PoseTilt::Ground(pose), false)
         .unwrap();
     assert!(body.palette_indices.iter().any(|&index| index != 0));
     assert!(body_bounds.is_some());
     let mut cache = crate::render::unit_pose_cache::VxlPoseFrameCache::default();
     let entry = cache
-        .render(&assets, Some(rules), &key, PoseTilt::Ground(pose))
+        .render(&assets, Some(rules), &key, PoseTilt::Ground(pose), false)
         .unwrap();
     assert_eq!(entry.pixel_size, [body.width as f32, body.height as f32]);
     assert_eq!(
@@ -56,13 +56,13 @@ fn physical_destroyer_pose_uses_loaded_hull_and_omits_unregistered_guns() {
         };
         assert!(
             model
-                .render_pose(&key, Some(&vpl), PoseTilt::Ground(pose))
+                .render_pose(&key, Some(&vpl), PoseTilt::Ground(pose), false)
                 .is_none(),
             "no invented stock DEST gun assets"
         );
         assert!(
             cache
-                .render(&assets, Some(rules), &key, PoseTilt::Ground(pose))
+                .render(&assets, Some(rules), &key, PoseTilt::Ground(pose), false)
                 .is_none()
         );
     }
@@ -71,7 +71,7 @@ fn physical_destroyer_pose_uses_loaded_hull_and_omits_unregistered_guns() {
         ..pose
     };
     let (unposed, _) = model
-        .render_pose(&key, Some(&vpl), PoseTilt::Ground(level))
+        .render_pose(&key, Some(&vpl), PoseTilt::Ground(level), false)
         .unwrap();
     assert_ne!(
         (body.width, body.height, body.palette_indices),
@@ -304,7 +304,7 @@ fn assert_native_ground_matrices_and_parts(
             };
             let (pose, key) = native_ground_part(type_id, row, layer);
             let (sprite, bounds) = model
-                .render_pose(&key, Some(&vpl), PoseTilt::Ground(pose))
+                .render_pose(&key, Some(&vpl), PoseTilt::Ground(pose), false)
                 .unwrap();
             let rect: [i32; 6] =
                 std::array::from_fn(|i| raster["rect"][i].as_i64().unwrap() as i32);

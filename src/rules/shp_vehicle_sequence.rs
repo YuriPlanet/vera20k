@@ -465,6 +465,8 @@ mod tests {
             extra_light: 0,
             terrain_palette: false,
             use_buffer: false,
+            disable_voxel_cache: false,
+            disable_shadow_cache: false,
             can_be_hidden: true,
             queueing_cell: [0, 0],
             pads: Vec::new(),

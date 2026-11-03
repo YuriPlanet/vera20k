@@ -192,7 +192,11 @@ pub(crate) fn build_voxel_anim_instances(
             palette,
             &view,
             order,
-            |image, section, matrix| cache.render_tumble(assets, image, section, matrix),
+            // VoxelAnimClass draws uncached in the style 0xB43180 holds.
+            |image, section, matrix| {
+                let depth_tested = presentation.voxel_images.borrow_mut().render_part(false);
+                cache.render_tumble(assets, image, section, matrix, depth_tested)
+            },
         ) {
             objects.push(object);
         }

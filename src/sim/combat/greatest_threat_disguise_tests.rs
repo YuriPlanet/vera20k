@@ -178,6 +178,9 @@ fn a_human_attacker_never_rolls_against_a_blinking_mirage() {
     };
     let rules = &retail.rules;
     let (mut sim, mirage, rhino) = scene(rules, "Russians");
+    // Seen, so the campaign discovery gate (`0x006F81BE`) does not refuse the
+    // Mirage before the disguise test does.
+    crate::sim::arena_fixture::discover(&mut sim, mirage);
     blink(&mut sim, mirage, 15);
     sim.scenario_rng = SimRng::answering(0, 99, 0);
     let before = sim.scenario_rng.logical_state();

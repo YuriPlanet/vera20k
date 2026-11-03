@@ -90,8 +90,10 @@ impl Health {
     /// unconditionally; there is no ConditionGreen key. Object radio
     /// (`0x005F5339`), Techno repair (`0x006F4DE5`), the healer fire errors and
     /// the hospital and depot tests ask it. The quotient of two dwords cannot
-    /// round across 1.0, so the integer form is exact.
-    pub(crate) fn is_full(self, strength: i32) -> bool {
+    /// round across 1.0, so the integer form is exact. Public because the
+    /// client's `[VERA] HealthBars=` modes ask it; the simulation keeps calling
+    /// it as the same owner.
+    pub fn is_full(self, strength: i32) -> bool {
         match strength.cmp(&0) {
             std::cmp::Ordering::Greater => self.current >= strength,
             std::cmp::Ordering::Less => self.current <= strength,

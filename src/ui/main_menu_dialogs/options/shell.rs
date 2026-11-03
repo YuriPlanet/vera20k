@@ -12,16 +12,16 @@ use super::{
     CUSTOM_END_GAME_MOVIE_LABEL, CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL,
     DEVELOPER_OPTIONS_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayChoice,
     DisplayTarget, FPS_COUNTER_HELP, FPS_COUNTER_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL,
-    HAS_CHECK_FOR_UPDATES, HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL, LOCK_CURSOR_HELP,
-    LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue,
-    LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP,
-    MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
-    OptionsPage, PhysicalControlFrame, RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL,
-    RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL,
-    SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_STARTUP_LOGO_HELP, SKIP_STARTUP_LOGO_LABEL, SidebarSize,
-    VERA_ICON_HELP, VERA_ICON_LABEL, VERA_OPTIONS_HELP, VERA_OPTIONS_LABEL, WOL_TEST_SERVICE_HELP,
-    WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL,
-    Zoom,
+    HAS_CHECK_FOR_UPDATES, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
+    HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode, LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton,
+    LauncherCheckboxId, LauncherComboId, LauncherCue, LauncherOptionsEvent, LauncherParentResult,
+    LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP,
+    ORIGINAL_SHAPE_LABEL, OptionsDialogState, OptionsPage, PhysicalControlFrame,
+    RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP,
+    RIGHT_CLICK_ORDERS_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
+    SKIP_STARTUP_LOGO_HELP, SKIP_STARTUP_LOGO_LABEL, SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL,
+    VERA_OPTIONS_HELP, VERA_OPTIONS_LABEL, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL,
+    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale, center_offset, child_window, dlu_rect};
@@ -206,6 +206,11 @@ impl LauncherOptionsLayout {
         // caption 50..66, face 66..90, caption 94..110, face 110..134.
         let sidebar_combo = px(RectPx::new(351, 66, 180, COMBO_FACE_H));
         let display_combo = px(RectPx::new(351, 110, 180, COMBO_FACE_H));
+        // The UI Options band's third right-column row, under Right-Click
+        // Orders and VERA Icon: its caption at 141 DLU and the face at 246 px
+        // end 3 px above the Developer Options heading, like the other lists'
+        // caption gap.
+        let health_bars_combo = px(RectPx::new(351, 246, 180, COMBO_FACE_H));
         // VERA's Accessibility band takes the main page's Audio Options place:
         // its heading, then one caption row over one slider. The trackbar's
         // border art is only authored for the windows in
@@ -256,6 +261,7 @@ impl LauncherOptionsLayout {
                 vec![
                     (LauncherComboId::Sidebar, sidebar_combo),
                     (LauncherComboId::Display, display_combo),
+                    (LauncherComboId::HealthBars, health_bars_combo),
                 ],
                 vec![(LauncherTrackbarId::HouseColorStrength, house_color_slider)],
                 vec![
@@ -479,6 +485,7 @@ impl OptionsDialogState {
                 (SIDEBAR_LABEL, 234, 31, 120, 10, Left),
                 (DISPLAY_LABEL, 234, 58, 120, 10, Left),
                 (&labels.ui_options, 20, 93, 298, 10, Left),
+                (HEALTH_BARS_LABEL, 234, 141, 120, 10, Left),
                 (DEVELOPER_OPTIONS_LABEL, 20, 168, 298, 10, Left),
                 // The Accessibility band, in the main page's Audio Options
                 // place, with its one caption over its one slider.
@@ -601,6 +608,11 @@ impl OptionsDialogState {
         self.values.sidebar.in_effect(width, height)
     }
 
+    /// The Health Bars face's text: the retained choice.
+    pub(crate) fn shell_selected_health_bars(&self) -> HealthBarMode {
+        self.values.health_bars
+    }
+
     /// The Display list's rows, top to bottom: Auto, then every screen the
     /// window layer reported. Auto is first so a profile whose saved screen is
     /// gone still shows a picked row.
@@ -666,6 +678,13 @@ impl OptionsDialogState {
                 let rows = self.display_choices();
                 let selected = rows.iter().position(|target| target == &self.display);
                 (rows.len(), selected)
+            }
+            LauncherComboId::HealthBars => {
+                let choices = HealthBarMode::choices();
+                let selected = choices
+                    .iter()
+                    .position(|mode| *mode == self.values.health_bars);
+                (choices.len(), selected)
             }
         };
         let metrics = DropdownMetrics::scaled(layout.scale);
@@ -805,6 +824,7 @@ impl OptionsDialogState {
                     LauncherComboId::Zoom => ZOOM_HELP,
                     LauncherComboId::Sidebar => SIDEBAR_HELP,
                     LauncherComboId::Display => DISPLAY_HELP,
+                    LauncherComboId::HealthBars => HEALTH_BARS_HELP,
                 })
             })
     }
@@ -837,6 +857,12 @@ impl OptionsDialogState {
                 LauncherComboId::Display => {
                     match row.and_then(|row| self.display_choices().get(row).cloned()) {
                         Some(target) => self.select_display(target),
+                        None => self.open_combo = None,
+                    }
+                }
+                LauncherComboId::HealthBars => {
+                    match row.and_then(|row| HealthBarMode::choices().get(row).copied()) {
+                        Some(mode) => self.select_health_bars(mode),
                         None => self.open_combo = None,
                     }
                 }
@@ -1127,8 +1153,8 @@ mod tests {
             layout.trackbars,
             [(LauncherTrackbarId::HouseColorStrength, slider_rect())]
         );
-        // The Sidebar and Display lists sit in the Display Options band's right
-        // column, Sidebar above Display, each with its own caption.
+        // The Sidebar, Display and Health Bars lists sit in the Display
+        // Options and UI Options bands' right columns, each with its caption.
         assert_eq!(
             layout.combos,
             [
@@ -1139,6 +1165,10 @@ mod tests {
                 (
                     LauncherComboId::Display,
                     RectPx::new(351, 110, 180, COMBO_FACE_H)
+                ),
+                (
+                    LauncherComboId::HealthBars,
+                    RectPx::new(351, 246, 180, COMBO_FACE_H)
                 ),
             ]
         );
@@ -1347,6 +1377,10 @@ mod tests {
             csf("STT:KeyboardButtonBack")
         );
         assert_eq!(at(layout.combos[0].1), text(SIDEBAR_HELP));
+        assert_eq!(
+            at(layout.combo_rect(LauncherComboId::HealthBars).unwrap()),
+            text(HEALTH_BARS_HELP)
+        );
         use LauncherCheckboxId::*;
         for (id, help) in [
             (FullScreen, FULL_SCREEN_HELP),
@@ -1664,6 +1698,42 @@ mod tests {
             (popup.rows, popup.selected),
             (3, 0),
             "an absent screen still falls back to Auto's row"
+        );
+    }
+
+    /// The Health Bars list: Original, All Units, and All Units, Not Full. Its
+    /// pick publishes at once like the Sidebar list, and the caption sits above
+    /// the face in its band.
+    #[test]
+    fn health_bars_list_publishes_its_pick_at_once() {
+        let mut state = vera_state();
+        let layout = vera_layout();
+        let face = layout.combo_rect(LauncherComboId::HealthBars).unwrap();
+        let caption = heading(&state, &layout, HEALTH_BARS_LABEL);
+        assert!(caption.y + caption.h <= face.y, "{caption:?} {face:?}");
+        assert!(face.y + face.h <= layout.status_help.y);
+        assert_eq!(state.shell_selected_health_bars(), HealthBarMode::Vanilla);
+        state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
+        assert_eq!(state.open_combo, Some(LauncherComboId::HealthBars));
+        let popup = state.shell_popup(&layout).unwrap();
+        assert_eq!(
+            (popup.combo, popup.rows, popup.selected),
+            (LauncherComboId::HealthBars, 3, 0)
+        );
+        state.drain_output();
+        let last = popup.row_rect(2);
+        state.shell_mouse_down(last.x + 10, last.y + 5, &layout);
+        assert_eq!(state.open_combo, None);
+        assert_eq!(
+            state.shell_selected_health_bars(),
+            HealthBarMode::AlwaysExceptFull
+        );
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
+                LauncherOptionsEvent::HealthBarModeSelected(HealthBarMode::AlwaysExceptFull)
+            ]
         );
     }
 

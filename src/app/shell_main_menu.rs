@@ -52,6 +52,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The next battle frame lays out and draws the sidebar at this size.
         self.persistence.options_profile.sidebar = size;
     }
+    fn store_health_bars(&mut self, mode: crate::ui::main_menu_dialogs::options::HealthBarMode) {
+        // Presentation reads it every frame, so the next frame draws the new
+        // strip policy; Options' accept writes it out.
+        self.persistence.options_profile.health_bars = mode;
+    }
     fn set_display(&mut self, display: crate::ui::main_menu_dialogs::options::DisplayTarget) {
         // Applied at once, like Full Screen: the window moves to the picked
         // screen (or back to the system's choice) before the page is accepted.

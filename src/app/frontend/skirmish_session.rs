@@ -1157,6 +1157,14 @@ impl MultiplayerShellRuntime {
         }
     }
 
+    /// The active record's `C0` text (`0x0049D680`): what `+0x60`
+    /// publishes to every guest. None without a valid record.
+    pub(crate) fn cooperative_campaign_text(&self) -> Option<String> {
+        self.cooperative_progress
+            .active()?
+            .campaign_text(&self.cooperative_registry)
+    }
+
     /// `0x0049E4F0`: the CoopCampMD `[Campaigns]` count, 0 without the file.
     pub(crate) fn cooperative_campaign_count(&self) -> u32 {
         self.cooperative_registry.campaigns.len() as u32
@@ -1167,6 +1175,11 @@ impl MultiplayerShellRuntime {
         self.cooperative_registry
             .campaign(campaign)
             .map(|campaign| campaign.campaign_name.as_str())
+    }
+
+    /// The campaign whose maps include `scenario`, a WOL room's listed map.
+    pub(crate) fn cooperative_campaign_for_scenario(&self, scenario: &str) -> Option<usize> {
+        self.cooperative_registry.campaign_for_scenario(scenario)
     }
 
     /// Cooperative `+0x1C` for a native country value (-2 Random).

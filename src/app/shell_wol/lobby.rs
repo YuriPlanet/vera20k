@@ -906,6 +906,7 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         visit.relogin = Some(postmatch);
         // The lost connection took the kept game room with it.
         visit.back_to_room = false;
+        visit.cooperative_resume = None;
         visit.lobby = None;
         visit.page = WolPage::Backdrop { wait: None };
         state.frontend.wol_lobby_art = None;
@@ -929,6 +930,9 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         .reset_to(super::WOL_LOBBY_DIALOG, false);
     let now = Instant::now();
     let returning = postmatch && visit.back_to_room;
+    if !returning {
+        visit.cooperative_resume = None;
+    }
     let resume = !postmatch && visit.lobby.is_some();
     if resume {
         let lobby = visit.lobby.as_deref_mut().expect("checked");
@@ -1028,6 +1032,7 @@ fn awaiting_room(state: &AppState) -> bool {
 fn room_not_returned(state: &mut AppState, closed: bool) {
     if let Some(visit) = state.frontend.wol.as_mut() {
         visit.back_to_room = false;
+        visit.cooperative_resume = None;
     }
     let Some(lobby) = lobby_mut(state) else {
         return;
@@ -1047,15 +1052,18 @@ fn room_not_returned(state: &mut AppState, closed: bool) {
 
 /// VERA: the lobby gave back the room this player stayed in, owner first.
 /// Its owner opens the host's setup again from the settings it started
-/// with; the others enter it as after a join.
+/// with, or on the campaign's next stage after BC6's Continue; the others
+/// enter it as after a join.
 fn room_reopened(state: &mut AppState, joined: WolJoined) {
     if !awaiting_room(state) {
         // The player gave up waiting; the chat-lobby join leaves the room.
         log::debug!("WOL room reopened after the wait ended");
         return;
     }
+    let mut resume = None;
     if let Some(visit) = state.frontend.wol.as_mut() {
         visit.back_to_room = false;
+        resume = visit.cooperative_resume.take();
     }
     let me = nickname(state);
     let host = joined
@@ -1078,6 +1086,13 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
             .multiplayer_shell_runtime
             .lan_create_observer();
         commit_create(state, observe);
+        // Before anyone is seated again: the Cooperative mode admits only
+        // its two players.
+        if let Some(resume) = resume.filter(|_| !observe)
+            && let Err(error) = crate::app::shell_network_setup::resume_cooperative(state, resume)
+        {
+            log::warn!("WOL reopened room keeps its mode: {error:#}");
+        }
         // The players who came back take rows as joiners would, in the
         // lobby's order, so the host's options name them all.
         for name in listed
@@ -1363,11 +1378,34 @@ pub(crate) fn open_art(state: &mut AppState) -> bool {
 
 fn refill_games(state: &mut AppState) {
     let sort = state.frontend.wol_lobby_globals.game_sort;
-    let Some(lobby) = lobby_mut(state) else {
+    let Some(lobby) = lobby(state) else {
         return;
     };
-    let rows = game_rows(&lobby.games, sort, lobby.ui.observer);
-    lobby.ui.replace_games(rows);
+    let mut rows = game_rows(&lobby.games, sort, lobby.ui.observer);
+    // VERA: the modern list tags a room whose exInfo names a co-op
+    // campaign's map with the Cooperative mode's name (MPModesMD.ini).
+    let tag = state
+        .frontend
+        .skirmish_modes
+        .iter()
+        .find(|mode| mode.class == crate::skirmish_modes::MpModeClass::Cooperative)
+        .map(|mode| csf(state, &mode.ui_name_key));
+    for row in &mut rows {
+        if cooperative_campaign(state, &lobby.games[row.record]).is_some() {
+            row.tag = tag.clone();
+        }
+    }
+    if let Some(lobby) = lobby_mut(state) {
+        lobby.ui.replace_games(rows);
+    }
+}
+
+/// The co-op campaign whose map a game's exInfo names.
+fn cooperative_campaign(state: &AppState, channel: &WolChannel) -> Option<usize> {
+    state
+        .frontend
+        .multiplayer_shell_runtime
+        .cooperative_campaign_for_scenario(&channel.ex_info().scenario)
 }
 
 fn refill_lobbies(state: &mut AppState) {
@@ -4071,7 +4109,7 @@ pub(crate) fn status_help(state: &AppState) -> String {
     match ui.buttons.hovered {
         Some(GAMES) => match ui.game_list.hot_row.and_then(|row| ui.game_rows.get(row)) {
             None => csf(state, "STT:LobbyListGames"),
-            Some(row) => game_help(state, row),
+            Some(row) => game_help(state, row, ui.is_modern()),
         },
         Some(PLAYERS) => match ui
             .player_list
@@ -4160,8 +4198,8 @@ fn scenario_description(state: &AppState, scenario: &str) -> String {
 
 /// `0x00780E30`: the host (the name up to `'`, at most 10 characters), the
 /// ping, then `", "` and the map when exInfo names a scenario `0x00780D90`
-/// knows.
-fn game_help(state: &AppState, row: &WolGameRow) -> String {
+/// knows. VERA: the modern list's help then names a co-op room's campaign.
+fn game_help(state: &AppState, row: &WolGameRow, modern: bool) -> String {
     let host: String = row
         .name
         .split('\'')
@@ -4179,8 +4217,8 @@ fn game_help(state: &AppState, row: &WolGameRow) -> String {
         )
     };
     let mut help = format!("{}, {ping}", user_help(state, &host, None));
-    let scenario = lobby(state)
-        .and_then(|lobby| lobby.games.get(row.record))
+    let channel = lobby(state).and_then(|lobby| lobby.games.get(row.record));
+    let scenario = channel
         .map(|channel| channel.ex_info().scenario)
         .unwrap_or_default();
     if !scenario.is_empty() {
@@ -4189,6 +4227,19 @@ fn game_help(state: &AppState, row: &WolGameRow) -> String {
             help.push_str(", ");
             help.push_str(&name);
         }
+    }
+    if let Some(key) = channel
+        .filter(|_| modern)
+        .and_then(|channel| cooperative_campaign(state, channel))
+        .and_then(|campaign| {
+            state
+                .frontend
+                .multiplayer_shell_runtime
+                .cooperative_campaign_name(campaign)
+        })
+    {
+        help.push_str(", ");
+        help.push_str(&csf(state, key));
     }
     help
 }

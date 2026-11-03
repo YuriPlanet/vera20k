@@ -594,6 +594,8 @@ fn a_parked_rocketeer_scans_and_fires_on_move() {
     let row = serde_json::json!({"doing": DO_HOVER, "fraction": 0.0, "armed": true,
         "owner": {"phase": 2, "moving": false}});
     let (mut sim, rules, shooter) = rocketeer_crash_fixture(&row);
+    // The player has seen the enemy: the campaign scan gate needs +0x41B.
+    crate::sim::arena_fixture::discover(&mut sim, shooter);
     let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
     let americans = sim.interner.intern("Americans");
     let order = CommandEnvelope::new(

@@ -83,6 +83,10 @@ pub enum LanTarget {
     /// Runs through the real300-frame prefix and remains in the live match
     /// until the external test driver kills it or blackholes its UDP route.
     OnlineFailureGuest,
+    /// Online Cooperative: the first stage is won, BC6's Continue returns
+    /// both players to the kept room on the next stage, and the host starts it.
+    OnlineCoopHost,
+    OnlineCoopGuest,
     LiveHost,
     LiveGuest,
     LiveTimeoutHost,
@@ -229,6 +233,8 @@ pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
     ("online-live-timeout-host", LanTarget::OnlineTimeoutHost),
     ("online-live-quit-host", LanTarget::OnlineQuitHost),
     ("online-live-failure-guest", LanTarget::OnlineFailureGuest),
+    ("online-live-coop-host", LanTarget::OnlineCoopHost),
+    ("online-live-coop-guest", LanTarget::OnlineCoopGuest),
     ("lan-live-host", LanTarget::LiveHost),
     ("lan-live-guest", LanTarget::LiveGuest),
     ("lan-live-timeout-host", LanTarget::LiveTimeoutHost),
@@ -338,6 +344,8 @@ impl LanTarget {
                 | Self::OnlineTimeoutHost
                 | Self::OnlineQuitHost
                 | Self::OnlineFailureGuest
+                | Self::OnlineCoopHost
+                | Self::OnlineCoopGuest
         )
     }
     pub(crate) fn online_failure(self) -> bool {
@@ -347,7 +355,10 @@ impl LanTarget {
         )
     }
     pub(crate) fn online_guest(self) -> bool {
-        matches!(self, Self::OnlineGuest | Self::OnlineFailureGuest)
+        matches!(
+            self,
+            Self::OnlineGuest | Self::OnlineFailureGuest | Self::OnlineCoopGuest
+        )
     }
     pub(crate) fn desync_failure(self) -> bool {
         matches!(self, Self::LiveDesyncHost | Self::LiveDesyncGuest)
@@ -360,6 +371,8 @@ impl LanTarget {
                 | Self::OnlineTimeoutHost
                 | Self::OnlineQuitHost
                 | Self::OnlineFailureGuest
+                | Self::OnlineCoopHost
+                | Self::OnlineCoopGuest
                 | Self::LiveHost
                 | Self::LiveGuest
                 | Self::LiveTimeoutHost
@@ -379,7 +392,9 @@ impl LanTarget {
     pub(crate) fn live_cooperative(self) -> bool {
         matches!(
             self,
-            Self::LiveCoopHost
+            Self::OnlineCoopHost
+                | Self::OnlineCoopGuest
+                | Self::LiveCoopHost
                 | Self::LiveCoopSavedHost
                 | Self::LiveCoopGuest
                 | Self::LiveCoopFinalHost

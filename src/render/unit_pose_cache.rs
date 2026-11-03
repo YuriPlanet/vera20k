@@ -13,6 +13,11 @@
 //! ([`VxlPoseFrameCache::begin_frame`]); overflow grows retained GPU pages.
 //! Each page’s used rows are uploaded after the voxel instances are built
 //! ([`VxlPoseFrameCache::upload`]).
+//!
+//! It also keeps, on retained pages, the depth-tested image of each stable
+//! key drawn while 0xB43180 is set ([`VxlPoseFrameCache::render_depth_tested`],
+//! [`crate::render::voxel_image_cache`]). A key's image depends on nothing
+//! else, so one render serves the match.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -30,7 +35,7 @@ const PAGE_SIZE: u32 = 1024;
 pub struct VxlPoseFrameCache {
     pages: Vec<PosePage>,
     /// Only frame-local derived sprites; immutable models remain cached below.
-    unit_poses: HashMap<UnitSpriteKey, HashMap<PoseTiltKey, UnitSpriteEntry>>,
+    unit_poses: HashMap<UnitSpriteKey, HashMap<(PoseTiltKey, bool), UnitSpriteEntry>>,
     /// `VOXELS.VPL`, parsed on the first pose.
     vpl: Option<Option<VplFile>>,
     /// Each posed type's voxel model, parsed on its first pose.
@@ -38,12 +43,17 @@ pub struct VxlPoseFrameCache {
     /// Image-file models shared by voxel debris and bullets. These keys are
     /// retained image-load attempts, unlike the rules type keys in `models`.
     image_models: BTreeMap<String, ImageModel>,
+    /// Depth-tested stable images on retained pages, with their pool bytes.
+    depth_tested: HashMap<UnitSpriteKey, Option<(UnitSpriteEntry, u32)>>,
 }
 
 struct PosePage {
     pixels: Vec<u8>,
     shelf: ShelfCursor,
+    /// Frame-local: used this frame. Retained: placed since the last upload.
     dirty: bool,
+    /// Holds depth-tested stable images for the whole match.
+    retained: bool,
     texture: Option<BatchTexture>,
 }
 
@@ -106,6 +116,7 @@ struct MatrixPoseKey {
     frame: u32,
     use_hva: bool,
     lighting: VxlLighting,
+    use_buffer: bool,
 }
 
 impl VxlPoseFrameCache {
@@ -175,6 +186,7 @@ impl VxlPoseFrameCache {
                 })
                 .collect(),
         };
+        let pose_key = (pose_key, false);
         if let Some(entry) = self
             .unit_poses
             .get(key)
@@ -199,28 +211,31 @@ impl VxlPoseFrameCache {
         Some(entry)
     }
 
-    /// Invalidate all frame-local entries while retaining parsed models and
-    /// page allocations. No live instance survives this presentation boundary.
+    /// Invalidate all frame-local entries while retaining parsed models,
+    /// depth-tested images and page allocations. No live instance survives
+    /// this presentation boundary.
     pub fn begin_frame(&mut self) {
         self.unit_poses.clear();
         for image in self.image_models.values_mut() {
             image.poses.clear();
         }
-        for page in &mut self.pages {
+        for page in self.pages.iter_mut().filter(|page| !page.retained) {
             page.begin_frame();
         }
     }
 
-    /// Rasterize a retained unit pose once per frame. Missing models and
-    /// oversized sprites are not drawable; page capacity never drops a part.
+    /// Rasterize a retained unit pose once per frame, depth-tested when
+    /// `depth_tested` (0xB43180 at the draw). Missing models and oversized
+    /// sprites are not drawable; page capacity never drops a part.
     pub fn render(
         &mut self,
         asset_manager: &AssetManager,
         rules: Option<&RuleSet>,
         key: &UnitSpriteKey,
         tilt: PoseTilt,
+        depth_tested: bool,
     ) -> Option<UnitSpriteEntry> {
-        let pose_key = PoseTiltKey::from(tilt);
+        let pose_key = (PoseTiltKey::from(tilt), depth_tested);
         if let Some(entry) = self
             .unit_poses
             .get(key)
@@ -241,13 +256,52 @@ impl VxlPoseFrameCache {
             .entry(key.type_id.clone())
             .or_insert_with(|| UnitModel::load(asset_manager, &key.type_id, rules))
             .as_ref()?;
-        let (sprite, native_draw_bounds) = model.render_pose(key, vpl, tilt)?;
+        let (sprite, native_draw_bounds) = model.render_pose(key, vpl, tilt, depth_tested)?;
         let entry = self.place(&sprite, native_draw_bounds)?;
         self.unit_poses
             .entry(key.clone())
             .or_default()
             .insert(pose_key, entry);
         Some(entry)
+    }
+
+    /// The depth-tested image of a stable atlas key and its pool bytes,
+    /// rendered on its first request and kept on a retained page. None when
+    /// the model or key does not draw.
+    pub fn render_depth_tested(
+        &mut self,
+        asset_manager: &AssetManager,
+        rules: Option<&RuleSet>,
+        key: &UnitSpriteKey,
+    ) -> Option<(UnitSpriteEntry, u32)> {
+        if let Some(image) = self.depth_tested.get(key) {
+            return *image;
+        }
+        let vpl = self
+            .vpl
+            .get_or_insert_with(|| {
+                asset_manager
+                    .get_ref("VOXELS.VPL")
+                    .and_then(|data| VplFile::from_bytes(data).ok())
+            })
+            .as_ref();
+        let image = self
+            .models
+            .entry(key.type_id.clone())
+            .or_insert_with(|| UnitModel::load(asset_manager, &key.type_id, rules))
+            .as_ref()
+            .and_then(|model| model.render_depth_tested(key, vpl))
+            .and_then(|(sprite, bounds)| {
+                let bytes = crate::render::voxel_image_cache::sprite_pool_bytes(
+                    &sprite.palette_indices,
+                    [sprite.width, sprite.height],
+                    [sprite.offset_x, sprite.offset_y],
+                    bounds,
+                );
+                Some((self.place_on(&sprite, bounds, true)?, bytes))
+            });
+        self.depth_tested.insert(key.clone(), image);
+        image
     }
 
     /// Rasterize one `VoxelAnimClass` piece's body and ground shadow at its
@@ -261,6 +315,7 @@ impl VxlPoseFrameCache {
         image: &str,
         section: i32,
         matrix: glam::Mat4,
+        use_buffer: bool,
     ) -> Option<(UnitSpriteEntry, Option<UnitSpriteEntry>)> {
         let vpl = self
             .vpl
@@ -279,7 +334,7 @@ impl VxlPoseFrameCache {
             })
             .model
             .as_ref()?;
-        let (body, shadow) = model.render_tumble(section, matrix, vpl)?;
+        let (body, shadow) = model.render_tumble(section, matrix, vpl, use_buffer)?;
         let shadow = shadow.and_then(|sprite| self.place(&sprite, None));
         Some((self.place(&body, None)?, shadow))
     }
@@ -296,12 +351,14 @@ impl VxlPoseFrameCache {
         frame: u32,
         use_hva: bool,
         lighting: VxlLighting,
+        use_buffer: bool,
     ) -> Option<UnitSpriteEntry> {
         let key = MatrixPoseKey {
             matrix: matrix.to_cols_array().map(f32::to_bits),
             frame,
             use_hva,
             lighting,
+            use_buffer,
         };
         if let Some(entry) = self
             .image_models
@@ -328,35 +385,53 @@ impl VxlPoseFrameCache {
         let (sprite, bounds) = model
             .model
             .as_ref()?
-            .render_matrix(matrix, frame, use_hva, lighting, vpl)?;
+            .render_matrix(matrix, frame, use_hva, lighting, vpl, use_buffer)?;
         let entry = self.place(&sprite, bounds)?;
         self.image_models.get_mut(image)?.poses.insert(key, entry);
         Some(entry)
     }
 
-    /// Put one rasterized sprite on the page.
+    /// Put one rasterized sprite on this frame's pages.
     fn place(
         &mut self,
         sprite: &VxlSprite,
         native_draw_bounds: Option<[i32; 4]>,
     ) -> Option<UnitSpriteEntry> {
+        self.place_on(sprite, native_draw_bounds, false)
+    }
+
+    /// Put one rasterized sprite on a frame-local or retained page.
+    fn place_on(
+        &mut self,
+        sprite: &VxlSprite,
+        native_draw_bounds: Option<[i32; 4]>,
+        retained: bool,
+    ) -> Option<UnitSpriteEntry> {
         if sprite.width > PAGE_SIZE || sprite.height > PAGE_SIZE {
             return None;
         }
-        // Retain existing page identity: only the last used page can grow.
-        // Earlier entries keep their UVs and page through all later requests.
-        let mut page_index = self.pages.iter().rposition(|page| page.dirty).unwrap_or(0);
-        if self.pages.is_empty() {
-            self.pages.push(PosePage::new());
-        }
-        let (px, py) = loop {
-            if let Some(position) = self.pages[page_index].try_place(sprite) {
-                break position;
+        // Retain existing page identity: only the last used page of its kind
+        // can grow. Earlier entries keep their UVs and page through all later
+        // requests; every retained page holds images, the last one grows.
+        let kind: Vec<usize> = (0..self.pages.len())
+            .filter(|&index| self.pages[index].retained == retained)
+            .collect();
+        let mut slot = kind
+            .iter()
+            .rposition(|&index| retained || self.pages[index].dirty)
+            .unwrap_or(0);
+        let (page_index, (px, py)) = loop {
+            let index = match kind.get(slot) {
+                Some(&index) => index,
+                None => {
+                    self.pages.push(PosePage::new(retained));
+                    self.pages.len() - 1
+                }
+            };
+            if let Some(position) = self.pages[index].try_place(sprite) {
+                break (index, position);
             }
-            page_index += 1;
-            if page_index == self.pages.len() {
-                self.pages.push(PosePage::new());
-            }
+            slot += 1;
         };
         let page = &mut self.pages[page_index];
         page.blit(sprite, px, py);
@@ -375,10 +450,12 @@ impl VxlPoseFrameCache {
         })
     }
 
-    /// Upload every used page. Bindings select the page carried by each entry;
-    /// page changes never reorder the retained native Display sequence.
+    /// Upload every used page, and every retained page placed on since its
+    /// last upload. Bindings select the page carried by each entry; page
+    /// changes never reorder the retained native Display sequence.
     pub fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, batch: &BatchRenderer) {
         for page in self.pages.iter_mut().filter(|page| page.dirty) {
+            page.dirty = !page.retained;
             let rows = page.used_rows();
             let texture = page.texture.get_or_insert_with(|| {
                 batch.create_blank_unit_atlas_texture(device, PAGE_SIZE, PAGE_SIZE)
@@ -405,7 +482,7 @@ impl VxlPoseFrameCache {
                 .into_iter()
                 .map(|texture| PosePage {
                     texture: Some(texture),
-                    ..PosePage::new()
+                    ..PosePage::new(false)
                 })
                 .collect(),
             ..Self::default()
@@ -431,11 +508,12 @@ impl VxlPoseFrameCache {
 }
 
 impl PosePage {
-    fn new() -> Self {
+    fn new(retained: bool) -> Self {
         Self {
             pixels: vec![0; (PAGE_SIZE * PAGE_SIZE) as usize],
             shelf: ShelfCursor::new(PAGE_SIZE, PAGE_SIZE),
             dirty: false,
+            retained,
             texture: None,
         }
     }
@@ -522,13 +600,13 @@ mod tests {
         ] {
             let key = ground_key(layer);
             let first = cache
-                .render(&assets, Some(&battle.rules), &key, ground_pose(0.25))
+                .render(&assets, Some(&battle.rules), &key, ground_pose(0.25), false)
                 .unwrap();
             let page = &cache.pages[first.page];
             let allocation = page.shelf;
             let pixels = cache.pages[first.page].pixels.clone();
             let repeated = cache
-                .render(&assets, Some(&battle.rules), &key, ground_pose(0.25))
+                .render(&assets, Some(&battle.rules), &key, ground_pose(0.25), false)
                 .unwrap();
             assert_same_entry(repeated, first);
             assert_eq!(
@@ -559,6 +637,7 @@ mod tests {
                 Some(&battle.rules),
                 &ground_key(VxlLayer::Body),
                 ground_pose(0.25),
+                false,
             )
             .unwrap();
         let filled = cache.fill_test_page();
@@ -572,6 +651,7 @@ mod tests {
                 Some(&battle.rules),
                 &ground_key(VxlLayer::Turret),
                 ground_pose(0.25),
+                false,
             )
             .expect("GTNK turret must remain drawable after a full overflow page");
         let barrel = cache
@@ -580,6 +660,7 @@ mod tests {
                 Some(&battle.rules),
                 &ground_key(VxlLayer::Barrel),
                 ground_pose(0.25),
+                false,
             )
             .expect("GTNK barrel must remain drawable after a full overflow page");
         assert_ne!(turret.page, filled.page);
@@ -590,6 +671,7 @@ mod tests {
                 Some(&battle.rules),
                 &ground_key(VxlLayer::Body),
                 ground_pose(-0.25),
+                false,
             )
             .expect("a distinct ground pose remains drawable after earlier requests");
         assert_ne!(
@@ -602,6 +684,7 @@ mod tests {
                 Some(&battle.rules),
                 &ground_key(VxlLayer::Body),
                 ground_pose(0.25),
+                false,
             )
             .unwrap();
         assert_same_entry(repeated, first);
@@ -630,6 +713,7 @@ mod tests {
                 Some(&battle.rules),
                 &ground_key(VxlLayer::Body),
                 ground_pose(-0.25),
+                false,
             )
             .unwrap();
         assert_eq!(next.page, 0);
@@ -640,6 +724,7 @@ mod tests {
                 Some(&battle.rules),
                 &ground_key(VxlLayer::Body),
                 ground_pose(0.25),
+                false,
             )
             .unwrap();
         assert_ne!(
@@ -665,7 +750,7 @@ mod tests {
         cache.begin_frame();
         assert_eq!(cache.fill_test_page().page, 0);
         let first = cache
-            .render_matrix(&assets, "ZBOMB", down, 0, true, VxlLighting::Diffuse)
+            .render_matrix(&assets, "ZBOMB", down, 0, true, VxlLighting::Diffuse, false)
             .unwrap();
         assert!(
             first.page > 0,
@@ -673,7 +758,7 @@ mod tests {
         );
         let cursor = cache.pages[first.page].shelf;
         let repeated = cache
-            .render_matrix(&assets, "ZBOMB", down, 0, true, VxlLighting::Diffuse)
+            .render_matrix(&assets, "ZBOMB", down, 0, true, VxlLighting::Diffuse, false)
             .unwrap();
         assert_same_entry(repeated, first);
         assert_eq!(
@@ -681,14 +766,14 @@ mod tests {
             "equal simultaneous bombs must not consume extra page space"
         );
         let changed = cache
-            .render_matrix(&assets, "ZBOMB", east, 0, true, VxlLighting::Diffuse)
+            .render_matrix(&assets, "ZBOMB", east, 0, true, VxlLighting::Diffuse, false)
             .unwrap();
         assert_ne!(first.uv_origin, changed.uv_origin);
         assert_eq!(cache.image_models["ZBOMB"].poses.len(), 2);
         for missing in ["VERA_MISSING_BULLET_IMAGE", ""] {
             assert!(
                 cache
-                    .render_matrix(&assets, missing, down, 0, true, VxlLighting::Diffuse)
+                    .render_matrix(&assets, missing, down, 0, true, VxlLighting::Diffuse, false)
                     .is_none()
             );
             assert!(cache.image_models[missing].model.is_none());
@@ -714,7 +799,7 @@ mod tests {
         );
         assert_eq!(cache.pages.iter().map(PosePage::used_rows).sum::<u32>(), 0);
         let next = cache
-            .render_matrix(&assets, "ZBOMB", east, 0, true, VxlLighting::Diffuse)
+            .render_matrix(&assets, "ZBOMB", east, 0, true, VxlLighting::Diffuse, false)
             .unwrap();
         assert_eq!(next.page, 0, "the next frame reuses the first page");
         assert_eq!(
@@ -753,7 +838,7 @@ mod tests {
         cache.begin_frame();
         let a = sprite(600, 40);
         let b = sprite(600, 30);
-        let mut page = PosePage::new();
+        let mut page = PosePage::new(false);
         let first = page.try_place(&a).unwrap();
         page.blit(&a, first.0, first.1);
         let second = page.try_place(&b).unwrap();
@@ -804,6 +889,7 @@ mod tests {
                 Some(&battle.rules),
                 &key,
                 PoseTilt::FlyNormal { pitch: 0.0, roll },
+                false,
             )
             .expect("stock SPYP VXL accepts a normal positive bank");
         let positive_texels = pose_texels(&cache, positive);
@@ -816,6 +902,7 @@ mod tests {
                     pitch: 0.0,
                     roll: -roll,
                 },
+                false,
             )
             .expect("stock SPYP VXL accepts a normal negative bank");
         let negative_texels = pose_texels(&cache, negative);
@@ -833,6 +920,7 @@ mod tests {
                 Some(&battle.rules),
                 &key,
                 PoseTilt::Fly([roll, 0.0]),
+                false,
             )
             .expect("stock SPYP VXL accepts the existing crash pose");
         assert_ne!(positive.uv_origin, crash.uv_origin);
@@ -845,6 +933,7 @@ mod tests {
                 Some(&battle.rules),
                 &key,
                 PoseTilt::FlyNormal { pitch, roll },
+                false,
             )
             .expect("stock SPYP VXL accepts a pitched normal-flight matrix");
         let pitched_crash = cache
@@ -853,6 +942,7 @@ mod tests {
                 Some(&battle.rules),
                 &key,
                 PoseTilt::Fly([roll, pitch]),
+                false,
             )
             .expect("stock SPYP VXL accepts the existing pitched crash matrix");
         assert_ne!(

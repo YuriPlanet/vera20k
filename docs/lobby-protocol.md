@@ -129,6 +129,9 @@ Commands and their payloads:
 
 HostOptions is `{launch,map_metadata,vacancies,observer_row,cooperative_difficulty,seed}`.
 Generated maps add `random_map:{start_staging,preview:{source_sha256,byte_length}}`.
+Cooperative rooms add `cooperative_campaign`, the host's campaign record as the game's
+`C0` text (at most 512 bytes, starting `C0,`); a guest applies it before the options
+that carry it. Other modes omit the field.
 `start_staging` is the canonical 37-number native `W` record, bounded to512bytes;
 `staging_digest` is its lowercase SHA-256, or the empty string for authored maps.
 `launch` is the existing serde representation of `SkirmishLaunchSession` (including
@@ -428,6 +431,8 @@ sets the welcome that sign-in responses carry as `motd`: non-blank text of at mo
 2048 UTF-8 bytes. `{text:null}` clears it. Both return `{welcome}`, the text or `null`.
 
 Released clients sign in with `User-Agent: VERA20k/<MAJOR.MINOR.PATCH> multiplayer-client`.
+A client that names a version older than 0.2.4 is refused at sign-in with 426
+`upgrade_required`; one that names no version is not.
 A session whose version is older than `version` in
 `https://downloads.vera20k.org/latest.json`, which the lobby reads at most every
 10 minutes, receives one such chat line per newer release, naming both versions,
