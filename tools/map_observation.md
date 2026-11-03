@@ -21,6 +21,15 @@ before that read. Legacy name-only sources and empty seed files cannot certify a
 capture. Other selected `.SED` names are not supported by this setup adapter.
 This demonstrates the recorded production path, not native full-generation parity.
 
+## Zoom and sidebar size
+
+Optional v2/v3 `presentation: {"zoom": 0, "sidebar": 100}` runs the battle at those
+`[VERA]` Options values: `zoom` 0 is Auto, otherwise a 50-step percent from 100;
+`sidebar` is 100, 150 or 200. The match frame is then the window over the zoom
+(`render.internal_extent`), and `frame.bgra` stays the full window, so a 3840×2160
+profile shows what a 4K player sees. Gestures and `cursor_position` use frame
+pixels at zoom 100% and cannot be combined with it.
+
 ## Named commands and outcome inspection
 
 Use `vera20k.map-observation-profile.v3` to name command targets without a separate
@@ -891,8 +900,8 @@ presentation pacing. It is cadence metadata, not GPU duration or ordinary play
 FPS, and does not participate in deterministic comparisons.
 
 Build through the shared Cargo owner, then run from the checkout with an existing
-`config.toml` pointing at retail assets; the capture always renders at native
-resolution. All supplied paths must be absolute without symlink
+`config.toml` pointing at retail assets; the capture renders at zoom 100% with the
+Normal sidebar unless the profile's `presentation` says otherwise. All supplied paths must be absolute without symlink
 ancestors; use canonical temporary paths on macOS. The output parent must exist,
 and the output directory itself must not exist.
 

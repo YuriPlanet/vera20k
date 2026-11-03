@@ -190,7 +190,8 @@ impl App {
         );
         let profile = &state.persistence.options_profile;
         let (percent, shape) = if state.platform.capture_client_size.is_some() {
-            (100, FrameShape::Window)
+            let zoom = state.platform.capture_presentation.zoom;
+            (zoom.percent(width, height), FrameShape::Window)
         } else if profile.original_shape {
             (profile.zoom.percent(width, height), FrameShape::Original)
         } else {
