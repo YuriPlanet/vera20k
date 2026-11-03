@@ -3,7 +3,8 @@
 //! This owns the `ScenarioClass::Post_Map_Init @ 0x00686890` tail that must
 //! complete before tick 0: native tiberium queue construction, navigation
 //! publication, the skirmish AI credit grant, scenario-start crate RNG, the
-//! final HouseClass alliance pass, Secret Lab rewards, and the post-`Full_Init` setup tail of
+//! final HouseClass alliance pass, the Special-house ally pass, Secret Lab
+//! rewards, and the post-`Full_Init` setup tail of
 //! `FUN_00684C30` (per-load particle-system ID, OreTwinkle Scenario
 //! draws). The app submits immutable map/session inputs and consumes only the
 //! receipt.
@@ -12,7 +13,7 @@ use crate::map::houses::HouseRoster;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::crates::CratePlacement;
-use crate::sim::world::Simulation;
+use crate::sim::world::{FrameEffects, Simulation};
 
 /// Immutable inputs for the one-shot post-map scenario command.
 pub(crate) struct ScenarioPostMapInput<'a> {
@@ -41,7 +42,7 @@ pub struct ScenarioPostMapOutput {
     /// A campaign opens on the centre of [`Self::opening_view_cell`].
     pub opening_view_coord: Option<[i32; 3]>,
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) skirmish_order: [Option<ScenarioPostMapStep>; 3],
+    pub(crate) skirmish_order: [Option<ScenarioPostMapStep>; 4],
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -50,6 +51,7 @@ pub(crate) enum ScenarioPostMapStep {
     StartupCrates,
     AiOpeningCredits,
     LaunchAlliances,
+    SpecialAllies,
 }
 
 impl Simulation {
@@ -67,7 +69,7 @@ impl Simulation {
         let navigation_published = self.rebuild_dynamic_navigation(input.rules);
 
         #[cfg(any(test, feature = "test-support"))]
-        let mut skirmish_order = [None; 3];
+        let mut skirmish_order = [None; 4];
         let crates = if let Some(descriptor) = input.skirmish_session {
             let session = descriptor.session();
             let player_count = crate::sim::crates::human_player_count(self);
@@ -130,6 +132,17 @@ impl Simulation {
         } else {
             None
         };
+
+        // Post_Map_Init's Special-House loop (`0x00686A9E..0x00686AC1`), in
+        // the same GameMode>0 segment between the AI credits (end
+        // `0x00686A7E`) and the Secret Lab call (`0x00686AFE`) below.
+        if self.session.game_mode_nonzero() {
+            #[cfg(any(test, feature = "test-support"))]
+            {
+                skirmish_order[3] = Some(ScenarioPostMapStep::SpecialAllies);
+            }
+            self.ally_special_house_with_every_house(&input);
+        }
 
         // Post_Map_Init686AFE calls68C050 after launch alliances. Authored
         // Full_Init687BC8..687BF1 skips that pass in GameMode0 (campaign).
@@ -256,6 +269,61 @@ impl Simulation {
             #[cfg(any(test, feature = "test-support"))]
             skirmish_order,
         }
+    }
+
+    /// `Post_Map_Init`'s Special-House pass: the loop at `0x00686A9E..0x00686AC1`
+    /// finds the House named by the literal at `0x00817318` ("Special") and
+    /// `HouseClass::Make_Ally @ 0x004F9B70`s it with every other registered
+    /// House, house→Special then Special→house, each with announce 0. A map
+    /// whose Houses hold no such name (native `FromName @ 0x0050C170` finds
+    /// none) leaves the graph untouched.
+    ///
+    /// The whole pass runs inside the object-placement scope because native
+    /// still holds the ScenarioInit counter `[0xA8E7AC]` here: `CanAlly @
+    /// 0x00501540` returns before its defeated and remaining-enemy gates
+    /// (`0x005015A1..0x005015AE`) and `Make_Ally` skips its live Paranoid,
+    /// target and announcement tail (`0x004F9C1F..0x004F9C28`). Outside the
+    /// scope a single-live-House Special would be refused by the
+    /// leaves-no-enemy gate, which no native start is.
+    fn ally_special_house_with_every_house(&mut self, input: &ScenarioPostMapInput<'_>) {
+        // `HouseClass::FromName @ 0x0050C170` scans the House array in order
+        // for the first byte-exact stored name (the shared mirror is
+        // `crate::map::houses::find_house_index`) and never creates a house.
+        // A case-folded interner lookup would wrongly ally a "special" or
+        // "SPECIAL" house here.
+        let Some(special) = self
+            .houses
+            .order()
+            .iter()
+            .copied()
+            .find(|&owner| self.interner.resolve(owner) == "Special")
+        else {
+            return;
+        };
+        let order = self.houses.order().to_vec();
+        self.with_object_placement_scope(|sim| {
+            for owner in order {
+                if owner == special {
+                    continue;
+                }
+                sim.make_ally(
+                    owner,
+                    special,
+                    input.rules,
+                    Some(input.overlay_registry),
+                    FrameEffects::default(),
+                    false,
+                );
+                sim.make_ally(
+                    special,
+                    owner,
+                    input.rules,
+                    Some(input.overlay_registry),
+                    FrameEffects::default(),
+                    false,
+                );
+            }
+        });
     }
 
     /// Rebuild the derived bridge record vector after a crate `OverlayClass::Mark`
@@ -396,6 +464,71 @@ mod tests {
             house_roster,
             skirmish_session: None,
             campaign_map: None,
+        }
+    }
+
+    /// The base post-map fixture plus the diplomacy rules fragment the
+    /// Special-House pass needs: "Special" sits on the `Mutant` side — not
+    /// `Civilian`, whose side CanAlly refuses in a nonzero game mode
+    /// (`0x0050157C..0x0050159E`) — and is MultiplayPassive.
+    fn special_ally_rules_and_overlays() -> (RuleSet, OverlayTypeRegistry) {
+        let ini = IniFile::from_str(
+            "[General]\n\
+             TiberiumGrows=yes\n\
+             TiberiumSpreads=yes\n\
+             [MultiplayerDialogSettings]\n\
+             AlliesAllowed=yes\n\
+             [Sides]\n\
+             GDI=Americans\n\
+             Nod=Russians\n\
+             Civilian=Neutral\n\
+             Mutant=Special\n\
+             [Countries]\n\
+             0=Americans\n\
+             1=Russians\n\
+             2=Neutral\n\
+             3=Special\n\
+             [Neutral]\n\
+             MultiplayPassive=yes\n\
+             [Special]\n\
+             MultiplayPassive=yes\n\
+             [InfantryTypes]\n\
+             [VehicleTypes]\n\
+             [AircraftTypes]\n\
+             [BuildingTypes]\n\
+             [Tiberiums]\n\
+             0=Riparius\n\
+             [Riparius]\n\
+             Image=1\n\
+             [OverlayTypes]\n\
+             0=TIBCELL\n\
+             [TIBCELL]\n\
+             Tiberium=yes\n",
+        );
+        (
+            RuleSet::from_ini(&ini).expect("special-ally rules"),
+            OverlayTypeRegistry::from_ini(&ini, None),
+        )
+    }
+
+    /// Registers `(name, country, human)` houses, resolving each
+    /// MultiplayPassive fact from its country rules as the roster
+    /// constructor does.
+    fn register_special_pass_houses(
+        sim: &mut Simulation,
+        rules: &RuleSet,
+        houses: &[(&str, &str, bool)],
+    ) {
+        for &(name, country, human) in houses {
+            let id = sim.interner.intern(name);
+            let side = rules.country_side_index(country).expect("country side").0;
+            let country_id = sim.interner.intern(country);
+            let mut house =
+                crate::sim::house_state::HouseState::new(id, side, Some(country_id), human, 0, 10);
+            house.set_multiplay_passive_for_test(
+                crate::sim::house_state::resolve_multiplay_passive(rules, Some(country)),
+            );
+            sim.houses.register(house);
         }
     }
 
@@ -804,5 +937,138 @@ mod tests {
             })
             .collect();
         assert_eq!(anims, expected_anims);
+    }
+
+    /// Post_Map_Init's Special-House loop `0x00686A9E..0x00686AC1`: in a
+    /// nonzero game mode the "Special" house leaves the map mutually allied
+    /// with every other House in both directions, no other pairing gains an
+    /// edge, and the pass records itself after the launch alliances.
+    #[test]
+    fn post_map_allies_the_special_house_with_every_house_both_ways() {
+        let (rules, overlays) = special_ally_rules_and_overlays();
+        let mut sim = Simulation::with_seed(7);
+        sim.install_session_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+        register_special_pass_houses(
+            &mut sim,
+            &rules,
+            &[
+                ("A", "Americans", false),
+                ("B", "Americans", false),
+                ("Special", "Special", false),
+            ],
+        );
+        let roster = HouseRoster::default();
+        let output =
+            sim.finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster));
+        let alliances = sim.house_alliances.as_map();
+        for other in ["A", "B"] {
+            assert!(
+                crate::map::houses::are_houses_mutually_allied(alliances, "Special", other),
+                "Special must leave mutually allied with {other}"
+            );
+        }
+        assert!(
+            !crate::map::houses::is_allied_with(alliances, "A", "B")
+                && !crate::map::houses::is_allied_with(alliances, "B", "A"),
+            "the Special loop must not ally the other Houses with each other"
+        );
+        assert_eq!(
+            output.skirmish_order,
+            [None, None, None, Some(ScenarioPostMapStep::SpecialAllies)],
+            "the Special pass records itself after the launch alliances"
+        );
+    }
+
+    /// A nonzero-mode map whose Houses hold none named "Special" (native
+    /// `FromName` finds none) leaves the alliance graph untouched.
+    #[test]
+    fn post_map_without_a_special_house_leaves_alliances_untouched() {
+        let (rules, overlays) = special_ally_rules_and_overlays();
+        let mut sim = Simulation::with_seed(7);
+        sim.install_session_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+        register_special_pass_houses(
+            &mut sim,
+            &rules,
+            &[("A", "Americans", false), ("B", "Russians", false)],
+        );
+        let roster = HouseRoster::default();
+        let before = sim.house_alliances.as_map().clone();
+        sim.finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster));
+        assert_eq!(sim.house_alliances.as_map(), &before);
+    }
+
+    /// `FromName @ 0x0050C170` matches stored names byte-exactly: a house
+    /// registered as "special" is not the pass's target, so no edge forms
+    /// in either direction.
+    #[test]
+    fn post_map_special_house_lookup_is_byte_exact() {
+        let (rules, overlays) = special_ally_rules_and_overlays();
+        let mut sim = Simulation::with_seed(7);
+        sim.install_session_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+        register_special_pass_houses(
+            &mut sim,
+            &rules,
+            &[("special", "Special", false), ("A", "Americans", false)],
+        );
+        let roster = HouseRoster::default();
+        sim.finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster));
+        let alliances = sim.house_alliances.as_map();
+        assert!(!crate::map::houses::is_allied_with(
+            alliances, "special", "A"
+        ));
+        assert!(!crate::map::houses::is_allied_with(
+            alliances, "A", "special"
+        ));
+    }
+
+    /// The Special pass shares the Secret Lab's GameMode>0 segment: a
+    /// campaign (GameMode0) Post_Map_Init tail never runs it, so a registered
+    /// Special house stays unallied and the step records nothing.
+    #[test]
+    fn campaign_post_map_does_not_run_the_special_house_pass() {
+        let (rules, overlays) = special_ally_rules_and_overlays();
+        let mut sim = Simulation::with_seed(7);
+        sim.install_session_mode(crate::sim::scenario_session::ScenarioGameMode::Campaign);
+        register_special_pass_houses(
+            &mut sim,
+            &rules,
+            &[("A", "Americans", false), ("Special", "Special", false)],
+        );
+        let roster = HouseRoster::default();
+        let output =
+            sim.finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster));
+        let alliances = sim.house_alliances.as_map();
+        assert!(!crate::map::houses::is_allied_with(
+            alliances, "Special", "A"
+        ));
+        assert!(!crate::map::houses::is_allied_with(
+            alliances, "A", "Special"
+        ));
+        assert_eq!(output.skirmish_order, [None; 4]);
+    }
+
+    /// The pass runs inside native's ScenarioInit bracket `[0xA8E7AC]`:
+    /// without it `CanAlly @ 0x00501540` refuses both directions at its
+    /// remaining-enemy gate (`0x005015C2..0x00501638`) — the single live
+    /// House plus the passive Special, which counts as a friend in the
+    /// count, already cover every live House — but inside the placement
+    /// scope the pair still leaves mutually allied.
+    #[test]
+    fn post_map_allies_special_despite_a_single_live_house_leaving_no_enemy() {
+        let (rules, overlays) = special_ally_rules_and_overlays();
+        let mut sim = Simulation::with_seed(7);
+        sim.install_session_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+        register_special_pass_houses(
+            &mut sim,
+            &rules,
+            &[("H", "Americans", false), ("Special", "Special", false)],
+        );
+        let roster = HouseRoster::default();
+        sim.finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster));
+        assert!(crate::map::houses::are_houses_mutually_allied(
+            sim.house_alliances.as_map(),
+            "Special",
+            "H"
+        ));
     }
 }
