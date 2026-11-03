@@ -321,7 +321,7 @@ where
 {
     // The shared constructor allocates AbstractClass+10 before its lifetime
     // draw, as original62B5E0 does for every particle behavior.
-    let mut particle = Particle::new_with_ground(
+    let (mut particle, start_rgb) = Particle::new_with_ground(
         particle_type_id,
         system_coords,
         system_coords,
@@ -329,8 +329,6 @@ where
         sim,
         &mut ground_height,
     )?;
-
-    let start_rgb = constructor_start_color(sim, particle_type)?;
 
     // Both coordinate arguments are the system's own coordinate, so direction
     // normalization is a no-op; the caller supplies the Spark velocity.
@@ -347,7 +345,8 @@ where
 }
 
 /// The constructor's colour seed (`ParticleClass::Constructor @ 0x0062BA51`),
-/// for every behavior: native reads the list only when it has entries, and
+/// for every behavior ([`Particle::new_with_ground`] calls it): native reads
+/// the list only when it has entries, and
 /// takes the interpolated arm only when at least one of the six
 /// `StartColor1`/`StartColor2` bytes is non-zero. The stock damage-spark types
 /// `[Spark]` and `[LargeSpark]` and both stock Railgun particles author

@@ -2284,6 +2284,10 @@ pub(crate) fn handle_death(
                             .with_effects(run.effects()),
                     );
                 }
+                // 0x00702216..0x00702228: then the Fire system link is released.
+                if let Some(dead) = world.substrate.entities.get_mut(dead_id) {
+                    dead.release_fire_particle_system();
+                }
                 // gamemd-derived: the debris block of
                 // `TechnoClass::ReceiveDamage @ 0x00701900`
                 // (`0x00702281`..`0x0070256C`). It sits BELOW the two death

@@ -826,6 +826,28 @@ fn lepton_cell(coord: ProjectileCoord) -> (i32, i32) {
     (coord.x / 256, coord.y / 256)
 }
 
+/// `WaveClass::Init_Tables @ 0x0075F020`'s sine tables: entry `i` is
+/// `ftol(SinFromTable(i * frequency) * 12.0 + 0.49)` (`0x0075F087..0x0075F0B4`).
+pub fn wave_sine_table<const N: usize>(frequency: NativeF64Bits) -> [i16; N] {
+    std::array::from_fn(|i| {
+        let frequency = X87Chop53::load_f64(frequency).unwrap();
+        let angle =
+            X87Chop53::store_f64(X87Chop53::mul(X87Chop53::load_i32(i as i32), frequency)).unwrap();
+        let sine = TrigTable::embedded().sin_from_table(X87Chop53::load_f64(angle).unwrap());
+        let amplitude =
+            X87Chop53::load_f64(NativeF64Bits::from_bits(0x4028_0000_0000_0000)).unwrap();
+        let bias = X87Chop53::load_f64(NativeF64Bits::from_bits(0x3fdf_5c28_f5c2_8f5c)).unwrap();
+        X87Chop53::ftol_i32_low_masked(X87Chop53::add(X87Chop53::mul(sine, amplitude), bias)) as i16
+    })
+}
+
+/// The 500-entry Sonic table at `0x00B46254` (frequency 0.125). WaveClass's
+/// Sonic pixel displacement and AI_Fire's stream wobble (`0x0062FC90`) read it.
+pub fn sonic_wave_table() -> &'static [i16; 500] {
+    static TABLE: std::sync::OnceLock<[i16; 500]> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| wave_sine_table(NativeF64Bits::from_bits(0x3fc0_0000_0000_0000)))
+}
+
 // Direction75F230 calls Sin4CACB0/Cos4CAD00(pi/8): retail entries512/2560
 // are 3EC3EF15/3F6C835E. Their Chop53 ratio and its reciprocal give these
 // exact thresholds; analytic tan(pi/8) would change boundary comparisons.
@@ -864,7 +886,10 @@ fn draw_point(coord: ProjectileCoord, camera: [i32; 2]) -> [i32; 2] {
     ]
 }
 
-fn direction_from_projected(from: (i32, i32), to: (i32, i32)) -> i32 {
+/// `0x0075F230`: the octant (0 north, clockwise) from `from` to `to`. Wave
+/// passes projected screen points; Fire's stream wobble (`0x0062FCEB`) passes
+/// lepton X/Y.
+pub(crate) fn direction_from_projected(from: (i32, i32), to: (i32, i32)) -> i32 {
     // `0x0075F230`: dx=to.x-from.x and n=from.y-to.y. The four equality
     // boundaries are intentionally asymmetric.
     let dx = to.0.wrapping_sub(from.0);
