@@ -1191,10 +1191,11 @@ fn reveal_on_fire(
 /// `TechnoClass::GetROF` (vt+0x318) for a shot: of the weapon GetWeapon
 /// answers (a garrison's next occupant's), at the stepped burst index. The rank
 /// and class are the firer's (a garrison shot reads the building's). FireAt
-/// created the Spark system just before (`0x006FF1AD..0x006FF1F5`);
-/// GetROF reads the actual +308 link, including a retained earlier system.
-/// RESIDUAL: Fire/Railgun systems still use the firing weapon's flags as
-/// their preexisting launch approximation; their retained links are unported.
+/// created the Spark and Railgun systems just before
+/// (`0x006FF1AD..0x006FF26E`); GetROF reads the actual +308 and +314 links,
+/// including a retained earlier system.
+/// RESIDUAL: the Fire system still uses the firing weapon's flag as its
+/// launch approximation; its retained +304 link is unported.
 fn fireat_get_rof(
     scenario_rng: &mut SimRng,
     substrate: &ObjectSubstrate,
@@ -1207,12 +1208,12 @@ fn fireat_get_rof(
     next_index: i32,
 ) -> i32 {
     let live = super::rof::LiveParticles {
-        spark: substrate
+        fire: weapon.use_fire_particles,
+        ..substrate
             .entities
             .get(snap.stable_id)
-            .is_some_and(|firer| firer.spark_particle_system.system().is_some()),
-        fire: weapon.use_fire_particles,
-        railgun: weapon.is_railgun,
+            .map(|firer| firer.live_particles())
+            .unwrap_or_default()
     };
     snapshot_get_rof(
         scenario_rng,
@@ -1380,15 +1381,18 @@ pub(super) fn emit_admitted_fire(
     if weapon.is_sonic && world.active_wave_id(snap.stable_id).is_some() {
         return None;
     }
-    // 6FDE36..6FDE48: direct FireAt callers also refuse a flagged weapon
-    // while the actual Techno+308 system remains retained. GetFireError is
-    // not the only admission caller, and a guessed expiry tick is insufficient.
-    if weapon.use_spark_particles
-        && world
-            .substrate
-            .entities
-            .get(snap.stable_id)
-            .is_some_and(|firer| firer.spark_particle_system.system().is_some())
+    // 6FDE22..6FDE48: direct FireAt callers also refuse a flagged weapon
+    // while the actual Techno+314 Railgun or +308 Spark system remains
+    // retained. GetFireError is not the only admission caller, and a guessed
+    // expiry tick is insufficient.
+    if world
+        .substrate
+        .entities
+        .get(snap.stable_id)
+        .is_some_and(|firer| {
+            (weapon.is_railgun && firer.railgun_particle_system.system().is_some())
+                || (weapon.use_spark_particles && firer.spark_particle_system.system().is_some())
+        })
     {
         return None;
     }
@@ -1977,6 +1981,50 @@ pub(super) fn emit_admitted_fire(
             });
         if let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
             firer.spark_particle_system.bind(system);
+        }
+    }
+    // FireAt6FF1FB..6FF26E: an IsRailgun weapon with no live +314 system runs
+    // the line damage from the launch source, then builds the Railgun system
+    // from there to the coordinate it returns, with no target and no House.
+    if weapon.is_railgun
+        && world
+            .substrate
+            .entities
+            .get(snap.stable_id)
+            .is_some_and(|firer| firer.railgun_particle_system.system().is_none())
+    {
+        let end = super::railgun::line_damage(
+            world,
+            rules,
+            overlay_registry,
+            effects,
+            &mut out.effects,
+            snap.stable_id,
+            launch_source.coord,
+            snap.target,
+            weapon,
+        );
+        let system = weapon
+            .attached_particle_system
+            .as_deref()
+            .and_then(|name| rules.ps_type_id_by_name(name))
+            .and_then(|type_id| {
+                world.spawn_particle_system(
+                    type_id,
+                    glam::IVec3::new(
+                        launch_source.coord.x,
+                        launch_source.coord.y,
+                        launch_source.coord.z,
+                    ),
+                    None,
+                    Some(snap.stable_id),
+                    glam::IVec3::new(end.x, end.y, end.z),
+                    None,
+                    rules,
+                )
+            });
+        if let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
+            firer.railgun_particle_system.bind(system);
         }
     }
     // GetROF (`0x006FCFA0`) reads its weapon through GetWeapon (vt+0x3F8,

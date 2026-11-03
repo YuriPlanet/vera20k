@@ -886,7 +886,11 @@ pub struct GameEntity {
     /// The actual Spark system link (`TechnoClass+0x308`), shared by
     /// FireAt and Cyborg AI; particles::spawn owns its mutations.
     #[serde(default)]
-    pub(crate) spark_particle_system: crate::sim::particles::spawn::AttachedSpark,
+    pub(crate) spark_particle_system: crate::sim::particles::spawn::AttachedParticleSystem,
+    /// The Railgun system link (`TechnoClass+0x314`) FireAt's `IsRailgun`
+    /// arm creates; it gates the next railgun shot until the system expires.
+    #[serde(default)]
+    pub(crate) railgun_particle_system: crate::sim::particles::spawn::AttachedParticleSystem,
     /// The damage-Smoke system handle (`TechnoClass+0x310`), a
     /// [`DamageSmoke`] that `particles::spawn` owns.
     ///
@@ -2113,6 +2117,7 @@ impl GameEntity {
             suspended_attack_target: Default::default(),
             base_defense_response: BaseDefenseResponseState::default(),
             spark_particle_system: Default::default(),
+            railgun_particle_system: Default::default(),
             damage_smoke_system_id: Default::default(),
             transport_unload_keep_count: Default::default(),
             produce_cash: crate::sim::credit_income::ProduceCash::new(construction_frame),
@@ -2385,6 +2390,27 @@ impl GameEntity {
     /// `Object+0x6C`, Health, above 0.
     pub fn is_alive(&self) -> bool {
         self.health.current() > 0
+    }
+
+    /// The particle systems GetROF and FireAt test (`+0x304`, `+0x308`,
+    /// `+0x314`) as they are linked now.
+    pub(crate) fn live_particles(&self) -> crate::sim::combat::rof::LiveParticles {
+        crate::sim::combat::rof::LiveParticles {
+            spark: self.spark_particle_system.system().is_some(),
+            // RESIDUAL: FireAt's `+0x304` Fire system link is not produced.
+            fire: false,
+            railgun: self.railgun_particle_system.system().is_some(),
+        }
+    }
+
+    /// Whether a cell object-list walk that damages what it finds (Wave
+    /// `DamageArea`, the railgun line) still reaches this object: alive, not
+    /// in its death sequence, not in limbo.
+    pub(crate) fn reachable_in_cell_list(&self) -> bool {
+        self.is_alive()
+            && !self.death.is_dying()
+            && !self.lifecycle.in_limbo()
+            && self.lifecycle.object_alive()
     }
 
     /// Whether ObjectClass native-alive state is set. This is intentionally

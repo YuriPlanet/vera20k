@@ -1597,6 +1597,15 @@ fn hash_particle(p: &crate::sim::particles::Particle, hasher: &mut impl Hasher) 
             spark.color_accumulator.bits().hash(hasher);
         }
     }
+    // Behavior-4 state, hashed only when present so other particles hash as
+    // before.
+    if let Some(railgun) = p.railgun() {
+        railgun.direction.map(|v| v.bits()).hash(hasher);
+        railgun.position.map(|v| v.bits()).hash(hasher);
+        railgun.start_rgb.hash(hasher);
+        railgun.color_index.hash(hasher);
+        railgun.color_accumulator.bits().hash(hasher);
+    }
 }
 
 /// One entity's components, in the order the state hash folds them.
@@ -2484,6 +2493,11 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     // ReceiveDamage damage-Smoke `+0x310` identity. This gates later
     // spawn/RNG and remains set while a marked system drains.
     entity.damage_smoke_system_id.system().hash(hasher);
+    // The Railgun `+0x314` link gates the next railgun shot. Hashed only
+    // when set, so objects that never fired a railgun hash as before.
+    if let Some(system) = entity.railgun_particle_system.system() {
+        system.hash(hasher);
+    }
 }
 
 /// One locomotor object, field for field, and the object its piggyback slot

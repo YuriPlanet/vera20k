@@ -472,24 +472,46 @@ pub fn advance_color(
     if color_count_i32 < 2 {
         return Err(SparkKernelError::InvalidColorCount(color_count));
     }
+    advance_point_color(
+        &mut spark.color_index,
+        &mut spark.color_accumulator,
+        color_speed,
+        color_rng_sample,
+        color_count_i32,
+    )?;
+    Ok(())
+}
 
+/// The colour step Spark and Railgun particles share (Railgun's copy is
+/// `ParticleClass::AI_Railgun @ 0x0062C494..0x0062C530`): the accumulator
+/// `+0xB8` gains `sample * scale * 0.05 + ColorSpeed`, and once it passes 1.0
+/// the index `+0xB4` steps toward `ColorList` count - 2 and the accumulator
+/// restarts at 0.0, or holds at 1.0 on the last pair. A list of fewer than two
+/// colours makes `count - 2` negative, so the accumulator just holds at 1.0.
+pub(super) fn advance_point_color(
+    color_index: &mut i32,
+    color_accumulator: &mut NativeF64Bits,
+    color_speed: NativeF64Bits,
+    color_rng_sample: u32,
+    color_count: i32,
+) -> Result<(), NativeX87Error> {
     let scaled_rng = X87Chop53::mul(
         X87Chop53::load_i32(color_rng_sample as i32),
         X87Chop53::load_f64(RANDOM_RANGED_UNIT_SCALE)?,
     );
     let jitter = X87Chop53::mul(scaled_rng, X87Chop53::load_f64(COLOR_JITTER_SCALE)?);
     let with_speed = X87Chop53::add(jitter, X87Chop53::load_f64(color_speed)?);
-    let accumulated = X87Chop53::add(with_speed, X87Chop53::load_f64(spark.color_accumulator)?);
-    spark.color_accumulator = X87Chop53::store_f64(accumulated)?;
+    let accumulated = X87Chop53::add(with_speed, X87Chop53::load_f64(*color_accumulator)?);
+    *color_accumulator = X87Chop53::store_f64(accumulated)?;
 
-    let stored = X87Chop53::load_f64(spark.color_accumulator)?;
+    let stored = X87Chop53::load_f64(*color_accumulator)?;
     let one = X87Chop53::load_f64(NativeF64Bits::ONE)?;
     if X87Chop53::compare(stored, one) == X87Ordering::Greater {
-        if spark.color_index < color_count_i32.wrapping_sub(2) {
-            spark.color_index = spark.color_index.wrapping_add(1);
-            spark.color_accumulator = NativeF64Bits::POSITIVE_ZERO;
+        if *color_index < color_count.wrapping_sub(2) {
+            *color_index = color_index.wrapping_add(1);
+            *color_accumulator = NativeF64Bits::POSITIVE_ZERO;
         } else {
-            spark.color_accumulator = NativeF64Bits::ONE;
+            *color_accumulator = NativeF64Bits::ONE;
         }
     }
     Ok(())

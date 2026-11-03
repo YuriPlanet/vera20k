@@ -3,8 +3,8 @@
 //! Drives each active system at its shared LogicVector slot. Gas and Smoke remain
 //! in storage because synchronous damage can append children to that same
 //! system; other behaviors temporarily take/reinsert their owned body.
-//! Ordinary Smoke, Spark and Gas are connected. Fire retains movement/damage
-//! residuals; Railgun body is still absent.
+//! Ordinary Smoke, Spark, Gas and Railgun are connected. Fire retains
+//! movement/damage residuals.
 
 use crate::rules::particle_system_type::ParticleSystemBehavesLike;
 use crate::rules::particle_type::ParticleBehavesLike;
@@ -20,14 +20,16 @@ use super::spark::{
 };
 use super::spark_world::{SparkCollisionWorld, SparkWorldError};
 
-// Errors retained at the production Spark begin/query/finish boundary. Railgun
-// alone remains dormant in the behavior dispatch below.
+// Errors retained at the production Spark begin/query/finish boundary and
+// the Railgun particle body.
 #[derive(Debug, Error)]
 pub(crate) enum SparkSystemTickError {
     #[error(transparent)]
     Kernel(#[from] SparkKernelError),
     #[error(transparent)]
     World(#[from] SparkWorldError),
+    #[error(transparent)]
+    Railgun(#[from] super::railgun::RailgunParticleError),
 }
 
 /// The shared signed UID/EC cadence in Smoke62C540, Gas62C313 and
@@ -119,8 +121,8 @@ where
             return Ok(()); // Spark finish calls the same lifetime owner.
         }
         ParticleBehavesLike::Railgun => {
-            // RESIDUAL: Railgun body62C3A0 (dispatch62CE81) remains unported;
-            // the shared lifetime tail still runs.
+            // Dispatch62CE81 -> AI_Railgun62C3A0, then the shared tail.
+            super::railgun::tick_particle(p, pt, sim.particle_rng())?;
         }
     }
     finish_lifetime(p);
@@ -196,9 +198,7 @@ fn tick_one_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleS
         ParticleSystemBehavesLike::Gas => unreachable!("Gas retains its body during callbacks"),
         ParticleSystemBehavesLike::Fire => tick_fire(sys, sim, rules),
         ParticleSystemBehavesLike::Spark => tick_spark(sys, sim, rules),
-        ParticleSystemBehavesLike::Railgun => {
-            // Tier 3 — no-op.
-        }
+        ParticleSystemBehavesLike::Railgun => super::railgun::tick_system(sys, sim, rules),
     }
 }
 
@@ -566,18 +566,16 @@ SpawnSparkPercentage=1
     }
 
     #[test]
-    fn spark_and_railgun_systems_survive_a_tick_with_nothing_to_do() {
-        // Spark dispatch is live (`tick_spark`), Railgun is still a no-op.
-        // Neither may retire a system early: the fixture system has exhausted
-        // its spawn frames and holds no particles, so `AI_Spark`'s guard at
-        // `0x0062E855` falls straight through and the lifetime alone governs.
-        for behaves in ["Spark", "Railgun"] {
-            let rules = build_rules(behaves, 100);
-            let mut sim = Simulation::new();
-            insert_live_system(&mut sim, fake_system(ParticleSystemTypeId(0), 100));
-            tick_particle_systems(&mut sim, &rules);
-            assert_eq!(sim.particle_systems().len(), 1, "{behaves} should survive");
-        }
+    fn spark_system_survives_a_tick_with_nothing_to_do() {
+        // Spark may not retire a system early: the fixture system has
+        // exhausted its spawn frames and holds no particles, so `AI_Spark`'s
+        // guard at `0x0062E855` falls straight through and the lifetime alone
+        // governs.
+        let rules = build_rules("Spark", 100);
+        let mut sim = Simulation::new();
+        insert_live_system(&mut sim, fake_system(ParticleSystemTypeId(0), 100));
+        tick_particle_systems(&mut sim, &rules);
+        assert_eq!(sim.particle_systems().len(), 1, "Spark should survive");
     }
 
     #[test]

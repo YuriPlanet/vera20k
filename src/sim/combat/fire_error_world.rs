@@ -297,6 +297,8 @@ impl<'a> FireSubject<'a> {
             wave_live: self.world.active_wave_id(firer.stable_id()).is_some(),
             // FireError6FC6D5/6FC9C7 reads the actual Techno+308 pointer.
             spark_particles_live: firer.spark_particle_system.system().is_some(),
+            // FireError reads the actual Techno+314 Railgun pointer too.
+            railgun_particles_live: firer.railgun_particle_system.system().is_some(),
             // T45: the object's own rearm countdown (`+0x2EC`).
             rearming: firer
                 .rearm_timer

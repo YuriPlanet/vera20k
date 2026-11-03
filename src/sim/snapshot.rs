@@ -1531,6 +1531,10 @@ fn restore_object_references(
                 entity.spark_particle_system.system(),
             ),
             (
+                "railgun_particle_system",
+                entity.railgun_particle_system.system(),
+            ),
+            (
                 "damage_smoke_system_id",
                 entity.damage_smoke_system_id.system(),
             ),
