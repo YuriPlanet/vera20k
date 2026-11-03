@@ -2948,7 +2948,8 @@ fn reveal_candidates(
 }
 
 /// The house gate of `MapClass::RevealArea @ 0x005678E0`
-/// (`0x00567AB0..0x00567B12`), asked with `viewer` as the player whose map
+/// (`0x00567AB0..0x00567B12`) and of Map `0x005673A0`
+/// (`0x0056756A..0x005675D0`), asked with `viewer` as the player whose map
 /// the leaf writes: a reveal by `owner` maps `owner`'s own cells, and an
 /// allied house's when `[AudioVisual] AllyReveal=` is set (`0x00567AEF`).
 ///

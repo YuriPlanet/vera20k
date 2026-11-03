@@ -1057,6 +1057,12 @@ enum FireDisclosurePath {
 /// Spawner's fresh-XYZ border4 also runs when the victim/weapon leaf gates
 /// fail; normal fire requires those gates for both calls. Each human map
 /// represents that client's PlayerPtr; computer Houses have no client shroud.
+/// On each client the victim leaf asks IsHumanPlayer (`0x0050B6F0`) of the
+/// victim's House with that client's PlayerPtr, and Map5673A0's House gate
+/// (`0x0056756A..0x005675D0`) writes that client's map for its own House or,
+/// under `AllyReveal=`, an ally ([`crate::sim::vision::reveal_admits`]): a
+/// shot at a campaign PlayerControl ally reveals its attacker on the
+/// player's map. Gameplay notifications reach only the native client's map.
 fn reveal_on_fire(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -1077,31 +1083,38 @@ fn reveal_on_fire(
     } else {
         return;
     };
-    let mut viewers = if path == FireDisclosurePath::Spawner {
-        // No callback or RNG occurs in this border. Use stable House order
-        // for the logical client planes and the shared canonical Dummy.
-        let mut viewers: Vec<_> = world
+    // The victim/weapon leaf on the client whose PlayerPtr is `client`:
+    // 6FF6D0..6FF6FA (Spawner 6FDEE0..6FDF0F).
+    let victim_leaf = |world: &Simulation, client| {
+        enabled
+            && victim.is_some_and(|victim| {
+                Simulation::is_human_player_on(&world.session, &world.houses, victim, Some(client))
+            })
+    };
+    // No callback or RNG occurs in this border. Use stable House order
+    // for the logical client planes.
+    let clients = |world: &Simulation| -> Vec<_> {
+        world
             .houses
             .order()
             .iter()
             .copied()
             .filter(|&house| world.owner_is_human(house))
-            .collect();
-        let mut extra: Vec<_> = world
-            .houses
-            .keys()
-            .copied()
-            .filter(|house| !world.houses.order().contains(house) && world.owner_is_human(*house))
-            .collect();
-        extra.sort_unstable();
-        viewers.extend(extra);
-        viewers
+            .collect()
+    };
+    let viewers = if path == FireDisclosurePath::Spawner {
+        clients(world)
     } else if let Some(victim) = victim.filter(|&victim| enabled && world.owner_is_human(victim)) {
-        vec![victim]
+        // Normal fire needs its leaf on a client. In a nonzero mode only the
+        // victim's own client passes it; in mode zero every client does.
+        if world.session.game_mode_nonzero() {
+            vec![victim]
+        } else {
+            clients(world)
+        }
     } else {
         return;
     };
-    viewers.dedup();
     let context = crate::sim::world::UninitContext::new(rules, None);
     let config = world.sight_reveal_config(rules);
     let heights = world.sight_height_grid(&config);
@@ -1152,7 +1165,16 @@ fn reveal_on_fire(
         // Subcell/negative raw XYZ correspondence remains the surrounding
         // Map geometry residual, rather than a second FireAt arithmetic port.
         let origin = ((coord.x / 256) as u16, (coord.y / 256) as u16, coord.z);
-        if enabled && victim == Some(house) {
+        if victim_leaf(world, house)
+            && let Some(victim) = victim
+            && crate::sim::vision::reveal_admits(
+                &world.house_alliances,
+                victim,
+                house,
+                &config,
+                &world.interner,
+            )
+        {
             let local_origin = world.reveal_area(
                 &[house],
                 (origin.0, origin.1),
@@ -1163,7 +1185,7 @@ fn reveal_on_fire(
                 &config,
                 context,
                 crate::sim::vision::MapRevealProjection::Fire,
-                Some(house),
+                world.session.current_house(),
             );
             if let Some(local_origin) = local_origin {
                 Simulation::refresh_sight_border(
@@ -3095,6 +3117,43 @@ mod reveal_on_fire_tests {
             !revealed(&sim, "Soviet", 10, 10),
             "the firer's map is untouched"
         );
+    }
+
+    /// A campaign where the human Americans are the player and the Alliance
+    /// their PlayerControl ally (ALL01, ALL03; SOV04's Germans): the computer
+    /// Soviet tank at (10, 10) shoots the Alliance's tank at (12, 10).
+    fn campaign_world(ally_reveal: bool) -> (Simulation, RuleSet) {
+        let (mut sim, mut rules) = world();
+        rules.general.ally_reveal = ally_reveal;
+        sim.session
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Campaign);
+        let americans = sim.interner.get("Americans").unwrap();
+        sim.session.set_current_house_for_test(Some(americans));
+        let alliance = sim.interner.intern("Alliance");
+        let mut house = HouseState::new(alliance, 0, None, false, 0, 10);
+        house.set_player_control_for_test(true);
+        sim.houses.register(house);
+        sim.house_alliances_mut_for_test()
+            .insert("ALLIANCE".into(), ["AMERICANS".to_string()].into());
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .set_owner_for_test(alliance);
+        (sim, rules)
+    }
+
+    #[test]
+    fn a_shot_at_a_player_controlled_ally_reveals_the_firer_on_the_players_map() {
+        for path in [FireDisclosurePath::Shot, FireDisclosurePath::Spawner] {
+            let (mut sim, rules) = campaign_world(true);
+            reveal_on_fire(&mut sim, &rules, 1, TargetKind::Entity(2), true, path);
+            assert!(revealed(&sim, "Americans", 10, 10), "AllyReveal=yes");
+
+            let (mut sim, rules) = campaign_world(false);
+            reveal_on_fire(&mut sim, &rules, 1, TargetKind::Entity(2), true, path);
+            assert!(!revealed(&sim, "Americans", 10, 10), "AllyReveal=no");
+        }
     }
 
     /// The actual FireAt disclosure continuation after ordinary scout sight
