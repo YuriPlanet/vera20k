@@ -1,5 +1,5 @@
-//! Rust regression tests for script actions that act on every member, and
-//! for the building actions 46 and 47.
+//! Rust regression tests for script actions that act on every member, for
+//! the building actions 46 and 47, and for a member's idle entry on leaving.
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
@@ -755,6 +755,30 @@ fn rules() -> RuleSet {
         &IniFile::from_str("[GAPOWR]\nFoundation=2x2\n"),
     )
     .expect("team action rules")
+}
+
+/// `TeamClass::Remove_Member @ 0x006EA870` enters a leaving member's idle
+/// mode only while the object-placement counter `[0x00A8E7AC]` is zero
+/// (`0x006EAA1E`). Native raises it around a hijack's mind-control callbacks,
+/// survivors, crates and reinforcements.
+#[test]
+fn a_member_leaving_inside_a_placement_scope_skips_idle_mode() {
+    let rules = rules();
+    let mut sim = Simulation::with_seed(0x6EAA1E);
+    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    let (team, members, _) = building_team(&mut sim, &rules, &[], &[]);
+    let hunt = MissionId::from_known(MissionType::Hunt);
+    for &member in &members[..2] {
+        let entity = sim.substrate.entities.get_mut(member).unwrap();
+        entity.mission.set_current_for_test(hunt, 0);
+    }
+    sim.with_object_placement_scope(|sim| {
+        sim.team_remove_member(team, members[0], false, &rules, FrameEffects::default());
+    });
+    sim.team_remove_member(team, members[1], false, &rules, FrameEffects::default());
+    let queued = |id| sim.substrate.entities.get(id).unwrap().mission.queued();
+    assert_eq!(queued(members[0]), MissionId::NONE, "inside the scope");
+    assert_ne!(queued(members[1]), MissionId::NONE, "outside the scope");
 }
 
 #[test]
