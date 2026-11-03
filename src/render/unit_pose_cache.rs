@@ -6,8 +6,8 @@
 //! draw -1, so the native voxel cache never holds such a pose: the body is
 //! rasterized afresh every frame with its current roll and pitch.
 //! `RocketLocomotionClass::Draw_Matrix` (`0x00663470`) keys a pitched missile
-//! -1 too, except at the stored PitchFinal product, whose cached image is the
-//! one a fresh render gives. `VoxelAnimClass::DrawIt` (`0x00749B70`) renders
+//! -1 too, except at the block's PitchInitial or stored PitchFinal product,
+//! whose cached image is the one a fresh render gives. `VoxelAnimClass::DrawIt` (`0x00749B70`) renders
 //! its piece fresh every frame too. This page renders the posed bodies on
 //! screen. Equal unit poses share a slot within each presentation frame
 //! ([`VxlPoseFrameCache::begin_frame`]); overflow grows retained GPU pages.

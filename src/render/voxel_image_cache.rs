@@ -46,12 +46,8 @@
 //! - The renderer's shared colour buffer, depth map and previous rect
 //!   (`0x00753E00`) are not kept: a depth-tested draw after an ordinary one
 //!   starts from a clear depth map, where native keeps stale depth outside the
-//!   previous rect (a few pixels of the next image after a Siege Chopper's
-//!   miss).
-//! - A pitched rocket at its PitchFinal product is cached natively
-//!   (`0x00663547`); VERA renders it with the live latch.
-//! - gamemd keeps types, caches, pool and flag across scenarios in one
-//!   process; VERA starts every scenario and loaded game empty.
+//!   previous rect. On retail SCHP that drops 1-2% of the next chopper image
+//!   after a tank-sized render, 39% after a bullet-sized one (#3794).
 
 use std::collections::HashMap;
 
@@ -205,9 +201,23 @@ impl VoxelImageCache {
         self.images.insert(image, drawn);
     }
 
-    /// Each scenario and loaded game starts empty.
-    pub fn clear(&mut self) {
-        *self = Self::default();
+    /// A new scenario reads its types again, and `TechnoTypeClass::ReadINI`
+    /// reloads a `Voxel=` type's voxels (`0x0071609C`), which frees all four
+    /// of its caches (`0x005F8BF0..0x005F8C95`): `reloaded` names those
+    /// types. The rest, such as a building's gun caches, keep their images:
+    /// `Clear_Scene` (`0x006851F0`) deletes objects, not types. The pool
+    /// cursor (rewound only by `0x005F99E0`) and `0xB43180` (cleared only by
+    /// `Init_Game`, `0x0052BE04`, once a process) carry over too.
+    pub fn start_scenario(&mut self, reloaded: impl Fn(&str) -> bool) {
+        self.images
+            .retain(|image, _| !reloaded(&image.sprite.type_id));
+    }
+
+    /// A loaded game: each type's Load frees its four caches
+    /// (`ObjectTypeClass::Load`, `0x005F9731..0x005F9772`). The pool cursor
+    /// and `0xB43180` carry over as for a new scenario.
+    pub fn load_game(&mut self) {
+        self.images.clear();
     }
 }
 
