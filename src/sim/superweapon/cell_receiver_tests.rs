@@ -431,12 +431,14 @@ fn infantry_same_frame_firer_death_keeps_electric_consequences() {
                 sim.substrate.entities.contains(infantry),
                 inf_death == 2 && visit < 3
             );
+            // This [Spark] authors no ColorList, so its sparks age and the
+            // system may retire (0x0062C494 holds the colour, no error); a
+            // repeated discharge would be another system.
+            assert!(
+                sim.particle_systems().iter().all(|(id, _)| *id == spark_id),
+                "no repeated death discharge"
+            );
         }
-        assert_eq!(
-            sim.particle_systems().len(),
-            1,
-            "no repeated death discharge"
-        );
     }
 }
 

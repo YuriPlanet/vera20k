@@ -1527,6 +1527,10 @@ fn restore_object_references(
 
         for (field, system_id) in [
             (
+                "fire_particle_system",
+                entity.fire_particle_system.system(),
+            ),
+            (
                 "spark_particle_system",
                 entity.spark_particle_system.system(),
             ),

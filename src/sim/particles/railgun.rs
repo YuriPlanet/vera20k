@@ -236,7 +236,7 @@ fn lay_spiral(
         );
 
         // 62F5FA..62F654: the constructor, both coordinates the point.
-        let mut particle = Particle::new_with_ground(
+        let (mut particle, start_rgb) = Particle::new_with_ground(
             particle_type_id,
             point,
             point,
@@ -244,7 +244,6 @@ fn lay_spiral(
             sim,
             |sim, x, y| super::spark_world::constructor_ground_height(sim, x, y),
         )?;
-        let start_rgb = super::spark_spawn::constructor_start_color(sim, particle_type)?;
 
         // 62F658..62F7AF: the drift direction is the ring vector plus three
         // movement draws (the third on X), normalized when non-zero.
@@ -316,8 +315,8 @@ fn lay_spiral(
             .map(|axis| Fpu::store_f32(Fpu::load_i32(axis)))
             .into_iter()
             .collect::<Result<Vec<_>, _>>()?;
+        particle.direction = direction;
         particle.railgun = Some(RailgunRuntimeState {
-            direction,
             position: [position[0], position[1], position[2]],
             start_rgb,
             color_index: 0,
@@ -342,7 +341,7 @@ pub(super) fn tick_particle(
         .ok_or(RailgunParticleError::MissingRuntimeState)?;
     let speed = Fpu::load_f32(particle.velocity)?;
     let mut step = [NativeF32Bits::POSITIVE_ZERO; 3];
-    for (axis, direction) in state.direction.into_iter().enumerate() {
+    for (axis, direction) in particle.direction.into_iter().enumerate() {
         step[axis] = Fpu::store_f32(Fpu::mul(Fpu::load_f32(direction)?, speed))?;
     }
     let sample = rng.next_range_u32_inclusive(0, MAX_SAMPLE);

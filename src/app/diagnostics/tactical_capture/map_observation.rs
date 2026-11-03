@@ -124,6 +124,7 @@ enum MapKeyEdge {
 /// render-target pixels; key names are literal keys, never command identities.
 /// No render sees a synthetic held button or key. Omitted mouse buttons retain
 /// the historical left route; right clicks use the same ordinary edge owner.
+/// Click modifiers are held through the cursor move, press and release only.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum MapGesture {
@@ -135,6 +136,12 @@ enum MapGesture {
             skip_serializing_if = "Option::is_none"
         )]
         button: Option<MapMouseButton>,
+        #[serde(
+            default,
+            deserialize_with = "deserialize_present",
+            skip_serializing_if = "Option::is_none"
+        )]
+        modifiers: Option<Vec<String>>,
     },
     Drag {
         from: [u32; 2],
@@ -201,6 +208,15 @@ impl MapGesture {
         )
     }
 
+    fn modifiers(&self) -> &[String] {
+        match self {
+            Self::Click { modifiers, .. } | Self::Key { modifiers, .. } => {
+                modifiers.as_deref().unwrap_or_default()
+            }
+            _ => &[],
+        }
+    }
+
     fn is_quickload(&self) -> bool {
         matches!(self, Self::Key { key, modifiers: Some(modifiers), .. }
             if key.eq_ignore_ascii_case("N") && modifiers.len() == 2
@@ -217,6 +233,26 @@ impl MapGesture {
             | Self::Key { .. }
             | Self::MinimapObject { .. } => None,
         }
+    }
+}
+
+/// Press or release literal modifiers through the shared modifier-key owner,
+/// releasing in reverse order.
+fn literal_modifier_edges(state: &mut AppState, codes: &[winit::keyboard::KeyCode], pressed: bool) {
+    let mut edge = |code| {
+        crate::app::input::hotkeys::record_modifier_key(
+            &mut state.platform.held_modifier_keys,
+            &mut state.platform.live_modifiers,
+            &mut state.match_state.input.hotkey_modifiers,
+            code,
+            pressed,
+            false,
+        );
+    };
+    if pressed {
+        codes.iter().copied().for_each(&mut edge);
+    } else {
+        codes.iter().rev().copied().for_each(&mut edge);
     }
 }
 
@@ -757,10 +793,10 @@ impl MapCaptureProfile {
                     | MapSidebarTarget::Sell {} => {}
                 }
             }
-            if let MapGesture::Key { key, modifiers, .. } = &gesture.gesture {
+            if let MapGesture::Key { key, .. } = &gesture.gesture {
                 literal_key(key)?;
-                literal_modifiers(modifiers.as_deref().unwrap_or_default())?;
             }
+            literal_modifiers(gesture.gesture.modifiers())?;
             if let MapGesture::CommandBar { command } = &gesture.gesture {
                 command_bar_index(command)?;
             }
@@ -944,6 +980,7 @@ impl MapCaptureProfile {
             matches!(entry.gesture, MapGesture::Key { .. })
                 || entry.gesture.is_minimap()
                 || entry.gesture.is_right_button()
+                || !entry.gesture.modifiers().is_empty()
         })
     }
 
@@ -1900,19 +1937,7 @@ impl MapKeyboardGestureReceipt {
         let (physical, logical) = literal_key(key)?;
         let planning_before = state.match_state.input.planning.active();
         let modifier_keys = literal_modifiers(modifiers)?;
-        let modifier_edge = |state: &mut AppState, code, pressed| {
-            hotkeys::record_modifier_key(
-                &mut state.platform.held_modifier_keys,
-                &mut state.platform.live_modifiers,
-                &mut state.match_state.input.hotkey_modifiers,
-                code,
-                pressed,
-                false,
-            );
-        };
-        for code in &modifier_keys {
-            modifier_edge(state, *code, true);
-        }
+        literal_modifier_edges(state, &modifier_keys, true);
         let location = KeyLocation::Standard;
         let encoded_key = hotkeys::logical_virtual_key(&logical, location)
             .context("literal key has no production virtual-key identity")?;
@@ -1962,9 +1987,7 @@ impl MapKeyboardGestureReceipt {
             edge(state, ElementState::Released, false);
         }
         let release_cleared = !state.match_state.input.keys_held.contains(&physical);
-        for code in modifier_keys.iter().rev() {
-            modifier_edge(state, *code, false);
-        }
+        literal_modifier_edges(state, &modifier_keys, false);
         ensure!(
             (key_edge == Some(MapKeyEdge::Released) || press_held)
                 && (matches!(key_edge, Some(MapKeyEdge::Pressed | MapKeyEdge::Repeat))
@@ -3612,6 +3635,8 @@ impl TacticalCaptureSession {
                     crate::app::input::tooltips::on_button_event(state);
                     crate::app::input::dispatch::handle_mouse_input(state, mouse_button, edge);
                 };
+                let modifier_keys = literal_modifiers(scheduled.gesture.modifiers())?;
+                literal_modifier_edges(state, &modifier_keys, true);
                 move_cursor(state, from);
                 if scheduled.gesture.is_minimap() {
                     let target =
@@ -3699,6 +3724,7 @@ impl TacticalCaptureSession {
                 let band_box_before_release =
                     state.match_state.input.selection_state.is_band_box_active();
                 button(state, ElementState::Released);
+                literal_modifier_edges(state, &modifier_keys, false);
                 if let Some((receipt, handle)) = &mut command_bar
                     && let Some(thumb) = &mut receipt.thumb
                 {
@@ -3744,6 +3770,7 @@ impl TacticalCaptureSession {
                 )
             };
             let neutral_input_restored = crate::app::input::camera::camera_input_idle(state)
+                && state.match_state.input.hotkey_modifiers.is_empty()
                 && !state.match_state.input.selection_state.is_band_box_active()
                 && [
                     state.match_state.input.cursor_x,
@@ -5667,6 +5694,7 @@ mod tests {
             gesture: MapGesture::Click {
                 position: [width - 2, height - 2],
                 button: None,
+                modifiers: None,
             },
         }]);
         profile.validate().unwrap();
@@ -5674,6 +5702,7 @@ mod tests {
             profile.gestures.as_mut().unwrap()[0].gesture = MapGesture::Click {
                 position,
                 button: None,
+                modifiers: None,
             };
             assert!(profile.validate().is_err(), "{position:?}");
         }
@@ -6051,6 +6080,7 @@ mod tests {
                 gesture: MapGesture::Click {
                     position: [10, 10],
                     button: None,
+                    modifiers: None,
                 },
             },
             MapScheduledGesture {
@@ -6065,6 +6095,7 @@ mod tests {
                 gesture: MapGesture::Click {
                     position: [30, 30],
                     button: None,
+                    modifiers: None,
                 },
             },
         ]);

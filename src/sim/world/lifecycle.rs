@@ -4757,6 +4757,7 @@ impl Simulation {
             listener.passenger_role.inside_transport_id(),
             listener.pending_entry(),
             listener.spawn_owner_id.owner(),
+            listener.fire_particle_system.system(),
             listener.spark_particle_system.system(),
             listener.railgun_particle_system.system(),
             listener.damage_smoke_system_id.system(),
@@ -5260,6 +5261,7 @@ impl Simulation {
         // exact match, including damage-Smoke+310. It precedes the control
         // gate707AE7 and is independent of the target's sensor/owner guards.
         let clear_damage_smoke = listener.damage_smoke_system_id.system() == Some(expired_id);
+        let clear_fire_system = listener.fire_particle_system.system() == Some(expired_id);
         let clear_spark_system = listener.spark_particle_system.system() == Some(expired_id);
         let clear_railgun_system = listener.railgun_particle_system.system() == Some(expired_id);
         // Techno707AE7..707B03 clears ArchiveTarget+218 on control1. The
@@ -5352,6 +5354,7 @@ impl Simulation {
         let clear_spotlight = listener.category() == EntityCategory::Structure
             && listener.building_light.light() == Some(expired_id);
         if !(clear_suspended_target
+            || clear_fire_system
             || clear_spark_system
             || clear_railgun_system
             || clear_damage_smoke
@@ -5382,6 +5385,9 @@ impl Simulation {
         }
         if clear_damage_smoke {
             listener.damage_smoke_system_id.forget();
+        }
+        if clear_fire_system {
+            listener.fire_particle_system.forget();
         }
         if clear_spark_system {
             listener.spark_particle_system.forget();

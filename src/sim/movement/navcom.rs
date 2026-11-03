@@ -746,10 +746,12 @@ pub(crate) fn set_destination_internal_coord(
 }
 
 /// Foot4D94C7/4D9510: NavComAux cleared and the reference published, before
-/// the locomotor dispatch. The Foot+0x6AC skip (4D9607) stops here, and a
-/// Teleport owner's Move_To is dispatched by the Unit setter.
-pub(super) fn publish_nav_com(entity: &mut GameEntity, target: NavTargetRef) {
+/// the locomotor dispatch; a non-null destination then releases the Fire
+/// system link (`0x004D954B`). The Foot+0x6AC skip (4D9607) stops after this,
+/// and a Teleport owner's Move_To is dispatched by the Unit setter.
+pub(crate) fn publish_nav_com(entity: &mut GameEntity, target: NavTargetRef) {
     entity.navigation.publish_nav_com(Some(target));
+    entity.release_fire_particle_system();
 }
 
 /// Foot4D94C7/4D9510 NULL reference publication, before locomotor Stop.

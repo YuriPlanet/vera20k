@@ -237,7 +237,8 @@ class LineDamage(RailgunBirth):
         out, source = self.alloc(12), self.alloc(12)
         self.u.mem_write(source, words(*case['source']))
         before = self.trace.states()
-        assert self.invoke(LINE_DAMAGE, firer, (out, source, objects[case['target']], weapon)) == out
+        returned = self.invoke(LINE_DAMAGE, firer, (out, source, objects[case['target']], weapon))
+        native.require(returned == out, 'line damage returns its out coordinate')
         assert not self.trace.pending
         return dict(case, radius=signed(self.read32(self.rules + 0x494)),
             returned=ints(self.u, out, 3), hits=self.hits, rng_unchanged=before == self.trace.states())

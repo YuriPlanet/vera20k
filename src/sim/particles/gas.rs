@@ -62,7 +62,7 @@ impl Simulation {
     }
 }
 
-fn reverse_ids(system: &ParticleSystem) -> Vec<(usize, u64)> {
+pub(super) fn reverse_ids(system: &ParticleSystem) -> Vec<(usize, u64)> {
     system
         .particles
         .iter()
@@ -81,7 +81,7 @@ pub(super) fn tick_system(
     let Some(sys) = sim.particle_systems().get(system) else {
         return;
     };
-    let owner_house = sys.owner_house;
+    let (owner_house, owner_entity) = (sys.owner_house, sys.owner_entity);
     let ids = reverse_ids(sys);
     for (index, id) in ids {
         let Some(mut p) = sim.particle_systems().particle_for_tick(system, index, id) else {
@@ -91,7 +91,7 @@ pub(super) fn tick_system(
             tick_particle(&mut p, sim, rules, owner_house, context);
             super::system_ai::finish_lifetime(&mut p);
         } else {
-            super::system_ai::tick_particle(&mut p, sim, rules, owner_house);
+            super::system_ai::tick_particle(&mut p, sim, rules, owner_house, owner_entity);
         }
         sim.substrate
             .particle_systems
@@ -129,8 +129,8 @@ pub(super) fn tick_system(
             if let Some(parent) = parent {
                 sim.retire_particle(parent, rules);
             }
-        } else if rules.particle_type(p.type_id).behaves_like == ParticleBehavesLike::Gas {
-            move_gas(&mut p, sim, rules);
+        } else {
+            super::system_ai::move_dispatch(&mut p, sim, rules);
             sim.substrate
                 .particle_systems
                 .commit_particle_tick(system, index, p);
@@ -319,7 +319,7 @@ fn ground(sim: &Simulation, coords: IVec3) -> i32 {
         .unwrap_or(0)
 }
 
-fn move_gas(p: &mut Particle, sim: &Simulation, rules: &RuleSet) {
+pub(super) fn move_gas(p: &mut Particle, sim: &Simulation, rules: &RuleSet) {
     let pt = rules.particle_type(p.type_id);
     let frame = sim.session.binary_frame() as i32;
     let mut coords = p.coords;
