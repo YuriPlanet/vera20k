@@ -178,65 +178,29 @@ fn friendly_attack_is_admitted(
 
 /// What_Action_OnObject's attack rung without Ctrl (`0x00700400..0x0070043E`)
 /// needs the object's type (vt+0x88) to be `LegalTarget=` (`+0x231`,
-/// `0x0070042E`) or TechnoClass vt+0x398 (`0x0070EF00`, asked at
-/// `0x007002EE`) to answer yes. For a Terrain object
-/// that is its TerrainType's `LegalTarget=` (retail: only `VEINHOLE`), else
-/// `[CombatDamage] TreeTargeting=` (`Rules+0x17E9`, retail no) or the
-/// `TerrainFire=` (`+0x138`) of the weapon SelectWeapon picks for it
-/// (`0x0070EF0C..0x0070EF4B`). A Techno uses its own ObjectType byte.
+/// `0x0070042E`) or TechnoClass vt+0x398 (asked at `0x007002EE`,
+/// [`Simulation::fires_at_terrain`]) to answer yes. For a Terrain object the
+/// type is its TerrainType (retail: only `VEINHOLE` is `LegalTarget=`); a
+/// Techno uses its own ObjectType byte.
 ///
-/// RESIDUAL: for a Techno, vt+0x398 also answers yes when the picked weapon
-/// is `TerrainFire=` and the target IsDisguised (vt+0xC4) with no worn house
-/// (vt+0xD0(1), `0x0070EF53..0x0070EFB9`); this asks `LegalTarget=` alone.
-/// Trigger: a layer clears a Techno's `LegalTarget=`, and an actor whose
-/// picked weapon is `TerrainFire=` (retail: only `TankMakeupKit`) clicks it
-/// while it is so disguised. Effect: that unforced click leaves the rung,
-/// where native stays on it; Ctrl is unaffected. Frequency: nil on retail
-/// data, where no rules or mode INI clears `LegalTarget=` on a Techno.
-/// Downstream: only that click's cursor and order.
+/// [`Simulation::fires_at_terrain`]: crate::sim::world::Simulation::fires_at_terrain
 fn object_target_is_legal(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     actor_id: u64,
     target_id: u64,
 ) -> bool {
-    use crate::sim::combat::combat_weapon;
-
-    let Some(terrain) = sim.terrain_objects().get(target_id) else {
-        return sim.entities().get(target_id).is_some_and(|target| {
+    let legal_target = match sim.terrain_objects().get(target_id) {
+        Some(terrain) => rules
+            .terrain_object_type_case_insensitive(sim.interner().resolve(terrain.type_ref()))
+            .is_some_and(|terrain| terrain.legal_target),
+        None => sim.entities().get(target_id).is_some_and(|target| {
             sim.interner()
                 .object_type_in_category(target.type_ref(), target.category().into(), rules)
                 .is_some_and(|kind| kind.legal_target)
-        });
+        }),
     };
-    if rules
-        .terrain_object_type_case_insensitive(sim.interner().resolve(terrain.type_ref()))
-        .is_some_and(|terrain| terrain.legal_target)
-    {
-        return true;
-    }
-    let Some(actor) = sim.entities().get(actor_id) else {
-        return false;
-    };
-    let Some(kind) = sim.interner().object_type(actor.type_ref(), rules) else {
-        return false;
-    };
-    let cells = sim
-        .resolved_terrain()
-        .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
-    combat_weapon::select_weapon_against_in_query(
-        rules,
-        actor,
-        kind,
-        &combat_weapon::attacker_facts(actor, kind),
-        Some(&TargetKind::Entity(target_id)),
-        sim,
-        sim.interner(),
-        cells.as_ref(),
-        Some(sim.house_alliances()),
-    )
-    .and_then(|(_, weapon)| weapon)
-    .is_some_and(|weapon| rules.general.tree_targeting || weapon.weapon.terrain_fire)
+    legal_target || sim.fires_at_terrain(actor_id, &TargetKind::Entity(target_id), rules, None)
 }
 
 /// The attack rung of the actor's What_Action and the tail it falls to.
@@ -263,12 +227,10 @@ fn object_target_is_legal(
 /// `cell_move_action` and `ordinary_cell_move_goal`. Any other house's object
 /// answers 0 there (`0x00700AB7..0x00700AC4`).
 ///
-/// DORMANT: before that tail, a second rung (`0x00700A46..0x00700AA8`)
-/// answers Attack when vt+0x398 (`0x0070EF00`) accepts the cell, which it
-/// does for an `IsARock=` overlay under a `TerrainFire=` weapon, and control
-/// (vt+0xA0) or range (vt+0x164) holds. Not ported: retail's only
-/// `TerrainFire=` weapon, `TankMakeupKit`, is unreferenced (`[MGTK]` has
-/// `;Primary=TankMakeupKit` commented out).
+/// Before that tail, a second rung (`0x00700A46..0x00700AA8`) answers Attack
+/// when vt+0x398 accepts the cell (an `IsARock=` overlay under a
+/// `TerrainFire=` weapon) and control or range holds; the unforced callers ask
+/// it with the first through [`Simulation::cell_attack_rung_admits`].
 ///
 /// This asks no ROF or reload. Over an object a Foot's shroud rung comes
 /// next ([`shrouded_object_action`]); so far it is [`base_action`]. Then
@@ -295,6 +257,8 @@ fn object_target_is_legal(
 /// `PermaDisguise=yes`). Trigger: a rules or map layer setting it to no, then
 /// an unforced hover or click over a disguised Spy or Mirage. Effect: VERA
 /// may answer Attack where native's rung refuses and the tail answers.
+///
+/// [`Simulation::cell_attack_rung_admits`]: crate::sim::world::Simulation::cell_attack_rung_admits
 pub(crate) fn attack_action(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -708,17 +672,19 @@ pub(super) fn infantry_arm_attacks(
 
 /// Whether an Aircraft's 0 over the object `target_id` becomes Attack. The
 /// Aircraft wrapper asks its own What_Action on the Cell under the object
-/// (`0x00417D7C..0x00417DCB`, [`Simulation::object_coords_cell`]):
-/// Aircraft `0x00417F80`, a human player's only, through Foot's shroud wrapper
+/// (`0x00417D7C..0x00417DCB`, [`Simulation::object_coords_cell`]): Aircraft
+/// `0x00417F80`, a human player's only, through Foot's shroud wrapper
 /// (`0x004DDDE0`) to Techno `0x00700600`, whose unforced Attack rung
-/// (`0x007008A6..0x007009F1`, [`Simulation::cell_attack_rung_admits`])
-/// answers over a destroyable cliff or another house's Wall its `Wall=`
-/// warhead may hit (retail Harrier and Black Eagle warheads have it), with
-/// the forced shot's tail at the Cell. A shrouded Cell takes the Attack back
-/// (`0x004DDE64..0x004DDEBE`). Aircraft `0x00417FB1` and `0x00417DCD` keep
-/// it only with a weapon in slot 0 (vt+0x3F8). The Immune rung then
-/// tests the object (`0x00417F4A`), and the click sends the Attack to Foot
-/// `0x004D74E0` as an attack on the object ([`object_attack_click_command`]).
+/// (`0x007008A6..0x007009F1`, [`Simulation::cell_attack_rung_admits`]) answers
+/// over a destroyable cliff or another house's Wall its `Wall=` warhead may hit
+/// (retail Harrier and Black Eagle warheads have it), and whose TerrainFire
+/// rung (`0x00700A46`) answers over an `IsARock=` overlay for a `TerrainFire=`
+/// weapon, each with the forced shot's tail at the Cell. A shrouded Cell takes
+/// the Attack back (`0x004DDE64..0x004DDEBE`). Aircraft `0x00417FB1` and
+/// `0x00417DCD` keep it only with a weapon in slot 0 (vt+0x3F8). The Immune
+/// rung then tests the object (`0x00417F4A`), and the click sends the Attack to
+/// Foot `0x004D74E0` as an attack on the object
+/// ([`object_attack_click_command`]).
 ///
 /// RESIDUAL: the slot-0 test stands on the rung's current weapon. Trigger: an
 /// aircraft type with a Secondary but no Primary weapon (none in retail, whose
@@ -4060,8 +4026,7 @@ pub(super) fn infantry_attack_action(
                 .object_type(target.type_ref(), rules)
                 .is_some_and(|object| {
                     let building = target.category() == EntityCategory::Structure;
-                    object.allows_airstrike(building)
-                        && !(building && object.invisible_in_game)
+                    object.allows_airstrike(building) && !(building && object.invisible_in_game)
                 })
         });
         #[cfg(not(feature = "phobos"))]
