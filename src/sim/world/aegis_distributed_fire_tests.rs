@@ -68,6 +68,9 @@ impl GuardScene {
             let id = sim
                 .spawn_object_at_height("ZEP", "Russians", x, y, 0, 6, &rules)
                 .expect("retail Kirov high Unlimbo");
+            // The player has seen the Kirov, a VehicleType: the campaign scan
+            // gate needs +0x41B.
+            crate::sim::arena_fixture::discover(&mut sim, id);
             let actor = sim.substrate.entities.get(id).unwrap();
             assert!(!actor.lifecycle.in_limbo());
             assert!(actor.lifecycle.cell_marked());

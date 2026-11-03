@@ -31,6 +31,8 @@ fn repair_scan(rules: &RuleSet, offset: (i32, i32), mission: MissionType) -> (Op
             rules,
         )
         .expect("Grizzly");
+    // The player's own Grizzly: the campaign scan gate needs +0x41A.
+    crate::sim::arena_fixture::own(&mut sim, tank);
     let mode = rules.object("ENGINEER").expect("ENGINEER").ifv_mode;
     let ifv_type = rules.object("FV").expect("FV");
     sim.substrate

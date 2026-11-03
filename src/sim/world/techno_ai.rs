@@ -3393,6 +3393,8 @@ mod tests {
         ))
         .expect("wreck rules parse");
         let (mut sim, grid) = guard_beside_unarmed(&rules, "MTNK");
+        // The player has seen the enemy: the campaign scan gate needs +0x41B.
+        crate::sim::arena_fixture::discover(&mut sim, 2);
         let timer = {
             let wreck = sim.substrate.entities.get_mut(1).expect("tank present");
             wreck.health.set_for_test(0);
@@ -3433,6 +3435,8 @@ mod tests {
             ],
             Some(&rules),
         );
+        // The player has seen the enemy: the campaign scan gate needs +0x41B.
+        crate::sim::arena_fixture::discover(&mut sim, 2);
         sim.playfield_bounds = Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(64, 2, 2, 56, 52),
         );
@@ -3488,6 +3492,9 @@ mod tests {
             ],
             Some(&rules),
         );
+        // Neither House is registered, so the Soviet tank scans as a human
+        // player's: the campaign scan gate needs the scout's +0x41B.
+        crate::sim::arena_fixture::discover(&mut sim, 1);
         let allied = sim.interner.get("Americans").expect("Americans interned");
         let start = sim
             .substrate
@@ -3559,6 +3566,9 @@ mod tests {
             ],
             Some(&rules),
         );
+        // The player has seen both enemies: the campaign scan gate needs +0x41B.
+        crate::sim::arena_fixture::discover(&mut sim, 2);
+        crate::sim::arena_fixture::discover(&mut sim, 3);
         for _ in 0..60 {
             let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
         }
@@ -3625,6 +3635,8 @@ mod tests {
             ],
             Some(rules),
         );
+        // The player has seen the enemy: the campaign scan gate needs +0x41B.
+        crate::sim::arena_fixture::discover(&mut sim, 3);
         // A human's probe: ReceiveDamage's scatter tail moves a computer's
         // unarmed unit off the reach edge (`0x00702C8A`); this measures reach.
         let soviet = sim.interner.intern("Soviet");
@@ -4807,6 +4819,8 @@ mod tests {
         // weapon reach that bounds a Guard-mission scan, comfortably inside
         // Sight=10 so the candidate is not shrouded.
         let mut sim = hunt_pair(0x40_0720, "HUNTVEH", 8, MissionType::Hunt);
+        // The player has seen the enemy: the campaign scan gate needs +0x41B.
+        crate::sim::arena_fixture::discover(&mut sim, 2);
         let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
         // Record the state at the moment of acquisition: the hunter starts
         // closing as soon as it has a target, and the point of the test is how
