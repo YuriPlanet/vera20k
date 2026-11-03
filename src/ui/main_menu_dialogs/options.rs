@@ -91,7 +91,7 @@ pub(crate) const SKIP_STARTUP_LOGO_HELP: &str =
     "Start without the logo movie; the loading screen still shows. Applies at the next start.";
 pub(crate) const DEBUG_TOOLS_LABEL: &str = "Debug Tools";
 pub(crate) const DEBUG_TOOLS_HELP: &str =
-    "Ctrl+Shift: L grid, K height, P terrain, O path, V reveal, J pause, . step, +/- speed";
+    "Ctrl+Shift: L grid, K height, F9 terrain, O path, V reveal, J pause, . step, +/- speed";
 pub(crate) const FPS_COUNTER_LABEL: &str = "FPS Counter";
 pub(crate) const FPS_COUNTER_HELP: &str = "Show frames per second in the top-left corner. Off at every start; Ctrl+Alt+F also switches it.";
 /// VERA's end-game switches, the pair of `[EndGameScreens]` presentation
