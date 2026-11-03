@@ -54,7 +54,7 @@
 //! again. A vehicle's own path search prices a cell a stationary friendly
 //! holds at code 6, so that re-path usually routes round the refusal or fails
 //! and stops it; a refusal that outlasts it, not yet seen in a run, would
-//! repeat every frame and hold a team waiting on the vehicle.
+//! repeat every frame and hold a team waiting on the vehicle (#3768).
 //! Hover's own timer-gated Find_Path is not batched.
 //! The batch draws no random numbers; later draws follow the changed
 //! movement. Each search reads only that frame-start world, so no result
