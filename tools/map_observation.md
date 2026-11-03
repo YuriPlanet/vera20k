@@ -1605,8 +1605,9 @@ starts America/Battle against a Yuri computer opponent (`Computer1`, Easy) with 
 rules and assets on an [authored map](map_observation/examples/ai_psychic_dominator.map):
 the Psychic Dominator fixture's terrain with the computer's pre-placed YAPPET at (46,42)
 and two GAPOWR, observer MTNK at (43,53), (44,54) and (45,55) and a fourth at (52,62),
-and no commands. The observer's starting MCV stays undeployed at its start (59,33). A
-deploy on its own would empty the observer's base cell, as gamemd's does (see the
+and no commands; a drag after step 9040 selects all four tanks. The observer's starting
+MCV stays undeployed at its start (59,33). A deploy on its own would empty the
+observer's base cell, as gamemd's does (see the
 [Spy Plane observation](#computer-spy-plane-observation)), but AI_Fire_PsyDom
 (`0x0050A150`) aims at Foot units and reads no base cell. MTNK is the only observed
 type, and the profile observes no Super rows, for the sample budget. The loader looks a
@@ -1616,7 +1617,10 @@ relative map name up in the retail root: run a profile copy whose
 Each grouped tank counts all three in its 38 cells, and the last-to-first scan keeps the
 last of them, (45,55): at step 9074 the tanks at (44,54) and (45,55) in the 3x3 block
 (`DominatorCaptureRange=1`) become Computer1's and hunt the tank at (43,53), which stays
-the observer's, outside the block, as does the one at (52,62). These are Rust production
+the observer's, outside the block, as does the one at (52,62). The same step's
+`input.selected_ids` drops the two captured tanks and keeps the other two:
+`TechnoClass::ChangeOwner @ 0x007014A0` deselects a local player's object before it
+changes owner (`0x007014B9..0x007014CF`). These are Rust production
 observations: the chain's native comparisons are the `tools.superweapon_oracle`
 `ai_psydom` rows and the `tools.ai_strategy_oracle` `all_to_hunt` rows. The run never
 reaches All_To_Hunt, and no whole-run timing or pixel equivalence with gamemd is claimed.
