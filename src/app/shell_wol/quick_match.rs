@@ -554,14 +554,28 @@ fn request(state: &mut AppState) -> bool {
         .and_then(|visit| visit.locales.get(&nickname.to_ascii_lowercase()))
         .copied();
     let width = lobby::options_screen(state).0;
+    // An online visit has no persona file: the MultiPlayer side and colour
+    // the player saved in VERA.INI stay (`persona::take_side_and_color`),
+    // and they go instead, as the game's first `R` sends them
+    // (`send_first_choices`).
+    let (country, color) = match super::persona::info_file(state) {
+        Some(_) => (persona.country, persona.color),
+        None => crate::app::frontend::skirmish_session::seat_items(
+            &state
+                .frontend
+                .multiplayer_shell_runtime
+                .local_participant()
+                .slot,
+        ),
+    };
     csf_line(state, "WOL:RequestingMatch", REQUEST_COLOR);
     service::request(
         state,
         WolServiceRequest::RequestMatch {
             matchbot,
             request: MatchRequest {
-                country: persona.country,
-                color: persona.color,
+                country,
+                color,
                 match_by_resolution: persona.match_by_res,
                 locale,
                 width,
@@ -769,7 +783,7 @@ pub(crate) enum MatchMap<'a> {
 
 /// The pairing this game hosts: a private `Start` whose host
 /// [`start_role`] finds to be the local player. The guest builds nothing.
-fn hosted_pairing(
+pub(super) fn hosted_pairing(
     local: &str,
     text: &str,
     private: bool,
@@ -781,16 +795,13 @@ fn hosted_pairing(
     host.then_some(pairing)
 }
 
-/// The host's options for VERA20K Online's pairing, which the `Start`
-/// message carries (`[0xB73714]`); `None` for the guest or a pairing that
-/// cannot be built (logged).
+/// The host's options for the VERA20K Online pairing it hosts
+/// ([`hosted_pairing`]), which the `Start` message carries (`[0xB73714]`);
+/// `None` for a pairing that cannot be built (logged).
 pub(super) fn online_start_options(
     state: &AppState,
-    text: &str,
-    private: bool,
     pairing: MatchStart,
 ) -> Option<Box<crate::app::shell_network_setup::HostOptions>> {
-    let pairing = hosted_pairing(&nickname(state), text, private, pairing)?;
     match host_options(state, &pairing, MatchMap::OfficialDuel) {
         Ok(options) => Some(Box::new(options)),
         Err(error) => {
@@ -803,8 +814,8 @@ pub(super) fn online_start_options(
 /// The host's options for a matchbot's pairing, as `0x005E3D10` parses a
 /// `Start` payload into them for the host (`0x007A6DC2..0x007A6E50`): the
 /// first mode (Cooperative in Quick Co-op), the host on row 0 and the
-/// guest on row 1 with their countries and colours on automatic starts,
-/// and the pairing's seed. The test service's stand-in matchbot and VERA20K
+/// guest on row 1 with their countries and colours on automatic starts
+/// (Random ones drawn by [`draw_random_picks`]), and the pairing's seed. The test service's stand-in matchbot and VERA20K
 /// Online's both build them here.
 pub(crate) fn host_options(
     state: &AppState,
@@ -932,6 +943,7 @@ fn build_host_options(
         false,
         PeerChoicePolicy::Wol { countries: None },
     );
+    draw_random_picks(&mut launch.humans, countries, pairing.seed)?;
     Ok(crate::app::shell_network_setup::HostOptions {
         launch,
         map_metadata: map_metadata(&file)?,
@@ -940,6 +952,53 @@ fn build_host_options(
         cooperative_difficulty: 0,
         seed: Some(pairing.seed),
     })
+}
+
+/// The pairing's Random picks, host first: a country of My Information's
+/// list and a colour the other player does not hold, drawn from the seed.
+/// Both players then accept with a concrete side and colour
+/// (`0x007A7F72`).
+/// RESIDUAL: the retail matchbot sent concrete countries and colours in its
+/// `Start`; VERA's lobby holds no rules data and echoes each request's
+/// `COU`/`COL`, Random included, so the host draws them. The draws are
+/// VERA's, not native's.
+fn draw_random_picks(
+    humans: &mut [crate::skirmish_launch::SkirmishHumanSlot],
+    countries: &[crate::skirmish_launch::LaunchCountry],
+    seed: u32,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(!countries.is_empty(), "no country to draw");
+    let mut draws = (0u32..).map(|k| seat_draw(seed, k) as usize);
+    for index in 0..humans.len() {
+        let held: Vec<u8> = humans
+            .iter()
+            .enumerate()
+            .filter(|(other, human)| *other != index && !human.slot.color_random)
+            .map(|(_, human)| human.slot.color_index)
+            .collect();
+        let slot = &mut humans[index].slot;
+        if slot.country_random {
+            slot.country = countries[draws.next().expect("endless") % countries.len()];
+            slot.country_random = false;
+        }
+        if slot.color_random {
+            let free: Vec<u8> = (0..crate::skirmish_launch::HOUSE_COLOR_COUNT as u8)
+                .filter(|color| !held.contains(color))
+                .collect();
+            slot.color_index = free[draws.next().expect("endless") % free.len()];
+            slot.color_random = false;
+        }
+    }
+    Ok(())
+}
+
+/// The seed's `k`th draw for a Random pick: a Weyl step, then a 32-bit
+/// integer hash, so the picks do not follow the map's `seed % count`.
+fn seat_draw(seed: u32, k: u32) -> u32 {
+    let mut x = seed.wrapping_add(k.wrapping_add(1).wrapping_mul(0x9E37_79B9));
+    x = (x ^ (x >> 16)).wrapping_mul(0x7FEB_352D);
+    x = (x ^ (x >> 15)).wrapping_mul(0x846C_A68B);
+    x ^ (x >> 16)
 }
 
 /// VERA20K Online's map: of the official two-player scenarios the mode
@@ -1556,10 +1615,14 @@ mod tests {
         assert_eq!(launch.local_player_index, 0);
         assert_eq!(launch.selected_map_file.as_deref(), Some("duel1.map"));
         assert_eq!(options.seed, Some(7));
-        // Random stays Random; the colour the host holds turns Random.
+        // Random draws a listed country; the colour the host holds turns
+        // Random and draws another, so both players accept.
         let (host, guest) = (&launch.humans[0].slot, &launch.humans[1].slot);
-        assert!(host.country_random && (host.color_random, host.color_index) == (false, 3));
-        assert!(!guest.country_random && guest.country == countries[5] && guest.color_random);
+        assert!(!host.country_random && countries.contains(&host.country));
+        assert_eq!((host.color_random, host.color_index), (false, 3));
+        assert!(!guest.country_random && guest.country == countries[5]);
+        assert!(!guest.color_random && guest.color_index != 3);
+        assert_eq!(build(&pairing).unwrap().launch, options.launch);
 
         let mut foreign = pairing;
         foreign.guest.country = 70_000;

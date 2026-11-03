@@ -447,8 +447,8 @@ players, then always last the matchbot
 Sign-in refuses `matchbot` without case with 409 `name_unavailable`. There a player's only
 chat is private to `matchbot`: `{text:"Match COU=<int>, COL=<int>, MBR=<0|1>[, LOC=<int>],
 RAT=<int>, RES=<int>, ADR=<int>, NAT=<int>, PRT=<int>",to:["matchbot"],action:false}`, the
-retail request with the transport fields 0. The lobby reads COU (country) and COL (colour,
-each -2 for Random); a text not starting `Match ` gets a private `nack`. The matchbot's
+retail request with the transport fields 0; COU and COL are the side and colour the player
+saved for multiplayer. The lobby reads COU (country) and COL (colour, each -2 for Random); a text not starting `Match ` gets a private `nack`. The matchbot's
 replies are `chat` events with `ansi:true`: a private `Working` at once, also to a repeated
 request, which keeps the player's place; a public `Pool <n>` whenever the number waiting
 changes; and on a pairing a private `Start <seed>:<host>,0,0,0,0,0,0,0,<guest>,0,0,0,0,0,0,0`
@@ -457,12 +457,15 @@ a fresh random u32 seed and each player's COU and COL as sent. Pairing is first 
 served between two players whose `User-Agent` names the same version (two unknown versions
 may pair); the earlier waiter hosts. Leaving `Lob_40_0` (leave, logout, expiry or another
 join) leaves the queue.
-The host's game then leaves and `create`s the two-player game `<host>'s_game`; the guest's
-leaves and lists `kind=41` up to 30 times, 100 ms apart, for that name (without case) and
-joins it. For 2 minutes a room the paired host creates is that pairing's: only the paired
+The host's game then leaves and `create`s the two-player game `<host>'s_game` with
+`tournament:1` and the `ex_info` of a Create; the guest's stays in `Lob_40_0`, lists `kind=41`
+up to 30 times, 100 ms apart, for that name (without case) and joins it, which leaves
+`Lob_40_0`. For 2 minutes a room the paired host creates is that pairing's: only the paired
 guest sees it listed or may join it (anyone else `room_full`), until the guest has joined.
 From there the v4 room flow runs. When the guest joins, the host's game publishes options
-built from `quick_match`: host row 0, guest row 1, automatic starts, -2 as Random and a
-guest colour the host holds as Random, the first mode (Battle), `seed`, and the official
-two-player map of index `seed % count` among those of its catalog the mode admits. The
-guest's game accepts them by itself, and the host's starts once it has.
+built from `quick_match`: host row 0, guest row 1, automatic starts, the first mode (Battle),
+`seed`, and the official two-player map of index `seed % count` among those of its catalog
+the mode admits. A guest colour the host holds becomes Random; each Random is then drawn from
+`seed`, a country from the game's list and a colour the other player does not hold. The host
+ignores the guest's `choices`; the guest's game accepts the options by itself, and the
+host's starts once it has.

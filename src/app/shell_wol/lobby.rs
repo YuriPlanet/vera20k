@@ -1204,27 +1204,38 @@ pub(super) fn quick_match_join_game(state: &mut AppState, channel: WolChannel) {
 }
 
 /// `0x00789B60`'s Quick Match branch (`0x00789BA8..0x00789D60`,
-/// `0x00789EC4..0x00789EEE`): no `0xC3`, two users, no key,
-/// `"%s's_game"`, tournament 1 (Quick Co-op 0, `0x00789EC9`), game flags
-/// `0x800` plus `[0xB77DD4]` and no resolution bits; the leave and the
+/// `0x00789EC4..0x00789EEE`): no `0xC3` and no key; the leave and the
 /// create then run as for Create.
 pub(super) fn quick_match_create(state: &mut AppState) {
     let nickname = nickname(state);
     let tournament = i32::from(!super::quick_match::quick_coop(state));
     let (width, _) = options_screen(state);
+    let ex_info = ex_info(state);
     let globals = &mut state.frontend.wol_lobby_globals;
     if width >= 1024 {
         globals.limit_resolution = false;
     }
-    let channel = WolChannel {
-        kind: GAME_CHANNEL,
+    let channel = quick_match_channel(&nickname, tournament, globals.lobby_number, ex_info);
+    leave_then_create(state, channel, String::new(), false);
+}
+
+/// `0x00789B60`'s record in Quick Match: Create's record and exInfo
+/// (`0x0077E7A0` at `0x00789D05` runs before the mode branch) with two users
+/// (`[0xB77DC4] = 2`, `0x00789BE0`), tournament 1 (Quick Co-op 0,
+/// `0x00789EC9`) and game flags `0x800` plus `[0xB77DD4]`: no clan or
+/// resolution bits.
+fn quick_match_channel(
+    nickname: &str,
+    tournament: i32,
+    lobby_number: i32,
+    ex_info: String,
+) -> WolChannel {
+    WolChannel {
         max_users: 2,
         tournament,
-        name: format!("{nickname}'s_game"),
-        game_flags: GAME_QUICK_MATCH.wrapping_add(globals.lobby_number as u32),
-        ..Default::default()
-    };
-    leave_then_create(state, channel, String::new(), false);
+        game_flags: GAME_QUICK_MATCH.wrapping_add(lobby_number as u32),
+        ..created_channel(nickname, false, false, 0, lobby_number, ex_info)
+    }
 }
 
 /// A box of the Quick Match runner over `0x117` or the backdrop.
@@ -4540,5 +4551,31 @@ mod tests {
             created_channel("a", false, true, 640, 0, String::new()).screen_limit(),
             640
         );
+    }
+
+    /// The Quick Match game carries Create's exInfo, which the guest's
+    /// `0x0079BA60` checks before it joins.
+    #[test]
+    fn a_quick_match_guest_admits_the_hosts_game() {
+        let ex_info = ExInfo {
+            version: EX_INFO_VERSION,
+            hash: 7,
+            ai_players: 0,
+            observer_taken: 0,
+            observer_open: 0,
+            scenario: "x".into(),
+        };
+        let channel = quick_match_channel("Host", 1, 2, ex_info.write());
+        assert_eq!(channel.name, "Host's_game");
+        assert_eq!(
+            (channel.max_users, channel.tournament, channel.game_flags),
+            (2, 1, GAME_QUICK_MATCH + 2)
+        );
+        let context = AdmissionContext {
+            quick_match: true,
+            clan_id: 0,
+            local_hash: Some(7),
+        };
+        assert_eq!(admit(&channel, false, context), Ok(()));
     }
 }

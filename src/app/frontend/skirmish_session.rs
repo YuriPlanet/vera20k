@@ -1835,6 +1835,23 @@ pub(crate) fn persona_seat(country: i32, color: i32) -> crate::skirmish_launch::
     picked_seat(persona_pick(country), persona_pick(color))
 }
 
+/// A seat's side and colour as My Information's item data (-2 Random):
+/// [`persona_seat`]'s inverse.
+pub(crate) fn seat_items(slot: &crate::skirmish_launch::SkirmishLocalSlot) -> (i32, i32) {
+    (
+        if slot.country_random {
+            RANDOM_ITEM_DATA
+        } else {
+            menu_country_item_data(slot.country)
+        },
+        if slot.color_random {
+            RANDOM_ITEM_DATA
+        } else {
+            i32::from(slot.color_index)
+        },
+    )
+}
+
 fn menu_country_from_item_data(value: i32) -> Option<LaunchCountry> {
     u16::try_from(value)
         .ok()
@@ -1893,6 +1910,15 @@ mod tests {
         AiDifficulty, LaunchStartPosition, LaunchTeam, SkirmishAiSlot, SkirmishLaunchMode,
         SkirmishLaunchOptions, SkirmishLocalSlot,
     };
+
+    /// A Quick Match request sends a seat's picks as the item data the
+    /// matchbot's `Start` gives back to [`persona_seat`].
+    #[test]
+    fn seat_items_give_back_the_persona_picks() {
+        for (country, color) in [(RANDOM_ITEM_DATA, RANDOM_ITEM_DATA), (5, 3), (0, 0)] {
+            assert_eq!(seat_items(&persona_seat(country, color)), (country, color));
+        }
+    }
 
     fn map_named(file_name: &str) -> MapMenuEntry {
         MapMenuEntry {
