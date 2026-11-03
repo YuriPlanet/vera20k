@@ -11,8 +11,8 @@ use crate::sim::movement::FacingClass;
 use crate::sim::world::{FrameEffects, Simulation};
 
 /// A firer of `category` with a three-shot weapon, aimed east at a rival-house
-/// target one cell out.
-fn arena(category: &str, weapon: &str) -> (Simulation, RuleSet, u64, u64) {
+/// target one cell out. `type_extra` adds keys to the firer's own type.
+fn arena(category: &str, weapon: &str, type_extra: &str) -> (Simulation, RuleSet, u64, u64) {
     let (registry, firer) = match category {
         "VehicleTypes" => (
             "[VehicleTypes]\n0=FIRER\n",
@@ -25,7 +25,7 @@ fn arena(category: &str, weapon: &str) -> (Simulation, RuleSet, u64, u64) {
         ),
     };
     let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
-        "{registry}[Warheads]\n0=HIT\n[BuildingTypes]\n0=DUMMY\n{firer}\
+        "{registry}[Warheads]\n0=HIT\n[BuildingTypes]\n0=DUMMY\n{firer}{type_extra}\
          [DUMMY]\nStrength=10000\nArmor=heavy\nCanPassiveAquire=no\n\
          [WeaponTypes]\n0=GUN\n[GUN]\nDamage=10\nROF=40\nRange=9.5\nSpeed=100\n\
          Projectile=INVIS\nWarhead=HIT\nBurst=3\n{weapon}\
@@ -56,10 +56,7 @@ fn arena(category: &str, weapon: &str) -> (Simulation, RuleSet, u64, u64) {
             .expect("placed object");
         entity.lifecycle.set_in_limbo_for_test(false);
     }
-    let owner = sim
-        .entities()
-        .get(target)
-        .map(|entity| entity.owner());
+    let owner = sim.entities().get(target).map(|entity| entity.owner());
     let victim = sim
         .entities()
         .get(target)
@@ -67,10 +64,7 @@ fn arena(category: &str, weapon: &str) -> (Simulation, RuleSet, u64, u64) {
         .expect("target");
     sim.fog
         .mark_visible_for_owner(owner.expect("owner"), victim.0, victim.1);
-    let actor = sim
-        .entities_mut_for_test()
-        .get_mut(firer)
-        .expect("firer");
+    let actor = sim.entities_mut_for_test().get_mut(firer).expect("firer");
     actor.body_facing.snap(east, 100);
     actor.barrel_facing = Some(FacingClass::new(east, 0));
     assert!(
@@ -88,15 +82,8 @@ fn arena(category: &str, weapon: &str) -> (Simulation, RuleSet, u64, u64) {
 }
 
 /// One class firing-update visit, and every projectile it launched.
-fn visit(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    firer: u64,
-    target: u64,
-    category: &str,
-) -> usize {
-    let before: std::collections::BTreeSet<_> =
-        sim.projectiles.iter().map(|(&id, _)| id).collect();
+fn visit(sim: &mut Simulation, rules: &RuleSet, firer: u64, target: u64, category: &str) -> usize {
+    let before: std::collections::BTreeSet<_> = sim.projectiles.iter().map(|(&id, _)| id).collect();
     sim.commit_fire_visit(
         match category {
             "VehicleTypes" => world_fire::FireVisit::UnitTarget(firer),
@@ -118,7 +105,7 @@ fn visit(
 #[test]
 fn the_key_empties_the_whole_burst_in_one_frame() {
     for category in ["VehicleTypes", "InfantryTypes"] {
-        let (mut sim, rules, firer, target) = arena(category, "Burst.NoDelay=yes\n");
+        let (mut sim, rules, firer, target) = arena(category, "Burst.NoDelay=yes\n", "");
         assert_eq!(
             visit(&mut sim, &rules, firer, target, category),
             3,
@@ -142,7 +129,7 @@ fn the_key_empties_the_whole_burst_in_one_frame() {
 #[test]
 fn an_ordinary_burst_still_fires_one_shot_per_frame() {
     for category in ["VehicleTypes", "InfantryTypes"] {
-        let (mut sim, rules, firer, target) = arena(category, "");
+        let (mut sim, rules, firer, target) = arena(category, "", "");
         assert_eq!(
             visit(&mut sim, &rules, firer, target, category),
             1,
@@ -161,8 +148,7 @@ fn an_ordinary_burst_still_fires_one_shot_per_frame() {
 /// call is one shot, wherever the key stands.
 #[test]
 fn a_raw_fireat_call_still_launches_one_shot() {
-    let (mut sim, rules, firer, target) =
-        arena("VehicleTypes", "Burst.NoDelay=yes\n");
+    let (mut sim, rules, firer, target) = arena("VehicleTypes", "Burst.NoDelay=yes\n", "");
     let before: std::collections::BTreeSet<_> = sim.projectiles.iter().map(|(&id, _)| id).collect();
     sim.commit_fire_visit(
         world_fire::FireVisit::Direct {
@@ -182,4 +168,75 @@ fn a_raw_fireat_call_still_launches_one_shot() {
         1,
         "`FireVisit::Direct` is a mission's FireAt, which native leaves alone"
     );
+}
+
+/// The run also ends on a *refused* attempt, which is what the write-back after
+/// the loop exists for: the first shot debits the firer's only round
+/// (`DecreaseAmmo70D670` inside `emit_admitted_fire`), `GetFireError`'s ammo arm
+/// then refuses the repeat, and the timer the refused attempt had just zeroed has
+/// to be restored from the last successful shot rather than left at zero.
+#[test]
+fn a_refused_repeat_restores_the_last_shots_rearm() {
+    for category in ["VehicleTypes", "InfantryTypes"] {
+        let (mut sim, rules, firer, target) = arena(category, "Burst.NoDelay=yes\n", "Ammo=1\n");
+        assert_eq!(
+            visit(&mut sim, &rules, firer, target, category),
+            1,
+            "{category}: the repeat is refused once the only round is spent"
+        );
+        let entity = sim.entities().get(firer).expect("firer");
+        assert_eq!(
+            entity.weapon_burst.index(),
+            1,
+            "{category}: the burst stopped mid-run instead of wrapping"
+        );
+        let duration = entity.rearm_timer.duration();
+        assert!(
+            (1..=5).contains(&duration),
+            "{category}: the restore must write the first shot's mid-burst gap back, not the zero the refused attempt armed and not the full ROF"
+        );
+        assert_eq!(
+            entity.ammo().map(|ammo| ammo.current()),
+            Some(0),
+            "{category}: the repeat was refused by the spent round, not by another gate"
+        );
+    }
+}
+
+/// The hooks gate the repeat on the delayed-fire keys as well:
+/// `!Duration.isset() || OnlyOnInitialBurst`. A weapon that authors
+/// `DelayedFire.Duration=` without the second key keeps native's one shot per
+/// frame even with `Burst.NoDelay=yes`, and authoring both opens the repeat
+/// again - so each key is tested against a case the other one fails.
+#[test]
+fn a_delayed_fire_weapon_keeps_its_burst_cadence() {
+    for category in ["VehicleTypes", "InfantryTypes"] {
+        let (mut sim, rules, firer, target) =
+            arena(category, "Burst.NoDelay=yes\nDelayedFire.Duration=5\n", "");
+        assert_eq!(
+            visit(&mut sim, &rules, firer, target, category),
+            1,
+            "{category}: a set Duration with OnlyOnInitialBurst unset refuses the repeat"
+        );
+        assert_eq!(
+            sim.entities()
+                .get(firer)
+                .expect("firer")
+                .weapon_burst
+                .index(),
+            1,
+            "{category}: the burst stepped once, as an ordinary burst does"
+        );
+
+        let (mut sim, rules, firer, target) = arena(
+            category,
+            "Burst.NoDelay=yes\nDelayedFire.Duration=5\nDelayedFire.OnlyOnInitialBurst=yes\n",
+            "",
+        );
+        assert_eq!(
+            visit(&mut sim, &rules, firer, target, category),
+            3,
+            "{category}: OnlyOnInitialBurst opens the gate again"
+        );
+    }
 }
