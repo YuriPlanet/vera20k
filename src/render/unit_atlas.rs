@@ -119,7 +119,7 @@ pub struct UnitSpriteKey {
 }
 
 /// UV and offset data for one sprite within the unit atlas.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UnitSpriteEntry {
     /// Top-left UV coordinate in the atlas (0.0..1.0).
     pub uv_origin: [f32; 2],
@@ -138,6 +138,17 @@ pub struct UnitSpriteEntry {
     pub native_draw_bounds: Option<[i32; 4]>,
     /// Texture page containing this sprite.
     pub page: usize,
+}
+
+impl UnitSpriteEntry {
+    /// The width and height of the native render it stands for: its native
+    /// draw bounds', else its pixel size.
+    pub fn native_size(&self) -> [i32; 2] {
+        self.native_draw_bounds.map_or(
+            self.pixel_size.map(|size| size as i32),
+            |[_, _, width, height]| [width, height],
+        )
+    }
 }
 
 /// One texture page in the unit atlas.
@@ -1116,6 +1127,16 @@ fn render_part(part: &VoxelPart, params: &VxlRenderParams, vpl: Option<&VplFile>
     vxl_raster::render_vxl(part.vxl(), part.hva(), params, vpl)
 }
 
+/// [`render_part`] on the shared `depth` map when depth-tested.
+fn render_part_on(
+    part: &VoxelPart,
+    params: &VxlRenderParams,
+    vpl: Option<&VplFile>,
+    depth: Option<&mut vxl_raster::DepthMap>,
+) -> VxlSprite {
+    vxl_raster::render_vxl_on(part.vxl(), part.hva(), params, vpl, depth)
+}
+
 /// `Ok(None)` for an omitted part; `Err` when a present part has no
 /// native draw bounds.
 fn part_native_draw_bounds(
@@ -1279,20 +1300,26 @@ impl UnitModel {
         slope_blend: Option<VxlSlopeBlend>,
         pose: &mut Option<PoseParts>,
     ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
-        self.render_styled(key, vpl, slope_blend, pose, self.use_buffer)
+        self.render_styled(key, vpl, slope_blend, pose, self.use_buffer, None)
     }
 
     /// A stable key's sprite as a draw renders it while 0xB43180 is set
     /// ([`crate::render::voxel_image_cache`]): depth-tested whatever the
     /// type's `UseBuffer=`. Shadows ignore the flag.
+    /// `depth` is the shared depth map the draw reads and writes; None draws
+    /// on a clear one.
     pub(crate) fn render_depth_tested(
         &self,
         key: &UnitSpriteKey,
         vpl: Option<&VplFile>,
+        depth: Option<&mut vxl_raster::DepthMap>,
     ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
-        self.render_styled(key, vpl, None, &mut None, true)
+        self.render_styled(key, vpl, None, &mut None, true, depth)
     }
 
+    /// `depth` rasterizes the requested part, or each part of a Composite,
+    /// on the shared depth map; the parts that only size its padding draw
+    /// clear.
     fn render_styled(
         &self,
         key: &UnitSpriteKey,
@@ -1300,6 +1327,7 @@ impl UnitModel {
         slope_blend: Option<VxlSlopeBlend>,
         pose: &mut Option<PoseParts>,
         use_buffer: bool,
+        depth: Option<&mut vxl_raster::DepthMap>,
     ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
         let (turret, barrel) = self.gun_parts(key.turret_index);
         if (key.layer == VxlLayer::Turret && turret.is_none())
@@ -1372,6 +1400,7 @@ impl UnitModel {
                 barrel,
                 &params,
                 vpl,
+                depth,
             ),
             VxlLayer::Shadow => {
                 let body = self.body.as_ref()?;
@@ -1397,6 +1426,7 @@ impl UnitModel {
                         turret: turret.map(|part| render_part(part, &params, vpl)),
                         barrel: barrel.map(|part| render_part(part, &params, vpl)),
                     });
+                let barrel_part = barrel;
                 let pitched_barrel = barrel
                     .filter(|_| key.barrel_pitch != 0)
                     .map(|part| render_part(part, &part_params, vpl));
@@ -1413,6 +1443,17 @@ impl UnitModel {
                     VxlLayer::Barrel => barrel?,
                     _ => unreachable!(),
                 };
+                let live = match depth {
+                    Some(depth) => Some(match key.layer {
+                        VxlLayer::Body => {
+                            render_part_on(self.body.as_ref()?, &params, vpl, Some(depth))
+                        }
+                        VxlLayer::Turret => render_part_on(turret?, &params, vpl, Some(depth)),
+                        _ => render_part_on(barrel_part?, &part_params, vpl, Some(depth)),
+                    }),
+                    None => None,
+                };
+                let requested = live.as_ref().unwrap_or(requested);
                 if self.body.is_none() {
                     // Building43DA80 blits each gun directly; each part's
                     // own extent seeds its vertical Z gradient. A unit's
@@ -1453,6 +1494,7 @@ impl UnitModel {
         vpl: Option<&VplFile>,
         tilt: PoseTilt,
         depth_tested: bool,
+        depth: Option<&mut vxl_raster::DepthMap>,
     ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
         let use_buffer = self.use_buffer || depth_tested;
         let body = self.body.as_ref()?;
@@ -1481,7 +1523,7 @@ impl UnitModel {
                 ..VxlRenderParams::default()
             };
             return Some((
-                render_part(part, &params, vpl),
+                render_part_on(part, &params, vpl, depth),
                 part_native_draw_bounds(Some(part), &params).ok().flatten(),
             ));
         }
@@ -1505,7 +1547,14 @@ impl UnitModel {
             ..VxlRenderParams::default()
         };
         let (turret, barrel) = self.gun_parts(key.turret_index);
-        let sprite = composite_parts(Some((body.vxl(), body.hva())), turret, barrel, &params, vpl);
+        let sprite = composite_parts(
+            Some((body.vxl(), body.hva())),
+            turret,
+            barrel,
+            &params,
+            vpl,
+            depth,
+        );
         Some((
             sprite,
             self.native_draw_bounds(&params, VxlLayer::Composite, key.turret_index),
@@ -1526,6 +1575,7 @@ impl UnitModel {
         matrix: glam::Mat4,
         vpl: Option<&VplFile>,
         use_buffer: bool,
+        depth: Option<&mut vxl_raster::DepthMap>,
     ) -> Option<(VxlSprite, Option<VxlSprite>)> {
         let body = self.body.as_ref()?;
         if section != 0 || body.vxl().limbs.len() != 1 {
@@ -1538,6 +1588,7 @@ impl UnitModel {
             vxl_raster::VxlLighting::Diffuse,
             vpl,
             use_buffer,
+            depth,
         )?;
         Some((
             sprite,
@@ -1548,7 +1599,8 @@ impl UnitModel {
     /// Shared direct-matrix body raster. Bullet46B0C0 submits every section
     /// with HVA frame modulo count and diffuse lighting; the VoxelAnim caller
     /// instead selects no HVA and separately renders its shadow. Neither
-    /// stores the image: `use_buffer` is 0xB43180 at the draw.
+    /// stores the image: `use_buffer` is 0xB43180 at the draw, and `depth`
+    /// the shared depth map it reads and writes (None: a clear one).
     pub(crate) fn render_matrix(
         &self,
         matrix: glam::Mat4,
@@ -1557,6 +1609,7 @@ impl UnitModel {
         lighting: vxl_raster::VxlLighting,
         vpl: Option<&VplFile>,
         use_buffer: bool,
+        depth: Option<&mut vxl_raster::DepthMap>,
     ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
         let body = self.body.as_ref()?;
         let hva = if use_hva { Some(body.hva()?) } else { None };
@@ -1574,7 +1627,7 @@ impl UnitModel {
         };
         let bounds = vxl_raster::native_vxl_draw_bounds(body.vxl(), hva, &params)?;
         Some((
-            vxl_raster::render_vxl(body.vxl(), hva, &params, vpl),
+            vxl_raster::render_vxl_on(body.vxl(), hva, &params, vpl, depth),
             Some(bounds),
         ))
     }
@@ -1636,22 +1689,25 @@ pub fn composite_unit_vxl_cpu(
         barrel.as_ref(),
         params,
         vpl,
+        None,
     )
 }
 
+/// `depth` rasterizes each part in turn on the shared depth map.
 fn composite_parts(
     body: Option<(&VxlFile, Option<&HvaFile>)>,
     turret: Option<&VoxelPart>,
     barrel: Option<&VoxelPart>,
     params: &VxlRenderParams,
     vpl: Option<&VplFile>,
+    mut depth: Option<&mut vxl_raster::DepthMap>,
 ) -> VxlSprite {
     let mut layers: Vec<VxlSprite> = body
-        .map(|(body, hva)| vxl_raster::render_vxl(body, hva, params, vpl))
+        .map(|(body, hva)| vxl_raster::render_vxl_on(body, hva, params, vpl, depth.as_deref_mut()))
         .into_iter()
         .collect();
-    layers.extend(turret.map(|part| render_part(part, params, vpl)));
-    layers.extend(barrel.map(|part| render_part(part, params, vpl)));
+    layers.extend(turret.map(|part| render_part_on(part, params, vpl, depth.as_deref_mut())));
+    layers.extend(barrel.map(|part| render_part_on(part, params, vpl, depth.as_deref_mut())));
     composite_vxl_layers(&layers)
 }
 

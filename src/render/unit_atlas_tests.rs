@@ -939,12 +939,12 @@ fn kirov_direct_matrix_requires_hva_and_wraps_its_native_frame() {
     .unwrap();
     let lighting = crate::render::vxl_raster::VxlLighting::Diffuse;
     let (first, bounds) = model
-        .render_matrix(matrix, 0, true, lighting, Some(&vpl), false)
+        .render_matrix(matrix, 0, true, lighting, Some(&vpl), false, None)
         .unwrap();
     assert!(bounds.is_some());
     let frames = model.body.as_ref().unwrap().hva().unwrap().frame_count;
     let (wrapped, wrapped_bounds) = model
-        .render_matrix(matrix, frames, true, lighting, Some(&vpl), false)
+        .render_matrix(matrix, frames, true, lighting, Some(&vpl), false, None)
         .unwrap();
     assert_eq!(first.palette_indices, wrapped.palette_indices);
     assert_eq!(bounds, wrapped_bounds);
@@ -961,13 +961,13 @@ fn kirov_direct_matrix_requires_hva_and_wraps_its_native_frame() {
     let model = UnitModel::load(&no_hva, "ZBOMB", None).unwrap();
     assert!(
         model
-            .render_matrix(matrix, 0, true, lighting, Some(&vpl), false)
+            .render_matrix(matrix, 0, true, lighting, Some(&vpl), false, None)
             .is_none(),
         "Bullet LoadVoxelAssets requires both main files"
     );
     assert!(
         model
-            .render_matrix(matrix, 0, false, lighting, Some(&vpl), false)
+            .render_matrix(matrix, 0, false, lighting, Some(&vpl), false, None)
             .is_some(),
         "the explicit debris no-HVA caller still uses the same raster owner"
     );
