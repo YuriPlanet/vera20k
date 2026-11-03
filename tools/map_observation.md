@@ -2228,6 +2228,16 @@ receipt before choosing orders. A high-deck response needs a separate map site.
 Its disabled shroud is an explicit launch option for this diagnostic observation.
 No actor IDs or gameplay state are granted by the profile.
 
+For a unit falling from a high deck, use
+[`map_observation.bridge-fall.example.json`](map_observation.bridge-fall.example.json).
+It loads Hills with the observer on start 1, sends MTNK938 onto the high deck at
+`(87,74)` and the other two MTNKs onto the span, and from step 2400 has those two
+force-fire the deck Cell `(86,74)`. At step 4483 MTNK938 moves onto that Cell. The deck
+there goes at step 4491 (`has_deck` false), MTNK938 leaves the bridge layer and falls
+from Z624, and it is gone at step 4521, on landing. These are observed production
+steps of this build, not native goldens; the collapse roll depends on every earlier
+draw, so changing any command before step 4491 can move or prevent it.
+
 For a long production run, `observe_types` can narrow actor discovery to 1..256
 unique, nonempty names from the loaded rule registry, for example `["CLEG"]`.
 Names are literal and case sensitive. Discovery requires both a requested owner
