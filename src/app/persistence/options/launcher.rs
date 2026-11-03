@@ -41,6 +41,7 @@ pub(crate) fn launcher_values_from_profile(
         vera_icon: profile.vera_icon,
         shift_queue: profile.shift_queue,
         wol_test_service: profile.wol_test_service,
+        debug_tools: profile.debug_tools,
         fps_counter: false,
         skip_startup_logo: profile.skip_startup_logo,
         custom_end_game_banner: profile.custom_end_game_banner,
@@ -108,6 +109,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_vera_icon(&mut self, vera_icon: bool);
     fn store_shift_queue(&mut self, shift_queue: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
+    /// Whether the Ctrl+Shift debug keys work in the next battle.
+    fn store_debug_tools(&mut self, enabled: bool);
     fn set_fps_counter(&mut self, shown: bool);
     fn store_skip_startup_logo(&mut self, skip: bool);
     /// Whether a finished match draws the country's own end-game picture.
@@ -158,6 +161,7 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::WolTestServiceChanged(wol_test_service) => {
             operations.store_wol_test_service(wol_test_service);
         }
+        LauncherOptionsEvent::DebugToolsChanged(enabled) => operations.store_debug_tools(enabled),
         LauncherOptionsEvent::FpsCounterChanged(shown) => operations.set_fps_counter(shown),
         LauncherOptionsEvent::SkipStartupLogoChanged(skip) => {
             operations.store_skip_startup_logo(skip);

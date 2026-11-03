@@ -48,7 +48,8 @@ verax = []
 # VERA20K's opt-in bug-fix extension adopting the NPExt changelog corrections;
 # builds without it keep every native path.
 npbug = []
-# The client's Ctrl+Shift dev chord reaches simulation and utility hooks.
+# Developer builds' capture and quicksave hooks the client's Ctrl+Shift dev
+# chord reaches.
 dev-overlays = []
 # Read-only snapshots and opt-in frame timing for the browser dashboard.
 telemetry = []

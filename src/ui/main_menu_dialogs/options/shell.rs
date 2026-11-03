@@ -10,18 +10,18 @@ use super::{
     ACCESSIBILITY_LABEL, CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL,
     CUSTOM_END_GAME_BANNER_HELP, CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP,
     CUSTOM_END_GAME_MOVIE_LABEL, CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL,
-    DEVELOPER_OPTIONS_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayChoice,
-    DisplayTarget, FPS_COUNTER_HELP, FPS_COUNTER_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL,
-    HAS_CHECK_FOR_UPDATES, HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL, LOCK_CURSOR_HELP,
-    LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue,
-    LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP,
-    MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
-    OptionsPage, PhysicalControlFrame, RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL,
-    RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL,
-    SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_STARTUP_LOGO_HELP, SKIP_STARTUP_LOGO_LABEL, SidebarSize,
-    VERA_ICON_HELP, VERA_ICON_LABEL, VERA_OPTIONS_HELP, VERA_OPTIONS_LABEL, WOL_TEST_SERVICE_HELP,
-    WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL,
-    Zoom,
+    DEBUG_TOOLS_HELP, DEBUG_TOOLS_LABEL, DEVELOPER_OPTIONS_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP,
+    DISPLAY_LABEL, DisplayChoice, DisplayTarget, FPS_COUNTER_HELP, FPS_COUNTER_LABEL,
+    FULL_SCREEN_HELP, FULL_SCREEN_LABEL, HAS_CHECK_FOR_UPDATES, HOUSE_COLOR_STRENGTH_HELP,
+    HOUSE_COLOR_STRENGTH_LABEL, LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton,
+    LauncherCheckboxId, LauncherComboId, LauncherCue, LauncherOptionsEvent, LauncherParentResult,
+    LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP,
+    ORIGINAL_SHAPE_LABEL, OptionsDialogState, OptionsPage, PhysicalControlFrame,
+    RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP,
+    RIGHT_CLICK_ORDERS_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
+    SKIP_STARTUP_LOGO_HELP, SKIP_STARTUP_LOGO_LABEL, SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL,
+    VERA_OPTIONS_HELP, VERA_OPTIONS_LABEL, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL,
+    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale, center_offset, child_window, dlu_rect};
@@ -286,7 +286,11 @@ impl LauncherOptionsLayout {
                     // Banner"), and the text rect keeps a 26 px icon column, so
                     // 130 would wrap them onto a second line the 10 DLU height
                     // clips. 150 leaves ~124 px of text, enough for 23.
+                    // Debug Tools heads the band's right column at x 238,
+                    // like the UI band's; the end-game rows reach 243, but
+                    // only from row 213, below it.
                     (LauncherCheckboxId::FpsCounter, dlu(93, 187, 130, 10)),
+                    (LauncherCheckboxId::DebugTools, dlu(238, 187, 130, 10)),
                     (LauncherCheckboxId::SkipStartupLogo, dlu(93, 200, 130, 10)),
                     (
                         LauncherCheckboxId::CustomEndGameBanner,
@@ -513,6 +517,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::VeraIcon => VERA_ICON_LABEL,
             LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
             LauncherCheckboxId::WolTestService => WOL_TEST_SERVICE_LABEL,
+            LauncherCheckboxId::DebugTools => DEBUG_TOOLS_LABEL,
             LauncherCheckboxId::FpsCounter => FPS_COUNTER_LABEL,
             LauncherCheckboxId::SkipStartupLogo => SKIP_STARTUP_LOGO_LABEL,
             LauncherCheckboxId::CustomEndGameBanner => CUSTOM_END_GAME_BANNER_LABEL,
@@ -571,6 +576,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::VeraIcon => self.values.vera_icon,
             LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
             LauncherCheckboxId::WolTestService => self.values.wol_test_service,
+            LauncherCheckboxId::DebugTools => self.values.debug_tools,
             LauncherCheckboxId::FpsCounter => self.values.fps_counter,
             LauncherCheckboxId::SkipStartupLogo => self.values.skip_startup_logo,
             LauncherCheckboxId::CustomEndGameBanner => self.values.custom_end_game_banner,
@@ -781,6 +787,7 @@ impl OptionsDialogState {
                 LauncherCheckboxId::WolTestService => {
                     LauncherStatusHelp::Text(WOL_TEST_SERVICE_HELP)
                 }
+                LauncherCheckboxId::DebugTools => LauncherStatusHelp::Text(DEBUG_TOOLS_HELP),
                 LauncherCheckboxId::FpsCounter => LauncherStatusHelp::Text(FPS_COUNTER_HELP),
                 LauncherCheckboxId::SkipStartupLogo => {
                     LauncherStatusHelp::Text(SKIP_STARTUP_LOGO_HELP)
@@ -1150,7 +1157,7 @@ mod tests {
             .chain(&layout.checkboxes)
             .map(|(id, _)| *id)
             .collect();
-        assert_eq!(all.len(), 17);
+        assert_eq!(all.len(), 18);
         for id in &all {
             assert_eq!(all.iter().filter(|other| *other == id).count(), 1, "{id:?}");
         }
@@ -1193,6 +1200,7 @@ mod tests {
             (RightClickOrders, ui, developer),
             (VeraIcon, ui, developer),
             (FpsCounter, developer, accessibility),
+            (DebugTools, developer, accessibility),
             (SkipStartupLogo, developer, accessibility),
             (CustomEndGameBanner, developer, accessibility),
             (CustomEndGameScore, developer, accessibility),
@@ -1729,6 +1737,11 @@ mod tests {
                 SKIP_STARTUP_LOGO_LABEL,
                 LauncherOptionsEvent::SkipStartupLogoChanged,
             ),
+            (
+                DebugTools,
+                DEBUG_TOOLS_LABEL,
+                LauncherOptionsEvent::DebugToolsChanged,
+            ),
         ] {
             let mut state = vera_state();
             let rect = checkbox(&layout, id);
@@ -1856,7 +1869,7 @@ mod tests {
                 .iter()
                 .all(|(id, _)| *id != LauncherCheckboxId::WolTestService)
         );
-        // The developer rows hold FPS and Skip Startup Logo only.
+        // The developer rows' other boxes still answer.
         for (id, event) in [
             (
                 LauncherCheckboxId::FpsCounter,

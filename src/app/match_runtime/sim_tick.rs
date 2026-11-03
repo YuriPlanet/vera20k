@@ -583,9 +583,10 @@ fn build_score_screen_model(
     let observing = local_owner.is_some_and(|owner| sim.session().is_observer_house(owner));
     let theme = (!observing)
         .then(|| {
-            state
-                .process_assets
-                .side_score_theme(side, crate::rules::ruleset::ScoreTheme::Multiplayer { defeated })
+            state.process_assets.side_score_theme(
+                side,
+                crate::rules::ruleset::ScoreTheme::Multiplayer { defeated },
+            )
         })
         .flatten()
         .map(str::to_owned);
@@ -1406,11 +1407,24 @@ pub(crate) fn local_pacing_inputs(state: &AppState) -> (u8, Option<(u16, u32)>) 
     (game_speed, super::network_match::frame_budget(state))
 }
 
+/// The Debug Tools keys that pause, step or unfog a battle work only offline:
+/// a Skirmish or campaign with no live network. A LAN or online player must
+/// never stop the shared timeline or see past their own fog.
+pub(crate) fn debug_offline(state: &AppState) -> bool {
+    offline_debug_session(
+        state.match_state.session_mode(),
+        state.match_state.live_network.is_some(),
+    )
+}
+
+fn offline_debug_session(mode: SessionMode, live_network: bool) -> bool {
+    !live_network && matches!(mode, SessionMode::Skirmish | SessionMode::Campaign)
+}
+
 /// Debug speed is limited to an offline Skirmish; online, LAN and campaign
 /// play keep one frame per paced interval.
 pub(crate) fn debug_speed_allowed(state: &AppState) -> bool {
-    state.match_state.session_mode() == super::session::SessionMode::Skirmish
-        && state.match_state.live_network.is_none()
+    debug_offline(state) && state.match_state.session_mode() == SessionMode::Skirmish
 }
 
 /// Tick simulation: advance movement and animation systems.
@@ -2947,9 +2961,20 @@ mod camera_cadence_tests;
 mod modal_pump_tests {
     use super::{
         SessionMode, audio_pump_follows_main_tick, modal_pump_should_advance_sim,
-        resolve_score_rows, score_title_key, should_record_replay_tick,
+        offline_debug_session, resolve_score_rows, score_title_key, should_record_replay_tick,
         wall_clock_service_admission,
     };
+
+    /// Pause, step and reveal are refused to LAN/online players: a live
+    /// network or a multiplayer mode keeps them off, even in a Skirmish.
+    #[test]
+    fn debug_pause_and_reveal_stay_offline() {
+        assert!(offline_debug_session(SessionMode::Skirmish, false));
+        assert!(offline_debug_session(SessionMode::Campaign, false));
+        assert!(!offline_debug_session(SessionMode::Skirmish, true));
+        assert!(!offline_debug_session(SessionMode::Lan, false));
+        assert!(!offline_debug_session(SessionMode::Wol, false));
+    }
 
     /// 0x005C9BE7: only GameMode 5 retitles 0x108.
     #[test]

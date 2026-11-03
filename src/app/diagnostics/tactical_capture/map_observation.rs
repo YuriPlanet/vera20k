@@ -1937,6 +1937,13 @@ impl MapKeyboardGestureReceipt {
         let (physical, logical) = literal_key(key)?;
         let planning_before = state.match_state.input.planning.active();
         let modifier_keys = literal_modifiers(modifiers)?;
+        // A literal Ctrl+Shift gesture (quicksave/quickload) needs the Options
+        // page's Debug Tools box; the capture ticks it in memory for its run.
+        if modifier_keys.contains(&winit::keyboard::KeyCode::ControlLeft)
+            && modifier_keys.contains(&winit::keyboard::KeyCode::ShiftLeft)
+        {
+            state.persistence.options_profile.debug_tools = true;
+        }
         literal_modifier_edges(state, &modifier_keys, true);
         let location = KeyLocation::Standard;
         let encoded_key = hotkeys::logical_virtual_key(&logical, location)

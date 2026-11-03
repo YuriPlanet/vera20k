@@ -172,6 +172,11 @@ pub(crate) struct RetailOptionsProfile {
     /// service instead of showing `TXT_APIMISSING`: the Options page's
     /// developer box. Off by default; no real service exists yet.
     pub(crate) wol_test_service: bool,
+    /// `[VERA] DebugTools=`: the Options page's Debug Tools box, which lets
+    /// the Ctrl+Shift debug keys work in battle (`app::input::dispatch`). Off
+    /// by default, so a new profile plays like the original game; the
+    /// overlays, speed and reveal those keys switch start off in every match.
+    pub(crate) debug_tools: bool,
     /// `[VERA] SoloSkirmish=`: Start accepts a skirmish that has fewer than two
     /// sides for an undisturbed test match — either no AI row enabled, or every
     /// enabled AI on the local player's own explicit team. Off by default, so
@@ -307,6 +312,7 @@ impl Default for RetailOptionsProfile {
             shift_queue: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             wol_test_service: false,
+            debug_tools: false,
             solo_skirmish: false,
             commander_feedback: true,
             custom_end_game_banner: true,
@@ -333,7 +339,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 26],
+    pub(crate) vera: [(&'static str, String); 27],
 }
 
 impl RetailOptionsLoad {
@@ -552,6 +558,7 @@ impl RetailOptionsProfile {
                 vera.read_int("ShiftQueueCount", self.shift_queue_count as i32),
             );
             self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
+            self.debug_tools = vera.read_bool("DebugTools", self.debug_tools);
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
             self.custom_end_game_banner =
@@ -679,6 +686,7 @@ impl RetailOptionsProfile {
                     "WolTestService",
                     format_bool(self.wol_test_service).to_string(),
                 ),
+                ("DebugTools", format_bool(self.debug_tools).to_string()),
                 ("SoloSkirmish", format_bool(self.solo_skirmish).to_string()),
                 (
                     "CommanderFeedback",
@@ -1501,6 +1509,8 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert!(!defaults.retained_profile.shift_queue);
         // Internet shows TXT_APIMISSING, as on retail, until it is ticked.
         assert!(!defaults.retained_profile.wol_test_service);
+        // The Ctrl+Shift debug keys stay dead until Debug Tools is ticked.
+        assert!(!defaults.retained_profile.debug_tools);
         // The retail minimum-player gate stays until SoloSkirmish= is enabled.
         assert!(!defaults.retained_profile.solo_skirmish);
         assert_eq!(
@@ -1537,6 +1547,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
             shift_queue: true,
             shift_queue_count: 7,
             wol_test_service: true,
+            debug_tools: true,
             solo_skirmish: true,
             ..RetailOptionsProfile::default()
         };
@@ -1545,7 +1556,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                 .unwrap();
         assert!(
             output.contains(
-                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nYROriginalStyle=yes\r\nSkipStartupLogo=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\nSoloSkirmish=yes\r\n"
+                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nYROriginalStyle=yes\r\nSkipStartupLogo=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\nDebugTools=yes\r\nSoloSkirmish=yes\r\n"
             ),
             "{output}"
         );
@@ -1558,6 +1569,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert!(reread.retained_profile.skip_startup_logo);
         assert!(reread.retained_profile.shift_queue);
         assert!(reread.retained_profile.wol_test_service);
+        assert!(reread.retained_profile.debug_tools);
         assert!(reread.retained_profile.solo_skirmish);
         assert_eq!(reread.retained_profile.shift_queue_count, 7);
     }

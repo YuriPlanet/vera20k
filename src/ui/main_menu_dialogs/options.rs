@@ -89,6 +89,8 @@ pub(crate) const WOL_TEST_SERVICE_HELP: &str =
 pub(crate) const SKIP_STARTUP_LOGO_LABEL: &str = "Skip Startup Logo";
 pub(crate) const SKIP_STARTUP_LOGO_HELP: &str =
     "Start without the logo movie; the loading screen still shows. Applies at the next start.";
+pub(crate) const DEBUG_TOOLS_LABEL: &str = "Debug Tools";
+pub(crate) const DEBUG_TOOLS_HELP: &str = "Turn on the Ctrl+Shift debug keys in battle: grid, heights, terrain, paths, reveal, pause and 1x-10x speed. Offline only.";
 pub(crate) const FPS_COUNTER_LABEL: &str = "FPS Counter";
 pub(crate) const FPS_COUNTER_HELP: &str = "Show frames per second in the top-left corner. Off at every start; Ctrl+Alt+F also switches it.";
 /// VERA's end-game switches, the pair of `[EndGameScreens]` presentation
@@ -524,6 +526,10 @@ pub(crate) enum LauncherCheckboxId {
     /// instead of Red Alert 2's red star (`app::window_icon`). It applies at
     /// once and is saved; the installed program's own icon stays the red star.
     VeraIcon,
+    /// VERA's developer box: the Ctrl+Shift debug keys work in battle
+    /// (`[VERA] DebugTools=`). Saved; the shell is the only place it changes,
+    /// so a match reads one value from start to end.
+    DebugTools,
     /// VERA's developer box: the window's FPS readout. Like Full Screen it
     /// shows and changes live state at once, and is never saved: the readout
     /// starts hidden at every launch.
@@ -580,6 +586,7 @@ pub(crate) enum LauncherOptionsEvent {
     YrOriginalStyleChanged(bool),
     ShiftQueueChanged(bool),
     WolTestServiceChanged(bool),
+    DebugToolsChanged(bool),
     RenderInterpolationChanged(bool),
     MouseWheelZoomChanged(bool),
     RightClickOrdersChanged(bool),
@@ -637,6 +644,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) vera_icon: bool,
     pub(crate) shift_queue: bool,
     pub(crate) wol_test_service: bool,
+    pub(crate) debug_tools: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
     pub(crate) fps_counter: bool,
     pub(crate) skip_startup_logo: bool,
@@ -679,6 +687,7 @@ impl Default for LauncherOptionsValues {
             vera_icon: false,
             shift_queue: false,
             wol_test_service: false,
+            debug_tools: false,
             fps_counter: false,
             skip_startup_logo: false,
             custom_end_game_banner: true,
@@ -1044,6 +1053,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::YrOriginalStyle => &mut self.values.yr_original_style,
             LauncherCheckboxId::ShiftQueue => &mut self.values.shift_queue,
             LauncherCheckboxId::WolTestService => &mut self.values.wol_test_service,
+            LauncherCheckboxId::DebugTools => &mut self.values.debug_tools,
             LauncherCheckboxId::RenderInterpolation => &mut self.values.render_interpolation,
             LauncherCheckboxId::MouseWheelZoom => &mut self.values.mouse_wheel_zoom,
             LauncherCheckboxId::RightClickOrders => &mut self.values.right_click_orders,
@@ -1075,6 +1085,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::WolTestService => self
                 .pending_events
                 .push(LauncherOptionsEvent::WolTestServiceChanged(checked)),
+            LauncherCheckboxId::DebugTools => self
+                .pending_events
+                .push(LauncherOptionsEvent::DebugToolsChanged(checked)),
             LauncherCheckboxId::RenderInterpolation => self
                 .pending_events
                 .push(LauncherOptionsEvent::RenderInterpolationChanged(checked)),

@@ -225,8 +225,8 @@ jobs:
         shell: pwsh
         run: .github/release/windows/install-inno.ps1
       - name: Build the game
-        # Shipped binaries leave out the default `dev-overlays` (the Ctrl+Shift dev chord),
-        # and use the whole-program `shipping` profile (Cargo.toml). The splash's
+        # Shipped binaries leave out the default `dev-overlays` (the developer-only
+        # Ctrl+Shift arms; Debug Tools stays in, off by default), and use the whole-program `shipping` profile (Cargo.toml). The splash's
         # license notice names the commit built (build.rs).
         env:
           VERA20K_COMMIT: ${{ needs.prepare.outputs.sha }}

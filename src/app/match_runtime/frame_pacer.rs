@@ -93,7 +93,6 @@ pub(crate) struct LocalFramePacer {
     debug_speed: u8,
 }
 
-#[cfg(feature = "dev-overlays")]
 const MAX_DEBUG_SPEED: u8 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -507,7 +506,6 @@ impl LocalFramePacer {
     }
 
     /// Step the debug speed by one within 1x..=10x.
-    #[cfg(feature = "dev-overlays")]
     pub(crate) fn change_debug_speed(&mut self, faster: bool) -> u8 {
         let speed = if faster {
             self.debug_speed + 1
@@ -826,7 +824,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "dev-overlays")]
     #[test]
     fn debug_speed_steps_within_1x_to_10x_and_resets_for_a_new_world() {
         let mut pacer = LocalFramePacer::new();

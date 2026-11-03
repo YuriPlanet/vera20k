@@ -47,8 +47,8 @@ wasm-lan = ["wasm-net", "vera20k-core/wasm-lan"]
 # Browser simulation work on a Web Worker pool. It needs shared Wasm memory, so
 # tools/wasm/build.py --threads builds it with a pinned nightly and its own std.
 wasm-threads = ["wasm", "vera20k-core/wasm-threads", "dep:wasm-bindgen-rayon"]
-# Development builds carry the Ctrl+Shift dev chord. The release workflow builds
-# with `--no-default-features`, so shipped binaries do not.
+# Development builds carry the developer-only dev-chord arms below. The release
+# workflow builds with `--no-default-features`, so shipped binaries do not.
 default = ["dev-overlays"]
 # Optional gameplay extensions. Neither default nor shipping builds enable this.
 ares = ["vera20k-core/ares"]
@@ -62,9 +62,10 @@ verax = ["vera20k-core/verax"]
 # Optional NPBUG bug-fix extension; neither default nor shipping builds enable
 # it.
 npbug = ["vera20k-core/npbug"]
-# The Ctrl+Shift dev chord: renderer-native diagnostic overlays (grid, heightmap,
-# pathgrid, foot path, fog), the debug pause and quicksave/quickload. Captures
-# rely on it (literal Ctrl+Shift+M/N quicksave/quickload).
+# Developer-only Ctrl+Shift arms and capture hooks: quicksave/quickload (captures
+# send literal Ctrl+Shift+M/N), the saved-game browser and the interim order
+# keys. The overlays, debug pause, frame step, reveal and speed are in every
+# build behind the Options page's Debug Tools box (`[VERA] DebugTools=`).
 dev-overlays = ["vera20k-core/dev-overlays"]
 # Optional read-only local browser dashboard, absent from default/shipping builds.
 telemetry-dashboard = ["vera20k-core/telemetry", "dep:sha1"]

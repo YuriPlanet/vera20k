@@ -12,7 +12,6 @@ use std::collections::{HashSet, VecDeque};
 use winit::event::{ElementState, MouseButton};
 // Only the dev chord matches on bare `KeyCode`; the retail path below keeps
 // fully-qualified `winit::keyboard::KeyCode`.
-#[cfg(feature = "dev-overlays")]
 use winit::keyboard::KeyCode;
 
 use crate::app::AppState;
@@ -1496,7 +1495,6 @@ pub(crate) fn report_black_cell_causes(state: &mut AppState) {
 /// Beyond flipping `state.diag.debug_show_pathgrid`, this resets the per-overlay
 /// SpeedType override to None when the overlay turns off, so reopening
 /// the overlay defaults back to "auto from selected unit".
-#[cfg(feature = "dev-overlays")]
 pub(crate) fn toggle_pathgrid_overlay(state: &mut AppState) {
     state.diag.debug_show_pathgrid = !state.diag.debug_show_pathgrid;
     if !state.diag.debug_show_pathgrid {
@@ -1517,7 +1515,6 @@ pub(crate) fn toggle_pathgrid_overlay(state: &mut AppState) {
 /// Independent of `toggle_pathgrid_overlay`: the terrain-cost wash and the
 /// numbered route answer different questions, and the route is useful with the
 /// cost grid off.
-#[cfg(feature = "dev-overlays")]
 pub(crate) fn toggle_foot_path_overlay(state: &mut AppState) {
     state.diag.debug_show_foot_path = !state.diag.debug_show_foot_path;
     log::info!(
@@ -1530,7 +1527,6 @@ pub(crate) fn toggle_foot_path_overlay(state: &mut AppState) {
     );
 }
 
-#[cfg(feature = "dev-overlays")]
 pub(crate) fn toggle_cell_grid_overlay(state: &mut AppState) {
     state.diag.debug_show_cell_grid = !state.diag.debug_show_cell_grid;
     log::info!(
@@ -1543,7 +1539,6 @@ pub(crate) fn toggle_cell_grid_overlay(state: &mut AppState) {
     );
 }
 
-#[cfg(feature = "dev-overlays")]
 pub(crate) fn toggle_heightmap_overlay(state: &mut AppState) {
     state.diag.debug_show_heightmap = !state.diag.debug_show_heightmap;
     log::info!(
@@ -1556,7 +1551,6 @@ pub(crate) fn toggle_heightmap_overlay(state: &mut AppState) {
     );
 }
 
-#[cfg(feature = "dev-overlays")]
 pub(crate) fn cycle_terrain_cost_speed_type(state: &mut AppState, forward: bool) {
     if state.diag.debug_show_pathgrid {
         let current = crate::app::diagnostics::debug_overlays::resolve_debug_speed_type(state);
@@ -1570,7 +1564,6 @@ pub(crate) fn cycle_terrain_cost_speed_type(state: &mut AppState, forward: bool)
     }
 }
 
-#[cfg(feature = "dev-overlays")]
 pub(crate) fn request_debug_frame_step(state: &mut AppState) {
     if state.match_state.paused() {
         state.diag.debug_frame_step_requested = true;
@@ -1581,7 +1574,6 @@ pub(crate) fn request_debug_frame_step(state: &mut AppState) {
 ///
 /// On resume, local frame admission is re-anchored so elapsed modal time
 /// cannot cause a catch-up frame.
-#[cfg(feature = "dev-overlays")]
 pub(crate) fn toggle_debug_pause(state: &mut AppState) {
     state.match_state.debug_pause = !state.match_state.paused();
     if !state.match_state.paused() {
@@ -1736,15 +1728,13 @@ fn handle_hotkey_pressed_inner(
             | HotkeyFallback::ArrowDown,
         ) => {}
         HotkeyResolution::Unhandled => {
-            #[cfg(feature = "dev-overlays")]
+            // Every build carries the dev chord; it stays dead until the
+            // Options page's Debug Tools box (`[VERA] DebugTools=`) is ticked.
             if KeyModifiers::from_modifiers_state(state.match_state.input.hotkey_modifiers)
-                .dev_chord()
+                .dev_chord_admitted(state.persistence.options_profile.debug_tools)
             {
                 handle_dev_hotkey_pressed(state, physical_code);
             }
-            // Builds without `dev-overlays` (release) carry no dev chord.
-            #[cfg(not(feature = "dev-overlays"))]
-            let _ = physical_code;
         }
     }
     crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
@@ -2116,19 +2106,25 @@ fn handle_options_hotkey(state: &mut AppState) {
     }
 }
 
-/// Dev/debug hotkeys require Ctrl+Shift, a chord stock binds to no command.
+/// Dev/debug hotkeys require Ctrl+Shift, a chord stock binds to no command,
+/// and the Options page's Debug Tools box; none is reachable from the retail
+/// UI path. Pause, step, reveal and speed change the battle itself, so they
+/// work only offline ([`debug_offline`]). The quicksave/quickload and interim
+/// order arms stay in `dev-overlays` (developer) builds.
 ///
-/// Gated on `dev-overlays`: every arm here is a diagnostic, a sandbox cheat or
-/// a developer shortcut, and none of them is reachable from the retail UI path.
-#[cfg(feature = "dev-overlays")]
+/// [`debug_offline`]: crate::app::match_runtime::sim_tick::debug_offline
 fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCode) {
+    use crate::app::match_runtime::sim_tick::debug_offline;
     match code {
+        #[cfg(feature = "dev-overlays")]
         KeyCode::KeyM => {
             crate::app::persistence::commands::quicksave(state);
         }
+        #[cfg(feature = "dev-overlays")]
         KeyCode::KeyN => {
             crate::app::persistence::commands::quickload(state);
         }
+        #[cfg(feature = "dev-overlays")]
         KeyCode::F5 => {
             // Diagnostic shortcut shares the retail browser and modal owner.
             crate::app::App::open_saved_game_browser(
@@ -2138,10 +2134,12 @@ fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCod
         }
         // Interim order-mode arms until the stock click modifiers
         // (Ctrl+Shift+click attack move, beacon key) are implemented.
+        #[cfg(feature = "dev-overlays")]
         KeyCode::KeyA => {
             state.match_state.input.queued_order_mode = OrderMode::AttackMove;
             log::info!("Order mode armed: AttackMove");
         }
+        #[cfg(feature = "dev-overlays")]
         KeyCode::KeyB => {
             state.match_state.input.queued_order_mode = OrderMode::Move;
         }
@@ -2163,7 +2161,7 @@ fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCod
         KeyCode::BracketLeft => {
             cycle_terrain_cost_speed_type(state, false);
         }
-        KeyCode::F10 | KeyCode::KeyV => {
+        KeyCode::F10 | KeyCode::KeyV if debug_offline(state) => {
             #[cfg(feature = "debug-tools")]
             crate::app::debug_tools::toggle_reveal(state);
             #[cfg(not(feature = "debug-tools"))]
@@ -2185,10 +2183,10 @@ fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCod
         KeyCode::F8 => {
             report_black_cell_causes(state);
         }
-        KeyCode::KeyJ => {
+        KeyCode::KeyJ if debug_offline(state) => {
             toggle_debug_pause(state);
         }
-        KeyCode::Period if state.match_state.paused() => {
+        KeyCode::Period if state.match_state.paused() && debug_offline(state) => {
             request_debug_frame_step(state);
         }
         KeyCode::Equal | KeyCode::NumpadAdd | KeyCode::Minus | KeyCode::NumpadSubtract
@@ -2254,7 +2252,6 @@ pub(crate) struct KeyModifiers {
 }
 
 impl KeyModifiers {
-    #[cfg(feature = "dev-overlays")]
     fn from_modifiers_state(modifiers: winit::keyboard::ModifiersState) -> Self {
         Self {
             shift: modifiers.shift_key(),
@@ -2286,9 +2283,14 @@ impl KeyModifiers {
 
     /// The VERA-internal dev chord. Stock binds nothing to Ctrl+Shift, so it
     /// collides with no retail hotkey.
-    #[cfg(any(feature = "dev-overlays", test))]
     pub(crate) fn dev_chord(self) -> bool {
         self.ctrl && self.shift && !self.alt
+    }
+
+    /// The dev chord reaches its keys only while the Options page's Debug
+    /// Tools box (`[VERA] DebugTools=`) is ticked.
+    fn dev_chord_admitted(self, debug_tools: bool) -> bool {
+        debug_tools && self.dev_chord()
     }
 }
 
@@ -6700,6 +6702,20 @@ mod modifier_tests {
         assert!(!ctrl_shift.only_shift());
         assert!(!ctrl_shift.only_alt());
         assert!(ctrl_shift.dev_chord());
+    }
+
+    /// A new profile leaves the Ctrl+Shift debug keys dead; only the Debug
+    /// Tools box lets the chord reach them.
+    #[test]
+    fn dev_chord_needs_the_debug_tools_box() {
+        let ctrl_shift = KeyModifiers {
+            shift: true,
+            ctrl: true,
+            alt: false,
+        };
+        let profile = crate::app::persistence::options_profile::RetailOptionsProfile::default();
+        assert!(!ctrl_shift.dev_chord_admitted(profile.debug_tools));
+        assert!(ctrl_shift.dev_chord_admitted(true));
     }
 }
 
