@@ -351,8 +351,16 @@ def _gesture(value: Any, label: str, extent: tuple[int, int],
     if 'button' in gesture:
         if gesture.get('kind') not in ('click', 'sidebar') or gesture['button'] not in ('left', 'right'):
             raise ValidationError(f'{label}.button requires click/sidebar and literal left/right')
+    if 'modifiers' in gesture:
+        if gesture.get('kind') not in ('click', 'key'):
+            raise ValidationError(f'{label}.modifiers requires a click or key gesture')
+        modifiers = require_array(gesture['modifiers'], f'{label}.modifiers')
+        if (len(modifiers) > 4 or any(type(value) is not str or value not in ('Ctrl', 'Shift', 'Alt', 'Super')
+                                      for value in modifiers) or len(set(modifiers)) != len(modifiers)):
+            raise ValidationError(f'{label}.modifiers must be unique literal Ctrl/Shift/Alt/Super keys')
     if gesture.get('kind') in ('click', 'minimap'):
-        require_exact_keys(gesture, ('kind', 'position', *(('button',) if 'button' in gesture else ())), label)
+        require_exact_keys(gesture, ('kind', 'position', *(('button',) if 'button' in gesture else ()),
+                                    *(('modifiers',) if 'modifiers' in gesture else ())), label)
         _screen_point(gesture['position'], f'{label}.position', extent)
     elif gesture.get('kind') == 'minimap_object':
         require_exact_keys(gesture, ('kind', 'entity_id'), label)
@@ -371,11 +379,6 @@ def _gesture(value: Any, label: str, extent: tuple[int, int],
         key = require_string(gesture['key'], f'{label}.key')
         if key != 'Escape' and not (len(key) == 1 and key.isascii() and key.isalnum()):
             raise ValidationError(f'{label}.key must be one ASCII letter/digit or Escape')
-        if 'modifiers' in gesture:
-            modifiers = require_array(gesture['modifiers'], f'{label}.modifiers')
-            if (len(modifiers) > 4 or any(type(value) is not str or value not in ('Ctrl', 'Shift', 'Alt', 'Super')
-                                          for value in modifiers) or len(set(modifiers)) != len(modifiers)):
-                raise ValidationError(f'{label}.modifiers must be unique literal Ctrl/Shift/Alt/Super keys')
     elif gesture.get('kind') == 'command_bar':
         require_exact_keys(gesture, ('kind', 'command'), label)
         command = require_string(gesture['command'], f'{label}.command')
@@ -411,7 +414,7 @@ def _right_button_gesture(gesture: Mapping[str, Any]) -> bool:
 
 def _observes_local_input(profile: Mapping[str, Any]) -> bool:
     return any(row['gesture']['kind'] in ('key', 'minimap', 'minimap_object') or _right_button_gesture(row['gesture'])
-               for row in profile.get('gestures', []))
+               or bool(row['gesture'].get('modifiers')) for row in profile.get('gestures', []))
 
 
 def _gesture_policy(profile: Mapping[str, Any]) -> str:
