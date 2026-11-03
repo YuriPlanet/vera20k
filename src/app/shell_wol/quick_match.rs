@@ -425,7 +425,10 @@ fn open_dialog(state: &mut AppState) {
 
 /// The runner loop's stage tests (`0x0079FF50..0x0079FFC5`): stage 2 joins
 /// the lobby (`0x00788800`; one already joined or pending answers 0) and
-/// moves to stage 3 (20 s).
+/// moves to stage 3 (20 s), then falls into the stage-3 test. Every way
+/// back to stage 2 returns to that loop: a guest's failed search and a
+/// failed create (`0x007A1BB0` under event 0x10), a timeout (the pump's
+/// event 5, `0x0077F900`).
 pub(super) fn advance(state: &mut AppState) {
     if !lobby::quick_match_runner(state) || stage(state) != stage::JOIN_LOBBY {
         return;
@@ -435,16 +438,20 @@ pub(super) fn advance(state: &mut AppState) {
     };
     lobby::quick_match_join(state, target, QUICK_MATCH_KEY);
     set_stage(state, stage::IN_LOBBY, Some(20));
+    runner_request(state);
 }
 
 /// The runner's own stage-3 test (`0x0079FFCA..0x007A0009`): with the
-/// lobby current, the request, its result ignored. It runs once per event
-/// the runner handles, which right after the join is never the lobby's,
-/// so in practice only a stage-3 retry (bad `Start` parameters) reaches
-/// it.
+/// lobby current, the request, its result ignored. Right after a join the
+/// lobby is not current yet and its user list asks instead
+/// ([`lobby_users_listed`]); a runner that never left the lobby asks here:
+/// a guest whose search found no game, as when its host crashed after the
+/// pairing, or a bad `Start`. Native never runs it during a leave
+/// ([`lobby::leaving`]): a timeout there finds the lobby already left.
 fn runner_request(state: &mut AppState) {
     let lobby_name = globals(state).and_then(|globals| Some(globals.lobby.as_ref()?.name.clone()));
     if stage(state) == stage::IN_LOBBY
+        && !lobby::leaving(state)
         && lobby::current_channel(state).is_some_and(|current| Some(current.name) == lobby_name)
     {
         request(state);
