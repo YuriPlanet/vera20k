@@ -556,3 +556,105 @@ fn assert_native_births(
         );
     }
 }
+
+/// SpawnRadEruption @ 0x006FD800 through FireAt (`0x006FF5EE`). Retail
+/// sets `IsRadEruption=no`; this map layer turns it on and makes the weapon
+/// an ordinary attack, not AreaFire's own-cell shot.
+#[test]
+fn an_eruption_shot_creates_eight_kind2_beams_around_the_firer() {
+    let Some(patched) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
+        &IniFile::from_str(
+            "[DESO]\nPrimary=RadEruptionWeapon\n\n[RadEruptionWeapon]\nIsRadEruption=yes\nAreaFire=no\n",
+        ),
+    ) else {
+        return;
+    };
+    let rules = &patched.rules;
+    let weapon = rules.weapon("RadEruptionWeapon").unwrap();
+    assert!(weapon.is_rad_eruption && !weapon.is_rad_beam);
+    let warhead = rules.warhead(weapon.warhead.as_deref().unwrap()).unwrap();
+    assert_eq!(warhead.cell_spread_f64, 10.0);
+
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0xC29D_E500);
+    sim.fog = FogState::new(32, 32);
+    let owner = sim.interner.intern("Americans");
+    sim.session.set_current_house_for_test(Some(owner));
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
+    let source = sim
+        .spawn_object("DESO", "Americans", 16, 16, 64, rules)
+        .unwrap();
+    let target = sim
+        .spawn_object("MTNK", "Russians", 18, 16, 192, rules)
+        .unwrap();
+    sim.fog.mark_visible_for_owner(owner, 18, 16);
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::Attack {
+            attacker_id: source,
+            target_id: target
+        },
+        Some(rules),
+    ));
+    sim.lifecycle_outputs.clear_for_test();
+    let grid = sim.path_grid_snapshot().unwrap();
+    for _ in 0..32 {
+        sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+        if !sim
+            .fire_events
+            .iter()
+            .any(|shot| shot.attacker_id == source)
+        {
+            continue;
+        }
+        let from = super::world_fire::object_get_coords(&sim, source).unwrap();
+        let births: Vec<_> = sim
+            .lifecycle_outputs
+            .iter()
+            .filter_map(|output| match output {
+                LifecycleOutput::RadiationBeamCreated(birth) => Some(*birth),
+                _ => None,
+            })
+            .collect();
+        // X outer, Y inner, centre skipped.
+        let cells = [
+            (-1, -1),
+            (-1, 0),
+            (-1, 1),
+            (0, -1),
+            (0, 1),
+            (1, -1),
+            (1, 0),
+            (1, 1),
+        ]
+        .map(|(dx, dy)| (from.x / 256 + dx * 10, from.y / 256 + dy * 10));
+        assert_eq!(births.len(), cells.len());
+        for birth in &births {
+            assert!(birth.eruption);
+            assert_eq!(
+                (birth.from, birth.z_adjust, birth.color),
+                (from, 0, [0, 255, 0])
+            );
+        }
+        // Per beam, Main draws X and Y jitter, duration, amplitude and the
+        // inert travel rate.
+        sim.main_rng = SimRng::new(77).into();
+        let mut main = SimRng::new(77);
+        sim.lifecycle_outputs.clear_for_test();
+        super::radiation_beam::erupted(&mut sim, rules, source, weapon);
+        for (output, (x, y)) in sim.lifecycle_outputs.iter().zip(cells) {
+            let LifecycleOutput::RadiationBeamCreated(birth) = output else {
+                panic!("eruption birth");
+            };
+            let mut draw = |low, high| main.next_range_i32_inclusive(low, high);
+            assert_eq!(birth.to.x, x * 256 + 128 + draw(-128, 128));
+            assert_eq!(birth.to.y, y * 256 + 128 + draw(-128, 128));
+            assert_eq!(birth.duration, draw(5, 20));
+            assert_eq!(birth.amplitude.bits(), f64::from(draw(100, 500)).to_bits());
+            draw(0, 20);
+        }
+        assert_eq!(sim.main_rng.logical_state(), main.logical_state());
+        return;
+    }
+    panic!("the eruption DESO did not fire within 32 ticks");
+}
