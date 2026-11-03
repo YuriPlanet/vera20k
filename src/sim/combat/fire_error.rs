@@ -31,7 +31,9 @@
 //!   `+0x314` (railgun) are not produced, so those shots rearm on ROF alone.
 //!   Dormant in retail with `ApplyRailgunLineDamage @ 0x0070C690`: the only
 //!   `UseFireParticles=yes` weapon (`FireballLauncher`) and the only
-//!   `IsRailgun=` one (`LtRail`) are on no type.
+//!   `IsRailgun=` one (`LtRail`) are on no type. Only RA2's campaign maps
+//!   (`[Joe]` and `[Jon]` in MAPS01.MIX and MAPS02.MIX) arm them; no
+//!   skirmish map does.
 //! - Dormant in retail: T44 (FiringSyncFrame), U1 (DeathFrames),
 //!   U3 (DirectRocker), U4 (DeployToFire), U7 (MobileFire=no), I3 (Pushy),
 //!   B3 (`EMPulseCannon=`, read live; no retail building sets it).
