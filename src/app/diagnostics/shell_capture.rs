@@ -1734,6 +1734,23 @@ where
             "online failure capture requires two players, simple input and exactly300 prefix frames"
         );
         ensure!(
+            !matches!(checkpoint, ShellCaptureCheckpoint::Lan(target) if target.live_cooperative())
+                || (players == 2
+                    && online_map.is_none()
+                    && online_start.is_none()
+                    && online_ai.is_none()
+                    && online_mode_id.is_none()
+                    && !online_mass
+                    && !online_latency
+                    && !profile_check
+                    && online_network_checkpoint.is_none()
+                    && online_exit_checkpoint.is_none()
+                    && online_loading_host_loss.is_none()
+                    && online_startup_host_loss.is_none()
+                    && online_loading_cancel.is_none()),
+            "online co-op capture requires two players and no map, start, AI, mode or other diagnostic option; the campaign picks its maps"
+        );
+        ensure!(
             !online_latency
                 || (players == 2
                     && !online_failure
