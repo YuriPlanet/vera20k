@@ -868,6 +868,14 @@ House row: `allies`, the other Houses its own ally mask names in House array
 order, and `enemy`, the House its anger chose (null for none). It follows the
 same presence rules as `observe_super_weapons`.
 
+Optional v2 `camera_top_left: [x, y]` places the tactical view's world top-left
+there, clamped like any view change, instead of centring `camera_cell`; the two are
+exclusive. Every child records the battlefield's `[width, height]`, which starts at
+the frame's top-left, as `render.tactical_extent`, and the world rectangle
+`[x, y, width, height]` the camera can show on the map (every clamped top-left
+across the battlefield) as `render.view_area`. `tools/map_render.py` places and
+crops the tiles of a whole-map picture by them.
+
 `render.frame_wall_mean_ms`, when present, reads the existing frame timer's last
 up-to-60 intervals. It includes simulation, diagnostic observation, rendering and
 presentation pacing. It is cadence metadata, not GPU duration or ordinary play

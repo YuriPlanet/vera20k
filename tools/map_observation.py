@@ -98,7 +98,7 @@ EXTENSION_FIELDS = frozenset(('commands', 'gestures', 'observe_owners', 'observe
                               'observe_spawns', 'observe_crates',
                               'observe_audio', 'allow_load_segments',
                               'observe_tooltips',
-                              'camera_cell', 'cursor_position', 'terrain_cells',
+                              'camera_cell', 'camera_top_left', 'cursor_position', 'terrain_cells',
                               'observe_super_weapons', 'observe_diplomacy', 'observe_sidebar_steps'))
 ASCII_UPPER = str.maketrans('abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')
 COPIES = {'profile': 'profile.json', 'config': 'config.toml', 'contract': 'contract.json'}
@@ -325,12 +325,12 @@ def _finite_number(value: Any, label: str) -> None:
 
 
 def _coordinate(value: Any, label: str, *, leptons: bool = False,
-                packed_cell: bool = False) -> list[int]:
+                packed_cell: bool = False, world: bool = False) -> list[int]:
     coordinate = require_array(value, label)
     size = 3 if leptons else 2
     if len(coordinate) != size:
         raise ValidationError(f'{label} must contain exactly {size} coordinates')
-    limits = ((-(1 << 31), (1 << 31) - 1) if leptons else
+    limits = ((-(1 << 31), (1 << 31) - 1) if leptons or world else
               (-(1 << 15), (1 << 15) - 1) if packed_cell else (0, (1 << 16) - 1))
     return [_bounded_int(item, f'{label}[{index}]', *limits)
             for index, item in enumerate(coordinate)]
@@ -650,6 +650,10 @@ def _profile_extensions(profile: Mapping[str, Any], *, production_commands: bool
             selected.add(name.translate(ASCII_UPPER))
     if 'camera_cell' in profile:
         _coordinate(profile['camera_cell'], 'profile.camera_cell')
+    if 'camera_top_left' in profile:
+        if 'camera_cell' in profile:
+            raise ValidationError('profile.camera_cell and profile.camera_top_left are exclusive')
+        _coordinate(profile['camera_top_left'], 'profile.camera_top_left', world=True)
     if 'observe_action_line_inputs' in profile and type(profile['observe_action_line_inputs']) is not bool:
         raise ValidationError('profile.observe_action_line_inputs must be a boolean')
     if 'observe_disguise_inputs' in profile and type(profile['observe_disguise_inputs']) is not bool:
@@ -3250,6 +3254,22 @@ def validate_capture(directory: Path, profile: Mapping[str, Any],
     width, height = _integer(profile, 'width', 1), _integer(profile, 'height', 1)
     for key in ('internal_extent', 'surface_extent'):
         _require_equal(render.get(key), [width, height], f'render.{key}')
+    # The battlefield at the frame's top-left and the world rectangle the
+    # camera can show, which tools/map_render.py crops and places tiles by.
+    if 'tactical_extent' in render:
+        extent = require_array(render['tactical_extent'], 'render.tactical_extent')
+        if len(extent) != 2:
+            raise ValidationError('render.tactical_extent must contain a width and a height')
+        for index, (value, limit) in enumerate(zip(extent, (width, height))):
+            _bounded_int(value, f'render.tactical_extent[{index}]', 1, limit)
+    if 'view_area' in render:
+        area = require_array(render['view_area'], 'render.view_area')
+        if len(area) != 4:
+            raise ValidationError('render.view_area must contain x, y, width and height')
+        for index, value in enumerate(area):
+            _finite_number(value, f'render.view_area[{index}]')
+        if area[2] <= 0 or area[3] <= 0:
+            raise ValidationError('render.view_area must have a positive extent')
     unit_atlas = _unit_atlas(render.get('unit_atlas'))
     frame = require_object(manifest.get('frame'), 'frame')
     frame_snapshot = require_regular_file(directory / 'frame.bgra', 'frame',
@@ -3266,7 +3286,7 @@ def validate_capture(directory: Path, profile: Mapping[str, Any],
                 'frame': frame_snapshot.public_identity(), 'map_source': dict(source),
                 'initial': dict(initial), 'final': dict(final), 'exact_step_count': ticks,
                 'unit_atlas': unit_atlas}
-    for metadata in ('cursor_position', 'frame_wall_mean_ms'):
+    for metadata in ('cursor_position', 'frame_wall_mean_ms', 'tactical_extent', 'view_area'):
         if metadata in render:
             evidence[metadata] = render[metadata]
     if not legacy_clock:
