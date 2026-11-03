@@ -23,7 +23,8 @@ mod aircraft_release;
 ///
 /// DORMANT: `RadiationEruption` has no consumer; `SpawnRadEruption @
 /// 0x006FD800` is not ported. Retail's only `IsRadEruption=` key, on
-/// `RadEruptionWeapon`, is `no`.
+/// `RadEruptionWeapon`, is `no`, and no retail map sets it: one YR campaign
+/// map gives `[DESO]` that weapon as its Secondary, still `no`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FireAtEffect {
     None,

@@ -79,9 +79,10 @@
 //!   `0x50`, from `RulesClass::Process` `0x00668EFA..0x00668F26`; the byte at
 //!   `+0x49` from `ReadDifficulty @ 0x0066D270`, `0x0066D376..0x0066D388`), as
 //!   the scan's cell target (`0x006F9B55..0x006F9B5F`). DORMANT: retail
-//!   RULESMD sets `DestroyWalls=no` for Easy, Normal and Difficult. Trigger:
-//!   a layer setting it, then a computer unit on Guard or Area Guard whose
-//!   rings reach a wall. Effect: it does not shoot the wall.
+//!   RULESMD sets `DestroyWalls=no` for Easy, Normal and Difficult, and no
+//!   other retail INI or map has the key. Trigger: a layer setting it, then
+//!   a computer unit on Guard or Area Guard whose rings reach a wall.
+//!   Effect: it does not shoot the wall.
 //! - The threat mask (the callsite literal, the class overrides and the
 //!   flags word) is [`super::threat_mask`]'s; its residuals are listed there.
 //!
