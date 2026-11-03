@@ -103,9 +103,17 @@ impl Simulation {
     ///   it is a JumpJet or cannot be ordered (`0x0051FAAB..0x0051FADD`): a
     ///   berserk soldier.
     ///
+    /// The planning rung (Ctrl+Alt or +0x43A, `0x00700815..0x007008A3`) never
+    /// answers its patrol action 0x33 in YR, so Ctrl+Alt always gives Guard
+    /// (0x1A). HouseClass::GetPlanningWaypointAt (`0x005023B0`) searches the
+    /// House+0x210 legacy waypoint paths, whose one insert (`0x007639A0`) is
+    /// called only from `0x00502160`, which has no call, jump or pointer
+    /// reference. FootClass::ActivatePlanningWaypoint sets +0x43A
+    /// (`0x004DC8D3`) and clears it before returning (`0x004DCE6B`), and it
+    /// asks What_Action only for a waypoint from those empty paths.
+    ///
     /// Not modelled, each answering another action where native reaches it:
-    /// the planning rung (Ctrl+Alt or +0x43A, `0x00700815..0x007008A3`); the
-    /// attack rungs (`0x007008A6..0x00700AB4`), which callers ask first
+    /// the attack rungs (`0x007008A6..0x00700AB4`), which callers ask first
     /// (Ctrl's forced shot, and [`Self::cell_attack_rung_admits`]); a tube
     /// entrance (Unit `0x007406CF`, Infantry `0x0051F9AC`); a JumpJet
     /// soldier over a tube's neighbourhood, which answers 0
@@ -467,9 +475,8 @@ impl Simulation {
     ///   TerrainFire rung (`0x00700A46..0x00700AA6`): [`Self::fires_at_terrain`],
     ///   then the same tail. The tails match, so it admits here.
     ///
-    /// Residuals: the planning rung before it answers for an object whose
-    /// +0x43A is set (`0x00700840`; FootClass::ActivatePlanningWaypoint sets
-    /// it at `0x004DC8D3`), which VERA does not model; the fogged-object scan
+    /// The planning rung before it (`0x00700840`) never answers in YR; see
+    /// [`Self::cell_move_action`]. Residuals: the fogged-object scan
     /// behind the scenario's FogOfWar flag
     /// (`0x00700761..0x0070080F`: a fogged overlay replaces the live one and
     /// a fogged enemy building admits the rung) and the veinhole monster

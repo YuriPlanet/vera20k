@@ -1339,8 +1339,8 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
         | WolServiceRequest::ForgetCredential { .. }
         | WolServiceRequest::SetLangFilter(_)
         | WolServiceRequest::SetFindPage { .. } => {}
-        WolServiceRequest::RequestMatch { .. } => {
-            notice(state, "Choose Custom Match to host or join an online game.")
+        WolServiceRequest::RequestMatch { matchbot, request } => {
+            request_match(service, matchbot, &request)
         }
         WolServiceRequest::Translate { text, line } => {
             if let Some(target) = state.persistence.options_profile.translate_chat {
@@ -1354,6 +1354,21 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             }
         }
     }
+}
+
+/// API+0x30's request: ordinary private chat to the matchbot. This game
+/// has no transport fields to report, so RAT, ADR, NAT and PRT are 0.
+fn request_match(
+    service: &mut LiveService,
+    matchbot: String,
+    request: &super::quick_match::MatchRequest,
+) {
+    let text = request.text(super::quick_match::MatchTransport::default());
+    send_chat(
+        service,
+        WolChatLine::Say(text.encode_utf16().collect()),
+        vec![matchbot],
+    );
 }
 
 fn send_chat(service: &mut LiveService, line: WolChatLine, mut to: Vec<String>) {
@@ -1634,7 +1649,11 @@ fn request_setup(
                 "choices",
                 json!({"row":row,"slot":slot,"observer":observer}),
             );
-            service.pending_choices = (!switch
+            // A Quick Match host drops `R` (`0x007A8260`), so no options
+            // answer it.
+            let answered = !crate::app::shell_network_setup::quick_match(state);
+            service.pending_choices = (answered
+                && !switch
                 && !service
                     .accepted_options
                     .as_ref()
@@ -2008,6 +2027,33 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
 
 fn decode<T: serde::de::DeserializeOwned>(value: Value) -> Result<T> {
     serde_json::from_value(value).map_err(|_| anyhow!("invalid lobby message"))
+}
+
+/// A `chat` event's payload.
+#[derive(Deserialize)]
+struct Chat {
+    from: wire::Member,
+    text: String,
+    #[serde(default)]
+    private: bool,
+    #[serde(default)]
+    action: bool,
+    // The matchbot's replies; its `Start` carries the pairing.
+    #[serde(default)]
+    ansi: bool,
+    #[serde(default)]
+    quick_match: Option<super::quick_match::MatchStart>,
+    #[serde(default)]
+    sent_at: Option<u64>,
+}
+
+impl Chat {
+    /// The pairing of the matchbot's `Start` that `local` hosts; only its
+    /// ANSI text carries one.
+    fn hosted_pairing(&self, local: &str) -> Option<super::quick_match::MatchStart> {
+        let pairing = self.quick_match.clone().filter(|_| self.ansi)?;
+        super::quick_match::hosted_pairing(local, &self.text, self.private, pairing)
+    }
 }
 
 // Deliberately no Debug: the ticket and keys are relay credentials.
@@ -2391,18 +2437,10 @@ fn apply_event(
             maps::available(state, service, digest, usize::try_from(total)?);
         }
         "chat" => {
-            #[derive(Deserialize)]
-            struct Payload {
-                from: wire::Member,
-                text: String,
-                #[serde(default)]
-                private: bool,
-                #[serde(default)]
-                action: bool,
-                #[serde(default)]
-                sent_at: Option<u64>,
-            }
-            let p: Payload = decode(payload)?;
+            let p: Chat = decode(payload)?;
+            let options = p
+                .hosted_pairing(&local)
+                .and_then(|pairing| super::quick_match::online_start_options(state, pairing));
             service_event(
                 state,
                 WolServiceEvent::Message {
@@ -2410,8 +2448,8 @@ fn apply_event(
                     text: p.text.encode_utf16().collect(),
                     private: p.private,
                     action: p.action,
-                    ansi: false,
-                    options: None,
+                    ansi: p.ansi,
+                    options,
                     sent_at: p.sent_at,
                 },
             );
@@ -3033,6 +3071,59 @@ mod completion_tests {
             outdated_notice: None,
         };
         (service, input, output)
+    }
+
+    #[test]
+    fn a_match_request_is_private_chat_to_the_matchbot() {
+        let (mut service, input, _output) = control_service(None);
+        let request = super::super::quick_match::MatchRequest {
+            country: -2,
+            color: 3,
+            match_by_resolution: false,
+            locale: None,
+            width: 1024,
+        };
+        request_match(&mut service, "matchbot".into(), &request);
+        let http::Request::Command {
+            operation, payload, ..
+        } = input.try_recv().unwrap()
+        else {
+            panic!("chat command");
+        };
+        assert_eq!(
+            (operation, payload),
+            (
+                "chat",
+                json!({
+                    "text": "Match COU=-2, COL=3, MBR=0, RAT=0, RES=1024, ADR=0, NAT=0, PRT=0",
+                    "to": ["matchbot"],
+                    "action": false,
+                })
+            )
+        );
+    }
+
+    /// Only the matchbot's ANSI `Start` gives its host the pairing.
+    #[test]
+    fn a_chat_start_gives_its_host_the_pairing() {
+        let chat = |ansi: bool| -> Chat {
+            decode(json!({
+                "from": {"player_id": "m", "name": "matchbot", "flags": 1},
+                "text": "Start 7:Alpha,0,0,0,0,0,0,0,Beta,0,0,0,0,0,0,0",
+                "private": true,
+                "ansi": ansi,
+                "quick_match": {
+                    "seed": 7,
+                    "host": {"name": "Alpha", "country": -2, "color": 3},
+                    "guest": {"name": "Beta", "country": 5, "color": -2},
+                },
+            }))
+            .unwrap()
+        };
+        let pairing = chat(true).hosted_pairing("Alpha").unwrap();
+        assert_eq!((pairing.seed, pairing.guest.country), (7, 5));
+        assert_eq!(chat(true).hosted_pairing("Beta"), None);
+        assert_eq!(chat(false).hosted_pairing("Alpha"), None);
     }
 
     #[test]
