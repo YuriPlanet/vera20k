@@ -1058,11 +1058,12 @@ enum FireDisclosurePath {
 /// fail; normal fire requires those gates for both calls. Each human map
 /// represents that client's PlayerPtr; computer Houses have no client shroud.
 /// On each client the victim leaf asks IsHumanPlayer (`0x0050B6F0`) of the
-/// victim's House with that client's PlayerPtr, and Map5673A0's House gate
+/// victim's House with that client's PlayerPtr
+/// ([`Simulation::human_player_clients`]), and Map5673A0's House gate
 /// (`0x0056756A..0x005675D0`) writes that client's map for its own House or,
 /// under `AllyReveal=`, an ally ([`crate::sim::vision::reveal_admits`]): a
 /// shot at a campaign PlayerControl ally reveals its attacker on the
-/// player's map. Gameplay notifications reach only the native client's map.
+/// player's map.
 fn reveal_on_fire(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -1071,6 +1072,9 @@ fn reveal_on_fire(
     enabled: bool,
     path: FireDisclosurePath,
 ) {
+    // RESIDUAL: a Spawner shot at a bare Cell returns here, but native still
+    // reaches border4: CellClass's Owner (vt7E4EEC+3C =4104A0) answers
+    // NULL, so6FDEFA jumps to6FDF35. Only shroud edge frames differ.
     let TargetKind::Entity(target_id) = target else {
         return;
     };
@@ -1083,42 +1087,27 @@ fn reveal_on_fire(
     } else {
         return;
     };
-    // The victim/weapon leaf on the client whose PlayerPtr is `client`:
-    // 6FF6D0..6FF6FA (Spawner 6FDEE0..6FDF0F).
-    let victim_leaf = |world: &Simulation, client| {
-        enabled
-            && victim.is_some_and(|victim| {
-                Simulation::is_human_player_on(&world.session, &world.houses, victim, Some(client))
-            })
+    // The clients whose victim/weapon leaf passes: 6FF6D0..6FF6FA (Spawner
+    // 6FDEE0..6FDF0F), RevealOnFire and IsHumanPlayer of the victim's House.
+    let admitted = match victim {
+        Some(victim) if enabled => world.human_player_clients(victim),
+        _ => Vec::new(),
     };
-    // No callback or RNG occurs in this border. Use stable House order
-    // for the logical client planes.
-    let clients = |world: &Simulation| -> Vec<_> {
-        world
-            .houses
-            .order()
-            .iter()
-            .copied()
-            .filter(|&house| world.owner_is_human(house))
-            .collect()
-    };
-    let viewers = if path == FireDisclosurePath::Spawner {
-        clients(world)
-    } else if let Some(victim) = victim.filter(|&victim| enabled && world.owner_is_human(victim)) {
-        // Normal fire needs its leaf on a client. In a nonzero mode only the
-        // victim's own client passes it; in mode zero every client does.
-        if world.session.game_mode_nonzero() {
-            vec![victim]
-        } else {
-            clients(world)
+    let clients;
+    let viewers = match path {
+        // No callback or RNG occurs in this border. Every client runs it, in
+        // stable House order.
+        FireDisclosurePath::Spawner => {
+            clients = world.fog_viewers();
+            &clients
         }
-    } else {
-        return;
+        FireDisclosurePath::Shot if admitted.is_empty() => return,
+        FireDisclosurePath::Shot => &admitted,
     };
     let context = crate::sim::world::UninitContext::new(rules, None);
     let config = world.sight_reveal_config(rules);
     let heights = world.sight_height_grid(&config);
-    for house in viewers {
+    for &house in viewers {
         let Some(firer) = world.substrate.entities.get(firer_id) else {
             return;
         };
@@ -1165,7 +1154,7 @@ fn reveal_on_fire(
         // Subcell/negative raw XYZ correspondence remains the surrounding
         // Map geometry residual, rather than a second FireAt arithmetic port.
         let origin = ((coord.x / 256) as u16, (coord.y / 256) as u16, coord.z);
-        if victim_leaf(world, house)
+        if admitted.contains(&house)
             && let Some(victim) = victim
             && crate::sim::vision::reveal_admits(
                 &world.house_alliances,
@@ -1185,7 +1174,7 @@ fn reveal_on_fire(
                 &config,
                 context,
                 crate::sim::vision::MapRevealProjection::Fire,
-                world.session.current_house(),
+                Some(house),
             );
             if let Some(local_origin) = local_origin {
                 Simulation::refresh_sight_border(

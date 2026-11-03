@@ -2954,8 +2954,8 @@ fn reveal_candidates(
 /// allied house's when `[AudioVisual] AllyReveal=` is set (`0x00567AEF`).
 ///
 /// RESIDUAL: a house that infiltrated `owner`'s radar (the `+0x54E4` bit
-/// of its index, `0x00567AC1..0x00567ADB`) is mapped too, allied or not;
-/// VERA keeps no radar-spy bits.
+/// of its index, `0x00567AC1..0x00567ADB`, `0x0056757F..0x00567599`) is
+/// mapped too, allied or not; VERA keeps no radar-spy bits.
 pub(crate) fn reveal_admits(
     alliances: &HouseAlliances,
     owner: InternedId,
