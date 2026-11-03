@@ -446,11 +446,13 @@ impl Simulation {
                     .entities
                     .get(owner)
                     .and_then(|e| self.houses.get(&e.owner()))
-                    .is_some_and(|h| h.is_human())
+                    .is_some_and(|h| h.is_controlled_by_human(self.session.game_mode_nonzero()))
             {
-                // IsHumanPlayer50B6F0 in skirmish means this machine's local
-                // house. The common sound boundary resolves that audience;
-                // another human player's Boris must not play our abort voice.
+                // IsHumanPlayer (`0x0041D5A5 CALL 0x0050B6F0`): in a campaign
+                // the human or `PlayerControl=` flag. In a multiplayer game it
+                // means this machine's local house; any human house passes
+                // here and the common sound boundary resolves that audience,
+                // so another human player's Boris does not play our abort voice.
                 let house = self.substrate.entities.get(owner).unwrap().owner();
                 self.airstrike_sound(
                     first,
