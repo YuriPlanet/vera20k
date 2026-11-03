@@ -175,9 +175,11 @@ impl QuickMatchGlobals {
 /// Co-op (mode 2), which every runner path treats alike except the lobby
 /// prefix, the game channel's tournament and the load's start points.
 pub(crate) fn mode_active(state: &AppState) -> bool {
-    state.frontend.wol.as_ref().is_some_and(|visit| {
-        matches!(visit.mode, Some(WolMode::QuickMatch | WolMode::QuickCoop))
-    })
+    state
+        .frontend
+        .wol
+        .as_ref()
+        .is_some_and(|visit| matches!(visit.mode, Some(WolMode::QuickMatch | WolMode::QuickCoop)))
 }
 
 /// `[0xA8B244] == 2`: Quick Co-op.
@@ -552,14 +554,28 @@ fn request(state: &mut AppState) -> bool {
         .and_then(|visit| visit.locales.get(&nickname.to_ascii_lowercase()))
         .copied();
     let width = lobby::options_screen(state).0;
+    // An online visit has no persona file: the MultiPlayer side and colour
+    // the player saved in VERA.INI stay (`persona::take_side_and_color`),
+    // and they go instead, as the game's first `R` sends them
+    // (`send_first_choices`).
+    let (country, color) = match super::persona::info_file(state) {
+        Some(_) => (persona.country, persona.color),
+        None => crate::app::frontend::skirmish_session::seat_items(
+            &state
+                .frontend
+                .multiplayer_shell_runtime
+                .local_participant()
+                .slot,
+        ),
+    };
     csf_line(state, "WOL:RequestingMatch", REQUEST_COLOR);
     service::request(
         state,
         WolServiceRequest::RequestMatch {
             matchbot,
             request: MatchRequest {
-                country: persona.country,
-                color: persona.color,
+                country,
+                color,
                 match_by_resolution: persona.match_by_res,
                 locale,
                 width,
@@ -676,25 +692,42 @@ fn start_names(payload: &str) -> (Option<&str>, Option<&str>) {
     (host, guest)
 }
 
+/// The local player's part in a `Start` (`0x007A1BB0`).
+#[derive(Debug, PartialEq, Eq)]
+enum StartRole<'a> {
+    Host { guest: &'a str },
+    Guest { host: &'a str },
+}
+
+/// `0x007A1BB0`'s test: the local nickname (`_strcmpi`) is the first
+/// player, the host, or else the ninth, the guest; `None` for bad names.
+fn start_role<'a>(payload: &'a str, local: &str) -> Option<StartRole<'a>> {
+    let (host, guest) = start_names(payload);
+    let is = |name: Option<&str>| {
+        name.is_some_and(|name| crate::util::native_string::crt_strcmpi(name, local).is_eq())
+    };
+    match (host, guest) {
+        (Some(_), Some(guest)) if is(host) => Some(StartRole::Host { guest }),
+        (Some(host), Some(_)) if is(guest) => Some(StartRole::Guest { host }),
+        _ => None,
+    }
+}
+
 /// `0x007A1BB0`: the local nickname names the role. Bad names print
 /// `WOL:MatchBadParameters` and go back to stage 3 (20 s), which asks
 /// again.
 /// RESIDUAL: each path's `0x0052F3F0` UDP re-init is the transport's.
 fn start(state: &mut AppState, payload: &str) {
     let local = nickname(state);
-    let (host, guest) = start_names(payload);
-    let is = |name: Option<&str>| {
-        name.is_some_and(|name| crate::util::native_string::crt_strcmpi(name, &local).is_eq())
-    };
-    match (host, guest) {
-        (Some(_), Some(guest)) if is(host) => {
+    match start_role(payload, &local) {
+        Some(StartRole::Host { guest }) => {
             let guest = guest.to_owned();
             found_with(state, &guest);
             csf_line(state, "WOL:MatchCreatingGame", u32::MAX);
             set_stage(state, stage::CREATING, Some(30));
             lobby::quick_match_create(state);
         }
-        (Some(host), Some(_)) if is(guest) => {
+        Some(StartRole::Guest { host }) => {
             let host = host.to_owned();
             found_with(state, &host);
             let name = format!("{host}'s_game");
@@ -709,12 +742,289 @@ fn start(state: &mut AppState, payload: &str) {
             }
             poll_search(state);
         }
-        _ => {
+        None => {
             csf_line(state, "WOL:MatchBadParameters", ERROR_COLOR);
             set_stage(state, stage::IN_LOBBY, Some(20));
             runner_request(state);
         }
     }
+}
+
+/// One player of a matchbot's pairing: the name and the request's `COU`
+/// and `COL`, My Information's item data (-2 Random).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+pub(crate) struct MatchPlayer {
+    pub(crate) name: String,
+    pub(crate) country: i32,
+    pub(crate) color: i32,
+}
+
+/// The pairing VERA20K Online's matchbot sends beside its private `Start`
+/// (`quick_match`, docs/lobby-protocol.md): a fresh seed, the host (the
+/// earlier waiter) and the guest.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+pub(crate) struct MatchStart {
+    pub(crate) seed: u32,
+    pub(crate) host: MatchPlayer,
+    pub(crate) guest: MatchPlayer,
+}
+
+/// The scenario of a pairing's options.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum MatchMap<'a> {
+    /// A named scenario (the stand-in matchbot's Quick Co-op).
+    Named(&'a str),
+    /// The first scenario the mode admits for two (the stand-in's Quick
+    /// Match).
+    First,
+    /// VERA20K Online's: [`official_duel`].
+    OfficialDuel,
+}
+
+/// The pairing this game hosts: a private `Start` whose host
+/// [`start_role`] finds to be the local player. The guest builds nothing.
+pub(super) fn hosted_pairing(
+    local: &str,
+    text: &str,
+    private: bool,
+    pairing: MatchStart,
+) -> Option<MatchStart> {
+    let host = private
+        && starts_with(text, "Start ")
+        && matches!(start_role(&text[6..], local), Some(StartRole::Host { .. }));
+    host.then_some(pairing)
+}
+
+/// The host's options for the VERA20K Online pairing it hosts
+/// ([`hosted_pairing`]), which the `Start` message carries (`[0xB73714]`);
+/// `None` for a pairing that cannot be built (logged).
+pub(super) fn online_start_options(
+    state: &AppState,
+    pairing: MatchStart,
+) -> Option<Box<crate::app::shell_network_setup::HostOptions>> {
+    match host_options(state, &pairing, MatchMap::OfficialDuel) {
+        Ok(options) => Some(Box::new(options)),
+        Err(error) => {
+            log::warn!("WOL Quick Match: no host options for the matchbot's pairing: {error:#}");
+            None
+        }
+    }
+}
+
+/// The host's options for a matchbot's pairing, as `0x005E3D10` parses a
+/// `Start` payload into them for the host (`0x007A6DC2..0x007A6E50`): the
+/// first mode (Cooperative in Quick Co-op), the host on row 0 and the
+/// guest on row 1 with their countries and colours on automatic starts
+/// (Random ones drawn by [`draw_random_picks`]), and the pairing's seed. The test service's stand-in matchbot and VERA20K
+/// Online's both build them here.
+pub(crate) fn host_options(
+    state: &AppState,
+    pairing: &MatchStart,
+    map: MatchMap<'_>,
+) -> anyhow::Result<crate::app::shell_network_setup::HostOptions> {
+    use crate::ui::skirmish_shell::{SkirmishComboItem, SkirmishCountryChoice};
+    let modes = &state.frontend.skirmish_modes;
+    let mode = if quick_coop(state) {
+        modes
+            .iter()
+            .find(|mode| mode.class == crate::skirmish_modes::MpModeClass::Cooperative)
+    } else {
+        modes.first()
+    }
+    .ok_or_else(|| anyhow::anyhow!("no mode"))?;
+    // My Information's countries (0x4E3A00).
+    let countries: Vec<_> = state
+        .rules()
+        .map(crate::ui::skirmish_shell::country_choices)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|item| match item {
+            SkirmishComboItem::Country(SkirmishCountryChoice::Country(country)) => Some(country),
+            _ => None,
+        })
+        .collect();
+    build_host_options(
+        mode,
+        state.frontend.scenario_catalog.records(),
+        &countries,
+        pairing,
+        map,
+        state
+            .frontend
+            .skirmish_shell_state
+            .launch_options_base
+            .clone(),
+        |file| crate::app::shell_network_setup::local_map_metadata(state, file),
+    )
+}
+
+/// [`host_options`] over the host's mode, catalog and countries.
+fn build_host_options(
+    mode: &crate::skirmish_modes::SkirmishGameMode,
+    records: &[crate::map::skirmish_scenarios::SkirmishScenarioRecord],
+    countries: &[crate::skirmish_launch::LaunchCountry],
+    pairing: &MatchStart,
+    map: MatchMap<'_>,
+    options: crate::skirmish_launch::SkirmishLaunchOptions,
+    map_metadata: impl FnOnce(
+        &str,
+    )
+        -> anyhow::Result<crate::app::match_runtime::session::NetworkMapMetadata>,
+) -> anyhow::Result<crate::app::shell_network_setup::HostOptions> {
+    use crate::app::frontend::skirmish_session::{RANDOM_ITEM_DATA, persona_seat};
+    use crate::app::match_runtime::session::{NetworkAiOptions, NetworkVacancy, PeerChoicePolicy};
+    use crate::skirmish_launch::{NETWORK_PLAYER_SLOT_COUNT, SkirmishHumanSlot, SkirmishLocalSlot};
+    let record = match map {
+        MatchMap::Named(file) => records
+            .iter()
+            .find(|record| record.file_name.eq_ignore_ascii_case(file)),
+        MatchMap::First => records.iter().find(|record| {
+            crate::map::skirmish_scenarios::record_matches_mode(record, mode)
+                && record.player_capacity >= 2
+        }),
+        MatchMap::OfficialDuel => official_duel(records, mode, pairing.seed),
+    };
+    let file = record
+        .map(|record| record.file_name.clone())
+        .ok_or_else(|| anyhow::anyhow!("no map for the matchbot"))?;
+    // Only what My Information can store: a country it lists, a colour, or
+    // Random.
+    let seat = |player: &MatchPlayer| -> anyhow::Result<SkirmishLocalSlot> {
+        let country_item = crate::app::frontend::skirmish_shell_render::side_item_data_for_country;
+        anyhow::ensure!(
+            player.country == RANDOM_ITEM_DATA
+                || countries
+                    .iter()
+                    .any(|country| country_item(*country) == player.country),
+            "{} has no country {}",
+            player.name,
+            player.country
+        );
+        anyhow::ensure!(
+            player.color == RANDOM_ITEM_DATA
+                || (0..crate::skirmish_launch::HOUSE_COLOR_COUNT as i32).contains(&player.color),
+            "{} has no colour {}",
+            player.name,
+            player.color
+        );
+        Ok(persona_seat(player.country, player.color))
+    };
+    let (host_seat, guest_seat) = (seat(&pairing.host)?, seat(&pairing.guest)?);
+    let human = |row: u8, name: &str, slot| SkirmishHumanSlot {
+        raw_slot_index: Some(row),
+        name: name.into(),
+        slot,
+        role: Default::default(),
+    };
+    let mut launch = crate::skirmish_launch::SkirmishLaunchSession {
+        mode: crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(mode),
+        selected_map_file: Some(file.clone()),
+        humans: vec![
+            human(0, &pairing.host.name, host_seat),
+            human(
+                1,
+                &pairing.guest.name,
+                persona_seat(RANDOM_ITEM_DATA, RANDOM_ITEM_DATA),
+            ),
+        ],
+        local_player_index: 0,
+        opponents: Vec::new(),
+        ai_player_count: 0,
+        pre_fill_house_roster: crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(0),
+        options,
+    };
+    // 0x0069B600: the guest's picks join as a peer's do, so a colour the
+    // host holds turns Random.
+    crate::app::match_runtime::session::apply_peer_choices(
+        &mut launch,
+        &[NetworkAiOptions::INITIAL_INACTIVE; NETWORK_PLAYER_SLOT_COUNT],
+        1,
+        guest_seat,
+        false,
+        PeerChoicePolicy::Wol { countries: None },
+    );
+    draw_random_picks(&mut launch.humans, countries, pairing.seed)?;
+    Ok(crate::app::shell_network_setup::HostOptions {
+        launch,
+        map_metadata: map_metadata(&file)?,
+        vacancies: [NetworkVacancy::Open; NETWORK_PLAYER_SLOT_COUNT],
+        observer_row: None,
+        cooperative_difficulty: 0,
+        seed: Some(pairing.seed),
+    })
+}
+
+/// The pairing's Random picks, host first: a country of My Information's
+/// list and a colour the other player does not hold, drawn from the seed.
+/// Both players then accept with a concrete side and colour
+/// (`0x007A7F72`).
+/// RESIDUAL: the retail matchbot sent concrete countries and colours in its
+/// `Start`; VERA's lobby holds no rules data and echoes each request's
+/// `COU`/`COL`, Random included, so the host draws them. The draws are
+/// VERA's, not native's.
+fn draw_random_picks(
+    humans: &mut [crate::skirmish_launch::SkirmishHumanSlot],
+    countries: &[crate::skirmish_launch::LaunchCountry],
+    seed: u32,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(!countries.is_empty(), "no country to draw");
+    let mut draws = (0u32..).map(|k| seat_draw(seed, k) as usize);
+    for index in 0..humans.len() {
+        let held: Vec<u8> = humans
+            .iter()
+            .enumerate()
+            .filter(|(other, human)| *other != index && !human.slot.color_random)
+            .map(|(_, human)| human.slot.color_index)
+            .collect();
+        let slot = &mut humans[index].slot;
+        if slot.country_random {
+            slot.country = countries[draws.next().expect("endless") % countries.len()];
+            slot.country_random = false;
+        }
+        if slot.color_random {
+            let free: Vec<u8> = (0..crate::skirmish_launch::HOUSE_COLOR_COUNT as u8)
+                .filter(|color| !held.contains(color))
+                .collect();
+            slot.color_index = free[draws.next().expect("endless") % free.len()];
+            slot.color_random = false;
+        }
+    }
+    Ok(())
+}
+
+/// The seed's `k`th draw for a Random pick: a Weyl step, then a 32-bit
+/// integer hash, so the picks do not follow the map's `seed % count`.
+fn seat_draw(seed: u32, k: u32) -> u32 {
+    let mut x = seed.wrapping_add(k.wrapping_add(1).wrapping_mul(0x9E37_79B9));
+    x = (x ^ (x >> 16)).wrapping_mul(0x7FEB_352D);
+    x = (x ^ (x >> 15)).wrapping_mul(0x846C_A68B);
+    x ^ (x >> 16)
+}
+
+/// VERA20K Online's map: of the official two-player scenarios the mode
+/// admits, in catalog order, the seed's (`seed % count`). Only maps with a
+/// file here count, not the random map's row or a map only in the online
+/// library.
+/// RESIDUAL: the retail matchbot named the scenario in its `Start` options
+/// (`0x005E3D10` parses it); VERA's lobby holds no retail map data, so the
+/// host picks. Every online Quick Match plays VERA's pool and pick, not
+/// the retail ladder's.
+fn official_duel<'a>(
+    records: &'a [crate::map::skirmish_scenarios::SkirmishScenarioRecord],
+    mode: &crate::skirmish_modes::SkirmishGameMode,
+    seed: u32,
+) -> Option<&'a crate::map::skirmish_scenarios::SkirmishScenarioRecord> {
+    let pool = || {
+        records.iter().filter(|record| {
+            record.official
+                && record.player_capacity == 2
+                && record.kind == crate::map::skirmish_scenarios::SkirmishScenarioKind::ConcreteMap
+                && !record.is_online()
+                && crate::map::skirmish_scenarios::record_matches_mode(record, mode)
+        })
+    };
+    let count = pool().count();
+    pool().nth((seed as usize).checked_rem(count)?)
 }
 
 /// `0x007A19E0`: the opponent, `WOL:MatchFoundWith`, then its ping.
@@ -1214,6 +1524,109 @@ mod tests {
         assert_eq!(start_names("::x:A,1,2"), (Some("A"), None));
         assert_eq!(start_names("no players"), (None, None));
         assert_eq!(start_names(""), (None, None));
+    }
+
+    /// Official two-player maps among a four-player map, an unofficial
+    /// duel and the random map's two-player row.
+    fn duel_records() -> Vec<crate::map::skirmish_scenarios::SkirmishScenarioRecord> {
+        use crate::map::skirmish_scenarios::*;
+        let record = |file: &str, capacity, official| SkirmishScenarioRecord {
+            source_ordinal: 0,
+            source: SkirmishScenarioSource::MissionsMdPkt,
+            file_name: file.into(),
+            display_name: file.into(),
+            author: None,
+            preview: Default::default(),
+            multiplayer_start_waypoints: Vec::new(),
+            player_capacity: capacity,
+            preview_source_bounds: None,
+            game_modes: vec!["standard".into()],
+            min_players: None,
+            max_players: None,
+            official,
+            kind: SkirmishScenarioKind::ConcreteMap,
+        };
+        vec![
+            record("four.map", 4, true),
+            record("custom.yrm", 2, false),
+            record("duel0.map", 2, true),
+            SkirmishScenarioRecord::random_map_sentinel(3, "Random", 2),
+            record("duel1.map", 2, true),
+        ]
+    }
+
+    #[test]
+    fn the_online_map_is_the_seeds_official_duel() {
+        let records = duel_records();
+        let battle = &crate::skirmish_modes::stock_skirmish_modes()[0];
+        let pick = |seed| official_duel(&records, battle, seed).map(|r| r.file_name.as_str());
+        assert_eq!(pick(4), Some("duel0.map"));
+        assert_eq!(pick(4), pick(4));
+        assert_eq!(pick(u32::MAX), Some("duel1.map"));
+        assert_eq!(official_duel(&records[..2], battle, 4), None);
+    }
+
+    #[test]
+    fn a_pairing_seats_both_players_for_its_host_and_nothing_for_its_guest() {
+        let pairing: MatchStart = serde_json::from_value(serde_json::json!({
+            "seed": 7,
+            "host": {"name": "Alpha", "country": -2, "color": 3},
+            "guest": {"name": "Beta", "country": 5, "color": 3},
+        }))
+        .unwrap();
+        let text = "Start 7:Alpha,0,0,0,0,0,0,0,Beta,0,0,0,0,0,0,0";
+        assert_eq!(hosted_pairing("Beta", text, true, pairing.clone()), None);
+        assert_eq!(hosted_pairing("Alpha", text, false, pairing.clone()), None);
+        let pairing = hosted_pairing("alpha", text, true, pairing).unwrap();
+
+        let battle = &crate::skirmish_modes::stock_skirmish_modes()[0];
+        let countries: Vec<_> = (0..10)
+            .map(crate::skirmish_launch::LaunchCountry::from_country_index)
+            .collect();
+        let build = |pairing: &MatchStart| {
+            build_host_options(
+                battle,
+                &duel_records(),
+                &countries,
+                pairing,
+                MatchMap::OfficialDuel,
+                Default::default(),
+                |file| {
+                    Ok(crate::app::match_runtime::session::NetworkMapMetadata {
+                        display_name: file.into(),
+                        player_capacity: 2,
+                        official: true,
+                        byte_length: 0,
+                        digest: String::new(),
+                        source_sha256: String::new(),
+                        effective_digest: String::new(),
+                    })
+                },
+            )
+        };
+        let options = build(&pairing).unwrap();
+        let launch = &options.launch;
+        let seats: Vec<_> = launch
+            .humans
+            .iter()
+            .map(|human| (human.name.as_str(), human.raw_slot_index))
+            .collect();
+        assert_eq!(seats, [("Alpha", Some(0)), ("Beta", Some(1))]);
+        assert_eq!(launch.local_player_index, 0);
+        assert_eq!(launch.selected_map_file.as_deref(), Some("duel1.map"));
+        assert_eq!(options.seed, Some(7));
+        // Random draws a listed country; the colour the host holds turns
+        // Random and draws another, so both players accept.
+        let (host, guest) = (&launch.humans[0].slot, &launch.humans[1].slot);
+        assert!(!host.country_random && countries.contains(&host.country));
+        assert_eq!((host.color_random, host.color_index), (false, 3));
+        assert!(!guest.country_random && guest.country == countries[5]);
+        assert!(!guest.color_random && guest.color_index != 3);
+        assert_eq!(build(&pairing).unwrap().launch, options.launch);
+
+        let mut foreign = pairing;
+        foreign.guest.country = 70_000;
+        assert!(build(&foreign).is_err());
     }
 
     #[test]
