@@ -532,6 +532,11 @@ fn find_team_target(
     ) else {
         return NO_CELL;
     };
+    // A wall Cell from the ring walk's fallback is its own cell.
+    let target = match target {
+        crate::sim::combat::TargetKind::Entity(target) => target,
+        crate::sim::combat::TargetKind::Cell(x, y) => return (x as i16, y as i16),
+    };
     let Some(entity) = sim.substrate.entities.get(target) else {
         return NO_CELL;
     };

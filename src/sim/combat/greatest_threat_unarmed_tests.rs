@@ -56,6 +56,7 @@ fn pick(
     mission: super::super::ScanMission,
 ) -> Option<u64> {
     sim.greatest_threat_represented(rules, Some(registry), scanner, mission, None)
+        .and_then(crate::sim::combat::TargetKind::object_id)
 }
 
 #[test]

@@ -149,7 +149,8 @@ fn custom_armor_passive_and_retaliation_flags_are_independent_of_each_other_and_
             "multiplier={multiplier}, passive={passive}, retaliate={retaliate}",
         );
         assert_eq!(
-            sim.greatest_threat_represented(&rules, None, scorer, ScanMission::Guard, None),
+            sim.greatest_threat_represented(&rules, None, scorer, ScanMission::Guard, None)
+                .and_then(crate::sim::combat::TargetKind::object_id),
             passive.then_some(target),
             "multiplier={multiplier}, passive={passive}, retaliate={retaliate}",
         );

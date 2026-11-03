@@ -1687,9 +1687,13 @@ mod retail_construction_tests {
         );
         eprintln!(
             "a Yuri engineer's quarry-6 scan: {:?}",
-            factory_scan.map(|id| sim
-                .interner
-                .resolve(sim.entities().get(id).unwrap().type_ref()))
+            factory_scan.map(|pick| match pick {
+                crate::sim::combat::TargetKind::Entity(id) => sim
+                    .interner
+                    .resolve(sim.entities().get(id).unwrap().type_ref())
+                    .to_owned(),
+                cell => format!("{cell:?}"),
+            })
         );
         let teams: Vec<u64> = ["05FFB46C-G", "08B95EFC-G"]
             .into_iter()

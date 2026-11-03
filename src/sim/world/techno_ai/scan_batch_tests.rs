@@ -155,7 +155,7 @@ fn a_hunter_whose_house_changes_enemy_during_the_pass_scans_live() {
     let batch = batched.scan_batch.as_ref().unwrap();
     let answered = batch.answers.iter().find(|(id, _)| *id == hunter);
     assert_eq!(
-        answered.and_then(|(_, answer)| answer.as_ref()?.outcome.target()),
+        answered.and_then(|(_, answer)| answer.as_ref()?.outcome.object()),
         Some(west),
         "the pass-start answer picks the Russians' tank"
     );

@@ -181,7 +181,7 @@ fn pick(
         None,
         None,
     )
-    .target()
+    .object()
 }
 
 #[test]

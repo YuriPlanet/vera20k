@@ -362,7 +362,7 @@ pub(crate) fn dispatch_foot_mission(
             {
                 let _ = sim.assign_target_represented(
                     id,
-                    Some(crate::sim::combat::TargetKind::Entity(target)),
+                    Some(target),
                     rules,
                     ctx.overlay_registry,
                     ctx.effects,
@@ -1922,7 +1922,7 @@ fn evaluate_foot_rescue(
             )
         });
         if let (Some(point), Some(pick)) = (point, pick)
-            && let Some(target) = coords(sim, crate::sim::combat::TargetKind::Entity(pick))
+            && let Some(target) = coords(sim, pick)
         {
             //1.5 is exact for the native integer range, so this signed
             //scaled comparison preserves its strict FCOMP result without
@@ -1931,7 +1931,7 @@ fn evaluate_foot_rescue(
             if i64::from(distance) * 2 < i64::from(foot_threat_range(sim, id, rules)) * 3 {
                 let _ = sim.assign_target_represented(
                     id,
-                    Some(crate::sim::combat::TargetKind::Entity(pick)),
+                    Some(pick),
                     rules,
                     ctx.overlay_registry,
                     ctx.effects,
@@ -2824,13 +2824,7 @@ fn infantry_deployed_attack_reacquire(
     // one was found. It writes no `+0x50C`, so the setter leaves the flag
     // clear.
     if had_target || pick.is_some() {
-        let _ = sim.assign_target_represented(
-            id,
-            pick.map(crate::sim::combat::TargetKind::Entity),
-            rules,
-            ctx.overlay_registry,
-            ctx.effects,
-        );
+        let _ = sim.assign_target_represented(id, pick, rules, ctx.overlay_registry, ctx.effects);
     }
     if pick.is_some() {
         return None;
