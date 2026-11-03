@@ -475,6 +475,7 @@ fn bracket_delta_moves_the_health_bar_but_not_the_scale_pips() {
                 zoom: 1.0,
                 ignore_visibility: true,
             },
+            HealthBarMode::Vanilla,
         );
         let y = |list: &[crate::render::batch::SpriteInstance]| {
             list.iter().map(|pip| pip.position).collect::<Vec<_>>()

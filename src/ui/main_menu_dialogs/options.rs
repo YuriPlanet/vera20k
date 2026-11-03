@@ -312,12 +312,11 @@ pub(crate) enum HealthBarMode {
     /// draws a bare strip, everything else draws nothing.
     #[default]
     Vanilla,
-    /// Every visible object draws a bare strip when it is not selected;
-    /// selected objects keep their bracket.
+    /// [`Self::Vanilla`], plus a bare strip on every other object the local
+    /// player can see.
     Always,
-    /// [`Self::Always`], except that an unselected object at full health draws
-    /// nothing. Hovering is not selecting, so a hovered full-health object
-    /// stays bare too.
+    /// [`Self::Vanilla`], plus a bare strip on every other object the local
+    /// player can see that is below full health.
     AlwaysExceptFull,
 }
 

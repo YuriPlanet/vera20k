@@ -13,8 +13,8 @@ values, and editing the file directly works too.
 | Value | Behavior |
 |---|---|
 | `0` (default) | gamemd's rule: selected draws the strip and bracket, the hovered object draws a bare strip. |
-| `1` | Every object the local player can see draws a bare strip when it is not selected; selected objects keep the bracket. |
-| `2` | Mode 1, except an unselected object at full health draws nothing. Hovering is not selecting, so a hovered full-health object stays bare. |
+| `1` | Mode 0, plus a bare strip on every other object the local player can see. |
+| `2` | Mode 0, plus a bare strip on every other object the local player can see that is below full health. |
 
 A value this build does not know reads as `0`, so a hand-edited file never hides
 the original strip.
@@ -23,9 +23,9 @@ the original strip.
 
 Own and allied objects always count. Another house's object needs its cell
 explored — and, under the `FogOfWar` game option, currently visible — the same
-reveal gate screen selection uses. The strip's PIPS fills use the 600 material,
-which reads no A, so the shroud plane that blacks out an unexplored enemy's body
-does not hide its pips; that gate is what keeps the strip out.
+reveal gate screen selection uses, so the strip never shows what shroud hides.
+gamemd's disguise rule still applies: an enemy Mirage worn as a tree draws no
+strip until it is selected, in every mode.
 
 ## Full health
 
@@ -46,7 +46,5 @@ strip because it shares the same block.
 - The visible-object count times the pip count (17 for mobiles, 8 for infantry)
   is the extra instance load in modes 1 and 2. No 20,000-unit frame-time
   measurement is recorded yet.
-- A hovered full-health object is hidden in mode 2 by design; treating hovering
-  as selection would be a different mode.
 - `docs/ini-commander-personalities.md` and other product extensions keep their
   own presentation switches; this option is independent of them.
