@@ -274,6 +274,9 @@ pub(super) struct SequencedSession {
     remote_next_sequence: u64,
     repair_gap_since: Option<u32>,
     pause: CanonicalPause,
+    /// VERA: the current pause found this game catching up, and it has not
+    /// reached the pause yet; see `take_caught_up_in_pause`.
+    pause_found_behind: bool,
     pause_relay_supported: bool,
     pause_supported_sources: u32,
     pause_active_sources: u32,
@@ -377,6 +380,7 @@ impl SequencedSession {
             remote_next_sequence: 1,
             repair_gap_since: None,
             pause: CanonicalPause::default(),
+            pause_found_behind: false,
             pause_relay_supported: false,
             pause_supported_sources: 0,
             pause_active_sources: mask,
@@ -977,9 +981,33 @@ impl SequencedSession {
         {
             return Some(super::NetworkRecoveryStatus::Reconnecting);
         }
+        self.catching_up_frames(current_frame)
+            .map(|frames| super::NetworkRecoveryStatus::CatchingUp { frames })
+    }
+
+    /// How far this game is behind the relay's head, when that is more than
+    /// half a second of frames: the Catching up status line.
+    fn catching_up_frames(&self, current_frame: u32) -> Option<u32> {
         let frames = self.head_frame.saturating_sub(current_frame);
-        (frames > u32::from(self.pace_fps) / 2)
-            .then_some(super::NetworkRecoveryStatus::CatchingUp { frames })
+        (frames > u32::from(self.pace_fps) / 2).then_some(frames)
+    }
+
+    /// VERA: true once, when this game reaches a pause that found it
+    /// catching up, so it can tell the others it has caught up. `reached` is
+    /// whether the simulation has reached the pause; a resume first sends
+    /// nothing, nor does a pause the relay has already ended, which a
+    /// rejoining game replays while still behind. gamemd's lockstep makes
+    /// everyone wait for a slow player, so it has no such line.
+    pub(super) fn take_caught_up_in_pause(&mut self, reached: bool, current_frame: u32) -> bool {
+        if !self.pause.paused {
+            self.pause_found_behind = false;
+        } else if reached {
+            return std::mem::take(&mut self.pause_found_behind)
+                && self.catching_up_frames(current_frame).is_none();
+        } else if self.catching_up_frames(current_frame).is_some() {
+            self.pause_found_behind = true;
+        }
+        false
     }
 
     fn assemble(&mut self) -> Result<(), SequencedError> {
@@ -1578,6 +1606,57 @@ mod stall_tests {
         );
         session.pause.paused = true;
         assert_eq!(session.recovery_status(1_000 + STALL_MS + 1, 40), None);
+    }
+
+    fn paused_at_100() -> SequencedSession {
+        let mut houses = [None; 30];
+        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
+        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        session.started = true;
+        session.head_frame = 100;
+        session.pause.paused = true;
+        session.pause.frame = 100;
+        session
+    }
+
+    /// A game the pause finds more than half a second behind says once that
+    /// it caught up, when it reaches the pause.
+    #[test]
+    fn a_game_a_pause_finds_catching_up_says_once_that_it_caught_up() {
+        let mut session = paused_at_100();
+        assert!(
+            !session.take_caught_up_in_pause(false, 84),
+            "16 frames behind"
+        );
+        assert!(session.take_caught_up_in_pause(true, 101));
+        assert!(!session.take_caught_up_in_pause(true, 101), "once a pause");
+    }
+
+    /// A game keeping up says nothing, nor does one a resume reaches first,
+    /// nor a rejoining one replaying a pause the relay has already ended.
+    #[test]
+    fn a_game_keeping_up_or_resumed_before_the_pause_says_nothing() {
+        let mut session = paused_at_100();
+        assert!(
+            !session.take_caught_up_in_pause(false, 85),
+            "15 frames behind"
+        );
+        assert!(!session.take_caught_up_in_pause(true, 101));
+        let mut session = paused_at_100();
+        assert!(!session.take_caught_up_in_pause(false, 60));
+        session.head_frame = 300;
+        assert!(
+            !session.take_caught_up_in_pause(true, 101),
+            "the relay has resumed and run on"
+        );
+        let mut session = paused_at_100();
+        assert!(!session.take_caught_up_in_pause(false, 60));
+        session.pause.paused = false;
+        assert!(!session.take_caught_up_in_pause(false, 70));
+        session.pause.paused = true;
+        session.head_frame = 200;
+        session.pause.frame = 200;
+        assert!(!session.take_caught_up_in_pause(true, 201), "a later pause");
     }
 
     /// Loading leaves the position still for many seconds; the start itself
