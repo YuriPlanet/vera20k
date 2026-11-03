@@ -50,9 +50,8 @@ impl ParticleBehavesLike {
 
 /// A particle definition parsed from a `[ParticleName]` section in rulesmd.ini.
 ///
-/// Tier 3 fields (Spark/Railgun: `XVelocity`, `ColorList`, etc.) are parsed but
-/// unused at Tier 2 — the binary parses them unconditionally and we mirror that
-/// so Tier 3 lights up cleanly later without re-parsing.
+/// The binary reads every key for every `BehavesLike`; the Spark and Railgun
+/// fields (`XVelocity`, `ColorList`, etc.) feed those behaviors' particle AI.
 #[derive(Debug, Clone)]
 pub struct ParticleType {
     // ── Identity ─────────────────────────────────────────────────────

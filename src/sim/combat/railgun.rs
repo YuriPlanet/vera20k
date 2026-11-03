@@ -1,5 +1,6 @@
-//! The railgun's line damage, `TechnoClass @ 0x0070C690`, which FireAt's
-//! `IsRailgun` arm calls after `BulletClass::Fire` (`0x006FF223`).
+//! The railgun's line damage, `TechnoClass::ApplyRailgunLineDamage @
+//! 0x0070C690`, which FireAt's `IsRailgun` arm calls after `BulletClass::Fire`
+//! (`0x006FF223`).
 //!
 //! The line runs from the launch source to the target's `GetCoords` in 50
 //! Lerp steps. Each new cell's object list (the bridge deck's when the step

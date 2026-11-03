@@ -204,6 +204,7 @@ fn railgun_line_damage_matches_native_hits_and_ground_stop() {
             })
             .collect();
         let mut deaths = DeathEffects::default();
+        let rng_before = sim.scenario_rng.native_state_hex();
         let returned = super::railgun::line_damage(
             &mut sim,
             rules,
@@ -219,6 +220,11 @@ fn railgun_line_damage_matches_native_hits_and_ground_stop() {
             [returned.x, returned.y, returned.z],
             xyz(&case["returned"]),
             "{name}: returned coordinate"
+        );
+        assert_eq!(
+            sim.scenario_rng.native_state_hex() == rng_before,
+            case["rng_unchanged"].as_bool().unwrap(),
+            "{name}: Scenario draws"
         );
         let mut struck: Vec<_> = ids
             .iter()
