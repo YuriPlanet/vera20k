@@ -7,7 +7,6 @@ use crate::app::input::commands::preferred_local_owner_name;
 use crate::app::input::cursor::{
     current_cursor_feedback_kind, cursor_id_for_feedback, software_cursor_frame_for,
 };
-use crate::app::persistence::options_profile::HealthBarMode;
 use crate::app::presentation::instances::in_view;
 use crate::app::types::{CursorId, HoverTargetKind, SoftwareCursorSequence};
 use crate::assets::csf_file::{CsfArg, format_csf};
@@ -18,6 +17,7 @@ use crate::render::bit_font::BitFont;
 use crate::rules::house_colors::{HouseColorRamps, NO_REMAP};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::Position;
+use crate::ui::main_menu_dialogs::options::HealthBarMode;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 /// Authentic pip counts for unit health bars.
@@ -2361,7 +2361,7 @@ mod tests {
     /// because hovering is not selecting.
     #[test]
     fn the_health_bar_modes_extend_only_the_seen_unselected_strip() {
-        use crate::app::persistence::options_profile::HealthBarMode;
+        use crate::ui::main_menu_dialogs::options::HealthBarMode;
 
         // Vanilla is gamemd: the selected/hovered pair, nothing else.
         assert!(health_strip_draws(

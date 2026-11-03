@@ -5,8 +5,10 @@ for the selected object (with the PIPBRD bracket) and a bare strip for the objec
 under the cursor; every other object draws nothing. This is a VERA display mode:
 `sim/` never reads it, so saves, replays, network sync and the AI are unaffected.
 
-It lives in `VERA.INI` for now; there is no Options control yet. The profile
-writer stores the key again with the other `[VERA]` values.
+Set it in **Options → Vera Options → Health Bars**, under the UI Options band's
+right column. It applies at once and is saved as `[VERA] HealthBars=` in
+`VERA.INI`; the profile writer stores the key again with the other `[VERA]`
+values, and editing the file directly works too.
 
 | Value | Behavior |
 |---|---|

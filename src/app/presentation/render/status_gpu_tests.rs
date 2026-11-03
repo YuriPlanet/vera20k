@@ -4,7 +4,6 @@
 use super::draw_plan_lowering::{
     NativeDisplayOrder, PlannedObjectInstance, lower_ground_object_instances,
 };
-use crate::app::persistence::options_profile::HealthBarMode;
 use crate::app::presentation::ui_overlays::{StatusViewport, techno_extras_for_parent};
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 use crate::map::entities::EntityCategory;
@@ -17,6 +16,7 @@ use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, encoded};
 use crate::sim::{
     combat::Health, components::DriveCoord, game_entity::GameEntity, world::Simulation,
 };
+use crate::ui::main_menu_dialogs::options::HealthBarMode;
 use serde_json::Value;
 
 #[test]

@@ -61,9 +61,7 @@ impl AppState {
 
     /// `[VERA] HealthBars=`: the client health-strip policy. Presentation only;
     /// the simulation never reads it.
-    pub(crate) fn health_bar_mode(
-        &self,
-    ) -> crate::app::persistence::options_profile::HealthBarMode {
+    pub(crate) fn health_bar_mode(&self) -> crate::ui::main_menu_dialogs::options::HealthBarMode {
         self.persistence.options_profile.health_bars
     }
 

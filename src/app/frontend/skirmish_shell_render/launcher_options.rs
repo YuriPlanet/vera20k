@@ -13,7 +13,7 @@ use crate::ui::main_menu_dialogs::options::shell::{
     LauncherLabelAlign, LauncherOptionsLayout, LauncherStatusHelp,
 };
 use crate::ui::main_menu_dialogs::options::{
-    LauncherCheckboxId, LauncherComboId, OptionsDialogState, Zoom,
+    HealthBarMode, LauncherCheckboxId, LauncherComboId, OptionsDialogState, Zoom,
 };
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::util::time::Instant;
@@ -216,6 +216,7 @@ fn build_text(
             ),
             LauncherComboId::Sidebar => dialog.shell_selected_sidebar(layout).label().to_owned(),
             LauncherComboId::Display => dialog.shell_display_label(),
+            LauncherComboId::HealthBars => dialog.shell_selected_health_bars().label().to_owned(),
         };
         out.push(text_draw(
             font,
@@ -416,6 +417,10 @@ pub(crate) fn render_launcher_options(
                 .map(|size| size.label().to_owned())
                 .collect(),
             LauncherComboId::Display => dialog.shell_display_rows(),
+            LauncherComboId::HealthBars => HealthBarMode::choices()
+                .into_iter()
+                .map(|mode| mode.label().to_owned())
+                .collect(),
         };
         for (i, row_text) in rows.iter().enumerate() {
             let rect = popup.row_rect(i);

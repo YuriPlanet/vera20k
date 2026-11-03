@@ -48,48 +48,6 @@ pub(crate) const RETAIL_SHELL_SIZE: ScreenSize = ScreenSize {
     height: 600,
 };
 
-/// The `[VERA] HealthBars=` health-strip policy.
-///
-/// gamemd draws a strip for the selected object and a bracket only when it is
-/// selected, so [`Self::Vanilla`] is the native rule. The other arms are VERA
-/// presentation extensions: they widen the same strip to the objects the local
-/// player can see. Nothing here reaches simulation state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum HealthBarMode {
-    /// gamemd: selected objects draw the strip and bracket, the hovered object
-    /// draws a bare strip, everything else draws nothing.
-    #[default]
-    Vanilla,
-    /// Every visible object draws a bare strip when it is not selected;
-    /// selected objects keep their bracket.
-    Always,
-    /// [`Self::Always`], except that an unselected object at full health draws
-    /// nothing. Hovering is not selecting, so a hovered full-health object
-    /// stays bare too.
-    AlwaysExceptFull,
-}
-
-impl HealthBarMode {
-    /// The `[VERA] HealthBars` value.
-    pub(crate) const fn ini_value(self) -> i32 {
-        match self {
-            Self::Vanilla => 0,
-            Self::Always => 1,
-            Self::AlwaysExceptFull => 2,
-        }
-    }
-
-    /// A value this build does not know reads as the native rule, so a
-    /// hand-edited INI never hides the original strip.
-    pub(crate) const fn from_ini_value(value: i32) -> Self {
-        match value {
-            1 => Self::Always,
-            2 => Self::AlwaysExceptFull,
-            _ => Self::Vanilla,
-        }
-    }
-}
-
 /// The process-lifetime subset of active-YR `OptionsClass` owned by
 /// `VERA.INI` `[Options]`, `[Video]`, and `[Audio]`.
 ///
@@ -248,10 +206,11 @@ pub(crate) struct RetailOptionsProfile {
     /// switch still decides whether clips exist at all.
     pub(crate) custom_end_game_movie: bool,
     /// `[VERA] HealthBars=`: which objects draw the health strip besides
-    /// gamemd's selected/hovered pair, as a [`HealthBarMode`] value. Defaults
-    /// to the native rule. Client presentation only: the simulation never
-    /// reads it, and the profile writer round-trips the value.
-    pub(crate) health_bars: HealthBarMode,
+    /// gamemd's selected/hovered pair, as a
+    /// [`HealthBarMode`](crate::ui::main_menu_dialogs::options::HealthBarMode)
+    /// value. Defaults to the native rule. Client presentation only: the
+    /// simulation never reads it, and the profile writer round-trips the value.
+    pub(crate) health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode,
     /// `[VERA] TranslateChat=`: the language received online chat is
     /// translated into, or `None`, the default, for off. Only the `/translate`
     /// chat command changes it ([`Self::commit_chat_translation`]).
@@ -359,7 +318,7 @@ impl Default for RetailOptionsProfile {
             custom_end_game_banner: true,
             custom_end_game_score: true,
             custom_end_game_movie: true,
-            health_bars: HealthBarMode::Vanilla,
+            health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode::Vanilla,
             translate_chat: None,
             language: crate::i18n::DEFAULT_LANGUAGE.to_owned(),
             skipped_update: String::new(),
@@ -610,7 +569,7 @@ impl RetailOptionsProfile {
                 vera.read_bool("CustomEndGameMovie", self.custom_end_game_movie);
             // Absent keeps the current value; a value this build does not know
             // reads as the native rule instead of hiding the original strip.
-            self.health_bars = HealthBarMode::from_ini_value(
+            self.health_bars = crate::ui::main_menu_dialogs::options::HealthBarMode::from_ini_value(
                 vera.read_int("HealthBars", self.health_bars.ini_value()),
             );
             if let Some(value) = vera.read_name("TranslateChat", 16) {
@@ -1855,6 +1814,8 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
     /// as it, so a hand-edited INI never hides the original strip.
     #[test]
     fn health_bar_modes_read_and_round_trip() {
+        use crate::ui::main_menu_dialogs::options::HealthBarMode;
+
         let startup = RetailStartupOptions::default();
         assert_eq!(
             load_snapshot(&startup, b"").retained_profile.health_bars,
