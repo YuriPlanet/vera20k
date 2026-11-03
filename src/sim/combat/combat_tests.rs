@@ -1687,8 +1687,10 @@ fn retail_berserk_gi_targets_its_own_house() {
     let ally = sim
         .spawn_object("E1", "Russians", 11, 10, 0, &rules)
         .unwrap();
-    let scan =
-        |sim: &mut Simulation, mask| sim.greatest_threat_represented(&rules, None, gi, mask, None);
+    let scan = |sim: &mut Simulation, mask| {
+        sim.greatest_threat_represented(&rules, None, gi, mask, None)
+            .and_then(crate::sim::combat::TargetKind::object_id)
+    };
     let masks = [ScanMission::Guard, ScanMission::Hunt];
     for mask in masks {
         assert_eq!(scan(&mut sim, mask), None, "calm, {mask:?}");
@@ -1736,8 +1738,10 @@ fn retail_gi_scan_asks_only_its_own_house_about_allies() {
             &rules,
         );
     };
-    let scan =
-        |sim: &mut Simulation, mask| sim.greatest_threat_represented(&rules, None, gi, mask, None);
+    let scan = |sim: &mut Simulation, mask| {
+        sim.greatest_threat_represented(&rules, None, gi, mask, None)
+            .and_then(crate::sim::combat::TargetKind::object_id)
+    };
     let masks = [ScanMission::Guard, ScanMission::Hunt];
     one_way(&mut sim, "Americans", "Russians");
     for mask in masks {
@@ -6380,7 +6384,7 @@ fn gsi_08_01_a_shared_cell_offers_only_its_list_head() {
         None,
         None,
     )
-    .target();
+    .object();
     assert!(
         pick == Some(20),
         "the cell's list head is the candidate, not the lower stable id"
@@ -6427,7 +6431,7 @@ fn mapless_guard_pick(shell: &str) -> Option<u64> {
         None,
         None,
     )
-    .target()
+    .object()
 }
 
 /// Without resolved terrain the Guard scan's CanFireAt arm asks the shared
@@ -6474,7 +6478,7 @@ fn gsi_08_01_unarmed_building_loses_to_a_tank_at_equal_distance() {
         None,
         None,
     )
-    .target();
+    .object();
     // Not a "threat class" tie-break — gamemd has none. `[GAPOWR]` carries no
     // weapon and `ThreatPosed=0`, so the human-attacker building gate at
     // `TechnoClass::Evaluate_Candidate @ 0x006F85AB` refuses it outright and

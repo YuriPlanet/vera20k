@@ -129,6 +129,7 @@ fn a_computer_attacker_sees_a_blinking_mirage_only_on_its_detection_roll() {
     let rules = &retail.rules;
     let pick = |sim: &mut Simulation, rhino| {
         sim.greatest_threat_represented(rules, None, rhino, ScanMission::Guard, None)
+            .and_then(crate::sim::combat::TargetKind::object_id)
     };
 
     let (mut sim, _, rhino) = scene(rules, "Americans");
@@ -181,7 +182,8 @@ fn a_human_attacker_never_rolls_against_a_blinking_mirage() {
     sim.scenario_rng = SimRng::answering(0, 99, 0);
     let before = sim.scenario_rng.logical_state();
     assert_eq!(
-        sim.greatest_threat_represented(rules, None, rhino, ScanMission::Guard, None),
+        sim.greatest_threat_represented(rules, None, rhino, ScanMission::Guard, None)
+            .and_then(crate::sim::combat::TargetKind::object_id),
         None
     );
     assert_eq!(sim.scenario_rng.logical_state(), before);
@@ -223,7 +225,9 @@ fn a_side_by_side_hunt_walk_rolls_like_the_one_by_one_walk() {
         sim.scenario_rng = SimRng::answering(0, 99, 0);
         SERIAL_FLAT_SCORES.set(serial);
         let walks = FLAT_WALKS_SIDE_BY_SIDE.get();
-        let pick = sim.greatest_threat_represented(rules, None, rhino, ScanMission::Hunt, None);
+        let pick = sim
+            .greatest_threat_represented(rules, None, rhino, ScanMission::Hunt, None)
+            .and_then(crate::sim::combat::TargetKind::object_id);
         SERIAL_FLAT_SCORES.set(false);
         (
             pick,

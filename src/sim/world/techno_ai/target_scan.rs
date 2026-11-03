@@ -812,7 +812,6 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
             self.id,
             outcome,
         )
-        .map(TargetKind::Entity)
     }
 
     fn distributed_fire(&mut self) -> bool {
@@ -883,7 +882,7 @@ impl Simulation {
         id: u64,
         mask: ScanMission,
         scan_coord: Option<[i32; 3]>,
-    ) -> Option<u64> {
+    ) -> Option<TargetKind> {
         let result = self.threat_scan(rules, overlay_registry, id, mask, scan_coord);
         Self::commit_threat_scan(&mut self.scenario_rng, &mut self.substrate, id, result)
     }
@@ -927,7 +926,7 @@ impl Simulation {
         substrate: &mut ObjectSubstrate,
         id: u64,
         mut result: crate::sim::combat::greatest_threat::ThreatScanOutcome,
-    ) -> Option<u64> {
+    ) -> Option<TargetKind> {
         // The computer's disguise detection draws during the scan
         // (Evaluate_Candidate 0x006F851C).
         if let Some(rng) = result.take_scenario_rng() {
@@ -960,7 +959,7 @@ pub(crate) fn direct_greatest_threat(
     overlay_registry: Option<&OverlayTypeRegistry>,
     scanner: u64,
     mask: ScanMission,
-) -> Option<u64> {
+) -> Option<TargetKind> {
     // These callers explicitly copy Object+9C..A4, not virtual GetCoords.
     // Preserve the shared direct-call owner for all of them. Original Steam
     // gamemd:6ED132,6ECDEF,6F0222 and414B3D.

@@ -2297,8 +2297,8 @@ impl ParadropList {
 /// double nearest .02 (`0x3F947AE147AE147B`, pushed at `0x0066D317`).
 const DIFFICULTY_REPAIR_DELAY_DEFAULT: f64 = 0.02;
 
-/// The scalar projection of one original ReadDifficulty66D270 row. ContentScan
-/// and its other AI flags belong to their existing AI admission owners.
+/// One original ReadDifficulty66D270 row: its scalars and `DestroyWalls=`.
+/// `BuildSlowdown=` (`+0x48`) and `ContentScan=` (`+0x4A`) have no reader yet.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DifficultyRules {
     pub firepower: f64,
@@ -2310,6 +2310,11 @@ pub struct DifficultyRules {
     pub build_time: f64,
     pub repair_delay: f64,
     pub build_delay: f64,
+    /// `DestroyWalls=` (`+0x49`, ReadBool `0x0066D374..0x0066D385`, default
+    /// yes): a computer house at this difficulty lets its passive scan pick
+    /// an enemy wall ([`crate::sim::combat::greatest_threat`]'s wall
+    /// fallback, `0x006F8C10`). Retail RULESMD sets `no` on all three rows.
+    pub destroy_walls: bool,
 }
 
 impl Default for DifficultyRules {
@@ -2324,14 +2329,16 @@ impl Default for DifficultyRules {
             build_time: 1.0,
             repair_delay: DIFFICULTY_REPAIR_DELAY_DEFAULT,
             build_delay: 0.03,
+            destroy_walls: true,
         }
     }
 }
 
 impl DifficultyRules {
-    /// Called only for a present row section. Each ReadDouble uses a literal
-    /// default, independent of the preceding Process pass. Native key order
-    /// places BuildTime after RepairDelay/BuildDelay and ContentScan.
+    /// Called only for a present row section. Each read uses a literal
+    /// default, independent of the preceding Process pass. Native key order:
+    /// RepairDelay, BuildDelay, BuildSlowdown, BuildTime, DestroyWalls,
+    /// ContentScan.
     pub(crate) fn read_pass(section: &crate::rules::ini_parser::IniSection) -> Self {
         let firepower = section.read_double("FirePower", 1.0);
         let ground_speed = section.read_double("Groundspeed", 1.0);
@@ -2342,6 +2349,7 @@ impl DifficultyRules {
         let repair_delay = section.read_double("RepairDelay", DIFFICULTY_REPAIR_DELAY_DEFAULT);
         let build_delay = section.read_double("BuildDelay", 0.03);
         let build_time = section.read_double("BuildTime", 1.0);
+        let destroy_walls = section.read_bool("DestroyWalls", true);
         Self {
             firepower,
             ground_speed,
@@ -2352,6 +2360,7 @@ impl DifficultyRules {
             build_time,
             repair_delay,
             build_delay,
+            destroy_walls,
         }
     }
 }

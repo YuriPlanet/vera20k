@@ -1294,7 +1294,7 @@ impl Simulation {
                     {
                         self.team_assign_mission_target(
                             team_id,
-                            threat.map(TeamTarget::Object),
+                            threat.map(TeamTarget::from),
                             rules,
                             registry,
                             effects,
@@ -2480,7 +2480,7 @@ impl Simulation {
         quarry: i32,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-    ) -> Option<u64> {
+    ) -> Option<crate::sim::combat::TargetKind> {
         let mission = self.team_quarry_mission(team_id, quarry);
         crate::sim::world::direct_greatest_threat(self, rules, registry, leader, mission)
     }
@@ -2700,7 +2700,7 @@ impl Simulation {
             let target = self.team_quarry_threat(team_id, leader, quarry, rules, registry);
             self.team_assign_mission_target(
                 team_id,
-                target.map(TeamTarget::Object),
+                target.map(TeamTarget::from),
                 rules,
                 registry,
                 frame_effects,

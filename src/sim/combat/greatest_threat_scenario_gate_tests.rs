@@ -38,7 +38,8 @@ fn guard_scan_honors_the_maps_techno_legal_target_override() {
         .into_parts();
     let (mut sim, tank, _) = guard_scene(&rules, "HTNK");
     assert_eq!(
-        sim.greatest_threat_represented(&rules, None, tank, ScanMission::Guard, None),
+        sim.greatest_threat_represented(&rules, None, tank, ScanMission::Guard, None)
+            .and_then(crate::sim::combat::TargetKind::object_id),
         None,
         "the map's LegalTarget=no must exclude an otherwise valid enemy"
     );
@@ -52,7 +53,8 @@ fn guard_scan_honors_the_maps_techno_legal_target_override() {
         .into_parts();
     let (mut sim, tank, target) = guard_scene(&rules, "HTNK");
     assert_eq!(
-        sim.greatest_threat_represented(&rules, None, tank, ScanMission::Guard, None),
+        sim.greatest_threat_represented(&rules, None, tank, ScanMission::Guard, None)
+            .and_then(crate::sim::combat::TargetKind::object_id),
         Some(target),
         "an explicit yes retains the normal target admission"
     );
@@ -79,6 +81,7 @@ fn retail_guard_scan_skips_a_harvester_while_scenario_bit_800_is_set() {
     let (mut sim, tank, harv) = guard_scene(rules, "HARV");
     let pick = |sim: &mut Simulation| {
         sim.greatest_threat_represented(rules, None, tank, ScanMission::Guard, None)
+            .and_then(crate::sim::combat::TargetKind::object_id)
     };
     assert_eq!(
         pick(&mut sim),
@@ -96,7 +99,8 @@ fn retail_guard_scan_skips_a_harvester_while_scenario_bit_800_is_set() {
     let (mut sim, tank, rhino) = guard_scene(rules, "HTNK");
     sim.session.set_harvester_immune_for_test(true);
     assert_eq!(
-        sim.greatest_threat_represented(rules, None, tank, ScanMission::Guard, None),
+        sim.greatest_threat_represented(rules, None, tank, ScanMission::Guard, None)
+            .and_then(crate::sim::combat::TargetKind::object_id),
         Some(rhino),
         "bit set: a non-harvester tank is not refused"
     );
@@ -116,6 +120,7 @@ fn guard_scan_refuses_a_candidate_strictly_below_minus_twenty_leptons() {
     let (mut sim, tank, target) = guard_scene(rules, "HTNK");
     let pick = |sim: &mut Simulation| {
         sim.greatest_threat_represented(rules, None, tank, ScanMission::Guard, None)
+            .and_then(crate::sim::combat::TargetKind::object_id)
     };
     let set_height = |sim: &mut Simulation, z: i32| {
         sim.substrate

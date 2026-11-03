@@ -347,7 +347,6 @@ fn scan(
         ScanMission::AreaGuard,
         Some([point.x, point.y, point.z]),
     )
-    .map(TargetKind::Entity)
 }
 
 fn threat_range(sim: &Simulation, id: u64, rules: &RuleSet) -> i32 {
