@@ -146,6 +146,8 @@ Conquer och Red Alert är varumärken som tillhör Electronic Arts Inc., och sk�
 appikonen, Red Alert 2:s röda stjärna, visar spelgrafik som ägs av Electronic Arts. VERA20K har
 ingen koppling till och stöds inte av Electronic Arts.
 
+**Läs [den juridiska informationen](LEGAL.md) innan du delar, säljer eller forkar VERA20K.**
+
 ## Dokumentation
 
 - [Bygg och kör](#bygg-och-kör): krav och hur du bygger från källkod.

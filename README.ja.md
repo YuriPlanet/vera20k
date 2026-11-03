@@ -118,6 +118,8 @@ OpenRA、XCC Mixer、ModEnc wiki、Project Perfect Mod、EA が GPL で公開し
 
 本プロジェクトは [GPLv3](LICENSE-GPL) でライセンスされています。このリポジトリにゲームファイルは含まれていません。Command & Conquer および Red Alert は Electronic Arts Inc. の商標です。スクリーンショットとアプリアイコン（Red Alert 2 の赤い星）には、Electronic Arts が所有するゲームアートが含まれています。VERA20K は Electronic Arts と提携関係になく、同社の承認を受けたものでもありません。
 
+**VERA20K を共有、販売、またはフォークする前に、[法的通知](LEGAL.md)をお読みください。**
+
 ## ドキュメント
 
 - [ビルドと実行](#ビルドと実行)：必要な環境とソースからのビルド。

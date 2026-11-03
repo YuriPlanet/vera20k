@@ -162,6 +162,8 @@ Conquer and Red Alert are trademarks of Electronic Arts Inc., and the screenshot
 icon, Red Alert 2's red star, show game art owned by Electronic Arts. VERA20K is not affiliated
 with or endorsed by Electronic Arts.
 
+**Read the [legal notice](LEGAL.md) before you share, sell or fork VERA20K.**
+
 ## Documentation
 
 - [Build and run](#build-and-run): requirements and building from source.

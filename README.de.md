@@ -149,6 +149,8 @@ App-Symbol, der rote Stern aus Red Alert 2, zeigen Spielgrafiken, die Electronic
 VERA20K steht in keiner Verbindung zu Electronic Arts und wird nicht von Electronic Arts
 unterstützt.
 
+**Lies den [rechtlichen Hinweis](LEGAL.md), bevor du VERA20K weitergibst, verkaufst oder forkst.**
+
 ## Dokumentation
 
 - [Kompilieren und starten](#kompilieren-und-starten): Voraussetzungen und Bauen aus dem Quellcode.

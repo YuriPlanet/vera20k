@@ -148,6 +148,8 @@ Ekran görüntülerindeki ve uygulama simgesindeki (Red Alert 2'nin kırmızı y
 Electronic Arts'a aittir. VERA20K, Electronic Arts ile bağlantılı değildir ve Electronic Arts
 tarafından desteklenmemektedir.
 
+**VERA20K'yı paylaşmadan, satmadan veya fork'lamadan önce [yasal bildirimi](LEGAL.md) okuyun.**
+
 ## Belgeler
 
 - [Derleme ve çalıştırma](#derleme-ve-çalıştırma): gereksinimler ve kaynak koddan derleme.
