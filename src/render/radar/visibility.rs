@@ -194,7 +194,10 @@ pub(super) struct RadarMobileVisibilityFacts {
     pub veteran_radar_invisible: bool,
 }
 
-/// Mobile virtual +0x324 @ 0x0070D1D0, in native branch order.
+/// Mobile virtual +0x324 @ 0x0070D1D0, in native branch order. Its Fog of
+/// War arm (`0x0070D350..0x0070D384`: scenario flag `0x1000` and a fogged
+/// Location) never applies: the fog test it calls, `0x005865E0`, is
+/// `xor al, al; ret 4` in YR, so no fact stands for it here.
 pub(super) fn radar_mobile_registration_visibility(
     facts: RadarMobileVisibilityFacts,
     discovered: bool,
