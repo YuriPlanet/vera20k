@@ -991,14 +991,15 @@ mod tests {
     }
 
     /// Issue #3687. `Apply_area_damage` (`0x00489280`) collects the impact
-    /// cell's residents in native `AddContent` (`0x005684B1`) list order —
-    /// the installed tank is prepended before the bunker — and dispatches in
-    /// that order (`0x00489ABC` per record). The tank's receiver therefore
-    /// runs first, and `TechnoClass::ReceiveDamage` (`0x00701900`) jumps to
-    /// `0x00701BF6` for the installed non-Building arm: a warhead without
-    /// `PenetratesBunker` (retail V3HE, GrandCannonWH) is nullified. The
-    /// bunker's record then kills the building, whose NowDead releases the
-    /// tank (`0x004424A2..0x004424EA` → `0x004593A0`) before its C4 loop.
+    /// cell's residents in `CellClass::AddContent` (`0x0047E8A0`) list order —
+    /// buildings are appended, so the installed tank precedes the bunker — and
+    /// dispatches in that order (`0x00489ABC` per record). The tank's receiver
+    /// therefore runs first, and `TechnoClass::ReceiveDamage` (`0x00701900`)
+    /// takes the installed non-Building arm (`0x00701BB6..0x00701BF3`): a
+    /// warhead without `PenetratesBunker` (retail V3HE, GrandCannonWH) is
+    /// nullified. The bunker's record then kills the building, whose NowDead
+    /// releases the tank (`0x004424A2..0x004424EA` → `0x004593A0`) before its
+    /// C4 loop.
     #[test]
     fn a_splash_killing_the_bunker_leaves_the_installed_tank_alive() {
         use crate::sim::combat::{combat_aoe, world_receiver};
@@ -1086,7 +1087,7 @@ mod tests {
     /// `0x00447AC0`) — the installed tank's own cell — so the native sweep
     /// (`OFFSET_TABLE`, offset (0,0) first, `0x00489592..0x004895A9`) collects
     /// the tank's prepended record before any bunker-only foundation cell
-    /// record. The live gate (`0x00701BF6`) nullifies the V3-class splash;
+    /// record. The live gate (`0x00701BB6..0x00701BF3`) nullifies the V3-class splash;
     /// the bunker's records then kill the building, whose NowDead releases
     /// the tank (`0x004424A2..0x004424EA` → `0x004593A0`) before its C4 loop.
     #[test]
@@ -1242,7 +1243,7 @@ mod tests {
 
     /// The gate's inverse arm through the same splash: a warhead with
     /// `PenetratesBunker=yes` (retail `[Super]`, the Issue #2231 killer)
-    /// bypasses the installed non-Building arm (`0x00701BF6`) and kills the
+    /// skips the installed non-Building arm to `0x00701BF6` and kills the
     /// tank. The tank's own record dispatches first, so its kill instant
     /// (`0x00737D97` → `ClearBunker @ 0x00459470`) empties the building's
     /// occupant before the bunker's record reads it live (`0x00701900`): an
