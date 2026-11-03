@@ -441,7 +441,7 @@ impl Simulation {
     /// (`track_fresh`).
     pub(crate) fn run_foot_path_request(
         &mut self,
-        request: &FootPathRequest,
+        request: &mut FootPathRequest,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
@@ -450,18 +450,28 @@ impl Simulation {
         // timer still ran (`path_batch`, a sim-scale deviation): 75AF4B..75AF66
         // calls the owner's vt+0x548 and returns. So does the admission
         // retry's recursion, whose +640 the retry just expired, unless it is
-        // the Foot's first request in a frame the batch answered. A request
-        // for the Foot's own cell never waits.
+        // the Foot's first request in a frame the batch answered; the request
+        // that takes its answer resumes with the retry spent, as the
+        // recursion runs. A request for the Foot's own cell never waits.
+        let resumes_recursion = self.answers_retry_recursion(request.entity_id);
+        let waiting = if request.walk_retry_spent() {
+            super::path_batch::WaitingRequest::RetryRecursion
+        } else {
+            super::path_batch::WaitingRequest::NoQueue
+        };
         if Self::defer_path_search(
             &mut self.path_batch,
             &self.resolved_terrain,
             &self.overlay_grid,
             &self.substrate.entities,
             request.entity_id,
-            super::path_batch::WaitingRequest::NoQueue,
+            waiting,
         ) {
             self.substrate.walk_owner_clear_doing(request.entity_id)?;
             return Ok(FootPathOutcome::Returned);
+        }
+        if resumes_recursion {
+            request.spend_walk_retry();
         }
         self.run_walk_path_request(request, rules, registry, frame_effects)
             .map(|resumed| {
