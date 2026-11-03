@@ -59,11 +59,14 @@
 //! (`FogState::is_cell_visible` on the candidate's cell) has been removed.
 //! `Evaluate_Candidate` was read end to end: its only visibility arms are the
 //! cloak/sensor test at `0x006F7DA9` and the "discovered by the local player"
-//! test at `0x006F81B8`, and the latter is behind `g_GameMode == 0` — campaign
-//! only, since a skirmish runs mode 5. Retail therefore lets a skirmish unit
-//! acquire an enemy standing in unexplored ground, and fires on it: no fire
-//! path reads shroud either (GetFireError `0x006FC0B0` has no shroud code, and
-//! `IsFogged @ 0x005865E0` is a constant false).
+//! test at `0x006F81BE..0x006F81F4`, and the latter is behind
+//! `g_GameMode == 0` — campaign only, since a skirmish runs mode 5. In the
+//! campaign a human player's scanner skips a non-aircraft candidate the player
+//! has neither owned nor discovered (the Techno history bytes, not the cell's
+//! shroud). Retail therefore lets a skirmish unit acquire an enemy standing in
+//! unexplored ground, and fires on it: no fire path reads shroud either
+//! (GetFireError `0x006FC0B0` has no shroud code, and `IsFogged @
+//! 0x005865E0` is a constant false).
 //!
 //! ## Other residuals
 //!
@@ -2458,6 +2461,21 @@ fn evaluate_candidate(
         return None;
     }
 
+    // `0x006F81BE..0x006F81F4`: in the campaign (`[0x00A8B238] == 0`), a
+    // scanner whose owner is a human player (`IsHumanPlayer @ 0x0050B6F0`,
+    // which there equals `standing.human`) passes over a candidate the current
+    // house neither owns (`+0x41A`) nor has discovered (`+0x41B`), unless it
+    // is an aircraft (WhatAmI 2): the player's units do not acquire enemies
+    // in ground the player has not explored.
+    if ctx.standing.human
+        && !ctx.standing.game_mode_nonzero
+        && !candidate.discovery.owned_by_current_house()
+        && !candidate.discovery.discovered_by_current_house()
+        && candidate.category() != EntityCategory::Aircraft
+    {
+        return None;
+    }
+
     // `0x006F81FA..0x006F8214`: an `InvisibleInGame=` building (`+0x1701`).
     let building = candidate.category() == EntityCategory::Structure;
     if building && candidate_obj.invisible_in_game {
@@ -3136,6 +3154,8 @@ mod tests {
             let target = sim
                 .spawn_object("TARGET", "Russians", 10 + distance, 16, 0, &rules)
                 .unwrap();
+            // The player has seen the enemy: the campaign scan gate needs +0x41B.
+            crate::sim::arena_fixture::discover(&mut sim, target);
             sim.substrate
                 .entities
                 .get_mut(ifv)
