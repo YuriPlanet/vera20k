@@ -462,7 +462,10 @@ impl Simulation {
     /// - then it attacks with no overlay (the cliff), a live veinhole monster,
     ///   or a Wall overlay its owner (`CellClass+0x50`) is not allied with
     ///   (`0x0070097E`), when the warhead has `Wall=`, or `Wood=` against an
-    ///   `Armor=wood` overlay (`0x007009C8..0x007009F1`).
+    ///   `Armor=wood` overlay (`0x007009C8..0x007009F1`);
+    /// - a Cell this rung refuses, or whose tail refuses, reaches the
+    ///   TerrainFire rung (`0x00700A46..0x00700AA6`): [`Self::fires_at_terrain`],
+    ///   then the same tail. The tails match, so it admits here.
     ///
     /// Residuals: the planning rung before it answers for an object whose
     /// +0x43A is set (`0x00700840`; FootClass::ActivatePlanningWaypoint sets
@@ -470,8 +473,7 @@ impl Simulation {
     /// behind the scenario's FogOfWar flag
     /// (`0x00700761..0x0070080F`: a fogged overlay replaces the live one and
     /// a fogged enemy building admits the rung) and the veinhole monster
-    /// (`0x00700990`, no VERA owner) are not modelled; the later TerrainFire
-    /// rung (vt+0x398, `0x00700A46`) is not either.
+    /// (`0x00700990`, no VERA owner) are not modelled.
     pub fn cell_attack_rung_admits(
         &self,
         id: u64,
@@ -517,23 +519,104 @@ impl Simulation {
             .as_ref()
             .is_some_and(|terrain| terrain.is_destroyable_cliff(cell.0, cell.1))
             && !warhead.is_some_and(|warhead| warhead.fire);
-        if !(overlay.is_some_and(|overlay| overlay.legal_target) || cliff) {
-            return false;
-        }
-        let Some(overlay) = overlay else {
-            return true;
+        let attack_rung = match overlay {
+            _ if !(overlay.is_some_and(|overlay| overlay.legal_target) || cliff) => false,
+            None => true,
+            Some(overlay) => {
+                let enemy_owned =
+                    overlay_cell
+                        .and_then(|cell| cell.wall_owner)
+                        .is_some_and(|owner| {
+                            !self
+                                .house_alliances
+                                .is_allied(&self.interner, owner, entity.owner())
+                        });
+                enemy_owned
+                    && overlay.wall
+                    && warhead.is_some_and(|warhead| {
+                        warhead.wall || (warhead.wood && overlay.armor_is_wood)
+                    })
+            }
         };
-        let enemy_owned = overlay_cell
-            .and_then(|cell| cell.wall_owner)
-            .is_some_and(|owner| {
-                !self
-                    .house_alliances
-                    .is_allied(&self.interner, owner, entity.owner())
-            });
-        enemy_owned
-            && overlay.wall
-            && warhead
-                .is_some_and(|warhead| warhead.wall || (warhead.wood && overlay.armor_is_wood))
+        attack_rung || self.fires_at_terrain(id, &TargetKind::Cell(cell.0, cell.1), rules, registry)
+    }
+
+    /// TechnoClass vt+0x398 (`0x0070EF00`, which no class overrides):
+    /// whether `id`'s weapon may fire at `target` as terrain. SelectWeapon
+    /// (vt+0x2E4) and GetWeapon (vt+0x3F8) pick the weapon; without one it
+    /// answers no (`0x0070EF1F`). Then:
+    /// - a Terrain object (`0x0070EF29..0x0070EF4B`) answers
+    ///   `[CombatDamage] TreeTargeting=` (`Rules+0x17E9`) or the weapon's
+    ///   `TerrainFire=` (`+0x138`);
+    /// - anything else needs `TerrainFire=` (`0x0070EF53`), then a Cell whose
+    ///   overlay is `IsARock=` (`OverlayType+0x2B5`, `0x0070EF61..0x0070EF82`),
+    ///   or an object that IsDisguised (vt+0xC4, `+0x1D8`) and wears no house
+    ///   (vt+0xD0(1), `0x0070EF8C..0x0070EFB2`), as a Mirage worn as a tree.
+    ///
+    /// Retail rules give `TerrainFire=` only to `TankMakeupKit`, which no
+    /// type carries, and leave `TreeTargeting=` off; a map may set either.
+    pub fn fires_at_terrain(
+        &self,
+        id: u64,
+        target: &TargetKind,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> bool {
+        use crate::sim::combat::combat_weapon;
+
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return false;
+        };
+        let cells = self
+            .resolved_terrain
+            .as_ref()
+            .map(NativeCellQuery::isolated);
+        let Some(weapon) = combat_weapon::select_weapon_against_in_query(
+            rules,
+            entity,
+            object,
+            &combat_weapon::attacker_facts(entity, object),
+            Some(target),
+            self,
+            &self.interner,
+            cells.as_ref(),
+            Some(&self.house_alliances),
+        )
+        .and_then(|(_, weapon)| weapon) else {
+            return false;
+        };
+        let terrain_fire = weapon.weapon.terrain_fire;
+        match *target {
+            TargetKind::Entity(target_id) if self.terrain_objects().get(target_id).is_some() => {
+                rules.general.tree_targeting || terrain_fire
+            }
+            _ if !terrain_fire => false,
+            TargetKind::Cell(x, y) => self
+                .overlay_grid
+                .as_ref()
+                .and_then(|grid| grid.cell(x, y).overlay_id)
+                .and_then(|overlay_id| registry?.flags(overlay_id))
+                .is_some_and(|overlay| overlay.is_a_rock),
+            // Infantry's vt+0xD0 answers the current player for no worn
+            // house (`0x005226C0`); the asker's owner stands in for it.
+            TargetKind::Entity(target_id) => {
+                self.substrate
+                    .entities
+                    .get(target_id)
+                    .is_some_and(|target| {
+                        target
+                            .disguise
+                            .as_ref()
+                            .is_some_and(|disguise| disguise.is_disguised())
+                            && target
+                                .disguise_house(true, Some(entity.owner()), false)
+                                .is_none()
+                    })
+            }
+        }
     }
 
     /// `MapClass::IsShrouded @ 0x00586360` for `viewer` at a clicked Cell's
