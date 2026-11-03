@@ -25,10 +25,13 @@ This demonstrates the recorded production path, not native full-generation parit
 
 Optional v2/v3 `presentation: {"zoom": 0, "sidebar": 100}` runs the battle at those
 `[VERA]` Options values: `zoom` 0 is Auto, otherwise a 50-step percent from 100;
-`sidebar` is 100, 150 or 200; an optional `"hd_radar": true` turns on the HD radar. The match frame is then the window over the zoom
-(`render.internal_extent`), and `frame.bgra` stays the full window, so a 3840×2160
-profile shows what a 4K player sees. Gestures and `cursor_position` use frame
-pixels at zoom 100% and cannot be combined with it.
+`sidebar` is 100, 150 or 200; an optional `"hd_radar": true` turns on the HD radar.
+The match frame is then the window over the zoom (`render.internal_extent`), and
+`frame.bgra` stays the full window, so a 3840×2160 profile shows what a 4K player
+sees. Gestures and `cursor_position` use frame pixels at zoom 100% and cannot be
+combined with it. The cursor then rests at the middle of the tactical view; when a
+unit stands there its cursor animates and the capture refuses, so move the view
+with `camera_cell`.
 
 ## Named commands and outcome inspection
 
@@ -901,8 +904,9 @@ FPS, and does not participate in deterministic comparisons.
 
 Build through the shared Cargo owner, then run from the checkout with an existing
 `config.toml` pointing at retail assets; the capture renders at zoom 100% with the
-Normal sidebar unless the profile's `presentation` says otherwise. All supplied paths must be absolute without symlink
-ancestors; use canonical temporary paths on macOS. The output parent must exist,
+Normal sidebar unless the profile's `presentation` says otherwise. All supplied paths
+must be absolute without symlink ancestors; use canonical temporary paths on macOS.
+The output parent must exist,
 and the output directory itself must not exist.
 
 ```sh
