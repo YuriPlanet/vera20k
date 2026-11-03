@@ -325,6 +325,30 @@ pub(crate) fn post_speed_changes(state: &mut AppState) {
     }
 }
 
+/// VERA: once this game reaches a pause that found it catching up, it tells
+/// everyone in chat, so whoever resumes knows the match can go on. A player
+/// leaving or already defeated keeps quiet.
+pub(crate) fn post_caught_up(state: &mut AppState) {
+    let reached = state.match_state.multiplayer_paused();
+    let Some((frame, defeated)) = state.match_state.sim_runtime.as_ref().map(|runtime| {
+        (
+            runtime.simulation.session().binary_frame(),
+            runtime.simulation.local_player_defeated(),
+        )
+    }) else {
+        return;
+    };
+    let caught_up =
+        state.match_state.live_network.as_mut().is_some_and(|live| {
+            live.take_caught_up_in_pause(reached, frame) && !live.exit_requested()
+        });
+    if caught_up && !defeated {
+        let text =
+            crate::i18n::text(state.process_assets.csf.as_ref(), "VERA:CaughtUp").into_owned();
+        crate::app::input::chat::send_to_all(state, &text);
+    }
+}
+
 /// Deliver one controlled in-match event.
 pub(crate) fn service_event(state: &mut AppState, event: NetworkMatchEvent) -> anyhow::Result<()> {
     match event {
