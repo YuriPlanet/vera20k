@@ -648,7 +648,7 @@ pub fn target_get_coords(
     }
 }
 
-/// Target virtual+58: Object410540 forwards virtual+48; Cell486900 uses
+/// Target virtual+58: Object410540 forwards virtual+48; Cell486890 uses
 /// structural bridge height. FireAt70BCB0 and planning Foot4D8560 share it.
 pub(crate) fn target_get_target_coords(
     target: crate::sim::combat::TargetKind,

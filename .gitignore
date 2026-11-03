@@ -133,6 +133,7 @@ tools/vendor-eval/
 !/README.ru.md
 !/README.th.md
 !/README.tr.md
+!/LEGAL.md
 # Kept visible: a root CLAUDE.md would stop Claude Code reading AGENTS.md.
 !/CLAUDE.md
 !/AGENTS.md

@@ -3032,7 +3032,7 @@ fn host_extra_row(
 }
 
 #[derive(Clone, Copy)]
-enum PeerChoicePolicy<'a> {
+pub(crate) enum PeerChoicePolicy<'a> {
     Lan,
     Wol {
         countries: Option<&'a [crate::skirmish_launch::LaunchCountry]>,
@@ -3040,7 +3040,8 @@ enum PeerChoicePolicy<'a> {
 }
 
 /// Shared69B600/5E9720 collision checks; caller selects the native country/team policy.
-fn apply_peer_choices(
+/// A Quick Match host seats the matchbot's guest through it too.
+pub(crate) fn apply_peer_choices(
     launch: &mut SkirmishLaunchSession,
     inactive_ai_options: &[NetworkAiOptions; NETWORK_PLAYER_SLOT_COUNT],
     index: usize,

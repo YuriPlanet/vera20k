@@ -1,5 +1,7 @@
-"""The update test's stand-in config.toml lasts only for its run."""
+"""The update test: its stand-in config.toml lasts only for its run, its key
+survives Git Bash, and a program that hangs fails it."""
 import os
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -31,6 +33,20 @@ class FirstLaunchConfigTest(unittest.TestCase):
         with update_test.first_launch_config(self.game):
             pass
         self.assertEqual(self.config.read_text(), 'ra2_dir = "/Games/RA2"\n')
+
+
+class UpdateKeyTest(unittest.TestCase):
+    def test_a_key_git_bash_would_rewrite_as_a_path_is_drawn_again(self):
+        keys = [("pem", "/NtLEIKtreh/Pov9g+VmZOivzbKxYAmanXTFtZQI2iI="),
+                ("pem", "NtLEIKtreh/Pov9g+VmZOivzbKxYAmanXTFtZQI2iI/=")]
+        with mock.patch.object(update_test, "signing_key", side_effect=keys):
+            self.assertEqual(update_test.update_key(Path("unused")), keys[1][1])
+
+
+class RunTest(unittest.TestCase):
+    def test_a_program_that_hangs_fails_the_run_instead_of_holding_it(self):
+        with self.assertRaisesRegex(SystemExit, r"still running after 1 s"):
+            update_test.run(sys.executable, "-c", "import time; time.sleep(60)", timeout=1)
 
 
 if __name__ == "__main__":

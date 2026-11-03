@@ -254,18 +254,6 @@ impl WaveTables {
     }
 }
 
-fn wave_sine_table<const N: usize>(frequency: NativeF64Bits) -> [i16; N] {
-    std::array::from_fn(|i| {
-        let frequency = X::load_f64(frequency).unwrap();
-        let angle = X::store_f64(X::mul(X::load_i32(i as i32), frequency)).unwrap();
-        let sine = crate::util::retail_trig::TrigTable::embedded()
-            .sin_from_table(X::load_f64(angle).unwrap());
-        let amplitude = X::load_f64(NativeF64Bits::from_bits(0x4028_0000_0000_0000)).unwrap();
-        let bias = X::load_f64(NativeF64Bits::from_bits(0x3fdf_5c28_f5c2_8f5c)).unwrap();
-        X::ftol_i32_low_masked(X::add(X::mul(sine, amplitude), bias)) as i16
-    })
-}
-
 pub(crate) fn wave_tables() -> &'static WaveTables {
     static TABLES: OnceLock<WaveTables> = OnceLock::new();
     TABLES.get_or_init(|| {
@@ -281,8 +269,10 @@ pub(crate) fn wave_tables() -> &'static WaveTables {
             .collect();
         WaveTables {
             distance,
-            magnetic: wave_sine_table(NativeF64Bits::from_bits(0x3fb9_9999_9999_999a)),
-            sonic: wave_sine_table(NativeF64Bits::from_bits(0x3fc0_0000_0000_0000)),
+            magnetic: crate::sim::wave::wave_sine_table(NativeF64Bits::from_bits(
+                0x3fb9_9999_9999_999a,
+            )),
+            sonic: *crate::sim::wave::sonic_wave_table(),
             brightness: std::array::from_fn(|i| 110 + i as i32 * 8),
         }
     })

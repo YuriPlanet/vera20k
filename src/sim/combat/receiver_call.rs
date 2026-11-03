@@ -472,6 +472,18 @@ pub(super) fn resolve_receive_damage_with_input(
         });
     // 701900 jumps to701BF6 when ignoreDefenses is set, before either linked
     // bunker branch. BlowUpBridge's forced C4 receiver must bypass both arms.
+    // Issue #3687 residual: this read is live at the record's dispatch, so the
+    // protection is order-dependent by native design — the per-cell list of
+    // CellClass::AddContent 0x0047E8A0 (buildings appended, so the installed
+    // tank comes first) × the impact-cell-first OFFSET_TABLE sweep
+    // (0x00489592..0x004895A9) × the per-record dispatch
+    // 0x004899F1..0x00489A95 must leave the tank's record behind an intact
+    // link. A splash lethal to the bunker whose impact cell is a foundation
+    // cell other than the occupant's (scattered arcs, interception debris)
+    // dispatches the bunker's record first; the synchronous death release
+    // (0x004593A0) clears the link and the occupant's own record then takes
+    // the splash unprotected. Native walks the same order, so VERA keeps it
+    // (docking::bunker_link tests pin both outcomes).
     let bunker_blocked = !receiver_flags.ignore_defenses
         && if target_is_building && target.bunker.occupant().is_some() {
             // Linked Building branch is intentionally the inverse of the installed

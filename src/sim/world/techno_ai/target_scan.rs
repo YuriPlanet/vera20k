@@ -84,7 +84,9 @@ impl PassiveScan {
         }
     }
 
-    /// The targeting timer.
+    /// The targeting timer (`+0x180` start, `+0x188` duration). Its `due` is
+    /// TechnoClass::TargetingTimerFinished (`0x0070F7E0`): an unarmed timer
+    /// is due only with a zero duration.
     pub const fn timer(self) -> MissionTimer {
         self.timer
     }
