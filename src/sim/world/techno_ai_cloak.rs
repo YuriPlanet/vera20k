@@ -931,8 +931,8 @@ pub(super) fn tick_stock_cloak_producer(
         // they are (BuildingClass overrides this slot and never gets here).
         // DORMANT: a Unit carrying a CTF flag (`+0x6CC != -1`, `0x006FBADF`)
         // would call StartUncloaking (vt+0xFC, `0x00703850`) instead of the
-        // Detach_All above. Only the desupported CaptureTheFlag option
-        // attaches flags (`foot_speed.rs`).
+        // Detach_All above. Skirmish never attaches a flag; the special-flag
+        // trace is in `foot_speed.rs`.
         let owner = sim
             .substrate
             .entities
