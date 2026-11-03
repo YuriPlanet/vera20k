@@ -1339,8 +1339,8 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
         | WolServiceRequest::ForgetCredential { .. }
         | WolServiceRequest::SetLangFilter(_)
         | WolServiceRequest::SetFindPage { .. } => {}
-        WolServiceRequest::RequestMatch { .. } => {
-            notice(state, "Choose Custom Match to host or join an online game.")
+        WolServiceRequest::RequestMatch { matchbot, request } => {
+            request_match(service, matchbot, &request)
         }
         WolServiceRequest::Translate { text, line } => {
             if let Some(target) = state.persistence.options_profile.translate_chat {
@@ -1354,6 +1354,21 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             }
         }
     }
+}
+
+/// API+0x30's request: ordinary private chat to the matchbot. This game
+/// has no transport fields to report, so RAT, ADR, NAT and PRT are 0.
+fn request_match(
+    service: &mut LiveService,
+    matchbot: String,
+    request: &super::quick_match::MatchRequest,
+) {
+    let text = request.text(super::quick_match::MatchTransport::default());
+    send_chat(
+        service,
+        WolChatLine::Say(text.encode_utf16().collect()),
+        vec![matchbot],
+    );
 }
 
 fn send_chat(service: &mut LiveService, line: WolChatLine, mut to: Vec<String>) {
@@ -2399,10 +2414,18 @@ fn apply_event(
                 private: bool,
                 #[serde(default)]
                 action: bool,
+                // The matchbot's replies; its `Start` carries the pairing.
+                #[serde(default)]
+                ansi: bool,
+                #[serde(default)]
+                quick_match: Option<super::quick_match::MatchStart>,
                 #[serde(default)]
                 sent_at: Option<u64>,
             }
             let p: Payload = decode(payload)?;
+            let options = p.quick_match.filter(|_| p.ansi).and_then(|pairing| {
+                super::quick_match::online_start_options(state, &p.text, p.private, pairing)
+            });
             service_event(
                 state,
                 WolServiceEvent::Message {
@@ -2410,8 +2433,8 @@ fn apply_event(
                     text: p.text.encode_utf16().collect(),
                     private: p.private,
                     action: p.action,
-                    ansi: false,
-                    options: None,
+                    ansi: p.ansi,
+                    options,
                     sent_at: p.sent_at,
                 },
             );
@@ -3033,6 +3056,36 @@ mod completion_tests {
             outdated_notice: None,
         };
         (service, input, output)
+    }
+
+    #[test]
+    fn a_match_request_is_private_chat_to_the_matchbot() {
+        let (mut service, input, _output) = control_service(None);
+        let request = super::super::quick_match::MatchRequest {
+            country: -2,
+            color: 3,
+            match_by_resolution: false,
+            locale: None,
+            width: 1024,
+        };
+        request_match(&mut service, "matchbot".into(), &request);
+        let http::Request::Command {
+            operation, payload, ..
+        } = input.try_recv().unwrap()
+        else {
+            panic!("chat command");
+        };
+        assert_eq!(
+            (operation, payload),
+            (
+                "chat",
+                json!({
+                    "text": "Match COU=-2, COL=3, MBR=0, RAT=0, RES=1024, ADR=0, NAT=0, PRT=0",
+                    "to": ["matchbot"],
+                    "action": false,
+                })
+            )
+        );
     }
 
     #[test]

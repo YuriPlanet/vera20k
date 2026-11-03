@@ -504,8 +504,11 @@ impl Client {
         let response = if let Some(body) = body {
             let mut request = self.agent.post(&url).header("User-Agent", USER_AGENT);
             if path == "/v1/sessions" {
-                // Its relay CONFIRM carries a federation roster; see docs/lobby-protocol.md.
-                request = request.header("Vera-Relay-Federation", "1");
+                // Its relay CONFIRM carries a federation roster, and it plays
+                // Quick Match; see docs/lobby-protocol.md.
+                request = request
+                    .header("Vera-Relay-Federation", "1")
+                    .header("Vera-Quick-Match", "1");
             }
             if let Some(token) = &self.token {
                 request = request.header("Authorization", format!("Bearer {token}"));

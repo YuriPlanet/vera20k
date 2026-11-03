@@ -35,7 +35,8 @@ use persistence::{
 
 use crate::app::persistence::profile_file;
 const CONCRETE_ITEM_DATA: i32 = -1;
-const RANDOM_ITEM_DATA: i32 = -2;
+/// A MultiPlayer pick's Random item data, which My Information also stores.
+pub(crate) const RANDOM_ITEM_DATA: i32 = -2;
 const MULTIPLAYER_HANDLE_UNITS: usize = 0x14;
 const MULTIPLAYER_HANDLE_LIMIT_BYTES: usize = 19;
 const DEFAULT_MULTIPLAYER_HANDLE: &[u8] = b"[New Player]";
@@ -380,19 +381,14 @@ impl MultiplayerShellRuntime {
     }
 
     pub(crate) fn local_participant(&self) -> crate::skirmish_launch::SkirmishHumanSlot {
+        let preferences = &self.local_preferences;
         crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: Some(0),
-            name: crate::util::native_string::acp_decode(&self.local_preferences.handle_bytes),
-            slot: crate::skirmish_launch::SkirmishLocalSlot {
-                country: LaunchCountry::from_country_index(
-                    self.local_preferences.side.max(0) as u32
-                ),
-                country_random: self.local_preferences.side_ex == RANDOM_ITEM_DATA,
-                color_index: u8::try_from(self.local_preferences.color_index).unwrap_or(0),
-                color_random: self.local_preferences.color_ex == RANDOM_ITEM_DATA,
-                start_position: crate::skirmish_launch::LaunchStartPosition::Auto,
-                team: crate::skirmish_launch::LaunchTeam::None,
-            },
+            name: crate::util::native_string::acp_decode(&preferences.handle_bytes),
+            slot: picked_seat(
+                (preferences.side, preferences.side_ex),
+                (preferences.color_index, preferences.color_ex),
+            ),
             role: crate::skirmish_launch::LaunchHumanRole::from_observer(self.lan_observer()),
         }
     }
@@ -729,16 +725,9 @@ impl MultiplayerShellRuntime {
     /// Country and Color this way (`0x00786938`, `0x0078694B`). The draw
     /// branch (flag set) has no caller here.
     pub(crate) fn set_side_and_color(&mut self, side: i32, color: i32) {
-        let pick = |value: i32| {
-            if value == RANDOM_ITEM_DATA {
-                (0, RANDOM_ITEM_DATA)
-            } else {
-                (value, CONCRETE_ITEM_DATA)
-            }
-        };
         let preferences = &mut self.local_preferences;
-        (preferences.side, preferences.side_ex) = pick(side);
-        (preferences.color_index, preferences.color_ex) = pick(color);
+        (preferences.side, preferences.side_ex) = persona_pick(side);
+        (preferences.color_index, preferences.color_ex) = persona_pick(color);
     }
 
     pub(crate) fn lan_observer(&self) -> bool {
@@ -1812,6 +1801,38 @@ fn persisted_row_type(value: SkirmishAiRowType) -> i32 {
         SkirmishAiRowType::Normal => 5,
         SkirmishAiRowType::Easy => 6,
     }
+}
+
+/// `0x0069B760(value, 0)` / `0x0069B7E0(value, 0)`'s item data and Ex
+/// ([`MultiplayerShellRuntime::set_side_and_color`]).
+fn persona_pick(value: i32) -> (i32, i32) {
+    if value == RANDOM_ITEM_DATA {
+        (0, RANDOM_ITEM_DATA)
+    } else {
+        (value, CONCRETE_ITEM_DATA)
+    }
+}
+
+/// A node's seat from its side and colour picks (item data, Ex).
+fn picked_seat(
+    (side, side_ex): (i32, i32),
+    (color, color_ex): (i32, i32),
+) -> crate::skirmish_launch::SkirmishLocalSlot {
+    crate::skirmish_launch::SkirmishLocalSlot {
+        country: LaunchCountry::from_country_index(side.max(0) as u32),
+        country_random: side_ex == RANDOM_ITEM_DATA,
+        color_index: u8::try_from(color).unwrap_or(0),
+        color_random: color_ex == RANDOM_ITEM_DATA,
+        start_position: crate::skirmish_launch::LaunchStartPosition::Auto,
+        team: crate::skirmish_launch::LaunchTeam::None,
+    }
+}
+
+/// The seat a persona's Country and Color item data (My Information's rows,
+/// -2 Random) give any player, as [`MultiplayerShellRuntime::set_side_and_color`]
+/// then `local_participant` give this one.
+pub(crate) fn persona_seat(country: i32, color: i32) -> crate::skirmish_launch::SkirmishLocalSlot {
+    picked_seat(persona_pick(country), persona_pick(color))
 }
 
 fn menu_country_from_item_data(value: i32) -> Option<LaunchCountry> {

@@ -308,8 +308,10 @@ pub(crate) struct WolLobby {
 }
 
 impl WolLobby {
+    /// The modern lobby lists only VERA20K Online; the Quick Match runner,
+    /// which shows no list, looks for its `Lob_40_` lobby in all of them.
     fn set_lobbies(&mut self, mut channels: Vec<WolChannel>) {
-        if self.ui.is_modern() {
+        if self.ui.is_modern() && self.runner != Runner::QuickMatch {
             channels.retain(|channel| channel.name == PUBLIC_LOBBY_NAME);
         }
         self.lobbies = channels;
@@ -4270,6 +4272,33 @@ mod tests {
         let names = lobby_base_names(visit.modern_ui(), str::to_owned);
         assert_eq!(WolLobbyRow::joined_name(2, &names), "TXT_LOB_3");
         assert_eq!(legacy.ui.page_spec().stacked.len(), 8);
+    }
+
+    /// The online Quick Match lobby `Lob_40_0`: the modern lobby leaves it
+    /// out, and the native list (`0x007806C0`) takes only `Lob_41_` rows,
+    /// but the modern Quick Match runner must find it.
+    #[test]
+    fn only_the_quick_match_runner_lists_the_quick_match_lobby() {
+        let channels: Vec<_> = ["Lob_41_2", "Lob_40_0"]
+            .into_iter()
+            .map(|name| WolChannel {
+                name: name.into(),
+                ..Default::default()
+            })
+            .collect();
+        let listed = |runner| {
+            let mut lobby = new_runner(runner, false, false, Instant::now(), true);
+            lobby.set_lobbies(channels.clone());
+            lobby
+                .lobbies
+                .iter()
+                .any(|channel| channel.name == "Lob_40_0")
+        };
+        assert!(!listed(Runner::Lobby));
+        assert!(listed(Runner::QuickMatch));
+        let rows = crate::ui::wol_lobby::lobby_rows(&channels);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "Lob_41_2");
     }
 
     fn user(name: &str, flags: u32) -> WolMember {

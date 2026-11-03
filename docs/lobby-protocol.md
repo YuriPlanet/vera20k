@@ -97,8 +97,8 @@ set identity and flags from the authenticated membership, never from user payloa
 The only public chat channel is `name:"Lob_41_2"` (`id:"public"`), which games from
 0.2.4 show as VERA20K Online and older games by its retail name, German Bunker.
 The service updates that stored room's name without replacing its membership or
-accounts. Other chat channels are neither listed nor joinable; game rooms remain
-available through `kind:41`.
+accounts. Other chat channels, apart from Quick Match's below, are neither listed nor
+joinable; game rooms remain available through `kind:41`.
 
 Commands and their payloads:
 
@@ -161,7 +161,7 @@ Event kinds and payloads:
 | `choices` | `{from,row,slot,observer}` |
 | `ready` | `{from,ready,revision}` |
 | `map_status` | `{from,status,revision}` |
-| `chat` | `{from:<Member>,text,private,action,sent_at}` |
+| `chat` | `{from:<Member>,text,private,action,sent_at,ansi?,quick_match?}` |
 | `game_started` | `{match_id,revision,version,rules_digest,seed,users:[{player_id,name,flags,source_index}],relay:<RelayGrant>}` |
 | `start_confirmed` | `{match_id}` |
 | `timing_confirmed` | `{match_id,pings:[integer],relay:<RelayGrant>}` |
@@ -434,3 +434,35 @@ A session whose version is older than `version` in
 since a match starts only between equal versions (`ready`, `start`). It arrives
 as a notice does: at once in the public channel or a game room that has not started,
 otherwise on the next public-channel join.
+
+## Quick Match
+
+1v1 and unranked; Quick Co-op (`Lob_39_`) has no lobby. Games that play it send
+`Vera-Quick-Match: 1` on `POST /v1/sessions`, beside `Vera-Relay-Federation: 1`. Only
+those sessions see `GET /v1/channels?kind=0` list, after `Lob_41_2`, the chat channel
+`{id:"quick-match",kind:0,name:"Lob_40_0",max_users:<lobby cap>,users,tournament:0,flags:0,game_flags:0,ping:-1,ex_info:""}`
+or may `join` it (any key); to others it is an unknown channel. Its members are its
+players, then always last the matchbot
+`{player_id:"00000000-0000-0000-0000-000000000001",name:"matchbot",flags:1,squad:0,clan_name:"",clan_tag:""}`.
+Sign-in refuses `matchbot` without case with 409 `name_unavailable`. There a player's only
+chat is private to `matchbot`: `{text:"Match COU=<int>, COL=<int>, MBR=<0|1>[, LOC=<int>],
+RAT=<int>, RES=<int>, ADR=<int>, NAT=<int>, PRT=<int>",to:["matchbot"],action:false}`, the
+retail request with the transport fields 0. The lobby reads COU (country) and COL (colour,
+each -2 for Random); a text not starting `Match ` gets a private `nack`. The matchbot's
+replies are `chat` events with `ansi:true`: a private `Working` at once, also to a repeated
+request, which keeps the player's place; a public `Pool <n>` whenever the number waiting
+changes; and on a pairing a private `Start <seed>:<host>,0,0,0,0,0,0,0,<guest>,0,0,0,0,0,0,0`
+to both players with `quick_match:{seed,host:{name,country,color},guest:{name,country,color}}`,
+a fresh random u32 seed and each player's COU and COL as sent. Pairing is first come, first
+served between two players whose `User-Agent` names the same version (two unknown versions
+may pair); the earlier waiter hosts. Leaving `Lob_40_0` (leave, logout, expiry or another
+join) leaves the queue.
+The host's game then leaves and `create`s the two-player game `<host>'s_game`; the guest's
+leaves and lists `kind=41` up to 30 times, 100 ms apart, for that name (without case) and
+joins it. For 2 minutes a room the paired host creates is that pairing's: only the paired
+guest sees it listed or may join it (anyone else `room_full`), until the guest has joined.
+From there the v4 room flow runs. When the guest joins, the host's game publishes options
+built from `quick_match`: host row 0, guest row 1, automatic starts, -2 as Random and a
+guest colour the host holds as Random, the first mode (Battle), `seed`, and the official
+two-player map of index `seed % count` among those of its catalog the mode admits. The
+guest's game accepts them by itself, and the host's starts once it has.
