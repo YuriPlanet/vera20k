@@ -292,6 +292,10 @@ pub(super) struct LiveService {
     relay_timeout: Duration,
     /// The sign-in (`auth_attempt`) that already showed its lobby-upgrade notice.
     outdated_notice: Option<u64>,
+    /// This client left its room for its started match: Quick Match leaves
+    /// it as the match starts (API+0x24 at `0x007955F1`). The `channel_left`
+    /// that answers is not the room closing under the loading map.
+    left_for_match: bool,
 }
 
 /// Where players download a newer build (README "Download and play").
@@ -398,6 +402,30 @@ struct StartPreparation {
 }
 
 impl StartPreparation {
+    /// VERA: the lobby's `start` takes the room's humans in the options'
+    /// order, while native API+0x48 sends its caller's order: Quick Match's
+    /// is reverse channel order (`0x0077EA53..0x0077EB72`). The same names
+    /// in another order go in the humans' order; any other list stays as it
+    /// is and never becomes ready.
+    fn users_in_human_order(
+        session: &crate::app::match_runtime::session::MatchSession,
+        users: Vec<String>,
+    ) -> Vec<String> {
+        let Some(launch) = session.network_setup() else {
+            return users;
+        };
+        let humans: Vec<String> = launch
+            .humans
+            .iter()
+            .map(|human| human.name.clone())
+            .collect();
+        let mut requested = users.clone();
+        let mut expected = humans.clone();
+        requested.sort();
+        expected.sort();
+        if requested == expected { humans } else { users }
+    }
+
     fn accept_options(&mut self, revision: u64, options: &Value) -> bool {
         if &self.options != options {
             return false;
@@ -406,6 +434,11 @@ impl StartPreparation {
         true
     }
 
+    /// Every guest accepted this revision and every player holds its map.
+    /// The host's own acceptance is its `ready` with each options revision
+    /// (`publish_options_agreement`), not its local flag: a Quick Match
+    /// host's flag falls with the matchbot's options (the material change
+    /// `0x005E3AB0` consumes), and its start (`0x0077EA53`) never reads it.
     fn ready(
         &self,
         session: &crate::app::match_runtime::session::MatchSession,
@@ -419,7 +452,7 @@ impl StartPreparation {
                     .map(|human| &human.name)
                     .eq(self.users.iter())
                     && (0..launch.humans.len()).all(|index| {
-                        session.network_player_ready(index)
+                        (index == launch.local_player_index || session.network_player_ready(index))
                             && session.network_map_status(index) == Some(1)
                     })
             })
@@ -584,6 +617,7 @@ impl LiveService {
             finish_opponents_left: false,
             relay_timeout: RELAY_TIMEOUT,
             outdated_notice: None,
+            left_for_match: false,
         })
     }
 
@@ -663,6 +697,7 @@ impl LiveService {
         {
             self.finishing = None;
             self.match_id = None;
+            self.left_for_match = false;
         }
     }
 
@@ -686,6 +721,19 @@ impl LiveService {
             self.back_to_room = false;
         }
         refused
+    }
+
+    /// A room leave the shell asked for; one during a started match is noted
+    /// for its `channel_left` ([`Self::room_closed`]).
+    fn leave_room(&mut self, now: Instant) {
+        self.left_for_match |= self.match_id.is_some();
+        self.begin_leave(now);
+    }
+
+    /// A `channel_left` closed the room under this client, rather than
+    /// answering its own leave for its started match.
+    fn room_closed(&mut self) -> bool {
+        !std::mem::take(&mut self.left_for_match)
     }
 
     fn begin_leave(&mut self, now: Instant) {
@@ -741,6 +789,7 @@ impl LiveService {
     fn clear_cleanup(&mut self) {
         self.finishing = None;
         self.leaving = None;
+        self.left_for_match = false;
         self.logging_out = None;
         self.match_id = None;
         self.next_renewal_attempt = None;
@@ -1270,7 +1319,7 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
         WolServiceRequest::LeaveChannel => {
             maps::cancel(state, service);
             cancel_pending(state, service);
-            service.begin_leave(Instant::now());
+            service.leave_room(Instant::now());
         }
         WolServiceRequest::MatchReturned => {
             service.back_to_room = state
@@ -1667,17 +1716,25 @@ fn request_setup(
         }
         NetworkSetupRequest::Ready(requested) => {
             let ready = requested && local_map_status(state, service) == 1;
+            let index = state
+                .match_state
+                .session
+                .network_setup()
+                .ok_or_else(|| anyhow!("no setup"))?
+                .local_player_index;
+            let withdrawn = state.match_state.session.network_player_ready(index);
             if requested && !ready {
                 // The guest's automatic Accept waits for the verified map
                 // instead of repeating this request every frame.
                 crate::app::shell_network_setup::refuse_local_acceptance(state)?;
+                if !withdrawn {
+                    // Only the Quick Match guest's accept (`0x007A7F72`)
+                    // leaves its node unaccepted. It withdraws nothing, so
+                    // nothing is sent: the host starts on the guest's first
+                    // `ready` (`0x0077EA53`) and drops the later ones.
+                    return Ok(());
+                }
             } else if !ready {
-                let index = state
-                    .match_state
-                    .session
-                    .network_setup()
-                    .ok_or_else(|| anyhow!("no setup"))?
-                    .local_player_index;
                 state
                     .match_state
                     .session
@@ -1706,7 +1763,10 @@ fn request_setup(
                     None
                 };
                 service.start_preparation = Some(StartPreparation {
-                    users,
+                    users: StartPreparation::users_in_human_order(
+                        &state.match_state.session,
+                        users,
+                    ),
                     options: snapshot,
                     revision,
                     publication_request,
@@ -1727,7 +1787,7 @@ fn request_setup(
         NetworkSetupRequest::Leave => {
             maps::cancel(state, service);
             cancel_pending(state, service);
-            service.begin_leave(Instant::now());
+            service.leave_room(Instant::now());
         }
         // Older lobbies take no keep_out, so only a host's own kick sends it.
         NetworkSetupRequest::Kick { name, keep_out } if keep_out => {
@@ -2216,6 +2276,7 @@ fn apply_event(
             service.last_ready_request = None;
             service.pending_choices = None;
             service.start_preparation = None;
+            service.left_for_match = false;
             service.member_ids = joined
                 .members
                 .iter()
@@ -2238,23 +2299,25 @@ fn apply_event(
             service_event(state, event);
         }
         "channel_left" => {
-            let active = crate::app::loading::pump::network_loading_active(state);
-            let taken = state
-                .frontend
-                .wol
-                .as_ref()
-                .is_some_and(|visit| visit.live_service.is_none());
-            state.match_state.match_diagnostics.observe_loading_cancel(
-                "deployed_channel_left",
-                service.match_id.clone(),
-                None,
-                taken,
-                active,
-            );
-            crate::app::loading::pump::cancel_network_loading(
-                state,
-                "The online room closed while the map was loading.",
-            );
+            if service.room_closed() {
+                let active = crate::app::loading::pump::network_loading_active(state);
+                let taken = state
+                    .frontend
+                    .wol
+                    .as_ref()
+                    .is_some_and(|visit| visit.live_service.is_none());
+                state.match_state.match_diagnostics.observe_loading_cancel(
+                    "deployed_channel_left",
+                    service.match_id.clone(),
+                    None,
+                    taken,
+                    active,
+                );
+                crate::app::loading::pump::cancel_network_loading(
+                    state,
+                    "The online room closed while the map was loading.",
+                );
+            }
             service.accepted_options = None;
             service.last_ready_request = None;
             service.pending_choices = None;
@@ -3069,6 +3132,7 @@ mod completion_tests {
             finish_opponents_left: false,
             relay_timeout: RELAY_TIMEOUT,
             outdated_notice: None,
+            left_for_match: false,
         };
         (service, input, output)
     }
@@ -3457,6 +3521,34 @@ mod completion_tests {
     }
 
     #[test]
+    fn a_quick_match_host_starts_its_reverse_channel_order_unaccepted() {
+        let mut session = setup_session();
+        for index in 0..2 {
+            session.set_network_map_status(index, 1).unwrap();
+        }
+        // The matchbot's options withdrew the host's own acceptance.
+        session.set_network_player_ready(0, false).unwrap();
+        session.set_network_player_ready(1, true).unwrap();
+        let start = |users: [&str; 2]| StartPreparation {
+            users: StartPreparation::users_in_human_order(
+                &session,
+                users.map(String::from).to_vec(),
+            ),
+            options: Value::Null,
+            revision: Some(5),
+            publication_request: None,
+            submitted_request: None,
+            deadline: Instant::now() + RELAY_TIMEOUT,
+        };
+        let reversed = start(["Guest", "Host"]);
+        assert_eq!(reversed.users, ["Host", "Guest"]);
+        assert!(reversed.ready(&session, 5));
+        assert!(!start(["Guest", "Other"]).ready(&session, 5));
+        session.set_network_player_ready(1, false).unwrap();
+        assert!(!reversed.ready(&session, 5), "the guest still accepts");
+    }
+
+    #[test]
     fn optimistic_local_choice_waits_for_the_authoritative_options_echo() {
         let mut session = setup_session();
         let accepted = json!({"launch":session.network_setup()});
@@ -3589,6 +3681,21 @@ mod completion_tests {
         assert!(service.finish_failed(id, http::CommandFailure::Rejected(0x8000_4005), now));
         service.poll_cleanup(now + Duration::from_secs(2));
         assert_eq!(sent(&input).1, json!({"match_id":"room-match"}));
+    }
+
+    #[test]
+    fn a_leave_for_the_started_match_keeps_its_loading_map() {
+        let (mut service, input, _output) = control_service(Some("test-match"));
+        service.leave_room(Instant::now());
+        let http::Request::Command { operation, .. } = input.try_recv().unwrap() else {
+            panic!("leave command");
+        };
+        assert_eq!(operation, "leave");
+        assert!(!service.room_closed(), "its own leave's channel_left");
+        assert!(service.room_closed(), "a later one closes the room");
+        let (mut service, _input, _output) = control_service(None);
+        service.leave_room(Instant::now());
+        assert!(service.room_closed(), "a leave before any start");
     }
 
     #[test]

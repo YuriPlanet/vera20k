@@ -1714,9 +1714,11 @@ fn join_failed_locally(state: &mut AppState, game: bool) {
 }
 
 /// The runner returns 0 (`LAB_00787F98`): the dialog closes without a
-/// slide and `WOL_Main` shows the welcome (mode 0).
+/// slide and `WOL_Main` shows the welcome (mode 0), or the online lobby
+/// again for a Quick Match runner that lobby started.
 fn close_runner(state: &mut AppState) {
-    if quick_match_runner(state) {
+    let quick_match = quick_match_runner(state);
+    if quick_match {
         super::quick_match::runner_closed(state);
     }
     if let Some(visit) = state.frontend.wol.as_mut() {
@@ -1724,6 +1726,9 @@ fn close_runner(state: &mut AppState) {
     }
     state.frontend.wol_lobby_art = None;
     state.match_state.session.leave_network();
+    if quick_match && super::quick_match::return_to_lobby(state) {
+        return;
+    }
     App::reopen_wol_welcome(state);
 }
 
@@ -1747,15 +1752,22 @@ pub(crate) fn commit_back(state: &mut AppState) {
     close_runner(state);
 }
 
-/// Buddy List's teardown has run: the runner ends as for Back, but
-/// `WOL_Main` sees mode 5 (`0x0077B482`) and runs the Buddy List runner.
-pub(crate) fn commit_buddy(state: &mut AppState) {
+/// Buddy List's teardown has run (`0x0078BF7D`): the runner ends as for
+/// Back with mode 5 and return mode 4. The mode-loop pass applies and the
+/// login category is unchanged, so `WOL_Main` runs the Buddy List runner at
+/// once (`0x0077B482`).
+/// VERA: the online page's Quick Match ends the runner the same way with
+/// mode 1, so the Quick Match runner `0x0079FC40` follows with the login kept.
+pub(crate) fn commit_runner_switch(state: &mut AppState, mode: crate::ui::wol_shell::WolMode) {
     request(state, WolServiceRequest::LeaveChannel);
     if let Some(visit) = state.frontend.wol.as_mut() {
         visit.lobby = None;
+        visit.mode = Some(mode);
+        visit.return_mode = Some(crate::ui::wol_shell::WolMode::CustomMatch);
     }
     state.frontend.wol_lobby_art = None;
-    super::buddy::enter_from(state, crate::ui::wol_shell::WolMode::CustomMatch);
+    super::apply_wol_preferences(state);
+    super::open_lobby(state, false);
 }
 
 /// The runner's records end with it (the Buddy List runner returned).
@@ -2408,9 +2420,20 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
         WolLobbyAction::Page => super::page::open_page_dialog(state),
         // 0x0078BF7D: mode 5 with return mode 4; event 6 then ends the
         // runner as Back does, and WOL_Main runs the Buddy List runner.
-        WolLobbyAction::Unported(BUDDY) => {
-            App::leave_shell_dialog(state, shell_transition::ShellExitThen::WolLobbyBuddy);
-        }
+        WolLobbyAction::Unported(BUDDY) => App::leave_shell_dialog(
+            state,
+            shell_transition::ShellExitThen::WolLobbyRunner(
+                crate::ui::wol_shell::WolMode::PlayBuddy,
+            ),
+        ),
+        // VERA: the online page's Quick Match ends the runner as Buddy List
+        // does, with return mode 4, and the Quick Match runner follows.
+        WolLobbyAction::QuickMatch => App::leave_shell_dialog(
+            state,
+            shell_transition::ShellExitThen::WolLobbyRunner(
+                crate::ui::wol_shell::WolMode::QuickMatch,
+            ),
+        ),
         WolLobbyAction::Unported(control) => {
             // Clan/Tournament/News (0x00773E90 web pages) need the
             // embedded browser.
@@ -4267,7 +4290,7 @@ mod tests {
         lobby.set_lobbies(channels.clone());
         assert_eq!(lobby.lobbies.len(), 1);
         assert_eq!(lobby.lobbies[0].name, "Lob_41_2");
-        assert_eq!(lobby.ui.page_spec().stacked.len(), 3);
+        assert_eq!(lobby.ui.page_spec().stacked.len(), 4);
         let names = lobby_base_names(visit.modern_ui(), str::to_owned);
         assert_eq!(WolLobbyRow::joined_name(2, &names), "VERA20K Online");
         visit.set_legacy_ui(true);

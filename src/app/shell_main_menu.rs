@@ -1796,7 +1796,9 @@ impl App {
             ShellExitThen::WolAction(mode) => Self::commit_wol_action(state, mode),
             ShellExitThen::WolLoginClose(result) => Self::commit_wol_login_close(state, result),
             ShellExitThen::WolLobbyBack => crate::app::shell_wol::lobby::commit_back(state),
-            ShellExitThen::WolLobbyBuddy => crate::app::shell_wol::lobby::commit_buddy(state),
+            ShellExitThen::WolLobbyRunner(mode) => {
+                crate::app::shell_wol::lobby::commit_runner_switch(state, mode)
+            }
             ShellExitThen::WolLobbyHide => crate::app::shell_wol::lobby::commit_hide(state),
             ShellExitThen::WolCreateAccepted { observe } => {
                 crate::app::shell_wol::lobby::commit_create(state, observe)
