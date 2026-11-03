@@ -20,11 +20,9 @@ mod aircraft_release;
 
 /// FireAt6FF4CC..6FF647 has one exclusive effect ladder. Sonic's earlier
 /// Wave creation is independent; these flags select the later alternative.
-///
-/// DORMANT: `RadiationEruption` has no consumer; `SpawnRadEruption @
-/// 0x006FD800` is not ported. Retail's only `IsRadEruption=` key, on
-/// `RadEruptionWeapon`, is `no`, and no retail map sets it: one YR campaign
-/// map gives `[DESO]` that weapon as its Secondary, still `no`.
+/// Retail's only `IsRadEruption=` key, on `RadEruptionWeapon`, is `no`, so
+/// `RadiationEruption` ([`super::radiation_beam::erupted`]) needs a map or
+/// mod that sets it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FireAtEffect {
     None,
@@ -2067,6 +2065,7 @@ pub(super) fn emit_admitted_fire(
     );
     super::electric_bolt::fired(world, rules, snap.stable_id, snap.target, weapon);
     super::radiation_beam::fired(world, rules, snap.stable_id, snap.target, weapon);
+    super::radiation_beam::erupted(world, rules, snap.stable_id, weapon);
     // Mag6FF5F5..6FF650 admits at most one linked Wave. The native Unit
     // constructor/update can reverse its endpoints before returning here.
     if fire_at_effect(weapon) == FireAtEffect::MagneticWave

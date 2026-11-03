@@ -5032,6 +5032,7 @@ mod tests {
         let sim = Simulation::new();
         let hash = sim.state_hash();
         let rng = sim.rng_state();
+        let main = crate::sim::rng::MainRng::new(1).draws();
         let mut beams = RadiationBeams::default();
         beams.create(
             RadiationBeamBirth {
@@ -5044,6 +5045,7 @@ mod tests {
                 house_color: false,
                 duration: 15,
                 amplitude: NativeF64Bits::from_bits(40.0_f64.to_bits()),
+                eruption: false,
             },
             |_| [0; 3],
         );
@@ -5060,7 +5062,7 @@ mod tests {
         // Actual presentation composites advance this owner without any Logic
         // tick. Numeric/native goldens belong to the renderer's own tests.
         for _ in 0..14 {
-            beams.composite(60, viewport, |_| true);
+            beams.composite(60, viewport, &main, |_| true);
         }
         let draws = beams.draws().to_vec();
         assert!(!draws.is_empty());
@@ -5086,7 +5088,7 @@ mod tests {
         );
         assert_eq!(serde_json::to_value(beams.observation()).unwrap(), retained);
         assert_eq!(beams.draws(), draws.as_slice());
-        beams.composite(60, viewport, |_| true);
+        beams.composite(60, viewport, &main, |_| true);
         let expired =
             serde_json::to_value(MapRadiationBeamObservation::capture(&beams).unwrap()).unwrap();
         assert!(expired["live"].as_array().unwrap().is_empty());

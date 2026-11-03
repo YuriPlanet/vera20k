@@ -1,17 +1,22 @@
-//! RadBeam kind1 registry659110/6591B0, in reverse birth order. Its copied
+//! RadBeam registry659110/6591B0, in reverse birth order. Its copied
 //! endpoints have no detach links. Every Tactical composite draws once,
 //! increments progress, and removes expired entries, even with no pixels; a
 //! draw between composites shows the last one's lines ([`RadiationBeams::shown`]).
+//! Kind1 beams are the straight copied modes; kind2 are SpawnRadEruption's.
 
-use crate::render::radiation_beam::{BeamGeometry, segment_spacing};
+use crate::render::radiation_beam::{BeamGeometry, eruption_cull_percent, segment_spacing};
 use crate::render::surface_line::{SurfaceDraw, SurfaceLineViewport};
 use crate::sim::combat::radiation_beam::RadiationBeamBirth;
+use crate::sim::rng::MainRngDraws;
 
 struct Beam {
     birth: RadiationBeamBirth,
     progress: i32,
     spacing: i32,
     geometry: Option<BeamGeometry>,
+    /// RadBeam `+0x09`, set by the constructor659409. Only the kind2 cull
+    /// clears it; a culled eruption keeps aging without drawing.
+    active: bool,
 }
 
 #[cfg(test)]
@@ -64,18 +69,22 @@ impl RadiationBeams {
         {
             birth.color = house_rgb(owner);
         }
+        // Allocate659189: the constructor's spacing is10 for kind1, else20.
         self.live.push(Beam {
             birth,
             progress: 0,
-            spacing: 10,
+            spacing: if birth.eruption { 20 } else { 10 },
             geometry: None,
+            active: true,
         });
     }
 
+    /// `main` is process Main886B88: the kind2 cull draws from it.
     pub(crate) fn composite(
         &mut self,
         frame_rate: u32,
         viewport: SurfaceLineViewport,
+        main: &MainRngDraws,
         mut visible: impl FnMut(&RadiationBeamBirth) -> bool,
     ) {
         self.draws.clear();
@@ -88,16 +97,31 @@ impl RadiationBeams {
         // Network timing Event4C807D is a separate producer not represented
         // here; display refresh and game speed are never substituted for it.
         let spacing = segment_spacing(frame_rate, 30);
+        // 6591C1..6591F5 counts the kind2 beams and the active ones before
+        // any of this pass's culls.
+        let eruptions = self.live.iter().filter(|beam| beam.birth.eruption);
+        let total = eruptions.clone().count() as i32;
+        let active = eruptions.filter(|beam| beam.active).count() as i32;
+        let cull = (active > 0).then(|| eruption_cull_percent(frame_rate, 30, total, active));
         for beam in self.live.iter_mut().rev() {
             let geometry = *beam
                 .geometry
                 .get_or_insert_with(|| BeamGeometry::new(beam.birth.from, beam.birth.to));
             let before = self.draws.len();
-            beam.spacing = spacing;
-            if visible(&beam.birth) {
-                geometry.lines(beam.birth, beam.progress, spacing, viewport, |line| {
-                    self.draws.push(SurfaceDraw::Line(line))
-                });
+            let mut push = |line| self.draws.push(SurfaceDraw::Line(line));
+            if !beam.birth.eruption {
+                beam.spacing = spacing;
+                if visible(&beam.birth) {
+                    geometry.lines(beam.birth, beam.progress, spacing, viewport, &mut push);
+                }
+            } else {
+                //6592D6..659301: one Main draw per active kind2 beam.
+                if beam.active && cull.is_some_and(|cull| main.ranged(0, 99) < cull) {
+                    beam.active = false;
+                }
+                if beam.active && visible(&beam.birth) {
+                    geometry.eruption_lines(beam.birth, beam.progress, viewport, &mut push);
+                }
             }
             let progress_before = beam.progress;
             beam.progress = beam.progress.wrapping_add(1);
