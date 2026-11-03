@@ -1440,13 +1440,13 @@ impl UnitModel {
     /// One posed body's composite, rendered afresh. The Fly crash and Jumpjet
     /// arms key their draw -1, so native never caches it. The Fly normal arm
     /// keys its pitch and roll bits (`0x004CF610`) and the Rocket arm keys a
-    /// pitched draw -1 unless the pitch is the block's stored PitchFinal
-    /// product (`0x00663547`); either image depends only on the facing step
-    /// and the angles, so a fresh render in the stored style is the cached
-    /// one. The Jumpjet arm's
-    /// half sizes come from this model's main voxel; one that never loaded
-    /// leaves them at the constructor's zero (`0x00710C4E`). `depth_tested`
-    /// is 0xB43180 at the draw; a `UseBuffer=` type always sets it.
+    /// pitched draw -1 unless the pitch is the block's PitchInitial or stored
+    /// PitchFinal product (`0x00663470`); either image depends only on the
+    /// facing step and the angles, so a fresh render in the stored style is
+    /// the cached one. The Jumpjet arm's half sizes come from this model's
+    /// main voxel; one that never loaded leaves them at the constructor's
+    /// zero (`0x00710C4E`). `depth_tested` is 0xB43180 at the draw; a
+    /// `UseBuffer=` type always sets it.
     pub(crate) fn render_pose(
         &self,
         key: &UnitSpriteKey,

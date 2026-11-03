@@ -2618,7 +2618,9 @@ impl ObjectType {
         &self.shp_image_loads
     }
 
-    pub(crate) fn voxel_image_load(&self) -> Option<&str> {
+    /// The voxel this scenario's `TechnoTypeClass::ReadINI` loaded
+    /// (`0x0071609C`), if a pass reached the load.
+    pub fn voxel_image_load(&self) -> Option<&str> {
         self.voxel_image_load.as_deref()
     }
 

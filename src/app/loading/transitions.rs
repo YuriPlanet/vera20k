@@ -180,12 +180,6 @@ pub(crate) fn install_world_presentation(
     state
         .match_state
         .match_presentation
-        .voxel_images
-        .borrow_mut()
-        .clear();
-    state
-        .match_state
-        .match_presentation
         .line_trails
         .clear_on_load();
     state
@@ -581,6 +575,18 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         },
         result.presentation,
     );
+    if let Some(rules) = state.rules() {
+        state
+            .match_state
+            .match_presentation
+            .voxel_images
+            .borrow_mut()
+            .start_scenario(|type_id| {
+                rules
+                    .object(type_id)
+                    .is_some_and(|object| object.voxel_image_load().is_some())
+            });
+    }
     state
         .match_state
         .match_presentation

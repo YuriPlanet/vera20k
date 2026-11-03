@@ -52,11 +52,13 @@
 //! between a frame's last SHAD shadow and the next SHAD body depends on draw
 //! order; VERA follows its own pass order (residual in the cache owner).
 //!
-//! Stale depth (rare, not measured): a HIND/SCHD/SCHP part miss (clears the
-//! flag), a shadow cache hit, smaller flag-off draws, then a UseBuffer draw
-//! keeps the miss's depth outside the smaller rect and drops the new draw's
-//! voxels there that are not nearer. SHAD alone never leaves stale depth:
-//! its shadow sets the flag before clearing the body's rect.
+//! Stale depth (#3794): a HIND/SCHD/SCHP part miss (clears the flag), a
+//! shadow cache hit, smaller flag-off draws, then a UseBuffer draw keeps the
+//! miss's depth outside the smaller rect and drops the new draw's voxels
+//! there that are not nearer. Measured here on retail SCHP (frame 1, then
+//! frame 0 a facing step on): 1-2% of its 1,675 pixels after a tank-sized
+//! render, 39% after a 20x20 one. SHAD alone never leaves stale depth: its
+//! shadow sets the flag before clearing the body's rect.
 //!
 //! A store at depth address 0xFFFF also writes one byte past both 64 KiB
 //! buffers, which is dropped here.

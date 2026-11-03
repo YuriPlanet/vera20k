@@ -75,3 +75,25 @@ fn pool_bytes_follow_the_zero_run_encoding() {
     );
     assert_eq!(pool_bytes(&pixels, 300, [1, 1, 2, 1]), 12 + 2 + 2);
 }
+
+/// A new scenario frees only the caches its rules read reloads (0x0071609C ->
+/// 0x005F8BF0); 0xB43180 (0x0052BE04, once a process) and the pool cursor
+/// (0x005F99E0) carry over, and so does a building gun's stored image.
+#[test]
+fn a_new_scenario_keeps_the_flag_the_pool_and_unreloaded_types() {
+    let mut cache = VoxelImageCache::default();
+    let mut gun = body("GTGCAN", 0);
+    gun.cache = VoxelCache::Turret;
+    cache.draw(gun.clone(), false, 0, |_| POOL_BYTES - 10);
+    cache.draw(body("MTNK", 0), false, 0, |_| 10);
+    cache.render_shadow(None, true, 0);
+    cache.start_scenario(|type_id| type_id == "MTNK");
+    assert!(cache.hit(&gun).is_some());
+    assert!(cache.hit(&body("MTNK", 0)).is_none());
+    assert!(cache.draw(body("MTNK", 0), false, 0, |_| 10).depth_tested);
+    assert_eq!(
+        cache.flushes(),
+        1,
+        "the dropped image still holds its bytes"
+    );
+}

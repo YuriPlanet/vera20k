@@ -736,8 +736,9 @@ pub(crate) fn build_unit_instances(
                 barrel_pitch: 0,
             };
             // The Fly normal arm's key adds its pitch (4) and roll direction
-            // (1, 2) bits to the facing (`0x004CF610`).
-            let image = match tilt {
+            // (1, 2) bits to the facing (`0x004CF610`); the Rocket arm its
+            // PitchInitial (0x20) or PitchFinal (0x40) bit (`0x00663470`).
+            let extra = match tilt {
                 crate::render::unit_atlas::PoseTilt::FlyNormal { pitch, .. } => {
                     use crate::sim::movement::facing_class::RotationDirection;
                     let roll = match render_pose.fly_bank_direction {
@@ -745,14 +746,18 @@ pub(crate) fn build_unit_instances(
                         Some(RotationDirection::Negative) => 2,
                         None => 0,
                     };
-                    Some(crate::render::voxel_image_cache::VoxelImageKey {
-                        cache: crate::render::voxel_image_cache::VoxelCache::Body,
-                        sprite: key.clone(),
-                        extra: u32::from(pitch != 0.0) << 2 | roll,
-                    })
+                    Some(u32::from(pitch != 0.0) << 2 | roll)
+                }
+                crate::render::unit_atlas::PoseTilt::Rocket(_) => {
+                    rocket_draw_key_bits(state, sim, entity)
                 }
                 _ => None,
             };
+            let image = extra.map(|extra| crate::render::voxel_image_cache::VoxelImageKey {
+                cache: crate::render::voxel_image_cache::VoxelCache::Body,
+                sprite: key.clone(),
+                extra,
+            });
             emit_pose_sprite(
                 state,
                 sim,
@@ -1323,13 +1328,29 @@ fn ground_pose_with_angles(
     })
 }
 
+/// The Rocket Draw_Matrix key bits of this rocket's pitch (`0x00663470`),
+/// from its owner type's block.
+fn rocket_draw_key_bits(
+    state: &AppState,
+    sim: &crate::sim::world::Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+) -> Option<u32> {
+    let rocket = entity.locomotor.as_ref()?.rocket_runtime()?;
+    let (block, _) = state
+        .rules()?
+        .missile_spawn
+        .rocket_block(sim.interner().resolve(entity.type_ref()));
+    rocket.draw_key_bits(block)
+}
+
 /// One posed body drawn on this frame's pose page. It joins its display
 /// layer in emission order like an atlas body. The concrete Unit and Aircraft
 /// callers emit their shadow separately in native order.
 ///
-/// Only the Fly normal arm keys its image (`0x004CF610`); every other pose
-/// keys -1 and renders each draw. VERA renders the keyed one each frame too,
-/// in the style its record holds.
+/// The Fly normal arm (`0x004CF610`) and the Rocket arm at a stored pitch
+/// (`0x00663470`) key their image; every other pose keys -1 and renders each
+/// draw. VERA renders the keyed one each frame too, in the style its record
+/// holds.
 fn emit_pose_sprite(
     state: &AppState,
     sim: &crate::sim::world::Simulation,
