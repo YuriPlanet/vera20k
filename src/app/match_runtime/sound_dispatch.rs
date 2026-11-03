@@ -97,14 +97,18 @@ pub(crate) fn deploy_order_voice_event(
 /// That ordering belongs to the caller, not to radar events.
 ///
 /// RESIDUAL: five events are fed by both kinds of site and keep the PlayerPtr
-/// test: CannotDeployHere (IsHumanPlayer in `UnitClass::Deploy` `0x007394E6`),
-/// UnderAttack (building arm `0x004F9407`), HouseEva (Robot Tank, GoOnline /
-/// GoOffline, crate upgrades), Repairing (ToggleRepair `0x004470A4`) and
-/// UnitRepaired (hospital `0x0044B93F`). Trigger: a campaign `PlayerControl=`
-/// house that is not the player deploys, owns a building or Robot Tank, picks
-/// up a crate or is healed at a hospital; effect: that line stays silent. No
-/// retail campaign reaches it: ALL01's Alliance owns two ORCAs, SOV04's
-/// Germans RMNV and SHAD, and no campaign map places a crate.
+/// test: CannotDeployHere (IsHumanPlayer in `UnitClass::Deploy` `0x007394E6`,
+/// after the `DeploysInto=` building refuses the cell), UnderAttack (building
+/// arm `0x004F9407`), HouseEva (Robot Tank, GoOnline / GoOffline, crate
+/// upgrades), Repairing (ToggleRepair `0x004470A4`) and UnitRepaired (the
+/// hospital's owner, `0x0044B93F`). Trigger: a campaign `PlayerControl=` house
+/// that is not the player owns a building, a `DeploysInto=` unit or a Robot
+/// Tank, or picks up a crate; effect: that line stays silent. No retail
+/// campaign reaches it. Only ALL01 (Alliance: two ORCA teams; British:
+/// nothing), ALL03 (Alliance: nothing) and SOV04 (Germans: RMNV infantry and a
+/// SHAD transport with no `DeploysInto=`) have such a house; no map gives one
+/// an object by placement, TeamType, Change House (actions 14 and 36) or
+/// Create Building (125). Of these maps only ALL03 places crates (action 108).
 pub(super) fn dispatch_sim_sound_events(
     events: impl IntoIterator<Item = SimSoundEvent>,
     sim: &Simulation,
