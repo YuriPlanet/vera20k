@@ -4278,7 +4278,8 @@ impl Simulation {
     /// Callers:
     /// * `all`: the exact-zero Destroy callback of `ObjectClass::ReceiveDamage`
     ///   (`0x005F5765..0x005F57AF`), after the kill callback and before
-    ///   TechnoClass's death arm, and the Stun of a living object.
+    ///   TechnoClass's death arm, and every Stun (death, crash, sinking,
+    ///   lift release and sale).
     /// * not `all`: `TechnoClass::StartCloaking @ 0x00703770` and the cloak's
     ///   1 → 2 completion (`0x006FBA98`).
     ///
@@ -4613,17 +4614,13 @@ impl Simulation {
     /// (`0x006B7BB0`) and Detach_All(1); only a lifted Foot skips them.
     /// Deselect follows on every class. Foot's constructor clears `+0x6AD` at
     /// `0x004D3414`; ImbueLocomotor sets the lift latch at `0x00710352`, and
-    /// the Jumpjet landing paths clear it.
-    ///
-    /// RESIDUAL: VERA runs the block for Foot only. Trigger: a Building's
-    /// Stun, which VERA reaches only from `TechnoClass::ReceiveDamage`'s death
-    /// arm (`0x00702206..0x00702210`), after `ObjectClass::ReceiveDamage`'s
-    /// Destroy callback already ran Detach_All(1) on it
-    /// (`0x005F5765..0x005F57AF`). Effect: native's second Detach_All(1),
-    /// and the spawn kill and target clear that Destroy's pointer expiry
-    /// already did, are skipped. Frequency: every building death; no retail
-    /// building sets `Spawns=`. Downstream: none seen; a holder that
-    /// re-acquired the building between the two passes would keep it.
+    /// the Jumpjet landing paths clear it. A Building reaches this from
+    /// `TechnoClass::ReceiveDamage`'s death arm (`0x00702206..0x00702210`),
+    /// usually after the Destroy callback's own Detach_All(1)
+    /// (`0x005F5765..0x005F57AF`), so it detaches a second time like native.
+    /// A further hit on a building already at Health 0 skips Destroy
+    /// (`0x005F5752..0x005F575F`) but still takes the death arm, so this is
+    /// its only detach.
     fn techno_stun(&mut self, stable_id: u64, context: UninitContext<'_>) {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
@@ -4656,14 +4653,13 @@ impl Simulation {
         crate::sim::radio::broadcast_break(self, stable_id, context.rules(), context.effects());
         // `0x006FCD6B..0x006FCD79`: a lifted Foot keeps its spawns, their
         // targets and its listeners. The `+0x14 & 4` test only guards the
-        // Foot-only `+0x6AD` read; native runs the block for non-Foot objects
-        // too (residual above).
+        // Foot-only `+0x6AD` read; every other object runs the block.
         let foot_lifted = self
             .substrate
             .entities
             .get(stable_id)
             .is_some_and(|entity| entity.category().is_foot() && entity.lift.swap_active());
-        if category.is_foot() && !foot_lifted {
+        if !foot_lifted {
             crate::sim::spawn_manager::kill_all_spawns_with_context(self, stable_id, context);
             crate::sim::spawn_manager::clear_all_spawn_targets(
                 self,
