@@ -2212,6 +2212,7 @@ fn network_load_with_remote_peer(
     remote.name = "Remote".into();
     remote.raw_slot_index = Some(1);
     remote.slot.color_index = 1;
+    remote.slot.start_position = LaunchStartPosition::Position(1);
     launch.humans.push(remote);
     launch.rebuild_house_roster();
     let rules = crate::rules::ruleset::RuleSet::from_ini(
@@ -2254,6 +2255,7 @@ fn loading_timeout_retires_only_live_peer_and_flags_existing_house_before_instal
             crate::app::match_runtime::network_match::ConnectionDestroyed {
                 owner: peer,
                 key: "TXT_CONNECTION_LOST",
+                player: None,
             }
         ]
     );

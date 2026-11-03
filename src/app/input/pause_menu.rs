@@ -252,6 +252,7 @@ pub(crate) fn current_layout(state: &AppState) -> Option<PauseMenuLayout> {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct MultiplayerPauseControl {
+    /// [`crate::i18n`] labels, resolved where they are drawn.
     pub(crate) caption: &'static str,
     pub(crate) enabled: bool,
     pub(crate) status: Option<&'static str>,
@@ -264,25 +265,16 @@ fn multiplayer_control_for(
     pause.available.then(|| {
         let (caption, status) = if pause.pending {
             if pause.paused {
-                (
-                    "Resuming...",
-                    Some("Resume requested - waiting for the relay"),
-                )
+                ("VERA:Resuming", Some("VERA:ResumeRequested"))
             } else {
-                (
-                    "Pausing...",
-                    Some("Pause requested - waiting for the relay"),
-                )
+                ("VERA:Pausing", Some("VERA:PauseRequested"))
             }
         } else if pause.paused && !stopped_here {
-            ("Pausing...", Some("Finishing the shared pause frame"))
+            ("VERA:Pausing", Some("VERA:FinishingPause"))
         } else if pause.paused {
-            (
-                "Resume All Players",
-                Some("Paused for all players - Pause or Options to resume"),
-            )
+            ("VERA:ResumeAllPlayers", Some("VERA:PausedForAllPlayers"))
         } else {
-            ("Pause All Players", None)
+            ("VERA:PauseAllPlayers", None)
         };
         MultiplayerPauseControl {
             caption,
@@ -514,14 +506,23 @@ pub(crate) struct InternetResume {
 /// In mode4 with Session+0x300 clear, each changed trackbar emits its event
 /// only while its limiter has expired, then restarts that limiter for 900
 /// buckets; a refused change only logs. Speed is read after latency.
+///
+/// VERA deviation: a relay-paced match emits neither event. The relay keeps
+/// the lobby's frame rate and never reads LatencyFudge, so a speed event
+/// would only rescale SpeedNormalize's animation delays against an unchanged
+/// pace. The sliders still move and reopen at the live values.
 pub(crate) fn internet_resume(
     controls: &InternetPauseControls,
     latency_fudge: i32,
     game_speed: i32,
     limiters: &mut PauseEventLimiters,
     now_bucket: u32,
+    relay_paced: bool,
 ) -> InternetResume {
     let mut out = InternetResume::default();
+    if relay_paced {
+        return out;
+    }
     let fudge = 3 - controls.positions[InternetSlider::Connection as usize];
     if fudge != latency_fudge {
         if limiters.latency.remaining(now_bucket) == 0 {
@@ -563,12 +564,18 @@ fn resume_internet_events(state: &mut AppState) {
     let latency_fudge = state.match_state.session.latency_fudge();
     let game_speed = current_game_speed(state);
     let now_bucket = crate::app::match_runtime::frame_pacer::wall_clock_bucket();
+    let relay_paced = state
+        .match_state
+        .live_network
+        .as_ref()
+        .is_some_and(|live| live.relay_frames_per_second().is_some());
     let resume = internet_resume(
         &controls,
         latency_fudge,
         game_speed,
         state.match_state.session.pause_event_limiters_mut(),
         now_bucket,
+        relay_paced,
     );
     let Some(owner) = crate::app::input::commands::preferred_local_owner(state) else {
         return;
@@ -639,7 +646,7 @@ mod tests {
         };
         let running = multiplayer_control_for(pause, false).unwrap();
         assert!(running.enabled);
-        assert_eq!(running.caption, "Pause All Players");
+        assert_eq!(running.caption, "VERA:PauseAllPlayers");
         pause.pending = true;
         assert!(!multiplayer_control_for(pause, false).unwrap().enabled);
         pause.paused = true;
@@ -647,11 +654,11 @@ mod tests {
         assert!(!multiplayer_control_for(pause, false).unwrap().enabled);
         let stopped = multiplayer_control_for(pause, true).unwrap();
         assert!(stopped.enabled);
-        assert_eq!(stopped.caption, "Resume All Players");
+        assert_eq!(stopped.caption, "VERA:ResumeAllPlayers");
         pause.pending = true;
         assert_eq!(
             multiplayer_control_for(pause, true).unwrap().caption,
-            "Resuming..."
+            "VERA:Resuming"
         );
         pause.available = false;
         assert!(multiplayer_control_for(pause, true).is_none());
@@ -696,13 +703,13 @@ mod tests {
         let mut controls = InternetPauseControls::open(1, 3);
         // Unchanged values emit nothing and arm nothing.
         assert_eq!(
-            internet_resume(&controls, 1, 3, &mut limiters, 100),
+            internet_resume(&controls, 1, 3, &mut limiters, 100, false),
             InternetResume::default()
         );
         controls.set(InternetSlider::Connection, 3);
         controls.set(InternetSlider::Speed, 5);
         assert_eq!(
-            internet_resume(&controls, 1, 3, &mut limiters, 100),
+            internet_resume(&controls, 1, 3, &mut limiters, 100, false),
             InternetResume {
                 latency_fudge: Some(0),
                 game_speed: Some(1),
@@ -710,11 +717,31 @@ mod tests {
         );
         // Within 900 buckets both changes are refused.
         assert_eq!(
-            internet_resume(&controls, 2, 4, &mut limiters, 999),
+            internet_resume(&controls, 2, 4, &mut limiters, 999, false),
             InternetResume::default()
         );
         assert_eq!(
-            internet_resume(&controls, 2, 4, &mut limiters, 1000),
+            internet_resume(&controls, 2, 4, &mut limiters, 1000, false),
+            InternetResume {
+                latency_fudge: Some(0),
+                game_speed: Some(1),
+            }
+        );
+    }
+
+    #[test]
+    fn a_relay_paced_match_sends_neither_slider_event() {
+        let mut limiters = PauseEventLimiters::default();
+        let mut controls = InternetPauseControls::open(1, 3);
+        controls.set(InternetSlider::Connection, 3);
+        controls.set(InternetSlider::Speed, 5);
+        assert_eq!(
+            internet_resume(&controls, 1, 3, &mut limiters, 100, true),
+            InternetResume::default()
+        );
+        // Nothing was sent, so no limiter was armed.
+        assert_eq!(
+            internet_resume(&controls, 1, 3, &mut limiters, 101, false),
             InternetResume {
                 latency_fudge: Some(0),
                 game_speed: Some(1),

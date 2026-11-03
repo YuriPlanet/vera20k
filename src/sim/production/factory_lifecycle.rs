@@ -880,8 +880,8 @@ pub(super) fn record_last_built(
             ObjectCategory::Building => None,
         })
         .map(str::to_owned);
-    let type_index = rules
-        .type_array_index(category, interner.resolve(type_id))
+    let type_index = interner
+        .type_array_index(type_id, category, rules)
         .expect("a produced object belongs to its class Type registry");
     if let Some(house) = houses.get_mut(&owner) {
         house.record_built_type(category, type_index);

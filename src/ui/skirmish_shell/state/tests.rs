@@ -584,6 +584,33 @@ fn skirmish_status_help_includes_flag_and_right_panel_static_targets() {
 }
 
 #[test]
+fn a_downloaded_map_waits_for_ok_before_use_map_goes_on() {
+    let prompt = |kind| ChooseMapPrompt {
+        selection: ChooseMapSelection {
+            mode_id: 1,
+            record_index: Some(0),
+        },
+        pressed: None,
+        kind,
+    };
+    // VERA: the box says the map is saved and stays. OK, clicked or Enter,
+    // goes on with Use Map; Cancel or Escape keeps the chooser.
+    let downloaded = prompt(ChooseMapPromptKind::Downloaded);
+    assert!(downloaded.button_enabled(ChooseMapPromptButton::Ok));
+    assert_eq!(downloaded.answer(true), ChooseMapPromptAnswer::UseMap);
+    assert_eq!(downloaded.answer(false), ChooseMapPromptAnswer::Close);
+    // OK on a failed download tries again, and waits while one runs.
+    assert_eq!(
+        prompt(ChooseMapPromptKind::DownloadFailed).answer(true),
+        ChooseMapPromptAnswer::Download
+    );
+    assert_eq!(
+        prompt(ChooseMapPromptKind::Downloading).answer(true),
+        ChooseMapPromptAnswer::Wait
+    );
+}
+
+#[test]
 fn hovered_shell_control_blocks_parent_targets_when_modal_owns_input() {
     let layout = compute_layout(800, 600);
     let mut shell = controlled_country_shell();

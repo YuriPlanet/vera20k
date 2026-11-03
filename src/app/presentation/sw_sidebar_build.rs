@@ -55,14 +55,22 @@ pub(crate) fn build(
         out.chrome.push(sprite_art(entry, toggle, DEPTH_ART));
         // `ToggleSWButtonClass::Draw` outlines the hovered toggle too.
         if toggle.contains(cursor_x as f32, cursor_y as f32) {
-            push_outline(&mut out.hover, toggle, hover_tint);
+            crate::app::presentation::sidebar_build::push_rect_outline(
+                &mut out.hover,
+                toggle,
+                hover_tint,
+            );
         }
     }
     if !sw.expanded {
         return out;
     }
     if let Some(rect) = crate::app::presentation::sw_sidebar::hovered_entry_rect(state) {
-        push_outline(&mut out.hover, rect, hover_tint);
+        crate::app::presentation::sidebar_build::push_rect_outline(
+            &mut out.hover,
+            rect,
+            hover_tint,
+        );
     }
     if let Some(art) = art {
         let center_height = sw.ui.cameo_height.max(48) as f32;
@@ -220,29 +228,6 @@ pub(crate) fn build(
         }
     }
     out
-}
-
-/// `SWButtonClass::Draw`: a one-pixel `Drawing::Rect` in the tooltip colour
-/// around the hovered gadget.
-fn push_outline(out: &mut Vec<SpriteInstance>, rect: Rect, tint: [f32; 3]) {
-    let border = 1.0;
-    for (x, y, w, h) in [
-        (rect.x, rect.y, rect.w, border),
-        (rect.x, rect.y + rect.h - border, rect.w, border),
-        (rect.x, rect.y, border, rect.h),
-        (rect.x + rect.w - border, rect.y, border, rect.h),
-    ] {
-        out.push(SpriteInstance {
-            position: [x, y],
-            size: [w, h],
-            uv_origin: [0.0, 0.0],
-            uv_size: [1.0, 1.0],
-            depth: 0.00044,
-            tint,
-            alpha: 1.0,
-            ..Default::default()
-        });
-    }
 }
 
 fn readiness_text<'a>(

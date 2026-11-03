@@ -925,7 +925,7 @@ fn retail_bridge_repair_hut_area_hit_returns_before_the_techno_receiver() {
                 &rules,
                 &sim.interner,
                 &sim.houses,
-                sim.house_alliances.as_map(),
+                &sim.house_alliances,
                 false,
                 0,
                 None,
@@ -941,7 +941,7 @@ fn retail_bridge_repair_hut_area_hit_returns_before_the_techno_receiver() {
             &rules,
             &sim.interner,
             &sim.houses,
-            sim.house_alliances.as_map(),
+            &sim.house_alliances,
             false,
             0,
             None,
@@ -954,7 +954,7 @@ fn retail_bridge_repair_hut_area_hit_returns_before_the_techno_receiver() {
             &rules,
             &sim.interner,
             &sim.houses,
-            sim.house_alliances.as_map(),
+            &sim.house_alliances,
             false,
             0,
             None,
@@ -1687,8 +1687,10 @@ fn retail_berserk_gi_targets_its_own_house() {
     let ally = sim
         .spawn_object("E1", "Russians", 11, 10, 0, &rules)
         .unwrap();
-    let scan =
-        |sim: &mut Simulation, mask| sim.greatest_threat_represented(&rules, None, gi, mask, None);
+    let scan = |sim: &mut Simulation, mask| {
+        sim.greatest_threat_represented(&rules, None, gi, mask, None)
+            .and_then(crate::sim::combat::TargetKind::object_id)
+    };
     let masks = [ScanMission::Guard, ScanMission::Hunt];
     for mask in masks {
         assert_eq!(scan(&mut sim, mask), None, "calm, {mask:?}");
@@ -1736,8 +1738,10 @@ fn retail_gi_scan_asks_only_its_own_house_about_allies() {
             &rules,
         );
     };
-    let scan =
-        |sim: &mut Simulation, mask| sim.greatest_threat_represented(&rules, None, gi, mask, None);
+    let scan = |sim: &mut Simulation, mask| {
+        sim.greatest_threat_represented(&rules, None, gi, mask, None)
+            .and_then(crate::sim::combat::TargetKind::object_id)
+    };
     let masks = [ScanMission::Guard, ScanMission::Hunt];
     one_way(&mut sim, "Americans", "Russians");
     for mask in masks {
@@ -2806,7 +2810,7 @@ fn stock_sniper_damage_retaliation_uses_wall_context_before_sight_fallback() {
             world: &sim,
             rules,
             overlay_registry: Some(&registry),
-            fog: Some(sim.fog.fire_view(sim.house_alliances.as_map())),
+            fog: Some(sim.fog.fire_view(&sim.house_alliances)),
             firer: actor,
             obj: sniper,
             target: Some(TargetKind::Entity(source)),
@@ -6375,12 +6379,12 @@ fn gsi_08_01_a_shared_cell_offers_only_its_list_head() {
         crate::sim::combat::line_of_fire::LineOfFireInputs {
             overlay_grid: None,
             overlay_registry: None,
-            alliances: Some(&HouseAllianceMap::new()),
+            alliances: Some(&HouseAlliances::default()),
         },
         None,
         None,
     )
-    .target();
+    .object();
     assert!(
         pick == Some(20),
         "the cell's list head is the candidate, not the lower stable id"
@@ -6422,12 +6426,12 @@ fn mapless_guard_pick(shell: &str) -> Option<u64> {
         crate::sim::combat::line_of_fire::LineOfFireInputs {
             overlay_grid: None,
             overlay_registry: None,
-            alliances: Some(&HouseAllianceMap::new()),
+            alliances: Some(&HouseAlliances::default()),
         },
         None,
         None,
     )
-    .target()
+    .object()
 }
 
 /// Without resolved terrain the Guard scan's CanFireAt arm asks the shared
@@ -6469,12 +6473,12 @@ fn gsi_08_01_unarmed_building_loses_to_a_tank_at_equal_distance() {
         crate::sim::combat::line_of_fire::LineOfFireInputs {
             overlay_grid: None,
             overlay_registry: None,
-            alliances: Some(&HouseAllianceMap::new()),
+            alliances: Some(&HouseAlliances::default()),
         },
         None,
         None,
     )
-    .target();
+    .object();
     // Not a "threat class" tie-break — gamemd has none. `[GAPOWR]` carries no
     // weapon and `ThreatPosed=0`, so the human-attacker building gate at
     // `TechnoClass::Evaluate_Candidate @ 0x006F85AB` refuses it outright and

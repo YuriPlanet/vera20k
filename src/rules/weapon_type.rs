@@ -77,9 +77,11 @@ pub struct WeaponType {
     /// firer to a human victim (FireAt `0x006FF66C`). Retail turns it off on
     /// the sniper, Virus, disguise and Mirage weapons.
     pub reveal_on_fire: bool,
-    /// `TerrainFire=` (`+0x138`, default no): the weapon may fire at a
-    /// Terrain object unforced (`TechnoClass` vt+0x398, `0x0070EF00`).
-    /// Retail authors it only on the unused `TankMakeupKit`.
+    /// `TerrainFire=` (`+0x138`, default no): the weapon may fire unforced at
+    /// a Terrain object, an `IsARock=` overlay or a disguised object wearing
+    /// no house (`TechnoClass` vt+0x398, `0x0070EF00`,
+    /// `Simulation::fires_at_terrain`). Retail authors it only on the unused
+    /// `TankMakeupKit`.
     pub terrain_fire: bool,
     /// `DisguiseFireOnly=` (`+0x13B`, constructor default false at
     /// `WeaponTypeClass::Constructor @ 0x00771C70`); `ReadBool` is called by

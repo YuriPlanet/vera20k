@@ -1,8 +1,10 @@
 # Website downloads
 
-The release workflow builds and verifies three installers. After a stable release
-is published, `downloads.yml` runs `publish-r2.sh` to mirror those exact files to
-Cloudflare R2. It never rebuilds or uploads game data.
+The release workflow builds and verifies four installers: Windows, Linux and a
+Mac disk image each for Apple Silicon and Intel Macs (`macos-x64`, which
+releases before 0.2.4 lack). After a stable release is published,
+`downloads.yml` runs `publish-r2.sh` to mirror those exact files to Cloudflare
+R2. It never rebuilds or uploads game data.
 
 The publisher verifies the release tag, GitHub size/SHA-256 and the build
 attestation. It uploads immutable `releases/v<version>/<filename>` objects,
@@ -17,7 +19,7 @@ published, and none for a version mirrored before manifests had them.
 Finally it conditionally replaces `latest.json`, only if this is GitHub's
 latest stable release and the pointer would not move backward, unless it is
 stopping a bad release (below). `latest.json`
-holds the same bytes as the version's `manifest.json`, so the website's three
+holds the same bytes as the version's `manifest.json`, so the website's
 `/download/<platform>` routes read it unchanged.
 
 The game's updater (`src/app/updater`) reads `latest.json`, and installs a

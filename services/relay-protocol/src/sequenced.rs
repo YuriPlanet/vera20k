@@ -827,6 +827,8 @@ struct Pace {
     raise_wait: u64,
     // When a player last reported being behind or catching up.
     lagging_at: u64,
+    // Slowdowns the server has not yet counted for its journal report.
+    slowdowns: u32,
 }
 
 impl Pace {
@@ -909,6 +911,7 @@ impl OrderingRoom {
                 raised_at: None,
                 raise_wait: PACE_RAISE_MS,
                 lagging_at: 0,
+                slowdowns: 0,
             },
             head: 0,
             sealed: 0,
@@ -1070,13 +1073,14 @@ impl OrderingRoom {
         Ok(())
     }
 
-    /// Stores a player's pace report; `adjust_pace` acts on it.
+    /// Stores a player's pace report, which `adjust_pace` acts on, and
+    /// returns its pace.
     fn report_pace(
         &mut self,
         ticket: Ticket,
         payload: &[u8],
         now_ms: u64,
-    ) -> Result<(), RelayError> {
+    ) -> Result<OrderPace, RelayError> {
         let pace = match payload.get(1) {
             Some(0) => OrderPace::KeepingUp,
             Some(1) => OrderPace::Behind,
@@ -1092,7 +1096,7 @@ impl OrderingRoom {
             frames_per_second: u16::from_le_bytes([payload[2], payload[3]]),
             at_ms: now_ms,
         });
-        Ok(())
+        Ok(pace)
     }
 
     /// Slows the clock while a player reports it cannot keep up: to the
@@ -1176,6 +1180,7 @@ impl OrderingRoom {
             } else {
                 PACE_RAISE_MS
             };
+            pace.slowdowns += 1;
         }
         pace.rate = rate;
         pace.anchor = Some((self.head, now_ms));
@@ -2001,6 +2006,34 @@ mod tests {
         assert_eq!(ordering(&server).pace.rate, 30);
         server.advance_clock(150_000, unix(150_000));
         assert_eq!(ordering(&server).pace.rate, 45);
+    }
+
+    #[test]
+    fn the_journal_count_has_each_slowdown_once_and_no_speedup() {
+        use OrderPace::*;
+        let key = SecretKey::new([73; 32]);
+        let (mut server, mut first, mut second) = paced_room(&key);
+        pace_report(&mut server, &mut first, KeepingUp, 45, 1000);
+        pace_report(&mut server, &mut second, Behind, 40, 1000);
+        server.advance_clock(1000, unix(1000));
+        pace_report(&mut server, &mut second, KeepingUp, 30, 2000);
+        server.advance_clock(32_000, unix(32_000));
+        assert_eq!(ordering(&server).pace.rate, 45, "slowed, then sped up");
+        assert_eq!(server.take_pace_counts().slowdowns, 1);
+        assert_eq!(server.take_pace_counts().slowdowns, 0);
+    }
+
+    #[test]
+    fn the_journal_count_has_a_second_for_each_catching_up_or_behind_report() {
+        use OrderPace::*;
+        let key = SecretKey::new([73; 32]);
+        let (mut server, mut first, mut second) = paced_room(&key);
+        pace_report(&mut server, &mut first, KeepingUp, 45, 1000);
+        pace_report(&mut server, &mut second, CatchingUp, 44, 1000);
+        pace_report(&mut server, &mut second, Behind, 40, 2000);
+        pace_report(&mut server, &mut second, KeepingUp, 45, 3000);
+        assert_eq!(server.take_pace_counts().catching_up_s, 2);
+        assert_eq!(server.take_pace_counts().catching_up_s, 0);
     }
 
     /// Released clients cannot be changed, so a newer relay may only append
@@ -4349,6 +4382,8 @@ impl RelayServer {
             {
                 let before = ordering.memory();
                 ordering.advance(now_ms, room.federation.as_mut());
+                self.pace_counts.slowdowns +=
+                    u64::from(std::mem::take(&mut ordering.pace.slowdowns));
                 total = total
                     .saturating_sub(before)
                     .saturating_add(ordering.memory());
@@ -4425,6 +4460,7 @@ impl RelayServer {
         {
             let before = ordering.memory();
             ordering.advance(now_ms, room.federation.as_mut());
+            self.pace_counts.slowdowns += u64::from(std::mem::take(&mut ordering.pace.slowdowns));
             if ordering.memory() > before {
                 self.reserve_ordering(0);
             }
@@ -4477,8 +4513,10 @@ impl RelayServer {
                 .rooms
                 .get_mut(&message.ticket.room)
                 .ok_or(RelayError::Unregistered)?;
-            if let Some(ordering) = room.ordering.as_mut() {
-                ordering.report_pace(message.ticket, payload, now_ms)?;
+            if let Some(ordering) = room.ordering.as_mut()
+                && ordering.report_pace(message.ticket, payload, now_ms)? != OrderPace::KeepingUp
+            {
+                self.pace_counts.catching_up_s += 1;
             }
             return Ok(Vec::new());
         }

@@ -323,6 +323,12 @@ impl SavedSeedBrowserState<NativeFileName> {
 }
 
 impl<I> SavedSeedBrowserState<I> {
+    /// The name field's caret phase: one second on, one second off from the
+    /// browser's opening. The caret is drawn only while the field has focus.
+    pub fn caret_blink_on(&self) -> bool {
+        self.opened_at.elapsed().as_millis() % 2000 < 1000
+    }
+
     /// Raise a message box over the browser. It takes the edit focus and ends
     /// any held press or scroll repeat; its buttons own input until answered.
     pub fn show_prompt(&mut self, prompt: SavedSeedPrompt<I>) {

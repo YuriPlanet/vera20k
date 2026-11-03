@@ -311,7 +311,7 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 "util/config.rs",
                 "util/logging.rs",
                 // Switches that only remove debug assertions.
-                "sim/touch_log.rs",
+                "util/debug_checks.rs",
                 "sim/world/master_frame.rs",
                 // Retail probes that movement_bridge_retail_tests.rs includes
                 // by `#[path]`, which the test-gate scan cannot see.
@@ -331,6 +331,9 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 "map/rmg/saved_seeds.rs",
                 "map/scenario_sources.rs",
                 "map/source/cache.rs",
+                // A received map's case-folded name check; a file it finds is
+                // kept only when it holds the same verified bytes.
+                "map/source.rs",
             ],
         ),
         (
@@ -408,21 +411,21 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/team_script_vm/reinforcements.rs", 2),
                 ("sim/trigger_runtime.rs", 1),
                 ("sim/world/aircraft_fire_location.rs", 1),
-                ("sim/world/camera_home.rs", 1),
+                ("sim/world/camera_home.rs", 2),
                 ("sim/world/command_schedule.rs", 3),
                 ("sim/world/fog_objects.rs", 1),
                 ("sim/world/gap_generator.rs", 1),
                 ("sim/world/house_defeat.rs", 9),
                 ("sim/world/jumpjet_cruise.rs", 1),
                 ("sim/world/lifecycle.rs", 5),
-                ("sim/world/mod.rs", 6),
+                ("sim/world/mod.rs", 7),
                 ("sim/world/object_turn.rs", 1),
                 ("sim/world/planning.rs", 2),
                 ("sim/world/shroud_refresh.rs", 18),
                 ("sim/world/techno_ai.rs", 1),
                 ("sim/world/techno_ai/mission_handlers.rs", 1),
                 ("sim/world/techno_ai_cloak.rs", 3),
-                ("sim/world/world_commands.rs", 4),
+                ("sim/world/world_commands.rs", 6),
                 ("sim/world/world_orders.rs", 2),
                 ("sim/world/world_spawn.rs", 1),
                 ("sim/world/world_spawn/construction.rs", 1),
@@ -443,7 +446,11 @@ fn engine_per_client_reads_have_pinned_callers() {
         ),
         (
             "is_human_player",
-            &[("sim/world/crash.rs", 1), ("sim/world/world_orders.rs", 2)],
+            &[
+                ("sim/world/crash.rs", 1),
+                ("sim/world/mod.rs", 1),
+                ("sim/world/world_orders.rs", 2),
+            ],
         ),
         (
             "house_is_human_player",
@@ -479,9 +486,10 @@ fn engine_per_client_reads_have_pinned_callers() {
         (
             "owned_by_current_house",
             &[
-                ("sim/cloak_disguise.rs", 9),
-                ("sim/game_entity.rs", 2),
+                ("sim/cloak_disguise.rs", 13),
+                ("sim/game_entity.rs", 3),
                 ("sim/miner/ore_scan.rs", 1),
+                ("sim/world/camera_home.rs", 1),
                 ("sim/world/lifecycle.rs", 8),
                 ("sim/world/object_entry.rs", 1),
             ],
@@ -1654,6 +1662,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              through vt+0x38 (0x00540D10) only when its bool argument is set",
         ),
         (
+            "net/live_commands/sequenced.rs",
+            "set_presentation_hidden",
+            "whether the game window is hidden, reported by the app: a hidden window, which \
+             its system may throttle, never reports falling behind the relay's clock",
+        ),
+        (
             "net/reliable.rs",
             "set_timing",
             "Set_Timing (0x00540C60) stores the manager's +0x58..+0x60 and copies them into \
@@ -1825,6 +1839,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "sim/movement/teleport_movement.rs",
             "set_warping_in",
             "Techno+0x271, cleared by TimerCheck's expiry and state 7",
+        ),
+        (
+            "sim/object_fall.rs",
+            "set_attached_anim_flag",
+            "Object+84: SetOwnerObject 0x00424B50 sets it when an Anim attaches and the last \
+             detach (0x00424B79, 0x0042291A) clears it, both through anim_class",
         ),
         (
             "sim/object_fall.rs",

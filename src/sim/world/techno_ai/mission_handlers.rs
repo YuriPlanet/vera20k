@@ -362,7 +362,7 @@ pub(crate) fn dispatch_foot_mission(
             {
                 let _ = sim.assign_target_represented(
                     id,
-                    Some(crate::sim::combat::TargetKind::Entity(target)),
+                    Some(target),
                     rules,
                     ctx.overlay_registry,
                     ctx.effects,
@@ -1502,6 +1502,28 @@ fn hunt_scans(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
         .is_some_and(|obj| obj.stupid_hunt)
 }
 
+/// Whether `id`'s Hunt handler ([`evaluate_foot_hunt`]) reaches
+/// Greatest_Threat this frame as the world stands, for the batched target
+/// scans (`techno_ai::scan_batch`): its handler is due, it holds no target
+/// (Retaliate_And_Scan scans only then), its type scans ([`hunt_scans`]),
+/// it does not take the Unit deploy arm (`mcv_deploy::hunt_deploys`), and it
+/// is not a deployed infantryman: a computer house's undeploys, and a human
+/// house's, which scans, is left out with it. A held target the drop step
+/// would drop, and the computer capture arm, are not foreseen; those objects
+/// scan live, if at all.
+pub(super) fn foot_hunt_scans_ahead(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return false;
+    };
+    entity.mission.current().known() == Some(MissionType::Hunt)
+        && entity.attack_target.target().is_none()
+        && !entity.infantry_deploy_doing()
+        && foot_mission_handler_due(sim, id, sim.session.binary_frame())
+        && hunt_scans(sim, id, rules)
+        && !(entity.category() == EntityCategory::Unit
+            && crate::sim::mcv_deploy::hunt_deploys(sim, id, rules))
+}
+
 /// Mission_Hunt's infantry arms, for the target its scan installed. They draw
 /// nothing themselves; a Teleport man's destination setter draws for his spot
 /// in the cell (`place_infantry_in_native_cell`).
@@ -1729,7 +1751,7 @@ fn area_guard_post_off_building(sim: &mut Simulation, id: u64) {
     };
     let owner = entity.owner();
     if !crate::sim::combat::combat_weapon::is_ally_by_object(
-        Some(sim.house_alliances.as_map()),
+        Some(&sim.house_alliances),
         &sim.interner,
         owner,
         building_owner,
@@ -1900,7 +1922,7 @@ fn evaluate_foot_rescue(
             )
         });
         if let (Some(point), Some(pick)) = (point, pick)
-            && let Some(target) = coords(sim, crate::sim::combat::TargetKind::Entity(pick))
+            && let Some(target) = coords(sim, pick)
         {
             //1.5 is exact for the native integer range, so this signed
             //scaled comparison preserves its strict FCOMP result without
@@ -1909,7 +1931,7 @@ fn evaluate_foot_rescue(
             if i64::from(distance) * 2 < i64::from(foot_threat_range(sim, id, rules)) * 3 {
                 let _ = sim.assign_target_represented(
                     id,
-                    Some(crate::sim::combat::TargetKind::Entity(pick)),
+                    Some(pick),
                     rules,
                     ctx.overlay_registry,
                     ctx.effects,
@@ -1993,6 +2015,31 @@ fn area_guard_scan_point(
             .as_ref(),
     )?;
     Some([coord.x, coord.y, coord.z])
+}
+
+/// Where `id`'s Area Guard handler ([`evaluate_foot_area_guard`]) scans this
+/// frame as the world stands, for the batched target scans
+/// (`techno_ai::scan_batch`): its handler is due, it holds no target, it is
+/// not a deployed infantryman (whose Area Guard is the deploy shim's,
+/// `0x00521320`: its arms act or re-acquire in place), and
+/// [`area_guard_scan_point`] answers for its post. The heads that return
+/// before the scan, a post the handler archives at this run and a target the
+/// leash drops are not foreseen; those objects scan live, if at all.
+pub(super) fn foot_area_guard_scan_ahead(
+    sim: &Simulation,
+    id: u64,
+    rules: &RuleSet,
+) -> Option<[i32; 3]> {
+    let entity = sim.substrate.entities.get(id)?;
+    if entity.mission.current().known() != Some(MissionType::AreaGuard)
+        || entity.attack_target.target().is_some()
+        || entity.infantry_deploy_doing()
+        || entity.is_harvester()
+        || !foot_mission_handler_due(sim, id, sim.session.binary_frame())
+    {
+        return None;
+    }
+    area_guard_scan_point(sim, id, rules, entity.archive_target())
 }
 
 /// Smallest value of the Area Guard cadence jitter draw (`RandomRanged(1, 5)`).
@@ -2777,13 +2824,7 @@ fn infantry_deployed_attack_reacquire(
     // one was found. It writes no `+0x50C`, so the setter leaves the flag
     // clear.
     if had_target || pick.is_some() {
-        let _ = sim.assign_target_represented(
-            id,
-            pick.map(crate::sim::combat::TargetKind::Entity),
-            rules,
-            ctx.overlay_registry,
-            ctx.effects,
-        );
+        let _ = sim.assign_target_represented(id, pick, rules, ctx.overlay_registry, ctx.effects);
     }
     if pick.is_some() {
         return None;

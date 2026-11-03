@@ -1,32 +1,50 @@
-//! The window, taskbar and Dock icon: Red Alert 2's red star, from the retail install.
+//! The window, taskbar and Dock icon: Red Alert 2's red star, from the retail install,
+//! or VERA's own artwork when the player ticks the Options page's VERA Icon box.
 //!
 //! Not gamemd-derived. gamemd registers its own Yuri's Revenge icon for its window;
 //! the user chose the original Red Alert 2 game icon instead: the red star with the
 //! hammer and sickle built into RA2's `game.exe` (and `Ra2.exe`). The icon group is read
 //! out of the executable in the configured install at startup; without it the program's
 //! own icon stays, which the release packages take from the same group
-//! (`.github/release`).
+//! (`.github/release`). The VERA Icon box (`[VERA] VeraIcon=`) shows `vera_icon.png`
+//! instead, a 256 px copy of the VERA artwork jamesulip contributed; the packages keep
+//! the red star either way.
 
 use std::collections::HashMap;
 use std::path::Path;
 
-use winit::window::{Icon, WindowAttributes};
+use winit::window::{Icon, Window, WindowAttributes};
 
 /// Retail executables carrying the red star, in order of preference.
 const ICON_SOURCES: [&str; 2] = ["GAME.EXE", "RA2.EXE"];
 
-/// Red Alert 2's red star, loaded from the retail install.
-pub(super) struct RetailIcon {
-    /// The icon group as an `.ico` file. macOS takes every entry and picks its own
-    /// resolution.
+/// VERA's own artwork, the VERA Icon box's choice.
+const VERA_ICON_PNG: &[u8] = include_bytes!("vera_icon.png");
+
+/// The window, taskbar and Dock icon: Red Alert 2's red star or VERA's artwork.
+pub(super) struct WindowIcon {
+    /// The icon as an image file: the red star's icon group as an `.ico`, or
+    /// VERA's PNG. macOS takes every entry and picks its own resolution.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-    ico: Vec<u8>,
+    file: Vec<u8>,
     /// The largest entry, for winit's window icon (Windows and X11).
     rgba: image::RgbaImage,
 }
 
-impl RetailIcon {
-    pub(super) fn load(ra2_dir: &Path) -> Option<Self> {
+impl WindowIcon {
+    /// The icon the VERA Icon box picks: VERA's artwork when it is ticked,
+    /// otherwise the red star from the retail install at `ra2_dir`.
+    pub(super) fn chosen(vera_icon: bool, ra2_dir: Option<&Path>) -> Option<Self> {
+        if !vera_icon {
+            return ra2_dir.and_then(Self::retail);
+        }
+        Self::decode(VERA_ICON_PNG.to_vec(), image::ImageFormat::Png)
+            .inspect_err(|err| log::warn!("VERA icon unreadable: {err}"))
+            .ok()
+    }
+
+    /// Red Alert 2's red star, loaded from the retail install.
+    fn retail(ra2_dir: &Path) -> Option<Self> {
         for name in ICON_SOURCES {
             let Some(path) = crate::util::case_insensitive_path::find(ra2_dir, name) else {
                 continue;
@@ -38,7 +56,7 @@ impl RetailIcon {
                 log::warn!("No icon found in {}", path.display());
                 continue;
             };
-            match Self::decode(ico) {
+            match Self::decode(ico, image::ImageFormat::Ico) {
                 Ok(icon) => return Some(icon),
                 Err(err) => log::warn!("Icon in {} unreadable: {err}", path.display()),
             }
@@ -46,25 +64,27 @@ impl RetailIcon {
         None
     }
 
-    fn decode(ico: Vec<u8>) -> image::ImageResult<Self> {
+    fn decode(file: Vec<u8>, format: image::ImageFormat) -> image::ImageResult<Self> {
         // The ICO decoder selects the file's largest entry.
-        let rgba = image::load_from_memory_with_format(&ico, image::ImageFormat::Ico)?.into_rgba8();
-        Ok(Self { ico, rgba })
+        let rgba = image::load_from_memory_with_format(&file, format)?.into_rgba8();
+        Ok(Self { file, rgba })
+    }
+
+    fn icon(&self) -> Option<Icon> {
+        Icon::from_rgba(
+            self.rgba.as_raw().clone(),
+            self.rgba.width(),
+            self.rgba.height(),
+        )
+        .inspect_err(|err| log::warn!("Window icon rejected: {err}"))
+        .ok()
     }
 
     /// The window icon, and on Windows the taskbar icon. winit ignores both on
     /// macOS; see [`Self::set_dock_icon`].
     pub(super) fn apply(&self, attributes: WindowAttributes) -> WindowAttributes {
-        let icon = match Icon::from_rgba(
-            self.rgba.as_raw().clone(),
-            self.rgba.width(),
-            self.rgba.height(),
-        ) {
-            Ok(icon) => icon,
-            Err(err) => {
-                log::warn!("Window icon rejected: {err}");
-                return attributes;
-            }
+        let Some(icon) = self.icon() else {
+            return attributes;
         };
         #[cfg(windows)]
         let attributes = {
@@ -72,6 +92,21 @@ impl RetailIcon {
             attributes.with_taskbar_icon(Some(icon.clone()))
         };
         attributes.with_window_icon(Some(icon))
+    }
+
+    /// [`Self::apply`] and [`Self::set_dock_icon`] for a window that is already
+    /// open: the VERA Icon box changes the icon at once.
+    pub(super) fn show_on(&self, window: &Window) {
+        if let Some(icon) = self.icon() {
+            #[cfg(windows)]
+            {
+                use winit::platform::windows::WindowExtWindows;
+                window.set_taskbar_icon(Some(icon.clone()));
+            }
+            window.set_window_icon(Some(icon));
+        }
+        #[cfg(target_os = "macos")]
+        self.set_dock_icon();
     }
 
     /// macOS has no per-window icon: the Dock and app switcher show the
@@ -86,7 +121,7 @@ impl RetailIcon {
             log::warn!("Dock icon not set: not on the main thread");
             return;
         };
-        let data = NSData::with_bytes(&self.ico);
+        let data = NSData::with_bytes(&self.file);
         let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) else {
             log::warn!("Dock icon not set: AppKit could not read the icon");
             return;
@@ -387,12 +422,14 @@ mod tests {
         );
         let ico = executable_icon(&exe).unwrap();
         assert_eq!(u16_at(&ico, 4), Some(2));
-        let icon = RetailIcon::decode(ico).unwrap();
+        let icon = WindowIcon::decode(ico, image::ImageFormat::Ico).unwrap();
         assert_eq!(icon.rgba.dimensions(), (48, 48));
     }
 
+    /// Unticked, the VERA Icon box shows the install's red star, whatever the
+    /// executable's case; ticked, VERA's bundled artwork, which needs no install.
     #[test]
-    fn load_finds_the_executable_whatever_its_case() {
+    fn the_vera_box_picks_the_bundled_art_over_the_installed_red_star() {
         let dir = std::env::temp_dir().join(format!("vera20k-window-icon-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
@@ -401,17 +438,27 @@ mod tests {
         )
         .unwrap();
 
-        let icon = RetailIcon::load(&dir);
+        let star = WindowIcon::chosen(false, Some(&dir));
+        let vera = WindowIcon::chosen(true, Some(&dir));
 
         std::fs::remove_dir_all(&dir).unwrap();
-        assert_eq!(icon.map(|icon| icon.rgba.dimensions()), Some((32, 32)));
+        assert_eq!(star.map(|icon| icon.rgba.dimensions()), Some((32, 32)));
+        let vera = vera.expect("the bundled PNG decodes").rgba;
+        assert_eq!(vera.dimensions(), (256, 256));
+        assert_eq!(vera.get_pixel(0, 0)[3], 0, "transparent outside the tile");
+        assert_eq!(vera.get_pixel(128, 128)[3], 255, "opaque tile");
+        assert!(
+            WindowIcon::chosen(true, None).is_some(),
+            "no install needed"
+        );
+        assert!(WindowIcon::chosen(false, None).is_none());
     }
 
     #[test]
     #[ignore = "requires RA2_DIR with the retail Red Alert 2 install"]
     fn retail_game_exe_yields_the_red_star() {
         let dir = std::env::var("RA2_DIR").expect("set RA2_DIR to the retail RA2 install");
-        let icon = RetailIcon::load(Path::new(&dir)).expect("game.exe carries an icon");
+        let icon = WindowIcon::retail(Path::new(&dir)).expect("game.exe carries an icon");
         // Sizes differ between installs (the development install's game.exe holds a
         // 512×512 PNG in a 256-pixel slot), so check only for a sane square icon.
         let (width, height) = icon.rgba.dimensions();

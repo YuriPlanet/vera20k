@@ -465,7 +465,7 @@ impl Simulation {
                             EntityCategory::Unit | EntityCategory::Infantry
                         )
                         && !crate::sim::combat::combat_weapon::is_ally_by_object(
-                            Some(self.house_alliances.as_map()),
+                            Some(&self.house_alliances),
                             &self.interner,
                             owner,
                             e.owner(),

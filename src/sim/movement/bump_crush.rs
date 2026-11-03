@@ -557,9 +557,8 @@ impl CrushTarget {
 /// `UnitClass::Death_Explosion` with its Scenario picks and anims, then the
 /// same release), `Record_The_Kill` (score, trigger events, EVA and the
 /// crusher's veterancy, which this engine now pays), then unmark, limbo and
-/// `UnInit`; no smudge. `Simulation::per_cell_process` runs them, except that
-/// the captive release waits for the victim's UnInit (residual in
-/// `sim::capture_manager`).
+/// `UnInit`; no smudge. `Simulation::per_cell_process` runs them in that
+/// order, the captive release included.
 ///
 /// GSI-08.17 named two more gaps underneath it.
 /// - **Overlay crushing — CLOSED.** `Per_Cell_Process @ 0x0073AFD4` flattens any
@@ -571,10 +570,9 @@ impl CrushTarget {
 ///   This block previously described the rule correctly while listing it as
 ///   open, and the gate it describes was for a while implemented as a Drive
 ///   locomotor test instead.
-/// - **Mind-control release.** A crushed controller frees its captives in its
-///   UnInit (`FootClass::UnInit @ 0x004DE5DD`) later in the same frame, not
-///   inside vt+0x170 before Record_The_Kill (residual in
-///   `sim::capture_manager`).
+/// - **Mind-control release — CLOSED.** A crushed controller frees its
+///   captives inside vt+0x170, before Record_The_Kill
+///   (`Simulation::free_all_captures` in `per_cell_process`).
 pub fn can_crush(
     capability: CrushCapability,
     target: CrushTarget,
@@ -659,7 +657,7 @@ pub fn select_crush_victims(
     occ: &[u64],
     entities: &EntityStore,
     crusher_id: u64,
-    alliances: &crate::map::houses::HouseAllianceMap,
+    alliances: &crate::sim::house_diplomacy::HouseAlliances,
     interner: &crate::sim::intern::StringInterner,
     crusher_coord: (i32, i32),
     capability: CrushCapability,

@@ -319,7 +319,7 @@ fn facts(input: &Value) -> FireFacts {
             chrono_warp_latch: flag(&t["chrono_warp_latch"]),
             bunkered: flag(&t["bunkered"]),
             sinking: flag(&t["sinking"]),
-            docked: flag(&t["docked"]),
+            tethered: flag(&t["docked"]),
             health: crate::sim::combat::Health::new(int(&t["health"])),
             parasite_lock_until: int(&t["parasite_lock_until"]),
             deploying: flag(&t["deploying"]) || flag(&t["undeploying"]),

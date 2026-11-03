@@ -550,13 +550,13 @@ fn render_skirmish_shell_with_atlas(
         .map(|_| body_ok_layout(state.render_width() as i32, state.render_height() as i32));
     // `ShellMessageBox__Run` draws the empty backdrop before its box
     // (`0x005D3514`): while a box is up the dialog behind does not show.
-    let eject_prompt = state
+    let message_box = state
         .frontend
         .skirmish_shell_state
         .choose_map_modal
         .as_ref()
-        .and_then(|modal| modal.eject_prompt);
-    let message_box_up = validation_layout.is_some() || eject_prompt.is_some();
+        .and_then(|modal| modal.message_box);
+    let message_box_up = validation_layout.is_some() || message_box.is_some();
     let action = SkirmishShellAction::None;
 
     let Some(atlas) = atlas else {
@@ -708,8 +708,14 @@ fn render_skirmish_shell_with_atlas(
                 validation_ok_pressed,
             );
         }
-        if let Some(prompt) = eject_prompt {
-            push_eject_box_instances(&mut instances, atlas, layout.screen, prompt);
+        if let Some(prompt) = message_box {
+            push_choose_map_prompt_instances(
+                &mut instances,
+                atlas,
+                layout.screen,
+                prompt,
+                crate::app::map_library::download_progress(state),
+            );
         }
         instances
     } else {
@@ -803,8 +809,8 @@ fn render_skirmish_shell_with_atlas(
             ));
         }
     }
-    if let Some(prompt) = eject_prompt {
-        text::push_choose_map_eject_prompt_text(&mut shell_draws, state, &prompt);
+    if let Some(prompt) = message_box {
+        text::push_choose_map_prompt_text(&mut shell_draws, state, &prompt);
     }
     if let Some(validation_layout) = validation_layout.as_ref() {
         push_validation_modal_text_draws(

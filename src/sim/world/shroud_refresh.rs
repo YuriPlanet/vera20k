@@ -10,9 +10,106 @@ use crate::sim::intern::InternedId;
 use crate::sim::vision::FogState;
 use crate::sim::{pathfinding::PathGrid, vision};
 
+/// Within one `HouseClass::Computer_Paranoid @ 0x00501640` call, the maps
+/// whose alliance walks may still change something.
+///
+/// Paranoid runs a Make_Ally or Make_Enemy bracket for each pair of live
+/// Houses, and each bracket walks every Techno for every map twice (Map4ADEE0
+/// before the write, Map4ADCD0 after). Between brackets only the alliance
+/// graph changes, and one map's walks read and write only that map's state
+/// and the alliances into it ([`vision::reveal_admits`], the gap gate). So
+/// once a bracket leaves a map as it was, with no cell notification, every
+/// later bracket leaves it so until an alliance into it changes. Each
+/// bracket therefore walks only the maps the last one changed and those
+/// whose alliances it changes, journaling ([`vision::FogState::journal`])
+/// which of them its walks change; every map ends as native leaves it. A
+/// bracket walks every map when the last one left no such record (a call's
+/// first bracket, or one after a write beyond the maps), when one of its
+/// maps hears cell notifications, or when its live tail may assign targets.
+///
+/// Off the map, the walks' lookups stamp the shared Dummy cell
+/// (`NativeCellQuery::lookup`), and a skipped walk stamps nothing. So while
+/// something retains the Dummy ([`Simulation::shared_cell_dummy_retained`]),
+/// every bracket walks every map. Otherwise the Dummy's coordinate may end
+/// where native's does not, and nothing reads it.
+///
+/// A bracket that walks every map right after one that journaled every map
+/// leaves that journal unused. After such a miss, the brackets that walk
+/// every map skip the journal: one after the first miss, twice as many after
+/// each next, until a bracket walks fewer maps again. This bounds the
+/// journal's cost where the maps never settle, as under a computer's
+/// `RevealToAll=` building.
+#[derive(Debug, Default)]
+pub(crate) struct ParanoidMaps {
+    /// The maps the last bracket changed or whose alliances it changed;
+    /// `None` until a journaled bracket shows which, or after one that wrote
+    /// beyond the maps.
+    unsettled: Option<std::collections::BTreeSet<InternedId>>,
+    /// Whether something retains the shared Dummy cell, once a journaled
+    /// bracket asks; `None` again after a bracket that may change it.
+    dummy_retained: Option<bool>,
+    /// Whether the last bracket journaled every map.
+    learning: bool,
+    /// How many more brackets that walk every map skip the journal.
+    pause: u32,
+    /// Unused journals since a bracket last walked fewer maps.
+    misses: u32,
+}
+
+impl ParanoidMaps {
+    /// A bracket walks fewer maps than every map.
+    fn restrict(&mut self) {
+        self.learning = false;
+        self.misses = 0;
+    }
+
+    /// A bracket walks every map; whether it journals them.
+    fn walk_every_map(&mut self, quiet: bool) -> bool {
+        if std::mem::take(&mut self.learning) {
+            // The last bracket's journal went unused.
+            self.pause = 1 << self.misses.min(16);
+            self.misses += 1;
+        }
+        if self.pause > 0 {
+            self.pause -= 1;
+            return false;
+        }
+        self.learning = quiet;
+        quiet
+    }
+}
+
+/// How one alliance bracket walks ([`Simulation::open_alliance_walks`]).
+pub(crate) struct AllianceWalks {
+    /// The maps both walks visit, in House order; `None` for every map.
+    maps: Option<Vec<InternedId>>,
+    /// Whether the walks' fog writes are journaled.
+    journaled: bool,
+    /// The maps whose alliance reads the bracket's write changes.
+    edge_maps: std::collections::BTreeSet<InternedId>,
+}
+
+impl AllianceWalks {
+    /// No map can change: neither walk runs.
+    fn skipped(&self) -> bool {
+        self.maps.as_ref().is_some_and(Vec::is_empty)
+    }
+}
+
 #[cfg(test)]
 #[path = "shroud_refresh_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "paranoid_walks_tests.rs"]
+mod paranoid_walks_tests;
+
+#[cfg(test)]
+thread_local! {
+    /// Tests turn this on to walk every map in every alliance bracket, the
+    /// reference [`ParanoidMaps`]' walks must match.
+    static WALK_EVERY_MAP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
 
 #[cfg(test)]
 #[path = "reveal_to_all_tests.rs"]
@@ -901,6 +998,8 @@ impl Simulation {
         fresh: bool,
         context: UninitContext<'_>,
     ) {
+        // Its receivers reach state beyond the viewer's map.
+        self.fog.note_shared_write();
         #[cfg(test)]
         {
             let receiver = FIRST_CELL_RECEIVER.with_borrow_mut(Option::take);
@@ -1273,11 +1372,8 @@ impl Simulation {
                     && only_viewer
                         .or(self.session.current_house())
                         .is_some_and(|viewer| {
-                            crate::map::houses::is_allied_with(
-                                self.house_alliances.as_map(),
-                                self.interner.resolve(entity.owner()),
-                                self.interner.resolve(viewer),
-                            )
+                            self.house_alliances
+                                .is_allied(&self.interner, entity.owner(), viewer)
                         })
                 {
                     Some((reveal_fog, false))
@@ -1547,7 +1643,7 @@ impl Simulation {
         // call the SAME live4ADEE0/4ADCD0 visitors as diplomacy. Source:
         // original gamemd instructions. Each visitor snapshots its count,
         // then reloads the next Techno slot after synchronous callbacks.
-        self.walk_map_sight(context, true, Some(owner), false);
+        self.walk_map_sight(context, true, Some(&[owner]), false);
         // Native initializes578350's allocated cursor AFTER pre-release.
         // These scalar cell stores dispatch no occupied-object callbacks.
         let cells = if self.reset_allocated_map_cell_cursor() {
@@ -1563,7 +1659,7 @@ impl Simulation {
             )
         };
         self.fog.store_map_transition(owner, cells, transition);
-        self.walk_map_sight(context, false, Some(owner), false);
+        self.walk_map_sight(context, false, Some(&[owner]), false);
         if reset {
             //577B8B/577D72 clear240 AFTER post-admission and nested Tags.
             self.fog.invalidate_whole_map_reveal_for_owner(owner);
@@ -1787,13 +1883,7 @@ impl Simulation {
             .iter()
             .copied()
             .filter(|&viewer| {
-                vision::reveal_admits(
-                    self.house_alliances.as_map(),
-                    owner,
-                    viewer,
-                    config,
-                    &self.interner,
-                )
+                vision::reveal_admits(&self.house_alliances, owner, viewer, config, &self.interner)
             })
             .collect();
         // Register each accepted map contribution before walking any cells.
@@ -1882,7 +1972,7 @@ impl Simulation {
                 continue;
             };
             if !vision::reveal_admits(
-                self.house_alliances.as_map(),
+                &self.house_alliances,
                 source.owner,
                 viewer,
                 config,
@@ -2405,7 +2495,7 @@ impl Simulation {
             && entity.category() == EntityCategory::Structure
             && entity.owner() != viewer
             && vision::reveal_admits(
-                self.house_alliances.as_map(),
+                &self.house_alliances,
                 entity.owner(),
                 viewer,
                 config,
@@ -2426,6 +2516,107 @@ impl Simulation {
         self.walk_map_sight(context, false, None, false);
     }
 
+    /// A live diplomacy write's Map4ADEE0, before the write: as
+    /// [`Self::release_alliance_sight`], or within a Paranoid call
+    /// (`paranoid`) only on the maps that may change ([`ParanoidMaps`]).
+    /// `edge_maps` are the maps whose alliance reads the write changes;
+    /// `quiet` says nothing the bracket runs between its walks writes what
+    /// they read, but the alliance graph. [`Self::close_alliance_walks`]
+    /// runs the matching Map4ADCD0.
+    pub(crate) fn open_alliance_walks(
+        &mut self,
+        paranoid: Option<&mut ParanoidMaps>,
+        edge_maps: std::collections::BTreeSet<InternedId>,
+        quiet: bool,
+        context: UninitContext<'_>,
+    ) -> AllianceWalks {
+        let mut walks = AllianceWalks {
+            maps: None,
+            journaled: false,
+            edge_maps,
+        };
+        #[cfg(test)]
+        let paranoid = paranoid.filter(|_| !WALK_EVERY_MAP.get());
+        // A bracket inside a journaled one (a notification's trigger) walks
+        // every map into the outer journal.
+        if let Some(paranoid) = paranoid.filter(|_| !self.fog.journaling()) {
+            let walked = |house: &InternedId| {
+                paranoid
+                    .unsettled
+                    .as_ref()
+                    .is_some_and(|unsettled| unsettled.contains(house))
+                    || walks.edge_maps.contains(house)
+            };
+            // A map that hears cell notifications hands them to receivers
+            // beyond the maps: walk every map with it.
+            if quiet
+                && paranoid.unsettled.is_some()
+                && !self.fog_clients_current_first().iter().any(walked)
+            {
+                let maps: Vec<_> = self.houses.order().iter().copied().filter(walked).collect();
+                walks.journaled = !maps.is_empty();
+                walks.maps = Some(maps);
+                paranoid.restrict();
+            } else {
+                walks.journaled = paranoid.walk_every_map(quiet);
+            }
+        }
+        if walks.journaled {
+            self.fog.journal();
+        }
+        if !walks.skipped() {
+            self.walk_map_sight(context, true, walks.maps.as_deref(), false);
+        }
+        walks
+    }
+
+    /// The Map4ADCD0 after a live diplomacy write, on the maps
+    /// [`Self::open_alliance_walks`] chose; within a Paranoid call it then
+    /// records which maps may still change.
+    pub(crate) fn close_alliance_walks(
+        &mut self,
+        walks: AllianceWalks,
+        paranoid: Option<&mut ParanoidMaps>,
+        context: UninitContext<'_>,
+    ) {
+        if walks.skipped() {
+            debug_assert!(walks.edge_maps.is_empty(), "an edge's map is walked");
+            return;
+        }
+        self.walk_map_sight(context, false, walks.maps.as_deref(), false);
+        let outcome = walks.journaled.then(|| {
+            let entities = &self.substrate.entities;
+            let outcome = self.fog.end_journal(|id, viewer| {
+                let deposit = entities.get(id)?.gap_generator.viewers().get(&viewer)?;
+                Some((deposit.active(), deposit.radius()))
+            });
+            if let Some(maps) = &walks.maps {
+                debug_assert!(
+                    outcome.written.iter().all(|viewer| maps.contains(viewer)),
+                    "walks on some maps wrote another"
+                );
+            }
+            outcome
+        });
+        let Some(paranoid) = paranoid else {
+            return;
+        };
+        paranoid.unsettled = None;
+        // A live tail or a write beyond the maps may change what retains
+        // the Dummy.
+        let Some(outcome) = outcome.filter(|outcome| !outcome.shared) else {
+            paranoid.dummy_retained = None;
+            return;
+        };
+        if !*paranoid
+            .dummy_retained
+            .get_or_insert_with(|| self.shared_cell_dummy_retained())
+        {
+            // The next bracket changes these maps' walks: their edges changed.
+            paranoid.unsettled = Some(outcome.changed.into_iter().chain(walks.edge_maps).collect());
+        }
+    }
+
     /// Fill_In_Data684F89 -> Map4ADCD0(1,0), before the first Logic frame.
     /// The native process stores its current player's map. VERA stores every
     /// House's map, so LAN/WOL runs this same owner for each human viewpoint
@@ -2434,7 +2625,7 @@ impl Simulation {
     pub(crate) fn initialize_scenario_sight(&mut self, context: UninitContext<'_>) {
         let viewers = self.represented_player_maps();
         for viewer in viewers {
-            self.walk_map_sight(context, false, Some(viewer), true);
+            self.walk_map_sight(context, false, Some(&[viewer]), true);
         }
     }
 
@@ -2459,7 +2650,7 @@ impl Simulation {
                 .get_mut(&owner)
                 .is_some_and(|house| house.take_initial_sight_refresh())
         {
-            self.walk_map_sight(context, false, Some(owner), false);
+            self.walk_map_sight(context, false, Some(&[owner]), false);
         }
     }
 
@@ -2475,22 +2666,34 @@ impl Simulation {
     /// `0x0070AF50`/`0x0070B1D0`; the House gate at `0x00567AB0..0x00567B12`
     /// independently decides whether that client's map receives the walk.
     /// Whole-map reveal/reshroud and live diplomacy share this visitor.
+    ///
+    /// It visits every House's map in House order, or `only_viewers`' maps
+    /// in their order. Each map's callbacks read and write only that map
+    /// ([`ParanoidMaps`]), so leaving maps out changes nothing on the rest.
     fn walk_map_sight(
         &mut self,
         context: UninitContext<'_>,
         release: bool,
-        only_viewer: Option<InternedId>,
+        only_viewers: Option<&[InternedId]>,
         skip_buildings: bool,
     ) {
         let count = self.substrate.entities.techno_registry_len();
-        let viewers =
-            only_viewer.map_or_else(|| self.houses.order().to_vec(), |viewer| vec![viewer]);
+        let viewers = only_viewers.map_or_else(|| self.houses.order().to_vec(), <[_]>::to_vec);
         let clients = self.fog_clients_current_first();
         let config = self.sight_reveal_config(context.rules());
+        let network = self.session.game_mode().is_network();
         // Map4ADEE0/4ADCD0 retain registration and viewer order. Scratch is
         // local to this invocation: callbacks may reenter the same walk.
+        // Followups name viewers by their index in `viewers`.
+        enum Followup {
+            SightAndGap(usize),
+            AlliedSight(usize),
+            RevealToAll(usize),
+            /// Consecutive viewers that take only the gap callbacks.
+            Gaps(std::ops::Range<usize>),
+        }
         let mut callback_viewers = Vec::with_capacity(viewers.len());
-        let mut followups = Vec::with_capacity(viewers.len());
+        let mut followups: Vec<Followup> = Vec::with_capacity(viewers.len());
         for ordinal in 0..count {
             let Some(id) = self.substrate.entities.techno_registry_at(ordinal) else {
                 break;
@@ -2499,55 +2702,79 @@ impl Simulation {
             // Keep the branch chosen for THIS receiver across its callbacks
             // (4ADD4C..4ADDA1,4ADDE4..4ADE21). Reload the next receiver at
             // the next ordinal, not this object's eligibility mid-branch.
-            enum Followup {
-                SightAndGap,
-                AlliedSight,
-                RevealToAll,
-                Gap,
-            }
+            // Nothing writes while the branches are chosen, so the receiver
+            // is read once for all viewers.
             callback_viewers.clear();
             followups.clear();
-            for &viewer in &viewers {
-                let Some(entity) = self.substrate.entities.get(id) else {
-                    break;
-                };
-                if !Self::in_ally_bracket_walk(entity)
-                    || (skip_buildings && entity.category() == EntityCategory::Structure)
-                {
-                    break;
-                }
-                let human = if self.session.game_mode().is_network() {
-                    entity.owner() == viewer
-                        && self
-                            .houses
-                            .get(&viewer)
-                            .is_some_and(|house| house.is_human())
-                } else {
-                    Some(viewer) == current && self.house_is_human_player(entity.owner())
-                };
-                if human && !self.techno_discovered_by_viewer(id, viewer) {
-                    continue;
-                }
-                let allied = !human && self.takes_allied_building_arm(entity, viewer, &config);
-                let followup = if human || allied {
-                    callback_viewers.push(viewer);
-                    if allied {
-                        Followup::AlliedSight
-                    } else {
-                        Followup::SightAndGap
+            let Some(entity) = self.substrate.entities.get(id) else {
+                continue;
+            };
+            let structure = entity.category() == EntityCategory::Structure;
+            if !Self::in_ally_bracket_walk(entity) || (skip_buildings && structure) {
+                continue;
+            }
+            // House50B6F0 and41B give the Human arm to one map at most: in
+            // LAN/WOL the owner's own when it is human, else the current
+            // player's when it counts the owner a human player.
+            let owner = entity.owner();
+            let human_viewer = if network {
+                Some(owner)
+                    .filter(|owner| self.houses.get(owner).is_some_and(|house| house.is_human()))
+            } else {
+                current.filter(|_| self.house_is_human_player(owner))
+            }
+            .and_then(|human| viewers.iter().position(|&viewer| viewer == human));
+            // An undiscovered receiver takes nothing on the Human map.
+            let human_viewer = human_viewer
+                .map(|index| (index, self.techno_discovered_by_viewer(id, viewers[index])));
+            if structure {
+                let mut reveal_to_all = None;
+                for (index, &viewer) in viewers.iter().enumerate() {
+                    let human = human_viewer.is_some_and(|(human, _)| human == index);
+                    if human_viewer == Some((index, false)) {
+                        continue;
                     }
-                } else if !release
-                    && clients.contains(&viewer)
-                    && entity.category() == EntityCategory::Structure
-                    && self
-                        .object_type(entity.type_ref(), context.rules())
-                        .is_some_and(|object| object.reveal_to_all)
-                {
-                    Followup::RevealToAll
-                } else {
-                    Followup::Gap
-                };
-                followups.push((viewer, followup));
+                    let allied = !human && self.takes_allied_building_arm(entity, viewer, &config);
+                    let followup = if human || allied {
+                        callback_viewers.push(viewer);
+                        if allied {
+                            Followup::AlliedSight(index)
+                        } else {
+                            Followup::SightAndGap(index)
+                        }
+                    } else if !release
+                        && clients.contains(&viewer)
+                        && *reveal_to_all.get_or_insert_with(|| {
+                            self.object_type(entity.type_ref(), context.rules())
+                                .is_some_and(|object| object.reveal_to_all)
+                        })
+                    {
+                        Followup::RevealToAll(index)
+                    } else {
+                        match followups.last_mut() {
+                            Some(Followup::Gaps(gaps)) if gaps.end == index => {
+                                gaps.end += 1;
+                                continue;
+                            }
+                            _ => Followup::Gaps(index..index + 1),
+                        }
+                    };
+                    followups.push(followup);
+                }
+            } else {
+                // Only a Building takes the allied-Building arm or4ADE68's
+                // RevealToAll, so every other map takes the gap callbacks.
+                match human_viewer {
+                    Some((index, discovered)) => {
+                        followups.push(Followup::Gaps(0..index));
+                        if discovered {
+                            callback_viewers.push(viewers[index]);
+                            followups.push(Followup::SightAndGap(index));
+                        }
+                        followups.push(Followup::Gaps(index + 1..viewers.len()));
+                    }
+                    None => followups.push(Followup::Gaps(0..viewers.len())),
+                }
             }
             // One UpdateReveal per native receiver, with each logical client's
             // source state installed before any RevealArea can reenter.
@@ -2572,29 +2799,35 @@ impl Simulation {
                     );
                 }
             }
-            for (viewer, followup) in followups.drain(..) {
+            for followup in followups.drain(..) {
                 match followup {
-                    Followup::SightAndGap | Followup::AlliedSight => {
+                    Followup::SightAndGap(index) | Followup::AlliedSight(index) => {
+                        let viewer = viewers[index];
                         if !release {
                             self.refresh_object_sight_border_on(id, Some(viewer), context);
                         }
-                        if matches!(followup, Followup::AlliedSight) {
-                            //4ADFBF/4ADE21 skip the gap callbacks.
-                            continue;
+                        //4ADFBF/4ADE21 skip the gap callbacks after allied sight.
+                        if matches!(followup, Followup::SightAndGap(_)) {
+                            self.refresh_map_callback_gap(id, viewer, !release, context.rules());
                         }
                     }
-                    Followup::RevealToAll => {
+                    Followup::RevealToAll(index) => {
                         //4ADE68 has no matching pre-release; each call counts
                         //again on this logical client's PlayerPtr map.
+                        let viewer = viewers[index];
                         self.reveal_sight_for_house(id, viewer, context);
                         self.refresh_object_sight_border_on(id, Some(viewer), context);
-                        continue;
                     }
-                    Followup::Gap => {}
+                    // Native rereads the TYPE after sight/border callbacks
+                    // before virtual418/414; shared gap ownership retains that
+                    // decision.
+                    Followup::Gaps(gaps) => self.refresh_map_callback_gaps(
+                        id,
+                        &viewers[gaps],
+                        !release,
+                        context.rules(),
+                    ),
                 }
-                // Native rereads the TYPE after sight/border callbacks before
-                // virtual418/414; shared gap ownership retains that decision.
-                self.refresh_map_callback_gap(id, viewer, !release, context.rules());
             }
         }
     }

@@ -110,7 +110,6 @@ fn tube_hierarchy_restore_prepares_detached_dummy_then_publishes_terminal_fields
     let sidebar = crate::sim::snapshot::SavedSidebarOrder::new(
         missing_owner,
         std::array::from_fn(|_| Vec::new()),
-        [0; 4],
     );
     let failing_bytes = GameSnapshot::save_validated_with_presentation(
         &failing,

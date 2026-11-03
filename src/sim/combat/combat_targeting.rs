@@ -38,12 +38,12 @@ use super::combat_weapon::{
 };
 use super::threat_range::{self, ScanMission};
 use crate::map::entities::EntityCategory;
-use crate::map::houses::HouseAllianceMap;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
+use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::vision::FogState;
 use crate::util::fixed_math::SimFixed;
@@ -197,7 +197,7 @@ pub(crate) fn calculate_ai_threat_score(
     rules: &RuleSet,
     interner: &StringInterner,
     terrain: Option<&ResolvedTerrainGrid>,
-    alliances: Option<&HouseAllianceMap>,
+    alliances: Option<&HouseAlliances>,
     scorer_enemy_house: Option<crate::sim::intern::InternedId>,
 ) -> Option<MaskedX87Value> {
     let scorer = entities.get(scorer_id)?;
@@ -235,7 +235,7 @@ pub(crate) fn retaliation_weapon_index(
     source_type: &ObjectType,
 ) -> i32 {
     let allied = is_ally_by_object(
-        Some(world.house_alliances.as_map()),
+        Some(&world.house_alliances),
         &world.interner,
         victim.owner(),
         source.owner(),
@@ -333,7 +333,7 @@ pub(crate) fn should_retaliate(
     // `0x00708880`: the owner's one-way alliance with the source's house;
     // `0x00708899`: the source is disguised to the owner (vt+0xC8).
     let allied = is_ally_by_object(
-        Some(world.house_alliances.as_map()),
+        Some(&world.house_alliances),
         interner,
         victim.owner(),
         source.owner(),
@@ -342,7 +342,7 @@ pub(crate) fn should_retaliate(
         || source.is_disguised_to(
             victim.owner(),
             Some(&world.fog),
-            Some(world.house_alliances.as_map()),
+            Some(&world.house_alliances),
             interner,
         )
     {
@@ -355,7 +355,7 @@ pub(crate) fn should_retaliate(
         world,
         rules,
         overlay_registry: None,
-        fog: Some(world.fog.fire_view(world.house_alliances.as_map())),
+        fog: Some(world.fog.fire_view(&world.house_alliances)),
         firer: victim,
         obj: victim_type,
         target: Some(TargetKind::Entity(source_id)),
@@ -447,7 +447,7 @@ pub(crate) fn should_retaliate(
                 rules,
                 interner,
                 world.resolved_terrain.as_ref(),
-                Some(world.house_alliances.as_map()),
+                Some(&world.house_alliances),
                 victim_enemy,
             ),
             calculate_ai_threat_score(
@@ -457,7 +457,7 @@ pub(crate) fn should_retaliate(
                 rules,
                 interner,
                 world.resolved_terrain.as_ref(),
-                Some(world.house_alliances.as_map()),
+                Some(&world.house_alliances),
                 victim_enemy,
             ),
         )

@@ -54,6 +54,10 @@ const CHECKPOINT_CAMPAIGN_0X94_ENTRY_PREFIX: &str = "campaign-0x94-entry-tick-";
 const CHECKPOINT_CAMPAIGN_ALL1_LOADING_FIRST: &str = "campaign-all1-loading-first-frame";
 const CHECKPOINT_CAMPAIGN_SOV1_LOADING_FIRST: &str = "campaign-sov1-loading-first-frame";
 const CHECKPOINT_CAMPAIGN_ALL1_FIRST_LIVE: &str = "campaign-all1-first-live-frame";
+/// `campaign-trigger-trace-<MAP>-tick-<N>[-push-<X>-<Y>]`: a retail mission
+/// run to tick N, recording every trigger Spring. Without `-push` there is no
+/// player input; with it the player's armed units attack-move toward Cell X,Y.
+const CHECKPOINT_CAMPAIGN_TRIGGER_TRACE_PREFIX: &str = "campaign-trigger-trace-";
 const CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE: &str = "campaign-sov1-first-live-frame";
 const CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN: &str = "campaign-all1-abort-return";
 const CHECKPOINT_CAMPAIGN_SOV1_ABORT_RETURN: &str = "campaign-sov1-abort-return";
@@ -329,7 +333,7 @@ pub enum ShellCaptureCheckpoint {
     Skirmish0x105ListOpen,
     /// Use Map on `0x105` asks to eject AI players; the answer's dialog
     /// settles (`CHECKPOINT_SKIRMISH_0X105_EJECT_*`).
-    Skirmish0x105Eject(crate::ui::skirmish_shell::EjectPromptButton),
+    Skirmish0x105Eject(crate::ui::skirmish_shell::ChooseMapPromptButton),
     /// The same route's eject box, unanswered.
     Skirmish0x105EjectBox,
     /// Choose Map `0x6B` settled after Skirmish's Choose Map.
@@ -438,6 +442,38 @@ impl ShellCaptureCheckpoint {
             return Ok(Self::CampaignOpening(movies::OpeningTarget::SovietGroups(
                 tick,
             )));
+        }
+        if let Some(rest) = value.strip_prefix(CHECKPOINT_CAMPAIGN_TRIGGER_TRACE_PREFIX) {
+            let (map, tick) = rest
+                .split_once("-tick-")
+                .context("trigger trace checkpoint is <MAP>-tick-<N>")?;
+            let scenario = *movies::RETAIL_CAMPAIGN_MAPS
+                .iter()
+                .find(|name| name.strip_suffix(".MAP").unwrap().eq_ignore_ascii_case(map))
+                .with_context(|| format!("{map:?} is not a retail campaign map"))?;
+            let (tick, push) = match tick.split_once("-push-") {
+                Some((tick, cell)) => {
+                    let (x, y) = cell
+                        .split_once('-')
+                        .context("trigger trace push is -push-<X>-<Y>")?;
+                    let x: u16 = x.parse().context("trigger trace push X")?;
+                    let y: u16 = y.parse().context("trigger trace push Y")?;
+                    (tick, Some((x, y)))
+                }
+                None => (tick, None),
+            };
+            let tick: u64 = tick
+                .parse()
+                .context("trigger trace tick is not an integer")?;
+            ensure!(
+                (1..=30000).contains(&tick),
+                "trigger trace tick must be 1..=30000"
+            );
+            return Ok(Self::CampaignOpening(movies::OpeningTarget::TriggerTrace {
+                scenario,
+                tick,
+                push,
+            }));
         }
         if let Some(tick) = value.strip_prefix("campaign-sov02-fortresses-tick-") {
             let tick: u64 = tick
@@ -562,10 +598,10 @@ impl ShellCaptureCheckpoint {
                 Ok(Self::Skirmish0x105SeedBrowserReturn)
             }
             CHECKPOINT_SKIRMISH_0X105_EJECT_CANCEL => Ok(Self::Skirmish0x105Eject(
-                crate::ui::skirmish_shell::EjectPromptButton::Cancel,
+                crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel,
             )),
             CHECKPOINT_SKIRMISH_0X105_EJECT_OK => Ok(Self::Skirmish0x105Eject(
-                crate::ui::skirmish_shell::EjectPromptButton::Ok,
+                crate::ui::skirmish_shell::ChooseMapPromptButton::Ok,
             )),
             CHECKPOINT_SKIRMISH_0X102_CHOOSE_MAP_RETURN => Ok(Self::Skirmish0x102ChooseMapReturn),
             CHECKPOINT_SKIRMISH_START_BLANK => Ok(Self::SkirmishStartBlank),
@@ -898,6 +934,9 @@ impl ShellCaptureCheckpoint {
             Self::CampaignOpening(movies::OpeningTarget::SovietFortresses(_)) => {
                 "campaign-sov02-fortresses-tick"
             }
+            Self::CampaignOpening(movies::OpeningTarget::TriggerTrace { .. }) => {
+                "campaign-trigger-trace"
+            }
             Self::CampaignOpening(movies::OpeningTarget::TimerRunning) => {
                 "campaign-sov1-opening-timer-running"
             }
@@ -958,10 +997,10 @@ impl ShellCaptureCheckpoint {
             Self::Skirmish0x105SeedBrowserReturn => CHECKPOINT_SKIRMISH_0X105_SEED_BROWSER_RETURN,
             Self::Skirmish0x105ListOpen => CHECKPOINT_SKIRMISH_0X105_LIST_OPEN,
             Self::Skirmish0x105EjectBox => CHECKPOINT_SKIRMISH_0X105_EJECT_BOX,
-            Self::Skirmish0x105Eject(crate::ui::skirmish_shell::EjectPromptButton::Cancel) => {
+            Self::Skirmish0x105Eject(crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel) => {
                 CHECKPOINT_SKIRMISH_0X105_EJECT_CANCEL
             }
-            Self::Skirmish0x105Eject(crate::ui::skirmish_shell::EjectPromptButton::Ok) => {
+            Self::Skirmish0x105Eject(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok) => {
                 CHECKPOINT_SKIRMISH_0X105_EJECT_OK
             }
             Self::Skirmish0x6BSteady => CHECKPOINT_SKIRMISH_0X6B_STEADY,
@@ -2463,6 +2502,14 @@ impl ShellCaptureSession {
             .is_some_and(|capture| capture.owns_simulation_steps(state))
     }
 
+    /// The live LAN and online battle observers check every committed frame,
+    /// so the runtime runs one frame per render for them.
+    pub(crate) fn observes_every_frame(&self) -> bool {
+        self.movies
+            .as_ref()
+            .is_some_and(|capture| capture.observes_every_frame())
+    }
+
     pub(crate) fn prepare_state(&mut self, state: &mut AppState) {
         state.match_state.input.cursor_x = self.request.cursor_x as f32;
         state.match_state.input.cursor_y = self.request.cursor_y as f32;
@@ -2493,7 +2540,8 @@ impl ShellCaptureSession {
                 ShellCaptureCheckpoint::CampaignOpening(
                     movies::OpeningTarget::SovietTick(tick)
                     | movies::OpeningTarget::SovietNavy(tick)
-                    | movies::OpeningTarget::SovietFortresses(tick),
+                    | movies::OpeningTarget::SovietFortresses(tick)
+                    | movies::OpeningTarget::TriggerTrace { tick, .. },
                 ) => MAX_CAPTURE_FRAMES + tick as u32,
                 _ => MAX_CAPTURE_FRAMES,
             };
@@ -4497,6 +4545,57 @@ mod tests {
             "campaign-sov07-groups-tick-10001",
             "campaign-sov02-fortresses-tick-300",
             "campaign-sov02-fortresses-tick-10001",
+        ] {
+            assert!(ShellCaptureCheckpoint::parse(invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn trigger_trace_checkpoint_selects_the_named_retail_mission_and_its_side() {
+        use crate::ui::campaign_shell::CampaignSide;
+        for (name, side, scenario, tick, push) in [
+            (
+                "campaign-trigger-trace-all04dmd-tick-9000",
+                CampaignSide::Allied,
+                "ALL04DMD.MAP",
+                9000,
+                None,
+            ),
+            (
+                "campaign-trigger-trace-SOV07TMD-tick-1",
+                CampaignSide::Soviet,
+                "SOV07TMD.MAP",
+                1,
+                None,
+            ),
+            (
+                "campaign-trigger-trace-ALL02UMD-tick-18000-push-83-88",
+                CampaignSide::Allied,
+                "ALL02UMD.MAP",
+                18000,
+                Some((83, 88)),
+            ),
+        ] {
+            let target = movies::OpeningTarget::TriggerTrace {
+                scenario,
+                tick,
+                push,
+            };
+            assert_eq!(
+                ShellCaptureCheckpoint::parse(name).unwrap().movies_target(),
+                Some(movies::MoviesTarget::CampaignStart {
+                    side,
+                    target: movies::CampaignStartTarget::Opening(target),
+                })
+            );
+        }
+        for invalid in [
+            "campaign-trigger-trace-ALL08UMD-tick-100",
+            "campaign-trigger-trace-ALL01UMD-tick-0",
+            "campaign-trigger-trace-ALL01UMD-tick-30001",
+            "campaign-trigger-trace-ALL01UMD",
+            "campaign-trigger-trace-ALL01UMD-tick-100-push-5",
+            "campaign-trigger-trace-ALL01UMD-tick-100-push--1-5",
         ] {
             assert!(ShellCaptureCheckpoint::parse(invalid).is_err());
         }

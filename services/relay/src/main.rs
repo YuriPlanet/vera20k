@@ -6,7 +6,9 @@ use std::net::{SocketAddr, UdpSocket};
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use vera20k_relay_protocol::{ForwardDatagram, MAX_DATAGRAM, RelayError, RelayServer, SecretKey};
+use vera20k_relay_protocol::{
+    ForwardDatagram, MAX_DATAGRAM, PaceCounts, RelayError, RelayServer, SecretKey,
+};
 
 /// Aggregate operational counts only. No request, endpoint, room identity,
 /// authentication material or error body enters the relay's journal.
@@ -42,9 +44,11 @@ impl TrafficCounts {
         *count += 1;
     }
 
-    fn report(&self, seconds: u64, rooms: usize) {
+    fn report(&self, seconds: u64, rooms: usize, pace: PaceCounts) {
         eprintln!(
-            "VERA20k relay interval_s={seconds} rooms={rooms} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={}",
+            "VERA20k relay interval_s={seconds} rooms={rooms} slowdowns={} catching_up_s={} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={}",
+            pace.slowdowns,
+            pace.catching_up_s,
             self.received,
             self.forwarded,
             self.send_errors,
@@ -106,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let elapsed = reported_at.elapsed().as_secs();
         if elapsed >= 60 {
-            counts.report(elapsed, server.room_count());
+            counts.report(elapsed, server.room_count(), server.take_pace_counts());
             counts = TrafficCounts::default();
             reported_at = Instant::now();
         }

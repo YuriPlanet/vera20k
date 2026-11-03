@@ -238,7 +238,7 @@ fn infantry_prepared_load_preserves_death_sequence_progress_and_cleanup_visit() 
     }
 }
 
-fn death_load_world(rules: &RuleSet) -> (Simulation, ResolvedTerrainGrid) {
+pub(super) fn death_load_world(rules: &RuleSet) -> (Simulation, ResolvedTerrainGrid) {
     let terrain = ResolvedTerrainGrid::from_cells(
         4,
         4,

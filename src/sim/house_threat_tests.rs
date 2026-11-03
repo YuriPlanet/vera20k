@@ -415,3 +415,50 @@ fn large_map_house_threat_keeps_high_coordinate_kernel_and_cleanup() {
     loaded.register(HouseState::new(late, 0, None, false, 0, 10));
     assert_eq!(loaded[&late].spatial_threat_at((642, 559)).unwrap(), 0);
 }
+
+/// Cell481870's receivers ask their own masks, one way
+/// (the index overload `HouseClass::IsAlliedWith @ 0x004F9A10`, called at
+/// `0x004818B7`), as the graph answers by name:
+/// Russians counts Americans an ally but not the reverse, no mask names
+/// Other, and Late counts Russians an ally but is interned after the ally
+/// matrix is built. Each grid holds exactly the kernels of the sources its
+/// House does not count allies.
+#[test]
+fn threat_receivers_ask_their_own_ally_masks() {
+    let mut interner = StringInterner::default();
+    let [americans, russians, other] =
+        ["Americans", "Russians", "Other"].map(|name| interner.intern(name));
+    let mut houses = Houses::default();
+    for owner in [americans, russians, other] {
+        houses.register(HouseState::new(owner, 0, None, false, 0, 10));
+    }
+    let alliances = HouseAlliances::new(crate::map::houses::HouseAllianceMap::from([
+        ("RUSSIANS".to_string(), ["AMERICANS".to_string()].into()),
+        ("LATE".to_string(), ["RUSSIANS".to_string()].into()),
+    ]));
+    let (west, east) = ((13, 15), (21, 15));
+    Simulation::cell_update_spatial_threat(&interner, &alliances, &mut houses, americans, west, 7);
+    let late = interner.intern("Late");
+    houses.register(HouseState::new(late, 0, None, false, 0, 10));
+    Simulation::cell_update_spatial_threat(&interner, &alliances, &mut houses, russians, east, 7);
+    let kernels = |cells: &[(i16, i16)]| {
+        let mut grid = HouseSpatialThreat::default();
+        for &cell in cells {
+            grid.adjust(cell, 7).unwrap();
+        }
+        grid
+    };
+    for (owner, sources) in [
+        (americans, &[east][..]),
+        (russians, &[]),
+        (other, &[west, east]),
+        (late, &[]),
+    ] {
+        assert_eq!(
+            houses[&owner].spatial_threat_values(),
+            kernels(sources).values(),
+            "{}",
+            interner.resolve(owner)
+        );
+    }
+}

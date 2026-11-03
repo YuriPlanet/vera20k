@@ -52,6 +52,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The next battle frame lays out and draws the sidebar at this size.
         self.persistence.options_profile.sidebar = size;
     }
+    fn store_health_bars(&mut self, mode: crate::ui::main_menu_dialogs::options::HealthBarMode) {
+        // Presentation reads it every frame, so the next frame draws the new
+        // strip policy; Options' accept writes it out.
+        self.persistence.options_profile.health_bars = mode;
+    }
     fn set_display(&mut self, display: crate::ui::main_menu_dialogs::options::DisplayTarget) {
         // Applied at once, like Full Screen: the window moves to the picked
         // screen (or back to the system's choice) before the page is accepted.
@@ -82,6 +87,22 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // Read once at the next launch; Options' accept writes it out.
         self.persistence.options_profile.skip_startup_logo = skip;
     }
+    fn store_custom_end_game_banner(&mut self, enabled: bool) {
+        // Read when a match result is admitted: the verdict's picture and its
+        // music are chosen together, so a match already on screen keeps what it
+        // started with and the next one obeys the box.
+        self.persistence.options_profile.custom_end_game_banner = enabled;
+    }
+    fn store_custom_end_game_score(&mut self, enabled: bool) {
+        // Same moment as the verdict: the model that becomes the score page is
+        // built once, when the match ends.
+        self.persistence.options_profile.custom_end_game_score = enabled;
+    }
+    fn store_custom_end_game_movie(&mut self, enabled: bool) {
+        // Read when a match ends; a teardown already waiting for a clip keeps
+        // waiting, so the switch never cuts a line that is halfway said.
+        self.persistence.options_profile.custom_end_game_movie = enabled;
+    }
     fn store_shift_queue(&mut self, shift_queue: bool) {
         // The next cameo press reads it; Options' accept writes it out.
         self.persistence.options_profile.shift_queue = shift_queue;
@@ -98,6 +119,26 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         self.persistence.options_profile.lock_cursor = locked;
         self.platform.cursor_confined = locked;
         crate::app::input::cursor::apply_cursor_confinement(self);
+    }
+    fn store_vera_icon(&mut self, vera_icon: bool) {
+        // Saved, and shown at once. Unticked in an install without the red
+        // star, the window keeps VERA's icon until the next launch, which
+        // starts with the program's own.
+        self.persistence.options_profile.vera_icon = vera_icon;
+        if self.platform.window.is_visible() == Some(false) {
+            return;
+        }
+        let ra2_dir = self
+            .platform
+            .game_config
+            .as_ref()
+            .map(|config| config.paths.ra2_dir.as_path());
+        if let Some(icon) = crate::app::window_icon::WindowIcon::chosen(vera_icon, ra2_dir) {
+            icon.show_on(&self.platform.window);
+        }
+    }
+    fn store_right_click_orders(&mut self, enabled: bool) {
+        self.persistence.options_profile.right_click_orders = enabled;
     }
     fn store_mouse_wheel_zoom(&mut self, enabled: bool) {
         self.persistence.options_profile.mouse_wheel_zoom = enabled;
@@ -540,6 +581,32 @@ impl App {
             ]
             .map(|key| resolve_csf(state, key).into_owned()),
         };
+        // A rules set may name its own picture for this country
+        // (`[EndGameScreens]`). A name the install cannot open is not fatal:
+        // the side's own picture is still a correct score page, and the model
+        // then names no card, so the page keeps the retail paint order.
+        let mut model = model;
+        if let Some(background) = model.background.as_ref()
+            && !state
+                .process_assets
+                .manager()
+                .is_some_and(|assets| assets.contains(&background.shape))
+        {
+            log::warn!(
+                "[EndGameScreens] {} is not installed; the side's score art stays",
+                background.shape
+            );
+            model.background = None;
+        }
+        // The side's own name table still supplies what the override leaves
+        // out: an art with no palette keeps the side's.
+        let mut art = state.process_assets.side_score_art(model.side);
+        if let Some(background) = model.background.as_ref() {
+            art.multiplayer_background = Some(background.shape.as_str());
+            if let Some(palette) = background.palette.as_deref() {
+                art.multiplayer_palette = Some(palette);
+            }
+        }
         state.frontend.score_art = state.process_assets.manager().and_then(|assets| {
             crate::render::main_menu_shell_chrome::build_score_art(
                 &state.renderer.gpu,
@@ -547,7 +614,7 @@ impl App {
                 assets,
                 model.side,
                 crate::app::frontend::shell_layout::art_key_screen_width(state),
-                state.process_assets.side_score_art(model.side),
+                art,
             )
         });
         state.frontend.campaign_score_page = None;
@@ -990,6 +1057,20 @@ impl App {
             state.frontend.scenario_catalog.shell_maps(),
             &state.frontend.skirmish_modes,
         );
+        // VERA: a saved index on an Online row (the list grew since it was
+        // saved) names no file here. It moves to the first local map; with none,
+        // it goes past the end, which Start reports as no selected map.
+        let shell = &mut state.frontend.skirmish_shell_state;
+        let catalog = &state.frontend.scenario_catalog;
+        if catalog
+            .records()
+            .get(shell.selected_map_idx)
+            .is_some_and(|record| record.is_online())
+        {
+            shell.selected_map_idx = catalog
+                .first_local_index()
+                .unwrap_or(catalog.records().len());
+        }
         crate::ui::skirmish_shell::repair_teams_for_selected_mode(
             &mut state.frontend.skirmish_shell_state,
             &state.frontend.skirmish_modes,
@@ -1796,7 +1877,11 @@ impl App {
         ) {
             return;
         }
-        if state.frontend.shell_route.wol_visit() {
+        // WOL_Main's mode loop runs the whole online visit, its game rooms
+        // included, so the lobby music keeps playing there; only leaving the
+        // visit returns to PrepareSession's INTRO (0x0052E28E). VERA's room
+        // uses the NetworkSetup route, so ask for the visit, not the route.
+        if state.frontend.wol.is_some() {
             return;
         }
         if let Some(assets) = state.process_assets.manager() {
@@ -2099,10 +2184,10 @@ mod status_error_tests {
     #[test]
     fn the_game_files_card_gives_this_platforms_advice_and_real_paths() {
         let files = StartupFiles {
-            config_file: Some("/home/player/.local/share/VERA20k/config.toml".into()),
+            config_file: Some("~/.local/share/VERA20k/config.toml".into()),
             problem: None,
         };
-        let log = Path::new("/home/player/.local/share/VERA20k/logs/ra2.log");
+        let log = Path::new("~/.local/share/VERA20k/logs/ra2.log");
         let (title, text) =
             shell_error_card(CardHost::Unix, &files, false, None, Some(log), "missing");
         assert_eq!(title, "Game files not found");

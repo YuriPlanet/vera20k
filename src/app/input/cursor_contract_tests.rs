@@ -36,6 +36,43 @@ fn reveal_rows(sim: &mut Simulation, owner: crate::sim::intern::InternedId, rows
     );
 }
 
+/// Techno700609 rejects berserk before Ctrl's Attack rung; Infantry51FADD
+/// then answers NoMove.
+#[test]
+fn retail_berserk_infantry_ctrl_ground_shows_no_move() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut sim = arena(rules);
+    let gi = sim
+        .spawn_object("E1", "Americans", 12, 10, 0, rules)
+        .unwrap();
+    sim.entities_mut_for_test()
+        .get_mut(gi)
+        .unwrap()
+        .berserk
+        .set_active_for_test(true);
+    let selected = [gi];
+    let query = ActionQuery {
+        sim: &sim,
+        rules: Some(rules),
+        overlays: None,
+        viewer: sim.session().current_house(),
+        selected: &selected,
+        modifier: OrderModifier::ForceFire,
+        force_move_key: false,
+        order_mode: crate::app::types::OrderMode::Move,
+        planning: false,
+        mouse_over: true,
+        full_visibility: true,
+    };
+    assert_eq!(
+        query.selection_action((12, 12), None),
+        Some(CursorFeedbackKind::Invalid)
+    );
+}
+
 #[cfg(feature = "ares")]
 #[test]
 fn ares_vehicle_capture_cursor_shares_manual_action_and_preserves_shift_selection() {

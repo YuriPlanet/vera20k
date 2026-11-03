@@ -63,6 +63,7 @@ mod initialize;
 pub(crate) mod input;
 pub(crate) mod lan_service;
 pub(crate) mod loading;
+pub(crate) mod map_library;
 pub(crate) mod match_audio;
 pub mod match_bootstrap;
 pub(crate) mod match_diagnostics;
@@ -297,6 +298,15 @@ impl App {
             (None, Some(session)) => session.take_outcome(),
             (None, None) => Ok(()),
             (Some(_), Some(_)) => anyhow::bail!("multiple capture modes were active"),
+        }
+    }
+
+    /// Save the running match's diagnostic replay once a panic has ended the
+    /// event loop. Every other way out saves it in `exiting`, which a panic
+    /// skips. The panic hook has already written the log and `except.txt`.
+    pub fn save_replay_after_panic(&mut self) {
+        if let Some(state) = self.state.as_mut() {
+            crate::app::match_runtime::sim_tick::flush_replay_log(state);
         }
     }
 }

@@ -5,6 +5,7 @@
 //! `wol`; every shared helper branches on GameMode like the native ones.
 
 mod actions;
+pub(crate) mod bans;
 pub(crate) mod agreement;
 mod cooperative;
 pub(crate) use cooperative::{
@@ -647,13 +648,24 @@ fn open_service_lobby(state: &mut AppState, dialog: SetupDialog) {
     }
 }
 
+fn abandon_host_setup(state: &mut AppState, dialog: SetupDialog) {
+    if dialog.wol() {
+        crate::app::shell_wol::lobby::host_setup_left(state);
+    }
+    open_service_lobby(state, dialog);
+}
+
 impl App {
     /// BC/C2 creation: restore the service's own setup profile. LAN BC then
     /// consumes Main -> CRT seed initialization at005DEC3B..5C; C2 draws no
     /// RNG (no 65C7E0/7CB49D/7CB4AA callee in 0078F7F0). Assignment still
     /// uses the retained Scenario cursor; gameplay reseeds both streams later
     /// at0052E619.
-    pub(crate) fn open_host_setup(state: &mut AppState, observe: bool) {
+    ///
+    /// Returns whether the setup opened. VERA: map archives are optional, so a
+    /// catalog can have no eligible map; a WOL host then leaves the channel it
+    /// just created.
+    pub(crate) fn open_host_setup(state: &mut AppState, observe: bool) -> bool {
         let dialog = SetupDialog {
             host: true,
             ..dialog(state)
@@ -689,8 +701,8 @@ impl App {
             Ok(value) => value,
             Err(error) => {
                 log::error!("Could not restore network setup: {error:#}");
-                open_service_lobby(state, dialog);
-                return;
+                abandon_host_setup(state, dialog);
+                return false;
             }
         };
         if let Err(error) = install_setup(
@@ -701,8 +713,8 @@ impl App {
             Some(if observe { 0 } else { 7 }),
         ) {
             log::error!("Could not admit local network setup: {error:#}");
-            open_service_lobby(state, dialog);
-            return;
+            abandon_host_setup(state, dialog);
+            return false;
         }
         // The WOL C2's own +20/+18 calls (0x791293, 0x7912A3) belong to a
         // later chain; LAN BC runs them here.
@@ -730,6 +742,7 @@ impl App {
             .session
             .set_network_player_ready(0, true)
             .expect("BC owns the local host node");
+        true
     }
 
     /// Packet7 closes BB before full host options arrive. Retained options
@@ -1124,6 +1137,42 @@ fn leave_setup(state: &mut AppState) -> SetupDialog {
     }
     state.match_state.session.return_to_network_lobby();
     dialog
+}
+
+/// VERA asks first: a guest's online room offers its map before the
+/// transfer downloads it (`shell_wol::live_service::maps`).
+pub(crate) fn offer_missing_map(state: &mut AppState, name: String, message: String) {
+    if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+        ui.map_offer = Some(crate::ui::multiplayer_setup::MapOffer {
+            name,
+            message,
+            downloading: false,
+            opened: Instant::now(),
+        });
+        // The offer takes the pointer from a row's open list too.
+        ui.cancel_pointer();
+        ui.popup.close();
+    }
+    state.platform.window.request_redraw();
+}
+
+/// The offer's map arrived, changed, or its transfer ended.
+pub(crate) fn close_missing_map_offer(state: &mut AppState) {
+    if let Some(ui) = state.frontend.multiplayer_setup.as_mut()
+        && ui.map_offer.take().is_some()
+    {
+        state.platform.window.request_redraw();
+    }
+}
+
+/// Whether the player pressed Download; the offer then shows the download.
+pub(crate) fn missing_map_download_agreed(state: &AppState) -> bool {
+    state
+        .frontend
+        .multiplayer_setup
+        .as_ref()
+        .and_then(|ui| ui.map_offer.as_ref())
+        .is_some_and(|offer| offer.downloading)
 }
 
 /// The shared CE owner admitted its OK/default key.

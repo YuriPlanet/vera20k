@@ -123,6 +123,10 @@ impl<T: Copy> NativeHeap<T> {
     /// only when it costs strictly less) and testing it against the item
     /// moves to the same child: the chosen child costs no more than the
     /// other, so it costs less than the item whenever native moves.
+    ///
+    /// The choice is made without a branch, which the costs of a search's
+    /// open list would mispredict. For a parent with only a left child both
+    /// choices are that child.
     fn sift_down(&mut self, less: &impl Fn(&T, &T) -> bool) {
         let Some(&item) = self.slots.first() else {
             return;
@@ -134,12 +138,12 @@ impl<T: Copy> NativeHeap<T> {
             if left >= len {
                 break;
             }
-            let right = left + 1;
-            let child = if right < len && less(&self.slots[right], &self.slots[left]) {
-                right
-            } else {
-                left
-            };
+            let right = (left + 1).min(len - 1);
+            let child = std::hint::select_unpredictable(
+                less(&self.slots[right], &self.slots[left]),
+                right,
+                left,
+            );
             if !less(&self.slots[child], &item) {
                 break;
             }
@@ -188,6 +192,18 @@ mod tests {
         assert_eq!(heap.first(), Some(&(4, 9)));
         assert_eq!(heap.replace_first((5, 8), less), (4, 9));
         assert_eq!(heap.first(), Some(&(4, 1)));
+    }
+
+    /// A last parent with only a left child sifts into it when it is
+    /// cheaper, and between tied children the item takes the left one.
+    #[test]
+    fn a_sift_takes_a_lone_left_child_and_the_left_of_tied_children() {
+        let mut heap = NativeHeap::from_native_slots(vec![(1, 0), (3, 1), (6, 2), (4, 3)], 9);
+        assert_eq!(heap.replace_first((7, 9), less), (1, 0));
+        assert_eq!(heap.as_slice(), [(3, 1), (4, 3), (6, 2), (7, 9)]);
+        let mut heap = NativeHeap::from_native_slots(vec![(1, 0), (5, 1), (5, 2)], 9);
+        assert_eq!(heap.replace_first((7, 9), less), (1, 0));
+        assert_eq!(heap.as_slice(), [(5, 1), (7, 9), (5, 2)]);
     }
 
     #[test]

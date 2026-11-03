@@ -143,10 +143,13 @@ Command & Conquer и Red Alert под GPL, World-Altering Editor, Final Alert, Y
 Phobos и многим другим.
 
 © 2026 Halvor Nikolai Rusten и участники проекта VERA20K.
-Проект распространяется под лицензией [GPLv3](LICENSE-GPL). В этом репозитории нет файлов игры.
+Проект распространяется под лицензией [GPLv3](LICENSE-GPL) с [дополнительными условиями](LEGAL.md#additional-terms).
+В этом репозитории нет файлов игры.
 Command & Conquer и Red Alert — товарные знаки Electronic Arts Inc., а на скриншотах и значке
 приложения (красной звезде из Red Alert 2) показана игровая графика, принадлежащая Electronic Arts.
 VERA20K не связан с Electronic Arts и не одобрен компанией.
+
+**Прочитай [юридическое уведомление](LEGAL.md), прежде чем распространять, продавать или форкать VERA20K.**
 
 ## Документация
 

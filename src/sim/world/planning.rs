@@ -480,12 +480,11 @@ impl Simulation {
 
     pub(crate) fn validate_planning_references(&self) -> Result<(), &'static str> {
         let validate_house = |record: &CommandRecord| {
-            let issuer = usize::try_from(record.house_id())
-                .ok()
-                .and_then(|index| self.houses.order().get(index))
+            let issuer = self
+                .command_sender_owner(record.house_id())
                 .ok_or("missing planning order house")?;
             self.houses
-                .contains_key(issuer)
+                .contains_key(&issuer)
                 .then_some(())
                 .ok_or("missing planning order house")
         };
@@ -529,7 +528,7 @@ impl Simulation {
         if !self.houses.contains_key(&owner) {
             return None;
         }
-        let house = i8::try_from(self.houses.index_of(owner)?).ok()?;
+        let house = self.command_sender(owner)?;
         CommandRecord::encode(
             opcode,
             i32::from(house),
@@ -738,11 +737,8 @@ impl Simulation {
         }
         let allied = |actor: u64| {
             self.substrate.entities.get(actor).is_some_and(|entity| {
-                crate::map::houses::is_allied_with(
-                    self.house_alliances.as_map(),
-                    self.interner.resolve(entity.owner()),
-                    self.interner.resolve(viewer),
-                )
+                self.house_alliances
+                    .is_allied(&self.interner, entity.owner(), viewer)
             })
         };
         let record_coord = |record: &CommandRecord| {
@@ -1538,7 +1534,7 @@ impl Simulation {
         };
         self.planning.unindex_node(id);
         if !self.planning_has_remaining_nodes(actor)
-            && let Ok(index) = usize::try_from(record.house_id())
+            && let Some(index) = self.session.network_source_house(record.house_id())
             && let Some(charge) = self.planning.house_charges.get_mut(index)
         {
             *charge = charge.wrapping_add(1);
@@ -1757,11 +1753,7 @@ impl Simulation {
         else {
             return false;
         };
-        let Some(_owner) = usize::try_from(record.house_id())
-            .ok()
-            .and_then(|index| self.houses.order().get(index))
-            .copied()
-        else {
+        let Some(_owner) = self.command_sender_owner(record.house_id()) else {
             return false;
         };
         // `0x00638602..0x0063860C`: Queue_Mission(Deliberate, 1) through
@@ -1796,6 +1788,13 @@ impl Simulation {
         // can change it.
         self.planning.pending_publication.push(record);
         true
+    }
+
+    /// Runs the post-DoList publication rung for a component fixture that
+    /// applies plan commands without advancing a frame.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn publish_planning_commands_for_test(&mut self) {
+        self.publish_planning_commands();
     }
 
     /// PlanMgr637550 -> EventClass::Add652230 (gamemd.exe instructions):

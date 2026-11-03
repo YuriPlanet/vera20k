@@ -22,6 +22,10 @@ pub struct LaserBirth {
     /// Laser+21: the supported Prism main beam's doubled first color.
     pub supported: bool,
     pub color: LaserColor,
+    /// Laser+54, copied by54FE60: the intensity a fading laser starts at.
+    /// Every caller passes 1.0 except the Railgun system's (`0x0062F8A4`),
+    /// which passes 0.5.
+    pub fade_start: NativeF32Bits,
     /// Laser+58, copied by54FE60. Ordinary lasers fade1→0; the delayed
     /// ring caller4A778E/4A785F retains0.5 as its other endpoint.
     pub fade_end: NativeF32Bits,
@@ -253,6 +257,7 @@ pub(crate) fn construct<'a>(
         width: 1,
         supported: false,
         color,
+        fade_start: NativeF32Bits::ONE,
         fade_end,
     }));
     let LifecycleOutput::LaserCreated(laser) = birth else {

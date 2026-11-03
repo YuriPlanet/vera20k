@@ -803,6 +803,7 @@ impl Probe {
         let (instances, draws) = self.instances_in_view(scene, entries, &view);
         let mut shadows = Vec::new();
         crate::app::presentation::instances::bridges::build_bridge_shadow_instances_inner(
+            crate::render::cell_window::CellWindow::Whole,
             terrain,
             &self.shadow.as_ref().unwrap().0,
             &self.names,
@@ -1220,6 +1221,7 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
         assert_eq!(draws[0].render_z, RenderZPolicy::ReadWrite);
         let mut shadows = Vec::new();
         crate::app::presentation::instances::bridges::build_bridge_shadow_instances_inner(
+            crate::render::cell_window::CellWindow::Whole,
             terrain,
             &shadow_atlas,
             &names,

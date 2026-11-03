@@ -895,6 +895,8 @@ mod tests {
                 let commit = sim.encode_plan_commit_record(owner).unwrap();
                 let envelope = sim.decode_native_command_record(&commit, 0).unwrap();
                 assert!(sim.apply_command("Americans", &envelope.payload, Some(&retail.rules)));
+                // PlanMgr 0x00637550 publishes the consumed orders after the DoList.
+                sim.publish_planning_commands_for_test();
                 assert!(sim.planning_paths(owner).is_empty());
                 assert_eq!(sim.pending_command_snapshot().len(), usize::from(count));
                 assert!(sim.planning_selection_has_capacity(owner, &[second]));

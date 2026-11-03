@@ -287,17 +287,36 @@ pub(super) fn build_particle_instance(
     {
         return;
     }
-    if kind.behaves_like == ParticleBehavesLike::Spark {
-        if let Some(spark) = particle.spark() {
+    // ParticleDraw62CF65..62CF7D: Spark (3) and Railgun (4) both take the
+    // coloured point path at 62D02C, reading the same +B0/+B4/+B8 colour.
+    if matches!(
+        kind.behaves_like,
+        ParticleBehavesLike::Spark | ParticleBehavesLike::Railgun
+    ) {
+        let color = particle
+            .spark()
+            .map(|spark| (spark.start_rgb, spark.color_index, spark.color_accumulator))
+            .or_else(|| {
+                particle.railgun().map(|railgun| {
+                    (
+                        railgun.start_rgb,
+                        railgun.color_index,
+                        railgun.color_accumulator,
+                    )
+                })
+            });
+        if let Some((start_rgb, color_index, color_accumulator)) = color {
             let command = crate::render::tactical_compat::SparkPointCommand {
                 world: painted.ivec3(),
-                start_rgb: spark.start_rgb,
-                color_index: spark.color_index,
-                color_accumulator: spark.color_accumulator,
+                start_rgb,
+                color_index,
+                color_accumulator,
                 damage: kind.damage,
                 gates: crate::render::tactical_compat::SparkDrawGates {
                     performance_passed: enough_fps,
-                    extra_animations_enabled: detail_level != 0,
+                    // The detail-0 gate (62CEF3) already returned for Spark;
+                    // it never applies to Railgun.
+                    extra_animations_enabled: true,
                     // Active-YR5865E0 is XOR AL,AL; RET4. The conditional
                     // Scenario1000 fog call in62CF11 never rejects this body.
                     fog_passed: true,
@@ -311,7 +330,7 @@ pub(super) fn build_particle_instance(
                     context.point_viewport,
                     crate::render::tactical_compat::SparkPointPlanes::Deferred,
                 )
-                .expect("produced Spark state has finite native point arithmetic")
+                .expect("produced point-particle state has finite native arithmetic")
             {
                 let mut planned = PlannedObjectInstance::object(parent, Vec::new());
                 planned.body_draw = Some(ObjectBodyDraw::Surface(SurfaceDraw::Point(point)));

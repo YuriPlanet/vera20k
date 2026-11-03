@@ -1,9 +1,10 @@
 # Mac signing in the Release workflow
 
-Dev builds run from `main`. The build job creates an ad-hoc-signed staging image;
-the separate `macos-sign` job signs its app with Developer ID, notarizes its final
+Dev builds run from `main`. Each Mac build job, Apple Silicon (`macos-arm64`) and
+Intel (`macos-x64`), creates an ad-hoc-signed staging image; the separate
+`macos-sign` job, once for each, signs its app with Developer ID, notarizes its final
 disk image, staples the ticket and verifies it. Updater tests and publication use
-only that final image. Stable promotion reuses its exact bytes.
+only those final images. Stable promotion reuses their exact bytes.
 The app is signed in a normal staging folder and then copied back onto the image;
 its signature is verified again after that copy.
 
@@ -49,14 +50,15 @@ GitHub documents environment branch protection:
 
 To check renewed credentials or diagnose signing independently of a game rebuild,
 dispatch `macos-signing-check.yml` from `main` with `build_run` set to a completed
-main-branch Release run containing `macos-unsigned`. It verifies the source run,
+main-branch Release run and `target` set to the image to sign, whose unsigned
+artifact is `<target>-unsigned`. It verifies the source run,
 uses the same signing script, and produces an artifact without publishing a release.
 
 ## A submission that takes longer than the job
 
 The job waits up to 2 hours: a team's first submissions took Apple 30 minutes to
 several hours on 2026-10-31. A timeout or rejection stops publication and saves
-the signed image and its submission/status JSON in the `macos-notarization`
+the signed image and its submission/status JSON in the `<target>-notarization`
 workflow artifact. No keychain or password is included. Resume the recorded
 submission instead of repeatedly uploading the same image:
 

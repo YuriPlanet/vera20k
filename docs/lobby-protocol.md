@@ -97,8 +97,8 @@ set identity and flags from the authenticated membership, never from user payloa
 The only public chat channel is `name:"Lob_41_2"` (`id:"public"`), which games from
 0.2.4 show as VERA20K Online and older games by its retail name, German Bunker.
 The service updates that stored room's name without replacing its membership or
-accounts. Other chat channels are neither listed nor joinable; game rooms remain
-available through `kind:41`.
+accounts. Other chat channels, apart from Quick Match's below, are neither listed nor
+joinable; game rooms remain available through `kind:41`.
 
 Commands and their payloads:
 
@@ -164,7 +164,7 @@ Event kinds and payloads:
 | `choices` | `{from,row,slot,observer}` |
 | `ready` | `{from,ready,revision}` |
 | `map_status` | `{from,status,revision}` |
-| `chat` | `{from:<Member>,text,private,action,sent_at}` |
+| `chat` | `{from:<Member>,text,private,action,sent_at,ansi?,quick_match?}` |
 | `game_started` | `{match_id,revision,version,rules_digest,seed,users:[{player_id,name,flags,source_index}],relay:<RelayGrant>}` |
 | `start_confirmed` | `{match_id}` |
 | `timing_confirmed` | `{match_id,pings:[integer],relay:<RelayGrant>}` |
@@ -328,6 +328,42 @@ Generated capacity equals the staged start count (2–8); observers consume only
 transport slots. Start admission also compares the canonical staging digest, so clients cannot
 agree on seed bytes while using different generated start cells.
 
+The service may keep a map library: custom maps its operator adds, each kept once under
+its SHA-256. Players never add maps; room uploads stay out of it. When the host selects
+a map the library holds (same `source_sha256` and length, not `map_metadata.official`,
+not a generated map), the service sends `map_available` with the settings, before any
+upload, and members download it through the same `GET /v1/maps/…` chunks. When the
+service does not copy it (it could not read a correct copy within about 2 seconds, or is
+busy copying others), it sends no `map_available` and the host uploads as usual. A host that hears `map_available` for its current map stops uploading; an upload
+sent anyway is accepted. Other custom maps go from host to members as before. A member
+whose game lacks the room's map is asked first: Download fetches it and saves it in
+VERA's own `Maps` folder (beside its settings, never the game folder); Leave leaves the
+room.
+
+`GET /v1/library/catalog` lists every library map:
+`{revision,maps:[{sha256,name,file_name,players,byte_length,header}]}`, where `name` is
+the map's `[Basic] Name=`, `file_name` the `.yrm` name to save it under, and `header`
+the base64 of the map's own `[Basic]`, `[Preview]`, `[PreviewPack]`, `[Waypoints]`,
+`[Header]` and `[RandomMap]` lines, byte for byte. No two library maps share a
+`file_name` without case: one whose name would, or whose name has nothing left to save
+under, ends in `-<first 8 hex of its SHA-256>.yrm`. The catalog carries
+`ETag: "lib-<revision>-<16 hex>"`, the hex from its content (catalogs written before:
+`"lib-<revision>"`), and answers 304 to a matching `If-None-Match`, weak or not, or `*`.
+`GET /v1/library/maps/<sha256>` downloads one map, and
+`GET /v1/library/maps?search=<text>&players=<n>&page=<n>` searches them (newest first,
+50 a page). The catalog and downloads also answer HEAD, and 503 `service_unavailable`
+when the library's storage fails. All three are public, and the search is limited per
+network; the service keeps no player, session or address with a map. The game reads the catalog
+when the player goes online and keeps it for the run once it arrives; a failed read is
+tried once more in that visit, and again on the next. In an online room (not one that
+takes only official maps), Choose Map lists under its Online Maps row each map the
+player does not have, starred maps first: a file of its name in the game folder or
+VERA's `Maps` folder that holds its bytes means the player has it. Use Map on one asks
+to download it, checks its length and SHA-256, and saves it in VERA's `Maps` folder,
+where it is an ordinary map in every game type's list. A map whose name another map
+already holds is saved as `<stem>-<first 8 hex of its SHA-256>.yrm`; no file is ever
+replaced.
+
 The match admission is retained independently of channel membership until
 finish/timeout. The original-style shell leaves its game room at the start and
 postmatch rejoins chat, where it may create or join another game. VERA's own room
@@ -395,9 +431,46 @@ sets the welcome that sign-in responses carry as `motd`: non-blank text of at mo
 2048 UTF-8 bytes. `{text:null}` clears it. Both return `{welcome}`, the text or `null`.
 
 Released clients sign in with `User-Agent: VERA20k/<MAJOR.MINOR.PATCH> multiplayer-client`.
+A client that names a version older than 0.2.4 is refused at sign-in with 426
+`upgrade_required`; one that names no version is not.
 A session whose version is older than `version` in
 `https://downloads.vera20k.org/latest.json`, which the lobby reads at most every
 10 minutes, receives one such chat line per newer release, naming both versions,
 since a match starts only between equal versions (`ready`, `start`). It arrives
 as a notice does: at once in the public channel or a game room that has not started,
 otherwise on the next public-channel join.
+
+## Quick Match
+
+1v1 and unranked; Quick Co-op (`Lob_39_`) has no lobby. Games that play it send
+`Vera-Quick-Match: 1` on `POST /v1/sessions`, beside `Vera-Relay-Federation: 1`. Only
+those sessions see `GET /v1/channels?kind=0` list, after `Lob_41_2`, the chat channel
+`{id:"quick-match",kind:0,name:"Lob_40_0",max_users:<lobby cap>,users,tournament:0,flags:0,game_flags:0,ping:-1,ex_info:""}`
+or may `join` it (any key); to others it is an unknown channel. Its members are its
+players, then always last the matchbot
+`{player_id:"00000000-0000-0000-0000-000000000001",name:"matchbot",flags:1,squad:0,clan_name:"",clan_tag:""}`.
+Sign-in refuses `matchbot` without case with 409 `name_unavailable`. There a player's only
+chat is private to `matchbot`: `{text:"Match COU=<int>, COL=<int>, MBR=<0|1>[, LOC=<int>],
+RAT=<int>, RES=<int>, ADR=<int>, NAT=<int>, PRT=<int>",to:["matchbot"],action:false}`, the
+retail request with the transport fields 0; COU and COL are the side and colour the player
+saved for multiplayer. The lobby reads COU (country) and COL (colour, each -2 for Random); a text not starting `Match ` gets a private `nack`. The matchbot's
+replies are `chat` events with `ansi:true`: a private `Working` at once, also to a repeated
+request, which keeps the player's place; a public `Pool <n>` whenever the number waiting
+changes; and on a pairing a private `Start <seed>:<host>,0,0,0,0,0,0,0,<guest>,0,0,0,0,0,0,0`
+to both players with `quick_match:{seed,host:{name,country,color},guest:{name,country,color}}`,
+a fresh random u32 seed and each player's COU and COL as sent. Pairing is first come, first
+served between two players whose `User-Agent` names the same version (two unknown versions
+may pair); the earlier waiter hosts. Leaving `Lob_40_0` (leave, logout, expiry or another
+join) leaves the queue.
+The host's game then leaves and `create`s the two-player game `<host>'s_game` with
+`tournament:1` and the `ex_info` of a Create; the guest's stays in `Lob_40_0`, lists `kind=41`
+up to 30 times, 100 ms apart, for that name (without case) and joins it, which leaves
+`Lob_40_0`. For 2 minutes a room the paired host creates is that pairing's: only the paired
+guest sees it listed or may join it (anyone else `room_full`), until the guest has joined.
+From there the v4 room flow runs. When the guest joins, the host's game publishes options
+built from `quick_match`: host row 0, guest row 1, automatic starts, the first mode (Battle),
+`seed`, and the official two-player map of index `seed % count` among those of its catalog
+the mode admits. A guest colour the host holds becomes Random; each Random is then drawn from
+`seed`, a country from the game's list and a colour the other player does not hold. The host
+ignores the guest's `choices`; the guest's game accepts the options by itself, and the
+host's starts once it has.

@@ -28,14 +28,17 @@ use crate::sim::world::{FrameEffects, PlacementEvidence, Simulation, UninitConte
 
 impl Simulation {
     /// GetHouse6F2070: fixed Country attachment, otherwise the native
-    /// Scenario1180 start-slot mapping used by Player@A..H510ED0. Country
+    /// Scenario1180 start-slot mapping used by Player@A..H510ED0 (VERA
+    /// extends this to A..AD). Country
     /// resolution uses House array order502D30, never sorted owner names.
     fn team_type_house(&self, team_type: InternedId, rules: &RuleSet) -> Option<InternedId> {
         match self.team_script_vm.team_type_ini.get(&team_type)?.house? {
             TeamTypeHouse::Country(country) => self.house_by_country_index(country, rules),
-            TeamTypeHouse::PlayerAt(slot) => {
-                self.house_by_trigger_selector(0x117B + i32::from(slot), rules)
-            }
+            TeamTypeHouse::PlayerAt(slot) => self.house_by_trigger_selector(
+                crate::rules::native_processing::HOUSE_TYPE_PLAYER_AT_SELECTORS.start
+                    + i32::from(slot),
+                rules,
+            ),
         }
     }
 
@@ -244,11 +247,9 @@ impl Simulation {
             .current_house()
             .filter(|&current| {
                 placed
-                    && crate::map::houses::is_allied_with(
-                        self.house_alliances.as_map(),
-                        self.interner.resolve(owner),
-                        self.interner.resolve(current),
-                    )
+                    && self
+                        .house_alliances
+                        .is_allied(&self.interner, owner, current)
             })
             .map(|_| origin);
         //65DB9C returns true regardless of PlaceMembers' result. Ordinary
@@ -493,11 +494,8 @@ impl Simulation {
             self.session
                 .current_house()
                 .filter(|&current| {
-                    crate::map::houses::is_allied_with(
-                        self.house_alliances.as_map(),
-                        self.interner.resolve(owner),
-                        self.interner.resolve(current),
-                    )
+                    self.house_alliances
+                        .is_allied(&self.interner, owner, current)
                 })
                 .map(|_| origin)
         });
@@ -962,6 +960,17 @@ impl Simulation {
         let mut placed_any = false;
         for &member in members {
             if cell == (0, 0) {
+                // Residual: a member that fails all eight directions, or whose
+                // search returns Cell (0,0) (65E5DC..65E5F4), is deleted at
+                //65E5A4; 65E5AE..65E5D7 moves on to the next member and the
+                //65E611 cleanup deletes only those after it, so native leaves
+                // that next member constructed in limbo and in the Team. VERA
+                // discards it too, and keeps the (0,0) member in limbo. Fresh
+                // members never get there: with A8E7AC raised, Unlimbo
+                // (Object5F4EC0, Foot Mark4D3780 ->5F5850, Infantry51E027
+                // priority spot) cannot refuse a cell-centre coordinate.
+                #[cfg(any(test, feature = "dev-overlays"))]
+                self.trace_placement_refused(cell);
                 self.discard_constructed_limbo(member, rules, effects);
                 continue;
             }
@@ -1037,6 +1046,8 @@ impl Simulation {
                                 .then_some(candidate)
                         });
                     if next.is_none() {
+                        #[cfg(any(test, feature = "dev-overlays"))]
+                        sim.trace_placement_refused(cell);
                         sim.discard_constructed_limbo(member, rules, effects);
                     }
                     (false, next)

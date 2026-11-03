@@ -304,6 +304,9 @@ impl PreparedLoad {
         // that state without touching the running match's retained identity.
         simulation.bind_shared_cell_dummy(crate::map::resolved_terrain::SharedCellDummy::fresh());
         simulation.reconstruct_cellclass_dummy_for_map_resize();
+        // InfantryLoad521A0C -> TechnoNoInit6F4335 resets the transition
+        // clock. This user-file seam is separate from internal continuations.
+        simulation.restart_cloak_progress_after_player_load();
         simulation.restore_after_snapshot_load()?;
         crate::sim::production::validate_restored_factory_state(&simulation, rules)?;
         simulation.rebuild_caches_after_load(terrain_template, terrain_speed_config, rules);
@@ -940,6 +943,7 @@ mod tests {
         in_game_menu: crate::ui::pause_menu::InGameMenuState,
     }
 
+    mod cloak_restore_tests;
     mod factory_restore_tests;
     mod infantry_death_restore_tests;
     mod rule_cache_restore_tests;

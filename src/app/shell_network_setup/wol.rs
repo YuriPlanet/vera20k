@@ -252,8 +252,10 @@ pub(crate) fn user_left(state: &mut AppState, name: &str, operator: bool) -> any
 
 /// The private-options sink `0x7A8260`'s gates for a guest's `R`: nothing
 /// while a WOL match runs (`[0xB77DC1]`) or a start is requested
-/// (`[0xB77E28]`); the sender must be a channel user (the caller's check)
-/// and own a node here. Only a host receives it.
+/// (`[0xB77E28]`), and nothing in Quick Match (`[0xA8B244]` 1-3 take only
+/// `Z`), where the matchbot's options seat both players; the sender must be
+/// a channel user (the caller's check) and own a node here. Only a host
+/// receives it.
 pub(crate) fn player_choices(
     state: &mut AppState,
     name: &str,
@@ -262,6 +264,7 @@ pub(crate) fn player_choices(
 ) -> anyhow::Result<()> {
     if crate::app::shell_wol::in_match(state)
         || start_pending(state)
+        || super::quick_match(state)
         || !state.match_state.session.host()
     {
         return Ok(());

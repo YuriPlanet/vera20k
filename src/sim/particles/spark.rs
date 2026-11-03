@@ -469,27 +469,46 @@ pub fn advance_color(
     let Ok(color_count_i32) = i32::try_from(color_count) else {
         return Err(SparkKernelError::InvalidColorCount(color_count));
     };
-    if color_count_i32 < 2 {
-        return Err(SparkKernelError::InvalidColorCount(color_count));
-    }
+    advance_point_color(
+        &mut spark.color_index,
+        &mut spark.color_accumulator,
+        color_speed,
+        color_rng_sample,
+        color_count_i32,
+    )?;
+    Ok(())
+}
 
+/// The colour step Spark and Railgun particles share (Railgun's copy is
+/// `ParticleClass::AI_Railgun @ 0x0062C494..0x0062C530`): the accumulator
+/// `+0xB8` gains `sample * scale * 0.05 + ColorSpeed`, and once it passes 1.0
+/// the index `+0xB4` steps toward `ColorList` count - 2 and the accumulator
+/// restarts at 0.0, or holds at 1.0 on the last pair. A list of fewer than two
+/// colours makes `count - 2` negative, so the accumulator just holds at 1.0.
+pub(super) fn advance_point_color(
+    color_index: &mut i32,
+    color_accumulator: &mut NativeF64Bits,
+    color_speed: NativeF64Bits,
+    color_rng_sample: u32,
+    color_count: i32,
+) -> Result<(), NativeX87Error> {
     let scaled_rng = X87Chop53::mul(
         X87Chop53::load_i32(color_rng_sample as i32),
         X87Chop53::load_f64(RANDOM_RANGED_UNIT_SCALE)?,
     );
     let jitter = X87Chop53::mul(scaled_rng, X87Chop53::load_f64(COLOR_JITTER_SCALE)?);
     let with_speed = X87Chop53::add(jitter, X87Chop53::load_f64(color_speed)?);
-    let accumulated = X87Chop53::add(with_speed, X87Chop53::load_f64(spark.color_accumulator)?);
-    spark.color_accumulator = X87Chop53::store_f64(accumulated)?;
+    let accumulated = X87Chop53::add(with_speed, X87Chop53::load_f64(*color_accumulator)?);
+    *color_accumulator = X87Chop53::store_f64(accumulated)?;
 
-    let stored = X87Chop53::load_f64(spark.color_accumulator)?;
+    let stored = X87Chop53::load_f64(*color_accumulator)?;
     let one = X87Chop53::load_f64(NativeF64Bits::ONE)?;
     if X87Chop53::compare(stored, one) == X87Ordering::Greater {
-        if spark.color_index < color_count_i32.wrapping_sub(2) {
-            spark.color_index = spark.color_index.wrapping_add(1);
-            spark.color_accumulator = NativeF64Bits::POSITIVE_ZERO;
+        if *color_index < color_count.wrapping_sub(2) {
+            *color_index = color_index.wrapping_add(1);
+            *color_accumulator = NativeF64Bits::POSITIVE_ZERO;
         } else {
-            spark.color_accumulator = NativeF64Bits::ONE;
+            *color_accumulator = NativeF64Bits::ONE;
         }
     }
     Ok(())
@@ -675,8 +694,10 @@ mod tests {
         assert_eq!(rng.logical_state(), expected_rng.logical_state());
     }
 
+    /// A one-colour list makes `count - 2` negative, so a full accumulator
+    /// holds at 1.0 on that colour (`0x0062C494..0x0062C530`), never an error.
     #[test]
-    fn color_error_keeps_native_prior_commits_and_rng_but_not_lifetime() {
+    fn a_one_color_list_holds_its_color() {
         let mut particle = particle(IVec3::new(2560, 2560, 10), F32_ZERO, 2);
         let mut rng = SimRng::new(1);
         let mut expected_rng = rng.clone();
@@ -686,19 +707,20 @@ mod tests {
             &mut particle,
             SparkTickInputs {
                 gravity: F32_SIX,
-                color_speed: F64_ZERO,
+                color_speed: NativeF64Bits::from_bits(0x4000_0000_0000_0000),
                 color_count: 1,
                 collision: facts(0),
             },
             &mut rng,
         );
 
-        assert_eq!(result, Err(SparkKernelError::InvalidColorCount(1)));
-        assert_eq!(particle.spark.unwrap().velocity_z.bits(), 0xc0c0_0000);
-        assert_eq!(particle.coords, IVec3::new(2560, 2560, 0));
-        assert!(particle.marked_for_deletion);
+        assert!(result.is_ok(), "{result:?}");
+        let spark = particle.spark.unwrap();
+        assert_eq!(
+            (spark.color_index, spark.color_accumulator),
+            (0, NativeF64Bits::ONE)
+        );
         assert_eq!(rng.logical_state(), expected_rng.logical_state());
-        assert_eq!(particle.lifetime_remaining, 2);
     }
 
     #[test]

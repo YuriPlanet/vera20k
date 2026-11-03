@@ -68,10 +68,13 @@ impl ConnectionError {
 }
 
 /// The line DestroyConnection posts for a destroyed connection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ConnectionDestroyed {
     pub(crate) owner: InternedId,
     pub(crate) key: &'static str,
+    /// VERA shared control: the player who left a House others share,
+    /// named in place of the House.
+    pub(crate) player: Option<String>,
 }
 
 /// What a controlled peer did during the match, decoded from its packets.
@@ -157,9 +160,11 @@ pub(crate) fn destroy_connection(
         //the reason-specific effects. Progress shares that connection's life.
         live.remove_peer(house);
     }
+    // VERA shared control: a House a connected teammate still controls stays.
+    let teammate = session.network_teammate_connected(source_index);
     if error == ConnectionError::Lost && !startup_pending && !sequenced {
         let frame = sim.session().binary_frame();
-        if frame == 0 && sim.session().network_command_timing().is_none() {
+        if frame == 0 && sim.session().network_command_timing().is_none() && !teammate {
             sim.flag_house_to_die(owner);
         }
         // VERA UDP/relay adaptation: native5DA86A..5DA87A only flags at zero.
@@ -169,16 +174,16 @@ pub(crate) fn destroy_connection(
         if frame != 0 || sim.session().network_command_timing().is_some() {
             // EVENT_REMOVEPLAYER from PlayerPtr with the House's index
             // (0x005DA898..0x005DA8F0); it kills the House on every peer.
+            // VERA shared control: the lost participant's sender, which is
+            // that index unless players share Houses.
             let local = sim.session().current_house();
-            let index = sim.houses().index_of(owner);
-            if let (Some(local), Some(index)) = (local, index) {
+            let sender = source_house(session, sim, source_index);
+            if let (Some(local), Some(sender)) = (local, sender) {
                 let local = sim.interner().resolve(local).to_string();
                 crate::app::input::commands::schedule_command_in_sim(
                     sim,
                     &local,
-                    crate::sim::command::Command::RemovePlayer {
-                        house_index: index as i32,
-                    },
+                    crate::sim::command::Command::RemovePlayer { source: sender },
                 );
             }
         }
@@ -188,6 +193,7 @@ pub(crate) fn destroy_connection(
     // block. RESIDUAL: mode 4's ladder-stats call (0x005DA921..) is backend.
     if !startup_pending
         && error == ConnectionError::Left
+        && !teammate
         && sim.session().wol_tournament_game()
         && !sim
             .houses()
@@ -199,6 +205,7 @@ pub(crate) fn destroy_connection(
     Some(ConnectionDestroyed {
         owner,
         key: error.csf_key(),
+        player: shared_house_player_name(session, source_index),
     })
 }
 
@@ -226,12 +233,22 @@ pub(crate) fn receive_departure(
 /// DestroyConnection's line (`0x005DA7A9..0x005DA83E`): the template with the
 /// House's UI name, in its HouseType's `Color=` scheme (`[[House+0x34]+0xC0]`).
 pub(crate) fn post_connection_line(state: &mut AppState, destroyed: ConnectionDestroyed) {
-    crate::app::input::messages::post_house_line(
-        state,
-        destroyed.key,
-        destroyed.owner,
-        crate::app::input::messages::HouseLineColor::Country,
-    );
+    let color = crate::app::input::messages::HouseLineColor::Country;
+    match destroyed.player {
+        Some(player) => crate::app::input::messages::post_player_house_line(
+            state,
+            destroyed.key,
+            destroyed.owner,
+            &player,
+            color,
+        ),
+        None => crate::app::input::messages::post_house_line(
+            state,
+            destroyed.key,
+            destroyed.owner,
+            color,
+        ),
+    }
 }
 
 /// The executed EXIT events of remote senders this frame: each runs
@@ -241,14 +258,16 @@ pub(crate) fn drain_departures(state: &mut AppState) {
     let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
         return;
     };
-    let departed = runtime.simulation.take_departed_owners();
-    for owner in departed {
+    let departed = runtime.simulation.take_departed_senders();
+    for sender in departed {
         let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
             return;
         };
-        let sim = &runtime.simulation;
-        let name = sim.interner().resolve(owner).to_string();
-        let Some(source) = state.match_state.session.network_owner_source(&name) else {
+        let Some(source) = house_source(
+            &state.match_state.session,
+            &runtime.simulation,
+            i32::from(sender),
+        ) else {
             continue;
         };
         kick(state, source, ConnectionError::Left);
@@ -303,6 +322,30 @@ pub(crate) fn post_speed_changes(state: &mut AppState) {
             MatchSpeedChange::Normal => "Game speed is back to normal.".to_owned(),
         };
         crate::app::input::messages::post_match_speed(state, &text);
+    }
+}
+
+/// VERA: once this game reaches a pause that found it catching up, it tells
+/// everyone in chat, so whoever resumes knows the match can go on. A player
+/// leaving or already defeated keeps quiet.
+pub(crate) fn post_caught_up(state: &mut AppState) {
+    let reached = state.match_state.multiplayer_paused();
+    let Some((frame, defeated)) = state.match_state.sim_runtime.as_ref().map(|runtime| {
+        (
+            runtime.simulation.session().binary_frame(),
+            runtime.simulation.local_player_defeated(),
+        )
+    }) else {
+        return;
+    };
+    let caught_up =
+        state.match_state.live_network.as_mut().is_some_and(|live| {
+            live.take_caught_up_in_pause(reached, frame) && !live.exit_requested()
+        });
+    if caught_up && !defeated {
+        let text =
+            crate::i18n::text(state.process_assets.csf.as_ref(), "VERA:CaughtUp").into_owned();
+        crate::app::input::chat::send_to_all(state, &text);
     }
 }
 
@@ -631,6 +674,17 @@ pub(crate) fn nodes(session: &MatchSession) -> Vec<usize> {
         .collect()
 }
 
+/// VERA shared control: participant `source_index`'s own name when it
+/// shares its House, which names a House's only player.
+pub(crate) fn shared_house_player_name(
+    session: &MatchSession,
+    source_index: usize,
+) -> Option<String> {
+    let owner = session.network_source_owner(source_index)?;
+    (session.network_owner_sources(&owner).len() > 1)
+        .then(|| participant_name(session, source_index))
+}
+
 pub(crate) fn participant_name(session: &MatchSession, source_index: usize) -> String {
     session
         .network_setup()
@@ -639,19 +693,31 @@ pub(crate) fn participant_name(session: &MatchSession, source_index: usize) -> S
         .unwrap_or_default()
 }
 
+/// Participant `source`'s network "house" id: its constructed House's
+/// index. VERA shared control: while players share Houses, each sends as its
+/// own source instead.
 pub(crate) fn source_house(session: &MatchSession, sim: &Simulation, source: usize) -> Option<i32> {
-    let name = session.network_source_owner(source)?;
-    let owner = sim.interner().get(&name)?;
-    sim.houses()
-        .order()
-        .iter()
-        .position(|candidate| *candidate == owner)
-        .and_then(|index| i32::try_from(index).ok())
+    let owner = sim.interner().get(&session.network_source_owner(source)?)?;
+    let index = sim.houses().index_of(owner)?;
+    if !sim.session().shares_houses() {
+        return i32::try_from(index).ok();
+    }
+    let sender = session.network_source_sender(source)?;
+    (sim.session().network_source_house(sender) == Some(index)).then_some(i32::from(sender))
 }
 
+/// The participant whose network "house" id is `house`.
 pub(crate) fn house_source(session: &MatchSession, sim: &Simulation, house: i32) -> Option<usize> {
-    let owner = sim.houses().order().get(usize::try_from(house).ok()?)?;
-    session.network_owner_source(sim.interner().resolve(*owner))
+    if !sim.session().shares_houses() {
+        let owner = sim.houses().order().get(usize::try_from(house).ok()?)?;
+        return session
+            .network_owner_sources(sim.interner().resolve(*owner))
+            .first()
+            .copied();
+    }
+    let sender = i8::try_from(house).ok()?;
+    sim.session().network_source_house(sender)?;
+    session.network_sender_source(sender)
 }
 
 /// Numeric projections only: never format transports, endpoints, errors or
@@ -1500,6 +1566,7 @@ mod tests {
         guest.name = "G\u{0100}uest".into();
         guest.raw_slot_index = Some(1);
         guest.slot.color_index = 2;
+        guest.slot.start_position = crate::skirmish_launch::LaunchStartPosition::Auto;
         launch.humans.push(guest);
         launch.local_player_index = 1;
         let mut session = MatchSession::default();
@@ -1975,6 +2042,7 @@ mod tests {
             third.name = "Third".into();
             third.raw_slot_index = Some(2);
             third.slot.color_index = 3;
+            third.slot.start_position = crate::skirmish_launch::LaunchStartPosition::Auto;
             launch.humans.push(third);
             launch.local_player_index = local_source;
             let mut session = MatchSession::default();

@@ -73,11 +73,10 @@ pub(crate) fn request_gate_open_for_cell(
         {
             continue;
         }
-        if crate::map::houses::is_allied_with(
-            sim.house_alliances.as_map(),
-            sim.interner.resolve(candidate.owner()),
-            sim.interner.resolve(mover_owner),
-        ) {
+        if sim
+            .house_alliances
+            .is_allied(&sim.interner, candidate.owner(), mover_owner)
+        {
             //4525B8..4525D6: Assign(-1), Queue(Open,false), Commence.
             //Read actual MissionCom and Door, never a Gate-local latch.
             if candidate.mission.effective().known() != Some(MissionType::Open)
@@ -108,6 +107,18 @@ pub(crate) fn request_gate_open_for_cell(
         }
     }
     true
+}
+
+/// Client-crate fixtures: `mover_id` asks the Gate on `cell` to open through
+/// [`request_gate_open_for_cell`].
+#[cfg(any(test, feature = "test-support"))]
+pub fn request_gate_open_for_test(
+    sim: &mut Simulation,
+    cell: (u16, u16),
+    mover_id: u64,
+    rules: &RuleSet,
+) -> bool {
+    request_gate_open_for_cell(sim, cell, mover_id, rules)
 }
 
 ///44E3A0: GetFoundation(false), then main Ground lists. Any pointer other

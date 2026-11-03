@@ -316,15 +316,27 @@ pub(crate) fn render_score_page(
     }
     let text = shell_paint::paint_labels_scaled(&state.renderer.bit_font, &labels, scale.factor());
 
+    // The shell pass draws these in array order with depth off
+    // (`DepthAxis::NONE`), so the list is the paint order: paint mode 1's
+    // panel, then the background. A country card (`[EndGameScreens]
+    // Score*Art=`) is opaque over the whole dialog and would hide the panel,
+    // Continue and the lower strip, so it goes under the chrome instead.
+    let chrome_draw = TexturedDraw {
+        texture: &chrome.texture,
+        instances: chrome_sprites,
+    };
+    let art_draw = TexturedDraw {
+        texture: &art.texture,
+        instances: art_sprites,
+    };
+    let [first, second] = if page.model.background.is_some() {
+        [art_draw, chrome_draw]
+    } else {
+        [chrome_draw, art_draw]
+    };
     let draws = [
-        TexturedDraw {
-            texture: &chrome.texture,
-            instances: chrome_sprites,
-        },
-        TexturedDraw {
-            texture: &art.texture,
-            instances: art_sprites,
-        },
+        first,
+        second,
         TexturedDraw {
             texture: &chrome.texture,
             instances: button_sprites,

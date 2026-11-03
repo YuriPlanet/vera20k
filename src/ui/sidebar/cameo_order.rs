@@ -14,6 +14,7 @@ use super::SidebarTab;
 
 /// The request retained by a cameo before its queued event reaches the Factory.
 /// Native Select6AB80D writes status1; Right6AB0C9 changes it to status2.
+/// Draw's status3 case (6A98DA) has no writer: Action stores only 0, 1 and 2.
 /// This is a local input/presentation state, not a second production queue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CameoRequestState {
@@ -58,7 +59,7 @@ pub(crate) fn pending_production_smoothed_stage(actual: i32, predicted: i32) -> 
 
 /// Current comparison inputs, projected from the rules, local House Cost_Of
 /// and the process string table. They are never retained as gameplay state.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Cameo {
     pub id: CameoId,
     pub tab: SidebarTab,
@@ -66,7 +67,7 @@ pub(crate) struct Cameo {
     pub key: CameoKey,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum CameoKey {
     SuperWeapon {
         recharge_frames: i32,
@@ -173,6 +174,9 @@ impl CameoKey {
 /// projections supply the current members and comparison inputs; surviving
 /// entries keep their positions, even if costs or other keys change. Match
 /// replacement and local-house replacement discard this derived projection.
+/// `Default` is the SidebarClass constructor 6A4E60 and StripClass
+/// constructor 6A80A0 / Init_Clear 6A81B0 state: no entries, TopRow 0, nothing
+/// queued. Their Stage and Unknown_40 drive nothing (Unknown_40 is only -1).
 #[derive(Debug, Clone, Default)]
 pub(crate) struct CameoStrips {
     strips: [Vec<Cameo>; 4],
@@ -460,23 +464,27 @@ impl CameoStrips {
         self.scroll_rows[tab.tab_index()] = row;
     }
 
-    /// Sidebar Action `0x006A7780`, R-DN (`0xC9`) / R-UP (`0xC8`) branch:
-    /// queue one page (the visible row count) while rows remain below
-    /// TopRow, or TopRow is above 0. False is the ScoldSound branch, which
-    /// queues nothing. The observer branch (page 1) has no VERA strip.
-    pub(crate) fn queue_page_scroll(
+    /// Queue `rows` scroll rows on a strip while rows remain below TopRow
+    /// (down), or TopRow is above 0 (up); false queues nothing. Both native
+    /// writers of PendingScroll gate on TopRow alone, not the queue:
+    /// Sidebar Action `0x006A7780`, R-DN (`0xC9`) / R-UP (`0xC8`) branch,
+    /// queues one page (the visible row count) and plays ScoldSound on false;
+    /// SidebarClass::Scroll `0x006A6A00` (SidebarUp/SidebarDown, the wheel)
+    /// queues one row. The observer branches have no VERA strip.
+    pub(crate) fn queue_scroll(
         &mut self,
         tab: SidebarTab,
         down: bool,
         visible_rows: usize,
+        rows: usize,
     ) -> bool {
         let index = tab.tab_index();
         let top = self.scroll_rows[index];
-        let page = visible_rows as i32;
+        let rows = rows as i32;
         if down && (top + visible_rows) * 2 < self.strips[index].len() {
-            self.pending_scroll[index] += page;
+            self.pending_scroll[index] += rows;
         } else if !down && top != 0 {
-            self.pending_scroll[index] -= page;
+            self.pending_scroll[index] -= rows;
         } else {
             return false;
         }

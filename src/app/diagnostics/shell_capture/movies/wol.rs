@@ -2251,6 +2251,34 @@ impl WolCapture {
                         "Crates did not toggle in Game Options"
                     );
                     self.event(frame, "C2 Game Options: Crates toggled");
+                    let no_france = crate::ui::multiplayer_setup::ROOM_CHECKBOXES
+                        .iter()
+                        .position(|id| *id == crate::ui::multiplayer_setup::NO_FRANCE)
+                        .expect("No France is a room checkbox");
+                    setup_click(
+                        state,
+                        crate::ui::skirmish_shell::checkbox_icon_rect(
+                            layout.room_checkboxes[no_france],
+                            layout.page.scale,
+                        ),
+                    );
+                    ensure!(
+                        setup_view(state)?.room_checks[no_france],
+                        "No France did not toggle in Game Options"
+                    );
+                    let french = state
+                        .rules()
+                        .and_then(|rules| rules.trigger_house_type_index("French"))
+                        .map(|index| i32::from(index.0));
+                    let sides = crate::ui::multiplayer_setup::SetupColumn::Country.control(0);
+                    ensure!(
+                        setup_view(state)?.combo(sides).is_some_and(|combo| {
+                            !combo.choices.is_empty()
+                                && combo.choices.iter().all(|item| Some(item.value) != french)
+                        }),
+                        "France stayed in the host's Side list"
+                    );
+                    self.event(frame, "C2 Game Options: No France toggled");
                 }
                 MoviesCapture::restore_neutral_pointer(state);
                 crate::app::input::multiplayer_setup::cursor_moved(state);

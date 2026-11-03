@@ -248,6 +248,90 @@ pub(crate) struct DisplayEffectInputs<'a> {
     pub observe_particles: bool,
 }
 
+impl DisplayEffectInputs<'_> {
+    /// Tactical6D2140's view, in world pixels.
+    pub(crate) fn projection_viewport(&self) -> [f32; 2] {
+        [
+            self.tactical[2] as f32 / self.zoom,
+            self.tactical[3] as f32 / self.zoom,
+        ]
+    }
+}
+
+/// Where an Anim's DrawIt draws: its admission point, cell, lift and drawn
+/// coordinate.
+struct AnimDrawPoint {
+    center: [f32; 2],
+    cell: (u16, u16),
+    lift_px: i32,
+    drawn_coord: [i32; 3],
+}
+
+/// The point Anim `id`'s Display encounter admits and draws it at, or `None`
+/// when that encounter stops before the mutative DrawIt55AF60 query:
+/// AnimDrawIfVisible422C70 rejects delay+184 before Object5F4B10's
+/// Tactical6D2140 projection gate. Whole-slot controls:
+/// spatial_oracle/building_anim_detail.json.
+fn anim_draw_point(
+    sim: &crate::sim::world::Simulation,
+    anim: &crate::sim::anim_class::AnimObject,
+    id: u64,
+    interpolation: Option<&crate::app::presentation::interpolation::RenderInterpolation>,
+    camera: [f32; 2],
+    viewport: [f32; 2],
+) -> Option<AnimDrawPoint> {
+    if anim.runtime().delay_remaining != 0 {
+        return None;
+    }
+    // AnimGetCoords422BE0 resolves owner-relative coordinates. Admission
+    // uses the same painted point as the existing body emitter, without
+    // image offsets or the parent Building's viewport/body visibility.
+    let anim_coord = sim.anim_absolute_coord(id)?;
+    let (mut center_x, mut center_y, rx, ry, _, mut lift_px) = anim_world_render_coords(anim_coord);
+    let mut drawn_coord = [anim_coord.x, anim_coord.y, anim_coord.z];
+    // Slot preparation uses the committed coordinate; retain that geometry.
+    // Free Anims keep their existing sampled point for admission and drawing.
+    if !anim.is_building_anim()
+        && let Some(interpolation) = interpolation
+    {
+        use crate::app::presentation::interpolation::{PointKind, PointPose};
+        let sample = interpolation.sample_point(
+            PointKind::Anim,
+            id,
+            PointPose::new(
+                [anim_coord.x, anim_coord.y, anim_coord.z],
+                anim.type_id().index(),
+                anim.owner_entity(),
+            ),
+            sim.session().binary_frame(),
+        );
+        [center_x, center_y] = sample.screen;
+        lift_px = sample.lift.round() as i32;
+        drawn_coord = sample.coord;
+    }
+    projection_admitted([center_x, center_y], camera, viewport).then_some(AnimDrawPoint {
+        center: [center_x, center_y],
+        cell: (rx, ry),
+        lift_px,
+        drawn_coord,
+    })
+}
+
+/// Whether building slot Anim `id`'s Display encounter can reach its
+/// prepared parent: [`anim_draw_point`] admits it (a slot takes no
+/// interpolated point). Slot preparation skips every slot this rejects, so
+/// it only drops parents the traversal would never consume.
+pub(super) fn slot_anim_admissible(
+    sim: &crate::sim::world::Simulation,
+    id: u64,
+    camera: [f32; 2],
+    viewport: [f32; 2],
+) -> bool {
+    sim.anim(id).is_some_and(|anim| {
+        anim.is_building_anim() && anim_draw_point(sim, anim, id, None, camera, viewport).is_some()
+    })
+}
+
 /// Traverse dynamic effect bodies in actual Display order. Anim and particle
 /// consumers share the mutative55AF60 FPS latch; grouping them by class changes
 /// native admission when the unsigned minimum/buffer arithmetic wraps.
@@ -287,7 +371,7 @@ pub(crate) fn build_display_effect_instances(
         input.render_size[0] as f32 / z2,
         input.render_size[1] as f32 / z2,
     );
-    let projection_viewport = [input.tactical[2] as f32 / z2, input.tactical[3] as f32 / z2];
+    let projection_viewport = input.projection_viewport();
     // NPSE Paradrop C2FA75/C2F939 attaches either retained canopy type; Ares
     // `[Side] Parachute.Anim=` adds its own attached type.
     let mut parachute_names = vec![
@@ -359,43 +443,23 @@ pub(crate) fn build_display_effect_instances(
         {
             continue;
         }
-        // AnimDrawIfVisible422C70 rejects delay+184 before Object5F4B10's
-        // Tactical6D2140 projection gate and the mutative DrawIt55AF60 query.
-        // Whole-slot controls: spatial_oracle/building_anim_detail.json.
-        if anim.runtime().delay_remaining != 0 {
-            continue;
-        }
-        // AnimGetCoords422BE0 resolves owner-relative coordinates. Admission
-        // uses the same painted point as the existing body emitter, without
-        // image offsets or the parent Building's viewport/body visibility.
-        let Some(anim_coord) = sim.anim_absolute_coord(stable_id) else {
+        let Some(AnimDrawPoint {
+            center: [center_x, center_y],
+            cell: (rx, ry),
+            lift_px,
+            drawn_coord,
+        }) = anim_draw_point(
+            sim,
+            anim,
+            stable_id,
+            input.interpolation,
+            input.camera,
+            projection_viewport,
+        )
+        else {
             continue;
         };
-        let (mut center_x, mut center_y, rx, ry, _, mut lift_px) =
-            anim_world_render_coords(anim_coord);
-        let mut drawn_coord = [anim_coord.x, anim_coord.y, anim_coord.z];
         let is_building_anim = anim.is_building_anim();
-        // Slot preparation uses the committed coordinate; retain that geometry.
-        // Free Anims keep their existing sampled point for admission and drawing.
-        if !is_building_anim && let Some(interpolation) = input.interpolation {
-            use crate::app::presentation::interpolation::{PointKind, PointPose};
-            let sample = interpolation.sample_point(
-                PointKind::Anim,
-                stable_id,
-                PointPose::new(
-                    [anim_coord.x, anim_coord.y, anim_coord.z],
-                    anim.type_id().index(),
-                    anim.owner_entity(),
-                ),
-                sim.session().binary_frame(),
-            );
-            [center_x, center_y] = sample.screen;
-            lift_px = sample.lift.round() as i32;
-            drawn_coord = sample.coord;
-        }
-        if !projection_admitted([center_x, center_y], input.camera, projection_viewport) {
-            continue;
-        }
         if !crate::sim::anim_class::anim_draw_detail_visible(
             crate::sim::anim_class::AnimDrawDetailInput {
                 frame_rate_below_minimum: {
@@ -868,15 +932,14 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             continue;
         };
         let name = if display_overlay_id == live_overlay_id {
-            input.names.get(&live_overlay_id).cloned()
+            input.names.get(&live_overlay_id).map(String::as_str)
         } else {
-            overlay_registry
-                .and_then(|registry| registry.name(display_overlay_id).map(str::to_owned))
+            overlay_registry.and_then(|registry| registry.name(display_overlay_id))
         };
         let Some(name) = name else {
             continue;
         };
-        if !ordinary_overlay_accepts_identity(live_overlay_id, &name) {
+        if !ordinary_overlay_accepts_identity(live_overlay_id, name) {
             continue;
         }
 
@@ -894,9 +957,8 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             None
         };
 
-        // FA2 IsoView.cpp:5955-5956: track overlays render +CellHeight (15px) lower.
         let track_y_offset: f32 = if overlay_flags.map(|f| f.track).unwrap_or(false) {
-            15.0
+            TRACK_OVERLAY_Y_OFFSET
         } else {
             0.0
         };
@@ -946,7 +1008,7 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
         // as phantom deck slabs. Frame selection lives in
         // `render::overlay_atlas::resolve_body_frame`.
         let key = rubble_key.unwrap_or_else(|| OverlaySpriteKey {
-            name: name.clone(),
+            name: name.to_owned(),
             frame: i32::from(render_frame),
         });
         let Some(spr) = input.atlas.get(&key) else {
@@ -998,10 +1060,32 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             instance,
         });
     }
+}
 
-    if std::env::var("RA2_DEBUG_BRIDGE_RENDER_BUCKETS").is_ok() {
-        log::debug!("Cell overlay bodies: {}", bodies.len());
-    }
+/// FA2 IsoView.cpp:5955-5956: track overlays render +CellHeight (15px) lower.
+const TRACK_OVERLAY_Y_OFFSET: f32 = 15.0;
+
+/// The cells whose overlay body [`build_cell_overlay_bodies`] can admit for
+/// `camera`/`viewport` when every sprite lies in `art`. Its `in_view` box and
+/// margin grow to a rubble sprite's size; the track offset moves the anchor
+/// down and [`super::bridges::cell_overlay_y_offset`] up by at most 31 px.
+fn overlay_body_window(
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    art: crate::render::cell_window::ArtExtent,
+    camera: [f32; 2],
+    viewport: [f32; 2],
+) -> crate::render::cell_window::CellWindow {
+    let margin = 120.0f32.max(art.max_side());
+    crate::render::cell_window::CellWindow::covering(
+        crate::render::cell_window::AnchorBounds {
+            left: camera[0] - 2.0 * margin,
+            top: camera[1] - 2.0 * margin - TRACK_OVERLAY_Y_OFFSET,
+            right: camera[0] + viewport[0] + margin,
+            bottom: camera[1] + viewport[1] + margin
+                - super::bridges::BRIDGE_BODY_Y_OFFSET_STATE_9_TO_17,
+        },
+        terrain.map_or_else(Default::default, |terrain| terrain.level_span()),
+    )
 }
 
 /// Build the ordinary overlay bodies for the cell body sweep, and the
@@ -1054,40 +1138,70 @@ pub(crate) fn build_overlay_instances(
                     sim.session().game_options().fog_of_war,
                 )
             });
-    build_cell_overlay_bodies(
-        &CellOverlayInputs {
-            entries: state.match_state.match_presentation.overlays.as_slice(),
-            atlas,
-            names: &state.match_state.match_presentation.overlay_names,
-            live_grid: state
-                .match_state
-                .sim_runtime
-                .as_ref()
-                .and_then(|runtime| runtime.simulation.overlay_grid()),
-            registry: state.overlay_registry(),
-            rules: state.rules(),
-            interner: state
-                .match_state
-                .sim_runtime
-                .as_ref()
-                .map(|runtime| runtime.simulation.interner()),
-            tiberium_types: state.rules().map(|rules| &rules.tiberium_types),
-            terrain: state
-                .match_state
-                .sim_runtime
-                .as_ref()
-                .and_then(|runtime| runtime.simulation.resolved_terrain()),
-            lighting: state.match_state.match_presentation.lighting.grid(),
-            camera: [cam_x, cam_y],
-            viewport: [sw, sh],
-            origin_y,
-            world_height,
-            viewer,
-            fog,
-            fog_of_war,
-        },
-        bodies,
-    );
+    let terrain = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .and_then(|runtime| runtime.simulation.resolved_terrain());
+    // Only the entries whose body can reach the view, still in index order:
+    // the opaque leaf keeps the first pixel on equal Z (0x004991EA..0x004991EC),
+    // so the bodies' order is part of the image.
+    let window = overlay_body_window(terrain, atlas.art_extent(), [cam_x, cam_y], [sw, sh]);
+    let overlays = &state.match_state.match_presentation.overlays;
+    let window_entries: Vec<_> = overlays.entries_in(window).cloned().collect();
+    let start = bodies.len();
+    let input = CellOverlayInputs {
+        entries: &window_entries,
+        atlas,
+        names: &state.match_state.match_presentation.overlay_names,
+        live_grid: state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .and_then(|runtime| runtime.simulation.overlay_grid()),
+        registry: state.overlay_registry(),
+        rules: state.rules(),
+        interner: state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|runtime| runtime.simulation.interner()),
+        tiberium_types: state.rules().map(|rules| &rules.tiberium_types),
+        terrain,
+        lighting: state.match_state.match_presentation.lighting.grid(),
+        camera: [cam_x, cam_y],
+        viewport: [sw, sh],
+        origin_y,
+        world_height,
+        viewer,
+        fog,
+        fog_of_war,
+    };
+    build_cell_overlay_bodies(&input, bodies);
+    if cfg!(debug_assertions) && window != crate::render::cell_window::CellWindow::Whole {
+        let mut whole = Vec::new();
+        build_cell_overlay_bodies(
+            &CellOverlayInputs {
+                entries: overlays.as_slice(),
+                ..input
+            },
+            &mut whole,
+        );
+        let windowed = &bodies[start..];
+        assert!(
+            windowed.len() == whole.len()
+                && windowed.iter().zip(&whole).all(|(a, b)| {
+                    a.cell == b.cell
+                        && a.draw == b.draw
+                        && bytemuck::bytes_of(&a.instance) == bytemuck::bytes_of(&b.instance)
+                }),
+            "the overlay window changed the overlay bodies"
+        );
+    }
+    static DEBUG_BUCKETS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *DEBUG_BUCKETS.get_or_init(|| std::env::var("RA2_DEBUG_BRIDGE_RENDER_BUCKETS").is_ok()) {
+        log::debug!("Cell overlay bodies: {}", bodies.len());
+    }
 
     // Terrain objects from [Terrain] section.
     let Some(sim) = state
@@ -1946,5 +2060,41 @@ mod tests {
 
         let capped = reg.anim_runtime_config("CAPPED");
         assert_eq!(anim_instance_alpha(capped, 5, 100), 0.5);
+    }
+
+    /// Rubble draws a whole building's art from one cell, so the body cull's
+    /// box and margin grow to the sprite's side; the body window must reach
+    /// an anchor that far left of the view.
+    #[test]
+    fn rubble_anchor_at_the_cull_margin_stays_in_the_body_window() {
+        use crate::render::cell_window::ArtExtent;
+        // A 300 x 240 sprite: a 300 px box and margin.
+        let art = ArtExtent {
+            left: -150.0,
+            top: -200.0,
+            right: 150.0,
+            bottom: 40.0,
+        };
+        let (camera, viewport) = ([0.0, 0.0], [600.0, 400.0]);
+        // Anchor x = -600, the cull's left limit, 19 columns left of the view.
+        let (rx, ry) = (5, 24);
+        let (x, y) = crate::map::terrain::iso_to_screen(rx, ry, 0);
+        let y = y + super::super::bridges::cell_overlay_y_offset(
+            crate::sim::overlay_grid::RUBBLE_OVERLAY_INDEX,
+            0,
+            0,
+        );
+        assert!(super::super::helpers::in_view(
+            x,
+            y,
+            300.0,
+            300.0,
+            camera[0],
+            camera[1],
+            viewport[0],
+            viewport[1],
+            300.0
+        ));
+        assert!(super::overlay_body_window(None, art, camera, viewport).contains(rx, ry));
     }
 }

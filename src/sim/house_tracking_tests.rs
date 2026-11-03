@@ -741,3 +741,49 @@ fn naval_tracking_retains_limbo_capture_and_reload_deletion_authority() {
     }
     assert_eq!(sim.state_hash(), restored.state_hash());
 }
+
+/// `BuildingClass::ChangeOwner` (`0x00448C9A..0x00448CD6`): only a
+/// Construction Yard taken from a human player (`0x0050B6F0`) cancels that
+/// player's current building placement.
+#[test]
+fn a_captured_human_construction_yard_cancels_placement() {
+    use crate::sim::world::{FrameEffects, LifecycleOutput};
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[BuildingTypes]\n0=YARD\n1=PLANT\n[YARD]\nConstructionYard=yes\n[PLANT]\n",
+        ),
+        &IniFile::from_str("[YARD]\nFoundation=2x2\n[PLANT]\nFoundation=2x2\n"),
+    )
+    .unwrap();
+    let mut sim = Simulation::with_seed(3);
+    let human = sim.interner.intern("Americans");
+    let computer = sim.interner.intern("Russians");
+    sim.houses
+        .register(HouseState::new(human, 0, None, true, 0, 10));
+    sim.houses
+        .register(HouseState::new(computer, 1, None, false, 0, 10));
+    sim.session.set_current_house_for_test(Some(human));
+    let [yard, plant] = [("YARD", 10), ("PLANT", 14)].map(|(kind, rx)| {
+        sim.spawn_object_at_height(kind, "Americans", rx, 10, 0, 0, &rules)
+            .unwrap()
+    });
+    let mut capture = |sim: &mut Simulation, id, to| {
+        sim.lifecycle_outputs.clear_for_test();
+        sim.change_owner_with_rules(id, to, &rules, None, FrameEffects::default());
+        sim.lifecycle_outputs
+            .as_slice()
+            .iter()
+            .copied()
+            .filter(|output| matches!(output, LifecycleOutput::ConstructionYardCaptured { .. }))
+            .collect::<Vec<_>>()
+    };
+    assert!(capture(&mut sim, plant, computer).is_empty());
+    assert_eq!(
+        capture(&mut sim, yard, computer),
+        [LifecycleOutput::ConstructionYardCaptured { owner: human }]
+    );
+    assert!(
+        capture(&mut sim, yard, human).is_empty(),
+        "a computer's yard"
+    );
+}

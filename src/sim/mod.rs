@@ -82,8 +82,12 @@ pub(crate) mod powered_unit; // Robot Tanks offline without a PowersUnit= buildi
 pub mod light_sources;
 pub mod multiplayer_checksum;
 pub mod native_identity;
-// A wasm build has no threads (the browser package, the headless WASI run).
-#[cfg_attr(target_arch = "wasm32", path = "parallel_web.rs")]
+// A wasm build has no threads (the browser package, the headless WASI run)
+// unless the browser package opts into its Web Worker pool.
+#[cfg_attr(
+    all(target_arch = "wasm32", not(feature = "wasm-threads")),
+    path = "parallel_web.rs"
+)]
 pub(crate) mod parallel; // order-preserving work over scoped threads
 #[cfg(all(test, feature = "wasm", not(target_arch = "wasm32")))]
 #[path = "parallel_web.rs"]
@@ -103,6 +107,7 @@ pub mod temporal;
 pub(crate) mod tesla_charging;
 pub mod timer; // signed frame-anchored countdown primitive
 pub(crate) mod touch_log; // which stored objects were handed out mutably, per reader
+pub use touch_log::live_read_check_enabled;
 pub mod type_handle_table; // InternedId -> TypeHandle, one-hop entity->type resolution
 
 // --- Pure read-only deterministic engine-data services (gamemd-exact lookup tables) ---
@@ -203,7 +208,7 @@ pub mod tiberium_germinate;
 
 // --- Per-match settings, per-player state ---
 pub mod game_options;
-pub(crate) mod house_diplomacy; // ally graph: install, MakeAlly/MakeEnemy, Computer_Paranoid
+pub mod house_diplomacy; // ally graph: install, MakeAlly/MakeEnemy, Computer_Paranoid
 pub mod house_state;
 pub mod houses;
 pub(crate) mod house_strategy;

@@ -117,6 +117,7 @@
 //! - rules/ does NOT depend on (outside tests): sim/, render/, ui/, audio/, net/
 
 pub mod airstrike;
+pub(crate) mod threat_coefficients;
 #[cfg(feature = "phobos")]
 pub mod airstrike_targets;
 pub mod attach_effect;
@@ -212,6 +213,7 @@ mod country_parent_tests;
 #[cfg(test)]
 mod country_veterancy_tests;
 pub mod effect_asset_catalog;
+pub mod end_game;
 pub mod error;
 pub mod flh;
 pub mod foundation;

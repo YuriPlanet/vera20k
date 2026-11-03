@@ -4,6 +4,11 @@ pub(crate) mod ime;
 use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
 
+// The host awaits `initThreadPool(workers)` after `init()`, before any
+// simulation work. Without it the same package runs that work serially.
+#[cfg(feature = "wasm-threads")]
+pub use wasm_bindgen_rayon::init_thread_pool;
+
 thread_local! {
     static CANVAS: RefCell<Option<web_sys::HtmlCanvasElement>> = const { RefCell::new(None) };
     static STATUS: RefCell<Option<js_sys::Function>> = const { RefCell::new(None) };

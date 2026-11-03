@@ -221,3 +221,42 @@ fn action110_stops_elapsed_before_action67_cue_and_house_wait() {
         "handled pause cannot re-arm after wait"
     );
 }
+
+/// `Custom End Game Movie` moves only the result's EVA line and the exit
+/// router. The House still publishes on the frame its SavourDelay expires,
+/// the frame a headless or replay run publishes on.
+#[test]
+fn a_deferred_verdict_line_publishes_the_result_on_its_own_frame() {
+    let mut sim = Simulation::with_seed(0x004F_860B);
+    let owner = sim.intern("Human");
+    let mut house = HouseState::new(owner, 0, None, true, 0, 10);
+    assert!(house.accept_win_result(0, 0, false));
+    sim.houses_mut_for_test().register(house);
+    sim.session_mut_for_test()
+        .set_game_mode(ScenarioGameMode::Skirmish);
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
+    let mut runtime = SimRuntime::from_simulation(sim);
+    let mut sounds = crate::audio::events::SoundEventQueue::new();
+    let mut radar = |_, _, _: &crate::rules::ruleset::RuleSet| false;
+    let mut pending = None;
+    let client = super::FrameClientBoundary::new(None, Some("Human"), &mut sounds, &mut radar)
+        .with_outcome_wait(&mut pending)
+        .with_deferred_verdict(true);
+    let output = runtime
+        .advance_frame(
+            &[],
+            67,
+            TickLane::Ordinary,
+            FrameEffects::for_sound(&client).with_outcome_wait(&client),
+        )
+        .unwrap();
+    assert!(!output.outcome_waiting);
+    assert_eq!(
+        runtime
+            .simulation
+            .ready_outcome_for_owner(owner)
+            .map(|outcome| outcome.kind),
+        Some(HouseOutcomeKind::Victory)
+    );
+}

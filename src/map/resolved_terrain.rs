@@ -541,11 +541,12 @@ impl DynamicTerrainCellState {
         }
     }
 
+    /// Every field but `level`, which the grid writes through its one level
+    /// writer (`ResolvedTerrainGrid::set_cell_level`).
     fn apply(&self, cell: &mut ResolvedTerrainCell) {
         cell.final_tile_index = self.final_tile_index;
         cell.final_sub_tile = self.final_sub_tile;
         cell.is_wood_bridge_repair_tile = self.is_wood_bridge_repair_tile;
-        cell.level = self.level;
         cell.filled_clear = self.filled_clear;
         cell.tileset_index = self.tileset_index;
         cell.land_type = self.land_type;
@@ -663,6 +664,41 @@ impl PristineTmpHeader {
     }
 }
 
+/// An inclusive range of signed cell levels (`level as i8`, the height
+/// `terrain::iso_to_screen` projects). See [`ResolvedTerrainGrid::level_span`].
+/// The default holds level 0 alone.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LevelSpan {
+    pub min: i8,
+    pub max: i8,
+}
+
+impl LevelSpan {
+    /// Every signed level.
+    pub const FULL: Self = Self {
+        min: i8::MIN,
+        max: i8::MAX,
+    };
+
+    /// The span of `levels` and 0.
+    fn of(levels: impl IntoIterator<Item = u8>) -> Self {
+        let mut span = Self::default();
+        for level in levels {
+            span.widen(level);
+        }
+        span
+    }
+
+    fn widen(&mut self, level: u8) {
+        self.min = self.min.min(level as i8);
+        self.max = self.max.max(level as i8);
+    }
+
+    pub fn contains(&self, level: u8) -> bool {
+        (self.min..=self.max).contains(&(level as i8))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ResolvedTerrainGrid {
     width: u16,
@@ -684,6 +720,15 @@ pub struct ResolvedTerrainGrid {
     /// never serialized or included in simulation hashes.
     native_tmp_draw_heights: HashMap<u16, PristineTmpHeader>,
     cells: Vec<ResolvedTerrainCell>,
+    /// Derived bound on the signed levels in `cells`, always holding 0 (the
+    /// level presentation assumes for a cell the grid lacks). Every
+    /// constructor computes it from `cells`; [`Self::set_cell_level`], the one
+    /// level writer, widens it and nothing narrows it. The raw test accessors
+    /// widen it to [`LevelSpan::FULL`]. A restored cell (the rollback in
+    /// [`Self::apply_dynamic_cell_state`]) brings back a level it already held.
+    /// Presentation bounds a cell's projected height with it;
+    /// [`Self::level_span`] checks it in debug builds.
+    level_span: LevelSpan,
     /// One live identity handle, normally bound to the process owner before
     /// scenario construction. Synthetic constructors own a fresh detached
     /// handle; derived clones share it.
@@ -1010,6 +1055,7 @@ impl ResolvedTerrainGrid {
         Self {
             width,
             height,
+            level_span: LevelSpan::of(cells.iter().map(|cell| cell.level)),
             cells,
             land_speed_costs: land_speed_cost_profiles(None),
             overlay_passability: Vec::new(),
@@ -1300,17 +1346,39 @@ impl ResolvedTerrainGrid {
         self.cells.get_mut(idx)
     }
 
-    /// [`Self::cell_mut`] for fixtures outside this module.
+    /// [`Self::cell_mut`] for fixtures outside this module. A fixture may
+    /// write any level through it, so the level span becomes
+    /// [`LevelSpan::FULL`].
     #[cfg(any(test, feature = "test-support"))]
     pub fn cell_mut_for_test(&mut self, rx: u16, ry: u16) -> Option<&mut ResolvedTerrainCell> {
+        self.level_span = LevelSpan::FULL;
         self.cell_mut(rx, ry)
     }
 
     /// The cell storage, for fixtures that reshape a grid. Does not move
-    /// `mutation_epoch`.
+    /// `mutation_epoch`; widens the level span to [`LevelSpan::FULL`].
     #[cfg(any(test, feature = "test-support"))]
     pub fn cells_mut_for_test(&mut self) -> &mut Vec<ResolvedTerrainCell> {
+        self.level_span = LevelSpan::FULL;
         &mut self.cells
+    }
+
+    /// The one writer of a stored cell's level; keeps [`Self::level_span`].
+    fn set_cell_level(&mut self, index: usize, level: u8) {
+        self.cells[index].level = level;
+        self.level_span.widen(level);
+    }
+
+    /// A signed range holding every stored cell's level and 0. It only widens
+    /// while the grid lives, so it can be wider than the current levels.
+    pub fn level_span(&self) -> LevelSpan {
+        debug_assert!(
+            self.cells
+                .iter()
+                .all(|cell| self.level_span.contains(cell.level)),
+            "a cell level was written past set_cell_level"
+        );
+        self.level_span
     }
 
     /// Epoch of mutable cell access; see the field note.
@@ -1337,9 +1405,11 @@ impl ResolvedTerrainGrid {
         let before = (!same_entry && self.bridge_recalc_catalog.is_some())
             .then(|| self.cells[index].clone());
         state.apply(&mut self.cells[index]);
+        self.set_cell_level(index, state.level);
         if !same_entry {
             if let Some(before) = before {
                 if let Err(error) = self.refresh_saved_cell_presentation(index) {
+                    // The restored level was in the span, which never narrows.
                     self.cells[index] = before;
                     log::error!("terrain snapshot presentation unavailable at {rx},{ry}: {error}");
                     return false;
@@ -1458,5 +1528,27 @@ mod mutation_epoch_tests {
         let stable = grid.mutation_epoch();
         grid.set_terrain_object_occupation((5, 5), Some(1));
         assert_eq!(grid.mutation_epoch(), stable);
+    }
+}
+
+#[cfg(test)]
+mod level_span_tests {
+    use super::*;
+
+    /// Presentation windows project with the span, so a raw native level
+    /// store above every built level (Cell+11B, 568E40) must widen it, and a
+    /// signed-negative byte must reach its minimum.
+    #[test]
+    fn native_level_write_beyond_the_built_levels_widens_the_span() {
+        let mut grid = test_grid(2, 1, |rx, ry| ResolvedTerrainCell {
+            level: 2,
+            ..test_flat_cell(rx, ry)
+        });
+        assert_eq!(grid.level_span(), LevelSpan { min: 0, max: 2 });
+        let cell = grid.native_cell_identity((1, 0));
+        grid.write_native_cell_level(cell, 9);
+        assert_eq!(grid.level_span(), LevelSpan { min: 0, max: 9 });
+        grid.write_native_cell_level(cell, 0xF8);
+        assert_eq!(grid.level_span(), LevelSpan { min: -8, max: 9 });
     }
 }

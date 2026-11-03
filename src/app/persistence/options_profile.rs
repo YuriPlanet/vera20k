@@ -140,9 +140,16 @@ pub(crate) struct RetailOptionsProfile {
     /// `[VERA] MouseWheelZoom=`: let the mouse wheel change the battle's
     /// view distance. Off by default; this is a local camera preference.
     pub(crate) mouse_wheel_zoom: bool,
+    /// `[VERA] RightClickOrders=`: left selects, right issues context orders.
+    /// VERA-only input preference; off by default.
+    pub(crate) right_click_orders: bool,
     /// `[VERA] LockCursor=`: keep the pointer inside the game window. On
     /// unless the player turns it off.
     pub(crate) lock_cursor: bool,
+    /// `[VERA] VeraIcon=`: the window, taskbar and Dock show VERA's artwork
+    /// instead of Red Alert 2's red star. Off by default; the installed
+    /// program's own icon stays the red star either way.
+    pub(crate) vera_icon: bool,
     /// `[VERA] WindowMaximized=`: whether the window was last left maximised.
     /// [`Self::window_placement`] keeps the size it returns to.
     pub(crate) window_maximized: bool,
@@ -176,10 +183,42 @@ pub(crate) struct RetailOptionsProfile {
     /// its personality and its trigger weights either way, and the simulation
     /// never reads it.
     pub(crate) commander_feedback: bool,
+    /// `[VERA] CustomEndGameBanner=`: the match's own verdict, shown where the
+    /// match is decided — the country's `VictoryArt=`/`DefeatArt=` picture
+    /// drawn over the tactical view where the retail `GRFXTXT` banner sits,
+    /// and its `VictoryMusic=`/`DefeatMusic=` theme started with it. On by
+    /// default, so a rules set that names them just works; untick it from
+    /// Options ("Custom End Game Verdict") to keep the retail banner and let
+    /// the battle theme run on. Presentation only: the simulation never reads
+    /// it, and the score page has its own switch below.
+    pub(crate) custom_end_game_banner: bool,
+    /// `[VERA] CustomEndGameScore=`: the score page's own picture and theme —
+    /// `VictoryArt=`/`DefeatArt=` as its background instead of the side's, and
+    /// `VictoryMusic=`/`DefeatMusic=` as its theme instead of the side's
+    /// `WinTheme`/`LoseTheme`. Separate from the verdict switch so a player can
+    /// keep one and drop the other. Presentation only.
+    pub(crate) custom_end_game_score: bool,
+    /// `[VERA] CustomEndGameMovie=`: let a destroyed computer commander's
+    /// losing clip finish before the card and the score page. The simulation
+    /// still publishes the result on its own frame; only the exit waits. Off
+    /// restores gamemd's immediate handoff, which cuts the clip. Presentation
+    /// only, and skirmish only: the clip layer's own `CommanderFeedback=`
+    /// switch still decides whether clips exist at all.
+    pub(crate) custom_end_game_movie: bool,
+    /// `[VERA] HealthBars=`: which objects draw the health strip besides
+    /// gamemd's selected/hovered pair, as a
+    /// [`HealthBarMode`](crate::ui::main_menu_dialogs::options::HealthBarMode)
+    /// value. Defaults to the native rule. Client presentation only: the
+    /// simulation never reads it, and the profile writer round-trips the value.
+    pub(crate) health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode,
     /// `[VERA] TranslateChat=`: the language received online chat is
     /// translated into, or `None`, the default, for off. Only the `/translate`
     /// chat command changes it ([`Self::commit_chat_translation`]).
     pub(crate) translate_chat: Option<crate::ui::chat_translation::ChatLanguage>,
+    /// `[VERA] Language=`: the language tag of VERA's own text
+    /// ([`crate::i18n`]), `en` by default. Edited in VERA.INI only, so the
+    /// writer leaves the player's line as it is; read once at startup.
+    pub(crate) language: String,
     /// `[VERA] SkipUpdate=`: the release the player chose to skip when the
     /// updater offered it; empty, the default, offers every newer release.
     /// Only the updater changes it ([`Self::commit_skipped_update`]).
@@ -266,7 +305,9 @@ impl Default for RetailOptionsProfile {
             skip_startup_logo: false,
             render_interpolation: false,
             mouse_wheel_zoom: false,
+            right_click_orders: false,
             lock_cursor: true,
+            vera_icon: false,
             window_maximized: false,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
@@ -274,7 +315,12 @@ impl Default for RetailOptionsProfile {
             wol_test_service: false,
             solo_skirmish: false,
             commander_feedback: true,
+            custom_end_game_banner: true,
+            custom_end_game_score: true,
+            custom_end_game_movie: true,
+            health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode::Vanilla,
             translate_chat: None,
+            language: crate::i18n::DEFAULT_LANGUAGE.to_owned(),
             skipped_update: String::new(),
             display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
             window_placement: None,
@@ -294,7 +340,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 21],
+    pub(crate) vera: [(&'static str, String); 27],
 }
 
 impl RetailOptionsLoad {
@@ -497,7 +543,9 @@ impl RetailOptionsProfile {
             self.render_interpolation =
                 vera.read_bool("RenderInterpolation", self.render_interpolation);
             self.mouse_wheel_zoom = vera.read_bool("MouseWheelZoom", self.mouse_wheel_zoom);
+            self.right_click_orders = vera.read_bool("RightClickOrders", self.right_click_orders);
             self.lock_cursor = vera.read_bool("LockCursor", self.lock_cursor);
+            self.vera_icon = vera.read_bool("VeraIcon", self.vera_icon);
             self.window_maximized = vera.read_bool("WindowMaximized", self.window_maximized);
             // A non-numeric value answers 0, which the clamp lifts to the
             // retail strength rather than to a negative boost.
@@ -513,8 +561,22 @@ impl RetailOptionsProfile {
             self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
+            self.custom_end_game_banner =
+                vera.read_bool("CustomEndGameBanner", self.custom_end_game_banner);
+            self.custom_end_game_score =
+                vera.read_bool("CustomEndGameScore", self.custom_end_game_score);
+            self.custom_end_game_movie =
+                vera.read_bool("CustomEndGameMovie", self.custom_end_game_movie);
+            // Absent keeps the current value; a value this build does not know
+            // reads as the native rule instead of hiding the original strip.
+            self.health_bars = crate::ui::main_menu_dialogs::options::HealthBarMode::from_ini_value(
+                vera.read_int("HealthBars", self.health_bars.ini_value()),
+            );
             if let Some(value) = vera.read_name("TranslateChat", 16) {
                 self.translate_chat = crate::ui::chat_translation::ChatLanguage::from_tag(value);
+            }
+            if let Some(value) = vera.read_name("Language", 16) {
+                self.language = value.to_owned();
             }
             if let Some(value) = vera.read_name("SkipUpdate", 16) {
                 self.skipped_update = value.to_owned();
@@ -635,12 +697,28 @@ impl RetailOptionsProfile {
                     format_bool(self.commander_feedback).to_string(),
                 ),
                 (
+                    "CustomEndGameBanner",
+                    format_bool(self.custom_end_game_banner).to_string(),
+                ),
+                (
+                    "CustomEndGameScore",
+                    format_bool(self.custom_end_game_score).to_string(),
+                ),
+                (
+                    "CustomEndGameMovie",
+                    format_bool(self.custom_end_game_movie).to_string(),
+                ),
+                (
                     "RenderInterpolation",
                     format_bool(self.render_interpolation).to_string(),
                 ),
                 (
                     "MouseWheelZoom",
                     format_bool(self.mouse_wheel_zoom).to_string(),
+                ),
+                (
+                    "RightClickOrders",
+                    format_bool(self.right_click_orders).to_string(),
                 ),
                 ("HouseColorStrength", self.house_color_strength.to_string()),
                 ("Display", self.display.ini_value().to_owned()),
@@ -656,6 +734,8 @@ impl RetailOptionsProfile {
                     format_bool(self.window_maximized).to_string(),
                 ),
                 ("LockCursor", format_bool(self.lock_cursor).to_string()),
+                ("VeraIcon", format_bool(self.vera_icon).to_string()),
+                ("HealthBars", self.health_bars.ini_value().to_string()),
             ],
         }
     }
@@ -1545,16 +1625,18 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         let unset = RetailOptionsProfile::default().transform_settings(b"");
         let unset = load_snapshot(&startup, &unset).retained_profile;
         assert_eq!(unset.window_placement, None);
-        // The lock starts on and a window starts unmaximised; both round-trip.
-        assert!(unset.lock_cursor && !unset.window_maximized);
+        // The lock starts on, a window starts unmaximised and its icon is the
+        // red star; all three round-trip.
+        assert!(unset.lock_cursor && !unset.window_maximized && !unset.vera_icon);
         let changed = RetailOptionsProfile {
             lock_cursor: false,
             window_maximized: true,
+            vera_icon: true,
             ..RetailOptionsProfile::default()
         }
         .transform_settings(b"");
         let changed = load_snapshot(&startup, &changed).retained_profile;
-        assert!(!changed.lock_cursor && changed.window_maximized);
+        assert!(!changed.lock_cursor && changed.window_maximized && changed.vera_icon);
     }
 
     #[test]
@@ -1651,6 +1733,33 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
     }
 
     #[test]
+    fn right_click_orders_preference_defaults_off_and_round_trips() {
+        let startup = RetailStartupOptions::default();
+        assert!(
+            !load_snapshot(&startup, b"")
+                .retained_profile
+                .right_click_orders
+        );
+        let input = b"[VERA]\nRightClickOrders=yes\nUnowned=keep\n";
+        let mut profile = load_snapshot(&startup, input).retained_profile;
+        assert!(profile.right_click_orders);
+        let written = profile.transform_settings(input);
+        assert!(
+            load_snapshot(&startup, &written)
+                .retained_profile
+                .right_click_orders
+        );
+        profile.right_click_orders = false;
+        let written = profile.transform_settings(&written);
+        assert!(
+            !load_snapshot(&startup, &written)
+                .retained_profile
+                .right_click_orders
+        );
+        assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
+    }
+
+    #[test]
     fn render_interpolation_preference_uses_the_existing_vera_profile_transaction() {
         let startup = RetailStartupOptions::default();
         assert!(
@@ -1696,6 +1805,94 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                     .retained_profile
                     .commander_feedback,
                 expected
+            );
+        }
+    }
+
+    /// `[VERA] HealthBars=` is the client health-strip policy: zero is the
+    /// native rule and the default, and a value this build does not know reads
+    /// as it, so a hand-edited INI never hides the original strip.
+    #[test]
+    fn health_bar_modes_read_and_round_trip() {
+        use crate::ui::main_menu_dialogs::options::HealthBarMode;
+
+        let startup = RetailStartupOptions::default();
+        assert_eq!(
+            load_snapshot(&startup, b"").retained_profile.health_bars,
+            HealthBarMode::Vanilla
+        );
+        for (value, expected) in [
+            (0, HealthBarMode::Vanilla),
+            (1, HealthBarMode::Always),
+            (2, HealthBarMode::AlwaysExceptFull),
+            (7, HealthBarMode::Vanilla),
+        ] {
+            let input = format!("[VERA]\nHealthBars={value}\nUnowned=keep\n");
+            let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
+            assert_eq!(profile.health_bars, expected, "HealthBars={value}");
+            let written = String::from_utf8(profile.transform_settings(input.as_bytes())).unwrap();
+            assert!(written.contains("Unowned=keep"), "{written}");
+            assert_eq!(
+                load_snapshot(&startup, written.as_bytes())
+                    .retained_profile
+                    .health_bars,
+                expected,
+                "HealthBars={value} survives the profile writer"
+            );
+        }
+    }
+
+    /// The three `CustomEndGame*=` switches are independent: turning one off
+    /// never touches the other two, so a player can keep the score page's
+    /// picture and drop the battlefield verdict, or keep both and cut the
+    /// closing movie short.
+    #[test]
+    fn the_custom_end_game_switches_round_trip_independently() {
+        let startup = RetailStartupOptions::default();
+        let stock = load_snapshot(&startup, b"").retained_profile;
+        assert!(stock.custom_end_game_banner, "verdict defaults on");
+        assert!(stock.custom_end_game_score, "score page defaults on");
+        assert!(stock.custom_end_game_movie, "movie defaults on");
+        for key in [
+            "CustomEndGameBanner",
+            "CustomEndGameScore",
+            "CustomEndGameMovie",
+        ] {
+            let input = format!("[VERA]\n{key}=no\nUnowned=keep\n");
+            let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
+            let (banner, score, movie) = (
+                profile.custom_end_game_banner,
+                profile.custom_end_game_score,
+                profile.custom_end_game_movie,
+            );
+            let off = match key {
+                "CustomEndGameBanner" => !banner,
+                "CustomEndGameScore" => !score,
+                _ => !movie,
+            };
+            assert!(off, "{key}=no switched its own key off");
+            assert_eq!(
+                (banner, score, movie),
+                (
+                    key != "CustomEndGameBanner",
+                    key != "CustomEndGameScore",
+                    key != "CustomEndGameMovie"
+                ),
+                "{key}=no left the other two alone"
+            );
+            let written = profile.transform_settings(input.as_bytes());
+            let text = String::from_utf8_lossy(&written).into_owned();
+            assert!(text.contains("Unowned=keep"));
+            assert!(text.contains(&format!("{key}=no")), "{key} is written back");
+            let reloaded = load_snapshot(&startup, &written).retained_profile;
+            assert_eq!(
+                (
+                    reloaded.custom_end_game_banner,
+                    reloaded.custom_end_game_score,
+                    reloaded.custom_end_game_movie
+                ),
+                (banner, score, movie),
+                "{key} survives a write and reread"
             );
         }
     }

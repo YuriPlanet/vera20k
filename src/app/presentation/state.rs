@@ -48,6 +48,10 @@ pub(crate) struct MatchPresentationState {
     /// process InitGame GRFXTXT art.
     pub(crate) outcome_banner_side_art:
         Option<crate::app::presentation::outcome_banner::OutcomeBannerArt>,
+    /// The local country's own win/lose card from `[EndGameScreens]`, drawn in
+    /// the same tactical slot as the retail banner. `None` keeps the native
+    /// art; the player's Custom End Game Banner switch is read at draw time.
+    pub(crate) end_game_banner: Option<crate::app::presentation::outcome_banner::EndGameBanner>,
     pub(crate) software_cursor: Option<crate::app::presentation::render::SoftwareCursor>,
     pub(crate) terrain_grid: Option<TerrainGrid>,
     /// Overlay entries from map for per-frame instance generation.
@@ -70,10 +74,15 @@ pub(crate) struct MatchPresentationState {
     pub(crate) electric_bolts: super::electric_bolts::ElectricBolts,
     /// Process registry B04A60; ordinary kind1 beams copy their endpoints.
     pub(crate) radiation_beams: super::radiation_beams::RadiationBeams,
-    /// Process-lived native Tactical superweapon ring fade state. Map loads
-    /// replace map resources but keep this presentation owner alive.
-    pub(crate) superweapon_range_pulse:
-        crate::app::presentation::radial_indicators::SuperweaponRangePulse,
+    /// The Main_Ticks the tactical effects above step on, and the last
+    /// composite's clock ([`super::tactical_composite`]).
+    pub(crate) tactical_composite: super::tactical_composite::TacticalComposite,
+    /// The airstrike flare shades of the last composite, by designating Techno.
+    pub(crate) airstrike_shades: super::airstrike_lines::AirstrikeShades,
+    /// Process-lived native Tactical placement and superweapon ring fade
+    /// states. Map loads replace map resources but keep these owners alive.
+    pub(crate) placement_range_pulse: crate::app::presentation::radial_indicators::RangePulse,
+    pub(crate) superweapon_range_pulse: crate::app::presentation::radial_indicators::RangePulse,
     /// Native process-lived FPS counter and detail hysteresis, never sim state.
     pub(crate) detail: std::cell::RefCell<super::detail::DetailState>,
     /// The client's AnimClass `+0x19D` for Supers' ChronoPlacement anims
@@ -82,6 +91,9 @@ pub(crate) struct MatchPresentationState {
     /// The Supers' timer blinks (`SuperClass+0x40`, `+0x48`), by owner and
     /// type (`presentation::super_timers`).
     pub(crate) super_timer_blinks: crate::app::presentation::super_timers::TimerBlinks,
+    /// The earliest clock ms a drawn 0 s Super line's blink flips at, as of
+    /// the last timer draw (`presentation::super_timers::blink_due`).
+    pub(crate) super_timer_next_flip_ms: Option<u64>,
     /// Local timer-list folding and scroll state, independent of simulation.
     pub(crate) super_timer_dock: crate::app::presentation::super_timers::TimerDock,
     pub(crate) combat_lights: crate::app::presentation::combat_lights::CombatLightRuntime,

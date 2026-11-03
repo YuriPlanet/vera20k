@@ -20,6 +20,11 @@ pub(crate) const POPUP_PASSWORD: u16 = 0x72C;
 pub(crate) const CREATE_CLAN: u16 = 0x66C;
 pub(crate) const CREATE_LIMIT: u16 = 0x71E;
 pub(crate) const CREATE_OBSERVE: u16 = 0x71F;
+/// VERA's online popup's Room name edit (no gamemd control).
+pub(crate) const CREATE_NAME: u16 = 0x7FF0;
+
+/// The Room name edit's limit: a nickname's 24, in units below `0x100`.
+const ROOM_NAME_LIMIT: usize = 24;
 
 /// `EM_LIMITTEXT 8` at both procs' `0x497`.
 const PASSWORD_LIMIT: usize = 8;
@@ -46,6 +51,8 @@ pub(crate) enum WolPopupAction {
         observe: bool,
         /// VERA's online popup's Max players and Allow spectators.
         room: Option<RoomLimits>,
+        /// VERA's online popup's Room name, trimmed and not empty.
+        name: Option<String>,
     },
     CreateCancelled,
     PasswordConfirmed(String),
@@ -62,10 +69,14 @@ fn password_edit() -> SavedSeedDescriptionEdit {
 
 /// `CreateGameDialogControl` (vtable `0x7F788C`): +0x11 clan, +0x12 limit,
 /// +0x13 observe; +0x10 belongs to control `0x629`, absent from the
-/// template, and stays 0. VERA's online popup adds its room's limits.
+/// template, and stays 0. VERA's online popup adds its room's limits and
+/// name.
 #[derive(Debug, Clone)]
 pub(crate) struct WolCreateGame {
     pub(crate) password: SavedSeedDescriptionEdit,
+    /// VERA's Room name; it takes the keys first, and a click on either
+    /// edit moves them.
+    pub(crate) name: Option<SavedSeedDescriptionEdit>,
     pub(crate) clan: bool,
     pub(crate) clan_enabled: bool,
     pub(crate) limit: bool,
@@ -90,24 +101,35 @@ impl WolLobbyPopup {
     /// `0x0078DB70`'s `0x497`. `screen_width` is Options' ScreenWidth
     /// (`[0xA8EB84]`); `limit` the process byte `[0xA8B540]`, already cleared
     /// by `0x00789B60` at 1024 or wider; `clan_id` `[0xB77DE4]`; `room` the
-    /// host's last limits in VERA's online lobby.
+    /// host's last limits and room name in VERA's online lobby.
     pub(crate) fn create(
         screen_width: i32,
         limit: bool,
         clan_id: i32,
         observe: bool,
-        room: Option<RoomLimits>,
+        room: Option<(RoomLimits, &str)>,
     ) -> Self {
         let narrow = screen_width < 1024;
+        let name = room.map(|(_, name)| {
+            let mut edit = SavedSeedDescriptionEdit {
+                focused: true,
+                ..Default::default()
+            };
+            edit.set_units_limited(name.encode_utf16(), ROOM_NAME_LIMIT);
+            edit
+        });
+        let mut password = password_edit();
+        password.focused = name.is_none();
         Self {
             kind: WolPopupKind::Create(WolCreateGame {
-                password: password_edit(),
+                password,
+                name,
                 clan: false,
                 clan_enabled: clan_id >= 1,
                 limit: limit && narrow,
                 limit_enabled: narrow,
                 observe,
-                room: room.map(RoomLimitsPicker::new),
+                room: room.map(|(limits, _)| RoomLimitsPicker::new(limits)),
             }),
             buttons: ShellButtonInteraction::default(),
         }
@@ -134,10 +156,39 @@ impl WolLobbyPopup {
         }
     }
 
+    /// The edit that takes the keys.
     fn edit_mut(&mut self) -> &mut SavedSeedDescriptionEdit {
         match &mut self.kind {
-            WolPopupKind::Create(create) => &mut create.password,
+            WolPopupKind::Create(create) => match &mut create.name {
+                Some(name) if name.focused => name,
+                _ => &mut create.password,
+            },
             WolPopupKind::Password(edit) => edit,
+        }
+    }
+
+    /// The Room name as OK sends it: trimmed, `None` when empty.
+    fn room_name(&self) -> Option<String> {
+        let WolPopupKind::Create(WolCreateGame {
+            name: Some(name), ..
+        }) = &self.kind
+        else {
+            return None;
+        };
+        let text = String::from_utf16_lossy(&name.units);
+        Some(text.trim().to_owned()).filter(|text| !text.is_empty())
+    }
+
+    /// A press on the password or Room name edit gives it the keys.
+    pub(crate) fn focus(&mut self, control: u16) {
+        if let WolPopupKind::Create(WolCreateGame {
+            password,
+            name: Some(name),
+            ..
+        }) = &mut self.kind
+        {
+            name.focused = control == CREATE_NAME;
+            password.focused = !name.focused;
         }
     }
 
@@ -149,9 +200,13 @@ impl WolLobbyPopup {
         }
     }
 
-    /// The EN_CHANGE gate of OK.
+    /// The EN_CHANGE gate of OK; VERA's Room name must not be blank.
     pub(crate) fn ok_enabled(&self) -> bool {
-        password_accepted(&self.edit().units)
+        let named = match &self.kind {
+            WolPopupKind::Create(WolCreateGame { name: Some(_), .. }) => self.room_name().is_some(),
+            _ => true,
+        };
+        named && password_accepted(&self.edit().units)
     }
 
     pub(crate) fn enabled(&self, control: u16) -> bool {
@@ -202,6 +257,7 @@ impl WolLobbyPopup {
                 limit: create.limit,
                 observe: create.observe,
                 room: create.room.as_ref().map(|room| room.limits),
+                name: self.room_name(),
             },
             (WolPopupKind::Create(_), POPUP_CANCEL) => WolPopupAction::CreateCancelled,
             (WolPopupKind::Password(_), POPUP_OK) => WolPopupAction::PasswordConfirmed(password),
@@ -212,12 +268,31 @@ impl WolLobbyPopup {
 
     pub(crate) fn insert_text(&mut self, text: &str) {
         let edit = self.edit_mut();
+        let (limit, byte_only) = if edit.password {
+            (PASSWORD_LIMIT, false)
+        } else {
+            (ROOM_NAME_LIMIT, true)
+        };
         for unit in text.encode_utf16() {
-            edit.insert_unit_filtered(unit, PASSWORD_LIMIT, false, &[]);
+            // VERA's lobby refuses a room name with C1 controls too.
+            if byte_only && (0x7F..=0x9F).contains(&unit) {
+                continue;
+            }
+            edit.insert_unit_filtered(unit, limit, byte_only, &[]);
         }
     }
 
     pub(crate) fn edit_key(&mut self, key: LanEditKey) -> Option<WolPopupAction> {
+        if key == LanEditKey::Tab {
+            // VERA's Room name and the password trade the keys.
+            let control = if self.edit_mut().password {
+                CREATE_NAME
+            } else {
+                POPUP_PASSWORD
+            };
+            self.focus(control);
+            return None;
+        }
         let edit = self.edit_mut();
         match key {
             LanEditKey::Backspace => edit.backspace(),
@@ -257,7 +332,8 @@ mod tests {
             players: 5,
             spectators: false,
         };
-        let mut modern = WolLobbyPopup::create(1024, false, 0, false, Some(limits));
+        let mut modern =
+            WolLobbyPopup::create(1024, false, 0, false, Some((limits, "Boris's game")));
         assert!(matches!(
             modern.activate(POPUP_OK),
             Some(WolPopupAction::CreateConfirmed { room: Some(room), .. }) if room == limits
@@ -283,6 +359,7 @@ mod tests {
                 limit: true,
                 observe: false,
                 room: None,
+                name: None,
             })
         );
         let mut password = WolLobbyPopup::password();
@@ -291,6 +368,34 @@ mod tests {
         assert_eq!(
             password.activate(POPUP_CANCEL),
             Some(WolPopupAction::PasswordCancelled)
+        );
+    }
+
+    /// VERA's Room name takes the keys first and Tab hands them to the
+    /// password; OK sends it trimmed and stays off while it is blank.
+    #[test]
+    fn the_room_name_takes_keys_first_and_gates_ok() {
+        let mut popup = WolLobbyPopup::create(
+            1024,
+            false,
+            0,
+            false,
+            Some((RoomLimits::default(), "Boris's game")),
+        );
+        for _ in 0.."Boris's game".len() {
+            popup.edit_key(LanEditKey::Backspace);
+        }
+        assert!(!popup.ok_enabled());
+        popup.insert_text("  No rush \u{4e2d}");
+        popup.edit_key(LanEditKey::Tab);
+        popup.insert_text("pw");
+        let Some(WolPopupAction::CreateConfirmed { password, name, .. }) = popup.activate(POPUP_OK)
+        else {
+            panic!("OK");
+        };
+        assert_eq!(
+            (password.as_str(), name.as_deref()),
+            ("pw", Some("No rush"))
         );
     }
 }

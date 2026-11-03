@@ -2068,7 +2068,7 @@ fn only_a_temporal_scanner_acquires_a_warped_enemy() {
             Some(sim),
             None,
         )
-        .target()
+        .object()
     };
     assert_eq!(acquire(&sim, gi), Some(tank), "the control");
     sim.temporal_initiate_warp(

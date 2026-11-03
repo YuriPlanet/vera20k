@@ -151,7 +151,7 @@ fn record_the_kill(
     entities: &mut EntityStore,
     houses: &mut crate::sim::houses::Houses,
     interner: &StringInterner,
-    alliances: &HouseAllianceMap,
+    alliances: &HouseAlliances,
     victim_id: u64,
     source: KillSource,
     victim_cost: i32,
@@ -210,13 +210,7 @@ fn record_the_kill(
         .and_then(|id| entities.get(id))
         .map(|killer| killer.owner())
         .or(killer_owner);
-    let allied = asker.is_some_and(|asker| {
-        crate::map::houses::is_allied_with(
-            alliances,
-            interner.resolve(asker),
-            interner.resolve(victim_owner),
-        )
-    });
+    let allied = asker.is_some_and(|asker| alliances.is_allied(interner, asker, victim_owner));
     let points =
         super::veterancy::kill_award_points(victim_cost, victim.veterancy.rank_kind(), allied);
     if let Some(killer_id) = killer_id {
@@ -313,7 +307,7 @@ impl crate::sim::world::Simulation {
             &mut self.substrate.entities,
             &mut self.houses,
             &self.interner,
-            self.house_alliances.as_map(),
+            &self.house_alliances,
             victim_id,
             source,
             victim_cost,

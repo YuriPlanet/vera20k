@@ -532,8 +532,8 @@ impl SharedCellDummy {
     /// Run `work` with this Dummy's packed coordinate/level/slope word private
     /// to the current thread: its stamps and reads use a copy of the shared
     /// word taken now, and the shared word stays as it is. Path searches and
-    /// candidate scores within one target scan (`movement::path_batch`,
-    /// `greatest_threat::flat_scores`) stamp
+    /// target scans running side by side (`movement::path_batch`,
+    /// `techno_ai::scan_batch`, `greatest_threat::flat_scores`) stamp
     /// through it, so they neither race on the Dummy nor change what later
     /// lookups on the simulation thread see.
     ///
@@ -868,6 +868,18 @@ impl ResolvedTerrainGrid {
         )
     }
 
+    /// The index of the real cell at `coord` ([`Self::native_cell_coord`])
+    /// on a regular terrain, whose real cells each have their own
+    /// coordinate, the one their index gives: a real cell is at `coord`
+    /// exactly when it has this index. `None` on any other terrain, or when
+    /// no real cell is at `coord`.
+    pub(crate) fn regular_cell_index(&self, (x, y): (i16, i16)) -> Option<usize> {
+        let width = usize::from(self.width);
+        let (x, y) = (usize::try_from(x).ok()?, usize::try_from(y).ok()?);
+        let index = y * width + x;
+        (x < width && index < self.cells.len() && self.is_regular()).then_some(index)
+    }
+
     pub(crate) fn native_cell_coord(&self, cell: NativeCellIdentity) -> (i16, i16) {
         match cell {
             NativeCellIdentity::Real(index) if self.is_regular() => {
@@ -1012,7 +1024,7 @@ impl ResolvedTerrainGrid {
     pub(crate) fn write_native_cell_level(&mut self, cell: NativeCellIdentity, level: u8) {
         match cell {
             NativeCellIdentity::Real(index) => {
-                self.cells[index].level = level;
+                self.set_cell_level(index, level);
                 self.cells[index].refresh_current_height_projection();
             }
             NativeCellIdentity::Dummy => self.shared_cell_dummy.set_level(level as i8),

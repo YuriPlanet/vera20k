@@ -4,15 +4,17 @@
 //! (`position.exact_z_leptons`). `ObjectClass::AI`'s falling block moves it
 //! ([`Simulation::advance_fall`](crate::sim::world::Simulation::advance_fall)):
 //! - each frame the Z moves by the FallRate: `Location.Z = GetZ() + FallRate`
-//! - the FallRate starts at 0 and drops by one a frame (integer DEC) to
-//!   `Rules.ParachuteMaxFallRate` (default `-3`), so it ramps 0,-1,-2,-3,-3,...
+//! - an attached Anim's retained Object+84 flag selects integer DEC, capped
+//!   by `Rules.ParachuteMaxFallRate` (default `-3`); a new Object starts at 0
 //! - the fall grounds when GetHeight is at most 0, and SetHeight(0) puts the
 //!   object on the ground or deck
 //! - the infantry keeps its base locomotor and body sequence during descent
 //!
 //! Free fall uses trunc(FallRate - 1.4), capped by NoParachuteMaxFallRate.
-//! Landing retains the rate and parachute/bomb bytes; a bomb then enters
-//! the synchronous C4 receiver with its current Health and both force flags.
+//! Landing retains the rate and attached-Anim/bomb bytes. The last normal
+//! Anim detach clears +84; a later fall then uses free-fall acceleration.
+//! A grounded bomb enters the synchronous C4 receiver with its current Health
+//! and both force flags.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on sim/game_entity, sim/entity_store, sim/locomotor.
@@ -27,8 +29,9 @@ use crate::sim::world::ObjectSubstrate;
 ///
 /// `ObjectClass::Paradrop @ 0x005F5940` raises the falling byte (`+0x8D`,
 /// `0x005F5965`) and places the object at the drop coordinate: Unlimbo
-/// (`vt+0xD8`), then SetLocation (`vt+0x1B4`, `0x005F5A50`). The FallRate
-/// starts at 0, so the ramp begins on the first frame.
+/// (`vt+0xD8`), then SetLocation (`vt+0x1B4`, `0x005F5A50`). It preserves
+/// the FallRate; only a new Object starts at 0. The caller's subsequent Anim
+/// attachment owns the +84 acceleration flag.
 ///
 /// The caller positions the entity's XY. Reveal keeps this Z as the Unlimbo
 /// coordinate's.
@@ -199,7 +202,7 @@ impl crate::sim::world::Simulation {
             self.substrate
                 .entities
                 .get_mut(owner_id)?
-                .set_parachute_animation(None);
+                .clear_parachute_animation();
             return None;
         };
         let type_name = self.interner.intern(canopy);
@@ -223,8 +226,9 @@ impl crate::sim::world::Simulation {
                 // the Anim owner. Keep a single held identity, not a type scan.
                 self.substrate
                     .entities
-                    .get_mut(owner_id)?
-                    .set_parachute_animation(Some(anim_id));
+                    .write_held_anim(owner_id, |owner, authority| {
+                        owner.hold_parachute_animation(anim_id, authority)
+                    })?;
                 self.set_anim_owner_object(anim_id, Some(owner_id), rules);
                 // Native Paradrop calls SetOwnerObject, then GetRemapColour
                 // through the owner's vtable and stores that ConvertClass at
@@ -245,7 +249,7 @@ impl crate::sim::world::Simulation {
                 self.substrate
                     .entities
                     .get_mut(owner_id)?
-                    .set_parachute_animation(None);
+                    .clear_parachute_animation();
                 // An art type that never bound draws nothing natively either.
                 log::debug!("parachute anim did not construct: {error}");
                 None
@@ -485,7 +489,7 @@ mod canopy_tests {
         sim.notify_anim_pointer_expired(canopy);
         assert_ne!(sim.state_hash(), expected);
         let restored: GameEntity = serde_json::from_slice(&bytes).unwrap();
-        *sim.substrate.entities.get_mut(id).unwrap() = restored;
+        sim.substrate.entities.insert(restored);
         assert_eq!(sim.state_hash(), expected);
         assert_eq!(
             sim.entities().get(id).unwrap().parachute_animation(),
@@ -495,7 +499,7 @@ mod canopy_tests {
         assert_eq!(
             sim.entities().get(id).unwrap().parachute_animation(),
             None,
-            "the derived expiry index re-reads restored entity state"
+            "the anim-holder index notes a restored entity's held canopy"
         );
     }
 

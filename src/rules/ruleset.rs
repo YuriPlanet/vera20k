@@ -30,7 +30,9 @@ use crate::rules::native_processing::{
     CountryProjection, CountryVeterancyState, ProcessedRulesLayers, RulesLayerStack,
     SideProjection, house_type_index_of_name,
 };
-use crate::rules::object_type::{BuildCategory, FactoryType, ObjectCategory, ObjectType};
+use crate::rules::object_type::{
+    BuildCategory, FactoryType, HouseMasks, ObjectCategory, ObjectType,
+};
 use crate::rules::particle_system_type::{ParticleSystemType, ParticleSystemTypeId};
 use crate::rules::particle_type::{ParticleType, ParticleTypeId, PendingParticleType};
 use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup};
@@ -1178,21 +1180,9 @@ pub struct GeneralRules {
     pub dumb_target_strength_coefficient: f64,
     /// AI coefficient for whole cells beyond the selected weapon range.
     pub dumb_target_distance_coefficient: f64,
-    /// `MyEffectivenessCoefficientDefault=` (`RulesClass+0x1040`,
-    /// `RulesClass::ReadGeneral @ 0x00671AEE`). Read default for the per-type
-    /// `MyEffectivenessCoefficient=`, and through it the live coefficient for
-    /// every house that has ever had a building in the world — see
-    /// [`crate::sim::combat::greatest_threat`]. Fallbacks here are the stock
-    /// `rulesmd.ini` values; the `RulesClass` constructor seed is UNCHECKED.
-    pub my_effectiveness_coefficient_default: f64,
-    /// `TargetEffectivenessCoefficientDefault=` (`RulesClass+0x1048`).
-    pub target_effectiveness_coefficient_default: f64,
-    /// `TargetSpecialThreatCoefficientDefault=` (`RulesClass+0x1050`).
-    pub target_special_threat_coefficient_default: f64,
-    /// `TargetStrengthCoefficientDefault=` (`RulesClass+0x1058`).
-    pub target_strength_coefficient_default: f64,
-    /// `TargetDistanceCoefficientDefault=` (`RulesClass+0x1060`).
-    pub target_distance_coefficient_default: f64,
+    /// Retained General defaults (original Rules+1040..1060,
+    /// ctor666C3F..666C75 zero, ReadGeneral671AF6..671B97).
+    threat_coefficient_defaults: super::threat_coefficients::ThreatCoefficients,
     /// `EnemyHouseThreatBonus=` (`RulesClass+0x1090`, ReadDouble at
     /// `0x00671C7C`; constructor 0.0 at `0x00666CB7`, stock rulesmd 400):
     /// added to the threat score of a candidate the scorer house's current
@@ -2307,8 +2297,8 @@ impl ParadropList {
 /// double nearest .02 (`0x3F947AE147AE147B`, pushed at `0x0066D317`).
 const DIFFICULTY_REPAIR_DELAY_DEFAULT: f64 = 0.02;
 
-/// The scalar projection of one original ReadDifficulty66D270 row. ContentScan
-/// and its other AI flags belong to their existing AI admission owners.
+/// One original ReadDifficulty66D270 row: its scalars and `DestroyWalls=`.
+/// `BuildSlowdown=` (`+0x48`) and `ContentScan=` (`+0x4A`) have no reader yet.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DifficultyRules {
     pub firepower: f64,
@@ -2320,6 +2310,11 @@ pub struct DifficultyRules {
     pub build_time: f64,
     pub repair_delay: f64,
     pub build_delay: f64,
+    /// `DestroyWalls=` (`+0x49`, ReadBool `0x0066D374..0x0066D385`, default
+    /// yes): a computer house at this difficulty lets its passive scan pick
+    /// an enemy wall ([`crate::sim::combat::greatest_threat`]'s wall
+    /// fallback, `0x006F8C10`). Retail RULESMD sets `no` on all three rows.
+    pub destroy_walls: bool,
 }
 
 impl Default for DifficultyRules {
@@ -2334,14 +2329,16 @@ impl Default for DifficultyRules {
             build_time: 1.0,
             repair_delay: DIFFICULTY_REPAIR_DELAY_DEFAULT,
             build_delay: 0.03,
+            destroy_walls: true,
         }
     }
 }
 
 impl DifficultyRules {
-    /// Called only for a present row section. Each ReadDouble uses a literal
-    /// default, independent of the preceding Process pass. Native key order
-    /// places BuildTime after RepairDelay/BuildDelay and ContentScan.
+    /// Called only for a present row section. Each read uses a literal
+    /// default, independent of the preceding Process pass. Native key order:
+    /// RepairDelay, BuildDelay, BuildSlowdown, BuildTime, DestroyWalls,
+    /// ContentScan.
     pub(crate) fn read_pass(section: &crate::rules::ini_parser::IniSection) -> Self {
         let firepower = section.read_double("FirePower", 1.0);
         let ground_speed = section.read_double("Groundspeed", 1.0);
@@ -2352,6 +2349,7 @@ impl DifficultyRules {
         let repair_delay = section.read_double("RepairDelay", DIFFICULTY_REPAIR_DELAY_DEFAULT);
         let build_delay = section.read_double("BuildDelay", 0.03);
         let build_time = section.read_double("BuildTime", 1.0);
+        let destroy_walls = section.read_bool("DestroyWalls", true);
         Self {
             firepower,
             ground_speed,
@@ -2362,6 +2360,7 @@ impl DifficultyRules {
             build_time,
             repair_delay,
             build_delay,
+            destroy_walls,
         }
     }
 }
@@ -2750,11 +2749,7 @@ impl Default for GeneralRules {
             dumb_target_special_threat_coefficient: 200.0,
             dumb_target_strength_coefficient: 200.0,
             dumb_target_distance_coefficient: -1.0,
-            my_effectiveness_coefficient_default: 200.0,
-            target_effectiveness_coefficient_default: -200.0,
-            target_special_threat_coefficient_default: 200.0,
-            target_strength_coefficient_default: -200.0,
-            target_distance_coefficient_default: -10.0,
+            threat_coefficient_defaults: Default::default(),
             enemy_house_threat_bonus: 0.0,
             threat_per_occupant: 5,
             normal_targeting_delay: 27,
@@ -3414,6 +3409,12 @@ pub(crate) fn ambient_change_terms(rate: f64, step: f64) -> (bool, i32, i32) {
 }
 
 impl GeneralRules {
+    pub(crate) fn threat_coefficient_defaults(
+        &self,
+    ) -> super::threat_coefficients::ThreatCoefficients {
+        self.threat_coefficient_defaults
+    }
+
     /// LogicClass::AI55B259..55B265 uses the shared ftol(minutes*900),
     /// without clamping negative, zero or exceptional conversion results.
     pub fn shroud_growth_interval_frames(&self) -> i32 {
@@ -3736,26 +3737,8 @@ impl GeneralRules {
                 "DumbTargetDistanceCoefficient",
                 defaults.dumb_target_distance_coefficient,
             ),
-            my_effectiveness_coefficient_default: general.read_double(
-                "MyEffectivenessCoefficientDefault",
-                defaults.my_effectiveness_coefficient_default,
-            ),
-            target_effectiveness_coefficient_default: general.read_double(
-                "TargetEffectivenessCoefficientDefault",
-                defaults.target_effectiveness_coefficient_default,
-            ),
-            target_special_threat_coefficient_default: general.read_double(
-                "TargetSpecialThreatCoefficientDefault",
-                defaults.target_special_threat_coefficient_default,
-            ),
-            target_strength_coefficient_default: general.read_double(
-                "TargetStrengthCoefficientDefault",
-                defaults.target_strength_coefficient_default,
-            ),
-            target_distance_coefficient_default: general.read_double(
-                "TargetDistanceCoefficientDefault",
-                defaults.target_distance_coefficient_default,
-            ),
+            // The ordered processor owns these current-default reads.
+            threat_coefficient_defaults: defaults.threat_coefficient_defaults,
             enemy_house_threat_bonus: general
                 .read_double("EnemyHouseThreatBonus", defaults.enemy_house_threat_bonus),
             threat_per_occupant: general
@@ -4452,6 +4435,56 @@ fn next_rule_set_serial() -> u64 {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub struct TypeHandle(pub u32);
 
+/// O(1) index into a `RuleSet`'s weapons, which [`RuleSet::weapon_handle`]
+/// resolves a name to.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct WeaponHandle(u32);
+
+/// A weapon name as one `RuleSet` resolved it ([`RuleSet::weapon_handle`]).
+/// [`RuleSet::resolved_weapon`] reads the handle only in that set and looks
+/// the name up anywhere else.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ResolvedWeapon {
+    /// The resolving set's serial; 0, which no set has, when unresolved.
+    rules_serial: u64,
+    handle: Option<WeaponHandle>,
+}
+
+/// The weapons a type's records name — `Weapon[]`, `EliteWeapon[]`,
+/// `OccupyWeapon=` and `EliteOccupyWeapon=` — resolved once by the set that
+/// built the type ([`RuleSet::resolve_type_weapons`]), so per-object reads
+/// skip hashing the name. Derived: never hashed or serialized.
+#[derive(Clone, Debug, Default)]
+pub struct TypeWeapons {
+    /// The resolving set's serial; 0 for a type no set resolved.
+    rules_serial: u64,
+    base: Box<[Option<WeaponHandle>]>,
+    elite: Box<[Option<WeaponHandle>]>,
+    /// `OccupyWeapon=`, then `EliteOccupyWeapon=`.
+    occupy: [Option<WeaponHandle>; 2],
+}
+
+impl TypeWeapons {
+    /// The base or, `elite`, the elite record at `index`.
+    #[inline]
+    pub(crate) fn slot(&self, index: usize, elite: bool) -> ResolvedWeapon {
+        let slots = if elite { &self.elite } else { &self.base };
+        ResolvedWeapon {
+            rules_serial: self.rules_serial,
+            handle: slots.get(index).copied().flatten(),
+        }
+    }
+
+    /// `OccupyWeapon=` or, `elite`, `EliteOccupyWeapon=`.
+    #[inline]
+    pub(crate) fn occupy(&self, elite: bool) -> ResolvedWeapon {
+        ResolvedWeapon {
+            rules_serial: self.rules_serial,
+            handle: self.occupy[usize::from(elite)],
+        }
+    }
+}
+
 /// Master container for all game data parsed from rules.ini.
 ///
 /// Name lookups are case-insensitive (matching the engine's find-or-allocate),
@@ -4484,8 +4517,11 @@ pub struct RuleSet {
     /// Case-insensitive identity of each type in the four native TechnoType
     /// registries to its ordered array index (`+0xDF8`).
     type_array_indices: HashMap<(ObjectCategory, String), i32>,
-    /// All weapons indexed by ID (e.g., "105mm" → WeaponType).
-    weapons: LookupMap<String, WeaponType>,
+    /// All weapons' handles indexed by ID (e.g., "105mm" → its
+    /// `weapon_types` index). Built once with the set, never changed.
+    weapons: LookupMap<String, WeaponHandle>,
+    /// The weapons `weapons` indexes, one per key.
+    weapon_types: Vec<WeaponType>,
     /// Derived from the one processed native Weapon family, in allocation
     /// order. The bool admits only slots whose Weapon/Warhead stored IDs map
     /// unambiguously into the existing name projection. Rebuilt with Rules;
@@ -4499,8 +4535,8 @@ pub struct RuleSet {
     countries: HashMap<String, CountryRules>,
     /// Country identities in native `[Countries]` registration order.
     country_ids: Vec<String>,
-    /// Uppercase country identity -> source-order index.
-    country_indices: HashMap<String, CountryIdx>,
+    /// Uppercase country identity -> source-order index; only looked up.
+    country_indices: LookupMap<String, CountryIdx>,
     /// Side identities in native `[Sides]` registration order, including
     /// sides allocated later by a per-country `Side=` override.
     side_ids: Vec<String>,
@@ -4512,6 +4548,12 @@ pub struct RuleSet {
     /// `[CommanderFeedback]`: the talking-head layer's own switches, next to
     /// the personalities they govern.
     commander_feedback: crate::rules::personality::CommanderFeedbackRules,
+    /// `[EndGameScreens]`: per-country score-page music and backgrounds.
+    ///
+    /// Empty for every rules set without that section — which is all retail
+    /// data — and an empty catalog leaves the side art and the native `SCORE`
+    /// theme untouched.
+    end_game_screens: crate::rules::end_game::EndGameCatalog,
     /// Read-only projection of the live SideExt owner, in the same native
     /// array order as side_ids. Rebuilt after every Process/reset/save restore.
     #[cfg(feature = "ares")]
@@ -4964,6 +5006,14 @@ impl RuleSet {
             rules
                 .native_techno_type_order
                 .push((category, id.to_owned(), handle));
+        }
+        for (category, id, coefficients) in processed.techno_threat_coefficients() {
+            let key = (category, id.to_ascii_uppercase());
+            if let Some(handle) = rules.object_category_index.get(&key).copied()
+                && rules.object_by_handle(handle).id == id
+            {
+                rules.object_list[handle.0 as usize].project_threat_coefficients(coefficients);
+            }
         }
         for (category, name, slots) in processed.weapon_slot_states() {
             if let Some(object) = rules
@@ -5613,7 +5663,23 @@ impl RuleSet {
             }
         }
         processed.rules_type_references().apply_to(&mut rules);
+        rules.project_house_masks();
+        rules.resolve_type_weapons();
         Ok(rules)
+    }
+
+    /// Derive every type's [`HouseMasks`] against the current Country
+    /// registry. The Rules build and [`Self::refresh_country_side_projection`]
+    /// are the registry's only writers, and both end here.
+    fn project_house_masks(&mut self) {
+        let masks: Vec<HouseMasks> = self
+            .object_list
+            .iter()
+            .map(|object| HouseMasks::derive(object, self))
+            .collect();
+        for (object, masks) in self.object_list.iter_mut().zip(masks) {
+            object.project_house_masks(masks);
+        }
     }
 
     /// The `ids` whose Type has an object of `category`. The ordered Rules
@@ -5814,7 +5880,7 @@ impl RuleSet {
         // WeaponTypeClass::ReadINI @ `0x00772080` calls
         // CCINIClass::ReadSoundList @ `0x00525430` for Report/DownReport at
         // `0x00772394`/`0x0077241A`; use its shared catalog/list owner.
-        for weapon in self.weapons.values_mut() {
+        for weapon in &mut self.weapon_types {
             let section = ini.section(&weapon.id);
             weapon.report = section.map_or_else(Vec::new, |section| {
                 sounds.read_rules_sound_list(section, "Report")
@@ -6024,6 +6090,7 @@ impl RuleSet {
         let production: ProductionRules = ProductionRules::from_ini(ini);
         let mut general: GeneralRules = GeneralRules::from_ini(ini);
         general.tree_strength = processed.tree_strength();
+        general.threat_coefficient_defaults = processed.threat_coefficient_defaults();
         let (_, color_indexes) = processed.color_add_state();
         general.laser_target_color = color_indexes.laser_target_color();
         general.iron_curtain_color = color_indexes.iron_curtain_color();
@@ -6257,7 +6324,8 @@ impl RuleSet {
         // Projectile, Warhead, Anim, OccupantAnim, OpenToppedAnim and
         // AttachedParticleSystem are retained here; AssaultAnim is retained by
         // this pass too, and Report lists bind below through the SOUNDMD catalog.
-        let mut weapons: LookupMap<String, WeaponType> = LookupMap::default();
+        let mut weapons: LookupMap<String, WeaponHandle> = LookupMap::default();
+        let mut weapon_types: Vec<WeaponType> = Vec::new();
         for state in processed.weapon_states() {
             let Some(section) = ini.section(state.id) else {
                 log::trace!("Weapon '{}' allocated but has no section", state.id);
@@ -6274,7 +6342,19 @@ impl RuleSet {
             weapon.occupant_anim = state.occupant_anim.map(str::to_owned);
             weapon.open_topped_anim = state.open_topped_anim.map(str::to_owned);
             weapon.attached_particle_system = state.attached_particle_system.map(str::to_owned);
-            weapons.insert(section.name.clone(), weapon);
+            // A repeated ID replaces the earlier weapon under its key. The
+            // reserve is `insert`'s, so the keys iterate in the order they
+            // did when the map held the weapons themselves.
+            weapons.reserve(1);
+            match weapons.entry(section.name.clone()) {
+                std::collections::hash_map::Entry::Occupied(slot) => {
+                    weapon_types[slot.get().0 as usize] = weapon;
+                }
+                std::collections::hash_map::Entry::Vacant(slot) => {
+                    slot.insert(WeaponHandle(weapon_types.len() as u32));
+                    weapon_types.push(weapon);
+                }
+            }
         }
         // Step 3: Parse warhead sections. The projected [Warheads] registry is
         // the processor's whole Warhead family: the [Warheads] values and
@@ -6299,7 +6379,7 @@ impl RuleSet {
         // Step 4: Collect projectile IDs referenced by weapons and parse them.
         let mut projectiles: LookupMap<String, ProjectileType> = LookupMap::default();
         let mut projectile_ids: HashSet<String> = HashSet::new();
-        for weapon in weapons.values() {
+        for weapon in &weapon_types {
             if let Some(ref proj_id) = weapon.projectile {
                 projectile_ids.insert(proj_id.clone());
             }
@@ -6460,6 +6540,7 @@ impl RuleSet {
             native_techno_type_order: Vec::new(),
             type_array_indices,
             weapons,
+            weapon_types,
             weapon_array: Vec::new(),
             warheads,
             projectiles,
@@ -6469,6 +6550,10 @@ impl RuleSet {
             side_ids: country_side_registry.side_ids,
             personalities,
             commander_feedback: crate::rules::personality::parse_commander_feedback(ini),
+            end_game_screens: crate::rules::end_game::parse_end_game_screens(
+                ini,
+                &parse_registry(ini, "EndGameScreens"),
+            ),
             #[cfg(feature = "phobos")]
             side_gdi_positions,
             #[cfg(feature = "phobos")]
@@ -6702,6 +6787,7 @@ impl RuleSet {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_fresh_serial(mut self) -> Self {
         self.serial = next_rule_set_serial();
+        self.resolve_type_weapons();
         self
     }
 
@@ -6762,9 +6848,19 @@ impl RuleSet {
         category: ObjectCategory,
         id: &str,
     ) -> Option<&ObjectType> {
+        self.type_handle_in_category(category, id)
+            .map(|handle| self.object_by_handle(handle))
+    }
+
+    /// The handle of the object [`Self::object_in_category`] answers.
+    pub(crate) fn type_handle_in_category(
+        &self,
+        category: ObjectCategory,
+        id: &str,
+    ) -> Option<TypeHandle> {
         self.object_category_index
             .get(&(category, id.to_ascii_uppercase()))
-            .map(|handle| self.object_by_handle(*handle))
+            .copied()
     }
 
     /// The computer's base defense candidates of a House's side
@@ -6992,7 +7088,77 @@ impl RuleSet {
 
     /// Look up a weapon by ID (case-insensitive, gamemd parity).
     pub fn weapon(&self, id: &str) -> Option<&WeaponType> {
-        Self::lookup_ci(&self.weapons, id)
+        self.weapon_handle(id)
+            .map(|handle| self.weapon_by_handle(handle))
+    }
+
+    /// The handle of the weapon [`Self::weapon`] answers for `id`.
+    pub fn weapon_handle(&self, id: &str) -> Option<WeaponHandle> {
+        Self::lookup_ci(&self.weapons, id).copied()
+    }
+
+    /// Dereference a handle this set resolved.
+    #[inline]
+    fn weapon_by_handle(&self, handle: WeaponHandle) -> &WeaponType {
+        &self.weapon_types[handle.0 as usize]
+    }
+
+    /// [`Self::weapon`] of `id`, through `resolved` when this set resolved
+    /// it from `id`; debug builds compare the handle with the name's.
+    #[inline]
+    pub(crate) fn resolved_weapon(
+        &self,
+        id: &str,
+        resolved: ResolvedWeapon,
+    ) -> Option<&WeaponType> {
+        if resolved.rules_serial != self.serial {
+            return self.weapon(id);
+        }
+        debug_assert!(
+            !crate::util::debug_checks::live_read_check_enabled()
+                || resolved.handle == self.weapon_handle(id),
+            "weapon {id:?} resolved to {:?}, unlike its name",
+            resolved.handle
+        );
+        resolved.handle.map(|handle| self.weapon_by_handle(handle))
+    }
+
+    /// Resolve every type's weapon records against this set's weapons
+    /// ([`TypeWeapons`]). Runs when the set is built, after the records'
+    /// last writer (`RulesTypeReferences::apply_to` sets the occupy
+    /// weapons), and when a copy takes its own serial.
+    fn resolve_type_weapons(&mut self) {
+        let resolve = |id: Option<&str>| id.and_then(|id| self.weapon_handle(id));
+        let resolved: Vec<TypeWeapons> = self
+            .object_list
+            .iter()
+            .map(|object| TypeWeapons {
+                rules_serial: self.serial,
+                base: object
+                    .weapon_list
+                    .iter()
+                    .map(|slot| resolve(slot.as_deref()))
+                    .collect(),
+                elite: object
+                    .elite_weapon_list
+                    .iter()
+                    .map(|slot| resolve(slot.as_deref()))
+                    .collect(),
+                occupy: [
+                    resolve(object.occupy_weapon.as_deref()),
+                    resolve(object.elite_occupy_weapon.as_deref()),
+                ],
+            })
+            .collect();
+        for (object, weapons) in self.object_list.iter_mut().zip(resolved) {
+            object.project_resolved_weapons(weapons);
+        }
+    }
+
+    /// Number of WeaponType global88756C allocation slots, including refused
+    /// ambiguous slots. Consumers must preserve these positions for Action42.
+    pub fn weapon_array_len(&self) -> usize {
+        self.weapon_array.len()
     }
 
     /// WeaponType global88756C's allocation index, used by Action42 at
@@ -7230,6 +7396,20 @@ impl RuleSet {
         // v34: Country starting-veterancy; optional extensions add domains below.
         b"rules-simulation-config-v34".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        // ReadINI71551E..715720 can retain different weights for identical
+        // current text. Include the projected bits and process-resident defaults.
+        b"threat-coefficients-v1".hash(&mut hasher);
+        self.general.threat_coefficient_defaults.hash(&mut hasher);
+        self.object_list
+            .iter()
+            .map(|object| {
+                (
+                    (object.category, object.id.to_ascii_uppercase()),
+                    object.threat_coefficients(),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
         // InfantryType ReadINI5245B8..5245F5 retains both theft bytes across
         // invalid later reads. Flattened text alone cannot identify that state.
         let mut theft_flags: Vec<_> = self
@@ -7350,8 +7530,7 @@ impl RuleSet {
             self.ares_super_weapon_metadata.hash(&mut hasher);
             b"ares-weapon-ammo-v1".hash(&mut hasher);
             Self::by_upper_id(
-                self.weapons
-                    .iter()
+                self.weapon_entries()
                     .map(|(id, weapon)| (id, weapon.ammo_cost())),
             )
             .hash(&mut hasher);
@@ -7376,8 +7555,7 @@ impl RuleSet {
             // Bound weapon `RadType=` names, by weapon ID: the map's
             // iteration order differs between targets.
             let mut rad_types: Vec<_> = self
-                .weapons
-                .iter()
+                .weapon_entries()
                 .map(|(id, weapon)| (id, &weapon.rad_type))
                 .collect();
             rad_types.sort_unstable_by_key(|&(id, _)| id);
@@ -8013,8 +8191,7 @@ impl RuleSet {
                 self.phobos_airburst.hash(&mut hasher);
             }
             let can_target_houses = Self::by_upper_id(
-                self.weapons
-                    .iter()
+                self.weapon_entries()
                     .filter(|(_, weapon)| {
                         weapon.can_target_houses()
                             != crate::rules::phobos_shields::AffectedHouse::ALL
@@ -8026,8 +8203,7 @@ impl RuleSet {
                 can_target_houses.hash(&mut hasher);
             }
             let weapon_targeting = Self::by_upper_id(
-                self.weapons
-                    .iter()
+                self.weapon_entries()
                     .filter(|(_, weapon)| {
                         weapon.weapon_targeting()
                             != crate::rules::phobos_airburst::PhobosWeaponTargeting::default()
@@ -8114,7 +8290,7 @@ impl RuleSet {
             "Ares.UnitDelivery".hash(&mut hasher);
             deliveries.hash(&mut hasher);
         }
-        Self::by_upper_id(self.weapons.iter().map(|(id, weapon)| {
+        Self::by_upper_id(self.weapon_entries().map(|(id, weapon)| {
             (
                 id,
                 (
@@ -8383,7 +8559,7 @@ impl RuleSet {
                 control_anims.hash(&mut hasher);
             }
         }
-        Self::by_upper_id(self.weapons.iter().map(|(id, weapon)| {
+        Self::by_upper_id(self.weapon_entries().map(|(id, weapon)| {
             (
                 id,
                 (
@@ -8745,6 +8921,7 @@ impl RuleSet {
         }
         self.side_indices = projection.side_indices;
         self.country_sides = projection.country_sides;
+        self.project_house_masks();
     }
 
     /// Native Country veteran-list membership uses the current HouseType,
@@ -9130,7 +9307,9 @@ impl RuleSet {
 
     /// Resolve a country name to its stable `[Countries]` registration index.
     pub fn country_index(&self, id: &str) -> Option<CountryIdx> {
-        self.country_indices.get(&id.to_ascii_uppercase()).copied()
+        crate::util::native_string::with_ascii_uppercase(id, |key| {
+            self.country_indices.get(key).copied()
+        })
     }
 
     /// Installed Ares1001BA90 shared Find: first stored-ID match, sentinel
@@ -9149,16 +9328,22 @@ impl RuleSet {
     /// return None here, never an invented entry0 binding.
     pub(crate) fn scenario_country_name(&self, country: Option<&str>) -> Option<&str> {
         let index = match country {
-            Some(name) => {
-                let index = house_type_index_of_name(name, self.country_lookup_members());
-                if index < 0 {
-                    return None;
-                }
-                CountryIdx(u16::try_from(index).expect("[Countries] exceeds u16 identity space"))
-            }
+            Some(name) => self.country_index_of_name(name)?,
             None => CountryIdx(0),
         };
         self.country_name(index)
+    }
+
+    /// `HouseTypeClass__FindIndexOfName @ 0x005117D0` as a registered Country.
+    /// The source-order scan checks each HouseType's `Name=` alias (`+0x64`)
+    /// before its registry ID (`+0x24`), ignoring case. The shared owner
+    /// retains `<random>`=-2 and unknown=-1; this typed projection returns
+    /// only registered Country identities.
+    pub(crate) fn country_index_of_name(&self, name: &str) -> Option<CountryIdx> {
+        let index = house_type_index_of_name(name, self.country_lookup_members());
+        (index >= 0).then(|| {
+            CountryIdx(u16::try_from(index).expect("[Countries] exceeds u16 identity space"))
+        })
     }
 
     /// Cooperative5C34F0/5C35F0 draw over the complete retained HouseType
@@ -9189,23 +9374,17 @@ impl RuleSet {
     /// Resolve a trigger owner token to the canonical HouseType registration.
     ///
     /// gamemd-derived: `TriggerTypeClass::Read` resolves token 1 through
-    /// `HouseTypeClass__FindIndexOfName @ 0x005117D0`. Before that scan,
+    /// `HouseTypeClass__FindIndexOfName @ 0x005117D0`
+    /// ([`Self::country_index_of_name`]). Before that scan,
     /// ReadINI727292..7272AA compares literal817474 (`<none>`) and selects
     /// Country zero. This is a TriggerType caller rule, not lookup behavior.
-    /// The source-order scan
-    /// checks each HouseType's `Name=` alias (`+0x64`) before its registry ID
-    /// (`+0x24`). The shared owner retains `<random>`=-2 and unknown=-1;
-    /// this typed projection returns only registered Country identities.
     /// Original caller controls: tools/input_oracle/campaign_start.py
     /// --houses, side_controls.trigger_type_reader_rows (+meta).
     pub fn trigger_house_type_index(&self, owner: &str) -> Option<CountryIdx> {
         if owner.eq_ignore_ascii_case("<none>") {
             return self.country_name(CountryIdx(0)).map(|_| CountryIdx(0));
         }
-        let index = house_type_index_of_name(owner, self.country_lookup_members());
-        (index >= 0).then(|| {
-            CountryIdx(u16::try_from(index).expect("[Countries] exceeds u16 identity space"))
-        })
+        self.country_index_of_name(owner)
     }
 
     /// Resolve a country index back to its source spelling.
@@ -9227,6 +9406,12 @@ impl RuleSet {
     /// how easily a house is considered to be in trouble.
     pub fn commander_feedback(&self) -> crate::rules::personality::CommanderFeedbackRules {
         self.commander_feedback.clone()
+    }
+
+    /// `[EndGameScreens]`: the per-country score-page themes and backgrounds.
+    /// Empty for retail data, which is what keeps the retail page untouched.
+    pub fn end_game_screens(&self) -> &crate::rules::end_game::EndGameCatalog {
+        &self.end_game_screens
     }
 
     /// Phobos `WarheadTypeExt::AllowDamageOnSelf.Get([General] ...)`: the
@@ -9818,10 +10003,7 @@ impl RuleSet {
     }
 
     /// Resolve an ordinal in the native ParticleSystemType registry A83D6C.
-    pub(crate) fn particle_system_type_id_by_index(
-        &self,
-        index: i32,
-    ) -> Option<ParticleSystemTypeId> {
+    pub fn particle_system_type_id_by_index(&self, index: i32) -> Option<ParticleSystemTypeId> {
         let index = usize::try_from(index).ok()?;
         self.particle_system_types
             .get(index)
@@ -9963,6 +10145,7 @@ impl RuleSet {
         let mut infantry_checked: u32 = 0;
         let mut crawls_patched: u32 = 0;
         for obj in self.object_list.iter_mut() {
+            obj.project_silo_damage(art);
             // Resolve the art.ini section: use Image= override if present,
             // otherwise fall back to the object ID itself.
             let art_key: &str = &obj.image;
@@ -10070,7 +10253,7 @@ impl RuleSet {
     /// discovered before the master list and by later rules/ART readers.
     /// TAction41 indexes this registry at6E2357; `[Animations]` numeric
     /// labels and the membership-only BTreeSet are not ordinal catalogs.
-    pub(crate) fn anim_type_name_by_index(&self, index: i32) -> Option<&str> {
+    pub fn anim_type_name_by_index(&self, index: i32) -> Option<&str> {
         self.anim_type_art_read_states
             .get(usize::try_from(index).ok()?)
             .map(|(name, _)| name.as_str())
@@ -10152,11 +10335,16 @@ impl RuleSet {
         self.project_art_data();
     }
 
-    /// Raw synthetic fixture replacement: no native admission or field projection.
+    /// Raw synthetic fixture replacement: no native admission or field
+    /// projection, except the derived `SiloDamage=` each type keeps, which
+    /// follows the new ART.
     #[cfg(any(test, feature = "test-support"))]
     pub fn replace_art_registry_for_test(&mut self, art: crate::rules::art_data::ArtRegistry) {
         self.art_registry = art;
         self.voxel_assets = Default::default();
+        for object in &mut self.object_list {
+            object.project_silo_damage(&self.art_registry);
+        }
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -10176,13 +10364,17 @@ impl RuleSet {
     /// fixture writes it.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_weapon_speed_for_test(&mut self, id: &str, speed: i32) {
-        if let Some(weapon) = self
-            .weapons
-            .values_mut()
-            .find(|weapon| weapon.id.eq_ignore_ascii_case(id))
-        {
+        if let Some(weapon) = self.weapon_mut_for_test(id) {
             weapon.speed = speed;
         }
+    }
+
+    /// The weapon [`Self::weapon`] answers for `id`, to rewrite. Its handle
+    /// stays the same, so the types' resolved records stay current.
+    #[cfg(any(test, feature = "test-support"))]
+    fn weapon_mut_for_test(&mut self, id: &str) -> Option<&mut WeaponType> {
+        let handle = self.weapon_handle(id)?;
+        Some(&mut self.weapon_types[handle.0 as usize])
     }
 
     /// Supply original fixture vectors that the real sound reader cannot
@@ -10406,7 +10598,15 @@ impl RuleSet {
         &self,
         type_id: &str,
     ) -> Option<&crate::rules::animation_sequence::SequenceSet> {
-        let handle = self.type_handle(type_id)?;
+        self.animation_sequence_by_handle(self.type_handle(type_id)?)
+    }
+
+    /// The sequences of the object `handle` names, as
+    /// [`Self::animation_sequence`] answers for its name.
+    pub fn animation_sequence_by_handle(
+        &self,
+        handle: TypeHandle,
+    ) -> Option<&crate::rules::animation_sequence::SequenceSet> {
         self.animation_sequence_by_handle[handle.0 as usize].as_ref()
     }
 
@@ -10466,7 +10666,16 @@ impl RuleSet {
 
     /// Iterate all parsed weapon types.
     pub fn weapons_iter(&self) -> impl Iterator<Item = &WeaponType> {
-        self.weapons.values()
+        self.weapons
+            .values()
+            .map(|&handle| self.weapon_by_handle(handle))
+    }
+
+    /// Every weapon with its ID, in the ID map's order.
+    fn weapon_entries(&self) -> impl Iterator<Item = (&String, &WeaponType)> {
+        self.weapons
+            .iter()
+            .map(|(id, &handle)| (id, self.weapon_by_handle(handle)))
     }
 
     /// Total number of projectiles.
@@ -10570,7 +10779,7 @@ fn parse_registry(ini: &IniFile, section_name: &str) -> Vec<String> {
 struct ProjectedCountrySideRegistry {
     rules: HashMap<String, CountryRules>,
     country_ids: Vec<String>,
-    country_indices: HashMap<String, CountryIdx>,
+    country_indices: LookupMap<String, CountryIdx>,
     side_ids: Vec<String>,
     #[cfg(feature = "ares")]
     side_extensions: Vec<crate::rules::ares_side_extension::AresSideExtension>,
@@ -10602,7 +10811,7 @@ fn project_country_side_registry<'a>(
             });
     }
     let mut country_ids = Vec::new();
-    let mut country_indices = HashMap::new();
+    let mut country_indices = LookupMap::default();
     let mut country_sides = Vec::new();
     let mut rules = HashMap::new();
     for (id, section, color, side, parent, veteran) in countries {
@@ -14977,7 +15186,7 @@ Projectile=Invisible
                 unit(rules).elite_occupy_weapon = Some("GUN".into());
             }),
             ("Range", |rules| {
-                rules.weapons.get_mut("GUN").unwrap().range_leptons = 1;
+                rules.weapon_mut_for_test("GUN").unwrap().range_leptons = 1;
             }),
             ("ShrapnelWeapon", |rules| {
                 rules.projectiles.get_mut("SHOT").unwrap().shrapnel_weapon = Some("GUN".into());
@@ -15074,24 +15283,25 @@ Projectile=Invisible
             ),
             (
                 "Anim",
-                Box::new(move |rules| rules.weapons.get_mut("GUN").unwrap().anim = names()),
+                Box::new(move |rules| rules.weapon_mut_for_test("GUN").unwrap().anim = names()),
             ),
             (
                 "OccupantAnim",
-                Box::new(move |rules| rules.weapons.get_mut("GUN").unwrap().occupant_anim = name()),
+                Box::new(move |rules| {
+                    rules.weapon_mut_for_test("GUN").unwrap().occupant_anim = name()
+                }),
             ),
             (
                 "OpenToppedAnim",
                 Box::new(move |rules| {
-                    rules.weapons.get_mut("GUN").unwrap().open_topped_anim = name()
+                    rules.weapon_mut_for_test("GUN").unwrap().open_topped_anim = name()
                 }),
             ),
             (
                 "AttachedParticleSystem",
                 Box::new(move |rules| {
                     rules
-                        .weapons
-                        .get_mut("GUN")
+                        .weapon_mut_for_test("GUN")
                         .unwrap()
                         .attached_particle_system = name();
                 }),

@@ -911,3 +911,171 @@ fn a_pillbox_clicking_an_enemy_out_of_range_selects_it() {
         }
     }
 }
+
+/// Ctrl+Alt on a member of the group: Techno's guard rung has no identity
+/// test (`0x00700191`, `Is_Ally_ByObject @ 0x004F9A90`), so the tank guards
+/// itself, and Foot's AreaGuard case asks IsActive first (`0x004D7543`), so
+/// the unarmed MCV beside it orders nothing.
+#[test]
+fn ctrl_alt_on_a_member_guards_it_and_skips_an_unarmed_receiver() {
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &battle.processed_rules,
+        Some(&battle.fixed_art),
+    );
+    let (mut sim, tank, other) = object_pair(&battle.rules, "MTNK", "own");
+    let mcv = sim
+        .spawn_object("AMCV", "Americans", 10, 12, 0, &battle.rules)
+        .unwrap();
+    let owner = sim.entities().get(tank).unwrap().owner();
+    let guard = |actor, target| {
+        object_attack_click_command(
+            &sim,
+            &battle.rules,
+            &overlays,
+            owner,
+            OrderMode::Move,
+            OrderModifier::GuardArea,
+            true,
+            actor,
+            target,
+        )
+    };
+    let guards = |actor, target| {
+        Some(Command::Guard {
+            entity_id: actor,
+            target: Some(TargetKind::Entity(target)),
+        })
+    };
+    assert_eq!(guard(tank, other), guards(tank, other));
+    assert_eq!(guard(tank, tank), guards(tank, tank));
+    assert_eq!(guard(mcv, other), None);
+}
+
+/// A receiver the player may not control (vt+0xA0; here a bunkered tank)
+/// fails both key rungs (`0x00700191..0x00700217`) and answers the attack
+/// rung (`0x0070021A`): unforced under Alt, where the controllable tank
+/// moves instead, and forced under Ctrl+Alt, so it attacks the player's own
+/// tank and the cursor shows Ctrl's.
+#[test]
+fn a_receiver_the_player_cannot_control_answers_its_attack_rung_under_alt() {
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &battle.processed_rules,
+        Some(&battle.fixed_art),
+    );
+    let (mut sim, tank, enemy) = object_pair(&battle.rules, "MTNK", "enemy");
+    let bunkered = sim
+        .spawn_object("MTNK", "Americans", 10, 12, 0, &battle.rules)
+        .unwrap();
+    sim.entities_mut_for_test()
+        .get_mut(bunkered)
+        .unwrap()
+        .bunker
+        .set_bunker_link_for_test(crate::sim::docking::bunker_link::BunkerLink::Installed(3));
+    let owner = sim.entities().get(tank).unwrap().owner();
+    let click = |actor, modifier, target| {
+        object_attack_click_command(
+            &sim,
+            &battle.rules,
+            &overlays,
+            owner,
+            OrderMode::Move,
+            modifier,
+            true,
+            actor,
+            target,
+        )
+    };
+    let alt = OrderModifier::ForceMove;
+    assert!(
+        matches!(
+            click(tank, alt, enemy),
+            Some(Command::Move { .. } | Command::MoveToObject { .. })
+        ),
+        "Alt's Move rung admits the controllable tank"
+    );
+    assert_eq!(
+        click(bunkered, alt, enemy),
+        Some(Command::Attack {
+            attacker_id: bunkered,
+            target_id: enemy,
+        })
+    );
+    assert_eq!(
+        click(bunkered, OrderModifier::GuardArea, tank),
+        Some(Command::Attack {
+            attacker_id: bunkered,
+            target_id: tank,
+        })
+    );
+    let cursor = |modifier| {
+        crate::app::input::cursor::capability_cursor_for_hover(
+            &sim,
+            &[bunkered],
+            Some(bunkered),
+            &picked_target(&sim, tank),
+            Some(&battle.rules),
+            Some(&overlays),
+            modifier,
+            true,
+            false,
+        )
+    };
+    assert_ne!(
+        cursor(OrderModifier::ForceFire),
+        cursor(OrderModifier::Normal)
+    );
+    assert_eq!(
+        cursor(OrderModifier::GuardArea),
+        cursor(OrderModifier::ForceFire)
+    );
+}
+
+/// What_Action_OnObject's unforced rung also takes a type that is not
+/// `LegalTarget=` when vt+0x398 answers (`0x00700438`): with a map giving
+/// the Grizzly's 105mm `TerrainFire=` and clearing its `LegalTarget=`, an
+/// enemy Grizzly worn as a tree with no worn house
+/// (`0x0070EF8C..0x0070EFB2`) is attacked, and a plain one is not.
+#[test]
+fn a_terrain_fire_weapon_attacks_an_enemy_worn_as_a_tree() {
+    let patch = crate::rules::ini_parser::IniFile::from_str(
+        "[105mm]\nTerrainFire=yes\n[MTNK]\nLegalTarget=no\n",
+    );
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &patch,
+    ) else {
+        return;
+    };
+    let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &battle.processed_rules,
+        Some(&battle.fixed_art),
+    );
+    let (mut sim, actor, target) = object_pair(&battle.rules, "MTNK", "enemy");
+    let action = |sim: &Simulation| {
+        attack_action(
+            sim,
+            &battle.rules,
+            actor,
+            &TargetKind::Entity(target),
+            false,
+            Some(&overlays),
+        )
+    };
+    assert_ne!(action(&sim), AttackAction::Attack, "not LegalTarget=");
+    let tree = sim.intern("TREE01");
+    let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
+    disguise.acquire(0, Some(tree), None);
+    sim.entities_mut_for_test()
+        .get_mut(target)
+        .unwrap()
+        .disguise = Some(disguise);
+    assert_eq!(action(&sim), AttackAction::Attack);
+}

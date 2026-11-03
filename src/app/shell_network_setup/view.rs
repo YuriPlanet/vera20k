@@ -7,7 +7,7 @@ use crate::app::frontend::skirmish_shell_render::{
 };
 use crate::app::match_runtime::session::NetworkVacancy;
 use crate::skirmish_launch::{AiDifficulty, LaunchStartPosition, LaunchTeam};
-use crate::skirmish_modes::mode_by_id;
+use crate::skirmish_modes::{MpModeClass, mode_by_id};
 use crate::ui::multiplayer_setup::*;
 use crate::ui::shell::trackbar::TrackbarRange;
 use crate::ui::skirmish_shell::{
@@ -346,11 +346,17 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             selected,
             choices: players,
         });
+        // VERA's room bans leave their countries off the list.
+        let banned = super::bans::banned_countries(state, launch.options.bans);
         let mut countries: Vec<_> = state
             .rules()
             .map(skirmish_shell::country_choices)
             .unwrap_or_default()
             .into_iter()
+            .filter(|item| {
+                !matches!(item, SkirmishComboItem::Country(SkirmishCountryChoice::Country(country))
+                    if banned.contains(country))
+            })
             .map(|item| choice(state, item))
             .collect();
         if let Some(player_countries) = coop.as_ref().and_then(|coop| coop.player_countries) {
@@ -417,7 +423,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 .into_iter()
                 .map(|item| choice(state, item))
                 .collect::<Vec<_>>();
-        let start_claims = launch
+        // VERA shared control: outside Cooperative a player may pick a start
+        // another player holds, which joins that player's House. Such starts
+        // stay listed, marked "+".
+        let shares = human.is_some() && mode.class != MpModeClass::Cooperative;
+        let human_starts = launch
             .humans
             .iter()
             .filter(|human| {
@@ -426,16 +436,26 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     && !human.is_observer()
             })
             .map(|human| human.slot.start_position)
-            .chain(
-                launch
-                    .opponents
-                    .iter()
-                    .filter(|ai| ai.raw_slot_index != row)
-                    .map(|ai| ai.start_position),
-            );
+            .collect::<Vec<_>>();
+        let start_claims = human_starts.iter().copied().filter(|_| !shares).chain(
+            launch
+                .opponents
+                .iter()
+                .filter(|ai| ai.raw_slot_index != row)
+                .map(|ai| ai.start_position),
+        );
         let starts = skirmish_shell::available_start_choices(Some(start), start_claims, capacity)
             .into_iter()
-            .map(|item| choice(state, item))
+            .map(|item| {
+                let mut choice = choice(state, item);
+                if shares
+                    && let SkirmishComboItem::Start(held @ LaunchStartPosition::Position(_)) = item
+                    && human_starts.contains(&held)
+                {
+                    choice.text.push('+');
+                }
+                choice
+            })
             .collect::<Vec<_>>();
         let teams = skirmish_shell::team_choices(mode.must_ally)
             .into_iter()
@@ -555,6 +575,14 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             options.super_weapons,
             options.build_off_ally,
         ],
+        room_checks: [
+            options.bridges_destroyable,
+            options.ally_change_allowed,
+            options.bans.yuri,
+            options.bans.france,
+            options.bans.spy,
+            options.bans.stolen_tech,
+        ],
         row_icons,
         options_open: dialog.modern
             && state
@@ -562,6 +590,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 .multiplayer_setup
                 .as_ref()
                 .is_some_and(|ui| ui.options_open),
+        map_offer_open: state
+            .frontend
+            .multiplayer_setup
+            .as_ref()
+            .is_some_and(|ui| ui.map_offer.is_some()),
         mode_label: label(
             state,
             if launch.selected_map_file.is_none() {

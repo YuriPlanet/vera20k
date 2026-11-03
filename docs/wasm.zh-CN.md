@@ -45,6 +45,20 @@ python3 -m http.server 8000 --bind 127.0.0.1 --directory target/wasm-dist
 
 宿主页面通过当前 origin 的 IndexedDB 恢复设置和存档，并排队保存后续写入。页面会显示存储失败和待写入状态。引擎先完成内存写入，异步存储事务随后才会完成；关闭页面前应等待已保存状态。清除站点数据会删除这些副本。持久化回调只上报 `/saves/` 下的文件，也就是 `restore_user_file` 接受的范围。需要录像的宿主在启动前注册 `set_replay_callback((name, bytes) => ...)`，对局结束或局内读档时会收到关闭的录像段，引擎不保留副本。未注册时录像会被丢弃，自带页面就是如此。导入的零售资源不会持久化，每次访问都会重新读取。在支持 File System Access API 的浏览器（Chrome、Edge）中，启动页会在单独的 `vera20k-wasm-launcher` 数据库中保存所选文件夹的读取句柄，下次访问时可一键继续；其它浏览器需要再次选择文件夹。
 
+## 多线程构建（实验性）
+
+`--threads` 让模拟工作运行在由 Web Worker 组成的 Rayon 线程池上，可以和 `--network`、`--lan` 同时使用。它需要固定版本的 nightly，因为标准库要带 Wasm atomics 重新编译。桌面版和默认浏览器包仍使用 stable。
+
+```sh
+rustup toolchain install nightly-2026-10-15 --profile minimal --component rust-src --target wasm32-unknown-unknown
+python3 tools/wasm/build.py --threads
+python3 tools/wasm/serve.py
+```
+
+共享内存要求跨源隔离，所以页面必须带上 `Cross-Origin-Opener-Policy: same-origin` 和 `Cross-Origin-Embedder-Policy: require-corp` 响应头。`serve.py` 会发送这两个头；普通的 `http.server` 不会，此时宿主页面会提示缺少响应头。其他宿主同样要发送它们，并在 `init()` 之后等待 `initThreadPool(workers)` 完成；不调用时，这个包会串行执行模拟工作。
+
+渲染、音频和输入留在主线程，线程池工作时主线程自旋等待。这段时间主线程不运行引擎代码，因为在主线程等待有竞争的锁会 trap。结果不依赖线程池大小。Worker 上的 panic 会中止该 Worker，主线程会一直自旋，所以页面会卡死，而不是上报 `engine-error`。
+
 ## 兼容边界
 
 所有浏览器实现都要求同时启用 `wasm` Cargo feature 和 `wasm32-unknown-unknown` 目标。在桌面目标上启用 `wasm` 仍会选择桌面实现。未启用 `wasm` 的浏览器构建会被拒绝。

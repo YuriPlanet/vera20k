@@ -86,6 +86,32 @@ browser has the File System Access API (Chrome, Edge), the launcher keeps a read
 handle to the chosen folder in a separate `vera20k-wasm-launcher` database and
 offers one-click Continue on the next visit; other browsers ask for the folder again.
 
+## Multi-threaded build (experimental)
+
+`--threads` runs simulation work on a Rayon pool of Web Workers. It combines
+with `--network` and `--lan`, and needs a pinned nightly, because the standard
+library has to be rebuilt with Wasm atomics. Desktop and default browser builds
+stay on stable.
+
+```sh
+rustup toolchain install nightly-2026-10-15 --profile minimal --component rust-src --target wasm32-unknown-unknown
+python3 tools/wasm/build.py --threads
+python3 tools/wasm/serve.py
+```
+
+Shared memory requires cross-origin isolation, so the page must be served with
+`Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp`. `serve.py` sends both; a plain
+`http.server` does not, and the host page then reports the missing headers when the pool fails to start.
+Other hosts must send them too and await `initThreadPool(workers)` after
+`init()`; without that call the package runs simulation work serially.
+
+Rendering, audio and input stay on the main thread, which spins while the pool
+works. It runs no engine code during that time, because waiting on a contended
+lock traps there. Results do not depend on the pool size. A panic on a worker
+aborts that worker and leaves the main thread spinning, so the tab freezes
+instead of reporting `engine-error`.
+
 ## Compatibility boundary
 
 All browser implementations require both the `wasm` Cargo feature and the

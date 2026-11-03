@@ -50,12 +50,16 @@ pub(super) fn adjusted_speed(
 /// in); native consumes a 15 Hz integer, then multiplies by the complete
 /// Foot+578 double before its second truncation.
 ///
-/// RESIDUAL (dormant): the getter's last step halves a Unit carrying a CTF
-/// flag (`Unit+0x6CC != -1`, `0x004DB21E..0x004DB237`, truncating). Only
+/// UNREACHABLE in skirmish: the getter's last step halves a Unit carrying a
+/// CTF flag (`Unit+0x6CC != -1`, `0x004DB21E..0x004DB237`, truncating). Only
 /// `UnitClass::AttachFlag @ 0x00740DF0` sets it, through `Flag_Attach_Unit
-/// @ 0x004FC060` from `Generate_Random_Units @ 0x00688C02` under the
-/// CaptureTheFlag game option (retail `CaptureTheFlag=no`, desupported), so
-/// no VERA scenario creates a carrier. Not ported.
+/// @ 0x004FC060` from `Generate_Random_Units @ 0x00688C02`, gated on
+/// Scenario special-flag bit 0x10 (`0x00688BF8`). `SpecialClass::Init @
+/// 0x006B8AE0` clears that bit at startup; skirmish setup (`PregameSetup`
+/// `0x005E74D4`) keeps it and the map's `[SpecialFlags]` reader
+/// (`0x006B8CB0`) never writes it. Only modem setup (`0x005B8B22`, from
+/// `CaptureTheFlag=`) or a peer's options event (`0x004C6E59`) set it. Not
+/// ported.
 pub(crate) fn owner_current_speed_from_native_fraction(
     adjusted_speed_per_second: SimFixed,
     current_speed_fraction: NativeF64Bits,

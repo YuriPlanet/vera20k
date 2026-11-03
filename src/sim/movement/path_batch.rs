@@ -13,7 +13,7 @@
 //! world as it stands, up to a cap (below), and the Foot's request then runs
 //! its Find_Path with the answer.
 //!
-//! Proposed sim-scale deviation from native order (update order and
+//! Sim-scale deviation from native order (update order and
 //! same-frame effects), pending side-by-side play: a Foot's path search runs
 //! a frame later (more under the cap below), from the world at the start of
 //! the pass rather than at its own turn, so a Foot starts along a new route
@@ -39,7 +39,23 @@
 //! whose next cell refuses it stands that frame with its head cleared and
 //! re-paths the next, where native re-paths and usually steps at once, and a
 //! Foot whose new route is blocked at its first step by a moving friendly
-//! re-paths a frame later. Hover's own timer-gated Find_Path is not batched.
+//! re-paths a frame later. Walk's recursion registers as such
+//! ([`WaitingRequest::RetryRecursion`]), and the request that takes its answer
+//! resumes with the retry spent, as the recursion (Process argument 0) runs:
+//! a step refused again takes the argument-0 arms, such as code 6's stop
+//! within CloseEnough of the destination (0x75B725..0x75B836), instead of
+//! retrying every frame. A recursion a capped pass leaves out stays one
+//! through the Foot's registrations, as a left-out code-2 re-path keeps its
+//! urgency. The request that takes the answer resumes with the retry spent
+//! even when the Foot was given a new destination in between, which native's
+//! same-frame recursion never meets; its retry would usually reach the same
+//! arm. Residual: Drive/Ship re-entries (Process_Movement(0, 0)) register as
+//! plain no-queue requests, so the next frame's Process_Movement retries
+//! again. A vehicle's own path search prices a cell a stationary friendly
+//! holds at code 6, so that re-path usually routes round the refusal or fails
+//! and stops it; a refusal that outlasts it, not yet seen in a run, would
+//! repeat every frame and hold a team waiting on the vehicle (#3768).
+//! Hover's own timer-gated Find_Path is not batched.
 //! The batch draws no random numbers; later draws follow the changed
 //! movement. Each search reads only that frame-start world, so no result
 //! depends on the thread count. Simulations start without batching; real
@@ -64,7 +80,7 @@
 //! (`BuildingClass::UpdateBunker` 0x458E50 at 0x45920B), would never raise
 //! its walls (#2448).
 //!
-//! A second proposed sim-scale deviation (update order), pending side-by-side
+//! A second sim-scale deviation (update order), pending side-by-side
 //! play, caps the work: a pass answers at most [`SEARCHES_PER_PASS`]
 //! registrations besides its urgency-2 re-paths (below), taking them in
 //! ascending Foot id from where the last capped pass stopped and wrapping
@@ -78,7 +94,7 @@
 //! start their routes in bands of ascending id; and the cap is shared, so
 //! one House's mass order delays every House's requests.
 //!
-//! A third proposed sim-scale deviation (update order), pending side-by-side
+//! A third sim-scale deviation (update order), pending side-by-side
 //! play, bounds the urgency-2 re-paths' work. They take their own turn: a
 //! pass takes at most [`SEARCHES_PER_PASS`] of them, first those the last
 //! pass left out and then the rest, each in ascending Foot id; it starts
@@ -96,7 +112,8 @@
 //! expanding 40,000 cells, and a pass of a few hundred held its frame for up
 //! to a tenth of a second. A Foot it leaves out stands as one the cap leaves
 //! out does: there the jammed Foots find their detours later, so fewer reach
-//! combat.
+//! combat. A re-path past the budget does not start, or stops searching, once
+//! the ones before it have made the budget's expansions.
 //!
 //! A code-2 re-path searches at the urgency its ladder asked when the Foot
 //! registered it, the frame native searched: 2 once the Foot's latched
@@ -131,9 +148,10 @@
 //! terrain object's multi-cell foundation test sees the Foot still in its
 //! cell when the foundation covers it.
 
-use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use crate::util::time::{Duration, Instant};
+use std::cell::Cell;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::foot_path::MoverLift;
 use super::movement_path::MovePathFailure;
@@ -151,7 +169,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionId;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::pathfinding::zone_search::PathSearchFailure;
-use crate::sim::pathfinding::{BlockerNeighborCounts, PathGrid, count_search_steps};
+use crate::sim::pathfinding::{BlockerNeighborCounts, PathGrid, search_steps};
 use crate::sim::radio::Contacts;
 use crate::sim::world::{EntryFacts, Simulation};
 
@@ -284,6 +302,10 @@ pub(crate) struct PathBatch {
     /// The urgency of each code-2 re-path the last pass left out, which the
     /// Foot's registrations this frame keep.
     left_out_code2: BTreeMap<u64, u8>,
+    /// The retry recursions the last pass left out, which the Foot's
+    /// no-queue registrations this frame repeat.
+    #[serde(default)]
+    left_out_retry_recursions: BTreeSet<u64>,
     /// The lowest Foot id the next capped pass answers first; see
     /// [`take_turn`].
     next_turn: u64,
@@ -328,6 +350,12 @@ impl std::hash::Hash for PathBatch {
                 urgency.hash(hasher);
             }
         }
+        if !self.left_out_retry_recursions.is_empty() {
+            (self.left_out_retry_recursions.len() as u64).hash(hasher);
+            for &id in &self.left_out_retry_recursions {
+                id.hash(hasher);
+            }
+        }
         if self.next_turn != 0 {
             self.next_turn.hash(hasher);
         }
@@ -369,6 +397,11 @@ pub(crate) enum WaitingRequest {
     /// A code-2 ladder's re-path, at the urgency the ladder asked; see the
     /// module docs.
     Code2Ladder { urgency: u8 },
+    /// The no-queue request of Walk's refused-step retry recursion
+    /// (`WalkLocomotionClass::Process(0)` at 0x75B716, 0x75BABB and
+    /// 0x75BC04): the request that takes its answer resumes with the retry
+    /// spent; see the module docs.
+    RetryRecursion,
 }
 
 impl WaitingRequest {
@@ -378,11 +411,12 @@ impl WaitingRequest {
         matches!(self, Self::Code2Ladder { urgency: 2 })
     }
 
-    /// Which request this is: 0 no-queue, 1 code-2 re-path.
+    /// Which request this is: 0 no-queue (a retry's recursion included), 1
+    /// code-2 re-path.
     #[cfg(any(test, feature = "test-support"))]
     fn kind(self) -> usize {
         match self {
-            Self::NoQueue => 0,
+            Self::NoQueue | Self::RetryRecursion => 0,
             Self::Code2Ladder { .. } => 1,
         }
     }
@@ -392,6 +426,7 @@ impl WaitingRequest {
         match self {
             Self::NoQueue => [0, 0],
             Self::Code2Ladder { urgency } => [1, urgency],
+            Self::RetryRecursion => [2, 0],
         }
     }
 }
@@ -400,8 +435,20 @@ impl WaitingRequest {
 fn code2_urgency(&(id, request): &(u64, WaitingRequest)) -> Option<(u64, u8)> {
     match request {
         WaitingRequest::Code2Ladder { urgency } => Some((id, urgency)),
-        WaitingRequest::NoQueue => None,
+        WaitingRequest::NoQueue | WaitingRequest::RetryRecursion => None,
     }
+}
+
+/// Whether the urgency-2 re-path at `index` falls past the cut whatever it
+/// makes: the counts in `made` before it reach `budget`. Each count is one
+/// its re-path has reached, never more than its search makes in all, so
+/// their sum is at most the one the cut adds up.
+fn past_cut(made: &[AtomicU64], index: usize, budget: u64) -> bool {
+    made[..index]
+        .iter()
+        .map(|made| made.load(Ordering::Relaxed))
+        .sum::<u64>()
+        >= budget
 }
 
 /// What a pass did with a registration it took.
@@ -493,7 +540,7 @@ fn no_queue_destination(actor: &GameEntity) -> Option<DriveCoord> {
 /// see the module docs.
 fn heads_for_own_cell(foot: &GameEntity, request: WaitingRequest) -> bool {
     let destination = match request {
-        WaitingRequest::NoQueue => no_queue_destination(foot),
+        WaitingRequest::NoQueue | WaitingRequest::RetryRecursion => no_queue_destination(foot),
         WaitingRequest::Code2Ladder { .. } => code2_ladder_destination(foot),
     };
     destination.is_some_and(|destination| {
@@ -514,7 +561,8 @@ impl Simulation {
     /// frame, and the request heads for a cell other than the Foot's own
     /// (see the module docs); otherwise it does not wait, and claims the
     /// unclaimed answer if there is one. A code-2 re-path the last pass left
-    /// out registers at the urgency it had.
+    /// out registers at the urgency it had, and a no-queue request of a Foot
+    /// whose retry recursion it left out registers as that recursion.
     pub(super) fn defer_path_search(
         path_batch: &mut Option<PathBatch>,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
@@ -545,10 +593,22 @@ impl Simulation {
             (WaitingRequest::Code2Ladder { .. }, Some(&urgency)) => {
                 WaitingRequest::Code2Ladder { urgency }
             }
+            (WaitingRequest::NoQueue, _) if batch.left_out_retry_recursions.contains(&id) => {
+                WaitingRequest::RetryRecursion
+            }
             _ => request,
         };
         batch.pending.push((id, request));
         true
+    }
+
+    /// Whether `id`'s next request this frame takes the answer to a Walk
+    /// retry recursion, and so resumes with the retry spent.
+    pub(super) fn answers_retry_recursion(&self, id: u64) -> bool {
+        self.path_batch
+            .as_ref()
+            .and_then(|batch| batch.ready.get(&id))
+            .is_some_and(|slot| !slot.claimed && slot.request == WaitingRequest::RetryRecursion)
     }
 
     /// The urgency `id`'s code-2 ladder searches at, given `now`, the
@@ -627,6 +687,7 @@ impl Simulation {
         // Last pass's left-out urgencies went into this frame's
         // registrations; its left-out urgency-2 re-paths go first.
         let last_left_out = std::mem::take(&mut batch.left_out_code2);
+        batch.left_out_retry_recursions.clear();
         if pending.is_empty() {
             batch.stats.finish(started.elapsed(), 0, 0, 0, 0, 0);
             return;
@@ -652,11 +713,19 @@ impl Simulation {
         );
         turn.truncate(SEARCHES_PER_PASS);
         let urgent = turn.len();
+        // The retry recursions it leaves out stay recursions.
+        let mut retries_left_out: BTreeSet<u64> = others
+            .iter()
+            .filter(|&&(_, request)| request == WaitingRequest::RetryRecursion)
+            .map(|&(id, _)| id)
+            .collect();
         let others = take_turn(others, &mut batch.next_turn, SEARCHES_PER_PASS);
         for (id, _) in &others {
             left_out.remove(id);
+            retries_left_out.remove(id);
         }
         batch.left_out_code2 = left_out;
+        batch.left_out_retry_recursions = retries_left_out;
         turn.extend(others);
         let searched = turn.len();
         let (turns, expanded, urgency2_made) = match self.path_grid_snapshot() {
@@ -776,45 +845,65 @@ impl Simulation {
         // most by far (match bench: a median of ~720 expansions against ~70
         // for the rest), so they start first, in their turn's order, and none
         // runs alone at the end. An answer depends on its request alone, so
-        // the order changes none. `spent` is their expansions so far: each
-        // re-path it counts was taken before the one that reads it, so one
-        // taken once it reaches the budget falls past the cut below. No
-        // search runs other pool work on its thread, which would count there.
-        let spent = AtomicU64::new(0);
-        let mut searched = crate::sim::parallel::map_in_order(
-            turn,
-            || spent.load(Ordering::Acquire) >= urgency2_steps,
-            |&(id, request), spent_up| {
-                let urgency2 = request.is_urgency2();
-                if urgency2 && spent_up {
-                    return None;
-                }
-                let (answer, steps) = count_search_steps(|| {
-                    dummy.detached(|| {
-                        sim.batched_search(id, request, rules, registry, grid, counts, Some(facts))
-                    })
-                });
-                if urgency2 {
-                    spent.fetch_add(steps, Ordering::Release);
-                }
-                Some((answer, steps))
-            },
-        );
+        // the order changes none. `made` holds each re-path's expansions so
+        // far, which it publishes as it searches: one whose predecessors'
+        // counts reach the budget falls past the cut below whatever it makes,
+        // so it does not start, or stops. No search runs other pool work on
+        // its thread, which would count there.
+        let made: Vec<AtomicU64> = (0..urgent).map(|_| AtomicU64::new(0)).collect();
+        let mut searched = crate::sim::parallel::map_in_order(turn, |index, &(id, request)| {
+            debug_assert_eq!(index < urgent, request.is_urgency2());
+            let base = search_steps();
+            let search = |keep_searching: Option<&dyn Fn(u32) -> bool>| {
+                dummy.detached(|| {
+                    sim.batched_search(
+                        id,
+                        request,
+                        rules,
+                        registry,
+                        grid,
+                        counts,
+                        Some(facts),
+                        keep_searching,
+                    )
+                })
+            };
+            if index >= urgent {
+                let answer = search(None);
+                return Some((answer, search_steps() - base, false));
+            }
+            if past_cut(&made, index, urgency2_steps) {
+                return None;
+            }
+            let stopped = Cell::new(false);
+            let answer = search(Some(&|expanded| {
+                made[index].store(
+                    search_steps() - base + u64::from(expanded),
+                    Ordering::Relaxed,
+                );
+                stopped.set(past_cut(&made, index, urgency2_steps));
+                !stopped.get()
+            }));
+            let steps = search_steps() - base;
+            made[index].store(steps, Ordering::Relaxed);
+            Some((answer, steps, stopped.get()))
+        });
         #[cfg(any(test, feature = "test-support"))]
         assert_eq!(rng, sim.rng_state(), "batched searches draw no RNG");
         // Expansions the pass actually made, counted before the cut drops the
         // answers past the budget: that work was still done.
         let expanded: u64 = searched.iter().flatten().map(|entry| entry.1).sum();
-        let urgency2_made = spent.load(Ordering::Acquire);
+        let urgency2_made = made.iter().map(|made| made.load(Ordering::Relaxed)).sum();
         // The cut, which depends on the re-paths' expansions alone: in turn
         // order a re-path is answered while the ones before it stay under the
         // budget.
         let mut steps = 0;
         for searched in &mut searched[..urgent] {
             if steps < urgency2_steps {
-                let (_, made) = searched
+                let &(_, made, stopped) = searched
                     .as_ref()
                     .expect("a re-path before the cut was searched");
+                assert!(!stopped, "a re-path before the cut searched to its end");
                 steps += made;
             } else {
                 *searched = None;
@@ -822,14 +911,16 @@ impl Simulation {
         }
         let turns = searched
             .into_iter()
-            .map(|searched| searched.map_or(Turn::OverBudget, |(answer, _)| Turn::Searched(answer)))
+            .map(|searched| {
+                searched.map_or(Turn::OverBudget, |(answer, ..)| Turn::Searched(answer))
+            })
             .collect();
         (turns, expanded, urgency2_made)
     }
 
     /// `id`'s search as its `request`'s Find_Path would run it now, without
     /// effects, reading the batch's kept entry `facts`; `None` when it has
-    /// nothing to answer.
+    /// nothing to answer or `keep_searching` stopped it.
     fn batched_search(
         &self,
         id: u64,
@@ -839,9 +930,12 @@ impl Simulation {
         grid: &PathGrid,
         counts: &BlockerNeighborCounts,
         facts: Option<&EntryFacts>,
+        keep_searching: Option<&dyn Fn(u32) -> bool>,
     ) -> Option<BatchedSearch> {
         let request = match request {
-            WaitingRequest::NoQueue => self.no_queue_request(id)?,
+            WaitingRequest::NoQueue | WaitingRequest::RetryRecursion => {
+                self.no_queue_request(id)?
+            }
             WaitingRequest::Code2Ladder { urgency } => self.code2_ladder_request(id, urgency)?,
         };
         let goal = request.destination;
@@ -864,12 +958,15 @@ impl Simulation {
             counts,
             MoverLift::Emulated,
             facts,
+            keep_searching,
         );
         if read_own_cell
             || matches!(
                 found,
                 Err(MovePathFailure::MissingGrid
-                    | MovePathFailure::Search(PathSearchFailure::CellEntryUnavailable(_)))
+                    | MovePathFailure::Search(
+                        PathSearchFailure::CellEntryUnavailable(_) | PathSearchFailure::Stopped
+                    ))
             )
         {
             return None;

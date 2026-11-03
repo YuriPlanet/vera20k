@@ -303,29 +303,35 @@ fn an_unarmed_train_answers_five_where_an_unarmed_unit_answers_seven() {
                 .as_ref()
                 .unwrap()
                 .native_cell_identity((11, 10));
-            let live = EntryReadContext {
-                sim: &sim,
-                rules: &rules,
-                registry: Some(&registry),
-                facts: None,
-            };
-            let args = InfantryEntryArgs {
-                direction: -1,
-                height: -1,
-                previous_cell: None,
-            };
-            assert_eq!(
-                classify_entry(&live, CellObjectMember::Entity(90), cell, args),
-                Ok(expected),
-                "IsTrain={train}, listed={listed}"
-            );
+            // A path batch's kept facts walk the infantryman's list too.
+            let kept = EntryFacts::fitted(&sim);
+            for facts in [None, Some(&kept)] {
+                let live = EntryReadContext {
+                    sim: &sim,
+                    rules: &rules,
+                    registry: Some(&registry),
+                    facts,
+                };
+                let args = InfantryEntryArgs {
+                    direction: -1,
+                    height: -1,
+                    previous_cell: None,
+                };
+                assert_eq!(
+                    classify_entry(&live, CellObjectMember::Entity(90), cell, args),
+                    Ok(expected),
+                    "IsTrain={train}, listed={listed}, kept={}",
+                    facts.is_some()
+                );
+            }
         }
     }
 }
 
 /// A Unit's walk meets a terrain object through the weapon it would fire at
 /// it (`0x0073FBAC`, `+0x2E4`): 5 for a `Wood=` warhead, else 7. A crusher is
-/// no exception, however the terrain's type spells `Crushable=`.
+/// no exception, however the terrain's type spells `Crushable=`. A path
+/// batch's kept facts meet it too.
 #[test]
 fn a_crusher_meets_a_terrain_object_with_its_weapon() {
     for (mover, expected) in [
@@ -365,22 +371,26 @@ fn a_crusher_meets_a_terrain_object_with_its_weapon() {
             .as_ref()
             .unwrap()
             .native_cell_identity((11, 10));
-        let live = EntryReadContext {
-            sim: &sim,
-            rules: &rules,
-            registry: Some(&registry),
-            facts: None,
-        };
-        let args = InfantryEntryArgs {
-            direction: -1,
-            height: -1,
-            previous_cell: None,
-        };
-        assert_eq!(
-            classify_entry(&live, CellObjectMember::Entity(90), cell, args),
-            Ok(expected),
-            "{mover}"
-        );
+        let kept = EntryFacts::fitted(&sim);
+        for facts in [None, Some(&kept)] {
+            let live = EntryReadContext {
+                sim: &sim,
+                rules: &rules,
+                registry: Some(&registry),
+                facts,
+            };
+            let args = InfantryEntryArgs {
+                direction: -1,
+                height: -1,
+                previous_cell: None,
+            };
+            assert_eq!(
+                classify_entry(&live, CellObjectMember::Entity(90), cell, args),
+                Ok(expected),
+                "{mover}, kept={}",
+                facts.is_some()
+            );
+        }
     }
 }
 

@@ -407,6 +407,7 @@ mod tests {
                 veteran_radar_invisible: false,
             }),
             local_front: false,
+            surface_edge: None,
         }
     }
 

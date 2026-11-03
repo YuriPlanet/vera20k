@@ -53,6 +53,18 @@ const RELAY_GRANT_LIFETIME: Duration = Duration::from_secs(300);
 const RELAY_RENEWAL_MARGIN: Duration = Duration::from_secs(150);
 const RELAY_RENEWAL_RETRY_MS: u32 = 10_000;
 
+/// The configured lobby's HTTPS origin: the build's, or `VERA20K_LOBBY_URL`
+/// for staging.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) fn lobby_base_url() -> Result<String> {
+    let base = std::env::var("VERA20K_LOBBY_URL").unwrap_or_else(|_| DEFAULT_LOBBY_URL.to_owned());
+    ensure!(
+        base.starts_with("https://") && !base[8..].chars().any(|ch| matches!(ch, '@' | '?' | '#')),
+        "the online lobby needs its configured HTTPS service"
+    );
+    Ok(base)
+}
+
 /// The departing visit's same HTTP/cleanup owner survives the menu teardown.
 /// Native WOL_Main77B532 releases WOLAPI786080 after logout785EA0. VERA's
 /// HTTPS retries are asynchronous: no retired callback may enter a new visit,
@@ -360,7 +372,17 @@ impl RetryingCommand {
 struct PendingChoices {
     request_id: u64,
     expected_human: Value,
+    /// The same row with a Random country: the host's answer when one of
+    /// VERA's room bans takes the asked country.
+    expected_random: Value,
     deadline: Instant,
+}
+
+impl PendingChoices {
+    fn answered_by(&self, accepted: &Value) -> bool {
+        accepted_human_matches(accepted, &self.expected_human)
+            || accepted_human_matches(accepted, &self.expected_random)
+    }
 }
 
 /// One outgoing Start transaction. Its frozen request is not editable setup
@@ -512,16 +534,7 @@ impl LiveService {
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let base = match service_url {
             Some(url) => url.to_owned(),
-            None => {
-                let base = std::env::var("VERA20K_LOBBY_URL")
-                    .unwrap_or_else(|_| DEFAULT_LOBBY_URL.to_owned());
-                ensure!(
-                    base.starts_with("https://")
-                        && !base[8..].chars().any(|ch| matches!(ch, '@' | '?' | '#')),
-                    "the online lobby needs its configured HTTPS service"
-                );
-                base
-            }
+            None => lobby_base_url()?,
         };
         let (requests, input) = mpsc::channel();
         let (output, responses) = mpsc::channel();
@@ -1338,8 +1351,8 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
         | WolServiceRequest::ForgetCredential { .. }
         | WolServiceRequest::SetLangFilter(_)
         | WolServiceRequest::SetFindPage { .. } => {}
-        WolServiceRequest::RequestMatch { .. } => {
-            notice(state, "Choose Custom Match to host or join an online game.")
+        WolServiceRequest::RequestMatch { matchbot, request } => {
+            request_match(service, matchbot, &request)
         }
         WolServiceRequest::Translate { text, line } => {
             if let Some(target) = state.persistence.options_profile.translate_chat {
@@ -1353,6 +1366,21 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             }
         }
     }
+}
+
+/// API+0x30's request: ordinary private chat to the matchbot. This game
+/// has no transport fields to report, so RAT, ADR, NAT and PRT are 0.
+fn request_match(
+    service: &mut LiveService,
+    matchbot: String,
+    request: &super::quick_match::MatchRequest,
+) {
+    let text = request.text(super::quick_match::MatchTransport::default());
+    send_chat(
+        service,
+        WolChatLine::Say(text.encode_utf16().collect()),
+        vec![matchbot],
+    );
 }
 
 fn send_chat(service: &mut LiveService, line: WolChatLine, mut to: Vec<String>) {
@@ -1644,12 +1672,18 @@ fn request_setup(
             human.raw_slot_index = Some(row);
             human.slot = slot.clone();
             human.set_observer(observer);
-            let expected_human = serde_json::to_value(human)?;
+            let expected_human = serde_json::to_value(&human)?;
+            human.slot.country_random = true;
+            let expected_random = serde_json::to_value(human)?;
             let request_id = service.command_with_id(
                 "choices",
                 json!({"row":row,"slot":slot,"observer":observer}),
             );
-            service.pending_choices = (!switch
+            // A Quick Match host drops `R` (`0x007A8260`), so no options
+            // answer it.
+            let answered = !crate::app::shell_network_setup::quick_match(state);
+            service.pending_choices = (answered
+                && !switch
                 && !service
                     .accepted_options
                     .as_ref()
@@ -1657,6 +1691,7 @@ fn request_setup(
             .then_some(PendingChoices {
                 request_id,
                 expected_human,
+                expected_random,
                 deadline: Instant::now() + RELAY_TIMEOUT,
             });
         }
@@ -2034,6 +2069,33 @@ fn decode<T: serde::de::DeserializeOwned>(value: Value) -> Result<T> {
     serde_json::from_value(value).map_err(|_| anyhow!("invalid lobby message"))
 }
 
+/// A `chat` event's payload.
+#[derive(Deserialize)]
+struct Chat {
+    from: wire::Member,
+    text: String,
+    #[serde(default)]
+    private: bool,
+    #[serde(default)]
+    action: bool,
+    // The matchbot's replies; its `Start` carries the pairing.
+    #[serde(default)]
+    ansi: bool,
+    #[serde(default)]
+    quick_match: Option<super::quick_match::MatchStart>,
+    #[serde(default)]
+    sent_at: Option<u64>,
+}
+
+impl Chat {
+    /// The pairing of the matchbot's `Start` that `local` hosts; only its
+    /// ANSI text carries one.
+    fn hosted_pairing(&self, local: &str) -> Option<super::quick_match::MatchStart> {
+        let pairing = self.quick_match.clone().filter(|_| self.ansi)?;
+        super::quick_match::hosted_pairing(local, &self.text, self.private, pairing)
+    }
+}
+
 // Deliberately no Debug: the ticket and keys are relay credentials.
 pub(crate) struct DecodedRelayGrant {
     pub(crate) ticket: Vec<u8>,
@@ -2312,7 +2374,7 @@ fn apply_event(
             if service
                 .pending_choices
                 .as_ref()
-                .is_some_and(|choices| accepted_human_matches(&canonical, &choices.expected_human))
+                .is_some_and(|choices| choices.answered_by(&canonical))
             {
                 service.pending_choices = None;
             }
@@ -2415,18 +2477,10 @@ fn apply_event(
             maps::available(state, service, digest, usize::try_from(total)?);
         }
         "chat" => {
-            #[derive(Deserialize)]
-            struct Payload {
-                from: wire::Member,
-                text: String,
-                #[serde(default)]
-                private: bool,
-                #[serde(default)]
-                action: bool,
-                #[serde(default)]
-                sent_at: Option<u64>,
-            }
-            let p: Payload = decode(payload)?;
+            let p: Chat = decode(payload)?;
+            let options = p
+                .hosted_pairing(&local)
+                .and_then(|pairing| super::quick_match::online_start_options(state, pairing));
             service_event(
                 state,
                 WolServiceEvent::Message {
@@ -2434,8 +2488,8 @@ fn apply_event(
                     text: p.text.encode_utf16().collect(),
                     private: p.private,
                     action: p.action,
-                    ansi: false,
-                    options: None,
+                    ansi: p.ansi,
+                    options,
                     sent_at: p.sent_at,
                 },
             );
@@ -3060,6 +3114,59 @@ mod completion_tests {
     }
 
     #[test]
+    fn a_match_request_is_private_chat_to_the_matchbot() {
+        let (mut service, input, _output) = control_service(None);
+        let request = super::super::quick_match::MatchRequest {
+            country: -2,
+            color: 3,
+            match_by_resolution: false,
+            locale: None,
+            width: 1024,
+        };
+        request_match(&mut service, "matchbot".into(), &request);
+        let http::Request::Command {
+            operation, payload, ..
+        } = input.try_recv().unwrap()
+        else {
+            panic!("chat command");
+        };
+        assert_eq!(
+            (operation, payload),
+            (
+                "chat",
+                json!({
+                    "text": "Match COU=-2, COL=3, MBR=0, RAT=0, RES=1024, ADR=0, NAT=0, PRT=0",
+                    "to": ["matchbot"],
+                    "action": false,
+                })
+            )
+        );
+    }
+
+    /// Only the matchbot's ANSI `Start` gives its host the pairing.
+    #[test]
+    fn a_chat_start_gives_its_host_the_pairing() {
+        let chat = |ansi: bool| -> Chat {
+            decode(json!({
+                "from": {"player_id": "m", "name": "matchbot", "flags": 1},
+                "text": "Start 7:Alpha,0,0,0,0,0,0,0,Beta,0,0,0,0,0,0,0",
+                "private": true,
+                "ansi": ansi,
+                "quick_match": {
+                    "seed": 7,
+                    "host": {"name": "Alpha", "country": -2, "color": 3},
+                    "guest": {"name": "Beta", "country": 5, "color": -2},
+                },
+            }))
+            .unwrap()
+        };
+        let pairing = chat(true).hosted_pairing("Alpha").unwrap();
+        assert_eq!((pairing.seed, pairing.guest.country), (7, 5));
+        assert_eq!(chat(true).hosted_pairing("Beta"), None);
+        assert_eq!(chat(false).hosted_pairing("Alpha"), None);
+    }
+
+    #[test]
     fn lobby_upgrade_notice_names_the_download_once_per_sign_in() {
         let (mut service, _input, _output) = control_service(None);
         let reason = "Online play needs VERA20k 0.3.0 or newer.";
@@ -3448,6 +3555,31 @@ mod completion_tests {
         let echoed = json!({"launch":session.network_setup()});
         assert!(local_choices_match(&session, &echoed));
         assert!(accepted_human_matches(&echoed, &expected));
+    }
+
+    #[test]
+    fn a_host_answering_with_random_settles_a_banned_country_choice() {
+        let mut session = setup_session();
+        let mut human = session.network_setup().unwrap().local_player().clone();
+        human.slot.country_random = false;
+        let expected_human = serde_json::to_value(&human).unwrap();
+        human.slot.country_random = true;
+        let pending = PendingChoices {
+            request_id: 1,
+            expected_human,
+            expected_random: serde_json::to_value(&human).unwrap(),
+            deadline: Instant::now() + RELAY_TIMEOUT,
+        };
+        let mut launch = session.network_setup().unwrap().clone();
+        launch.local_player_mut().slot = human.slot.clone();
+        launch.rebuild_house_roster();
+        session
+            .accept_network_setup(launch, true, None, false)
+            .unwrap();
+        assert!(pending.answered_by(&json!({"launch":session.network_setup()})));
+        let mut launch = session.network_setup().unwrap().clone();
+        launch.local_slot_mut().color_random = !launch.local_slot().color_random;
+        assert!(!pending.answered_by(&json!({"launch":launch})));
     }
 
     #[test]

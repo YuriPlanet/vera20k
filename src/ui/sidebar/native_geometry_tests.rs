@@ -12,6 +12,8 @@ struct LayoutCase {
     tactical: [i32; 4],
     body: [i32; 4],
     globals: [i32; 15],
+    /// GetVisibleSlotCount 6AC430, the select buttons Activate 6A8330 adds.
+    visible_slots: usize,
 }
 #[derive(Deserialize)]
 struct LayoutPacket {
@@ -123,6 +125,13 @@ fn native_21_screen_and_theme_layouts_drive_actual_view() {
                 50
             ],
             g,
+            "{:?}/{}",
+            c.screen,
+            c.side
+        );
+        assert_eq!(
+            2 * l.side2_tile_count,
+            c.visible_slots,
             "{:?}/{}",
             c.screen,
             c.side

@@ -910,7 +910,7 @@ pub(super) fn dispatch_sim_sound_events(
                 let aux_satisfied =
                     crate::sim::superweapon::super_weapon_available(sim, rules, owner, &type_name);
                 if !eva_producers::super_weapon_detected_allowed(
-                    sim.house_alliances(),
+                    sim.house_alliances().as_map(),
                     &owner_name,
                     local_name,
                     local_defeated,
@@ -1059,7 +1059,7 @@ fn owner_is_local(
 /// `EVA_YouAreVictorious` (`0x00824C2C`) and `Flag_To_Lose 0x004FCDA1`
 /// `EVA_YouHaveLost` (`0x00824C08`), both with `EDX = -1` (the entry's own
 /// type; stock rows are STANDARD NORMAL). The side column is the consumer's.
-fn outcome_eva_event(
+pub(crate) fn outcome_eva_event(
     kind: crate::sim::house_state::HouseOutcomeKind,
     campaign: bool,
 ) -> &'static str {

@@ -135,7 +135,7 @@ fn super_weapon_pointer_target_is_valid(
         .is_some_and(|target| {
             target.category() == crate::map::entities::EntityCategory::Structure
                 && crate::map::houses::is_allied_with(
-                    sim.house_alliances(),
+                    sim.house_alliances().as_map(),
                     sim.interner().resolve(target.owner()),
                     sim.interner().resolve(viewer),
                 )
@@ -771,8 +771,8 @@ pub(crate) fn schedule_command_in_sim(
             let record = sim.encode_destruct_record(owner_id)?;
             CommandEnvelope::synchronized(record, execute_tick)
         }
-        Command::RemovePlayer { house_index } => {
-            let record = sim.encode_remove_player_record(owner_id, house_index)?;
+        Command::RemovePlayer { source } => {
+            let record = sim.encode_remove_player_record(owner_id, source)?;
             CommandEnvelope::synchronized(record, execute_tick)
         }
         Command::Ally { house_index } => {
@@ -1537,7 +1537,10 @@ mod tests {
         assert!(run_due(&mut sim), "a remote EXIT does not end the frame");
         assert!(!sim.quit_requested());
         assert_eq!(sim.take_executed_exit_owner(), None);
-        assert_eq!(sim.take_departed_owners(), [peer]);
+        assert_eq!(
+            sim.take_departed_senders(),
+            [sim.houses().index_of(peer).unwrap() as i8]
+        );
         assert!(sim.houses()[&peer].left_game());
         // 0x005E2BA0: the local human is undefeated, so no Flag_To_Die.
         assert!(!sim.houses()[&peer].is_to_die());
@@ -1548,7 +1551,7 @@ mod tests {
         assert!(!run_due(&mut sim));
         assert!(sim.quit_requested());
         assert_eq!(sim.take_executed_exit_owner(), Some(local));
-        assert!(sim.take_departed_owners().is_empty());
+        assert!(sim.take_departed_senders().is_empty());
     }
 
     #[test]
@@ -1572,12 +1575,8 @@ mod tests {
         sim.houses_mut_for_test()
             .register(HouseState::new(ai, 0, None, false, 0, 10));
         for index in [1, 2] {
-            schedule_command_in_sim(
-                &mut sim,
-                "Local",
-                Command::RemovePlayer { house_index: index },
-            )
-            .unwrap();
+            schedule_command_in_sim(&mut sim, "Local", Command::RemovePlayer { source: index })
+                .unwrap();
         }
         let record = sim
             .encode_remove_player_record(sim.interner().get("Local").unwrap(), 1)
@@ -1601,8 +1600,7 @@ mod tests {
             .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Wol);
         sim.install_network_timing(10);
         sim.install_wol_start(1, Default::default());
-        schedule_command_in_sim(&mut sim, "Local", Command::RemovePlayer { house_index: 2 })
-            .unwrap();
+        schedule_command_in_sim(&mut sim, "Local", Command::RemovePlayer { source: 2 }).unwrap();
         run_due(&mut sim);
         assert!(sim.houses()[&ai].is_to_die());
     }

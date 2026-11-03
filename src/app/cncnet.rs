@@ -468,19 +468,19 @@ impl App {
     /// starts when this build, its rules or the client map differ from what
     /// the launcher probed.
     fn check_spawn_expectations(state: &AppState, request: &SpawnRequest) -> Result<()> {
-        let map = match &request.game {
-            SpawnGame::Skirmish(session) => session.selected_map_file.as_deref(),
-            SpawnGame::Network(network) => network.session.selected_map_file.as_deref(),
+        let session = match &request.game {
+            SpawnGame::Skirmish(session) => Some(&**session),
+            SpawnGame::Network(network) => Some(&network.session),
             SpawnGame::Campaign(_) => None,
         };
+        let map = session.and_then(|session| session.selected_map_file.as_deref());
         request.expected.mismatch(
             &crate::app::shell_network_setup::agreement::version(),
             || {
+                let session = session.context("launch has no game mode")?;
                 state
                     .process_assets
-                    .multiplayer_rules_digest(
-                        &crate::app::frontend::cncnet_spawn::spawn_battle_mode().override_file,
-                    )
+                    .multiplayer_rules_digest(&session.mode.override_file)
                     .map_err(anyhow::Error::msg)
             },
             || {

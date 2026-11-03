@@ -124,6 +124,7 @@ enum MapKeyEdge {
 /// render-target pixels; key names are literal keys, never command identities.
 /// No render sees a synthetic held button or key. Omitted mouse buttons retain
 /// the historical left route; right clicks use the same ordinary edge owner.
+/// Click modifiers are held through the cursor move, press and release only.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum MapGesture {
@@ -135,6 +136,12 @@ enum MapGesture {
             skip_serializing_if = "Option::is_none"
         )]
         button: Option<MapMouseButton>,
+        #[serde(
+            default,
+            deserialize_with = "deserialize_present",
+            skip_serializing_if = "Option::is_none"
+        )]
+        modifiers: Option<Vec<String>>,
     },
     Drag {
         from: [u32; 2],
@@ -201,6 +208,15 @@ impl MapGesture {
         )
     }
 
+    fn modifiers(&self) -> &[String] {
+        match self {
+            Self::Click { modifiers, .. } | Self::Key { modifiers, .. } => {
+                modifiers.as_deref().unwrap_or_default()
+            }
+            _ => &[],
+        }
+    }
+
     fn is_quickload(&self) -> bool {
         matches!(self, Self::Key { key, modifiers: Some(modifiers), .. }
             if key.eq_ignore_ascii_case("N") && modifiers.len() == 2
@@ -217,6 +233,26 @@ impl MapGesture {
             | Self::Key { .. }
             | Self::MinimapObject { .. } => None,
         }
+    }
+}
+
+/// Press or release literal modifiers through the shared modifier-key owner,
+/// releasing in reverse order.
+fn literal_modifier_edges(state: &mut AppState, codes: &[winit::keyboard::KeyCode], pressed: bool) {
+    let mut edge = |code| {
+        crate::app::input::hotkeys::record_modifier_key(
+            &mut state.platform.held_modifier_keys,
+            &mut state.platform.live_modifiers,
+            &mut state.match_state.input.hotkey_modifiers,
+            code,
+            pressed,
+            false,
+        );
+    };
+    if pressed {
+        codes.iter().copied().for_each(&mut edge);
+    } else {
+        codes.iter().rev().copied().for_each(&mut edge);
     }
 }
 
@@ -351,7 +387,7 @@ fn diplomacy_row(sim: &crate::sim::world::Simulation, owner: &str) -> Value {
         .map(|&house| sim.interner().resolve(house))
         .filter(|house| {
             !house.eq_ignore_ascii_case(owner)
-                && crate::map::houses::is_allied_with(sim.house_alliances(), owner, house)
+                && crate::map::houses::is_allied_with(sim.house_alliances().as_map(), owner, house)
         })
         .collect();
     let enemy = crate::sim::house_state::house_state_for_owner(sim.houses(), owner, sim.interner())
@@ -709,11 +745,13 @@ impl MapCaptureProfile {
                 "gestures must be ordered by issue_after_step before the final step"
             );
             if let Some((from, to)) = gesture.gesture.points() {
-                for [x, y] in [from, to] {
-                    if gesture.gesture.is_minimap() {
+                // A drag may end over the sidebar to observe the held cursor.
+                let drag = matches!(gesture.gesture, MapGesture::Drag { .. });
+                for (index, [x, y]) in [from, to].into_iter().enumerate() {
+                    if gesture.gesture.is_minimap() || (drag && index == 1) {
                         ensure!(
                             x > 0 && x < self.width - 1 && y > 0 && y < self.height - 1,
-                            "minimap gesture must be inside the render target's outermost pixels"
+                            "minimap point or drag end must be inside the render target's outermost pixels"
                         );
                     } else {
                         ensure!(
@@ -755,10 +793,10 @@ impl MapCaptureProfile {
                     | MapSidebarTarget::Sell {} => {}
                 }
             }
-            if let MapGesture::Key { key, modifiers, .. } = &gesture.gesture {
+            if let MapGesture::Key { key, .. } = &gesture.gesture {
                 literal_key(key)?;
-                literal_modifiers(modifiers.as_deref().unwrap_or_default())?;
             }
+            literal_modifiers(gesture.gesture.modifiers())?;
             if let MapGesture::CommandBar { command } = &gesture.gesture {
                 command_bar_index(command)?;
             }
@@ -942,6 +980,7 @@ impl MapCaptureProfile {
             matches!(entry.gesture, MapGesture::Key { .. })
                 || entry.gesture.is_minimap()
                 || entry.gesture.is_right_button()
+                || !entry.gesture.modifiers().is_empty()
         })
     }
 
@@ -1898,19 +1937,7 @@ impl MapKeyboardGestureReceipt {
         let (physical, logical) = literal_key(key)?;
         let planning_before = state.match_state.input.planning.active();
         let modifier_keys = literal_modifiers(modifiers)?;
-        let modifier_edge = |state: &mut AppState, code, pressed| {
-            hotkeys::record_modifier_key(
-                &mut state.platform.held_modifier_keys,
-                &mut state.platform.live_modifiers,
-                &mut state.match_state.input.hotkey_modifiers,
-                code,
-                pressed,
-                false,
-            );
-        };
-        for code in &modifier_keys {
-            modifier_edge(state, *code, true);
-        }
+        literal_modifier_edges(state, &modifier_keys, true);
         let location = KeyLocation::Standard;
         let encoded_key = hotkeys::logical_virtual_key(&logical, location)
             .context("literal key has no production virtual-key identity")?;
@@ -1960,9 +1987,7 @@ impl MapKeyboardGestureReceipt {
             edge(state, ElementState::Released, false);
         }
         let release_cleared = !state.match_state.input.keys_held.contains(&physical);
-        for code in modifier_keys.iter().rev() {
-            modifier_edge(state, *code, false);
-        }
+        literal_modifier_edges(state, &modifier_keys, false);
         ensure!(
             (key_edge == Some(MapKeyEdge::Released) || press_held)
                 && (matches!(key_edge, Some(MapKeyEdge::Pressed | MapKeyEdge::Repeat))
@@ -2026,6 +2051,18 @@ struct MapGestureReceipt {
     command_bar: Option<MapCommandBarGestureReceipt>,
     #[serde(skip_serializing_if = "Option::is_none")]
     minimap: Option<MapMinimapGestureReceipt>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    held_cursor: Option<MapHeldCursorReceipt>,
+}
+
+/// Cursors a drag's draws pick while its button is held: one at the press
+/// point, one at the drag end before release. Each is the production draw's
+/// own selection (`ui_overlays::shown_cursor_id`), which also notes it as
+/// the last shown cursor, as a drawn frame does.
+#[derive(Debug, Serialize)]
+struct MapHeldCursorReceipt {
+    press: Option<String>,
+    before_release: Option<String>,
 }
 
 fn disguise_inputs(
@@ -3509,6 +3546,7 @@ impl TacticalCaptureSession {
             let before = MapInputObservation::capture(state, local_input)?;
             let right = scheduled.gesture.is_right_button();
             let mut minimap = None;
+            let mut held_cursor = None;
             let (
                 left_press_captured,
                 right_press_captured,
@@ -3597,6 +3635,8 @@ impl TacticalCaptureSession {
                     crate::app::input::tooltips::on_button_event(state);
                     crate::app::input::dispatch::handle_mouse_input(state, mouse_button, edge);
                 };
+                let modifier_keys = literal_modifiers(scheduled.gesture.modifiers())?;
+                literal_modifier_edges(state, &modifier_keys, true);
                 move_cursor(state, from);
                 if scheduled.gesture.is_minimap() {
                     let target =
@@ -3665,16 +3705,26 @@ impl TacticalCaptureSession {
                         let routed = gadgets.out.consumed_by.or(gadgets.focus.sticky);
                         expected.is_some() && routed == expected && !mouse.captured
                     } else if scheduled.gesture.is_minimap() {
-                        state.match_state.input.minimap_dragging && !mouse.captured
+                        state.match_state.input.minimap_press_active() && !mouse.captured
                     } else {
                         mouse.captured
                     };
                 if matches!(scheduled.gesture, MapGesture::Drag { .. }) {
+                    let shown = |state: &AppState| {
+                        crate::app::presentation::ui_overlays::shown_cursor_id(state)
+                            .map(|id| format!("{id:?}"))
+                    };
+                    let press = shown(state);
                     move_cursor(state, to);
+                    held_cursor = Some(MapHeldCursorReceipt {
+                        press,
+                        before_release: shown(state),
+                    });
                 }
                 let band_box_before_release =
                     state.match_state.input.selection_state.is_band_box_active();
                 button(state, ElementState::Released);
+                literal_modifier_edges(state, &modifier_keys, false);
                 if let Some((receipt, handle)) = &mut command_bar
                     && let Some(thumb) = &mut receipt.thumb
                 {
@@ -3720,6 +3770,7 @@ impl TacticalCaptureSession {
                 )
             };
             let neutral_input_restored = crate::app::input::camera::camera_input_idle(state)
+                && state.match_state.input.hotkey_modifiers.is_empty()
                 && !state.match_state.input.selection_state.is_band_box_active()
                 && [
                     state.match_state.input.cursor_x,
@@ -3836,6 +3887,7 @@ impl TacticalCaptureSession {
                 keyboard,
                 command_bar,
                 minimap,
+                held_cursor,
             });
         }
     }
@@ -5007,6 +5059,7 @@ mod tests {
         let sim = Simulation::new();
         let hash = sim.state_hash();
         let rng = sim.rng_state();
+        let main = crate::sim::rng::MainRng::new(1).draws();
         let mut beams = RadiationBeams::default();
         beams.create(
             RadiationBeamBirth {
@@ -5019,6 +5072,7 @@ mod tests {
                 house_color: false,
                 duration: 15,
                 amplitude: NativeF64Bits::from_bits(40.0_f64.to_bits()),
+                eruption: false,
             },
             |_| [0; 3],
         );
@@ -5035,7 +5089,7 @@ mod tests {
         // Actual presentation composites advance this owner without any Logic
         // tick. Numeric/native goldens belong to the renderer's own tests.
         for _ in 0..14 {
-            beams.composite(60, viewport, |_| true);
+            beams.composite(60, viewport, &main, |_| true);
         }
         let draws = beams.draws().to_vec();
         assert!(!draws.is_empty());
@@ -5061,7 +5115,7 @@ mod tests {
         );
         assert_eq!(serde_json::to_value(beams.observation()).unwrap(), retained);
         assert_eq!(beams.draws(), draws.as_slice());
-        beams.composite(60, viewport, |_| true);
+        beams.composite(60, viewport, &main, |_| true);
         let expired =
             serde_json::to_value(MapRadiationBeamObservation::capture(&beams).unwrap()).unwrap();
         assert!(expired["live"].as_array().unwrap().is_empty());
@@ -5640,6 +5694,7 @@ mod tests {
             gesture: MapGesture::Click {
                 position: [width - 2, height - 2],
                 button: None,
+                modifiers: None,
             },
         }]);
         profile.validate().unwrap();
@@ -5647,6 +5702,7 @@ mod tests {
             profile.gestures.as_mut().unwrap()[0].gesture = MapGesture::Click {
                 position,
                 button: None,
+                modifiers: None,
             };
             assert!(profile.validate().is_err(), "{position:?}");
         }
@@ -5660,6 +5716,15 @@ mod tests {
             to: [100, 100],
         };
         profile.validate().unwrap();
+        // A drag may end over the sidebar, but it starts on the battlefield.
+        for (from, to, ok) in [
+            ([10, 10], [720, 300], true),
+            ([720, 300], [10, 10], false),
+            ([10, 10], [profile.width - 1, 300], false),
+        ] {
+            profile.gestures.as_mut().unwrap()[0].gesture = MapGesture::Drag { from, to };
+            assert_eq!(profile.validate().is_ok(), ok, "{from:?} -> {to:?}");
+        }
         // A radar gesture uses the same ordinary mouse edges, but its live
         // production admission is outside the tactical rectangle.
         profile.gestures.as_mut().unwrap()[0].gesture = MapGesture::Minimap {
@@ -6015,6 +6080,7 @@ mod tests {
                 gesture: MapGesture::Click {
                     position: [10, 10],
                     button: None,
+                    modifiers: None,
                 },
             },
             MapScheduledGesture {
@@ -6029,6 +6095,7 @@ mod tests {
                 gesture: MapGesture::Click {
                     position: [30, 30],
                     button: None,
+                    modifiers: None,
                 },
             },
         ]);
@@ -6066,6 +6133,7 @@ mod tests {
                 keyboard: None,
                 command_bar: None,
                 minimap: None,
+                held_cursor: None,
             });
         }
         assert!(map.pending_gesture(&profile, 1).unwrap().is_none());

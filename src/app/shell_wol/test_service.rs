@@ -767,85 +767,33 @@ fn match_requested(state: &mut AppState) {
 }
 
 /// The options a stand-in matchbot's `Start` carries for `host` and
-/// `guest`, as the host receives them (`local_player_index` 0).
+/// `guest`, as the host receives them (`local_player_index` 0): its fixed
+/// picks through the Quick Match owner's builder.
 pub(crate) fn matchbot_options(
     state: &AppState,
     host: &str,
     guest: &str,
 ) -> anyhow::Result<crate::app::shell_network_setup::HostOptions> {
-    use crate::skirmish_launch::{
-        LaunchCountry, LaunchStartPosition, LaunchTeam, SkirmishHumanSlot, SkirmishLocalSlot,
-    };
-    let quick_coop = super::quick_match::quick_coop(state);
-    let mode = if quick_coop {
-        state
-            .frontend
-            .skirmish_modes
-            .iter()
-            .find(|mode| mode.class == crate::skirmish_modes::MpModeClass::Cooperative)
+    use super::quick_match::{MatchMap, MatchPlayer, MatchStart};
+    // In Quick Co-op the host's +0x20 replaces the map with the first
+    // Allied one, whose stage admits only Americans (index 0); a peer
+    // country outside it turns Random, which the shell never resolves.
+    let ((host_country, guest_country), map) = if super::quick_match::quick_coop(state) {
+        ((0, 0), MatchMap::Named(QUICK_COOP_MAP))
     } else {
-        state.frontend.skirmish_modes.first()
-    }
-    .ok_or_else(|| anyhow::anyhow!("no mode"))?;
-    let file = state
-        .frontend
-        .scenario_catalog
-        .records()
-        .iter()
-        .find(|record| {
-            if quick_coop {
-                record.file_name.eq_ignore_ascii_case(QUICK_COOP_MAP)
-            } else {
-                crate::map::skirmish_scenarios::record_matches_mode(record, mode)
-                    && record.player_capacity >= 2
-            }
-        })
-        .map(|record| record.file_name.clone())
-        .ok_or_else(|| anyhow::anyhow!("no map for the matchbot"))?;
-    let human = |row: u8, name: &str, country: u32, color_index| SkirmishHumanSlot {
-        raw_slot_index: Some(row),
+        ((5, 4), MatchMap::First)
+    };
+    let player = |name: &str, country, color| MatchPlayer {
         name: name.into(),
-        slot: SkirmishLocalSlot {
-            country: LaunchCountry::from_country_index(country),
-            country_random: false,
-            color_index,
-            color_random: false,
-            start_position: LaunchStartPosition::Auto,
-            team: LaunchTeam::None,
-        },
-        role: Default::default(),
+        country,
+        color,
     };
-    let mut launch = crate::skirmish_launch::SkirmishLaunchSession {
-        mode: crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(mode),
-        selected_map_file: Some(file.clone()),
-        // In Quick Co-op the host's +0x20 replaces the map with the first
-        // Allied one, whose stage admits only Americans (index 0); a peer
-        // country outside it turns Random, which the shell never resolves.
-        humans: if quick_coop {
-            vec![human(0, host, 0, 1), human(1, guest, 0, 3)]
-        } else {
-            vec![human(0, host, 5, 1), human(1, guest, 4, 3)]
-        },
-        local_player_index: 0,
-        opponents: Vec::new(),
-        ai_player_count: 0,
-        pre_fill_house_roster: crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(0),
-        options: state
-            .frontend
-            .skirmish_shell_state
-            .launch_options_base
-            .clone(),
+    let pairing = MatchStart {
+        seed: HOST_SEED,
+        host: player(host, host_country, 1),
+        guest: player(guest, guest_country, 3),
     };
-    launch.rebuild_house_roster();
-    Ok(crate::app::shell_network_setup::HostOptions {
-        launch,
-        map_metadata: crate::app::shell_network_setup::local_map_metadata(state, &file)?,
-        vacancies: [crate::app::match_runtime::session::NetworkVacancy::Open;
-            crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
-        observer_row: None,
-        cooperative_difficulty: 0,
-        seed: Some(HOST_SEED),
-    })
+    super::quick_match::host_options(state, &pairing, map)
 }
 
 fn lobby_members() -> Vec<WolMember> {

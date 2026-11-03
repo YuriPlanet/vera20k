@@ -236,7 +236,7 @@ fn authored_power_flag_and_needs_engineer_use_distinct_latches_and_survive_save_
          2=House0,TECH,256,19,15,0,None,0,0,1\n\
          3=House0,POWERED,256,21,15,0,None,0,0,-7\n",
     );
-    let placed = crate::map::entities::parse_map_entities(&ini);
+    let placed = crate::map::entities::parse_map_entities(&ini, 4);
     assert_eq!(
         placed
             .iter()
@@ -268,6 +268,16 @@ fn authored_power_flag_and_needs_engineer_use_distinct_latches_and_survive_save_
         "NeedsEngineer does not clear660"
     );
     assert!(sim.go_building_offline(tech, &rules, FrameEffects::default()));
+    // GoOnline (`0x00452271`) refuses while the EMP counter `+0x504` runs.
+    sim.entities_mut_for_test()
+        .get_mut(tech)
+        .unwrap()
+        .set_emp_remaining_for_test(3);
+    assert!(!sim.go_building_online(tech, &rules, FrameEffects::default()));
+    sim.entities_mut_for_test()
+        .get_mut(tech)
+        .unwrap()
+        .set_emp_remaining_for_test(0);
     assert!(sim.go_building_online(tech, &rules, FrameEffects::default()));
     assert!(
         sim.entities()

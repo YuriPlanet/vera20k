@@ -929,8 +929,8 @@ impl BattleOpening {
     /// precede execution by MaxAhead. DoList dispatches raw frameN after Logic;
     /// MainTick's late commit makes its first observable state binary_frameN+1.
     /// Source: command_schedule::admit_queued_command and commit_frame_tail.
-    /// The capture handler renders one runtime service pass (handler.rs), whose
-    /// advance_one_simulation_frame loop is0..1. If a failed presentation ever
+    /// The battle runs one frame per render (`observes_every_frame`), so each
+    /// committed frame is observed. If a failed presentation ever
     /// skips the required boundary, refuse the capture instead of labelling a
     /// later mutable state as the command's immediate effect.
     fn observe_due_orders(&mut self, state: &AppState, frame: u32) -> Result<()> {
@@ -2324,56 +2324,84 @@ impl BattleOpening {
         Ok(())
     }
 
-    pub(super) fn finished(&self, state: &AppState) -> Result<bool> {
+    /// The end checks this run has not met, by name; empty once it is done.
+    pub(super) fn missing(&self, state: &AppState) -> Result<Vec<&'static str>> {
         let sim = simulation(state)?;
-        Ok(matches!(self.step, Step::Done)
-            && self.rally_executions.iter().all(Option::is_some)
-            && self.rally_planning_commits.iter().all(Option::is_some)
-            && self.gi_products.len() == 2
-            && self
-                .gi_products
-                .iter()
-                .all(|product| product.rally_arrival.is_some())
-            && self.attack_observation.is_some()
-            && self.hit_observation.is_some()
-            && self.stop_observation.is_some()
-            && self.repair.iter().all(|observation| {
-                observation.records.len() == 3
-                    && observation.executions.len() == 3
-                    && observation.damage.is_some()
-                    && observation.stop_execution.is_some()
-                    && observation.stopped.is_some()
-                    && observation.full.is_some()
-            })
-            && (!self.sale_enabled
-                || (self.sale.iter().all(|observation| {
-                    observation.produces.len() == 2
-                        && observation.record.is_some()
-                        && observation.execution.is_some()
-                        && observation.exited.is_some()
-                        && observation.stable.is_some()
-                        && observation.crew_count == Some(observation.crew_settled.len())
-                        && observation.reentry_arrival.is_some()
-                }) && self.sale_local_input.is_some()
-                    && self.sale_local_cleanup.is_some()))
-            && [
-                ("GAPOWR", 2),
-                ("GAPILE", if self.sale_enabled { 0 } else { 2 }),
-            ]
-            .iter()
-            .all(|(type_id, count)| {
-                sim.entities()
-                    .values_sorted()
-                    .filter(|entity| {
-                        entity.is_alive()
-                            && !entity.in_limbo()
-                            && !entity.in_construction_bstate()
-                            && sim.interner().resolve(entity.type_ref()) == *type_id
-                    })
-                    .count()
-                    == *count
-            })
-            && self.all_gi_orders_admitted(state)?)
+        let standing = |type_id: &str| {
+            sim.entities()
+                .values_sorted()
+                .filter(|entity| {
+                    entity.is_alive()
+                        && !entity.in_limbo()
+                        && !entity.in_construction_bstate()
+                        && sim.interner().resolve(entity.type_ref()) == type_id
+                })
+                .count()
+        };
+        let checks = [
+            ("step", matches!(self.step, Step::Done)),
+            (
+                "rally executions",
+                self.rally_executions.iter().all(Option::is_some),
+            ),
+            (
+                "rally planning commits",
+                self.rally_planning_commits.iter().all(Option::is_some),
+            ),
+            ("two GI products", self.gi_products.len() == 2),
+            (
+                "GI rally arrivals",
+                self.gi_products
+                    .iter()
+                    .all(|product| product.rally_arrival.is_some()),
+            ),
+            ("attack", self.attack_observation.is_some()),
+            ("hit", self.hit_observation.is_some()),
+            ("stop", self.stop_observation.is_some()),
+            (
+                "repair",
+                self.repair.iter().all(|observation| {
+                    observation.records.len() == 3
+                        && observation.executions.len() == 3
+                        && observation.damage.is_some()
+                        && observation.stop_execution.is_some()
+                        && observation.stopped.is_some()
+                        && observation.full.is_some()
+                }),
+            ),
+            (
+                "sale",
+                !self.sale_enabled
+                    || self.sale.iter().all(|observation| {
+                        observation.produces.len() == 2
+                            && observation.record.is_some()
+                            && observation.execution.is_some()
+                            && observation.exited.is_some()
+                            && observation.stable.is_some()
+                            && observation.crew_count == Some(observation.crew_settled.len())
+                            && observation.reentry_arrival.is_some()
+                    }),
+            ),
+            (
+                "local sale input",
+                !self.sale_enabled || self.sale_local_input.is_some(),
+            ),
+            (
+                "local sale cleanup",
+                !self.sale_enabled || self.sale_local_cleanup.is_some(),
+            ),
+            ("two GAPOWR", standing("GAPOWR") == 2),
+            (
+                "GAPILE count",
+                standing("GAPILE") == if self.sale_enabled { 0 } else { 2 },
+            ),
+            ("GI orders admitted", self.all_gi_orders_admitted(state)?),
+        ];
+        Ok(checks
+            .into_iter()
+            .filter(|(_, met)| !met)
+            .map(|(name, _)| name)
+            .collect())
     }
 
     pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
@@ -3825,6 +3853,7 @@ mod identity_tests {
         guest.name = "VG6f7a8b9c0d".into();
         guest.raw_slot_index = Some(1);
         guest.slot.color_index = 2;
+        guest.slot.start_position = crate::skirmish_launch::LaunchStartPosition::Auto;
         launch.humans.push(guest);
         launch.local_player_index = 1;
         if local_first {

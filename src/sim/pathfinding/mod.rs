@@ -37,3 +37,5 @@ pub use self::core::*;
 #[cfg(test)]
 #[path = "zone_map_tests.rs"]
 mod zone_map_tests;
+#[cfg(test)]
+mod zone_threat_retail_tests;

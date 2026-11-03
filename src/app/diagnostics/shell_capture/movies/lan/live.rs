@@ -177,7 +177,6 @@ enum Phase {
     Discover,
     HostSetup,
     HostReady,
-    HostKick,
     GuestSetup,
     Loading,
     Running,
@@ -253,7 +252,7 @@ impl AiActivity {
             .filter(|slot| !slot.is_human && !slot.observer)
             .collect::<Vec<_>>();
         ensure!(
-            ai.len() == 1 && ai[0].source_human_index.is_none(),
+            ai.len() == 1 && ai[0].source_human_index().is_none(),
             "AI acquired a human source"
         );
         let sim = &state
@@ -372,12 +371,10 @@ pub(super) struct LiveLanCapture {
     stop_observation: StopObservation,
     stopped: bool,
     last_wait: Option<String>,
-    kick_observed: bool,
     /// The guest watched from a spectator row (`switch_sides`).
     guest_watched: bool,
     /// The guest's Side list steps: Observer asked, a side asked, playing.
     sides: u8,
-    entered_setup: bool,
     cooperative: Option<cooperative::CooperativeRun>,
     country_selected: bool,
     battle: Option<battle::BattleOpening>,
@@ -464,11 +461,8 @@ impl LiveLanCapture {
             stop_observation: StopObservation::default(),
             stopped: false,
             last_wait: None,
-            // Co-op skips the kick/rejoin pass: its rows follow the campaign.
-            kick_observed: target.live_cooperative(),
             guest_watched: false,
             sides: 0,
-            entered_setup: false,
             cooperative: target.live_cooperative().then(|| {
                 cooperative::CooperativeRun::new(
                     matches!(
@@ -605,20 +599,17 @@ impl LiveLanCapture {
         })
     }
 
-    /// The hosts paired with `lan-live-guest` start only once it watched
+    /// The host paired with `lan-live-guest` starts only once it watched
     /// and plays again.
     fn waits_for_spectator(&self) -> bool {
-        matches!(
-            self.target,
-            LanTarget::LiveHost | LanTarget::LiveTimeoutHost | LanTarget::LiveQuitHost
-        )
+        self.target == LanTarget::LiveHost
     }
 
-    /// After its rejoin the guest picks Observer in its Side list: VERA's
-    /// room moves it to the open spectator row. Then it picks a side, and
-    /// the room seats it again.
+    /// In setup the guest picks Observer in its Side list: VERA's room
+    /// moves it to the open spectator row. Then it picks a side, and the
+    /// room seats it again.
     fn switch_sides(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        if self.target != LanTarget::LiveGuest || !self.kick_observed {
+        if self.target != LanTarget::LiveGuest {
             return Ok(());
         }
         let Some(local) = state
@@ -751,6 +742,14 @@ impl LiveLanCapture {
             .map_or(self.phase == Phase::Finished, online::LiveRoundFlow::ready)
     }
 
+    /// The battle observer checks each command at its execution boundary and
+    /// repair on consecutive frames. Ordinary pacing runs every due frame in
+    /// one pass, for example the next frame right after a network wait ends,
+    /// so the battle asks for one frame per render.
+    pub(super) fn observes_every_frame(&self) -> bool {
+        self.battle.is_some()
+    }
+
     pub(super) fn owns_simulation_steps(&self, state: &AppState) -> bool {
         // Keep the final observed frame stable during GPU readback. Ordinary
         // App frame pacing and NetworkCommandBoundary own every earlier step,
@@ -829,7 +828,6 @@ impl LiveLanCapture {
                 return Ok(());
             }
         }
-        self.entered_setup |= state.match_state.session.network_setup().is_some();
         if !self.guest_watched
             && state
                 .match_state
@@ -844,25 +842,6 @@ impl LiveLanCapture {
         {
             self.guest_watched = true;
             self.event(frame, "the guest watches from a spectator row");
-        }
-        if !self.host()
-            && self.entered_setup
-            && !self.kick_observed
-            && matches!(self.phase, Phase::GuestSetup | Phase::Loading)
-            && rendered == PresentedShell::LanLobby
-            && lobby_settled(state)
-        {
-            ensure!(
-                state.match_state.session.network_setup().is_none(),
-                "kicked guest retained admitted setup"
-            );
-            self.kick_observed = true;
-            self.country_selected = false;
-            self.phase = Phase::Discover;
-            self.event(
-                frame,
-                "host kick returned guest to BB; rediscover and rejoin",
-            );
         }
         if frame % 120 == 0 {
             log::debug!(
@@ -1031,26 +1010,6 @@ impl LiveLanCapture {
                 if rendered == PresentedShell::NetworkSetup && setup_settled(state, true) =>
             {
                 let session = &state.match_state.session;
-                if !self.kick_observed
-                    && let Some(row) = session.network_setup().and_then(|launch| {
-                        launch
-                            .humans
-                            .iter()
-                            .find(|human| human.name == GUEST_NAME)
-                            .and_then(|human| human.raw_slot_index)
-                    })
-                {
-                    let control =
-                        setup_control_at_row(state, SetupColumn::Player, usize::from(row))?
-                            .context("visible guest row")?;
-                    setup::apply_action(state, SetupAction::Select { control, value: 2 });
-                    self.event(
-                        frame,
-                        "replace guest row through normal UI; real Type8 kick",
-                    );
-                    self.phase = Phase::HostKick;
-                    return Ok(());
-                }
                 if let Some(launch) = session.network_setup()
                     && launch.humans.len() == 2
                     && launch
@@ -1071,23 +1030,6 @@ impl LiveLanCapture {
                     self.phase = Phase::Loading;
                 }
             }
-            Phase::HostKick
-                if rendered == PresentedShell::NetworkSetup && setup_settled(state, true) =>
-            {
-                if state
-                    .match_state
-                    .session
-                    .network_setup()
-                    .is_some_and(|launch| launch.humans.len() == 1)
-                {
-                    self.kick_observed = true;
-                    self.event(
-                        frame,
-                        "real guest departure removed host membership and endpoint",
-                    );
-                    self.phase = Phase::HostReady;
-                }
-            }
             Phase::GuestSetup
                 if rendered == PresentedShell::NetworkSetup && setup_settled(state, false) =>
             {
@@ -1098,10 +1040,6 @@ impl LiveLanCapture {
                 self.switch_sides(state, frame)?;
             }
             Phase::Loading | Phase::GuestSetup if state.frontend.screen == GameScreen::InGame => {
-                ensure!(
-                    self.kick_observed,
-                    "live diagnostic skipped kick/rejoin validation"
-                );
                 ensure!(
                     state.match_state.live_network.is_some(),
                     "loaded LAN match has no real command transport"
@@ -1451,10 +1389,12 @@ impl LiveLanCapture {
             let battle = self.battle.as_mut().expect("battle target");
             battle.step(state, committed, host, &mut self.actions)?;
             if committed >= required_frames {
+                let missing = battle.missing(state)?;
                 ensure!(
-                    battle.finished(state)?,
-                    "Battle opening incomplete: {}",
-                    battle.phase()
+                    missing.is_empty(),
+                    "Battle opening incomplete: {}; missing {}",
+                    battle.phase(),
+                    missing.join(", ")
                 );
                 let live = state
                     .match_state
@@ -1770,7 +1710,7 @@ impl LiveLanCapture {
             "finished live capture lost its transport"
         );
         let mut receipt = json!({"target":format!("{:?}",self.target),"service_boundary":if self.ai.is_some() {"one App process; real HTTPS/UDP relay; ordinary frame boundary"} else if self.target.online() {"independent App processes; real HTTPS/UDP relay; ordinary frame boundary"} else {"two independent App processes; real UDP/global/private queues; ordinary frame boundary"},
-            "scope":if self.target.desync_failure() { "real300-frame CRC and strong-hash prefix followed by external scoped FRAMEINFO corruption, actual checksum CE Stop and ordinary LAN lobby cleanup" } else if self.failure.is_some() { "shared 300-frame prefix followed by real peer disappearance and ordinary wait recovery or Quit; bounded runtime validation, not whole-match/native parity" } else if self.target.online() {"observed production match before real outcome; tactical commands and simulation checksums"} else if self.battle.is_some() { "kick/rejoin, Battle opening, paid GI rally/combat, paid GAPILE repair and sale with an unfinished Infantry queue, natural crew, refunds and cleanup, then former-foundation Move; bounded runtime validation, not whole-match/native parity" } else { "kick/rejoin, 300 native frames and local Move/Stop; bounded runtime validation, not whole-match/native parity" },
+            "scope":if self.target.desync_failure() { "real300-frame CRC and strong-hash prefix followed by external scoped FRAMEINFO corruption, actual checksum CE Stop and ordinary LAN lobby cleanup" } else if self.failure.is_some() { "shared 300-frame prefix followed by real peer disappearance and ordinary wait recovery or Quit; bounded runtime validation, not whole-match/native parity" } else if self.target.online() {"observed production match before real outcome; tactical commands and simulation checksums"} else if self.battle.is_some() { "Battle opening, paid GI rally/combat, paid GAPILE repair and sale with an unfinished Infantry queue, natural crew, refunds and cleanup, then former-foundation Move; bounded runtime validation, not whole-match/native parity" } else { "300 native frames and local Move/Stop; bounded runtime validation, not whole-match/native parity" },
             "process_id":std::process::id(),
             "loading_progress":crate::app::diagnostics::shell_capture::loading_runtime::progress_receipt(state)?,
             "participant_count":self.startup.as_ref().and_then(|startup|startup["sources"].as_array()).map_or(self.expected_players,Vec::len),
@@ -1780,7 +1720,6 @@ impl LiveLanCapture {
             "failure":self.failure.as_ref().map(|failure| failure.receipt()),"mass_input":self.mass.as_ref().map(mass::MassInput::receipt),
             "ai_activity":self.ai.as_ref().map(AiActivity::receipt).transpose()?,
             "solo_ai_input_bound_native_frames":self.ai.as_ref().map(|_| SOLO_AI_INPUT_BOUND_FRAMES),
-            "kick_observed":self.kick_observed,
             "production_broadcast":self.config.as_ref().map(|config|matches!(config.transport,LiveLanTransport::ProductionBroadcast)),
             "bind":self.config.as_ref().and_then(|config|config.transport.explicit_endpoints()).map(|(bind,_)|bind.to_string()),"peer":self.config.as_ref().and_then(|config|config.transport.explicit_endpoints()).map(|(_,peer)|peer.to_string()),"startup":self.startup,"map_admission":self.map_admission,
             "native_checksums":checksums,"simulation_hashes":hashes,
@@ -1869,7 +1808,7 @@ fn local_owner(state: &AppState) -> Result<String> {
         .context("network setup")?;
     crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
         .into_iter()
-        .find(|slot| slot.source_human_index == Some(launch.local_player_index))
+        .find(|slot| slot.is_controlled_by(launch.local_player_index))
         .map(|slot| slot.owner_name)
         .context("local normalized House")
 }

@@ -20,6 +20,9 @@ mod aircraft_release;
 
 /// FireAt6FF4CC..6FF647 has one exclusive effect ladder. Sonic's earlier
 /// Wave creation is independent; these flags select the later alternative.
+/// Retail's only `IsRadEruption=` key, on `RadEruptionWeapon`, is `no`, so
+/// `RadiationEruption` ([`super::radiation_beam::erupted`]) needs a map or
+/// mod that sets it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FireAtEffect {
     None,
@@ -246,7 +249,7 @@ fn admit_attacker_fire<'r>(
             world,
             &world.interner,
             world.resolved_terrain.as_ref(),
-            fog_enabled.then_some(world.house_alliances.as_map()),
+            fog_enabled.then_some(&world.house_alliances),
         ) else {
             out.remove_attack.push(snap.stable_id);
             return None;
@@ -255,7 +258,7 @@ fn admit_attacker_fire<'r>(
     };
 
     let infantry_fire = snap.category == EntityCategory::Infantry;
-    let sequences = rules.animation_sequence(world.interner.resolve(snap.type_id));
+    let sequences = world.interner.animation_sequence(snap.type_id, rules);
     let firing_at_entry = infantry_fire
         && world
             .substrate
@@ -294,7 +297,7 @@ fn admit_attacker_fire<'r>(
                 world,
                 rules,
                 overlay_registry,
-                fog: fog_enabled.then(|| world.fog.fire_view(world.house_alliances.as_map())),
+                fog: fog_enabled.then(|| world.fog.fire_view(&world.house_alliances)),
                 firer,
                 obj,
                 target: Some(snap.target),
@@ -532,13 +535,13 @@ fn admit_attacker_fire<'r>(
             world,
             &world.interner,
             world.resolved_terrain.as_ref(),
-            fog_enabled.then_some(world.house_alliances.as_map()),
+            fog_enabled.then_some(&world.house_alliances),
         )?;
         let code = fire_error_world::FireSubject {
             world,
             rules,
             overlay_registry,
-            fog: fog_enabled.then(|| world.fog.fire_view(world.house_alliances.as_map())),
+            fog: fog_enabled.then(|| world.fog.fire_view(&world.house_alliances)),
             firer: actor,
             obj,
             target,
@@ -765,7 +768,7 @@ pub(super) fn retaliation_reaches(
         world,
         rules,
         overlay_registry,
-        fog: Some(world.fog.fire_view(world.house_alliances.as_map())),
+        fog: Some(world.fog.fire_view(&world.house_alliances)),
         firer: victim,
         obj: victim_type,
         target: Some(TargetKind::Entity(source_id)),
@@ -1188,10 +1191,9 @@ fn reveal_on_fire(
 /// `TechnoClass::GetROF` (vt+0x318) for a shot: of the weapon GetWeapon
 /// answers (a garrison's next occupant's), at the stepped burst index. The rank
 /// and class are the firer's (a garrison shot reads the building's). FireAt
-/// created the Spark system just before (`0x006FF1AD..0x006FF1F5`);
-/// GetROF reads the actual +308 link, including a retained earlier system.
-/// RESIDUAL: Fire/Railgun systems still use the firing weapon's flags as
-/// their preexisting launch approximation; their retained links are unported.
+/// created the Fire, Spark and Railgun systems just before
+/// (`0x006FF15F..0x006FF26E`); GetROF reads the actual +304, +308 and +314
+/// links, including a retained earlier system.
 fn fireat_get_rof(
     scenario_rng: &mut SimRng,
     substrate: &ObjectSubstrate,
@@ -1199,18 +1201,14 @@ fn fireat_get_rof(
     rules: &RuleSet,
     snap: &AttackerSnapshot,
     obj: &ObjectType,
-    weapon: &WeaponType,
     rof_weapon: Option<&WeaponType>,
     next_index: i32,
 ) -> i32 {
-    let live = super::rof::LiveParticles {
-        spark: substrate
-            .entities
-            .get(snap.stable_id)
-            .is_some_and(|firer| firer.spark_particle_system.system().is_some()),
-        fire: weapon.use_fire_particles,
-        railgun: weapon.is_railgun,
-    };
+    let live = substrate
+        .entities
+        .get(snap.stable_id)
+        .map(|firer| firer.live_particles())
+        .unwrap_or_default();
     snapshot_get_rof(
         scenario_rng,
         substrate,
@@ -1297,6 +1295,29 @@ pub(crate) fn snapshot_get_rof(
 /// Answers the bullet `TechnoClass::FireAt @ 0x006FDD50` returns: the one
 /// launched, or `None` where it returns NULL (Suicide, a refused sonic shot, the
 /// spawner, drain and DiskLaser arms, and a launch with no solution).
+/// FireAt's Fire and Spark arms (`0x006FF15F..0x006FF1A7`,
+/// `0x006FF1AD..0x006FF1F5`) construct the weapon's AttachedParticleSystem
+/// alike (`0x0062DC50`): from the retained launch source toward the target,
+/// owned by the firer, with no House.
+fn fireat_attached_system(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    weapon: &WeaponType,
+    snap: &AttackerSnapshot,
+    launch: glam::IVec3,
+) -> Option<u64> {
+    let type_id = rules.ps_type_id_by_name(weapon.attached_particle_system.as_deref()?)?;
+    world.spawn_particle_system(
+        type_id,
+        launch,
+        Some(snap.target),
+        Some(snap.stable_id),
+        glam::IVec3::ZERO,
+        None,
+        rules,
+    )
+}
+
 pub(super) fn emit_admitted_fire(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -1377,15 +1398,19 @@ pub(super) fn emit_admitted_fire(
     if weapon.is_sonic && world.active_wave_id(snap.stable_id).is_some() {
         return None;
     }
-    // 6FDE36..6FDE48: direct FireAt callers also refuse a flagged weapon
-    // while the actual Techno+308 system remains retained. GetFireError is
-    // not the only admission caller, and a guessed expiry tick is insufficient.
-    if weapon.use_spark_particles
-        && world
-            .substrate
-            .entities
-            .get(snap.stable_id)
-            .is_some_and(|firer| firer.spark_particle_system.system().is_some())
+    // 6FDE0E..6FDE48: direct FireAt callers also refuse a flagged weapon
+    // while the actual Techno+304 Fire, +314 Railgun or +308 Spark system
+    // remains retained. GetFireError is not the only admission caller, and a guessed
+    // expiry tick is insufficient.
+    if world
+        .substrate
+        .entities
+        .get(snap.stable_id)
+        .is_some_and(|firer| {
+            (weapon.use_fire_particles && firer.fire_particle_system.system().is_some())
+                || (weapon.is_railgun && firer.railgun_particle_system.system().is_some())
+                || (weapon.use_spark_particles && firer.spark_particle_system.system().is_some())
+        })
     {
         return None;
     }
@@ -1552,7 +1577,6 @@ pub(super) fn emit_admitted_fire(
             rules,
             snap,
             obj,
-            weapon,
             rof_weapon,
             burst.next_index(),
         );
@@ -1942,6 +1966,31 @@ pub(super) fn emit_admitted_fire(
     if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
         entity.fire_voxel_recoil(obj.has_turret);
     }
+    // FireAt6FF15F..6FF1A7: a UseFireParticles weapon with no live +304
+    // system builds its AttachedParticleSystem as the Spark arm below does.
+    let launch = glam::IVec3::new(
+        launch_source.coord.x,
+        launch_source.coord.y,
+        launch_source.coord.z,
+    );
+    if weapon.use_fire_particles
+        && world
+            .substrate
+            .entities
+            .get(snap.stable_id)
+            .is_some_and(|firer| firer.fire_particle_system.system().is_none())
+    {
+        let system = fireat_attached_system(world, rules, weapon, snap, launch);
+        if let Some(system) = system {
+            world
+                .substrate
+                .particle_systems
+                .link_to_owner_fire_slot(system);
+        }
+        if let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
+            firer.fire_particle_system.bind(system);
+        }
+    }
     // FireAt6FF1AD..6FF1F5: after successful Bullet::Fire and recoil, before
     // burst/GetROF/rearm. The coordinate is the retained launch-source local
     // [ESP+44], not a later recomputation. Constructor62DC50 owns identity,
@@ -1953,6 +2002,32 @@ pub(super) fn emit_admitted_fire(
             .get(snap.stable_id)
             .is_some_and(|firer| firer.spark_particle_system.system().is_none())
     {
+        let system = fireat_attached_system(world, rules, weapon, snap, launch);
+        if let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
+            firer.spark_particle_system.bind(system);
+        }
+    }
+    // FireAt6FF1FB..6FF26E: an IsRailgun weapon with no live +314 system runs
+    // the line damage from the launch source, then builds the Railgun system
+    // from there to the coordinate it returns, with no target and no House.
+    if weapon.is_railgun
+        && world
+            .substrate
+            .entities
+            .get(snap.stable_id)
+            .is_some_and(|firer| firer.railgun_particle_system.system().is_none())
+    {
+        let end = super::railgun::line_damage(
+            world,
+            rules,
+            overlay_registry,
+            effects,
+            &mut out.effects,
+            snap.stable_id,
+            launch_source.coord,
+            snap.target,
+            weapon,
+        );
         let system = weapon
             .attached_particle_system
             .as_deref()
@@ -1965,15 +2040,15 @@ pub(super) fn emit_admitted_fire(
                         launch_source.coord.y,
                         launch_source.coord.z,
                     ),
-                    Some(snap.target),
+                    None,
                     Some(snap.stable_id),
-                    glam::IVec3::ZERO,
+                    glam::IVec3::new(end.x, end.y, end.z),
                     None,
                     rules,
                 )
             });
         if let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
-            firer.spark_particle_system.bind(system);
+            firer.railgun_particle_system.bind(system);
         }
     }
     // GetROF (`0x006FCFA0`) reads its weapon through GetWeapon (vt+0x3F8,
@@ -2004,7 +2079,6 @@ pub(super) fn emit_admitted_fire(
         rules,
         snap,
         obj,
-        weapon,
         rof_weapon,
         next_index,
     );
@@ -2062,6 +2136,7 @@ pub(super) fn emit_admitted_fire(
     );
     super::electric_bolt::fired(world, rules, snap.stable_id, snap.target, weapon);
     super::radiation_beam::fired(world, rules, snap.stable_id, snap.target, weapon);
+    super::radiation_beam::erupted(world, rules, snap.stable_id, weapon);
     // Mag6FF5F5..6FF650 admits at most one linked Wave. The native Unit
     // constructor/update can reverse its endpoints before returning here.
     if fire_at_effect(weapon) == FireAtEffect::MagneticWave
@@ -2183,6 +2258,7 @@ pub(super) fn emit_admitted_fire(
             .and_then(|entity| entity.disguise.as_mut())
     {
         disguise.start_fire_blink(binary_frame, weapon.disguise_fake_blink_time);
+        world.note_disguise_blink_started();
     }
     Some(bullet_id)
 }

@@ -379,6 +379,10 @@ pub(crate) fn build_super_timer_instances(
         .match_presentation
         .super_timer_dock
         .clear_hits();
+    state
+        .match_state
+        .match_presentation
+        .super_timer_next_flip_ms = None;
     if state.frontend.screen != GameScreen::InGame {
         return (Vec::new(), Vec::new());
     }
@@ -484,9 +488,19 @@ pub(crate) fn build_super_timer_instances(
     };
     let mut fills = Vec::with_capacity(2 * lines.len());
     let mut texts = Vec::new();
+    let mut next_flip_ms: Option<u64> = None;
     for (index, (line, label, rgb)) in lines.iter().enumerate() {
         let blinking = match line.source {
-            TimerSource::Super(view) => TimerBlink::of(blinks, &view).step(line.seconds, now_ms),
+            TimerSource::Super(view) => {
+                let blink = TimerBlink::of(blinks, &view);
+                let on = blink.step(line.seconds, now_ms);
+                if line.seconds == 0 {
+                    next_flip_ms = Some(
+                        next_flip_ms.map_or(blink.deadline_ms, |next| next.min(blink.deadline_ms)),
+                    );
+                }
+                on
+            }
             TimerSource::Scenario | TimerSource::Blackout(_) => false,
         };
         // Hidden rows still step the existing wall-clock blink owner.
@@ -524,6 +538,10 @@ pub(crate) fn build_super_timer_instances(
             ));
         }
     }
+    state
+        .match_state
+        .match_presentation
+        .super_timer_next_flip_ms = next_flip_ms;
     if let Some(rect) = dock.toggle_rect {
         // Solid 7x4 pixel triangles, no font substitution, frame or backing box.
         for row in 0..4 {
@@ -543,6 +561,16 @@ pub(crate) fn build_super_timer_instances(
         }
     }
     (fills, texts)
+}
+
+/// Whether a 0 s Super line's blink flips on the next timer draw
+/// (`0x006D4C75..0x006D4CDF`): its deadline has passed on the same clock.
+pub(crate) fn blink_due(state: &AppState) -> bool {
+    state
+        .match_state
+        .match_presentation
+        .super_timer_next_flip_ms
+        .is_some_and(|next| crate::app::input::tooltips::now_ms(state) >= next)
 }
 
 #[cfg(test)]

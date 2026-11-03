@@ -5,8 +5,8 @@
 //! the real renderer, and publishes one transactional final readback. It does
 //! not focus the window, inject desktop input, or grant simulation state.
 
-use std::path::Path;
 use crate::util::time::{Duration, Instant};
+use std::path::Path;
 
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
@@ -1119,7 +1119,7 @@ impl TacticalCaptureSession {
                 .keys_held
                 .iter()
                 .all(|key| state.match_state.input.planning.owns_key(*key))
-            && !state.match_state.input.minimap_dragging
+            && !state.match_state.input.minimap_press_active()
             && !state
                 .match_state
                 .match_presentation

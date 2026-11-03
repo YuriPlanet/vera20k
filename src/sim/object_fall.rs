@@ -6,6 +6,9 @@
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ObjectFallState {
     rate: i32,
+    /// Object+84 is the retained attached-Anim flag, consumed by ObjectAI5F3FB2.
+    /// Retail gamemd.exe SetOwnerObject424B50 sets it and the last normal
+    /// detach clears it; PointerExpired425150 can leave it set without an Anim.
     parachuted: bool,
     /// ObjectClass+88: constructor5F3969 clears it; Paradrop5F5AF1
     /// publishes the new Anim before SetOwnerObject5F5AFE.
@@ -44,14 +47,11 @@ impl ObjectFallState {
     pub(crate) fn parachuted(&self) -> bool {
         self.parachuted
     }
+    pub(crate) fn set_attached_anim_flag(&mut self, attached: bool) {
+        self.parachuted = attached;
+    }
     pub(crate) fn dropped_as_bomb(&self) -> bool {
         self.dropped_as_bomb
-    }
-
-    pub(crate) fn begin_parachute(&mut self) {
-        self.parachuted = true;
-        self.falling = true;
-        self.rate = 0;
     }
 
     pub(crate) fn begin_bomb(&mut self) {
@@ -59,7 +59,8 @@ impl ObjectFallState {
         self.dropped_as_bomb = true;
     }
 
-    /// FlamingGuy425BFC writes +8D without resetting any other fall state.
+    /// Paradrop5F5965 and FlamingGuy425BFC write +8D without resetting the
+    /// retained rate or attached-Anim flag.
     pub(crate) fn begin_fall(&mut self) {
         self.falling = true;
     }
@@ -120,7 +121,7 @@ mod tests {
         assert!(!bomb.was_falling);
 
         let mut chute = ObjectFallState::default();
-        chute.begin_parachute();
+        chute.begin_fall();
         assert!(!chute.observe_falling_edge());
         assert!(chute.was_falling);
     }

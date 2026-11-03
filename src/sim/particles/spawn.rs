@@ -1,16 +1,13 @@
 //! Particle spawn helpers.
 //!
-//! Three entry points:
+//! Two entry points:
 //!   - `Simulation::spawn_particle_system` — public API for combat / refinery /
 //!     gap-gen / area-damage to create a new system at a world coord.
 //!   - `spawn_particle` — ParticleSystem62E380's explicit child constructor.
 //!     Producers own their individual cap/cadence gates.
-//!   - `spawn_particle_with_insert` — Fire-only variant: append, then random-
-//!     shuffle within the last `insert_range` slots so the visual stream has
-//!     variety instead of strict FIFO.
 //!
-//! Railgun remains refused by the public entry. Spark systems enter the
-//! shared live Logic vector and their owned particles run in that system visit.
+//! Every behavior's system enters the shared live Logic vector, and its owned
+//! particles run in that system visit.
 
 use super::{Particle, ParticleSystem};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -28,17 +25,19 @@ use crate::util::native_x87::{
 };
 use glam::IVec3;
 
-/// TechnoClass+308: the retained Spark ParticleSystem, shared by FireAt6FF1F5
-/// and the Cyborg AI producer6FAEDA. Constructor6F3231 clears it;
+/// A Techno's retained ParticleSystem link: `+0x304` the Fire system
+/// FireAt6FF1A7 creates, `+0x308` the Spark system, shared by FireAt6FF1F5
+/// and the Cyborg AI producer6FAEDA, and `+0x314` the Railgun system
+/// FireAt6FF26E creates. Constructor6F3231 clears them;
 /// PointerExpired707AC2..707AD7 clears an exact match for either control byte.
 /// The system's actual Logic/child lifetime owns expiry, not a Techno timer.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub(crate) struct AttachedSpark {
+pub(crate) struct AttachedParticleSystem {
     system: Option<u64>,
 }
 
-impl AttachedSpark {
+impl AttachedParticleSystem {
     pub(crate) const fn system(self) -> Option<u64> {
         self.system
     }
@@ -243,13 +242,14 @@ impl Simulation {
         crate::sim::movement::air_movement::current_fly_height(entity, resolved_terrain.as_ref())
     }
 
-    /// Spawn a new particle system. Returns the new system's stable id, or
-    /// `None` for a `Railgun` type, which is still unimplemented.
+    /// Spawn a new particle system and return its stable id.
     ///
-    /// gamemd-derived: `ParticleSystemClass::Constructor @ 0x0062DC50`. Spark
-    /// systems are admitted and simulated — `particles/spark_spawn.rs` owns
+    /// gamemd-derived: `ParticleSystemClass::Constructor @ 0x0062DC50`, which
+    /// has no per-behavior branch. `particles/spark_spawn.rs` owns
     /// `ParticleSystemClass::AI_Spark @ 0x0062E840`'s burst half and
-    /// `particles/spark.rs` the per-particle kernel. Railgun is still refused.
+    /// `particles/spark.rs` the per-particle kernel; `particles/railgun.rs`
+    /// owns the Railgun system and particle bodies, whose producer is FireAt's
+    /// `IsRailgun` arm (`combat::railgun`).
     ///
     /// The shared `combat::electric_bolt::create` owner creates one
     /// `[CombatDamage] DefaultSparkSystem` at the bolt's target endpoint,
@@ -289,14 +289,6 @@ impl Simulation {
         rules: &RuleSet,
     ) -> Option<u64> {
         let pst = rules.particle_system_type(type_id);
-        if pst.behaves_like == ParticleSystemBehavesLike::Railgun {
-            log::warn!(
-                "particles: Tier 3 PSC type {:?} requested at {:?} — skipped",
-                pst.behaves_like,
-                coords,
-            );
-            return None;
-        }
         // Original62DC50 calls Abstract410230 -> Scenario68BCB0 before
         // registration. The native numeric identity is not the Rust handle.
         // Executed constructor/CRC: procedural_drawing_oracle/electric_bolt.
@@ -363,6 +355,7 @@ impl Simulation {
             target_coords,
             owner_house,
             done_spawning: false,
+            owner_fire_link: false,
             alive: true,
             in_limbo: false,
         };
@@ -711,37 +704,33 @@ pub(super) fn spawn_state_ai_advance(
     advance as u8
 }
 
-/// Fire-only variant: spawn one particle, then random-shuffle it into the last
-/// `insert_range` slots so the stream looks varied. Returns `false` if the
-/// underlying `spawn_particle` failed (no `HoldsWhat`).
-pub(super) fn spawn_particle_with_insert(
-    sys: &mut ParticleSystem,
-    coords: IVec3,
-    insert_range: usize,
-    rules: &RuleSet,
-    sim: &mut Simulation,
-) -> bool {
-    if insert_range == 0 || !spawn_particle(sys, coords, sys.target_coords, rules, sim) {
-        return false;
-    }
-    let count = sys.particles.len();
-    if count < 2 {
-        return true;
-    }
-    let actual_range = insert_range.min(count);
-    let random_offset = sim.particle_rng().next_raw_abs_modulo(actual_range as u32) as usize;
-    let insert_pos = count.saturating_sub(2).saturating_sub(random_offset);
-    if insert_pos + 1 >= count {
-        return true;
-    }
-    let p = sys.particles.pop().unwrap();
-    sys.particles.insert(insert_pos + 1, p);
-    true
-}
-
 #[cfg(test)]
 mod tests {
     use crate::sim::rng::SimRng;
+
+    /// The constructor's colour seed (`0x0062BA51`) draws for any type with a
+    /// `ColorList` and a start colour, a Fire type as much as a Spark one.
+    #[test]
+    fn a_fire_particle_with_start_colors_takes_the_constructor_color_draw() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[Particles]\n0=Flame\n[Flame]\nBehavesLike=Fire\nMaxEC=10\n\
+             ColorList=(255,255,255),(200,200,80)\nStartColor1=255,128,0\nStartColor2=128,64,32\n",
+        ))
+        .unwrap();
+        let kind = rules.p_type_id_by_name("Flame").unwrap();
+        let mut sim = Simulation::new();
+        let mut expected = sim.scenario_rng.clone();
+        expected.next_raw_abs_modulo(10);
+        expected.next_range_u32_inclusive(0, 0x7fff_fffe);
+        super::Particle::new(
+            kind,
+            IVec3::new(256, 256, 0),
+            IVec3::new(512, 256, 0),
+            rules.particle_type(kind),
+            &mut sim,
+        );
+        assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
+    }
     #[test]
     fn original_96_receiver_height_rows_gate_constructor_and_rng() {
         use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
@@ -951,16 +940,11 @@ mod tests {
                 velocity,
                 "{name}"
             );
-            for (kept, bits) in particle.direction.into_iter().zip(velocity) {
-                let native = f64::from(f32::from_bits(bits));
-                let kept = kept.to_num::<f64>();
-                assert!(
-                    kept * native >= 0.0
-                        && kept.abs() <= native.abs()
-                        && native.abs() - kept.abs() < 1.0 / 65536.0,
-                    "{name}: {kept} for {native}"
-                );
-            }
+            assert_eq!(
+                particle.direction.map(NativeF32Bits::bits),
+                velocity,
+                "{name}"
+            );
             assert_eq!(
                 u64::from(particle.state_ai_advance),
                 row["advance"].as_u64().unwrap(),
@@ -996,22 +980,6 @@ mod tests {
         );
         let ini = IniFile::from_str(&ini_text);
         RuleSet::from_ini(&ini).expect("rules parse")
-    }
-
-    #[test]
-    fn spawn_returns_none_for_railgun_at_tier_2() {
-        let rules = build_rules("Railgun", 50);
-        let mut sim = Simulation::new();
-        let result = sim.spawn_particle_system(
-            ParticleSystemTypeId(0),
-            IVec3::ZERO,
-            None,
-            None,
-            IVec3::ZERO,
-            None,
-            &rules,
-        );
-        assert!(result.is_none());
     }
 
     #[test]

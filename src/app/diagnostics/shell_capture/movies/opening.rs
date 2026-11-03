@@ -38,6 +38,17 @@ pub enum OpeningTarget {
     TimerExpired,
     /// SOV02's ordinary briefing Action55 creates a type-5 alert.
     RadarAlert,
+    /// Any retail campaign mission run to a committed tick, recording every
+    /// trigger Spring on the way, plus what a native replay of the trigger
+    /// classes needs: the starting Tags, the poll and House-raise bounds,
+    /// world raises, world-reading event results, attachment counts,
+    /// variable writes and run-time Tags. Without `push` there is no player
+    /// input; with it the player's armed units attack-move toward that Cell.
+    TriggerTrace {
+        scenario: &'static str,
+        tick: u64,
+        push: Option<(u16, u16)>,
+    },
     /// Save/load that naturally created alert, then present the restored radar.
     RadarRestored,
 }
@@ -62,12 +73,16 @@ impl OpeningTarget {
             Self::TimerExpired => "opening-timer-expired",
             Self::RadarAlert => "radar-alert",
             Self::RadarRestored => "radar-restored",
+            Self::TriggerTrace { .. } => "trigger-trace",
         }
     }
 
     pub(crate) fn side(self) -> CampaignSide {
         match self {
             Self::LoadUnlockedWhileLocked | Self::AlliedTick(_) => CampaignSide::Allied,
+            Self::TriggerTrace { scenario, .. } if scenario.starts_with("ALL") => {
+                CampaignSide::Allied
+            }
             _ => CampaignSide::Soviet,
         }
     }
@@ -78,7 +93,8 @@ impl OpeningTarget {
             Self::SovietTick(tick)
             | Self::SovietNavy(tick)
             | Self::SovietGroups(tick)
-            | Self::SovietFortresses(tick) => tick as usize + 1,
+            | Self::SovietFortresses(tick)
+            | Self::TriggerTrace { tick, .. } => tick as usize + 1,
             Self::TimerRunning | Self::TimerExpired => 8_000,
             _ => 2_500,
         }
@@ -115,6 +131,11 @@ pub(super) struct OpeningCapture {
     loaded_frame: Option<(u64, u32)>,
     saved_radar: Option<crate::sim::snapshot::saved_local_view::SavedRadarEvents>,
     group_orders: Option<Value>,
+    /// Trigger-trace push orders issued: tick and unit count of each.
+    push_orders: Vec<(u64, usize)>,
+    trigger_springs: Vec<Value>,
+    /// Poll and House-raise bounds, variable writes and run-time Tags.
+    trigger_events: Vec<Value>,
 }
 
 impl OpeningCapture {
@@ -143,6 +164,9 @@ impl OpeningCapture {
             loaded_frame: None,
             saved_radar: None,
             group_orders: None,
+            push_orders: Vec::new(),
+            trigger_springs: Vec::new(),
+            trigger_events: Vec::new(),
         }
     }
 
@@ -154,6 +178,7 @@ impl OpeningCapture {
             | OpeningTarget::SovietGroups(_)
             | OpeningTarget::SovietFortresses(_) => 600,
             OpeningTarget::TimerRunning | OpeningTarget::TimerExpired => 600,
+            OpeningTarget::TriggerTrace { .. } => 3600,
             _ => 180,
         })
     }
@@ -198,6 +223,10 @@ impl OpeningCapture {
             .as_ref()
             .context("campaign opening has no installed runtime")?
             .simulation;
+        if let OpeningTarget::TriggerTrace { tick, .. } = self.target {
+            // A mission that ends first stops the trace on its outcome frame.
+            return Ok(trace_outcome(state).is_some() || sim.session().tick() == tick);
+        }
         let locked = sim.session().input_locked();
         let view = camera::saved_tactical_view(state);
         Ok(self.saw_lock
@@ -227,7 +256,9 @@ impl OpeningCapture {
                 OpeningTarget::TimerExpired => {
                     self.saw_countdown && sim.session().scenario_timer_view().is_none()
                 }
-                OpeningTarget::RadarAlert | OpeningTarget::RadarRestored => unreachable!(),
+                OpeningTarget::RadarAlert
+                | OpeningTarget::RadarRestored
+                | OpeningTarget::TriggerTrace { .. } => unreachable!(),
             })
     }
 
@@ -244,11 +275,25 @@ impl OpeningCapture {
             } else {
                 campaign_runtime_receipt(state)?
             });
+            if let OpeningTarget::TriggerTrace { .. } = self.target {
+                #[cfg(feature = "dev-overlays")]
+                state
+                    .match_state
+                    .sim_runtime
+                    .as_mut()
+                    .context("trigger trace has no installed runtime")?
+                    .simulation
+                    .record_trigger_springs(true);
+                #[cfg(not(feature = "dev-overlays"))]
+                bail!("trigger traces need dev-overlays");
+            }
             // A real pointer press before the first authored lock. Action46
             // must cancel its capture while preserving physical button state.
             if !matches!(
                 self.target,
-                OpeningTarget::RadarAlert | OpeningTarget::RadarRestored
+                OpeningTarget::RadarAlert
+                    | OpeningTarget::RadarRestored
+                    | OpeningTarget::TriggerTrace { .. }
             ) {
                 crate::app::input::dispatch::handle_mouse_input(
                     state,
@@ -268,21 +313,16 @@ impl OpeningCapture {
             }
         }
         let locked = crate::app::input::campaign_input::is_locked(state);
-        if !matches!(
+        let probes = !matches!(
             self.target,
-            OpeningTarget::RadarAlert | OpeningTarget::RadarRestored
-        ) && locked
-            && self.lock_probe.is_none()
-        {
+            OpeningTarget::RadarAlert
+                | OpeningTarget::RadarRestored
+                | OpeningTarget::TriggerTrace { .. }
+        );
+        if probes && locked && self.lock_probe.is_none() {
             self.lock_probe = Some(probe_arrow_edge(state, true)?);
             self.locked_mouse_probe = Some(probe_locked_mouse_edges(state)?);
-        } else if !matches!(
-            self.target,
-            OpeningTarget::RadarAlert | OpeningTarget::RadarRestored
-        ) && self.saw_unlock
-            && !locked
-            && self.unlock_probe.is_none()
-        {
+        } else if probes && self.saw_unlock && !locked && self.unlock_probe.is_none() {
             self.unlock_probe = Some(probe_arrow_edge(state, false)?);
             self.unlocked_mouse_probe = Some(probe_unlocked_mouse_edges(state)?);
         }
@@ -303,6 +343,13 @@ impl OpeningCapture {
         ) && !locked
         {
             self.issue_campaign_encounter_orders(state)?;
+        }
+        if let OpeningTarget::TriggerTrace {
+            push: Some(cell), ..
+        } = self.target
+            && !locked
+        {
+            self.issue_trace_push_orders(state, cell)?;
         }
         if matches!(
             self.target,
@@ -383,6 +430,20 @@ impl OpeningCapture {
             );
         }
         self.steps.push(receipt);
+        #[cfg(feature = "dev-overlays")]
+        if let OpeningTarget::TriggerTrace { .. } = self.target {
+            let sim = &mut state
+                .match_state
+                .sim_runtime
+                .as_mut()
+                .context("trigger trace lost its runtime")?
+                .simulation;
+            let (springs, events) = sim.take_trigger_trace();
+            self.trigger_springs
+                .extend(springs.into_iter().map(|spring| json!(spring)));
+            self.trigger_events
+                .extend(events.into_iter().map(|event| json!(event)));
+        }
         self.observe(state)?;
         Ok(())
     }
@@ -575,6 +636,9 @@ impl OpeningCapture {
         self.saw_unlock |= self.saw_lock && !locked;
         self.saw_lock |= locked;
         self.saw_countdown |= !facts["scenario_timer"].is_null();
+        if let OpeningTarget::TriggerTrace { .. } = self.target {
+            return Ok(());
+        }
         if !facts["scenario_timer"].is_null() {
             self.last_running_countdown = Some(json!({
                 "tick": facts["tick"], "binary_frame": facts["binary_frame"],
@@ -736,40 +800,8 @@ impl OpeningCapture {
         if self.group_orders.is_some() {
             return Ok(());
         }
-        let sim = &state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .context("group runtime")?
-            .simulation;
-        let tick = sim.session().tick();
-        if tick < 300 {
-            return Ok(());
-        }
-        let viewer = sim.session().current_house().context("campaign player")?;
-        let owner = sim.interner().resolve(viewer).to_owned();
-        let rules = state.rules().context("campaign rules")?;
-        let ids: Vec<_> = sim
-            .entities()
-            .iter_sorted()
-            .filter_map(|(id, actor)| {
-                let object = rules.object(sim.interner().resolve(actor.type_ref()))?;
-                (actor.owner() == viewer
-                    && actor.is_active()
-                    && !actor.lifecycle.in_limbo()
-                    && actor.category() != crate::map::entities::EntityCategory::Structure
-                    && !object.resource_gatherer
-                    && crate::sim::combat::combat_weapon::is_armed(
-                        actor,
-                        object,
-                        sim.entities(),
-                        rules,
-                        sim.interner(),
-                    ))
-                .then_some(id)
-            })
-            .collect();
-        if ids.is_empty() {
+        let (tick, owner, ids) = armed_player_units(state)?;
+        if tick < 300 || ids.is_empty() {
             return Ok(());
         }
         let (target, group) = match self.target {
@@ -814,6 +846,41 @@ impl OpeningCapture {
         Ok(())
     }
 
+    /// Trigger trace `-push-<X>-<Y>`: like a player sending the whole armed
+    /// force, every armed unit attack-moves toward one Cell, again each game
+    /// minute so new and idle units follow. Player input only.
+    fn issue_trace_push_orders(&mut self, state: &mut AppState, cell: (u16, u16)) -> Result<()> {
+        use crate::sim::combat::TargetKind;
+        use crate::sim::command::Command;
+        const PERIOD_TICKS: u64 = 900;
+        let (tick, owner, ids) = armed_player_units(state)?;
+        if ids.is_empty()
+            || self
+                .push_orders
+                .last()
+                .is_some_and(|&(last, _)| tick < last + PERIOD_TICKS)
+        {
+            return Ok(());
+        }
+        for &entity_id in &ids {
+            ensure!(
+                crate::app::input::commands::try_schedule_command(
+                    state,
+                    &owner,
+                    Command::AttackMove {
+                        entity_id,
+                        target: None,
+                        destination: Some(TargetKind::Cell(cell.0, cell.1)),
+                    }
+                )
+                .is_some(),
+                "push attack-move input rejected"
+            );
+        }
+        self.push_orders.push((tick, ids.len()));
+        Ok(())
+    }
+
     pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
         ensure!(
             self.ready(state)?,
@@ -837,7 +904,14 @@ impl OpeningCapture {
             "pre_lock_save": self.pre_lock_save, "unlocked_save": self.unlocked_save,
             "load_while_locked": self.load_while_locked,
             "group_orders": self.group_orders,
-            "requested_tick": match self.target { OpeningTarget::AlliedTick(tick) | OpeningTarget::SovietTick(tick) | OpeningTarget::SovietNavy(tick) | OpeningTarget::SovietGroups(tick) | OpeningTarget::SovietFortresses(tick) => Some(tick), _ => None },
+            "requested_tick": match self.target { OpeningTarget::AlliedTick(tick) | OpeningTarget::SovietTick(tick) | OpeningTarget::SovietNavy(tick) | OpeningTarget::SovietGroups(tick) | OpeningTarget::SovietFortresses(tick) | OpeningTarget::TriggerTrace { tick, .. } => Some(tick), _ => None },
+            "trigger_springs": self.trigger_springs,
+            "trigger_events": self.trigger_events,
+            "push_orders": self.push_orders,
+            "outcome": trace_outcome(state),
+            "houses": if matches!(self.target, OpeningTarget::TriggerTrace { .. }) {
+                Some(trace_houses(state)?)
+            } else { None },
             "encounter_entities": if matches!(self.target, OpeningTarget::SovietTick(_) | OpeningTarget::SovietNavy(_) | OpeningTarget::SovietGroups(_) | OpeningTarget::SovietFortresses(_)) {
                 let sim = &state.match_state.sim_runtime.as_ref().context("encounter runtime")?.simulation;
                 Some(sim.entities().iter_sorted().map(|(_, entity)| json!({
@@ -1167,4 +1241,92 @@ fn probe_unlocked_mouse_edges(state: &mut AppState) -> Result<Value> {
     Ok(json!({"held_left_blocks_right_pan": true,
         "released_buttons_admit_right_pan": true, "capture_released": true,
         "camera_request_committed": false}))
+}
+
+/// The current tick, the player's House name and the armed, active, on-map
+/// units a player would send: no buildings, harvesters or unarmed units.
+fn armed_player_units(state: &AppState) -> Result<(u64, String, Vec<u64>)> {
+    let sim = &state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .context("campaign runtime")?
+        .simulation;
+    let viewer = sim.session().current_house().context("campaign player")?;
+    let rules = state.rules().context("campaign rules")?;
+    let ids = sim
+        .entities()
+        .iter_sorted()
+        .filter_map(|(id, actor)| {
+            let object = rules.object(sim.interner().resolve(actor.type_ref()))?;
+            (actor.owner() == viewer
+                && actor.is_active()
+                && !actor.lifecycle.in_limbo()
+                && actor.category() != crate::map::entities::EntityCategory::Structure
+                && !object.resource_gatherer
+                && crate::sim::combat::combat_weapon::is_armed(
+                    actor,
+                    object,
+                    sim.entities(),
+                    rules,
+                    sim.interner(),
+                ))
+            .then_some(id)
+        })
+        .collect();
+    Ok((
+        sim.session().tick(),
+        sim.interner().resolve(viewer).to_owned(),
+        ids,
+    ))
+}
+
+/// The local House's campaign outcome, once Flag_To_Win or Flag_To_Lose set it.
+fn trace_outcome(state: &AppState) -> Option<&'static str> {
+    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let owner = crate::app::input::commands::preferred_local_owner_name(state)
+        .and_then(|name| sim.interner().get(&name))?;
+    let house = sim.houses().get(&owner)?;
+    if house.has_won() {
+        Some("won")
+    } else if house.has_lost() {
+        Some("lost")
+    } else {
+        None
+    }
+}
+
+/// End-of-trace House summary: live, non-limbo objects per category.
+fn trace_houses(state: &AppState) -> Result<Value> {
+    let sim = &state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .context("trigger trace runtime")?
+        .simulation;
+    let mut houses = std::collections::BTreeMap::<String, [u32; 4]>::new();
+    for (_, entity) in sim.entities().iter_sorted() {
+        if !entity.is_active() || entity.lifecycle.in_limbo() {
+            continue;
+        }
+        use crate::map::entities::EntityCategory;
+        let slot = match entity.category() {
+            EntityCategory::Structure => 0,
+            EntityCategory::Unit => 1,
+            EntityCategory::Infantry => 2,
+            EntityCategory::Aircraft => 3,
+        };
+        houses
+            .entry(sim.interner().resolve(entity.owner()).to_owned())
+            .or_default()[slot] += 1;
+    }
+    Ok(json!(
+        houses
+            .into_iter()
+            .map(|(house, [buildings, units, infantry, aircraft])| json!({
+                "house": house, "buildings": buildings, "units": units,
+                "infantry": infantry, "aircraft": aircraft,
+            }))
+            .collect::<Vec<_>>()
+    ))
 }

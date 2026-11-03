@@ -51,7 +51,7 @@ fn make_test_entity(type_id: &str, category: EntityCategory) -> MapEntity {
         recruitable_b: true,
         group: -1,
         follows: None,
-        structure_upgrades: [None, None, None],
+        structure_columns: Default::default(),
         structure_ai_sellable: false,
         structure_ai_repairable: false,
         structure_online: true,
@@ -509,7 +509,10 @@ fn a_tournament_players_exit_flags_their_house_on_the_remaining_peers() {
     assert_eq!(result.executed_commands, 1);
     let house = sim.houses.get(&leaver).unwrap();
     assert!(house.is_to_die() || house.has_lost());
-    assert_eq!(sim.take_departed_owners(), [leaver]);
+    assert_eq!(
+        sim.take_departed_senders(),
+        [sim.houses.index_of(leaver).unwrap() as i8]
+    );
 }
 
 #[test]
@@ -5902,7 +5905,7 @@ fn move_event_issuer_does_not_replace_actor_owner() {
             recruitable_b: true,
             group: -1,
             follows: None,
-            structure_upgrades: [None, None, None],
+            structure_columns: Default::default(),
             structure_ai_sellable: false,
             structure_ai_repairable: false,
             structure_online: true,
@@ -6094,7 +6097,7 @@ fn attack_move_fight(rules: &RuleSet) -> Simulation {
                 recruitable_b: true,
                 group: -1,
                 follows: None,
-                structure_upgrades: [None, None, None],
+                structure_columns: Default::default(),
                 structure_ai_sellable: false,
                 structure_ai_repairable: false,
                 structure_online: true,
@@ -6116,7 +6119,7 @@ fn attack_move_fight(rules: &RuleSet) -> Simulation {
                 recruitable_b: true,
                 group: -1,
                 follows: None,
-                structure_upgrades: [None, None, None],
+                structure_columns: Default::default(),
                 structure_ai_sellable: false,
                 structure_ai_repairable: false,
                 structure_online: true,
@@ -6587,6 +6590,48 @@ fn test_lethal_hit_stuns_the_dying_infantry() {
     assert!(
         gi.navigation.nav_com().is_none(),
         "FootClass::Stun Assign_Destination(NULL)"
+    );
+}
+
+/// `TechnoClass::Stun @ 0x006FCD40` runs Kill_All_Spawns, ClearAllTargets
+/// and Detach_All(1) for a non-Foot object too (`JZ 0x006FCD7B`): a stunned
+/// building drops out of its attacker's Target.
+#[test]
+fn test_stunning_a_building_detaches_its_attackers() {
+    let rules = combat_test_rules();
+    let mut sim: Simulation = Simulation::new();
+    sim.spawn_from_map(
+        &[
+            MapEntity {
+                owner: "Russians".to_string(),
+                cell_x: 6,
+                cell_y: 2,
+                ..make_test_entity("GACNST", EntityCategory::Structure)
+            },
+            MapEntity {
+                cell_x: 2,
+                cell_y: 2,
+                ..make_test_entity("MTNK", EntityCategory::Unit)
+            },
+        ],
+        Some(&rules),
+    );
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(1)));
+    sim.stun(1, UninitContext::with_rules(&rules));
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(2)
+            .unwrap()
+            .attack_target
+            .target(),
+        None,
+        "Detach_All(1) clears the tank's Target"
     );
 }
 

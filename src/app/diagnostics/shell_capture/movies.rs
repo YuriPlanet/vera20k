@@ -38,6 +38,24 @@ const LIST_DOWN_ARROW_POINT: (f32, f32) = (509.0, 420.0);
 /// changes show before the readback.
 const SETTLE_FRAMES: u32 = 4;
 
+/// The 14 retail Yuri's Revenge campaign missions a trigger trace may run.
+pub(super) const RETAIL_CAMPAIGN_MAPS: [&str; 14] = [
+    "ALL01UMD.MAP",
+    "ALL02UMD.MAP",
+    "ALL03UMD.MAP",
+    "ALL04DMD.MAP",
+    "ALL05UMD.MAP",
+    "ALL06UMD.MAP",
+    "ALL07SMD.MAP",
+    "SOV01UMD.MAP",
+    "SOV02SMD.MAP",
+    "SOV03UMD.MAP",
+    "SOV04DMD.MAP",
+    "SOV05UMD.MAP",
+    "SOV06LMD.MAP",
+    "SOV07TMD.MAP",
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum MoviesTarget {
     Page0x101,
@@ -134,6 +152,7 @@ impl CampaignStartTarget {
                 | OpeningTarget::SovietFortresses(_),
             ) => Some("SOV02SMD.MAP"),
             Self::Opening(OpeningTarget::SovietGroups(_)) => Some("SOV07TMD.MAP"),
+            Self::Opening(OpeningTarget::TriggerTrace { scenario, .. }) => Some(scenario),
             Self::Restart(RestartTarget::ObjectiveExpiry) => Some("SOV02SMD.MAP"),
             Self::Restart(RestartTarget::AlternateHomeVictory) => Some("SOV06LMD.MAP"),
             Self::Restart(RestartTarget::InheritedTimerVictory) => Some("SOV01UMD.MAP"),
@@ -1731,6 +1750,12 @@ impl MoviesCapture {
 
     pub(super) fn measurement_failure(&self) -> Option<String> {
         self.lan.as_ref()?.measurement_failure()
+    }
+
+    pub(super) fn observes_every_frame(&self) -> bool {
+        self.lan
+            .as_ref()
+            .is_some_and(|lan| lan.observes_every_frame())
     }
 
     pub(super) fn owns_simulation_steps(&self, state: &AppState) -> bool {

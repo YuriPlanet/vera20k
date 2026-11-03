@@ -131,15 +131,37 @@ pub(crate) fn super_weapon_index_of_name<'a>(
     ids.position(|id| id.eq_ignore_ascii_case(incoming))
 }
 
-/// HouseClassGetPlayerAtFromString510FB0's exact physical token table.
-/// Shared by ReadHouseType475540 and TeamType House decoding.
+/// HouseClass::GetPlayerAtFromString @ 0x00510FB0 and ReadHouseType
+/// @ 0x00475540 use selectors starting at 0x117B. VERA extends their eight
+/// entries to the room capacity, preserving the original A..H identities.
+pub(crate) const HOUSE_TYPE_PLAYER_AT_SELECTORS: std::ops::Range<i32> =
+    0x117B..0x117B + crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32;
+
+/// Shared case-sensitive player token reader for Session and TeamType House.
+/// VERA extension: A..Z, AA..AD represent the thirty start slots.
 pub(crate) fn house_type_player_at(incoming: &str) -> Option<u8> {
-    let bytes = incoming.as_bytes();
-    (bytes.len() == 12
-        && bytes.starts_with(b"<Player @ ")
-        && bytes[11] == b'>'
-        && (b'A'..=b'H').contains(&bytes[10]))
-    .then(|| bytes[10] - b'A')
+    let letters = incoming.strip_prefix("<Player @ ")?.strip_suffix('>')?;
+    let slot = match letters.as_bytes() {
+        [letter @ b'A'..=b'Z'] => letter - b'A',
+        [b'A', letter @ b'A'..=b'Z'] => 26 + letter - b'A',
+        _ => return None,
+    };
+    (usize::from(slot) < crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT).then_some(slot)
+}
+
+/// INIClass::Put_HouseType @ 0x00475610 player-selector text, extended to
+/// the same thirty slots as the reader. Other HouseType values stay with callers.
+pub fn house_type_player_at_text(index: i32) -> Option<String> {
+    if !HOUSE_TYPE_PLAYER_AT_SELECTORS.contains(&index) {
+        return None;
+    }
+    let slot = (index - HOUSE_TYPE_PLAYER_AT_SELECTORS.start) as u8;
+    let (prefix, letter) = if slot < 26 {
+        ("", slot)
+    } else {
+        ("A", slot - 26)
+    };
+    Some(format!("<Player @ {prefix}{}>", char::from(b'A' + letter)))
 }
 
 /// One native `RulesClass::Process` source in its runtime position.
@@ -593,7 +615,7 @@ pub(crate) fn read_native_multiplayer_country(
     let index = if name.is_empty() {
         current
     } else if let Some(player) = house_type_player_at(&name) {
-        0x117b + i32::from(player)
+        HOUSE_TYPE_PLAYER_AT_SELECTORS.start + i32::from(player)
     } else {
         let found = processor.country_index_of_name(&name);
         if found != -1 {
@@ -2236,6 +2258,33 @@ impl ProcessedRulesLayers {
             .rules_tree_strength
     }
 
+    pub(crate) fn threat_coefficient_defaults(
+        &self,
+    ) -> super::threat_coefficients::ThreatCoefficients {
+        self.native_registry_state()
+            .rules_threat_coefficient_defaults
+    }
+
+    pub(crate) fn techno_threat_coefficients(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            super::threat_coefficients::ThreatCoefficients,
+        ),
+    > {
+        let state = self.native_registry_state();
+        state.techno_type_order.iter().map(|&(family, index)| {
+            let member = &state.families[&family][index];
+            (
+                family.object_category().expect("TechnoType family"),
+                member.native_stored_id.as_str(),
+                member.threat_coefficients,
+            )
+        })
+    }
+
     pub(crate) fn detail(&self) -> DetailRules {
         self.native_type_construction_trace
             .registry_state()
@@ -3388,6 +3437,9 @@ impl AresGlobalControls {
 /// RulesClass scalars share this process lifetime and survive Type resets.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct NativeRulesRegistryState {
+    /// Rules ctor666C3F..666C75 / ReadGeneral671AF6..671B97. Mandatory
+    /// saved history: flattened text cannot reconstruct previous read defaults.
+    rules_threat_coefficient_defaults: super::threat_coefficients::ThreatCoefficients,
     /// Build capability is retained with the Rules owner, never selected by INI.
     compatibility: RulesCompatibility,
     /// Ares Clear/AddDefaults rebuilds these at a destructive scenario reset;
@@ -3498,6 +3550,7 @@ impl Default for NativeRulesRegistryState {
         // RulesClass constructor values; `GeneralRules::default` owns them.
         let general = crate::rules::ruleset::GeneralRules::default();
         Self {
+            rules_threat_coefficient_defaults: general.threat_coefficient_defaults(),
             compatibility: RulesCompatibility::default(),
             ares_prerequisites: crate::rules::ARES_ENABLED.then(GenericPrerequisites::default),
             ares_armors: crate::rules::ARES_ENABLED.then(ArmorCatalog::default),
@@ -3927,6 +3980,8 @@ impl NativeRulesRegistryState {
     /// cannot be rewound by this operation.
     pub(crate) fn destructive_reset(self) -> Self {
         Self {
+            // Reset6686C0 deletes Types, retaining the same RulesClass scalars.
+            rules_threat_coefficient_defaults: self.rules_threat_coefficient_defaults,
             //6686C0..668BF0 has no RulesExt reconstruction. Early-map Process
             //686D35 precedes this TypeReset6876AC and its flags/phase survive.
             #[cfg(feature = "ares")]
@@ -4219,6 +4274,9 @@ impl AresExplicitFactory {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct ProcessedType {
+    /// TechnoType ctor710B6A..710BA0 starts all five at zero. Preserve the
+    /// admitted-read history on save; a missing section must not apply defaults.
+    threat_coefficients: super::threat_coefficients::ThreatCoefficients,
     native_stored_id: String,
     body: IniSection,
     // Mandatory on load: a missing Arctic latch cannot be reconstructed from
@@ -4824,6 +4882,7 @@ impl ProcessedType {
 
     fn new(native_stored_id: String) -> Self {
         Self {
+            threat_coefficients: Default::default(),
             body: IniSection::new(native_stored_id.clone()),
             object_image: ObjectImageState::new(&native_stored_id),
             overlay_damage_levels: 1,
@@ -5017,6 +5076,7 @@ fn find_or_construct_type(
 
 #[derive(Debug, Clone)]
 struct RulesPassProcessor {
+    rules_threat_coefficient_defaults: super::threat_coefficients::ThreatCoefficients,
     image_theater: ImageTheater,
     compatibility: RulesCompatibility,
     ares_prerequisites: Option<GenericPrerequisites>,
@@ -5109,6 +5169,7 @@ impl Default for RulesPassProcessor {
 impl RulesPassProcessor {
     fn with_registry_state(registry_state: NativeRulesRegistryState) -> Self {
         Self {
+            rules_threat_coefficient_defaults: registry_state.rules_threat_coefficient_defaults,
             image_theater: ImageTheater::Uninitialized,
             compatibility: registry_state.compatibility,
             ares_prerequisites: registry_state.ares_prerequisites,
@@ -5893,6 +5954,10 @@ impl RulesPassProcessor {
         // as defaults; RulesClass keeps them across Full_Init's reset.
         self.rules_prism_support = self.rules_prism_support.read_pass(section);
         self.rules_spotlight.read_pass(section);
+        // ReadGeneral671AF6..671B97; Process668EE8 reaches General before
+        // TypeData668EF0. Keep current defaults on each admitted General pass.
+        self.rules_threat_coefficient_defaults
+            .read_defaults(section);
         // RulesCtor666DF8 starts TreeStrength at25. ReadGeneral671DD2..
         //671DEB retains the current signed dword; Process668EE8 reaches this
         // before TypeData668EF0. This same boundary handles General prepasses,
@@ -7597,6 +7662,12 @@ impl RulesPassProcessor {
         let member = &mut self.family_mut(family)[index];
         member.radial_fire_segments =
             raw.read_int("RadialFireSegments", member.radial_fire_segments);
+        // ReadINI71551E..715720. begin_rules_member_read has admitted this
+        // actual section, so zero/unordered values now take this pass's General.
+        let defaults = self.rules_threat_coefficient_defaults;
+        self.family_mut(family)[index]
+            .threat_coefficients
+            .read_type(raw, defaults);
     }
 
     /// A reference read from the fixed ART section the type's Image names; a
@@ -8456,6 +8527,7 @@ impl RulesPassProcessor {
                 events: self.native_type_construction_events,
                 allocated_super_weapon_type_count,
                 registry_state: NativeRulesRegistryState {
+                    rules_threat_coefficient_defaults: self.rules_threat_coefficient_defaults,
                     compatibility: self.compatibility,
                     ares_prerequisites: self.ares_prerequisites,
                     ares_armors: self.ares_armors,

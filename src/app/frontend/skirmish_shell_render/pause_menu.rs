@@ -110,9 +110,11 @@ fn text_draws(
     for (button, rect) in layout.buttons() {
         let state = states[button as usize];
         let label = if button == PauseMenuButton::SharedPause {
-            shared_pause_caption.unwrap_or_default().to_owned()
+            shared_pause_caption
+                .map(|key| crate::i18n::text(csf, key).into_owned())
+                .unwrap_or_default()
         } else if button == PauseMenuButton::Resume && shared_pause_caption.is_some() {
-            "Return to Game".to_owned()
+            crate::i18n::text(csf, "VERA:ReturnToGame").into_owned()
         } else {
             let control = layout.template.control(button).expect("template button");
             caption(csf, control.csf_key)

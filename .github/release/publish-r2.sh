@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Copy the three attested stable-release installers to immutable R2 keys, with
-# a manifest signed for the game's updater (src/app/updater).
+# Copy the attested stable-release installers to immutable R2 keys, with a
+# manifest signed for the game's updater (src/app/updater).
 # --roll-back lets latest.json move back to this release, which GitHub must
 # already mark Latest: how a bad release is stopped (downloads.md).
 # Credentials and the signing key come only from the environment; never enable
@@ -114,13 +114,21 @@ gh api "repos/$repo/releases/tags/$tag" > "$work/release.json"
 names=("vera20k-$version-windows-x64-setup.exe" "vera20k-$version-macos-arm64.dmg" "vera20k-$version-linux-x64.AppImage")
 platforms=(windows macos linux)
 types=(application/vnd.microsoft.portable-executable application/x-apple-diskimage application/octet-stream)
-jq -e --arg tag "$tag" --arg a "${names[0]}" --arg b "${names[1]}" --arg c "${names[2]}" '
+# The Intel Mac disk image, from the first release built with one. Earlier
+# releases, which a roll-back publishes again, have only the other three.
+intel="vera20k-$version-macos-x64.dmg"
+if jq -e --arg name "$intel" 'any(.assets[]; .name == $name)' "$work/release.json" >/dev/null; then
+  names+=("$intel")
+  platforms+=(macos-x64)
+  types+=(application/x-apple-diskimage)
+fi
+jq -e --arg tag "$tag" '
   .tag_name == $tag and .draft == false and .prerelease == false
-  and (.assets | length == 3)
-  and ([.assets[].name] | sort == ([$a,$b,$c] | sort))
+  and ([.assets[].name] | sort == ($ARGS.positional | sort))
   and all(.assets[]; .state == "uploaded" and (.size | type == "number") and .size > 0
     and (.digest | type == "string") and (.digest | test("^sha256:[0-9a-f]{64}$")))
-' "$work/release.json" >/dev/null || die 'release must contain exactly three published stable installers with SHA-256 digests'
+' "$work/release.json" --args "${names[@]}" >/dev/null \
+  || die 'release must contain exactly its published stable installers with SHA-256 digests'
 commit=$(tag_commit)
 # The release page's change list, which the game's update offer shows: the
 # bullets under its first "Changes" heading (.github/release/notes.sh), without
@@ -165,7 +173,7 @@ jq -nS --arg version "$version" --arg tag "$tag" --arg commit "$commit" --argjso
   '{version:$version,tag:$tag,commit:$commit,files:{}} + $fields' > "$work/manifest.json"
 
 # Complete every GitHub download/provenance check before writing any R2 object.
-for index in 0 1 2; do
+for index in "${!names[@]}"; do
   name=${names[$index]}
   file="$work/assets/$name"
   gh release download "$tag" --repo "$repo" --dir "$work/assets" --pattern "$name"
@@ -230,7 +238,7 @@ publish_immutable() {
   verify_copy "$source" "$target" "$key"
 }
 
-for index in 0 1 2; do
+for index in "${!names[@]}"; do
   publish_immutable "releases/$tag/${names[$index]}" "$work/assets/${names[$index]}" "${types[$index]}" "${names[$index]}"
 done
 publish_immutable "releases/$tag/manifest.json" "$work/manifest.json" application/json
@@ -250,7 +258,7 @@ if fetch_optional latest.json "$work/prior-latest.json"; then
     type == "object" and (.tag | type == "string") and (.version | type == "string")
     and (.version | test("^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})$"))
     and .tag == ("v" + .version) and (.commit | test("^[0-9a-f]{40}$"))
-    and (.files | type == "object") and (.files | keys == ["linux","macos","windows"])
+    and (.files | type == "object") and (.files | keys - ["macos-x64"] == ["linux","macos","windows"])
   ' "$work/prior-latest.json" >/dev/null || die 'existing latest manifest is malformed'
   if jq -e --arg version "$version" \
       '(.version | split(".") | map(tonumber)) > ($version | split(".") | map(tonumber))' \
@@ -288,4 +296,4 @@ s3 put-object --bucket "$bucket" --key latest.json --body "$work/manifest.json" 
   > "$work/latest-put.json" 2> "$work/latest-put.error" || die 'latest pointer update failed; prior/concurrent pointer was preserved'
 fetch_optional latest.json "$work/final-latest.json" || die 'latest manifest is absent after publication'
 verify_copy "$work/manifest.json" "$work/final-latest.json" latest.json
-printf '%s\n' "Published and verified the three $tag downloads."
+printf '%s\n' "Published and verified the ${#names[@]} $tag downloads."

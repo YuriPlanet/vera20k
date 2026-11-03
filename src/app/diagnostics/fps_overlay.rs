@@ -1,10 +1,12 @@
 //! Final-window FPS readout, hidden at every launch until Ctrl+Alt+F or the
-//! Options page's FPS Counter box shows it.
-//! Independent of tactical cameras, optional dev overlays, retail fonts, and
-//! shell/offscreen composition.
+//! Options page's FPS Counter box shows it, and the replay/recovery status
+//! line below it. The readout's built-in font is independent of retail
+//! assets; the status line is localized text ([`crate::i18n`]), so it draws
+//! with the caller's GAME.FNT font. Both are independent of tactical cameras,
+//! optional dev overlays, and shell/offscreen composition.
 
-use std::sync::Mutex;
 use crate::util::time::Instant;
+use std::sync::Mutex;
 
 use crate::render::batch::{BatchRenderer, CameraUniform, InstanceBufferPool};
 use crate::render::bit_font::BitFont;
@@ -18,6 +20,14 @@ pub(crate) struct FpsOverlay {
     camera_buffer: wgpu::Buffer,
     camera_group: wgpu::BindGroup,
     frame: Mutex<OverlayFrame>,
+}
+
+struct OverlayText<'a> {
+    font: &'a BitFont,
+    scale: f32,
+    text: &'a str,
+    y: f32,
+    key: &'static str,
 }
 
 struct OverlayFrame {
@@ -96,13 +106,18 @@ impl FpsOverlay {
             encoder,
             destination,
             &mut frame,
-            &text,
-            8.0,
-            "window_fps",
+            OverlayText {
+                font: &self.font,
+                scale: 2.0,
+                text: &text,
+                y: 8.0,
+                key: "window_fps",
+            },
         );
     }
 
-    /// Persistent replay/recovery facts share the final-window font/camera.
+    /// Persistent replay/recovery facts share the final-window camera. `font`
+    /// is the process GAME.FNT font, which covers localized text.
     /// This call neither samples nor changes the FPS counter's visibility.
     pub(crate) fn encode_status(
         &self,
@@ -110,6 +125,7 @@ impl FpsOverlay {
         batch: &BatchRenderer,
         encoder: &mut wgpu::CommandEncoder,
         destination: &wgpu::Texture,
+        font: &BitFont,
         text: &str,
     ) {
         let mut frame = self.frame.lock().expect("window status overlay frame lock");
@@ -119,9 +135,13 @@ impl FpsOverlay {
             encoder,
             destination,
             &mut frame,
-            &text.to_ascii_uppercase(),
-            if self.visible { 30.0 } else { 8.0 },
-            "window_status",
+            OverlayText {
+                font,
+                scale: 1.0,
+                text,
+                y: if self.visible { 30.0 } else { 8.0 },
+                key: "window_status",
+            },
         );
     }
 
@@ -132,10 +152,15 @@ impl FpsOverlay {
         encoder: &mut wgpu::CommandEncoder,
         destination: &wgpu::Texture,
         frame: &mut OverlayFrame,
-        text: &str,
-        y: f32,
-        key: &'static str,
+        overlay: OverlayText<'_>,
     ) {
+        let OverlayText {
+            font,
+            scale,
+            text,
+            y,
+            key,
+        } = overlay;
         let size = [destination.width(), destination.height()];
         if frame.size != size {
             frame.depth = gpu.create_depth_texture();
@@ -154,14 +179,15 @@ impl FpsOverlay {
         gpu.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
         let mut instances = Vec::with_capacity(text.len() * 5);
-        let layout = self.font.wrap_layout(
+        let layout = font.wrap_layout(
             text,
             if key == "window_fps" {
                 u32::MAX
             } else {
-                size[0].saturating_sub(16) / 2
+                (size[0].saturating_sub(16) as f32 / scale) as u32
             },
         );
+        let line_height = font.cell_height() * scale + 4.0;
         for (line_index, line) in layout.lines.iter().enumerate() {
             for (dx, dy, tint) in [
                 (-1.0, 0.0, [0.0; 3]),
@@ -170,11 +196,11 @@ impl FpsOverlay {
                 (0.0, 1.0, [0.0; 3]),
                 (0.0, 0.0, [1.0, 1.0, 0.25]),
             ] {
-                instances.extend(self.font.build_text(
+                instances.extend(font.build_text(
                     &text[line.start_byte..line.end_byte],
                     8.0 + dx,
-                    y + line_index as f32 * 20.0 + dy,
-                    2.0,
+                    y + line_index as f32 * line_height + dy,
+                    scale,
                     0.0,
                     tint,
                     [0.0; 2],
@@ -218,7 +244,7 @@ impl FpsOverlay {
         if let Some((buffer, count)) = frame.pool.get(key) {
             batch.draw_passthrough_range_bound(
                 &mut pass,
-                self.font.atlas(),
+                font.atlas(),
                 buffer,
                 &self.camera_group,
                 0,

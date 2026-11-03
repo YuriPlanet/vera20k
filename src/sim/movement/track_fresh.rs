@@ -228,7 +228,7 @@ impl Simulation {
         }
         let destination = track_destination(actor).ok_or("no-queue arm without destination")?;
         // A batched request waits for the next frame's batch as if the timer
-        // still ran (`path_batch`, a proposed deviation). So does a
+        // still ran (`path_batch`, a sim-scale deviation). So does a
         // recursion's (the retries at 0x4B397F, 0x4B4480 and the 0x4B4541
         // tail, the second stage's re-entries at 0x4B41B3 and 0x4B420B),
         // unless it is the Foot's first request in a frame the batch answered.
@@ -502,7 +502,7 @@ impl Simulation {
         let destination = super::path_batch::code2_ladder_destination(actor)
             .ok_or("Drive/Ship code-2 ladder without a track locomotor")?;
         // A batched re-path waits for the next frame's batch as if the timer
-        // still ran (`path_batch`, a proposed deviation), unless it heads for
+        // still ran (`path_batch`, a sim-scale deviation), unless it heads for
         // the Foot's own cell.
         if Self::defer_path_search(
             &mut self.path_batch,
@@ -1213,11 +1213,10 @@ impl Simulation {
                     return;
                 };
                 //4B3B52..4B3B62: the mover's House asks about the object.
-                if crate::map::houses::is_allied_with(
-                    self.house_alliances.as_map(),
-                    self.interner.resolve(actor.owner()),
-                    self.interner.resolve(target.owner()),
-                ) {
+                if self
+                    .house_alliances
+                    .is_allied(&self.interner, actor.owner(), target.owner())
+                {
                     return;
                 }
                 self.track_override(id, TargetKind::Entity(blocker), rules, frame_effects);

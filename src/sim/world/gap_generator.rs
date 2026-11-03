@@ -480,6 +480,12 @@ impl Simulation {
         // CreateGap/DestroyGap (0x006FB170/0x006FB470) branch on PlayerPtr+0x1F5;
         // MPlayer_Defeated (0x004FC0B0) sets it. Each retained viewer maps to its House.
         let viewer_defeated = houses.get(&viewer).is_some_and(|house| house.is_defeated());
+        let before = entity.gap_generator.viewers.get(&viewer);
+        fog.note_gap_deposit(
+            id,
+            viewer,
+            before.map(|deposit| (deposit.active, deposit.radius)),
+        );
         let deposit = entity.gap_generator.viewers.entry(viewer).or_default();
         if deposit.active == active {
             return;
@@ -497,7 +503,7 @@ impl Simulation {
             .collect();
         vision::publish_gap_generator_event(
             fog,
-            house_alliances.as_map(),
+            house_alliances,
             viewer,
             source,
             active,
@@ -578,16 +584,9 @@ impl Simulation {
         admit: bool,
         rules: &RuleSet,
     ) {
-        let Some(entity) = self.substrate.entities.get(id) else {
+        let Some(radius) = self.map_callback_gap_radius(id, rules) else {
             return;
         };
-        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
-            return;
-        };
-        if !object.gap_generator {
-            return;
-        }
-        let radius = i32::from(object.gap_radius_in_cells);
         if admit && self.building_operational_state(id, rules) != Some(true) {
             return;
         }
@@ -603,6 +602,35 @@ impl Simulation {
             admit,
             radius,
         );
+    }
+
+    /// [`Self::refresh_map_callback_gap`] for each of `viewers` in order. A
+    /// callback for an object that is no gap generator changes nothing, so
+    /// one read settles the whole run; a gap generator takes each callback
+    /// with its own reread, as before.
+    pub(super) fn refresh_map_callback_gaps(
+        &mut self,
+        id: u64,
+        viewers: &[InternedId],
+        admit: bool,
+        rules: &RuleSet,
+    ) {
+        if viewers.is_empty() || self.map_callback_gap_radius(id, rules).is_none() {
+            return;
+        }
+        for &viewer in viewers {
+            self.refresh_map_callback_gap(id, viewer, admit, rules);
+        }
+    }
+
+    /// The gap radius the map callbacks act on: `None` unless the object
+    /// exists and its type is a `GapGenerator=`.
+    fn map_callback_gap_radius(&self, id: u64, rules: &RuleSet) -> Option<i32> {
+        let entity = self.substrate.entities.get(id)?;
+        let object = self.interner.object_type(entity.type_ref(), rules)?;
+        object
+            .gap_generator
+            .then(|| i32::from(object.gap_radius_in_cells))
     }
 }
 

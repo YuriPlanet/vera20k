@@ -791,6 +791,16 @@ pub struct ForwardDatagram {
     pub bytes: Vec<u8>,
 }
 
+/// How players kept pace, for the relay's journal report.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct PaceCounts {
+    /// Times the clock slowed a match because a player could not keep up.
+    pub slowdowns: u64,
+    /// Pace reports from a player catching up or behind. Each player reports
+    /// once a second, so this is about the seconds players spent catching up.
+    pub catching_up_s: u64,
+}
+
 /// Bound storage and packet rate; untrusted data never creates a room until
 /// both ticket authentication and UDP source reachability are established.
 pub struct RelayServer {
@@ -818,6 +828,8 @@ pub struct RelayServer {
     // Ordering rooms cleaned up before their certificate expired, until that
     // expiry: a late Ready gets Inactive instead of a new timeline.
     ended_orderings: HashMap<[u8; 16], u64>,
+    // Since `take_pace_counts` last read them.
+    pace_counts: PaceCounts,
 }
 
 impl RelayServer {
@@ -841,6 +853,7 @@ impl RelayServer {
             push_after: None,
             journal_directory: None,
             ended_orderings: HashMap::new(),
+            pace_counts: PaceCounts::default(),
         }
     }
 
@@ -862,6 +875,11 @@ impl RelayServer {
 
     pub fn room_count(&self) -> usize {
         self.rooms.len()
+    }
+
+    /// How players kept pace since the last call; the relay's journal reports it.
+    pub fn take_pace_counts(&mut self) -> PaceCounts {
+        std::mem::take(&mut self.pace_counts)
     }
 
     pub fn process(

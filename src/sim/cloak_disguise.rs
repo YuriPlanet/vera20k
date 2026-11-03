@@ -79,7 +79,8 @@ impl CloakStepTimer {
 /// Active `TechnoClass` cloak fields consumed by radar and tactical draw.
 ///
 /// `CloakingTick @ 0x006FB740`, `StartCloaking @ 0x00703770`,
-/// `StartUncloaking @ 0x007036C0`, and `GetVisualState @ 0x00703860` establish
+/// `StartUncloaking @ 0x007036C0`, `NoInit @ 0x006F4300`, and
+/// `GetVisualState @ 0x00703860` establish
 /// every state/progress/timer write below. Stock YR exercises this continuously
 /// through DLPH/SUB/SQD/BSUB.
 pub struct CloakRuntime {
@@ -99,6 +100,20 @@ pub struct CloakRuntime {
     /// 900 frames — into `+0x248`. `CanAutoCloak @ 0x006FBDC0` reads it as its
     /// LAST timer gate (`param_1[0x90]`/`[0x92]`).
     recloak_delay: CdTimer,
+    /// A Building's fade stage, `BuildingClass+0x6ED`: 0 opaque to 15 faded
+    /// out. The constructor zeroes it (`0x0043B9A9`) and only
+    /// `BuildingClass::UpdateCloak @ 0x00454DB0` changes it
+    /// ([`Self::step_building_fade`]). Other objects leave it 0.
+    building_stage: u8,
+}
+
+/// The state edge one [`CloakRuntime::step_building_fade`] visit reached.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BuildingFadeEdge {
+    /// Stage 15 in state 1: fully cloaked (`0x00454E72..0x00454E85`).
+    Cloaked,
+    /// Stage 0 in state 3: uncloaked (`0x00454F1B..0x00454F2F`).
+    Uncloaked,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -203,25 +218,7 @@ pub(crate) fn visual_character(
         return 0;
     }
     if state == 2 {
-        if query.force_sensor {
-            return if query.observer_present && query.observer_senses_cell {
-                3
-            } else {
-                5
-            };
-        }
-        if !query.graphical_client || owned_by_current_house || query.observer_senses_cell {
-            return 3;
-        }
-        return if !query.is_campaign
-            && owner_present
-            && query.observer_present
-            && query.mutually_allied
-        {
-            3
-        } else {
-            5
-        };
+        return hidden_unless_sensed(owned_by_current_house, owner_present, query);
     }
     if progress <= 0 {
         return 0;
@@ -246,6 +243,52 @@ pub(crate) fn visual_character(
         _ if !query.force_sensor && owned_by_current_house => 3,
         192..=254 => 4,
         _ => 5,
+    }
+}
+
+/// The fully cloaked answer of `TechnoClass::GetVisualState @ 0x00703860`
+/// (state 2), which `BuildingClass::GetVisualState @ 0x004544A0` repeats for
+/// a stage of 11 or more: 3 (seen as cloaked) or 5 (unseen). An explicit
+/// sensor query asks only the observer's sensors. A screen query sees it
+/// without a window, for its owner, or under the player's sensors; otherwise
+/// a skirmish player sees a mutual ally's.
+fn hidden_unless_sensed(
+    owned_by_current_house: bool,
+    owner_present: bool,
+    query: VisualCharacterQuery,
+) -> u8 {
+    if query.force_sensor {
+        return if query.observer_present && query.observer_senses_cell {
+            3
+        } else {
+            5
+        };
+    }
+    if !query.graphical_client || owned_by_current_house || query.observer_senses_cell {
+        return 3;
+    }
+    if !query.is_campaign && owner_present && query.observer_present && query.mutually_allied {
+        3
+    } else {
+        5
+    }
+}
+
+/// `BuildingClass::GetVisualState @ 0x004544A0` for a nonzero fade stage
+/// (`BuildingClass+0x6ED`): stages 1-5 are 1 and 6-10 are 2, then the fully
+/// cloaked answer. A stage of 0 is the Techno base, [`visual_character`].
+/// The stage is read before the type's `Invisible=`.
+pub(crate) fn building_stage_visual_character(
+    stage: u8,
+    owned_by_current_house: bool,
+    owner_present: bool,
+    query: VisualCharacterQuery,
+) -> u8 {
+    debug_assert!(stage != 0);
+    match stage {
+        ..=5 => 1,
+        6..=10 => 2,
+        _ => hidden_unless_sensed(owned_by_current_house, owner_present, query),
     }
 }
 
@@ -339,6 +382,12 @@ impl CloakRuntime {
         self.depth = depth;
     }
 
+    /// Install a fixture Building's fade stage.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_building_stage_for_test(&mut self, stage: u8) {
+        self.building_stage = stage;
+    }
+
     pub fn new(current_frame: i32) -> Self {
         Self {
             state: 0,
@@ -346,7 +395,49 @@ impl CloakRuntime {
             step_delta: 0,
             step_timer: CloakStepTimer::started(current_frame, 0),
             recloak_delay: CdTimer::started(current_frame, 0),
+            building_stage: 0,
         }
+    }
+
+    /// `BuildingClass+0x6ED`, the fade stage (0 opaque, 15 faded out).
+    pub fn building_stage(&self) -> u8 {
+        self.building_stage
+    }
+
+    /// The fade arms of `BuildingClass::UpdateCloak @ 0x00454DB0`
+    /// (`0x00454E02..0x00455012`): one stage per AI visit, out in state 1 and
+    /// back in state 3. Stage 15 makes state 2 and stage 0 makes state 0. The
+    /// building never reads its CloakProgress clock, and neither edge starts
+    /// the ReCloak delay.
+    pub(crate) fn step_building_fade(&mut self) -> Option<BuildingFadeEdge> {
+        match self.state {
+            1 if self.building_stage < 15 => {
+                self.building_stage += 1;
+                if self.building_stage == 15 {
+                    self.state = 2;
+                    return Some(BuildingFadeEdge::Cloaked);
+                }
+            }
+            3 => {
+                // `0x00454EBA` skips a negative stage, which nothing writes.
+                self.building_stage = self.building_stage.saturating_sub(1);
+                if self.building_stage == 0 {
+                    self.state = 0;
+                    return Some(BuildingFadeEdge::Uncloaked);
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+
+    /// Original gamemd.exe TechnoClass::Constructor_NoInit @006F4300,
+    /// 006F4335..006F4365: reset the progress and its clock after reading the
+    /// object, retaining the cloak state and the separate re-cloak delay.
+    pub(crate) fn restart_progress_after_player_load(&mut self, binary_frame: i32) {
+        self.depth = 0;
+        self.step_delta = 1;
+        self.step_timer = CloakStepTimer::started(binary_frame, 0);
     }
 
     /// UnitClass::Unlimbo @ 0x00737BA0 sets only state 2 when runtime cloak
@@ -570,7 +661,7 @@ impl crate::sim::game_entity::GameEntity {
         &self,
         observer: InternedId,
         fog: Option<&crate::sim::vision::FogState>,
-        alliances: Option<&crate::map::houses::HouseAllianceMap>,
+        alliances: Option<&crate::sim::house_diplomacy::HouseAlliances>,
         interner: &crate::sim::intern::StringInterner,
     ) -> bool {
         let Some(disguise) = self.disguise.as_ref() else {
@@ -639,7 +730,7 @@ impl crate::sim::game_entity::GameEntity {
         &self,
         player: InternedId,
         fog: Option<&crate::sim::vision::FogState>,
-        alliances: Option<&crate::map::houses::HouseAllianceMap>,
+        alliances: Option<&crate::sim::house_diplomacy::HouseAlliances>,
         interner: &crate::sim::intern::StringInterner,
     ) -> bool {
         self.disguise_house(true, Some(player), false).is_none()
@@ -1085,7 +1176,7 @@ impl crate::sim::world::Simulation {
                         )
                         .and_then(|other| self.substrate.entities.get(other))
                         && !crate::sim::combat::combat_weapon::is_ally_by_object(
-                            Some(self.house_alliances.as_map()),
+                            Some(&self.house_alliances),
                             &self.interner,
                             entity.owner(),
                             neighbor.owner(),

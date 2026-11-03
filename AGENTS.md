@@ -4,7 +4,9 @@
 [Contributing](README.md#contributing) section and your issue, and skip the rest of this file.
 In short: one small fix per PR, one to three regression tests that fail without it, the
 native function address cited next to the code, no native-execution corpora, and a PR
-description of about 15 lines. The rest is the contract for the maintainer's own agents:
+description of about 15 lines. Leave code marked as a sim-scale deviation as it is: it
+differs from gamemd on purpose, so VERA can run 20,000 units. If it plays visibly wrong,
+open an issue. The rest is the contract for the maintainer's own agents:
 its build runner, retail-data checks, critic reviews, checkpoints and native comparisons
 don't apply to you. Where the two differ, the README wins.
 
@@ -107,7 +109,9 @@ Prefer data-oriented design for simulation hot loops. Match gamemd's results, no
 execution strategy: batch, vectorize or parallelize freely. Update order may differ
 from gamemd's when it stays deterministic and causes no noticeable gameplay change;
 within one object's update, only for a profiled hot spot. Record each order change in
-its PR for side-by-side play.
+its PR for side-by-side play, and next to its code as a sim-scale deviation. Keep them:
+moving one back toward native needs a `--release` sim-bench run at 20,000 units and 30
+houses showing frames are no slower, or the maintainer's agreement to the cost.
 
 Preserve state authority, lifecycle, tick phase order, timers, same-tick effects,
 persistence and numeric semantics under the policy below. Document and validate

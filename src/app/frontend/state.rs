@@ -147,6 +147,9 @@ pub(crate) struct FrontendState {
     pub(crate) multiplayer_setup: Option<crate::ui::multiplayer_setup::MultiplayerSetupState>,
     /// The host's last Create Game choices, which its next VERA room takes.
     pub(crate) room_limits: crate::ui::room_limits::RoomLimits,
+    /// The host's last Room name in VERA's online lobby, which its next
+    /// Create Game shows; `None` until one is typed.
+    pub(crate) wol_room_name: Option<String>,
     /// VERA: how this player returns to its LAN room after the match.
     pub(crate) lan_rematch: Option<crate::app::shell_lan::LanRematch>,
     /// Options' Network child D7, retained until its teardown completes.
@@ -250,6 +253,8 @@ pub(crate) struct FrontendState {
     /// persistence of the old app field. Match paths read the runtime-bound
     /// copy via `overlay_registry()`.
     pub(crate) shell_preview_overlay_registry: Option<OverlayTypeRegistry>,
+    /// The online map library's catalog and Choose Map's map download.
+    pub(crate) map_library: crate::app::map_library::MapLibrary,
     /// The release check, its main-menu offer and the download (desktop only).
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     pub(crate) updater: crate::app::updater::Updater,

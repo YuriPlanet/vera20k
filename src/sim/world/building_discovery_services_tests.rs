@@ -60,6 +60,7 @@ fn campaign_fixture(triggers: &str) -> Option<(Simulation, RuleSet, InternedId)>
     assert!(!sim.houses[&remote].is_human());
     assert!(
         !sim.house_alliances()
+            .as_map()
             .get("REMOTE")
             .is_some_and(|allies| allies.contains("PLAYER"))
     );

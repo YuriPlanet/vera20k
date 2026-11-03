@@ -248,6 +248,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             if dialog.host {
                 // 0x5E1945..0x5E1973: the mode's +1C/+28 country check.
                 super::cooperative::admit_join_country(state, &mut human.slot);
+                super::bans::admit_slot(state, &mut human.slot);
             }
             state.match_state.session.add_network_participant(human)?;
             // Type3 admission5E0770 and accepted host type6 at5E1B32.
@@ -306,9 +307,10 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         }
         NetworkSetupEvent::PlayerChoices {
             index,
-            choices,
+            mut choices,
             observer,
         } => {
+            super::bans::admit_slot(state, &mut choices);
             // Cooperative's mode +0x1C (0x5C17B0) admits its campaign's
             // countries; the other modes' (0x5D67A0) admit any.
             let countries = super::cooperative::current(state)
@@ -1462,6 +1464,7 @@ fn invalidate_local_acceptance(state: &mut AppState) -> anyhow::Result<()> {
 
 /// MPGameOptions5E3D10's material-change report consumed by5E3AB0.
 /// Human color and AI color/difficulty are deliberately outside this test.
+/// VERA's room adds its own options: bridges, allying and the bans.
 fn settings_materially_changed(old: &SkirmishLaunchSession, new: &SkirmishLaunchSession) -> bool {
     let a = &old.options;
     let b = &new.options;
@@ -1473,6 +1476,9 @@ fn settings_materially_changed(old: &SkirmishLaunchSession, new: &SkirmishLaunch
         || a.build_off_ally != b.build_off_ally
         || a.mcv_redeploy != b.mcv_redeploy
         || a.crates != b.crates
+        || a.bridges_destroyable != b.bridges_destroyable
+        || a.ally_change_allowed != b.ally_change_allowed
+        || a.bans != b.bans
         || old.humans.len() != new.humans.len()
         || old
             .humans

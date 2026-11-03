@@ -51,17 +51,25 @@ impl fmt::Display for InternedId {
 
 /// Bidirectional string interner with uppercase-normalized lookup.
 ///
-/// `intern("Americans")` and `intern("americans")` return the same ID.
+/// `intern("Americans")` and `intern("americans")` return the same ID, so two
+/// distinct ids never name strings equal under ASCII case folding.
 /// The display string preserves the casing of the first call that created the entry.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct StringInterner {
     /// Uppercase-normalized key → ID.
     to_id: BTreeMap<String, InternedId>,
     /// ID (index) → display string (first-seen casing).
     to_str: Vec<String>,
-    /// Derived: each id's object handle in the bound rules
+    /// Derived: each id's object handles in the bound rules
     /// ([`Self::bind_types`]). Never serialized; a load binds again.
     types: TypeHandleTable,
+    /// [`Self::serial`]; never serialized.
+    serial: u64,
+}
+
+fn next_interner_serial() -> u64 {
+    static SERIALS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    SERIALS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
 }
 
 impl StringInterner {
@@ -71,7 +79,16 @@ impl StringInterner {
             to_id: BTreeMap::new(),
             to_str: Vec::new(),
             types: TypeHandleTable::default(),
+            serial: next_interner_serial(),
         }
+    }
+
+    /// This interner's identity: distinct from every other interner the
+    /// process makes, a clone or a load included (a clone's later ids can
+    /// name other strings). It reaches no result; a cache keyed by interned
+    /// ids compares it to know whose ids it holds.
+    pub fn serial(&self) -> u64 {
+        self.serial
     }
 
     /// Resolve the strings interned so far to their objects in `rules`, so
@@ -90,14 +107,17 @@ impl StringInterner {
 
     /// Resolve an already known concrete family. Native GetTechnoType returns
     /// the constructor's typed pointer (Infantry51FAF0), even when another
-    /// class registry contains the same name. The name-only cache stays broad.
+    /// class registry contains the same name. As
+    /// `rules.object_in_category(category, self.try_resolve(id)?)` answers,
+    /// through the bound handles where they apply.
+    #[inline]
     pub fn object_type_in_category<'r>(
         &self,
         id: InternedId,
         category: crate::rules::object_type::ObjectCategory,
         rules: &'r RuleSet,
     ) -> Option<&'r ObjectType> {
-        rules.object_in_category(category, self.try_resolve(id)?)
+        self.types.object_in_category(self, id, category, rules)
     }
 
     /// The handle of the object type `id` names in `rules`, as
@@ -105,6 +125,30 @@ impl StringInterner {
     #[inline]
     pub fn type_handle(&self, id: InternedId, rules: &RuleSet) -> Option<TypeHandle> {
         self.types.handle(self, id, rules)
+    }
+
+    /// The sequences of the object type `id` names in `rules`, as
+    /// `rules.animation_sequence(self.resolve(id))` answers, the same way.
+    #[inline]
+    pub fn animation_sequence<'r>(
+        &self,
+        id: InternedId,
+        rules: &'r RuleSet,
+    ) -> Option<&'r crate::rules::animation_sequence::SequenceSet> {
+        rules.animation_sequence_by_handle(self.type_handle(id, rules)?)
+    }
+
+    /// The native array index (`+0xDF8`) of the type `id` names in
+    /// `category`'s array, as `rules.type_array_index(category,
+    /// self.resolve(id))` answers, the same way.
+    #[inline]
+    pub fn type_array_index(
+        &self,
+        id: InternedId,
+        category: crate::rules::object_type::ObjectCategory,
+        rules: &RuleSet,
+    ) -> Option<i32> {
+        self.types.array_index(self, id, category, rules)
     }
 
     /// Intern a string, returning its ID. If already interned (case-insensitive),
@@ -158,6 +202,18 @@ impl Default for StringInterner {
     }
 }
 
+impl Clone for StringInterner {
+    /// The same strings and ids, under a serial of its own.
+    fn clone(&self) -> Self {
+        Self {
+            to_id: self.to_id.clone(),
+            to_str: self.to_str.clone(),
+            types: self.types.clone(),
+            serial: next_interner_serial(),
+        }
+    }
+}
+
 impl serde::Serialize for StringInterner {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.to_str.serialize(serializer)
@@ -175,6 +231,7 @@ impl<'de> serde::Deserialize<'de> for StringInterner {
             to_id,
             to_str: strings,
             types: TypeHandleTable::default(),
+            serial: next_interner_serial(),
         })
     }
 }

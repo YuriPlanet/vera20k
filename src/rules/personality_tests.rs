@@ -237,11 +237,14 @@ fn trigger_decisions_keep_reweight_or_drop() {
     assert_eq!(inert.team_delay_percent, NEUTRAL_WEIGHT_PERCENT);
 }
 
-/// Assignment is opt-in, and a name that was asked for is never silently
-/// replaced: a misspelling leaves the house with no commander instead of
-/// handing it someone else's voice.
+/// Assignment is opt-in, and a misspelled name is never silently replaced: a
+/// name that is no `[AIPersonalities]` entry leaves the house with no commander
+/// instead of handing it someone else's voice. A name that exists but does not
+/// serve the house's country *is* replaced — `Country=` is what makes a
+/// commander speak its own side's lines, and a slot's side is whatever the
+/// launch rolled.
 #[test]
-fn assignment_is_opt_in_and_an_explicit_name_wins() {
+fn assignment_is_opt_in_and_a_commander_matches_its_country() {
     let rules = processed(
         "[Countries]\n0=Americans\n1=Russians\n\
          [Sides]\nAllied=Americans\nSoviet=Russians\n\
@@ -252,41 +255,42 @@ fn assignment_is_opt_in_and_an_explicit_name_wins() {
     let standard = catalog.standard().expect("Standard is always registered");
 
     assert_eq!(
-        personality_for_house(catalog, "Americans", None),
+        personality_for_house(catalog, "Americans", None, 0),
         None,
         "a launch that asks for nobody gets nobody: the AI stays native"
     );
     assert_eq!(
-        personality_for_house(catalog, "Americans", Some("Warren")),
+        personality_for_house(catalog, "Americans", Some("Warren"), 0),
         Some(0)
     );
     assert_eq!(
-        personality_for_house(catalog, "Americans", Some("Standard")),
+        personality_for_house(catalog, "Americans", Some("Standard"), 0),
         Some(standard),
         "any case, by name"
     );
     assert_eq!(
-        personality_for_house(catalog, "Americans", Some("standard")),
+        personality_for_house(catalog, "Americans", Some("standard"), 0),
         Some(standard)
     );
     assert_eq!(
-        personality_for_house(catalog, "Americans", Some("none")),
+        personality_for_house(catalog, "Americans", Some("none"), 0),
         None,
         "a house with no commander at all"
     );
     assert_eq!(
-        personality_for_house(catalog, "Americans", Some("off")),
+        personality_for_house(catalog, "Americans", Some("off"), 0),
         None
     );
     assert_eq!(
-        personality_for_house(catalog, "Americans", Some("Nobody")),
+        personality_for_house(catalog, "Americans", Some("Nobody"), 0),
         None,
         "an unknown name is a data error, not a reason to pick someone else"
     );
     assert_eq!(
-        personality_for_house(catalog, "Russians", Some("Warren")),
-        Some(0),
-        "an explicit request outranks the Country= filter, with a warning"
+        personality_for_house(catalog, "Russians", Some("Warren"), 0),
+        Some(1),
+        "a commander that does not serve the house's country is replaced by \
+         one that does, so it speaks its own side's lines"
     );
 }
 

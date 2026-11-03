@@ -80,6 +80,12 @@ impl PathsConfig {
         &self.legacy_settings_dir
     }
 
+    /// VERA's own folder for maps it downloads or receives, so nothing is
+    /// written into the retail installation (`map::source::keep_received_map`).
+    pub fn downloaded_maps_dir(&self) -> PathBuf {
+        self.settings_dir.join("Maps")
+    }
+
     fn separate_settings_from_assets(&mut self) -> Result<()> {
         if resolved_directory(&self.settings_dir).starts_with(resolved_directory(&self.ra2_dir)) {
             self.settings_dir = default_settings_dir()?;

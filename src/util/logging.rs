@@ -41,6 +41,7 @@ pub fn init_file_logger(name: &str) -> io::Result<PathBuf> {
 
     let mut log_path = log_dir;
     log_path.push(format!("{name}.log"));
+    roll_over_large_log(&log_path, LOG_ROLL_OVER_BYTES);
 
     let file = OpenOptions::new()
         .create(true)
@@ -54,6 +55,20 @@ pub fn init_file_logger(name: &str) -> io::Result<PathBuf> {
 
     let _ = LOG_FILE.set(log_path.clone());
     Ok(log_path)
+}
+
+/// A log past this size at start-up becomes `<name>.log.1` and a new one
+/// starts, so the folder holds at most about twice this.
+const LOG_ROLL_OVER_BYTES: u64 = 10 * 1024 * 1024;
+
+/// Move a log larger than `limit` to `<file>.1`, replacing the older copy.
+/// A failure keeps appending to the old file rather than stopping start-up.
+fn roll_over_large_log(log_path: &Path, limit: u64) {
+    if fs::metadata(log_path).is_ok_and(|meta| meta.len() > limit) {
+        let mut previous = log_path.as_os_str().to_owned();
+        previous.push(".1");
+        let _ = fs::rename(log_path, previous);
+    }
 }
 
 /// The log file [`init_file_logger`] opened; None when the log goes to stderr.
@@ -339,7 +354,26 @@ mod tests {
 
     use log::LevelFilter;
 
-    use super::{Filter, claim_exception_dump, utc_timestamp};
+    use super::{Filter, claim_exception_dump, roll_over_large_log, utc_timestamp};
+
+    #[test]
+    fn a_log_past_the_limit_moves_aside_and_a_small_one_stays() {
+        let dir = std::env::temp_dir().join(format!("vera20k-log-roll-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("ra2.log");
+        let previous = dir.join("ra2.log.1");
+        std::fs::write(&previous, b"oldest").unwrap();
+
+        std::fs::write(&log, [0u8; 8]).unwrap();
+        roll_over_large_log(&log, 8);
+        assert!(log.exists(), "a log at the limit keeps growing");
+
+        std::fs::write(&log, [0u8; 9]).unwrap();
+        roll_over_large_log(&log, 8);
+        assert!(!log.exists());
+        assert_eq!(std::fs::read(&previous).unwrap().len(), 9);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn rust_log_directives_pick_the_longest_matching_target() {

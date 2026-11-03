@@ -55,7 +55,7 @@ fn query(sim: &Simulation, rules: &RuleSet, ids: &[u64], ms: u64) -> Vec<RadialI
         sim.scenario_rng().native_state_hex(),
         sim.mapgen_rng().native_state_hex(),
     );
-    let mut pulse = SuperweaponRangePulse::default();
+    let mut pulse = RangePulse::default();
     let result = build(
         Some(sim),
         Some(rules),
@@ -64,6 +64,8 @@ fn query(sim: &Simulation, rules: &RuleSet, ids: &[u64], ms: u64) -> Vec<RadialI
         None,
         None,
         false,
+        true,
+        &mut RangePulse::default(),
         &mut pulse,
         &HouseColorMap::new(),
         SurfaceLineViewport {
@@ -73,7 +75,9 @@ fn query(sim: &Simulation, rules: &RuleSet, ids: &[u64], ms: u64) -> Vec<RadialI
             zoom: 1.,
         },
         ms,
-    );
+        1,
+    )
+    .draws;
     assert_eq!(
         before,
         (
@@ -90,7 +94,7 @@ fn target_query(
     sim: &Simulation,
     rules: &RuleSet,
     armed_super_weapon: Option<&str>,
-    pulse: &mut SuperweaponRangePulse,
+    pulse: &mut RangePulse,
 ) -> Vec<RadialIndicatorDraw> {
     let colors = HouseColorMap::from([(
         "Americans".to_owned(),
@@ -104,6 +108,8 @@ fn target_query(
         None,
         Some((16, 16)),
         false,
+        true,
+        &mut RangePulse::default(),
         pulse,
         &colors,
         SurfaceLineViewport {
@@ -113,7 +119,9 @@ fn target_query(
             zoom: 1.0,
         },
         0,
+        1,
     )
+    .draws
 }
 
 #[test]
@@ -129,7 +137,7 @@ fn selected_retail_superweapon_targeting_emits_native_range_loop() {
     let sim = state(rules);
     let control = loop_control("nuke_special_retail_7_2");
     let first_draw = control["pulse_draws"][0].clone();
-    let mut pulse = SuperweaponRangePulse::default();
+    let mut pulse = RangePulse::default();
     assert!(target_query(&sim, rules, None, &mut pulse).is_empty());
     let draws = target_query(&sim, rules, Some("NukeSpecial"), &mut pulse);
     let radii: Vec<_> = draws.iter().map(|draw| draw.radius.to_bits()).collect();
@@ -161,7 +169,7 @@ fn selected_retail_superweapon_targeting_emits_native_range_loop() {
     );
     assert_eq!(
         pulse,
-        SuperweaponRangePulse {
+        RangePulse {
             phase: 10,
             direction: 1
         }
@@ -204,7 +212,7 @@ fn selected_retail_superweapon_targeting_emits_native_range_loop() {
     assert!(target_query(&sim, rules, None, &mut pulse).is_empty());
     assert_eq!(
         pulse,
-        SuperweaponRangePulse {
+        RangePulse {
             phase: 10,
             direction: 1
         }
@@ -212,7 +220,7 @@ fn selected_retail_superweapon_targeting_emits_native_range_loop() {
     let next = target_query(&sim, rules, Some("NukeSpecial"), &mut pulse);
     assert_eq!(
         pulse,
-        SuperweaponRangePulse {
+        RangePulse {
             phase: 20,
             direction: 1
         }
@@ -259,7 +267,7 @@ fn superweapon_range_ring_requires_targeting_mode_and_positive_range() {
             inactive["phase_direction_after"][0].as_i64().unwrap() as i32,
             inactive["phase_direction_after"][1].as_i64().unwrap() as i32,
         ];
-        let mut pulse = SuperweaponRangePulse {
+        let mut pulse = RangePulse {
             phase: before[0],
             direction: before[1],
         };
@@ -291,7 +299,7 @@ fn superweapon_range_ring_requires_targeting_mode_and_positive_range() {
         );
     }
 
-    let mut pulse = SuperweaponRangePulse::default();
+    let mut pulse = RangePulse::default();
     let mut single_ring_rules = rules.clone();
     single_ring_rules
         .super_weapons
@@ -341,7 +349,7 @@ fn superweapon_range_ring_requires_targeting_mode_and_positive_range() {
     );
     assert_eq!(
         pulse,
-        SuperweaponRangePulse {
+        RangePulse {
             phase: 10,
             direction: 1
         }
@@ -369,7 +377,7 @@ fn retail_fractional_and_synthetic_loop_controls_reach_the_production_builder() 
     assert_eq!(iron.range.to_bits(), 0x3FB3_3333);
     assert_eq!(iron.line_multiplier, 3);
     let sim = state(rules);
-    let mut pulse = SuperweaponRangePulse::default();
+    let mut pulse = RangePulse::default();
     let draws = target_query(&sim, rules, Some("IronCurtainSpecial"), &mut pulse);
     assert_eq!(
         draws
@@ -411,7 +419,7 @@ fn retail_fractional_and_synthetic_loop_controls_reach_the_production_builder() 
     );
     nuke.line_multiplier = synthetic["line_multiplier"].as_i64().unwrap() as i32;
     let synthetic_sim = state(&synthetic_rules);
-    let mut synthetic_pulse = SuperweaponRangePulse::default();
+    let mut synthetic_pulse = RangePulse::default();
     let synthetic_draws = target_query(
         &synthetic_sim,
         &synthetic_rules,
@@ -515,7 +523,9 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
             None,
             Some(cell),
             false,
-            &mut SuperweaponRangePulse::default(),
+            true,
+            &mut RangePulse::default(),
+            &mut RangePulse::default(),
             &HouseColorMap::new(),
             SurfaceLineViewport {
                 camera: [0; 2],
@@ -524,7 +534,9 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
                 zoom: 1.0,
             },
             0,
-        );
+            1,
+        )
+        .draws;
         assert!(!draws.is_empty());
         assert_eq!(dummy.snapshot(), before_dummy);
         assert_eq!(sim.state_hash(), before_hash);
@@ -546,6 +558,171 @@ fn advance(sim: &mut Simulation, rules: &RuleSet) {
         FrameEffects::default(),
     )
     .unwrap();
+}
+
+/// One composite while `armed` is placed at `cursor` or `super_weapon` is
+/// armed at (16, 16), with Americans on color index 3.
+fn action_query(
+    sim: &Simulation,
+    rules: &RuleSet,
+    armed: Option<&str>,
+    super_weapon: Option<&str>,
+    cursor: (u16, u16),
+    unit_action_lines: bool,
+    pulses: &mut [RangePulse; 2],
+) -> Vec<RadialIndicatorDraw> {
+    let colors = HouseColorMap::from([(
+        "Americans".to_owned(),
+        crate::rules::house_colors::HouseColorIndex(3),
+    )]);
+    let [placement, superweapon] = pulses;
+    build(
+        Some(sim),
+        Some(rules),
+        &[],
+        super_weapon,
+        armed,
+        Some(cursor),
+        false,
+        unit_action_lines,
+        placement,
+        superweapon,
+        &colors,
+        SurfaceLineViewport {
+            camera: [0; 2],
+            clip: [0, 0, 1024, 768],
+            z_origin_y: 0,
+            zoom: 1.0,
+        },
+        0,
+        1,
+    )
+    .draws
+}
+
+/// Tactical::DrawUnitActionVisuals 0x006DBE81..0x006DC1A1: placing a pillbox
+/// (Vulcan2, Range=5.5) rings the cursor cell and every own pillbox at the
+/// smallest distance within 10 cells, without rays.
+#[test]
+fn placing_a_pillbox_rings_the_cursor_and_its_nearest_pillboxes() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut sim = state(rules);
+    let west = sim
+        .spawn_object("GAPILL", "Americans", 16, 16, 64, rules)
+        .unwrap();
+    let east = sim
+        .spawn_object("GAPILL", "Americans", 24, 16, 64, rules)
+        .unwrap();
+    // Farther than the tie, a rival's pillbox, and another type.
+    sim.spawn_object("GAPILL", "Americans", 20, 23, 64, rules)
+        .unwrap();
+    sim.spawn_object("GAPILL", "British", 20, 17, 64, rules)
+        .unwrap();
+    sim.spawn_object("GAGAP", "Americans", 21, 16, 64, rules)
+        .unwrap();
+    for _ in 0..3 {
+        advance(&mut sim, rules);
+    }
+    let selected = |id| query(&sim, rules, &[id], 0);
+    let mut pulses = [RangePulse::default(); 2];
+    let draws = action_query(
+        &sim,
+        rules,
+        Some("GAPILL"),
+        None,
+        (20, 16),
+        true,
+        &mut pulses,
+    );
+
+    assert_eq!(draws.len(), 3);
+    let ring = draws[0];
+    assert_eq!(ring.radius, 5.0);
+    assert!(ring.fade && !ring.rays && ring.truncate_radius && !ring.pixel_radius);
+    let house = crate::render::palette_light::house_color_rgb(
+        &rules.house_color_ramps,
+        crate::rules::house_colors::HouseColorIndex(3),
+    );
+    assert_eq!(
+        ring.rgb,
+        crate::render::native_surface_format::interpolate_rgb8(house, [0; 3], 10)
+    );
+    assert_eq!(
+        pulses,
+        [
+            RangePulse {
+                phase: 10,
+                direction: 1
+            },
+            RangePulse::default()
+        ]
+    );
+    // Both pillboxes 4 cells away draw their own ring, without rays.
+    let viewport = SurfaceLineViewport {
+        camera: [0; 2],
+        clip: [0, 0, 1024, 768],
+        z_origin_y: 0,
+        zoom: 1.0,
+    };
+    for (draw, id) in draws[1..].iter().zip([west, east]) {
+        let position = crate::sim::movement::ground_pose::object_get_coords(
+            sim.entities().get(id).unwrap(),
+            sim.resolved_terrain(),
+        );
+        assert_eq!(
+            draw.center,
+            screen_center(viewport, position.x, position.y, position.z)
+        );
+        assert!(!draw.rays);
+    }
+    // Selected, a retail pillbox draws no ring of its own: 0x006DBE59 tests
+    // the type's HasRadialIndicator (+0x238), which [GAPILL] leaves unset.
+    assert!(selected(west).is_empty());
+}
+
+/// 0x006DBE74: with Unit Action Lines off, neither the placement nor the
+/// superweapon ring draws, and neither pulse advances.
+#[test]
+fn unit_action_lines_off_hides_placement_and_superweapon_rings() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let rules = &retail.rules;
+    let sim = state(rules);
+    let mut pulses = [RangePulse::default(); 2];
+    for (armed, super_weapon) in [(Some("GAPILL"), None), (None, Some("NukeSpecial"))] {
+        assert!(
+            !action_query(
+                &sim,
+                rules,
+                armed,
+                super_weapon,
+                (16, 16),
+                true,
+                &mut pulses
+            )
+            .is_empty()
+        );
+        let before = pulses;
+        assert!(
+            action_query(
+                &sim,
+                rules,
+                armed,
+                super_weapon,
+                (16, 16),
+                false,
+                &mut pulses
+            )
+            .is_empty()
+        );
+        assert_eq!(pulses, before);
+    }
 }
 
 #[test]
@@ -730,7 +907,7 @@ fn placement_query(
     cursor: (u16, u16),
     show: bool,
 ) -> Vec<RadialIndicatorDraw> {
-    let mut pulse = SuperweaponRangePulse::default();
+    let mut pulse = RangePulse::default();
     build(
         Some(sim),
         Some(rules),
@@ -739,6 +916,8 @@ fn placement_query(
         Some(armed),
         Some(cursor),
         show,
+        true,
+        &mut RangePulse::default(),
         &mut pulse,
         &HouseColorMap::new(),
         SurfaceLineViewport {
@@ -748,7 +927,9 @@ fn placement_query(
             zoom: 1.0,
         },
         0,
+        1,
     )
+    .draws
 }
 
 #[cfg(feature = "phobos")]

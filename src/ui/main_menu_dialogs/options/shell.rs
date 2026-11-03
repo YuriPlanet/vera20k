@@ -7,18 +7,21 @@
 //! VERA's page lays its controls out on the main page's bands and rows.
 
 use super::{
-    ACCESSIBILITY_LABEL, CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL, DEVELOPER_OPTIONS_LABEL,
-    DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayChoice, DisplayTarget,
-    FPS_COUNTER_HELP, FPS_COUNTER_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL,
-    HAS_CHECK_FOR_UPDATES, HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL, LOCK_CURSOR_HELP,
-    LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue,
-    LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP,
-    MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
-    OptionsPage, PhysicalControlFrame, RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL,
-    SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_STARTUP_LOGO_HELP,
-    SKIP_STARTUP_LOGO_LABEL, SidebarSize, VERA_OPTIONS_HELP, VERA_OPTIONS_LABEL,
-    WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL,
-    ZOOM_HELP, ZOOM_LABEL, Zoom,
+    ACCESSIBILITY_LABEL, CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL,
+    CUSTOM_END_GAME_BANNER_HELP, CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP,
+    CUSTOM_END_GAME_MOVIE_LABEL, CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL,
+    DEVELOPER_OPTIONS_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayChoice,
+    DisplayTarget, FPS_COUNTER_HELP, FPS_COUNTER_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL,
+    HAS_CHECK_FOR_UPDATES, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
+    HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode, LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton,
+    LauncherCheckboxId, LauncherComboId, LauncherCue, LauncherOptionsEvent, LauncherParentResult,
+    LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP,
+    ORIGINAL_SHAPE_LABEL, OptionsDialogState, OptionsPage, PhysicalControlFrame,
+    RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP,
+    RIGHT_CLICK_ORDERS_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
+    SKIP_STARTUP_LOGO_HELP, SKIP_STARTUP_LOGO_LABEL, SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL,
+    VERA_OPTIONS_HELP, VERA_OPTIONS_LABEL, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL,
+    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale, center_offset, child_window, dlu_rect};
@@ -203,6 +206,11 @@ impl LauncherOptionsLayout {
         // caption 50..66, face 66..90, caption 94..110, face 110..134.
         let sidebar_combo = px(RectPx::new(351, 66, 180, COMBO_FACE_H));
         let display_combo = px(RectPx::new(351, 110, 180, COMBO_FACE_H));
+        // The UI Options band's third right-column row, under Right-Click
+        // Orders and VERA Icon: its caption at 141 DLU and the face at 246 px
+        // end 3 px above the Developer Options heading, like the other lists'
+        // caption gap.
+        let health_bars_combo = px(RectPx::new(351, 246, 180, COMBO_FACE_H));
         // VERA's Accessibility band takes the main page's Audio Options place:
         // its heading, then one caption row over one slider. The trackbar's
         // border art is only authored for the windows in
@@ -246,12 +254,14 @@ impl LauncherOptionsLayout {
                     ),
                 ],
             ),
-            // VERA's page keeps the main page's bands and rows: one column
-            // of boxes at the UI Options boxes' place, 15 DLUs apart.
+            // VERA's page keeps the main page's bands and rows: boxes at the
+            // UI Options boxes' place, 15 DLUs apart. A band whose left column
+            // is full continues at x 238, the main page's Scroll slider column.
             OptionsPage::Vera => (
                 vec![
                     (LauncherComboId::Sidebar, sidebar_combo),
                     (LauncherComboId::Display, display_combo),
+                    (LauncherComboId::HealthBars, health_bars_combo),
                 ],
                 vec![(LauncherTrackbarId::HouseColorStrength, house_color_slider)],
                 vec![
@@ -267,9 +277,35 @@ impl LauncherOptionsLayout {
                     (LauncherCheckboxId::ShiftQueue, dlu(93, 128, 130, 10)),
                     (LauncherCheckboxId::MouseWheelZoom, dlu(93, 143, 130, 10)),
                     (LauncherCheckboxId::LockCursor, dlu(93, 158, 130, 10)),
+                    (LauncherCheckboxId::RightClickOrders, dlu(238, 113, 130, 10)),
+                    (LauncherCheckboxId::VeraIcon, dlu(238, 128, 130, 10)),
                     // Developer Options, in the main page's UI Options band.
-                    (LauncherCheckboxId::FpsCounter, dlu(93, 188, 130, 10)),
-                    (LauncherCheckboxId::SkipStartupLogo, dlu(93, 203, 130, 10)),
+                    // This band carries five rows where the others carry
+                    // three, so it uses a 13 DLU pitch instead of 15:
+                    // 187, 200, 213, 226, 239. At 15 the fifth row would end
+                    // at 258 and run through the Accessibility heading at 254;
+                    // at 13 the last row ends 5 short of it, the same gap the
+                    // other bands keep between their own rows. The last three
+                    // are the `[EndGameScreens]` switches and stay together.
+                    // The three end-game rows are wider than the column's usual
+                    // 130: their labels run to 21 characters ("Custom End Game
+                    // Banner"), and the text rect keeps a 26 px icon column, so
+                    // 130 would wrap them onto a second line the 10 DLU height
+                    // clips. 150 leaves ~124 px of text, enough for 23.
+                    (LauncherCheckboxId::FpsCounter, dlu(93, 187, 130, 10)),
+                    (LauncherCheckboxId::SkipStartupLogo, dlu(93, 200, 130, 10)),
+                    (
+                        LauncherCheckboxId::CustomEndGameBanner,
+                        dlu(93, 213, 150, 10),
+                    ),
+                    (
+                        LauncherCheckboxId::CustomEndGameScore,
+                        dlu(93, 226, 150, 10),
+                    ),
+                    (
+                        LauncherCheckboxId::CustomEndGameMovie,
+                        dlu(93, 239, 150, 10),
+                    ),
                 ],
                 HAS_CHECK_FOR_UPDATES
                     .then(|| {
@@ -449,6 +485,7 @@ impl OptionsDialogState {
                 (SIDEBAR_LABEL, 234, 31, 120, 10, Left),
                 (DISPLAY_LABEL, 234, 58, 120, 10, Left),
                 (&labels.ui_options, 20, 93, 298, 10, Left),
+                (HEALTH_BARS_LABEL, 234, 141, 120, 10, Left),
                 (DEVELOPER_OPTIONS_LABEL, 20, 168, 298, 10, Left),
                 // The Accessibility band, in the main page's Audio Options
                 // place, with its one caption over its one slider.
@@ -478,11 +515,16 @@ impl OptionsDialogState {
             LauncherCheckboxId::YrOriginalStyle => YR_ORIGINAL_STYLE_LABEL,
             LauncherCheckboxId::RenderInterpolation => RENDER_INTERPOLATION_LABEL,
             LauncherCheckboxId::MouseWheelZoom => MOUSE_WHEEL_ZOOM_LABEL,
+            LauncherCheckboxId::RightClickOrders => RIGHT_CLICK_ORDERS_LABEL,
             LauncherCheckboxId::LockCursor => LOCK_CURSOR_LABEL,
+            LauncherCheckboxId::VeraIcon => VERA_ICON_LABEL,
             LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
             LauncherCheckboxId::WolTestService => WOL_TEST_SERVICE_LABEL,
             LauncherCheckboxId::FpsCounter => FPS_COUNTER_LABEL,
             LauncherCheckboxId::SkipStartupLogo => SKIP_STARTUP_LOGO_LABEL,
+            LauncherCheckboxId::CustomEndGameBanner => CUSTOM_END_GAME_BANNER_LABEL,
+            LauncherCheckboxId::CustomEndGameScore => CUSTOM_END_GAME_SCORE_LABEL,
+            LauncherCheckboxId::CustomEndGameMovie => CUSTOM_END_GAME_MOVIE_LABEL,
         }
     }
 
@@ -531,11 +573,16 @@ impl OptionsDialogState {
             LauncherCheckboxId::YrOriginalStyle => self.values.yr_original_style,
             LauncherCheckboxId::RenderInterpolation => self.values.render_interpolation,
             LauncherCheckboxId::MouseWheelZoom => self.values.mouse_wheel_zoom,
+            LauncherCheckboxId::RightClickOrders => self.values.right_click_orders,
             LauncherCheckboxId::LockCursor => self.values.lock_cursor,
+            LauncherCheckboxId::VeraIcon => self.values.vera_icon,
             LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
             LauncherCheckboxId::WolTestService => self.values.wol_test_service,
             LauncherCheckboxId::FpsCounter => self.values.fps_counter,
             LauncherCheckboxId::SkipStartupLogo => self.values.skip_startup_logo,
+            LauncherCheckboxId::CustomEndGameBanner => self.values.custom_end_game_banner,
+            LauncherCheckboxId::CustomEndGameScore => self.values.custom_end_game_score,
+            LauncherCheckboxId::CustomEndGameMovie => self.values.custom_end_game_movie,
         }
     }
 
@@ -559,6 +606,11 @@ impl OptionsDialogState {
     pub(crate) fn shell_selected_sidebar(&self, layout: &LauncherOptionsLayout) -> SidebarSize {
         let (width, height) = layout.battle_frame;
         self.values.sidebar.in_effect(width, height)
+    }
+
+    /// The Health Bars face's text: the retained choice.
+    pub(crate) fn shell_selected_health_bars(&self) -> HealthBarMode {
+        self.values.health_bars
     }
 
     /// The Display list's rows, top to bottom: Auto, then every screen the
@@ -626,6 +678,13 @@ impl OptionsDialogState {
                 let rows = self.display_choices();
                 let selected = rows.iter().position(|target| target == &self.display);
                 (rows.len(), selected)
+            }
+            LauncherComboId::HealthBars => {
+                let choices = HealthBarMode::choices();
+                let selected = choices
+                    .iter()
+                    .position(|mode| *mode == self.values.health_bars);
+                (choices.len(), selected)
             }
         };
         let metrics = DropdownMetrics::scaled(layout.scale);
@@ -732,7 +791,11 @@ impl OptionsDialogState {
                 LauncherCheckboxId::MouseWheelZoom => {
                     LauncherStatusHelp::Text(MOUSE_WHEEL_ZOOM_HELP)
                 }
+                LauncherCheckboxId::RightClickOrders => {
+                    LauncherStatusHelp::Text(RIGHT_CLICK_ORDERS_HELP)
+                }
                 LauncherCheckboxId::LockCursor => LauncherStatusHelp::Text(LOCK_CURSOR_HELP),
+                LauncherCheckboxId::VeraIcon => LauncherStatusHelp::Text(VERA_ICON_HELP),
                 LauncherCheckboxId::ShiftQueue => LauncherStatusHelp::Text(SHIFT_QUEUE_HELP),
                 LauncherCheckboxId::WolTestService => {
                     LauncherStatusHelp::Text(WOL_TEST_SERVICE_HELP)
@@ -740,6 +803,15 @@ impl OptionsDialogState {
                 LauncherCheckboxId::FpsCounter => LauncherStatusHelp::Text(FPS_COUNTER_HELP),
                 LauncherCheckboxId::SkipStartupLogo => {
                     LauncherStatusHelp::Text(SKIP_STARTUP_LOGO_HELP)
+                }
+                LauncherCheckboxId::CustomEndGameBanner => {
+                    LauncherStatusHelp::Text(CUSTOM_END_GAME_BANNER_HELP)
+                }
+                LauncherCheckboxId::CustomEndGameScore => {
+                    LauncherStatusHelp::Text(CUSTOM_END_GAME_SCORE_HELP)
+                }
+                LauncherCheckboxId::CustomEndGameMovie => {
+                    LauncherStatusHelp::Text(CUSTOM_END_GAME_MOVIE_HELP)
                 }
             });
         }
@@ -752,6 +824,7 @@ impl OptionsDialogState {
                     LauncherComboId::Zoom => ZOOM_HELP,
                     LauncherComboId::Sidebar => SIDEBAR_HELP,
                     LauncherComboId::Display => DISPLAY_HELP,
+                    LauncherComboId::HealthBars => HEALTH_BARS_HELP,
                 })
             })
     }
@@ -784,6 +857,12 @@ impl OptionsDialogState {
                 LauncherComboId::Display => {
                     match row.and_then(|row| self.display_choices().get(row).cloned()) {
                         Some(target) => self.select_display(target),
+                        None => self.open_combo = None,
+                    }
+                }
+                LauncherComboId::HealthBars => {
+                    match row.and_then(|row| HealthBarMode::choices().get(row).copied()) {
+                        Some(mode) => self.select_health_bars(mode),
                         None => self.open_combo = None,
                     }
                 }
@@ -1074,8 +1153,8 @@ mod tests {
             layout.trackbars,
             [(LauncherTrackbarId::HouseColorStrength, slider_rect())]
         );
-        // The Sidebar and Display lists sit in the Display Options band's right
-        // column, Sidebar above Display, each with its own caption.
+        // The Sidebar, Display and Health Bars lists sit in the Display
+        // Options and UI Options bands' right columns, each with its caption.
         assert_eq!(
             layout.combos,
             [
@@ -1087,6 +1166,10 @@ mod tests {
                     LauncherComboId::Display,
                     RectPx::new(351, 110, 180, COMBO_FACE_H)
                 ),
+                (
+                    LauncherComboId::HealthBars,
+                    RectPx::new(351, 246, 180, COMBO_FACE_H)
+                ),
             ]
         );
         // Each visible box is on exactly one page.
@@ -1097,7 +1180,7 @@ mod tests {
             .chain(&layout.checkboxes)
             .map(|(id, _)| *id)
             .collect();
-        assert_eq!(all.len(), 12);
+        assert_eq!(all.len(), 17);
         for id in &all {
             assert_eq!(all.iter().filter(|other| *other == id).count(), 1, "{id:?}");
         }
@@ -1137,8 +1220,13 @@ mod tests {
             (ShiftQueue, ui, developer),
             (MouseWheelZoom, ui, developer),
             (LockCursor, ui, developer),
+            (RightClickOrders, ui, developer),
+            (VeraIcon, ui, developer),
             (FpsCounter, developer, accessibility),
             (SkipStartupLogo, developer, accessibility),
+            (CustomEndGameBanner, developer, accessibility),
+            (CustomEndGameScore, developer, accessibility),
+            (CustomEndGameMovie, developer, accessibility),
         ] {
             let rect = checkbox(&layout, id);
             assert!(
@@ -1289,6 +1377,10 @@ mod tests {
             csf("STT:KeyboardButtonBack")
         );
         assert_eq!(at(layout.combos[0].1), text(SIDEBAR_HELP));
+        assert_eq!(
+            at(layout.combo_rect(LauncherComboId::HealthBars).unwrap()),
+            text(HEALTH_BARS_HELP)
+        );
         use LauncherCheckboxId::*;
         for (id, help) in [
             (FullScreen, FULL_SCREEN_HELP),
@@ -1298,8 +1390,13 @@ mod tests {
             (ShiftQueue, SHIFT_QUEUE_HELP),
             (MouseWheelZoom, MOUSE_WHEEL_ZOOM_HELP),
             (LockCursor, LOCK_CURSOR_HELP),
+            (RightClickOrders, RIGHT_CLICK_ORDERS_HELP),
+            (VeraIcon, VERA_ICON_HELP),
             (FpsCounter, FPS_COUNTER_HELP),
             (SkipStartupLogo, SKIP_STARTUP_LOGO_HELP),
+            (CustomEndGameBanner, CUSTOM_END_GAME_BANNER_HELP),
+            (CustomEndGameScore, CUSTOM_END_GAME_SCORE_HELP),
+            (CustomEndGameMovie, CUSTOM_END_GAME_MOVIE_HELP),
         ] {
             assert_eq!(at(checkbox(&layout, id)), text(help), "{id:?}");
         }
@@ -1604,6 +1701,42 @@ mod tests {
         );
     }
 
+    /// The Health Bars list: Original, All Units, and All Units, Not Full. Its
+    /// pick publishes at once like the Sidebar list, and the caption sits above
+    /// the face in its band.
+    #[test]
+    fn health_bars_list_publishes_its_pick_at_once() {
+        let mut state = vera_state();
+        let layout = vera_layout();
+        let face = layout.combo_rect(LauncherComboId::HealthBars).unwrap();
+        let caption = heading(&state, &layout, HEALTH_BARS_LABEL);
+        assert!(caption.y + caption.h <= face.y, "{caption:?} {face:?}");
+        assert!(face.y + face.h <= layout.status_help.y);
+        assert_eq!(state.shell_selected_health_bars(), HealthBarMode::Vanilla);
+        state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
+        assert_eq!(state.open_combo, Some(LauncherComboId::HealthBars));
+        let popup = state.shell_popup(&layout).unwrap();
+        assert_eq!(
+            (popup.combo, popup.rows, popup.selected),
+            (LauncherComboId::HealthBars, 3, 0)
+        );
+        state.drain_output();
+        let last = popup.row_rect(2);
+        state.shell_mouse_down(last.x + 10, last.y + 5, &layout);
+        assert_eq!(state.open_combo, None);
+        assert_eq!(
+            state.shell_selected_health_bars(),
+            HealthBarMode::AlwaysExceptFull
+        );
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
+                LauncherOptionsEvent::HealthBarModeSelected(HealthBarMode::AlwaysExceptFull)
+            ]
+        );
+    }
+
     /// Each VERA box on its page: its caption, and a press that toggles it and
     /// reports the change after the cue.
     #[test]
@@ -1647,6 +1780,16 @@ mod tests {
                 LauncherOptionsEvent::LockCursorChanged,
             ),
             (
+                RightClickOrders,
+                RIGHT_CLICK_ORDERS_LABEL,
+                LauncherOptionsEvent::RightClickOrdersChanged,
+            ),
+            (
+                VeraIcon,
+                VERA_ICON_LABEL,
+                LauncherOptionsEvent::VeraIconChanged,
+            ),
+            (
                 FpsCounter,
                 FPS_COUNTER_LABEL,
                 LauncherOptionsEvent::FpsCounterChanged,
@@ -1673,6 +1816,55 @@ mod tests {
                 ],
                 "{id:?}"
             );
+        }
+    }
+
+    /// The three end-game boxes are the VERA boxes that start ticked: a stock
+    /// profile plays and draws whatever a rules set names, so the player's
+    /// first click turns that override off rather than on. Each publishes its
+    /// own event and leaves the other two alone.
+    #[test]
+    fn the_end_game_boxes_start_ticked_and_publish_their_own_event() {
+        use LauncherCheckboxId::{CustomEndGameBanner, CustomEndGameMovie, CustomEndGameScore};
+        let layout = vera_layout();
+        for (id, label, off) in [
+            (
+                CustomEndGameBanner,
+                CUSTOM_END_GAME_BANNER_LABEL,
+                LauncherOptionsEvent::CustomEndGameBannerChanged(false),
+            ),
+            (
+                CustomEndGameScore,
+                CUSTOM_END_GAME_SCORE_LABEL,
+                LauncherOptionsEvent::CustomEndGameScoreChanged(false),
+            ),
+            (
+                CustomEndGameMovie,
+                CUSTOM_END_GAME_MOVIE_LABEL,
+                LauncherOptionsEvent::CustomEndGameMovieChanged(false),
+            ),
+        ] {
+            // A fresh page per box: each click is the player's first, and the
+            // boxes must not remember each other's state.
+            let mut state = vera_state();
+            assert_eq!(state.shell_checkbox_label(id), label);
+            assert!(state.shell_checkbox_checked(id), "{id:?} starts ticked");
+            let rect = checkbox(&layout, id);
+            state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
+            assert!(!state.shell_checkbox_checked(id), "{id:?} unticked");
+            assert_eq!(
+                state.drain_output().events,
+                [LauncherOptionsEvent::Cue(LauncherCue::Checkbox), off],
+                "{id:?}"
+            );
+            for other in [CustomEndGameBanner, CustomEndGameScore, CustomEndGameMovie] {
+                if other != id {
+                    assert!(
+                        state.shell_checkbox_checked(other),
+                        "{id:?}'s click left {other:?} alone"
+                    );
+                }
+            }
         }
     }
 

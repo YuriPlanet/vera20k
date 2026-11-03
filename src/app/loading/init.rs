@@ -1514,6 +1514,8 @@ pub struct PresentationLoadAssets {
     /// keeps the process InitGame art.
     pub(crate) outcome_banner_side_art:
         Option<crate::app::presentation::outcome_banner::OutcomeBannerArt>,
+    /// The local country's `[EndGameScreens]` card for the in-game banner.
+    pub(crate) end_game_banner: Option<crate::app::presentation::outcome_banner::EndGameBanner>,
     pub(crate) software_cursor: Option<crate::app::presentation::render::SoftwareCursor>,
     /// Overlay ID → type name mapping (from rules.ini [OverlayTypes]).
     pub overlay_names: BTreeMap<u8, String>,
@@ -1848,7 +1850,7 @@ pub(crate) struct RandomMapEntityProjection {
     mission: Option<crate::rules::mission_data::MissionType>,
     recruitable: (bool, bool),
     follows: Option<i32>,
-    structure_upgrades: [Option<String>; 3],
+    structure_columns: crate::map::entities::StructureColumns,
 }
 
 #[cfg(test)]
@@ -1993,7 +1995,7 @@ impl MapLoadInitial {
                     mission: entity.mission,
                     recruitable: (entity.recruitable_a, entity.recruitable_b),
                     follows: entity.follows,
-                    structure_upgrades: entity.structure_upgrades.clone(),
+                    structure_columns: entity.structure_columns.clone(),
                 })
                 .collect(),
             overlays: map_data
@@ -2374,7 +2376,7 @@ impl MapLoadInitial {
 pub(crate) fn load_csf(
     asset_manager: &AssetManager,
 ) -> anyhow::Result<crate::assets::csf_file::CsfFile> {
-    let (csf, supplements) =
+    let (mut csf, supplements) =
         crate::assets::csf_file::CsfFile::load_active(|name| asset_manager.get_ref(name)).map_err(
             |err| match err {
                 crate::assets::error::AssetError::AssetNotFound { .. } => {
@@ -2384,6 +2386,7 @@ pub(crate) fn load_csf(
             },
         )?;
     log::info!("Loaded CSF string table: ra2md.csf; supplements={supplements:?}");
+    crate::i18n::apply(&mut csf);
     Ok(csf)
 }
 
@@ -3578,15 +3581,11 @@ fn load_map_first_step(
             anyhow::anyhow!("active YR aimd.ini failed RuleSet resolution: {refused:?}")
         })?;
 
-                                                        let initial_local_owner: Option<String> =
-                                                            if let (
-                                                                Some(launch),
-                                                                Some(projection),
-                                                            ) = (
-                                                                match_launch_descriptor.as_ref(),
-                                                                scenario_prefix_projection.as_ref(),
-                                                            ) {
-                                                                apply_pre_fill_scenario_prefix_launch_session_with_overlay_registry(
+                                                        if let (Some(launch), Some(projection)) = (
+                                                            match_launch_descriptor.as_ref(),
+                                                            scenario_prefix_projection.as_ref(),
+                                                        ) {
+                                                            apply_pre_fill_scenario_prefix_launch_session_with_overlay_registry(
             &mut staged_simulation,
             &map_data,
             &house_roster,
@@ -3595,19 +3594,8 @@ fn load_map_first_step(
             launch,
             &overlay_registry,
             projection,
-        )
-        .local_owner
-                                                            } else {
-                                                                staged_simulation
-                                                                    .session()
-                                                                    .current_house()
-                                                                    .map(|owner| {
-                                                                        staged_simulation
-                                                                            .interner()
-                                                                            .resolve(owner)
-                                                                            .to_owned()
-                                                                    })
-                                                            };
+        );
+                                                        }
 
                                                         // Optional debug spawn list for render testing.
                                                         // Examples:
@@ -3841,7 +3829,7 @@ fn load_map_first_step(
                                                                     // authoritative post-map tail — runs through the same sim-owned function
                                                                     // the headless loader uses.
                                                                     let rules_for_post_map = &rules;
-                                                                    let opening_view_cell =
+                                                                    let (opening_view_cell, opening_view_coord) =
                                                                         if let Some(sim) =
                                                                             &mut simulation
                                                                         {
@@ -3864,39 +3852,24 @@ fn load_map_first_step(
                                                                                     "Connected {connected_crates} visible startup crate cell(s) to initial overlay presentation"
                                                                                 );
                                                                             }
-                                                                            output.opening_view_cell
+                                                                            (output.opening_view_cell, output.opening_view_coord)
                                                                         } else {
-                                                                            None
+                                                                            (None, None)
                                                                         };
 
-                                                                    // Campaigns use the shared post-map owner's HomeCell selection (684C30).
-                                                                    // Offline starts use the local owner's spawned cell, then a multiplayer
-                                                                    // waypoint or the playable area's centre when no local object exists.
+                                                                    // Campaigns open on the shared post-map owner's HomeCell (684C30),
+                                                                    // other scenarios on its CenterCameraOnPlayerTechnos coordinate
+                                                                    // (4AC4F0). Without either (no current player, or an observer
+                                                                    // with nothing), a multiplayer waypoint or the playable centre.
                                                                     //
                                                                     // This is a **world point**, not a camera position: the sidebar's real width
                                                                     // depends on the UI scale, which only exists once `AppState` is built, so the
                                                                     // conversion to a camera top-left happens in `loading::transitions` where the
                                                                     // scaled layout spec is available.
-                                                                    let local_start_cell: Option<
-                                                                        (u16, u16),
-                                                                    > = initial_local_owner
-                                                                        .as_deref()
-                                                                        .zip(simulation.as_ref())
-                                                                        .and_then(
-                                                                            |(owner, sim)| {
-                                                                                let owner_id = sim
-                                                                                    .interner()
-                                                                                    .get(owner)?;
-                                                                                sim.entities()
-                .keys_sorted()
-                .into_iter()
-                .filter_map(|id| sim.entities().get(id))
-                .find(|e| e.owner() == owner_id)
-                .map(|e| (e.position.rx(), e.position.ry()))
-                                                                            },
-                                                                        );
                                                                     let (camera_anchor_x, camera_anchor_y): (f32, f32) =
-        if let Some((rx, ry)) = opening_view_cell.or(local_start_cell) {
+        if let Some([x, y, z]) = opening_view_coord {
+            crate::util::lepton::absolute_leptons_to_screen(x, y, z)
+        } else if let Some((rx, ry)) = opening_view_cell {
             let z = resolved_terrain.cell(rx, ry).map_or(0, |cell| cell.level);
             crate::app::input::camera::cell_centre_world_point(rx, ry, z)
         } else if let Some(start_wp) = waypoints::first_multiplayer_start(&map_data.waypoints) {
@@ -4395,7 +4368,8 @@ mod random_map_retail_tests {
         let dir = std::env::temp_dir().join(format!("vera20k-rmg-retail-{tag}"));
         crate::util::file_system::create_dir_all(&dir).expect("scratch dir");
         let name = format!("{tag}.sed");
-        crate::util::file_system::write(dir.join(&name), options.to_sed_bytes()).expect("write .SED");
+        crate::util::file_system::write(dir.join(&name), options.to_sed_bytes())
+            .expect("write .SED");
         (dir, name)
     }
 

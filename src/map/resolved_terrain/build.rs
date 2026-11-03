@@ -252,6 +252,7 @@ impl ResolvedTerrainGrid {
                 width: 0,
                 height: 0,
                 cells: Vec::new(),
+                level_span: LevelSpan::of([]),
                 land_speed_costs: land_speed_cost_profiles(None),
                 overlay_passability: Vec::new(),
                 native_tmp_draw_heights: HashMap::new(),
@@ -966,6 +967,7 @@ impl ResolvedTerrainGrid {
         let mut grid = Self {
             width,
             height,
+            level_span: LevelSpan::of(cells.iter().map(|cell| cell.level)),
             cells,
             land_speed_costs: land_speed_cost_profiles(None),
             overlay_passability: Vec::new(),

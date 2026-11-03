@@ -116,8 +116,21 @@ fn apply_cameo_transitions(
 
 /// Reconcile state-derived sidebar inputs and replace the retained immutable
 /// projection. This is called only from explicit simulation/input/lifecycle
-/// transitions, never from a view consumer.
+/// transitions, never from a view consumer. It derives the simulation's
+/// inputs afresh, so a transition that wrote the world outside a frame needs
+/// no revision of its own.
 pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
+    refresh_projection(state, false);
+}
+
+/// The gadget idle tick's republish on every presentation pass: the same
+/// refresh, reusing the simulation inputs kept for the world's revision
+/// ([`crate::app::sidebar_projection::SidebarSimInputs`]).
+pub(crate) fn republish_sidebar_projection(state: &mut AppState) {
+    refresh_projection(state, true);
+}
+
+fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     refresh_radar_animation_source(state);
     let theme = current_sidebar_theme(state);
     #[cfg(feature = "phobos")]
@@ -146,52 +159,32 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
             .replace_view(None);
         return;
     };
-    let Some((
-        build_options,
-        queue_items,
-        ready_buildings,
-        credits,
-        power_produced,
-        power_drained,
-        sw_views,
-    )) = (|| {
-        let (sim, rules) = (
-            state
-                .match_state
-                .sim_runtime
-                .as_ref()
-                .map(|rt| &rt.simulation)?,
-            state.rules()?,
-        );
-        let owner_iid = sim.interner().get(&owner_name).unwrap_or_default();
-        let sw_views = crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner_iid);
-        let (power_produced, power_drained) =
-            production::power_balance_for_owner(sim, rules, &owner_name);
-        Some((
-            production::all_build_options_for_owner(sim, rules, &owner_name),
-            production::queue_view_for_owner(sim, rules, &owner_name),
-            production::ready_buildings_for_owner(sim, rules, &owner_name),
-            counter_credits(sim, &owner_name),
-            power_produced,
-            power_drained,
-            sw_views,
-        ))
-    })()
-    else {
-        state
-            .match_state
+    let inputs = {
+        let match_state = &mut state.match_state;
+        let Some(runtime) = match_state.sim_runtime.as_ref() else {
+            match_state
+                .match_presentation
+                .sidebar_projection
+                .replace_view(None);
+            return;
+        };
+        match_state
             .match_presentation
             .sidebar_projection
-            .replace_view(None);
-        return;
+            .sim_inputs(
+                &runtime.simulation,
+                &runtime.resources.rules,
+                &owner_name,
+                reuse_sim_inputs,
+            )
     };
 
-    let sim = &state
+    let runtime = state
         .match_state
         .sim_runtime
         .as_ref()
-        .expect("sidebar runtime")
-        .simulation;
+        .expect("sidebar runtime");
+    let (sim, rules) = (&runtime.simulation, &runtime.resources.rules);
     let owner = sim.interner().get(&owner_name).unwrap_or_default();
     let seed_additions = state
         .match_state
@@ -205,7 +198,7 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
     // Phobos adds a superweapon to the left sidebar first and skips its right
     // sidebar cameo (`SidebarClass_AddCameo` returns false once accepted).
     #[cfg(feature = "phobos")]
-    let sw_plan = crate::app::presentation::sw_sidebar::plan(state, owner, &sw_views);
+    let sw_plan = crate::app::presentation::sw_sidebar::plan(state, owner, &inputs.sw_views);
     #[cfg(feature = "phobos")]
     let right_sw_views: Vec<crate::sim::superweapon::SuperWeaponView> = {
         let left: std::collections::HashSet<&str> = sw_plan
@@ -213,23 +206,29 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
             .iter()
             .map(|entry| entry.type_id.as_str())
             .collect();
-        sw_views
+        inputs
+            .sw_views
             .iter()
             .filter(|view| !left.contains(sim.interner().resolve(view.type_id)))
             .cloned()
             .collect()
     };
     #[cfg(not(feature = "phobos"))]
-    let right_sw_views = sw_views.clone();
-    let cameos = crate::app::sidebar_projection::cameo_candidates(
-        sim,
-        state.rules().expect("sidebar rules"),
-        state.process_assets.csf.as_ref(),
-        owner,
-        &build_options,
-        &ready_buildings,
-        &right_sw_views,
-    );
+    let right_sw_views = inputs.sw_views.clone();
+    let cameos = state
+        .match_state
+        .match_presentation
+        .sidebar_projection
+        .cameo_candidates(
+            sim,
+            rules,
+            state.process_assets.csf.as_ref(),
+            owner,
+            &owner_name,
+            &inputs,
+            &right_sw_views,
+            reuse_sim_inputs,
+        );
     let reconciled = state
         .match_state
         .match_presentation
@@ -269,7 +268,7 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .displayed_credits_or_seed(&owner_name, credits);
+        .displayed_credits_or_seed(&owner_name, inputs.credits);
     let (
         tab_btn_size,
         repair_btn_size,
@@ -316,12 +315,12 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         screen_h,
         state.match_state.match_presentation.active_sidebar_tab,
         display_credits,
-        power_produced,
-        power_drained,
+        inputs.power_produced,
+        inputs.power_drained,
         tab_btn_size,
-        &queue_items,
-        &build_options,
-        &ready_buildings,
+        &inputs.queue_items,
+        &inputs.build_options,
+        &inputs.ready_buildings,
         armed_entry.as_ref(),
         state
             .match_state
@@ -431,6 +430,9 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
 /// for every entry it draws, so a restriction that appears or clears between
 /// two House rechecks must reach the very next frame. Membership and the House
 /// pass stay with [`refresh_sidebar_projection`].
+/// RepaintForRemovedObject 6A5F20, RepaintSidebar 6A60A0 and
+/// RepaintSidebarFor2Frames 6A60E0 only set redraw flags and RedrawUntilFrame;
+/// VERA draws the sidebar every frame, so they have no port.
 pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
     let Some(owner_name) = preferred_local_owner_name(state) else {
         return;
@@ -522,17 +524,6 @@ pub(crate) fn is_cursor_over_minimap(state: &AppState) -> bool {
     let rect = active_minimap_screen_rect(state);
     let (x, y) = sidebar_cursor(state);
     minimap.contains_screen_point_in_rect(x, y, rect.x, rect.y, rect.w, rect.h)
-}
-
-pub(crate) fn try_begin_minimap_drag(state: &mut AppState) -> bool {
-    if !is_cursor_over_minimap(state) {
-        return false;
-    }
-    // Capture the region for the release; Radar653CC0..653D6F decides
-    // separately whether this press centers the view or awaits an order.
-    state.match_state.input.minimap_dragging = true;
-    state.match_state.input.selection_state.cancel_drag();
-    true
 }
 
 pub(crate) fn minimap_camera_target(

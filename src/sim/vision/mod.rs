@@ -39,6 +39,7 @@
 mod cell_reveal;
 mod fog_objects;
 pub use fog_objects::{FoggedDrawKind, FoggedDrawRecord, FrozenBuilding};
+mod map_journal;
 mod map_reveal;
 pub(crate) use map_reveal::MapTransition;
 mod planes;
@@ -62,8 +63,9 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::map::houses::{HouseAllianceMap, is_allied_with};
+use crate::map::houses::HouseAllianceMap;
 use crate::sim::entity_store::EntityStore;
+use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::movement::ground_pose;
 use crate::sim::pathfinding::PathGrid;
@@ -648,7 +650,7 @@ pub(crate) struct GapGeneratorSource {
 /// ([`FogState::fire_view`]).
 #[derive(Clone, Copy)]
 pub(crate) struct FireFog<'a> {
-    pub(crate) alliances: &'a HouseAllianceMap,
+    pub(crate) alliances: &'a HouseAlliances,
     sensors_by_house: &'a BTreeMap<InternedId, Vec<i16>>,
     width: u16,
     height: u16,
@@ -774,6 +776,10 @@ pub struct FogState {
     /// selection uses the original x86-masked bit index (`h & 31`).
     #[serde(default)]
     cloaked_by_houses: Vec<u32>,
+    /// While journaling ([`Self::journal`]), what each map held before its
+    /// first write. Never saved or hashed.
+    #[serde(skip)]
+    journal: Option<Box<map_journal::MapJournal>>,
 }
 
 impl FogState {
@@ -925,6 +931,7 @@ impl FogState {
     ) {
         // In this map `latched` means only that this viewer's derived source
         // counts are active. Its native +250 lives in `sight_sources`.
+        self.note_sight(id, viewer);
         admission.latched = true;
         let map = if alternate {
             &mut self.alternate_sight_admissions
@@ -971,6 +978,7 @@ impl FogState {
         // alternate House received the actual map contribution (70B0CB..B12C).
         let mut source = SightSource::from(admission);
         source.owner = source_owner;
+        self.note_sight(id, viewer);
         self.sight_sources.insert((id, viewer), source);
     }
 
@@ -982,6 +990,7 @@ impl FogState {
         id: u64,
         viewer: InternedId,
     ) -> Option<SightSource> {
+        self.note_sight(id, viewer);
         let source = self.sight_sources.get_mut(&(id, viewer))?;
         if !source.latched {
             return None;
@@ -1000,6 +1009,7 @@ impl FogState {
         viewer: InternedId,
         alternate: bool,
     ) -> Option<SightAdmission> {
+        self.note_sight(id, viewer);
         let map = if alternate {
             &mut self.alternate_sight_admissions
         } else {
@@ -1027,6 +1037,7 @@ impl FogState {
         id: u64,
         viewer: InternedId,
     ) -> Option<SightAdmission> {
+        self.note_sight(id, viewer);
         self.sight_admissions.remove(&(id, viewer))
     }
 
@@ -1068,6 +1079,7 @@ impl FogState {
     /// Destructor cleanup of cached250/254/260 and per-viewer derived indexes.
     /// Native UnInit/Limbo must have released their live contributions first.
     pub(crate) fn forget_sight_source(&mut self, id: u64) {
+        self.note_shared_write();
         while let Some((&key, _)) = self.sight_sources.range(source_keys(id)).next() {
             self.sight_sources.remove(&key);
         }
@@ -1281,6 +1293,7 @@ impl FogState {
         occupied_cells: Vec<(u16, u16)>,
         drawing: Option<FrozenBuilding>,
     ) -> FoggedObjectId {
+        self.note_shared_write();
         let id = self.next_fogged_object_id.max(1);
         self.next_fogged_object_id = id.wrapping_add(1);
         let record = FoggedObjectFootprintRecord {
@@ -1306,6 +1319,7 @@ impl FogState {
     }
 
     pub(crate) fn set_object_fogged(&mut self, viewer: InternedId, id: u64, fogged: bool) {
+        self.note_shared_write();
         if fogged {
             self.fogged_live_objects.insert((viewer, id));
         } else {
@@ -1321,6 +1335,7 @@ impl FogState {
     }
 
     pub(crate) fn forget_fogged_live_object(&mut self, id: u64) {
+        self.note_shared_write();
         self.fogged_live_objects.retain(|(_, candidate)| *candidate != id);
     }
 
@@ -1346,6 +1361,7 @@ impl FogState {
         rx: u16,
         ry: u16,
     ) -> Vec<FoggedObjectFootprintRecord> {
+        self.note_shared_write();
         let Some(mut ids) = self.fogged_object_cells.remove(&(viewer, rx, ry)) else {
             return Vec::new();
         };
@@ -1374,6 +1390,7 @@ impl FogState {
     /// deposits are owned by `sim::sensor_lifecycle`; this remains the explicit
     /// map-storage recreation edge.
     pub fn reset_sensor_counts(&mut self) {
+        self.note_shared_write();
         self.sensors_by_house.clear();
         self.disguise_detect_by_house.clear();
     }
@@ -1605,8 +1622,25 @@ impl FogState {
         )
     }
 
+    /// `TechnoClass::IsSensorVisibleToPlayer @ 0x0070D420` (vt+0x328) for
+    /// `house`: its sensors cover the cell of the object's GetCoords (vt+0x48),
+    /// which is a building's foundation centre. A coordinate off the map reads
+    /// the dummy cell, which no sensor counts.
+    pub fn senses_object_for_house(
+        &self,
+        house: InternedId,
+        entity: &crate::sim::game_entity::GameEntity,
+    ) -> bool {
+        let [x, y] = crate::sim::movement::ground_pose::object_center_xy(entity);
+        let cell = |v| u16::try_from(crate::util::lepton::lepton_to_cell(v));
+        match (cell(x), cell(y)) {
+            (Ok(rx), Ok(ry)) => self.has_sensor_for_house(house, rx, ry),
+            _ => false,
+        }
+    }
+
     /// What a fire check reads of this fog and the houses' ally graph.
-    pub(crate) fn fire_view<'a>(&'a self, alliances: &'a HouseAllianceMap) -> FireFog<'a> {
+    pub(crate) fn fire_view<'a>(&'a self, alliances: &'a HouseAlliances) -> FireFog<'a> {
         FireFog {
             alliances,
             sensors_by_house: &self.sensors_by_house,
@@ -2132,6 +2166,7 @@ impl FogState {
         // whose clear visited every cell re-marks every footprint this frame.
         let mut frame = SightFrame::default();
         if self.width != width || self.height != height {
+            self.note_shared_write();
             #[cfg(any(test, feature = "test-support"))]
             {
                 frame.sized = true;
@@ -2921,14 +2956,13 @@ fn reveal_candidates(
 /// of its index, `0x00567AC1..0x00567ADB`) is mapped too, allied or not;
 /// VERA keeps no radar-spy bits.
 pub(crate) fn reveal_admits(
-    alliances: &HouseAllianceMap,
+    alliances: &HouseAlliances,
     owner: InternedId,
     viewer: InternedId,
     config: &VisionConfig,
     interner: &StringInterner,
 ) -> bool {
-    viewer == owner
-        || ally_reveal_test(alliances, owner, config, interner)(interner.resolve(viewer))
+    viewer == owner || (config.ally_reveal && alliances.is_allied(interner, owner, viewer))
 }
 
 /// [`reveal_admits`]'s allied arm for one `owner`, to ask of many viewers by
@@ -3014,7 +3048,7 @@ pub fn apply_spy_sat(
 #[cfg(any(test, feature = "test-support"))]
 pub fn apply_gap_generators(
     fog: &mut FogState,
-    alliances: &HouseAllianceMap,
+    alliances: &HouseAlliances,
     gap_generators: &[(InternedId, u16, u16, i32)],
     interner: &StringInterner,
 ) {
@@ -3035,7 +3069,7 @@ pub fn apply_gap_generators(
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn apply_gap_generator_sources(
     fog: &mut FogState,
-    alliances: &HouseAllianceMap,
+    alliances: &HouseAlliances,
     gap_generators: &[GapGeneratorSource],
     interner: &StringInterner,
 ) {
@@ -3054,7 +3088,7 @@ pub(crate) fn apply_gap_generator_sources(
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn apply_gap_generator_sources_with_spy_sat(
     fog: &mut FogState,
-    alliances: &HouseAllianceMap,
+    alliances: &HouseAlliances,
     gap_generators: &[GapGeneratorSource],
     interner: &StringInterner,
     spy_sat_active_owners: &std::collections::BTreeSet<InternedId>,
@@ -3138,7 +3172,7 @@ impl GapGeometry {
 /// outside the rectangular map retain the existing bounded mapping.
 pub(crate) fn publish_gap_generator_event(
     fog: &mut FogState,
-    alliances: &HouseAllianceMap,
+    alliances: &HouseAlliances,
     viewer: InternedId,
     source: GapGeneratorSource,
     active: bool,
@@ -3148,17 +3182,13 @@ pub(crate) fn publish_gap_generator_event(
 ) {
     // Both complete6FB170/6FB470 leaves clear local House240 after an
     // admitted269 transition, including friendly events with no hostile cells.
+    fog.note_map(viewer);
     fog.whole_map_revealed_owners.remove(&viewer);
     let width = usize::from(fog.width);
     let height = usize::from(fog.height);
     if let Some(vis) = fog.by_owner.get_mut(&viewer) {
         let receipts = fog.gap_sources.entry(viewer).or_default();
-        let friendly = viewer_defeated
-            || is_allied_with(
-                alliances,
-                interner.resolve(source.owner),
-                interner.resolve(viewer),
-            );
+        let friendly = viewer_defeated || alliances.is_allied(interner, source.owner, viewer);
         if friendly {
             for &index in fog.gap_geometry.cells(source, width, height) {
                 vis.count_friendly_gap_cell(index, active);

@@ -55,3 +55,5 @@ pub mod native_affine;
 // Platform services retain the standard-library types on native targets.
 pub mod time;
 pub mod file_system;
+
+pub mod debug_checks;

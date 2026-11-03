@@ -84,7 +84,9 @@ impl PassiveScan {
         }
     }
 
-    /// The targeting timer.
+    /// The targeting timer (`+0x180` start, `+0x188` duration). Its `due` is
+    /// TechnoClass::TargetingTimerFinished (`0x0070F7E0`): an unarmed timer
+    /// is due only with a zero duration.
     pub const fn timer(self) -> MissionTimer {
         self.timer
     }
@@ -565,7 +567,7 @@ fn fire_subject<'a>(
         world: sim,
         rules,
         overlay_registry,
-        fog: Some(sim.fog.fire_view(sim.house_alliances.as_map())),
+        fog: Some(sim.fog.fire_view(&sim.house_alliances)),
         firer,
         obj,
         target,
@@ -615,7 +617,7 @@ pub(super) fn select_weapon(
         sim,
         &sim.interner,
         cells.as_ref(),
-        Some(sim.house_alliances.as_map()),
+        Some(&sim.house_alliances),
     )
     .unwrap_or(0)
 }
@@ -789,22 +791,29 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
         );
     }
 
-    /// Through the object's live `+0x3C4` override. Hunt4D5392,
-    /// AreaGuard4D6F06 and passive/arrival acquisition709820 observe all
-    /// earlier object turns, including newly admitted candidates. Reusing a
-    /// frame-start result would omit their ranking and query/RNG effects.
+    /// Through the object's `+0x3C4` override, or this pass's batched answer
+    /// ([`super::scan_batch`]). Natively Hunt (`0x004D5392`), Area Guard
+    /// (`0x004D6F06`) and the targeting slot all scan the world as the
+    /// object's turn finds it; an answer scanned it as the pass began, a
+    /// sim-scale deviation.
     fn greatest_threat(&mut self, mask: ScanMission) -> Option<TargetKind> {
         let (rules, registry) = (self.rules, self.ctx.overlay_registry);
-        let outcome = self
-            .sim
-            .threat_scan(rules, registry, self.id, mask, self.scan_coord);
+        let outcome =
+            match self
+                .sim
+                .take_batched_scan(rules, registry, self.id, mask, self.scan_coord)
+            {
+                Some(outcome) => outcome,
+                None => self
+                    .sim
+                    .threat_scan(rules, registry, self.id, mask, self.scan_coord),
+            };
         Simulation::commit_threat_scan(
             &mut self.sim.scenario_rng,
             &mut self.sim.substrate,
             self.id,
             outcome,
         )
-        .map(TargetKind::Entity)
     }
 
     fn distributed_fire(&mut self) -> bool {
@@ -875,7 +884,7 @@ impl Simulation {
         id: u64,
         mask: ScanMission,
         scan_coord: Option<[i32; 3]>,
-    ) -> Option<u64> {
+    ) -> Option<TargetKind> {
         let result = self.threat_scan(rules, overlay_registry, id, mask, scan_coord);
         Self::commit_threat_scan(&mut self.scenario_rng, &mut self.substrate, id, result)
     }
@@ -905,7 +914,7 @@ impl Simulation {
             crate::sim::combat::line_of_fire::LineOfFireInputs {
                 overlay_grid: self.overlay_grid.as_ref(),
                 overlay_registry,
-                alliances: Some(self.house_alliances.as_map()),
+                alliances: Some(&self.house_alliances),
             },
             Some(self),
             scan_coord,
@@ -919,7 +928,7 @@ impl Simulation {
         substrate: &mut ObjectSubstrate,
         id: u64,
         mut result: crate::sim::combat::greatest_threat::ThreatScanOutcome,
-    ) -> Option<u64> {
+    ) -> Option<TargetKind> {
         // The computer's disguise detection draws during the scan
         // (Evaluate_Candidate 0x006F851C).
         if let Some(rng) = result.take_scenario_rng() {
@@ -952,7 +961,7 @@ pub(crate) fn direct_greatest_threat(
     overlay_registry: Option<&OverlayTypeRegistry>,
     scanner: u64,
     mask: ScanMission,
-) -> Option<u64> {
+) -> Option<TargetKind> {
     // These callers explicitly copy Object+9C..A4, not virtual GetCoords.
     // Preserve the shared direct-call owner for all of them. Original Steam
     // gamemd:6ED132,6ECDEF,6F0222 and414B3D.
@@ -1042,7 +1051,7 @@ mod tests {
                 world: &sim,
                 rules,
                 overlay_registry: Some(&registry),
-                fog: Some(sim.fog.fire_view(sim.house_alliances.as_map())),
+                fog: Some(sim.fog.fire_view(&sim.house_alliances)),
                 firer: actor,
                 obj: rules.object("E1").unwrap(),
                 target: Some(TargetKind::Entity(victim)),

@@ -9,7 +9,6 @@
 //! tools/spatial_oracle/astar_threat_inputs.json, spatial controls.
 
 use crate::map::entities::EntityCategory;
-use crate::map::houses::is_allied_with;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::houses::Houses;
@@ -229,6 +228,9 @@ impl Simulation {
 
     /// Cell481870: each receiver excludes the source House and its directional
     /// allies. Unlike509400's rebuild, this applies to every concrete class.
+    /// Every other House takes the write, clamp included. The walk goes in
+    /// id order, not the House array's (0x00A8022C); each House writes only
+    /// its own grid, so the results are the same.
     fn cell_update_spatial_threat(
         interner: &StringInterner,
         house_alliances: &HouseAlliances,
@@ -237,15 +239,11 @@ impl Simulation {
         cell: (i16, i16),
         delta: i32,
     ) {
-        let source_name = interner.resolve(source);
+        // Each receiver asks its own IsAlliedWith(source): the index overload
+        // 0x004F9A10, called at 0x004818B7.
+        let friendly = house_alliances.allied_to(interner, source);
         for (&owner, house) in &mut *houses {
-            if owner == source
-                || is_allied_with(
-                    house_alliances.as_map(),
-                    interner.resolve(owner),
-                    source_name,
-                )
-            {
+            if friendly(owner) {
                 continue;
             }
             house
@@ -499,11 +497,9 @@ impl Simulation {
                 if cell == (0, 0)
                     || actor.owner() == owner
                     || (controlled
-                        && is_allied_with(
-                            self.house_alliances.as_map(),
-                            self.interner.resolve(owner),
-                            self.interner.resolve(actor.owner()),
-                        ))
+                        && self
+                            .house_alliances
+                            .is_allied(&self.interner, owner, actor.owner()))
                 {
                     return None;
                 }
