@@ -39,6 +39,7 @@ pub(crate) fn launcher_values_from_profile(
         right_click_orders: profile.right_click_orders,
         lock_cursor: profile.lock_cursor,
         vera_icon: profile.vera_icon,
+        hd_radar: profile.hd_radar,
         shift_queue: profile.shift_queue,
         wol_test_service: profile.wol_test_service,
         fps_counter: false,
@@ -109,6 +110,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_lock_cursor(&mut self, locked: bool);
     /// Show VERA's artwork or the red star on the window, taskbar and Dock.
     fn store_vera_icon(&mut self, vera_icon: bool);
+    /// Draw the radar at the sidebar's window scale (`[VERA] HdRadar=`).
+    fn store_hd_radar(&mut self, enabled: bool);
     fn store_shift_queue(&mut self, shift_queue: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
     fn set_fps_counter(&mut self, shown: bool);
@@ -156,6 +159,7 @@ pub(crate) fn dispatch_launcher_preview_event(
         }
         LauncherOptionsEvent::LockCursorChanged(locked) => operations.store_lock_cursor(locked),
         LauncherOptionsEvent::VeraIconChanged(vera_icon) => operations.store_vera_icon(vera_icon),
+        LauncherOptionsEvent::HdRadarChanged(enabled) => operations.store_hd_radar(enabled),
         LauncherOptionsEvent::ShiftQueueChanged(shift_queue) => {
             operations.store_shift_queue(shift_queue);
         }

@@ -55,8 +55,9 @@ impl SidebarFrame {
 
     /// This frame as a window shows it at `zoom_percent`: the surfaces draw
     /// with as many whole window pixels per sidebar pixel as the zoom and the
-    /// size give, at least one. Large keeps its own pixels unless `sharpen`:
-    /// in the window's, the seams it blends between pixels would turn sharp.
+    /// size give, at least one. Large keeps its own pixels unless `sharpen`
+    /// (the HD radar, which draws at the window's): in the window's, the
+    /// seams it blends between pixels would turn sharp.
     pub fn in_window(self, zoom_percent: u32, sharpen: bool) -> Self {
         let zoom_percent = zoom_percent.max(100);
         let draw_scale = if self.is_sharp() || sharpen {

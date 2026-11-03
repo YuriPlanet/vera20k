@@ -25,7 +25,7 @@ This demonstrates the recorded production path, not native full-generation parit
 
 Optional v2/v3 `presentation: {"zoom": 0, "sidebar": 100}` runs the battle at those
 `[VERA]` Options values: `zoom` 0 is Auto, otherwise a 50-step percent from 100;
-`sidebar` is 100, 150 or 200. The match frame is then the window over the zoom
+`sidebar` is 100, 150 or 200; an optional `"hd_radar": true` turns on the HD radar. The match frame is then the window over the zoom
 (`render.internal_extent`), and `frame.bgra` stays the full window, so a 3840×2160
 profile shows what a 4K player sees. Gestures and `cursor_position` use frame
 pixels at zoom 100% and cannot be combined with it.

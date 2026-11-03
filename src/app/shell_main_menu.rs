@@ -134,6 +134,10 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
     fn store_right_click_orders(&mut self, enabled: bool) {
         self.persistence.options_profile.right_click_orders = enabled;
     }
+    fn store_hd_radar(&mut self, enabled: bool) {
+        // A battle's next frame sizes the sidebar and radar from it.
+        self.persistence.options_profile.hd_radar = enabled;
+    }
     fn store_mouse_wheel_zoom(&mut self, enabled: bool) {
         self.persistence.options_profile.mouse_wheel_zoom = enabled;
         if !enabled {

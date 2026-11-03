@@ -68,6 +68,23 @@ impl NativeRadarScreenGeometry {
         ))
     }
 
+    /// VERA's HD radar: the pixel of the surface generated at `scale` times
+    /// the size under an exact layout `point`, clamped onto that surface. The
+    /// native pick above decides whether the point is on the radar at all.
+    pub fn fine_surface_pixel(self, point: (f32, f32), scale: u32) -> (i32, i32) {
+        let rect = self.content_rect();
+        let size = self.surface.subdivided(scale).generated_size();
+        let pick = |point: f32, start: f32, extent: f32, count: i32| {
+            let count = count.max(1);
+            let offset = (point - start.round()) * count as f32 / extent.round().max(1.0);
+            (offset.floor() as i32).clamp(0, count - 1)
+        };
+        (
+            pick(point.0, rect[0], rect[2], size.0),
+            pick(point.1, rect[1], rect[3], size.1),
+        )
+    }
+
     /// Resolve an actual destination pixel which the existing inverse maps
     /// back to this generated pixel. A downscaled, unrepresented pixel has no
     /// clickable point; do not silently select its neighbor.

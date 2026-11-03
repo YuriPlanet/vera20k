@@ -823,6 +823,17 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
         }
     }
 
+    // VERA's HD radar draws at the sidebar's whole scale while it is on.
+    let hd_scale = state.hd_radar().then(|| state.sidebar_frame().draw_scale());
+    if let Some(minimap) = state.match_state.match_presentation.minimap.as_mut() {
+        minimap.set_hd_scale(
+            &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
+            &state.renderer.batch_renderer,
+            hd_scale,
+        );
+    }
+
     let full_visibility = state.match_state.sandbox_full_visibility;
     let beacon_draws = crate::app::match_runtime::beacons::draws(state);
     let presentation = &mut state.match_state.match_presentation;

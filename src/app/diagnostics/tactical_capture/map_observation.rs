@@ -52,7 +52,8 @@ struct MapAudioProfile {
 }
 
 /// The battle's Options presentation choices for one capture, as their
-/// `[VERA]` values. Absent, a capture keeps zoom 100% and the Normal sidebar.
+/// `[VERA]` values. Absent, a capture keeps zoom 100%, the Normal sidebar and
+/// the native radar.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct MapPresentationProfile {
@@ -60,6 +61,9 @@ struct MapPresentationProfile {
     zoom: i32,
     /// `Sidebar=`: 100, 150 or 200.
     sidebar: i32,
+    /// `HdRadar=`: optional, off when absent.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    hd_radar: bool,
 }
 
 impl MapPresentationProfile {
@@ -81,6 +85,7 @@ impl MapPresentationProfile {
         state.platform.capture_presentation = crate::app::state::CapturePresentation {
             zoom: Zoom::from_ini_value(self.zoom),
             sidebar: SidebarSize::from_ini_value(self.sidebar),
+            hd_radar: self.hd_radar,
         };
         crate::app::App::sync_zoom_pass(state);
     }
@@ -5121,10 +5126,15 @@ mod tests {
         profile.presentation = Some(MapPresentationProfile {
             zoom: 0,
             sidebar: 150,
+            hd_radar: true,
         });
         profile.validate().unwrap();
         for (zoom, sidebar) in [(125, 100), (100, 120)] {
-            profile.presentation = Some(MapPresentationProfile { zoom, sidebar });
+            profile.presentation = Some(MapPresentationProfile {
+                zoom,
+                sidebar,
+                hd_radar: false,
+            });
             assert!(profile.validate().is_err(), "{zoom} {sidebar}");
         }
     }

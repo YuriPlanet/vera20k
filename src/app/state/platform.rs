@@ -120,11 +120,12 @@ pub(crate) struct PlatformState {
 
 /// The Options presentation choices a capture runs its battle at. A sealed
 /// map profile may set them (`MapPresentationProfile`); otherwise a capture
-/// keeps zoom 100% and the Normal sidebar, whatever its size.
+/// keeps zoom 100%, the Normal sidebar and the native radar, whatever its size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CapturePresentation {
     pub(crate) zoom: crate::ui::main_menu_dialogs::options::Zoom,
     pub(crate) sidebar: crate::ui::main_menu_dialogs::options::SidebarSize,
+    pub(crate) hd_radar: bool,
 }
 
 impl Default for CapturePresentation {
@@ -132,6 +133,7 @@ impl Default for CapturePresentation {
         Self {
             zoom: crate::ui::main_menu_dialogs::options::Zoom::Percent(100),
             sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
+            hd_radar: false,
         }
     }
 }

@@ -106,7 +106,17 @@ impl AppState {
             .match_zoom_pass()
             .map_or(100, |pass| pass.geometry().percent);
         self.sidebar_frame_for(self.render_width(), self.render_height())
-            .in_window(zoom, false)
+            .in_window(zoom, self.hd_radar())
+    }
+
+    /// Whether VERA's HD radar is on (`[VERA] HdRadar=`); a capture takes its
+    /// profile's choice (`CapturePresentation`).
+    pub(crate) fn hd_radar(&self) -> bool {
+        if self.platform.capture_client_size.is_some() {
+            self.platform.capture_presentation.hd_radar
+        } else {
+            self.persistence.options_profile.hd_radar
+        }
     }
 
     /// The same for a frame of `width` x `height`. Captures take their own

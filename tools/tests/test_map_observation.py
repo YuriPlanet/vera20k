@@ -301,13 +301,14 @@ class MapObservationTests(unittest.TestCase):
 
     def test_presentation_admits_a_zoomed_frame_and_rejects_unknown_values(self):
         self.profile.update(schema_version=observation.PROFILE_V2,
-                            presentation={'zoom': 0, 'sidebar': 150})
+                            presentation={'zoom': 0, 'sidebar': 150, 'hd_radar': True})
         self.profile_path.write_text(json.dumps(self.profile))
         self.internal_extent = [1, 1]
         report = self.run_capture()
         self.assertEqual(report['status'], 'VALID', report['errors'])
         for bad in ({'zoom': 125, 'sidebar': 100}, {'zoom': 50, 'sidebar': 100},
-                    {'zoom': 100, 'sidebar': 120}, {'zoom': 100}):
+                    {'zoom': 100, 'sidebar': 120}, {'zoom': 100},
+                    {'zoom': 100, 'sidebar': 100, 'hd_radar': 1}):
             with self.subTest(bad=bad), self.assertRaises(ValidationError):
                 observation._profile_extensions(dict(self.profile, presentation=bad))
         with self.assertRaises(ValidationError):
