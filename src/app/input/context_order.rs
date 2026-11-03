@@ -672,18 +672,19 @@ pub(super) fn infantry_arm_attacks(
 
 /// Whether an Aircraft's 0 over the object `target_id` becomes Attack. The
 /// Aircraft wrapper asks its own What_Action on the Cell under the object
-/// (`0x00417D7C..0x00417DCB`, [`Simulation::object_coords_cell`]):
-/// Aircraft `0x00417F80`, a human player's only, through Foot's shroud wrapper
+/// (`0x00417D7C..0x00417DCB`, [`Simulation::object_coords_cell`]): Aircraft
+/// `0x00417F80`, a human player's only, through Foot's shroud wrapper
 /// (`0x004DDDE0`) to Techno `0x00700600`, whose unforced Attack rung
-/// (`0x007008A6..0x007009F1`, [`Simulation::cell_attack_rung_admits`])
-/// answers over a destroyable cliff or another house's Wall its `Wall=`
-/// warhead may hit (retail Harrier and Black Eagle warheads have it), and
-/// whose TerrainFire rung (`0x00700A46`) answers over an `IsARock=` overlay for a
-/// `TerrainFire=` weapon, each with the forced shot's tail at the Cell. A shrouded Cell takes the Attack back
-/// (`0x004DDE64..0x004DDEBE`). Aircraft `0x00417FB1` and `0x00417DCD` keep
-/// it only with a weapon in slot 0 (vt+0x3F8). The Immune rung then
-/// tests the object (`0x00417F4A`), and the click sends the Attack to Foot
-/// `0x004D74E0` as an attack on the object ([`object_attack_click_command`]).
+/// (`0x007008A6..0x007009F1`, [`Simulation::cell_attack_rung_admits`]) answers
+/// over a destroyable cliff or another house's Wall its `Wall=` warhead may hit
+/// (retail Harrier and Black Eagle warheads have it), and whose TerrainFire
+/// rung (`0x00700A46`) answers over an `IsARock=` overlay for a `TerrainFire=`
+/// weapon, each with the forced shot's tail at the Cell. A shrouded Cell takes
+/// the Attack back (`0x004DDE64..0x004DDEBE`). Aircraft `0x00417FB1` and
+/// `0x00417DCD` keep it only with a weapon in slot 0 (vt+0x3F8). The Immune
+/// rung then tests the object (`0x00417F4A`), and the click sends the Attack to
+/// Foot `0x004D74E0` as an attack on the object
+/// ([`object_attack_click_command`]).
 ///
 /// RESIDUAL: the slot-0 test stands on the rung's current weapon. Trigger: an
 /// aircraft type with a Secondary but no Primary weapon (none in retail, whose
