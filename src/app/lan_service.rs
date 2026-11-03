@@ -2896,6 +2896,8 @@ fn join_denial(
             .session
             .network_join_row(request.observer_request == 1)
             .is_none()
+        // VERA's room gives a newcomer the last AI's seat.
+        && state.match_state.session.network_newcomer_ai_seat().is_none()
     {
         Some(1)
     } else if Some(request.compatibility) != compatibility(state) {
@@ -3122,20 +3124,27 @@ fn confirm_join(
             .is_some();
         if !same_peer {
             let request = request.join_fields().expect("confirmed request");
-            let (row, observer) = state
-                .match_state
-                .session
-                .network_join_row(request.observer_request == 1)
-                .expect("validated row");
             let initial = state
                 .frontend
                 .multiplayer_shell_runtime
                 .local_participant()
                 .slot;
+            let slot = received_choices(request.country, request.color, &initial)?;
+            // With every seat taken, VERA's room seats the newcomer on the
+            // last AI's, which it frees.
+            let freed = state.match_state.session.free_network_seat_for_newcomer()?;
+            let (row, observer) = match freed {
+                Some(row) => (row, false),
+                None => state
+                    .match_state
+                    .session
+                    .network_join_row(request.observer_request == 1)
+                    .expect("validated row"),
+            };
             let mut human = crate::skirmish_launch::SkirmishHumanSlot {
                 name: name.clone(),
                 raw_slot_index: Some(row),
-                slot: received_choices(request.country, request.color, &initial)?,
+                slot,
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(observer),
             };
             if !human.slot.color_random

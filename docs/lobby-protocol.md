@@ -88,7 +88,11 @@ Channel: `{id,kind,max_users,users,tournament,flags,game_flags,ping,name,ex_info
 from the creator: 256 when a game has a password, which clients show as a lock and
 ask for before joining, otherwise 0. `max_users` (1–30) from `create` and the host's
 `advertise` is the room's join limit, never below its current members; a join past
-it fails with `room_full`. A host `kick` with `keep_out:true` keeps that player out of
+it fails with `room_full`. Games from 0.2.6 advertise the most people their room
+takes, players and spectators: the host's Max players, and with spectators off no
+more than its seats. Their host gives a newcomer a free seat, then the last AI's
+seat, then a spectator's place, and their lobby lists each room as `users` over
+`max_users`. A host `kick` with `keep_out:true` keeps that player out of
 the room for five minutes, by account and by name without case: their `join` fails
 with 403 `room_kept_out`, which clients show with the join ban's text while staying in the lobby. The other fields are presentation metadata, not authority. `name` identifies a channel uniquely for compatibility with the
 existing shell. Member: `{player_id,name,flags,squad,clan_name,clan_tag}`. Flags bit 0
