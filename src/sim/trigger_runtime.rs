@@ -729,19 +729,167 @@ pub struct TriggerRuntime {
     /// Dev campaign trigger-trace capture: `Some` while recording.
     #[cfg(any(test, feature = "dev-overlays"))]
     #[serde(skip)]
-    spring_log: Option<Vec<TriggerSpringRecord>>,
+    trace: Option<TriggerTrace>,
 }
+
+/// Records of the dev campaign trigger-trace capture, taken after each step.
+/// Observation only: nothing here feeds back into simulation state.
+#[cfg(any(test, feature = "dev-overlays"))]
+#[derive(Debug, Clone, Default)]
+struct TriggerTrace {
+    springs: Vec<TriggerSpringRecord>,
+    events: Vec<TriggerTraceEvent>,
+    next_seq: u32,
+    /// The (Spring `seq`, action ordinal) each nested record happens in.
+    parents: Vec<(u32, usize)>,
+    /// Inside a poll or House raise loop, whose own raises are not recorded.
+    window: bool,
+    /// The frame of the latest record, for records made without a session.
+    frame: u32,
+    /// The latest recorded (result, persist) of each (Trigger, event ordinal).
+    predicates: BTreeMap<(usize, usize), (bool, bool)>,
+}
+
+#[cfg(any(test, feature = "dev-overlays"))]
+impl TriggerTrace {
+    fn next_seq(&mut self) -> u32 {
+        self.next_seq += 1;
+        self.next_seq - 1
+    }
+}
+
+/// A trace record other than a Spring. `seq` orders it among the Springs, so
+/// a native replay can rebuild each frame's poll, House raises and the world
+/// inputs between them.
+#[cfg(any(test, feature = "dev-overlays"))]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "event")]
+pub enum TriggerTraceEvent {
+    /// Logic55AFB0's Tag poll begins (`end` false) or ends.
+    Poll {
+        seq: u32,
+        binary_frame: u32,
+        end: bool,
+    },
+    /// HouseClass::Update's event-8 raise (4F8F87..4F8FBC) begins or ends.
+    HouseRaise {
+        seq: u32,
+        binary_frame: u32,
+        house: String,
+        end: bool,
+    },
+    /// A SetGlobal689670/SetLocal689910 write through the shared owner.
+    Variable {
+        seq: u32,
+        binary_frame: u32,
+        parent: Option<(u32, usize)>,
+        global: bool,
+        index: i32,
+        set: bool,
+    },
+    /// A live Tag constructed after the trace started (Team Tags, Tags first
+    /// attached at run time), with its Trigger chain.
+    TagConstructed {
+        seq: u32,
+        binary_frame: u32,
+        parent: Option<(u32, usize)>,
+        tag: TraceTag,
+    },
+    /// The first record: the live Tags in registry order, the Logic, map and
+    /// House Tag vectors, the poll's dirty flags and the set variables.
+    Init {
+        seq: u32,
+        binary_frame: u32,
+        tags: Vec<TraceTag>,
+        logic: Vec<usize>,
+        map: Vec<usize>,
+        houses: Vec<(String, Vec<usize>)>,
+        dirty: [bool; 4],
+        globals: Vec<u32>,
+        locals: Vec<u32>,
+    },
+    /// A Tag6E53A0 raise from outside the poll and House raise loops, or one
+    /// nested in an action. The loops' own raises are left to the replay.
+    Dispatch {
+        seq: u32,
+        binary_frame: u32,
+        parent: Option<(u32, usize)>,
+        tag: usize,
+        kind: i32,
+        force: bool,
+        actor: Option<u64>,
+        cell: (i16, i16),
+    },
+    /// A HasOccurred71E940 result for an event kind that reads the world,
+    /// recorded when it differs from the same event's previous result.
+    /// `persist` is set when this call wrote the persistence flag.
+    Predicate {
+        seq: u32,
+        binary_frame: u32,
+        parent: Option<(u32, usize)>,
+        trigger: usize,
+        ordinal: usize,
+        result: bool,
+        persist: bool,
+    },
+    /// A reinforcement member Place_Reinforcement_Members (0x65E010) could
+    /// not place: every direction refused, or the nearby search found no
+    /// Cell (`cell` (0,0)). Its residual (the next member left in limbo
+    /// natively) needs one of these followed by another member.
+    PlacementRefused {
+        seq: u32,
+        binary_frame: u32,
+        parent: Option<(u32, usize)>,
+        cell: (i16, i16),
+    },
+    /// A Tag's attachment count (+2C) after an attach or detach.
+    Refs {
+        seq: u32,
+        binary_frame: u32,
+        parent: Option<(u32, usize)>,
+        tag: usize,
+        refs: i32,
+    },
+}
+
+/// A live Tag in a trace record: its index, TagType ID, attachment count and
+/// Trigger chain (live index, TriggerType ID, enabled), first to last.
+#[cfg(any(test, feature = "dev-overlays"))]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct TraceTag {
+    pub tag: usize,
+    pub tag_type: String,
+    pub refs: i32,
+    pub triggers: Vec<(usize, String, bool)>,
+}
+
+/// Event kinds a native replay computes itself from the trigger state, the
+/// frame and the variables; the trace records every other kind's results.
+#[cfg(any(test, feature = "dev-overlays"))]
+const REPLAYED_EVENT_KINDS: [i32; 8] = [EVENT_ANY, 13, 14, 27, 28, 36, 37, 47];
 
 /// One Spring7265C0 call, recorded for the dev campaign trigger-trace capture.
 /// Observation only: it never feeds back into simulation state.
 #[cfg(any(test, feature = "dev-overlays"))]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct TriggerSpringRecord {
+    /// Order among all trace records.
+    pub seq: u32,
+    /// The (Spring `seq`, action ordinal) this Spring happens in, if nested.
+    pub parent: Option<(u32, usize)>,
     pub binary_frame: u32,
     /// The TriggerType ID, as authored in the map's [Triggers].
     pub trigger: String,
+    /// The live Tag holding the Trigger and its TagType ID, if any.
+    pub tag: Option<(usize, String)>,
+    /// Whether the raise was forced (Force bypasses the event predicates).
+    pub forced: bool,
     /// The event kind raised to the Tag (0 for a Trigger forced by Force22).
     pub raised_kind: i32,
+    /// The object Spring received (stable ID and type ID), if any.
+    pub actor: Option<(u64, String)>,
+    /// The packed Cell Spring received; (0,0) is the empty Cell.
+    pub cell: (i16, i16),
     /// Each executed action kind and whether Execute reported it handled.
     pub actions: Vec<(i32, bool)>,
 }
@@ -1400,6 +1548,20 @@ impl Simulation {
                 .unwrap()
                 .triggers
                 .insert(0, index);
+        }
+        #[cfg(any(test, feature = "dev-overlays"))]
+        if self.trigger_runtime.trace.is_some() {
+            let tag = self.trigger_runtime.trace_tag(tag_index);
+            Self::trace_event(
+                &mut self.trigger_runtime,
+                self.session.binary_frame(),
+                |seq, binary_frame, parent| TriggerTraceEvent::TagConstructed {
+                    seq,
+                    binary_frame,
+                    parent,
+                    tag,
+                },
+            );
         }
         tag_index
     }
@@ -2152,14 +2314,19 @@ impl Simulation {
                 let bit = 1u32.wrapping_shl(ordinal as u32);
                 let completed = self.trigger_runtime.trigger(index).unwrap().completed & bit != 0;
                 if !completed {
-                    if !self.has_occurred(
+                    #[cfg(any(test, feature = "dev-overlays"))]
+                    let before = persistence;
+                    let occurred = self.has_occurred(
                         ordinal,
                         input,
                         incoming_house,
                         &mut persistence,
                         rules,
                         index,
-                    ) {
+                    );
+                    #[cfg(any(test, feature = "dev-overlays"))]
+                    self.trace_predicate(index, ordinal, occurred, persistence && !before);
+                    if !occurred {
                         result = false;
                         continue;
                     }
@@ -2248,6 +2415,22 @@ impl Simulation {
         if (self.session.binary_frame() as i32) % 8 != 0 {
             return;
         }
+        #[cfg(any(test, feature = "dev-overlays"))]
+        let trace_house = |sim: &mut Self, end: bool| {
+            let house = sim.interner.resolve(house).to_owned();
+            Self::trace_event(
+                &mut sim.trigger_runtime,
+                sim.session.binary_frame(),
+                |seq, binary_frame, _| TriggerTraceEvent::HouseRaise {
+                    seq,
+                    binary_frame,
+                    house,
+                    end,
+                },
+            );
+        };
+        #[cfg(any(test, feature = "dev-overlays"))]
+        trace_house(self, false);
         let count = self
             .trigger_runtime
             .house_tags
@@ -2278,6 +2461,8 @@ impl Simulation {
                 frame_effects,
             );
         }
+        #[cfg(any(test, feature = "dev-overlays"))]
+        trace_house(self, true);
         self.publish_trigger_effects(effects);
     }
 
@@ -2847,17 +3032,7 @@ impl Simulation {
         }
         self.trigger_runtime.spring_depth += 1;
         #[cfg(any(test, feature = "dev-overlays"))]
-        let record = self.trigger_runtime.spring_log.as_mut().map(|log| {
-            log.push(TriggerSpringRecord {
-                binary_frame: self.session.binary_frame(),
-                trigger: self.trigger_runtime.definitions.trigger_types[type_index]
-                    .id
-                    .clone(),
-                raised_kind: input.kind,
-                actions: Vec::new(),
-            });
-            log.len() - 1
-        });
+        let record = self.trace_spring(index, type_index, input);
         let mut result = false;
         for ordinal in 0..count {
             if self.trigger_runtime.spring_actions_left == 0 {
@@ -2869,6 +3044,10 @@ impl Simulation {
             let context = self.trigger_action_context(type_index, Some(index), input, rules);
             let action =
                 self.trigger_runtime.definitions.trigger_types[type_index].actions[ordinal].clone();
+            #[cfg(any(test, feature = "dev-overlays"))]
+            if let (Some((_, seq)), Some(trace)) = (record, self.trigger_runtime.trace.as_mut()) {
+                trace.parents.push((seq, ordinal));
+            }
             let handled = self.apply_live_trigger_action(
                 &action,
                 context,
@@ -2878,8 +3057,12 @@ impl Simulation {
                 frame_effects,
             );
             #[cfg(any(test, feature = "dev-overlays"))]
-            if let (Some(record), Some(log)) = (record, self.trigger_runtime.spring_log.as_mut()) {
-                log[record].actions.push((action.entry.kind, handled));
+            if let (Some((record, _)), Some(trace)) = (record, self.trigger_runtime.trace.as_mut())
+            {
+                trace.parents.pop();
+                trace.springs[record]
+                    .actions
+                    .push((action.entry.kind, handled));
             }
             result |= handled;
         }
@@ -2887,20 +3070,174 @@ impl Simulation {
         result
     }
 
-    /// Start or stop recording Spring calls for the dev trigger-trace capture.
-    /// Stopping drops anything not yet taken.
+    /// Push a Spring record; returns its index and `seq` while recording.
     #[cfg(any(test, feature = "dev-overlays"))]
-    pub fn record_trigger_springs(&mut self, on: bool) {
-        self.trigger_runtime.spring_log = on.then(Vec::new);
+    fn trace_spring(
+        &mut self,
+        live: usize,
+        type_index: usize,
+        input: TagEventInput,
+    ) -> Option<(usize, u32)> {
+        let runtime = &self.trigger_runtime;
+        runtime.trace.as_ref()?;
+        let tag = runtime.tag_order.iter().copied().find(|&tag| {
+            runtime
+                .tag(tag)
+                .is_some_and(|live_tag| live_tag.triggers.contains(&live))
+        });
+        let tag = tag.map(|tag| {
+            let tag_type = runtime.tag(tag).unwrap().type_index;
+            (tag, runtime.definitions.tag_types[tag_type].id.clone())
+        });
+        let record = TriggerSpringRecord {
+            seq: 0,
+            parent: None,
+            binary_frame: self.session.binary_frame(),
+            trigger: runtime.definitions.trigger_types[type_index].id.clone(),
+            tag,
+            forced: input.force,
+            raised_kind: input.kind,
+            actor: input.actor.map(|id| {
+                let type_id = self
+                    .substrate
+                    .entities
+                    .get(id)
+                    .map_or("?", |entity| self.interner.resolve(entity.type_ref()));
+                (id, type_id.to_owned())
+            }),
+            cell: input.cell,
+            actions: Vec::new(),
+        };
+        let trace = self.trigger_runtime.trace.as_mut()?;
+        let seq = trace.next_seq();
+        let parent = trace.parents.last().copied();
+        trace.springs.push(TriggerSpringRecord {
+            seq,
+            parent,
+            ..record
+        });
+        Some((trace.springs.len() - 1, seq))
     }
 
-    /// The Spring calls recorded since the last take, oldest first.
+    /// Push a non-Spring trace record built from its `seq`, `binary_frame`
+    /// and parent while recording.
     #[cfg(any(test, feature = "dev-overlays"))]
-    pub fn take_trigger_springs(&mut self) -> Vec<TriggerSpringRecord> {
+    fn trace_event(
+        trigger_runtime: &mut TriggerRuntime,
+        binary_frame: u32,
+        event: impl FnOnce(u32, u32, Option<(u32, usize)>) -> TriggerTraceEvent,
+    ) {
+        if let Some(trace) = trigger_runtime.trace.as_mut() {
+            let seq = trace.next_seq();
+            let parent = trace.parents.last().copied();
+            let event = event(seq, binary_frame, parent);
+            if let TriggerTraceEvent::Poll { end, .. } | TriggerTraceEvent::HouseRaise { end, .. } =
+                event
+            {
+                trace.window = !end;
+            }
+            trace.frame = binary_frame;
+            trace.events.push(event);
+        }
+    }
+
+    /// Record a reinforcement member the placement could not place.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    pub(crate) fn trace_placement_refused(&mut self, cell: (i16, i16)) {
+        Self::trace_event(
+            &mut self.trigger_runtime,
+            self.session.binary_frame(),
+            |seq, binary_frame, parent| TriggerTraceEvent::PlacementRefused {
+                seq,
+                binary_frame,
+                parent,
+                cell,
+            },
+        );
+    }
+
+    /// Record a HasOccurred71E940 result for a world-reading event kind when
+    /// it differs from that event's previous recorded result.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    fn trace_predicate(&mut self, trigger: usize, ordinal: usize, result: bool, persist: bool) {
+        let Some(trace) = self.trigger_runtime.trace.as_mut() else {
+            return;
+        };
+        let type_index = self.trigger_runtime.triggers[trigger]
+            .as_ref()
+            .unwrap()
+            .type_index;
+        let kind = self.trigger_runtime.definitions.trigger_types[type_index].events[ordinal].kind;
+        if REPLAYED_EVENT_KINDS.contains(&kind)
+            || trace
+                .predicates
+                .insert((trigger, ordinal), (result, persist))
+                == Some((result, persist))
+        {
+            return;
+        }
+        let seq = trace.next_seq();
+        let parent = trace.parents.last().copied();
+        trace.events.push(TriggerTraceEvent::Predicate {
+            seq,
+            binary_frame: self.session.binary_frame(),
+            parent,
+            trigger,
+            ordinal,
+            result,
+            persist,
+        });
+    }
+
+    /// Start or stop recording the dev trigger-trace capture. Stopping drops
+    /// anything not yet taken. Starting records the live Tags first.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    pub fn record_trigger_springs(&mut self, on: bool) {
+        self.trigger_runtime.trace = on.then(TriggerTrace::default);
+        if !on {
+            return;
+        }
+        let runtime = &self.trigger_runtime;
+        let tags = runtime
+            .tag_order
+            .iter()
+            .map(|&tag| runtime.trace_tag(tag))
+            .collect();
+        let houses = runtime
+            .house_tags
+            .iter()
+            .map(|(&house, tags)| (self.interner.resolve(house).to_owned(), tags.clone()))
+            .collect();
+        let init = TriggerTraceEvent::Init {
+            seq: 0,
+            binary_frame: self.session.binary_frame(),
+            tags,
+            logic: runtime.logic_tags.clone(),
+            map: runtime.map_tags.clone(),
+            houses,
+            dirty: runtime.dirty,
+            globals: runtime.globals_set.iter().copied().collect(),
+            locals: runtime.locals_set.iter().copied().collect(),
+        };
+        let trace = self.trigger_runtime.trace.as_mut().unwrap();
+        trace.next_seq = 1;
+        trace.frame = self.session.binary_frame();
+        trace.events.push(init);
+    }
+
+    /// The Spring calls and other trace records made since the last take,
+    /// each oldest first.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    pub fn take_trigger_trace(&mut self) -> (Vec<TriggerSpringRecord>, Vec<TriggerTraceEvent>) {
         self.trigger_runtime
-            .spring_log
+            .trace
             .as_mut()
-            .map(std::mem::take)
+            .map(|trace| {
+                (
+                    std::mem::take(&mut trace.springs),
+                    std::mem::take(&mut trace.events),
+                )
+            })
             .unwrap_or_default()
     }
 
@@ -2954,6 +3291,25 @@ impl Simulation {
         self.trigger_runtime
             .dispatch_trace
             .push((index, input.kind));
+        #[cfg(any(test, feature = "dev-overlays"))]
+        if self.trigger_runtime.tag(index).is_some()
+            && let Some(trace) = self.trigger_runtime.trace.as_mut()
+        {
+            let parent = trace.parents.last().copied();
+            if parent.is_some() || !trace.window {
+                let seq = trace.next_seq();
+                trace.events.push(TriggerTraceEvent::Dispatch {
+                    seq,
+                    binary_frame: self.session.binary_frame(),
+                    parent,
+                    tag: index,
+                    kind: input.kind,
+                    force: input.force,
+                    actor: input.actor,
+                    cell: input.cell,
+                });
+            }
+        }
         let Some(tag) = self.trigger_runtime.tag(index) else {
             return false;
         };
@@ -3102,6 +3458,19 @@ impl Simulation {
         if !(0..count as i32).contains(&index) {
             return false;
         }
+        #[cfg(any(test, feature = "dev-overlays"))]
+        Self::trace_event(
+            trigger_runtime,
+            session.binary_frame(),
+            |seq, binary_frame, parent| TriggerTraceEvent::Variable {
+                seq,
+                binary_frame,
+                parent,
+                global,
+                index,
+                set,
+            },
+        );
         let values = if global {
             &mut trigger_runtime.globals_set
         } else {
@@ -3151,6 +3520,16 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> Vec<TriggerEffect> {
         let mut effects = Vec::new();
+        #[cfg(any(test, feature = "dev-overlays"))]
+        Self::trace_event(
+            &mut self.trigger_runtime,
+            self.session.binary_frame(),
+            |seq, binary_frame, _| TriggerTraceEvent::Poll {
+                seq,
+                binary_frame,
+                end: false,
+            },
+        );
         self.trigger_runtime.logic_cursor = 0;
         while let Some(&tag) = self
             .trigger_runtime
@@ -3270,6 +3649,16 @@ impl Simulation {
         }
         self.session.finish_scenario_timer_poll();
         self.trigger_runtime.dirty = [false; 4];
+        #[cfg(any(test, feature = "dev-overlays"))]
+        Self::trace_event(
+            &mut self.trigger_runtime,
+            self.session.binary_frame(),
+            |seq, binary_frame, _| TriggerTraceEvent::Poll {
+                seq,
+                binary_frame,
+                end: true,
+            },
+        );
         effects
     }
 
@@ -5157,16 +5546,57 @@ impl TriggerRuntime {
         self.cell_tags.remove(&NativeCellIdentity::Dummy);
     }
 
+    /// A live Tag as trace records show it.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    fn trace_tag(&self, tag: usize) -> TraceTag {
+        let live = self.tag(tag).unwrap();
+        TraceTag {
+            tag,
+            tag_type: self.definitions.tag_types[live.type_index].id.clone(),
+            refs: live.refs,
+            triggers: live
+                .triggers
+                .iter()
+                .map(|&trigger| {
+                    let live = self.trigger(trigger).unwrap();
+                    let id = self.definitions.trigger_types[live.type_index].id.clone();
+                    (trigger, id, live.enabled)
+                })
+                .collect(),
+        }
+    }
+
+    /// Record a Tag's attachment count after it changed.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    fn trace_refs(&mut self, tag: usize) {
+        let refs = self.tag(tag).unwrap().refs;
+        if let Some(trace) = self.trace.as_mut() {
+            let seq = trace.next_seq();
+            let parent = trace.parents.last().copied();
+            trace.events.push(TriggerTraceEvent::Refs {
+                seq,
+                binary_frame: trace.frame,
+                parent,
+                tag,
+                refs,
+            });
+        }
+    }
+
     fn replace_cell_trigger_tag(&mut self, cell: NativeCellIdentity, tag: Option<usize>) {
         if let Some(previous) = self.cell_tags.remove(&cell)
             && let Some(old) = self.tags[previous].as_mut()
         {
             old.refs = old.refs.wrapping_sub(1);
+            #[cfg(any(test, feature = "dev-overlays"))]
+            self.trace_refs(previous);
         }
         if let Some(tag) = tag {
             self.cell_tags.insert(cell, tag);
             let live = self.tags[tag].as_mut().unwrap();
             live.refs = live.refs.wrapping_add(1);
+            #[cfg(any(test, feature = "dev-overlays"))]
+            self.trace_refs(tag);
         }
     }
     fn replace_trigger_tag_attachment(
@@ -5179,12 +5609,16 @@ impl TriggerRuntime {
             && matches!(attachment, TagAttachment::Object(_))
         {
             old.refs = old.refs.wrapping_sub(1);
+            #[cfg(any(test, feature = "dev-overlays"))]
+            self.trace_refs(previous);
         }
         if let Some(tag) = tag {
             self.attachments.insert(attachment, tag);
             let live = self.tags[tag].as_mut().unwrap();
             if matches!(attachment, TagAttachment::Object(_)) {
                 live.refs = live.refs.wrapping_add(1);
+                #[cfg(any(test, feature = "dev-overlays"))]
+                self.trace_refs(tag);
             }
         }
         tag.is_some()

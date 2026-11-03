@@ -38,11 +38,16 @@ pub enum OpeningTarget {
     TimerExpired,
     /// SOV02's ordinary briefing Action55 creates a type-5 alert.
     RadarAlert,
-    /// Any retail campaign mission run without player input to a committed
-    /// tick, recording every trigger Spring on the way.
+    /// Any retail campaign mission run to a committed tick, recording every
+    /// trigger Spring on the way, plus what a native replay of the trigger
+    /// classes needs: the starting Tags, the poll and House-raise bounds,
+    /// world raises, world-reading event results, attachment counts,
+    /// variable writes and run-time Tags. Without `push` there is no player
+    /// input; with it the player's armed units attack-move toward that Cell.
     TriggerTrace {
         scenario: &'static str,
         tick: u64,
+        push: Option<(u16, u16)>,
     },
     /// Save/load that naturally created alert, then present the restored radar.
     RadarRestored,
@@ -126,7 +131,11 @@ pub(super) struct OpeningCapture {
     loaded_frame: Option<(u64, u32)>,
     saved_radar: Option<crate::sim::snapshot::saved_local_view::SavedRadarEvents>,
     group_orders: Option<Value>,
+    /// Trigger-trace push orders issued: tick and unit count of each.
+    push_orders: Vec<(u64, usize)>,
     trigger_springs: Vec<Value>,
+    /// Poll and House-raise bounds, variable writes and run-time Tags.
+    trigger_events: Vec<Value>,
 }
 
 impl OpeningCapture {
@@ -155,7 +164,9 @@ impl OpeningCapture {
             loaded_frame: None,
             saved_radar: None,
             group_orders: None,
+            push_orders: Vec::new(),
             trigger_springs: Vec::new(),
+            trigger_events: Vec::new(),
         }
     }
 
@@ -333,6 +344,13 @@ impl OpeningCapture {
         {
             self.issue_campaign_encounter_orders(state)?;
         }
+        if let OpeningTarget::TriggerTrace {
+            push: Some(cell), ..
+        } = self.target
+            && !locked
+        {
+            self.issue_trace_push_orders(state, cell)?;
+        }
         if matches!(
             self.target,
             OpeningTarget::TimerRunning | OpeningTarget::TimerExpired
@@ -420,11 +438,11 @@ impl OpeningCapture {
                 .as_mut()
                 .context("trigger trace lost its runtime")?
                 .simulation;
-            self.trigger_springs.extend(
-                sim.take_trigger_springs()
-                    .into_iter()
-                    .map(|spring| json!(spring)),
-            );
+            let (springs, events) = sim.take_trigger_trace();
+            self.trigger_springs
+                .extend(springs.into_iter().map(|spring| json!(spring)));
+            self.trigger_events
+                .extend(events.into_iter().map(|event| json!(event)));
         }
         self.observe(state)?;
         Ok(())
@@ -782,40 +800,8 @@ impl OpeningCapture {
         if self.group_orders.is_some() {
             return Ok(());
         }
-        let sim = &state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .context("group runtime")?
-            .simulation;
-        let tick = sim.session().tick();
-        if tick < 300 {
-            return Ok(());
-        }
-        let viewer = sim.session().current_house().context("campaign player")?;
-        let owner = sim.interner().resolve(viewer).to_owned();
-        let rules = state.rules().context("campaign rules")?;
-        let ids: Vec<_> = sim
-            .entities()
-            .iter_sorted()
-            .filter_map(|(id, actor)| {
-                let object = rules.object(sim.interner().resolve(actor.type_ref()))?;
-                (actor.owner() == viewer
-                    && actor.is_active()
-                    && !actor.lifecycle.in_limbo()
-                    && actor.category() != crate::map::entities::EntityCategory::Structure
-                    && !object.resource_gatherer
-                    && crate::sim::combat::combat_weapon::is_armed(
-                        actor,
-                        object,
-                        sim.entities(),
-                        rules,
-                        sim.interner(),
-                    ))
-                .then_some(id)
-            })
-            .collect();
-        if ids.is_empty() {
+        let (tick, owner, ids) = armed_player_units(state)?;
+        if tick < 300 || ids.is_empty() {
             return Ok(());
         }
         let (target, group) = match self.target {
@@ -860,6 +846,41 @@ impl OpeningCapture {
         Ok(())
     }
 
+    /// Trigger trace `-push-<X>-<Y>`: like a player sending the whole armed
+    /// force, every armed unit attack-moves toward one Cell, again each game
+    /// minute so new and idle units follow. Player input only.
+    fn issue_trace_push_orders(&mut self, state: &mut AppState, cell: (u16, u16)) -> Result<()> {
+        use crate::sim::combat::TargetKind;
+        use crate::sim::command::Command;
+        const PERIOD_TICKS: u64 = 900;
+        let (tick, owner, ids) = armed_player_units(state)?;
+        if ids.is_empty()
+            || self
+                .push_orders
+                .last()
+                .is_some_and(|&(last, _)| tick < last + PERIOD_TICKS)
+        {
+            return Ok(());
+        }
+        for &entity_id in &ids {
+            ensure!(
+                crate::app::input::commands::try_schedule_command(
+                    state,
+                    &owner,
+                    Command::AttackMove {
+                        entity_id,
+                        target: None,
+                        destination: Some(TargetKind::Cell(cell.0, cell.1)),
+                    }
+                )
+                .is_some(),
+                "push attack-move input rejected"
+            );
+        }
+        self.push_orders.push((tick, ids.len()));
+        Ok(())
+    }
+
     pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
         ensure!(
             self.ready(state)?,
@@ -885,6 +906,8 @@ impl OpeningCapture {
             "group_orders": self.group_orders,
             "requested_tick": match self.target { OpeningTarget::AlliedTick(tick) | OpeningTarget::SovietTick(tick) | OpeningTarget::SovietNavy(tick) | OpeningTarget::SovietGroups(tick) | OpeningTarget::SovietFortresses(tick) | OpeningTarget::TriggerTrace { tick, .. } => Some(tick), _ => None },
             "trigger_springs": self.trigger_springs,
+            "trigger_events": self.trigger_events,
+            "push_orders": self.push_orders,
             "outcome": trace_outcome(state),
             "houses": if matches!(self.target, OpeningTarget::TriggerTrace { .. }) {
                 Some(trace_houses(state)?)
@@ -1220,7 +1243,44 @@ fn probe_unlocked_mouse_edges(state: &mut AppState) -> Result<Value> {
         "camera_request_committed": false}))
 }
 
-/// End-of-trace House summary: live, non-limbo objects per category.
+/// The current tick, the player's House name and the armed, active, on-map
+/// units a player would send: no buildings, harvesters or unarmed units.
+fn armed_player_units(state: &AppState) -> Result<(u64, String, Vec<u64>)> {
+    let sim = &state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .context("campaign runtime")?
+        .simulation;
+    let viewer = sim.session().current_house().context("campaign player")?;
+    let rules = state.rules().context("campaign rules")?;
+    let ids = sim
+        .entities()
+        .iter_sorted()
+        .filter_map(|(id, actor)| {
+            let object = rules.object(sim.interner().resolve(actor.type_ref()))?;
+            (actor.owner() == viewer
+                && actor.is_active()
+                && !actor.lifecycle.in_limbo()
+                && actor.category() != crate::map::entities::EntityCategory::Structure
+                && !object.resource_gatherer
+                && crate::sim::combat::combat_weapon::is_armed(
+                    actor,
+                    object,
+                    sim.entities(),
+                    rules,
+                    sim.interner(),
+                ))
+            .then_some(id)
+        })
+        .collect();
+    Ok((
+        sim.session().tick(),
+        sim.interner().resolve(viewer).to_owned(),
+        ids,
+    ))
+}
+
 /// The local House's campaign outcome, once Flag_To_Win or Flag_To_Lose set it.
 fn trace_outcome(state: &AppState) -> Option<&'static str> {
     let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
@@ -1236,6 +1296,7 @@ fn trace_outcome(state: &AppState) -> Option<&'static str> {
     }
 }
 
+/// End-of-trace House summary: live, non-limbo objects per category.
 fn trace_houses(state: &AppState) -> Result<Value> {
     let sim = &state
         .match_state
