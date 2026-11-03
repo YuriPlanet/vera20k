@@ -3576,6 +3576,69 @@ fn forced_trigger_branching_work_is_bounded_and_next_dispatch_gets_its_budget() 
     assert_eq!(sim.trigger_runtime.action_trace.len(), 1);
 }
 
+/// Execute6DF112..6DF119 springs each forced Trigger with a NULL object and
+/// the empty Cell [B0E680]. Action32 is the only arm that reads Spring's
+/// Cell, so a Trigger forced by a Spring at a bridge must leave it intact.
+#[test]
+fn retail_hills_forced_trigger_does_not_inherit_the_outer_bridge_cell() {
+    use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+    let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let mut launch = crate::headless_scenario::battle_session(
+        "Hills.mmx",
+        &[(LaunchCountry::America, AiDifficulty::Easy)],
+    );
+    launch.options.bases = false;
+    launch.options.unit_count = 0;
+    let mut scene =
+        crate::headless_scenario::load_session(&retail, "Hills.mmx", 0x0B21_D6E5, launch).unwrap();
+    let runtime = &mut scene.runtime;
+    let sim = &mut runtime.simulation;
+    install_map_triggers(
+        sim,
+        &trigger_fixture_map(
+            "[Triggers]\nOUTER=Neutral,<none>,Outer,0,1,1,1,0\n\
+             FORCED=Neutral,<none>,Forced,0,1,1,1,0\n\
+             [Events]\nOUTER=1,13,0,0\nFORCED=1,13,0,0\n\
+             [Actions]\nOUTER=1,22,2,FORCED,0,0,0,0,A\n\
+             FORCED=2,32,0,0,0,0,0,0,A,28,0,7,0,0,0,0,A\n\
+             [Tags]\nOUTERTAG=2,Outer,OUTER\nFORCEDTAG=2,Forced,FORCED\n",
+        ),
+    );
+    for tag in 0..sim.trigger_runtime.definitions.tag_types.len() {
+        sim.construct_trigger_tag(tag);
+    }
+    let bridge = |sim: &Simulation| {
+        let terrain = sim.resolved_terrain.as_ref().unwrap();
+        let grid = sim.overlay_grid.as_ref().unwrap();
+        let overlays: Vec<_> = terrain
+            .cells()
+            .iter()
+            .map(|cell| *grid.cell(cell.rx, cell.ry))
+            .collect();
+        let deck = terrain.cell(76, 75).unwrap();
+        (deck.bridge_facts.has_structural_bridge(), overlays)
+    };
+    let before = bridge(sim);
+    assert!(before.0, "Hills (76,75) is a bridge deck");
+    let outer = live_trigger_of_type(sim, trigger_type_index(sim, "OUTER"));
+    sim.spring_live_trigger(
+        outer,
+        TagEventInput {
+            kind: 1,
+            cell: (76, 75),
+            ..TagEventInput::default()
+        },
+        &mut Vec::new(),
+        &runtime.resources.rules,
+        Some(&runtime.resources.overlay_registry),
+        FrameEffects::default(),
+    );
+    assert!(sim.global_variables()[7], "the forced Trigger ran");
+    assert!(bridge(sim) == before, "the forced Trigger hit the bridge");
+}
+
 #[test]
 fn typed_trigger_reference_enable_and_disable_use_operand_instead_of_metadata() {
     // Enable53 starts from disabled Triggers, Disable54 from enabled ones;

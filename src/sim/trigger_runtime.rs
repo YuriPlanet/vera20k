@@ -740,7 +740,7 @@ pub struct TriggerSpringRecord {
     pub binary_frame: u32,
     /// The TriggerType ID, as authored in the map's [Triggers].
     pub trigger: String,
-    /// The event kind raised to the Tag (Force22 passes its own caller's).
+    /// The event kind raised to the Tag (0 for a Trigger forced by Force22).
     pub raised_kind: i32,
     /// Each executed action kind and whether Execute reported it handled.
     pub actions: Vec<(i32, bool)>,
@@ -1953,7 +1953,7 @@ impl Simulation {
                 true
             }
             32 | 57 => {
-                //71EEFB/71EF1F ->49FAE0 with House+5550 (active, not owned).
+                //71EFA8/71EFCB ->49FAE0 with House+5550 (active, not owned).
                 //The null incoming House reaches the original generic true
                 //tail without writing persistence.
                 let Some(owner) = incoming_house else {
@@ -2053,7 +2053,7 @@ impl Simulation {
                 })
             }
             30 | 58 => {
-                //71EFA2/71EFC2 selects Event.value's Country, then the retained
+                //71F099/71F0BD select Event.value's Country, then the retained
                 //House power ratio. Neither branch writes persistence.
                 let owner = {
                     u16::try_from(condition.value).ok().and_then(|country| {
@@ -3440,6 +3440,8 @@ impl Simulation {
         // client with a smaller thread stack aborts before the depth guard.
         // Execute6DF0E7..6DF134 (original instructions) iterates the live registry in order and ignores Spring's
         // result. Re-read its live length after every synchronous callback.
+        // 6DF112..6DF119 passes Spring7265C0 a NULL object and the empty
+        // Cell [B0E680], never this Spring's own object or Cell.
         if action.entry.kind == ACTION_FORCE_TRIGGER {
             if let Some(DefinitionReference::Trigger(target)) = action.reference {
                 let mut ordinal = 0;
@@ -3452,7 +3454,7 @@ impl Simulation {
                     {
                         self.spring_live_trigger(
                             live,
-                            context.input,
+                            TagEventInput::default(),
                             effects,
                             rules,
                             overlay_registry,
@@ -3678,7 +3680,7 @@ impl Simulation {
                     .with_effects(frame_effects),
             ),
             51 => {
-                //6DED66 calls the incoming House's577C90 map transition,
+                //6DEF9B calls the incoming House's577C90 map transition,
                 //then returns AL1 independently of the void service result.
                 self.trigger_reshroud_map(context.incoming_house, rules);
             }
@@ -4391,7 +4393,7 @@ impl Simulation {
                 }
             }
             100 | 117 => {
-                // Execute6DF546/6DF90E -> radar movie5BFF50. Preparation,
+                // Execute6DF546/6DF90E -> radar movie5BF390. Preparation,
                 // the game-mode gate and missing-media handling are app-owned;
                 // the action returns success independently of queue admission.
                 effects.push(TriggerEffect::RadarMovie {
@@ -5117,7 +5119,7 @@ impl Simulation {
                 }
             }
             1 | 2 | ACTION_ANNOUNCE_WIN | ACTION_ANNOUNCE_LOSE | ACTION_END_SCENARIO => {
-                //6DDCB1/6DDD23 and6DF399..6DF3CE use PlayerPtr, not the
+                //6DEA37/6DEA67 and6DDD77/6DDD93/6DDDAF use PlayerPtr, not the
                 //incoming Trigger House. The shared House result/timer
                 //owner drives normal frame termination and ScenarioExit.
                 use crate::sim::house_state::HouseOutcomeKind;
