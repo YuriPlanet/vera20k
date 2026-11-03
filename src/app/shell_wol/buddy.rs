@@ -96,18 +96,6 @@ pub(crate) fn open_art(state: &mut AppState) -> bool {
     state.frontend.wol_buddy_art.is_some()
 }
 
-/// `0x0078BF7D`: the lobby's Buddy List writes mode 5 with return mode 4
-/// and its runner ends; the mode-loop pass applies, and the login category
-/// is unchanged, so the Buddy List runner follows at once.
-pub(super) fn enter_from(state: &mut AppState, from: WolMode) {
-    if let Some(visit) = state.frontend.wol.as_mut() {
-        visit.mode = Some(WolMode::PlayBuddy);
-        visit.return_mode = Some(from);
-    }
-    super::apply_wol_preferences(state);
-    open(state);
-}
-
 /// The runner's entry (steps 1-2): the chat-lobby list behind its wait.
 pub(super) fn open(state: &mut AppState) {
     super::lobby::open_buddy_runner(state);
@@ -179,13 +167,7 @@ fn returned(state: &mut AppState) {
     let mode = visit.return_mode.take();
     super::lobby::drop_runner(state);
     match mode {
-        Some(WolMode::CustomMatch) => {
-            if let Some(visit) = state.frontend.wol.as_mut() {
-                visit.mode = Some(WolMode::CustomMatch);
-            }
-            super::apply_wol_preferences(state);
-            super::lobby::open(state, false);
-        }
+        Some(WolMode::CustomMatch) => super::reopen_lobby(state),
         Some(WolMode::MyInformation) => {
             if let Some(visit) = state.frontend.wol.as_mut() {
                 visit.mode = Some(WolMode::MyInformation);

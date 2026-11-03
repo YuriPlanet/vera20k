@@ -330,7 +330,8 @@ fn quick_match_start(state: &mut AppState, name: &str) {
 /// (`0x007A7F72..0x007A8014`): its own node with a side and a colour, and
 /// exactly two channel users, accept at once: `"A1"` channel-wide
 /// (API+0x3C). The text is the host's digit-led options, and the parse
-/// already dropped it while a match runs or a start is pending.
+/// already dropped it while a match runs or a start is pending. VERA: the
+/// online lobby's verified map runs it again (`accept_network_map_source`).
 /// RESIDUAL: the channel-owner gate (`0x007931A0`, the first operator is
 /// not this user) holds for every guest the matchbot names.
 pub(super) fn quick_match_accept(state: &mut AppState) {

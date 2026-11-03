@@ -1213,6 +1213,9 @@ pub(crate) struct LiveOnlineConfig {
     pub loading_host_loss: Option<String>,
     /// External owned kill after ordinary100, before the original host installs live gameplay.
     pub startup_host_loss: Option<String>,
+    /// Each round queues through the lobby's Quick Match; the matchbot sets
+    /// the match up and the configured host must be its host.
+    pub quick_match: bool,
     pub loading_output: Option<PathBuf>,
     pub loading_cancel: Option<LoadingCancelConfig>,
     pub observe_loading: bool,
@@ -1419,6 +1422,7 @@ where
     let mut online_start = None;
     let mut online_frames = None;
     let mut online_simple = false;
+    let mut online_quick_match = false;
     let mut online_latency = false;
     let mut online_mass = false;
     let mut online_network_checkpoint = None;
@@ -1628,6 +1632,10 @@ where
             "--online-simple-input" => {
                 ensure!(!online_simple, "duplicate --online-simple-input");
                 online_simple = true;
+            }
+            "--online-quick-match" => {
+                ensure!(!online_quick_match, "duplicate --online-quick-match");
+                online_quick_match = true;
             }
             _ => bail!("unknown shell-capture option {flag:?}"),
         }
@@ -1865,6 +1873,24 @@ where
             "more than two players requires --online-simple-input or --online-mass-input"
         );
         ensure!(
+            !online_quick_match
+                || (players == 2
+                    && online_ai.is_none()
+                    && online_mode_id.is_none()
+                    && online_map.is_none()
+                    && online_start.is_none()
+                    && !online_failure
+                    && !online_latency
+                    && !online_mass
+                    && !profile_check
+                    && online_network_checkpoint.is_none()
+                    && online_exit_checkpoint.is_none()
+                    && online_loading_host_loss.is_none()
+                    && online_startup_host_loss.is_none()
+                    && online_loading_cancel.is_none()),
+            "--online-quick-match requires a normal online pair; the matchbot sets the match up"
+        );
+        ensure!(
             !online_map
                 .as_deref()
                 .is_some_and(|file| file.eq_ignore_ascii_case("RandMap.Sed"))
@@ -1964,6 +1990,7 @@ where
                 .map(|_| output_dir.clone()),
             loading_host_loss: online_loading_host_loss,
             startup_host_loss: online_startup_host_loss,
+            quick_match: online_quick_match,
         })
     } else {
         ensure!(
@@ -1984,7 +2011,8 @@ where
                 && online_startup_host_loss.is_none()
                 && online_loading_cancel.is_none()
                 && online_loading_cancel_checkpoint.is_none()
-                && !observe_loading,
+                && !observe_loading
+                && !online_quick_match,
             "online options require an online live checkpoint"
         );
         None
@@ -3695,6 +3723,28 @@ mod tests {
         assert_eq!(config.account, "Peer");
         assert_eq!(config.host, "Host");
         assert_eq!(config.players, 2);
+        assert!(!config.quick_match);
+    }
+
+    #[test]
+    fn online_quick_match_capture_leaves_the_match_to_the_matchbot() {
+        let output = new_output_path("online-quick-match");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-guest".into();
+        values.extend(args(&[
+            "--online-account",
+            "Peer",
+            "--online-host",
+            "Host",
+            "--online-quick-match",
+        ]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture")
+        };
+        assert!(request.live_online.unwrap().quick_match);
+        values.extend(args(&["--online-map", "host-only.map"]));
+        assert!(parse_launch_args(values).is_err());
     }
 
     #[test]
