@@ -18,10 +18,10 @@ use crate::rules::ini_parser::is_native_none_type_name;
 use crate::rules::ini_value::{crt_atoi, truncate_native_bytes};
 use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
-use crate::util::state_hasher::hash_indices;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
+use crate::util::state_hasher::hash_indices;
 
 const ACTION_PLAY_SOUND: i32 = 19;
 const ACTION_FORCE_TRIGGER: i32 = 22;
@@ -726,6 +726,24 @@ pub struct TriggerRuntime {
     #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
     stop_before_action: Option<i32>,
+    /// Dev campaign trigger-trace capture: `Some` while recording.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    #[serde(skip)]
+    spring_log: Option<Vec<TriggerSpringRecord>>,
+}
+
+/// One Spring7265C0 call, recorded for the dev campaign trigger-trace capture.
+/// Observation only: it never feeds back into simulation state.
+#[cfg(any(test, feature = "dev-overlays"))]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct TriggerSpringRecord {
+    pub binary_frame: u32,
+    /// The TriggerType ID, as authored in the map's [Triggers].
+    pub trigger: String,
+    /// The event kind raised to the Tag (Force22 passes its own caller's).
+    pub raised_kind: i32,
+    /// Each executed action kind and whether Execute reported it handled.
+    pub actions: Vec<(i32, bool)>,
 }
 
 /// Draw-free transfer of the outgoing Scenario's local values into a fresh
@@ -2828,6 +2846,18 @@ impl Simulation {
             self.trigger_runtime.spring_actions_left = MAX_TRIGGER_SPRING_ACTIONS;
         }
         self.trigger_runtime.spring_depth += 1;
+        #[cfg(any(test, feature = "dev-overlays"))]
+        let record = self.trigger_runtime.spring_log.as_mut().map(|log| {
+            log.push(TriggerSpringRecord {
+                binary_frame: self.session.binary_frame(),
+                trigger: self.trigger_runtime.definitions.trigger_types[type_index]
+                    .id
+                    .clone(),
+                raised_kind: input.kind,
+                actions: Vec::new(),
+            });
+            log.len() - 1
+        });
         let mut result = false;
         for ordinal in 0..count {
             if self.trigger_runtime.spring_actions_left == 0 {
@@ -2839,7 +2869,7 @@ impl Simulation {
             let context = self.trigger_action_context(type_index, Some(index), input, rules);
             let action =
                 self.trigger_runtime.definitions.trigger_types[type_index].actions[ordinal].clone();
-            result |= self.apply_live_trigger_action(
+            let handled = self.apply_live_trigger_action(
                 &action,
                 context,
                 effects,
@@ -2847,9 +2877,31 @@ impl Simulation {
                 overlay_registry,
                 frame_effects,
             );
+            #[cfg(any(test, feature = "dev-overlays"))]
+            if let (Some(record), Some(log)) = (record, self.trigger_runtime.spring_log.as_mut()) {
+                log[record].actions.push((action.entry.kind, handled));
+            }
+            result |= handled;
         }
         self.trigger_runtime.spring_depth -= 1;
         result
+    }
+
+    /// Start or stop recording Spring calls for the dev trigger-trace capture.
+    /// Stopping drops anything not yet taken.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    pub fn record_trigger_springs(&mut self, on: bool) {
+        self.trigger_runtime.spring_log = on.then(Vec::new);
+    }
+
+    /// The Spring calls recorded since the last take, oldest first.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    pub fn take_trigger_springs(&mut self) -> Vec<TriggerSpringRecord> {
+        self.trigger_runtime
+            .spring_log
+            .as_mut()
+            .map(std::mem::take)
+            .unwrap_or_default()
     }
 
     /// Diagnostic admission for a later campaign countdown without playing
