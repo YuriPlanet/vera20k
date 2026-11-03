@@ -236,7 +236,7 @@ fn lay_spiral(
         );
 
         // 62F5FA..62F654: the constructor, both coordinates the point.
-        let mut particle = Particle::new_with_ground(
+        let (mut particle, start_rgb) = Particle::new_with_ground(
             particle_type_id,
             point,
             point,
@@ -244,7 +244,6 @@ fn lay_spiral(
             sim,
             |sim, x, y| super::spark_world::constructor_ground_height(sim, x, y),
         )?;
-        let start_rgb = super::spark_spawn::constructor_start_color(sim, particle_type)?;
 
         // 62F658..62F7AF: the drift direction is the ring vector plus three
         // movement draws (the third on X), normalized when non-zero.

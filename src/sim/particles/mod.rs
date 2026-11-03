@@ -325,6 +325,7 @@ impl Particle {
     /// normalized direction and drift. Original Particle62B5E0 reaches
     /// Abstract410230 -> Scenario68BCB0 before its lifetime draw. Spark, Fire,
     /// Smoke and Gas all use this boundary; children never join global Logic.
+    /// Gas, Smoke and Fire read no colour, so the seed is dropped here.
     /// Executed constructor/CRC controls: tools/procedural_drawing_oracle/electric_bolt.
     pub(super) fn new(
         type_id: ParticleTypeId,
@@ -333,16 +334,18 @@ impl Particle {
         pt: &ParticleType,
         sim: &mut Simulation,
     ) -> Self {
-        let particle = Self::new_with_ground(type_id, coords, target, pt, sim, |sim, x, y| {
-            spark_world::constructor_ground_height(sim, x, y)
-        })
-        .expect("particle construction requires supported ground facts");
+        let (particle, _start_rgb) =
+            Self::new_with_ground(type_id, coords, target, pt, sim, |sim, x, y| {
+                spark_world::constructor_ground_height(sim, x, y)
+            })
+            .expect("particle construction requires supported ground facts");
         Simulation::reveal_particle(&mut sim.substrate, particle.stable_id);
         particle
     }
 
-    /// Constructor62B5E0 terrain seam used by the existing Spark controls.
-    /// Spark registers only after its conditional color initialization.
+    /// Constructor62B5E0 terrain seam used by the existing Spark controls,
+    /// with the start colour its seed (`0x0062BA51`) picks for any type with
+    /// a `ColorList`. Spark registers only after that colour initialization.
     pub(super) fn new_with_ground<E, F>(
         type_id: ParticleTypeId,
         coords: IVec3,
@@ -350,7 +353,7 @@ impl Particle {
         pt: &ParticleType,
         sim: &mut Simulation,
         mut ground: F,
-    ) -> Result<Self, E>
+    ) -> Result<(Self, [u8; 3]), E>
     where
         F: FnMut(&Simulation, i32, i32) -> Result<Option<i32>, E>,
     {
@@ -380,7 +383,9 @@ impl Particle {
         let location = floor_constructor_coords_with(coords, |x, y| ground(sim, x, y))?;
         let direction = spawn::native_velocity(coords, target);
         let advance = spawn::spawn_state_ai_advance(pt, coords, target, direction, velocity);
-        Ok(Particle {
+        let start_rgb = spark_spawn::constructor_start_color(sim, pt)
+            .expect("a ranged draw scales to a finite colour fraction");
+        let particle = Particle {
             stable_id,
             native_unique_id,
             type_id,
@@ -405,7 +410,8 @@ impl Particle {
             spark: None,
             railgun: None,
             prev_delta: [0; 3],
-        })
+        };
+        Ok((particle, start_rgb))
     }
 }
 
@@ -563,9 +569,10 @@ impl ParticleSystem {
     /// The owner's release of `+0x304` (Foot `0x004D954B`, Assign_Target
     /// `0x006FCF78`, ReceiveDamage `0x00702220`) calls this system's vt+0xF8,
     /// which only sets the done byte (`0x006301E0`), and clears the slot. Only
-    /// this system's AI reads that byte, so the system sets it here, before
-    /// its first read, once its owner no longer holds it. An owner gone
-    /// altogether also ends spawning: AI_Fire's owner test sets the byte too.
+    /// this system's AI reads that byte, whatever its behavior, so the system
+    /// sets it here, before each of those reads, once its owner no longer
+    /// holds it. An owner gone altogether also ends spawning: AI_Fire's owner
+    /// test sets the byte too.
     pub(crate) fn apply_fire_link_release(&mut self, entities: &crate::sim::entity_store::EntityStore) {
         if !self.owner_fire_link {
             return;

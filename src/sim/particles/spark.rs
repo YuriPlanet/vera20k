@@ -469,9 +469,6 @@ pub fn advance_color(
     let Ok(color_count_i32) = i32::try_from(color_count) else {
         return Err(SparkKernelError::InvalidColorCount(color_count));
     };
-    if color_count_i32 < 2 {
-        return Err(SparkKernelError::InvalidColorCount(color_count));
-    }
     advance_point_color(
         &mut spark.color_index,
         &mut spark.color_accumulator,
@@ -697,8 +694,10 @@ mod tests {
         assert_eq!(rng.logical_state(), expected_rng.logical_state());
     }
 
+    /// A one-colour list makes `count - 2` negative, so a full accumulator
+    /// holds at 1.0 on that colour (`0x0062C494..0x0062C530`), never an error.
     #[test]
-    fn color_error_keeps_native_prior_commits_and_rng_but_not_lifetime() {
+    fn a_one_color_list_holds_its_color() {
         let mut particle = particle(IVec3::new(2560, 2560, 10), F32_ZERO, 2);
         let mut rng = SimRng::new(1);
         let mut expected_rng = rng.clone();
@@ -708,19 +707,20 @@ mod tests {
             &mut particle,
             SparkTickInputs {
                 gravity: F32_SIX,
-                color_speed: F64_ZERO,
+                color_speed: NativeF64Bits::from_bits(0x4000_0000_0000_0000),
                 color_count: 1,
                 collision: facts(0),
             },
             &mut rng,
         );
 
-        assert_eq!(result, Err(SparkKernelError::InvalidColorCount(1)));
-        assert_eq!(particle.spark.unwrap().velocity_z.bits(), 0xc0c0_0000);
-        assert_eq!(particle.coords, IVec3::new(2560, 2560, 0));
-        assert!(particle.marked_for_deletion);
+        assert!(result.is_ok(), "{result:?}");
+        let spark = particle.spark.unwrap();
+        assert_eq!(
+            (spark.color_index, spark.color_accumulator),
+            (0, NativeF64Bits::ONE)
+        );
         assert_eq!(rng.logical_state(), expected_rng.logical_state());
-        assert_eq!(particle.lifetime_remaining, 2);
     }
 
     #[test]

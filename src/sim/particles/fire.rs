@@ -92,8 +92,12 @@ pub(super) struct FireHit {
 /// owner and commits damage through the world's owners; the native
 /// comparison replays recorded owner facts and records the hits.
 pub(super) trait FireWorld {
-    fn owner(&mut self, sim: &Simulation, rules: &RuleSet, owner: Option<u64>)
-    -> Option<OwnerFacts>;
+    fn owner(
+        &mut self,
+        sim: &Simulation,
+        rules: &RuleSet,
+        owner: Option<u64>,
+    ) -> Option<OwnerFacts>;
     fn receive_damage(&mut self, sim: &mut Simulation, rules: &RuleSet, hit: FireHit);
 }
 
@@ -113,10 +117,15 @@ impl FireWorld for LiveFire<'_> {
         let alive = entity.is_object_alive();
         let frame = sim.session.binary_frame();
         let terrain = sim.resolved_terrain.as_ref();
+        // 0x0062FA20 tests +0x2B4, which the killing hit already cleared.
         let sweep = entity
             .attack_target
             .target()
-            .filter(|_| alive && entity.body_facing.is_rotating(frame))
+            .filter(|&target| {
+                alive
+                    && crate::sim::combat::target_present(Some(target), sim)
+                    && entity.body_facing.is_rotating(frame)
+            })
             .and_then(|target| {
                 let cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::canonical);
                 let target = target_get_coords(target, sim, cells.as_ref())?;
@@ -341,10 +350,9 @@ fn wobble_target(frame: i32, location: IVec3, target: IVec3) -> IVec3 {
         )
         .expect("the divisor is 3 or 9"),
     );
-    let octant = crate::sim::wave::direction_from_projected(
-        (location.x, location.y),
-        (target.x, target.y),
-    ) as usize;
+    let octant =
+        crate::sim::wave::direction_from_projected((location.x, location.y), (target.x, target.y))
+            as usize;
     IVec3::new(
         target.x.wrapping_add(OCTANT_X[octant].wrapping_mul(step)),
         target.y.wrapping_add(OCTANT_Y[octant].wrapping_mul(step)),
@@ -409,13 +417,18 @@ pub(super) fn tick_particle(
     // 0x0062CB36..0x0062CBC1: this frame's step, the direction scaled by
     // 1 + 0.02·(Random() % 10 − 5) and the speed. X and Y pass through
     // floats first; Z does not.
-    let raw = sim.particle_rng().next_raw_modulo_signed(10).wrapping_sub(5);
+    let raw = sim
+        .particle_rng()
+        .next_raw_modulo_signed(10)
+        .wrapping_sub(5);
     let jitter = X87::add(
         X87::mul(X87::load_i32(raw), X87::load_f64(JITTER_STEP)),
         X87::load_f64(NativeF64Bits::ONE),
     );
     let speed = X87::load_f32(p.velocity);
-    let [x, y, z] = p.direction.map(|axis| X87::mul(jitter, X87::load_f32(axis)));
+    let [x, y, z] = p
+        .direction
+        .map(|axis| X87::mul(jitter, X87::load_f32(axis)));
     let through_float = |value| X87::load_f32(X87::store_f32_masked_chop(value));
     p.prev_delta = [
         X87::ftol_i32_low_masked(X87::mul(through_float(x), speed)),

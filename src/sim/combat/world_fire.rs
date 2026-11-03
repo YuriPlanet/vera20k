@@ -1295,6 +1295,29 @@ pub(crate) fn snapshot_get_rof(
 /// Answers the bullet `TechnoClass::FireAt @ 0x006FDD50` returns: the one
 /// launched, or `None` where it returns NULL (Suicide, a refused sonic shot, the
 /// spawner, drain and DiskLaser arms, and a launch with no solution).
+/// FireAt's Fire and Spark arms (`0x006FF15F..0x006FF1A7`,
+/// `0x006FF1AD..0x006FF1F5`) construct the weapon's AttachedParticleSystem
+/// alike (`0x0062DC50`): from the retained launch source toward the target,
+/// owned by the firer, with no House.
+fn fireat_attached_system(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    weapon: &WeaponType,
+    snap: &AttackerSnapshot,
+    launch: glam::IVec3,
+) -> Option<u64> {
+    let type_id = rules.ps_type_id_by_name(weapon.attached_particle_system.as_deref()?)?;
+    world.spawn_particle_system(
+        type_id,
+        launch,
+        Some(snap.target),
+        Some(snap.stable_id),
+        glam::IVec3::ZERO,
+        None,
+        rules,
+    )
+}
+
 pub(super) fn emit_admitted_fire(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -1944,8 +1967,12 @@ pub(super) fn emit_admitted_fire(
         entity.fire_voxel_recoil(obj.has_turret);
     }
     // FireAt6FF15F..6FF1A7: a UseFireParticles weapon with no live +304
-    // system builds its AttachedParticleSystem from the launch source toward
-    // the target, owned by the firer, exactly as the Spark arm below does.
+    // system builds its AttachedParticleSystem as the Spark arm below does.
+    let launch = glam::IVec3::new(
+        launch_source.coord.x,
+        launch_source.coord.y,
+        launch_source.coord.z,
+    );
     if weapon.use_fire_particles
         && world
             .substrate
@@ -1953,25 +1980,7 @@ pub(super) fn emit_admitted_fire(
             .get(snap.stable_id)
             .is_some_and(|firer| firer.fire_particle_system.system().is_none())
     {
-        let system = weapon
-            .attached_particle_system
-            .as_deref()
-            .and_then(|name| rules.ps_type_id_by_name(name))
-            .and_then(|type_id| {
-                world.spawn_particle_system(
-                    type_id,
-                    glam::IVec3::new(
-                        launch_source.coord.x,
-                        launch_source.coord.y,
-                        launch_source.coord.z,
-                    ),
-                    Some(snap.target),
-                    Some(snap.stable_id),
-                    glam::IVec3::ZERO,
-                    None,
-                    rules,
-                )
-            });
+        let system = fireat_attached_system(world, rules, weapon, snap, launch);
         if let Some(system) = system {
             world
                 .substrate
@@ -1993,25 +2002,7 @@ pub(super) fn emit_admitted_fire(
             .get(snap.stable_id)
             .is_some_and(|firer| firer.spark_particle_system.system().is_none())
     {
-        let system = weapon
-            .attached_particle_system
-            .as_deref()
-            .and_then(|name| rules.ps_type_id_by_name(name))
-            .and_then(|type_id| {
-                world.spawn_particle_system(
-                    type_id,
-                    glam::IVec3::new(
-                        launch_source.coord.x,
-                        launch_source.coord.y,
-                        launch_source.coord.z,
-                    ),
-                    Some(snap.target),
-                    Some(snap.stable_id),
-                    glam::IVec3::ZERO,
-                    None,
-                    rules,
-                )
-            });
+        let system = fireat_attached_system(world, rules, weapon, snap, launch);
         if let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
             firer.spark_particle_system.bind(system);
         }

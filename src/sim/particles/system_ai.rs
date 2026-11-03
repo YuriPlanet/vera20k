@@ -168,6 +168,8 @@ pub(crate) fn tick_particle_system(
         return false;
     };
     let behavior = rules.particle_system_type(sys.type_id).behaves_like;
+    // AI_Railgun reads the done byte first (`0x0062F242`).
+    apply_fire_link_release(sim, id);
     if behavior == ParticleSystemBehavesLike::Gas {
         // Gas damage may synchronously kill another animal and append to this
         // same system. Retain its body in storage through those callbacks.
@@ -185,6 +187,15 @@ pub(crate) fn tick_particle_system(
     true
 }
 
+/// An owner's `+0x304` release, applied before a read of the system's done
+/// byte ([`super::ParticleSystem::apply_fire_link_release`]).
+pub(super) fn apply_fire_link_release(sim: &mut Simulation, id: u64) {
+    let substrate = &mut sim.substrate;
+    if let Some(sys) = substrate.particle_systems.get_mut(id) {
+        sys.apply_fire_link_release(&substrate.entities);
+    }
+}
+
 /// The tail of `ParticleSystemClass::AI @ 0x0062FD60` after the subtype AI:
 /// the lifetime count and the done-and-empty retirement.
 pub(super) fn finish_system_visit(
@@ -192,6 +203,7 @@ pub(super) fn finish_system_visit(
     id: u64,
     context: crate::sim::world::UninitContext<'_>,
 ) {
+    apply_fire_link_release(sim, id);
     let Some(sys) = sim.substrate.particle_systems.get_mut(id) else {
         return;
     };

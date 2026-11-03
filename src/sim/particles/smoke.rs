@@ -116,6 +116,7 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
 
     //62F047: Smoke ignores Spawns and ParticleCap. Offset draws precede
     //the HoldsWhat lookup, even when the type index is absent.
+    super::system_ai::apply_fire_link_release(sim, id);
     let Some(sys) = sim.particle_systems().get(id) else {
         return;
     };

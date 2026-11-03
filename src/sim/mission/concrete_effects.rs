@@ -733,12 +733,16 @@ pub(crate) fn represented_assign_target_admitted(
 }
 
 /// The represented `Assign_Destination` write set, entity-local, for either
-/// mode: it never touches NavQueue.
+/// mode: it never touches NavQueue. A non-null destination is the Foot
+/// publication (`0x004D9510`) with its Fire link release.
 pub(crate) fn represented_assign_destination(
     entity: &mut crate::sim::game_entity::GameEntity,
     requested: Option<NavTargetRef>,
 ) {
-    entity.navigation.publish_nav_com(requested);
+    match requested {
+        Some(target) => crate::sim::movement::navcom::publish_nav_com(entity, target),
+        None => entity.navigation.publish_nav_com(None),
+    }
 }
 
 #[cfg(any(test, feature = "test-support"))]

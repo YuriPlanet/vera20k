@@ -2409,7 +2409,7 @@ impl GameEntity {
     }
 
     /// Release the Fire system link: Foot `Set_Destination_Internal` with a
-    /// destination (`0x004D954B`), `Assign_Target` to a target the object
+    /// destination (`0x004D954B`, `navcom::publish_nav_com`), `Assign_Target` to a target the object
     /// cannot fire at (`0x006FCF61`) and the death arm of ReceiveDamage
     /// (`0x00702216`) each call the system's vt+0xF8, which only sets its
     /// done byte (`0x006301E0`), and clear `+0x304`. Only the system's own AI

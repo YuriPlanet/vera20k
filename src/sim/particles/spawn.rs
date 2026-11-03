@@ -707,6 +707,30 @@ pub(super) fn spawn_state_ai_advance(
 #[cfg(test)]
 mod tests {
     use crate::sim::rng::SimRng;
+
+    /// The constructor's colour seed (`0x0062BA51`) draws for any type with a
+    /// `ColorList` and a start colour, a Fire type as much as a Spark one.
+    #[test]
+    fn a_fire_particle_with_start_colors_takes_the_constructor_color_draw() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[Particles]\n0=Flame\n[Flame]\nBehavesLike=Fire\nMaxEC=10\n\
+             ColorList=(255,255,255),(200,200,80)\nStartColor1=255,128,0\nStartColor2=128,64,32\n",
+        ))
+        .unwrap();
+        let kind = rules.p_type_id_by_name("Flame").unwrap();
+        let mut sim = Simulation::new();
+        let mut expected = sim.scenario_rng.clone();
+        expected.next_raw_abs_modulo(10);
+        expected.next_range_u32_inclusive(0, 0x7fff_fffe);
+        super::Particle::new(
+            kind,
+            IVec3::new(256, 256, 0),
+            IVec3::new(512, 256, 0),
+            rules.particle_type(kind),
+            &mut sim,
+        );
+        assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
+    }
     #[test]
     fn original_96_receiver_height_rows_gate_constructor_and_rng() {
         use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};

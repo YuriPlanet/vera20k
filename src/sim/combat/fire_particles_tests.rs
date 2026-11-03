@@ -5,6 +5,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::particle_system_type::ParticleSystemBehavesLike;
 use crate::rules::retail_ini_fixture::RetailBattleRules;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::combat::TargetKind;
 use crate::sim::command::Command;
 use crate::sim::vision::FogState;
 use crate::sim::world::Simulation;
@@ -157,4 +158,85 @@ fn a_move_order_releases_the_fire_system_link() {
     let released = sim.particle_systems().get(system).unwrap();
     assert!(released.done_spawning());
     assert!(!released.particles().is_empty());
+}
+
+/// Every Foot setter path publishes a destination through `0x004D9510`, the
+/// aircraft's included, and a non-null one releases `+0x304` (`0x004D954B`);
+/// a NULL destination keeps it.
+#[test]
+fn a_destination_releases_the_fire_link_and_a_null_one_keeps_it() {
+    use crate::sim::mission::concrete_effects::represented_assign_destination;
+    let mut tank = crate::sim::game_entity::GameEntity::test_default(1, "MTNK", "Americans", 4, 4);
+    tank.fire_particle_system.bind(Some(7));
+    represented_assign_destination(&mut tank, None);
+    assert_eq!(tank.fire_particle_system.system(), Some(7));
+    represented_assign_destination(
+        &mut tank,
+        Some(crate::sim::components::NavTargetRef::cell(5, 5)),
+    );
+    assert_eq!(tank.fire_particle_system.system(), None);
+}
+
+/// AI_Fire sweeps toward the owner's FLH while its Target pointer (`+0x2B4`)
+/// is set and its body turns (`0x0062FA20..0x0062FB84`). The killing hit
+/// clears that pointer, so a dying target stops the sweep though VERA still
+/// holds its id.
+#[test]
+fn a_dying_target_stops_the_fire_sweep() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0xF1A3_E001);
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
+    let owner = sim
+        .spawn_object("MTNK", "Americans", 16, 16, 64, rules)
+        .unwrap();
+    let target = sim
+        .spawn_object("E2", "Russians", 19, 16, 0, rules)
+        .unwrap();
+    let frame = sim.session.binary_frame();
+    let tank = sim.substrate.entities.get_mut(owner).unwrap();
+    tank.attack_target.set(Some(TargetKind::Entity(target)));
+    tank.body_facing.set(0x8000, frame);
+    assert!(tank.body_facing.is_rotating(frame));
+    let launch = glam::IVec3::new(2048, 2048, 0);
+    let system = sim
+        .spawn_particle_system(
+            rules.ps_type_id_by_name("FireStreamSys").unwrap(),
+            launch,
+            Some(TargetKind::Entity(target)),
+            Some(owner),
+            glam::IVec3::ZERO,
+            None,
+            rules,
+        )
+        .unwrap();
+    let visit = |sim: &mut Simulation| {
+        assert!(crate::sim::particles::system_ai::tick_particle_system(
+            sim,
+            rules,
+            system,
+            crate::sim::world::UninitContext::with_rules(rules),
+        ));
+        sim.particle_systems().get(system).unwrap().coords()
+    };
+    assert_ne!(
+        visit(&mut sim),
+        launch,
+        "a live target's sweep moves the system"
+    );
+    sim.substrate
+        .particle_systems
+        .get_mut(system)
+        .unwrap()
+        .set_coords_for_test(launch);
+    sim.substrate
+        .entities
+        .get_mut(target)
+        .unwrap()
+        .health
+        .set_for_test(0);
+    assert_eq!(visit(&mut sim), launch);
 }
