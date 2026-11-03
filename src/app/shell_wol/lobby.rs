@@ -448,6 +448,13 @@ pub(crate) fn current_channel(state: &AppState) -> Option<WolChannel> {
     lobby(state)?.current.clone()
 }
 
+/// A leave is out (`WOL:LeavingChannel`): VERA keeps its channel current
+/// until the leave lands, where native's wait (`0x00792BE0`) runs nothing
+/// else first.
+pub(crate) fn leaving(state: &AppState) -> bool {
+    lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::Leaving { .. }))
+}
+
 fn lobby_mut(state: &mut AppState) -> Option<&mut WolLobby> {
     state.frontend.wol.as_mut()?.lobby.as_deref_mut()
 }
