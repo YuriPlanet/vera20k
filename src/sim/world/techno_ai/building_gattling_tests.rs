@@ -86,6 +86,9 @@ fn retail_gattling_updates_its_loop_position_before_guard_releases_it() {
     let target = sim
         .spawn_object("MTNK", "Russians", 16, 12, 0, &rules)
         .unwrap();
+    // Seen, so Guard's release follows from the cleared target, not from the
+    // campaign discovery gate (`0x006F81BE`) hiding the tank from its scan.
+    crate::sim::arena_fixture::discover(&mut sim, target);
     assert!(sim.apply_command(
         "Americans",
         &Command::Attack {

@@ -78,6 +78,42 @@ fn campaign_player_scan_skips_an_enemy_the_player_has_not_discovered() {
     );
 }
 
+/// The production discovery the gate reads: with the campaign player
+/// installed, Techno vt+0x4A0's campaign prelude (`0x0070D997..0x0070D9C6`,
+/// [`Simulation::update_techno_discovery_from_shroud`]) leaves an enemy in
+/// shrouded ground undiscovered, so the player's tank refuses it, and
+/// discovers it once the player has revealed its ground.
+#[test]
+fn campaign_discovery_prelude_admits_an_enemy_once_its_ground_is_revealed() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (mut sim, tank, enemy) = rival_pair(rules, "MTNK", "HTNK");
+    let player = sim.interner.get("Americans").unwrap();
+    sim.session.set_current_house_for_test(Some(player));
+    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    let discovered = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(enemy)
+            .unwrap()
+            .discovery
+            .discovered_by_current_house()
+    };
+    sim.update_techno_discovery_from_shroud(enemy);
+    assert!(!discovered(&sim), "the enemy's ground is shrouded");
+    assert_eq!(guard_pick(&mut sim, rules, tank), None);
+
+    crate::sim::vision::reveal_radius(&mut sim.fog, player, 18, 16, 1);
+    sim.update_techno_discovery_from_shroud(enemy);
+    assert!(
+        discovered(&sim),
+        "the player has revealed the enemy's ground"
+    );
+    assert_eq!(guard_pick(&mut sim, rules, tank), Some(enemy));
+}
+
 /// Aircraft (WhatAmI 2) pass the campaign discovery gate: the player's IFV
 /// (HoverMissile, AA and AG) still takes an undiscovered paradrop plane.
 /// Retail's Kirov (`ZEP`) is a VehicleType, so it takes no exemption.
