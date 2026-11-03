@@ -99,9 +99,14 @@ impl AppState {
         self.render_dimensions().1
     }
 
-    /// The sidebar's place and size in the match frame (`ui::sidebar::frame`).
+    /// The sidebar's place and size in the match frame (`ui::sidebar::frame`),
+    /// drawn at the window's pixels when the match zooms.
     pub(crate) fn sidebar_frame(&self) -> crate::ui::sidebar::SidebarFrame {
+        let zoom = self
+            .match_zoom_pass()
+            .map_or(100, |pass| pass.geometry().percent);
         self.sidebar_frame_for(self.render_width(), self.render_height())
+            .in_window(zoom, false)
     }
 
     /// The same for a frame of `width` x `height`. Captures take their own
