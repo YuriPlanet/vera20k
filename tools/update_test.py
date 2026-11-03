@@ -113,8 +113,11 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def run(*command, **options) -> None:
-    subprocess.run([str(part) for part in command], check=True, **options)
+def run(*command, timeout: float | None = None, **options) -> None:
+    try:
+        subprocess.run([str(part) for part in command], check=True, timeout=timeout, **options)
+    except subprocess.TimeoutExpired:
+        raise SystemExit(f"{Path(str(command[0])).name} still running after {timeout:.0f} s")
 
 
 def publish(work: Path, key: Path, version: str, release: Path | None) -> Path:
@@ -240,10 +243,12 @@ def install(work: Path, release: Path, program: Path, game_folder: Path, quarant
     if platform() == "windows":
         folder = work / "Test Player/VERA"
         run(release, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/DIR={folder}",
-            f"/GAMEDIR={game_folder}", f"/LOG={work / 'setup.log'}")
+            f"/GAMEDIR={game_folder}", f"/LOG={work / 'setup.log'}", timeout=300)
         shutil.copyfile(program, folder / "vera20k.exe")
+        # vera20k*: the game and any setup (vera20k-X.Y.Z-windows-x64-setup.exe
+        # and its .tmp) that an update left running.
         return Game(folder / "vera20k.exe", folder, [str(folder / "vera20k.exe")],
-                    ["taskkill", "/F", "/IM", "vera20k.exe"], cwd=folder)
+                    ["taskkill", "/F", "/T", "/IM", "vera20k*"], cwd=folder)
     data = data_folder()
     if platform() == "macos":
         mount = work / "release-mount"
@@ -306,7 +311,12 @@ def play(game: Game, scenario: str, version: str, attended: bool) -> None:
     kept = game.files()
     offset = game.log.stat().st_size if game.log.exists() else 0
     started = time.monotonic()
-    subprocess.Popen(game.start, cwd=game.cwd, env=dict(os.environ, **game.env))
+    # On Windows the game would hand the step's output to the setup it starts
+    # and the game that setup restarts, and the step can wait for whichever of
+    # them still holds it, past its own timeout, however the test ended.
+    detached = ({"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+                if platform() == "windows" else {})
+    subprocess.Popen(game.start, cwd=game.cwd, env=dict(os.environ, **game.env), **detached)
     failed = r"Updater: (check failed|updating to \S+ failed|cannot \w+)[^\n]*"
     if scenario == "update":
         if attended:
@@ -365,6 +375,21 @@ def tamper(objects: Path, scenario: str, version: str) -> None:
         path.write_bytes(bytes(data))
 
 
+def report(work: Path, game: Game | None) -> None:
+    """What a failed run leaves to explain it: the setup and game logs (the
+    Windows ones are all under `work`) and, on Windows, the game and setup
+    processes still running."""
+    logs = set(work.rglob("*.log"))
+    if game and game.log.exists():
+        logs.add(game.log)
+    for log in sorted(logs):
+        print(f"--- {log}, last 4000 characters:\n{log.read_text('utf-8', 'replace')[-4000:]}", flush=True)
+    if platform() == "windows":
+        listing = subprocess.run(["tasklist", "/V", "/FI", "IMAGENAME eq vera20k*"], capture_output=True,
+                                 text=True, timeout=30)
+        print(f"--- vera20k* processes:\n{listing.stdout}{listing.stderr}", flush=True)
+
+
 def command_run(args) -> None:
     with tempfile.TemporaryDirectory(prefix="vera20k-update-test-", ignore_cleanup_errors=True) as temp:
         work = Path(temp)
@@ -397,6 +422,12 @@ def command_run(args) -> None:
                     shutil.copytree(rekeyed if scenario == "rekey" else pristine, objects)
                     tamper(objects, scenario, args.version)
                     play(game, scenario, args.version, args.attended)
+            except BaseException:
+                try:
+                    report(work, game)
+                except Exception as error:
+                    print(f"cannot report the failed run: {error}", flush=True)
+                raise
             finally:
                 server.shutdown()
                 if game:
@@ -405,6 +436,15 @@ def command_run(args) -> None:
                     time.sleep(2)
                 remove_installed()
     print(f"update test passed: {', '.join(args.scenario)}")
+
+
+def update_key(directory: Path) -> str:
+    """A new signing key whose public half Git Bash passes on unchanged: it
+    rewrites a value starting with "/" as a path before a native program such
+    as Cargo sees it (MSYS2 path conversion), and the build embeds that."""
+    while (key := signing_key(directory)[1]).startswith("/"):
+        pass
+    return key
 
 
 def command_fixture(directory: Path) -> None:
@@ -452,7 +492,7 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("--quarantine needs --attended on macOS: a person allows the first start")
     if args.command == "key":
         args.directory.mkdir(parents=True, exist_ok=True)
-        print(signing_key(args.directory)[1])
+        print(update_key(args.directory))
     elif args.command == "run":
         command_run(args)
     else:
