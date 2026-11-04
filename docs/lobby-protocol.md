@@ -541,8 +541,9 @@ password. Every request below is a `POST` with a JSON body; a refusal's
   the `x@y.z` shape, one account each.
 - `/v1/accounts/verify` `{name,code}` returns 200 and creates the account: 400
   `invalid_code` (5 tries), 410 `code_expired` (30 minutes, or the tries used up).
-- `/v1/accounts/forgot` `{name}` always returns 202, and mails a code to that account's
-  email when there is one.
+- `/v1/accounts/forgot` `{name}` returns 202 whether or not the name has an account,
+  and mails a code to the account's email when it has one. It refuses a malformed
+  name (400) and too many requests (429).
 - `/v1/accounts/reset` `{name,code,password}` returns 200, sets the password, signs out
   every remembered computer and mails the owner. It refuses as verify does, and with
   `invalid_password`.
@@ -552,25 +553,29 @@ password. Every request below is a `POST` with a JSON body; a refusal's
 At `/v1/sessions` an account's name needs its `password` or a `sign_in_token`, never
 both: with neither it returns 403 `name_claimed`, with a wrong one 403 `wrong_password`,
 and 10 wrong passwords in an hour return 429 `account_locked` for 15 minutes and mail
-the owner. `remember:true` with the right password adds a `sign_in_token` (32 bytes,
-base64url without padding) and `account:true` to the response. A password for a name
-without an account returns 404 `no_account`; otherwise that name enters as a guest.
+the owner. 30 wrong passwords from one network in an hour return 429 `rate_limited`.
+An account's sign-in has `account:true` in the response, and `remember:true` with the
+right password adds a `sign_in_token` (32 bytes, base64url without padding). A password
+or `sign_in_token` for a name without an account returns 404 `no_account`; otherwise
+that name enters as a guest. A lobby without accounts set up refuses a password with
+503 `accounts_unavailable`.
 
 VERA20k's online login page has Password and Remember password under the name, and
 Create Account and Forgot Password under Login. Create Account asks for the name,
 email and password, then the mailed code, and signs in. Forgot Password mails the
 typed name's code, then asks for it and a new password, and signs in. A remembered
 sign-in lives in `Account.json` beside `VERA.INI` as `{name, sign_in_token}` per lobby,
-readable only by its owner; the page then shows the name with a masked password. A
-Login that does not use it, such as one with Remember password unticked, forgets it
-here and at the lobby, and a `wrong_password` answer to it forgets it here.
+readable only by its owner; the page then shows the name with a masked password.
+Unticking Remember password forgets it here and at the lobby, and so does a password
+sign-in of that name or a remembered sign-in of another account. A `wrong_password` or
+`no_account` answer to it forgets it too. Signing in under another name leaves it.
 
 ## Ranked games
 
 While the operator runs a season, the lobby ranks a 1v1 Quick Match pairing played by its
 two players alone, and a game room's match in a mode that lets players ally, with every
 player on one of two teams of the same size (at least two each) whose chances are within
-80/20. Ranked matches have no AI, and every player signed in to an account.
+80/20. Ranked matches have no AI, and every player is signed in to an account.
 
 A host who unticks Ranked game at Create Game sends `ranked:false` on `create`, and that
 room's games never rank; its odds line says why. A ticked box sends nothing, as a lobby

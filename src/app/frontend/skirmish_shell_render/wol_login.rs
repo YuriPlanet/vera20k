@@ -68,8 +68,8 @@ pub(crate) fn paint_wol_login_children(
     for (index, (key, rect)) in layout.labels.iter().enumerate() {
         paint.texts.push(text(
             &match (online, index) {
-                (true, 0) => "Username".to_owned(),
-                (true, _) => "Password".to_owned(),
+                (true, 0) => label("VERA:Username"),
+                (true, _) => label("VERA:Password"),
                 _ => label(key),
             },
             *rect,
@@ -174,11 +174,11 @@ pub(crate) fn paint_wol_login_children(
             scale,
         );
         paint.texts.push(text(
-            &if online {
-                "Remember password".to_owned()
+            &label(if online {
+                "VERA:RememberPassword"
             } else {
-                label("GUI:RememberAccount")
-            },
+                "GUI:RememberAccount"
+            }),
             crate::ui::skirmish_shell::checkbox_text_rect(layout.remember, scale),
             ShellAlign::V_CENTER,
             wol_button_label_rgb(login.remember_enabled),
@@ -249,7 +249,7 @@ pub(crate) fn paint_wol_account_form(
         .zip(&layout.fields)
         .map(|(field, (caption, _))| {
             plain(
-                field.label.to_owned(),
+                csf_label(state, field.label),
                 *caption,
                 ShellAlign::H_RIGHT,
                 SHELL_LABEL_TEXT_RGB,

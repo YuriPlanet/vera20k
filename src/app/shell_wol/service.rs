@@ -122,6 +122,9 @@ pub(crate) enum WolServiceRequest {
     /// VERA online: a lobby account request; the answer is
     /// [`WolServiceEvent::Account`].
     Account(crate::ui::wol_account::AccountRequest),
+    /// VERA online: Remember password was unticked for the remembered
+    /// account; this computer forgets its sign-in, here and at the lobby.
+    ForgetSignIn,
     /// Forget Account: API+0x94(slot, "", "", 1).
     ForgetCredential { slot: u32 },
     /// Remember after a login: `0x00789500(nickname, password, changed,

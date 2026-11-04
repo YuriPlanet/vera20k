@@ -19,7 +19,8 @@ use crate::ui::shell::layout::status_line_rect;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::skirmish_shell::{COMBO_FACE_H, SavedSeedDescriptionEdit};
 use crate::ui::wol_account::{
-    AccountRequest, AccountSignIn, WolAccountForm, valid_name, valid_password,
+    AccountRequest, AccountSignIn, NAME_LIMIT as ONLINE_NAME_LIMIT,
+    PASSWORD_LIMIT as ONLINE_PASSWORD_LIMIT, WolAccountForm, valid_name, valid_password,
 };
 
 pub(crate) const DIALOG: DialogId = DialogId(0x010F);
@@ -40,8 +41,6 @@ pub(crate) const NICKNAME_LIMIT: usize = 9;
 pub(crate) const PASSWORD_LIMIT: usize = 8;
 /// Login is enabled only for a password of exactly this length.
 const PASSWORD_LENGTH: usize = 8;
-/// An online account's password edit.
-const ONLINE_PASSWORD_LIMIT: usize = 64;
 /// What the password edit holds for a remembered account: masked, it shows
 /// that this computer signs in without the password.
 const REMEMBERED_PLACEHOLDER: [u16; 8] = [b'*' as u16; 8];
@@ -189,7 +188,7 @@ impl LoginPolicy {
     fn nickname_limit(self) -> usize {
         match self {
             Self::Legacy => NICKNAME_LIMIT,
-            Self::Online => 24,
+            Self::Online => ONLINE_NAME_LIMIT,
         }
     }
 
@@ -263,6 +262,9 @@ pub(crate) enum WolLoginAction {
     Close(u16),
     /// VERA: Forgot Password opened its popup; the lobby mails the code.
     Account(AccountRequest),
+    /// VERA online: Remember password was unticked for the remembered
+    /// account, which this computer forgets at once.
+    ForgetSignIn,
     /// Forget Account found the nickname in the combo: API+0x94 clears the
     /// slot, after AutoLogin/LastValid were cleared when they matched.
     Forget { slot: u32, nickname: String },
@@ -562,19 +564,23 @@ impl WolLoginState {
 
     /// `0x72D`'s click: the auto-checkbox toggles, then the proc stores its
     /// state in `0xB77E68`.
-    pub(crate) fn toggle_remember(&mut self, globals: &mut WolAccountGlobals) {
+    pub(crate) fn toggle_remember(
+        &mut self,
+        globals: &mut WolAccountGlobals,
+    ) -> Option<WolLoginAction> {
         if !self.remember_enabled {
-            return;
+            return None;
         }
         if self.remembered {
             // VERA online: unticked, this computer forgets the account at
-            // Login, which then needs its password.
+            // once, and its Login needs the password.
             self.forget_placeholder(globals);
             self.focus(PASSWORD);
-            return;
+            return Some(WolLoginAction::ForgetSignIn);
         }
         self.remember_checked = !self.remember_checked;
         globals.remember = self.remember_checked;
+        None
     }
 
     /// Activate a right-panel button. Disabled windows take no click.
@@ -613,7 +619,7 @@ impl WolLoginState {
         sign_in: AccountSignIn,
         globals: &mut WolAccountGlobals,
     ) -> Option<WolLoginAction> {
-        let remember = self.remember_checked && !self.remembered;
+        let remember = self.remember_checked;
         self.account = None;
         self.nickname
             .set_units_limited(sign_in.name.encode_utf16(), self.policy.nickname_limit());
@@ -1176,7 +1182,22 @@ mod tests {
         assert!(login.remembered && login.remember_checked && login.login_enabled);
         assert!(globals.password.is_empty() && globals.remember);
         assert_eq!(login.password.units.len(), REMEMBERED_PLACEHOLDER.len());
-        login.toggle_remember(&mut globals);
+        // Forgot Password's new password signs in, still remembered.
+        let reset = AccountSignIn {
+            name: "Tanya".into(),
+            password: "n3w-password".into(),
+        };
+        let mut reset_login = login.clone();
+        let mut reset_globals = globals.clone();
+        assert_eq!(
+            reset_login.sign_in(reset, &mut reset_globals),
+            Some(WolLoginAction::Close(LOGIN))
+        );
+        assert!(reset_globals.remember && reset_globals.password == "n3w-password");
+        assert_eq!(
+            login.toggle_remember(&mut globals),
+            Some(WolLoginAction::ForgetSignIn)
+        );
         assert!(!login.remembered && !globals.remember);
         assert!(login.password.units.is_empty());
         assert_eq!(login.focused_control, PASSWORD);

@@ -63,8 +63,12 @@ pub(super) enum Request {
         nickname: String,
         credential: Credential,
     },
-    /// An `/v1/accounts/` request, answered by [`Response::AccountAnswered`].
-    Account(crate::ui::wol_account::AccountRequest),
+    /// An `/v1/accounts/` request, answered by [`Response::AccountAnswered`]
+    /// with the same `attempt`.
+    Account {
+        attempt: u64,
+        request: crate::ui::wol_account::AccountRequest,
+    },
     /// `/v1/accounts/forget`: the lobby drops this computer's remembered
     /// sign-in. Nothing answers.
     ForgetSignIn {
@@ -272,11 +276,15 @@ pub(super) enum Response {
     SignInRefused {
         attempt: u64,
         message: String,
-        /// 403 `wrong_password`: the password or remembered sign-in is wrong.
-        wrong_password: bool,
+        /// 403 `wrong_password` or 404 `no_account`: the password or
+        /// remembered sign-in signs in to no account.
+        bad_credential: bool,
     },
     /// The answer to a [`Request::Account`], or the message to show.
-    AccountAnswered(Result<(), String>),
+    AccountAnswered {
+        attempt: u64,
+        answer: Result<(), String>,
+    },
     StartRejected {
         id: u64,
         /// 429, 5xx or no answer: the lobby, not the setup, refused it.
@@ -334,7 +342,9 @@ enum RequestFailure {
     /// the message to show.
     Account {
         status: u16,
-        wrong_password: bool,
+        /// `wrong_password` or `no_account`: the credential signs in to no
+        /// account.
+        bad_credential: bool,
         message: String,
     },
 }
@@ -434,15 +444,22 @@ impl RequestFailure {
     }
 
     /// An answer to `path`: an `/v1/accounts/` request's refusals all
-    /// carry their message, since `name_unavailable` there names an account.
+    /// carry their message, since `name_unavailable` there names an account,
+    /// and so do a sign-in's wrong passwords from one network and its
+    /// accounts being unavailable.
     fn answer(path: &str, status: u16, bytes: &[u8]) -> Self {
-        if !path.starts_with("/v1/accounts/") {
-            return Self::response(status, bytes);
-        }
         let value = serde_json::from_slice::<Value>(bytes).ok();
         let code = value
             .as_ref()
             .and_then(|value| value["error"]["code"].as_str());
+        let sign_in = path == "/v1/sessions"
+            && matches!(
+                (status, code),
+                (429, Some("rate_limited")) | (503, Some("accounts_unavailable"))
+            );
+        if !path.starts_with("/v1/accounts/") && !sign_in {
+            return Self::response(status, bytes);
+        }
         Self::account(status, code, value.as_ref())
     }
 
@@ -468,7 +485,7 @@ impl RequestFailure {
         });
         Self::Account {
             status,
-            wrong_password: code == Some("wrong_password"),
+            bad_credential: matches!(code, Some("wrong_password" | "no_account")),
             message,
         }
     }
@@ -1123,15 +1140,15 @@ macro_rules! serial_driver {
                     | RequestFailure::Full(_)
                     | RequestFailure::Account { .. }
                     | RequestFailure::Status(429))) => {
-                        let wrong_password = matches!(
+                        let bad_credential = matches!(
                             error,
-                            RequestFailure::Account { wrong_password: true, .. }
+                            RequestFailure::Account { bad_credential: true, .. }
                         );
                         let message = sign_in_refusal(error);
                         let _ = output.send(Response::SignInRefused {
                             attempt,
                             message,
-                            wrong_password,
+                            bad_credential,
                         });
                     }
                     Err(_) => {
@@ -1139,12 +1156,12 @@ macro_rules! serial_driver {
                     }
                 }
             }
-            Some(Request::Account(request)) => {
+            Some(Request::Account { attempt, request }) => {
                 let (path, body) = account_call(&request);
                 let answer = platform_await!(client.request(path, Some(&body)))
                     .map(|_| ())
                     .map_err(sign_in_refusal);
-                let _ = output.send(Response::AccountAnswered(answer));
+                let _ = output.send(Response::AccountAnswered { attempt, answer });
             }
             Some(Request::ForgetSignIn {
                 name,
@@ -1643,8 +1660,9 @@ mod tests {
     }
 
     /// An account's refusals show the lobby's words; only `wrong_password`
-    /// says a remembered sign-in no longer works, and an account request's
-    /// `name_unavailable` is a message, not a room's join code.
+    /// and `no_account` say a remembered sign-in no longer works, and an
+    /// account request's `name_unavailable` is a message, not a room's join
+    /// code.
     #[test]
     fn account_refusals_carry_the_lobby_message() {
         let refusal = |code: &str, message: &str| {
@@ -1658,15 +1676,23 @@ mod tests {
             wrong,
             RequestFailure::Account {
                 status: 403,
-                wrong_password: true,
+                bad_credential: true,
                 message: "Sign in again with your password.".into(),
             }
         );
+        let deleted = RequestFailure::response(404, br#"{"error":{"code":"no_account"}}"#);
+        assert!(matches!(
+            deleted,
+            RequestFailure::Account {
+                bad_credential: true,
+                ..
+            }
+        ));
         let claimed = RequestFailure::response(403, br#"{"error":{"code":"name_claimed"}}"#);
         assert!(!matches!(
             claimed,
             RequestFailure::Account {
-                wrong_password: true,
+                bad_credential: true,
                 ..
             }
         ));
@@ -1677,6 +1703,22 @@ mod tests {
             refusal("name_unavailable", "That name is taken.").as_bytes(),
         );
         assert_eq!(sign_in_refusal(taken), "That name is taken.");
+        let network = refusal(
+            "rate_limited",
+            "Too many wrong passwords from your network.",
+        );
+        assert_eq!(
+            sign_in_refusal(RequestFailure::answer(
+                "/v1/sessions",
+                429,
+                network.as_bytes()
+            )),
+            "Too many wrong passwords from your network."
+        );
+        assert_eq!(
+            RequestFailure::answer("/v1/maps", 429, network.as_bytes()),
+            RequestFailure::Status(429)
+        );
     }
 
     /// A sign-in sends the typed password or the remembered sign-in, never

@@ -1700,11 +1700,7 @@ where
         let host = online_host.unwrap_or_else(|| account.clone());
         for name in [&account, &host] {
             ensure!(
-                !name.is_empty()
-                    && name.len() <= 24
-                    && name
-                        .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte)),
+                crate::ui::wol_account::valid_name(name),
                 "online account names must contain 1-24 letters, digits, underscores or hyphens"
             );
         }

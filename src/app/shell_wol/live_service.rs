@@ -311,6 +311,9 @@ pub(super) struct LiveService {
     lobby: String,
     /// The current sign-in sends this computer's remembered sign-in.
     signing_in_remembered: bool,
+    /// The latest account request: an answer to an earlier one, whose popup
+    /// was cancelled, is dropped.
+    account_attempt: u64,
 }
 
 /// Where players download a newer build (README "Download and play").
@@ -640,6 +643,7 @@ impl LiveService {
             ladder_lookup: None,
             lobby,
             signing_in_remembered: false,
+            account_attempt: 0,
         })
     }
 
@@ -1422,32 +1426,37 @@ pub(super) fn remembered_name(state: &AppState) -> Option<String> {
     account::load(dir, &lobby).map(|remembered| remembered.name)
 }
 
+/// The folder of VERA.INI, which holds `Account.json`.
+fn settings_dir(state: &AppState) -> Option<&std::path::Path> {
+    state
+        .platform
+        .game_config
+        .as_ref()
+        .map(|config| config.paths.settings_dir())
+}
+
 /// How this sign-in proves its name: the typed password, else, while
 /// Remember password stays ticked, the sign-in this computer remembers for
-/// the name, else nothing (a guest). A remembered sign-in it does not use is
-/// forgotten here and at the lobby.
+/// the name, else nothing (a guest). The remembered name's password sign-in
+/// forgets the old sign-in here and at the lobby; another name's sign-in
+/// leaves it.
 fn sign_in_credential(
-    state: &AppState,
+    settings: Option<&std::path::Path>,
     service: &LiveService,
     nickname: &str,
     password: String,
     remember: bool,
 ) -> http::Credential {
-    let remembered = state
-        .platform
-        .game_config
-        .as_ref()
-        .and_then(|config| account::load(config.paths.settings_dir(), &service.lobby));
-    if password.is_empty()
-        && remember
-        && let Some(remembered) = remembered
-            .as_ref()
-            .filter(|remembered| remembered.name.eq_ignore_ascii_case(nickname))
-    {
-        return http::Credential::Remembered(remembered.sign_in_token.clone());
-    }
-    if remembered.is_some() {
-        forget_sign_in(state, service);
+    let remembered = settings
+        .and_then(|dir| account::load(dir, &service.lobby))
+        .filter(|remembered| remembered.name.eq_ignore_ascii_case(nickname));
+    if let Some(remembered) = remembered {
+        if password.is_empty() && remember {
+            return http::Credential::Remembered(remembered.sign_in_token);
+        }
+        if !password.is_empty() {
+            forget_sign_in(settings, service);
+        }
     }
     if password.is_empty() {
         http::Credential::Guest
@@ -1457,11 +1466,11 @@ fn sign_in_credential(
 }
 
 /// Drop this computer's remembered sign-in, here and at the lobby.
-fn forget_sign_in(state: &AppState, service: &LiveService) {
-    let Some(config) = state.platform.game_config.as_ref() else {
+fn forget_sign_in(settings: Option<&std::path::Path>, service: &LiveService) {
+    let Some(dir) = settings else {
         return;
     };
-    match account::forget(config.paths.settings_dir(), &service.lobby) {
+    match account::forget(dir, &service.lobby) {
         Ok(Some(remembered)) => {
             let _ = service.requests.send(http::Request::ForgetSignIn {
                 name: remembered.name,
@@ -1473,9 +1482,15 @@ fn forget_sign_in(state: &AppState, service: &LiveService) {
     }
 }
 
-/// Keep the sign-in the lobby gave a password sign-in with Remember password.
-fn remember_sign_in(state: &AppState, service: &LiveService, name: &str, token: String) {
-    let Some(config) = state.platform.game_config.as_ref() else {
+/// Keep the sign-in the lobby gave a password sign-in with Remember password,
+/// in place of another account's, which the lobby then forgets.
+fn remember_sign_in(
+    settings: Option<&std::path::Path>,
+    service: &LiveService,
+    name: &str,
+    token: String,
+) {
+    let Some(dir) = settings else {
         return;
     };
     let remembered = account::Remembered {
@@ -1484,9 +1499,10 @@ fn remember_sign_in(state: &AppState, service: &LiveService, name: &str, token: 
     };
     if !account::valid_token(&remembered.sign_in_token) {
         log::warn!("The lobby's remembered sign-in for {name} is malformed");
-    } else if let Err(error) =
-        account::save(config.paths.settings_dir(), &service.lobby, remembered)
-    {
+        return;
+    }
+    forget_sign_in(settings, service);
+    if let Err(error) = account::save(dir, &service.lobby, remembered) {
         log::warn!("Could not remember the sign-in of {name}: {error}");
     }
 }
@@ -1507,7 +1523,8 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
         } => {
             service.clear_cleanup();
             service.auth_attempt = service.auth_attempt.wrapping_add(1);
-            let credential = sign_in_credential(state, service, &nickname, password, remember);
+            let credential =
+                sign_in_credential(settings_dir(state), service, &nickname, password, remember);
             service.signing_in_remembered = matches!(credential, http::Credential::Remembered(_));
             let _ = service.requests.send(http::Request::OpenSession {
                 attempt: service.auth_attempt,
@@ -1516,8 +1533,13 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             });
         }
         WolServiceRequest::Account(request) => {
-            let _ = service.requests.send(http::Request::Account(request));
+            service.account_attempt = service.account_attempt.wrapping_add(1);
+            let _ = service.requests.send(http::Request::Account {
+                attempt: service.account_attempt,
+                request,
+            });
         }
+        WolServiceRequest::ForgetSignIn => forget_sign_in(settings_dir(state), service),
         WolServiceRequest::ListChannels { kind, .. } => {
             let _ = service.requests.send(http::Request::Channels(kind));
         }
@@ -2141,7 +2163,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 return;
             }
             if let Some(token) = sign_in_token {
-                remember_sign_in(state, service, &nickname, token);
+                remember_sign_in(settings_dir(state), service, &nickname, token);
             }
             service.player_id = player_id;
             state.frontend.wol_account.nickname = nickname;
@@ -2162,10 +2184,10 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
         http::Response::SignInRefused {
             attempt,
             message,
-            wrong_password,
+            bad_credential,
         } if attempt == service.auth_attempt => {
-            if wrong_password && service.signing_in_remembered {
-                forget_sign_in(state, service);
+            if bad_credential && service.signing_in_remembered {
+                forget_sign_in(settings_dir(state), service);
             }
             state.frontend.wol_account.password.clear();
             service_event(state, WolServiceEvent::Login(Err(0)));
@@ -2307,8 +2329,10 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 super::translation::show(state, line, &text);
             }
         }
-        http::Response::AccountAnswered(answer) => {
-            service_event(state, WolServiceEvent::Account(answer));
+        http::Response::AccountAnswered { attempt, answer } => {
+            if attempt == service.account_attempt {
+                service_event(state, WolServiceEvent::Account(answer));
+            }
         }
         http::Response::Failure(message) => notice(state, message),
         http::Response::LobbyUnreachable => {
@@ -3484,8 +3508,41 @@ mod completion_tests {
             ladder_lookup: None,
             lobby: "https://lobby.test".into(),
             signing_in_remembered: false,
+            account_attempt: 0,
         };
         (service, input, output)
+    }
+
+    /// The remembered sign-in signs its name in, survives another name's
+    /// sign-in, and is forgotten here and at the lobby by its name's password
+    /// sign-in or by another account's remembered sign-in.
+    #[test]
+    fn a_remembered_sign_in_lasts_until_its_name_or_another_account_replaces_it() {
+        let directory = crate::map::source::test_support::TestDirectory::new("live-account");
+        let settings = Some(directory.path());
+        let (service, input, _output) = control_service(None);
+        let token = |c: char| c.to_string().repeat(43);
+        let forgotten = |input: &Receiver<http::Request>| match input.try_recv() {
+            Ok(http::Request::ForgetSignIn { sign_in_token, .. }) => Some(sign_in_token),
+            _ => None,
+        };
+        remember_sign_in(settings, &service, "Tanya", token('A'));
+        assert!(matches!(
+            sign_in_credential(settings, &service, "tanya", String::new(), true),
+            http::Credential::Remembered(sent) if sent == token('A')
+        ));
+        assert!(matches!(
+            sign_in_credential(settings, &service, "Boris", String::new(), false),
+            http::Credential::Guest
+        ));
+        remember_sign_in(settings, &service, "Boris", token('B'));
+        assert_eq!(forgotten(&input), Some(token('A')));
+        assert!(matches!(
+            sign_in_credential(settings, &service, "Boris", "s3cret-pw".into(), true),
+            http::Credential::Password { remember: true, .. }
+        ));
+        assert_eq!(forgotten(&input), Some(token('B')));
+        assert_eq!(account::load(directory.path(), &service.lobby), None);
     }
 
     /// A lobby from before the Ranked game choice refuses the field, so a

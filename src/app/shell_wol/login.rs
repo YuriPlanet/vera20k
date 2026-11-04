@@ -153,6 +153,7 @@ fn dispatch(state: &mut AppState, action: WolLoginAction) {
         WolLoginAction::Account(request) => {
             service::request(state, WolServiceRequest::Account(request));
         }
+        WolLoginAction::ForgetSignIn => service::request(state, WolServiceRequest::ForgetSignIn),
     }
 }
 
@@ -309,6 +310,8 @@ pub(super) fn cursor_moved(state: &mut AppState) {
 enum Press {
     Nothing,
     Cue(LauncherCue),
+    /// Remember password toggled, perhaps forgetting the remembered account.
+    Remember(Option<WolLoginAction>),
     Button,
 }
 
@@ -378,8 +381,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                     && crate::ui::skirmish_shell::checkbox_icon_rect(layout.remember, scale)
                         .contains(x, y)
                 {
-                    login.toggle_remember(globals);
-                    return Press::Cue(LauncherCue::Checkbox);
+                    return Press::Remember(login.toggle_remember(globals));
                 }
                 Press::Nothing
             }
@@ -395,6 +397,12 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     });
     match press {
         Some(Press::Cue(cue)) => App::play_launcher_options_cue(state, cue),
+        Some(Press::Remember(action)) => {
+            App::play_launcher_options_cue(state, LauncherCue::Checkbox);
+            if let Some(action) = action {
+                dispatch(state, action);
+            }
+        }
         // Owner-draw buttons play GUIMainButtonSound on the press.
         Some(Press::Button) => App::play_main_menu_button_sound(state),
         _ => {}

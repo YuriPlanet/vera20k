@@ -15,13 +15,15 @@ pub(crate) const FORM_CANCEL: u16 = 2;
 /// the ids only name their rects.
 pub(crate) const FIRST_FIELD: u16 = 0x7FE0;
 
-const NAME_LIMIT: usize = 24;
+/// A lobby name's and an account password's longest.
+pub(crate) const NAME_LIMIT: usize = 24;
 const EMAIL_LIMIT: usize = 254;
 const PASSWORD_MIN: usize = 8;
-const PASSWORD_LIMIT: usize = 64;
+pub(crate) const PASSWORD_LIMIT: usize = 64;
 const CODE_LENGTH: usize = 6;
 
-/// A lobby player name: 1 to 24 letters, digits, `_` or `-`.
+/// A lobby player name: 1 to 24 letters, digits, `_` or `-`. The one
+/// owner of the rule: names also become persona INI section names.
 pub(crate) fn valid_name(name: &str) -> bool {
     !name.is_empty() && name.len() <= NAME_LIMIT && name.bytes().all(name_byte)
 }
@@ -137,11 +139,21 @@ pub(crate) enum FormKind {
     Reset,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct AccountField {
     pub(crate) kind: FieldKind,
+    /// The caption's CSF key (`src/i18n`).
     pub(crate) label: &'static str,
     pub(crate) edit: SavedSeedDescriptionEdit,
+}
+
+/// Never shows what was typed: a field may hold a password.
+impl std::fmt::Debug for AccountField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AccountField")
+            .field("kind", &self.kind)
+            .finish_non_exhaustive()
+    }
 }
 
 impl AccountField {
@@ -235,10 +247,10 @@ impl WolAccountForm {
         let mut form = Self::with_fields(
             FormKind::Register,
             vec![
-                AccountField::new(FieldKind::Name, "Username"),
-                AccountField::new(FieldKind::Email, "Email"),
-                AccountField::new(FieldKind::Password, "Password"),
-                AccountField::new(FieldKind::Confirm, "Confirm password"),
+                AccountField::new(FieldKind::Name, "VERA:Username"),
+                AccountField::new(FieldKind::Email, "VERA:Email"),
+                AccountField::new(FieldKind::Password, "VERA:Password"),
+                AccountField::new(FieldKind::Confirm, "VERA:ConfirmPassword"),
             ],
             "Choose a username and a password of 8 to 64 characters.".into(),
         );
@@ -255,7 +267,7 @@ impl WolAccountForm {
     fn verify(name: String, email: String, password: String) -> Self {
         let mut form = Self::with_fields(
             FormKind::Verify,
-            vec![AccountField::new(FieldKind::Code, "Code")],
+            vec![AccountField::new(FieldKind::Code, "VERA:Code")],
             format!("Enter the code we sent to {email}."),
         );
         form.name = name;
@@ -269,11 +281,11 @@ impl WolAccountForm {
         let mut form = Self::with_fields(
             FormKind::Reset,
             vec![
-                AccountField::new(FieldKind::Code, "Code"),
-                AccountField::new(FieldKind::Password, "New password"),
-                AccountField::new(FieldKind::Confirm, "Confirm password"),
+                AccountField::new(FieldKind::Code, "VERA:Code"),
+                AccountField::new(FieldKind::Password, "VERA:NewPassword"),
+                AccountField::new(FieldKind::Confirm, "VERA:ConfirmPassword"),
             ],
-            format!("Sending a code to the email of {name}..."),
+            format!("Asking VERA20k Online to mail a code for {name}..."),
         );
         form.name = name.to_owned();
         form.busy = true;
@@ -477,7 +489,7 @@ impl WolAccountForm {
             // Forgot Password's code went out; the reset itself signs in.
             FormKind::Reset if self.password.is_empty() => {
                 self.status = format!(
-                    "We sent a code to the email of {}. Choose a new password.",
+                    "If {} has an account, its email has a code. Choose a new password.",
                     self.name
                 );
                 None
