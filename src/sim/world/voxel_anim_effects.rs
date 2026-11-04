@@ -301,24 +301,23 @@ impl Simulation {
                 }
             }
             //74A303..572: ore in the eight neighbours of the impact cell,
-            // AdjacentCell89F688 order, never the impact cell itself.
+            // AdjacentCell89F688 order, never the impact cell itself; each
+            // looked up through GetCell5657A0.
             if kind.is_tiberium && !above {
-                for (dx, dy) in crate::sim::tiberium::ADJACENT_OFFSETS {
-                    self.voxel_anim_place_tiberium(
-                        rules,
-                        (
-                            (impact.x / 256).wrapping_add(dx) as u16,
-                            (impact.y / 256).wrapping_add(dy) as u16,
-                        ),
-                    );
-                }
+                let ring = crate::sim::tiberium::ADJACENT_OFFSETS.map(|(dx, dy)| {
+                    (
+                        (impact.x / 256).wrapping_add(dx) as u16,
+                        (impact.y / 256).wrapping_add(dy) as u16,
+                    )
+                });
+                self.voxel_anim_place_tiberium(rules, &ring);
             }
         } else if kind.is_tiberium
             && !above
             && let Some(cell) = Self::map_coord_cell(&self.resolved_terrain, impact.x, impact.y)
         {
             //74A5B6..6F7: ore in the impact cell (565730).
-            self.voxel_anim_place_tiberium(rules, cell);
+            self.voxel_anim_place_tiberium(rules, &[cell]);
         }
         changed
     }
@@ -367,83 +366,72 @@ impl Simulation {
         changed
     }
 
-    /// Expiry ore cell74A385..566 (meteor) / 74A5F0..6F7 (ordinary):
-    /// GetCell5657A0 and CanPlace4838E0, then the Tiberium of overlay 0x7F
-    /// (OverlayToTiberiumIndex5FDD20; TIB2_01, Vinifera, in retail), a flat
-    /// image RandomRanged(0, 11), Overlay5FC380(-1), AddToGrowthQueue
-    /// 7235A0 and OverlayData 0. The slope arm at74A3B8 is dead: CanPlace
-    /// admits only SlopeIndex 0. When overlay 0x7F is not Tiberium, native
-    /// reads Tiberiums[-1]; VERA places nothing there.
-    fn voxel_anim_place_tiberium(&mut self, rules: &RuleSet, cell: (u16, u16)) {
-        use crate::sim::tiberium::{NewTiberiumAdmission, TiberiumPlacementObjectContext};
+    /// Expiry ore74A385..566 (meteor ring) / 74A5F0..6F7 (ordinary): an
+    /// inline copy of PlaceTiberium487190's new-cell arm with amount 0
+    /// ([`crate::sim::tiberium::place_new_tiberium`]), for the Tiberium of
+    /// overlay 0x7F (OverlayToTiberiumIndex5FDD20; TIB2_01, Vinifera, in
+    /// retail). The ring dirties one union rectangle and the ordinary arm
+    /// none; both mark radar per cell. When overlay 0x7F is not Tiberium,
+    /// native reads Tiberiums[-1]; VERA places nothing there.
+    fn voxel_anim_place_tiberium(&mut self, rules: &RuleSet, cells: &[(u16, u16)]) {
+        use crate::sim::tiberium::{
+            NewTiberiumAdmission, PlaceTiberiumContext, TiberiumPlacement,
+            TiberiumPlacementObjectContext, place_new_tiberium,
+        };
         let registry = rules.overlay_registry();
-        let admitted = {
-            let (Some(terrain), Some(grid)) =
-                (self.resolved_terrain.as_ref(), self.overlay_grid.as_ref())
-            else {
-                return;
-            };
-            let objects = TiberiumPlacementObjectContext::new(
-                &self.substrate.entities,
-                &self.substrate.occupancy,
-                &self.substrate.raw_cell_occupation,
-                rules,
-                &self.interner,
-                self.terrain_objects.cell_index(),
-            );
-            crate::sim::tiberium::admit_new_tiberium_target(
-                grid,
-                self.terrain_objects.spawning_cells(),
-                NewTiberiumAdmission::runtime(terrain, objects),
-                cell,
-            )
-        };
-        let Some(cell) = admitted else {
-            return;
-        };
         let Some(type_id) = registry.tiberium_type_for_overlay(&rules.tiberium_types, 0x7F) else {
             return;
         };
-        let image = self.scenario_rng.next_range_i32_inclusive(0, 11) as usize;
-        if let Some(selected) = rules
-            .tiberium_types
-            .get(type_id)
-            .and_then(|tiberium| registry.flat_tiberium_variant_ids(tiberium))
-            .map(|images| images[image])
-        {
-            crate::sim::crates::construct_runtime_overlay(
-                self,
-                &rules.crate_rules,
-                rules,
-                registry,
-                cell,
-                selected,
-            );
-        }
-        //74A47C..48F: the growth queue reads Mark's density before the store,
-        // even when the Overlay constructor refused the cell.
         let binary_frame = self.session.binary_frame();
-        let growth_enabled = self.ore_growth_config.grows();
-        if let Some(grid) = self.overlay_grid.as_ref() {
-            self.ore_growth_state.add_native_growth_queue_cell(
-                grid,
-                registry,
-                &rules.tiberium_types,
-                self.resolved_terrain.as_ref(),
-                growth_enabled,
-                type_id,
-                cell.0,
-                cell.1,
-                binary_frame,
-                &mut self.scenario_rng,
-            );
+        let (Some(terrain), Some(grid)) =
+            (self.resolved_terrain.as_ref(), self.overlay_grid.as_mut())
+        else {
+            return;
+        };
+        let live_objects = TiberiumPlacementObjectContext::new(
+            &self.substrate.entities,
+            &self.substrate.occupancy,
+            &self.substrate.raw_cell_occupation,
+            rules,
+            &self.interner,
+            self.terrain_objects.cell_index(),
+        );
+        let admission = NewTiberiumAdmission::runtime(terrain, live_objects);
+        let mut context = PlaceTiberiumContext {
+            overlay_grid: grid,
+            ore_growth_state: &mut self.ore_growth_state,
+            overlay_registry: registry,
+            tiberium_types: &rules.tiberium_types,
+            resolved_terrain: Some(terrain),
+            source_object_cells: self.terrain_objects.spawning_cells(),
+            new_cell_admission: Some(admission),
+            live_objects: Some(admission.live_objects().object_view()),
+            rng: &mut self.scenario_rng,
+            binary_frame,
+            growth_enabled: self.ore_growth_config.grows(),
+            spread_enabled: self.ore_growth_config.spreads(),
+            dirty_cells: Some(&mut self.dirty_cells),
+        };
+        let placements: Vec<TiberiumPlacement> = cells
+            .iter()
+            .filter_map(|&cell| place_new_tiberium(&mut context, cell, type_id, 0))
+            .collect();
+        drop(context);
+        if placements.is_empty() {
+            return;
         }
-        if let Some(grid) = self.overlay_grid.as_mut() {
-            grid.write_cell_data(cell.0, cell.1, 0);
-        }
-        //74A499..561: the dirty rectangle and radar6551C0.
-        self.dirty_cells.mark_tactical_once(cell);
-        self.dirty_cells.mark_radar([cell]);
+        // Each Overlay constructor and its Mark ->Recalc47D2B0 complete
+        // before the anim's UnInit, so publish both before returning.
+        let placed: Vec<(u16, u16)> = placements.iter().map(TiberiumPlacement::cell).collect();
+        Self::publish_overlay_constructions(
+            &mut self.native_unique_ids,
+            &mut self.load_objects,
+            &mut self.substrate,
+            placements
+                .into_iter()
+                .filter_map(TiberiumPlacement::into_overlay_construction),
+        );
+        self.publish_tiberium_cells(rules, registry, &placed);
     }
 
     /// Anim4239D3..23A88 / Voxel74A884..929: select the live ground-list

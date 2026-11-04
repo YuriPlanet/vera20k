@@ -37,7 +37,7 @@ use crate::util::native_x87::{
 };
 
 /// Transient meteor launch values (Steam gamemd): Anim4222FF..422433 and
-/// VoxelAnim749668..7497D5 take the same prefix.
+/// VoxelAnim749668..749787 take the same prefix.
 pub(crate) struct MeteorLaunch {
     pub start: IVec3,
     pub velocity: [NativeF32Bits; 3],
