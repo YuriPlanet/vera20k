@@ -91,7 +91,11 @@ Channel: `{id,kind,max_users,users,tournament,flags,game_flags,ping,name,ex_info
 from the creator: 256 when a game has a password, which clients show as a lock and
 ask for before joining, otherwise 0. `max_users` (1–30) from `create` and the host's
 `advertise` is the room's join limit, never below its current members; a join past
-it fails with `room_full`. A host `kick` with `keep_out:true` keeps that player out of
+it fails with `room_full`. Games from 0.2.6 advertise the most people their room
+takes, players and spectators: the host's Max players, and with spectators off no
+more than its seats. Their host gives a newcomer a free seat, then the last AI's
+seat, then a spectator's place, and their lobby lists each room as `users` over
+`max_users`. A host `kick` with `keep_out:true` keeps that player out of
 the room for five minutes, by account and by name without case: their `join` fails
 with 403 `room_kept_out`, which clients show with the join ban's text while staying in the lobby. The other fields are presentation metadata, not authority. `name` identifies a channel uniquely for compatibility with the
 existing shell. Member: `{player_id,name,flags,squad,clan_name,clan_tag}`. Flags bit 0
@@ -117,7 +121,7 @@ Commands and their payloads:
 | `map_status` | `{status,revision,version,rules_digest,map_digest,effective_map_digest,staging_digest}` |
 | `advertise` | `{channel:<Channel>}` |
 | `start` | `{users:[name],revision,version,rules_digest,effective_map_digest,staging_digest}` |
-| `finish` | `{match_id,back_to_room?}` |
+| `finish` | `{match_id,back_to_room?,network_quality?}` |
 | `relay_ready` | `{match_id}` |
 | `latency_ready` | `{match_id,pings:[{source_index,round_trip_ms}]}` |
 | `renew_relay` | `{match_id}` |
@@ -393,6 +397,21 @@ answers 401. A lobby outage or overload is not player silence: these
 intervals count from the later of the player's last request and the lobby's first
 request after 90 seconds in which it neither served a request nor ran its
 once-a-minute alarm, or its latest 429 `busy` refusal.
+
+A game whose online match reached play adds `network_quality` to that match's
+`finish`: its own record of how the match ran, which it also logs as
+`Network quality:`. It is
+`{played_seconds,catch_up:{episodes,seconds,max_backlog_frames,skipped_draws},`
+`network:{gaps,repair_pulls,command_round_trip_ms,max_jitter_reserve_ms,underruns},`
+`performance:{tick_ms_p50,tick_ms_p99,fps_p50,fps_p5,unfocused_seconds},`
+`pacing:{slowdowns,slowed_by,slowed_seconds},outcome:{desync_frame,reconnects}}`.
+Times are seconds, or milliseconds where the name says so; `command_round_trip_ms`
+is `{mean,max,samples}` or null, `tick_ms_p50`, `tick_ms_p99`, `fps_p50`, `fps_p5` and
+`desync_frame` may be null, and `slowed_by` lists the House each relay slowdown named.
+A start cancelled before play and a match an external launcher formed send none. The
+service may keep reports for its operator without the player's name or address; one it
+cannot read is dropped and the match still finishes. A service that refuses the field
+gets the same finish again without it.
 
 `POST /v1/translate` accepts exactly `{text,target}` from a v4 bearer and returns
 `{text}`: `text` translated into `target`, a language tag such as `en` or `zh-Hans`.

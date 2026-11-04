@@ -206,7 +206,8 @@ set_lifecycle_callback(event => {
   `kills`, `losses`, `built`, `raw_score` and `score`; they read the simulation's
   finalized snapshot without new RNG draws. `scores: null` means no terminal
   score snapshot was produced, including abort and cooperative paths.
-  `network_quality` is present for an online relay match only: `catch_up`
+  `network_quality` is present for an online relay match only:
+  `played_seconds` (the time the record watched the match in play), `catch_up`
   (`episodes`, `seconds`, `max_backlog_frames`, `skipped_draws`), `network`
   (`gaps`, `repair_pulls`, nullable `command_round_trip_ms` with `mean`, `max`
   and `samples`, `max_jitter_reserve_ms`, `underruns`), `performance`

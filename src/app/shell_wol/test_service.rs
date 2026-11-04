@@ -916,6 +916,7 @@ mod tests {
             quick_match: false,
             clan_id: 0,
             local_hash: Some(7),
+            vera_rooms: false,
         };
         let games = games(7, "Transylv.yro");
         assert_eq!(admit(&games[0], false, context), Ok(()));

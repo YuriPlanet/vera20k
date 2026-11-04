@@ -124,6 +124,10 @@ impl ListScrollInteraction {
     pub fn repeat_at(&self) -> Option<Instant> {
         self.repeat_at
     }
+    /// Whether a press holds the scrollbar's capture, until the release.
+    pub fn captured(&self) -> bool {
+        self.captured.is_some()
+    }
     pub fn cancel(&mut self) {
         *self = Self::default();
     }
@@ -141,8 +145,19 @@ pub struct ShellListGeometry {
 }
 impl ShellListGeometry {
     pub fn new(outer: RectPx, count: usize, top: usize, metrics: ListMetrics) -> Self {
+        let visible_rows = ((outer.h - 2).max(0) / metrics.row_h) as usize;
+        Self::with_visible_rows(outer, count, visible_rows, top, metrics)
+    }
+    /// A list whose rows its owner lays out, `visible_rows` of them showing:
+    /// the scrollbar ranges over the tops that keep them filled.
+    pub fn with_visible_rows(
+        outer: RectPx,
+        count: usize,
+        visible_rows: usize,
+        top: usize,
+        metrics: ListMetrics,
+    ) -> Self {
         let inner_height = (outer.h - 2).max(0);
-        let visible_rows = (inner_height / metrics.row_h) as usize;
         let max_top = count.saturating_sub(visible_rows);
         let scrollbar = (max_top > 0).then(|| {
             RectPx::new(

@@ -283,6 +283,7 @@ pub(crate) fn join_enabled(
                         quick_match: false,
                         clan_id,
                         local_hash: None,
+                        vera_rooms: false,
                     },
                 )
                 .is_ok()

@@ -106,10 +106,6 @@
 //!     House4F92D2→Building4456D0 membership pass does honor the online latch:
 //!     existing cameos may stay dark while new additions wait for release.
 //!     `0x0044017E` reads660 for Tesla charging, not construction options.
-//! - A building's erase kills its garrison through `0x004585C0(0)` and deletes
-//!   absorbed passengers outright before Record_The_Kill; VERA's carrier
-//!   UnInit purges both inside the building's UnInit (each at health 0 with no
-//!   killer, booking a loss). Draws inside `0x004585C0` are not established.
 //! - SlaveManager release with the attacker as liberator (`0x006B0AE0`):
 //!   VERA models no slave release on any master death.
 //! - `WarpPerStep` (`+0x4C`, written each step, read by no sim function) and

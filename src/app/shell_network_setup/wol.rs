@@ -166,17 +166,21 @@ pub(crate) fn send_first_choices(state: &mut AppState) {
 /// it through `0x5E9240`: a player on the first Open row, an observer on
 /// the first open observer row when no Open player row is left
 /// (`0x5E9510`); with neither (`0x5E9560`) the joiner is kicked
-/// (`0x7A6BC7`).
+/// (`0x7A6BC7`). VERA's room first frees the last AI's seat when every seat
+/// is taken, so it stays open until its host's Max players.
 /// RESIDUAL: the host's node takes the mode's default country (mode
 /// vt+0x28) natively; it is unset here.
 pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<()> {
-    let session = &state.match_state.session;
     let pending = start_pending(state)
         || state
             .frontend
             .network_setup_protocol
             .as_ref()
             .is_some_and(|protocol| protocol.locked);
+    if !pending {
+        state.match_state.session.free_network_seat_for_newcomer()?;
+    }
+    let session = &state.match_state.session;
     let row = if !session.host() {
         Some(None)
     } else if session.network_room_full() {
@@ -729,6 +733,10 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
                 .session
                 .network_start_seed()
                 .ok_or_else(|| anyhow::anyhow!("WOL start has no admitted seed"))?;
+            // VERA: a guest's match, or a Quick Match the matchbot paired,
+            // starts without a click. Call back a player in another window
+            // now: a hidden window's slide waits for its frames.
+            state.platform.request_attention(true);
             let protocol = state
                 .frontend
                 .network_setup_protocol

@@ -108,14 +108,12 @@ impl ChooseMapPrompt {
 
 /// Whether any AI row at or past the map's player limit is occupied
 /// (`0x006ACCA0`: rows from slot `limit` on whose type is Easy, Normal or
-/// Hard; a limit of 8 or more never ejects).
+/// Hard; a limit of 8 or more never ejects). VERA's rows past the seventh
+/// count the same way, so only a limit past every row never ejects.
 pub fn ai_rows_beyond_limit_occupied(
     opponents: &[super::SkirmishShellOpponent],
     limit: i32,
 ) -> bool {
-    if limit >= 8 {
-        return false;
-    }
     opponents
         .iter()
         .skip(limit.max(1) as usize - 1)

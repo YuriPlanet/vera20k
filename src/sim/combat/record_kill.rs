@@ -92,8 +92,8 @@ fn award_kill_experience(
 }
 
 /// The caller decides whether this callback leaves the victim alive. Native
-/// RecordKill always books immediately; this controls only VERA's fallback for
-/// teardown sites whose native callback is still unrepresented.
+/// RecordKill always books immediately; this controls only whether the
+/// callback closes VERA's [`KillRecord`] guard.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum KillCallback {
     Terminal,
@@ -135,8 +135,8 @@ impl KillSource {
 /// calls it with no attacker before the owner store: that call immediately
 /// books the old House's loss while the object remains alive. Each actual
 /// native callback books independently; there is no first-credit guard in
-/// 702D40. The UnInit fallback guard prevents an additional deferred record,
-/// rather than suppressing this callback. Spawner missiles
+/// 702D40, and UnInit books nothing (`Simulation::close_kill_record`).
+/// Spawner missiles
 /// credit their launcher's house; if the launcher dies during the missile's
 /// flight, the kill goes uncredited.
 ///
@@ -377,15 +377,17 @@ impl crate::sim::world::Simulation {
 ///   vector through a death animation, so this keeps the callback's
 ///   attribution. It does not defer or suppress the native score callback,
 ///   and saves do not keep it.
-/// - a VERA guard that keeps UnInit's uncredited-loss fallback
-///   (`Simulation::record_destruction_once`) from booking a loss a routed
-///   RecordTheKill callback already booked. Native callbacks themselves may
-///   record again; it does not stand in for native-alive or dying.
+/// - a VERA guard that says the object's destruction is closed: a terminal
+///   RecordTheKill callback credited it, or UnInit removed it. No booking
+///   reads it (native callbacks may record again, and UnInit books nothing);
+///   the dead-object check in `Simulation`'s frame validation, the hash and
+///   test counts do. It does not stand in for native-alive or dying.
 ///
-/// The credit step sets both. The fallback sets the guard
-/// ([`Self::mark_fallback_recorded`]); the receiver's next exact-zero callback
-/// and a PostMortem restore clear both ([`Self::clear`]); the construction
-/// boundary clears the guard ([`Self::reset_constructed`]).
+/// The credit step sets both. UnInit and ReceiveDamage's Destroy set the
+/// guard (`Simulation::close_kill_record`, [`Self::close`]); the receiver's
+/// next exact-zero callback and a PostMortem restore clear both
+/// ([`Self::clear`]); the construction boundary clears the guard
+/// ([`Self::reset_constructed`]).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct KillRecord {
     #[serde(skip)]
@@ -400,13 +402,13 @@ impl KillRecord {
         self.killed_by
     }
 
-    /// The object's loss is booked.
+    /// The object's destruction is closed: credited or removed.
     pub(crate) const fn is_recorded(self) -> bool {
         self.destruction_recorded
     }
 
-    /// UnInit's fallback booked the loss.
-    pub(crate) fn mark_fallback_recorded(&mut self) {
+    /// UnInit or Destroy closed the record, booking nothing.
+    pub(crate) fn close(&mut self) {
         self.destruction_recorded = true;
     }
 
@@ -439,11 +441,10 @@ impl KillRecord {
 /// The immediate House-accounting half of RecordKill70300F..7031DC.
 /// MatchStatistics owns all mutations; retained fatal attribution is an
 /// observation, never a second deferred score authority. A Temporal erase
-/// calls this at full health (71AAC4), so its later UnInit must also skip the
-/// fallback. FootCrash4DEC51 calls at full health before4DEC72 zeroes it, so
-/// health/attacker alone cannot identify a terminal callback. An attacker-free
-/// live ChangeOwner callback leaves the existing death guard untouched, since
-/// the object remains alive afterwards.
+/// calls this at full health (71AAC4) and FootCrash4DEC51 before4DEC72
+/// zeroes it, so health/attacker alone cannot identify a terminal callback.
+/// An attacker-free live ChangeOwner callback leaves the existing death guard
+/// untouched, since the object remains alive afterwards.
 ///
 /// Building+53C=-1 suppresses only BuildingsLost703054, including when a
 /// sale's NULL callback synchronously changes owner or removes the receiver.

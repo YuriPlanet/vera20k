@@ -67,12 +67,24 @@ class MapRenderTests(unittest.TestCase):
         self.assertEqual((width, height), (23, 10))
         self.assertEqual(pixels, expected)
 
-    def test_markers_grow_with_the_picture_and_clip_at_its_edge(self):
+    def test_markers_grow_with_the_picture_and_stay_inside_its_edge(self):
         # 480 px wide is twice the list box: the marker is drawn at twice its size.
         marked = map_render.mark_starts(bytes(480 * 2 * 3), 480, 2, [dict(MARKER, anchor=[1, 0])],
                                         (0.0, 0.0, 480.0, 2.0), 1)
         red = [(index // 3 % 480, index // 3 // 480) for index in range(0, len(marked), 3) if marked[index]]
-        self.assertEqual(red, [(0, 0), (0, 1)])
+        self.assertEqual(red, [(0, 0), (1, 0), (0, 1), (1, 1)])
+
+    def test_marker_inset_uses_the_scaled_sprite_extent_and_preserves_interior_anchors(self):
+        picture = {'size': [2, 3], 'origin': [1, 2],
+                   'rgba': base64.b64encode(bytes((200, 0, 0, 255)) * 6).decode()}
+        markers = [{'anchor': [479, 299], 'picture': picture},
+                   {'anchor': [100, 100], 'picture': picture}]
+        marked = map_render.mark_starts(bytes(480 * 300 * 3), 480, 300, markers,
+                                        (0.0, 0.0, 480.0, 300.0), 1)
+        red = {(index // 3 % 480, index // 3 // 480)
+               for index in range(0, len(marked), 3) if marked[index]}
+        self.assertEqual(red, {(x, y) for x in range(476, 480) for y in range(294, 300)}
+                         | {(x, y) for x in range(98, 102) for y in range(96, 102)})
 
     def test_overlapping_markers_part_about_their_midpoint_and_others_stay(self):
         self.assertEqual(map_render.spread([(10, 10), (12, 10), (100, 100)], 20), [(1, 10), (21, 10), (100, 100)])
