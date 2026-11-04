@@ -530,6 +530,11 @@ fn shroud_current_sight_psychic_never_gapped_and_mixed_views_are_nontransitive()
         let b = sim.interner.intern("Alliance");
         let c = sim.interner.intern("Soviet");
         let gapper = sim.interner.intern("Neutral");
+        // Each compared view is a human player's client map.
+        for house in [b, c] {
+            sim.houses
+                .register(HouseState::new(house, 0, None, true, 0, 10));
+        }
         let sw = charge_psychic_reveal(&mut sim, a);
         for (left, right) in [
             ("AMERICANS", "ALLIANCE"),

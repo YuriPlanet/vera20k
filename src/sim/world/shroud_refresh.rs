@@ -1805,6 +1805,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
+        let clients = self.fog_viewers();
         let map_viewers = match only_viewer {
             Some(viewer) => vec![viewer],
             None => self
@@ -1815,25 +1816,26 @@ impl Simulation {
                     entity.owner(),
                     config,
                     &self.interner,
+                    &clients,
                 )
                 .to_vec(),
         };
         let requested = match only_viewer {
             Some(viewer) => vec![viewer],
-            None => self.sight_event_viewers(id, entity.owner(), &map_viewers, true, false),
+            None => self.sight_event_viewers(id, &map_viewers, true, false),
         };
         self.update_object_sight_for_viewers(id, radius, &requested, config, heights, context);
     }
 
     /// The logical clients that execute this source event: the active human
-    /// and current-house planes, its owner plane, any direct map projections,
-    /// and (for a release) clients that previously retained this source.
+    /// and current-house planes, any direct map projections, and (for a
+    /// release) clients that previously retained this source. The owner has
+    /// a plane only as one of those clients ([`vision::direct_reveal_viewers`]).
     /// Registration order is shared with the House owner, not reconstructed
     /// from interned-name or contribution-map ordering.
     fn sight_event_viewers(
         &self,
         id: u64,
-        owner: crate::sim::intern::InternedId,
         map_viewers: &[crate::sim::intern::InternedId],
         include_active: bool,
         include_cached: bool,
@@ -1842,7 +1844,6 @@ impl Simulation {
         if include_active {
             selected.extend(self.fog_viewers());
         }
-        selected.insert(owner);
         selected.extend(map_viewers.iter().copied());
         if include_cached {
             selected.extend(self.fog.source_sight_viewers(id));
@@ -1948,14 +1949,16 @@ impl Simulation {
     ) {
         let config = self.sight_reveal_config(context.rules());
         let viewers = if let Some(entity) = self.substrate.entities.get(id) {
+            let clients = self.fog_viewers();
             let projected = self.reveal_viewers.direct(
                 &self.fog,
                 self.house_alliances.as_map(),
                 entity.owner(),
                 &config,
                 &self.interner,
+                &clients,
             );
-            self.sight_event_viewers(id, entity.owner(), &projected, true, true)
+            self.sight_event_viewers(id, &projected, true, true)
         } else {
             // Some existing release callers drop their entity-index entry
             // before clearing retained sight. In that case only visit the
@@ -2119,16 +2122,18 @@ impl Simulation {
         let viewers = match only_viewer {
             Some(viewer) => vec![viewer],
             None => {
+                let clients = self.fog_viewers();
                 let projected = self.reveal_viewers.direct(
                     &self.fog,
                     self.house_alliances.as_map(),
                     entity.owner(),
                     &config,
                     &self.interner,
+                    &clients,
                 );
                 //567DA0 has no RevealArea house gate: an enemy's source
                 //still refreshes the active client's existing ground edges.
-                self.sight_event_viewers(id, entity.owner(), &projected, true, false)
+                self.sight_event_viewers(id, &projected, true, false)
             }
         };
         for &viewer in viewers.iter() {
@@ -2257,12 +2262,14 @@ impl Simulation {
                 );
                 let cell = ((location.x / 256) as u16, (location.y / 256) as u16);
                 let config = self.sight_reveal_config(context.rules());
+                let clients = self.fog_viewers();
                 let viewers = self.reveal_viewers.direct(
                     &self.fog,
                     self.house_alliances.as_map(),
                     owner,
                     &config,
                     &self.interner,
+                    &clients,
                 );
                 let viewers: Vec<_> = viewers
                     .iter()
@@ -2308,12 +2315,14 @@ impl Simulation {
         if geometry.radius == 0 {
             return;
         }
+        let clients = self.fog_viewers();
         let viewers = self.reveal_viewers.direct(
             &self.fog,
             self.house_alliances.as_map(),
             entity.owner(),
             &config,
             &self.interner,
+            &clients,
         );
         let viewers: Vec<_> = viewers
             .iter()

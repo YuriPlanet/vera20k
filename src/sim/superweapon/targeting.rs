@@ -284,7 +284,10 @@ pub(super) fn check_with_data(
             relation: sim.ares_house_relation(owner, entity.owner()),
         })
         .collect();
-    let shrouded = (!policy.fire_into_shroud()).then(|| {
+    // Ares tests `SW.FireIntoShroud=` only in the player's cursor,
+    // `SWTypeExt::ExtData::WhatAction` (Ares.dll `0x10033EB0`), on the
+    // client's own map; the AI's `CanFireAt` path has no shroud test.
+    let shrouded = (!automatic && !policy.fire_into_shroud()).then(|| {
         crate::sim::vision::cell_is_shrouded(
             &sim.fog,
             &NativeCellQuery::isolated(terrain),

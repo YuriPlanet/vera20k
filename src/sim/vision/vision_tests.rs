@@ -75,6 +75,7 @@ fn fixture_frame_with_sight(
     *world.house_alliances_mut_for_test() = alliances.clone();
     world.resolved_terrain = terrain.cloned();
     world.path_grid = path_grid.cloned().map(std::sync::Arc::new);
+    seat_fixture_clients(world, alliances, &[]);
     let context = crate::sim::world::UninitContext::new(
         rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
         None,
@@ -93,6 +94,38 @@ fn fixture_frame_with_sight(
         rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
     );
     *fog = std::mem::take(&mut world.fog);
+}
+
+/// Seat every house the fixture names, by its objects or its alliances, as a
+/// human player's house, so each has the client map
+/// (`Simulation::fog_viewers`) these fixtures read. A computer house has none
+/// ([`direct_reveal_viewers`]); `computers` stay unseated as humans.
+fn seat_fixture_clients(
+    world: &mut crate::sim::world::Simulation,
+    alliances: &HouseAllianceMap,
+    computers: &[InternedId],
+) {
+    let mut houses: Vec<InternedId> = world
+        .substrate
+        .entities
+        .values()
+        .map(|entity| entity.owner())
+        .collect();
+    for (house, allies) in alliances {
+        for name in std::iter::once(house).chain(allies) {
+            houses.push(world.interner.intern(name));
+        }
+    }
+    for house in houses {
+        if world.houses.get(&house).is_none() {
+            let human = !computers.contains(&house);
+            world
+                .houses
+                .register(crate::sim::house_state::HouseState::new(
+                    house, 0, None, human, 0, 10,
+                ));
+        }
+    }
 }
 
 fn fixture_visibility(
@@ -132,6 +165,7 @@ fn fixture_source_event(
     world.fog = std::mem::take(fog);
     world.substrate.entities = entities.clone();
     world.interner = interner.clone();
+    seat_fixture_clients(world, &HouseAllianceMap::new(), &[]);
     let context = crate::sim::world::UninitContext::default();
     if refresh {
         world.release_object_sight_with_context(1, context);
@@ -1487,6 +1521,7 @@ fn shroud_current_sight_matches_original_native_sequences() {
                     }
                     sight_world.fog = std::mem::take(&mut fog);
                     sight_world.substrate.entities = store.clone();
+                    seat_fixture_clients(&mut sight_world, &HouseAllianceMap::new(), &[]);
                     let context = crate::sim::world::UninitContext::default();
                     if op == "reveal" {
                         sight_world.update_object_sight_in_view(
@@ -2010,6 +2045,7 @@ fn source_release_and_zero_sight_gate_preserve_original_cached_metadata() {
     entity.position.put_location(coord);
     entity.sight.stamp_type_sight(amcv.sight);
     world.substrate.entities.insert(entity);
+    seat_fixture_clients(&mut world, &HouseAllianceMap::new(), &[]);
     let config = default_config();
     let context = crate::sim::world::UninitContext::default();
     world.update_object_sight_in_view(1, 0, None, &config, None, context);
@@ -2091,4 +2127,29 @@ fn source_release_and_zero_sight_gate_preserve_original_cached_metadata() {
         "native client cache metadata survives the snapshot round trip"
     );
     assert_eq!(cache_hash(&restored), cache_hash(&world.fog));
+}
+
+/// RevealArea's house gate (`0x00567AB0..0x00567B12`) writes only a
+/// client's PlayerPtr map, so a human player's sight opens its own map and a
+/// computer house's sight opens none of its own.
+#[test]
+fn a_computer_houses_sight_opens_no_map_of_its_own() {
+    let mut store = EntityStore::new();
+    spawn_with_vision(&mut store, 1, "Americans", 10, 10, 4);
+    spawn_with_vision(&mut store, 2, "Soviet", 20, 20, 4);
+    let americans = intern::test_intern("Americans");
+    let soviet = intern::test_intern("Soviet");
+    let mut world = crate::sim::world::Simulation::default();
+    world.fog = FogState::new(32, 32);
+    world.substrate.entities = store;
+    world.interner = ti();
+    seat_fixture_clients(&mut world, &HouseAllianceMap::new(), &[soviet]);
+    let config = default_config();
+    let context = crate::sim::world::UninitContext::default();
+    for id in [1, 2] {
+        world.update_object_sight_in_view(id, 0, None, &config, None, context);
+    }
+    assert!(world.fog.is_cell_revealed(americans, 10, 10));
+    assert!(!world.fog.is_cell_revealed(americans, 20, 20));
+    assert!(!world.fog.by_owner().contains_key(&soviet));
 }
