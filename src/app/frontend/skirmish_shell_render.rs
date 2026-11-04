@@ -422,6 +422,7 @@ fn build_skirmish_shell_instances(
     push_combo_instances(&mut instances, atlas, color_schemes, layout, shell, maps);
     push_checkbox_instances(&mut instances, atlas, layout, shell);
     push_trackbar_instances(&mut instances, atlas, layout, shell);
+    push_opponent_scrollbar_instances(&mut instances, atlas, layout, shell, maps);
 
     if let Some(flag) = flag_name_for_country_choice(
         &shell.country_catalog,
@@ -438,27 +439,21 @@ fn build_skirmish_shell_instances(
             0.00057,
         );
     }
-    for idx in 1..layout.flags.len() {
-        if !player_row_visible(shell, maps, idx) {
+    for (slot, row, opponent) in shell.paged_opponents() {
+        if !player_row_visible(shell, maps, row) || !opponent.is_active() {
             continue;
         }
-        let entry = shell
-            .opponents
-            .get(idx - 1)
-            .filter(|opponent| opponent.is_active())
-            .and_then(|opponent| {
-                flag_name_for_country_choice(
-                    &shell.country_catalog,
-                    opponent.country_random,
-                    opponent.country,
-                )
-            })
-            .and_then(|name| flag_entry(atlas, name));
+        let entry = flag_name_for_country_choice(
+            &shell.country_catalog,
+            opponent.country_random,
+            opponent.country,
+        )
+        .and_then(|name| flag_entry(atlas, name));
         if let Some(flag) = entry {
             push_flag_entry_clipped_centered(
                 &mut instances,
                 flag,
-                layout.flags[idx],
+                layout.flags[slot],
                 layout.scale,
                 0.00057,
             );

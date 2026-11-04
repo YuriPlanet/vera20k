@@ -736,11 +736,7 @@ pub(super) fn build_shell_text_draws(
         scale,
     );
 
-    for (idx, opponent) in shell.opponents.iter().enumerate() {
-        if idx >= layout.rows.ai_type_combos.len() {
-            break;
-        }
-        let row = idx + 1;
+    for (slot, row, opponent) in shell.paged_opponents() {
         if !player_row_visible(shell, maps, row) {
             continue;
         }
@@ -750,7 +746,7 @@ pub(super) fn build_shell_text_draws(
             &mut shell_draws,
             state,
             &row_type,
-            layout.rows.ai_type_combos[idx],
+            layout.rows.ai_type_combos[slot - 1],
             scale,
         );
         let sibling_text_color = opponent_sibling_combo_text_color(opponent);
@@ -758,7 +754,7 @@ pub(super) fn build_shell_text_draws(
             &mut shell_draws,
             state,
             &country_choice_label(state, opponent.country_random, opponent.country),
-            layout.rows.side_combos[row],
+            layout.rows.side_combos[slot],
             sibling_text_color,
             scale,
         );
@@ -768,7 +764,7 @@ pub(super) fn build_shell_text_draws(
                 &mut shell_draws,
                 state,
                 &random_color,
-                layout.color_combos[row],
+                layout.color_combos[slot],
                 sibling_text_color,
                 scale,
             );
@@ -777,7 +773,7 @@ pub(super) fn build_shell_text_draws(
             &mut shell_draws,
             state,
             &combo_item_label(state, SkirmishComboItem::Start(opponent.start_position)),
-            layout.rows.start_combos[row],
+            layout.rows.start_combos[slot],
             sibling_text_color,
             scale,
         );
@@ -785,7 +781,7 @@ pub(super) fn build_shell_text_draws(
             &mut shell_draws,
             state,
             &team_label(state, opponent.team),
-            layout.rows.team_combos[row],
+            layout.rows.team_combos[slot],
             // Row-active alone does not decide the Team face: the mode's
             // AlliesAllowed gate greys it as well.
             combo_face_text_color(!combo_enabled(shell, maps, SkirmishComboId::Team(row))),
