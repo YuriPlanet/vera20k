@@ -135,14 +135,10 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
             }
             HealthCallback::Destroy => {
                 if self.execute_world_callbacks {
-                    //The existing fallback never books a loss a real Kill
-                    //already booked. Both ordinary and delayed death use the
-                    //same Destroy here, before Techno's PostMortem branch.
-                    Simulation::record_destruction_once(
-                        &mut self.world.substrate,
-                        &mut self.world.houses,
-                        id,
-                    );
+                    // Both ordinary and delayed death use the same Destroy
+                    // here, before Techno's PostMortem branch. It books no
+                    // loss: the Kill above already called RecordKill.
+                    Simulation::close_kill_record(&mut self.world.substrate, id);
                     if super::world_receiver::callbacks_enabled(self.world) {
                         self.world.detach_all(id, true, context);
                     }

@@ -4218,58 +4218,17 @@ impl Simulation {
         outcome
     }
 
-    /// Guard UnInit's legacy uncredited-loss fallback. Routed RecordTheKill
-    /// callbacks already book their immediate House statistics, including
-    /// Temporal's full-health callback. Unrouted destruction sites still book
-    /// only their loss here; this does not certify their missing kill callback.
-    /// House quantities move through Removed_From_Game and Remove_Tracking.
-    pub(crate) fn record_destruction_once(
-        substrate: &mut ObjectSubstrate,
-        houses: &mut Houses,
-        stable_id: u64,
-    ) {
-        let Some((
-            owner,
-            category,
-            already_recorded,
-            destroyed,
-            dont_score,
-            suppress_building_loss,
-        )) = substrate.entities.get(stable_id).map(|entity| {
-            (
-                entity.owner(),
-                entity.category(),
-                entity.kill_record.is_recorded(),
-                // A Temporal erase leaves at full health with its kill
-                // already booked (`combat::record_kill::record_kill_credit`);
-                // a crashing infantryman falls at Health 1 (`0x0051BC57`)
-                // after the kill that booked its loss.
-                entity.health.current() == 0
-                    || entity.kill_record.killer().is_some()
-                    || entity.crash.is_crashing(),
-                entity.tracking_facts.dont_score(),
-                entity.category() == EntityCategory::Structure
-                    && entity.building_loss_index() == -1,
-            )
-        })
-        else {
-            return;
-        };
-        if already_recorded {
-            return;
-        }
+    /// Close `stable_id`'s kill record ([`crate::sim::combat::KillRecord`])
+    /// at UnInit and at ReceiveDamage's Destroy. It books nothing: the House
+    /// loss counts (`+0x5434` units, `+0x5488` buildings) have no writer but
+    /// RecordKill `0x00702D40` and RegisterKill `0x00703230`, so an object
+    /// removed without either is no loss. Such removals: a zero-health map
+    /// building at its first Update (`0x00440072..0x004400F1`), a parasite
+    /// that dies leaving its victim (ExitUnit `0x0062A4A0`, PointerExpired
+    /// `0x0062A260`) and a dropped Crashable unit (Notice `0x00746100`).
+    pub(crate) fn close_kill_record(substrate: &mut ObjectSubstrate, stable_id: u64) {
         if let Some(entity) = substrate.entities.get_mut(stable_id) {
-            entity.kill_record.mark_fallback_recorded();
-        }
-        if destroyed
-            && !dont_score
-            // A synchronous sale Tag action can enter UnInit before the
-            // outer RecordKill books its guard. The native +53C sentinel
-            // still suppresses the building loss at that nested boundary.
-            && !suppress_building_loss
-            && let Some(house) = houses.get_mut(&owner)
-        {
-            house.stats_mut().record_loss(category);
+            entity.kill_record.close();
         }
     }
 
@@ -4703,7 +4662,7 @@ impl Simulation {
         // recovery path here: it converts coordinates and stops sounds early.
         // Ordinary21slots have no Anim owner+CC and survive this broadcast;
         // Building43BDC5 clears them only at deferred scalar destruction.
-        Self::record_destruction_once(&mut self.substrate, &mut self.houses, stable_id);
+        Self::close_kill_record(&mut self.substrate, stable_id);
         crate::sim::docking::bunker_link::break_links_on_despawn(&mut self.substrate, stable_id);
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::UninitClassPre { stable_id });

@@ -28,23 +28,13 @@ impl Health {
     }
 
     /// Store `value`. The native writers outside ReceiveDamage: a crash's
-    /// kill (`0x004DEC72`) and a parasite whose host dies under it
-    /// (`ParasiteClass::ExitUnit`, `0x0062A854`, `0x0062A8A0`) store 0;
+    /// kill (`0x004DEC72`) and a parasite that dies leaving its victim
+    /// (`ParasiteClass::PointerExpired`, `0x0062A46A`;
+    /// `ParasiteClass::ExitUnit`, `0x0062A854`, `0x0062A8A0`) store 0;
     /// PostMortem, ship sinking and the infantry health reset store 1; a
     /// completed repair (an engineer's, the repair step's or the depot's), a
     /// spawn reload and a slave heal store the type's Strength; map
     /// admission, conversion and crew survival store their computed value.
-    ///
-    /// RESIDUAL: VERA also stores 0 before UnInit where native leaves the
-    /// health alone: a crushed object (`Crush_Or_Prescatter_Cell
-    /// 0x007416A0`), a transport's dying passengers (`KillPassengers
-    /// 0x00707CB0`, Unit ReceiveDamage's refused escape
-    /// `0x00738188..0x0073819B`) and a garrison's occupants (`KillOccupants
-    /// 0x004585C0`, `SellBuilding 0x00457DE0`). Trigger: each of those
-    /// deaths. Effect: a reader of the dead object's health between that
-    /// store and its removal sees 0 where native sees its last value.
-    /// Frequency: every crush and every passenger or occupant death. Risk: a
-    /// same-frame reader, such as `is_alive`, disagrees with native.
     pub(crate) fn set(&mut self, value: i32) {
         self.current = value;
     }
