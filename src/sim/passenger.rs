@@ -620,7 +620,8 @@ impl PassengerRole {
     /// (`0x007078D5`), a dying Unit's passenger escape (`0x007380FA`) and Unit
     /// Mission_Unload's success path (`0x0073DBD1`) clear it, so a soldier an
     /// aircraft unloads (`0x004151E0`, KickOutUnit `0x00415B10`) keeps it
-    /// until that aircraft dies, through any garrison or cargo he enters.
+    /// until that aircraft dies, through any garrison or cargo he enters (no
+    /// retail `[AircraftTypes]` entry has `Passengers=`).
     pub(crate) fn transporter(&self) -> Option<u64> {
         self.transporter
     }
@@ -731,9 +732,9 @@ impl PassengerRole {
     /// on first use: every native Techno has its CargoClass (`+0x114`), and
     /// `HouseClass::SendParadropPlanes` fills the paradrop plane's through
     /// `CargoClass::AddPassenger` (`0x0065E7F5`). The entity's own carrier
-    /// relation (`+0x11C`, `+0x82`) is a separate Techno field that
-    /// `CargoClass::AddPassenger` (`0x004733A0`) does not write, so the hold
-    /// keeps it.
+    /// relation and Transporter (`+0x11C`, [`Self::transporter`]) are not the
+    /// hold's: `CargoClass::AddPassenger` (`0x004733A0`) writes neither
+    /// Transporter nor `+0x82`, so the hold keeps them.
     pub(crate) fn ensure_hold(&mut self) -> &mut PassengerCargo {
         if !self.is_transport() {
             let carrier_relation = match self.role {
@@ -769,10 +770,13 @@ impl PassengerRole {
         self.inside_transport().map(|(id, _)| id)
     }
 
-    /// `TechnoClass+0x82` with its `+0x11C` Transporter: the `OpenTopped=`
-    /// transport this entity rides in, if any. Read by weapon selection, the
-    /// fire coordinate, InRange, GetFireError, FireAt's damage and muzzle
-    /// anim, kill credit, navigation and the Temporal warp-distance check.
+    /// The `OpenTopped=` transport this entity rides in, if any, from the
+    /// carrier relation. It stands in for gamemd's `+0x82` and Transporter
+    /// (`+0x11C`, [`Self::transporter`]) reads, which can differ for cargo
+    /// that `CargoClass::AddPassenger` loaded (vera20k#3838). Read by weapon
+    /// selection, the fire coordinate, InRange, GetFireError, FireAt's damage
+    /// and muzzle anim, kill credit, navigation and the Temporal
+    /// warp-distance check.
     pub fn open_transport_id(&self) -> Option<u64> {
         self.inside_transport()
             .and_then(|(id, open)| open.then_some(id))
@@ -1186,6 +1190,11 @@ pub(crate) fn board_passenger(
     }
     //4733A0 repeats the head's virtual Limbo before its unconditional
     //prepend.
+    let prior_transporter = sim
+        .substrate
+        .entities
+        .get(pax_id)
+        .and_then(|pax| pax.passenger_role.transporter());
     if arm == BoardingArm::InfantryTransport {
         sim.mark_boarded_transport_passenger(pax_id, carrier_id, open_topped, rules, effects);
     }
@@ -1212,6 +1221,7 @@ pub(crate) fn board_passenger(
             && let Some(passenger) = sim.substrate.entities.get_mut(pax_id)
         {
             passenger.passenger_role.clear_carrier_relation();
+            passenger.passenger_role.transporter = prior_transporter;
         }
         let _ = sim.reveal_entity_with_context(pax_id, context);
         return false;

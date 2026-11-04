@@ -1347,11 +1347,14 @@ fn nighthawk_ejects_five_passengers_to_scanned_neighbours() {
 
 /// Aircraft Mission_Unload (`0x004151E0`, KickOutUnit `0x00415B10`) never
 /// clears Transporter (`+0x11C`): a soldier who boarded through the
-/// transport arm (`0x0051A463`) keeps it after a landed Nighthawk sets him
+/// transport arm (`0x0051A463`) keeps it after a landed aircraft sets him
 /// down, so trigger action 128 (`0x0050D6D0`) still skips him, until the
-/// aircraft's removal clears it (PointerExpired `0x007078D5`).
+/// aircraft's removal clears it (PointerExpired `0x007078D5`). Dormant in
+/// retail: no `[AircraftTypes]` entry has `Passengers=` (the fixture's SHAD
+/// is retail's jumpjet `[VehicleTypes]` entry, whose Unit Mission_Unload
+/// clears the field at `0x0073DBD1`).
 #[test]
-fn nighthawk_unload_keeps_the_transporter_until_the_aircraft_goes() {
+fn aircraft_unload_keeps_the_transporter_until_the_aircraft_goes() {
     use crate::sim::passenger::{BoardingArm, board_passenger};
     use crate::sim::world::{FrameEffects, UninitContext};
     let mut fx = Fixture::new(|_, _| false);
