@@ -1930,6 +1930,8 @@ fn a_jumpjet_wreck_scans_only_on_its_committed_guard() {
             ),
             RevealOutcome::Revealed { .. }
         ));
+        // The player has seen the enemy: the campaign scan gate needs +0x41B.
+        crate::sim::arena_fixture::discover(&mut sim, enemy);
         shoot_down(&mut sim, &rules, shooter);
         let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
         let mut acquired = false;

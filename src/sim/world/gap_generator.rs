@@ -117,9 +117,12 @@ impl LastOperational {
 }
 
 impl Simulation {
+    /// The client maps a gap writes. Gap add `0x006FB170` and remove
+    /// `0x006FB470` test PlayerPtr (`0x00A83D4C`) and write only the running
+    /// client's Map (`0x0087F7E8`), so a computer house has none.
     fn gap_viewers(&self) -> Vec<InternedId> {
-        self.houses
-            .keys()
+        self.fog_viewers()
+            .iter()
             .chain(self.fog.by_owner().keys())
             .copied()
             .collect::<std::collections::BTreeSet<_>>()
@@ -480,6 +483,12 @@ impl Simulation {
         // CreateGap/DestroyGap (0x006FB170/0x006FB470) branch on PlayerPtr+0x1F5;
         // MPlayer_Defeated (0x004FC0B0) sets it. Each retained viewer maps to its House.
         let viewer_defeated = houses.get(&viewer).is_some_and(|house| house.is_defeated());
+        let before = entity.gap_generator.viewers.get(&viewer);
+        fog.note_gap_deposit(
+            id,
+            viewer,
+            before.map(|deposit| (deposit.active, deposit.radius)),
+        );
         let deposit = entity.gap_generator.viewers.entry(viewer).or_default();
         if deposit.active == active {
             return;

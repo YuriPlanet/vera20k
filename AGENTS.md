@@ -2,7 +2,7 @@
 
 **Outside contributors and their agents:** follow the README's
 [Contributing](README.md#contributing) section and your issue, and skip the rest of this file.
-In short: one small fix per PR, one to three regression tests that fail without it, the
+Keep each PR small: one fix, one to three regression tests that fail without it, the
 native function address cited next to the code, no native-execution corpora, and a PR
 description of about 15 lines. Leave code marked as a sim-scale deviation as it is: it
 differs from gamemd on purpose, so VERA can run 20,000 units. If it plays visibly wrong,

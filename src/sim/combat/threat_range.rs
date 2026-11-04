@@ -189,7 +189,7 @@ pub enum ScanMission {
     ///
     /// **Mask 0 is a scan TOPOLOGY, not a radius.** The jump at `0x006F8FE2`
     /// lands past the airborne pre-pass *and* past the expanding-ring cell walk
-    /// (`0x006F9169` and `0x006F94D0` both sit below `0x006F9B6E`), so a
+    /// (`0x006F9169` and `0x006F9AE2` both sit below `0x006F9B6E`), so a
     /// hunting object never walks a single cell ring — it walks the global
     /// object array. [`super::greatest_threat`] owns that branch; this variant
     /// only names which mask the caller pushed.

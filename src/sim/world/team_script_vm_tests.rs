@@ -714,8 +714,12 @@ fn only_a_human_scanner_passes_over_an_unarmed_building() {
     let computer = sim
         .spawn_object_at_height("E1", "Computer", 17, 7, 0, 0, &rules)
         .expect("E1 spawns");
-    sim.spawn_object_at_height("PLANTA", "Computer", 6, 16, 0, 0, &rules)
+    let computer_plant = sim
+        .spawn_object_at_height("PLANTA", "Computer", 6, 16, 0, 0, &rules)
         .expect("plant spawns");
+    // Seen, so the building gate refuses it, not the campaign discovery gate
+    // (`0x006F81BE`) that runs first.
+    crate::sim::arena_fixture::discover(&mut sim, computer_plant);
     let human = sim
         .spawn_object_at_height("E1", "Human", 5, 15, 0, 0, &rules)
         .expect("E1 spawns");
@@ -727,6 +731,7 @@ fn only_a_human_scanner_passes_over_an_unarmed_building() {
             id,
             crate::sim::combat::ScanMission::Guard,
         )
+        .and_then(crate::sim::combat::TargetKind::object_id)
     };
     assert_eq!(scan(computer), Some(plant));
     assert_eq!(scan(human), None);

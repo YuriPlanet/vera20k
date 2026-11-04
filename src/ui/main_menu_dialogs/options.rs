@@ -88,9 +88,8 @@ pub(crate) const DEVELOPER_OPTIONS_LABEL: &str = "Developer Options";
 pub(crate) const WOL_TEST_SERVICE_LABEL: &str = "Offline Internet Test Service";
 pub(crate) const WOL_TEST_SERVICE_HELP: &str =
     "Internet opens with stand-in servers, lobbies and players, for testing its screens.";
-pub(crate) const SKIP_STARTUP_LOGO_LABEL: &str = "Skip Startup Logo";
-pub(crate) const SKIP_STARTUP_LOGO_HELP: &str =
-    "Start without the logo movie; the loading screen still shows. Applies at the next start.";
+pub(crate) const SKIP_INTRO_LABEL: &str = "Skip Intro";
+pub(crate) const SKIP_INTRO_HELP: &str = "Start straight at the main menu, without the logo, the splash picture or the first-start intro movie. Applies at the next start.";
 pub(crate) const FPS_COUNTER_LABEL: &str = "FPS Counter";
 pub(crate) const FPS_COUNTER_HELP: &str = "Show frames per second in the top-left corner. Off at every start; Ctrl+Alt+F also switches it.";
 /// VERA's end-game switches, the pair of `[EndGameScreens]` presentation
@@ -103,10 +102,13 @@ pub(crate) const CUSTOM_END_GAME_SCORE_LABEL: &str = "Custom End Game Score";
 pub(crate) const CUSTOM_END_GAME_SCORE_HELP: &str = "Use the same country picture as the score screen's background and its music as the score theme. Untick to keep the standard score screen.";
 pub(crate) const CUSTOM_END_GAME_MOVIE_LABEL: &str = "Custom End Game Movie";
 pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "Let a beaten computer commander's losing clip finish before the victory or defeat picture and the score screen. Skirmish only. Untick to show them at once, which cuts the clip.";
-pub(crate) const SHIFT_QUEUE_HELP: &str =
-    "Shift-click an infantry, vehicle or aircraft cameo to queue several at once.";
+pub(crate) const SHIFT_QUEUE_HELP: &str = "Unit cameos: Shift-click queues several, Ctrl-click builds endlessly, Alt-click builds next, Shift-right-click cancels all.";
 pub(crate) const DISPLAY_LABEL: &str = "Display";
 pub(crate) const DISPLAY_HELP: &str = "Which screen the game opens on. Auto follows the system.";
+/// VERA's health-bar list. The retail string table has nothing for it, so
+/// the caption and help are English everywhere.
+pub(crate) const HEALTH_BARS_LABEL: &str = "Health Bars";
+pub(crate) const HEALTH_BARS_HELP: &str = "When units show a health bar. Original is the hovered unit and the selection; All Units shows every unit you can see; All Units, Not Full hides the full-health ones.";
 /// VERA's strength slider for the `[Colors]` team-colour bands. Retail's
 /// string table has nothing for it.
 pub(crate) const HOUSE_COLOR_STRENGTH_LABEL: &str = "Team Color Strength";
@@ -277,6 +279,64 @@ impl SidebarSize {
     }
 }
 
+/// VERA's `[VERA] HealthBars=` health-strip policy: which objects draw a
+/// health strip.
+///
+/// gamemd draws a strip for the selected object and a bracket only when it is
+/// selected, so [`Self::Vanilla`] is the native rule. The other arms are VERA
+/// presentation extensions: they widen the same strip to the objects the local
+/// player can see. Nothing here reaches simulation state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum HealthBarMode {
+    /// gamemd: selected objects draw the strip and bracket, the hovered object
+    /// draws a bare strip, everything else draws nothing.
+    #[default]
+    Vanilla,
+    /// [`Self::Vanilla`], plus a bare strip on every other object the local
+    /// player can see.
+    Always,
+    /// [`Self::Vanilla`], plus a bare strip on every other object the local
+    /// player can see that is below full health.
+    AlwaysExceptFull,
+}
+
+impl HealthBarMode {
+    /// The list's rows, top to bottom; the first is the default.
+    const ALL: [Self; 3] = [Self::Vanilla, Self::Always, Self::AlwaysExceptFull];
+
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Vanilla => "Original",
+            Self::Always => "All Units",
+            Self::AlwaysExceptFull => "All Units, Not Full",
+        }
+    }
+
+    /// The list's rows, top to bottom.
+    pub(crate) fn choices() -> Vec<Self> {
+        Self::ALL.to_vec()
+    }
+
+    /// The `[VERA] HealthBars` value.
+    pub(crate) const fn ini_value(self) -> i32 {
+        match self {
+            Self::Vanilla => 0,
+            Self::Always => 1,
+            Self::AlwaysExceptFull => 2,
+        }
+    }
+
+    /// A value this build does not know reads as the native rule, so a
+    /// hand-edited INI never hides the original strip.
+    pub(crate) const fn from_ini_value(value: i32) -> Self {
+        match value {
+            1 => Self::Always,
+            2 => Self::AlwaysExceptFull,
+            _ => Self::Vanilla,
+        }
+    }
+}
+
 /// One screen the Display list offers, as the window layer reported it when the
 /// page opened. VERA's own data: no profile or native code names a monitor.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -347,6 +407,8 @@ pub(crate) enum LauncherComboId {
     Zoom,
     Sidebar,
     Display,
+    /// The `[VERA] HealthBars=` list.
+    HealthBars,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -509,7 +571,7 @@ pub(crate) enum LauncherCheckboxId {
     FpsCounter,
     /// VERA's developer box: the next launch skips `Init_Game`'s logo movie
     /// (`0x0052C5E2`); the splash and the first-run intro still play.
-    SkipStartupLogo,
+    SkipIntro,
     /// VERA's box: the score page draws the country's own victory or defeat
     /// picture from `[EndGameScreens]` instead of the side's `MP*SCRN` art. On
     /// by default — a rules set that names pictures shows them — and it covers
@@ -552,6 +614,8 @@ pub(crate) enum LauncherOptionsEvent {
     Cue(LauncherCue),
     ZoomSelected(Zoom),
     SidebarSelected(SidebarSize),
+    /// The Health Bars list's pick, applied at once like Sidebar.
+    HealthBarModeSelected(HealthBarMode),
     /// The Display list's pick, applied to the window at once.
     DisplaySelected(DisplayTarget),
     FullScreenChanged(bool),
@@ -565,7 +629,7 @@ pub(crate) enum LauncherOptionsEvent {
     LockCursorChanged(bool),
     VeraIconChanged(bool),
     FpsCounterChanged(bool),
-    SkipStartupLogoChanged(bool),
+    SkipIntroChanged(bool),
     CustomEndGameBannerChanged(bool),
     CustomEndGameScoreChanged(bool),
     CustomEndGameMovieChanged(bool),
@@ -616,7 +680,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) wol_test_service: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
     pub(crate) fps_counter: bool,
-    pub(crate) skip_startup_logo: bool,
+    pub(crate) skip_intro: bool,
     /// The country's own end-game picture is allowed; see
     /// [`LauncherCheckboxId::CustomEndGameBanner`].
     pub(crate) custom_end_game_banner: bool,
@@ -628,6 +692,8 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) custom_end_game_movie: bool,
     /// The Sidebar list's choice; like Zoom, it applies at once.
     pub(crate) sidebar: SidebarSize,
+    /// The Health Bars list's choice; like Sidebar, it applies at once.
+    pub(crate) health_bars: HealthBarMode,
     /// VERA's team-colour strength as the slider's position,
     /// [`crate::rules::house_colors::STRENGTH_MIN`] less than the level the
     /// profile stores. Position 0 is gamemd's own bands.
@@ -652,16 +718,17 @@ impl Default for LauncherOptionsValues {
             render_interpolation: false,
             mouse_wheel_zoom: false,
             right_click_orders: false,
-            lock_cursor: true,
+            lock_cursor: false,
             vera_icon: false,
             shift_queue: false,
             wol_test_service: false,
             fps_counter: false,
-            skip_startup_logo: false,
-            custom_end_game_banner: true,
-            custom_end_game_score: true,
-            custom_end_game_movie: true,
+            skip_intro: false,
+            custom_end_game_banner: false,
+            custom_end_game_score: false,
+            custom_end_game_movie: false,
             sidebar: SidebarSize::Normal,
+            health_bars: HealthBarMode::Vanilla,
             house_color_position: 0,
             score_position: 4,
             sound_position: 7,
@@ -1026,7 +1093,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::LockCursor => &mut self.values.lock_cursor,
             LauncherCheckboxId::VeraIcon => &mut self.values.vera_icon,
             LauncherCheckboxId::FpsCounter => &mut self.values.fps_counter,
-            LauncherCheckboxId::SkipStartupLogo => &mut self.values.skip_startup_logo,
+            LauncherCheckboxId::SkipIntro => &mut self.values.skip_intro,
             LauncherCheckboxId::CustomEndGameBanner => &mut self.values.custom_end_game_banner,
             LauncherCheckboxId::CustomEndGameScore => &mut self.values.custom_end_game_score,
             LauncherCheckboxId::CustomEndGameMovie => &mut self.values.custom_end_game_movie,
@@ -1069,9 +1136,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::FpsCounter => self
                 .pending_events
                 .push(LauncherOptionsEvent::FpsCounterChanged(checked)),
-            LauncherCheckboxId::SkipStartupLogo => self
+            LauncherCheckboxId::SkipIntro => self
                 .pending_events
-                .push(LauncherOptionsEvent::SkipStartupLogoChanged(checked)),
+                .push(LauncherOptionsEvent::SkipIntroChanged(checked)),
             LauncherCheckboxId::CustomEndGameBanner => self
                 .pending_events
                 .push(LauncherOptionsEvent::CustomEndGameBannerChanged(checked)),
@@ -1139,6 +1206,14 @@ impl OptionsDialogState {
         self.open_combo = None;
         self.pending_events
             .push(LauncherOptionsEvent::SidebarSelected(size));
+    }
+
+    /// The Health Bars list publishes its pick at once too.
+    pub(crate) fn select_health_bars(&mut self, mode: HealthBarMode) {
+        self.values.health_bars = mode;
+        self.open_combo = None;
+        self.pending_events
+            .push(LauncherOptionsEvent::HealthBarModeSelected(mode));
     }
 
     /// The Display list publishes its pick at once too: the window moves to
@@ -1263,6 +1338,7 @@ impl Category {
             ],
             Self::Interface => &[
                 Setting::List(List::Sidebar),
+                Setting::List(List::HealthBars),
                 Setting::Checkbox(Check::Tooltips),
                 Setting::Checkbox(Check::VeraIcon),
             ],
@@ -1282,7 +1358,7 @@ impl Category {
             // turns it on.
             Self::Developer => &[
                 Setting::Checkbox(Check::FpsCounter),
-                Setting::Checkbox(Check::SkipStartupLogo),
+                Setting::Checkbox(Check::SkipIntro),
             ],
         }
     }
@@ -1295,7 +1371,7 @@ impl Category {
             Self::Gameplay => {
                 "Detail, difficulty, target lines, hidden objects, queueing and end-game screens."
             }
-            Self::Interface => "Tooltips, sidebar size and the VERA icon.",
+            Self::Interface => "Sidebar size, health bars, tooltips and the VERA icon.",
             Self::Audio => "Music, sound and voice volume.",
             Self::Controls => {
                 "Scroll rate, right-click orders, mouse wheel zoom and the cursor lock."
@@ -1586,6 +1662,21 @@ mod tests {
             [
                 LauncherOptionsEvent::Cue(LauncherCue::ComboOpen),
                 LauncherOptionsEvent::SidebarSelected(SidebarSize::Large)
+            ]
+        );
+
+        // The Health Bars list works the same way, on its own value.
+        use LauncherComboId::HealthBars as HealthBarsList;
+        state.combo_mouse_down(HealthBarsList, frame(4, 5, 180, 24));
+        assert_eq!(state.open_combo, Some(HealthBarsList));
+        state.select_health_bars(HealthBarMode::Always);
+        assert_eq!(state.open_combo, None);
+        assert_eq!(state.values.health_bars, HealthBarMode::Always);
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::ComboOpen),
+                LauncherOptionsEvent::HealthBarModeSelected(HealthBarMode::Always)
             ]
         );
     }
@@ -1906,7 +1997,7 @@ mod tests {
             .flat_map(|page| page.settings())
             .copied()
             .collect();
-        let every: Vec<Setting> = [List::Zoom, List::Sidebar, List::Display]
+        let every: Vec<Setting> = [List::Zoom, List::Sidebar, List::Display, List::HealthBars]
             .map(Setting::List)
             .into_iter()
             .chain(
@@ -1936,7 +2027,7 @@ mod tests {
                     Check::VeraIcon,
                     Check::ShiftQueue,
                     Check::FpsCounter,
-                    Check::SkipStartupLogo,
+                    Check::SkipIntro,
                     Check::CustomEndGameBanner,
                     Check::CustomEndGameScore,
                     Check::CustomEndGameMovie,

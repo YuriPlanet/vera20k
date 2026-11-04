@@ -63,21 +63,18 @@ fn geometry(
     BulletGeometry { body, shadow }
 }
 
-pub(crate) fn build_projectile_visual_instances(
-    state: &AppState,
-    objects: &mut Vec<PlannedObjectInstance>,
-    order: &NativeDisplayOrder,
-) {
-    let Some(rt) = state.match_state.sim_runtime.as_ref() else {
-        return;
-    };
+/// One Display member's Bullet, if `id` names one that draws. The caller
+/// visits the members in Display order, so a voxel Bullet's render meets
+/// the buffers the render before it left.
+pub(crate) fn projectile_visitor<'a>(
+    state: &'a AppState,
+    order: &'a NativeDisplayOrder,
+) -> Option<impl FnMut(&mut Vec<PlannedObjectInstance>, u64) + 'a> {
+    let rt = state.match_state.sim_runtime.as_ref()?;
     let atlas = state.match_state.match_presentation.sprite_atlas.as_ref();
     let assets = state.process_assets.manager();
-    let mut pose_cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
     let sim = &rt.simulation;
-    let Some(terrain) = sim.resolved_terrain() else {
-        return;
-    };
+    let terrain = sim.resolved_terrain()?;
     let rules = &rt.resources.rules;
     let input = &state.match_state.input;
     let (_, _, width, height) = crate::app::input::camera::tactical_viewport_px(state);
@@ -95,16 +92,19 @@ pub(crate) fn build_projectile_visual_instances(
     let viewer = local_owner
         .as_deref()
         .and_then(|name| sim.interner().get(name));
-    for (_, projectile) in sim.projectiles().iter() {
+    Some(move |objects: &mut Vec<PlannedObjectInstance>, id: u64| {
+        let Some(projectile) = sim.projectiles().get(id) else {
+            return;
+        };
         let Some(type_id) = projectile
             .payload()
             .projectile_type()
             .map(|id| sim.interner().resolve(id))
         else {
-            continue;
+            return;
         };
         let Some(kind) = rules.projectile(type_id) else {
-            continue;
+            return;
         };
         let scheme = projectile
             .firer_house()
@@ -134,7 +134,7 @@ pub(crate) fn build_projectile_visual_instances(
                 sim.session().game_options().fog_of_war,
             )
         {
-            continue;
+            return;
         }
         if let Some(object) = projectile_draw_instance_sampled(
             projectile,
@@ -148,20 +148,36 @@ pub(crate) fn build_projectile_visual_instances(
             [width, height],
             axis,
             order,
+            // Bullet46B0C0 draws uncached in the style 0xB43180 holds.
             |image, matrix| {
-                pose_cache.render_matrix(
-                    assets?,
-                    image,
-                    matrix,
-                    0,
-                    true,
-                    crate::render::vxl_raster::VxlLighting::Diffuse,
-                )
+                let mut images = state
+                    .match_state
+                    .match_presentation
+                    .voxel_images
+                    .borrow_mut();
+                let mut cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
+                let mut render = |depth_tested, depth| {
+                    cache.render_matrix(
+                        assets?,
+                        image,
+                        matrix,
+                        0,
+                        true,
+                        crate::render::vxl_raster::VxlLighting::Diffuse,
+                        depth_tested,
+                        depth,
+                    )
+                };
+                let clean = render(images.part_style(false), None)?;
+                if !images.render_part(false, clean.native_size()).stale {
+                    return Some(clean);
+                }
+                render(true, Some(images.depth_map()))
             },
         ) {
             objects.push(object);
         }
-    }
+    })
 }
 
 /// Shared production adapter used by full SHP/atlas/GPU native comparisons.

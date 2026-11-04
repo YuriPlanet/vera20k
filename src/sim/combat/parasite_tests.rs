@@ -382,6 +382,9 @@ fn drone_bites_on_its_weapon_rate_until_the_host_dies_then_drops_off() {
     let mut arena = Arena::new(&rules);
     let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));
     let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
+    // The drone's House is unregistered, so its Guard scan, which finds the
+    // tank, runs as a human player's: the campaign scan gate needs +0x41B.
+    crate::sim::arena_fixture::discover(&mut arena.sim, tank);
     // A player's tank: ReceiveDamage's scatter tail moves a computer's host
     // off its cell at a bite (`0x00702C8A`).
     let owner = arena.sim.entities().get(tank).unwrap().owner();
@@ -465,6 +468,9 @@ fn a_paid_repair_radio_request_releases_the_drone_after_the_heal() {
     let mut arena = Arena::new(&rules);
     let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));
     let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
+    // The drone's House is unregistered, so its Guard scan, which finds the
+    // tank, runs as a human player's: the campaign scan gate needs +0x41B.
+    crate::sim::arena_fixture::discover(&mut arena.sim, tank);
     // A player's tank, before the sourceless hit: ReceiveDamage's scatter tail
     // moves a computer's (`0x00702C8A`).
     let owner = arena.sim.entities().get(tank).unwrap().owner();

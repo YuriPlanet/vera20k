@@ -292,14 +292,11 @@ impl App {
                             ))
                     });
                 let current = sim.session().map_name();
-                // Victory685A38..685A5C selects +108 with Global0, otherwise +4.
                 let skip = state.match_state.map_basic.skip_map_select.unwrap_or(false);
-                let next = if sim.global_variables()[0] {
-                    state.match_state.map_basic.alt_next_scenario.as_deref()
-                } else {
-                    state.match_state.map_basic.next_scenario.as_deref()
-                }
-                .unwrap_or("");
+                let next = skip_map_select_destination(
+                    &state.match_state.map_basic,
+                    &sim.global_variables(),
+                );
                 let pick = map_select(
                     mapsel.as_ref().map(|selected| &selected.ini),
                     side,
@@ -422,6 +419,23 @@ impl App {
     }
 }
 
+/// `GameExit::Victory @ 0x00685A38..0x00685A5C`: with `[Basic]
+/// SkipMapSelect=yes`, global variable 1 picks AltNextScenario (`+0x108`),
+/// otherwise NextScenario (`+0x4`). The byte tested at `0x00685A42` is
+/// Scenario+0x1CD9: GetGlobalVariable `0x00689760` reads the value of global
+/// `index` at `+0x1CB0 + 41 * index`, so +0x1CD9 is global 1.
+fn skip_map_select_destination<'a>(
+    basic: &'a crate::map::basic::BasicSection,
+    globals: &[bool; crate::sim::trigger_runtime::SCENARIO_GLOBAL_COUNT],
+) -> &'a str {
+    if globals[1] {
+        basic.alt_next_scenario.as_deref()
+    } else {
+        basic.next_scenario.as_deref()
+    }
+    .unwrap_or("")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -464,6 +478,23 @@ Scenario=ALL03umd.MAP
                 scenario: "ALL03umd.MAP".into(),
                 stage: 2
             }
+        );
+    }
+
+    #[test]
+    fn skip_map_select_destination_reads_global_one() {
+        let basic =
+            basic("SkipMapSelect=yes\nNextScenario=all02UMD.map\nAltNextScenario=all03UMD.map");
+        let mut globals = [false; crate::sim::trigger_runtime::SCENARIO_GLOBAL_COUNT];
+        globals[0] = true;
+        assert_eq!(
+            skip_map_select_destination(&basic, &globals),
+            "all02UMD.map"
+        );
+        globals[1] = true;
+        assert_eq!(
+            skip_map_select_destination(&basic, &globals),
+            "all03UMD.map"
         );
     }
 

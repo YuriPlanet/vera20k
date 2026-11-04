@@ -9,22 +9,22 @@
 //! 756590 adds Z words and dispatches the depth-tested leaves 757980/757BF0
 //! (leaf table `0x00846840`).
 //!
-//! RESIDUAL (UseBuffer state across draws). VERA always draws the ordinary
-//! style: each draw starts from a clear depth map and the flag follows the
-//! drawn type. Native keeps the colour buffer (0xB2FF78), depth map, the
-//! previous draw's crop rect (0xB2FB60..6C, stored by 754510 at
-//! `0x007546A1` and by 7542F0) and 0xB43180 across every draw. Each draw
-//! starts with 753E00: its first call (0x8467E0) clears both buffers whole;
-//! later calls clear the colour buffer over the previous rect, inclusive
-//! (whole when that rect leaves the map), and the depth map over the same
-//! rect only while the flag is set (`0x00753EC5`). The uncached part draw
-//! 706ED0 sets the flag for a UseBuffer type before its clear and clears it
-//! after; the uncached shadow draw 707280 sets it before its clear
-//! (`0x007072FC`) and again after (`0x0070744B`), and never clears it. While
-//! it is set every caller rasterizes depth-tested, and 706640 stores what a
-//! miss rendered. Reproducing this needs a runtime native-order software
-//! voxel pass with native's cache lifetime (related: issue #828); VERA bakes
-//! its atlas at load and its pose cache in presentation order.
+//! The flag's state across draws, and the image caches that keep what a
+//! miss rendered, are [`crate::render::voxel_image_cache`]'s; a draw takes
+//! the style through `VxlRenderParams::use_buffer`. Native also keeps the
+//! colour buffer (0xB2FF78), depth map and the previous draw's crop rect
+//! (0xB2FB60..6C, stored by 754510 at `0x007546A1` and by 7542F0) across
+//! every draw. Each draw starts with 753E00: its first call (0x8467E0)
+//! clears both buffers whole; later calls clear the colour buffer over the
+//! previous rect, inclusive (whole when that rect leaves the map), and the
+//! depth map over the same rect only while the flag is set (`0x00753EC5`).
+//! The image cache owner keeps the depth map and passes it to a draw that
+//! reads it ([`prepare_draw`]'s `depth`).
+//! The uncached part draw 706ED0 sets the flag for a UseBuffer type before
+//! its clear and clears it after; the uncached shadow draw 707280 sets it
+//! before its clear (`0x007072FC`) and again after (`0x0070744B`), and never
+//! clears it. While it is set every caller rasterizes depth-tested, and
+//! 706640 stores what a miss rendered.
 //!
 //! Retail UseBuffer types are HIND, SCHD, SCHP and SHAD: VehicleTypes with
 //! the Jumpjet locomotor, SpeedType=Hover and no BalloonHover, so the
@@ -51,13 +51,16 @@
 //! type's caches and resets the 4,000,000-byte pool, called only when a
 //! store finds the pool full (`0x00706AE0`, `0x00706E38`). Which draws fall
 //! between a frame's last SHAD shadow and the next SHAD body depends on draw
-//! order (not traced); the look is not captured against retail.
+//! order, the Display order VERA draws in too.
 //!
-//! Stale depth (rare, not measured): a HIND/SCHD/SCHP part miss (clears the
-//! flag), a shadow cache hit, smaller flag-off draws, then a UseBuffer draw
-//! keeps the miss's depth outside the smaller rect and drops the new draw's
-//! voxels there that are not nearer. SHAD alone never leaves stale depth:
-//! its shadow sets the flag before clearing the body's rect.
+//! Stale depth (#3794): a HIND/SCHD/SCHP part miss (clears the flag), a
+//! shadow cache hit, smaller flag-off draws, then a UseBuffer draw keeps the
+//! miss's depth outside the smaller rect and drops the new draw's voxels
+//! there that are not nearer. Measured here on retail SCHP (frame 1, then
+//! frame 0 a facing step on): 1-2% of its 1,675 pixels after a tank-sized
+//! render, 39% after a 20x20 one. SHAD alone never leaves stale depth: its
+//! shadow sets the flag before clearing the body's rect. The cache owner
+//! keeps that depth and the previous rect across draws.
 //!
 //! A store at depth address 0xFFFF also writes one byte past both 64 KiB
 //! buffers, which is dropped here.
@@ -520,11 +523,14 @@ fn paint_section(
     Some(())
 }
 
+/// `depth` is the shared depth map a depth-tested draw reads and writes;
+/// None draws on a clear one.
 pub(super) fn prepare_draw(
     vxl: &VxlFile,
     hva: Option<&HvaFile>,
     params: &super::VxlRenderParams,
     vpl: Option<&super::VplFile>,
+    depth: Option<&mut super::DepthMap>,
 ) -> Option<PreparedDraw> {
     if params.scale != 1.0 || vxl.limbs.iter().any(|limb| limb.native_spans.is_none()) {
         return None;
@@ -539,7 +545,14 @@ pub(super) fn prepare_draw(
     let rotation = glam::Mat3::from_mat4(draw_matrix);
     let pages = params.lighting.pages(normals_mode, rotation);
     let mut writes = Vec::with_capacity(vxl.limbs.iter().map(|limb| limb.voxels.len()).sum());
-    let mut depth_map = geometry.use_buffer.then(|| vec![0u8; 65536]);
+    let mut clear = Vec::new();
+    let mut depth_map = geometry.use_buffer.then(|| match depth {
+        Some(map) => &mut map[..],
+        None => {
+            clear = vec![0u8; 65536];
+            &mut clear[..]
+        }
+    });
     for index in geometry.raster_order() {
         paint_section(
             &vxl.limbs[index],
@@ -554,7 +567,7 @@ pub(super) fn prepare_draw(
         writes,
         rect: geometry.rect,
         #[cfg(test)]
-        depth_map,
+        depth_map: depth_map.map(|map| map.to_vec()),
     })
 }
 
@@ -743,7 +756,7 @@ mod tests {
             );
             backward += usize::from(params.reverse);
         }
-        let draw = prepare_draw(vxl, hva, params, Some(vpl)).unwrap();
+        let draw = prepare_draw(vxl, hva, params, Some(vpl), None).unwrap();
         let mut visibility = vec![0u8; 65536];
         let mut zero = 0;
         let mut erased = 0;

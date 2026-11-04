@@ -287,8 +287,10 @@ impl Simulation {
             .resolved_terrain
             .as_ref()
             .ok_or("Object navigation-cell query requires the native map")?;
-        let cells = NativeCellQuery::canonical(terrain);
-        Ok(cells.lookup(((coordinate.x / 256) as i16, (coordinate.y / 256) as i16)))
+        Ok(navigation_cell_lookup(
+            coordinate,
+            &NativeCellQuery::canonical(terrain),
+        ))
     }
 
     /// ObjectClass::SetZ5F6060 writes only Object+A4. A marked owner runs
@@ -646,7 +648,7 @@ pub fn target_get_coords(
     }
 }
 
-/// Target virtual+58: Object410540 forwards virtual+48; Cell486900 uses
+/// Target virtual+58: Object410540 forwards virtual+48; Cell486890 uses
 /// structural bridge height. FireAt70BCB0 and planning Foot4D8560 share it.
 pub(crate) fn target_get_target_coords(
     target: crate::sim::combat::TargetKind,
@@ -894,4 +896,34 @@ impl Simulation {
             .position
             .set_height(on_bridge, height, resolved_terrain.as_ref(), None);
     }
+}
+
+/// Object+1C4 (`ObjectClass::GetCell @ 0x005F6A10`) for a live object in the
+/// caller's own Cell query: virtual+4C with a null requester
+/// ([`super::navcom::object_navigation_coordinate`]), then one lookup.
+pub fn entity_navigation_cell_identity(
+    entity: &crate::sim::game_entity::GameEntity,
+    cells: &NativeCellQuery<'_>,
+    rules: Option<(
+        &crate::rules::ruleset::RuleSet,
+        &crate::sim::intern::StringInterner,
+    )>,
+) -> Result<NativeCellIdentity, String> {
+    let coordinate = super::navcom::object_navigation_coordinate(
+        entity,
+        None,
+        Some(cells.terrain()),
+        rules,
+        || Err("a null requester has no coordinate".into()),
+    )?;
+    Ok(navigation_cell_lookup(coordinate, cells))
+}
+
+/// GetCell's tail (`0x005F6A1F..0x005F6A5A`): the XY truncated toward zero to
+/// signed cell words, then one Map5657A0 lookup.
+fn navigation_cell_lookup(
+    coordinate: DriveCoord,
+    cells: &NativeCellQuery<'_>,
+) -> NativeCellIdentity {
+    cells.lookup(((coordinate.x / 256) as i16, (coordinate.y / 256) as i16))
 }

@@ -3778,9 +3778,12 @@ impl Simulation {
             //returns before this BuildingDetach arm.
             crate::sim::radio::broadcast_break(self, stable_id, context.rules(), context.effects());
         }
-        // The Foot prelude (`0x004D9744`) leaves the object's team, before
-        // Limbo is set, so the object still takes its idle mode.
-        self.leave_team(stable_id, false, context.rules(), context.effects());
+        // The Foot prelude leaves the object's team before Limbo is set, so
+        // the object still takes its idle mode. It skips that inside an
+        // object-placement scope (`[0x00A8E7AC]`, `0x004D9736..0x004D9744`).
+        if !self.object_placement_scope_active() {
+            self.leave_team(stable_id, false, context.rules(), context.effects());
+        }
         // This Detach_All(1) (`0x005F4D61`) also visits the concealed object
         // itself, so a live spawner's Limbo runs its SpawnManager's owner arm:
         // docked children UnInit with a zero regen timer, and airborne ones
@@ -4215,58 +4218,17 @@ impl Simulation {
         outcome
     }
 
-    /// Guard UnInit's legacy uncredited-loss fallback. Routed RecordTheKill
-    /// callbacks already book their immediate House statistics, including
-    /// Temporal's full-health callback. Unrouted destruction sites still book
-    /// only their loss here; this does not certify their missing kill callback.
-    /// House quantities move through Removed_From_Game and Remove_Tracking.
-    pub(crate) fn record_destruction_once(
-        substrate: &mut ObjectSubstrate,
-        houses: &mut Houses,
-        stable_id: u64,
-    ) {
-        let Some((
-            owner,
-            category,
-            already_recorded,
-            destroyed,
-            dont_score,
-            suppress_building_loss,
-        )) = substrate.entities.get(stable_id).map(|entity| {
-            (
-                entity.owner(),
-                entity.category(),
-                entity.kill_record.is_recorded(),
-                // A Temporal erase leaves at full health with its kill
-                // already booked (`combat::record_kill::record_kill_credit`);
-                // a crashing infantryman falls at Health 1 (`0x0051BC57`)
-                // after the kill that booked its loss.
-                entity.health.current() == 0
-                    || entity.kill_record.killer().is_some()
-                    || entity.crash.is_crashing(),
-                entity.tracking_facts.dont_score(),
-                entity.category() == EntityCategory::Structure
-                    && entity.building_loss_index() == -1,
-            )
-        })
-        else {
-            return;
-        };
-        if already_recorded {
-            return;
-        }
+    /// Close `stable_id`'s kill record ([`crate::sim::combat::KillRecord`])
+    /// at UnInit and at ReceiveDamage's Destroy. It books nothing: the House
+    /// loss counts (`+0x5434` units, `+0x5488` buildings) have no writer but
+    /// RecordKill `0x00702D40` and RegisterKill `0x00703230`, so an object
+    /// removed without either is no loss. Such removals: a zero-health map
+    /// building at its first Update (`0x00440072..0x004400F1`), a parasite
+    /// that dies leaving its victim (ExitUnit `0x0062A4A0`, PointerExpired
+    /// `0x0062A260`) and a dropped Crashable unit (Notice `0x00746100`).
+    pub(crate) fn close_kill_record(substrate: &mut ObjectSubstrate, stable_id: u64) {
         if let Some(entity) = substrate.entities.get_mut(stable_id) {
-            entity.kill_record.mark_fallback_recorded();
-        }
-        if destroyed
-            && !dont_score
-            // A synchronous sale Tag action can enter UnInit before the
-            // outer RecordKill books its guard. The native +53C sentinel
-            // still suppresses the building loss at that nested boundary.
-            && !suppress_building_loss
-            && let Some(house) = houses.get_mut(&owner)
-        {
-            house.stats_mut().record_loss(category);
+            entity.kill_record.close();
         }
     }
 
@@ -4278,7 +4240,8 @@ impl Simulation {
     /// Callers:
     /// * `all`: the exact-zero Destroy callback of `ObjectClass::ReceiveDamage`
     ///   (`0x005F5765..0x005F57AF`), after the kill callback and before
-    ///   TechnoClass's death arm, and the Stun of a living object.
+    ///   TechnoClass's death arm, and every Stun (death, crash, sinking,
+    ///   lift release and sale).
     /// * not `all`: `TechnoClass::StartCloaking @ 0x00703770` and the cloak's
     ///   1 → 2 completion (`0x006FBA98`).
     ///
@@ -4375,9 +4338,10 @@ impl Simulation {
                 }
             }
             EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft => {
-                if all {
-                    // `0x004D9744`: the Foot prelude leaves the object's team
-                    // first.
+                // The Foot prelude leaves the object's team first, unless an
+                // object-placement scope is open (`[0x00A8E7AC]`,
+                // `0x004D9736..0x004D9744`).
+                if all && !self.object_placement_scope_active() {
                     self.leave_team(stable_id, false, context.rules(), context.effects());
                 }
                 if let Some(contact) = self
@@ -4608,11 +4572,18 @@ impl Simulation {
     /// then its Foot-class gate. Techno ctor `0x006F2B40` ORs AbstractFlags
     /// bit 0 at `0x006F3228`; Foot ctor `0x004D31E0` ORs bit 2 (`4`) at
     /// `0x004D34DA`, so the native `+0x14 & 4` test identifies Foot, not an
-    /// active-state predicate. Only a Foot with `+0x6AD == 0` runs
-    /// Kill_All_Spawns (`0x006B7100`), ClearAllTargets (`0x006B7BB0`) and
-    /// Detach_All(1); Deselect follows on every class. Foot's constructor
-    /// clears `+0x6AD` at `0x004D3414`; ImbueLocomotor sets the lift latch at
-    /// `0x00710352`, and the Jumpjet landing paths clear it.
+    /// active-state predicate. A non-Foot object (`JZ 0x006FCD7B`) and a Foot
+    /// with `+0x6AD == 0` run Kill_All_Spawns (`0x006B7100`), ClearAllTargets
+    /// (`0x006B7BB0`) and Detach_All(1); only a lifted Foot skips them.
+    /// Deselect follows on every class. Foot's constructor clears `+0x6AD` at
+    /// `0x004D3414`; ImbueLocomotor sets the lift latch at `0x00710352`, and
+    /// the Jumpjet landing paths clear it. A Building reaches this from
+    /// `TechnoClass::ReceiveDamage`'s death arm (`0x00702206..0x00702210`),
+    /// usually after the Destroy callback's own Detach_All(1)
+    /// (`0x005F5765..0x005F57AF`), so it detaches a second time like native.
+    /// A further hit on a building already at Health 0 skips Destroy
+    /// (`0x005F5752..0x005F575F`) but still takes the death arm, so this is
+    /// its only detach.
     fn techno_stun(&mut self, stable_id: u64, context: UninitContext<'_>) {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
@@ -4644,14 +4615,14 @@ impl Simulation {
         }
         crate::sim::radio::broadcast_break(self, stable_id, context.rules(), context.effects());
         // `0x006FCD6B..0x006FCD79`: a lifted Foot keeps its spawns, their
-        // targets and its listeners. The `+0x14 & 4` test guards the whole
-        // block before the Foot-only `+0x6AD` read.
+        // targets and its listeners. The `+0x14 & 4` test only guards the
+        // Foot-only `+0x6AD` read; every other object runs the block.
         let foot_lifted = self
             .substrate
             .entities
             .get(stable_id)
             .is_some_and(|entity| entity.category().is_foot() && entity.lift.swap_active());
-        if category.is_foot() && !foot_lifted {
+        if !foot_lifted {
             crate::sim::spawn_manager::kill_all_spawns_with_context(self, stable_id, context);
             crate::sim::spawn_manager::clear_all_spawn_targets(
                 self,
@@ -4691,7 +4662,7 @@ impl Simulation {
         // recovery path here: it converts coordinates and stops sounds early.
         // Ordinary21slots have no Anim owner+CC and survive this broadcast;
         // Building43BDC5 clears them only at deferred scalar destruction.
-        Self::record_destruction_once(&mut self.substrate, &mut self.houses, stable_id);
+        Self::close_kill_record(&mut self.substrate, stable_id);
         crate::sim::docking::bunker_link::break_links_on_despawn(&mut self.substrate, stable_id);
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::UninitClassPre { stable_id });
@@ -4747,9 +4718,12 @@ impl Simulation {
         [
             listener.unit_follower(),
             listener.passenger_role.inside_transport_id(),
+            listener.passenger_role.transporter(),
             listener.pending_entry(),
             listener.spawn_owner_id.owner(),
+            listener.fire_particle_system.system(),
             listener.spark_particle_system.system(),
+            listener.railgun_particle_system.system(),
             listener.damage_smoke_system_id.system(),
             listener.ammo().and_then(|ammo| ammo.dock()),
             listener
@@ -5251,7 +5225,9 @@ impl Simulation {
         // exact match, including damage-Smoke+310. It precedes the control
         // gate707AE7 and is independent of the target's sensor/owner guards.
         let clear_damage_smoke = listener.damage_smoke_system_id.system() == Some(expired_id);
+        let clear_fire_system = listener.fire_particle_system.system() == Some(expired_id);
         let clear_spark_system = listener.spark_particle_system.system() == Some(expired_id);
+        let clear_railgun_system = listener.railgun_particle_system.system() == Some(expired_id);
         // Techno707AE7..707B03 clears ArchiveTarget+218 on control1. The
         // later Foot4D99F1..4D99FC clears a still-matching archive on both
         // controls, independent of sensors and same-owner target exemptions.
@@ -5309,12 +5285,14 @@ impl Simulation {
         // Steam gamemd, TechnoPointerExpired7078B2..7078DB:
         // Transporter+11C survives a live hull's ordinary Limbo announcement,
         // for either control. Clear only on Object+90==0, exact Health==0 or
-        // ScenarioInit(A8E7AC)!=0. Negative live HP is not this zero test.
-        let clear_passenger_role = listener.passenger_role.inside_transport_id()
-            == Some(expired_id)
-            && (!expired_object_alive
-                || expired_health == 0
-                || self.object_placement_scope_active());
+        // ScenarioInit(A8E7AC)!=0 (`0x007078D5`). Negative live HP is not
+        // this zero test. VERA's carrier relation follows the same test.
+        let hull_gone =
+            !expired_object_alive || expired_health == 0 || self.object_placement_scope_active();
+        let clear_transporter =
+            hull_gone && listener.passenger_role.transporter() == Some(expired_id);
+        let clear_passenger_role =
+            hull_gone && listener.passenger_role.inside_transport_id() == Some(expired_id);
         let clear_c4_source = listener
             .pending_c4_detonation
             .pending()
@@ -5342,7 +5320,9 @@ impl Simulation {
         let clear_spotlight = listener.category() == EntityCategory::Structure
             && listener.building_light.light() == Some(expired_id);
         if !(clear_suspended_target
+            || clear_fire_system
             || clear_spark_system
+            || clear_railgun_system
             || clear_damage_smoke
             || clear_archive_target
             || clear_suspended_nav_com
@@ -5351,6 +5331,7 @@ impl Simulation {
             || prune_nav_queue
             || clear_dock
             || clear_airfield
+            || clear_transporter
             || clear_passenger_role
             || clear_c4_source
             || expire_mega_pointer
@@ -5372,8 +5353,14 @@ impl Simulation {
         if clear_damage_smoke {
             listener.damage_smoke_system_id.forget();
         }
+        if clear_fire_system {
+            listener.fire_particle_system.forget();
+        }
         if clear_spark_system {
             listener.spark_particle_system.forget();
+        }
+        if clear_railgun_system {
+            listener.railgun_particle_system.forget();
         }
         if clear_archive_target {
             listener.set_archive_target(None);
@@ -5400,6 +5387,9 @@ impl Simulation {
         }
         if clear_airfield && let Some(ammo) = listener.ammo_mut() {
             ammo.set_dock(None);
+        }
+        if clear_transporter {
+            listener.passenger_role.clear_transporter();
         }
         if clear_passenger_role {
             listener.passenger_role.clear_carrier_relation();

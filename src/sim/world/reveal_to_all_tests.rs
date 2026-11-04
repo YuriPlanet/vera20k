@@ -17,8 +17,14 @@ const FAR: (u16, u16) = (60, 60);
 /// Retail rules on a Size64x64 diamond in128x128 storage: the human current house
 /// `Americans` and the computer houses `Russians` and `Confederation`.
 fn world() -> Option<(RuleSet, Simulation, InternedId)> {
-    use crate::sim::superweapon::chronosphere_tests::{retail_rules_binding, world_with};
-    let (rules, mut sim, americans) = world_with(retail_rules_binding(&[])?, 128, &[]);
+    use crate::sim::superweapon::chronosphere_tests::retail_rules_binding;
+    Some(world_on(retail_rules_binding(&[])?))
+}
+
+/// [`world`] under `rules`.
+pub(super) fn world_on(rules: RuleSet) -> (RuleSet, Simulation, InternedId) {
+    use crate::sim::superweapon::chronosphere_tests::world_with;
+    let (rules, mut sim, americans) = world_with(rules, 128, &[]);
     //578350 starts at(1,SizeW), not at a rectangular grid's first cell.
     //Native Size64x64 spans packed coordinates1..127, just as the existing
     //shroud_refresh Size6x4 fixture uses10x10 storage for its allocated walk.
@@ -50,7 +56,7 @@ fn world() -> Option<(RuleSet, Simulation, InternedId)> {
         .collect();
     assert!(allocated.contains(&SITE) && allocated.contains(&FAR));
     assert!(!allocated.contains(&(0, 0)));
-    Some((rules, sim, americans))
+    (rules, sim, americans)
 }
 
 fn radar_events(sim: &Simulation) -> Vec<RadarEventRequest> {
@@ -118,13 +124,13 @@ fn a_computer_houses_opening_shows_the_current_house_its_sight_until_it_dies() {
     }
     assert!(!sim.fog.is_cell_revealed(americans, FAR.0, FAR.1));
 
-    // The frame pass keeps the owner's own sight, which its Unlimbo opened
-    // on its map, and leaves this one in place.
+    // The frame pass leaves this one in place. The computer owner is no
+    // client, so its Unlimbo opened no map of its own (`0x005678E0`'s gate).
     let russians = sim.interner.get("Russians").unwrap();
     let config = sim.sight_reveal_config(&rules);
     sim.refresh_fog(&config, &rules);
-    assert!(sim.fog.sight_is_latched(id, russians));
-    assert!(!sim.fog.sight_is_latched(id, americans));
+    assert!(!sim.fog.sight_is_latched(id, russians));
+    assert!(!sim.fog.by_owner().contains_key(&russians));
     for &(x, y) in &cells {
         assert!(sim.fog.is_cell_visible(americans, x, y), "{x},{y}");
     }
@@ -455,12 +461,12 @@ fn a_shroud_reset_shows_a_computer_superweapon_still_building_up() {
     );
     let russians = sim.interner.get("Russians").unwrap();
     assert!(
-        sim.fog.sight_is_latched(id, russians),
-        "70AF50 caches before Map admission"
+        !sim.fog.sight_is_latched(id, russians),
+        "a computer house is no client"
     );
     assert!(
-        sim.fog.is_cell_revealed(russians, SITE.0, SITE.1),
-        "logical query projection is retained"
+        !sim.fog.by_owner().contains_key(&russians),
+        "a computer house has no map"
     );
     let building = sim.substrate.entities.get(id).unwrap();
     assert_eq!((building.position.rx(), building.position.ry()), SITE);

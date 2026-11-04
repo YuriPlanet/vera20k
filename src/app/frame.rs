@@ -248,6 +248,7 @@ impl App {
                 }
             }
         }
+        crate::app::match_runtime::network_quality::observe_pass(state);
         result
     }
 
@@ -550,11 +551,12 @@ impl App {
         }
     }
 
-    /// The render continuation is allowed only outside every modal, focus,
-    /// exact-step and terminal path. The sequencer remains frame authority.
+    /// The render continuation is allowed only outside every modal, focus
+    /// freeze, exact-step and terminal path. The sequencer remains frame
+    /// authority. A visible window without focus still catches up: it takes
+    /// no player input, and skipping its draws changes no simulation state.
     pub(super) fn next_online_render_frame(state: &AppState) -> Option<(u32, u32)> {
         if state.frontend.screen != GameScreen::InGame
-            || !state.platform.window_active
             || state.platform.window_hidden
             || state.focus_freeze_active()
             || state.match_state.paused()
@@ -791,11 +793,19 @@ impl App {
         // teardown starts, is drawn by the ordinary game frame. The native
         // gates below stop drawing once the router has taken the result, so
         // the beat needs this exception.
+        //
+        // The losing commander's clip needs the same exception while the
+        // result waits for it: `RadarClass::Draw 653100` advances the movie,
+        // and a gate that answers `Unavailable` here never reaches it. The
+        // clip then sits on its first frame until the wait times out, which is
+        // the freeze this exception prevents. Nothing is drawn over the movie
+        // in that window — see `outcome_banner::local_outcome`.
         let showing_verdict = state
             .match_state
             .scenario_exit
             .as_ref()
-            .is_some_and(|exit| exit.holding_banner());
+            .is_some_and(|exit| exit.holding_banner())
+            || crate::app::commander_feedback::verdict_is_waiting_for_clip(state);
         if Self::house_outcome_wait_pending(state)
             || (state.frontend.screen == GameScreen::InGame
                 && state.match_state.scenario_exit.is_some()
@@ -818,6 +828,12 @@ impl App {
                 runtime_pass.main_tick_admitted || tactical_capture.is_some(),
             )
         };
+        // Atlas growths publish before the picture is judged. Captures wait
+        // for them, so their pictures never depend on worker timing.
+        crate::app::match_runtime::sim_tick::publish_entity_atlas_growth(
+            state,
+            shell_capture.is_some() || tactical_capture.is_some(),
+        );
         // A changed picture is drawn in this same pass, so each drawn frame
         // still follows exactly one match service. The picture is judged by
         // the clock before the draw (`redraw_gate::PictureClock`).
@@ -1498,10 +1514,18 @@ impl App {
             .queue
             .submit(std::iter::once(encoder.finish()));
         output.present(&state.renderer.gpu.queue);
+        let presented_at = Instant::now();
+        let battlefield = state.frontend.screen == GameScreen::InGame;
         state
             .platform
             .frame_pacer
-            .record_presented(Instant::now(), state.frontend.screen == GameScreen::InGame);
+            .record_presented(presented_at, battlefield);
+        if battlefield {
+            state
+                .match_state
+                .network_quality
+                .record_present(presented_at);
+        }
         if let Some(completed) = state
             .match_state
             .match_diagnostics

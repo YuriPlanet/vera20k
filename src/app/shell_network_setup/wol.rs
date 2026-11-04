@@ -166,17 +166,21 @@ pub(crate) fn send_first_choices(state: &mut AppState) {
 /// it through `0x5E9240`: a player on the first Open row, an observer on
 /// the first open observer row when no Open player row is left
 /// (`0x5E9510`); with neither (`0x5E9560`) the joiner is kicked
-/// (`0x7A6BC7`).
+/// (`0x7A6BC7`). VERA's room first frees the last AI's seat when every seat
+/// is taken, so it stays open until its host's Max players.
 /// RESIDUAL: the host's node takes the mode's default country (mode
 /// vt+0x28) natively; it is unset here.
 pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<()> {
-    let session = &state.match_state.session;
     let pending = start_pending(state)
         || state
             .frontend
             .network_setup_protocol
             .as_ref()
             .is_some_and(|protocol| protocol.locked);
+    if !pending {
+        state.match_state.session.free_network_seat_for_newcomer()?;
+    }
+    let session = &state.match_state.session;
     let row = if !session.host() {
         Some(None)
     } else if session.network_room_full() {
@@ -252,8 +256,10 @@ pub(crate) fn user_left(state: &mut AppState, name: &str, operator: bool) -> any
 
 /// The private-options sink `0x7A8260`'s gates for a guest's `R`: nothing
 /// while a WOL match runs (`[0xB77DC1]`) or a start is requested
-/// (`[0xB77E28]`); the sender must be a channel user (the caller's check)
-/// and own a node here. Only a host receives it.
+/// (`[0xB77E28]`), and nothing in Quick Match (`[0xA8B244]` 1-3 take only
+/// `Z`), where the matchbot's options seat both players; the sender must be
+/// a channel user (the caller's check) and own a node here. Only a host
+/// receives it.
 pub(crate) fn player_choices(
     state: &mut AppState,
     name: &str,
@@ -262,6 +268,7 @@ pub(crate) fn player_choices(
 ) -> anyhow::Result<()> {
     if crate::app::shell_wol::in_match(state)
         || start_pending(state)
+        || super::quick_match(state)
         || !state.match_state.session.host()
     {
         return Ok(());
@@ -327,7 +334,8 @@ fn quick_match_start(state: &mut AppState, name: &str) {
 /// (`0x007A7F72..0x007A8014`): its own node with a side and a colour, and
 /// exactly two channel users, accept at once: `"A1"` channel-wide
 /// (API+0x3C). The text is the host's digit-led options, and the parse
-/// already dropped it while a match runs or a start is pending.
+/// already dropped it while a match runs or a start is pending. VERA: the
+/// online lobby's verified map runs it again (`accept_network_map_source`).
 /// RESIDUAL: the channel-owner gate (`0x007931A0`, the first operator is
 /// not this user) holds for every guest the matchbot names.
 pub(super) fn quick_match_accept(state: &mut AppState) {
@@ -725,6 +733,10 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
                 .session
                 .network_start_seed()
                 .ok_or_else(|| anyhow::anyhow!("WOL start has no admitted seed"))?;
+            // VERA: a guest's match, or a Quick Match the matchbot paired,
+            // starts without a click. Call back a player in another window
+            // now: a hidden window's slide waits for its frames.
+            state.platform.request_attention(true);
             let protocol = state
                 .frontend
                 .network_setup_protocol
@@ -749,6 +761,8 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
             }
             if let Some(visit) = state.frontend.wol.as_mut() {
                 visit.back_to_room = back_to_room;
+                // A new match voids an earlier BC6 resume no room took.
+                visit.cooperative_resume = None;
             }
             state.frontend.skirmish_preview_texture = None;
             if quick_match {

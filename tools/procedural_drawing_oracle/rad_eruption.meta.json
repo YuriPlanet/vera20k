@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original TechnoClass::SpawnRadEruption 6FD800: eight kind2 RadBeam births.\n\nSupplied Infantry receiver coordinates, sparse fixed-stride cells with level and\nslope, the shared dummy, RadColor and seeded Main/Scenario/Mapgen RNG objects.\nThe whole wrapper, Infantry GetCoords 5F65A0, Map lookup 5657A0, Cell centre\n480A30/47B3A0, RNG, RadBeam allocation 659110, constructor and setters execute.\n",
+  "assumptions": [
+    "Two controls: interior spread10 with real level/slope target cells, and a map-edge firer whose x=-7/y=-5 targets miss and read the stamped dummy (fresh level0/slope0).",
+    "Receiver is a bare Infantry vtable 7EB058 object whose only read field is GetCoords5F65A0 +0x9C. Rules pointer supplies RULESMD RadColor 0,255,0 at +0x1830; spread is the caller-side ftol argument. LevelHeight 89E7C0 is the initialized 104.",
+    "RngTrace seeds Main/Scenario/Mapgen with native Random__Seed(seed, seed+1, seed+2); only Main may draw, 40 ranged requests. Registry B04A60 has spare capacity, so no growth runs."
+  ],
+  "substitutions": [
+    "operator new 7C8E17 returns a bump allocation of the requested 0xC8 bytes."
+  ],
+  "entry_points": {
+    "spawn_rad_eruption": "0x006FD800"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.rad_eruption",
+  "payload_sha256": "d4205fae6966b0c80b39fed028943f957bc635095053931096f60347d5d9e500"
+}

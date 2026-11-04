@@ -265,9 +265,8 @@ impl<'a> FireSubject<'a> {
             .passenger_role
             .inside_transport_id()
             .and_then(|id| self.world.substrate.entities.get(id));
-        // U5 reads the `+0x418` tether byte that radio `0x18` sets, whose
-        // stand-in is the dock-entered projection (VERA owns no exact tether
-        // byte, `radio/receive.rs`), and `RadioLinks[0]`.
+        // U5 reads the `+0x418` tether latch (`radio::tether`) and
+        // `RadioLinks[0]`.
         let radio_link = firer
             .radio_contacts
             .slot(0)
@@ -296,8 +295,12 @@ impl<'a> FireSubject<'a> {
                 Some(_) => Transporter::Plain,
             },
             wave_live: self.world.active_wave_id(firer.stable_id()).is_some(),
+            // FireError reads the actual Techno+304 Fire pointer.
+            fire_particles_live: firer.fire_particle_system.system().is_some(),
             // FireError6FC6D5/6FC9C7 reads the actual Techno+308 pointer.
             spark_particles_live: firer.spark_particle_system.system().is_some(),
+            // FireError reads the actual Techno+314 Railgun pointer too.
+            railgun_particles_live: firer.railgun_particle_system.system().is_some(),
             // T45: the object's own rearm countdown (`+0x2EC`).
             rearming: firer
                 .rearm_timer
@@ -443,6 +446,8 @@ impl<'a> FireSubject<'a> {
                         warped_out: entity.is_warped_out(),
                         chrono_warp_latch: entity.chrono_warp_latch(),
                         bunkered: entity.bunker.link().installed_in().is_some(),
+                        // T18 reads the target's `+0x418` tether latch.
+                        tethered: entity.tether.partner().is_some(),
                         health: entity.health,
                         parasite_lock_until: entity.parasite.launch_lock() as i32,
                         deploying: entity.unit_deploying(),

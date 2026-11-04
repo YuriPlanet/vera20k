@@ -84,13 +84,14 @@ env:
 jobs:
   # One cheap job decides the names and the publish mode, so all platform jobs
   # and the publish job agree instead of each recomputing a date that may roll
-  # over midnight mid-run.
+  # over midnight mid-run. It also writes the third-party notices every
+  # installer carries.
   prepare:
     name: prepare
     # A release reuses a dev build's installers; only a dev build builds.
     if: inputs.promote == ''
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     outputs:
       version: ${{ steps.names.outputs.version }}
       stamp: ${{ steps.names.outputs.stamp }}
@@ -159,6 +160,30 @@ jobs:
             echo "| tag | \`$tag\` |"
             echo "| publish | \`$publish\` |"
           } >> "$GITHUB_STEP_SUMMARY"
+      # Once for all four installers: about.toml names every target, so the
+      # notices are the same on any runner (v0.2.5's Apple Silicon and Intel
+      # Mac images hold byte-identical ones). Here, before the builds, a crate
+      # with an unrecognized or GPL-incompatible license stops the release
+      # early (.github/release/about.toml), and the Intel Mac build no longer
+      # compiles cargo-about, which publishes no binary for it.
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: cargo-about@0.9.2
+      - name: Third-party license notices
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cargo about generate --locked --fail -c .github/release/about.toml \
+            -o dist/THIRD_PARTY_LICENSES.html .github/release/about.hbs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: third-party-licenses
+          path: dist/THIRD_PARTY_LICENSES.html
+          if-no-files-found: error
 
   build:
     name: build (${{ matrix.target }})
@@ -177,7 +202,11 @@ jobs:
           - os: ubuntu-22.04
             target: linux-x64
             program: vera20k
-          - os: macos-latest
+          # Apple Silicon jobs here use macos-15, not macos-latest (macOS 26),
+          # which dropped this job unstarted ("not acquired by Runner of type
+          # hosted") in four of five attempts on 2026-11-03 and 04. The oldest
+          # supported macOS stays MACOSX_DEPLOYMENT_TARGET on either image.
+          - os: macos-15
             target: macos-arm64
             program: vera20k
           # Intel Macs, built and started on GitHub's last Intel image, which
@@ -195,24 +224,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
-      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
-        if: matrix.target != 'macos-x64'
+      # The third-party notices the prepare job wrote, for the Package step.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          tool: cargo-about@0.9.2
-      # cargo-about publishes no Intel Mac binary, and install-action's source
-      # fallback leaves out the `cli` feature that holds the command.
-      - name: Install cargo-about from source
-        if: matrix.target == 'macos-x64'
-        run: cargo install --locked cargo-about@0.9.2 --features cli
-      # Before the build, so a crate with an unrecognized or GPL-incompatible
-      # license stops the release early (.github/release/about.toml).
-      - name: Third-party license notices
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          cargo about generate --locked --fail -c .github/release/about.toml \
-            -o dist/THIRD_PARTY_LICENSES.html .github/release/about.hbs
+          name: third-party-licenses
+          path: dist
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       # The AppImage step also needs desktop-file-validate.
       - name: Install Linux dependencies
@@ -223,23 +239,7 @@ jobs:
       - name: Install Inno Setup 7.1.0
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          # Pin the official compiler instead of using the runner's older copy.
-          $installer = Join-Path $env:RUNNER_TEMP 'innosetup-7.1.0-x64.exe'
-          $compilerDir = Join-Path $env:RUNNER_TEMP 'innosetup-7.1.0'
-          Invoke-WebRequest -Uri 'https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe' -OutFile $installer
-          $expectedSha256 = '0362a383ed217d4c4239b5933866dd96d3eb2102737da92f80f6057a4b40df2f'
-          if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne $expectedSha256) {
-            throw 'Inno Setup download checksum mismatch'
-          }
-          $install = Start-Process $installer -Wait -PassThru -ArgumentList @(
-            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', '/TASKS=',
-            "/DIR=`"$compilerDir`"")
-          if ($install.ExitCode -ne 0) { throw "Inno Setup installation failed: $($install.ExitCode)" }
-          $iscc = Join-Path $compilerDir 'ISCC.exe'
-          if (-not (Test-Path $iscc -PathType Leaf)) { throw 'Inno Setup compiler was not installed' }
-          "INNO_SETUP_ISCC=$iscc" >> $env:GITHUB_ENV
+        run: .github/release/windows/install-inno.ps1
       - name: Build the game
         # Shipped binaries leave out the default `dev-overlays` (the Ctrl+Shift dev chord),
         # and use the whole-program `shipping` profile (Cargo.toml). The splash's
@@ -282,10 +282,10 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $dist = (Resolve-Path dist).Path
-          & $env:INNO_SETUP_ISCC "/DAppVersion=$env:VERSION" "/DBuild=$env:STAMP" `
-            "/DPackageDir=$dist\$env:NAME" "/DOutputDir=$dist" `
-            "/DOutputBaseFilename=$env:NAME-setup" .github\release\windows\vera20k.iss
-          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+          python .github/release/windows/signing.py plain --package "$dist\$env:NAME" `
+            --output "$dist" --version "$env:VERSION" --build "$env:STAMP" `
+            --name "$env:NAME" --iscc "$env:INNO_SETUP_ISCC"
+          if ($LASTEXITCODE -ne 0) { throw "Windows packaging failed with exit code $LASTEXITCODE" }
       # Install, upgrade and uninstall silently against stand-in game folders, so
       # a broken installer stops the release here instead of reaching players.
       - name: Test the Windows installer
@@ -599,12 +599,15 @@ jobs:
   # Swift or package installation with credentials present. The environment's
   # exact-main branch policy is the security boundary, outside workflow YAML.
   # Both Mac images wait for approval together, once every build has passed,
-  # and are notarized side by side.
+  # and are notarized side by side. Both on the Intel image: signing never
+  # starts the app, notarize.py verify accepts the Apple Silicon image there
+  # (checked on v0.2.5), and GitHub has run short of Apple Silicon Macs (the
+  # build matrix).
   macos-sign:
     name: sign and notarize (${{ matrix.target }})
     needs: [prepare, build]
     if: inputs.promote == '' && github.ref == 'refs/heads/main'
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     # Apple's two-hour wait (notarize.py) plus signing, upload and stapling.
     timeout-minutes: 150
     environment: macos-signing
@@ -650,26 +653,17 @@ jobs:
           path: ready/*.dmg
           if-no-files-found: error
 
-  # Each platform's installed game updates itself to this dev build through
-  # its own updater (src/app/updater, tools/update_test.py): the real publisher
-  # signs the R2 layout downloads.yml would publish, a local server stands in for
-  # downloads.vera20k.org, and the installed game is this commit's program built
-  # older (0.0.1), trusting a throwaway key and that server. Also refused: a
-  # manifest and an installer changed after signing. The same release signed by
-  # a new key that its manifest names is only offered as a download by hand.
-  # Then the update players make: the newest release, built from its tag with
-  # that server and key and installed from its own installer, updates to this
-  # dev build.
-  # That is skipped while the newest release has no updater, and when this dev
-  # build raises updater-version, which that release offers as a download by hand.
-  # The game is installed where players keep it: a Windows folder with a space
-  # in its path, /Applications, and an AppImage in ~/Applications that FUSE
-  # mounts. Without retail game data there is no main menu to ask on, so that
-  # build updates without asking. It uploads nothing. The Mac input is the
-  # final notarized image, never the unsigned staging artifact.
-  update-test:
-    name: update test (${{ matrix.target }})
-    needs: [prepare, build, macos-sign]
+  # The update test's two older programs (the update test below): this commit
+  # built as 0.0.1, and the newest release built from its tag. They need the
+  # source, not the installers, so they compile while the Mac images are
+  # signed and notarized rather than after, and the update test only installs
+  # and starts them. They start after the library tests, not with the builds:
+  # GitHub's free plan runs five macOS jobs at once, and the builds and tests
+  # hold four until then. Not needing the builds, they keep a run whose build
+  # failed going until they finish.
+  update-programs:
+    name: update test programs (${{ matrix.target }})
+    needs: [prepare, test]
     if: inputs.promote == ''
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -683,7 +677,7 @@ jobs:
           - os: ubuntu-22.04
             target: linux-x64
             program: vera20k
-          - os: macos-latest
+          - os: macos-15
             target: macos-arm64
             program: vera20k
           - os: macos-15-intel
@@ -701,29 +695,13 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
-      # The game's ALSA headers, the AppImage step's desktop-file-validate, a
-      # virtual screen with a software Vulkan device and the X keyboard library
-      # (README.txt.in) to run the game on, and fusermount for the AppImage
-      # runtime to mount it with, unless the image has one.
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config desktop-file-utils xvfb mesa-vulkan-drivers \
-            libxkbcommon-x11-0
-          command -v fusermount3 || command -v fusermount || sudo apt-get install -y fuse3
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: ${{ matrix.target }}
-          path: release
-      - name: Verify the notarized Mac installer and app
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euo pipefail
-          images=(release/*.dmg)
-          test "${#images[@]}" -eq 1
-          python3 .github/release/macos/notarize.py verify "${images[0]}" --smoke-test
+          sudo apt-get install -y libasound2-dev pkg-config
+      # update-programs/ gathers what the update test takes from this job: the
+      # throwaway signing key, the programs and the newest release's installer.
       - name: Build the older test program
         shell: bash
         env:
@@ -732,7 +710,7 @@ jobs:
           VERA20K_UPDATE_UNATTENDED: '1'
         run: |
           set -euo pipefail
-          key="$(python -m tools.update_test key "$RUNNER_TEMP/update-key")"
+          key="$(python -m tools.update_test key update-programs/key)"
           echo "TEST_UPDATE_KEY=$key" >> "$GITHUB_ENV"
           python - <<'PY'
           import pathlib, re
@@ -740,22 +718,8 @@ jobs:
           path.write_text(re.sub(r'(?m)^version = ".*"$', 'version = "0.0.1"', path.read_text(), count=1), newline="\n")
           PY
           VERA20K_UPDATE_KEY="$key" cargo build --profile fast -p vera20k --no-default-features --bin vera20k
-      - name: Update the installed older build to this dev build
-        shell: bash
-        timeout-minutes: 20
-        env:
-          VERSION: ${{ needs.prepare.outputs.version }}
-        run: |
-          set -euo pipefail
-          release=(release/*)
-          test "${#release[@]}" -eq 1
-          test=(python -m tools.update_test run --key "$RUNNER_TEMP/update-key/signing-key.pem"
-            --release "${release[0]}" --version "$VERSION" --program "target/fast/${{ matrix.program }}")
-          if [ "$RUNNER_OS" = Linux ]; then
-            xvfb-run -a -s '-screen 0 1280x1024x24' "${test[@]}"
-          else
-            "${test[@]}"
-          fi
+          mkdir -p update-programs/older
+          cp "target/fast/${{ matrix.program }}" update-programs/older/
       - name: Fetch the newest release to update from
         id: previous
         shell: bash
@@ -789,7 +753,7 @@ jobs:
             exit 0
           fi
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "vera20k-${tag#v}-${{ matrix.target }}*" \
-            --dir previous-release
+            --dir update-programs/newest-release/installer
           # Outside this checkout, so nothing of this one applies to its build.
           git worktree add --quiet --detach "$RUNNER_TEMP/previous" "$tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -806,8 +770,108 @@ jobs:
           VERA20K_COMMIT="$(git rev-parse --short=7 HEAD)" VERA20K_UPDATE_KEY="$TEST_UPDATE_KEY" \
             cargo build --profile fast -p vera20k --no-default-features --bin vera20k \
             --target-dir "$GITHUB_WORKSPACE/target"
-      - name: Update the newest release to this dev build
-        if: steps.previous.outputs.tag != ''
+      # One tar file, since an artifact drops the programs' executable bit.
+      - name: Pack the test programs
+        shell: bash
+        env:
+          TAG: ${{ steps.previous.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TAG" ]; then
+            cp "target/fast/${{ matrix.program }}" update-programs/newest-release/
+            echo "$TAG" > update-programs/newest-release/tag
+          fi
+          tar -cf update-programs.tar update-programs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          # Not ending in -x64, which the publish job takes for an installer.
+          name: ${{ matrix.target }}-update-programs
+          path: update-programs.tar
+          if-no-files-found: error
+
+  # Each platform's installed game updates itself to this dev build through
+  # its own updater (src/app/updater, tools/update_test.py): the real publisher
+  # signs the R2 layout downloads.yml would publish, a local server stands in for
+  # downloads.vera20k.org, and the installed game is this commit's program built
+  # older (0.0.1), trusting a throwaway key and that server. Also refused: a
+  # manifest and an installer changed after signing. The same release signed by
+  # a new key that its manifest names is only offered as a download by hand.
+  # Then the update players make: the newest release, built from its tag with
+  # that server and key and installed from its own installer, updates to this
+  # dev build.
+  # That is skipped while the newest release has no updater, and when this dev
+  # build raises updater-version, which that release offers as a download by hand.
+  # The game is installed where players keep it: a Windows folder with a space
+  # in its path, /Applications, and an AppImage in ~/Applications that FUSE
+  # mounts. Without retail game data there is no main menu to ask on, so that
+  # build updates without asking. Both programs and the key come from the
+  # update-programs job. It uploads nothing. The Mac input is the final
+  # notarized image, never the unsigned staging artifact.
+  update-test:
+    name: update test (${{ matrix.target }})
+    needs: [prepare, build, macos-sign, update-programs]
+    if: inputs.promote == ''
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows-x64
+            program: vera20k.exe
+          - os: ubuntu-22.04
+            target: linux-x64
+            program: vera20k
+          - os: macos-15
+            target: macos-arm64
+            program: vera20k
+          - os: macos-15-intel
+            target: macos-x64
+            program: vera20k
+    steps:
+      - name: Check out with LF line endings
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      # The game's ALSA library, the AppImage step's desktop-file-validate, a
+      # virtual screen with a software Vulkan device and the X keyboard library
+      # (README.txt.in) to run the game on, and fusermount for the AppImage
+      # runtime to mount it with, unless the image has one.
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev desktop-file-utils xvfb mesa-vulkan-drivers libxkbcommon-x11-0
+          command -v fusermount3 || command -v fusermount || sudo apt-get install -y fuse3
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ matrix.target }}
+          path: release
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ matrix.target }}-update-programs
+      - name: Verify the notarized Mac installer and app
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          images=(release/*.dmg)
+          test "${#images[@]}" -eq 1
+          python3 .github/release/macos/notarize.py verify "${images[0]}" --smoke-test
+      - name: Unpack the test programs
+        id: programs
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -xf update-programs.tar
+          if [ -f update-programs/newest-release/tag ]; then
+            echo "tag=$(cat update-programs/newest-release/tag)" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Update the installed older build to this dev build
         shell: bash
         timeout-minutes: 20
         env:
@@ -815,11 +879,28 @@ jobs:
         run: |
           set -euo pipefail
           release=(release/*)
-          installed=(previous-release/*)
+          test "${#release[@]}" -eq 1
+          test=(python -m tools.update_test run --key update-programs/key/signing-key.pem
+            --release "${release[0]}" --version "$VERSION" --program "update-programs/older/${{ matrix.program }}")
+          if [ "$RUNNER_OS" = Linux ]; then
+            xvfb-run -a -s '-screen 0 1280x1024x24' "${test[@]}"
+          else
+            "${test[@]}"
+          fi
+      - name: Update the newest release to this dev build
+        if: steps.programs.outputs.tag != ''
+        shell: bash
+        timeout-minutes: 20
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          release=(release/*)
+          installed=(update-programs/newest-release/installer/*)
           test "${#installed[@]}" -eq 1
-          test=(python -m tools.update_test run --key "$RUNNER_TEMP/update-key/signing-key.pem"
+          test=(python -m tools.update_test run --key update-programs/key/signing-key.pem
             --release "${release[0]}" --installed "${installed[0]}" --version "$VERSION"
-            --program "target/fast/${{ matrix.program }}" --scenario update)
+            --program "update-programs/newest-release/${{ matrix.program }}" --scenario update)
           if [ "$RUNNER_OS" = Linux ]; then
             xvfb-run -a -s '-screen 0 1280x1024x24' "${test[@]}"
           else
@@ -841,7 +922,7 @@ jobs:
         # not the build's 22.04: rust-cache keys on the OS family, not its
         # version, so a cache saved on the newer image could hand 22.04 build
         # scripts linked against a glibc it lacks.
-        os: [windows-latest, ubuntu-latest, macos-latest, macos-15-intel]
+        os: [windows-latest, ubuntu-latest, macos-15, macos-15-intel]
     uses: ./.github/workflows/test.yml
     with:
       os: ${{ matrix.os }}
@@ -874,10 +955,13 @@ jobs:
       attestations: write
     steps:
       # The notes list the changes since the previous release, which needs
-      # history.
+      # history: commits and trees, never an older file's contents (notes.sh),
+      # so a blobless clone, which takes seconds where a full one took up to
+      # three minutes.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          filter: blob:none
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           # Only the final installers: Windows, Linux and the signed Intel Mac
@@ -967,8 +1051,9 @@ jobs:
   promote:
     name: promote
     if: inputs.promote != ''
-    # Apple's signature and ticket checks run on the same files we publish.
-    runs-on: macos-latest
+    # Apple's signature and ticket checks run on the same files we publish,
+    # on the Intel image like the signing jobs.
+    runs-on: macos-15-intel
     timeout-minutes: 15
     permissions:
       contents: write
@@ -976,10 +1061,13 @@ jobs:
       attestations: read
     steps:
       # The notes list the changes since the previous release, which needs
-      # history.
+      # history: commits and trees, never an older file's contents (notes.sh),
+      # so a blobless clone, which takes seconds where a full one took up to
+      # three minutes.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          filter: blob:none
       - name: Check the dev build and download its installers
         id: source
         shell: bash

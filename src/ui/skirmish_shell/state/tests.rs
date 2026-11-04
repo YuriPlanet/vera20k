@@ -1296,6 +1296,92 @@ fn accepted_map_shrink_resets_and_hides_complete_opponent_rows_atomically() {
 }
 
 #[test]
+fn thirty_start_map_scrolls_its_computer_rows_through_to_player_thirty() {
+    let maps = [test_map_entry_with_starts("thirty.mmx", 30)];
+    let mut shell = SkirmishShellState::default();
+    initialize_rows_for_selected_map(&mut shell, &maps);
+    // The scrollbar stands right of Team beside the computer rows, short of
+    // the right panel.
+    let layout = compute_layout(800, 600);
+    let scrollbar = |shell: &SkirmishShellState| {
+        opponent_scroll_geometry(&layout, shell, &maps).expect("thirty starts scroll")
+    };
+    let bar = scrollbar(&shell).scrollbar.expect("the rows overflow");
+    let team = layout.rows.team_combos;
+    assert!(team[0].y + COMBO_FACE_H < bar.y && bar.y + bar.h <= team[7].y + COMBO_FACE_H);
+    assert!(team[7].x + team[7].w < bar.x && bar.x + bar.w < layout.right_panel.top.x);
+
+    // The player's row and computer rows 1-7; a notch down shows row 8
+    // under the player's, and the down arrow row 9.
+    assert!(player_row_visible(&shell, &maps, 7));
+    assert!(!player_row_visible(&shell, &maps, 8));
+    assert!(handle_option_mouse_wheel(&mut shell, &maps, -1.0));
+    assert!(!player_row_visible(&shell, &maps, 1));
+    assert!(player_row_visible(&shell, &maps, 8));
+    let x = bar.x + bar.w / 2;
+    handle_option_mouse_down(&mut shell, &layout, &maps, x, bar.y + bar.h - 5);
+    handle_option_mouse_up(&mut shell);
+    assert!(player_row_visible(&shell, &maps, 9));
+    assert!(!player_row_visible(&shell, &maps, 2));
+
+    // The thumb dragged to the bottom shows the last seven, player thirty in
+    // the seventh computer row's controls; the wheel goes no further.
+    let thumb = scrollbar(&shell).thumb.expect("thumb");
+    handle_option_mouse_down(&mut shell, &layout, &maps, x, thumb.y + thumb.h / 2);
+    handle_option_mouse_move(&mut shell, &layout, &maps, x, bar.y + bar.h);
+    handle_option_mouse_up(&mut shell);
+    assert!(player_row_visible(&shell, &maps, 0));
+    assert!(!player_row_visible(&shell, &maps, 22));
+    assert!(!handle_option_mouse_wheel(&mut shell, &maps, -1.0));
+    assert_eq!(
+        combo_rect(&layout, &shell, SkirmishComboId::AiType(28)),
+        Some(layout.rows.ai_type_combos[6])
+    );
+    assert_eq!(
+        combo_rect(&layout, &shell, SkirmishComboId::Start(29)),
+        Some(layout.rows.start_combos[7])
+    );
+
+    // Player thirty can take the thirtieth start into the match.
+    apply_combo_selection_for_test(
+        &mut shell,
+        SkirmishComboId::AiType(28),
+        SkirmishComboItem::AiType(SkirmishAiRowType::Hard),
+    );
+    let last_start = SkirmishComboItem::Start(LaunchStartPosition::Position(29));
+    assert!(combo_items(&shell, &maps, SkirmishComboId::Start(29)).contains(&last_start));
+    apply_combo_selection_for_test(&mut shell, SkirmishComboId::Start(29), last_start);
+    let session = launch_session(&shell, &maps, &stock_skirmish_modes(), false).expect("session");
+    let ai = session
+        .opponents
+        .iter()
+        .find(|ai| ai.raw_slot_index == 29)
+        .expect("player thirty launches");
+    assert_eq!(ai.start_position, LaunchStartPosition::Position(29));
+}
+
+#[test]
+fn an_eight_start_map_ejects_rows_past_the_eighth_and_drops_the_scrollbar() {
+    let maps = [
+        test_map_entry_with_starts("thirty.mmx", 30),
+        test_map_entry_with_starts("eight.mmx", 8),
+    ];
+    let mut shell = SkirmishShellState::default();
+    initialize_rows_for_selected_map(&mut shell, &maps);
+    assert!(handle_option_mouse_wheel(&mut shell, &maps, -3.0));
+    shell.opponents[9].row_type = SkirmishAiRowType::Normal;
+
+    // Native ejects nothing at eight players; VERA's rows past them count.
+    assert!(ai_rows_beyond_limit_occupied(&shell.opponents, 8));
+    assert!(accept_selected_map(&mut shell, &maps, 1));
+    assert_eq!(shell.opponents[9].row_type, SkirmishAiRowType::None);
+    assert!(player_row_visible(&shell, &maps, 1));
+    assert!(player_row_visible(&shell, &maps, 7));
+    let layout = compute_layout(800, 600);
+    assert!(opponent_scroll_geometry(&layout, &shell, &maps).is_none());
+}
+
+#[test]
 fn accepted_map_growth_reveals_rows_without_reactivating_hidden_state() {
     let maps = [
         test_map_entry_with_starts("two.mmx", 2),
@@ -1558,7 +1644,7 @@ fn dropdown_hover_uses_scrolled_rows_and_only_click_commits_the_choice() {
     let mut shell = controlled_country_shell();
     let maps = [test_map_entry("map.mmx")];
     let id = SkirmishComboId::Side(0);
-    let rect = combo_rect(&layout, id).unwrap();
+    let rect = combo_rect(&layout, &shell, id).unwrap();
     let saved = selected_combo_item(&shell, id);
 
     handle_option_mouse_down(&mut shell, &layout, &maps, rect.x + rect.w - 1, rect.y + 1);
@@ -1982,8 +2068,8 @@ fn color_default_state_each_row_excludes_other_claimed_colors() {
     // Default state: every active row's filter excludes the other 7 default
     // colors and includes its own + sentinel.
     let mut shell = controlled_country_shell();
-    // Activate every AI row so all 8 slots hold claims.
-    for opponent in &mut shell.opponents {
+    // Activate the seven retail AI rows so all 8 slots hold claims.
+    for opponent in shell.opponents.iter_mut().take(SKIRMISH_AI_SLOT_COUNT) {
         opponent.row_type = SkirmishAiRowType::Easy;
         opponent.color_claimed = true;
     }
@@ -2332,4 +2418,103 @@ fn ares_country_catalog_sorts_hides_and_exposes_flag_and_status() {
         ),
         Some("STT:PlayerSideRandom")
     );
+}
+
+/// VERA's Load Setup puts back what Save Setup kept, clearing the page's own
+/// claims first; a saved choice the page does not offer leaves Random.
+#[test]
+fn saved_setup_loads_back_through_the_combo_rules() {
+    use SkirmishComboId as Id;
+    use SkirmishComboItem as Item;
+    let maps = [test_map_entry_with_starts("four.map", 4)];
+    let country = |index| {
+        Item::Country(SkirmishCountryChoice::Country(
+            LaunchCountry::from_country_index(index),
+        ))
+    };
+    let page = || {
+        let mut shell = controlled_country_shell();
+        initialize_rows_for_selected_map(&mut shell, &maps);
+        shell
+    };
+    let mut shell = page();
+    for (id, item) in [
+        (Id::Side(0), country(6)),
+        (Id::Color(0), Item::Color(2)),
+        (Id::Start(0), Item::Start(LaunchStartPosition::Position(3))),
+        (Id::Team(0), Item::Team(1)),
+        (Id::AiType(0), Item::AiType(SkirmishAiRowType::Hard)),
+        (Id::Side(1), country(2)),
+        (Id::Color(1), Item::Color(5)),
+        (Id::Start(1), Item::Start(LaunchStartPosition::Position(0))),
+        (Id::Team(1), Item::Team(0)),
+        (Id::AiType(1), Item::AiType(SkirmishAiRowType::Normal)),
+        (Id::Side(2), country(8)),
+        (Id::Team(2), Item::Team(1)),
+    ] {
+        apply_combo_selection_for_test(&mut shell, id, item);
+    }
+    shell.game_speed = 2;
+    shell.starting_credits = 7500;
+    shell.short_game = false;
+    shell.crates = false;
+    let saved = SkirmishSavedSetup::capture(&shell, &maps);
+    assert_eq!(saved.computers.len(), 3, "a four-start map shows three");
+
+    // The page to load on gives the player's saved colour and start to a
+    // third computer row.
+    let mut loaded = page();
+    for (id, item) in [
+        (Id::AiType(2), Item::AiType(SkirmishAiRowType::Easy)),
+        (Id::Color(3), Item::Color(2)),
+        (Id::Start(3), Item::Start(LaunchStartPosition::Position(3))),
+    ] {
+        apply_combo_selection_for_test(&mut loaded, id, item);
+    }
+    loaded.game_speed = 5;
+    saved.apply(&mut loaded, &maps);
+    assert_eq!(SkirmishSavedSetup::capture(&loaded, &maps), saved);
+
+    // Row 2's list lacks the colour row 1 took and any start past the map's
+    // four.
+    let mut clash = saved.clone();
+    clash.computers[1].seat.color = Some(5);
+    clash.computers[1].seat.start = LaunchStartPosition::Position(4);
+    clash.apply(&mut loaded, &maps);
+    let shown = SkirmishSavedSetup::capture(&loaded, &maps);
+    assert_eq!(shown.computers[0].seat.color, Some(5));
+    assert_eq!(shown.computers[1].seat.color, None);
+    assert_eq!(shown.computers[1].seat.start, LaunchStartPosition::Auto);
+}
+
+/// Save and Load reach every computer row the map seats, not only the rows
+/// VERA's scrollbar shows.
+#[test]
+fn saved_setup_keeps_computer_rows_scrolled_out_of_view() {
+    let maps = [test_map_entry_with_starts("thirty.mmx", 30)];
+    let page = || {
+        let mut shell = controlled_country_shell();
+        initialize_rows_for_selected_map(&mut shell, &maps);
+        shell
+    };
+    // Player thirty takes the last start while the page shows rows 1-7.
+    let mut shell = page();
+    apply_combo_selection_for_test(
+        &mut shell,
+        SkirmishComboId::AiType(28),
+        SkirmishComboItem::AiType(SkirmishAiRowType::Hard),
+    );
+    apply_combo_selection_for_test(
+        &mut shell,
+        SkirmishComboId::Start(29),
+        SkirmishComboItem::Start(LaunchStartPosition::Position(29)),
+    );
+    assert!(!player_row_visible(&shell, &maps, 29));
+    let saved = SkirmishSavedSetup::capture(&shell, &maps);
+    assert_eq!(saved.computers.len(), 29);
+
+    let mut loaded = page();
+    saved.apply(&mut loaded, &maps);
+    assert_eq!(loaded.opponents[28].row_type, SkirmishAiRowType::Hard);
+    assert_eq!(SkirmishSavedSetup::capture(&loaded, &maps), saved);
 }

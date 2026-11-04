@@ -39,6 +39,7 @@
 mod cell_reveal;
 mod fog_objects;
 pub use fog_objects::{FoggedDrawKind, FoggedDrawRecord, FrozenBuilding};
+mod map_journal;
 mod map_reveal;
 pub(crate) use map_reveal::MapTransition;
 mod planes;
@@ -775,6 +776,10 @@ pub struct FogState {
     /// selection uses the original x86-masked bit index (`h & 31`).
     #[serde(default)]
     cloaked_by_houses: Vec<u32>,
+    /// While journaling ([`Self::journal`]), what each map held before its
+    /// first write. Never saved or hashed.
+    #[serde(skip)]
+    journal: Option<Box<map_journal::MapJournal>>,
 }
 
 impl FogState {
@@ -926,6 +931,7 @@ impl FogState {
     ) {
         // In this map `latched` means only that this viewer's derived source
         // counts are active. Its native +250 lives in `sight_sources`.
+        self.note_sight(id, viewer);
         admission.latched = true;
         let map = if alternate {
             &mut self.alternate_sight_admissions
@@ -972,6 +978,7 @@ impl FogState {
         // alternate House received the actual map contribution (70B0CB..B12C).
         let mut source = SightSource::from(admission);
         source.owner = source_owner;
+        self.note_sight(id, viewer);
         self.sight_sources.insert((id, viewer), source);
     }
 
@@ -983,6 +990,7 @@ impl FogState {
         id: u64,
         viewer: InternedId,
     ) -> Option<SightSource> {
+        self.note_sight(id, viewer);
         let source = self.sight_sources.get_mut(&(id, viewer))?;
         if !source.latched {
             return None;
@@ -1001,6 +1009,7 @@ impl FogState {
         viewer: InternedId,
         alternate: bool,
     ) -> Option<SightAdmission> {
+        self.note_sight(id, viewer);
         let map = if alternate {
             &mut self.alternate_sight_admissions
         } else {
@@ -1028,6 +1037,7 @@ impl FogState {
         id: u64,
         viewer: InternedId,
     ) -> Option<SightAdmission> {
+        self.note_sight(id, viewer);
         self.sight_admissions.remove(&(id, viewer))
     }
 
@@ -1069,6 +1079,7 @@ impl FogState {
     /// Destructor cleanup of cached250/254/260 and per-viewer derived indexes.
     /// Native UnInit/Limbo must have released their live contributions first.
     pub(crate) fn forget_sight_source(&mut self, id: u64) {
+        self.note_shared_write();
         while let Some((&key, _)) = self.sight_sources.range(source_keys(id)).next() {
             self.sight_sources.remove(&key);
         }
@@ -1282,6 +1293,7 @@ impl FogState {
         occupied_cells: Vec<(u16, u16)>,
         drawing: Option<FrozenBuilding>,
     ) -> FoggedObjectId {
+        self.note_shared_write();
         let id = self.next_fogged_object_id.max(1);
         self.next_fogged_object_id = id.wrapping_add(1);
         let record = FoggedObjectFootprintRecord {
@@ -1307,6 +1319,7 @@ impl FogState {
     }
 
     pub(crate) fn set_object_fogged(&mut self, viewer: InternedId, id: u64, fogged: bool) {
+        self.note_shared_write();
         if fogged {
             self.fogged_live_objects.insert((viewer, id));
         } else {
@@ -1322,6 +1335,7 @@ impl FogState {
     }
 
     pub(crate) fn forget_fogged_live_object(&mut self, id: u64) {
+        self.note_shared_write();
         self.fogged_live_objects.retain(|(_, candidate)| *candidate != id);
     }
 
@@ -1347,6 +1361,7 @@ impl FogState {
         rx: u16,
         ry: u16,
     ) -> Vec<FoggedObjectFootprintRecord> {
+        self.note_shared_write();
         let Some(mut ids) = self.fogged_object_cells.remove(&(viewer, rx, ry)) else {
             return Vec::new();
         };
@@ -1375,6 +1390,7 @@ impl FogState {
     /// deposits are owned by `sim::sensor_lifecycle`; this remains the explicit
     /// map-storage recreation edge.
     pub fn reset_sensor_counts(&mut self) {
+        self.note_shared_write();
         self.sensors_by_house.clear();
         self.disguise_detect_by_house.clear();
     }
@@ -2150,6 +2166,7 @@ impl FogState {
         // whose clear visited every cell re-marks every footprint this frame.
         let mut frame = SightFrame::default();
         if self.width != width || self.height != height {
+            self.note_shared_write();
             #[cfg(any(test, feature = "test-support"))]
             {
                 frame.sized = true;
@@ -2896,48 +2913,15 @@ fn fire_reveal_cells(fog: &mut FogState, owner: InternedId, cells: Vec<(u16, u16
     }
 }
 
-/// The houses a reveal by `owner` can reach (every house with a map or an
-/// alliance entry, and `owner`) that are `owner` itself, when `with_owner`,
-/// or whose name `admits` passes; ascending, without repeats.
-fn reveal_candidates(
-    fog: &FogState,
-    alliances: &HouseAllianceMap,
-    owner: InternedId,
-    interner: &StringInterner,
-    with_owner: bool,
-    admits: impl Fn(&str) -> bool,
-) -> Vec<InternedId> {
-    let mut viewers: Vec<InternedId> = fog
-        .by_owner
-        .keys()
-        .copied()
-        .chain(std::iter::once(owner))
-        .filter(|&viewer| (with_owner && viewer == owner) || admits(interner.resolve(viewer)))
-        .collect();
-    // An alliance entry's house is the interned name itself; `owner` is
-    // already in when `with_owner` keeps it.
-    for (house, allies) in alliances {
-        for name in std::iter::once(house).chain(allies) {
-            if admits(name)
-                && let Some(id) = interner.get(name)
-            {
-                viewers.push(id);
-            }
-        }
-    }
-    viewers.sort_unstable();
-    viewers.dedup();
-    viewers
-}
-
 /// The house gate of `MapClass::RevealArea @ 0x005678E0`
-/// (`0x00567AB0..0x00567B12`), asked with `viewer` as the player whose map
+/// (`0x00567AB0..0x00567B12`) and of Map `0x005673A0`
+/// (`0x0056756A..0x005675D0`), asked with `viewer` as the player whose map
 /// the leaf writes: a reveal by `owner` maps `owner`'s own cells, and an
 /// allied house's when `[AudioVisual] AllyReveal=` is set (`0x00567AEF`).
 ///
 /// RESIDUAL: a house that infiltrated `owner`'s radar (the `+0x54E4` bit
-/// of its index, `0x00567AC1..0x00567ADB`) is mapped too, allied or not;
-/// VERA keeps no radar-spy bits.
+/// of its index, `0x00567AC1..0x00567ADB`, `0x0056757F..0x00567599`) is
+/// mapped too, allied or not; VERA keeps no radar-spy bits.
 pub(crate) fn reveal_admits(
     alliances: &HouseAlliances,
     owner: InternedId,
@@ -2960,35 +2944,56 @@ fn ally_reveal_test<'a>(
     move |viewer| config.ally_reveal && allied(viewer)
 }
 
-/// The maps a reveal by `owner` writes ([`reveal_admits`]).
+/// The maps a reveal by `owner` writes: each client map in `clients` whose
+/// RevealArea house gate admits `owner` ([`reveal_admits`]); ascending,
+/// without repeats.
+///
+/// gamemd keeps one map per running client, its PlayerPtr's (`0x00A83D4C`).
+/// `TechnoClass::UpdateReveal @ 0x0070AF50` and `ReReveal @ 0x0070B1D0` pass
+/// the source's Owner (`+0x21C`) to `MapClass::RevealArea @ 0x005678E0`,
+/// whose gate (`0x00567AB0..0x00567B12`) returns at `0x00567D88` before any
+/// cell unless that Owner is PlayerPtr or an `AllyReveal=` ally of it. A
+/// computer house is never a client's PlayerPtr, so it has no map: only the
+/// represented clients (`Simulation::fog_viewers`) are candidates.
 pub(crate) fn direct_reveal_viewers(
-    fog: &FogState,
     alliances: &HouseAllianceMap,
     owner: InternedId,
     config: &VisionConfig,
     interner: &StringInterner,
+    clients: &[InternedId],
 ) -> Vec<InternedId> {
-    reveal_candidates(
-        fog,
-        alliances,
-        owner,
-        interner,
-        true,
-        ally_reveal_test(alliances, owner, config, interner),
-    )
+    let allied = ally_reveal_test(alliances, owner, config, interner);
+    let mut viewers: Vec<InternedId> = clients
+        .iter()
+        .copied()
+        .filter(|&viewer| viewer == owner || allied(interner.resolve(viewer)))
+        .collect();
+    viewers.sort_unstable();
+    viewers.dedup();
+    viewers
 }
 
-/// `owner` and every house `owner`'s IsAlliedWith names, whatever `AllyReveal=`
-/// says. `HouseClass::IsAlliedWith @ 0x004F9A50` reads `owner`'s own ally bits
-/// (`+0x5788`), one-way; a house is its own ally.
+/// The client maps in `clients` that `owner`'s IsAlliedWith names, whatever
+/// `AllyReveal=` says; ascending, without repeats.
+/// `HouseClass::IsAlliedWith @ 0x004F9A50` reads `owner`'s own ally bits
+/// (`+0x5788`), one-way; a house is its own ally. Its callers ask it of
+/// PlayerPtr only (the high-flyer refresh `0x004DA6AF..0x004DA6C2`), so a
+/// computer house, never a client's PlayerPtr, is no candidate.
 pub(crate) fn allied_viewers(
-    fog: &FogState,
     alliances: &HouseAllianceMap,
     owner: InternedId,
     interner: &StringInterner,
+    clients: &[InternedId],
 ) -> Vec<InternedId> {
     let allied = crate::map::houses::ally_test(alliances, interner.resolve(owner));
-    reveal_candidates(fog, alliances, owner, interner, false, allied)
+    let mut viewers: Vec<InternedId> = clients
+        .iter()
+        .copied()
+        .filter(|&viewer| allied(interner.resolve(viewer)))
+        .collect();
+    viewers.sort_unstable();
+    viewers.dedup();
+    viewers
 }
 
 /// Materialize active SpySat house latches by marking every synthetic-grid cell
@@ -2998,9 +3003,8 @@ pub(crate) fn allied_viewers(
 /// gamemd's whole-map reveal sets only the explored bit on every cell. It does
 /// not create a "currently in sight" state — with `FogOfWar=no` no such per-cell
 /// state exists at all — so the uplink lifts the shroud and nothing more. It
-/// must not mark cells *visible* here: that layer is VERA-internal and gates
-/// combat target acquisition, so writing it map-wide would let every unit
-/// acquire across the whole map, which the engine never does.
+/// must not mark cells *visible* here: that layer is VERA-internal, and the
+/// uplink never puts a cell in sight.
 ///
 /// Writing it repeatedly is idempotent. The persisted per-house aggregate latch
 /// decides activation and last-provider loss; this helper only materializes the
@@ -3165,6 +3169,7 @@ pub(crate) fn publish_gap_generator_event(
 ) {
     // Both complete6FB170/6FB470 leaves clear local House240 after an
     // admitted269 transition, including friendly events with no hostile cells.
+    fog.note_map(viewer);
     fog.whole_map_revealed_owners.remove(&viewer);
     let width = usize::from(fog.width);
     let height = usize::from(fog.height);

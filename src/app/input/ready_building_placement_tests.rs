@@ -162,7 +162,7 @@ fn paid_ready_fixture() -> Option<Fixture> {
     )?;
 
     let options = production::all_build_options_for_owner(&sim, &rules, "Americans");
-    let candidates = cameo_candidates(&sim, &rules, None, owner, &options, &[], &[]);
+    let candidates = cameo_candidates(&sim, &rules, None, owner, &options, &[]);
     let additions = production::initial_construction_options(&sim, &rules);
     projection.reconcile_cameos(owner, &candidates, 12, &additions);
     let starting_credits = production::credits_for_owner(&sim, "Americans");
@@ -241,7 +241,6 @@ fn refresh_fixture_sidebar(
         None,
         fixture.owner,
         &options,
-        &ready,
         &[],
     );
     let layout_spec = SidebarChromeLayoutSpec::stock();

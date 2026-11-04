@@ -84,7 +84,9 @@ impl PassiveScan {
         }
     }
 
-    /// The targeting timer.
+    /// The targeting timer (`+0x180` start, `+0x188` duration). Its `due` is
+    /// TechnoClass::TargetingTimerFinished (`0x0070F7E0`): an unarmed timer
+    /// is due only with a zero duration.
     pub const fn timer(self) -> MissionTimer {
         self.timer
     }
@@ -812,7 +814,6 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
             self.id,
             outcome,
         )
-        .map(TargetKind::Entity)
     }
 
     fn distributed_fire(&mut self) -> bool {
@@ -883,7 +884,7 @@ impl Simulation {
         id: u64,
         mask: ScanMission,
         scan_coord: Option<[i32; 3]>,
-    ) -> Option<u64> {
+    ) -> Option<TargetKind> {
         let result = self.threat_scan(rules, overlay_registry, id, mask, scan_coord);
         Self::commit_threat_scan(&mut self.scenario_rng, &mut self.substrate, id, result)
     }
@@ -927,7 +928,7 @@ impl Simulation {
         substrate: &mut ObjectSubstrate,
         id: u64,
         mut result: crate::sim::combat::greatest_threat::ThreatScanOutcome,
-    ) -> Option<u64> {
+    ) -> Option<TargetKind> {
         // The computer's disguise detection draws during the scan
         // (Evaluate_Candidate 0x006F851C).
         if let Some(rng) = result.take_scenario_rng() {
@@ -960,7 +961,7 @@ pub(crate) fn direct_greatest_threat(
     overlay_registry: Option<&OverlayTypeRegistry>,
     scanner: u64,
     mask: ScanMission,
-) -> Option<u64> {
+) -> Option<TargetKind> {
     // These callers explicitly copy Object+9C..A4, not virtual GetCoords.
     // Preserve the shared direct-call owner for all of them. Original Steam
     // gamemd:6ED132,6ECDEF,6F0222 and414B3D.
@@ -1015,6 +1016,8 @@ mod tests {
             let victim = sim
                 .spawn_object("E1", "Russians", 15, 12, 0, rules)
                 .unwrap();
+            // The player has seen the enemy: the campaign scan gate needs +0x41B.
+            crate::sim::arena_fixture::discover(&mut sim, victim);
             let owner = sim.substrate.entities.get(scanner).unwrap().owner();
             sim.fog.mark_visible_for_owner(owner, 15, 12);
             sim.session.set_binary_frame_for_test(100);

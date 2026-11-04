@@ -217,6 +217,12 @@ pub(crate) struct CommanderFeedback {
     verdict_held: bool,
     /// Set once the wait has ended, so it never re-opens.
     verdict_released: bool,
+    /// When the result's card first went up: the frame the result was
+    /// published, which is also the frame the wait opened. Survives the
+    /// release, so the exit router can charge the card's beat against the time
+    /// it has already been on screen — a clip that played under it has spent
+    /// that beat, and the card is not held again after the clip ends.
+    verdict_card_at_ms: Option<u64>,
     /// Whether the result's own EVA line has been said after the frame's
     /// sound delivery withheld it. See [`withholds_verdict_line`].
     verdict_line_said: bool,
@@ -260,6 +266,58 @@ impl CommanderFeedback {
     fn verdict_line_clear(&self, radar_pending: bool) -> bool {
         !self.verdict_held && self.queue.is_empty() && !radar_pending
     }
+}
+
+/// Whether the published result is being held back for the losing commander's
+/// clip.
+///
+/// The tactical frame has to keep drawing while this is true: `RadarClass::Draw
+/// 653100` is what advances the clip (`crate::render::radar::anim`), so a frame
+/// the outcome gates throw away leaves the movie on its first frame until the
+/// wait gives up. It is also the reason the verdict banner draws nothing yet —
+/// the card belongs to the beat after the clip, not to the movie.
+pub(crate) fn verdict_is_waiting_for_clip(state: &AppState) -> bool {
+    state
+        .match_state
+        .match_presentation
+        .commander_feedback
+        .result_waits()
+}
+
+/// When the result's card first went up, if a clip held the result back.
+///
+/// The card goes up on the frame the simulation publishes, which is the frame
+/// the clip wait opens. The verdict's beat is measured from here, so a clip
+/// that played under the card has already spent it.
+pub(crate) fn verdict_card_shown_at_ms(state: &AppState) -> Option<u64> {
+    state
+        .match_state
+        .match_presentation
+        .commander_feedback
+        .verdict_card_at_ms
+}
+
+/// Cut the losing commander's clip short because the player asked to leave the
+/// battlefield before it ends.
+///
+/// The match is already decided at this point: the simulation published the
+/// result, latched its terminal score and stopped the score clock on that same
+/// frame (`finalize_terminal_score_snapshot`, `MasterFrame`), so skipping the
+/// clip changes nothing about the numbers. It retires the clip's FIFO and ends
+/// the wait, and the exit router takes the verdict on its next pass — the same
+/// card, the same theme and the same score page the clip would have led to.
+pub(crate) fn skip_verdict_clip(state: &mut AppState, wall_ms: u64) {
+    if !verdict_is_waiting_for_clip(state) {
+        return;
+    }
+    // The clip's own EVA hold and both queues belong to this FIFO.
+    crate::app::radar_movie::retire(state, wall_ms);
+    let feedback = &mut state.match_state.match_presentation.commander_feedback;
+    feedback.queue.clear();
+    feedback.verdict_wait = None;
+    // Never re-open: the verdict is the router's now.
+    feedback.verdict_released = true;
+    log::info!("The commander clip is skipped; the verdict goes out now");
 }
 
 /// The feature's own admit test. Only a live skirmish draws clips, and only
@@ -404,6 +462,7 @@ pub(crate) fn owe_the_verdict_a_clip(
         );
         let feedback = &mut state.match_state.match_presentation.commander_feedback;
         feedback.verdict_held = true;
+        feedback.verdict_card_at_ms = Some(wall_ms);
         feedback.verdict_wait = Some(VerdictWait {
             since_ms: wall_ms,
             start_passes: feedback.passes,

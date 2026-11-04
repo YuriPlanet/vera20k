@@ -479,6 +479,7 @@ fn relay_section_at(source: u8, sources_mask: u32, tick_hz: u16) -> String {
         sources_mask,
         tick_hz,
         expires: 86400,
+        pacing: Default::default(),
     }
     .sign(&key)
     .unwrap();
@@ -817,9 +818,43 @@ fn single_player_spawn_keeps_its_offline_admission() {
     for append in [relay_section(0, 1), "[Other12]\nName=Remote\n".into()] {
         assert!(SpawnRequest::parse(&format!("{SKIRMISH}\n{append}")).is_err());
     }
-    // Retail's eight waypoints still bound a single-player start.
+    // A network room's thirty waypoints bound a single-player start too.
     let far = SKIRMISH.replacen("Multi2=0\n[Multi1", "Multi2=8\n[Multi1", 1);
-    assert!(SpawnRequest::parse(&far).is_err());
+    assert!(SpawnRequest::parse(&far).is_ok());
+}
+
+/// One human against `ai` AI houses in `mode`, as a lobby writes it without a relay.
+fn one_human(mode: i32, ai: usize) -> String {
+    let rows = |value: fn(usize) -> usize| -> String {
+        (2..=ai + 1)
+            .map(|house| format!("Multi{house}={}\n", value(house)))
+            .collect()
+    };
+    format!(
+        "[Settings]\nName=Solo\nScenario=spawnmap.ini\nPlayerCount=1\nGameMode={mode}\n\
+         Side=0\nColor=0\nAIPlayers={ai}\nSpecialHouseIsAlly=No\n\
+         [HouseHandicaps]\n{}[HouseCountries]\n{}[HouseColors]\n{}",
+        rows(|_| 1),
+        rows(|house| house % 9),
+        rows(|house| house % 8),
+    )
+}
+
+/// A lobby plays every one-human game without a relay, so one human takes what
+/// a network room admits: thirty houses, and modes Skirmish does not list.
+#[test]
+fn one_human_spawn_admits_thirty_houses_and_unlisted_modes() {
+    let SpawnGame::Skirmish(full) = SpawnRequest::parse(&one_human(1, 29)).unwrap().game else {
+        panic!("one human stays a skirmish")
+    };
+    assert_eq!(full.opponents.len(), 29);
+    assert!(full.house_roster_is_consistent());
+    assert!(SpawnRequest::parse(&one_human(1, 30)).is_err());
+    let SpawnGame::Skirmish(coop) = SpawnRequest::parse(&one_human(3, 2)).unwrap().game else {
+        panic!("one human stays a skirmish")
+    };
+    assert_eq!(coop.mode.override_file, "MPCoopMD.ini");
+    assert_eq!(coop.opponents.len(), 2);
 }
 
 #[test]

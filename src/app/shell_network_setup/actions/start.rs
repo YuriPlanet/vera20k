@@ -208,10 +208,12 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .network_setup()
         .expect("mode callback retains setup")
         .clone();
+    let banned =
+        crate::app::shell_network_setup::bans::banned_countries(state, launch.options.bans);
     let resolved = state
         .frontend
         .multiplayer_shell_runtime
-        .resolve_network_assignments(&launch)?;
+        .resolve_network_assignments(&launch, &banned)?;
     state
         .match_state
         .session

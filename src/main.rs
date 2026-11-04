@@ -194,7 +194,20 @@ fn run(app_bundle: bool) -> Result<i32> {
             vera20k::app::App::new_tactical_capture(request)
         }
     };
-    event_loop.run_app(&mut app)?;
+    // A panic skips `exiting`, where the match replay is saved. winit stops
+    // its loop and hands the panic back here (macOS and Windows catch it in
+    // their callbacks; elsewhere it unwinds straight out), with `app` intact.
+    // Save the replay, then let the panic end the process as before.
+    let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        event_loop.run_app(&mut app)
+    }));
+    match ran {
+        Ok(result) => result?,
+        Err(panic) => {
+            app.save_replay_after_panic();
+            std::panic::resume_unwind(panic);
+        }
+    }
     // Written for failed launches too, before the failure returns below.
     let spawn_status = app.finish_spawn_launch();
     app.finish_capture()?;

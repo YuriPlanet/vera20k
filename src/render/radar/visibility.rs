@@ -194,7 +194,10 @@ pub(super) struct RadarMobileVisibilityFacts {
     pub veteran_radar_invisible: bool,
 }
 
-/// Mobile virtual +0x324 @ 0x0070D1D0, in native branch order.
+/// Mobile virtual +0x324 @ 0x0070D1D0, in native branch order. Its Fog of
+/// War arm (`0x0070D350..0x0070D384`: scenario flag `0x1000` and a fogged
+/// Location) never applies: the fog test it calls, `0x005865E0`, is
+/// `xor al, al; ret 4` in YR, so no fact stands for it here.
 pub(super) fn radar_mobile_registration_visibility(
     facts: RadarMobileVisibilityFacts,
     discovered: bool,
@@ -449,7 +452,40 @@ pub(super) fn build_radar_object_update(
         // AddObjectToTracker @ 0x00655560 compares directly to g_PlayerPtr,
         // narrower than IsHumanPlayer's single-player shroud exception.
         local_front: local_owner == Some(entity.owner()),
+        surface_edge: projection.native_surface.map(|surface| {
+            let mut edge = super::tracker::RadarSurfaceEdge {
+                size: surface.generated_size(),
+                in_playfield_origin: None,
+            };
+            if (!edge.contains(origin) || foundation.is_some())
+                && radar_edge_cell_in_playfield(entity, cells, playfield_bounds, rules, interner)
+            {
+                edge.in_playfield_origin = Some(surface.world_to_surface_pixel(raw_x, raw_y, true));
+            }
+            edge
+        }),
     }
+}
+
+/// `0x0070DB0A..0x0070DB21`: `MapClass::Is_Cell_In_Playfield @ 0x00578540`
+/// (mode 1) on the object's GetCell (vt+0x1C4,
+/// [`crate::sim::movement::ground_pose::entity_navigation_cell_identity`]). Without
+/// the map the object stays off the radar, as it did before this step.
+fn radar_edge_cell_in_playfield(
+    entity: &crate::sim::game_entity::GameEntity,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    bounds: Option<crate::map::playfield::PlayfieldBounds>,
+    rules: Option<&RuleSet>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+) -> bool {
+    cells.is_some_and(|cells| {
+        crate::sim::movement::ground_pose::entity_navigation_cell_identity(
+            entity,
+            cells,
+            rules.zip(interner),
+        )
+        .is_ok_and(|cell| crate::sim::cell_rect::retained_cell_is_in_playfield(cell, bounds, cells))
+    })
 }
 
 #[cfg(test)]
@@ -889,6 +925,70 @@ mod tests {
             Some(bounds),
             None,
         ));
+    }
+
+    /// A unit centred on the playfield's bottom row projects one pixel past
+    /// the generated surface (`0x006557F0`, clamp 0). TechnoClass+0x4A0
+    /// re-projects it with clamping while its cell is in the playfield
+    /// (`0x0070DADC..0x0070DB64`), so its dot sits on the surface edge.
+    #[test]
+    fn a_unit_on_the_bottom_playfield_row_keeps_its_radar_dot_on_the_edge() {
+        let bounds = crate::map::playfield::PlayfieldBounds {
+            base: 16,
+            off_fc: 2,
+            off_100: 2,
+            off_104: 12,
+            off_108: 8,
+        };
+        let terrain = flat_terrain(32);
+        let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(&terrain);
+        let surface = crate::render::radar::geometry::NativeRadarSurfaceGeometry::from_playfield(
+            &terrain, bounds,
+        )
+        .expect("flat playfield surface");
+        let (rx, ry) = terrain
+            .iter()
+            .filter(|cell| {
+                bounds.contains_height_aware_packed(
+                    i32::from(cell.rx),
+                    i32::from(cell.ry),
+                    cell.level as i8,
+                    cell.slope_type,
+                )
+            })
+            .map(|cell| (cell.rx, cell.ry))
+            .max_by_key(|&(rx, ry)| (rx + ry, rx))
+            .expect("a playfield cell");
+        let mut entity =
+            crate::sim::game_entity::GameEntity::test_default(1, "MTNK", "Enemy", rx, ry);
+        entity.lifecycle.set_in_limbo_for_test(false);
+        entity.locomotor = Some(
+            crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                crate::rules::locomotor_type::LocomotorKind::Drive,
+            ),
+        );
+        let mut projection = visibility_projection();
+        projection.native_surface = Some(surface);
+        let update = build_radar_object_update(
+            &entity,
+            &crate::sim::houses::Houses::default(),
+            None,
+            &FogState::default(),
+            &Default::default(),
+            true,
+            false,
+            None,
+            None,
+            projection,
+            Some(bounds),
+            Some(&cells),
+        );
+        let (width, height) = surface.generated_size();
+        assert_eq!(update.origin.1, height, "one pixel past the surface");
+        assert!((0..width).contains(&update.origin.0));
+        let mut tracker = super::super::tracker::RetainedRadarTracker::default();
+        tracker.update_object(update, false);
+        assert_eq!(tracker.entries_at(update.origin.0, height - 1), vec![1]);
     }
 
     #[test]

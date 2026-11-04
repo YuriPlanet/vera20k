@@ -776,9 +776,17 @@ mod tests {
     use crate::sim::intern::test_intern;
 
     fn rules_for(section: &str) -> RuleSet {
-        RuleSet::from_ini(&IniFile::from_str(&format!(
-            "[InfantryTypes]\n0=E1\n\n[VehicleTypes]\n\n[AircraftTypes]\n\n[BuildingTypes]\n\n[E1]\nStrength=100\nArmor=flak\nSpeed=4\n{section}\n"
-        )))
+        rules_with_art(section, &IniFile::empty())
+    }
+
+    /// [`rules_for`] with `art` as the fixed ART its passes read.
+    fn rules_with_art(section: &str, art: &IniFile) -> RuleSet {
+        RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(&format!(
+                "[InfantryTypes]\n0=E1\n\n[VehicleTypes]\n\n[AircraftTypes]\n\n[BuildingTypes]\n\n[E1]\nStrength=100\nArmor=flak\nSpeed=4\n{section}\n"
+            )),
+            art,
+        )
         .expect("rules should parse")
     }
 
@@ -898,12 +906,6 @@ mod tests {
                 "no"
             }
         };
-        let mut rules = rules_for(&format!(
-            "Locomotor={{4A582744-9839-11d1-B709-00A024DDAFD1}}\n\
-             Fearless={}\nFraidycat={}\n",
-            yes_no("fearless", false),
-            yes_no("fraidycat", false)
-        ));
         let records: String = crate::rules::infantry_sequence::NATIVE_SEQUENCE_NAMES
             .iter()
             .enumerate()
@@ -917,6 +919,15 @@ mod tests {
             "[E1]\nSequence=FearFixture\nCrawls={}\n[FearFixture]\n{records}",
             yes_no("crawls", true)
         ));
+        let mut rules = rules_with_art(
+            &format!(
+                "Locomotor={{4A582744-9839-11d1-B709-00A024DDAFD1}}\n\
+                 Fearless={}\nFraidycat={}\n",
+                yes_no("fearless", false),
+                yes_no("fraidycat", false)
+            ),
+            &art,
+        );
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
         // Native fixture supplies Type+EBD directly. The production reader
         // binds that Crawls byte from ART, not RULES, before Down51D77A.
@@ -1123,6 +1134,16 @@ mod tests {
                 .unwrap()
         );
         assert_native_fear_state(&sim, row);
+    }
+
+    /// WEEDGUY is the retail infantry without an ARTMD image section, so it
+    /// keeps the InfantryTypeClass constructor's Crawls (`0x00523788`).
+    #[test]
+    fn retail_weedguy_keeps_the_constructor_crawls() {
+        let Some(rules) = retail_e1_rules() else {
+            return;
+        };
+        assert!(rules.object("WEEDGUY").unwrap().crawls);
     }
 
     /// Stock E1's Crawls/Fearless/Fraidycat/Ammo/Walk inputs come through

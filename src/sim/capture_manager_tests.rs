@@ -2858,3 +2858,44 @@ fn warhead_mind_control_anim_overrides_the_global_ring() {
         "MINDANIM"
     );
 }
+
+/// TechnoClass::ChangeOwner deselects the local player's selected object
+/// before the owner swap (`0x007014B9..0x007014CF`); another house's
+/// selected byte is left alone.
+#[test]
+fn a_captured_selected_unit_of_the_local_player_is_deselected() {
+    let rules = rules();
+    let mut sim = sim(3);
+    let local = sim.interner.get("Americans");
+    sim.session.set_current_house_for_test(local);
+    let mut captured = Vec::new();
+    for (owner, ry) in [("Americans", 10), ("Russians", 14)] {
+        let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, ry);
+        let victim = spawn(&mut sim, &rules, "E1", owner, 12, ry);
+        sim.substrate
+            .entities
+            .get_mut(victim)
+            .unwrap()
+            .selection
+            .select();
+        let effects = crate::sim::world::FrameEffects::default();
+        assert!(sim.capture_unit(yuri, victim, &rules, None, effects));
+        captured.push(victim);
+    }
+    let selected = |id| {
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .selection
+            .is_selected()
+    };
+    assert!(
+        !selected(captured[0]),
+        "the local player's captive leaves the selection"
+    );
+    assert!(
+        selected(captured[1]),
+        "only the local player's selection changes"
+    );
+}

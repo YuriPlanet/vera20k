@@ -24,12 +24,14 @@ impl FogState {
     /// `MapClass::RevealEntireMap`'s one-time House+240 test and set
     /// (`0x00577F9A..0x00577FAD`): false when the map is already revealed.
     pub(crate) fn admit_whole_map_reveal(&mut self, owner: InternedId) -> bool {
+        self.note_map(owner);
         self.whole_map_revealed_owners.insert(owner)
     }
 
     /// Successful native6FB170 gap re-admission invalidates House+240,
     /// including a friendly generator whose footprint leaves no hostile gap.
     pub(crate) fn invalidate_whole_map_reveal_for_owner(&mut self, owner: InternedId) {
+        self.note_map(owner);
         self.whole_map_revealed_owners.remove(&owner);
     }
 
@@ -190,6 +192,7 @@ impl FogState {
         cells: Vec<(u16, u16)>,
         transition: MapTransition,
     ) {
+        self.note_map(owner);
         self.gap_sources.remove(&owner);
         if transition == MapTransition::Reveal {
             self.whole_map_revealed_owners.insert(owner);
@@ -220,6 +223,7 @@ impl FogState {
         for index in gap_footprint(gap, usize::from(self.width), usize::from(self.height)) {
             vis.add_gap_cell(index);
         }
+        self.note_map(owner);
         self.gap_sources.entry(owner).or_default().insert(gap);
         self.whole_map_revealed_owners.remove(&owner);
     }

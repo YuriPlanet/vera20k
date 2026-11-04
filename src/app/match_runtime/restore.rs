@@ -129,6 +129,12 @@ pub(crate) fn commit_prepared_load(
         map,
         committed.presentation,
     );
+    state
+        .match_state
+        .match_presentation
+        .voxel_images
+        .borrow_mut()
+        .load_game();
 
     // MouseLoad5BE092 restores incoming Power; SidebarNoInit6A4F89/94
     // rearms only slide. Sample after world adoption so diagnostic time uses
@@ -220,6 +226,10 @@ pub(crate) fn commit_prepared_load(
 
     // Reset pacing, not saved simulation input delay or elapsed score time.
     state.platform.frame_pacer.reset_for_new_world();
+    state
+        .match_state
+        .network_quality
+        .reset(state.platform.frame_pacer.total_render_deferrals());
     crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
     // The incoming chrome owns the footer allowance; refresh its layout
     // before initializing derived geometry, including on a cold/different-side

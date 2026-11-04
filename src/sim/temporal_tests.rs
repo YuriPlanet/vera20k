@@ -2049,6 +2049,8 @@ fn only_a_temporal_scanner_acquires_a_warped_enemy() {
     // helper's Size64 diamond (which excludes their x+y<64 coordinates).
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let tank = spawn(&mut sim, &rules, "HTNK", "Russians", 12, 10);
+    // The player has seen the enemy: the campaign scan gate needs +0x41B.
+    crate::sim::arena_fixture::discover(&mut sim, tank);
     let cleg = spawn(&mut sim, &rules, "CLEG", "Americans", 12, 13);
     let gi = spawn(&mut sim, &rules, "E1", "Americans", 10, 10);
     let second = spawn(&mut sim, &rules, "CLEG", "Americans", 10, 11);
@@ -2068,7 +2070,7 @@ fn only_a_temporal_scanner_acquires_a_warped_enemy() {
             Some(sim),
             None,
         )
-        .target()
+        .object()
     };
     assert_eq!(acquire(&sim, gi), Some(tank), "the control");
     sim.temporal_initiate_warp(

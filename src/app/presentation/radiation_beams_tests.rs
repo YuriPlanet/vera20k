@@ -15,6 +15,7 @@ fn original_manager_histories_match_without_logic_ticks_or_rng() {
             .iter()
             .map(|v| native::birth(&v["birth"]))
             .collect::<Vec<_>>();
+        let main = crate::sim::rng::MainRng::new(1).draws();
         let mut beams = RadiationBeams::default();
         for &birth in &births {
             beams.create(birth, |_| [0; 3]);
@@ -24,7 +25,7 @@ fn original_manager_histories_match_without_logic_ticks_or_rng() {
             viewport.camera = viewport.camera.map(|v| v + 3000);
         }
         for visit in row["visits"].as_array().unwrap() {
-            beams.composite(30, viewport, |_| true);
+            beams.composite(30, viewport, &main, |_| true);
             let expected = visit["registered_after"]
                 .as_array()
                 .unwrap()
@@ -78,4 +79,48 @@ fn original_manager_histories_match_without_logic_ticks_or_rng() {
     }
     assert_eq!(sim.rng_state(), rng);
     assert_eq!(sim.state_hash(), hash);
+}
+
+/// Kind2 in 6591B0/659CA0: at the requested rate nothing is culled, yet each
+/// active eruption spends one Main 0..99 draw and draws ftol(length / 20)
+/// segments. At Logic rate 0 the rate cube is 0, so the draw culls it; a
+/// culled eruption then ages out without lines or Main draws.
+#[test]
+fn eruptions_cull_below_the_requested_rate_and_draw_twenty_lepton_segments() {
+    use crate::sim::projectile::ProjectileCoord;
+    let birth = RadiationBeamBirth {
+        frame: 0,
+        from: ProjectileCoord::new(2048, 2048, 0),
+        to: ProjectileCoord::new(3048, 2048, 0),
+        z_adjust: 0,
+        color: [0, 255, 0],
+        house: None,
+        house_color: false,
+        duration: 10,
+        amplitude: crate::util::native_x87::NativeF64Bits::from_bits(300.0_f64.to_bits()),
+        eruption: true,
+    };
+    let viewport = SurfaceLineViewport {
+        camera: [0, 0],
+        clip: [-8192, -8192, 16384, 16384],
+        z_origin_y: 0,
+        zoom: 1.0,
+    };
+    let length = f64::from_bits(BeamGeometry::new(birth.from, birth.to).length().bits());
+    let main = crate::sim::rng::MainRng::new(5);
+    let mut reference = crate::sim::rng::SimRng::new(5);
+    let mut beams = RadiationBeams::default();
+    beams.create(birth, |_| [0; 3]);
+    beams.composite(30, viewport, &main.draws(), |_| true);
+    reference.next_range_i32_inclusive(0, 99);
+    assert_eq!(main.logical_state(), reference.logical_state());
+    assert_eq!(beams.draws().len(), (length / 20.0) as usize);
+    beams.composite(0, viewport, &main.draws(), |_| true);
+    reference.next_range_i32_inclusive(0, 99);
+    assert!(beams.draws().is_empty());
+    for _ in 2..birth.duration {
+        beams.composite(0, viewport, &main.draws(), |_| true);
+    }
+    assert_eq!(main.logical_state(), reference.logical_state());
+    assert!(beams.live.is_empty());
 }

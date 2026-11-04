@@ -177,6 +177,36 @@ impl InfantryPips {
     }
 }
 
+/// InfantryType's fixed-ART reads, retained by the process-resident type.
+/// The constructor sets Crawls (`+0xEBD`) to true (`0x00523788`) and clears
+/// the four discharge frames (`+0xE40..+0xE4C`, `0x005236D7..0x005236F9`).
+/// Every reached ReadINI pass reads all five from the ART section its Image
+/// names, each with its current value as the default
+/// (`InfantryTypeClass::ReadINI`, `0x005246A1..0x0052472D`), so a pass whose
+/// section lacks a key keeps the value an earlier pass read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct InfantryArt {
+    crawls: bool,
+    discharge_frames: [i32; 4],
+}
+
+impl Default for InfantryArt {
+    fn default() -> Self {
+        Self {
+            crawls: true,
+            discharge_frames: [0; 4],
+        }
+    }
+}
+
+impl InfantryArt {
+    /// One pass's reads from its Image's ART section.
+    pub(crate) fn read_pass(&mut self, section: &IniSection) {
+        self.crawls = section.read_bool("Crawls", self.crawls);
+        crate::rules::art_data::read_infantry_discharge_frames(section, &mut self.discharge_frames);
+    }
+}
+
 /// InfantryType constructor clears EBE/EC2..EC6. ReadINI reads these
 /// current-default flags, then 52466E..52469A forces Infiltrate for C4,
 /// Engineer or Agent, independently of either theft byte.
@@ -381,6 +411,33 @@ impl HouseMasks {
             forbidden: rules.house_type_mask(&object.forbidden_houses),
         }
     }
+}
+
+/// The `VoxelBarrelOffsetTo*` pivot triples of a `BarrelAnimIsVoxel=`
+/// (`+0x16C6`) building type. `BuildingTypeClass::ReadINI @ 0x0045FE50` reads
+/// them in native field order right after `BarrelAnimIsVoxel=` (and the
+/// unread `VoxelBarrelFile=` name) through `Get_TripleInt @ 0x00529CA0`
+/// (`0x00464697`, `0x004646C0`, `0x004646E9`), each pass using the current
+/// triple as its self-default. The constructor `0x0045DD90` never writes
+/// them, so native's first default is uninitialized heap memory; VERA's is
+/// `(0,0,0)` (a `fire_coordinate` residual). The barrel matrix chain
+/// `0x00458810` composes them for `BuildingClass::GetTurretDrawPosition`
+/// (`0x00453BF0`) and for the unported barrel draw (`0x0043E63E`);
+/// `BuildingTypeClass::ComputeCRC` (`0x00464B30`) also hashes them. The
+/// fourth triple, `VoxelBarrelOffsetToBarrelEnd=` (`+0x1754`, read at
+/// `0x00464712`), is the point VERA's zero chain scale (`+0x1728`)
+/// multiplies away, so VERA does not read it.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct BarrelVoxelOffsets {
+    /// `VoxelBarrelOffsetToPitchPivotPoint=` (`+0x1730/34/38`), the pitch
+    /// pivot the chain translates by after the barrel-elevation turn.
+    pub pitch_pivot: [i32; 3],
+    /// `VoxelBarrelOffsetToRotatePivotPoint=` (`+0x173C/40/44`), translated
+    /// between the body-facing turn and the elevation turn.
+    pub rotate_pivot: [i32; 3],
+    /// `VoxelBarrelOffsetToBuildingPivotPoint=` (`+0x1748/4C/50`), the first
+    /// translation off the identity.
+    pub building_pivot: [i32; 3],
 }
 
 /// A game object definition parsed from a rules.ini section.
@@ -1078,6 +1135,18 @@ pub struct ObjectType {
     /// = nearer the camera). Building vtable `0x7E3EBC+0x2EC` folds it into the
     /// draw Z only when `TurretAnimIsVoxel`; it is not a ground-layer sort key.
     pub turret_anim_z_adjust: i32,
+    /// `BarrelAnimIsVoxel=` (`BuildingType +0x16C6`): arms the
+    /// `BuildingClass::GetFLH @ 0x00453840` arm (`0x004539A1..0x004539DE`)
+    /// that replaces the whole coordinate with `GetTurretDrawPosition`
+    /// (`0x00453BF0`). ReadINI reads it at `0x00464661` through
+    /// `INIClass::ReadBool @ 0x005295F0` with the current byte as default; the
+    /// constructor zeroes it (`0x0045E16F`), so it defaults false.
+    /// `VoxelBarrelFile=` (`+0x1714`, read at `0x0046467E`) names the barrel
+    /// model but nothing on this fire path consumes it.
+    pub barrel_anim_is_voxel: bool,
+    /// The `VoxelBarrelOffsetTo*` pivot triples ([`BarrelVoxelOffsets`]) the
+    /// barrel arm's matrix chain composes.
+    pub barrel_voxel: BarrelVoxelOffsets,
     /// Scan radius in cells for auto-targeting idle enemies. If None, defaults
     /// to the primary weapon's range at runtime.
     pub guard_range: Option<SimFixed>,
@@ -1392,7 +1461,8 @@ pub struct ObjectType {
     pub fearless: bool,
     /// `Fraidycat=yes` on InfantryType. First fear hit immediately maxes fear.
     pub fraidycat: bool,
-    /// `Crawls=yes` from art.ini. Controls the prone movement speed branch.
+    /// `Crawls=` from ARTMD (InfantryTypeClass `+0xEBD`), the last reached
+    /// pass's read ([`InfantryArt`]). Gates Down and the prone speed.
     pub crawls: bool,
     /// Phobos `InfantryTypeExt::ProneSpeed`: the prone movement multiplier for
     /// this type. Unset defers to the `[General]` value `Crawls=` selects.
@@ -2618,7 +2688,9 @@ impl ObjectType {
         &self.shp_image_loads
     }
 
-    pub(crate) fn voxel_image_load(&self) -> Option<&str> {
+    /// The voxel this scenario's `TechnoTypeClass::ReadINI` loaded
+    /// (`0x0071609C`), if a pass reached the load.
+    pub fn voxel_image_load(&self) -> Option<&str> {
         self.voxel_image_load.as_deref()
     }
 
@@ -3311,6 +3383,16 @@ impl ObjectType {
 
     pub(crate) fn project_infantry_pips(&mut self, pips: InfantryPips) {
         self.infantry_pips = pips;
+    }
+
+    pub(crate) fn project_infantry_art(&mut self, art: InfantryArt) {
+        self.crawls = art.crawls;
+        [
+            self.fire_up_frame,
+            self.fire_prone_frame,
+            self.secondary_fire_frame,
+            self.secondary_prone_frame,
+        ] = art.discharge_frames;
     }
 
     pub(crate) fn project_sequence_sound_reads(
@@ -4307,6 +4389,20 @@ impl ObjectType {
             turret_anim_x: section.read_int("TurretAnimX", 0),
             turret_anim_y: section.read_int("TurretAnimY", 0),
             turret_anim_z_adjust: section.read_int("TurretAnimZAdjust", 0),
+            // Native order after TurretAnimIsVoxel (0x00464647): the
+            // `BarrelAnimIsVoxel` bool (0x00464661), the VoxelBarrelFile name
+            // this port does not read (0x0046467E, retained above), then the
+            // `Read3Int` pivot triples (0x00464697..0x004646E9) whose
+            // self-default keeps an earlier layer's triple. VERA does not
+            // read the barrel-end triple (0x00464712); see `BarrelVoxelOffsets`.
+            barrel_anim_is_voxel: section.read_bool("BarrelAnimIsVoxel", false),
+            barrel_voxel: BarrelVoxelOffsets {
+                pitch_pivot: section.read_coord3_fold("VoxelBarrelOffsetToPitchPivotPoint", [0; 3]),
+                rotate_pivot: section
+                    .read_coord3_fold("VoxelBarrelOffsetToRotatePivotPoint", [0; 3]),
+                building_pivot: section
+                    .read_coord3_fold("VoxelBarrelOffsetToBuildingPivotPoint", [0; 3]),
+            },
             guard_range: present_range("GuardRange"),
             air_range_bonus: present_range("AirRangeBonus"),
             // Default no (passive acquisition off unless the type opts in).
@@ -4435,7 +4531,10 @@ impl ObjectType {
             slaved: section.read_bool("Slaved", false),
             fearless: section.read_bool("Fearless", false),
             fraidycat: section.read_bool("Fraidycat", false),
-            crawls: false,
+            // InfantryTypeClass's constructor sets Crawls (`+0xEBD`) to true
+            // (`0x00523788`); the per-pass ART read projects over it
+            // ([`InfantryArt`]). Other types have no such field.
+            crawls: category == ObjectCategory::Infantry,
             fire_up_frame: 0,
             fire_prone_frame: 0,
             secondary_fire_frame: 0,

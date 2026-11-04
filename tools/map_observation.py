@@ -23,6 +23,7 @@ Right gestures use their own policy and the same ordinary mouse-edge driver.
 from __future__ import annotations
 
 import argparse
+import base64
 from bisect import bisect_left
 from dataclasses import dataclass
 import math
@@ -98,7 +99,8 @@ EXTENSION_FIELDS = frozenset(('commands', 'gestures', 'observe_owners', 'observe
                               'observe_spawns', 'observe_crates',
                               'observe_audio', 'allow_load_segments',
                               'observe_tooltips',
-                              'camera_cell', 'cursor_position', 'terrain_cells',
+                              'camera_cell', 'camera_top_left', 'observe_start_markers',
+                              'cursor_position', 'terrain_cells',
                               'observe_super_weapons', 'observe_diplomacy', 'observe_sidebar_steps'))
 ASCII_UPPER = str.maketrans('abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')
 COPIES = {'profile': 'profile.json', 'config': 'config.toml', 'contract': 'contract.json'}
@@ -313,6 +315,33 @@ def _bounded_int(value: Any, label: str, minimum: int, maximum: int) -> int:
     return number
 
 
+def _start_marker(value: Any, label: str) -> None:
+    """One start's number, world pixel and RGBA marker picture with that pixel at origin."""
+    marker = require_object(value, label)
+    require_exact_keys(marker, ('label', 'anchor', 'picture'), label)
+    if not re.fullmatch(r'[1-9][0-9]{0,2}', require_string(marker['label'], f'{label}.label')):
+        raise ValidationError(f'{label}.label must be a start number')
+    anchor = require_array(marker['anchor'], f'{label}.anchor')
+    if len(anchor) != 2:
+        raise ValidationError(f'{label}.anchor must contain x and y')
+    for axis, coordinate in enumerate(anchor):
+        _bounded_int(coordinate, f'{label}.anchor[{axis}]', -(1 << 31), (1 << 31) - 1)
+    picture = require_object(marker['picture'], f'{label}.picture')
+    require_exact_keys(picture, ('size', 'origin', 'rgba'), f'{label}.picture')
+    size, origin = (require_array(picture[key], f'{label}.picture.{key}') for key in ('size', 'origin'))
+    if len(size) != 2 or len(origin) != 2:
+        raise ValidationError(f'{label}.picture size and origin must each contain two values')
+    for axis in range(2):
+        extent = _bounded_int(size[axis], f'{label}.picture.size[{axis}]', 1, 256)
+        _bounded_int(origin[axis], f'{label}.picture.origin[{axis}]', 0, extent)
+    try:
+        rgba = base64.b64decode(require_string(picture['rgba'], f'{label}.picture.rgba'), validate=True)
+    except ValueError as error:
+        raise ValidationError(f'{label}.picture.rgba must be base64') from error
+    if len(rgba) != size[0] * size[1] * 4:
+        raise ValidationError(f'{label}.picture.rgba must hold width * height RGBA pixels')
+
+
 def _finite_number(value: Any, label: str) -> None:
     if type(value) not in (int, float):
         raise ValidationError(f'{label} must be finite')
@@ -325,12 +354,12 @@ def _finite_number(value: Any, label: str) -> None:
 
 
 def _coordinate(value: Any, label: str, *, leptons: bool = False,
-                packed_cell: bool = False) -> list[int]:
+                packed_cell: bool = False, world: bool = False) -> list[int]:
     coordinate = require_array(value, label)
     size = 3 if leptons else 2
     if len(coordinate) != size:
         raise ValidationError(f'{label} must contain exactly {size} coordinates')
-    limits = ((-(1 << 31), (1 << 31) - 1) if leptons else
+    limits = ((-(1 << 31), (1 << 31) - 1) if leptons or world else
               (-(1 << 15), (1 << 15) - 1) if packed_cell else (0, (1 << 16) - 1))
     return [_bounded_int(item, f'{label}[{index}]', *limits)
             for index, item in enumerate(coordinate)]
@@ -345,13 +374,22 @@ def _screen_point(value: Any, label: str, extent: tuple[int, int]) -> list[int]:
     return point
 
 
-def _gesture(value: Any, label: str, extent: tuple[int, int]) -> None:
+def _gesture(value: Any, label: str, extent: tuple[int, int],
+             drag_end_extent: tuple[int, int] | None = None) -> None:
     gesture = require_object(value, label)
     if 'button' in gesture:
         if gesture.get('kind') not in ('click', 'sidebar') or gesture['button'] not in ('left', 'right'):
             raise ValidationError(f'{label}.button requires click/sidebar and literal left/right')
+    if 'modifiers' in gesture:
+        if gesture.get('kind') not in ('click', 'key'):
+            raise ValidationError(f'{label}.modifiers requires a click or key gesture')
+        modifiers = require_array(gesture['modifiers'], f'{label}.modifiers')
+        if (len(modifiers) > 4 or any(type(value) is not str or value not in ('Ctrl', 'Shift', 'Alt', 'Super')
+                                      for value in modifiers) or len(set(modifiers)) != len(modifiers)):
+            raise ValidationError(f'{label}.modifiers must be unique literal Ctrl/Shift/Alt/Super keys')
     if gesture.get('kind') in ('click', 'minimap'):
-        require_exact_keys(gesture, ('kind', 'position', *(('button',) if 'button' in gesture else ())), label)
+        require_exact_keys(gesture, ('kind', 'position', *(('button',) if 'button' in gesture else ()),
+                                    *(('modifiers',) if 'modifiers' in gesture else ())), label)
         _screen_point(gesture['position'], f'{label}.position', extent)
     elif gesture.get('kind') == 'minimap_object':
         require_exact_keys(gesture, ('kind', 'entity_id'), label)
@@ -359,7 +397,7 @@ def _gesture(value: Any, label: str, extent: tuple[int, int]) -> None:
     elif gesture.get('kind') == 'drag':
         require_exact_keys(gesture, ('kind', 'from', 'to'), label)
         start = _screen_point(gesture['from'], f'{label}.from', extent)
-        end = _screen_point(gesture['to'], f'{label}.to', extent)
+        end = _screen_point(gesture['to'], f'{label}.to', drag_end_extent or extent)
         if start == end:
             raise ValidationError(f'{label} drag endpoints must differ')
     elif gesture.get('kind') == 'key':
@@ -370,11 +408,6 @@ def _gesture(value: Any, label: str, extent: tuple[int, int]) -> None:
         key = require_string(gesture['key'], f'{label}.key')
         if key != 'Escape' and not (len(key) == 1 and key.isascii() and key.isalnum()):
             raise ValidationError(f'{label}.key must be one ASCII letter/digit or Escape')
-        if 'modifiers' in gesture:
-            modifiers = require_array(gesture['modifiers'], f'{label}.modifiers')
-            if (len(modifiers) > 4 or any(type(value) is not str or value not in ('Ctrl', 'Shift', 'Alt', 'Super')
-                                          for value in modifiers) or len(set(modifiers)) != len(modifiers)):
-                raise ValidationError(f'{label}.modifiers must be unique literal Ctrl/Shift/Alt/Super keys')
     elif gesture.get('kind') == 'command_bar':
         require_exact_keys(gesture, ('kind', 'command'), label)
         command = require_string(gesture['command'], f'{label}.command')
@@ -410,7 +443,7 @@ def _right_button_gesture(gesture: Mapping[str, Any]) -> bool:
 
 def _observes_local_input(profile: Mapping[str, Any]) -> bool:
     return any(row['gesture']['kind'] in ('key', 'minimap', 'minimap_object') or _right_button_gesture(row['gesture'])
-               for row in profile.get('gestures', []))
+               or bool(row['gesture'].get('modifiers')) for row in profile.get('gestures', []))
 
 
 def _gesture_policy(profile: Mapping[str, Any]) -> str:
@@ -646,13 +679,17 @@ def _profile_extensions(profile: Mapping[str, Any], *, production_commands: bool
             selected.add(name.translate(ASCII_UPPER))
     if 'camera_cell' in profile:
         _coordinate(profile['camera_cell'], 'profile.camera_cell')
+    if 'camera_top_left' in profile:
+        if 'camera_cell' in profile:
+            raise ValidationError('profile.camera_cell and profile.camera_top_left are exclusive')
+        _coordinate(profile['camera_top_left'], 'profile.camera_top_left', world=True)
     if 'observe_action_line_inputs' in profile and type(profile['observe_action_line_inputs']) is not bool:
         raise ValidationError('profile.observe_action_line_inputs must be a boolean')
     if 'observe_disguise_inputs' in profile and type(profile['observe_disguise_inputs']) is not bool:
         raise ValidationError('profile.observe_disguise_inputs must be a boolean')
     for key in ('observe_lasers', 'observe_electric_bolts', 'observe_bombs', 'observe_temporal',
                 'observe_cloak', 'observe_radiation_beams', 'observe_spawns',
-                'observe_crates', 'observe_tooltips'):
+                'observe_crates', 'observe_tooltips', 'observe_start_markers'):
         if key in profile and type(profile[key]) is not bool:
             raise ValidationError(f'profile.{key} must be a boolean')
     if 'observe_electric_bolt_steps' in profile:
@@ -2616,6 +2653,7 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any], segments=()) -
         keyboard = request['gesture']['kind'] == 'key'
         command_bar = request['gesture']['kind'] == 'command_bar'
         minimap = request['gesture']['kind'] in ('minimap', 'minimap_object')
+        drag = request['gesture']['kind'] == 'drag'
         right = _right_button_gesture(request['gesture'])
         require_exact_keys(row, ('ordinal', 'issue_after_step', 'issued_simulation_tick',
                                  'issued_binary_frame', 'gesture', 'before', 'after',
@@ -2625,7 +2663,8 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any], segments=()) -
                                  *(('sidebar',) if sidebar else ()),
                                  *(('command_bar',) if command_bar else ()),
                                  *(('keyboard',) if keyboard else ()),
-                                 *(('minimap',) if minimap else ())), row_label)
+                                 *(('minimap',) if minimap else ()),
+                                 *(('held_cursor',) if drag and 'held_cursor' in row else ())), row_label)
         tick, frame = _segment_clock(request['issue_after_step'], segments, after_inputs=True, gesture_ordinal=index)
         for key, expected in (('ordinal', index), ('issue_after_step', request['issue_after_step']),
                               ('issued_simulation_tick', tick), ('issued_binary_frame', frame)):
@@ -2633,7 +2672,9 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any], segments=()) -
         _require_equal(row['gesture'], request['gesture'], f'{row_label}.gesture')
         gesture_extent = ((profile['width'], profile['height'])
                           if minimap else extent)
-        _gesture(row['gesture'], f'{row_label}.gesture', gesture_extent)
+        # A drag starts on the battlefield and may end over the sidebar.
+        _gesture(row['gesture'], f'{row_label}.gesture', gesture_extent,
+                 (profile['width'], profile['height']))
         if command_bar:
             sample_count += _command_bar_gesture(row['command_bar'], request['gesture']['command'],
                 f'{row_label}.command_bar', (profile['width'], profile['height']))
@@ -2651,6 +2692,13 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any], segments=()) -
             require_value(row[key], expected, f'{row_label}.{key}')
         if right:
             require_value(row['right_press_captured'], True, f'{row_label}.right_press_captured')
+        if drag and 'held_cursor' in row:
+            # Captures made before the field existed omit it.
+            held = require_object(row['held_cursor'], f'{row_label}.held_cursor')
+            require_exact_keys(held, ('press', 'before_release'), f'{row_label}.held_cursor')
+            for key in ('press', 'before_release'):
+                if held[key] is not None and not require_string(held[key], f'{row_label}.held_cursor.{key}'):
+                    raise ValidationError(f'{row_label}.held_cursor.{key} is empty')
         for key in ('before', 'after'):
             sample_count += _input_observation(row[key], f'{row_label}.{key}', local_input=local_input)
         if minimap:
@@ -3235,6 +3283,29 @@ def validate_capture(directory: Path, profile: Mapping[str, Any],
     width, height = _integer(profile, 'width', 1), _integer(profile, 'height', 1)
     for key in ('internal_extent', 'surface_extent'):
         _require_equal(render.get(key), [width, height], f'render.{key}')
+    # The battlefield at the frame's top-left and the world rectangle the
+    # camera can show, which tools/map_render.py crops and places tiles by.
+    if 'tactical_extent' in render:
+        extent = require_array(render['tactical_extent'], 'render.tactical_extent')
+        if len(extent) != 2:
+            raise ValidationError('render.tactical_extent must contain a width and a height')
+        for index, (value, limit) in enumerate(zip(extent, (width, height))):
+            _bounded_int(value, f'render.tactical_extent[{index}]', 1, limit)
+    if 'view_area' in render:
+        area = require_array(render['view_area'], 'render.view_area')
+        if len(area) != 4:
+            raise ValidationError('render.view_area must contain x, y, width and height')
+        for index, value in enumerate(area):
+            _finite_number(value, f'render.view_area[{index}]')
+        if area[2] <= 0 or area[3] <= 0:
+            raise ValidationError('render.view_area must have a positive extent')
+    # Each multiplayer start's marker, which tools/map_render.py pastes on.
+    if profile.get('observe_start_markers', False):
+        markers = require_array(render.get('start_markers'), 'render.start_markers')
+        for index, marker in enumerate(markers):
+            _start_marker(marker, f'render.start_markers[{index}]')
+    elif 'start_markers' in render:
+        raise ValidationError('render.start_markers requires profile.observe_start_markers')
     unit_atlas = _unit_atlas(render.get('unit_atlas'))
     frame = require_object(manifest.get('frame'), 'frame')
     frame_snapshot = require_regular_file(directory / 'frame.bgra', 'frame',
@@ -3251,7 +3322,8 @@ def validate_capture(directory: Path, profile: Mapping[str, Any],
                 'frame': frame_snapshot.public_identity(), 'map_source': dict(source),
                 'initial': dict(initial), 'final': dict(final), 'exact_step_count': ticks,
                 'unit_atlas': unit_atlas}
-    for metadata in ('cursor_position', 'frame_wall_mean_ms'):
+    for metadata in ('cursor_position', 'frame_wall_mean_ms', 'tactical_extent', 'view_area',
+                     'start_markers'):
         if metadata in render:
             evidence[metadata] = render[metadata]
     if not legacy_clock:

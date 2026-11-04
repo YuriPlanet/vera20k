@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+    <parameter name="installer" required="true" />
+  </parameters>
+  <zip-file>
+    <!-- Inno 7.1.0 leaves ProductName padded to 60 characters and ProductVersion to 50. -->
+    <pe-file path="${installer}" product-name="VERA20k                                                     " product-version="${version}                                             ">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

@@ -332,6 +332,22 @@ function updateCost(snapshot) {
     document.getElementById("tickhz").textContent = timing
         ? fmt(timing.tick_hz, 1)
         : "-";
+    const network = snapshot.network;
+    const backlogCell = document.getElementById("backlog");
+    backlogCell.textContent = network ? String(network.backlog_frames) : "-";
+    backlogCell.className =
+        network && (network.catching_up || network.relay_slowed) ? "value bad" : "value";
+    backlogCell.title = !network
+        ? ""
+        : [
+            network.catching_up ? t("cost.catchingUp") : "",
+            network.relay_slowed ? t("cost.relaySlowed") : "",
+        ]
+            .filter(Boolean)
+            .join("\n");
+    document.getElementById("skipped").textContent = network
+        ? String(network.skipped_draws)
+        : "-";
 }
 /** Terrain inspection data from the snapshot's debug block. */
 function updateTerrain(debug) {

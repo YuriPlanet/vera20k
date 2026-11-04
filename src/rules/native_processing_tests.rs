@@ -910,6 +910,7 @@ fn campaign_difficulty_process_layers_match_original_nine_scalar_outputs() {
             build_time: bits("build_time"),
             repair_delay: bits("repair_delay"),
             build_delay: bits("build_delay"),
+            ..DifficultyRules::default()
         }
     }
     fn row_bits(row: DifficultyRules) -> [u64; 9] {

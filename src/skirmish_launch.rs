@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::sim::game_options::GameOptions;
+use crate::sim::game_options::{GameOptions, RoomBans};
 use crate::sim::rng::SimRng;
 use crate::skirmish_modes::SkirmishGameMode;
 
@@ -15,8 +15,9 @@ use crate::skirmish_modes::SkirmishGameMode;
 pub const BATTLE_MODE_ID: i32 = 1;
 pub const SKIRMISH_PLAYER_SLOT_COUNT: usize = 8;
 pub const SKIRMISH_AI_SLOT_COUNT: usize = SKIRMISH_PLAYER_SLOT_COUNT - 1;
-/// VERA network rooms extend the retail eight-row setup without changing the
-/// offline shell's resource rows or the eight-colour retail palette.
+/// VERA seats up to thirty players: its network rooms page their roster, and
+/// offline Skirmish scrolls its computer rows through the retail eight
+/// resource rows. The eight-colour retail palette stays.
 pub const NETWORK_PLAYER_SLOT_COUNT: usize = 30;
 pub const HOUSE_COLOR_COUNT: usize = 8;
 
@@ -418,6 +419,10 @@ pub struct SkirmishLaunchOptions {
     pub multi_engineer: bool,
     pub harvester_truce: bool,
     pub ally_change_allowed: bool,
+    /// VERA's room bans. Left out when empty, so a room without bans sends
+    /// the same options as before them.
+    #[serde(default, skip_serializing_if = "RoomBans::is_empty")]
+    pub bans: RoomBans,
 }
 
 impl Default for SkirmishLaunchOptions {
@@ -442,6 +447,7 @@ impl Default for SkirmishLaunchOptions {
             multi_engineer: defaults.multi_engineer,
             harvester_truce: defaults.harvester_truce,
             ally_change_allowed: defaults.ally_change_allowed,
+            bans: RoomBans::default(),
         }
     }
 }
@@ -474,6 +480,7 @@ impl SkirmishLaunchOptions {
             multi_engineer: options.multi_engineer,
             harvester_truce: options.harvester_truce,
             ally_change_allowed: options.ally_change_allowed,
+            bans: options.bans,
         }
     }
 
@@ -492,6 +499,7 @@ impl SkirmishLaunchOptions {
             multi_engineer: self.multi_engineer,
             harvester_truce: self.harvester_truce,
             ally_change_allowed: self.ally_change_allowed,
+            bans: self.bans,
             starting_credits: self.starting_credits,
             unit_count: self.unit_count,
             tech_level: self.tech_level,
@@ -499,6 +507,34 @@ impl SkirmishLaunchOptions {
             ai_difficulty: self.default_ai_difficulty,
             ai_players,
         }
+    }
+}
+
+/// The options VERA's game room adds to gamemd's: Destroyable Bridges,
+/// In-game Allying and the bans. LAN carries them beside the native options
+/// text, which has no field for them, and the room keeps them for its next
+/// game.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoomOptions {
+    pub bridges_destroyable: bool,
+    pub ally_change_allowed: bool,
+    pub bans: RoomBans,
+}
+
+impl SkirmishLaunchOptions {
+    pub fn room_options(&self) -> RoomOptions {
+        RoomOptions {
+            bridges_destroyable: self.bridges_destroyable,
+            ally_change_allowed: self.ally_change_allowed,
+            bans: self.bans,
+        }
+    }
+
+    pub fn set_room_options(&mut self, room: RoomOptions) {
+        self.bridges_destroyable = room.bridges_destroyable;
+        self.ally_change_allowed = room.ally_change_allowed;
+        self.bans = room.bans;
     }
 }
 

@@ -1898,6 +1898,7 @@ impl ScenarioSession {
         opts.multi_engineer.hash(hasher);
         opts.harvester_truce.hash(hasher);
         opts.ally_change_allowed.hash(hasher);
+        opts.bans.hash(hasher);
         opts.starting_credits.hash(hasher);
         opts.unit_count.hash(hasher);
         opts.tech_level.hash(hasher);

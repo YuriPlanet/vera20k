@@ -13,15 +13,16 @@ use super::{
     CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, DEVELOPER_OPTIONS_LABEL,
     DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget, FPS_COUNTER_HELP,
     FPS_COUNTER_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, HAS_CHECK_FOR_UPDATES,
-    HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL, LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL,
-    LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue, LauncherOptionsEvent,
-    LauncherParentResult, LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL,
-    ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState, PhysicalControlFrame,
-    RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP,
-    RIGHT_CLICK_ORDERS_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
-    SKIP_STARTUP_LOGO_HELP, SKIP_STARTUP_LOGO_LABEL, Setting, SidebarSize, VERA_ICON_HELP,
-    VERA_ICON_LABEL, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP,
-    YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL,
+    HealthBarMode, LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId,
+    LauncherComboId, LauncherCue, LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId,
+    MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL,
+    OptionsDialogState, PhysicalControlFrame, RENDER_INTERPOLATION_HELP,
+    RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL,
+    SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP,
+    SKIP_INTRO_LABEL, Setting, SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL, WOL_TEST_SERVICE_HELP,
+    WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL,
+    Zoom,
 };
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{
@@ -510,7 +511,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
             LauncherCheckboxId::WolTestService => WOL_TEST_SERVICE_LABEL,
             LauncherCheckboxId::FpsCounter => FPS_COUNTER_LABEL,
-            LauncherCheckboxId::SkipStartupLogo => SKIP_STARTUP_LOGO_LABEL,
+            LauncherCheckboxId::SkipIntro => SKIP_INTRO_LABEL,
             LauncherCheckboxId::CustomEndGameBanner => CUSTOM_END_GAME_BANNER_LABEL,
             LauncherCheckboxId::CustomEndGameScore => CUSTOM_END_GAME_SCORE_LABEL,
             LauncherCheckboxId::CustomEndGameMovie => CUSTOM_END_GAME_MOVIE_LABEL,
@@ -569,7 +570,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
             LauncherCheckboxId::WolTestService => self.values.wol_test_service,
             LauncherCheckboxId::FpsCounter => self.values.fps_counter,
-            LauncherCheckboxId::SkipStartupLogo => self.values.skip_startup_logo,
+            LauncherCheckboxId::SkipIntro => self.values.skip_intro,
             LauncherCheckboxId::CustomEndGameBanner => self.values.custom_end_game_banner,
             LauncherCheckboxId::CustomEndGameScore => self.values.custom_end_game_score,
             LauncherCheckboxId::CustomEndGameMovie => self.values.custom_end_game_movie,
@@ -596,6 +597,11 @@ impl OptionsDialogState {
     pub(crate) fn shell_selected_sidebar(&self, layout: &LauncherOptionsLayout) -> SidebarSize {
         let (width, height) = layout.battle_frame;
         self.values.sidebar.in_effect(width, height)
+    }
+
+    /// The Health Bars face's text: the retained choice.
+    pub(crate) fn shell_selected_health_bars(&self) -> HealthBarMode {
+        self.values.health_bars
     }
 
     /// The Display list's rows, top to bottom: Auto, then every screen the
@@ -663,6 +669,13 @@ impl OptionsDialogState {
                 let rows = self.display_choices();
                 let selected = rows.iter().position(|target| target == &self.display);
                 (rows.len(), selected)
+            }
+            LauncherComboId::HealthBars => {
+                let choices = HealthBarMode::choices();
+                let selected = choices
+                    .iter()
+                    .position(|mode| *mode == self.values.health_bars);
+                (choices.len(), selected)
             }
         };
         let metrics = DropdownMetrics::scaled(layout.scale);
@@ -774,9 +787,7 @@ impl OptionsDialogState {
                     LauncherStatusHelp::Text(WOL_TEST_SERVICE_HELP)
                 }
                 LauncherCheckboxId::FpsCounter => LauncherStatusHelp::Text(FPS_COUNTER_HELP),
-                LauncherCheckboxId::SkipStartupLogo => {
-                    LauncherStatusHelp::Text(SKIP_STARTUP_LOGO_HELP)
-                }
+                LauncherCheckboxId::SkipIntro => LauncherStatusHelp::Text(SKIP_INTRO_HELP),
                 LauncherCheckboxId::CustomEndGameBanner => {
                     LauncherStatusHelp::Text(CUSTOM_END_GAME_BANNER_HELP)
                 }
@@ -797,6 +808,7 @@ impl OptionsDialogState {
                     LauncherComboId::Zoom => ZOOM_HELP,
                     LauncherComboId::Sidebar => SIDEBAR_HELP,
                     LauncherComboId::Display => DISPLAY_HELP,
+                    LauncherComboId::HealthBars => HEALTH_BARS_HELP,
                 })
             })
     }
@@ -829,6 +841,12 @@ impl OptionsDialogState {
                 LauncherComboId::Display => {
                     match row.and_then(|row| self.display_choices().get(row).cloned()) {
                         Some(target) => self.select_display(target),
+                        None => self.open_combo = None,
+                    }
+                }
+                LauncherComboId::HealthBars => {
+                    match row.and_then(|row| HealthBarMode::choices().get(row).copied()) {
+                        Some(mode) => self.select_health_bars(mode),
                         None => self.open_combo = None,
                     }
                 }
@@ -913,6 +931,7 @@ fn list_caption(id: LauncherComboId) -> &'static str {
         LauncherComboId::Zoom => ZOOM_LABEL,
         LauncherComboId::Sidebar => SIDEBAR_LABEL,
         LauncherComboId::Display => DISPLAY_LABEL,
+        LauncherComboId::HealthBars => HEALTH_BARS_LABEL,
     }
 }
 
@@ -1644,53 +1663,83 @@ mod tests {
         }
     }
 
-    /// The three end-game boxes are the VERA boxes that start ticked: a stock
-    /// profile plays and draws whatever a rules set names, so the player's
-    /// first click turns that override off rather than on. Each publishes its
-    /// own event and leaves the other two alone.
+    /// The three end-game boxes start unticked like every VERA box. Each
+    /// publishes its own event and leaves the other two alone.
     #[test]
-    fn the_end_game_boxes_start_ticked_and_publish_their_own_event() {
+    fn the_end_game_boxes_start_unticked_and_publish_their_own_event() {
         use LauncherCheckboxId::{CustomEndGameBanner, CustomEndGameMovie, CustomEndGameScore};
         let layout = page(Category::Gameplay);
-        for (id, label, off) in [
+        for (id, label, on) in [
             (
                 CustomEndGameBanner,
                 CUSTOM_END_GAME_BANNER_LABEL,
-                LauncherOptionsEvent::CustomEndGameBannerChanged(false),
+                LauncherOptionsEvent::CustomEndGameBannerChanged(true),
             ),
             (
                 CustomEndGameScore,
                 CUSTOM_END_GAME_SCORE_LABEL,
-                LauncherOptionsEvent::CustomEndGameScoreChanged(false),
+                LauncherOptionsEvent::CustomEndGameScoreChanged(true),
             ),
             (
                 CustomEndGameMovie,
                 CUSTOM_END_GAME_MOVIE_LABEL,
-                LauncherOptionsEvent::CustomEndGameMovieChanged(false),
+                LauncherOptionsEvent::CustomEndGameMovieChanged(true),
             ),
         ] {
             // A fresh dialog per box: each click is the player's first, and
             // the boxes must not remember each other's state.
             let mut state = state();
             assert_eq!(state.shell_checkbox_label(id), label);
-            assert!(state.shell_checkbox_checked(id), "{id:?} starts ticked");
+            assert!(!state.shell_checkbox_checked(id), "{id:?} starts unticked");
             let rect = checkbox(&layout, id);
             state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
-            assert!(!state.shell_checkbox_checked(id), "{id:?} unticked");
+            assert!(state.shell_checkbox_checked(id), "{id:?} ticked");
             assert_eq!(
                 state.drain_output().events,
-                [LauncherOptionsEvent::Cue(LauncherCue::Checkbox), off],
+                [LauncherOptionsEvent::Cue(LauncherCue::Checkbox), on],
                 "{id:?}"
             );
             for other in [CustomEndGameBanner, CustomEndGameScore, CustomEndGameMovie] {
                 if other != id {
                     assert!(
-                        state.shell_checkbox_checked(other),
+                        !state.shell_checkbox_checked(other),
                         "{id:?}'s click left {other:?} alone"
                     );
                 }
             }
         }
+    }
+
+    /// The Health Bars list on the Interface page: Original, All Units, and
+    /// All Units, Not Full. Its pick publishes at once like the Sidebar list.
+    #[test]
+    fn health_bars_list_publishes_its_pick_at_once() {
+        let mut state = state();
+        let layout = page(Category::Interface);
+        let face = layout.combo_rect(LauncherComboId::HealthBars).unwrap();
+        assert_eq!(state.shell_selected_health_bars(), HealthBarMode::Vanilla);
+        state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
+        assert_eq!(state.open_combo, Some(LauncherComboId::HealthBars));
+        let popup = state.shell_popup(&layout).unwrap();
+        assert_eq!(
+            (popup.combo, popup.rows, popup.selected),
+            (LauncherComboId::HealthBars, 3, 0)
+        );
+        state.drain_output();
+        let last = popup.row_rect(2);
+        state.shell_mouse_down(last.x + 10, last.y + 5, &layout);
+        assert_eq!(state.open_combo, None);
+        assert_eq!(
+            state.shell_selected_health_bars(),
+            HealthBarMode::AlwaysExceptFull
+        );
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
+                LauncherOptionsEvent::HealthBarModeSelected(HealthBarMode::AlwaysExceptFull)
+            ]
+        );
     }
 
     /// The Team Color Strength slider publishes the level it stops on, not
@@ -1761,8 +1810,8 @@ mod tests {
                 LauncherOptionsEvent::FpsCounterChanged(true),
             ),
             (
-                LauncherCheckboxId::SkipStartupLogo,
-                LauncherOptionsEvent::SkipStartupLogoChanged(true),
+                LauncherCheckboxId::SkipIntro,
+                LauncherOptionsEvent::SkipIntroChanged(true),
             ),
         ] {
             let rect = checkbox(&layout, id);

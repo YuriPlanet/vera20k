@@ -643,7 +643,7 @@ pub(crate) fn render_game(
         );
         presentation
             .radiation_beams
-            .composite(frame_rate, viewport, |birth| {
+            .composite(frame_rate, viewport, &main, |birth| {
                 !effect_hidden(birth.to.x, birth.to.y)
             });
     }
@@ -975,6 +975,11 @@ fn upload_to_gpu(
     pool.upload(&state.renderer.gpu, "sidebar_cameo", &sidebar.cameo);
     pool.upload(
         &state.renderer.gpu,
+        "sidebar_cameo_hover",
+        &sidebar.cameo_hover,
+    );
+    pool.upload(
+        &state.renderer.gpu,
         "sidebar_unavailable",
         &sidebar.unavailable,
     );
@@ -989,6 +994,16 @@ fn upload_to_gpu(
         &state.renderer.gpu,
         "sidebar_queue_text",
         &sidebar.queue_text,
+    );
+    pool.upload(
+        &state.renderer.gpu,
+        "sidebar_label_overlay",
+        &sidebar.label_overlay,
+    );
+    pool.upload(
+        &state.renderer.gpu,
+        "sidebar_label_text",
+        &sidebar.label_text,
     );
     pool.upload(
         &state.renderer.gpu,

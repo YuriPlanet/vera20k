@@ -8,6 +8,8 @@
 //! - Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
+use crate::app::input::cursor::CursorVisibility;
+use crate::app::input::gadget_input::{ID_SCROLL_DOWN, ID_SCROLL_UP, ID_TAB_BASE};
 use crate::app::presentation::sidebar_render::{
     current_sidebar_side, current_sidebar_theme, current_sidebar_view,
 };
@@ -15,6 +17,7 @@ use crate::assets::csf_file::{CsfArg, format_csf};
 use crate::map::entities::EntityCategory;
 use crate::render::batch::SpriteInstance;
 use crate::ui::game_screen::GameScreen;
+use crate::ui::sidebar::SidebarView;
 use crate::ui::tooltips::{TipRect, TipRegion};
 
 /// In-game tip ids mirror the gamemd id space: button ids as-is, cameo slots
@@ -448,6 +451,34 @@ fn with_disabled_suffix(state: &AppState, tip: String, disabled: bool) -> String
     )
 }
 
+/// `SidebarClass::GetTooltipText @ 0x006AC210` for the gadgets with a `Tip:*`
+/// label: 200 reads R-UP, 0xC9 R-DN and 0xCB..0xCE the four tabs. Each label
+/// gets the `Tip:Disabled` suffix when that gadget's `IsEnabled` fails
+/// (`0x006AC24E`), the scroll pair included.
+fn sidebar_button_tip(view: &SidebarView, id: u16) -> Option<(&'static str, bool)> {
+    match id {
+        ID_SCROLL_UP => Some((TIP_LABEL_SCROLL_UP, view.scroll_up_button.disabled)),
+        ID_SCROLL_DOWN => Some((TIP_LABEL_SCROLL_DOWN, view.scroll_down_button.disabled)),
+        _ => {
+            let index = usize::from(id.checked_sub(ID_TAB_BASE)?);
+            Some((*TIP_LABELS_TAB.get(index)?, view.tabs.get(index)?.disabled))
+        }
+    }
+}
+
+fn sidebar_button_tip_text(
+    state: &AppState,
+    cursor: CursorVisibility,
+    view: &SidebarView,
+    id: u16,
+) -> String {
+    dynamic_tip_text(cursor, || {
+        sidebar_button_tip(view, id)
+            .map(|(label, disabled)| with_disabled_suffix(state, csf_text(state, label), disabled))
+            .unwrap_or_default()
+    })
+}
+
 /// Cameo tooltip text for a buildable slot.
 ///
 /// gamemd formats the localized `UIName` and the item cost through CSF
@@ -456,6 +487,10 @@ fn with_disabled_suffix(state: &AppState, tip: String, disabled: bool) -> String
 /// between the name and the price, so a Grizzly Battle Tank cameo tip is four
 /// stacked lines — `Grizzly` / `Battle` / `Tank` / `$700` — not one line and
 /// not a name/price pair.
+///
+/// StripClass::GetCameoTooltip 6A92E0, which returns a super weapon's bare
+/// name. Its `TXT_MONEY_FORMAT_1` branch and DrawCameoText 6AC480 need
+/// ShowCameoNames (+0x53A4), which only the constructor 6A4E60 writes (0).
 fn cameo_tip_text(money_format: Option<&str>, name: &str, cost: Option<i64>) -> String {
     let formatted = match (money_format, cost) {
         (Some(fmt), Some(cost)) => format_csf(fmt, &[CsfArg::Str(name), CsfArg::Int(cost)]),
@@ -529,17 +564,11 @@ fn sync_in_game_regions(state: &mut AppState) {
         text: power_text,
     });
     for (i, tab) in view.tabs.iter().enumerate() {
-        let label = TIP_LABELS_TAB
-            .get(i)
-            .copied()
-            .unwrap_or(TIP_LABELS_TAB[TIP_LABELS_TAB.len() - 1]);
-        let text = dynamic_tip_text(cursor, || {
-            with_disabled_suffix(state, csf_text(state, label), tab.disabled)
-        });
+        let id = ID_TAB_BASE + i as u16;
         regions.push(TipRegion {
-            id: crate::app::input::gadget_input::ID_TAB_BASE as u32 + i as u32,
+            id: u32::from(id),
             rect: tip_rect(frame, tab.rect),
-            text,
+            text: sidebar_button_tip_text(state, cursor, &view, id),
         });
     }
     regions.push(TipRegion {
@@ -552,19 +581,14 @@ fn sync_in_game_regions(state: &mut AppState) {
         rect: tip_rect(frame, view.sell_button.rect),
         text: csf_text(state, "TXT_SELL_MODE"),
     });
-    {
-        // Our scroll gadget model carries no disabled state yet, so the
-        // `Tip:Disabled` branch is unreachable for this pair; the labels
-        // themselves are the native ones.
+    for (id, button) in [
+        (ID_SCROLL_DOWN, &view.scroll_down_button),
+        (ID_SCROLL_UP, &view.scroll_up_button),
+    ] {
         regions.push(TipRegion {
-            id: crate::app::input::gadget_input::ID_SCROLL_DOWN as u32,
-            rect: tip_rect(frame, view.scroll_down_button.rect),
-            text: dynamic_tip_text(cursor, || csf_text(state, TIP_LABEL_SCROLL_DOWN)),
-        });
-        regions.push(TipRegion {
-            id: crate::app::input::gadget_input::ID_SCROLL_UP as u32,
-            rect: tip_rect(frame, view.scroll_up_button.rect),
-            text: dynamic_tip_text(cursor, || csf_text(state, TIP_LABEL_SCROLL_UP)),
+            id: u32::from(id),
+            rect: tip_rect(frame, button.rect),
+            text: sidebar_button_tip_text(state, cursor, &view, id),
         });
     }
     for (slot, item) in view.items.iter().enumerate() {
@@ -1549,6 +1573,45 @@ mod tests {
     }
 
     #[test]
+    fn scroll_tips_take_the_disabled_suffix_like_the_tabs() {
+        use crate::ui::sidebar::{SidebarTab, gadget_flash::SidebarGadgetState};
+        // An empty strip fits on screen, so 6A6610 disables both arrows and
+        // 6AC210 asks the same IsEnabled for them as for the tabs.
+        let view = crate::ui::sidebar::build_sidebar_view(
+            1024.0,
+            768.0,
+            SidebarTab::Building,
+            0,
+            0,
+            0,
+            None,
+            &[],
+            &[],
+            &[],
+            None,
+            0,
+            None,
+            &SidebarGadgetState::default(),
+            None,
+            None,
+        );
+        assert!(view.scroll_down_button.disabled && view.scroll_up_button.disabled);
+        assert_eq!(
+            sidebar_button_tip(&view, ID_SCROLL_DOWN),
+            Some((TIP_LABEL_SCROLL_DOWN, true))
+        );
+        assert_eq!(
+            sidebar_button_tip(&view, ID_SCROLL_UP),
+            Some((TIP_LABEL_SCROLL_UP, true))
+        );
+        assert_eq!(
+            sidebar_button_tip(&view, ID_TAB_BASE + 3),
+            Some((TIP_LABELS_TAB[3], view.tabs[3].disabled))
+        );
+        assert_eq!(sidebar_button_tip(&view, ID_TAB_BASE + 4), None);
+    }
+
+    #[test]
     fn disabled_tip_appends_the_parenthesised_csf_word() {
         assert_eq!(
             format_csf(
@@ -1684,22 +1747,12 @@ mod tests {
 
     #[test]
     fn tooltip_draw_uses_native_insets_for_cjk_latin_digits_and_multiple_lines() {
-        let font = make_test_font(
-            &[('汉' as u16, 16), (b'A' as u16, 6), (b'1' as u16, 6)],
-            4,
-        );
+        let font = make_test_font(&[('汉' as u16, 16), (b'A' as u16, 6), (b'1' as u16, 6)], 4);
         for region in [[0.0, 0.0, 800.0, 600.0], [0.0, 0.0, 1280.0, 720.0]] {
             for text in ["汉", "A1", "汉\nA1"] {
                 let layout = font.wrap_layout(text, region[2] as u32);
-                let (fill, _, glyphs) = tooltip_quads(
-                    &font,
-                    text,
-                    [100, 100],
-                    region,
-                    [1.0; 3],
-                    [0.0; 2],
-                    true,
-                );
+                let (fill, _, glyphs) =
+                    tooltip_quads(&font, text, [100, 100], region, [1.0; 3], [0.0; 2], true);
                 assert_eq!(
                     fill[0].size,
                     [layout.width as f32 + 8.0, layout.height as f32 + 4.0]

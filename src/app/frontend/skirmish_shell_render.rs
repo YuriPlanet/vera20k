@@ -31,7 +31,7 @@ pub(crate) use network_failure::render_network_failure;
 mod preview;
 mod text;
 
-pub(crate) use preview::SkirmishPreviewTexture;
+pub(crate) use preview::{SkirmishPreviewTexture, start_marker_picture};
 
 /// The preview the setup dialog shows for `file`, decoded the way BC's own
 /// preview is: the LAN host's `[0xAC1154]` for its preview upload.
@@ -234,6 +234,7 @@ fn build_skirmish_shell_instances(
     maps: &[MapMenuEntry],
     wave: Option<&ShellFrameWave>,
     leaving: bool,
+    load_setup_enabled: bool,
 ) -> Vec<SpriteInstance> {
     let mut instances = Vec::new();
 
@@ -396,6 +397,12 @@ fn build_skirmish_shell_instances(
                     OwnerDrawButton::ChooseMap0x5aa,
                     false,
                 ),
+                (layout.save_setup_button, OwnerDrawButton::SaveSetup, false),
+                (
+                    layout.load_setup_button,
+                    OwnerDrawButton::LoadSetup,
+                    !load_setup_enabled,
+                ),
                 (layout.back_button, OwnerDrawButton::Back0x5c0, false),
             ] {
                 push_right_panel_button_shp(
@@ -422,6 +429,7 @@ fn build_skirmish_shell_instances(
     push_combo_instances(&mut instances, atlas, color_schemes, layout, shell, maps);
     push_checkbox_instances(&mut instances, atlas, layout, shell);
     push_trackbar_instances(&mut instances, atlas, layout, shell);
+    push_opponent_scrollbar_instances(&mut instances, atlas, layout, shell, maps);
 
     if let Some(flag) = flag_name_for_country_choice(
         &shell.country_catalog,
@@ -438,27 +446,21 @@ fn build_skirmish_shell_instances(
             0.00057,
         );
     }
-    for idx in 1..layout.flags.len() {
-        if !player_row_visible(shell, maps, idx) {
+    for (slot, row, opponent) in shell.paged_opponents() {
+        if !player_row_visible(shell, maps, row) || !opponent.is_active() {
             continue;
         }
-        let entry = shell
-            .opponents
-            .get(idx - 1)
-            .filter(|opponent| opponent.is_active())
-            .and_then(|opponent| {
-                flag_name_for_country_choice(
-                    &shell.country_catalog,
-                    opponent.country_random,
-                    opponent.country,
-                )
-            })
-            .and_then(|name| flag_entry(atlas, name));
+        let entry = flag_name_for_country_choice(
+            &shell.country_catalog,
+            opponent.country_random,
+            opponent.country,
+        )
+        .and_then(|name| flag_entry(atlas, name));
         if let Some(flag) = entry {
             push_flag_entry_clipped_centered(
                 &mut instances,
                 flag,
-                layout.flags[idx],
+                layout.flags[slot],
                 layout.scale,
                 0.00057,
             );
@@ -731,6 +733,7 @@ fn render_skirmish_shell_with_atlas(
             state.frontend.scenario_catalog.shell_maps(),
             wave.as_ref(),
             leaving,
+            crate::app::App::skirmish_setup_saved(state),
         )
     };
     if preview_instance.is_some() {

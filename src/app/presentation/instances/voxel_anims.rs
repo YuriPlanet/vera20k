@@ -137,23 +137,22 @@ struct DebrisView<'a> {
     axis: DepthAxis,
 }
 
-pub(crate) fn build_voxel_anim_instances(
-    state: &AppState,
-    objects: &mut Vec<PlannedObjectInstance>,
-    order: &NativeDisplayOrder,
-) {
+/// One Display member's piece, if `id` names one that draws. The caller
+/// visits the members in Display order.
+pub(crate) fn voxel_anim_visitor<'a>(
+    state: &'a AppState,
+    order: &'a NativeDisplayOrder,
+) -> Option<impl FnMut(&mut Vec<PlannedObjectInstance>, u64) + 'a> {
     let (Some(rt), Some(assets)) = (
         state.match_state.sim_runtime.as_ref(),
         state.process_assets.manager(),
     ) else {
-        return;
+        return None;
     };
     let sim = &rt.simulation;
-    let Some(terrain) = sim.resolved_terrain() else {
-        return;
-    };
+    let terrain = sim.resolved_terrain()?;
     if sim.voxel_anims().is_empty() {
-        return;
+        return None;
     }
     let rules = &rt.resources.rules;
     let input = &state.match_state.input;
@@ -168,8 +167,10 @@ pub(crate) fn build_voxel_anim_instances(
         axis: super::helpers::depth_axis(state),
     };
     let presentation = &state.match_state.match_presentation;
-    let mut cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
-    for (&id, piece) in sim.voxel_anims().iter() {
+    Some(move |objects: &mut Vec<PlannedObjectInstance>, id: u64| {
+        let Some(piece) = sim.voxel_anims().get(id) else {
+            return;
+        };
         let kind = rules.voxel_anim_type(piece.type_id());
         let palette = piece_palette(
             piece,
@@ -192,11 +193,34 @@ pub(crate) fn build_voxel_anim_instances(
             palette,
             &view,
             order,
-            |image, section, matrix| cache.render_tumble(assets, image, section, matrix),
+            // VoxelAnimClass draws uncached in the style 0xB43180 holds: its
+            // shadow renders, then its body (`0x00749CBE`, `0x00749DA8`).
+            |image, section, matrix| {
+                let mut images = presentation.voxel_images.borrow_mut();
+                let mut cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
+                let depth_tested = images.part_style(false);
+                let (body, shadow) =
+                    cache.render_tumble(assets, image, section, matrix, depth_tested, None)?;
+                if let Some(shadow) = shadow {
+                    images.render_shadow(None, false, 0, shadow.native_size());
+                }
+                if !images.render_part(false, body.native_size()).stale {
+                    return Some((body, shadow));
+                }
+                let (body, _) = cache.render_tumble(
+                    assets,
+                    image,
+                    section,
+                    matrix,
+                    true,
+                    Some(images.depth_map()),
+                )?;
+                Some((body, shadow))
+            },
         ) {
             objects.push(object);
         }
-    }
+    })
 }
 
 /// One piece's draw. Display membership is admission: storage alone never

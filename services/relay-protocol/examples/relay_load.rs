@@ -288,6 +288,7 @@ fn run_room(options: &Options, key: &SecretKey, room_index: usize, started: Inst
         sources_mask,
         tick_hz: options.tick_hz,
         expires,
+        pacing: Default::default(),
     }
     .sign(key)
     .expect("certificate");
@@ -376,82 +377,95 @@ fn drive(
                         }
                     }
                     ServerEvent::Payload { .. } => {}
-                    ServerEvent::Ordering(event) => match event {
-                        OrderEvent::Ready {
-                            ready_mask,
-                            sources_mask,
-                        } if ready_mask == sources_mask => {
-                            if player.phase == Phase::Configure {
-                                player.phase = Phase::Running;
-                                player.last_progress = arrived;
-                            }
-                        }
-                        OrderEvent::Ack { batch_id, .. } => {
-                            while player.pending.front().is_some_and(|p| p.id <= batch_id) {
-                                player.pending.pop_front();
-                            }
-                        }
-                        OrderEvent::Status(status) => {
-                            if status.next_seq > player.next_sequence && player.gap_since.is_none()
-                            {
-                                player.gap_since = Some(arrived);
-                            }
-                        }
-                        OrderEvent::Entry(entry) => {
-                            let sequence = match &entry {
-                                OrderEntry::Batch { sequence, .. }
-                                | OrderEntry::FrameEnd { sequence, .. }
-                                | OrderEntry::Departure { sequence, .. }
-                                | OrderEntry::Pause { sequence, .. }
-                                | OrderEntry::Rate { sequence, .. } => *sequence,
-                            };
-                            if sequence < player.next_sequence || player.ahead.contains(&sequence) {
-                                continue;
-                            }
-                            if let OrderEntry::Batch {
-                                source, batch_id, ..
-                            } = &entry
-                                && *source == player.source
-                                && let Some(sent) = player.submitted_at.remove(batch_id)
-                                && measuring
-                            {
-                                stats
-                                    .own_batch_ms
-                                    .push(arrived.duration_since(sent).as_millis() as u32);
-                            }
-                            if sequence == player.next_sequence {
-                                player.next_sequence += 1;
-                                while player.ahead.remove(&player.next_sequence) {
-                                    player.next_sequence += 1;
+                    ServerEvent::Ordering(_) | ServerEvent::OrderingPack(_) => {
+                        let events = match event {
+                            ServerEvent::Ordering(event) => vec![event],
+                            ServerEvent::OrderingPack(events) => events,
+                            _ => unreachable!(),
+                        };
+                        for event in events {
+                            match event {
+                                OrderEvent::Ready {
+                                    ready_mask,
+                                    sources_mask,
+                                } if ready_mask == sources_mask => {
+                                    if player.phase == Phase::Configure {
+                                        player.phase = Phase::Running;
+                                        player.last_progress = arrived;
+                                    }
                                 }
-                                player.last_progress = arrived;
-                                if player.ahead.is_empty() {
-                                    player.gap_since = None;
+                                OrderEvent::Ack { batch_id, .. } => {
+                                    while player.pending.front().is_some_and(|p| p.id <= batch_id) {
+                                        player.pending.pop_front();
+                                    }
                                 }
-                            } else {
-                                player.ahead.insert(sequence);
-                                player.gap_since.get_or_insert(arrived);
-                            }
-                            // Gaps between frame ends as the player receives
-                            // them, in or out of order.
-                            if matches!(entry, OrderEntry::FrameEnd { .. }) {
-                                if let Some(last) = player.last_frame_end
-                                    && measuring
-                                {
-                                    stats
-                                        .frame_gap_ms
-                                        .push(arrived.duration_since(last).as_millis() as u32);
+                                OrderEvent::Status(status) => {
+                                    if status.next_seq > player.next_sequence
+                                        && player.gap_since.is_none()
+                                    {
+                                        player.gap_since = Some(arrived);
+                                    }
                                 }
-                                player.last_frame_end = Some(arrived);
+                                OrderEvent::Entry(entry) => {
+                                    let sequence = match &entry {
+                                        OrderEntry::Batch { sequence, .. }
+                                        | OrderEntry::FrameEnd { sequence, .. }
+                                        | OrderEntry::Departure { sequence, .. }
+                                        | OrderEntry::Pause { sequence, .. }
+                                        | OrderEntry::Rate { sequence, .. }
+                                        | OrderEntry::Desync { sequence, .. } => *sequence,
+                                    };
+                                    if sequence < player.next_sequence
+                                        || player.ahead.contains(&sequence)
+                                    {
+                                        continue;
+                                    }
+                                    if let OrderEntry::Batch {
+                                        source, batch_id, ..
+                                    } = &entry
+                                        && *source == player.source
+                                        && let Some(sent) = player.submitted_at.remove(batch_id)
+                                        && measuring
+                                    {
+                                        stats
+                                            .own_batch_ms
+                                            .push(arrived.duration_since(sent).as_millis() as u32);
+                                    }
+                                    if sequence == player.next_sequence {
+                                        player.next_sequence += 1;
+                                        while player.ahead.remove(&player.next_sequence) {
+                                            player.next_sequence += 1;
+                                        }
+                                        player.last_progress = arrived;
+                                        if player.ahead.is_empty() {
+                                            player.gap_since = None;
+                                        }
+                                    } else {
+                                        player.ahead.insert(sequence);
+                                        player.gap_since.get_or_insert(arrived);
+                                    }
+                                    // Gaps between frame ends as the player receives
+                                    // them, in or out of order.
+                                    if matches!(entry, OrderEntry::FrameEnd { .. }) {
+                                        if let Some(last) = player.last_frame_end
+                                            && measuring
+                                        {
+                                            stats.frame_gap_ms.push(
+                                                arrived.duration_since(last).as_millis() as u32,
+                                            );
+                                        }
+                                        player.last_frame_end = Some(arrived);
+                                    }
+                                }
+                                // Start-up replies such as NotStarted stay out.
+                                OrderEvent::Error { code, .. } if measuring => {
+                                    stats.ordering_errors += 1;
+                                    *stats.errors.entry(format!("{code:?}")).or_default() += 1;
+                                }
+                                _ => {}
                             }
                         }
-                        // Start-up replies such as NotStarted stay out.
-                        OrderEvent::Error { code, .. } if measuring => {
-                            stats.ordering_errors += 1;
-                            *stats.errors.entry(format!("{code:?}")).or_default() += 1;
-                        }
-                        _ => {}
-                    },
+                    }
                 }
             }
             // Send what a live client would now.

@@ -721,6 +721,33 @@ impl Simulation {
         self.hash_projectiles(hasher);
     }
 
+    /// Whether something retains the shared dummy cell, so that its live
+    /// coordinate is state ([`Self::hash_shared_cell_dummy`] folds it then).
+    /// Otherwise nothing reads the coordinate: the next lookup that hands
+    /// the dummy out stamps it first.
+    pub(super) fn shared_cell_dummy_retained(&self) -> bool {
+        let entities: Vec<_> = self.substrate.entities.values().collect();
+        self.cells_anchor_dummy()
+            || self.entities_target_dummy(&entities)
+            || self.dummy_retained_beyond_cells_and_entities(&self.effective_shared_cell_dummy())
+    }
+
+    /// Whether the dummy's own bridge anchor, a Team script or a projectile
+    /// retains it.
+    fn dummy_retained_beyond_cells_and_entities(
+        &self,
+        dummy: &crate::map::resolved_terrain::SharedCellDummy,
+    ) -> bool {
+        dummy.native_anchor() == Some(crate::map::cell_index::NativeCellIdentity::Dummy)
+            || self
+                .resolved_terrain
+                .as_ref()
+                .is_some_and(|terrain| self.team_script_vm.retains_dummy_cell(terrain))
+            || self.projectiles.iter().any(|(_, projectile)| {
+                projectile.target() == crate::sim::projectile::ProjectileTarget::DummyCell
+            })
+    }
+
     /// The shared dummy cell's state, and its live coordinate while its own
     /// bridge anchor, a real cell's bridge anchor or an entity's target
     /// (`cells_or_entities_retain_dummy`), or a projectile retains it.
@@ -732,8 +759,6 @@ impl Simulation {
         let shared_dummy_handle = self.effective_shared_cell_dummy();
         let shared_dummy = shared_dummy_handle.snapshot();
         let gap_flags = shared_dummy_handle.retained_bridge_flags() & 0xC00;
-        let bridge_keeps_dummy = shared_dummy_handle.native_anchor()
-            == Some(crate::map::cell_index::NativeCellIdentity::Dummy);
         {
             let extra_flags = shared_dummy_handle.raw_flags()
                 & !crate::map::bridge_facts::RETAINED_CELLCLASS_BRIDGE_FLAG_MASK;
@@ -773,15 +798,8 @@ impl Simulation {
         // live-state authority rather than Scenario payload authority.
         b"shared-cell-dummy-overlay-v1".hash(hasher);
         shared_dummy_overlay.hash(hasher);
-        if bridge_keeps_dummy
-            || cells_or_entities_retain_dummy
-            || self
-                .resolved_terrain
-                .as_ref()
-                .is_some_and(|terrain| self.team_script_vm.retains_dummy_cell(terrain))
-            || self.projectiles.iter().any(|(_, projectile)| {
-                projectile.target() == crate::sim::projectile::ProjectileTarget::DummyCell
-            })
+        if cells_or_entities_retain_dummy
+            || self.dummy_retained_beyond_cells_and_entities(&shared_dummy_handle)
         {
             // Retained Cell pointers make the live coordinate affect future
             // range, Team orders, approach and projectile behavior.
@@ -1017,6 +1035,9 @@ impl Simulation {
             sys.lifetime().hash(hasher);
             sys.facing().hash(hasher);
             sys.done_spawning().hash(hasher);
+            if sys.owner_fire_link() {
+                0x304_u16.hash(hasher);
+            }
             sys.alive().hash(hasher);
             sys.in_limbo().hash(hasher);
             // The rest of the saved system state. `in_logic_vector` is not
@@ -1560,13 +1581,13 @@ fn hash_particle(p: &crate::sim::particles::Particle, hasher: &mut impl Hasher) 
     p.translucency().hash(hasher);
     p.marked_for_deletion().hash(hasher);
     p.origin().to_array().hash(hasher);
-    p.direction().map(|v| v.to_bits()).hash(hasher);
+    p.direction().map(|v| v.bits()).hash(hasher);
     p.motion().map(|v| v.bits()).hash(hasher);
     p.velocity().bits().hash(hasher);
     p.damage_counter().hash(hasher);
     p.state_ai_advance().hash(hasher);
     (p.drift_x(), p.drift_y(), p.drift_z()).hash(hasher);
-    p.prev_delta().map(|v| v.to_bits()).hash(hasher);
+    p.prev_delta().hash(hasher);
     match p.spark() {
         None => 0_u8.hash(hasher),
         Some(spark) => {
@@ -1578,6 +1599,14 @@ fn hash_particle(p: &crate::sim::particles::Particle, hasher: &mut impl Hasher) 
             spark.color_index.hash(hasher);
             spark.color_accumulator.bits().hash(hasher);
         }
+    }
+    // Behavior-4 state, hashed only when present so other particles hash as
+    // before.
+    if let Some(railgun) = p.railgun() {
+        railgun.position.map(|v| v.bits()).hash(hasher);
+        railgun.start_rgb.hash(hasher);
+        railgun.color_index.hash(hasher);
+        railgun.color_accumulator.bits().hash(hasher);
     }
 }
 
@@ -2270,10 +2299,14 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
             // A Foot can own cargo while riding another transport (Unit
             // PerCell 0x0073A730..0x0073A77C). Only append a live parent
             // relation, preserving ordinary outside-cargo hash controls.
-            if let Some((parent, open_topped)) = role.inside_transport() {
+            if let Some(link) = role.carrier_link() {
                 3u8.hash(hasher);
-                parent.hash(hasher);
-                open_topped.hash(hasher);
+                link.transport_id().hash(hasher);
+                link.open_topped().hash(hasher);
+                // `+0x11C`, folded only when set (see the arm below).
+                if role.transporter() == Some(link.transport_id()) {
+                    4u8.hash(hasher);
+                }
             }
             // `UnitClass+0x6E4` keep-count, written only by a
             // transport's own Unload state 0. Folded only when set so
@@ -2284,18 +2317,29 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
             }
         }
         None => {
-            if let Some((transport_id, open_topped)) = role.inside_transport() {
+            if let Some(link) = role.carrier_link() {
                 3u8.hash(hasher);
-                transport_id.hash(hasher);
-                // `+0x82`, folded only when set so a closed transport's
-                // cargo keeps its historical hash.
-                if open_topped {
+                link.transport_id().hash(hasher);
+                // `+0x82` and `+0x11C`, folded only when set so cargo that
+                // CargoClass::AddPassenger loaded keeps its historical hash.
+                if link.open_topped() {
                     1u8.hash(hasher);
+                }
+                if role.transporter() == Some(link.transport_id()) {
+                    4u8.hash(hasher);
                 }
             } else {
                 0u8.hash(hasher);
             }
         }
+    }
+    // `+0x11C` naming another hull than the carrier relation, or none: a
+    // soldier an aircraft unloaded keeps it (`PassengerRole::transporter`).
+    if let Some(transporter) = role.transporter()
+        && role.carrier_link().map(|link| link.transport_id()) != Some(transporter)
+    {
+        5u8.hash(hasher);
+        transporter.hash(hasher);
     }
     // BuildingCtor43B8DC..43B907 and GetCount4581F0: independent vector,
     // not Cargo+114. The unique empty/zero constructor state adds no bytes,
@@ -2466,6 +2510,15 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     // ReceiveDamage damage-Smoke `+0x310` identity. This gates later
     // spawn/RNG and remains set while a marked system drains.
     entity.damage_smoke_system_id.system().hash(hasher);
+    // The Railgun `+0x314` link gates the next railgun shot. Hashed only
+    // when set, so objects that never fired a railgun hash as before.
+    if let Some(system) = entity.railgun_particle_system.system() {
+        system.hash(hasher);
+    }
+    // The Fire `+0x304` link gates the next fire shot, hashed the same way.
+    if let Some(system) = entity.fire_particle_system.system() {
+        (0x304_u16, system).hash(hasher);
+    }
 }
 
 /// One locomotor object, field for field, and the object its piggyback slot
@@ -3664,7 +3717,6 @@ mod particle_hash_tests {
     use crate::rules::particle_system_type::ParticleSystemTypeId;
     use crate::rules::particle_type::ParticleTypeId;
     use crate::sim::particles::{Particle, ParticleSystem, SparkRuntimeState};
-    use crate::util::fixed_math::SimFixed;
     use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
     use glam::IVec3;
 
@@ -3773,7 +3825,8 @@ mod particle_hash_tests {
             Box::new(move |s| s.set_owner_house_for_test(Some(owner_house))),
             Box::new(|s| s.particles_mut_for_test()[0].set_origin_for_test(IVec3::new(0, 0, 1))),
             Box::new(|s| {
-                s.particles_mut_for_test()[0].direction_mut_for_test()[1] = SimFixed::from_num(1)
+                s.particles_mut_for_test()[0].direction_mut_for_test()[1] =
+                    crate::util::native_x87::NativeF32Bits::ONE
             }),
             Box::new(|s| {
                 s.particles_mut_for_test()[0].motion_mut_for_test()[1] =
@@ -3789,7 +3842,7 @@ mod particle_hash_tests {
             Box::new(|s| s.particles_mut_for_test()[0].set_drift_y_for_test(1)),
             Box::new(|s| s.particles_mut_for_test()[0].set_drift_z_for_test(1)),
             Box::new(|s| {
-                s.particles_mut_for_test()[0].prev_delta_mut_for_test()[2] = SimFixed::from_num(1)
+                s.particles_mut_for_test()[0].prev_delta_mut_for_test()[2] = 1
             }),
         ];
         for (index, edit) in edits.iter().enumerate() {

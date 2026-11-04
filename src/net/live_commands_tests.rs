@@ -3087,6 +3087,7 @@ fn sequenced_udp_paused_client_catches_up_without_stalling_healthy_commands() {
         sources_mask: 3,
         tick_hz: 30,
         expires: 86_500,
+        pacing: Default::default(),
     }
     .sign(&key)
     .unwrap();
@@ -3358,6 +3359,7 @@ fn sequenced_service_ends_a_match_a_newer_relay_keeps_stalling() {
         sources_mask: 3,
         tick_hz: 30,
         expires: 86_500,
+        pacing: Default::default(),
     }
     .sign(&key)
     .unwrap();
@@ -3427,6 +3429,7 @@ fn sequenced_unsent_batch_retries_when_the_relay_route_recovers() {
         sources_mask: 3,
         tick_hz: 30,
         expires: 86_500,
+        pacing: Default::default(),
     }
     .sign(&key)
     .unwrap();
@@ -3655,6 +3658,7 @@ fn sequenced_pair() -> (
         sources_mask: 3,
         tick_hz: 30,
         expires: 86_500,
+        pacing: Default::default(),
     }
     .sign(&key)
     .unwrap();

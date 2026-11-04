@@ -1,5 +1,6 @@
-//! Rust regression tests for script actions that act on every member, and
-//! for the building actions 46 and 47.
+//! Rust regression tests for script actions that act on every member, for
+//! the building actions 46 and 47, and for a member leaving its team inside
+//! an object-placement scope.
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
@@ -755,6 +756,48 @@ fn rules() -> RuleSet {
         &IniFile::from_str("[GAPOWR]\nFoundation=2x2\n"),
     )
     .expect("team action rules")
+}
+
+/// `TeamClass::Remove_Member @ 0x006EA870` enters a leaving member's idle
+/// mode only while the object-placement counter `[0x00A8E7AC]` is zero
+/// (`0x006EAA1E`). `BuildingClass::SellBuilding @ 0x00457DE0` raises it from
+/// `0x00458092` to `0x004581B2`, around its Remove_Member call at `0x0045812B`.
+#[test]
+fn a_member_leaving_inside_a_placement_scope_skips_idle_mode() {
+    let rules = rules();
+    let mut sim = Simulation::with_seed(0x6EAA1E);
+    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    let (team, members, _) = building_team(&mut sim, &rules, &[], &[]);
+    let hunt = MissionId::from_known(MissionType::Hunt);
+    for &member in &members[..2] {
+        let entity = sim.substrate.entities.get_mut(member).unwrap();
+        entity.mission.set_current_for_test(hunt, 0);
+    }
+    sim.with_object_placement_scope(|sim| {
+        sim.team_remove_member(team, members[0], false, &rules, FrameEffects::default());
+    });
+    sim.team_remove_member(team, members[1], false, &rules, FrameEffects::default());
+    let queued = |id| sim.substrate.entities.get(id).unwrap().mission.queued();
+    assert_eq!(queued(members[0]), MissionId::NONE, "inside the scope");
+    assert_ne!(queued(members[1]), MissionId::NONE, "outside the scope");
+}
+
+/// `FootClass::Detach_All @ 0x004D9720` removes the object from its team only
+/// while `[0x00A8E7AC]` is zero (`0x004D9736..0x004D9744`). Neither member
+/// heads the list, which `TeamClass::PointerExpired @ 0x006EAE60` would
+/// unlink either way (`0x006EAE71..0x006EAE84`).
+#[test]
+fn a_member_detached_inside_a_placement_scope_stays_in_its_team() {
+    let rules = rules();
+    let mut sim = Simulation::with_seed(0x4D9736);
+    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    let (team, members, _) = building_team(&mut sim, &rules, &[], &[]);
+    let context = crate::sim::world::UninitContext::new(&rules, None);
+    sim.with_object_placement_scope(|sim| sim.detach_all(members[1], true, context));
+    sim.detach_all(members[2], true, context);
+    let team_of = |id| sim.team_script_vm.member_team.get(&id).copied();
+    assert_eq!(team_of(members[1]), Some(team), "inside the scope");
+    assert_eq!(team_of(members[2]), None, "outside the scope");
 }
 
 #[test]
@@ -1960,6 +2003,46 @@ fn script_action_51_plays_an_animation_and_finishes_the_step() {
     assert_eq!(loops.len(), 2, "one Anim per visit, attached to the member");
     assert!(loops[1] > 1);
     assert_eq!(u16::from(loops[0]), u16::from(loops[1]) * 3);
+}
+
+#[test]
+fn script_action_52_shows_a_talk_bubble_over_the_first_member_and_finishes_the_step() {
+    // TeamClass action 52 (`0x006E9D42..0x006E9D5B`): TalkBubble
+    // SetObjectAndFrame (`0x0070F120`) over the first member, then the step
+    // finishes. Unported, the refusal froze the team on this step. The scene
+    // returns after step 0's visit, so the observed frame runs step 1.
+    let Some((mut scene, team, member)) = crate::sim::team_script_vm::packed_cell_tests::scene(
+        "0=52,0\n1=52,7\n2=5,300",
+        "E2",
+        false,
+        |_| {},
+    ) else {
+        return;
+    };
+    let commands = scene.runtime.simulation.take_due_commands();
+    let output = scene
+        .runtime
+        .advance_frame(
+            &commands,
+            22,
+            crate::sim::world::TickLane::Ordinary,
+            FrameEffects::default(),
+        )
+        .unwrap();
+    let state = scene.sim().team_script_vm.team(team).unwrap();
+    assert!(state.refusal().is_none(), "{:?}", state.refusal());
+    assert!(state.cursor() >= 1, "action 52 finishes its step");
+    let bubbles: Vec<_> = output
+        .trigger_effects
+        .iter()
+        .filter_map(|effect| match effect {
+            crate::sim::trigger_runtime::TriggerEffect::TalkBubble { actor, value, .. } => {
+                Some((*actor, *value))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(bubbles, vec![(Some(member), 7)]);
 }
 
 #[test]

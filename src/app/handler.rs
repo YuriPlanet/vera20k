@@ -1812,7 +1812,9 @@ impl ApplicationHandler for App {
                     // Every wheel notch scrolls the active build strip by one
                     // row. gamemd routes the wheel message straight to the
                     // SidebarUp / SidebarDown commands and has no world zoom.
-                    dispatch::sidebar_wheel_scroll(state, lines);
+                    if let Some(action) = dispatch::wheel_notch(lines) {
+                        dispatch::sidebar_scroll_command(state, action);
+                    }
                 }
             }
             WindowEvent::Ime(ime) => crate::app::input::ime::event(state, ime),
@@ -1892,6 +1894,7 @@ impl ApplicationHandler for App {
                 crate::app::input::sound::poll_scroll_repeat(state),
                 Self::poll_movie_list_scroll(state),
                 Self::poll_choose_map_scroll(state),
+                Self::poll_skirmish_opponent_scroll(state),
                 // Captures replay sealed input; they never read the library.
                 (self.shell_capture.is_none() && self.tactical_capture.is_none())
                     .then(|| crate::app::map_library::poll(state))
@@ -2055,10 +2058,14 @@ impl ApplicationHandler for App {
                         Instant::now() + crate::app::match_runtime::frame_pacer::SERVICE_WAKE,
                     ));
                 } else {
-                    // Nothing on screen to keep fresh. Park the redraw loop
-                    // until a window event (including the un-occlude edge)
-                    // wakes it, rather than rendering frames no one can see.
-                    event_loop.set_control_flow(ControlFlow::Wait);
+                    // Nothing on screen to keep fresh: draw no frames until a
+                    // window event (including the un-occlude edge). The shell's
+                    // services still wake it, so a lobby, a LAN room or a Quick
+                    // Match search keeps answering while the player is in
+                    // another window.
+                    event_loop.set_control_flow(
+                        shell_scroll_wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil),
+                    );
                 }
             } else if state.platform.redraw_gate.next_pass()
                 == crate::app::match_runtime::redraw_gate::NextPass::Probe

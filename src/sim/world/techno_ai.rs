@@ -1404,6 +1404,13 @@ fn drop_unsensed_cloaked_target_step(
 /// Tick the common `+0xC4` per-mission AI counter once per object visit
 /// (`0x006FA646..0x006FA64F`), then enter `MissionClass::AI @ 0x005B3060`
 /// (`0x006FA655`), whose first call is `ObjectClass::AI`'s sound block.
+///
+/// Returns false only when the fall failed. An object the fall kills (a unit
+/// on a destroyed bridge) runs on: `MissionClass::AI` skips its handler on
+/// IsAlive and Health (`0x005B306C`, `0x005B30A7`), but `AI_Update` still
+/// runs the passive scan (`0x006FA65A..0x006FA6EE`), the bomb tick
+/// (`0x006FA6F5..0x006FA712`) and the Slave and Capture managers
+/// (`0x006FA717..0x006FA730`) before its IsAlive test at `0x006FA735`.
 fn mission_counter_step(
     sim: &mut Simulation,
     id: u64,
@@ -1414,6 +1421,9 @@ fn mission_counter_step(
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.mission.increment_ai_counter();
     }
+    // The sound block (`0x005F3E78..0x005F3F0C`) runs before the fall block
+    // (`0x005F3F11`), so a faller its landing kills still plays its sounds.
+    sim.object_ai_sounds(id, rules, ctx.effects);
     match sim.object_ai_fall(id, rules, ctx.overlay_registry, ctx.effects) {
         Ok((landed, changed)) => {
             outcome.landed |= landed;
@@ -1424,8 +1434,7 @@ fn mission_counter_step(
             return false;
         }
     }
-    sim.object_ai_sounds(id, rules, ctx.effects);
-    ai_alive(&sim.substrate, id)
+    true
 }
 
 // ===== TechnoClass common-body bracket =====
@@ -3384,6 +3393,8 @@ mod tests {
         ))
         .expect("wreck rules parse");
         let (mut sim, grid) = guard_beside_unarmed(&rules, "MTNK");
+        // The player has seen the enemy: the campaign scan gate needs +0x41B.
+        crate::sim::arena_fixture::discover(&mut sim, 2);
         let timer = {
             let wreck = sim.substrate.entities.get_mut(1).expect("tank present");
             wreck.health.set_for_test(0);
@@ -3424,6 +3435,8 @@ mod tests {
             ],
             Some(&rules),
         );
+        // The player has seen the enemy: the campaign scan gate needs +0x41B.
+        crate::sim::arena_fixture::discover(&mut sim, 2);
         sim.playfield_bounds = Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(64, 2, 2, 56, 52),
         );
@@ -3479,6 +3492,9 @@ mod tests {
             ],
             Some(&rules),
         );
+        // Neither House is registered, so the Soviet tank scans as a human
+        // player's: the campaign scan gate needs the scout's +0x41B.
+        crate::sim::arena_fixture::discover(&mut sim, 1);
         let allied = sim.interner.get("Americans").expect("Americans interned");
         let start = sim
             .substrate
@@ -3550,6 +3566,9 @@ mod tests {
             ],
             Some(&rules),
         );
+        // The player has seen both enemies: the campaign scan gate needs +0x41B.
+        crate::sim::arena_fixture::discover(&mut sim, 2);
+        crate::sim::arena_fixture::discover(&mut sim, 3);
         for _ in 0..60 {
             let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
         }
@@ -3616,6 +3635,8 @@ mod tests {
             ],
             Some(rules),
         );
+        // The player has seen the enemy: the campaign scan gate needs +0x41B.
+        crate::sim::arena_fixture::discover(&mut sim, 3);
         // A human's probe: ReceiveDamage's scatter tail moves a computer's
         // unarmed unit off the reach edge (`0x00702C8A`); this measures reach.
         let soviet = sim.interner.intern("Soviet");
@@ -4798,6 +4819,8 @@ mod tests {
         // weapon reach that bounds a Guard-mission scan, comfortably inside
         // Sight=10 so the candidate is not shrouded.
         let mut sim = hunt_pair(0x40_0720, "HUNTVEH", 8, MissionType::Hunt);
+        // The player has seen the enemy: the campaign scan gate needs +0x41B.
+        crate::sim::arena_fixture::discover(&mut sim, 2);
         let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
         // Record the state at the moment of acquisition: the hunter starts
         // closing as soon as it has a target, and the point of the test is how

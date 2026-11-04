@@ -23,8 +23,10 @@ mod journal;
 mod sequenced;
 pub use sequenced::federation::{MAX_FEDERATED_RELAYS, sign_federation_roster};
 pub use sequenced::{
-    ORDERING_BATCH_CAPACITY, ORDERING_CERTIFICATE_LEN, ORDERING_PULL_LIMIT, OrderEntry, OrderError,
-    OrderEvent, OrderPace, OrderStatus, OrderingCertificate, paced_rates,
+    CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY, ORDERING_CERTIFICATE_LEN,
+    ORDERING_CERTIFICATE_V2_LEN, ORDERING_PULL_LIMIT, OrderEntry, OrderError, OrderEvent,
+    OrderPace, OrderStatus, OrderingCertificate, is_ordering_certificate_len, paced_rates,
+    turn_frames,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -314,8 +316,13 @@ impl fmt::Debug for ClientSession {
 pub enum ServerEvent<'a> {
     Challenge(&'a [u8]),
     Ready,
-    Payload { source: u8, bytes: DecryptedPayload },
+    Payload {
+        source: u8,
+        bytes: DecryptedPayload,
+    },
     Ordering(OrderEvent),
+    /// Consecutive history entries packed into one datagram, in order.
+    OrderingPack(Vec<OrderEvent>),
 }
 
 impl ClientSession {
@@ -512,6 +519,11 @@ impl ClientSession {
                 // Hop authentication protects the ordering authority; batch
                 // contents additionally authenticate under the match-only key.
                 self.received.accept(sequence)?;
+                if payload.first() == Some(&sequenced::PACK_EVENT) {
+                    return Ok(ServerEvent::OrderingPack(
+                        self.receive_ordering_pack(payload)?,
+                    ));
+                }
                 Ok(ServerEvent::Ordering(self.receive_ordering(payload)?))
             }
             LEAVE_ACK
@@ -791,6 +803,23 @@ pub struct ForwardDatagram {
     pub bytes: Vec<u8>,
 }
 
+/// How players kept pace and read the ordering, for the relay's journal
+/// report. No player, room or endpoint identity.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct OrderingCounts {
+    /// Times the clock slowed a match because a player could not keep up.
+    pub slowdowns: u64,
+    /// Times the clock tried a faster rate again.
+    pub raises: u64,
+    /// Pace reports from a player catching up or behind. Each player reports
+    /// once a second, so this is about the seconds players spent catching up.
+    pub catching_up_s: u64,
+    /// Pull requests answered: repairs and pull-only readers.
+    pub pull_replies: u64,
+    /// Matches this relay ended with a DESYNC record.
+    pub desyncs: u64,
+}
+
 /// Bound storage and packet rate; untrusted data never creates a room until
 /// both ticket authentication and UDP source reachability are established.
 pub struct RelayServer {
@@ -818,6 +847,8 @@ pub struct RelayServer {
     // Ordering rooms cleaned up before their certificate expired, until that
     // expiry: a late Ready gets Inactive instead of a new timeline.
     ended_orderings: HashMap<[u8; 16], u64>,
+    // Since `take_ordering_counts` last read them.
+    ordering_counts: OrderingCounts,
 }
 
 impl RelayServer {
@@ -841,6 +872,7 @@ impl RelayServer {
             push_after: None,
             journal_directory: None,
             ended_orderings: HashMap::new(),
+            ordering_counts: OrderingCounts::default(),
         }
     }
 
@@ -862,6 +894,12 @@ impl RelayServer {
 
     pub fn room_count(&self) -> usize {
         self.rooms.len()
+    }
+
+    /// How players kept pace and read the ordering since the last call; the
+    /// relay's journal reports it.
+    pub fn take_ordering_counts(&mut self) -> OrderingCounts {
+        std::mem::take(&mut self.ordering_counts)
     }
 
     pub fn process(

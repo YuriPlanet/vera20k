@@ -8,9 +8,9 @@
 use super::audio::{AudioVolume, AudioVolumeOperations, apply_volume};
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::ui::main_menu_dialogs::options::{
-    DisplayTarget, LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels, LauncherOptionsPacked,
-    LauncherOptionsValues, LauncherParentResult, OptionsDialogState, SidebarSize, Zoom,
-    admitted_initial_position, admitted_volume_position,
+    DisplayTarget, HealthBarMode, LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels,
+    LauncherOptionsPacked, LauncherOptionsValues, LauncherParentResult, OptionsDialogState,
+    SidebarSize, Zoom, admitted_initial_position, admitted_volume_position,
 };
 
 /// Project the retained signed profile into the fresh native-shaped controls.
@@ -42,11 +42,12 @@ pub(crate) fn launcher_values_from_profile(
         shift_queue: profile.shift_queue,
         wol_test_service: profile.wol_test_service,
         fps_counter: false,
-        skip_startup_logo: profile.skip_startup_logo,
+        skip_intro: profile.skip_intro,
         custom_end_game_banner: profile.custom_end_game_banner,
         custom_end_game_score: profile.custom_end_game_score,
         custom_end_game_movie: profile.custom_end_game_movie,
         sidebar: profile.sidebar,
+        health_bars: profile.health_bars,
         // The slider's position is the stored level less the retail strength,
         // so gamemd's own bands sit at the left end.
         house_color_position: profile
@@ -95,6 +96,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn play_cue(&mut self, cue: LauncherCue);
     fn store_zoom(&mut self, zoom: Zoom);
     fn store_sidebar(&mut self, size: SidebarSize);
+    /// The `[VERA] HealthBars=` list's pick; presentation only.
+    fn store_health_bars(&mut self, mode: HealthBarMode);
     /// Move the window to the picked screen, or hand it back to the system.
     fn set_display(&mut self, display: DisplayTarget);
     fn set_full_screen(&mut self, full_screen: bool);
@@ -109,7 +112,7 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_shift_queue(&mut self, shift_queue: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
     fn set_fps_counter(&mut self, shown: bool);
-    fn store_skip_startup_logo(&mut self, skip: bool);
+    fn store_skip_intro(&mut self, skip: bool);
     /// Whether a finished match draws the country's own end-game picture.
     fn store_custom_end_game_banner(&mut self, enabled: bool);
     /// Whether a finished match starts the country's own end-game music.
@@ -131,6 +134,7 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::Cue(cue) => operations.play_cue(cue),
         LauncherOptionsEvent::ZoomSelected(zoom) => operations.store_zoom(zoom),
         LauncherOptionsEvent::SidebarSelected(size) => operations.store_sidebar(size),
+        LauncherOptionsEvent::HealthBarModeSelected(mode) => operations.store_health_bars(mode),
         LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
         LauncherOptionsEvent::FullScreenChanged(full_screen) => {
             operations.set_full_screen(full_screen);
@@ -159,8 +163,8 @@ pub(crate) fn dispatch_launcher_preview_event(
             operations.store_wol_test_service(wol_test_service);
         }
         LauncherOptionsEvent::FpsCounterChanged(shown) => operations.set_fps_counter(shown),
-        LauncherOptionsEvent::SkipStartupLogoChanged(skip) => {
-            operations.store_skip_startup_logo(skip);
+        LauncherOptionsEvent::SkipIntroChanged(skip) => {
+            operations.store_skip_intro(skip);
         }
         LauncherOptionsEvent::CustomEndGameBannerChanged(enabled) => {
             operations.store_custom_end_game_banner(enabled);
@@ -281,6 +285,24 @@ pub(crate) fn dispatch_launcher_parent_result(
 mod tests {
     use super::*;
 
+    /// The Health Bars list starts on the retained profile's mode, so the page
+    /// never shows a different strip policy from the one the battle draws.
+    #[test]
+    fn health_bar_mode_reaches_the_dialog_from_the_profile() {
+        use crate::ui::main_menu_dialogs::options::HealthBarMode;
+        for mode in [
+            HealthBarMode::Vanilla,
+            HealthBarMode::Always,
+            HealthBarMode::AlwaysExceptFull,
+        ] {
+            let profile = RetailOptionsProfile {
+                health_bars: mode,
+                ..RetailOptionsProfile::default()
+            };
+            assert_eq!(launcher_values_from_profile(&profile).health_bars, mode);
+        }
+    }
+
     #[test]
     fn profile_projection_uses_reject_to_zero_edges() {
         let default = launcher_values_from_profile(&RetailOptionsProfile::default());
@@ -353,7 +375,7 @@ mod tests {
             unit_action_lines: false,
             show_hidden: true,
             yr_original_style: true,
-            skip_startup_logo: true,
+            skip_intro: true,
             render_interpolation: false,
             mouse_wheel_zoom: true,
             shift_queue: true,
@@ -364,7 +386,7 @@ mod tests {
         assert!(!booleans.target_lines);
         assert!(booleans.show_hidden);
         assert!(booleans.yr_original_style);
-        assert!(booleans.skip_startup_logo);
+        assert!(booleans.skip_intro);
         assert!(!booleans.render_interpolation);
         assert!(booleans.mouse_wheel_zoom);
         assert!(booleans.shift_queue);

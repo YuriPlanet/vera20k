@@ -17,6 +17,12 @@ pub(crate) const SERVICE_WAKE: std::time::Duration =
 /// A refresh gap the pacer forgives, so a pass at 60 Hz still finds a
 /// one-bucket (GameSpeed 1, 60 FPS) frame on time.
 const CADENCE_SLACK_BUCKETS: u32 = 2;
+// Online catch-up render deferral bounds (`defer_online_render`).
+const MIN_RENDER_STANDING_MS: u64 = 50;
+const MAX_RENDER_STANDING_MS: u64 = 200;
+/// Half the native 256-frame checksum history (`CHECKSUM_HISTORY_LEN`): the
+/// LAN live capture reads that history once per presented frame.
+const MAX_TICKS_BETWEEN_PRESENTS: u32 = 128;
 const MIN_TIMED_GAME_SPEED: u8 = 1;
 const MAX_TIMED_GAME_SPEED: u8 = 6;
 const ELAPSED_CLOCK_STOPPED: u32 = u32::MAX;
@@ -82,7 +88,6 @@ pub(crate) struct LocalFramePacer {
     last_frame_start_ms: Option<u32>,
     last_presented: Option<crate::util::time::Instant>,
     frames_since_present: u32,
-    chunks_since_present: u8,
     render_deferred: bool,
     total_render_deferrals: u64,
     online: Option<OnlinePacer>,
@@ -186,9 +191,18 @@ impl OnlinePacer {
         }
     }
 
+    /// The relay seals a turn's frames at once, sent when its last frame is
+    /// due (relay README, ordering).
+    fn turn(&self) -> u32 {
+        crate::net::live_commands::turn_frames(self.receipt.frames_per_second)
+    }
+
+    /// A turn's frames arrive together, so playout runs a turn's span behind
+    /// the schedule to play them evenly until the next turn arrives.
     fn deadline(&self, frame: u32) -> Instant {
         let base = self.scheduled(frame);
-        base.checked_add(self.reserve).unwrap_or(base)
+        base.checked_add(self.reserve + self.span(self.turn() - 1))
+            .unwrap_or(base)
     }
 
     fn learn(&mut self, required: Duration, now: Instant) {
@@ -269,9 +283,12 @@ impl OnlinePacer {
         {
             self.learn(receipt.received_at.saturating_duration_since(deadline), now);
         }
+        // A whole turn waiting is on time; two frames beyond it, or one
+        // beyond it two frames late, is a backlog.
+        let turn = self.turn();
         if !self.catching_up
-            && (available >= 3
-                || (available >= 2
+            && (available >= turn + 2
+                || (available > turn
                     && now.saturating_duration_since(self.deadline(next_frame)) > self.span(2)))
         {
             self.catching_up = true;
@@ -494,7 +511,6 @@ impl LocalFramePacer {
             last_frame_start_ms: None,
             last_presented: None,
             frames_since_present: 0,
-            chunks_since_present: 0,
             render_deferred: false,
             total_render_deferrals: 0,
             online: None,
@@ -599,7 +615,9 @@ impl LocalFramePacer {
 
     /// Yield to winit between ordinary online catch-up chunks. Only completed
     /// transactions count; neither a blocked frame nor a modal may defer.
-    /// Four existing chunks contain at most 32 ticks, below checksum history.
+    /// The picture may stand for half the buffered backlog's playout time,
+    /// 50 ms to 200 ms: a deep backlog spends more of each second simulating.
+    /// At most `MAX_TICKS_BETWEEN_PRESENTS` run between two presents.
     pub(crate) fn defer_online_render(
         &mut self,
         now: crate::util::time::Instant,
@@ -608,21 +626,35 @@ impl LocalFramePacer {
         next_canonical: Option<(u32, u32)>,
     ) -> bool {
         self.frames_since_present = self.frames_since_present.saturating_add(completed_frames);
-        self.chunks_since_present = self
-            .chunks_since_present
-            .saturating_add(u8::from(completed_frames > 0));
         self.render_deferred = completed_frames > 0
             && last_frame_completed
-            && next_canonical.is_some_and(|(frame, frontier)| frame > 0 && frame <= frontier)
-            && self.last_presented.is_some_and(|last| {
-                now.saturating_duration_since(last) < std::time::Duration::from_millis(50)
+            && next_canonical.is_some_and(|(frame, frontier)| {
+                frame > 0
+                    && frame <= frontier
+                    && self.last_presented.is_some_and(|last| {
+                        now.saturating_duration_since(last)
+                            < self.online_render_standing(frontier - frame + 1)
+                    })
             })
-            && self.frames_since_present < 32
-            && self.chunks_since_present < 4;
+            && self.frames_since_present < MAX_TICKS_BETWEEN_PRESENTS;
         if self.render_deferred {
             self.total_render_deferrals = self.total_render_deferrals.saturating_add(1);
         }
         self.render_deferred
+    }
+
+    /// How long a catch-up may leave the picture standing with `available`
+    /// canonical frames buffered: half their playout time, 50 ms to 200 ms.
+    fn online_render_standing(&self, available: u32) -> std::time::Duration {
+        let fps = self
+            .online
+            .as_ref()
+            .map_or(0, |online| online.receipt.frames_per_second);
+        let half = match fps {
+            0 => 0,
+            fps => u64::from(available) * 500 / u64::from(fps),
+        };
+        std::time::Duration::from_millis(half.clamp(MIN_RENDER_STANDING_MS, MAX_RENDER_STANDING_MS))
     }
 
     pub(crate) fn render_deferred(&self) -> bool {
@@ -638,7 +670,6 @@ impl LocalFramePacer {
     pub(crate) fn record_presented(&mut self, now: crate::util::time::Instant, battlefield: bool) {
         self.last_presented = battlefield.then_some(now);
         self.frames_since_present = 0;
-        self.chunks_since_present = 0;
         self.render_deferred = false;
     }
 
@@ -852,7 +883,8 @@ mod tests {
             clock_epoch: 1,
             ..push_receipt(resumed_at, 2)
         };
-        let due = resumed_at + tick + Duration::from_millis(15);
+        // A frame, the reserve and the 45 Hz turn's two more frames.
+        let due = resumed_at + tick * 3 + Duration::from_millis(15);
         assert!(!pacer.online_catch_up_ready(resumed_at, 3, 3, resumed, false));
         for _ in 0..2 {
             assert_eq!(
@@ -871,11 +903,13 @@ mod tests {
     #[test]
     fn early_receipt_moves_a_late_origin_and_repeated_queries_are_idempotent() {
         let start = Instant::now();
+        // Playout runs the 45 Hz turn's two more frames behind receipt.
+        let turn = Duration::from_nanos(2 * 1_000_000_000 / 45);
         let mut pacer = LocalFramePacer::new();
         let delayed = push_receipt(start + Duration::from_millis(15), 1);
         assert_eq!(
             pacer.online_frame_decision(delayed.received_at, 1, 1, delayed, false, false),
-            OnlineFrameDecision::Run
+            OnlineFrameDecision::HoldUntil(delayed.received_at + turn)
         );
         // Frame 2 arrives 15ms before the delayed anchor's schedule. Holding it
         // to that schedule would delay every later frame without any reserve.
@@ -883,7 +917,7 @@ mod tests {
         for _ in 0..2 {
             assert_eq!(
                 pacer.online_frame_decision(on_time.received_at, 2, 2, on_time, false, false),
-                OnlineFrameDecision::Run
+                OnlineFrameDecision::HoldUntil(on_time.received_at + turn)
             );
         }
         assert_eq!(
@@ -894,7 +928,7 @@ mod tests {
         assert_eq!(pacer.online_pacing_status().unwrap().underruns, 0);
         assert_eq!(
             pacer.online.as_ref().unwrap().deadline(1_001),
-            on_time.received_at + Duration::from_nanos(999 * 1_000_000_000 / 45)
+            on_time.received_at + Duration::from_nanos(999 * 1_000_000_000 / 45) + turn
         );
         let duplicate = push_receipt(on_time.received_at + Duration::from_millis(15), 2);
         pacer.online_frame_decision(duplicate.received_at, 2, 2, duplicate, false, false);
@@ -1013,11 +1047,51 @@ mod tests {
         pacer.reset_for_new_world();
         assert!(pacer.online_pacing_status().is_none());
         let restart = push_receipt(bulk.received_at + Duration::from_secs(10), 1);
+        // A fresh schedule plays a turn's span behind its first receipt.
         assert_eq!(
             pacer.online_frame_decision(restart.received_at, 1, 1, restart, false, false),
-            OnlineFrameDecision::Run
+            OnlineFrameDecision::HoldUntil(
+                restart.received_at + Duration::from_nanos(2 * 1_000_000_000 / 45)
+            )
         );
         assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 0);
+    }
+
+    /// At 45 Hz the relay sends three frames a turn, together when the last
+    /// is due: playout spreads them a frame apart, a turn's span behind, and
+    /// only frames past a turn and one more are a backlog.
+    #[test]
+    fn a_three_frame_turn_plays_evenly_and_catches_up_only_past_the_turn() {
+        use OnlineFrameDecision::*;
+        let start = Instant::now();
+        let tick = Duration::from_nanos(1_000_000_000 / 45);
+        let mut pacer = LocalFramePacer::new();
+        let turn = push_receipt(start, 3);
+        let mut decisions = Vec::new();
+        for (now, next) in [(start, 1), (start, 2), (start + tick, 2), (start + tick, 3)] {
+            decisions.push(pacer.online_frame_decision(now, next, 3, turn, false, false));
+        }
+        assert_eq!(
+            decisions,
+            [
+                Run,
+                HoldUntil(start + tick),
+                Run,
+                HoldUntil(start + tick * 2)
+            ]
+        );
+        let mut pacer = LocalFramePacer::new();
+        let ahead = push_receipt(start, 4);
+        assert_eq!(
+            pacer.online_frame_decision(start, 1, 4, ahead, false, false),
+            Run
+        );
+        let mut pacer = LocalFramePacer::new();
+        let backlog = push_receipt(start, 5);
+        assert_eq!(
+            pacer.online_frame_decision(start, 1, 5, backlog, false, false),
+            CatchUp
+        );
     }
 
     #[test]
@@ -1029,7 +1103,7 @@ mod tests {
             "first surface must present"
         );
         pacer.record_presented(now, true);
-        assert!(pacer.defer_online_render(now, 8, true, Some((18, 100))));
+        assert!(pacer.defer_online_render(now, 32, true, Some((42, 400))));
         assert!(pacer.render_deferred());
         pacer.clear_render_continuation();
         assert!(
@@ -1037,15 +1111,15 @@ mod tests {
             "hidden/ineligible windows cancel the queued continuation"
         );
         assert_eq!(pacer.total_render_deferrals(), 1);
-        assert!(pacer.defer_online_render(now, 8, true, Some((26, 100))));
-        assert!(pacer.defer_online_render(now, 8, true, Some((34, 100))));
+        assert!(pacer.defer_online_render(now, 32, true, Some((74, 400))));
+        assert!(pacer.defer_online_render(now, 32, true, Some((106, 400))));
         assert!(
-            !pacer.defer_online_render(now, 8, true, Some((42, 100))),
-            "32 ticks force a present"
+            !pacer.defer_online_render(now, 32, true, Some((138, 400))),
+            "128 ticks force a present, below the 256-frame checksum history"
         );
         pacer.clear_render_continuation();
         assert!(
-            !pacer.defer_online_render(now, 1, true, Some((43, 100))),
+            !pacer.defer_online_render(now, 1, true, Some((139, 400))),
             "a failed acquisition cannot reset the budget"
         );
         pacer.record_presented(now, true);
@@ -1062,13 +1136,35 @@ mod tests {
             "a loading surface does not replace the first battlefield present"
         );
         pacer.record_presented(now, true);
-        for _ in 0..3 {
-            assert!(pacer.defer_online_render(now, 1, true, Some((45, 100))));
+        for _ in 0..8 {
+            assert!(
+                pacer.defer_online_render(now, 1, true, Some((45, 100))),
+                "short chunks alone never force a present"
+            );
         }
-        assert!(
-            !pacer.defer_online_render(now, 1, true, Some((45, 100))),
-            "four short chunks also force a present"
-        );
+    }
+
+    /// A deeper buffered backlog may leave the picture standing longer: half
+    /// its playout time, from 50 ms up to 200 ms.
+    #[test]
+    fn online_render_standing_grows_with_the_buffered_backlog() {
+        let now = crate::util::time::Instant::now();
+        let mut pacer = LocalFramePacer::new();
+        let receipt = push_receipt(now, 100);
+        pacer.online_frame_decision(now, 1, 100, receipt, false, false);
+        pacer.record_presented(now, true);
+        let at = |ms| now + std::time::Duration::from_millis(ms);
+        // 45 frames at 45 Hz: one second buffered, half of it capped at 200 ms.
+        assert!(pacer.defer_online_render(at(199), 1, true, Some((56, 100))));
+        assert!(!pacer.defer_online_render(at(200), 1, true, Some((56, 100))));
+        pacer.record_presented(now, true);
+        // 9 frames: 200 ms buffered, so 100 ms.
+        assert!(pacer.defer_online_render(at(99), 1, true, Some((92, 100))));
+        assert!(!pacer.defer_online_render(at(100), 1, true, Some((92, 100))));
+        pacer.record_presented(now, true);
+        // 2 frames keep the 50 ms floor.
+        assert!(pacer.defer_online_render(at(49), 1, true, Some((99, 100))));
+        assert!(!pacer.defer_online_render(at(50), 1, true, Some((99, 100))));
     }
 
     #[test]

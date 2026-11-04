@@ -43,6 +43,24 @@ pub(crate) const CREDITS: u16 = 0x402;
 pub(crate) const UNITS: u16 = 0x54F;
 pub(crate) const DIFFICULTY: u16 = 0x732;
 pub(crate) const CHECKBOXES: [u16; 5] = [0x54E, 0x3E8, 0x54D, 0x69A, 0x69D];
+/// VERA-only checkboxes its Game Options adds under the native five.
+pub(crate) const BRIDGES: u16 = 0x7F06;
+pub(crate) const ALLYING: u16 = 0x7F07;
+pub(crate) const NO_YURI: u16 = 0x7F08;
+pub(crate) const NO_FRANCE: u16 = 0x7F09;
+pub(crate) const NO_SPY: u16 = 0x7F0A;
+pub(crate) const NO_STOLEN_TECH: u16 = 0x7F0B;
+pub(crate) const ROOM_CHECKBOXES: [u16; 6] =
+    [BRIDGES, ALLYING, NO_YURI, NO_FRANCE, NO_SPY, NO_STOLEN_TECH];
+/// Their labels; the retail string table has none for them.
+pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 6] = [
+    "Destroyable Bridges",
+    "In-game Allying",
+    "No Yuri",
+    "No France",
+    "No Spy",
+    "No Stolen Tech",
+];
 /// The trackbars VERA's room moves into Game Options; Difficulty stays.
 pub(crate) const OPTION_TRACKBARS: [u16; 3] = [SPEED, CREDITS, UNITS];
 pub(crate) const COUNTRIES: [u16; 8] = [0x6A1, 0x510, 0x513, 0x51E, 0x514, 0x51F, 0x520, 0x521];
@@ -421,6 +439,8 @@ pub(crate) struct SetupView {
     pub(crate) combos: Vec<SetupCombo>,
     pub(crate) trackbars: Vec<SetupTrackbar>,
     pub(crate) checks: [bool; 5],
+    /// [`ROOM_CHECKBOXES`]' states.
+    pub(crate) room_checks: [bool; 6],
     /// Indexed by the row on the page, up to [`SetupDialog::rows_per_page`].
     pub(crate) row_icons: [Option<SetupRowIcon>; MODERN_SETUP_ROWS],
     /// C2/C9 ping statics; always empty on BC/BD.
@@ -464,7 +484,7 @@ impl SetupView {
             NEXT_ROWS => self.first_row + self.dialog.rows_per_page() < self.row_count,
             ACCEPT => !self.host && self.accept_enabled,
             0x54E if self.short_game_locked => false,
-            id if CHECKBOXES.contains(&id) => self.host,
+            id if CHECKBOXES.contains(&id) || ROOM_CHECKBOXES.contains(&id) => self.host,
             id => {
                 self.combo(id)
                     .is_some_and(|combo| combo.visible && combo.enabled)
@@ -688,6 +708,8 @@ pub(crate) struct MultiplayerSetupLayout {
     /// In the room, or in [`Self::game_options`] when it is `Some`, with
     /// the trackbars of [`OPTION_TRACKBARS`] and [`Self::option_labels`].
     pub(crate) checkboxes: [RectPx; 5],
+    /// [`ROOM_CHECKBOXES`], placed only in [`Self::game_options`].
+    pub(crate) room_checkboxes: [RectPx; 6],
     pub(crate) trackbars: [(u16, RectPx); 4],
     pub(crate) labels: Vec<(&'static str, RectPx)>,
     pub(crate) option_labels: [(&'static str, RectPx); 3],
@@ -823,6 +845,7 @@ impl MultiplayerSetupLayout {
                 rect(checkbox_x, option_y[3], 151, 17),
                 rect(302, option_y[3], build_off_ally_width, 17),
             ],
+            room_checkboxes: [RectPx::new(0, 0, 0, 0); 6],
             trackbars: [
                 (SPEED, rect(404, option_y[0], 129, 21)),
                 (CREDITS, rect(404, credit_y, 129, 21)),
@@ -868,22 +891,30 @@ impl MultiplayerSetupLayout {
         let scale = self.page.scale;
         let base = |x, y, w, h| scale.scale_rect(RectPx::new(x, y, w, h));
         let popup = |x, y, w, h| base(GAME_OPTIONS_BOX.x + x, GAME_OPTIONS_BOX.y + y, w, h);
-        // Each trackbar right of its label, then the checkboxes, all past
-        // x 215 of the box, where the art's Desolator ends.
+        // The same two columns as the checkboxes below: each trackbar's
+        // label in the left one, the trackbar (its art's own width) starting
+        // the right one.
         for (index, (_, label)) in self.option_labels.iter_mut().enumerate() {
-            *label = popup(215, 32 + 30 * index as i32, 85, 17);
+            *label = popup(24, 32 + 30 * index as i32, 185, 17);
         }
         for (id, bar) in &mut self.trackbars {
             if let Some(index) = OPTION_TRACKBARS.iter().position(|option| option == id) {
-                *bar = popup(304, 30 + 30 * index as i32, 129, 21);
+                *bar = popup(215, 30 + 30 * index as i32, 129, 21);
             }
         }
+        // Two columns of six under the trackbars, the left one over the art:
+        // the native five and Destroyable Bridges, then In-game Allying and
+        // the four bans.
+        let row = |index: i32| 124 + 22 * index;
+        let left = |index| popup(24, row(index), 185, 17);
+        let right = |index| popup(215, row(index), 226, 17);
         for (index, checkbox) in self.checkboxes.iter_mut().enumerate() {
-            *checkbox = popup(215, 126 + 24 * index as i32, 226, 17);
+            *checkbox = left(index as i32);
         }
+        self.room_checkboxes = [left(5), right(0), right(1), right(2), right(3), right(4)];
         self.game_options = Some(GameOptionsLayout {
             dialog: popup(0, 0, GAME_OPTIONS_BOX.w, GAME_OPTIONS_BOX.h),
-            ok: popup(276, 262, 124, 24),
+            ok: popup(276, 292, 124, 24),
         });
         // Under the last row once [`Self::arrange_extended_rows`] packs them.
         let y = 36 + MODERN_SETUP_ROWS as i32 * 24 + 2;
@@ -921,6 +952,12 @@ impl MultiplayerSetupLayout {
         }
         if let Some(index) = CHECKBOXES.iter().position(|candidate| *candidate == id) {
             return Some(self.checkboxes[index]);
+        }
+        if let Some(index) = ROOM_CHECKBOXES
+            .iter()
+            .position(|candidate| *candidate == id)
+        {
+            return Some(self.room_checkboxes[index]);
         }
         if let Some((_, rect)) = self
             .trackbars
@@ -960,6 +997,7 @@ impl MultiplayerSetupLayout {
         if view.options_open {
             return CHECKBOXES
                 .into_iter()
+                .chain(ROOM_CHECKBOXES)
                 .chain(OPTION_TRACKBARS)
                 .chain([GAME_OPTIONS_OK])
                 .find(hit);
@@ -1168,14 +1206,21 @@ mod tests {
         let popup_layout =
             MultiplayerSetupLayout::new(dialog(true, SetupFlavor::Wol, true), 800, 600, false);
         let popup = popup_layout.game_options.unwrap();
+        // The checkboxes may cover the art; the trackbars and OK stay right of it.
         for id in CHECKBOXES
             .into_iter()
+            .chain(ROOM_CHECKBOXES)
             .chain(OPTION_TRACKBARS)
             .chain([GAME_OPTIONS_OK])
         {
             let rect = popup_layout.control_rect(id).unwrap();
+            let left = if OPTION_TRACKBARS.contains(&id) || id == GAME_OPTIONS_OK {
+                215
+            } else {
+                0
+            };
             assert!(
-                rect.x >= popup.dialog.x + 215
+                rect.x >= popup.dialog.x + left
                     && rect.x + rect.w <= popup.dialog.x + popup.dialog.w
                     && rect.y + rect.h <= popup.dialog.y + popup.dialog.h,
                 "{id:#x} at {rect:?}"
@@ -1194,6 +1239,7 @@ mod tests {
             combos: Vec::new(),
             trackbars: Vec::new(),
             checks: [false; 5],
+            room_checks: [false; 6],
             row_icons: std::array::from_fn(|_| None),
             ping_icons: [None; MODERN_SETUP_ROWS],
             options_open: true,

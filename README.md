@@ -20,6 +20,12 @@ game files, so you'll need your own copy of Red Alert 2: Yuri's Revenge.
 
 VERA20K is made by gamers, for gamers, and gamers have the final say in where it goes.
 
+**We need more maintainers.** If you'd like to help review PRs, guide new contributors or look
+after part of the engine, say so on [Discord](https://discord.gg/kmjRUn5m5F) or in the QQ
+group (1097193563).
+
+**Don't be afraid to send a PR.** It doesn't have to be perfect; we'll help with the rest.
+
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K skirmish setup screen and in-game view" width="100%">
 
 ## Project goals
@@ -29,20 +35,8 @@ VERA20K is made by gamers, for gamers, and gamers have the final say in where it
 3. Incorporate known RTS features and some never seen before.
 4. Integrated multiplayer client
 
-## Current status
-
-**In active development.**
-
-- **Skirmish:** Playable on Windows, Linux and macOS, with original and random maps,
-  base building, harvesting, combat and save/load.
-- **Campaigns:** Missions can launch; support remains incomplete.
-- **AI:** Parts of the original AI handle base building and scripted attacks.
-- **Ongoing work:** Gameplay accuracy, visuals and performance.
-- **Multiplayer:** LAN and online play are available in current source builds on
-  macOS and Linux.
-- **Scale:** Two consecutive online matches passed functional validation with
-  30 independent client processes and more than 20,000 active mobile units per match.
-  Linux clients shared VMs; this does not establish smooth, real-time performance.
+See the [roadmap](https://github.com/orgs/YuriPlanet/projects/1) for current priorities
+and future plans.
 
 ## Download and play
 
@@ -50,15 +44,21 @@ Download the installer for Windows, macOS or Linux from the
 [releases page](https://github.com/YuriPlanet/vera20k/releases). It finds your copy of
 Yuri's Revenge and sets up VERA20K in a new folder.
 
-Use **Options** for sound and controls, and **Vera Options** for VERA-specific features.
-
 To launch single-player YR skirmishes or campaigns from a CnCNet client, see the
 [offline client setup](integrations/cncnet/README.md).
 
 ## Contributing
 
-Help is welcome. You can write code, refactor the engine, test the game, share ideas, or play
-it next to the original and tell us what feels wrong. Open a PR and we'll take it from there.
+Help is welcome anywhere, and these areas need it most. Each links to its roadmap issue, with
+the work in progress and the next step:
+
+- **[Gameplay and combat](https://github.com/YuriPlanet/vera20k/issues/3830):** unit behavior, damage and everyday skirmish reliability.
+- **[Performance](https://github.com/YuriPlanet/vera20k/issues/3831):** frame rate and responsiveness in large battles and on older hardware.
+- **[Multiplayer](https://github.com/YuriPlanet/vera20k/issues/3832):** joining, starting and keeping online matches going, and co-op reliability.
+- **[UI and audio](https://github.com/YuriPlanet/vera20k/issues/3833):** menus, text, translations and sound.
+- **[Campaigns](https://github.com/YuriPlanet/vera20k/issues/3834):** missions launch, but playing them to the end still needs work: objectives, triggers, scripted transitions, save/load and moving on to the next mission.
+- **[Mod compatibility](https://github.com/YuriPlanet/vera20k/issues/3835):** Ares and Phobos features, without changing the original game's defaults.
+- **[Testing](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** play VERA20K next to the original and report what plays differently.
 
 Contributors can take responsibility for engine areas, with broad freedom to make changes that
 move VERA20K forward.
@@ -68,25 +68,7 @@ contribution.
 
 Discussion is on [Discord](https://discord.gg/kmjRUn5m5F) and in the QQ group (1097193563).
 
-## Architecture
-
-The engine has three main parts:
-
-- **Simulation:** Owns gameplay state and logic.
-- **Rendering:** An absolutely new GPU rendering pipeline using the original game assets, built
-  to preserve the original look.
-- **Application:** Handles input, menus, audio, and platform integration, connecting the systems.
-
-This separation supports deterministic gameplay.
-
-Arrows show data flow:
-
-![Application sends commands to simulation, which returns world state; application sends draw data to rendering.](docs/images/architecture.png)
-
 ## Build and run
-
-An opt-in [WebAssembly single-player preview](docs/wasm.md) is also available.
-It uses a separate build command; desktop builds keep their existing defaults.
 
 You need:
 
@@ -96,8 +78,6 @@ You need:
   to install; on macOS, `xcode-select --install`; on Debian and Ubuntu,
   `sudo apt install build-essential libasound2-dev libxkbcommon-x11-0 pkg-config`.
 
-VERA20K has been played on Windows, Linux and macOS.
-
 ```sh
 git clone https://github.com/YuriPlanet/vera20k.git
 cd vera20k
@@ -105,20 +85,6 @@ cp config.toml.example config.toml
 # Edit config.toml and set ra2_dir to your game folder before running:
 cargo run --release --bin vera20k
 ```
-
-### Large maps
-
-Desktop builds support map `Size` width + height up to 1024 without a feature flag.
-A map whose sum is at most 512 keeps retail 512-stride cell addressing; larger
-maps automatically select 1024-stride addressing. This is a bounded VERA extension.
-Generate a literal 500×500 map with 30 starts using
-`python -m tools.scale_map large500.map --size 500 --starts 30`.
-Retail overlay packs keep their 512×512 layout; extended packs use 1024×1024.
-Both map sizes use the same executable and versioned save machinery. Stored-layout
-changes are checked by the existing snapshot version guard; this change does not
-provide a migration for saves from the earlier 16-bit navigation layout.
-Basic loading, movement and MCV deployment are checked separately from 30-player,
-long-game and large-unit-count performance, which remain unvalidated.
 
 ## How we work
 
@@ -128,9 +94,9 @@ and playtesting. Agents follow [AGENTS.md](AGENTS.md).
 
 ## Customization
 
-VERA20K plays like the original game by default. Map capacity is selected automatically as
-described above. Other new features, including extensions from mods such as Ares, stay off
-until they are turned on with one of:
+VERA20K plays like the original game by default. Map capacity is selected automatically,
+without a build flag: `Size` width plus height can be up to 1024. Other new features,
+including extensions from mods such as Ares, stay off until they are turned on with one of:
 
 - **A VERA player option**, in **Options → Vera Options**, saved under `[VERA]` in `VERA.INI`.
 - **A build option**, such as `--features ares` for the supported [Ares extensions](docs/ares.md).
@@ -146,9 +112,7 @@ settings, mods or maps.
 All donations received are distributed
 to contributors according to the [TIBTRE contribution ledger](https://github.com/YuriPlanet/tibtre-ledger).
 
-Payouts to contributors:
-
-<p><img src="https://img.shields.io/badge/PayPal-003087?style=flat&amp;logo=paypal&amp;logoColor=white" alt="PayPal" height="23"> <img src="https://img.shields.io/badge/China_UnionPay-E21836?style=flat&amp;logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9Ii02IC02IDI2OCAxNzIiPjxwYXRoIGQ9Ik01MC4wNDE2MzEsMC4wMDA2Njc1NjMzMDUgTDExMy44MjAyMTEsMC4wMDA2Njc1NjMzMDUgQzEyMi43MjMxMjcsMC4wMDA2Njc1NjMzMDUgMTI4LjI2MDQzOCw3LjI1NzMxMzQ1IDEyNi4xODM1NTgsMTYuMTg5NzY1NyBMOTYuNDkwMDcxNSwxNDMuNjc1NDE2IEM5NC4zOTQ1MzY1LDE1Mi41NzY3NzcgODUuNDgwNzM5LDE1OS44Mzk2NDEgNzYuNTcxNjA1LDE1OS44Mzk2NDEgTDEyLjc5OTI0MzMsMTU5LjgzOTY0MSBDMy45MDg3NjQsMTU5LjgzOTY0MSAtMS42NDA5ODQ0NCwxNTIuNTc2Nzc3IDAuNDM1ODk2MjA4LDE0My42NzU0MTYgTDMwLjE0MTgxODYsMTYuMTg5NzY1NyBDMzIuMjE4Njk5Myw3LjI1NzMxMzQ1IDQxLjEyNzgzMzMsMC4wMDA2Njc1NjMzMDUgNTAuMDQxNjMxLDAuMDAwNjY3NTYzMzA1IiBmaWxsPSIjRTIxODM2IiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iOCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjxwYXRoIGQ9Ik0xMDguNTEzMjgzLDAuMDAwNjY3NTYzMzA1IEwxODEuODU3MDE4LDAuMDAwNjY3NTYzMzA1IEMxOTAuNzU4Mzc4LDAuMDAwNjY3NTYzMzA1IDE4Ni43NDQ1MjcsNy4yNTczMTM0NSAxODQuNjUwNTQ2LDE2LjE4OTc2NTcgTDE1NC45NjE3MjQsMTQzLjY3NTQxNiBDMTUyLjg3ODYyNSwxNTIuNTc2Nzc3IDE1My41Mjg0MjcsMTU5LjgzOTY0MSAxNDQuNjA4NDExLDE1OS44Mzk2NDEgTDcxLjI2NDY3NzUsMTU5LjgzOTY0MSBDNjIuMzQ0NjYxNSwxNTkuODM5NjQxIDU2LjgyNDQ0OTUsMTUyLjU3Njc3NyA1OC45MTk5ODUsMTQzLjY3NTQxNiBMODguNjA3MjUyNSwxNi4xODk3NjU3IEM5MC43MTUyMjQsNy4yNTczMTM0NSA5OS42MDU3MDM1LDAuMDAwNjY3NTYzMzA1IDEwOC41MTMyODMsMC4wMDA2Njc1NjMzMDUiIGZpbGw9IiMwMDQ0N0MiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI4IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8%2BPHBhdGggZD0iTTE3OC45NDc4MywwLjAwMDY2NzU2MzMwNSBMMjQyLjcyNjQwOSwwLjAwMDY2NzU2MzMwNSBDMjUxLjY0MTc2MiwwLjAwMDY2NzU2MzMwNSAyNTcuMTc5MDc0LDcuMjU3MzEzNDUgMjU1LjA4NTA5MywxNi4xODk3NjU3IEwyMjUuMzk2MjcxLDE0My42NzU0MTYgQzIyMy4zMDA3MzYsMTUyLjU3Njc3NyAyMTQuMzgwNzE5LDE1OS44Mzk2NDEgMjA1LjQ2NjkyMiwxNTkuODM5NjQxIEwxNDEuNzE3ODc5LDE1OS44Mzk2NDEgQzEzMi43OTc4NjMsMTU5LjgzOTY0MSAxMjcuMjY1MjE1LDE1Mi41NzY3NzcgMTI5LjM1NDUzMiwxNDMuNjc1NDE2IEwxNTkuMDQ4MDE3LDE2LjE4OTc2NTcgQzE2MS4xMjQ4OTksNy4yNTczMTM0NSAxNzAuMDI3ODE0LDAuMDAwNjY3NTYzMzA1IDE3OC45NDc4MywwLjAwMDY2NzU2MzMwNSIgZmlsbD0iIzAwN0I4NCIgc3Ryb2tlPSIjZmZmIiBzdHJva2Utd2lkdGg9IjgiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48L3N2Zz4%3D" alt="China UnionPay" height="23"> <img src="https://img.shields.io/badge/Alipay-1677FF?style=flat&amp;logo=alipay&amp;logoColor=white" alt="Alipay" height="23"> <img src="https://img.shields.io/badge/Vipps-FF5B24?style=flat&amp;logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjQzLjUgMjEuNSAyNyAyNyI%2BPHBhdGggZD0iTTU3LjMsNDAuNmMzLjcsMCw1LjgtMS44LDcuOC00LjRjMS4xLTEuNCwyLjUtMS43LDMuNS0wLjlzMS4xLDIuMywwLDMuN2MtMi45LDMuOC02LjYsNi4xLTExLjMsNi4xIGMtNS4xLDAtOS42LTIuOC0xMi43LTcuN2MtMC45LTEuMy0wLjctMi43LDAuMy0zLjRzMi41LTAuNCwzLjQsMUM1MC41LDM4LjMsNTMuNSw0MC42LDU3LjMsNDAuNnogTTY0LjIsMjguM2MwLDEuOC0xLjQsMy0zLDMgcy0zLTEuMi0zLTNzMS40LTMsMy0zQzYyLjgsMjUuMyw2NC4yLDI2LjYsNjQuMiwyOC4zeiIgZmlsbD0iI2ZmZiIvPjwvc3ZnPg%3D%3D" alt="Vipps" height="23"> <img src="https://img.shields.io/badge/SEPA-2D4B9A?style=flat&amp;logo=sepa&amp;logoColor=white" alt="SEPA" height="23"> <img src="https://img.shields.io/badge/Bitcoin-F7931A?style=flat&amp;logo=bitcoin&amp;logoColor=white" alt="Bitcoin" height="23"></p>
+Payouts to contributors: PayPal, China UnionPay, Alipay, Vipps, SEPA or Bitcoin.
 
 ## Credits and legal
 
@@ -157,16 +121,18 @@ Command & Conquer and Red Alert, World-Altering Editor, Final Alert, YRpp, Ares,
 many others.
 
 Copyright © 2026 Halvor Nikolai Rusten and VERA20K contributors.
-Licensed under the [GPLv3](LICENSE-GPL). This repository contains no game files. Command &
+Licensed under the [GPLv3](LICENSE-GPL) with [additional terms](LEGAL.md#additional-terms).
+This repository contains no game files. Command &
 Conquer and Red Alert are trademarks of Electronic Arts Inc., and the screenshots and the app
 icon, Red Alert 2's red star, show game art owned by Electronic Arts. VERA20K is not affiliated
 with or endorsed by Electronic Arts.
 
+**Read the [legal notice](LEGAL.md) before you share, sell or fork VERA20K.**
+
 ## Documentation
 
-- [Build and run](#build-and-run): requirements and building from source.
+- [WebAssembly preview](docs/wasm.md): an opt-in single-player build that runs in a browser.
 - [INI profiles](docs/ini-roots.md): choosing rules, art and AI files.
-- [End-game screens](docs/ini-end-game-screens.md): the verdict card, its theme and the score page's own art.
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md), [NPatch](docs/npatch.md) and [VeraX](docs/verax.md): extension support and limitations.
 - [Engine overview](docs/index.md): code layout and how the engine fits together.
 - [Developer tools](tools/README.md): builds, tests and asset inspection.

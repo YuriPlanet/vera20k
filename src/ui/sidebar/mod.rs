@@ -22,6 +22,8 @@ pub use frame::{BOTTOM_STRIP_HEIGHT_PX, SIDEBAR_WIDTH_PX, SidebarFrame};
 pub use layout_spec::{SidebarChromeLayoutSpec, SidebarTheme};
 pub use power_bar_anim::PowerBarAnimState;
 pub(crate) use sidebar_view::ArmedSidebarEntry;
+#[cfg(test)]
+pub(crate) use sidebar_view::build_sidebar_view;
 pub(crate) use sidebar_view::build_sidebar_view_with_spec;
 pub(crate) use sidebar_view::{CameoFactoryStatus, ObjectCameoDrawInputs, draw_object_cameo};
 
@@ -68,6 +70,9 @@ pub enum SidebarTab {
 }
 
 impl SidebarTab {
+    /// TypeToTab 6ABC60 / GetObjectTabIdx 6ABCD0: buildings 0, or 1 with a
+    /// combat BuildCat (production_tech's Defense), infantry 2, units and
+    /// aircraft 3. Super weapons take strip 1 in `CameoStrips`.
     pub(crate) fn for_category(category: ProductionCategory) -> Self {
         match category {
             ProductionCategory::Building => Self::Building,
@@ -296,6 +301,14 @@ pub(crate) fn compute_layout_with_spec(
 ) -> SidebarLayout {
     // Original 6A5090/6A5130: capacity depends on screen height and side,
     // never on build-item count. Integer division truncates toward zero.
+    // Native keeps 60 select buttons per strip (0x3C stride, InitSelectZones
+    // 6A8220). Above 30 rows (screens 1810 px or taller) strips 0..2 write into
+    // the next strip's buttons, and the Vehicle strip runs past the array's
+    // end at B0B300 (a static coordinate, then the R-DN ShapeButton at B0B328).
+    // Activate 6A8330 then adds that vtable-less memory as gadgets. Native has
+    // no defined result here, so VERA keeps a working uncapped grid.
+    // GetVisibleSlotCount 6AC430 and StripClass Activate 6A8330 count 2 * rows
+    // the same way: footer 26, or 18 when Scenario +0x34B8 (the side) is set.
     let rows = ((screen_h as i32 - 227 - spec.footer_allowance - 7) / 50).max(0) as usize;
     SidebarLayout {
         sidebar_x: screen_w - spec.sidebar_width,

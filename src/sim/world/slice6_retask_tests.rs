@@ -416,7 +416,10 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // variant, render offset and radar colours (tag v2): hash composition only.
 // A temporary control restoring the v1 fold gave the previous value, with
 // every tripwire above green. Control removed. Previous: 0x5725_6E95_8F9E_04F8.
-const SLICE6_BASELINE_HASH: u64 = 0xD3E2_D02E_809A_1CCD;
+// #3710 folds the game options' room bans (all off here): hash composition
+// only. A temporary control omitting that fold gave the previous value, with
+// every tripwire above green. Control removed. Previous: 0xD3E2_D02E_809A_1CCD.
+const SLICE6_BASELINE_HASH: u64 = 0xD8C3_5827_8CA8_5375;
 
 #[test]
 fn replay_hash_stable_through_slice6() {

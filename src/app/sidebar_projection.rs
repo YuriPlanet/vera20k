@@ -205,17 +205,7 @@ impl SidebarProjectionState {
         supers: &[SuperWeaponView],
         reuse: bool,
     ) -> Arc<Vec<Cameo>> {
-        let derive = || {
-            cameo_candidates(
-                sim,
-                rules,
-                csf,
-                owner,
-                &inputs.build_options,
-                &inputs.ready_buildings,
-                supers,
-            )
-        };
+        let derive = || cameo_candidates(sim, rules, csf, owner, &inputs.build_options, supers);
         if reuse
             && let Some((key, kept_supers, kept)) = &self.kept_cameos
             && key.holds(sim, rules, owner_name)
@@ -373,7 +363,7 @@ impl SidebarProjectionState {
                     })
                     .collect()
             });
-            crate::sim::snapshot::SavedSidebarOrder::new(*owner, identities, strips.scroll_rows())
+            crate::sim::snapshot::SavedSidebarOrder::new(*owner, identities)
                 .with_flash(deadlines, redraw_until)
                 .with_requests(strips.saved_requests())
                 .with_factory_links(factory_links)
@@ -1117,16 +1107,17 @@ impl SidebarProjectionState {
             .set_scroll_row(tab, row);
     }
 
-    /// A fired scroll arrow; see [`CameoStrips::queue_page_scroll`].
-    pub(crate) fn queue_page_scroll(
+    /// A fired scroll arrow or scroll command; see [`CameoStrips::queue_scroll`].
+    pub(crate) fn queue_scroll(
         &mut self,
         tab: crate::ui::sidebar::SidebarTab,
         down: bool,
         visible_rows: usize,
+        rows: usize,
     ) -> bool {
         self.cameos
             .as_mut()
-            .is_some_and(|(_, strips)| strips.queue_page_scroll(tab, down, visible_rows))
+            .is_some_and(|(_, strips)| strips.queue_scroll(tab, down, visible_rows, rows))
     }
 
     /// Roll queued scroll rows for `visits` Sidebar Actions (one per
@@ -1217,37 +1208,34 @@ pub(crate) fn credits_advance_for_frame(frame_committed: bool, tick_lane: TickLa
 /// Project comparison fields from their existing owners. The full build
 /// roster supplies live costs even for a retained cameo about to be removed.
 /// Super additions follow their native type-array order, not interned-ID order.
+///
+/// An object stays available only while the strip keeps it. A finished
+/// product is no exception: `StripClass::Recalculate @ 0x006AA600` removes
+/// the entry whose FindFactory or CanBuild fails (`0x006AA74D..0x006AA7B6`)
+/// whatever its Factory holds. The same House pass's ABANDON has already
+/// released that product when the projection prunes.
 pub(crate) fn cameo_candidates(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     csf: Option<&crate::assets::csf_file::CsfFile>,
     owner: InternedId,
     options: &[crate::sim::production::BuildOption],
-    ready: &[crate::sim::production::ReadyBuildingView],
     supers: &[crate::sim::superweapon::SuperWeaponView],
 ) -> Vec<Cameo> {
-    let object = |id, available, cost| object_cameo(sim, rules, csf, owner, id, available, cost);
     let mut candidates: Vec<_> = options
         .iter()
         .filter_map(|item| {
-            object(
+            object_cameo(
+                sim,
+                rules,
+                csf,
+                owner,
                 item.type_id,
-                item.visible_in_sidebar()
-                    || ready.iter().any(|ready| ready.type_id == item.type_id),
+                item.visible_in_sidebar(),
                 item.cost,
             )
         })
         .collect();
-    for item in ready {
-        if !candidates
-            .iter()
-            .any(|entry| entry.id == CameoId::Object(item.type_id))
-            && let Some(kind) = sim.interner().object_type(item.type_id, rules)
-            && let Some(entry) = object(item.type_id, true, sim.cost_of(owner, kind, rules))
-        {
-            candidates.push(entry);
-        }
-    }
     let mut supers: Vec<_> = supers.iter().collect();
     supers.sort_by_key(|item| rules.super_weapon_index(sim.interner().resolve(item.type_id)));
     candidates.extend(
@@ -1346,7 +1334,7 @@ pub(crate) fn prepare_saved_order(
     if prediction_categories.len() != saved.prediction_categories().len() {
         return Err("saved sidebar has duplicate prediction categories".into());
     }
-    let (owner, saved_strips, scroll_rows) = saved.into_parts();
+    let (owner, saved_strips) = saved.into_parts();
     if sim.session().current_house() != Some(owner) || !sim.houses().contains_key(&owner) {
         return Err("saved sidebar owner differs from the loaded current house".into());
     }
@@ -1377,11 +1365,6 @@ pub(crate) fn prepare_saved_order(
         if identities.len() > 76 {
             return Err(format!(
                 "saved sidebar strip {index} exceeds native admission capacity"
-            ));
-        }
-        if scroll_rows[index] > identities.len().div_ceil(2).saturating_sub(1) {
-            return Err(format!(
-                "saved sidebar strip {index} has an invalid scroll row"
             ));
         }
         for (slot, id) in identities.into_iter().enumerate() {
@@ -1450,7 +1433,9 @@ pub(crate) fn prepare_saved_order(
             strips[index].push(item);
         }
     }
-    let mut strips = CameoStrips::from_retained(strips, scroll_rows);
+    // Load_Game_From_File 67E68F -> TabClass Init 6D03A0 -> SidebarClass Init
+    // 6A5310 -> ToggleSidebar 6A7D70 (0, then 1): every strip shows its top row.
+    let mut strips = CameoStrips::from_retained(strips, [0; 4]);
     strips.restore_flash(flash_deadlines, redraw_until);
     strips.restore_requests(request_states, sim.session().binary_frame() as i32);
     Ok(Some(PreparedSidebarOrder {

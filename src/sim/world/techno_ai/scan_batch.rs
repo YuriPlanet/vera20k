@@ -40,7 +40,9 @@
 //! effects), kept so target scans stay off the main thread at 20,000 units:
 //! an answered scan sees the world as it stood when the pass began, not as
 //! the scanner's turn finds it. A target that an earlier turn in the same
-//! pass admits, brings into reach or makes better is seen one scan later:
+//! pass admits (for a campaign player's scanner, discovers: the target's own
+//! vt+0x4A0 prelude or a reveal, read by the `0x006F81BE` gate), brings into
+//! reach or makes better is seen one scan later:
 //! the targeting slot's `[General] NormalTargetingDelay=` frames later, plus
 //! the 0..2 draw; Area Guard's at its next handler run with the timer run
 //! out; Hunt's at its next handler run. An estimate another scan debited
@@ -268,7 +270,7 @@ impl Simulation {
                 let (mask, scan_coord) = world.scan_ahead(id, entity, rules, overlay_registry)?;
                 let outcome = world.threat_scan(rules, overlay_registry, id, mask, scan_coord);
                 let pick_house = outcome
-                    .target()
+                    .object()
                     .and_then(|pick| world.substrate.entities.get(pick))
                     .map(|pick| (pick.owner(), world.scanner_allies(entity, pick.owner())));
                 Some(BatchedScan {
@@ -279,8 +281,14 @@ impl Simulation {
                     pick_house,
                 })
             });
+            // A wall Cell pick (the ring walk's fallback, `0x006F8C10`) is
+            // never kept: an earlier turn may destroy or rebuild the wall.
             answer
-                .filter(|answer| !stamped && !answer.outcome.drew_scenario_rng())
+                .filter(|answer| {
+                    !stamped
+                        && !answer.outcome.drew_scenario_rng()
+                        && !matches!(answer.outcome.target(), Some(TargetKind::Cell(..)))
+                })
                 .map(|answer| (id, Some(answer)))
         });
         answers.sort_unstable_by_key(|&(id, _)| id);
@@ -410,7 +418,7 @@ impl Simulation {
         let answer = slot.take()?;
         let released = answer
             .outcome
-            .target()
+            .object()
             .is_some_and(|pick| batch.released.contains(&pick))
             || (batch.blink_started && answer.outcome.met_idle_disguise());
         let scanner = self.substrate.entities.get(id)?;
@@ -418,7 +426,7 @@ impl Simulation {
         if released || ScannerKey::of(self, scanner, obj, rules) != answer.key {
             return None;
         }
-        if let Some(pick) = answer.outcome.target() {
+        if let Some(pick) = answer.outcome.object() {
             let pick_house = self
                 .substrate
                 .entities

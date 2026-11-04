@@ -204,6 +204,11 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 .and_then(|rules| rules.general.player_joined_sound())
                 .map(str::to_owned);
             App::play_shell_ui_sound_by_id(state, sound.as_deref());
+            if dialog.host {
+                // VERA: the host may wait in another window, which hears no
+                // sound (the activation edge stops the primary output).
+                state.platform.request_attention(false);
+            }
             let quick_match = super::quick_match(state);
             if dialog.host && quick_match {
                 // 0x007A6DC2..0x007A6E50: modes 1/2 parse the matchbot's
@@ -248,6 +253,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             if dialog.host {
                 // 0x5E1945..0x5E1973: the mode's +1C/+28 country check.
                 super::cooperative::admit_join_country(state, &mut human.slot);
+                super::bans::admit_slot(state, &mut human.slot);
             }
             state.match_state.session.add_network_participant(human)?;
             // Type3 admission5E0770 and accepted host type6 at5E1B32.
@@ -259,6 +265,8 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 .map(str::to_owned);
             App::play_shell_ui_sound_by_id(state, sound.as_deref());
             if dialog.host {
+                // VERA: as in a WOL room, the host may be in another window.
+                state.platform.request_attention(false);
                 // 0x5E1B5A..0x5E1BF2: the options, the 0x16 roster to every
                 // guest, then 0x5E2FA0's mode +94.
                 let protocol = state
@@ -306,9 +314,10 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         }
         NetworkSetupEvent::PlayerChoices {
             index,
-            choices,
+            mut choices,
             observer,
         } => {
+            super::bans::admit_slot(state, &mut choices);
             // Cooperative's mode +0x1C (0x5C17B0) admits its campaign's
             // countries; the other modes' (0x5D67A0) admit any.
             let countries = super::cooperative::current(state)
@@ -773,6 +782,13 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             preview_file_received(state, transferred_file)?;
         }
         NetworkSetupEvent::CooperativeCampaign(text) => {
+            // The 'C' arm (0x005E43CE) follows the parse's WOL drop of every
+            // option text (0x005E3E73..0x005E3E90), as HostSetup does.
+            if dialog.wol()
+                && (crate::app::shell_wol::in_match(state) || super::wol::start_pending(state))
+            {
+                return Ok(());
+            }
             super::cooperative::campaign_received(state, &text)?;
         }
         NetworkSetupEvent::StartStaging(text) => {
@@ -1360,7 +1376,15 @@ pub(crate) fn accept_network_map_source(
     apply_local_map_admission(
         state,
         crate::app::match_runtime::session::NetworkMapAdmission::Present,
-    )
+    )?;
+    // VERA: a Quick Match guest accepts with the host's options
+    // (`0x007A7F72`), but the online lobby verifies the map after them and
+    // VERA's live service refuses an acceptance before then; the verified
+    // map accepts again.
+    if super::quick_match(state) && !state.match_state.session.host() {
+        super::wol::quick_match_accept(state);
+    }
+    Ok(())
 }
 
 fn finish_go(state: &mut AppState) -> anyhow::Result<()> {
@@ -1387,6 +1411,9 @@ fn finish_go(state: &mut AppState) -> anyhow::Result<()> {
         .session
         .network_start_seed()
         .ok_or_else(|| anyhow::anyhow!("GO has no admitted seed"))?;
+    // VERA: a guest's match starts without a click. Call back a player in
+    // another window now: a hidden window's slide waits for its frames.
+    state.platform.request_attention(true);
     if super::external(state) {
         // A direct spawn has no dialog to slide out.
         super::commit_start(state, seed);
@@ -1455,6 +1482,7 @@ fn invalidate_local_acceptance(state: &mut AppState) -> anyhow::Result<()> {
 
 /// MPGameOptions5E3D10's material-change report consumed by5E3AB0.
 /// Human color and AI color/difficulty are deliberately outside this test.
+/// VERA's room adds its own options: bridges, allying and the bans.
 fn settings_materially_changed(old: &SkirmishLaunchSession, new: &SkirmishLaunchSession) -> bool {
     let a = &old.options;
     let b = &new.options;
@@ -1466,6 +1494,9 @@ fn settings_materially_changed(old: &SkirmishLaunchSession, new: &SkirmishLaunch
         || a.build_off_ally != b.build_off_ally
         || a.mcv_redeploy != b.mcv_redeploy
         || a.crates != b.crates
+        || a.bridges_destroyable != b.bridges_destroyable
+        || a.ally_change_allowed != b.ally_change_allowed
+        || a.bans != b.bans
         || old.humans.len() != new.humans.len()
         || old
             .humans

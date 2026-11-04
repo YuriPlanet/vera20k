@@ -6,7 +6,9 @@ use std::net::{SocketAddr, UdpSocket};
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use vera20k_relay_protocol::{ForwardDatagram, MAX_DATAGRAM, RelayError, RelayServer, SecretKey};
+use vera20k_relay_protocol::{
+    ForwardDatagram, MAX_DATAGRAM, OrderingCounts, RelayError, RelayServer, SecretKey,
+};
 
 /// Aggregate operational counts only. No request, endpoint, room identity,
 /// authentication material or error body enters the relay's journal.
@@ -24,6 +26,10 @@ struct TrafficCounts {
     rate_limited: u64,
     counter_exhausted: u64,
     entropy_unavailable: u64,
+    // Ordering push datagrams and their bytes; each also counts in `forwarded`
+    // or `send_errors`.
+    pushed: u64,
+    pushed_bytes: u64,
 }
 
 impl TrafficCounts {
@@ -42,9 +48,12 @@ impl TrafficCounts {
         *count += 1;
     }
 
-    fn report(&self, seconds: u64, rooms: usize) {
+    fn report(&self, seconds: u64, rooms: usize, ordering: OrderingCounts) {
         eprintln!(
-            "VERA20k relay interval_s={seconds} rooms={rooms} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={}",
+            "VERA20k relay interval_s={seconds} rooms={rooms} slowdowns={} raises={} catching_up_s={} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={} pushed={} pushed_bytes={} pull_replies={} desyncs={}",
+            ordering.slowdowns,
+            ordering.raises,
+            ordering.catching_up_s,
             self.received,
             self.forwarded,
             self.send_errors,
@@ -57,6 +66,10 @@ impl TrafficCounts {
             self.rate_limited,
             self.counter_exhausted,
             self.entropy_unavailable,
+            self.pushed,
+            self.pushed_bytes,
+            ordering.pull_replies,
+            ordering.desyncs,
         );
     }
 }
@@ -97,16 +110,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut counts,
                 server.drain_federation(monotonic_ms, now),
             );
-            send_datagrams(
-                &socket,
-                &mut counts,
-                server.drain_ordering_push(monotonic_ms, now),
-            );
+            let pushed = server.drain_ordering_push(monotonic_ms, now);
+            counts.pushed += pushed.len() as u64;
+            counts.pushed_bytes += pushed
+                .iter()
+                .map(|datagram| datagram.bytes.len() as u64)
+                .sum::<u64>();
+            send_datagrams(&socket, &mut counts, pushed);
             passed_ms = Some(clock_origin.elapsed().as_millis().min(u128::from(u64::MAX)) as u64);
         }
         let elapsed = reported_at.elapsed().as_secs();
         if elapsed >= 60 {
-            counts.report(elapsed, server.room_count());
+            counts.report(elapsed, server.room_count(), server.take_ordering_counts());
             counts = TrafficCounts::default();
             reported_at = Instant::now();
         }

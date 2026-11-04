@@ -35,7 +35,8 @@ pub(crate) mod shadow;
 
 pub(crate) use native::PreparedDraw;
 
-/// Shared ordinary VXL preparation for CPU and GPU visibility writes. Preview
+/// Shared ordinary VXL preparation for CPU and GPU visibility writes, on the
+/// shared `depth` map when depth-tested (None draws on a clear one). Preview
 /// magnification and constructed models without encoded spans keep their
 /// explicitly separate legacy renderer.
 pub(crate) fn prepare_native_draw(
@@ -43,9 +44,13 @@ pub(crate) fn prepare_native_draw(
     hva: Option<&HvaFile>,
     params: &VxlRenderParams,
     vpl: Option<&VplFile>,
+    depth: Option<&mut DepthMap>,
 ) -> Option<PreparedDraw> {
-    native::prepare_draw(vxl, hva, params, vpl)
+    native::prepare_draw(vxl, hva, params, vpl, depth)
 }
+
+/// The renderer's 256-square depth map (`0xB1D5E0`), one byte a pixel.
+pub type DepthMap = [u8; 65536];
 
 /// Number of distinct orientations a voxel body/turret/barrel can render at.
 ///
@@ -252,16 +257,16 @@ pub(crate) fn ground_unit_pose_matrices(
         pose.angles,
         half_sizes,
     );
-    let translated = affine::translate(body, &[turret_offset_units(pose.turret_offset)]);
+    let translated = affine::translate_axis(body, 0, turret_offset_units(pose.turret_offset));
     let relative = i32::from(voxel_facing_step(turret_facing))
         - i32::from(voxel_facing_step(pose.body_facing));
     let (sin, cos) = crate::util::native_trig::native_sin_cos_by_step(relative)
         .expect("relative five-bit facing fits table");
     let turret = affine::rotate_z(translated, sin, cos);
     let pivot = turret.w_axis.truncate();
-    let barrel = affine::translate(turret, &(-pivot).to_array());
+    let barrel = affine::translate(turret, (-pivot).to_array());
     let barrel = voxel_barrel_pitch(barrel, barrel_pitch);
-    let barrel = affine::translate(barrel, &pivot.to_array());
+    let barrel = affine::translate(barrel, pivot.to_array());
     [body, turret, barrel].map(|matrix| {
         affine::matrix_product(voxel_camera_view(), matrix).expect("finite ground draw matrix")
     })
@@ -1197,7 +1202,19 @@ pub fn render_vxl(
     params: &VxlRenderParams,
     vpl: Option<&VplFile>,
 ) -> VxlSprite {
-    if let Some(draw) = prepare_native_draw(vxl, hva, params, vpl)
+    render_vxl_on(vxl, hva, params, vpl, None)
+}
+
+/// [`render_vxl`] on the shared `depth` map when depth-tested; None draws on
+/// a clear one. The legacy fallback ignores it.
+pub(crate) fn render_vxl_on(
+    vxl: &VxlFile,
+    hva: Option<&HvaFile>,
+    params: &VxlRenderParams,
+    vpl: Option<&VplFile>,
+    depth: Option<&mut DepthMap>,
+) -> VxlSprite {
+    if let Some(draw) = prepare_native_draw(vxl, hva, params, vpl, depth)
         && let Some(sprite) = draw.render_cpu()
     {
         return sprite;

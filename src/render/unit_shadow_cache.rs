@@ -1,8 +1,9 @@
 //! Retained shadow stencil payloads within the existing unit atlas pages.
 //!
 //! Native 706BD0/707280 retains the first composed-body mask for a cache key.
-//! This bounded owner keeps that history across frames and atlas growth. It
-//! does not emulate the original shared 4 MB arena's global purge policy.
+//! This bounded owner keeps that history across frames and atlas growth,
+//! until the shared pool's flush ([`crate::render::voxel_image_cache`])
+//! frees it.
 
 use super::{UnitAtlas, UnitSpriteEntry, UnitSpriteKey};
 
@@ -15,16 +16,17 @@ pub(crate) struct UnitShadowPart {
 }
 
 impl UnitAtlas {
-    /// Fill only on the first supported request. Parts are the exact atlas
-    /// entries and anchor offsets used by this Unit's visible body draw.
-    /// Hits perform no body composition, pixel filtering, or texture upload.
+    /// [`Self::prepare_native_shadow_with`] stamping atlas parts at their
+    /// anchor offsets.
+    #[cfg(test)]
     pub(crate) fn prepare_native_shadow(
         &self,
         queue: &wgpu::Queue,
         key: &UnitSpriteKey,
+        flushes: u32,
         parts: impl IntoIterator<Item = (UnitSpriteEntry, [f32; 2])>,
     ) -> bool {
-        self.prepare_native_shadow_with(queue, key, |body| {
+        self.prepare_native_shadow_with(queue, key, flushes, |body| {
             let mut any = false;
             for (part, offset) in parts {
                 any = true;
@@ -40,13 +42,23 @@ impl UnitAtlas {
         })
     }
 
+    /// Fill only on the first supported request since the image cache's
+    /// `flushes`-th flush. `stamp` composes the exact parts and anchor
+    /// offsets of this Unit's visible body draw. Hits perform no body
+    /// composition, pixel filtering, or texture upload.
     pub(crate) fn prepare_native_shadow_with(
         &self,
         queue: &wgpu::Queue,
         key: &UnitSpriteKey,
+        flushes: u32,
         stamp: impl FnOnce(&mut [u8]) -> bool,
     ) -> bool {
-        if self.shadow_masks.borrow().contains_key(key) {
+        if self
+            .shadow_masks
+            .borrow()
+            .get(key)
+            .is_some_and(|(filled, _)| *filled == flushes)
+        {
             return true;
         }
         let Some(entry) = self
@@ -62,8 +74,24 @@ impl UnitAtlas {
         self.upload_shadow_pixels(queue, entry, &sprite.palette_indices);
         self.shadow_masks
             .borrow_mut()
-            .insert(key.clone(), sprite.palette_indices);
+            .insert(key.clone(), (flushes, sprite.palette_indices));
         true
+    }
+
+    /// The pool bytes `key`'s shadow image takes: its composed mask when one
+    /// was retained, else its template.
+    pub(crate) fn shadow_pool_bytes(&self, key: &UnitSpriteKey) -> Option<u32> {
+        let masks = self.shadow_masks.borrow();
+        let Some((_, mask)) = masks.get(key) else {
+            return self.pool_bytes(key);
+        };
+        let entry = self.entries.get(key)?;
+        Some(crate::render::voxel_image_cache::sprite_pool_bytes(
+            mask,
+            entry.pixel_size.map(|side| side as u32),
+            [entry.offset_x, entry.offset_y],
+            None,
+        ))
     }
 
     /// Sample an indexed atlas source through its owning cache. Placement is

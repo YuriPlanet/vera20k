@@ -39,6 +39,13 @@ pub struct CombatDamageDefaults {
     /// Signed, unclamped destroyable-cliff chance compared against one
     /// Scenario RandomRanged(0,99) draw. Native constructor default is 100.
     pub collapse_chance: i32,
+    /// `RailgunDamageRadius=`: the most a Techno may sit from a railgun line
+    /// and still be hit. `RulesClass::Constructor` writes 0x80
+    /// (`0x00665CDE`); `ReadCombatDamage` (`0x0066BC18..0x0066BC31`) reads a
+    /// plain signed int with that default, and
+    /// `TechnoClass::ApplyRailgunLineDamage @ 0x0070C690` compares it at
+    /// `0x0070C9DD`. Stock rulesmd.ini does not author it.
+    pub railgun_damage_radius: i32,
     /// `BallisticScatter=` in LEPTONS. `RulesClass::ReadCombatDamage
     /// @ 0x0066CD5B` reads it through `CCINIClass::ReadRange @ 0x00474620`
     /// into `RulesClass+0x1734`, so the authored cell count is multiplied by
@@ -51,6 +58,13 @@ pub struct CombatDamageDefaults {
     /// computer unit charges a crushable attacker
     /// (`UnitClass::Should_Crush_It @ 0x007438F0`).
     pub crush: i32,
+    /// `FireSupress=` in LEPTONS (`RulesClass+0x1430`), read through
+    /// `ReadRange` at `0x0066CE07` with the current value as its default; the
+    /// constructor writes `0x100` (`0x006671A6`). Stock `1` reads as 256. A
+    /// `Supress=` weapon's target scan halves a candidate's score for each
+    /// allied building cell in the rings within it
+    /// (`TechnoClass::ThreatAvoidance_Modifier @ 0x006F79A0`).
+    pub fire_supress: i32,
     /// `Incoming=` (`RulesClass+0x16C0`), read through `ReadSpeed @
     /// 0x00474810` at `0x0066CF24` with the current value as its default; the
     /// constructor writes 0 (`0x006674EA`). Stock `10` reads as 25. An
@@ -152,8 +166,10 @@ impl CombatDamageDefaults {
             tiberium_explosion_damage: section.read_int("TiberiumExplosionDamage", 100),
             max_damage: section.read_int("MaxDamage", 1000),
             collapse_chance: section.read_int("CollapseChance", 100),
+            railgun_damage_radius: section.read_int("RailgunDamageRadius", 0x80),
             ballistic_scatter: section.read_range("BallisticScatter", 0x100),
             crush: section.read_range("Crush", 0x180),
+            fire_supress: section.read_range("FireSupress", 0x100),
             incoming: section.read_speed("Incoming", 0),
             open_topped_warp_distance: section.read_int("OpenToppedWarpDistance", 5),
             death_weapon: None,
@@ -187,8 +203,10 @@ impl Default for CombatDamageDefaults {
             tiberium_explosion_damage: 100,
             max_damage: 1000,
             collapse_chance: 100,
+            railgun_damage_radius: 0x80,
             ballistic_scatter: 0x100,
             crush: 0x180,
+            fire_supress: 0x100,
             incoming: 0,
             open_topped_warp_distance: 5,
             death_weapon: None,

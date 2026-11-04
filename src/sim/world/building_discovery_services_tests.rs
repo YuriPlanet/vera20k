@@ -276,7 +276,10 @@ fn mapped_retained_objects_promote_silently_in_ordinary_ai_and_action40() {
     }
     // Action40/6E225C..6E227C calls the same virtual+4A0 prelude for every
     // Building before returning, even with no following object-AI visit.
-    assert!(sim.change_visible_map_area([0, 0, 16, 16], &rules));
+    assert!(sim.change_visible_map_area(
+        [0, 0, 16, 16],
+        crate::sim::world::UninitContext::with_rules(&rules)
+    ));
     for id in ids {
         assert!(
             sim.substrate

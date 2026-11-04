@@ -134,6 +134,7 @@ mod trigger_camera;
 mod trigger_camera_tests;
 mod trigger_explosion;
 mod trigger_strikes;
+pub(crate) use shroud_refresh::ParanoidMaps;
 pub(crate) use techno_ai::ObjectAiCtx;
 pub(crate) use techno_ai::PassiveScan;
 pub(crate) use techno_ai::PatrolPost;
@@ -225,6 +226,8 @@ pub use lifecycle_tests::common_raw_terrain_cell as common_raw_test_terrain_cell
 mod team_script_vm_tests;
 #[cfg(test)]
 mod voxel_water_expiry_tests;
+#[cfg(test)]
+pub(in crate::sim) mod voxel_meteor_tests;
 #[cfg(test)]
 mod overlay_explodes_tests;
 
@@ -2584,16 +2587,12 @@ impl Simulation {
                 while let Some(receiver_object) = current {
                     let receiver = match receiver_object {
                         CellObject::Entity(target_id) => {
-                            let eligible =
-                                target_id != request.firer_id
-                                    && self.substrate.entities.get(target_id).is_some_and(
-                                        |entity| {
-                                            entity.is_alive()
-                                                && !entity.death.is_dying()
-                                                && !entity.lifecycle.in_limbo()
-                                                && entity.lifecycle.object_alive()
-                                        },
-                                    );
+                            let eligible = target_id != request.firer_id
+                                && self
+                                    .substrate
+                                    .entities
+                                    .get(target_id)
+                                    .is_some_and(|entity| entity.reachable_in_cell_list());
                             if !eligible {
                                 let order = current_order(
                                     &self.substrate.occupancy,
@@ -2737,122 +2736,15 @@ impl Simulation {
                 }
 
                 // The cliff tail is independent of damage magnitude and
-                // Warhead. Eligibility alone consumes one Scenario draw,
-                // including signed chances outside 0..=100.
-                let destroyable_cliff = self
-                    .resolved_terrain
-                    .as_ref()
-                    .is_some_and(|terrain| terrain.is_destroyable_cliff(rx, ry));
-                if destroyable_cliff {
-                    let chance_draw = self.scenario_rng.next_range_u32_inclusive(0, 99) as i32;
-                    if chance_draw < rules.combat_damage.collapse_chance
-                        && let Some(mutation) = self.resolved_terrain.as_mut().and_then(|terrain| {
-                            terrain.collapse_destroyable_cliff_terrain(rx, ry, |cell_x, cell_y| {
-                                if let Some(grid) = self.overlay_grid.as_mut() {
-                                    let _ = grid.clear_overlay(cell_x, cell_y);
-                                }
-                                if let Some(grid) = self.smudge_grid.as_mut() {
-                                    let _ = grid.clear_cell_slot(cell_x, cell_y);
-                                }
-                            })
-                        })
-                    {
-                        // Cliff stamps change Cell+11B without refreshing
-                        // retained lighting; publish geometry before any later
-                        // ordered source/owner callback samples these cells.
-                        self.publish_cell_lighting_levels(
-                            mutation
-                                .original_footprint
-                                .iter()
-                                .chain(&mutation.changed_cells)
-                                .copied(),
-                        );
-                        // Native performs one complete zone rebuild after the
-                        // two sparse stamps and before its three footprint
-                        // passes. The Rust navigation owner rebuilds all
-                        // movement zones as the corresponding single unit.
-                        self.rebuild_dynamic_navigation(rules);
-
-                        // Pass three's externally represented effects remain
-                        // strictly interleaved: detach this CellClass target,
-                        // then dirty this radar cell, in old-TMP row order.
-                        for &coord in &mutation.original_footprint {
-                            // Map5814D4/581BE6:70D4A0 then radar, per old footprint cell.
-                            let _receipt = self.stop_all_targeting_cell(
-                                coord.0, coord.1, rules, overlay_registry, frame_effects,
-                            );
-                            #[cfg(any(test, feature = "test-support"))]
-                            effects.cell_target_detaches.extend(_receipt.cell_detaches);
-                            self.dirty_cells.mark_radar([coord]);
-                        }
-                        for &coord in &mutation.original_footprint {
-                            self.dirty_cells.mark_tactical_once(coord);
-                        }
-
-                        // Resolve the three types in native order, then make
-                        // two row-major attempts at each of the 15 grid cells.
-                        // Every representable allocation is successful, so
-                        // each attempt consumes type, X, Y, and delay draws.
-                        let anim_types = crate::rules::effect_asset_catalog::CLIFF_COLLAPSE_ANIMS
-                            .map(|name| self.interner.intern(name));
-                        for &(cell_x, cell_y) in &mutation.animation_cells {
-                            for _ in 0..2 {
-                                let type_index =
-                                    self.scenario_rng.next_range_u32_inclusive(0, 2) as usize;
-                                let jitter_x =
-                                    self.scenario_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
-                                let jitter_y =
-                                    self.scenario_rng.next_range_u32_inclusive(0, 24) as i32 - 12;
-                                let level = self
-                                    .resolved_terrain
-                                    .as_ref()
-                                    .expect("collapse terrain retained")
-                                    .collapse_animation_level(cell_x, cell_y);
-                                let delay = self.scenario_rng.next_range_u32_inclusive(0, 2) as u16;
-                                let world_coord = crate::sim::anim_class::AnimWorldCoord {
-                                    x: i32::from(cell_x)
-                                        .wrapping_mul(256)
-                                        .wrapping_add(128)
-                                        .wrapping_add(jitter_x),
-                                    y: i32::from(cell_y)
-                                        .wrapping_mul(256)
-                                        .wrapping_add(128)
-                                        .wrapping_add(jitter_y),
-                                    z: i32::from(level).wrapping_mul(104),
-                                };
-                                let mut descriptor =
-                                    crate::sim::components::AnimClassSpawnDescriptor::new(
-                                        anim_types[type_index],
-                                        cell_x as u16,
-                                        cell_y as u16,
-                                        SimFixed::from_num(128 + jitter_x),
-                                        SimFixed::from_num(128 + jitter_y),
-                                        level as u8,
-                                    );
-                                descriptor.delay = delay;
-                                descriptor.loop_count = 1;
-                                descriptor.draw_flags = 0x600;
-                                descriptor.z_adjust = 0;
-                                descriptor.reverse = false;
-                                // AnimClass construction completes before the
-                                // next attempt selects its type. This matters
-                                // when the selected AnimType consumes Scenario
-                                // RNG for RandomRate during construction.
-                                let _ = self.spawn_anim_at_world(rules, descriptor, world_coord);
-                            }
-                        }
-
-                        let terrain = self
-                            .resolved_terrain
-                            .as_ref()
-                            .expect("collapse terrain retained");
-                        for &(cell_x, cell_y) in &mutation.changed_cells {
-                            if let Some(cell) = terrain.cell(cell_x, cell_y) {
-                                self.dynamic_terrain_cells.record(cell);
-                            }
-                        }
-                    }
-                }
+                // Warhead.
+                self.roll_cliff_collapse(
+                    rx,
+                    ry,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                    &mut effects,
+                );
             }
         }
 
@@ -2868,6 +2760,139 @@ impl Simulation {
             terrain_navigation_changed_cells,
             frame_effects,
         );
+    }
+
+    /// The destroyable-cliff roll Wave `DamageArea` and the railgun line
+    /// (`0x0070CAE9..0x0070CB2B` at the ground hit, `0x0070CC05..0x0070CC39`
+    /// on a Cell target) share. A cell whose tile is a destroyable cliff
+    /// (`CellClass::Tile_Is_DestroyableCliff @ 0x00486900`) spends one Scenario
+    /// `RandomRanged(0, 99)` draw, including signed chances outside 0..=100,
+    /// and collapses (`MapClass::CollapseCliff @ 0x00581140`) when the draw is
+    /// below `[CombatDamage] CollapseChance`.
+    pub(crate) fn roll_cliff_collapse(
+        &mut self,
+        rx: u16,
+        ry: u16,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+        #[cfg_attr(not(any(test, feature = "test-support")), allow(unused_variables))]
+        effects: &mut crate::sim::combat::DeathEffects,
+    ) {
+        let destroyable_cliff = self
+            .resolved_terrain
+            .as_ref()
+            .is_some_and(|terrain| terrain.is_destroyable_cliff(rx, ry));
+        if destroyable_cliff {
+            let chance_draw = self.scenario_rng.next_range_u32_inclusive(0, 99) as i32;
+            if chance_draw < rules.combat_damage.collapse_chance
+                && let Some(mutation) = self.resolved_terrain.as_mut().and_then(|terrain| {
+                    terrain.collapse_destroyable_cliff_terrain(rx, ry, |cell_x, cell_y| {
+                        if let Some(grid) = self.overlay_grid.as_mut() {
+                            let _ = grid.clear_overlay(cell_x, cell_y);
+                        }
+                        if let Some(grid) = self.smudge_grid.as_mut() {
+                            let _ = grid.clear_cell_slot(cell_x, cell_y);
+                        }
+                    })
+                })
+            {
+                // Cliff stamps change Cell+11B without refreshing
+                // retained lighting; publish geometry before any later
+                // ordered source/owner callback samples these cells.
+                self.publish_cell_lighting_levels(
+                    mutation
+                        .original_footprint
+                        .iter()
+                        .chain(&mutation.changed_cells)
+                        .copied(),
+                );
+                // Native performs one complete zone rebuild after the
+                // two sparse stamps and before its three footprint
+                // passes. The Rust navigation owner rebuilds all
+                // movement zones as the corresponding single unit.
+                self.rebuild_dynamic_navigation(rules);
+
+                // Pass three's externally represented effects remain
+                // strictly interleaved: detach this CellClass target,
+                // then dirty this radar cell, in old-TMP row order.
+                for &coord in &mutation.original_footprint {
+                    // Map5814D4/581BE6:70D4A0 then radar, per old footprint cell.
+                    let _receipt = self.stop_all_targeting_cell(
+                        coord.0, coord.1, rules, overlay_registry, frame_effects,
+                    );
+                    #[cfg(any(test, feature = "test-support"))]
+                    effects.cell_target_detaches.extend(_receipt.cell_detaches);
+                    self.dirty_cells.mark_radar([coord]);
+                }
+                for &coord in &mutation.original_footprint {
+                    self.dirty_cells.mark_tactical_once(coord);
+                }
+
+                // Resolve the three types in native order, then make
+                // two row-major attempts at each of the 15 grid cells.
+                // Every representable allocation is successful, so
+                // each attempt consumes type, X, Y, and delay draws.
+                let anim_types = crate::rules::effect_asset_catalog::CLIFF_COLLAPSE_ANIMS
+                    .map(|name| self.interner.intern(name));
+                for &(cell_x, cell_y) in &mutation.animation_cells {
+                    for _ in 0..2 {
+                        let type_index =
+                            self.scenario_rng.next_range_u32_inclusive(0, 2) as usize;
+                        let jitter_x =
+                            self.scenario_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
+                        let jitter_y =
+                            self.scenario_rng.next_range_u32_inclusive(0, 24) as i32 - 12;
+                        let level = self
+                            .resolved_terrain
+                            .as_ref()
+                            .expect("collapse terrain retained")
+                            .collapse_animation_level(cell_x, cell_y);
+                        let delay = self.scenario_rng.next_range_u32_inclusive(0, 2) as u16;
+                        let world_coord = crate::sim::anim_class::AnimWorldCoord {
+                            x: i32::from(cell_x)
+                                .wrapping_mul(256)
+                                .wrapping_add(128)
+                                .wrapping_add(jitter_x),
+                            y: i32::from(cell_y)
+                                .wrapping_mul(256)
+                                .wrapping_add(128)
+                                .wrapping_add(jitter_y),
+                            z: i32::from(level).wrapping_mul(104),
+                        };
+                        let mut descriptor =
+                            crate::sim::components::AnimClassSpawnDescriptor::new(
+                                anim_types[type_index],
+                                cell_x as u16,
+                                cell_y as u16,
+                                SimFixed::from_num(128 + jitter_x),
+                                SimFixed::from_num(128 + jitter_y),
+                                level as u8,
+                            );
+                        descriptor.delay = delay;
+                        descriptor.loop_count = 1;
+                        descriptor.draw_flags = 0x600;
+                        descriptor.z_adjust = 0;
+                        descriptor.reverse = false;
+                        // AnimClass construction completes before the
+                        // next attempt selects its type. This matters
+                        // when the selected AnimType consumes Scenario
+                        // RNG for RandomRate during construction.
+                        let _ = self.spawn_anim_at_world(rules, descriptor, world_coord);
+                    }
+                }
+
+                let terrain = self
+                    .resolved_terrain
+                    .as_ref()
+                    .expect("collapse terrain retained");
+                for &(cell_x, cell_y) in &mutation.changed_cells {
+                    if let Some(cell) = terrain.cell(cell_x, cell_y) {
+                        self.dynamic_terrain_cells.record(cell);
+                    }
+                }
+            }
+        }
     }
 
     /// Complete one direct object ReceiveDamage call before its caller resumes.
@@ -5050,8 +5075,14 @@ impl Simulation {
     /// rebuilds zone connectivity/all levels, and refreshes radar before it
     /// returns to `TriggerAction__Execute @ 0x006DD8B0`. Rust performs every
     /// corresponding owned update synchronously here, so later actions and
-    /// the same master frame observe one coherent authority.
-    pub fn change_visible_map_area(&mut self, raw_local_size: [i32; 4], rules: &RuleSet) -> bool {
+    /// the same master frame observe one coherent authority. `context`
+    /// carries the trigger's rules, overlay table and frame effects into the
+    /// See callbacks, whose discoveries may Grand_Open a building.
+    pub fn change_visible_map_area(
+        &mut self,
+        raw_local_size: [i32; 4],
+        context: UninitContext<'_>,
+    ) -> bool {
         let (Some(current), Some(size_height)) =
             (self.playfield_bounds, self.playfield_size_height)
         else {
@@ -5073,6 +5104,11 @@ impl Simulation {
         // canonical TechnoClass+0x3D5 byte for every represented Techno. This
         // must precede later action consumers and may both demote and promote;
         // ordinary per-cell movement's writer is deliberately only 0 -> 1.
+        // RESIDUAL: native stores, gates and Sees one object at a time
+        // (0x0056730E..0x00567351); VERA gates every object and stores every
+        // byte before the first See. They differ only if a See's discovery
+        // springs a Tag that changes a later object's owner, IsAlive or Limbo
+        // within the same action.
         let membership_updates = self
             .substrate
             .entities
@@ -5088,18 +5124,23 @@ impl Simulation {
                     Some(bounds),
                     self.resolved_terrain.as_ref(),
                 );
-                let reveal = !entity.in_playfield()
+                // 0x00567314..0x00567347: a 0 -> 1 flip, an owner passing
+                // IsHumanPlayer 0x0050B6F0, not a Building, IsAlive (+0x90)
+                // and not InLimbo (+0x81). No Health test, so an infantry
+                // corpse still Sees; a dying SHP wreck does not, since its
+                // native UnInit already cleared IsAlive (`is_active`). The
+                // clients are those on which 0x0050B6F0 passes.
+                let see = !entity.in_playfield()
                     && member
-                    && entity.lifecycle.object_alive()
-                    && !entity.lifecycle.in_limbo()
-                    && !entity.death.is_dying()
-                    && entity.health.current() > 0
                     && entity.category() != EntityCategory::Structure
-                    && self
-                        .houses
-                        .get(&entity.owner())
-                        .is_some_and(|house| house.is_human());
-                Some((stable_id, member, reveal))
+                    && entity.is_active()
+                    && !entity.lifecycle.in_limbo();
+                let clients = if see {
+                    self.human_player_clients(entity.owner())
+                } else {
+                    Vec::new()
+                };
+                Some((stable_id, member, clients))
             })
             .collect::<Vec<_>>();
         // Set_Clipped_LocalSize's exact store (`0x0056730E`).
@@ -5108,13 +5149,26 @@ impl Simulation {
                 entity.in_playfield.store(member);
             }
         }
-        // FUN_006E21E0's false->true callback is Object See (virtual+120):
-        // Aircraft41ADF0 or Techno70ADC0, only for human-owned live nonlimbo
-        // mobiles; Buildings are explicitly excluded. The shared dispatch
-        // commits the sight reveal before this action returns.
-        for (stable_id, _, reveal) in membership_updates {
-            if reveal {
-                self.reveal_uncached_object_sight(stable_id, false, false, None, UninitContext::new(rules, None));
+        // The false->true callback is Object See(0, 0) (vt+0x120 at
+        // 0x00567351): Aircraft 0x0041ADF0 or Techno 0x0070ADC0. A network
+        // game's 0x0050B6F0 passes only on the owner's own client
+        // (0x0050B716), so See writes only that map, as Display See's
+        // projection does (`refresh_techno_shroud`); other modes keep one
+        // shared reveal. It commits before this action returns.
+        let network = self.session.game_mode().is_network();
+        for (stable_id, _, clients) in membership_updates {
+            if network {
+                for client in clients {
+                    self.reveal_uncached_object_sight(
+                        stable_id,
+                        false,
+                        false,
+                        Some(client),
+                        context,
+                    );
+                }
+            } else if !clients.is_empty() {
+                self.reveal_uncached_object_sight(stable_id, false, false, None, context);
             }
         }
 
@@ -5482,7 +5536,7 @@ impl Simulation {
                 );
                 debug_assert!(
                     entity.kill_record.is_recorded(),
-                    "dead entity {} must record its destruction exactly once before alive clear",
+                    "dead entity {} must close its kill record before alive clear",
                     entity.stable_id()
                 );
                 debug_assert!(
@@ -5653,8 +5707,9 @@ impl Simulation {
     }
 
     /// Common VoxelAnim7493B0 constructor/admission for typed Techno and
-    /// Bullet debris. Create_ID74944E precedes launch74951D..749559 and
-    /// Bounce4397E0 RNG; admission finishes before the next typed selector.
+    /// Bullet debris, trigger action 43 and meteor children. Create_ID74944E
+    /// precedes the launch and Bounce4397E0 RNG; admission finishes before
+    /// the next typed selector.
     /// `admit_inline=false` is the caller's existing no-callback numeric-fixture
     /// boundary: its packet retains both identities for later registration.
     pub fn emit_debris_voxel(
@@ -6298,6 +6353,12 @@ impl Simulation {
         if category == EntityCategory::Structure {
             self.houses.leave_house_base_lists(stable_id, old_owner);
         }
+        // TechnoClass::ChangeOwner (`0x007014B9..0x007014CF`): the local
+        // player's selected object is deselected first (vt+0x150, every
+        // Techno class's `ObjectClass::Deselect @ 0x005F44A0`).
+        if self.session.current_house() == Some(old_owner) {
+            self.object_deselect(stable_id);
+        }
         // Ares7014D5 ->10049FB0/10049FD7 displays the old owner's queued
         // sum before target/destination callbacks and the actual owner store.
         #[cfg(feature = "ares")]
@@ -6842,9 +6903,15 @@ impl Simulation {
     /// CMIN and SMIN are `ImmuneToPsionics=yes`.
     ///
     /// RESIDUAL: no stock aircraft can be captured, so the Aircraft
-    /// Enter_Idle_Mode (`0x004176F0`) here is dormant; the trailing
-    /// `+0x423`-gated `vt+0x498`/`vt+0x494` and `vt+0x488(0, 0, 0, 0, 0)`
-    /// calls are unidentified.
+    /// Enter_Idle_Mode (`0x004176F0`) here is dormant.
+    ///
+    /// The tail (`0x0070184F..0x0070187B`): a radar-registered object
+    /// (`+0x423`) calls `UnregisterFromRadar` (vt+0x498, `0x0070CCC0`) and
+    /// `RegisterOnRadar` (vt+0x494, `0x0070CC90`), which the client radar
+    /// tracker does when it sees the owner change
+    /// (`render/radar/tracker.rs`, `registration_identity_changed`); then
+    /// `UpdateReveal(0, 0, 0, 0, 0)` (vt+0x488, `0x0070AF50`), ported in
+    /// `change_owner_inherited`.
     ///
     /// `+0x484` census (`search_instructions CALL [+0x484]`), the sites a
     /// miner can reach besides Move arrival, this owner change and the depot

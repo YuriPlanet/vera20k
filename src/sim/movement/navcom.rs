@@ -637,6 +637,29 @@ pub(crate) fn nav_target_coordinate(
         )
         .ok_or_else(|| format!("NavCom coordinate target {id} disappeared"));
     };
+    object_navigation_coordinate(entity, requester, terrain, rules, || {
+        let id = requester.expect("Bunker only reads a non-null requester");
+        let entity = entities
+            .get(id)
+            .ok_or_else(|| format!("Navigation requester {id} disappeared"))?;
+        Ok(super::ground_pose::object_get_coords(entity, terrain))
+    })
+}
+
+/// A live object's virtual+4C coordinate: Building `0x00447E90` (its type's
+/// dock policy, which reads the requester only for a Bunker) or Foot
+/// `0x004DBDF0` (its tube exit, else its locomotor's retained head).
+pub(crate) fn object_navigation_coordinate(
+    entity: &GameEntity,
+    requester: Option<u64>,
+    terrain: Option<&ResolvedTerrainGrid>,
+    rules: Option<(
+        &crate::rules::ruleset::RuleSet,
+        &crate::sim::intern::StringInterner,
+    )>,
+    requester_coordinate: impl FnOnce() -> Result<DriveCoord, String>,
+) -> Result<DriveCoord, String> {
+    let id = entity.stable_id();
     if entity.category() == crate::map::entities::EntityCategory::Structure {
         let (rules, interner) =
             rules.ok_or_else(|| format!("Building {id} navigation requires type data"))?;
@@ -649,13 +672,7 @@ pub(crate) fn nav_target_coordinate(
             object,
             &entity.radio_contacts,
             requester,
-            || {
-                let id = requester.expect("Bunker only reads a non-null requester");
-                let entity = entities
-                    .get(id)
-                    .ok_or_else(|| format!("Navigation requester {id} disappeared"))?;
-                Ok(super::ground_pose::object_get_coords(entity, terrain))
-            },
+            requester_coordinate,
         );
     }
     super::foot_coordinate::navigation_coordinate(entity, terrain)
@@ -729,10 +746,12 @@ pub(crate) fn set_destination_internal_coord(
 }
 
 /// Foot4D94C7/4D9510: NavComAux cleared and the reference published, before
-/// the locomotor dispatch. The Foot+0x6AC skip (4D9607) stops here, and a
-/// Teleport owner's Move_To is dispatched by the Unit setter.
-pub(super) fn publish_nav_com(entity: &mut GameEntity, target: NavTargetRef) {
+/// the locomotor dispatch; a non-null destination then releases the Fire
+/// system link (`0x004D954B`). The Foot+0x6AC skip (4D9607) stops after this,
+/// and a Teleport owner's Move_To is dispatched by the Unit setter.
+pub(crate) fn publish_nav_com(entity: &mut GameEntity, target: NavTargetRef) {
     entity.navigation.publish_nav_com(Some(target));
+    entity.release_fire_particle_system();
 }
 
 /// Foot4D94C7/4D9510 NULL reference publication, before locomotor Stop.

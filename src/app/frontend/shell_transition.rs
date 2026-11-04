@@ -153,8 +153,9 @@ impl ShellSlideKind {
 
     /// The dialog's slide column with the panel's `rows` tile rows. Every
     /// rendered shell has a `slide` table entry, so a miss is a programming
-    /// error. Options slides VERA's category buttons under retail's Keyboard
-    /// and Network.
+    /// error. Options slides VERA's page buttons under retail's Keyboard and
+    /// Network. Skirmish slides VERA's Save Setup and Load Setup under Choose
+    /// Map.
     pub(crate) fn column(self, rows: u32, page: Option<&MenuPageSpec>) -> SlideColumn {
         let spec = crate::ui::shell::slide::slide_spec_for(self.dialog_id())
             .expect("rendered shell dialog must have a slide column");
@@ -167,6 +168,7 @@ impl ShellSlideKind {
                         .stacked
                         .len() as u32
                 }
+                ShellSlideKind::Skirmish => spec.top_buttons + 2,
                 _ => spec.top_buttons,
             },
             |page| page.stacked.len() as u32,
@@ -305,9 +307,9 @@ pub(crate) enum ShellExitThen {
     WolLoginClose(u16),
     /// `0x113` Back (`0x686`): the runner leaves its channel and returns 0.
     WolLobbyBack,
-    /// `0x113` Buddy List (`0x689`): the runner ends as for Back, with mode
-    /// 5 and return mode 4.
-    WolLobbyBuddy,
+    /// `0x113` Buddy List (`0x689`), or the online page's Quick Match: the
+    /// runner ends as for Back, with mode 5 or 1 and return mode 4.
+    WolLobbyRunner(crate::ui::wol_shell::WolMode),
     /// A game join was requested (`0x0078C281`): `0x113` slides out and hides.
     WolLobbyHide,
     /// The create succeeded: `0x113` slides out and hides, then C2 opens.
@@ -369,7 +371,7 @@ impl ShellExitThen {
             Self::WolBack | Self::WolAction(_) => ShellSlideKind::WolWelcome,
             Self::WolLoginClose(_) => ShellSlideKind::WolLogin,
             Self::WolLobbyBack
-            | Self::WolLobbyBuddy
+            | Self::WolLobbyRunner(_)
             | Self::WolLobbyHide
             | Self::WolCreateAccepted { .. }
             | Self::WolOptionsOpen => ShellSlideKind::WolLobby,
@@ -1521,9 +1523,11 @@ mod tests {
             (3, true, false)
         );
         assert_eq!(top_and_bottom(ShellSlideKind::MovieList), (1, true, false));
-        assert_eq!(top_and_bottom(ShellSlideKind::Skirmish), (2, true, true));
-        // Retail `0xD5` slides Keyboard and Network; VERA's six category
-        // buttons slide under them.
+        // Retail `0x102` slides Start Game and Choose Map; VERA's Save Setup
+        // and Load Setup slide under them.
+        assert_eq!(top_and_bottom(ShellSlideKind::Skirmish), (4, true, true));
+        // Retail `0xD5` slides Keyboard and Network; VERA's six page buttons
+        // slide under them.
         assert_eq!(
             crate::ui::shell::slide::slide_spec_for(DialogId(0x00D5))
                 .unwrap()
@@ -1539,7 +1543,7 @@ mod tests {
         let column = ShellSlideKind::WolLobby.column(9, Some(lobby.page_spec()));
         assert_eq!(
             (column.top_buttons, column.bottom_button, column.top_panel),
-            (3, true, false)
+            (4, true, false)
         );
         assert_eq!(ShellSlideKind::WolWelcome.column(9, None).top_buttons, 6);
         let retail = ShellSlideKind::WolLobby.column(9, None);
