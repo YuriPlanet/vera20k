@@ -3,8 +3,9 @@
 //!
 //! Wall-clock observations only; the deterministic simulation never reads
 //! them. A world install resets them, the match's transport return closes
-//! them (logged once as `Network quality:`), and the closed report stays for
-//! the external launch result until the next install.
+//! them (logged once as `Network quality:` and handed to the lobby's
+//! `finish`), and the closed report stays for the external launch result
+//! until the next install.
 
 use crate::net::live_commands::{DeliveryCounters, NetworkRecoveryStatus};
 use crate::util::time::{Duration, Instant};
@@ -51,6 +52,9 @@ impl MsHistogram {
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub(crate) struct NetworkQualityReport {
+    /// Time the record watched the match in play; its catch-up, unfocused and
+    /// slowed times are parts of it.
+    pub(crate) played_seconds: f64,
     pub(crate) catch_up: CatchUpReport,
     pub(crate) network: DeliveryReport,
     pub(crate) performance: PerformanceReport,
@@ -133,6 +137,7 @@ pub(crate) struct NetworkQualityStats {
     max_backlog_frames: u32,
     max_reserve_micros: u32,
     underruns: u64,
+    played: Duration,
     unfocused: Duration,
     slowed: Duration,
     reconnecting: bool,
@@ -199,6 +204,7 @@ impl NetworkQualityStats {
         let fps = |ms: Option<f32>| ms.map(|ms| (1000.0 / ms * 10.0).round() / 10.0);
         let seconds = |span: Duration| (span.as_millis() as f64) / 1000.0;
         NetworkQualityReport {
+            played_seconds: seconds(self.played),
             catch_up: CatchUpReport {
                 episodes: self.catch_up_episodes,
                 seconds: seconds(self.catch_up),
@@ -272,6 +278,7 @@ pub(crate) fn observe_pass(state: &mut AppState) {
         .last_pass
         .replace(now)
         .map_or(Duration::ZERO, |last| now.saturating_duration_since(last));
+    stats.played += elapsed;
     let catching_up = pacing.is_some_and(|pacing| pacing.catching_up);
     if catching_up {
         stats.catch_up += elapsed;
@@ -303,11 +310,12 @@ pub(crate) fn observe_pass(state: &mut AppState) {
     };
 }
 
-/// Close the record as the online match returns its transport.
-pub(crate) fn close(state: &mut AppState) {
+/// Close the record as the online match returns its transport: the report it
+/// closed, once, for the lobby's `finish`.
+pub(crate) fn close(state: &mut AppState) -> Option<NetworkQualityReport> {
     let stats = &mut state.match_state.network_quality;
     if !stats.active || stats.closed.is_some() {
-        return;
+        return None;
     }
     let report = stats.summarize();
     stats.active = false;
@@ -315,7 +323,8 @@ pub(crate) fn close(state: &mut AppState) {
         Ok(json) => log::info!("Network quality: {json}"),
         Err(error) => log::warn!("Network quality report: {error}"),
     }
-    stats.closed = Some(report);
+    stats.closed = Some(report.clone());
+    Some(report)
 }
 
 #[cfg(test)]
@@ -336,5 +345,25 @@ mod tests {
         frames.record(100.0);
         assert_eq!(frames.quantile(0.95), Some(100.25));
         assert_eq!(MsHistogram::default().quantile(0.5), None);
+    }
+
+    /// The lobby reads `finish`'s report by these names
+    /// (docs/lobby-protocol.md) and drops one it cannot read.
+    #[test]
+    fn the_report_keeps_the_names_the_lobby_reads() {
+        let report = serde_json::to_value(NetworkQualityStats::default().summarize()).unwrap();
+        assert_eq!(
+            report,
+            serde_json::json!({
+                "played_seconds": 0.0,
+                "catch_up": {"episodes": 0, "seconds": 0.0, "max_backlog_frames": 0, "skipped_draws": 0},
+                "network": {"gaps": 0, "repair_pulls": 0, "command_round_trip_ms": null,
+                    "max_jitter_reserve_ms": 0.0, "underruns": 0},
+                "performance": {"tick_ms_p50": null, "tick_ms_p99": null, "fps_p50": null,
+                    "fps_p5": null, "unfocused_seconds": 0.0},
+                "pacing": {"slowdowns": 0, "slowed_by": [], "slowed_seconds": 0.0},
+                "outcome": {"desync_frame": null, "reconnects": 0},
+            })
+        );
     }
 }

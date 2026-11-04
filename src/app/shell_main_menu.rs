@@ -83,9 +83,9 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         self.persistence.options_profile.yr_original_style = yr_original_style;
         let _ = App::ensure_skirmish_shell_chrome(self);
     }
-    fn store_skip_startup_logo(&mut self, skip: bool) {
+    fn store_skip_intro(&mut self, skip: bool) {
         // Read once at the next launch; Options' accept writes it out.
-        self.persistence.options_profile.skip_startup_logo = skip;
+        self.persistence.options_profile.skip_intro = skip;
     }
     fn store_custom_end_game_banner(&mut self, enabled: bool) {
         // Read when a match result is admitted: the verdict's picture and its

@@ -1285,6 +1285,126 @@ fn action128_retail_foots_use_reverse_shared_sweep_and_finish_the_warp() {
     );
 }
 
+/// House50D6D0 skips a Foot only for its Transporter (`+0x11C`, 0x50D783 and
+/// 0x50D895). A garrison occupant (AddGarrisonOccupant 0x522910) and a Full
+/// reinforcement's cargo (CargoClass::AddPassenger 0x4733A0) have none, so
+/// they are warped in Limbo; a rider who boarded a vehicle (0x51A463) is not.
+#[test]
+fn action128_skips_only_passengers_with_a_transporter() {
+    use crate::sim::passenger::{BoardingArm, add_garrison_occupant, board_passenger};
+    use crate::sim::superweapon::chronosphere_tests::{retail_world, step, world_with};
+    let Some((rules, _, _)) = retail_world() else {
+        return;
+    };
+    let (rules, mut sim, owner) = world_with(rules, 128, &[]);
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_chrono_house.json",
+    ))
+    .unwrap();
+    // The native coordinate of offset 2 (a unit's cell centre).
+    let third_offset = native["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["name"] == "reverse_mixed_classes")
+        .unwrap()["warp"][2]
+        .clone();
+    assert_eq!(third_offset["offset"], 2);
+    let mut spawn = |name, x| {
+        sim.spawn_object_at_height(name, "Americans", x, 20, 0, 0, &rules)
+            .unwrap()
+    };
+    // First in the Foot array, so the offsets below stay the fixture's.
+    let reinforcement = spawn("E1", 22);
+    let tank = spawn("MTNK", 20);
+    let transport = spawn("HTK", 24);
+    let rider = spawn("E1", 26);
+    let bunker = spawn("NABNKR", 30);
+    let occupant = spawn("E1", 28);
+    assert!(board_passenger(
+        &mut sim,
+        &rules,
+        rider,
+        transport,
+        BoardingArm::InfantryTransport,
+        None,
+        FrameEffects::default()
+    ));
+    assert!(add_garrison_occupant(
+        &mut sim,
+        &rules,
+        occupant,
+        bunker,
+        None,
+        FrameEffects::default()
+    ));
+    // Full reinforcements load through CargoClass::AddPassenger 0x4733A0,
+    // which leaves +0x11C NULL.
+    assert!(sim.add_cargo_passenger_chain(
+        transport,
+        &[(reinforcement, 1.0)],
+        crate::sim::world::UninitContext::with_rules(&rules),
+    ));
+    sim.substrate
+        .entities
+        .get_mut(reinforcement)
+        .unwrap()
+        .passenger_role
+        .set_inside_transport(transport, false);
+    let map = install_event_ingress_map(
+        &mut sim,
+        &rules,
+        "[Waypoints]\n15=50075\n[Triggers]\nSHIFT=Americans,<none>,Shift,0,1,1,1,0\n\
+         [Events]\nSHIFT=1,8,0,0\n[Actions]\nSHIFT=1,128,0,478,0,0,0,0,P\n",
+    );
+    sim.session.install_waypoints(&map.waypoints);
+    let source = trigger_type_index(&sim, "SHIFT");
+    let action = sim.trigger_runtime.definitions.trigger_types[source].actions[0].clone();
+    assert!(sim.apply_live_trigger_action(
+        &action,
+        TriggerActionContext {
+            live_index: None,
+            input: TagEventInput::default(),
+            incoming_house: Some(owner)
+        },
+        &mut Vec::new(),
+        &rules,
+        None,
+        FrameEffects::default(),
+    ));
+    let entity = |sim: &Simulation, id| sim.substrate.entities.get(id).unwrap().clone();
+    assert!(entity(&sim, occupant).chrono_warp_latch());
+    assert!(entity(&sim, occupant).lifecycle.in_limbo());
+    assert!(entity(&sim, reinforcement).chrono_warp_latch());
+    assert!(!entity(&sim, rider).chrono_warp_latch());
+    // Reverse order: the occupant takes offset 0, the transport 1, the tank 2.
+    let coord = entity(&sim, tank).chrono_warp().unwrap().destination();
+    assert_eq!(
+        serde_json::json!([coord.x, coord.y, coord.z]),
+        third_offset["coord"]
+    );
+    // The warp outlasts his stay: Foot Unlimbo 0x4D7170 calls only the
+    // locomotor's Unlimbo slot (LocomotionClass's empty 0x55AC20), and his
+    // Teleport runs it once Foot AI reaches him again.
+    assert_eq!(
+        crate::sim::passenger::garrison_eject::sell_building_occupants(
+            &mut sim,
+            &rules,
+            None,
+            bunker,
+            crate::sim::passenger::garrison_eject::GarrisonEjectMode::Release,
+            FrameEffects::default(),
+        ),
+        1
+    );
+    for _ in 0..180 {
+        step(&mut sim, &rules);
+    }
+    let soldier = entity(&sim, occupant);
+    assert!(!soldier.chrono_warp_latch() && !soldier.is_warped_out() && !soldier.is_warping_in());
+    assert!(soldier.position.rx().abs_diff(75) <= 2 && soldier.position.ry().abs_diff(50) <= 2);
+}
+
 #[test]
 fn variable_scripts_use_shared_owner_and_advance_on_rejected_indices() {
     use crate::sim::team_script_vm::{TeamScriptAction, TeamScriptDefinition};

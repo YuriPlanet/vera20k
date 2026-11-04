@@ -235,19 +235,18 @@ fn ally_writes_reach_the_remembered_reveal_viewers() {
     }
     let config = crate::sim::vision::VisionConfig::default();
     let viewers = |sim: &mut Simulation| {
+        // Every house stands for a client map here: the answers' memory, not
+        // the client set, is under test.
         let direct = sim.reveal_viewers.direct(
-            &sim.fog,
             sim.house_alliances.as_map(),
             ids[1],
             &config,
             &sim.interner,
+            &ids,
         );
-        let allied = sim.reveal_viewers.allied(
-            &sim.fog,
-            sim.house_alliances.as_map(),
-            ids[1],
-            &sim.interner,
-        );
+        let allied =
+            sim.reveal_viewers
+                .allied(sim.house_alliances.as_map(), ids[1], &sim.interner, &ids);
         (direct.to_vec(), allied.to_vec())
     };
     let (alone, with_ally) = (vec![ids[1]], vec![ids[1], ids[2]]);

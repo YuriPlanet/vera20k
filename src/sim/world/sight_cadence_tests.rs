@@ -1344,9 +1344,11 @@ fn a_source_event_keeps_one_notification_admission_across_logical_planes() {
         owner < ally,
         "the fixture visits the original player plane first"
     );
+    // A human ally: its client map is a logical plane of its own (a
+    // computer house has none).
     sim.houses
         .register(crate::sim::house_state::HouseState::new(
-            ally, 0, None, false, 0, 10,
+            ally, 0, None, true, 0, 10,
         ));
     // Supplied direct alliance prestate; the test exercises source event
     // admission, not the separate diplomacy producer.
@@ -2006,8 +2008,8 @@ fn a_reveal_before_navigation_publication_tests_the_cell_heights() {
 
 /// `TechnoClass::ChangeOwner @ 0x007014A0` moves an object's sight within
 /// the call: its ReReveal before the owner store (`0x0070172F`) takes it
-/// off the old owner's map, and its UpdateReveal (`0x0070187B`) opens it on
-/// the new owner's.
+/// off the old owner's map, and its UpdateReveal (`0x0070187B`) would open
+/// it on the new owner's, which a computer house does not have.
 #[test]
 fn an_owner_change_moves_the_sight_to_the_new_owner_within_the_call() {
     let Some((mut sim, rules, _)) = retail_arena() else {
@@ -2022,9 +2024,11 @@ fn an_owner_change_moves_the_sight_to_the_new_owner_within_the_call() {
     assert!(sim.fog.sight_is_latched(id, americans));
     sim.change_owner_with_rules(id, russians, &rules, None, FrameEffects::default());
     assert!(!sim.fog.sight_is_latched(id, americans), "0x0070172F");
-    assert!(sim.fog.sight_is_latched(id, russians), "0x0070187B");
     assert!(!sim.fog.is_cell_visible(americans, 16, 16));
-    assert!(sim.fog.is_cell_visible(russians, 16, 16));
+    // 0x0070187B's UpdateReveal passes the computer owner to RevealArea,
+    // whose gate opens no map for it: it is no client.
+    assert!(!sim.fog.sight_is_latched(id, russians));
+    assert!(!sim.fog.by_owner().contains_key(&russians));
 }
 
 /// MakeAlly and MakeEnemy bracket their ally-bit write with the map
@@ -2055,26 +2059,23 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
         .unwrap();
     // The Spy Plane's kind of reveal: a radius that replaces its Sight=.
     sim.refresh_object_sight(tank, &rules, 7, crate::sim::world::FrameEffects::default());
-    let tank_sight = sim.fog.sight_admission(tank, russians).unwrap().clone();
-    assert_eq!(tank_sight.radius, 7);
+    let tank_source = sim
+        .fog
+        .source_sight(tank, americans)
+        .expect("the American logical client ran UpdateReveal before its map gate");
+    assert_eq!(tank_source.radius, 7);
+    assert!(
+        !sim.fog.by_owner().contains_key(&russians),
+        "a computer house has no map (0x00567AB0..0x00567B12)"
+    );
     assert!(!sim.fog.sight_is_latched(standing, americans));
     let american_source = sim
         .fog
         .source_sight(standing, americans)
         .expect("the American logical client ran UpdateReveal before its map gate");
-    let owner_source = sim
-        .fog
-        .source_sight(standing, russians)
-        .expect("the Russian owner has an independent native source cache");
     assert!(american_source.latched);
-    assert!(owner_source.latched);
     assert!(sim.fog.sight_admission(standing, americans).is_none());
-    let owner_sight = sim
-        .fog
-        .sight_admission(standing, russians)
-        .expect("the Russian House keeps the plant's original sight")
-        .clone();
-    let owner_origin = owner_sight.origin;
+    let owner_origin = american_source.origin;
 
     sim.make_ally(
         russians,
@@ -2085,19 +2086,9 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
         false,
     );
     assert_eq!(
-        sim.fog.sight_admission(standing, russians),
-        Some(&owner_sight),
-        "the Russian contribution keeps its original geometry"
-    );
-    assert_eq!(
         sim.fog.source_sight(standing, americans),
         Some(american_source),
         "MakeAlly cannot reopen a source already latched for that client"
-    );
-    assert_eq!(
-        sim.fog.source_sight(standing, russians),
-        Some(owner_source),
-        "the owner client's independent +0x250/+0x254/+0x260 is unchanged"
     );
     assert!(
         sim.fog.sight_admission(standing, americans).is_none(),
@@ -2117,9 +2108,9 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
         "the frame pass reveals nothing"
     );
     assert_eq!(
-        sim.fog.sight_admission(tank, russians),
-        Some(&tank_sight),
-        "the frame pass keeps the last reveal's footprint"
+        sim.fog.source_sight(tank, americans),
+        Some(tank_source),
+        "the frame pass keeps the last reveal's source"
     );
 
     // A plant placed while the alliance stands opens on the ally's map at
@@ -2128,7 +2119,7 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
     let plant = sim
         .spawn_object("NAPOWR", "Russians", 22, 22, 0, &rules)
         .unwrap();
-    let origin = sim.fog.sight_admission(plant, russians).unwrap().origin;
+    let origin = sim.fog.sight_admission(plant, americans).unwrap().origin;
     assert!(sim.fog.sight_is_latched(plant, americans));
     assert!(sim.fog.is_cell_visible(americans, origin.0, origin.1));
 
@@ -2155,7 +2146,6 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
         "0x004F9FD8's release precedes the bit write"
     );
     assert!(!sim.fog.is_cell_visible(americans, origin.0, origin.1));
-    assert!(sim.fog.sight_is_latched(plant, russians));
 
     sim.make_ally(
         russians,

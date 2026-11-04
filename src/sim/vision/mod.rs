@@ -2913,40 +2913,6 @@ fn fire_reveal_cells(fog: &mut FogState, owner: InternedId, cells: Vec<(u16, u16
     }
 }
 
-/// The houses a reveal by `owner` can reach (every house with a map or an
-/// alliance entry, and `owner`) that are `owner` itself, when `with_owner`,
-/// or whose name `admits` passes; ascending, without repeats.
-fn reveal_candidates(
-    fog: &FogState,
-    alliances: &HouseAllianceMap,
-    owner: InternedId,
-    interner: &StringInterner,
-    with_owner: bool,
-    admits: impl Fn(&str) -> bool,
-) -> Vec<InternedId> {
-    let mut viewers: Vec<InternedId> = fog
-        .by_owner
-        .keys()
-        .copied()
-        .chain(std::iter::once(owner))
-        .filter(|&viewer| (with_owner && viewer == owner) || admits(interner.resolve(viewer)))
-        .collect();
-    // An alliance entry's house is the interned name itself; `owner` is
-    // already in when `with_owner` keeps it.
-    for (house, allies) in alliances {
-        for name in std::iter::once(house).chain(allies) {
-            if admits(name)
-                && let Some(id) = interner.get(name)
-            {
-                viewers.push(id);
-            }
-        }
-    }
-    viewers.sort_unstable();
-    viewers.dedup();
-    viewers
-}
-
 /// The house gate of `MapClass::RevealArea @ 0x005678E0`
 /// (`0x00567AB0..0x00567B12`) and of Map `0x005673A0`
 /// (`0x0056756A..0x005675D0`), asked with `viewer` as the player whose map
@@ -2978,35 +2944,56 @@ fn ally_reveal_test<'a>(
     move |viewer| config.ally_reveal && allied(viewer)
 }
 
-/// The maps a reveal by `owner` writes ([`reveal_admits`]).
+/// The maps a reveal by `owner` writes: each client map in `clients` whose
+/// RevealArea house gate admits `owner` ([`reveal_admits`]); ascending,
+/// without repeats.
+///
+/// gamemd keeps one map per running client, its PlayerPtr's (`0x00A83D4C`).
+/// `TechnoClass::UpdateReveal @ 0x0070AF50` and `ReReveal @ 0x0070B1D0` pass
+/// the source's Owner (`+0x21C`) to `MapClass::RevealArea @ 0x005678E0`,
+/// whose gate (`0x00567AB0..0x00567B12`) returns at `0x00567D88` before any
+/// cell unless that Owner is PlayerPtr or an `AllyReveal=` ally of it. A
+/// computer house is never a client's PlayerPtr, so it has no map: only the
+/// represented clients (`Simulation::fog_viewers`) are candidates.
 pub(crate) fn direct_reveal_viewers(
-    fog: &FogState,
     alliances: &HouseAllianceMap,
     owner: InternedId,
     config: &VisionConfig,
     interner: &StringInterner,
+    clients: &[InternedId],
 ) -> Vec<InternedId> {
-    reveal_candidates(
-        fog,
-        alliances,
-        owner,
-        interner,
-        true,
-        ally_reveal_test(alliances, owner, config, interner),
-    )
+    let allied = ally_reveal_test(alliances, owner, config, interner);
+    let mut viewers: Vec<InternedId> = clients
+        .iter()
+        .copied()
+        .filter(|&viewer| viewer == owner || allied(interner.resolve(viewer)))
+        .collect();
+    viewers.sort_unstable();
+    viewers.dedup();
+    viewers
 }
 
-/// `owner` and every house `owner`'s IsAlliedWith names, whatever `AllyReveal=`
-/// says. `HouseClass::IsAlliedWith @ 0x004F9A50` reads `owner`'s own ally bits
-/// (`+0x5788`), one-way; a house is its own ally.
+/// The client maps in `clients` that `owner`'s IsAlliedWith names, whatever
+/// `AllyReveal=` says; ascending, without repeats.
+/// `HouseClass::IsAlliedWith @ 0x004F9A50` reads `owner`'s own ally bits
+/// (`+0x5788`), one-way; a house is its own ally. Its callers ask it of
+/// PlayerPtr only (the high-flyer refresh `0x004DA6AF..0x004DA6C2`), so a
+/// computer house, never a client's PlayerPtr, is no candidate.
 pub(crate) fn allied_viewers(
-    fog: &FogState,
     alliances: &HouseAllianceMap,
     owner: InternedId,
     interner: &StringInterner,
+    clients: &[InternedId],
 ) -> Vec<InternedId> {
     let allied = crate::map::houses::ally_test(alliances, interner.resolve(owner));
-    reveal_candidates(fog, alliances, owner, interner, false, allied)
+    let mut viewers: Vec<InternedId> = clients
+        .iter()
+        .copied()
+        .filter(|&viewer| allied(interner.resolve(viewer)))
+        .collect();
+    viewers.sort_unstable();
+    viewers.dedup();
+    viewers
 }
 
 /// Materialize active SpySat house latches by marking every synthetic-grid cell
@@ -3016,9 +3003,8 @@ pub(crate) fn allied_viewers(
 /// gamemd's whole-map reveal sets only the explored bit on every cell. It does
 /// not create a "currently in sight" state — with `FogOfWar=no` no such per-cell
 /// state exists at all — so the uplink lifts the shroud and nothing more. It
-/// must not mark cells *visible* here: that layer is VERA-internal and gates
-/// combat target acquisition, so writing it map-wide would let every unit
-/// acquire across the whole map, which the engine never does.
+/// must not mark cells *visible* here: that layer is VERA-internal, and the
+/// uplink never puts a cell in sight.
 ///
 /// Writing it repeatedly is idempotent. The persisted per-house aggregate latch
 /// decides activation and last-provider loss; this helper only materializes the

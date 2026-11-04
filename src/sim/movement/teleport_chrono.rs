@@ -132,6 +132,11 @@ impl Simulation {
         let mut cell = super::coord_cell(coord);
         //Infantry prepares its old Walk head before creating the Teleport;
         //Foot adjusts the bridge first, then prepares Unit Force_Track.
+        // RESIDUAL: for an infantryman warped in Limbo (action 128's garrison
+        // occupants and cargo riders), Walk 0x0075CA30 and Teleport
+        // 0x0071A090 still clear the bit at his retained head; VERA's release
+        // skips Limbo. His Limbo cleared it already, so this only matters if
+        // another infantryman took that spot: a later placement may stack.
         if infantry {
             self.locomotor_mark_all_occupation_bits(id, false);
             Self::object_raw_receiver_at(

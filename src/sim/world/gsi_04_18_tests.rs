@@ -530,6 +530,11 @@ fn shroud_current_sight_psychic_never_gapped_and_mixed_views_are_nontransitive()
         let b = sim.interner.intern("Alliance");
         let c = sim.interner.intern("Soviet");
         let gapper = sim.interner.intern("Neutral");
+        // Each compared view is a human player's client map.
+        for house in [b, c] {
+            sim.houses
+                .register(HouseState::new(house, 0, None, true, 0, 10));
+        }
         let sw = charge_psychic_reveal(&mut sim, a);
         for (left, right) in [
             ("AMERICANS", "ALLIANCE"),
@@ -591,6 +596,11 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
     let b = sim.interner.intern("Alliance");
     let c = sim.interner.intern("Third");
     let reverse = sim.interner.intern("ReverseOnly");
+    // Each viewer whose history is compared is a human player's client map.
+    for house in [b, c, reverse] {
+        sim.houses
+            .register(HouseState::new(house, 0, None, true, 0, 10));
+    }
     sim.house_alliances_mut_for_test()
         .entry("REVERSEONLY".into())
         .or_default()
@@ -782,7 +792,13 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
     assert_eq!(clocks.last_height(c), 213);
     assert_eq!(clocks.last_height(a), 208);
     assert_eq!(clocks.last_height(b), 0);
-    assert!(sim.fog.is_cell_revealed(c, 12, 12));
+    // The refresh admits the new ally's client map at that current height.
+    let admission = sim
+        .fog
+        .sight_admission(2, c)
+        .expect("the ally's map is admitted");
+    assert!(admission.latched);
+    assert_eq!(admission.origin, (13, 13, 213));
 }
 
 #[test]
@@ -1159,4 +1175,20 @@ fn reset_shroud_replays_own_sight_and_allied_buildings() {
         sim.fog.is_cell_visible(viewer, 18, 12),
         "its ally's building"
     );
+}
+
+/// Reveal `0x00577D90` stores `+0x241` for any house but changes only
+/// PlayerPtr's shroud (`0x00577DB6..0x00577DC0`): a computer house's map
+/// reveal sets its byte and opens no plane; the player's reveals its map.
+#[test]
+fn a_computer_houses_map_reveal_opens_no_plane() {
+    let (mut sim, rules, owner) = fixture();
+    let computer = sim.interner.intern("Soviet");
+    sim.houses
+        .register(HouseState::new(computer, 1, None, false, 0, 10));
+    sim.reveal_map_for_owner(computer, &rules);
+    assert!(sim.houses[&computer].map_is_clear());
+    assert!(!sim.fog.by_owner().contains_key(&computer));
+    sim.reveal_map_for_owner(owner, &rules);
+    assert!(sim.fog.is_cell_revealed(owner, 23, 23));
 }

@@ -257,16 +257,16 @@ pub(crate) fn ground_unit_pose_matrices(
         pose.angles,
         half_sizes,
     );
-    let translated = affine::translate(body, &[turret_offset_units(pose.turret_offset)]);
+    let translated = affine::translate_axis(body, 0, turret_offset_units(pose.turret_offset));
     let relative = i32::from(voxel_facing_step(turret_facing))
         - i32::from(voxel_facing_step(pose.body_facing));
     let (sin, cos) = crate::util::native_trig::native_sin_cos_by_step(relative)
         .expect("relative five-bit facing fits table");
     let turret = affine::rotate_z(translated, sin, cos);
     let pivot = turret.w_axis.truncate();
-    let barrel = affine::translate(turret, &(-pivot).to_array());
+    let barrel = affine::translate(turret, (-pivot).to_array());
     let barrel = voxel_barrel_pitch(barrel, barrel_pitch);
-    let barrel = affine::translate(barrel, &pivot.to_array());
+    let barrel = affine::translate(barrel, pivot.to_array());
     [body, turret, barrel].map(|matrix| {
         affine::matrix_product(voxel_camera_view(), matrix).expect("finite ground draw matrix")
     })

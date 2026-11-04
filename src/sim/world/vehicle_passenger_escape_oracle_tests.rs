@@ -132,7 +132,7 @@ fn state(sim: &Simulation, id: u64) -> Value {
         "mission": entity.mission.current().raw(),
         "queued": entity.mission.queued().raw(),
         "mega_mission": if entity.mega_mission.is_attack_move() { 29 } else { -1 },
-        "transporter": entity.passenger_role.is_inside_transport(),
+        "transporter": entity.passenger_role.transporter().is_some(),
         "nav_cell": nav,
         "drive_destination": destination,
     })
@@ -219,7 +219,7 @@ fn vehicle_passenger_escape_matches_native_caller_scatter() {
                 MissionId::from_raw(spec["mission"].as_i64().unwrap() as i32),
                 0,
             );
-            entity.passenger_role = PassengerRole::inside_for_test(transport, false);
+            entity.passenger_role = PassengerRole::boarded_for_test(transport, false);
             if !spec["nav_cell"].is_null() {
                 let (nx, ny) = cell(&spec["nav_cell"]);
                 // Explicit retained raw NavCom input; no destination setter

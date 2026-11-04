@@ -117,9 +117,12 @@ impl LastOperational {
 }
 
 impl Simulation {
+    /// The client maps a gap writes. Gap add `0x006FB170` and remove
+    /// `0x006FB470` test PlayerPtr (`0x00A83D4C`) and write only the running
+    /// client's Map (`0x0087F7E8`), so a computer house has none.
     fn gap_viewers(&self) -> Vec<InternedId> {
-        self.houses
-            .keys()
+        self.fog_viewers()
+            .iter()
             .chain(self.fog.by_owner().keys())
             .copied()
             .collect::<std::collections::BTreeSet<_>>()
