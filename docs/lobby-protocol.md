@@ -114,7 +114,7 @@ Commands and their payloads:
 | operation | payload |
 | --- | --- |
 | `join` | `{channel:<channel name>,key}` |
-| `create` | `{channel:<Channel>,key}` |
+| `create` | `{channel:<Channel>,key,ranked?}` |
 | `leave` | `{}` |
 | `logout` | `{}` |
 | `options` | `{options:<HostOptions>}` |
@@ -534,6 +534,10 @@ While the operator runs a season, the lobby ranks a 1v1 Quick Match pairing play
 two players alone, and a game room's match in a mode that lets players ally, with every
 player on one of two teams of the same size (at least two each) whose chances are within
 80/20. Ranked matches have no AI, and every player's game can hold a ladder key.
+
+A host who unticks Ranked game at Create Game sends `ranked:false` on `create`, and that
+room's games never rank; its odds line says why. A ticked box sends nothing, as a lobby
+from before the choice refuses the field.
 
 A game that can hold one sends `ladder_key` at sign-in: the name's key, or `null` when it
 holds none for that name. A game that omits the field plays unranked. As a ranked match

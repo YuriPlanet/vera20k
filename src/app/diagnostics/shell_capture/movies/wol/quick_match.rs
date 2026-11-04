@@ -405,7 +405,7 @@ impl WolCapture {
         );
         service_event(state, WolServiceEvent::ChannelLeft);
         let requests = self.requests(state, frame)?;
-        let [WolServiceRequest::CreateChannel { channel, key }] = requests.as_slice() else {
+        let [WolServiceRequest::CreateChannel { channel, key, .. }] = requests.as_slice() else {
             bail!("the game channel was not created: {requests:?}");
         };
         ensure!(

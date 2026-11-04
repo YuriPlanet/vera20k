@@ -153,6 +153,9 @@ pub(crate) struct FrontendState {
     /// The host's last Room name in VERA's online lobby, which its next
     /// Create Game shows; `None` until one is typed.
     pub(crate) wol_room_name: Option<String>,
+    /// The host unticked Ranked game at its last Create Game in VERA's
+    /// online lobby, which its next Create Game shows.
+    pub(crate) wol_room_unranked: bool,
     /// VERA: how this player returns to its LAN room after the match.
     pub(crate) lan_rematch: Option<crate::app::shell_lan::LanRematch>,
     /// Options' Network child D7, retained until its teardown completes.

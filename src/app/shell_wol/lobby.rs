@@ -233,6 +233,7 @@ enum AfterLeave {
         channel: WolChannel,
         key: String,
         observe: bool,
+        ranked: bool,
     },
     /// The Quick Match runner's exit (`0x007A03A0..0x007A0410`): it
     /// returns 0 whether or not the leave finished.
@@ -1239,7 +1240,7 @@ pub(super) fn quick_match_create(state: &mut AppState) {
         globals.limit_resolution = false;
     }
     let channel = quick_match_channel(&nickname, tournament, globals.lobby_number, ex_info);
-    leave_then_create(state, channel, String::new(), false);
+    leave_then_create(state, channel, String::new(), false, true);
 }
 
 /// `0x00789B60`'s record in Quick Match: Create's record and exInfo
@@ -1726,9 +1727,10 @@ fn leave_finished(state: &mut AppState, left: bool) {
             channel,
             key,
             observe,
+            ranked,
         } => {
             close_wait(state);
-            send_create(state, channel, key, observe);
+            send_create(state, channel, key, observe, ranked);
         }
         AfterLeave::Return => {
             close_wait(state);
@@ -1858,7 +1860,13 @@ pub(crate) fn commit_create(state: &mut AppState, observe: bool) {
 /// modal loop waits for the result. The session preparation `0x00789B60`
 /// runs before it (GameMode options, the host node, `[0x8316A4]`) belongs
 /// to the setup owner that creates C2 ([`App::open_host_setup`]).
-fn send_create(state: &mut AppState, channel: WolChannel, key: String, observe: bool) {
+fn send_create(
+    state: &mut AppState,
+    channel: WolChannel,
+    key: String,
+    observe: bool,
+    ranked: bool,
+) {
     // 0x00789F55..0x00789FB4: with registry Options bit 1 clear (VERA reads
     // no registry), the nickname's persona Country and Color become the
     // MultiPlayer picks the host node then takes (0x0069B700/0x0069B720).
@@ -1871,7 +1879,14 @@ fn send_create(state: &mut AppState, channel: WolChannel, key: String, observe: 
             request: None,
         };
     }
-    request(state, WolServiceRequest::CreateChannel { channel, key });
+    request(
+        state,
+        WolServiceRequest::CreateChannel {
+            channel,
+            key,
+            ranked,
+        },
+    );
     show_wait(state, "GUI:CreatingChannel");
 }
 
@@ -2027,6 +2042,7 @@ fn create_confirmed(
     clan: bool,
     limit: bool,
     observe: bool,
+    ranked: bool,
 ) {
     let nickname = nickname(state);
     let (width, _) = options_screen(state);
@@ -2051,13 +2067,20 @@ fn create_confirmed(
     };
     lobby.ui.popup = None;
     lobby.ui.observer = observe;
-    leave_then_create(state, channel, key, observe);
+    leave_then_create(state, channel, key, observe, ranked);
 }
 
 /// `0x00789B60`'s leave and create: API+0x24 runs unconditionally, and
 /// once more with the wait (a `0x792BE0(0)` retext: no box is created)
 /// while still joined.
-fn leave_then_create(state: &mut AppState, channel: WolChannel, key: String, observe: bool) {
+/// `ranked` false asks VERA's lobby to keep the room's games unranked.
+fn leave_then_create(
+    state: &mut AppState,
+    channel: WolChannel,
+    key: String,
+    observe: bool,
+    ranked: bool,
+) {
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
@@ -2069,6 +2092,7 @@ fn leave_then_create(state: &mut AppState, channel: WolChannel, key: String, obs
                 channel: channel.clone(),
                 key: key.clone(),
                 observe,
+                ranked,
             },
         };
     }
@@ -2077,7 +2101,7 @@ fn leave_then_create(state: &mut AppState, channel: WolChannel, key: String, obs
         request(state, WolServiceRequest::LeaveChannel);
         retext_wait(state, "WOL:LeavingChannel");
     } else {
-        send_create(state, channel, key, observe);
+        send_create(state, channel, key, observe, ranked);
     }
 }
 
@@ -2182,15 +2206,20 @@ fn popup_action(state: &mut AppState, action: WolPopupAction) {
             observe,
             room,
             name,
+            ranked,
         } => {
             if let Some(room) = room {
                 state.frontend.room_limits = room;
+            }
+            if let Some(ranked) = ranked {
+                state.frontend.wol_room_unranked = !ranked;
             }
             // An untouched Room name keeps gamemd's "%s's_game".
             let default = default_room_name(&nickname(state));
             let name = name.filter(|name| *name != default);
             state.frontend.wol_room_name = name.clone();
-            create_confirmed(state, password, name, clan, limit, observe)
+            let ranked = ranked.unwrap_or(true);
+            create_confirmed(state, password, name, clan, limit, observe, ranked)
         }
         WolPopupAction::CreateCancelled => {
             if let Some(lobby) = lobby_mut(state) {
@@ -2358,6 +2387,7 @@ pub(super) fn begin_create(state: &mut AppState) {
     let limit = globals.limit_resolution;
     let squad = squad_id(state);
     let room = state.frontend.room_limits;
+    let ranked = !state.frontend.wol_room_unranked;
     let name = state
         .frontend
         .wol_room_name
@@ -2370,8 +2400,11 @@ pub(super) fn begin_create(state: &mut AppState) {
     lobby.ui.game_list.selected = None;
     lobby.covered = true;
     // +0x13 starts as [0xAC10C8] == 1. VERA's lobby also offers its room's
-    // limits and name, from the host's last choice.
-    let room = lobby.ui.is_modern().then_some((room, name.as_str()));
+    // limits, name and Ranked game, from the host's last choice.
+    let room = lobby
+        .ui
+        .is_modern()
+        .then_some((room, name.as_str(), ranked));
     lobby.ui.popup = Some(WolLobbyPopup::create(width, limit, squad, observer, room));
     state
         .frontend
@@ -3700,6 +3733,7 @@ fn popup_control(state: &AppState, popup: &WolLobbyPopup) -> Option<u16> {
                 layout.observe.map(|rect| (CREATE_OBSERVE, rect)),
                 Some((POPUP_PASSWORD, layout.password)),
                 layout.name.map(|(_, rect)| (CREATE_NAME, rect)),
+                layout.ranked.map(|rect| (CREATE_RANKED, rect)),
             ]
             .into_iter()
             .flatten()
@@ -3831,10 +3865,11 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         let press = match (picked, over) {
             (Some(RoomLimitsPress::Players), _) => Press::Nothing,
             (Some(RoomLimitsPress::Spectators), _) => Press::Cue(LauncherCue::Checkbox),
-            (_, Some(control @ (CREATE_CLAN | CREATE_LIMIT | CREATE_OBSERVE))) => {
+            (_, Some(control @ (CREATE_CLAN | CREATE_LIMIT | CREATE_OBSERVE | CREATE_RANKED))) => {
                 let window = match control {
                     CREATE_CLAN => rects.clan,
                     CREATE_LIMIT => Some(rects.limit),
+                    CREATE_RANKED => rects.ranked,
                     _ => rects.observe,
                 };
                 if window.is_some_and(|window| {

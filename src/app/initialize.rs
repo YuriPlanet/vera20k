@@ -1197,6 +1197,7 @@ impl App {
                 multiplayer_setup: None,
                 room_limits: Default::default(),
                 wol_room_name: None,
+                wol_room_unranked: false,
                 lan_rematch: None,
                 network_setup_protocol: None,
                 wol_welcome_art: None,
