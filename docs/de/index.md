@@ -31,6 +31,8 @@ Der gesamte veränderliche Spielzustand liegt in einer einzigen Struktur, `Simul
 
 Die App setzt Spielereingaben in Befehle für die Simulation um. Nach jedem Frame übergibt sie den neuen Zustand an den Renderer und spielt die Sounds ab, die der Frame erzeugt hat. Das Rendering liest den Simulationszustand nur, und `sim/` hängt nie von `render/`, `ui/`, `audio/` oder `net/` ab.
 
+![Die Anwendung sendet Befehle an die Simulation, die den Weltzustand zurückgibt; die Anwendung sendet Zeichendaten an das Rendering.](../images/architecture.de.png)
+
 ## Determinismus
 
 Gleicher Zustand, gleiche Eingaben und gleicher Zufalls-Seed müssen auf jeder Plattform und jeder CPU dasselbe Ergebnis liefern.
