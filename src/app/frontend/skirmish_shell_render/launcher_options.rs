@@ -13,8 +13,7 @@ use crate::ui::main_menu_dialogs::options::shell::{
     LauncherLabelAlign, LauncherOptionsLayout, LauncherStatusHelp,
 };
 use crate::ui::main_menu_dialogs::options::{
-    LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherParentResult, OptionsDialogState,
-    Zoom,
+    LauncherButton, LauncherCheckboxId, LauncherComboId, OptionsDialogState, Zoom,
 };
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::util::time::Instant;
@@ -61,93 +60,6 @@ fn text_draw(
     )
 }
 
-/// The board behind the tab column and the form card: the dropdown black,
-/// lifted just enough to read as a surface rather than a hole.
-const SHELL_OPTIONS_BOARD_RGB: [f32; 3] = [0.020, 0.031, 0.024];
-/// The form card the rows sit on: a touch lighter than the board, so the
-/// selected tab can open into it.
-const SHELL_OPTIONS_FORM_RGB: [f32; 3] = [0.048, 0.068, 0.052];
-/// An unselected tab's plate.
-const SHELL_OPTIONS_TAB_RGB: [f32; 3] = [0.031, 0.046, 0.036];
-/// An unselected tab's caption.
-const SHELL_OPTIONS_TAB_TEXT_RGB: [f32; 3] = [0.62, 0.60, 0.50];
-/// The rule under the selected tab's heading.
-const SHELL_OPTIONS_RULE_RGB: [f32; 3] = [0.34, 0.32, 0.24];
-/// A section heading inside the form card.
-const SHELL_OPTIONS_HEADING_RGB: [f32; 3] = [0.92, 0.90, 0.80];
-
-/// One page tab: a plate on the board, with the selected one filled like the
-/// form card and open along its right edge, so the tab reads as the sheet's
-/// own index.
-fn push_options_tab(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    rect: RectPx,
-    selected: bool,
-    body_left: i32,
-    depth: f32,
-) {
-    if selected {
-        // Fill at the card's colour, then three edges only: the right edge is
-        // the opening into the card.
-        push_solid_rect_px(
-            out,
-            atlas.white_pixel,
-            rect,
-            SHELL_OPTIONS_FORM_RGB,
-            depth,
-        );
-        // The opening itself: a tongue of the card's colour across the gutter,
-        // so the tab reads as part of the sheet rather than a button beside it.
-        // It runs the tab's full height and two pixels into the card, so the
-        // card's own left bevel is interrupted exactly where the tab opens,
-        // and the top and bottom rails are then drawn across both so the two
-        // plates read as one continuous line.
-        let tongue_w = (body_left + 3 - (rect.x + rect.w)).max(0);
-        if tongue_w > 0 {
-            push_solid_rect_px(
-                out,
-                atlas.white_pixel,
-                RectPx::new(rect.x + rect.w - 1, rect.y, tongue_w, rect.h),
-                SHELL_OPTIONS_FORM_RGB,
-                depth,
-            );
-        }
-        let edge = OWNERDRAW_BEVEL_LIGHT_RGB_FROM_PACKED_00C5BEA7;
-        let rail_w = rect.w + tongue_w.max(1) - 1;
-        for strip in [
-            RectPx::new(rect.x, rect.y, rail_w, 1),
-            RectPx::new(rect.x, rect.y + 1, 1, rect.h - 1),
-            RectPx::new(rect.x, rect.y + rect.h - 1, rail_w, 1),
-        ] {
-            push_solid_rect_px(out, atlas.white_pixel, strip, edge, depth + 0.00001);
-        }
-        // A yellow spine marks the current page at a glance.
-        push_solid_rect_px(
-            out,
-            atlas.white_pixel,
-            RectPx::new(rect.x + 2, rect.y + 3, 3, rect.h - 6),
-            SHELL_LABEL_TEXT_RGB,
-            depth + 0.00002,
-        );
-    } else {
-        push_solid_rect_px(
-            out,
-            atlas.white_pixel,
-            rect,
-            SHELL_OPTIONS_TAB_RGB,
-            depth,
-        );
-        push_rect_outline(
-            out,
-            atlas,
-            rect,
-            OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68,
-            depth + 0.00001,
-        );
-    }
-}
-
 /// The left-side controls, and the right-panel buttons unless a slide draws
 /// the column in their place.
 fn build_controls(
@@ -159,56 +71,6 @@ fn build_controls(
     let mut out = Vec::new();
     let chrome = atlas.control_chrome();
     let scale = layout.scale;
-    // The left half is one board: a tab column down its left edge and the
-    // selected tab's form card beside it. Painting the board at its full
-    // height is what makes the page fill the left side.
-    push_solid_rect_px(
-        &mut out,
-        atlas.white_pixel,
-        layout.content_panel,
-        SHELL_OPTIONS_BOARD_RGB,
-        SHELL_CONTROL_DEPTH - 0.00013,
-    );
-    push_ownerdraw_two_pixel_bevel_frame_px(
-        &mut out,
-        atlas.white_pixel,
-        layout.content_panel,
-        SHELL_CONTROL_DEPTH - 0.00012,
-    );
-    push_solid_rect_px(
-        &mut out,
-        atlas.white_pixel,
-        layout.content_body,
-        SHELL_OPTIONS_FORM_RGB,
-        SHELL_CONTROL_DEPTH - 0.00011,
-    );
-    push_ownerdraw_two_pixel_bevel_frame_px(
-        &mut out,
-        atlas.white_pixel,
-        layout.content_body,
-        SHELL_CONTROL_DEPTH - 0.00010,
-    );
-    if let Some(rule) = layout.section_rule {
-        push_solid_rect_px(
-            &mut out,
-            atlas.white_pixel,
-            rule,
-            SHELL_OPTIONS_RULE_RGB,
-            SHELL_CONTROL_DEPTH - 0.00009,
-        );
-    }
-    for &(id, rect) in &layout.buttons {
-        if let LauncherButton::Tab(category) = id {
-            push_options_tab(
-                &mut out,
-                atlas,
-                rect,
-                category == dialog.tab(),
-                layout.content_body.x,
-                SHELL_CONTROL_DEPTH - 0.00008,
-            );
-        }
-    }
     for &(id, rect) in &layout.trackbars {
         paint_control(
             &mut out,
@@ -247,30 +109,47 @@ fn build_controls(
             scale,
         );
     }
-    for &(id, rect) in layout.buttons.iter().filter(|_| buttons) {
-        // Back keeps the family column's SDBTNANM cell; the tabs and every
-        // content-page action are drawn from the left-side layout above.
-        match id {
-            LauncherButton::Tab(_) => {}
-            LauncherButton::Exit(LauncherParentResult::Back) => push_right_panel_button_shp(
+    let mut page_buttons = Vec::new();
+    for &(id, rect) in &layout.buttons {
+        let pressed = dialog.shell_button_pressed(id);
+        if id == LauncherButton::CheckForUpdates {
+            page_buttons.push(crate::render::shell_paint::ModalButton {
+                rect,
+                pressed,
+                enabled: true,
+            });
+        } else if buttons {
+            // The page that shows keeps its category button lit in the
+            // owner-draw highlight frame (612B70 record+C5, SDBTNANM 3).
+            push_right_panel_button_shp(
                 &mut out,
                 atlas,
                 rect,
-                dialog.shell_button_pressed(id),
+                crate::ui::shell::button::ButtonVisual {
+                    pressed,
+                    highlighted: dialog.shell_button_selected(id),
+                },
                 false,
                 SHELL_CONTROL_DEPTH,
-            ),
-            _ => push_button_30_scaled(
-                &mut out,
-                atlas,
-                rect,
-                dialog.shell_button_pressed(id),
-                false,
-                SHELL_CONTROL_DEPTH,
-                scale,
-            ),
+            );
         }
     }
+    // Check for Updates is drawn as Sound Options' Play and Stop are
+    // (609FC7..609FE2/60A330): owner-draw type 3, MNBTTN centred on the
+    // control, so it paints with the page's other controls during the slide.
+    let (width, height) = layout.screen();
+    out.extend(crate::render::shell_paint::paint_modal_sprites(
+        None,
+        type3_button_frames(atlas),
+        RectPx::new(0, 0, width as i32, height as i32),
+        &page_buttons,
+        scale,
+        crate::render::shell_paint::ModalDepths {
+            background: SHELL_CONTROL_DEPTH,
+            button: SHELL_CONTROL_DEPTH,
+            text: SHELL_CONTROL_TEXT_DEPTH,
+        },
+    ));
     out
 }
 
@@ -288,6 +167,7 @@ fn build_text(
         let align = match label.align {
             LauncherLabelAlign::Left => ShellAlign::NONE,
             LauncherLabelAlign::Center => ShellAlign::H_CENTER,
+            LauncherLabelAlign::Right => ShellAlign::H_RIGHT,
         };
         if label.title {
             if let Some(window) = title {
@@ -318,11 +198,7 @@ fn build_text(
                 label.text,
                 label.rect,
                 align,
-                if label.heading {
-                    SHELL_OPTIONS_HEADING_RGB
-                } else {
-                    SHELL_LABEL_TEXT_RGB
-                },
+                SHELL_LABEL_TEXT_RGB,
                 glyph,
             ));
         }
@@ -340,18 +216,6 @@ fn build_text(
             SHELL_LABEL_TEXT_RGB,
             glyph,
         ));
-    }
-    for &(rect, id) in &layout.value_labels {
-        if let Some(caption) = dialog.shell_trackbar_caption(id) {
-            out.push(text_draw(
-                font,
-                caption,
-                rect,
-                ShellAlign::V_CENTER,
-                SHELL_LABEL_TEXT_RGB,
-                glyph,
-            ));
-        }
     }
     for &(id, rect) in &layout.trackbars {
         if id.plaque_reserve() > 0 {
@@ -393,30 +257,11 @@ fn build_text(
             glyph,
         ));
     }
-    for &(id, rect) in &layout.buttons {
-        // A tab's caption sits in the plate, not in a button's inset text
-        // rect; the current page's tab goes yellow, the rest stay muted. The
-        // tab column is on the left, so its captions stay up through the
-        // right-panel slide; only the column's own buttons wait for it.
-        if let LauncherButton::Tab(category) = id {
-            let selected = category == dialog.tab();
-            out.push(text_draw(
-                font,
-                category.label(),
-                RectPx::new(rect.x + 8, rect.y, (rect.w - 16).max(1), rect.h),
-                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-                if selected {
-                    SHELL_LABEL_TEXT_RGB
-                } else {
-                    SHELL_OPTIONS_TAB_TEXT_RGB
-                },
-                glyph,
-            ));
-            continue;
-        }
-        if !buttons {
-            continue;
-        }
+    for &(id, rect) in layout
+        .buttons
+        .iter()
+        .filter(|(id, _)| buttons || *id == LauncherButton::CheckForUpdates)
+    {
         let pressed = dialog.shell_button_pressed(id);
         // 612B70 type1: ordinary press retains AC18A4 foreground; the text
         // rectangle changes at61358D..6135CD, independently of SHP geometry.
@@ -482,25 +327,21 @@ pub(crate) fn render_launcher_options(
 ) -> anyhow::Result<()> {
     use crate::app::frontend::shell_transition::ShellSlideKind;
     let now = Instant::now();
-    let (page, tab) = {
-        let dialog = state
-            .frontend
-            .options_dialog
-            .as_ref()
-            .expect("launcher active");
-        (dialog.page(), dialog.tab())
-    };
-    let layout = crate::app::frontend::shell_layout::launcher_options_layout(state, tab);
+    let category = state
+        .frontend
+        .options_dialog
+        .as_ref()
+        .expect("launcher active")
+        .category();
+    let layout = crate::app::frontend::shell_layout::launcher_options_layout(state, category);
     let scale = layout.scale;
     // The teardown slide starts with a full dialog repaint (`0x00622C4F`) and
     // pumps no messages until it ends: every child stays blank. The entry
     // slide suppresses the heading, status line, monitor and column buttons
     // (`0x00606800`); the left-side controls paint.
-    let exit_wave = crate::app::frontend::shell_transition::shell_exit_wave(
-        state,
-        ShellSlideKind::options_page(page),
-    )
-    .cloned();
+    let exit_wave =
+        crate::app::frontend::shell_transition::shell_exit_wave(state, ShellSlideKind::Options)
+            .cloned();
     let leaving = exit_wave.is_some();
     let wave = exit_wave.or_else(|| state.frontend.shell_first_paint_slide.clone());
     let sliding = wave.is_some();
@@ -539,6 +380,11 @@ pub(crate) fn render_launcher_options(
         );
         (title, status)
     };
+    let dialog = state
+        .frontend
+        .options_dialog
+        .as_ref()
+        .expect("launcher active");
     let atlas = state
         .frontend
         .skirmish_shell_chrome
@@ -570,7 +416,6 @@ pub(crate) fn render_launcher_options(
             SHELL_CONTROL_DEPTH,
         );
     }
-    let dialog = state.frontend.options_dialog.as_ref().expect("launcher active");
     if !leaving {
         instances.extend(build_controls(atlas, &layout, dialog, !sliding));
         texts = build_text(&state.renderer.bit_font, &layout, dialog, title, !sliding);

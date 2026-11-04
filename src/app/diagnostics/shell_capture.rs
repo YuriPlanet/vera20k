@@ -80,15 +80,13 @@ const CHECKPOINT_CAMPAIGN_BACK_RETURN: &str = "campaign-back-return";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY: &str = "load-saved-game-0xb7-steady";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_ENTRY_PREFIX: &str = "load-saved-game-0xb7-entry-tick-";
 const CHECKPOINT_OPTIONS_0XD5_STEADY: &str = "options-0xd5-steady";
-/// The category list's row for a category pressed on the settled `0xD5`: that
-/// settings subpage settled.
-const OPTIONS_SETTINGS_CHECKPOINTS: [(&str, Category); 7] = [
+/// A page's column button pressed on the settled `0xD5`: that page showing.
+const OPTIONS_SETTINGS_CHECKPOINTS: [(&str, Category); 6] = [
     ("options-0xd5-settings-display", Category::Display),
-    ("options-0xd5-settings-audio", Category::Audio),
     ("options-0xd5-settings-gameplay", Category::Gameplay),
     ("options-0xd5-settings-interface", Category::Interface),
+    ("options-0xd5-settings-audio", Category::Audio),
     ("options-0xd5-settings-controls", Category::Controls),
-    ("options-0xd5-settings-network", Category::Network),
     ("options-0xd5-settings-developer", Category::Developer),
 ];
 const NETWORK_OPTIONS_CHECKPOINTS: [(&str, movies::NetworkOptionsTarget); 7] = [
@@ -131,12 +129,20 @@ const CHECKPOINT_WOL_0X10E_BACK: &str = "wol-0x10e-back";
 const WOL_QUICK_MATCH_POINT: (i32, i32) = (720, 220);
 const CHECKPOINT_OPTIONS_0XD5_ENTRY_PREFIX: &str = "options-0xd5-entry-tick-";
 /// `options-0xd5-hover-<control>`: the pointer rests on a control (like the
-/// retail helper's hover capture) so the status line shows its help. The
-/// control lives on a category subpage, so each entry names its category.
+/// retail helper's hover capture) so the status line shows its help. Each
+/// entry names the page its control is on; the points are at 800x600.
 const OPTIONS_0XD5_HOVER_CHECKPOINTS: [(&str, Category, (i32, i32)); 3] = [
-    ("options-0xd5-hover-difficulty", Category::Gameplay, (400, 130)),
-    ("options-0xd5-hover-tooltips", Category::Interface, (205, 90)),
-    ("options-0xd5-hover-music", Category::Audio, (400, 90)),
+    (
+        "options-0xd5-hover-difficulty",
+        Category::Gameplay,
+        (224, 156),
+    ),
+    (
+        "options-0xd5-hover-tooltips",
+        Category::Interface,
+        (160, 158),
+    ),
+    ("options-0xd5-hover-music", Category::Audio, (200, 97)),
 ];
 /// `skirmish-0x102-hover-<control>`: once `0x102` settles the pointer rests
 /// on a control, as in the retail stills `sk-hover-start.png` and
@@ -276,7 +282,7 @@ pub enum ShellCaptureCheckpoint {
     LoadSavedGame0xB7Entry(u32),
     /// Main Menu -> Options: `0xD5` settled.
     Options0xD5Steady,
-    /// Then a category row: that settings subpage settled.
+    /// Then a page's column button: that page showing.
     OptionsSettings(Category),
     /// Ordinary D5 -> D7 with explicit service/settings inputs.
     NetworkOptions(movies::NetworkOptionsTarget),
@@ -927,11 +933,13 @@ impl ShellCaptureCheckpoint {
             Self::LoadSavedGame0xB7Steady => CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY,
             Self::LoadSavedGame0xB7Entry(_) => "load-saved-game-0xb7-entry",
             Self::Options0xD5Steady => CHECKPOINT_OPTIONS_0XD5_STEADY,
-            Self::OptionsSettings(category) => OPTIONS_SETTINGS_CHECKPOINTS
-                .iter()
-                .find(|(_, candidate)| *candidate == category)
-                .expect("every Category has an options checkpoint")
-                .0,
+            Self::OptionsSettings(category) => {
+                OPTIONS_SETTINGS_CHECKPOINTS
+                    .iter()
+                    .find(|(_, candidate)| *candidate == category)
+                    .expect("every Category has an options checkpoint")
+                    .0
+            }
             Self::Lan(target) => {
                 movies::LAN_CHECKPOINTS
                     .iter()
@@ -1123,24 +1131,24 @@ impl ShellCaptureCheckpoint {
             Self::Options0xD5Steady => movies::MoviesTarget::Options0xD5 {
                 entry_tick: None,
                 hover: None,
-                tab: Category::Display,
+                category: Category::Display,
             },
             Self::OptionsSettings(category) => movies::MoviesTarget::Options0xD5 {
                 entry_tick: None,
                 hover: None,
-                tab: category,
+                category,
             },
             Self::Options0xD5Entry(tick) => movies::MoviesTarget::Options0xD5 {
                 entry_tick: Some(tick),
                 hover: None,
-                tab: Category::Display,
+                category: Category::Display,
             },
             Self::Options0xD5Hover(index) => {
-                let (_, tab, point) = OPTIONS_0XD5_HOVER_CHECKPOINTS[index];
+                let (_, category, point) = OPTIONS_0XD5_HOVER_CHECKPOINTS[index];
                 movies::MoviesTarget::Options0xD5 {
                     entry_tick: None,
                     hover: Some(point),
-                    tab,
+                    category,
                 }
             }
             Self::CreditsRollFrame(frame) => movies::MoviesTarget::Credits { frame },
@@ -4078,7 +4086,10 @@ mod tests {
         assert!(ShellCaptureCheckpoint::parse("options-0xd5-hover-nothing").is_err());
         for (name, category) in OPTIONS_SETTINGS_CHECKPOINTS {
             let checkpoint = ShellCaptureCheckpoint::parse(name).expect("settings checkpoint");
-            assert_eq!(checkpoint, ShellCaptureCheckpoint::OptionsSettings(category));
+            assert_eq!(
+                checkpoint,
+                ShellCaptureCheckpoint::OptionsSettings(category)
+            );
             assert_eq!(checkpoint.as_str(), name);
         }
     }

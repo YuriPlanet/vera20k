@@ -7,7 +7,7 @@
 
 use super::*;
 use crate::app::input::network_options as input;
-use crate::ui::main_menu_dialogs::options::{LauncherButton, LauncherParentResult};
+use crate::ui::main_menu_dialogs::options::{Category, LauncherButton, LauncherParentResult};
 use crate::ui::network_options::{CANCEL, NetworkOptionsMessage, OK, PORT, SOCKET};
 use crate::ui::shell::geom::RectPx;
 use winit::event::MouseButton;
@@ -149,6 +149,16 @@ fn button_rect(state: &AppState, id: u16) -> Result<RectPx> {
         .context("D7 action missing from production layout")
 }
 
+/// The page `0xD5` shows. Network and Main Menu sit in the column on every
+/// page.
+fn options_page(state: &AppState) -> Category {
+    state
+        .frontend
+        .options_dialog
+        .as_ref()
+        .map_or(Category::Display, |dialog| dialog.category())
+}
+
 impl MoviesCapture {
     pub(super) fn network_options_after_present(
         &mut self,
@@ -164,43 +174,9 @@ impl MoviesCapture {
                 if rendered == PresentedShell::Options
                     && Self::slide_settled(state, ShellSlideKind::Options)
                 {
-                    use crate::ui::main_menu_dialogs::options::Category;
-                    let tab = state
-                        .frontend
-                        .options_dialog
-                        .as_ref()
-                        .map(|dialog| dialog.tab())
-                        .unwrap_or(Category::Display);
-                    // D7 opens from the Network tab, so the route picks that
-                    // tab first; the tab column is always on screen, so this
-                    // is one press and no page slide.
-                    if tab != Category::Network {
-                        let layout = crate::app::frontend::shell_layout::launcher_options_layout(
-                            state, tab,
-                        );
-                        let row = LauncherButton::Tab(Category::Network);
-                        let rect = layout
-                            .buttons
-                            .iter()
-                            .find(|(action, _)| *action == row)
-                            .map(|(_, rect)| *rect)
-                            .context("D5 Network tab")?;
-                        state.match_state.input.cursor_x = (rect.x + rect.w / 2) as f32;
-                        state.match_state.input.cursor_y = (rect.y + rect.h / 2) as f32;
-                        App::handle_launcher_options_mouse(state, None);
-                        App::handle_launcher_options_mouse(state, Some(true));
-                        App::handle_launcher_options_mouse(state, Some(false));
-                        ensure!(
-                            state.frontend.shell_exit.is_none(),
-                            "the Network tab switches in place; it must not run the page's teardown slide"
-                        );
-                        self.route.push(json!({"dialog": 0xd5, "frame": frame,
-                            "action": "Network tab through ordinary pointer handler"}));
-                        return Ok(true);
-                    }
                     let layout = crate::app::frontend::shell_layout::launcher_options_layout(
                         state,
-                        Category::Network,
+                        options_page(state),
                     );
                     let network = LauncherButton::Exit(LauncherParentResult::Network);
                     let rect = layout
@@ -519,14 +495,9 @@ impl MoviesCapture {
                             profile_state(state) == case["state"],
                             "D7 return lost accepted profile values"
                         );
-                        let tab = state
-                            .frontend
-                            .options_dialog
-                            .as_ref()
-                            .map(|dialog| dialog.tab())
-                            .unwrap_or(crate::ui::main_menu_dialogs::options::Category::Display);
                         let layout = crate::app::frontend::shell_layout::launcher_options_layout(
-                            state, tab,
+                            state,
+                            options_page(state),
                         );
                         let main_menu = LauncherButton::Exit(LauncherParentResult::Back);
                         let rect = layout

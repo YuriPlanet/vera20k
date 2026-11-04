@@ -108,9 +108,9 @@ pub(crate) struct FrontendState {
     pub(crate) shell_message_box: Option<ShellMessageBox>,
     /// Retained active-YR launcher Options `0xD5` parent snapshot.
     pub(crate) options_dialog: Option<crate::ui::main_menu_dialogs::OptionsDialogState>,
-    /// The tab the launcher Options dialog reopens on after a child of its
+    /// The page the launcher Options dialog reopens on after a child of its
     /// own (the key-mapping page `0xA3` or Network settings `0xD7`) closes, so
-    /// the tab the player came from comes back.
+    /// the page the player came from comes back.
     pub(crate) options_reopen_at: Option<crate::ui::main_menu_dialogs::options::Category>,
     /// Shared A3 child, reached from launcher Options or paused Game Controls.
     pub(crate) keyboard_dialog: Option<crate::ui::shell::keyboard::KeyboardState>,

@@ -1185,8 +1185,8 @@ impl App {
             displays,
         );
         let mut dialog = dialog;
-        if let Some(tab) = state.frontend.options_reopen_at.take() {
-            dialog.show_tab(tab);
+        if let Some(category) = state.frontend.options_reopen_at.take() {
+            dialog.select_category(category);
         }
         state.frontend.options_dialog = Some(dialog);
     }
@@ -1252,13 +1252,6 @@ impl App {
             }
             None => {
                 state.frontend.options_dialog = Some(dialog);
-                // Vera Options or Back: the showing page slides out first.
-                if let Some(page) = output.page {
-                    Self::leave_shell_dialog(
-                        state,
-                        crate::app::frontend::shell_transition::ShellExitThen::OptionsPage(page),
-                    );
-                }
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 if output.check_for_updates {
                     Self::leave_shell_dialog(
@@ -1270,18 +1263,6 @@ impl App {
         }
     }
 
-    /// The other Options page has slid out: show `page`, whose column slides
-    /// in on the next frame. The dialog and its values stay as they are.
-    fn commit_options_page(
-        state: &mut AppState,
-        page: crate::ui::main_menu_dialogs::options::OptionsPage,
-    ) {
-        if let Some(dialog) = state.frontend.options_dialog.as_mut() {
-            dialog.show_page(page);
-        }
-        state.platform.window.request_redraw();
-    }
-
     /// `0xD5`'s teardown slide has run: commit the controls (`0x0055FAA0`),
     /// then write the profile and build `0xE2` (Main Menu, `0x005FAD10`) or
     /// run the Keyboard page.
@@ -1290,15 +1271,15 @@ impl App {
         result: crate::ui::main_menu_dialogs::options::LauncherParentResult,
     ) {
         // The key page and Network settings are children of Options: closing
-        // one reopens the dialog on the tab the player left. Back and Terminal
-        // end the dialog for good.
+        // one reopens the dialog on the page the player left. Back and
+        // Terminal end the dialog for good.
         state.frontend.options_reopen_at = match result {
             crate::ui::main_menu_dialogs::options::LauncherParentResult::Network
             | crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard => state
                 .frontend
                 .options_dialog
                 .as_ref()
-                .map(|dialog| dialog.tab()),
+                .map(|dialog| dialog.category()),
             _ => None,
         };
         let Some(dialog) = state.frontend.options_dialog.take() else {
@@ -1325,7 +1306,7 @@ impl App {
             state.match_state.input.cursor_y as i32,
         );
         let layout =
-            crate::app::frontend::shell_layout::launcher_options_layout(state, dialog.tab());
+            crate::app::frontend::shell_layout::launcher_options_layout(state, dialog.category());
         match down {
             Some(true) => dialog.shell_mouse_down(x, y, &layout),
             Some(false) => dialog.shell_mouse_up(x, y, &layout),
@@ -1772,7 +1753,6 @@ impl App {
             ShellExitThen::CampaignStart(side) => Self::commit_campaign_start(state, side),
             ShellExitThen::LoadSavedGameBack => Self::commit_load_saved_game_back(state),
             ShellExitThen::Options(result) => Self::commit_launcher_options_result(state, result),
-            ShellExitThen::OptionsPage(page) => Self::commit_options_page(state, page),
             ShellExitThen::KeyboardClose(exit) => {
                 crate::app::input::keyboard::commit_close(state, exit)
             }

@@ -92,9 +92,9 @@ pub(super) enum MoviesTarget {
         entry_tick: Option<u32>,
         /// Rest the pointer here instead of at the neutral point.
         hover: Option<(i32, i32)>,
-        /// The tab captured. Another tab is reached by pressing it on the
-        /// settled dialog.
-        tab: crate::ui::main_menu_dialogs::options::Category,
+        /// The page captured. Another page is reached by pressing its
+        /// column button on the settled dialog.
+        category: crate::ui::main_menu_dialogs::options::Category,
     },
     /// Network on `0xE2`: its teardown slide, then a new `0xE2` with its
     /// own entry slide, captured once settled.
@@ -738,7 +738,7 @@ impl MoviesCapture {
                 let MoviesTarget::Options0xD5 {
                     entry_tick,
                     hover,
-                    tab,
+                    category,
                 } = self.target
                 else {
                     bail!("options phase without an options target");
@@ -747,7 +747,7 @@ impl MoviesCapture {
                     .frontend
                     .options_dialog
                     .as_ref()
-                    .map(|dialog| dialog.tab());
+                    .map(|dialog| dialog.category());
                 if let Some(target) = entry_tick {
                     let tick = state
                         .frontend
@@ -769,22 +769,20 @@ impl MoviesCapture {
                         }
                     }
                 } else if rendered == PresentedShell::Options
-                    && showing.is_some_and(|showing| showing != tab)
-                    && let Some(showing) = showing
+                    && let Some(showing) = showing.filter(|&showing| showing != category)
                     && state.frontend.shell_exit.is_none()
                     && Self::slide_settled(state, ShellSlideKind::Options)
                 {
-                    // The tab column is always on screen: pressing another tab
-                    // swaps the form beside it in place, with no page slide.
-                    let layout = crate::app::frontend::shell_layout::launcher_options_layout(
-                        state, showing,
-                    );
+                    // The page buttons stay in the column: pressing another
+                    // swaps the controls in place, with no slide.
+                    let layout =
+                        crate::app::frontend::shell_layout::launcher_options_layout(state, showing);
                     let rect = layout
                         .buttons
                         .iter()
-                        .find(|(button, _)| *button == LauncherButton::Tab(tab))
+                        .find(|(button, _)| *button == LauncherButton::Category(category))
                         .map(|(_, rect)| *rect)
-                        .context("D5 tab")?;
+                        .context("D5 page button")?;
                     state.match_state.input.cursor_x = (rect.x + rect.w / 2) as f32;
                     state.match_state.input.cursor_y = (rect.y + rect.h / 2) as f32;
                     App::handle_launcher_options_mouse(state, None);
@@ -792,19 +790,19 @@ impl MoviesCapture {
                     App::handle_launcher_options_mouse(state, Some(false));
                     ensure!(
                         state.frontend.shell_exit.is_none(),
-                        "a tab switches the form in place; it must not run the page's teardown slide"
+                        "a page button swaps the controls in place; it must not run the teardown slide"
                     );
                     let swapped = state
                         .frontend
                         .options_dialog
                         .as_ref()
-                        .is_some_and(|dialog| dialog.tab() == tab);
-                    ensure!(swapped, "the tab must be showing after the press");
+                        .is_some_and(|dialog| dialog.category() == category);
+                    ensure!(swapped, "the page must be showing after the press");
                     self.route.push(json!({"dialog": 0xd5, "frame": frame,
-                        "action": "tab through ordinary pointer handler",
-                        "tab": tab.label()}));
+                        "action": "page button through ordinary pointer handler",
+                        "page": format!("{category:?}")}));
                 } else if rendered == PresentedShell::Options
-                    && showing == Some(tab)
+                    && showing == Some(category)
                     && state.frontend.shell_exit.is_none()
                     && Self::slide_settled(state, ShellSlideKind::Options)
                 {
@@ -1509,13 +1507,15 @@ impl MoviesCapture {
             MoviesTarget::Wol(_) => unreachable!("WOL driver handled above"),
             MoviesTarget::NetworkOptions(target) => self.network_options_ready(state, target)?,
             MoviesTarget::Options0xD5 {
-                entry_tick, tab, ..
+                entry_tick,
+                category,
+                ..
             } => {
                 state
                     .frontend
                     .options_dialog
                     .as_ref()
-                    .is_some_and(|dialog| dialog.tab() == tab)
+                    .is_some_and(|dialog| dialog.category() == category)
                     && entry_tick.is_none_or(|target| {
                         state
                             .frontend

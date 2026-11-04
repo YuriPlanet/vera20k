@@ -367,42 +367,15 @@ pub(super) fn push_button_30(
     disabled: bool,
     depth: f32,
 ) {
-    push_button_30_on(out, atlas, rect, pressed, disabled, depth, 1.0);
-}
-
-/// [`push_button_30`] on a scaled page: the three pieces, the tiling period and
-/// the art height grow with the page, so a wide dialog button keeps the stock
-/// proportions instead of shrinking to native size in a 1280x720 dialog.
-pub(super) fn push_button_30_scaled(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    rect: RectPx,
-    pressed: bool,
-    disabled: bool,
-    depth: f32,
-    scale: ShellScale,
-) {
-    push_button_30_on(out, atlas, rect, pressed, disabled, depth, scale.factor());
-}
-
-fn push_button_30_on(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    rect: RectPx,
-    pressed: bool,
-    disabled: bool,
-    depth: f32,
-    factor: f32,
-) {
     let Some((left, mid, right)) = button_entries(atlas, pressed && !disabled) else {
         return;
     };
     let alpha = if disabled { BUTTON_DISABLED_ALPHA } else { 1.0 };
     for segment in build_button_segments(
         rect,
-        left.pixel_size[0] * factor,
-        mid.pixel_size[0] * factor,
-        right.pixel_size[0] * factor,
+        left.pixel_size[0],
+        mid.pixel_size[0],
+        right.pixel_size[0],
     ) {
         let mut entry = match segment.piece {
             ButtonPiece::Left => left,
@@ -416,13 +389,12 @@ fn push_button_30_on(
             entry.uv_size[0] *= segment.uv_width_ratio;
             entry.pixel_size[0] = segment.width;
         }
-        let art_h = entry.pixel_size[1] * factor;
         push_entry_sized_alpha(
             out,
             entry,
             segment.x,
-            button_art_y(rect, art_h, pressed, disabled),
-            [segment.width, art_h],
+            button_art_y(rect, entry.pixel_size[1], pressed, disabled),
+            button_segment_sprite_size(entry, segment),
             depth,
             alpha,
         );
