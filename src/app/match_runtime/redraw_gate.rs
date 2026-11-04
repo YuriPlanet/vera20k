@@ -48,8 +48,9 @@ impl PictureClock {
 /// input, a page switch, a world change, a tooltip, the Save page's blinking
 /// caret or the screen shake (`shake_px`, the offset this pass draws). The
 /// offline battlefield also changes with the camera, the sidebar view, the
-/// message rows, the published detail frame rate and the talk bubble, and
-/// stands only while none of its self-moving owners runs (module docs).
+/// message rows, the published detail frame rate, the talk bubble and each
+/// published atlas growth, and stands only while none of its self-moving
+/// owners runs (module docs).
 /// `None` keeps every refresh drawn: captures, modals, other screens,
 /// network and replay matches, exits and loads, the FPS overlay, a held
 /// mouse button (gadgets repeat on it) and a shake still decaying.
@@ -137,6 +138,7 @@ pub(crate) fn still_frame(
                 messages: presentation.message_list.messages().len(),
                 detail_fps: detail.frame_rate(),
                 talk_bubble: presentation.talk_bubble.shown(clock.wall_ms),
+                atlas_growths: presentation.atlas_growth.published(),
             })
         }
         _ => None,
@@ -176,6 +178,9 @@ pub(crate) enum StillFrame {
         detail_fps: u32,
         /// Whether the talk bubble shows.
         talk_bubble: bool,
+        /// Atlas growths published; each draws sprites the last picture
+        /// lacked.
+        atlas_growths: u64,
     },
 }
 
@@ -307,6 +312,7 @@ mod tests {
             messages: 2,
             detail_fps: 15,
             talk_bubble: bubble,
+            atlas_growths: 0,
         }
     }
 

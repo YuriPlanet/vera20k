@@ -826,6 +826,12 @@ impl App {
                 runtime_pass.main_tick_admitted || tactical_capture.is_some(),
             )
         };
+        // Atlas growths publish before the picture is judged. Captures wait
+        // for them, so their pictures never depend on worker timing.
+        crate::app::match_runtime::sim_tick::publish_entity_atlas_growth(
+            state,
+            shell_capture.is_some() || tactical_capture.is_some(),
+        );
         // A changed picture is drawn in this same pass, so each drawn frame
         // still follows exactly one match service. The picture is judged by
         // the clock before the draw (`redraw_gate::PictureClock`).

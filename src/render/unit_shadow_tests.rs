@@ -122,6 +122,7 @@ fn jumpjet_native_masks_keep_ground_flight_and_frame_payloads_separate() {
         offset_y: -128.,
         native_draw_bounds: Some([-128, -128, 256, 256]),
         shadow_center: None,
+        pool_bytes: 0,
     }];
     let key_for = |caller: &serde_json::Value| UnitSpriteKey {
         type_id: "native-unit".into(),
@@ -164,6 +165,7 @@ fn jumpjet_native_masks_keep_ground_flight_and_frame_payloads_separate() {
                     sprite.height as i32,
                 ]),
                 shadow_center: center,
+                pool_bytes: 0,
             });
         }
     }
@@ -330,6 +332,7 @@ fn shadow_first_fill_hits_and_atlas_growth_keep_payloads() {
             height as i32,
         ]),
         shadow_center: None,
+        pool_bytes: 0,
     };
     let cache = vec![
         make(

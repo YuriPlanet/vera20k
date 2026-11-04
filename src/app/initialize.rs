@@ -1076,6 +1076,7 @@ impl App {
                     unit_atlas: None,
                     palette_set: None,
                     sprite_atlas: None,
+                    atlas_growth: Default::default(),
                     overlay_atlas: None,
                     bridge_atlas: None,
                     sidebar_cameo_atlas: None,
