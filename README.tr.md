@@ -29,6 +29,8 @@ oyuncular söylüyor.
 3. Bilinen RTS özelliklerini ve daha önce hiç görülmemiş bazı özellikleri eklemek.
 4. Entegre çok oyunculu istemci
 
+Güncel öncelikler ve gelecek planları için [yol haritasına](https://github.com/orgs/YuriPlanet/projects/1) bakın.
+
 ## Mevcut durum
 
 **Aktif geliştirme aşamasında.**

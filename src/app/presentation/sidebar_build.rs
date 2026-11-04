@@ -378,6 +378,28 @@ fn shows_queue_badge(item: &crate::ui::sidebar::SidebarItem, structure_badges: b
     counts && (item.queued_count > 1 || (item.queued_count > 0 && !item.is_held_this_type))
 }
 
+/// The top-right badge text: the queue count, or VERA's endless-build mark
+/// (`build_repeat`, Ctrl + left click) after it. The mark is not native.
+fn queue_badge_text(
+    state: &AppState,
+    item: &crate::ui::sidebar::SidebarItem,
+    has_queue_badge: bool,
+) -> Option<String> {
+    if !item.is_superweapon
+        && state
+            .match_state
+            .input
+            .build_repeat
+            .is_repeating(&item.type_id)
+    {
+        return Some(format!("{}{}", item.queued_count, ENDLESS_BUILD_MARK));
+    }
+    has_queue_badge.then(|| item.queued_count.to_string())
+}
+
+/// Shown after the queue count of a type that builds endlessly.
+const ENDLESS_BUILD_MARK: &str = "+";
+
 /// Whether a status label sits at the cameo's left edge instead of centered.
 ///
 /// gamemd keeps two sidebar text slots. `[esp+0x40]` carries `TXT_READY`
@@ -717,8 +739,9 @@ pub(crate) fn build_sidebar_cameo_instances(
         // Dark strip overlay behind queue count badge (top-right, same alpha as Ready strip).
         // Original: ComputeTextRect(cameo_x+60, cameo_y+1, 0x242, x_pad=2, y_pad=1)
         // The dark rect extends x_pad (2px) past the cameo right edge.
-        if has_queue_badge && state.renderer.bit_font.darken_texture().is_some() {
-            let count_str = format!("{}", item.queued_count);
+        if let Some(count_str) = queue_badge_text(state, item, has_queue_badge)
+            && state.renderer.bit_font.darken_texture().is_some()
+        {
             let text_w = state.renderer.bit_font.text_width(&count_str) as f32;
             let strip_w = text_w + QUEUE_COUNT_PAD_X * 2.0;
             let strip_h = state.renderer.bit_font.cell_height() + QUEUE_COUNT_PAD_Y * 2.0;
@@ -816,8 +839,7 @@ pub(crate) fn build_sidebar_text_instances(
         // Queue count badge — right-aligned at top-right of cameo.
         // Original: ComputeTextRect(cameo_x+60, cameo_y+1, 0x242, 2, 1)
         // 0x242 = right-align. Uses same side-dependent color as Ready text.
-        if has_queue_badge {
-            let count_str = format!("{}", item.queued_count);
+        if let Some(count_str) = queue_badge_text(state, item, has_queue_badge) {
             let text_w = state.renderer.bit_font.text_width(&count_str) as f32;
             // Right-align: text right edge at cameo right edge (anchor = cameo_x + 60).
             let text_x = slot.x + slot.w - text_w;

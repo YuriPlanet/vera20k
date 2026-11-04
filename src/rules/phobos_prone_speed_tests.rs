@@ -8,13 +8,17 @@ fn rules(global: &str, techno: &str) -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(&ini)).expect("rules read")
 }
 
-/// `Crawls=` is an ARTMD key, so the type only takes the crawl multiplier when
-/// the art registry projects it. `from_ini_with_fixed_art_for_test` merges the
-/// art for the read side; the projection into `ObjectType::crawls` happens in
-/// `install_art_data`, as it does in production.
-fn rules_with_crawls(global: &str, techno: &str) -> RuleSet {
+/// `Crawls=` is an ARTMD key, so the type only takes the art's value when the
+/// art registry projects it. `from_ini_with_fixed_art_for_test` merges the art
+/// for the read side; the projection into `ObjectType::crawls` happens in
+/// `install_art_data`, as it does in production. Without the key a type keeps
+/// the constructor's true (`0x00523788`).
+fn rules_with_crawls(global: &str, techno: &str, crawls: bool) -> RuleSet {
     let ini = format!("[General]\n{global}[InfantryTypes]\n0=TEST\n[TEST]\nStrength=100\n{techno}");
-    let art = IniFile::from_str("[TEST]\nCrawls=yes\n");
+    let art = IniFile::from_str(&format!(
+        "[TEST]\nCrawls={}\n",
+        if crawls { "yes" } else { "no" }
+    ));
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(&ini), &art)
         .expect("rules with art read");
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
@@ -24,12 +28,17 @@ fn rules_with_crawls(global: &str, techno: &str) -> RuleSet {
 #[test]
 fn prone_speed_follows_the_general_defaults_and_the_crawls_flag() {
     // Untouched rules: Phobos's own defaults, 0.67 crawling and 1.5 not.
-    let plain = rules("", "");
+    let plain = rules_with_crawls("", "", false);
     let ty = plain.object("TEST").expect("TEST type");
     assert!(!ty.crawls);
     assert_eq!(plain.prone_speed_for(ty), 1.5);
 
-    let crawling = rules_with_crawls("", "");
+    let bare = rules("", "");
+    let ty = bare.object("TEST").expect("TEST type");
+    assert!(ty.crawls, "no art keeps the constructor's Crawls");
+    assert_eq!(bare.prone_speed_for(ty), 0.67);
+
+    let crawling = rules_with_crawls("", "", true);
     let ty = crawling.object("TEST").expect("TEST type");
     assert!(ty.crawls, "art Crawls=yes reaches the type");
     assert_eq!(crawling.prone_speed_for(ty), 0.67);
@@ -37,11 +46,19 @@ fn prone_speed_follows_the_general_defaults_and_the_crawls_flag() {
 
 #[test]
 fn the_general_keys_are_per_flag_and_the_type_key_wins() {
-    let plain = rules("ProneSpeed.NoCrawls=1.25\nProneSpeed.Crawls=0.5\n", "");
+    let plain = rules_with_crawls(
+        "ProneSpeed.NoCrawls=1.25\nProneSpeed.Crawls=0.5\n",
+        "",
+        false,
+    );
     let ty = plain.object("TEST").expect("TEST type");
     assert_eq!(plain.prone_speed_for(ty), 1.25);
 
-    let crawling = rules_with_crawls("ProneSpeed.Crawls=0.5\nProneSpeed.NoCrawls=1.25\n", "");
+    let crawling = rules_with_crawls(
+        "ProneSpeed.Crawls=0.5\nProneSpeed.NoCrawls=1.25\n",
+        "",
+        true,
+    );
     let ty = crawling.object("TEST").expect("TEST type");
     assert_eq!(crawling.prone_speed_for(ty), 0.5);
 
@@ -49,6 +66,7 @@ fn the_general_keys_are_per_flag_and_the_type_key_wins() {
     let both = rules_with_crawls(
         "ProneSpeed.Crawls=0.5\nProneSpeed.NoCrawls=1.25\n",
         "ProneSpeed=2.0\n",
+        true,
     );
     let ty = both.object("TEST").expect("TEST type");
     assert_eq!(both.prone_speed_for(ty), 2.0);
@@ -70,7 +88,7 @@ fn only_infantry_sections_carry_the_key() {
 /// convert keeps the default, where stock ReadDouble would store 0.
 #[test]
 fn an_unparsable_global_keeps_the_phobos_default() {
-    let plain = rules("ProneSpeed.NoCrawls=fast\n", "");
+    let plain = rules_with_crawls("ProneSpeed.NoCrawls=fast\n", "", false);
     let ty = plain.object("TEST").expect("TEST type");
     assert_eq!(plain.prone_speed_for(ty), 1.5);
 }

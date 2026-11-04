@@ -31,7 +31,7 @@ pub(crate) use network_failure::render_network_failure;
 mod preview;
 mod text;
 
-pub(crate) use preview::SkirmishPreviewTexture;
+pub(crate) use preview::{SkirmishPreviewTexture, start_marker_picture};
 
 /// The preview the setup dialog shows for `file`, decoded the way BC's own
 /// preview is: the LAN host's `[0xAC1154]` for its preview upload.

@@ -248,6 +248,7 @@ impl App {
                 }
             }
         }
+        crate::app::match_runtime::network_quality::observe_pass(state);
         result
     }
 
@@ -550,11 +551,12 @@ impl App {
         }
     }
 
-    /// The render continuation is allowed only outside every modal, focus,
-    /// exact-step and terminal path. The sequencer remains frame authority.
+    /// The render continuation is allowed only outside every modal, focus
+    /// freeze, exact-step and terminal path. The sequencer remains frame
+    /// authority. A visible window without focus still catches up: it takes
+    /// no player input, and skipping its draws changes no simulation state.
     pub(super) fn next_online_render_frame(state: &AppState) -> Option<(u32, u32)> {
         if state.frontend.screen != GameScreen::InGame
-            || !state.platform.window_active
             || state.platform.window_hidden
             || state.focus_freeze_active()
             || state.match_state.paused()
@@ -826,6 +828,12 @@ impl App {
                 runtime_pass.main_tick_admitted || tactical_capture.is_some(),
             )
         };
+        // Atlas growths publish before the picture is judged. Captures wait
+        // for them, so their pictures never depend on worker timing.
+        crate::app::match_runtime::sim_tick::publish_entity_atlas_growth(
+            state,
+            shell_capture.is_some() || tactical_capture.is_some(),
+        );
         // A changed picture is drawn in this same pass, so each drawn frame
         // still follows exactly one match service. The picture is judged by
         // the clock before the draw (`redraw_gate::PictureClock`).
@@ -1506,10 +1514,18 @@ impl App {
             .queue
             .submit(std::iter::once(encoder.finish()));
         output.present(&state.renderer.gpu.queue);
+        let presented_at = Instant::now();
+        let battlefield = state.frontend.screen == GameScreen::InGame;
         state
             .platform
             .frame_pacer
-            .record_presented(Instant::now(), state.frontend.screen == GameScreen::InGame);
+            .record_presented(presented_at, battlefield);
+        if battlefield {
+            state
+                .match_state
+                .network_quality
+                .record_present(presented_at);
+        }
         if let Some(completed) = state
             .match_state
             .match_diagnostics

@@ -7,7 +7,7 @@
 //! the slots see and applies their effects (the country refresh, a changed
 //! scenario, the `C0` text).
 
-use super::NetworkSetupRequest;
+use super::{NetworkSetupProtocol, NetworkSetupRequest};
 use crate::app::AppState;
 use crate::app::frontend::skirmish_session::cooperative::{
     CooperativeCampaignText, CooperativeSlotContext, SavedCampaignJoin, SavedCampaignLeave,
@@ -210,9 +210,8 @@ pub(super) fn host_opened(state: &mut AppState) -> anyhow::Result<()> {
 /// as BC open's selection does, and keeps the record, which `+0x20` would
 /// replace outside Choose Map. `+0x24` and `+0x60` follow as after Use Map;
 /// C2's opening publish, still queued, carries them, and the partner's
-/// join (`+0x94`) names both players again.
-/// RESIDUAL: that join's tail prints `TXT_SAVE_CAMP_AVAILABLE` after a won
-/// mission, whose save it finds; `+0xAC` runs no join.
+/// join (`+0x94`) names both players again. That join skips `+0x94`'s
+/// saved-campaign tail ([`guest_joined`]): `+0xAC` seats both without one.
 pub(crate) fn resume(state: &mut AppState, resume: CooperativeResume) -> anyhow::Result<()> {
     anyhow::ensure!(
         state
@@ -234,7 +233,11 @@ pub(crate) fn resume(state: &mut AppState, resume: CooperativeResume) -> anyhow:
         parts.progress.request_refresh();
         parts.progress.publish(parts.registry, setup)
     };
-    publish(state, published)
+    publish(state, published)?;
+    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+        protocol.await_cooperative_rematch_seat();
+    }
+    Ok(())
 }
 
 /// `MPGameOptions__SelectScenario` (`0x005E7BF0`) from `+0x20`: the
@@ -422,6 +425,10 @@ pub(super) fn map_used(state: &mut AppState, mode_changed: bool, row: usize) -> 
 /// publishes it; with the pair's save it then adds Choose Map's saved row
 /// or prints `TXT_SAVE_CAMP_AVAILABLE`. Ordinary modes' `+0x94` does
 /// nothing.
+/// VERA: the partner coming back to a kept room ([`resume`]) skips the
+/// tail. In retail BC6's Continue goes through `+0xAC`'s rematch
+/// (`0x005C46E0`) straight to Start_Scenario (`GameExit__Victory`,
+/// `0x00685670`, on LAN and WOL alike), so no join and no tail run there.
 pub(super) fn guest_joined(state: &mut AppState) -> anyhow::Result<()> {
     if !peer_mode_cooperative(state) {
         return Ok(());
@@ -433,6 +440,14 @@ pub(super) fn guest_joined(state: &mut AppState) -> anyhow::Result<()> {
         inputs.with(|_, nodes| parts.progress.join(parts.registry, parts.rng, nodes, setup))
     };
     publish(state, published)?;
+    if state
+        .frontend
+        .network_setup_protocol
+        .as_mut()
+        .is_some_and(NetworkSetupProtocol::take_cooperative_rematch_seat)
+    {
+        return Ok(());
+    }
     let save = state.frontend.multiplayer_shell_runtime.cooperative_save();
     let files = scenario_files(state);
     let files: Vec<(usize, &str)> = files

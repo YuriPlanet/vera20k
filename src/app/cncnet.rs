@@ -163,6 +163,9 @@ pub(crate) struct ExternalLaunchReport {
     pub(crate) opponents_left: bool,
     /// The failure message of a `failed` launch.
     pub(crate) reason: Option<String>,
+    /// Relay matches only: the match's network quality record.
+    pub(crate) network_quality:
+        Option<crate::app::match_runtime::network_quality::NetworkQualityReport>,
 }
 
 impl ExternalLaunchReport {
@@ -196,6 +199,7 @@ impl ExternalLaunchReport {
             duration_seconds: duration,
             opponents_left: progress.opponents_left,
             reason: failure.map(str::to_owned),
+            network_quality: None,
         }
     }
 
@@ -550,11 +554,13 @@ impl App {
     ) -> ExternalLaunchReport {
         let failure = failure
             .or_else(|| state.and_then(|state| state.frontend.external_launch_error.as_deref()));
-        ExternalLaunchReport::new(
+        let mut report = ExternalLaunchReport::new(
             state.and_then(Self::external_match_result),
             state.map(|state| &state.frontend.external_progress),
             failure,
-        )
+        );
+        report.network_quality = state.and_then(|state| state.match_state.network_quality.report());
+        report
     }
 
     /// Desktop: write `spawn_result.json` beside spawn.ini and return the
@@ -839,7 +845,7 @@ mod tests {
             value,
             serde_json::json!({"result":"won","exit_code":10,"mode":"relay","match_id":"m",
                 "source_index":1,"frames":781,"duration_seconds":0.0,"opponents_left":true,
-                "reason":null})
+                "reason":null,"network_quality":null})
         );
         let quit = ExternalLaunchReport::new(None, None, None);
         assert_eq!(

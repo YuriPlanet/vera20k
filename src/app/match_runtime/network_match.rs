@@ -306,6 +306,7 @@ pub(crate) fn post_speed_changes(state: &mut AppState) {
     for change in changes {
         let text = match change {
             MatchSpeedChange::SlowedBy(house) => {
+                state.match_state.network_quality.record_slowdown(house);
                 let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
                     return;
                 };

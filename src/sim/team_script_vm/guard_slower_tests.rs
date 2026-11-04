@@ -82,16 +82,37 @@ fn retail_guard_slower_center_falls_back_when_infantry_cannot_enter_water() {
     );
 }
 
+#[test]
+fn retail_guard_slower_center_weights_an_unarmed_fast_member_once() {
+    // YHVR has no Primary= and Speed=6 (15 leptons/frame). Foot4DBFD0's
+    // NULL GetWeapon(0) test never passes, so it is counted once:
+    // (2688 + 2752 + 2*4224 + 2*4288 + 5888) / 7 = 4050, cell 15. Weighting
+    // it twice would give 34240 / 8 = 4280, cell 16.
+    let Some(Fixture { sim, team, .. }) = Fixture::build(true, false, Some(("YHVR", 5888))) else {
+        return;
+    };
+    assert_eq!(
+        sim.team_script_vm.teams[&team].zone,
+        Some(TeamTarget::Cell { x: 15, y: 10 })
+    );
+}
+
 struct Fixture {
     sim: Simulation,
     rules: RuleSet,
     overlays: OverlayTypeRegistry,
     team: u64,
-    actors: [u64; 4],
+    actors: Vec<u64>,
 }
 
 impl Fixture {
     fn new(guard_slower: bool, water: bool) -> Option<Self> {
+        Self::build(guard_slower, water, None)
+    }
+
+    /// The stock Yuri team, plus `extra` (a type added to its TaskForce and
+    /// the X it stands at) when given.
+    fn build(guard_slower: bool, water: bool, extra: Option<(&str, i32)>) -> Option<Self> {
         let retail = retail_battle_rules_for_map("XMP03T4.MAP")?;
         let (_, assets) = retail_assets()?;
         let overlays =
@@ -104,6 +125,11 @@ impl Fixture {
             scenario.merge(&IniFile::from_str(
                 "[TeamTypes]\n0=05FBBBEC-G\n[05FBBBEC-G]\nGuardSlower=no\n",
             ));
+        }
+        if let Some((kind, _)) = extra {
+            scenario.merge(&IniFile::from_str(&format!(
+                "[TaskForces]\n0=05FBBADC-G\n[05FBBADC-G]\n0=2,BRUTE\n1=1,YURI\n2=1,VIRUS\n3=1,{kind}\nGroup=-1\n"
+            )));
         }
         let registry = TeamAiIniRegistry::load_retail(&assets, &scenario, true).unwrap();
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4DBFD0);
@@ -119,8 +145,14 @@ impl Fixture {
             sim.team_script_vm.team_type_ini[&team_type].guard_slower,
             guard_slower
         );
-        let mut actors = [0; 4];
-        for (index, kind) in ["BRUTE", "BRUTE", "YURI", "VIRUS"].into_iter().enumerate() {
+        let mut kinds = vec!["BRUTE", "BRUTE", "YURI", "VIRUS"];
+        let mut xs = vec![2688, 2752, 4224, 4288];
+        if let Some((kind, x)) = extra {
+            kinds.push(kind);
+            xs.push(x);
+        }
+        let mut actors = Vec::new();
+        for (index, kind) in kinds.into_iter().enumerate() {
             let id = sim
                 .spawn_object(
                     kind,
@@ -131,7 +163,7 @@ impl Fixture {
                     &rules,
                 )
                 .unwrap();
-            actors[index] = id;
+            actors.push(id);
         }
         // Recruit/form while clustered, so earlier formation orders cannot hide
         // the later Regroup destination. No Team flags or script cursor are set.
@@ -146,7 +178,7 @@ impl Fixture {
         }
         let state = &sim.team_script_vm.teams[&team];
         assert_eq!(state.current_action(&sim.team_script_vm), 5);
-        for (&id, x) in actors.iter().zip([2688, 2752, 4224, 4288]) {
+        for (&id, x) in actors.iter().zip(xs) {
             sim.foot_set_location_marked(
                 id,
                 DriveCoord { x, y: 2688, z: 0 },

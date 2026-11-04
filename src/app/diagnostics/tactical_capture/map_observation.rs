@@ -574,6 +574,15 @@ pub(crate) struct MapCaptureProfile {
         skip_serializing_if = "Option::is_none"
     )]
     camera_top_left: Option<[i32; 2]>,
+    // Opt-in start markers in the render evidence: each multiplayer start
+    // waypoint's number, world pixel and marker picture, for whole-map
+    // pictures (tools/map_render.py).
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    observe_start_markers: Option<bool>,
     #[serde(
         default,
         deserialize_with = "deserialize_present",
@@ -659,6 +668,7 @@ impl MapCaptureProfile {
                     && self.observe_crates.is_none()
                     && self.camera_cell.is_none()
                     && self.camera_top_left.is_none()
+                    && self.observe_start_markers.is_none()
                     && self.cursor_position.is_none()
                     && self.terrain_cells.is_none()
                     && self.observe_super_weapons.is_none()
@@ -4658,6 +4668,9 @@ impl TacticalCaptureSession {
             .last_render_evidence
             .clone()
             .context("map render evidence absent")?;
+        if profile.value.observe_start_markers == Some(true) {
+            render["start_markers"] = start_marker_evidence(state)?;
+        }
         // Serialize the actual transcript only once, avoiding quadratic work
         // across the up-to-100000-step capture route.
         render["presentation_clock"] = json!({"policy": MAP_PRESENTATION_CLOCK_POLICY,
@@ -4718,6 +4731,49 @@ impl TacticalCaptureSession {
             PublishFault::None,
         )
     }
+}
+
+/// Each multiplayer start waypoint with the mark the skirmish preview draws
+/// for a start (`DrawStartPositions 0x00640710`), for whole-map pictures
+/// (tools/map_render.py): its 1-based number, the world pixel at its cell's
+/// centre on the terrain, and the marker picture with that pixel at `origin`.
+fn start_marker_evidence(state: &AppState) -> Result<Value> {
+    use base64::Engine;
+    let assets = state
+        .process_assets
+        .manager()
+        .context("start markers need the process assets")?;
+    let art = crate::render::skirmish_shell_chrome::start_marker_art(assets)
+        .context("start marker art STARTBUT.SHP is unavailable")?;
+    let font = crate::assets::fnt_file::FntFile::from_bytes(
+        assets
+            .get_ref("GAME.FNT")
+            .context("start marker font GAME.FNT is unavailable")?,
+    )
+    .context("GAME.FNT")?;
+    let view = state
+        .sim_view()
+        .context("start markers lost the simulation")?;
+    let terrain = view
+        .resolved_terrain()
+        .context("start markers lost the terrain")?;
+    let (sub_x, sub_y) = crate::util::lepton::subcell_lepton_offset(None);
+    let mut markers = Vec::new();
+    for (&index, &(rx, ry)) in view.session().mp_start_waypoints() {
+        let cell = terrain
+            .cell(rx, ry)
+            .with_context(|| format!("start waypoint {index} at ({rx}, {ry}) has no cell"))?;
+        let label = (index + 1).to_string();
+        let picture =
+            crate::app::frontend::skirmish_shell_render::start_marker_picture(&art, &font, &label)
+                .with_context(|| format!("GAME.FNT cannot draw start number {label}"))?;
+        let (x, y) = crate::util::lepton::lepton_to_screen(rx, ry, sub_x, sub_y, cell.level);
+        markers.push(json!({"label": label, "anchor": [x as i32, y as i32],
+            "picture": {"size": [picture.width, picture.height],
+                "origin": [picture.origin.0, picture.origin.1],
+                "rgba": base64::engine::general_purpose::STANDARD.encode(&picture.rgba)}}));
+    }
+    Ok(Value::Array(markers))
 }
 
 /// A scene with no voxel demand never builds the unit atlas (the builder keeps
@@ -5709,7 +5765,7 @@ mod tests {
     }
 
     #[test]
-    fn camera_top_left_is_a_v2_field_apart_from_camera_cell() {
+    fn camera_top_left_and_start_markers_are_v2_fields() {
         let mut profile = example();
         profile.camera_top_left = Some([-1766, 908]);
         profile.validate().unwrap();
@@ -5717,6 +5773,9 @@ mod tests {
         assert!(profile.validate().is_err());
         profile.camera_cell = None;
         profile.schema_version = PROFILE_V1.to_owned();
+        assert!(profile.validate().is_err());
+        profile.camera_top_left = None;
+        profile.observe_start_markers = Some(true);
         assert!(profile.validate().is_err());
     }
 

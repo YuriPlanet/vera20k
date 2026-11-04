@@ -13,7 +13,8 @@
 //! The online variant plays the same chooser in a VERA room over the
 //! deployed lobby and wins the first stage the same way. BC6's Continue
 //! there leaves at once for the kept room, which comes back on the next
-//! stage; the host starts it as a first start, and it runs over the relay.
+//! stage without `TXT_SAVE_CAMP_AVAILABLE` in either setup's chat; the host
+//! starts it as a first start, and it runs over the relay.
 
 use super::*;
 use crate::app::diagnostics::shell_capture::movies::abort_return::AbortReturnInput;
@@ -200,7 +201,9 @@ impl CooperativeRun {
     }
 
     /// Online, BC6's Continue returns both players to the kept room. True
-    /// once it seats both on Cooperative's stage after the won one.
+    /// once it seats both on Cooperative's stage after the won one. Retail's
+    /// rematch `+0xAC` (`0x005C46E0`) seats them without a join, so the
+    /// partner's return must not print `+0x94`'s saved-campaign notice.
     pub(super) fn room_returned(
         &mut self,
         state: &AppState,
@@ -222,6 +225,23 @@ impl CooperativeRun {
             && next.is_some()
             && next != self.first_map
         {
+            let notice =
+                App::csf_label(state, "TXT_SAVE_CAMP_AVAILABLE", "TXT_SAVE_CAMP_AVAILABLE");
+            let shown = state
+                .frontend
+                .multiplayer_setup
+                .as_ref()
+                .is_some_and(|setup| {
+                    setup
+                        .chat
+                        .lines
+                        .iter()
+                        .any(|line| String::from_utf16_lossy(&line.text) == notice)
+                });
+            ensure!(
+                !shown,
+                "the kept room printed {notice:?} for the partner's return"
+            );
             route.push(json!({"render_frame":frame,"action":"kept room back in Cooperative on the next stage","map":next}));
             self.next_map = next;
             self.phase = CoopPhase::AwaitNext;

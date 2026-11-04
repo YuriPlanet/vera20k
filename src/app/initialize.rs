@@ -1076,6 +1076,7 @@ impl App {
                     unit_atlas: None,
                     palette_set: None,
                     sprite_atlas: None,
+                    atlas_growth: Default::default(),
                     overlay_atlas: None,
                     bridge_atlas: None,
                     sidebar_cameo_atlas: None,
@@ -1086,6 +1087,7 @@ impl App {
                 },
                 match_audio: Default::default(),
                 match_diagnostics: Default::default(),
+                network_quality: Default::default(),
                 #[cfg(feature = "telemetry-dashboard")]
                 telemetry_timing: Default::default(),
                 #[cfg(feature = "telemetry-dashboard")]

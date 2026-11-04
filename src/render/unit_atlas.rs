@@ -475,7 +475,7 @@ impl UnitAtlas {
                 let entry = unit_entry(&sprite, origin, group.page, page_size);
                 self.entries.insert(sprite.key.clone(), entry);
                 self.pool_bytes
-                    .insert(sprite.key.clone(), sprite.pool_bytes());
+                    .insert(sprite.key.clone(), sprite.pool_bytes);
                 self.rendered_cache.push(sprite);
             }
         }
@@ -596,19 +596,21 @@ struct CachedUnitSprite {
     ///756860 adds its mask displacement to this fractional center before
     ///truncating. Source: the same model/key/HVA geometry as these pixels.
     shadow_center: Option<[f32; 2]>,
+    /// The pool bytes the original's image cache takes for these pixels
+    /// ([`crate::render::voxel_image_cache::sprite_pool_bytes`]). Counted
+    /// where the sprite is rasterized, so live growth scans no pixels on the
+    /// frame that publishes it.
+    pool_bytes: u32,
 }
 
 impl CachedUnitSprite {
-    fn pool_bytes(&self) -> u32 {
-        crate::render::voxel_image_cache::sprite_pool_bytes(
-            &self.pixels,
-            [self.width, self.height],
-            [self.offset_x, self.offset_y],
-            self.native_draw_bounds,
-        )
-    }
-
     fn from_rendered(rs: RenderedSprite) -> Self {
+        let pool_bytes = crate::render::voxel_image_cache::sprite_pool_bytes(
+            &rs.sprite.palette_indices,
+            [rs.sprite.width, rs.sprite.height],
+            [rs.sprite.offset_x, rs.sprite.offset_y],
+            rs.native_draw_bounds,
+        );
         Self {
             key: rs.key,
             pixels: rs.sprite.palette_indices,
@@ -618,6 +620,7 @@ impl CachedUnitSprite {
             offset_y: rs.sprite.offset_y,
             native_draw_bounds: rs.native_draw_bounds,
             shadow_center: None,
+            pool_bytes,
         }
     }
 }
@@ -811,11 +814,12 @@ fn needed_unit_keys(
 }
 
 /// Caller-owned upload state. Resident GPU pages never enter a raster worker.
+/// It completes into the atlas it was prepared against, which stays in use
+/// while the raster runs.
 pub(crate) struct UnitAtlasUpload {
     started: Instant,
     frame_counts: UnitFrameCounts,
     missing: UnitAtlasDemand,
-    existing: Option<UnitAtlas>,
 }
 
 /// Owned display inputs derived from the scene; no scene state is copied.
@@ -839,7 +843,9 @@ pub(crate) struct UnitRasterOutput {
 /// (`PreparedDraw::render_cpu`), each model's poses spread over the cores.
 ///
 /// Returns `None` only when no prior atlas exists and no voxel sprite can be
-/// produced.
+/// produced. The synchronous composition of [`prepare_unit_atlas`], the
+/// raster and [`UnitAtlasUpload::finish`]; live growth runs the raster on a
+/// worker instead ([`crate::render::entity_atlas_growth`]).
 pub fn build_unit_atlas(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -850,17 +856,21 @@ pub fn build_unit_atlas(
     existing: Option<UnitAtlas>,
     interner: Option<&crate::sim::intern::StringInterner>,
 ) -> Option<UnitAtlas> {
-    let (work, upload) = prepare_unit_atlas(entities, asset_manager, rules, existing, interner);
-    upload.finish(device, queue, batch, work.render())
+    let (work, upload) =
+        prepare_unit_atlas(entities, asset_manager, rules, existing.as_ref(), interner);
+    let mut atlas = existing;
+    upload.finish(device, queue, batch, work.render(), &mut atlas);
+    atlas
 }
 
 /// Freeze the physical source choices in their established model/key order.
 /// CPU raster scheduling may change; asset resolution and simulation do not.
+/// `existing` is the atlas the upload will complete into.
 pub(crate) fn prepare_unit_atlas(
     entities: &crate::sim::entity_store::EntityStore,
     asset_manager: &AssetManager,
     rules: Option<&RuleSet>,
-    existing: Option<UnitAtlas>,
+    existing: Option<&UnitAtlas>,
     interner: Option<&crate::sim::intern::StringInterner>,
 ) -> (UnitRasterWork, UnitAtlasUpload) {
     let started = Instant::now();
@@ -869,7 +879,7 @@ pub(crate) fn prepare_unit_atlas(
     // Body/Turret/Barrel entries per facing; for the rest a single Composite
     // entry per facing. Multi-frame HVA units get entries for each frame.
     let demand = UnitAtlasDemand::of_world(entities, rules, interner);
-    let missing = match &existing {
+    let missing = match existing {
         Some(atlas) => demand.without(&atlas.covered),
         None => demand,
     };
@@ -885,7 +895,6 @@ pub(crate) fn prepare_unit_atlas(
                 started,
                 frame_counts: BTreeMap::new(),
                 missing,
-                existing,
             },
         );
     }
@@ -894,11 +903,7 @@ pub(crate) fn prepare_unit_atlas(
     // shares its flat keys with the resident ones.
     let mut new_keys: Vec<UnitSpriteKey> = needed
         .into_iter()
-        .filter(|key| {
-            existing
-                .as_ref()
-                .is_none_or(|atlas| !atlas.entries.contains_key(key))
-        })
+        .filter(|key| existing.is_none_or(|atlas| !atlas.entries.contains_key(key)))
         .collect();
     // By model, then pose: each model is parsed once, and each pose's body,
     // turret and barrel are rasterized once for its three part keys.
@@ -969,7 +974,6 @@ pub(crate) fn prepare_unit_atlas(
             started,
             frame_counts,
             missing,
-            existing,
         },
     )
 }
@@ -978,6 +982,27 @@ impl UnitRasterWork {
     /// prepare_unit_atlas. It owns no simulation, asset manager or GPU handles.
     pub(crate) fn render(self) -> UnitRasterOutput {
         self.render_cancellable(&std::sync::atomic::AtomicBool::new(false))
+    }
+
+    /// Rasterize on a worker thread, which sends the output once and ends.
+    /// Setting `cancelled` stops it between models and poses; the receiver
+    /// may be dropped at any time. Map load and live growth share it.
+    pub(crate) fn spawn(
+        self,
+        cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> std::io::Result<std::sync::mpsc::Receiver<UnitRasterOutput>> {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        {
+            let _ = sender.send(self.render_cancellable(&cancelled));
+        }
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        std::thread::Builder::new()
+            .name("voxel-atlas-raster".into())
+            .spawn(move || {
+                let _ = sender.send(self.render_cancellable(&cancelled));
+            })?;
+        Ok(receiver)
     }
 
     pub(crate) fn render_cancellable(
@@ -1052,48 +1077,51 @@ impl UnitRasterWork {
 }
 impl UnitAtlasUpload {
     /// Main-thread completion of the same atlas owner used by map loading and
-    /// live growth. CPU workers never expose partially uploaded resources.
+    /// live growth: append to `atlas`, or pack a new one when there is none.
+    /// `atlas` must be the one this upload was prepared against. CPU workers
+    /// never expose partially uploaded resources. Whether `atlas` now covers
+    /// this upload's models; it is left as it was when it does not.
     pub(crate) fn finish(
         self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         batch: &BatchRenderer,
         output: UnitRasterOutput,
-    ) -> Option<UnitAtlas> {
+        atlas: &mut Option<UnitAtlas>,
+    ) -> bool {
         let Self {
             started,
             frame_counts,
             missing,
-            existing,
         } = self;
         if missing.is_empty() {
-            return existing;
+            return false;
         }
         let rendered = output.rendered;
         // Step 3: shelf-pack into new pages at map load; afterwards append to a
         // growth page so resident sprites are never repacked or re-uploaded.
         let added = rendered.len();
-        let mut atlas = match existing {
-            Some(mut atlas) => {
+        let atlas = match atlas {
+            Some(atlas) => {
                 atlas.append_sprites(device, queue, batch, rendered);
                 atlas
             }
             None if rendered.is_empty() => {
                 log::warn!("No unit sprites rendered");
-                return None;
+                return false;
             }
             None => match pack_sprites_on_device(device, queue, batch, &rendered) {
-                Ok(mut atlas) => {
-                    atlas.pool_bytes = rendered
+                Ok(mut packed) => {
+                    packed.pool_bytes = rendered
                         .iter()
-                        .map(|sprite| (sprite.key.clone(), sprite.pool_bytes()))
+                        .map(|sprite| (sprite.key.clone(), sprite.pool_bytes))
                         .collect();
-                    atlas.rendered_cache = rendered;
-                    atlas
+                    packed.rendered_cache = rendered;
+                    atlas.insert(packed)
                 }
                 Err(err) => {
                     log::error!("Unit atlas packing failed: {err}");
-                    return None;
+                    return false;
                 }
             },
         };
@@ -1114,7 +1142,7 @@ impl UnitAtlasUpload {
             atlas.page_count(),
             page_dimensions,
         );
-        Some(atlas)
+        true
     }
 }
 

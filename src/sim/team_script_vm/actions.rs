@@ -2344,7 +2344,7 @@ impl Simulation {
                             self,
                             member,
                             rules,
-                            None,
+                            registry,
                             frame_effects,
                         );
                     }

@@ -29,6 +29,9 @@ VERA20K is made by gamers, for gamers, and gamers have the final say in where it
 3. Incorporate known RTS features and some never seen before.
 4. Integrated multiplayer client
 
+See the [roadmap](https://github.com/orgs/YuriPlanet/projects/1) for current priorities
+and future plans.
+
 ## Current status
 
 **In active development.**

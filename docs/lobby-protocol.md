@@ -54,7 +54,10 @@ every reader for 10 seconds.
 within a session and retries are idempotent. Responses and
 `GET /v1/events?after=<cursor>` return `{events:[{sequence,kind,payload}],cursor}`.
 Sequences increase within a session. An event appears once logically even when
-responses are repeated. `GET /v1/channels?kind=0|41` returns `{kind,channels}`.
+responses are repeated. `GET /v1/channels?kind=0|41` returns `{kind,channels}`. The
+`kind=41` list leaves out game rooms whose host's `User-Agent` named another version than
+the caller's, since those could never start together (two sessions that do not both name a
+version see each other's rooms).
 Clients poll at most once per second. Responses contain at most 256 events and
 256 KiB of UTF-8 JSON.
 `GET /v1/events/stream?after=<cursor>` with a WebSocket upgrade and the bearer (protocol 4
@@ -439,6 +442,15 @@ A session whose version is older than `version` in
 since a match starts only between equal versions (`ready`, `start`). It arrives
 as a notice does: at once in the public channel or a game room that has not started,
 otherwise on the next public-channel join.
+A session that still joins a game room from another version, through a buddy's game or
+its name, makes every member hear a `chat` line from the notice sender naming both
+versions.
+
+Each `join` of the public channel gives the joining session one `chat` line from the
+notice sender after its `joined`. The line says how many players are online: in the
+public channel, in game rooms, playing, for sessions that play Quick Match searching on
+their version, and elsewhere. It also counts the game rooms the list leaves out for another
+version and, when the list holds none for the session, says how to start a game.
 
 ## Quick Match
 
@@ -462,6 +474,18 @@ a fresh random u32 seed and each player's COU and COL as sent. Pairing is first 
 served between two players whose `User-Agent` names the same version (two unknown versions
 may pair); the earlier waiter hosts. Leaving `Lob_40_0` (leave, logout, expiry or another
 join) leaves the queue.
+A request that puts a player in the queue without pairing them makes them first in line for
+their version. They then get private `Info <text>` lines after `Working`, which the game
+prints as they come. These say:
+- that the match starts when another player presses Quick Match;
+- how many others wait on another version;
+- how many public-channel players heard of the search;
+- that their game sent the side and colour last picked for a multiplayer game.
+
+Those players are the public channel's sessions that play Quick Match on the same version.
+Each gets a `chat` line from the notice sender, `<name> is looking for a Quick Match. Press
+Quick Match to play them.`, at most once every 5 minutes from each network.
+
 The host's game then leaves and `create`s the two-player game `<host>'s_game` with
 `tournament:1` and the `ex_info` of a Create; the guest's stays in `Lob_40_0`, lists `kind=41`
 up to 30 times, 100 ms apart, for that name (without case) and joins it, which leaves

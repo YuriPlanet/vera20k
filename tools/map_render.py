@@ -8,6 +8,17 @@ show (each capture's ``view_area``); the picture is then shrunk by a whole facto
 to at most ``--width`` pixels wide, each pixel the mean of the block it covers,
 and written as an RGB PNG.
 
+Each multiplayer start then gets the skirmish preview's marker
+(``DrawStartPositions`` 0x00640710: STARTBUT.SHP with its number in yellow
+GAME.FNT), the first capture's ``start_markers``. It is drawn
+``round(max(width / 240, height / 150))`` times its size, so it shows at its own
+size in the 240 x 150 box vera20k.org/maps shows the picture in. Unlike the
+game's preview, which marks the ``[Header]`` start points, a marker sits on its
+start waypoint's cell centre at the terrain's height, and a map whose header
+lists no starts still gets them. Where the game would draw two markers over each
+other, they are pushed apart along the line between them until their anchors
+lie a marker's width and two pixels apart, so every number stays readable.
+
     python3 -m tools.map_render --map /abs/map.yrm --output /abs/preview.png
 
 Run it from a checkout whose config.toml points at the retail game, with a
@@ -20,6 +31,7 @@ once the picture is written and kept when a capture fails.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import math
 import shutil
@@ -40,6 +52,11 @@ CONTRACT = ROOT / 'src' / 'app' / 'diagnostics' / 'tactical_capture' / 'contract
 FRAME = (4096, 4096)
 # A camera request beyond every map's edge, which the clamp moves to that edge.
 FAR = 1 << 30
+# The box vera20k.org/maps shows each picture in (.map-preview in the website's
+# styles.css), where the start markers show at their own size.
+LIST_BOX = (240, 150)
+# The pixels, at the marker's own size, between two start markers pushed apart.
+MARKER_GAP = 2
 # vera20k's input delay without a config.toml value (default_input_delay_ticks,
 # src/util/config.rs); a capture must ask for the configured one.
 DEFAULT_INPUT_DELAY = 15
@@ -54,7 +71,8 @@ class Tile:
     frame: bytes
 
 
-def tile_profile(map_path: Path, top_left: tuple[int, int], input_delay: int) -> dict:
+def tile_profile(map_path: Path, top_left: tuple[int, int], input_delay: int,
+                 markers: bool = False) -> dict:
     profile = json.loads(EXAMPLE.read_text())
     launch = profile['launch']
     launch['selected_map_file'] = str(map_path)
@@ -64,6 +82,8 @@ def tile_profile(map_path: Path, top_left: tuple[int, int], input_delay: int) ->
     profile.update(ticks=0, width=width, height=height, input_delay_ticks=input_delay,
                    timeout_seconds=300, cursor_position=[width - 80, height - 44],
                    camera_top_left=list(top_left))
+    if markers:
+        profile['observe_start_markers'] = True
     return profile
 
 
@@ -119,15 +139,62 @@ def shrink(rgb: bytes, width: int, height: int, factor: int) -> tuple[bytes, int
     return bytes(out), out_w, out_h
 
 
+def spread(spots: list[tuple[int, int]], distance: float) -> list[tuple[int, int]]:
+    """The spots with each two closer than `distance` pushed apart along the line between
+    them, about their midpoint, until `distance` separates them; others stay where they are."""
+    points = [[float(x), float(y)] for x, y in spots]
+    for _ in range(100):
+        moved = False
+        for index, first in enumerate(points):
+            for second in points[index + 1:]:
+                dx, dy = second[0] - first[0], second[1] - first[1]
+                gap = math.hypot(dx, dy)
+                if gap >= distance - 0.01:
+                    continue
+                # Spots on top of each other part sideways.
+                ux, uy = (dx / gap, dy / gap) if gap else (1.0, 0.0)
+                push = (distance - gap) / 2
+                first[0], first[1] = first[0] - ux * push, first[1] - uy * push
+                second[0], second[1] = second[0] + ux * push, second[1] + uy * push
+                moved = True
+        if not moved:
+            break
+    return [(round(x), round(y)) for x, y in points]
+
+
+def mark_starts(rgb: bytes, width: int, height: int, markers: list[dict],
+                area: tuple[float, float, float, float], factor: int) -> bytes:
+    """Packed RGB with each start marker on its anchor, shrunk by `factor` from world `area`,
+    overlapping markers spread apart."""
+    scale = max(1, round(max(width / LIST_BOX[0], height / LIST_BOX[1])))
+    canvas = bytearray(rgb)
+    anchors = [(math.floor((marker['anchor'][0] - area[0]) / factor),
+                math.floor((marker['anchor'][1] - area[1]) / factor)) for marker in markers]
+    widest = max((marker['picture']['size'][0] for marker in markers), default=0)
+    for marker, (anchor_x, anchor_y) in zip(markers, spread(anchors, (widest + MARKER_GAP) * scale)):
+        picture = marker['picture']
+        (columns, rows), (origin_x, origin_y) = picture['size'], picture['origin']
+        rgba = base64.b64decode(picture['rgba'])
+        left, top = anchor_x - origin_x * scale, anchor_y - origin_y * scale
+        for y in range(max(0, -top), min(rows * scale, height - top)):
+            for x in range(max(0, -left), min(columns * scale, width - left)):
+                pixel = ((y // scale) * columns + x // scale) * 4
+                if rgba[pixel + 3]:
+                    at = ((top + y) * width + left + x) * 3
+                    canvas[at:at + 3] = rgba[pixel:pixel + 3]
+    return bytes(canvas)
+
+
 def input_delay(checkout: Path) -> int:
     config = tomllib.loads((checkout / 'config.toml').read_text())
     return int(config.get('gameplay', {}).get('input_delay_ticks', DEFAULT_INPUT_DELAY))
 
 
 def capture_tile(work: Path, index: int, map_path: Path, top_left: tuple[int, int], delay: int,
-                 checkout: Path, binary: dict) -> tuple[Tile, tuple[float, float, float, float]]:
+                 checkout: Path, binary: dict, markers: bool = False) -> tuple[Tile, dict]:
+    """The tile and the capture's evidence (its view_area, and start_markers when asked for)."""
     profile_path = work / f'tile-{index}.json'
-    profile_path.write_text(json.dumps(tile_profile(map_path, top_left, delay)))
+    profile_path.write_text(json.dumps(tile_profile(map_path, top_left, delay, markers)))
     report = observation.capture(profile_path=profile_path, contract_path=CONTRACT,
                                  output=work / f'tile-{index}', working_directory=checkout, **binary)
     if report['status'] != 'VALID':
@@ -135,7 +202,7 @@ def capture_tile(work: Path, index: int, map_path: Path, top_left: tuple[int, in
     evidence = report['capture']
     frame = Path(evidence['frame']['path']).read_bytes()
     tile = Tile(tuple(evidence['camera']['top_left']), tuple(evidence['tactical_extent']), FRAME[0], frame)
-    return tile, tuple(evidence['view_area'])
+    return tile, evidence
 
 
 def render(map_path: Path, output: Path, max_width: int, checkout: Path, binary: dict) -> tuple[int, int, int]:
@@ -143,7 +210,9 @@ def render(map_path: Path, output: Path, max_width: int, checkout: Path, binary:
     work = Path(tempfile.mkdtemp(prefix=f'{output.stem}.tiles-', dir=output.parent)).resolve()
     delay = input_delay(checkout)
     try:
-        first, area = capture_tile(work, 0, map_path, (-FAR, -FAR), delay, checkout, binary)
+        first, evidence = capture_tile(work, 0, map_path, (-FAR, -FAR), delay, checkout, binary,
+                                       markers=True)
+        area = tuple(evidence['view_area'])
         tiles = [first]
         requests = [(x, y) for y in axis_requests(area[1], area[3], first.extent[1])
                     for x in axis_requests(area[0], area[2], first.extent[0])]
@@ -153,7 +222,9 @@ def render(map_path: Path, output: Path, max_width: int, checkout: Path, binary:
     except (RuntimeError, observation.ValidationError) as error:
         raise RuntimeError(f'{error} (tile runs kept in {work})') from None
     rgb, width, height = stitch(tiles, area)
-    small, width, height = shrink(rgb, width, height, max(1, math.ceil(width / max_width)))
+    factor = max(1, math.ceil(width / max_width))
+    small, width, height = shrink(rgb, width, height, factor)
+    small = mark_starts(small, width, height, evidence['start_markers'], area, factor)
     partial = output.with_name(output.name + '.partial')
     write_png_rgb(partial, width, height, small)
     partial.replace(output)
