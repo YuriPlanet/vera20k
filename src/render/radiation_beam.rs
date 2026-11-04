@@ -1,5 +1,6 @@
-//! RadBeam straight drawing659650/659AC0. Coordinates are world leptons;
-//! the shared surface-line owner performs packed RGB565/A/Z stores.
+//! RadBeam straight drawing659650/659AC0 and eruption drawing
+//! 659CA0/659E30/659EE0/659FF0. Coordinates are world leptons; the shared
+//! surface-line owner performs packed RGB565/A/Z stores.
 //! Original numeric/geometry controls: procedural_drawing_oracle/rad_beam.
 
 use super::surface_line::{SurfaceLine, SurfaceLineBlend, SurfaceLineViewport};
@@ -10,8 +11,9 @@ use crate::util::native_x87::{
 };
 use crate::util::retail_trig::TrigTable;
 
-/// Derived once on the first draw. Copied mode0/1 endpoints never change, so
-/// this cache needs no invalidation before its owning registry entry retires.
+/// Derived once on the first draw. Copied mode0/1 and eruption endpoints
+/// never change, so this cache needs no invalidation before its owning
+/// registry entry retires.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct BeamGeometry {
     delta: [i32; 3],
@@ -49,47 +51,15 @@ impl BeamGeometry {
         viewport: SurfaceLineViewport,
         mut emit: impl FnMut(SurfaceLine),
     ) {
-        let frame = StraightFrame::new(self, birth, progress, spacing);
+        let frame = SineFrame::straight(self, birth, progress, spacing);
         if M::compare(M::load_f64(self.length), M::load_i32(0))
             != crate::util::native_x87::MaskedX87Ordering::Greater
         {
             return;
         }
-        let project = |p: ProjectileCoord| {
-            let (x, y) = crate::util::lepton::absolute_leptons_to_screen(p.x, p.y, p.z);
-            [
-                (x as i32).wrapping_sub(viewport.camera[0]),
-                (y as i32).wrapping_sub(viewport.camera[1]),
-            ]
-        };
         let mut index = 0_i32;
         loop {
-            let segment = frame.segment(index);
-            let mut from = project(segment.from);
-            let mut to = project(segment.to);
-            //6598EC clips XY before passing the ORIGINAL world-endpoint Z
-            //arguments to4BFD30. The shared raster's second clip is inert.
-            if super::surface_line::clip_line(&mut from, &mut to, viewport.clip) {
-                emit(SurfaceLine {
-                    from,
-                    to,
-                    z_adjust: [
-                        birth
-                            .z_adjust
-                            .wrapping_sub(crate::util::native_x87::adjust_for_z_standard(
-                                segment.from.z,
-                            ))
-                            .wrapping_sub(2),
-                        (-2_i32).wrapping_sub(crate::util::native_x87::adjust_for_z_standard(
-                            segment.to.z,
-                        )),
-                    ],
-                    blend: SurfaceLineBlend::Replace(super::tactical_compat::pack_rgb(
-                        segment.color.map(i32::from),
-                        super::native_surface_format::RGB565,
-                    )),
-                });
-            }
+            frame.draw(index, viewport, &mut emit);
             index = index.wrapping_add(1);
             //659953: ceil iterations use the FLOOR divisor. The last
             //segment can extend beyond the copied target; don't fit it.
@@ -102,17 +72,72 @@ impl BeamGeometry {
             }
         }
     }
+
+    /// Kind2 RadBeam659CA0 for an active beam: 659EE0's update, then
+    /// segments0..count (none when count <= 0). `spacing` is the
+    /// constructor's, which kind2 never rewrites. 659EE0 re-derives the length, count and step from
+    /// the endpoint delta after adding its travel offset, which is always zero
+    /// (see [`crate::sim::combat::radiation_beam::erupted`]), so this
+    /// first-draw geometry (659E30) is what it re-derives.
+    pub(crate) fn eruption_lines(
+        self,
+        birth: RadiationBeamBirth,
+        progress: i32,
+        spacing: i32,
+        viewport: SurfaceLineViewport,
+        mut emit: impl FnMut(SurfaceLine),
+    ) {
+        let frame = SineFrame::eruption(self, birth, progress, spacing);
+        for index in 0..frame.count {
+            frame.draw(index, viewport, &mut emit);
+        }
+    }
 }
 
 ///65920D..6592CB: unsigned Logic-rate numerator, signed requested rate.
 /// The reciprocal spills before the multiply10. Masked qword ftol narrows
 /// to its low32 bits, including0 for a nonfinite integer indefinite.
 pub(crate) fn segment_spacing(frame_rate: u32, requested_fps: i32) -> i32 {
-    let current = M::load_f64(NativeF64Bits::from_bits(f64::from(frame_rate).to_bits()));
-    let ratio = M::div(current, M::load_i32(requested_fps));
-    let cube = M::mul(M::mul(ratio, ratio), ratio);
+    let cube = rate_cube(frame_rate, requested_fps);
     let reciprocal = M::load_f64(M::store_f64_masked_chop(M::div(M::load_i32(1), cube)));
     M::ftol_i32_low_masked(M::mul(reciprocal, M::load_i32(10))).clamp(10, 100)
+}
+
+/// The cube of the Logic-to-requested frame-rate ratio both kinds read.
+fn rate_cube(frame_rate: u32, requested_fps: i32) -> MaskedX87Value {
+    let current = M::load_f64(NativeF64Bits::from_bits(f64::from(frame_rate).to_bits()));
+    let ratio = M::div(current, M::load_i32(requested_fps));
+    M::mul(M::mul(ratio, ratio), ratio)
+}
+
+///65921F..659262, 6592DB..6592F9: the kind2 cull percentage. Each active
+/// kind2 beam is culled when a Main 0..99 draw is below it. A positive
+/// excess of the active share over the rate cube scales back to a fraction
+/// of the active beams; otherwise it is0. `active` is positive.
+pub(crate) fn eruption_cull_percent(
+    frame_rate: u32,
+    requested_fps: i32,
+    total: i32,
+    active: i32,
+) -> i32 {
+    let cube = rate_cube(frame_rate, requested_fps);
+    let total = M::load_i32(total);
+    let excess = M::load_f64(M::store_f64_masked_chop(M::sub(
+        M::div(M::load_i32(active), total),
+        cube,
+    )));
+    let culled = if M::compare(excess, M::load_i32(0))
+        == crate::util::native_x87::MaskedX87Ordering::Greater
+    {
+        M::mul(total, excess)
+    } else {
+        M::load_i32(0)
+    };
+    let cull = M::load_f64(M::store_f64_masked_chop(M::div(
+        culled,
+        M::load_i32(active),
+    )));
+    M::ftol_i32_low_masked(M::mul(cull, M::load_i32(100)))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -122,7 +147,9 @@ struct BeamSegment {
     color: [u8; 3],
 }
 
-struct StraightFrame {
+/// One draw's segment frame: `amplitude` is this draw's sine height and
+/// `span` the degrees the whole beam sweeps.
+struct SineFrame {
     birth: RadiationBeamBirth,
     count: i32,
     step: [i32; 3],
@@ -130,8 +157,13 @@ struct StraightFrame {
     span: MaskedX87Value,
 }
 
-impl StraightFrame {
-    fn new(geometry: BeamGeometry, birth: RadiationBeamBirth, progress: i32, spacing: i32) -> Self {
+impl SineFrame {
+    fn straight(
+        geometry: BeamGeometry,
+        birth: RadiationBeamBirth,
+        progress: i32,
+        spacing: i32,
+    ) -> Self {
         let length = M::load_f64(geometry.length);
         let count = M::ftol_i32_low_masked(M::div(length, M::load_i32(spacing)));
         let step = divide_coordinate(geometry.delta, count);
@@ -156,8 +188,80 @@ impl StraightFrame {
         }
     }
 
-    /// Original ComputeStraight659AC0. All exceptional/truncation behavior
-    /// stays with the existing masked math and one shared trig-table owner.
+    /// 659E30/659EE0: count = ftol(length / spacing). The amplitude's height
+    /// is 2*progress before half the duration (signed /2), then duration less
+    /// 2*progress mod duration, over the duration: a rise and fall, uneven
+    /// for odd durations. The beam sweeps 180 degrees (659FF0's ratio*180,
+    /// then the shared radian factor; the product commutes with the straight
+    /// frame's order).
+    fn eruption(
+        geometry: BeamGeometry,
+        birth: RadiationBeamBirth,
+        progress: i32,
+        spacing: i32,
+    ) -> Self {
+        let length = M::load_f64(geometry.length);
+        let count = M::ftol_i32_low_masked(M::div(length, M::load_i32(spacing)));
+        let step = divide_coordinate(geometry.delta, count);
+        let duration = birth.duration;
+        let doubled = progress.wrapping_add(progress);
+        let height = if progress < duration / 2 {
+            doubled
+        } else {
+            duration.wrapping_sub(doubled.wrapping_rem(duration))
+        };
+        let amplitude = M::load_f64(M::store_f64_masked_chop(M::mul(
+            M::div(M::load_i32(height), M::load_i32(duration)),
+            M::load_f64(birth.amplitude),
+        )));
+        Self {
+            birth,
+            count,
+            step,
+            amplitude,
+            span: M::load_f64(NativeF64Bits::from_bits(180.0_f64.to_bits())),
+        }
+    }
+
+    /// One segment's projection, XY clip and raster (6598EC / 659D57..659DE7).
+    fn draw(&self, index: i32, viewport: SurfaceLineViewport, emit: &mut impl FnMut(SurfaceLine)) {
+        let project = |p: ProjectileCoord| {
+            let (x, y) = crate::util::lepton::absolute_leptons_to_screen(p.x, p.y, p.z);
+            [
+                (x as i32).wrapping_sub(viewport.camera[0]),
+                (y as i32).wrapping_sub(viewport.camera[1]),
+            ]
+        };
+        let segment = self.segment(index);
+        let mut from = project(segment.from);
+        let mut to = project(segment.to);
+        //6598EC clips XY before passing the ORIGINAL world-endpoint Z
+        //arguments to4BFD30. The shared raster's second clip is inert.
+        if super::surface_line::clip_line(&mut from, &mut to, viewport.clip) {
+            emit(SurfaceLine {
+                from,
+                to,
+                z_adjust: [
+                    self.birth
+                        .z_adjust
+                        .wrapping_sub(crate::util::native_x87::adjust_for_z_standard(
+                            segment.from.z,
+                        ))
+                        .wrapping_sub(2),
+                    (-2_i32)
+                        .wrapping_sub(crate::util::native_x87::adjust_for_z_standard(segment.to.z)),
+                ],
+                blend: SurfaceLineBlend::Replace(super::tactical_compat::pack_rgb(
+                    segment.color.map(i32::from),
+                    super::native_surface_format::RGB565,
+                )),
+            });
+        }
+    }
+
+    /// Original ComputeStraight659AC0, which eruption's659FF0 repeats with
+    /// its own span. All exceptional/truncation behavior stays with the
+    /// existing masked math and one shared trig-table owner.
     fn segment(&self, index: i32) -> BeamSegment {
         let endpoint = |index: i32| {
             let ratio = M::div(M::load_i32(index), M::load_i32(self.count));

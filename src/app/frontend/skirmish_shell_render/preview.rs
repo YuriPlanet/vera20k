@@ -118,6 +118,72 @@ pub(super) fn start_marker_top_left(anchor_x: i32, anchor_y: i32, scale: ShellSc
     )
 }
 
+/// One start marker as `DrawStartPositions 0x00640710` draws it at retail
+/// scale, for pictures of a map drawn outside the shell: RGBA, with the anchor
+/// at `origin`.
+pub(crate) struct StartMarkerPicture {
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) origin: (i32, i32),
+    pub(crate) rgba: Vec<u8>,
+}
+
+/// `art` (STARTBUT.SHP) at the marker offset, then `label` in `font` at the
+/// number's offset and colour, its glyphs advanced as `BitFont::build_text`
+/// advances them. None when `font` lacks one of the label's glyphs.
+pub(crate) fn start_marker_picture(
+    art: &crate::render::chrome_atlas::ChromePiece,
+    font: &crate::assets::fnt_file::FntFile,
+    label: &str,
+) -> Option<StartMarkerPicture> {
+    let glyphs = label
+        .chars()
+        .map(|ch| {
+            u16::try_from(u32::from(ch))
+                .ok()
+                .and_then(|cp| font.glyph(cp))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let spacing = crate::render::bit_font::CHAR_SPACING as i32;
+    let text_w = font.text_width(label) as i32;
+    let sprite = start_marker_top_left(0, 0, ShellScale::RETAIL);
+    let text = super::text::start_marker_label_origin(0, 0, ShellScale::RETAIL);
+    let (left, top) = (sprite.0.min(text.0), sprite.1.min(text.1));
+    let right = (sprite.0 + art.width as i32).max(text.0 + text_w);
+    let bottom = (sprite.1 + art.height as i32).max(text.1 + font.bitmap_rows as i32);
+    let (width, height) = ((right - left) as u32, (bottom - top) as u32);
+    let mut rgba = vec![0; width as usize * height as usize * 4];
+    // Both the art and the glyphs are wholly opaque or clear.
+    let mut put = |source: &[u8], source_w: u32, x: i32, y: i32, tint: Option<[u8; 3]>| {
+        for (index, pixel) in source.chunks_exact(4).enumerate() {
+            if pixel[3] == 0 {
+                continue;
+            }
+            let (px, py) = (
+                x + (index as u32 % source_w) as i32,
+                y + (index as u32 / source_w) as i32,
+            );
+            let at = (py as usize * width as usize + px as usize) * 4;
+            rgba[at..at + 3].copy_from_slice(&tint.unwrap_or([pixel[0], pixel[1], pixel[2]]));
+            rgba[at + 3] = 255;
+        }
+    };
+    put(&art.rgba, art.width, sprite.0 - left, sprite.1 - top, None);
+    let tint =
+        super::text::start_marker_label_color().map(|channel| (channel * 255.0).round() as u8);
+    let mut x = text.0 - left;
+    for glyph in glyphs {
+        put(&glyph.rgba, glyph.width, x, text.1 - top, Some(tint));
+        x += glyph.width as i32 + spacing;
+    }
+    Some(StartMarkerPicture {
+        width,
+        height,
+        origin: (-left, -top),
+        rgba,
+    })
+}
+
 pub(super) fn project_preview_start_positions(
     bounds: &PreviewSourceBounds,
     fitted_preview_rect: RectPx,
@@ -531,5 +597,32 @@ mod tests {
             project_preview_start_positions(&bounds, RectPx::new(10, 20, 200, 100)).is_empty(),
             "unrepresentable untrusted Header coordinates must not wrap into the preview"
         );
+    }
+
+    #[test]
+    fn start_marker_picture_puts_art_and_number_at_the_shell_offsets() {
+        let mut rgba = [10, 20, 30, 255].repeat(18 * 18);
+        rgba[3] = 0;
+        let art = crate::render::chrome_atlas::ChromePiece {
+            label: "startbut".to_owned(),
+            width: 18,
+            height: 18,
+            rgba,
+        };
+        let font = crate::assets::fnt_file::FntFile::solid_for_test(2);
+        let picture = start_marker_picture(&art, &font, "10").unwrap();
+        assert_eq!(
+            (picture.width, picture.height, picture.origin),
+            (18, 18, (9, 6))
+        );
+        let pixel = |x: usize, y: usize| &picture.rgba[(y * 18 + x) * 4..][..4];
+        assert_eq!(pixel(0, 0), [0, 0, 0, 0], "clear art pixels stay clear");
+        assert_eq!(pixel(0, 1), [10, 20, 30, 255]);
+        // The number starts at anchor (-2, -6); its second glyph follows one
+        // spacing pixel after the first.
+        assert_eq!(pixel(7, 0), [255, 255, 0, 255]);
+        assert_eq!(pixel(9, 0), [10, 20, 30, 255]);
+        assert_eq!(pixel(10, 0), [255, 255, 0, 255]);
+        assert_eq!(pixel(7, 1), [10, 20, 30, 255]);
     }
 }

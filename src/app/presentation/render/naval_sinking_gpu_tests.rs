@@ -245,7 +245,7 @@ fn assert_ground_pose_upload_and_replay(
                 let name = row["input"]["name"].as_str().unwrap();
                 let (pose, key) = native_ground_part(type_id, row, part_layer);
                 let entry = cache
-                    .render(&assets, Some(rules), &key, PoseTilt::Ground(pose))
+                    .render(&assets, Some(rules), &key, PoseTilt::Ground(pose), false)
                     .unwrap();
                 assert_eq!(entry.page > 0, overflow);
                 cache.upload(&gpu.device, &gpu.queue, &batch);

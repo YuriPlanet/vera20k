@@ -228,7 +228,8 @@ impl PatrolHost for WorldPatrol<'_> {
 
     fn greatest_threat(&mut self) -> Option<u64> {
         //417461..417481 pushes mask2, a copy of Location, and false.
-        // The represented scanner returns only Techno entities (native bit2).
+        // 41748B tests the result's IsObject bit (+0x14 & 2): a wall Cell
+        // from the ring walk is no threat here.
         crate::sim::world::direct_greatest_threat(
             self.sim,
             self.rules,
@@ -236,6 +237,7 @@ impl PatrolHost for WorldPatrol<'_> {
             self.id,
             ScanMission::AreaGuard,
         )
+        .and_then(TargetKind::object_id)
     }
 
     fn override_mission(&mut self, mission: MissionType, object: u64) {

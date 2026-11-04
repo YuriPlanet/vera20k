@@ -214,6 +214,27 @@ pub(super) struct RadarObjectUpdate {
     pub discovery_observed: bool,
     pub visibility: RadarRegistrationVisibilityFacts,
     pub local_front: bool,
+    /// Present with the native radar surface ([`RadarSurfaceEdge`]).
+    pub surface_edge: Option<RadarSurfaceEdge>,
+}
+
+/// TechnoClass+0x4A0's off-surface step (`0x0070DADC..0x0070DB64`): the
+/// generated surface's size (`pRadarSurface` GetRect, vt+0x78) and, when the
+/// object's cell (GetCell, vt+0x1C4) is in the playfield
+/// (`MapClass::Is_Cell_In_Playfield @ 0x00578540`, mode 1), its Location
+/// re-projected with clamping (`FUN_006557F0`, clamp 1). Builders fill it when
+/// the fresh pixel lies off the surface, and always for Buildings, whose
+/// cached pixel the tracker may test instead.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct RadarSurfaceEdge {
+    pub size: (i32, i32),
+    pub in_playfield_origin: Option<(i32, i32)>,
+}
+
+impl RadarSurfaceEdge {
+    pub fn contains(self, pixel: (i32, i32)) -> bool {
+        (0..self.size.0).contains(&pixel.0) && (0..self.size.1).contains(&pixel.1)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -317,7 +338,19 @@ impl RetainedRadarTracker {
         let was_discovered = existing.is_some_and(|cache| cache.discovered);
         let discovered = was_discovered || update.discovery_observed;
         let visibility = update.visibility.evaluate(discovered);
-        let visible = visibility.visible;
+        // A visible object whose pixel lies off the generated surface is
+        // drawn on its edge, re-projected from its Location with clamping
+        // (`0x0070DB27..0x0070DB64`), while its cell is in the playfield;
+        // otherwise it is radar-invisible (`0x0070DB0A..0x0070DB25`).
+        let (origin, visible) = match update.surface_edge {
+            Some(edge) if visibility.visible && !edge.contains(origin) => {
+                match edge.in_playfield_origin {
+                    Some(clamped) => (clamped, true),
+                    None => (origin, false),
+                }
+            }
+            _ => (origin, visibility.visible),
+        };
         let registration_identity_changed = existing.is_some_and(|cache| {
             cache.owner != update.owner || cache.local_front != update.local_front
         });
@@ -490,7 +523,7 @@ impl RetainedRadarTracker {
     }
 
     #[cfg(test)]
-    fn entries_at(&self, x: i32, y: i32) -> Vec<u64> {
+    pub(super) fn entries_at(&self, x: i32, y: i32) -> Vec<u64> {
         self.buckets[tracker_bucket(x, y)]
             .iter()
             .filter(|entry| entry.x == x && entry.y == y)
@@ -571,6 +604,7 @@ mod tests {
             discovery_observed: true,
             visibility: RadarRegistrationVisibilityFacts::Mobile(visible_mobile_facts()),
             local_front,
+            surface_edge: None,
         }
     }
 
@@ -615,6 +649,27 @@ mod tests {
         tracker.update_object(moved, false);
         assert!(tracker.is_registered(1));
         assert_eq!(tracker.entries_at(41, 61), vec![1]);
+    }
+
+    /// Off the generated surface, an object whose cell is outside the
+    /// playfield is radar-invisible (`0x0070DB0A..0x0070DB25`); inside, its
+    /// pixel is clamped onto the edge (`0x0070DB27..0x0070DB64`).
+    #[test]
+    fn radar_tracker_clamps_an_off_surface_pixel_only_inside_the_playfield() {
+        let mut tracker = RetainedRadarTracker::default();
+        let mut off = update(1, false);
+        off.surface_edge = Some(RadarSurfaceEdge {
+            size: (40, 100),
+            in_playfield_origin: None,
+        });
+        tracker.update_object(off, false);
+        assert!(!tracker.is_registered(1));
+        off.surface_edge = Some(RadarSurfaceEdge {
+            size: (40, 100),
+            in_playfield_origin: Some((39, 60)),
+        });
+        tracker.update_object(off, false);
+        assert_eq!(tracker.entries_at(39, 60), vec![1]);
     }
 
     #[test]

@@ -48,6 +48,7 @@ oracle families index their own fixtures and producers.
 | Validate retained map captures or compare exact production observations | [map observation](map_observation.md), `python -m tools.map_observation compare` |
 | Name scenario command targets, inspect timelines and assert observed effects | [named commands and inspection](map_observation.md#named-commands-and-outcome-inspection), `python -m tools.map_observation inspect` |
 | Load a chosen retail map, step, capture and exit | [map observation](map_observation.md), `python -m tools.map_observation` |
+| Render a whole map as one picture, such as its preview on vera20k.org | `python3 -m tools.map_render --help` |
 | Run one bounded child with retained diagnostics | `tools.child_process.run_child` (shared by capture wrappers) |
 | Check shell UI matrices | [exact shell matrix](exact_shell_ui_matrix/README.md) |
 | Synchronize authoritative skill sources | `python tools/skill_sync.py --write`, then `--check` |

@@ -8,9 +8,9 @@
 use super::audio::{AudioVolume, AudioVolumeOperations, apply_volume};
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::ui::main_menu_dialogs::options::{
-    DisplayTarget, LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels, LauncherOptionsPacked,
-    LauncherOptionsValues, LauncherParentResult, OptionsDialogState, SidebarSize, Zoom,
-    admitted_initial_position, admitted_volume_position,
+    DisplayTarget, HealthBarMode, LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels,
+    LauncherOptionsPacked, LauncherOptionsValues, LauncherParentResult, OptionsDialogState,
+    SidebarSize, Zoom, admitted_initial_position, admitted_volume_position,
 };
 
 /// Project the retained signed profile into the fresh native-shaped controls.
@@ -38,6 +38,7 @@ pub(crate) fn launcher_values_from_profile(
         mouse_wheel_zoom: profile.mouse_wheel_zoom,
         right_click_orders: profile.right_click_orders,
         lock_cursor: profile.lock_cursor,
+        vera_icon: profile.vera_icon,
         shift_queue: profile.shift_queue,
         wol_test_service: profile.wol_test_service,
         fps_counter: false,
@@ -46,6 +47,7 @@ pub(crate) fn launcher_values_from_profile(
         custom_end_game_score: profile.custom_end_game_score,
         custom_end_game_movie: profile.custom_end_game_movie,
         sidebar: profile.sidebar,
+        health_bars: profile.health_bars,
         // The slider's position is the stored level less the retail strength,
         // so gamemd's own bands sit at the left end.
         house_color_position: profile
@@ -94,6 +96,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn play_cue(&mut self, cue: LauncherCue);
     fn store_zoom(&mut self, zoom: Zoom);
     fn store_sidebar(&mut self, size: SidebarSize);
+    /// The `[VERA] HealthBars=` list's pick; presentation only.
+    fn store_health_bars(&mut self, mode: HealthBarMode);
     /// Move the window to the picked screen, or hand it back to the system.
     fn set_display(&mut self, display: DisplayTarget);
     fn set_full_screen(&mut self, full_screen: bool);
@@ -103,6 +107,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_mouse_wheel_zoom(&mut self, enabled: bool);
     fn store_right_click_orders(&mut self, enabled: bool);
     fn store_lock_cursor(&mut self, locked: bool);
+    /// Show VERA's artwork or the red star on the window, taskbar and Dock.
+    fn store_vera_icon(&mut self, vera_icon: bool);
     fn store_shift_queue(&mut self, shift_queue: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
     fn set_fps_counter(&mut self, shown: bool);
@@ -128,6 +134,7 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::Cue(cue) => operations.play_cue(cue),
         LauncherOptionsEvent::ZoomSelected(zoom) => operations.store_zoom(zoom),
         LauncherOptionsEvent::SidebarSelected(size) => operations.store_sidebar(size),
+        LauncherOptionsEvent::HealthBarModeSelected(mode) => operations.store_health_bars(mode),
         LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
         LauncherOptionsEvent::FullScreenChanged(full_screen) => {
             operations.set_full_screen(full_screen);
@@ -148,6 +155,7 @@ pub(crate) fn dispatch_launcher_preview_event(
             operations.store_right_click_orders(enabled);
         }
         LauncherOptionsEvent::LockCursorChanged(locked) => operations.store_lock_cursor(locked),
+        LauncherOptionsEvent::VeraIconChanged(vera_icon) => operations.store_vera_icon(vera_icon),
         LauncherOptionsEvent::ShiftQueueChanged(shift_queue) => {
             operations.store_shift_queue(shift_queue);
         }
@@ -276,6 +284,24 @@ pub(crate) fn dispatch_launcher_parent_result(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The Health Bars list starts on the retained profile's mode, so the page
+    /// never shows a different strip policy from the one the battle draws.
+    #[test]
+    fn health_bar_mode_reaches_the_dialog_from_the_profile() {
+        use crate::ui::main_menu_dialogs::options::HealthBarMode;
+        for mode in [
+            HealthBarMode::Vanilla,
+            HealthBarMode::Always,
+            HealthBarMode::AlwaysExceptFull,
+        ] {
+            let profile = RetailOptionsProfile {
+                health_bars: mode,
+                ..RetailOptionsProfile::default()
+            };
+            assert_eq!(launcher_values_from_profile(&profile).health_bars, mode);
+        }
+    }
 
     #[test]
     fn profile_projection_uses_reject_to_zero_edges() {

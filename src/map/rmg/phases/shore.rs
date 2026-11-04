@@ -2,8 +2,13 @@
 //! shore-piece tiles along it. Its verdict decides whether the blob commits
 //! or rolls back, so every detail here is on the bit-exact path.
 //!
-//! Four full-map passes in native scan order: erosion, thin-water cleanup,
-//! then two piece-selection passes (straight/outer pieces, inner corners).
+//! gamemd: `MapClass::RmgFinalizeWaterShore` 0x0057A0C0, called only by the
+//! random-map water routines 0x0059A6C0, 0x0059BBC0, `GrowLake` 0x0059C920,
+//! `CarveRiver` 0x0059D510 and `BuildRiverBridge` 0x0059E740.
+//!
+//! Four full-map passes in native scan order: erosion (0x0057A430), thin-water
+//! cleanup (0x0057A320, result discarded), then two piece-selection passes
+//! (0x0057ACF0 with pass 1, straight/outer pieces, then pass 2, inner corners).
 //! The selection passes draw one bounded uniform per iterated cell — even
 //! cells that do nothing — which makes the tiler a heavy, load-bearing
 //! consumer of the draw stream.

@@ -201,6 +201,65 @@ fn a_bridge_drop_plays_voice_falling_once_through_foot_ai() {
     }
 }
 
+/// `TechnoClass::AI_Update` keeps going after the landing kills a bridge
+/// faller: MissionClass::AI skips the handler (`0x005B306C`), but the passive
+/// scan (`0x006FA65A..0x006FA6EE`) still runs before the IsAlive test at
+/// `0x006FA735`.
+#[test]
+fn a_tank_killed_by_its_bridge_fall_still_scans_on_that_visit() {
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = battle.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 1);
+    let tank = sim
+        .spawn_object("MTNK", "Americans", CELL.0, CELL.1, 0, &rules)
+        .unwrap();
+    put_on_deck(&mut sim, &rules, tank, false);
+    sim.object_custom_sounds
+        .insert(tank, "TestAmbient".to_owned());
+    remove_deck(&mut sim);
+    blow_up_bridge_cell_fallout(
+        &mut sim,
+        &rules,
+        CELL.0,
+        CELL.1,
+        None,
+        FrameEffects::default(),
+    );
+    for _ in 0..100 {
+        let frame = sim.session.binary_frame() + 1;
+        sim.session.set_binary_frame_for_test(frame);
+        sim.sound_events.clear_for_test();
+        sim.substrate
+            .entities
+            .get_mut(tank)
+            .unwrap()
+            .passive_scan
+            .arm_timer(frame, 0);
+        sim.advance_live_object_turn(tank, &rules, super::techno_ai::ObjectAiCtx::default())
+            .unwrap();
+        let entity = sim.substrate.entities.get(tank).unwrap();
+        if !entity.is_object_alive() {
+            assert_eq!(
+                entity.passive_scan.last_scan_frame(),
+                frame,
+                "the dead faller's visit still runs the passive scan"
+            );
+            let owner = super::object_sound::custom_sound_owner(tank);
+            assert!(
+                sim.sound_events.as_slice().iter().any(|event| matches!(
+                    event,
+                    super::SimSoundEvent::AnimationStarted { anim_id, .. } if *anim_id == owner
+                )),
+                "its sound plays before the fall kills it"
+            );
+            return;
+        }
+    }
+    panic!("the tank never landed");
+}
+
 fn run_drop(sim: &mut Simulation, rules: &RuleSet, carrier: u64, passenger: u64, water: bool) {
     let explosion_anims = rules
         .object(

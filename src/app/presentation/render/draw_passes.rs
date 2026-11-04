@@ -99,6 +99,14 @@ fn draw_sidebar_surface(
             .map(|atlas| &atlas.texture),
         "sidebar_cameo",
     );
+    // StripDraw6A9AF8 outlines the hovered slot before its masks.
+    draw(
+        presentation
+            .selection_overlay
+            .as_ref()
+            .map(|overlay| overlay.white_texture()),
+        "sidebar_cameo_hover",
+    );
     drop(pass);
 
     // Original StripDraw: icon6A9A3E -> unavailable4016A9B46 -> flash404
@@ -163,6 +171,23 @@ fn draw_sidebar_surface(
             Some(renderer.bit_font.atlas()),
             "sidebar_queue_text",
         );
+        // Ready and Super labels6A9D94 also precede the clock6A9E97.
+        draw_pooled_with_camera(
+            &mut pass,
+            batch,
+            camera,
+            pool,
+            cameo_overlay_tex,
+            "sidebar_label_overlay",
+        );
+        draw_pooled_with_camera(
+            &mut pass,
+            batch,
+            camera,
+            pool,
+            Some(renderer.bit_font.atlas()),
+            "sidebar_label_text",
+        );
     }
     if let (Some((buffer, count)), Some(texture)) = (
         pool.get("sidebar_gclock"),
@@ -180,8 +205,7 @@ fn draw_sidebar_surface(
             crate::render::terrain_draw::PackedSpriteKind::UiPalette,
         );
     }
-    // READY skips clock6A9E44; HOLD is after it6AA014. Separate status
-    // layers preserve both without moving the earlier queue badge.
+    // The production HOLD label6AA014 is the only text after the clock.
     let mut pass = surface.begin_load_pass(SidebarPart::Column, encoder);
     let mut draw = |tex: Option<&BatchTexture>, key: &'static str| {
         draw_pooled_with_camera(&mut pass, batch, camera, pool, tex, key);
@@ -1558,11 +1582,14 @@ mod tests {
     fn gsi_04_01_retained_sidebar_radar_subpass_ends_with_content_boundary() {
         let chrome = source_offset("\"sidebar_chrome\"");
         let cameo = source_offset("\"sidebar_cameo\"");
+        let cameo_hover = source_offset("\"sidebar_cameo_hover\"");
         let gclock = source_offset("\"sidebar_gclock\"");
         let unavailable = source_offset("\"sidebar_unavailable\"");
         let flash = source_offset("\"sidebar_flash\"");
         let queue_fill = source_offset("\"sidebar_queue_overlay\"");
         let queue_text = source_offset("\"sidebar_queue_text\"");
+        let label_overlay = source_offset("\"sidebar_label_overlay\"");
+        let label_text = source_offset("\"sidebar_label_text\"");
         let cameo_overlay = source_offset("\"sidebar_cameo_overlay\"");
         let sidebar_text = source_offset("\"sidebar_text\"");
         let radar_anim = source_offset("\"radar_anim\"");
@@ -1572,11 +1599,14 @@ mod tests {
         let message = source_offset("\"message_text\"");
 
         assert!(chrome < cameo);
-        assert!(cameo < unavailable);
+        assert!(cameo < cameo_hover);
+        assert!(cameo_hover < unavailable);
         assert!(unavailable < flash);
         assert!(flash < queue_fill);
         assert!(queue_fill < queue_text);
-        assert!(queue_text < gclock);
+        assert!(queue_text < label_overlay);
+        assert!(label_overlay < label_text);
+        assert!(label_text < gclock);
         assert!(gclock < cameo_overlay);
         assert!(cameo_overlay < sidebar_text);
         assert!(sidebar_text < radar_anim);
@@ -1598,6 +1628,8 @@ mod tests {
             "\"sidebar_flash\"",
             "\"sidebar_queue_overlay\"",
             "\"sidebar_queue_text\"",
+            "\"sidebar_label_overlay\"",
+            "\"sidebar_label_text\"",
             "\"sidebar_cameo_overlay\"",
             "\"sidebar_text\"",
             "\"radar_anim\"",

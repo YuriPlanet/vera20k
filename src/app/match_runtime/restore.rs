@@ -129,6 +129,12 @@ pub(crate) fn commit_prepared_load(
         map,
         committed.presentation,
     );
+    state
+        .match_state
+        .match_presentation
+        .voxel_images
+        .borrow_mut()
+        .load_game();
 
     // MouseLoad5BE092 restores incoming Power; SidebarNoInit6A4F89/94
     // rearms only slide. Sample after world adoption so diagnostic time uses

@@ -113,10 +113,8 @@ pub(crate) fn observer_draw_context(
                 crate::map::houses::is_allied_with(sim.house_alliances().as_map(), owner, observer)
             }),
         observer_present: local_owner_id.is_some(),
-        detects_cloak: local_owner_id.is_some_and(|observer| {
-            sim.fog()
-                .has_sensor_for_house(observer, entity.position.rx(), entity.position.ry())
-        }),
+        detects_cloak: local_owner_id
+            .is_some_and(|observer| sim.fog().senses_object_for_house(observer, entity)),
         cloaking_stages: rules.map_or_else(
             || crate::rules::ruleset::GeneralRules::default().cloaking_stages,
             |r| r.general.cloaking_stages,

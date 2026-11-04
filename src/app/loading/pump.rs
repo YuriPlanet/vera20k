@@ -1408,6 +1408,7 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
     // limit). Nothing draws them once loading begins and the install replaces
     // them, so free them before this load builds its own.
     let outgoing = &mut state.match_state.match_presentation;
+    outgoing.atlas_growth.cancel();
     outgoing.sprite_atlas = None;
     outgoing.unit_atlas = None;
     replace_loading_attempt(
@@ -2733,14 +2734,16 @@ pub(crate) fn selected_map_start_assignments(
             projection.final_gathered_starts().get(start_index)?;
             let slots = crate::sim::scenario_bootstrap::normalized_launch_slots(launch_session);
             let slot = slots.get(participant_index)?;
-            let participant = match slot.source_human_index {
-                Some(index) if index == launch_session.local_player_index => {
+            // A shared House is one slot; its marker is Local for each of
+            // its players, and AI slots follow the human Houses.
+            let participant = match slot.source_human_index() {
+                Some(_) if slot.is_controlled_by(launch_session.local_player_index) => {
                     LoadingParticipantId::Local
                 }
                 Some(index) => LoadingParticipantId::Human(index),
-                None => {
-                    LoadingParticipantId::Opponent(participant_index - launch_session.humans.len())
-                }
+                None => LoadingParticipantId::Opponent(
+                    participant_index - slots.iter().filter(|slot| slot.is_human).count(),
+                ),
             };
             let color_priority = slot.color_index;
             Some(LoadingStartAssignment {

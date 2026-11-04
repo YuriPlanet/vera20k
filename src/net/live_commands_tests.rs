@@ -2784,6 +2784,65 @@ fn two_udp_clients_execute_the_delayed_stop_through_the_production_frame_boundar
 }
 
 #[test]
+fn two_udp_clients_sharing_a_house_both_command_it() {
+    use crate::sim::command::StopRecord;
+    // VERA shared control: senders 0 and 1 both control Alpha.
+    let (a_live, b_live) = pair(73);
+    let boundaries = [Boundary::new(a_live), Boundary::new(b_live)];
+    let (a, rules, actor) = stop_scene();
+    let (b, _, _) = stop_scene();
+    let mut worlds = [a, b];
+    for (source, sim) in (0..).zip(&mut worlds) {
+        let alpha = sim.interner.get("Alpha").unwrap();
+        sim.session
+            .install_shared_house_sources(vec![0, 0], Some(source));
+        sim.session.set_current_house_for_test(Some(alpha));
+        let stop = sim.encode_stop_record(alpha, actor).unwrap();
+        assert_eq!(stop.house_id(), source);
+        assert!(sim.issue_local_command(CommandEnvelope::synchronized(stop, 0)));
+    }
+    for frame in 0..=10 {
+        let start = Instant::now();
+        let mut completed = [false; 2];
+        let mut checksums = [None; 2];
+        while !completed.iter().all(|done| *done) {
+            for index in 0..2 {
+                if completed[index] {
+                    continue;
+                }
+                boundaries[index]
+                    .now
+                    .set(1000 + frame * 100 + (start.elapsed().as_millis() / 16) as u32);
+                let output = production_frame(&mut worlds[index], &rules, &boundaries[index]);
+                if let Some(sync) = output.multiplayer_checksum {
+                    checksums[index] = Some(sync.checksum.unwrap().value);
+                }
+                completed[index] = output.tick.frame_committed;
+            }
+            assert!(
+                start.elapsed() < Duration::from_secs(2),
+                "frame{frame} stalled"
+            );
+            std::thread::yield_now();
+        }
+        assert_eq!(checksums[0], checksums[1], "frame{frame} CRC");
+    }
+    // Each client ran both players' orders for Alpha on the same frame.
+    for boundary in &boundaries {
+        let mut stops: Vec<_> = boundary
+            .applied
+            .borrow()
+            .iter()
+            .filter_map(|(frame, record, ok)| {
+                StopRecord::decode(record).map(|stop| (*frame, stop.house_id, *ok))
+            })
+            .collect();
+        stops.sort();
+        assert_eq!(stops, [(10, 0, true), (10, 1, true)]);
+    }
+}
+
+#[test]
 fn real_udp_mass_order_survives_backpressure_and_executes_one_shared_frame() {
     use crate::sim::command::{Command, MegaMissionRecord, StopRecord};
     use std::collections::{BTreeMap, BTreeSet};

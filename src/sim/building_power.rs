@@ -92,9 +92,9 @@ impl Simulation {
         true
     }
 
-    /// GoOnline452260, also inlined by ReadINI44FC27..44FD1F. The native
-    /// EMP+504 gate remains at its constructor zero: the engine has no EMP
-    /// producer yet (the same bound as OperationalFacts' existing adapter).
+    /// GoOnline452260, also inlined by ReadINI44FC27..44FD1F. A building
+    /// held by an EMP (`+0x504` nonzero, `0x00452271`) stays off; only Ares
+    /// writes that counter.
     pub(crate) fn go_building_online(
         &mut self,
         id: u64,
@@ -104,7 +104,10 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
-        if entity.category() != EntityCategory::Structure || entity.building_online() {
+        if entity.category() != EntityCategory::Structure
+            || entity.building_online()
+            || entity.emp_remaining() != 0
+        {
             return false;
         }
         let owner = entity.owner();

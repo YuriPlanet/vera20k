@@ -49,7 +49,10 @@ impl TrafficCounts {
 
     fn report(&self, seconds: u64, rooms: usize, ordering: OrderingCounts) {
         eprintln!(
-            "VERA20k relay interval_s={seconds} rooms={rooms} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={} pushed={} pushed_bytes={} pull_replies={} slowdowns={} raises={}",
+            "VERA20k relay interval_s={seconds} rooms={rooms} slowdowns={} raises={} catching_up_s={} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={} pushed={} pushed_bytes={} pull_replies={}",
+            ordering.slowdowns,
+            ordering.raises,
+            ordering.catching_up_s,
             self.received,
             self.forwarded,
             self.send_errors,
@@ -65,8 +68,6 @@ impl TrafficCounts {
             self.pushed,
             self.pushed_bytes,
             ordering.pull_replies,
-            ordering.slowdowns,
-            ordering.raises,
         );
     }
 }

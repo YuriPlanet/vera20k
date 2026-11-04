@@ -236,7 +236,6 @@ fn infantry_fire_frame_rules_with(patch: &str) -> RuleSet {
 [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n",
     );
     rules_ini.merge(&IniFile::from_str(patch));
-    let mut rules = RuleSet::from_ini(&rules_ini).expect("infantry rules should parse");
     // Supplied reader-built records make native action admission explicit.
     // SecondaryFire/SecondaryProne are authored controls, not stock GI ART.
     let art_ini = IniFile::from_str(
@@ -245,6 +244,8 @@ fn infantry_fire_frame_rules_with(patch: &str) -> RuleSet {
          FireProne=212,6,6\nDie1=56,15,0\nDeployed=292,1,0\nDeployedFire=292,6,0\n\
          SecondaryFire=164,6,6\nSecondaryProne=212,6,6\n",
     );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini)
+        .expect("infantry rules should parse");
     let art = crate::rules::art_data::ArtRegistry::from_ini(&art_ini);
     rules.install_art_data(art);
     rules.bind_animation_sequences(
@@ -1687,8 +1688,10 @@ fn retail_berserk_gi_targets_its_own_house() {
     let ally = sim
         .spawn_object("E1", "Russians", 11, 10, 0, &rules)
         .unwrap();
-    let scan =
-        |sim: &mut Simulation, mask| sim.greatest_threat_represented(&rules, None, gi, mask, None);
+    let scan = |sim: &mut Simulation, mask| {
+        sim.greatest_threat_represented(&rules, None, gi, mask, None)
+            .and_then(crate::sim::combat::TargetKind::object_id)
+    };
     let masks = [ScanMission::Guard, ScanMission::Hunt];
     for mask in masks {
         assert_eq!(scan(&mut sim, mask), None, "calm, {mask:?}");
@@ -1736,8 +1739,10 @@ fn retail_gi_scan_asks_only_its_own_house_about_allies() {
             &rules,
         );
     };
-    let scan =
-        |sim: &mut Simulation, mask| sim.greatest_threat_represented(&rules, None, gi, mask, None);
+    let scan = |sim: &mut Simulation, mask| {
+        sim.greatest_threat_represented(&rules, None, gi, mask, None)
+            .and_then(crate::sim::combat::TargetKind::object_id)
+    };
     let masks = [ScanMission::Guard, ScanMission::Hunt];
     one_way(&mut sim, "Americans", "Russians");
     for mask in masks {
@@ -1759,7 +1764,7 @@ fn retail_gi_scan_asks_only_its_own_house_about_allies() {
 /// (`0x006FC1CC`).
 #[test]
 fn retail_berserk_gi_shoots_its_own_house() {
-    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
         return;
     };
     let mut sim = Simulation::with_seed(0x5CA7);
@@ -6380,7 +6385,7 @@ fn gsi_08_01_a_shared_cell_offers_only_its_list_head() {
         None,
         None,
     )
-    .target();
+    .object();
     assert!(
         pick == Some(20),
         "the cell's list head is the candidate, not the lower stable id"
@@ -6427,7 +6432,7 @@ fn mapless_guard_pick(shell: &str) -> Option<u64> {
         None,
         None,
     )
-    .target()
+    .object()
 }
 
 /// Without resolved terrain the Guard scan's CanFireAt arm asks the shared
@@ -6474,7 +6479,7 @@ fn gsi_08_01_unarmed_building_loses_to_a_tank_at_equal_distance() {
         None,
         None,
     )
-    .target();
+    .object();
     // Not a "threat class" tie-break — gamemd has none. `[GAPOWR]` carries no
     // weapon and `ThreatPosed=0`, so the human-attacker building gate at
     // `TechnoClass::Evaluate_Candidate @ 0x006F85AB` refuses it outright and

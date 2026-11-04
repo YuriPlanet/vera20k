@@ -57,6 +57,7 @@ mod object_health;
 pub(crate) mod parasite;
 mod projectile_delivery;
 pub mod radiation_beam;
+pub(crate) mod railgun;
 mod receiver_call;
 mod receiver_health;
 mod record_kill;
@@ -101,6 +102,8 @@ mod electric_bolt_tests;
 #[cfg(test)]
 mod fireat_launch_tests;
 #[cfg(test)]
+mod fire_particles_tests;
+#[cfg(test)]
 mod garrison_oracle_tests;
 #[cfg(test)]
 mod homing_shipyard_tests;
@@ -123,6 +126,8 @@ mod open_topped_fire_tests;
 mod prone_damage_tests;
 #[cfg(test)]
 mod radiation_beam_tests;
+#[cfg(test)]
+mod railgun_tests;
 #[cfg(test)]
 mod shrapnel_chain_tests;
 #[cfg(test)]

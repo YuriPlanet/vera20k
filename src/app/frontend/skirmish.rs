@@ -1334,7 +1334,7 @@ mod tests {
                 recruitable_a: true,
                 recruitable_b: true,
                 follows: None,
-                structure_upgrades: [None, None, None],
+                structure_columns: Default::default(),
                 structure_ai_sellable: false,
                 structure_ai_repairable: false,
                 structure_online: true,
@@ -1472,8 +1472,7 @@ mod tests {
             difficulty: Default::default(),
         });
         let slots = normalized_launch_slots(&session);
-        let alliances =
-            launch_alliance_map(&roster_with_neutral_and_playable(), &slots, &session.mode);
+        let alliances = launch_alliance_map(&slots, &session.mode);
 
         assert!(
             alliances
@@ -1508,8 +1507,7 @@ mod tests {
         });
         let slots = normalized_launch_slots(&session);
 
-        let alliances =
-            launch_alliance_map(&roster_with_neutral_and_playable(), &slots, &session.mode);
+        let alliances = launch_alliance_map(&slots, &session.mode);
 
         assert!(
             alliances
@@ -1869,10 +1867,12 @@ mod tests {
                 &terrain,
                 &launch_descriptor(&session),
             );
-            let owner = result
-                .local_owner
-                .as_deref()
-                .expect("explicit launch must return its pinned local owner");
+            let owner = sim
+                .session()
+                .current_house()
+                .map(|house| sim.interner().resolve(house).to_owned())
+                .expect("explicit launch must pin its local owner");
+            let owner = owner.as_str();
             assert_eq!(owner, "Commander");
 
             let side = crate::app::presentation::sidebar_render::project_sidebar_side(
@@ -2498,7 +2498,12 @@ mod tests {
             );
             assert_eq!(result.spawned_mcvs, 0);
             assert!(sim.entities().is_empty());
-            assert_eq!(result.local_owner.as_deref(), Some("Player"));
+            assert_eq!(
+                sim.session()
+                    .current_house()
+                    .map(|house| sim.interner().resolve(house)),
+                Some("Player")
+            );
             assert_eq!(
                 sim.scenario_rng().native_state_hex(),
                 row["force_tail_rng_hex"].as_str().unwrap()

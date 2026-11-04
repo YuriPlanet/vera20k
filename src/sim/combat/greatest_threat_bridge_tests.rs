@@ -181,7 +181,7 @@ fn pick(
         None,
         None,
     )
-    .target()
+    .object()
 }
 
 #[test]
@@ -339,6 +339,7 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
         harvester_unit_ids: Vec::new(),
         scenario_rng: Default::default(),
         scenario_draws: Default::default(),
+        met_idle_disguise: Default::default(),
     };
     let walk = WalkArgs {
         flags: 0x8042,

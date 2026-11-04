@@ -1839,7 +1839,8 @@ pub(crate) fn commit_entities(
                 // (`0x0044269A`, `0x004426A2`), only while its death fuse has
                 // time left (`0x0044266B..0x00442690`). One that outlives the
                 // blow stays alive at Health 0 until its Update retires it
-                // (`0x00440072..0x004400F1`); its bunker is still released.
+                // (`0x00440072..0x004400F1`). Its bunker was already released
+                // ahead of the saved-contact loop in `handle_death`.
                 let frame = world.session.binary_frame() as i32;
                 let outlives = fatal_category == EntityCategory::Structure
                     && world
@@ -1849,25 +1850,16 @@ pub(crate) fn commit_entities(
                         .is_some_and(|building| {
                             !building.pending_c4_detonation.has_time_left(frame)
                         });
-                if callbacks_enabled(world) {
-                    if outlives {
-                        crate::sim::docking::bunker_link::release_sell_destroy(
-                            world,
-                            target_id,
-                            rules,
-                            run.effects(),
-                        );
-                    } else {
-                        world.apply_fatal_lifecycle_stage(
-                            rules,
-                            FatalLifecycleStage::AfterDeathEffects,
-                            target_id,
-                            fatal_category,
-                            crate::sim::world::UninitContext::with_rules(rules)
-                                .with_registry(overlay_registry)
-                                .with_effects(run.effects()),
-                        );
-                    }
+                if callbacks_enabled(world) && !outlives {
+                    world.apply_fatal_lifecycle_stage(
+                        rules,
+                        FatalLifecycleStage::AfterDeathEffects,
+                        target_id,
+                        fatal_category,
+                        crate::sim::world::UninitContext::with_rules(rules)
+                            .with_registry(overlay_registry)
+                            .with_effects(run.effects()),
+                    );
                 }
                 if callbacks_enabled(world) {
                     nested
@@ -2292,6 +2284,10 @@ pub(crate) fn handle_death(
                             .with_effects(run.effects()),
                     );
                 }
+                // 0x00702216..0x00702228: then the Fire system link is released.
+                if let Some(dead) = world.substrate.entities.get_mut(dead_id) {
+                    dead.release_fire_particle_system();
+                }
                 // gamemd-derived: the debris block of
                 // `TechnoClass::ReceiveDamage @ 0x00701900`
                 // (`0x00702281`..`0x0070256C`). It sits BELOW the two death
@@ -2426,14 +2422,34 @@ pub(crate) fn handle_death(
         if category == EntityCategory::Structure && !entity.lifecycle.object_alive() {
             continue;
         }
+        let bunker_occupant = entity.bunker.occupant();
         // The admitted Building wrapper does not re-test Alive after its
         // synchronous contacts:442601 continues through442625..442665.
         if callbacks_enabled(world)
             && let Some(contacts) = building_contacts
             && category == EntityCategory::Structure
         {
+            // `0x004424A2..0x004424EA`: a bunkered vehicle (+0x2E4) leaves the
+            // saved contacts (first match) and is released (`0x004593A0`)
+            // before the loop at `0x00442511`, so it never takes the C4.
+            let contacts = match bunker_occupant {
+                Some(tank) => {
+                    let mut saved = contacts.to_vec();
+                    if let Some(index) = saved.iter().position(|&id| id == tank) {
+                        saved.remove(index);
+                    }
+                    crate::sim::docking::bunker_link::release_sell_destroy(
+                        world,
+                        dead_id,
+                        rules,
+                        run.effects(),
+                    );
+                    std::borrow::Cow::Owned(saved)
+                }
+                None => std::borrow::Cow::Borrowed(contacts),
+            };
             let (nested, pings) =
-                world.building_now_dead_contacts(dead_id, contacts, rules, overlay_registry, run);
+                world.building_now_dead_contacts(dead_id, &contacts, rules, overlay_registry, run);
             effects.append(nested);
             effects.under_attack_events.extend(pings);
         }

@@ -112,7 +112,7 @@ impl HeadlessScenario {
             team: crate::skirmish_launch::LaunchTeam::None,
             is_human: true,
             observer: false,
-            source_human_index: None,
+            controllers: Vec::new(),
             handle: None,
             difficulty: crate::sim::house_state::HouseDifficulty::Normal,
             commander: None,
@@ -1687,9 +1687,13 @@ mod retail_construction_tests {
         );
         eprintln!(
             "a Yuri engineer's quarry-6 scan: {:?}",
-            factory_scan.map(|id| sim
-                .interner
-                .resolve(sim.entities().get(id).unwrap().type_ref()))
+            factory_scan.map(|pick| match pick {
+                crate::sim::combat::TargetKind::Entity(id) => sim
+                    .interner
+                    .resolve(sim.entities().get(id).unwrap().type_ref())
+                    .to_owned(),
+                cell => format!("{cell:?}"),
+            })
         );
         let teams: Vec<u64> = ["05FFB46C-G", "08B95EFC-G"]
             .into_iter()
@@ -3640,6 +3644,46 @@ mod launch_special_flags_tests {
         assert!(
             !plain.sim().session.harvester_immune(),
             "the default skirmish session leaves the bit clear"
+        );
+    }
+}
+
+#[cfg(test)]
+mod launch_alliance_tests {
+    use super::{battle_session, load_session};
+
+    /// A skirmish launch never reads a map House's `Allies=`: gamemd reads it
+    /// in `HouseClass::Read_Scenario_INI @ 0x00500B40`, which an authored map
+    /// reaches only through `HouseClass::Read_INI @ 0x005009B0`, called in
+    /// campaigns alone (`0x0068776E..0x006877B9`). XMP29U2's `[Neutral]`
+    /// names Americans, here the human's House. A pair with Special cannot
+    /// probe this: Post_Map_Init allies Special with every House
+    /// (`0x00686A9E..0x00686AC1`).
+    #[test]
+    fn a_skirmish_launch_leaves_neutral_without_the_maps_allies() {
+        let Some((root, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut session = battle_session(
+            "XMP29U2.MAP",
+            &[(
+                crate::skirmish_launch::LaunchCountry::America,
+                crate::skirmish_launch::AiDifficulty::Easy,
+            )],
+        );
+        session.humans[0].name = "Americans".to_string();
+        let scene = load_session(&root, "XMP29U2.MAP", 0x1234_5678, session).unwrap();
+        let sim = scene.sim();
+        let neutral = sim.interner().get("Neutral").unwrap();
+        let human = sim.interner().get("Americans").unwrap();
+        assert!(
+            sim.houses()
+                .get(&human)
+                .is_some_and(|house| house.is_human())
+        );
+        assert!(
+            !sim.house_alliances()
+                .is_allied(sim.interner(), neutral, human)
         );
     }
 }

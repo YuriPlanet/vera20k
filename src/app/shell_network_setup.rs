@@ -5,9 +5,12 @@
 //! `wol`; every shared helper branches on GameMode like the native ones.
 
 mod actions;
+pub(crate) mod bans;
 pub(crate) mod agreement;
 mod cooperative;
-pub(crate) use cooperative::chooser_rows as cooperative_chooser_rows;
+pub(crate) use cooperative::{
+    CooperativeResume, chooser_rows as cooperative_chooser_rows, resume as resume_cooperative,
+};
 pub(crate) mod maps;
 mod service;
 pub(crate) use service::{
@@ -181,6 +184,11 @@ pub(crate) struct NetworkSetupProtocol {
     /// Derived from the same admitted source as the received image.
     received_preview_bounds: Option<crate::map::preview::PreviewSourceBounds>,
     received_preview_count: u32,
+    /// VERA: a kept WOL room came back after BC6's Continue
+    /// (`cooperative::resume`) in place of `+0xAC`'s rematch (`0x005C46E0`),
+    /// which seats both players without a join. The next join is the
+    /// partner coming back to that seat.
+    cooperative_rematch_seat: bool,
     requests: Vec<NetworkSetupRequest>,
 }
 
@@ -367,6 +375,7 @@ impl NetworkSetupProtocol {
             received_preview: None,
             received_preview_bounds: None,
             received_preview_count: 0,
+            cooperative_rematch_seat: false,
             requests: if wol_host {
                 // C2 0x497: advertisement 78F000, then one ping per user.
                 vec![
@@ -392,6 +401,17 @@ impl NetworkSetupProtocol {
 
     pub(crate) fn start_in_progress(&self) -> bool {
         self.wol_start_pending || self.online_start_preparing
+    }
+
+    /// VERA: the next join is the kept room's partner coming back.
+    pub(crate) fn await_cooperative_rematch_seat(&mut self) {
+        self.cooperative_rematch_seat = true;
+    }
+
+    /// Whether this join is the kept room's partner coming back: only the
+    /// first join after [`Self::await_cooperative_rematch_seat`].
+    pub(crate) fn take_cooperative_rematch_seat(&mut self) -> bool {
+        std::mem::take(&mut self.cooperative_rematch_seat)
     }
 
     pub(crate) fn lan_go_send_pending(&self) -> bool {
@@ -645,13 +665,24 @@ fn open_service_lobby(state: &mut AppState, dialog: SetupDialog) {
     }
 }
 
+fn abandon_host_setup(state: &mut AppState, dialog: SetupDialog) {
+    if dialog.wol() {
+        crate::app::shell_wol::lobby::host_setup_left(state);
+    }
+    open_service_lobby(state, dialog);
+}
+
 impl App {
     /// BC/C2 creation: restore the service's own setup profile. LAN BC then
     /// consumes Main -> CRT seed initialization at005DEC3B..5C; C2 draws no
     /// RNG (no 65C7E0/7CB49D/7CB4AA callee in 0078F7F0). Assignment still
     /// uses the retained Scenario cursor; gameplay reseeds both streams later
     /// at0052E619.
-    pub(crate) fn open_host_setup(state: &mut AppState, observe: bool) {
+    ///
+    /// Returns whether the setup opened. VERA: map archives are optional, so a
+    /// catalog can have no eligible map; a WOL host then leaves the channel it
+    /// just created.
+    pub(crate) fn open_host_setup(state: &mut AppState, observe: bool) -> bool {
         let dialog = SetupDialog {
             host: true,
             ..dialog(state)
@@ -687,8 +718,8 @@ impl App {
             Ok(value) => value,
             Err(error) => {
                 log::error!("Could not restore network setup: {error:#}");
-                open_service_lobby(state, dialog);
-                return;
+                abandon_host_setup(state, dialog);
+                return false;
             }
         };
         if let Err(error) = install_setup(
@@ -699,8 +730,8 @@ impl App {
             Some(if observe { 0 } else { 7 }),
         ) {
             log::error!("Could not admit local network setup: {error:#}");
-            open_service_lobby(state, dialog);
-            return;
+            abandon_host_setup(state, dialog);
+            return false;
         }
         // The WOL C2's own +20/+18 calls (0x791293, 0x7912A3) belong to a
         // later chain; LAN BC runs them here.
@@ -728,6 +759,7 @@ impl App {
             .session
             .set_network_player_ready(0, true)
             .expect("BC owns the local host node");
+        true
     }
 
     /// Packet7 closes BB before full host options arrive. Retained options

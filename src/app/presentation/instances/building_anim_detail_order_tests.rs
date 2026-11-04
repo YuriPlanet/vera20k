@@ -160,6 +160,7 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
             10000.,
             [camera[0], camera[1], size[0] as f32, size[1] as f32],
             DrawState::default(),
+            0,
             2,
         );
         // The shared body/shadow emitter retains an empty parent when neither

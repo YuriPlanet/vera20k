@@ -465,6 +465,13 @@ impl App {
         if Self::house_outcome_wait_pending(state) {
             return false;
         }
+        // A result that is already published and waiting for its commander
+        // clip is decided, but the player may still want out of the clip: the
+        // menu has to open for them. Leaving through it cuts the clip instead
+        // of queueing an EXIT event the stopped world could never execute.
+        if crate::app::commander_feedback::verdict_is_waiting_for_clip(state) {
+            return true;
+        }
         let sim = state
             .match_state
             .sim_runtime
@@ -572,6 +579,21 @@ impl App {
     /// back to the shell. Confirmation itself only constructs and queues the
     /// event; teardown begins after the event-tail dispatcher executes it.
     fn exit_match_to_shell(state: &mut AppState) {
+        // The result is already decided and only its commander clip is left.
+        // Leaving now cuts that clip: the card, the theme and the score page
+        // follow exactly as they would after it — the terminal frame latched
+        // the score before this point. Queueing the native EXIT event instead
+        // would go nowhere: no frame runs after a published result, so the
+        // event would never execute.
+        if crate::app::commander_feedback::verdict_is_waiting_for_clip(state) {
+            let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+            crate::app::commander_feedback::skip_verdict_clip(state, wall_ms);
+            Self::enter_in_game_menu_state(
+                state,
+                crate::ui::pause_menu::InGameMenuState::Closed,
+            );
+            return;
+        }
         log::info!("Abort Mission confirmed — queueing EXIT event");
         // 0x0048CAA1 clears the admission latch after queueing EXIT, even
         // when the event ring is full: until EXIT runs, State_Machine opens
@@ -612,6 +634,7 @@ impl App {
         // Remote EXIT senders run DestroyConnection first (0x0064C9B1).
         crate::app::match_runtime::network_match::drain_departures(state);
         crate::app::match_runtime::network_match::post_speed_changes(state);
+        crate::app::match_runtime::network_match::post_caught_up(state);
         let local_owner = crate::app::input::commands::preferred_local_owner(state);
         let local_owner_id = local_owner.as_deref().and_then(|owner| {
             state
@@ -659,24 +682,76 @@ impl App {
         crate::app::radar_movie::retire(state, wall_ms);
         crate::app::commander_feedback::retire(state);
         crate::app::chrono_screen::retire(state, wall_ms);
-        let _ = state.match_state.scenario_elapsed_clock.stop(wall_ms);
+        let elapsed_seconds = state.match_state.scenario_elapsed_clock.stop(wall_ms);
         // gamemd provenance: battle abort teardown; verified
         // GameExit__BattleControlTerminated @ 0x00686570 starts Theme's fade
         // (`ThemeClass::Stop(1)` @ 0x006865FA), then fades the independent
         // audio master, bounds its voice pump to 300 timer buckets, and
         // finally hard-stops audio.
         state.audio.fade_out_theme(wall_ms);
+        let destination = Self::aborted_score_destination(state, elapsed_seconds).unwrap_or(
+            crate::app::match_runtime::scenario_exit::ScenarioExitDestination::MainMenu,
+        );
+        let showed_score = !matches!(
+            &destination,
+            crate::app::match_runtime::scenario_exit::ScenarioExitDestination::MainMenu
+        );
         let mut scenario_exit =
             crate::app::match_runtime::scenario_exit::ScenarioExitCascade::start(
-                wall_ms,
-                crate::app::match_runtime::scenario_exit::ScenarioExitDestination::MainMenu,
+                wall_ms, destination,
             );
+        if showed_score {
+            scenario_exit = scenario_exit.with_battle_control_terminated();
+        }
         // `0x00686570` requests EVA_BattleControlTerminated as an INTERRUPT
         // immediately before waiting for the two simultaneous audio fades.
         if let Some(action) = scenario_exit.take_start_voice_action() {
             Self::apply_scenario_exit_voice_action(state, action);
         }
         state.match_state.scenario_exit = Some(scenario_exit);
+    }
+
+    /// The score page for a skirmish the player left on purpose, or `None`
+    /// when this exit is not a skirmish's.
+    ///
+    /// Retail returns to the shell on abort. The counters a match has already
+    /// earned do not depend on how it ended, and the games this mode follows
+    /// (RA3, SC2, AoE2) show their result page after a resign. A mission, a
+    /// network match and a co-op round keep their own destinations: the first
+    /// owns its result dialogs, the second reports through cncnet, the third
+    /// has `CooperativeResult`.
+    fn aborted_score_destination(
+        state: &mut AppState,
+        elapsed_seconds: i32,
+    ) -> Option<crate::app::match_runtime::scenario_exit::ScenarioExitDestination> {
+        let eligible = state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .is_some_and(|runtime| runtime.simulation.session().game_mode_nonzero())
+            && state.match_state.live_network.is_none()
+            && !crate::app::cooperative_round::applies(state)
+            && !state.match_state.map_basic.skip_score.unwrap_or(false);
+        if !eligible {
+            return None;
+        }
+        // The page numbers itself from this counter, and the natural exit
+        // increments before it builds the model.
+        state.frontend.finished_game_count = state.frontend.finished_game_count.saturating_add(1);
+        log::info!("Abort Mission: the score page follows ({elapsed_seconds} s played)");
+        Some(
+            crate::app::match_runtime::scenario_exit::ScenarioExitDestination::Score {
+                title: crate::app::match_runtime::scenario_exit::outcome_title(
+                    crate::sim::house_state::HouseOutcomeKind::Defeat,
+                )
+                .to_string(),
+                detail: "You left the battle.".to_string(),
+                model: crate::app::match_runtime::sim_tick::build_aborted_score_screen_model(
+                    state,
+                    elapsed_seconds,
+                ),
+            },
+        )
     }
 }
 

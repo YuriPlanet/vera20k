@@ -8,7 +8,8 @@ use anyhow::Result;
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_pass::{owner_draw_button_label_rect, resolve_csf};
 use crate::app::frontend::shell_transition::{
-    ColumnDraw, MainMenuEntryPaintFrame, MainMenuEntryPresentToken, ShellFrameWave,
+    ColumnDraw, ExternalMenuWait, MainMenuEntryPaintFrame, MainMenuEntryPresentToken,
+    ShellFrameWave, external_menu_wait,
 };
 use crate::app::{AppState, BUILD_STAMP};
 use crate::render::batch::SpriteInstance;
@@ -169,6 +170,38 @@ pub(crate) fn main_menu_title_text(state: &AppState) -> std::borrow::Cow<'_, str
 
 fn main_menu_status_csf_key(hovered_button: Option<MainMenuControlId>) -> Option<&'static str> {
     hovered_button.map(tooltip_csf_key_for_control)
+}
+
+/// What 0xE2 shows in place of its live controls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MainMenuCover {
+    /// Buttons, statics and the hover status line.
+    Live,
+    /// The empty shell backdrop: shuttered column, no statics, no movie.
+    Backdrop,
+    /// VERA: the backdrop of an external network launch that is joining its
+    /// match (docs/spawn.md), with a connecting notice on the status line.
+    /// gamemd has no such launch; buttons that could not be pressed made the
+    /// wait look frozen.
+    Joining,
+}
+
+impl MainMenuCover {
+    fn new(modal: bool, external: Option<ExternalMenuWait>) -> Self {
+        match external {
+            _ if modal => Self::Backdrop,
+            Some(ExternalMenuWait::Joining) => Self::Joining,
+            Some(ExternalMenuWait::Reporting) => Self::Backdrop,
+            None => Self::Live,
+        }
+    }
+
+    fn of(state: &AppState) -> Self {
+        Self::new(
+            state.frontend.shell_message_box.is_some() || state.frontend.quit_cascade.is_some(),
+            external_menu_wait(state),
+        )
+    }
 }
 
 /// Path-A tint for a right-panel kind-1 static (heading `0x694`, status line
@@ -492,8 +525,8 @@ fn render_main_menu_shell_to_target_inner(
     // (`0x0052FEC0`). Retail leaves the destroyed box's last image on screen
     // through the quit fade (nothing repaints after OK); here the backdrop
     // shows alone (evidence note residual).
-    let backdrop =
-        state.frontend.shell_message_box.is_some() || state.frontend.quit_cascade.is_some();
+    let cover = MainMenuCover::of(state);
+    let backdrop = cover != MainMenuCover::Live;
     if !backdrop {
         ensure_movie_for_current_layout(state, Ra2tsDialogOwner::MainMenu0xE2)?;
     }
@@ -539,13 +572,18 @@ fn render_main_menu_shell_to_target_inner(
     } else {
         crate::app::frontend::menu_page_render::paint_shell_monitor(state)
     };
-    let status_label = if leaving || backdrop {
+    let status_label = if leaving || cover == MainMenuCover::Backdrop {
         None
     } else {
-        let hovered = crate::ui::main_menu_shell::hovered_control(&state.frontend.shell_controller);
-        let status_text = main_menu_status_csf_key(hovered)
-            .map(|key| resolve_csf(state, key).into_owned())
-            .unwrap_or_default();
+        let status_text = if cover == MainMenuCover::Joining {
+            resolve_csf(state, "GUI:ConnectingToPlayers").into_owned()
+        } else {
+            let hovered =
+                crate::ui::main_menu_shell::hovered_control(&state.frontend.shell_controller);
+            main_menu_status_csf_key(hovered)
+                .map(|key| resolve_csf(state, key).into_owned())
+                .unwrap_or_default()
+        };
         crate::app::frontend::menu_page_render::paint_shell_status_line(
             state,
             status_text,
@@ -968,6 +1006,21 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn external_launch_wait_covers_the_menu_controls() {
+        // docs/spawn.md: a joining network launch takes no shell input, so it
+        // must not paint the live buttons; it names what it waits for.
+        assert_eq!(
+            MainMenuCover::new(false, Some(ExternalMenuWait::Joining)),
+            MainMenuCover::Joining
+        );
+        assert_eq!(
+            MainMenuCover::new(false, Some(ExternalMenuWait::Reporting)),
+            MainMenuCover::Backdrop
+        );
+        assert_eq!(MainMenuCover::new(false, None), MainMenuCover::Live);
+    }
 
     #[test]
     #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]

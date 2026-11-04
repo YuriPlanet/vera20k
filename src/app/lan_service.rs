@@ -5775,6 +5775,7 @@ mod tests {
         guest.name = "Guest".to_owned();
         guest.raw_slot_index = Some(1);
         guest.slot.color_index = 2;
+        guest.slot.start_position = crate::skirmish_launch::LaunchStartPosition::Auto;
         launch.humans.push(guest);
         launch.local_player_index = 1;
         let host_name = launch.humans[0].name.clone();

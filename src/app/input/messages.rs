@@ -476,6 +476,18 @@ pub(crate) fn post_house_line(
     post_house_names_line(state, key, &[house], color);
 }
 
+/// [`post_house_line`] naming player `name` instead of the House: VERA
+/// shared control names which of a shared House's players left.
+pub(crate) fn post_player_house_line(
+    state: &mut AppState,
+    key: &str,
+    house: crate::sim::intern::InternedId,
+    name: &str,
+    color: HouseLineColor,
+) {
+    post_named_house_line(state, key, house, &[name.to_owned()], color);
+}
+
 /// [`post_house_line`] with one `%s` per House, coloured by the first.
 fn post_house_names_line(
     state: &mut AppState,
@@ -493,6 +505,17 @@ fn post_house_names_line(
     let Some(&house) = houses.first() else {
         return;
     };
+    post_named_house_line(state, key, house, &names, color);
+}
+
+/// The line itself: the template with `names`, coloured by `house`.
+fn post_named_house_line(
+    state: &mut AppState,
+    key: &str,
+    house: crate::sim::intern::InternedId,
+    names: &[String],
+    color: HouseLineColor,
+) {
     let Some(sim) = state
         .match_state
         .sim_runtime

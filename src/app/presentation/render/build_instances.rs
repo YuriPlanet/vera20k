@@ -88,12 +88,15 @@ pub(super) struct SidebarInstances {
     /// The bottom command bar's surface layer, in layout space too.
     pub command_bar: Vec<SpriteInstance>,
     pub cameo: Vec<SpriteInstance>,
+    pub cameo_hover: Vec<SpriteInstance>,
     pub unavailable: Vec<SpriteInstance>,
     pub flash: Vec<SpriteInstance>,
     pub gclock: Vec<SpriteInstance>,
     pub cameo_overlay: Vec<SpriteInstance>,
     pub queue_overlay: Vec<SpriteInstance>,
     pub queue_text: Vec<SpriteInstance>,
+    pub label_overlay: Vec<SpriteInstance>,
+    pub label_text: Vec<SpriteInstance>,
     pub text: Vec<SpriteInstance>,
     #[cfg(feature = "phobos")]
     pub sw_sidebar_chrome: Vec<SpriteInstance>,
@@ -121,7 +124,7 @@ impl SidebarInstances {
             self.minimap.len(),
             self.viewport_rect.len(),
             self.radar_anim.len(),
-            self.text.len() + self.queue_text.len(),
+            self.text.len() + self.queue_text.len() + self.label_text.len(),
         )
     }
 }
@@ -241,12 +244,38 @@ pub(super) fn build_world_instances(
         .vxl_pose_frame_cache
         .borrow_mut()
         .begin_frame();
-    instances::build_unit_instances(state, &mut planned_objects, &display_order);
-    instances::build_voxel_anim_instances(state, &mut planned_objects, &display_order);
-    // A building's voxel turret remains owned by the building display call.
-    // The SHP builder therefore adds it to the same contiguous Ground parent
-    // instead of leaking it into an atlas-level tie.
-    instances::build_shp_instances(state, &mut planned_objects, &display_order);
+    // Every voxel render shares the renderer's buffers and the UseBuffer
+    // latch (`crate::render::voxel_image_cache`), so the objects draw in
+    // the order Tactical draws them: the Display members, layer by layer
+    // (`0x006D8F19..0x006D95A9`). Each member is one unit, piece of debris,
+    // building or infantry, or Bullet. A building's voxel turret remains
+    // owned by the building display call, in the same contiguous Ground
+    // parent instead of an atlas-level tie.
+    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+        let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+        let shp_inputs = instances::shp_inputs(state, local_owner.as_deref());
+        let mut units = instances::unit_visitor(state, &display_order);
+        let mut debris = instances::voxel_anim_visitor(state, &display_order);
+        let mut shp = shp_inputs
+            .as_ref()
+            .map(|input| instances::shp_visitor(input, &display_order));
+        let mut bullets = instances::projectile_visitor(state, &display_order);
+        for &id in runtime.view().display_layers().ordered_ids() {
+            let objects = &mut planned_objects;
+            if let Some(visit) = units.as_mut() {
+                visit(objects, id);
+            }
+            if let Some(visit) = debris.as_mut() {
+                visit(objects, id);
+            }
+            if let Some(visit) = shp.as_mut() {
+                visit(objects, id);
+            }
+            if let Some(visit) = bullets.as_mut() {
+                visit(objects, id);
+            }
+        }
+    }
     let mut particle_draws = state.diagnostic_presentation_ms().map(|_| Vec::new());
     let display_inputs = state.match_state.sim_runtime.as_ref().map(|runtime| {
         let presentation = &state.match_state.match_presentation;
@@ -300,7 +329,6 @@ pub(super) fn build_world_instances(
             prepared_building_anims,
         );
     }
-    instances::build_projectile_visual_instances(state, &mut planned_objects, &display_order);
 
     // Every dynamic pose consumer, including Bullet46B0C0, has now populated
     // the shared page. One upload precedes this frame's draw submission.
@@ -370,6 +398,7 @@ pub(super) fn build_world_instances(
                         zoom: state.match_state.input.zoom_level,
                         ignore_visibility: state.match_state.sandbox_full_visibility,
                     },
+                    state.health_bar_mode(),
                 );
                 status.group = group_labels.remove(&parent.parent.id).unwrap_or_default();
                 // Phobos DigitalDisplay: built here because the GAME.FNT atlas
@@ -1286,9 +1315,11 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         charging: charging_text.as_ref(),
         active: active_text.as_ref(),
     };
+    // StripClass::Draw packs the B0FA1C side colour into the 16-bit surface
+    // format before drawing its labels (6A9BF3..6A9C46).
     let ready_tint = {
         let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
-        crate::render::sidebar_text::side_highlight_color(theme)
+        crate::render::sidebar_text::native_radar_outline_color(theme)
     };
     let cameo_layers = view
         .as_ref()
@@ -1349,12 +1380,15 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         chrome,
         command_bar,
         cameo: cameo_layers.cameo,
+        cameo_hover: cameo_layers.hover,
         unavailable: cameo_layers.unavailable,
         flash: cameo_layers.flash,
         gclock: cameo_layers.gclock,
         cameo_overlay: cameo_layers.overlay,
         queue_overlay: cameo_layers.queue_overlay,
         queue_text: text_layers.queue,
+        label_overlay: cameo_layers.label_overlay,
+        label_text: text_layers.label,
         text: text_layers.status,
         #[cfg(feature = "phobos")]
         sw_sidebar_chrome: sw_sidebar.chrome,

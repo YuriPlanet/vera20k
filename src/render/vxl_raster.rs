@@ -35,7 +35,8 @@ pub(crate) mod shadow;
 
 pub(crate) use native::PreparedDraw;
 
-/// Shared ordinary VXL preparation for CPU and GPU visibility writes. Preview
+/// Shared ordinary VXL preparation for CPU and GPU visibility writes, on the
+/// shared `depth` map when depth-tested (None draws on a clear one). Preview
 /// magnification and constructed models without encoded spans keep their
 /// explicitly separate legacy renderer.
 pub(crate) fn prepare_native_draw(
@@ -43,9 +44,13 @@ pub(crate) fn prepare_native_draw(
     hva: Option<&HvaFile>,
     params: &VxlRenderParams,
     vpl: Option<&VplFile>,
+    depth: Option<&mut DepthMap>,
 ) -> Option<PreparedDraw> {
-    native::prepare_draw(vxl, hva, params, vpl)
+    native::prepare_draw(vxl, hva, params, vpl, depth)
 }
+
+/// The renderer's 256-square depth map (`0xB1D5E0`), one byte a pixel.
+pub type DepthMap = [u8; 65536];
 
 /// Number of distinct orientations a voxel body/turret/barrel can render at.
 ///
@@ -1197,7 +1202,19 @@ pub fn render_vxl(
     params: &VxlRenderParams,
     vpl: Option<&VplFile>,
 ) -> VxlSprite {
-    if let Some(draw) = prepare_native_draw(vxl, hva, params, vpl)
+    render_vxl_on(vxl, hva, params, vpl, None)
+}
+
+/// [`render_vxl`] on the shared `depth` map when depth-tested; None draws on
+/// a clear one. The legacy fallback ignores it.
+pub(crate) fn render_vxl_on(
+    vxl: &VxlFile,
+    hva: Option<&HvaFile>,
+    params: &VxlRenderParams,
+    vpl: Option<&VplFile>,
+    depth: Option<&mut DepthMap>,
+) -> VxlSprite {
+    if let Some(draw) = prepare_native_draw(vxl, hva, params, vpl, depth)
         && let Some(sprite) = draw.render_cpu()
     {
         return sprite;

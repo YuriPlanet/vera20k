@@ -83,10 +83,18 @@ pub enum LanTarget {
     /// Runs through the real300-frame prefix and remains in the live match
     /// until the external test driver kills it or blackholes its UDP route.
     OnlineFailureGuest,
+    /// Online Cooperative: the first stage is won, BC6's Continue returns
+    /// both players to the kept room on the next stage, and the host starts it.
+    OnlineCoopHost,
+    OnlineCoopGuest,
     LiveHost,
     LiveGuest,
     LiveTimeoutHost,
     LiveQuitHost,
+    /// The timeout and quit hosts' guest: plays the shared 300-frame prefix,
+    /// then its process ends without leaving, so the host meets a real peer
+    /// disappearance.
+    LiveFailureGuest,
     LiveDesyncHost,
     LiveDesyncGuest,
     /// LAN Cooperative through BC6 Continue to the retried mission.
@@ -225,10 +233,13 @@ pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
     ("online-live-timeout-host", LanTarget::OnlineTimeoutHost),
     ("online-live-quit-host", LanTarget::OnlineQuitHost),
     ("online-live-failure-guest", LanTarget::OnlineFailureGuest),
+    ("online-live-coop-host", LanTarget::OnlineCoopHost),
+    ("online-live-coop-guest", LanTarget::OnlineCoopGuest),
     ("lan-live-host", LanTarget::LiveHost),
     ("lan-live-guest", LanTarget::LiveGuest),
     ("lan-live-timeout-host", LanTarget::LiveTimeoutHost),
     ("lan-live-quit-host", LanTarget::LiveQuitHost),
+    ("lan-live-failure-guest", LanTarget::LiveFailureGuest),
     ("lan-live-desync-host", LanTarget::LiveDesyncHost),
     ("lan-live-desync-guest", LanTarget::LiveDesyncGuest),
     ("lan-live-coop-host", LanTarget::LiveCoopHost),
@@ -333,6 +344,8 @@ impl LanTarget {
                 | Self::OnlineTimeoutHost
                 | Self::OnlineQuitHost
                 | Self::OnlineFailureGuest
+                | Self::OnlineCoopHost
+                | Self::OnlineCoopGuest
         )
     }
     pub(crate) fn online_failure(self) -> bool {
@@ -342,7 +355,10 @@ impl LanTarget {
         )
     }
     pub(crate) fn online_guest(self) -> bool {
-        matches!(self, Self::OnlineGuest | Self::OnlineFailureGuest)
+        matches!(
+            self,
+            Self::OnlineGuest | Self::OnlineFailureGuest | Self::OnlineCoopGuest
+        )
     }
     pub(crate) fn desync_failure(self) -> bool {
         matches!(self, Self::LiveDesyncHost | Self::LiveDesyncGuest)
@@ -355,10 +371,13 @@ impl LanTarget {
                 | Self::OnlineTimeoutHost
                 | Self::OnlineQuitHost
                 | Self::OnlineFailureGuest
+                | Self::OnlineCoopHost
+                | Self::OnlineCoopGuest
                 | Self::LiveHost
                 | Self::LiveGuest
                 | Self::LiveTimeoutHost
                 | Self::LiveQuitHost
+                | Self::LiveFailureGuest
                 | Self::LiveDesyncHost
                 | Self::LiveDesyncGuest
                 | Self::LiveCoopHost
@@ -373,7 +392,9 @@ impl LanTarget {
     pub(crate) fn live_cooperative(self) -> bool {
         matches!(
             self,
-            Self::LiveCoopHost
+            Self::OnlineCoopHost
+                | Self::OnlineCoopGuest
+                | Self::LiveCoopHost
                 | Self::LiveCoopSavedHost
                 | Self::LiveCoopGuest
                 | Self::LiveCoopFinalHost
@@ -2156,13 +2177,28 @@ impl LanCapture {
                             combo.enabled && combo.visible,
                             "local {column:?} is disabled"
                         );
+                        // A start another player holds would share its House;
+                        // these routes play separate Houses.
+                        let launch = state.match_state.session.network_setup();
+                        let held = |value: i32| {
+                            column == SetupColumn::Start
+                                && launch.is_some_and(|launch| {
+                                    launch.humans.iter().any(|human| {
+                                        human.raw_slot_index.is_some_and(|other| other != row)
+                                            && human.slot.start_position
+                                                == LaunchStartPosition::Position(value as u8)
+                                    })
+                                })
+                        };
                         let (index, choice) = combo
                             .choices
                             .iter()
                             .enumerate()
                             .take(column.visible_rows())
                             .find(|(index, choice)| {
-                                choice.value >= 0 && Some(*index) != combo.selected
+                                choice.value >= 0
+                                    && Some(*index) != combo.selected
+                                    && !held(choice.value)
                             })
                             .context("different concrete choice on first popup page")?;
                         Some((control, index, choice.value))
@@ -2900,11 +2936,11 @@ impl LanCapture {
                     let slots = crate::sim::scenario_bootstrap::normalized_launch_slots(launch);
                     let peer_slot = slots
                         .iter()
-                        .find(|slot| slot.source_human_index == Some(peer))
+                        .find(|slot| slot.is_controlled_by(peer))
                         .context("canonical source-to-House binding")?;
                     let local_slot = slots
                         .iter()
-                        .find(|slot| slot.source_human_index == Some(local))
+                        .find(|slot| slot.is_controlled_by(local))
                         .context("canonical local binding")?;
                     let sim = &state
                         .match_state
@@ -4369,6 +4405,11 @@ impl LanCapture {
                 | LanTarget::CoopNext
                 | LanTarget::CoopRetry
         )
+    }
+    pub(super) fn observes_every_frame(&self) -> bool {
+        self.live
+            .as_ref()
+            .is_some_and(|live| live.observes_every_frame())
     }
     pub(super) fn owns_simulation_steps(&self, state: &AppState) -> bool {
         if let Some(live) = &self.live {

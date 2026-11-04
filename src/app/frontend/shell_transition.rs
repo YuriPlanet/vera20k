@@ -314,9 +314,9 @@ pub(crate) enum ShellExitThen {
     WolLoginClose(u16),
     /// `0x113` Back (`0x686`): the runner leaves its channel and returns 0.
     WolLobbyBack,
-    /// `0x113` Buddy List (`0x689`): the runner ends as for Back, with mode
-    /// 5 and return mode 4.
-    WolLobbyBuddy,
+    /// `0x113` Buddy List (`0x689`), or the online page's Quick Match: the
+    /// runner ends as for Back, with mode 5 or 1 and return mode 4.
+    WolLobbyRunner(crate::ui::wol_shell::WolMode),
     /// A game join was requested (`0x0078C281`): `0x113` slides out and hides.
     WolLobbyHide,
     /// The create succeeded: `0x113` slides out and hides, then C2 opens.
@@ -385,7 +385,7 @@ impl ShellExitThen {
             Self::WolBack | Self::WolAction(_) => ShellSlideKind::WolWelcome,
             Self::WolLoginClose(_) => ShellSlideKind::WolLogin,
             Self::WolLobbyBack
-            | Self::WolLobbyBuddy
+            | Self::WolLobbyRunner(_)
             | Self::WolLobbyHide
             | Self::WolCreateAccepted { .. }
             | Self::WolOptionsOpen => ShellSlideKind::WolLobby,
@@ -812,11 +812,30 @@ pub(crate) fn blocks_shell_input(state: &AppState) -> bool {
     state.frontend.quit_cascade.is_some()
         || state.frontend.shell_exit.is_some()
         || transition_blocks_shell_input(state.frontend.shell_first_paint_slide.as_ref())
-        // An external network launch shows the menu backdrop only while it
-        // joins or reports its match (docs/spawn.md).
-        || (state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-            && (crate::app::shell_wol::spawned_visit(state)
-                || crate::app::shell_network_setup::external(state)))
+        || external_menu_wait(state).is_some()
+}
+
+/// Why an external network launch (docs/spawn.md) is at the main menu. It
+/// shows the empty menu backdrop there and takes no shell input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ExternalMenuWait {
+    /// Admission, before the match first reaches the screen.
+    Joining,
+    /// The match ran; the launch is reporting it.
+    Reporting,
+}
+
+pub(crate) fn external_menu_wait(state: &AppState) -> Option<ExternalMenuWait> {
+    let external = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
+        && (crate::app::shell_wol::spawned_visit(state)
+            || crate::app::shell_network_setup::external(state));
+    external.then(|| {
+        if state.frontend.external_progress.match_started.is_none() {
+            ExternalMenuWait::Joining
+        } else {
+            ExternalMenuWait::Reporting
+        }
+    })
 }
 
 pub(crate) fn transition_blocks_shell_input(transition: Option<&ShellFrameWave>) -> bool {
@@ -1547,7 +1566,7 @@ mod tests {
         let column = ShellSlideKind::WolLobby.column(9, Some(lobby.page_spec()));
         assert_eq!(
             (column.top_buttons, column.bottom_button, column.top_panel),
-            (3, true, false)
+            (4, true, false)
         );
         assert_eq!(ShellSlideKind::WolWelcome.column(9, None).top_buttons, 6);
         let retail = ShellSlideKind::WolLobby.column(9, None);

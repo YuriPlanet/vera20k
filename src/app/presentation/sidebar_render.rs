@@ -430,6 +430,9 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
 /// for every entry it draws, so a restriction that appears or clears between
 /// two House rechecks must reach the very next frame. Membership and the House
 /// pass stay with [`refresh_sidebar_projection`].
+/// RepaintForRemovedObject 6A5F20, RepaintSidebar 6A60A0 and
+/// RepaintSidebarFor2Frames 6A60E0 only set redraw flags and RedrawUntilFrame;
+/// VERA draws the sidebar every frame, so they have no port.
 pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
     let Some(owner_name) = preferred_local_owner_name(state) else {
         return;

@@ -157,16 +157,20 @@ Command & Conquer and Red Alert, World-Altering Editor, Final Alert, YRpp, Ares,
 many others.
 
 Copyright © 2026 Halvor Nikolai Rusten and VERA20K contributors.
-Licensed under the [GPLv3](LICENSE-GPL). This repository contains no game files. Command &
+Licensed under the [GPLv3](LICENSE-GPL) with [additional terms](LEGAL.md#additional-terms).
+This repository contains no game files. Command &
 Conquer and Red Alert are trademarks of Electronic Arts Inc., and the screenshots and the app
 icon, Red Alert 2's red star, show game art owned by Electronic Arts. VERA20K is not affiliated
 with or endorsed by Electronic Arts.
+
+**Read the [legal notice](LEGAL.md) before you share, sell or fork VERA20K.**
 
 ## Documentation
 
 - [Build and run](#build-and-run): requirements and building from source.
 - [INI profiles](docs/ini-roots.md): choosing rules, art and AI files.
 - [End-game screens](docs/ini-end-game-screens.md): the verdict card, its theme and the score page's own art.
+- [Health-strip modes](docs/health-bars.md): the `[VERA] HealthBars=` client option.
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md), [NPatch](docs/npatch.md) and [VeraX](docs/verax.md): extension support and limitations.
 - [Engine overview](docs/index.md): code layout and how the engine fits together.
 - [Developer tools](tools/README.md): builds, tests and asset inspection.

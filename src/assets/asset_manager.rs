@@ -495,7 +495,8 @@ impl AssetManager {
     }
 
     /// Inspect the ordinary startup stack while retaining readable archives for
-    /// resource diagnostics. Missing optional probes stay silent. The partial
+    /// resource diagnostics. Missing optional probes stay silent, except the
+    /// map and movie media reported as optional issues. The partial
     /// manager is diagnostic only: ordinary startup still stops on required
     /// failures, while unreadable optional archives are logged and skipped.
     pub fn inspect_install(
@@ -560,7 +561,7 @@ impl AssetManager {
         manager.mount_startup_archive("cameo.mix", true, &mut policy)?;
 
         manager.mount_startup_map_media(media_mode, &mut policy)?;
-        manager.mount_startup_archive("multimd.mix", true, &mut policy)?;
+        manager.mount_reported_archive("multimd.mix", &mut policy)?;
         manager.mount_startup_archive("thememd.mix", false, &mut policy)?;
         // VERA presentation extension: native YR mounts THEME.MIX only when
         // THEMEMD.MIX is absent. Keep MD first, then make original RA2 music
@@ -1250,15 +1251,16 @@ impl AssetManager {
         match mode {
             MediaArchiveMode::Numbered { media_index } => {
                 let number = media_index.wrapping_add(1);
-                self.mount_startup_archive(&format!("mapsmd{number:02}.mix"), true, policy)?;
+                self.mount_reported_archive(&format!("mapsmd{number:02}.mix"), policy)?;
                 self.mount_startup_archive(&format!("maps{number:02}.mix"), false, policy)?;
             }
             MediaArchiveMode::CdWildcard => {
                 let result = (|| {
                     let md = self.mount_wildcard_archives(None, "mapsmd")?;
                     if !md.matched {
-                        // This is the native fallback branch, even though active
-                        // YR still fails the later required-MD global check.
+                        // This is the native fallback branch. Active YR then
+                        // fails its required-MD global check; see
+                        // `mount_reported_archive` for why VERA continues.
                         self.mount_wildcard_archives(None, "maps")?;
                     }
                     if !md.first_registered {
@@ -1269,7 +1271,7 @@ impl AssetManager {
                     Ok(())
                 })();
                 if let Err(error) = result {
-                    Self::record_archive_issue("MAPSMD*.MIX", true, error, policy)?;
+                    Self::record_archive_issue("MAPSMD*.MIX", false, error, policy)?;
                 }
             }
         }
@@ -1290,7 +1292,7 @@ impl AssetManager {
             MediaArchiveMode::Numbered { media_index } => {
                 let number = media_index.wrapping_add(1);
                 if !self.mount_startup_archive(&format!("movmd{number:02}.mix"), false, policy)? {
-                    self.mount_startup_archive(&format!("movies{number:02}.mix"), true, policy)?;
+                    self.mount_reported_archive(&format!("movies{number:02}.mix"), policy)?;
                 }
             }
             MediaArchiveMode::CdWildcard => {
@@ -1330,7 +1332,7 @@ impl AssetManager {
                     Ok(())
                 })();
                 if let Err(error) = result {
-                    Self::record_archive_issue(name, true, error, policy)?;
+                    Self::record_archive_issue(name, false, error, policy)?;
                 }
             }
         }
@@ -1419,8 +1421,8 @@ impl AssetManager {
             }
             StartupArchivePolicy::OptionalWarnings if !required => {
                 // Install warnings must remain optional when the game starts.
-                // This changes no required archive or standalone media gate.
-                log::warn!("Skipping unreadable optional archive {name}: {error}");
+                // The test-only FailFast policy keeps the strict media gate.
+                log::warn!("Skipping unavailable optional archive {name}: {error}");
                 Ok(())
             }
             _ => Err(error),
@@ -1437,6 +1439,25 @@ impl AssetManager {
             Ok(mounted) => Ok(mounted),
             Err(error) => {
                 Self::record_archive_issue(name, required, error, policy)?;
+                Ok(false)
+            }
+        }
+    }
+
+    /// VERA extension: retail's Init_Mix_Files refuses to start without its map
+    /// and movie media. Retail copies hold only scenarios and movies: the lists
+    /// skip a missing map, a movie is skipped, and choosing a campaign mission
+    /// without its map returns to the menu. So VERA starts without them. Unlike
+    /// a silent optional probe, absence reaches the install check and log.
+    fn mount_reported_archive(
+        &mut self,
+        name: &str,
+        policy: &mut StartupArchivePolicy<'_>,
+    ) -> Result<bool, AssetError> {
+        match self.mount_named_archive(name, true) {
+            Ok(mounted) => Ok(mounted),
+            Err(error) => {
+                Self::record_archive_issue(name, false, error, policy)?;
                 Ok(false)
             }
         }

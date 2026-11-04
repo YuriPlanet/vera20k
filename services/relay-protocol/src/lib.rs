@@ -791,16 +791,19 @@ pub struct ForwardDatagram {
     pub bytes: Vec<u8>,
 }
 
-/// Ordering activity since the last `RelayServer::take_ordering_counts`, for
-/// the service's aggregate report. No player, room or endpoint identity.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// How players kept pace and read the ordering, for the relay's journal
+/// report. No player, room or endpoint identity.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct OrderingCounts {
-    /// Pull requests answered from history (repairs and pull-only readers).
-    pub pull_replies: u64,
-    /// Rate markers that slowed a match for a player who could not keep up.
+    /// Times the clock slowed a match because a player could not keep up.
     pub slowdowns: u64,
-    /// Rate markers that tried a faster rate again.
+    /// Times the clock tried a faster rate again.
     pub raises: u64,
+    /// Pace reports from a player catching up or behind. Each player reports
+    /// once a second, so this is about the seconds players spent catching up.
+    pub catching_up_s: u64,
+    /// Pull requests answered: repairs and pull-only readers.
+    pub pull_replies: u64,
 }
 
 /// Bound storage and packet rate; untrusted data never creates a room until
@@ -830,6 +833,7 @@ pub struct RelayServer {
     // Ordering rooms cleaned up before their certificate expired, until that
     // expiry: a late Ready gets Inactive instead of a new timeline.
     ended_orderings: HashMap<[u8; 16], u64>,
+    // Since `take_ordering_counts` last read them.
     ordering_counts: OrderingCounts,
 }
 
@@ -858,11 +862,6 @@ impl RelayServer {
         }
     }
 
-    /// The ordering activity since the previous call.
-    pub fn take_ordering_counts(&mut self) -> OrderingCounts {
-        std::mem::take(&mut self.ordering_counts)
-    }
-
     /// Enable full-match encrypted replay on the existing relay's private
     /// StateDirectory. Existing room files are never overwritten or resumed;
     /// those of long-ended matches move to its `archive` subfolder.
@@ -881,6 +880,12 @@ impl RelayServer {
 
     pub fn room_count(&self) -> usize {
         self.rooms.len()
+    }
+
+    /// How players kept pace and read the ordering since the last call; the
+    /// relay's journal reports it.
+    pub fn take_ordering_counts(&mut self) -> OrderingCounts {
+        std::mem::take(&mut self.ordering_counts)
     }
 
     pub fn process(

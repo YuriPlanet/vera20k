@@ -135,7 +135,16 @@ fn stock_flat_torpedo_pose_upload_and_surface_replay_match_original_pixels() {
                     "{name}"
                 );
                 let body = cache
-                    .render_matrix(&assets, "SUBT", matrix, 0, true, VxlLighting::Diffuse)
+                    .render_matrix(
+                        &assets,
+                        "SUBT",
+                        matrix,
+                        0,
+                        true,
+                        VxlLighting::Diffuse,
+                        false,
+                        None,
+                    )
                     .unwrap();
                 let rect = &draw["body"]["rect"];
                 assert_eq!(
@@ -162,7 +171,16 @@ fn stock_flat_torpedo_pose_upload_and_surface_replay_match_original_pixels() {
                     DepthAxis::NONE,
                     &order,
                     |image, matrix| {
-                        cache.render_matrix(&assets, image, matrix, 0, true, VxlLighting::Diffuse)
+                        cache.render_matrix(
+                            &assets,
+                            image,
+                            matrix,
+                            0,
+                            true,
+                            VxlLighting::Diffuse,
+                            false,
+                            None,
+                        )
                     },
                 );
                 assert_eq!(sim.state_hash(), before, "read-only draw: {name}");
@@ -461,7 +479,15 @@ fn kirov_pose_upload_and_replay(interpolated: bool) {
             }
             let matrix = painted.voxel_matrix().unwrap();
             let (expected, _) = model
-                .render_matrix(matrix, 0, true, VxlLighting::Diffuse, Some(&vpl))
+                .render_matrix(
+                    matrix,
+                    0,
+                    true,
+                    VxlLighting::Diffuse,
+                    Some(&vpl),
+                    false,
+                    None,
+                )
                 .unwrap();
             if let Some(previous) = previous_pixels.replace(expected.palette_indices.clone()) {
                 assert_ne!(
@@ -483,13 +509,31 @@ fn kirov_pose_upload_and_replay(interpolated: bool) {
                 DepthAxis::NONE,
                 &order,
                 |image, matrix| {
-                    cache.render_matrix(&assets, image, matrix, 0, true, VxlLighting::Diffuse)
+                    cache.render_matrix(
+                        &assets,
+                        image,
+                        matrix,
+                        0,
+                        true,
+                        VxlLighting::Diffuse,
+                        false,
+                        None,
+                    )
                 },
             )
             .unwrap();
             let instance = object.pieces[0].instance;
             let reused = cache
-                .render_matrix(&assets, "ZBOMB", matrix, 0, true, VxlLighting::Diffuse)
+                .render_matrix(
+                    &assets,
+                    "ZBOMB",
+                    matrix,
+                    0,
+                    true,
+                    VxlLighting::Diffuse,
+                    false,
+                    None,
+                )
                 .unwrap();
             assert_eq!(
                 instance.uv_origin, reused.uv_origin,

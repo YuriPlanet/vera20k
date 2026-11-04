@@ -652,6 +652,50 @@ fn a_human_aircraft_shooting_over_shroud_maps_the_cells_around_it() {
     }
 }
 
+/// In a campaign IsHumanPlayer (`0x0050B6F0`) admits the player's
+/// PlayerControl ally (ALL01's Alliance flies Harriers), so its aircraft asks
+/// the player's map, and RevealArea's house gate (`0x00567AB0..0x00567B12`)
+/// maps the cells there under `AllyReveal=`.
+#[test]
+fn a_campaign_ally_aircraft_shooting_over_shroud_maps_the_players_cells() {
+    let (mut sim, mut rules) = fixture(&serde_json::json!({"burst": 1}));
+    rules.general.attacking_aircraft_sight_range = 2;
+    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+        64,
+        64,
+        crate::map::resolved_terrain::test_flat_cell,
+    ));
+    sim.fog.set_width_for_test(64);
+    sim.fog.set_height_for_test(64);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .position
+        .set_exact_z_leptons_for_test(Some(1500));
+    let americans = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            americans, 0, None, true, 0, 10,
+        ));
+    sim.session.set_current_house_for_test(Some(americans));
+    let alliance = sim.interner.intern("Alliance");
+    let mut ally = crate::sim::house_state::HouseState::new(alliance, 0, None, false, 0, 10);
+    ally.set_player_control_for_test(true);
+    sim.houses.register(ally);
+    sim.house_alliances_mut_for_test()
+        .insert("ALLIANCE".into(), ["AMERICANS".to_string()].into());
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_owner_for_test(alliance);
+    let result = dispatch(&mut sim, &rules);
+    assert_eq!(result.len(), 1, "one shot");
+    assert!(sim.fog.is_ground_unshrouded(americans, 3, 3));
+    assert!(sim.fog.is_ground_unshrouded(americans, 5, 3), "radius 2");
+}
+
 /// `0x0041659E..0x004165AC`: a missile on the kamikaze tracker (`+0x6CA`,
 /// set by its Push) that fires is removed (UnInit) after the shot.
 #[test]

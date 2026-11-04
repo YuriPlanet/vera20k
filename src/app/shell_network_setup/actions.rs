@@ -177,9 +177,17 @@ fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
         0x54D => options.crates = !options.crates,
         0x69A => options.super_weapons = !options.super_weapons,
         0x69D => options.build_off_ally = !options.build_off_ally,
+        // VERA's room adds these in its Game Options.
+        BRIDGES => options.bridges_destroyable = !options.bridges_destroyable,
+        ALLYING => options.ally_change_allowed = !options.ally_change_allowed,
+        NO_YURI => options.bans.yuri = !options.bans.yuri,
+        NO_FRANCE => options.bans.france = !options.bans.france,
+        NO_SPY => options.bans.spy = !options.bans.spy,
+        NO_STOLEN_TECH => options.bans.stolen_tech = !options.bans.stolen_tech,
         _ => anyhow::bail!("unknown setup checkbox"),
     }
     state.match_state.session.set_network_options(options)?;
+    super::bans::clear_banned_rows(state)?;
     host_option_edited(state)?;
     queue(state, NetworkSetupRequest::PublishOptions);
     Ok(())

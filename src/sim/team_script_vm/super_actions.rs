@@ -142,18 +142,19 @@ impl Simulation {
                 // 56 at 6EFF5D..6EFFAF calls 6EEBD0 directly, with the selected
                 // leader (not the member-list head), its House's enemy and the
                 // TeamType's OnlyTargetHouseEnemy. No quarry/weapon/fog gate.
+                // A quarry scan may answer a wall Cell (the ring walk's
+                // fallback); 6F0271 reads its coordinates like an object's.
                 let target = match destination {
-                    ChronoshiftTarget::Building(argument) => {
-                        self.team_find_target_building(team_id, leader, argument)
-                    }
-                    ChronoshiftTarget::Quarry(quarry) => {
-                        self.team_quarry_threat(team_id, leader, quarry, rules, registry)
-                    }
+                    ChronoshiftTarget::Building(argument) => self
+                        .team_find_target_building(team_id, leader, argument)
+                        .map(TeamTarget::Object),
+                    ChronoshiftTarget::Quarry(quarry) => self
+                        .team_quarry_threat(team_id, leader, quarry, rules, registry)
+                        .map(TeamTarget::from),
                 };
                 if let Some(target) = target
                     && let Some(centre) = self.team_centre_cell(team_id)
-                    && let Some(TeamTarget::Cell { x, y }) =
-                        self.team_target_cell_of_coord(TeamTarget::Object(target))
+                    && let Some(TeamTarget::Cell { x, y }) = self.team_target_cell_of_coord(target)
                 {
                     self.team_fire_super(
                         owner,
@@ -173,7 +174,7 @@ impl Simulation {
                     );
                     self.team_assign_mission_target(
                         team_id,
-                        Some(TeamTarget::Object(target)),
+                        Some(target),
                         rules,
                         registry,
                         frame_effects,

@@ -194,7 +194,10 @@ pub(super) struct RadarMobileVisibilityFacts {
     pub veteran_radar_invisible: bool,
 }
 
-/// Mobile virtual +0x324 @ 0x0070D1D0, in native branch order.
+/// Mobile virtual +0x324 @ 0x0070D1D0, in native branch order. Its Fog of
+/// War arm (`0x0070D350..0x0070D384`: scenario flag `0x1000` and a fogged
+/// Location) never applies: the fog test it calls, `0x005865E0`, is
+/// `xor al, al; ret 4` in YR, so no fact stands for it here.
 pub(super) fn radar_mobile_registration_visibility(
     facts: RadarMobileVisibilityFacts,
     discovered: bool,
@@ -241,12 +244,12 @@ pub(super) struct RadarBuildingVisibilityFacts {
     pub fresh_in_playfield: bool,
     pub both_corners_shrouded: bool,
     pub cloak_state: i32,
-    /// BuildingClass+0x6ED. No Rust production writer exists yet.
+    /// BuildingClass+0x6ED, the fade stage.
     pub building_cloak_stage: u8,
-    /// BuildingClass+0x6E7, the FogOfWar freeze flag. `freeze_building_in_fog`
-    /// and `clean_fog` write it as `FogState::is_object_fogged`; the radar
-    /// registration below does not feed it from there yet.
-    pub building_cloak_flag: bool,
+    /// BuildingClass+0x6E7, the FogOfWar freeze flag set by the fogged-object
+    /// constructor (`0x004D10D5`): `freeze_building_in_fog` and `clean_fog`
+    /// keep it as `FogState::is_object_fogged` for the local player.
+    pub fogged: bool,
     pub has_sensor: bool,
     /// The current player's house asks (`PlayerPtr->IsAlliedWith(Owner)`,
     /// `0x00457196`, `HouseClass::IsAlliedWith @ 0x004F9A50`).
@@ -272,7 +275,7 @@ pub(super) fn radar_building_registration_visibility(
     }
     if facts.cloak_state != 2
         && facts.building_cloak_stage != 15
-        && !facts.building_cloak_flag
+        && !facts.fogged
         && !facts.both_corners_shrouded
     {
         return RadarVisibilityResult::VISIBLE;
@@ -281,9 +284,7 @@ pub(super) fn radar_building_registration_visibility(
         return RadarVisibilityResult::HIDDEN;
     }
     let out_code = u8::from(
-        !facts.allied_with_current_player
-            && !facts.building_cloak_flag
-            && !facts.both_corners_shrouded,
+        !facts.allied_with_current_player && !facts.fogged && !facts.both_corners_shrouded,
     );
     RadarVisibilityResult {
         visible: true,
@@ -415,10 +416,9 @@ pub(super) fn build_radar_object_update(
             fresh_in_playfield,
             both_corners_shrouded,
             cloak_state,
-            // Exact predicate fields are explicit. +0x6ED has no Rust writer;
-            // +0x6E7's FogOfWar writer is not consulted here yet.
-            building_cloak_stage: 0,
-            building_cloak_flag: false,
+            building_cloak_stage: entity.building_cloak_stage(),
+            fogged: !full_visibility
+                && local_owner.is_some_and(|local| fog.is_object_fogged(local, entity.stable_id())),
             has_sensor,
             allied_with_current_player,
         })
@@ -452,7 +452,40 @@ pub(super) fn build_radar_object_update(
         // AddObjectToTracker @ 0x00655560 compares directly to g_PlayerPtr,
         // narrower than IsHumanPlayer's single-player shroud exception.
         local_front: local_owner == Some(entity.owner()),
+        surface_edge: projection.native_surface.map(|surface| {
+            let mut edge = super::tracker::RadarSurfaceEdge {
+                size: surface.generated_size(),
+                in_playfield_origin: None,
+            };
+            if (!edge.contains(origin) || foundation.is_some())
+                && radar_edge_cell_in_playfield(entity, cells, playfield_bounds, rules, interner)
+            {
+                edge.in_playfield_origin = Some(surface.world_to_surface_pixel(raw_x, raw_y, true));
+            }
+            edge
+        }),
     }
+}
+
+/// `0x0070DB0A..0x0070DB21`: `MapClass::Is_Cell_In_Playfield @ 0x00578540`
+/// (mode 1) on the object's GetCell (vt+0x1C4,
+/// [`crate::sim::movement::ground_pose::entity_navigation_cell_identity`]). Without
+/// the map the object stays off the radar, as it did before this step.
+fn radar_edge_cell_in_playfield(
+    entity: &crate::sim::game_entity::GameEntity,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    bounds: Option<crate::map::playfield::PlayfieldBounds>,
+    rules: Option<&RuleSet>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+) -> bool {
+    cells.is_some_and(|cells| {
+        crate::sim::movement::ground_pose::entity_navigation_cell_identity(
+            entity,
+            cells,
+            rules.zip(interner),
+        )
+        .is_ok_and(|cell| crate::sim::cell_rect::retained_cell_is_in_playfield(cell, bounds, cells))
+    })
 }
 
 #[cfg(test)]
@@ -490,7 +523,7 @@ mod tests {
             both_corners_shrouded: false,
             cloak_state: 0,
             building_cloak_stage: 0,
-            building_cloak_flag: false,
+            fogged: false,
             has_sensor: false,
             allied_with_current_player: false,
         }
@@ -894,6 +927,70 @@ mod tests {
         ));
     }
 
+    /// A unit centred on the playfield's bottom row projects one pixel past
+    /// the generated surface (`0x006557F0`, clamp 0). TechnoClass+0x4A0
+    /// re-projects it with clamping while its cell is in the playfield
+    /// (`0x0070DADC..0x0070DB64`), so its dot sits on the surface edge.
+    #[test]
+    fn a_unit_on_the_bottom_playfield_row_keeps_its_radar_dot_on_the_edge() {
+        let bounds = crate::map::playfield::PlayfieldBounds {
+            base: 16,
+            off_fc: 2,
+            off_100: 2,
+            off_104: 12,
+            off_108: 8,
+        };
+        let terrain = flat_terrain(32);
+        let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(&terrain);
+        let surface = crate::render::radar::geometry::NativeRadarSurfaceGeometry::from_playfield(
+            &terrain, bounds,
+        )
+        .expect("flat playfield surface");
+        let (rx, ry) = terrain
+            .iter()
+            .filter(|cell| {
+                bounds.contains_height_aware_packed(
+                    i32::from(cell.rx),
+                    i32::from(cell.ry),
+                    cell.level as i8,
+                    cell.slope_type,
+                )
+            })
+            .map(|cell| (cell.rx, cell.ry))
+            .max_by_key(|&(rx, ry)| (rx + ry, rx))
+            .expect("a playfield cell");
+        let mut entity =
+            crate::sim::game_entity::GameEntity::test_default(1, "MTNK", "Enemy", rx, ry);
+        entity.lifecycle.set_in_limbo_for_test(false);
+        entity.locomotor = Some(
+            crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                crate::rules::locomotor_type::LocomotorKind::Drive,
+            ),
+        );
+        let mut projection = visibility_projection();
+        projection.native_surface = Some(surface);
+        let update = build_radar_object_update(
+            &entity,
+            &crate::sim::houses::Houses::default(),
+            None,
+            &FogState::default(),
+            &Default::default(),
+            true,
+            false,
+            None,
+            None,
+            projection,
+            Some(bounds),
+            Some(&cells),
+        );
+        let (width, height) = surface.generated_size();
+        assert_eq!(update.origin.1, height, "one pixel past the surface");
+        assert!((0..width).contains(&update.origin.0));
+        let mut tracker = super::super::tracker::RetainedRadarTracker::default();
+        tracker.update_object(update, false);
+        assert_eq!(tracker.entries_at(update.origin.0, height - 1), vec![1]);
+    }
+
     #[test]
     fn radar_visibility_building_shroud_samples_origin_and_far_corner() {
         let local = crate::sim::intern::test_intern("Local");
@@ -920,6 +1017,45 @@ mod tests {
             location,
             (3, 2),
         ));
+    }
+
+    /// `0x00457170`: an AI building the local player sees only as a fogged
+    /// image (+0x6E7, set by the fogged-object constructor `0x004D10D5`)
+    /// needs a sensor to register on the radar, like a shrouded one.
+    #[test]
+    fn radar_visibility_a_fogged_ai_building_needs_a_sensor() {
+        let local = crate::sim::intern::test_intern("Local");
+        let mut building =
+            crate::sim::game_entity::GameEntity::test_default(2, "BLDG", "Enemy", 10, 10);
+        building.set_category_for_test(EntityCategory::Structure);
+        building
+            .type_facts
+            .set_foundation_for_test("2x2".to_string().into());
+        building.lifecycle.set_in_limbo_for_test(false);
+        let mut fog = FogState::default();
+        fog.mark_visible_for_owner(local, 10, 10);
+        let visible = |fog: &FogState| {
+            build_radar_object_update(
+                &building,
+                &crate::sim::houses::Houses::default(),
+                Some(local),
+                fog,
+                &Default::default(),
+                false,
+                true,
+                None,
+                None,
+                visibility_projection(),
+                None,
+                None,
+            )
+            .visibility
+            .evaluate(false)
+            .visible
+        };
+        assert!(visible(&fog));
+        fog.set_object_fogged_for_test(local, 2, true);
+        assert!(!visible(&fog));
     }
 
     /// `0x0070D30E..0x0070D34B` and `0x00457117..0x0045714B` ask

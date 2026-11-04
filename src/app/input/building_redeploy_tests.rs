@@ -967,3 +967,92 @@ fn a_yard_alt_click_over_a_tree_archives_it_and_its_mcv_drives_there() {
         (unit.position.rx(), unit.position.ry())
     );
 }
+
+/// Building4436F0 and vt+0xA0 (`0x0044F5C0`) read neither build-up nor
+/// sale: a ground click while the deployed yard builds up starts its repack
+/// (Sell_Back `0x00447110` queues Selling over Construction), and a second
+/// click during the repack re-archives the cell the returning MCV drives to.
+#[test]
+fn a_ground_click_during_build_up_repacks_and_a_second_redirects_the_mcv() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let mut rules = retail.rules;
+    rules.set_buildup_control_for_test("GACNST", [0, 29, 1]);
+    let (mut sim, owner) = yard_arena(&rules);
+    sim.session_mut_for_test()
+        .game_options_mut_for_test()
+        .short_game = false;
+    sim.set_input_delay_ticks(0);
+    sim.spawn_object("GAPOWR", "Russians", 3, 3, 0, &rules)
+        .unwrap();
+    let mcv = sim
+        .spawn_object("AMCV", "Americans", 12, 12, 96, &rules)
+        .unwrap();
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::DeployMcv { entity_id: mcv },
+        Some(&rules)
+    ));
+    let mut yard = None;
+    for _ in 0..120 {
+        step(&mut sim, &rules);
+        yard = sim
+            .entities()
+            .values()
+            .find(|e| sim.interner().resolve(e.type_ref()) == "GACNST")
+            .map(|e| e.stable_id());
+        if yard.is_some() {
+            break;
+        }
+    }
+    let yard = yard.expect("the MCV deploys");
+    assert!(sim.entities().get(yard).unwrap().building_up());
+    let click = |sim: &mut Simulation, cell| {
+        let (orders, _) =
+            building_cell_orders(sim, &rules, None, &[yard], owner, cell, false, false);
+        assert!(
+            matches!(
+                orders.as_slice(),
+                [Command::SetRally { .. }, Command::SellBuilding { .. }]
+            ),
+            "{cell:?}: {orders:?}"
+        );
+        let goal = match orders[0] {
+            Command::SetRally { rx, ry, .. } => (rx, ry),
+            _ => unreachable!(),
+        };
+        for payload in orders {
+            crate::app::input::commands::schedule_command_in_sim(sim, "Americans", payload)
+                .unwrap();
+        }
+        goal
+    };
+    click(&mut sim, (20, 14));
+    step(&mut sim, &rules);
+    step(&mut sim, &rules);
+    assert!(sim.entities().get(yard).unwrap().building_down());
+    let goal = click(&mut sim, (14, 20));
+    let mut converted = None;
+    for _ in 0..80 {
+        step(&mut sim, &rules);
+        converted = sim
+            .entities()
+            .values()
+            .find(|e| e.stable_id() != mcv && sim.interner().resolve(e.type_ref()) == "AMCV")
+            .map(|e| e.stable_id());
+        if converted.is_some() {
+            break;
+        }
+    }
+    let converted = converted.expect("the yard repacks into its MCV");
+    for _ in 0..600 {
+        step(&mut sim, &rules);
+        let unit = sim.entities().get(converted).unwrap();
+        if (unit.position.rx(), unit.position.ry()) == goal {
+            break;
+        }
+    }
+    let unit = sim.entities().get(converted).unwrap();
+    assert_eq!((unit.position.rx(), unit.position.ry()), goal);
+}

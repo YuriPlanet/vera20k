@@ -480,6 +480,12 @@ impl Simulation {
         // CreateGap/DestroyGap (0x006FB170/0x006FB470) branch on PlayerPtr+0x1F5;
         // MPlayer_Defeated (0x004FC0B0) sets it. Each retained viewer maps to its House.
         let viewer_defeated = houses.get(&viewer).is_some_and(|house| house.is_defeated());
+        let before = entity.gap_generator.viewers.get(&viewer);
+        fog.note_gap_deposit(
+            id,
+            viewer,
+            before.map(|deposit| (deposit.active, deposit.radius)),
+        );
         let deposit = entity.gap_generator.viewers.entry(viewer).or_default();
         if deposit.active == active {
             return;

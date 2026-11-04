@@ -341,6 +341,10 @@ pub(crate) struct WolGameRow {
     pub(crate) limit_icon: Option<&'static str>,
     /// -1 shows `"???"`; the column tooltip is `WOL:GamePing` either way.
     pub(crate) ping: i32,
+    /// VERA: the modern list's text at the end of the name cell, the
+    /// Cooperative mode's name for a co-op room. The app sets it; the
+    /// native list has no such column.
+    pub(crate) tag: Option<String>,
 }
 
 /// `0x00781130`: whether the filter pass skips this record.
@@ -423,6 +427,7 @@ pub(crate) fn game_rows(
                     keyed: channel.keyed(),
                     limit_icon: channel.limit_icon(),
                     ping: channel.ping,
+                    tag: None,
                 });
             }
         }

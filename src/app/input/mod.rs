@@ -4,6 +4,7 @@
 
 #[cfg(feature = "verax")]
 pub(crate) mod autoload;
+pub(crate) mod build_repeat;
 pub(crate) mod camera;
 pub(crate) mod chat;
 pub(crate) mod commands;

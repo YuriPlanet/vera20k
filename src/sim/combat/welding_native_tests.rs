@@ -978,7 +978,6 @@ fn original_live_spark_rof_and_fireat_rearm_use_the_retained_link_and_exact_rng(
                 rules,
                 &snap,
                 object,
-                &weapon,
                 Some(&weapon),
                 int(&row["input"]["queried_burst"]),
             );
@@ -989,7 +988,6 @@ fn original_live_spark_rof_and_fireat_rearm_use_the_retained_link_and_exact_rng(
                 rules,
                 &snap,
                 object,
-                &weapon,
                 Some(&weapon),
                 1,
             );

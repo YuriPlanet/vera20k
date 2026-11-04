@@ -56,9 +56,9 @@ mod object_stages;
 #[cfg(test)]
 mod object_stages_gpu_tests;
 
-use anyhow::Result;
 #[cfg(feature = "telemetry-dashboard")]
 use crate::util::time::{Duration, Instant};
+use anyhow::Result;
 
 // Re-export shared types so any remaining `use crate::app::presentation::render::Foo` imports still compile.
 // New code should import from `crate::app::types` directly.
@@ -483,11 +483,7 @@ pub(crate) fn render_game(
         state.match_state.input.selection_order_pending,
     );
     let armed_super_weapon = state.armed_super_weapon_type().map(str::to_owned);
-    // Phobos's enhancer rings (`0x6DBEA3`) draw while a building is placed.
-    #[cfg(feature = "phobos")]
     let armed_building = state.armed_building_type().map(str::to_owned);
-    #[cfg(not(feature = "phobos"))]
-    let armed_building: Option<String> = None;
     let cursor_cell = (armed_super_weapon.is_some() || armed_building.is_some()).then(|| {
         crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
             state,
@@ -523,6 +519,8 @@ pub(crate) fn render_game(
         armed_building.as_deref(),
         cursor_cell,
         show_power_plant_enhancer_range,
+        match_presentation.target_lines.unit_action_lines_enabled(),
+        &mut match_presentation.placement_range_pulse,
         &mut match_presentation.superweapon_range_pulse,
         &match_presentation.house_color_map,
         viewport,
@@ -645,7 +643,7 @@ pub(crate) fn render_game(
         );
         presentation
             .radiation_beams
-            .composite(frame_rate, viewport, |birth| {
+            .composite(frame_rate, viewport, &main, |birth| {
                 !effect_hidden(birth.to.x, birth.to.y)
             });
     }
@@ -977,6 +975,11 @@ fn upload_to_gpu(
     pool.upload(&state.renderer.gpu, "sidebar_cameo", &sidebar.cameo);
     pool.upload(
         &state.renderer.gpu,
+        "sidebar_cameo_hover",
+        &sidebar.cameo_hover,
+    );
+    pool.upload(
+        &state.renderer.gpu,
         "sidebar_unavailable",
         &sidebar.unavailable,
     );
@@ -991,6 +994,16 @@ fn upload_to_gpu(
         &state.renderer.gpu,
         "sidebar_queue_text",
         &sidebar.queue_text,
+    );
+    pool.upload(
+        &state.renderer.gpu,
+        "sidebar_label_overlay",
+        &sidebar.label_overlay,
+    );
+    pool.upload(
+        &state.renderer.gpu,
+        "sidebar_label_text",
+        &sidebar.label_text,
     );
     pool.upload(
         &state.renderer.gpu,

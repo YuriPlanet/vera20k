@@ -90,6 +90,9 @@ pub struct MultiplayerSetupSnapshot {
     pub build_off_ally: bool,
     pub mcv_repacks: bool,
     pub crates_appear: bool,
+    /// VERA's room options from the room's last game; kept for this run of
+    /// the game only, never written to the INI.
+    pub room: Option<crate::skirmish_launch::RoomOptions>,
     /// FUN_005ED400/005ED5A0 snapshot/restore rows1..7 (loop bounds at
     /// 005ED542/005EDC99; source: original gamemd.exe). VERA extends that
     /// same process profile through row29; only the native prefix reaches INI.
@@ -110,6 +113,7 @@ impl MultiplayerSetupSnapshot {
             build_off_ally: defaults.build_off_ally,
             mcv_repacks: defaults.mcv_repacks,
             crates_appear: defaults.crates_appear,
+            room: None,
             slots: std::array::from_fn(|index| {
                 let mut slot = SkirmishPersistedSlot::native_default(index);
                 // 00698456/0069846F: LAN and WOL read with defaults 2/2.

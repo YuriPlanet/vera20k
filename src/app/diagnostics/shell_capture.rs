@@ -54,6 +54,10 @@ const CHECKPOINT_CAMPAIGN_0X94_ENTRY_PREFIX: &str = "campaign-0x94-entry-tick-";
 const CHECKPOINT_CAMPAIGN_ALL1_LOADING_FIRST: &str = "campaign-all1-loading-first-frame";
 const CHECKPOINT_CAMPAIGN_SOV1_LOADING_FIRST: &str = "campaign-sov1-loading-first-frame";
 const CHECKPOINT_CAMPAIGN_ALL1_FIRST_LIVE: &str = "campaign-all1-first-live-frame";
+/// `campaign-trigger-trace-<MAP>-tick-<N>[-push-<X>-<Y>]`: a retail mission
+/// run to tick N, recording every trigger Spring. Without `-push` there is no
+/// player input; with it the player's armed units attack-move toward Cell X,Y.
+const CHECKPOINT_CAMPAIGN_TRIGGER_TRACE_PREFIX: &str = "campaign-trigger-trace-";
 const CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE: &str = "campaign-sov1-first-live-frame";
 const CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN: &str = "campaign-all1-abort-return";
 const CHECKPOINT_CAMPAIGN_SOV1_ABORT_RETURN: &str = "campaign-sov1-abort-return";
@@ -438,6 +442,38 @@ impl ShellCaptureCheckpoint {
             return Ok(Self::CampaignOpening(movies::OpeningTarget::SovietGroups(
                 tick,
             )));
+        }
+        if let Some(rest) = value.strip_prefix(CHECKPOINT_CAMPAIGN_TRIGGER_TRACE_PREFIX) {
+            let (map, tick) = rest
+                .split_once("-tick-")
+                .context("trigger trace checkpoint is <MAP>-tick-<N>")?;
+            let scenario = *movies::RETAIL_CAMPAIGN_MAPS
+                .iter()
+                .find(|name| name.strip_suffix(".MAP").unwrap().eq_ignore_ascii_case(map))
+                .with_context(|| format!("{map:?} is not a retail campaign map"))?;
+            let (tick, push) = match tick.split_once("-push-") {
+                Some((tick, cell)) => {
+                    let (x, y) = cell
+                        .split_once('-')
+                        .context("trigger trace push is -push-<X>-<Y>")?;
+                    let x: u16 = x.parse().context("trigger trace push X")?;
+                    let y: u16 = y.parse().context("trigger trace push Y")?;
+                    (tick, Some((x, y)))
+                }
+                None => (tick, None),
+            };
+            let tick: u64 = tick
+                .parse()
+                .context("trigger trace tick is not an integer")?;
+            ensure!(
+                (1..=30000).contains(&tick),
+                "trigger trace tick must be 1..=30000"
+            );
+            return Ok(Self::CampaignOpening(movies::OpeningTarget::TriggerTrace {
+                scenario,
+                tick,
+                push,
+            }));
         }
         if let Some(tick) = value.strip_prefix("campaign-sov02-fortresses-tick-") {
             let tick: u64 = tick
@@ -898,6 +934,9 @@ impl ShellCaptureCheckpoint {
             Self::CampaignOpening(movies::OpeningTarget::SovietFortresses(_)) => {
                 "campaign-sov02-fortresses-tick"
             }
+            Self::CampaignOpening(movies::OpeningTarget::TriggerTrace { .. }) => {
+                "campaign-trigger-trace"
+            }
             Self::CampaignOpening(movies::OpeningTarget::TimerRunning) => {
                 "campaign-sov1-opening-timer-running"
             }
@@ -1174,6 +1213,9 @@ pub(crate) struct LiveOnlineConfig {
     pub loading_host_loss: Option<String>,
     /// External owned kill after ordinary100, before the original host installs live gameplay.
     pub startup_host_loss: Option<String>,
+    /// Each round queues through the lobby's Quick Match; the matchbot sets
+    /// the match up and the configured host must be its host.
+    pub quick_match: bool,
     pub loading_output: Option<PathBuf>,
     pub loading_cancel: Option<LoadingCancelConfig>,
     pub observe_loading: bool,
@@ -1380,6 +1422,7 @@ where
     let mut online_start = None;
     let mut online_frames = None;
     let mut online_simple = false;
+    let mut online_quick_match = false;
     let mut online_latency = false;
     let mut online_mass = false;
     let mut online_network_checkpoint = None;
@@ -1590,6 +1633,10 @@ where
                 ensure!(!online_simple, "duplicate --online-simple-input");
                 online_simple = true;
             }
+            "--online-quick-match" => {
+                ensure!(!online_quick_match, "duplicate --online-quick-match");
+                online_quick_match = true;
+            }
             _ => bail!("unknown shell-capture option {flag:?}"),
         }
     }
@@ -1675,6 +1722,12 @@ where
                 "online account names must contain 1-24 letters, digits, underscores or hyphens"
             );
         }
+        // The host's room is "<host>'s_game", cut at the room name edit's 24
+        // units (`popups::ROOM_NAME_LIMIT`), and guests look for the whole name.
+        ensure!(
+            host.len() + "'s_game".len() <= 24,
+            "the online host name must leave room for 's_game in a 24-character room name"
+        );
         ensure!(
             online_start.is_none_or(
                 |start| start < crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as u32
@@ -1693,6 +1746,23 @@ where
                     && !online_mass
                     && online_frames.is_none_or(|frames| frames == 300)),
             "online failure capture requires two players, simple input and exactly300 prefix frames"
+        );
+        ensure!(
+            !matches!(checkpoint, ShellCaptureCheckpoint::Lan(target) if target.live_cooperative())
+                || (players == 2
+                    && online_map.is_none()
+                    && online_start.is_none()
+                    && online_ai.is_none()
+                    && online_mode_id.is_none()
+                    && !online_mass
+                    && !online_latency
+                    && !profile_check
+                    && online_network_checkpoint.is_none()
+                    && online_exit_checkpoint.is_none()
+                    && online_loading_host_loss.is_none()
+                    && online_startup_host_loss.is_none()
+                    && online_loading_cancel.is_none()),
+            "online co-op capture requires two players and no map, start, AI, mode or other diagnostic option; the campaign picks its maps"
         );
         ensure!(
             !online_latency
@@ -1803,6 +1873,24 @@ where
             "more than two players requires --online-simple-input or --online-mass-input"
         );
         ensure!(
+            !online_quick_match
+                || (players == 2
+                    && online_ai.is_none()
+                    && online_mode_id.is_none()
+                    && online_map.is_none()
+                    && online_start.is_none()
+                    && !online_failure
+                    && !online_latency
+                    && !online_mass
+                    && !profile_check
+                    && online_network_checkpoint.is_none()
+                    && online_exit_checkpoint.is_none()
+                    && online_loading_host_loss.is_none()
+                    && online_startup_host_loss.is_none()
+                    && online_loading_cancel.is_none()),
+            "--online-quick-match requires a normal online pair; the matchbot sets the match up"
+        );
+        ensure!(
             !online_map
                 .as_deref()
                 .is_some_and(|file| file.eq_ignore_ascii_case("RandMap.Sed"))
@@ -1902,6 +1990,7 @@ where
                 .map(|_| output_dir.clone()),
             loading_host_loss: online_loading_host_loss,
             startup_host_loss: online_startup_host_loss,
+            quick_match: online_quick_match,
         })
     } else {
         ensure!(
@@ -1922,7 +2011,8 @@ where
                 && online_startup_host_loss.is_none()
                 && online_loading_cancel.is_none()
                 && online_loading_cancel_checkpoint.is_none()
-                && !observe_loading,
+                && !observe_loading
+                && !online_quick_match,
             "online options require an online live checkpoint"
         );
         None
@@ -2463,6 +2553,14 @@ impl ShellCaptureSession {
             .is_some_and(|capture| capture.owns_simulation_steps(state))
     }
 
+    /// The live LAN and online battle observers check every committed frame,
+    /// so the runtime runs one frame per render for them.
+    pub(crate) fn observes_every_frame(&self) -> bool {
+        self.movies
+            .as_ref()
+            .is_some_and(|capture| capture.observes_every_frame())
+    }
+
     pub(crate) fn prepare_state(&mut self, state: &mut AppState) {
         state.match_state.input.cursor_x = self.request.cursor_x as f32;
         state.match_state.input.cursor_y = self.request.cursor_y as f32;
@@ -2493,7 +2591,8 @@ impl ShellCaptureSession {
                 ShellCaptureCheckpoint::CampaignOpening(
                     movies::OpeningTarget::SovietTick(tick)
                     | movies::OpeningTarget::SovietNavy(tick)
-                    | movies::OpeningTarget::SovietFortresses(tick),
+                    | movies::OpeningTarget::SovietFortresses(tick)
+                    | movies::OpeningTarget::TriggerTrace { tick, .. },
                 ) => MAX_CAPTURE_FRAMES + tick as u32,
                 _ => MAX_CAPTURE_FRAMES,
             };
@@ -3624,6 +3723,28 @@ mod tests {
         assert_eq!(config.account, "Peer");
         assert_eq!(config.host, "Host");
         assert_eq!(config.players, 2);
+        assert!(!config.quick_match);
+    }
+
+    #[test]
+    fn online_quick_match_capture_leaves_the_match_to_the_matchbot() {
+        let output = new_output_path("online-quick-match");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-guest".into();
+        values.extend(args(&[
+            "--online-account",
+            "Peer",
+            "--online-host",
+            "Host",
+            "--online-quick-match",
+        ]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture")
+        };
+        assert!(request.live_online.unwrap().quick_match);
+        values.extend(args(&["--online-map", "host-only.map"]));
+        assert!(parse_launch_args(values).is_err());
     }
 
     #[test]
@@ -3637,6 +3758,29 @@ mod tests {
         assert!(parse_launch_args(values.clone()).is_err());
         *values.last_mut().unwrap() = "--online-create-account".into();
         assert!(parse_launch_args(values).is_err());
+    }
+
+    /// A guest looks for "<host>'s_game", which the room name edit cuts at
+    /// 24 characters.
+    #[test]
+    fn online_host_names_leave_room_for_the_room_suffix() {
+        let output = new_output_path("online-host-name");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-coop-guest".into();
+        values.extend(args(&[
+            "--online-account",
+            "Guest",
+            "--online-host",
+            "seventeen-chars-x",
+        ]));
+        assert!(parse_launch_args(values.clone()).is_ok());
+        *values.last_mut().unwrap() = "eighteen-chars-xyz".into();
+        assert!(
+            parse_launch_args(values)
+                .unwrap_err()
+                .to_string()
+                .contains("room for 's_game")
+        );
     }
 
     #[test]
@@ -4497,6 +4641,57 @@ mod tests {
             "campaign-sov07-groups-tick-10001",
             "campaign-sov02-fortresses-tick-300",
             "campaign-sov02-fortresses-tick-10001",
+        ] {
+            assert!(ShellCaptureCheckpoint::parse(invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn trigger_trace_checkpoint_selects_the_named_retail_mission_and_its_side() {
+        use crate::ui::campaign_shell::CampaignSide;
+        for (name, side, scenario, tick, push) in [
+            (
+                "campaign-trigger-trace-all04dmd-tick-9000",
+                CampaignSide::Allied,
+                "ALL04DMD.MAP",
+                9000,
+                None,
+            ),
+            (
+                "campaign-trigger-trace-SOV07TMD-tick-1",
+                CampaignSide::Soviet,
+                "SOV07TMD.MAP",
+                1,
+                None,
+            ),
+            (
+                "campaign-trigger-trace-ALL02UMD-tick-18000-push-83-88",
+                CampaignSide::Allied,
+                "ALL02UMD.MAP",
+                18000,
+                Some((83, 88)),
+            ),
+        ] {
+            let target = movies::OpeningTarget::TriggerTrace {
+                scenario,
+                tick,
+                push,
+            };
+            assert_eq!(
+                ShellCaptureCheckpoint::parse(name).unwrap().movies_target(),
+                Some(movies::MoviesTarget::CampaignStart {
+                    side,
+                    target: movies::CampaignStartTarget::Opening(target),
+                })
+            );
+        }
+        for invalid in [
+            "campaign-trigger-trace-ALL08UMD-tick-100",
+            "campaign-trigger-trace-ALL01UMD-tick-0",
+            "campaign-trigger-trace-ALL01UMD-tick-30001",
+            "campaign-trigger-trace-ALL01UMD",
+            "campaign-trigger-trace-ALL01UMD-tick-100-push-5",
+            "campaign-trigger-trace-ALL01UMD-tick-100-push--1-5",
         ] {
             assert!(ShellCaptureCheckpoint::parse(invalid).is_err());
         }

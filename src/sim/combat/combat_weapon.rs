@@ -590,6 +590,17 @@ pub fn current_weapon<'r>(
     get_weapon(entity, obj, index, entities, rules, interner)
 }
 
+/// [`current_weapon`] of a freshly constructed object that is not on the map,
+/// such as the building being placed (`Display+0x11A4`). It has no upgrades,
+/// occupants or elite rank, and every retail building has `TurretCount=0`, so
+/// `GetCurrentWeapon @ 0x0070E1A0` reads weapon slot 0.
+pub fn fresh_object_current_weapon<'r>(
+    obj: &'r ObjectType,
+    rules: &'r RuleSet,
+) -> Option<&'r WeaponType> {
+    weapon_for_index(obj, 0, 0)?.weapon(rules)
+}
+
 /// `TechnoClass::SelectNavalTargetingWeapon @ 0x006F3820` (vtable `+0x2E8`,
 /// no class overrides). Returns `-1` (cannot engage on water), `0` or `1`.
 ///
@@ -1406,7 +1417,7 @@ mod tests {
         let mut world = Simulation::new();
         assert_eq!(
             world.spawn_from_map(
-                &crate::map::entities::parse_map_entities(&ini),
+                &crate::map::entities::parse_map_entities(&ini, 4),
                 Some(&rules)
             ),
             3

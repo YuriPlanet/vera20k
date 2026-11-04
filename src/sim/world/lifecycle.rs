@@ -777,6 +777,13 @@ pub enum LifecycleOutput {
     BuildingProductionAbandoned {
         owner: InternedId,
     },
+    /// BuildingChangeOwner448C9A..448CD6: a Construction Yard leaving a
+    /// human player (IsHumanPlayer50B6F0) clears that player's current
+    /// placement (Display PendingObject/Type/House) and cursor (4A8BF0).
+    /// The saved retry and the ready product stay.
+    ConstructionYardCaptured {
+        owner: InternedId,
+    },
     /// Logic55AFB0 increments the process FPS sample even on terminal frames.
     LogicVisit,
     /// Logic55B5C3 updates existing lasers before the live object visits.
@@ -1680,6 +1687,8 @@ impl Simulation {
             // Building440D2D, after native House building registration.
             entity.reset_building_health_sample_at_unlimbo();
         }
+        // Residual (invisible): native marks at 0x00440C34, before
+        // 0x00440D07..0x00440D2D above; only House AI reads the marks.
         self.mark_building_base_reservation_with_arg(stable_id, false, context);
         self.discover_building_owner_after_unlimbo(stable_id, context);
         self.construct_spotlight(stable_id, context.rules());
@@ -3769,9 +3778,12 @@ impl Simulation {
             //returns before this BuildingDetach arm.
             crate::sim::radio::broadcast_break(self, stable_id, context.rules(), context.effects());
         }
-        // The Foot prelude (`0x004D9744`) leaves the object's team, before
-        // Limbo is set, so the object still takes its idle mode.
-        self.leave_team(stable_id, false, context.rules(), context.effects());
+        // The Foot prelude leaves the object's team before Limbo is set, so
+        // the object still takes its idle mode. It skips that inside an
+        // object-placement scope (`[0x00A8E7AC]`, `0x004D9736..0x004D9744`).
+        if !self.object_placement_scope_active() {
+            self.leave_team(stable_id, false, context.rules(), context.effects());
+        }
         // This Detach_All(1) (`0x005F4D61`) also visits the concealed object
         // itself, so a live spawner's Limbo runs its SpawnManager's owner arm:
         // docked children UnInit with a zero regen timer, and airborne ones
@@ -4269,7 +4281,8 @@ impl Simulation {
     /// Callers:
     /// * `all`: the exact-zero Destroy callback of `ObjectClass::ReceiveDamage`
     ///   (`0x005F5765..0x005F57AF`), after the kill callback and before
-    ///   TechnoClass's death arm, and the Stun of a living object.
+    ///   TechnoClass's death arm, and every Stun (death, crash, sinking,
+    ///   lift release and sale).
     /// * not `all`: `TechnoClass::StartCloaking @ 0x00703770` and the cloak's
     ///   1 → 2 completion (`0x006FBA98`).
     ///
@@ -4366,9 +4379,10 @@ impl Simulation {
                 }
             }
             EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft => {
-                if all {
-                    // `0x004D9744`: the Foot prelude leaves the object's team
-                    // first.
+                // The Foot prelude leaves the object's team first, unless an
+                // object-placement scope is open (`[0x00A8E7AC]`,
+                // `0x004D9736..0x004D9744`).
+                if all && !self.object_placement_scope_active() {
                     self.leave_team(stable_id, false, context.rules(), context.effects());
                 }
                 if let Some(contact) = self
@@ -4599,11 +4613,18 @@ impl Simulation {
     /// then its Foot-class gate. Techno ctor `0x006F2B40` ORs AbstractFlags
     /// bit 0 at `0x006F3228`; Foot ctor `0x004D31E0` ORs bit 2 (`4`) at
     /// `0x004D34DA`, so the native `+0x14 & 4` test identifies Foot, not an
-    /// active-state predicate. Only a Foot with `+0x6AD == 0` runs
-    /// Kill_All_Spawns (`0x006B7100`), ClearAllTargets (`0x006B7BB0`) and
-    /// Detach_All(1); Deselect follows on every class. Foot's constructor
-    /// clears `+0x6AD` at `0x004D3414`; ImbueLocomotor sets the lift latch at
-    /// `0x00710352`, and the Jumpjet landing paths clear it.
+    /// active-state predicate. A non-Foot object (`JZ 0x006FCD7B`) and a Foot
+    /// with `+0x6AD == 0` run Kill_All_Spawns (`0x006B7100`), ClearAllTargets
+    /// (`0x006B7BB0`) and Detach_All(1); only a lifted Foot skips them.
+    /// Deselect follows on every class. Foot's constructor clears `+0x6AD` at
+    /// `0x004D3414`; ImbueLocomotor sets the lift latch at `0x00710352`, and
+    /// the Jumpjet landing paths clear it. A Building reaches this from
+    /// `TechnoClass::ReceiveDamage`'s death arm (`0x00702206..0x00702210`),
+    /// usually after the Destroy callback's own Detach_All(1)
+    /// (`0x005F5765..0x005F57AF`), so it detaches a second time like native.
+    /// A further hit on a building already at Health 0 skips Destroy
+    /// (`0x005F5752..0x005F575F`) but still takes the death arm, so this is
+    /// its only detach.
     fn techno_stun(&mut self, stable_id: u64, context: UninitContext<'_>) {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
@@ -4635,14 +4656,14 @@ impl Simulation {
         }
         crate::sim::radio::broadcast_break(self, stable_id, context.rules(), context.effects());
         // `0x006FCD6B..0x006FCD79`: a lifted Foot keeps its spawns, their
-        // targets and its listeners. The `+0x14 & 4` test guards the whole
-        // block before the Foot-only `+0x6AD` read.
+        // targets and its listeners. The `+0x14 & 4` test only guards the
+        // Foot-only `+0x6AD` read; every other object runs the block.
         let foot_lifted = self
             .substrate
             .entities
             .get(stable_id)
             .is_some_and(|entity| entity.category().is_foot() && entity.lift.swap_active());
-        if category.is_foot() && !foot_lifted {
+        if !foot_lifted {
             crate::sim::spawn_manager::kill_all_spawns_with_context(self, stable_id, context);
             crate::sim::spawn_manager::clear_all_spawn_targets(
                 self,
@@ -4740,7 +4761,9 @@ impl Simulation {
             listener.passenger_role.inside_transport_id(),
             listener.pending_entry(),
             listener.spawn_owner_id.owner(),
+            listener.fire_particle_system.system(),
             listener.spark_particle_system.system(),
+            listener.railgun_particle_system.system(),
             listener.damage_smoke_system_id.system(),
             listener.ammo().and_then(|ammo| ammo.dock()),
             listener
@@ -4917,6 +4940,11 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> TargetingSweepReceipt {
+        // VERA-only: the sweep releases a batched target scan's pick as it
+        // does a TarCom (`techno_ai::scan_batch`).
+        if let TargetKind::Entity(target_id) = target {
+            self.release_batched_scan_pick(target_id);
+        }
         #[cfg(any(test, feature = "test-support"))]
         let mut cell_detaches = Vec::new();
         let mut listeners = self.substrate.entities.keys_sorted();
@@ -5237,7 +5265,9 @@ impl Simulation {
         // exact match, including damage-Smoke+310. It precedes the control
         // gate707AE7 and is independent of the target's sensor/owner guards.
         let clear_damage_smoke = listener.damage_smoke_system_id.system() == Some(expired_id);
+        let clear_fire_system = listener.fire_particle_system.system() == Some(expired_id);
         let clear_spark_system = listener.spark_particle_system.system() == Some(expired_id);
+        let clear_railgun_system = listener.railgun_particle_system.system() == Some(expired_id);
         // Techno707AE7..707B03 clears ArchiveTarget+218 on control1. The
         // later Foot4D99F1..4D99FC clears a still-matching archive on both
         // controls, independent of sensors and same-owner target exemptions.
@@ -5328,7 +5358,9 @@ impl Simulation {
         let clear_spotlight = listener.category() == EntityCategory::Structure
             && listener.building_light.light() == Some(expired_id);
         if !(clear_suspended_target
+            || clear_fire_system
             || clear_spark_system
+            || clear_railgun_system
             || clear_damage_smoke
             || clear_archive_target
             || clear_suspended_nav_com
@@ -5358,8 +5390,14 @@ impl Simulation {
         if clear_damage_smoke {
             listener.damage_smoke_system_id.forget();
         }
+        if clear_fire_system {
+            listener.fire_particle_system.forget();
+        }
         if clear_spark_system {
             listener.spark_particle_system.forget();
+        }
+        if clear_railgun_system {
+            listener.railgun_particle_system.forget();
         }
         if clear_archive_target {
             listener.set_archive_target(None);
@@ -5671,6 +5709,9 @@ impl Simulation {
         control: PointerExpiryControl,
         context: UninitContext<'_>,
     ) {
+        // VERA-only: a batched target scan holds its pick across the turns
+        // before its scanner's as a TarCom does (`techno_ai::scan_batch`).
+        self.release_batched_scan_pick(expired_id);
         // `DispatchPointerExpiredCleanup @ 0x007258D0` calls
         // `BombListClass::PointerGotInvalid @ 0x00439150` after its listener
         // loop (0x00725961) whatever the control, so a cloaking planter loses

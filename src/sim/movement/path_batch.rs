@@ -39,7 +39,29 @@
 //! whose next cell refuses it stands that frame with its head cleared and
 //! re-paths the next, where native re-paths and usually steps at once, and a
 //! Foot whose new route is blocked at its first step by a moving friendly
-//! re-paths a frame later. Hover's own timer-gated Find_Path is not batched.
+//! re-paths a frame later. A recursion's request registers as that
+//! recursion, and the request that takes its answer resumes with the
+//! recursion's arguments, as the recursion runs:
+//! - A retry's recursion ([`WaitingRequest::RetryRecursion`]), Walk's
+//!   (Process argument 0) and Drive/Ship's (Process_Movement(0, 0)), resumes
+//!   with the retry spent: a step refused again takes the argument-0 arms,
+//!   such as code 6's stop within CloseEnough of the destination (Walk
+//!   0x75B725..0x75B836, Drive 0x4B3742..0x4B38A1) or Drive's code-7 stop
+//!   (0x4B3C26), instead of retrying every frame.
+//! - Drive/Ship's second-stage code-4/5 re-entry
+//!   ([`WaitingRequest::StraightReentry`]) clears the path and passes
+//!   argument 2 on with argument 3 = 1 (Drive 0x4B41B3..0x4B41F7, Ship
+//!   0x6A37DF..0x6A3823), so the new route's first track runs straight
+//!   (Drive 0x4B3F7D..0x4B3F93, Ship 0x6A35CC..0x6A35E2) instead of
+//!   turning into the same refusal every frame.
+//!
+//! A recursion a capped pass leaves out stays one through the Foot's
+//! registrations, as a left-out code-2 re-path keeps its urgency. The
+//! request that takes the answer resumes as the recursion even when the Foot
+//! was given a new destination in between, which native's same-frame
+//! recursion never meets: a retry would usually reach the same arm, and the
+//! new route's first track runs straight.
+//! Hover's own timer-gated Find_Path is not batched.
 //! The batch draws no random numbers; later draws follow the changed
 //! movement. Each search reads only that frame-start world, so no result
 //! depends on the thread count. Simulations start without batching; real
@@ -286,6 +308,10 @@ pub(crate) struct PathBatch {
     /// The urgency of each code-2 re-path the last pass left out, which the
     /// Foot's registrations this frame keep.
     left_out_code2: BTreeMap<u64, u8>,
+    /// The recursions the last pass left out, by Foot, which the Foot's
+    /// no-queue registrations this frame repeat.
+    #[serde(default)]
+    left_out_recursions: BTreeMap<u64, WaitingRequest>,
     /// The lowest Foot id the next capped pass answers first; see
     /// [`take_turn`].
     next_turn: u64,
@@ -313,8 +339,9 @@ pub(crate) struct PathBatch {
 }
 
 impl std::hash::Hash for PathBatch {
-    /// The registrations, the left-out re-paths' urgencies and the next
-    /// capped turn, which carry into the next frame; answers live within one.
+    /// The registrations, the left-out re-paths' urgencies and recursions,
+    /// and the next capped turn, which carry into the next frame; answers
+    /// live within one.
     /// A cap or budget that never bound leaves no re-path out and the turn
     /// at zero, which fold nothing.
     fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
@@ -328,6 +355,13 @@ impl std::hash::Hash for PathBatch {
             for (&id, &urgency) in &self.left_out_code2 {
                 id.hash(hasher);
                 urgency.hash(hasher);
+            }
+        }
+        if !self.left_out_recursions.is_empty() {
+            (self.left_out_recursions.len() as u64).hash(hasher);
+            for (&id, &request) in &self.left_out_recursions {
+                id.hash(hasher);
+                request.hash_bytes().hash(hasher);
             }
         }
         if self.next_turn != 0 {
@@ -371,6 +405,18 @@ pub(crate) enum WaitingRequest {
     /// A code-2 ladder's re-path, at the urgency the ladder asked; see the
     /// module docs.
     Code2Ladder { urgency: u8 },
+    /// The no-queue request of a refused-step retry recursion: Walk's
+    /// (`WalkLocomotionClass::Process(0)` at 0x75B716, 0x75BABB and
+    /// 0x75BC04) or Drive/Ship's (`Process_Movement(0, 0)` at 0x4B397F,
+    /// 0x4B4480 and 0x4B4552; Ship 0x6A2FCE, 0x6A3AAC and 0x6A3B7E): the
+    /// request that takes its answer resumes with the retry spent; see the
+    /// module docs.
+    RetryRecursion,
+    /// The no-queue request of Drive/Ship's second-stage code-4/5 re-entry,
+    /// `Process_Movement(allow_retry, 1)` once it cleared the path (Drive
+    /// 0x4B41B3..0x4B41F7, Ship 0x6A37DF..0x6A3823): the request that takes
+    /// its answer resumes with those arguments; see the module docs.
+    StraightReentry { allow_retry: bool },
 }
 
 impl WaitingRequest {
@@ -380,11 +426,18 @@ impl WaitingRequest {
         matches!(self, Self::Code2Ladder { urgency: 2 })
     }
 
-    /// Which request this is: 0 no-queue, 1 code-2 re-path.
+    /// Whether this is a recursion's no-queue request, which the request
+    /// that takes its answer resumes as.
+    fn is_recursion(self) -> bool {
+        matches!(self, Self::RetryRecursion | Self::StraightReentry { .. })
+    }
+
+    /// Which request this is: 0 no-queue (a recursion's included), 1 code-2
+    /// re-path.
     #[cfg(any(test, feature = "test-support"))]
     fn kind(self) -> usize {
         match self {
-            Self::NoQueue => 0,
+            Self::NoQueue | Self::RetryRecursion | Self::StraightReentry { .. } => 0,
             Self::Code2Ladder { .. } => 1,
         }
     }
@@ -394,6 +447,8 @@ impl WaitingRequest {
         match self {
             Self::NoQueue => [0, 0],
             Self::Code2Ladder { urgency } => [1, urgency],
+            Self::RetryRecursion => [2, 0],
+            Self::StraightReentry { allow_retry } => [3, u8::from(allow_retry)],
         }
     }
 }
@@ -402,7 +457,9 @@ impl WaitingRequest {
 fn code2_urgency(&(id, request): &(u64, WaitingRequest)) -> Option<(u64, u8)> {
     match request {
         WaitingRequest::Code2Ladder { urgency } => Some((id, urgency)),
-        WaitingRequest::NoQueue => None,
+        WaitingRequest::NoQueue
+        | WaitingRequest::RetryRecursion
+        | WaitingRequest::StraightReentry { .. } => None,
     }
 }
 
@@ -507,8 +564,10 @@ fn no_queue_destination(actor: &GameEntity) -> Option<DriveCoord> {
 /// see the module docs.
 fn heads_for_own_cell(foot: &GameEntity, request: WaitingRequest) -> bool {
     let destination = match request {
-        WaitingRequest::NoQueue => no_queue_destination(foot),
         WaitingRequest::Code2Ladder { .. } => code2_ladder_destination(foot),
+        WaitingRequest::NoQueue
+        | WaitingRequest::RetryRecursion
+        | WaitingRequest::StraightReentry { .. } => no_queue_destination(foot),
     };
     destination.is_some_and(|destination| {
         let (start, goal) = super::movement_tick::core_search_cells(foot, destination);
@@ -528,7 +587,8 @@ impl Simulation {
     /// frame, and the request heads for a cell other than the Foot's own
     /// (see the module docs); otherwise it does not wait, and claims the
     /// unclaimed answer if there is one. A code-2 re-path the last pass left
-    /// out registers at the urgency it had.
+    /// out registers at the urgency it had, and a no-queue request of a Foot
+    /// whose recursion it left out registers as that recursion.
     pub(super) fn defer_path_search(
         path_batch: &mut Option<PathBatch>,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
@@ -559,10 +619,26 @@ impl Simulation {
             (WaitingRequest::Code2Ladder { .. }, Some(&urgency)) => {
                 WaitingRequest::Code2Ladder { urgency }
             }
+            (WaitingRequest::NoQueue, _) => batch
+                .left_out_recursions
+                .get(&id)
+                .copied()
+                .unwrap_or(request),
             _ => request,
         };
         batch.pending.push((id, request));
         true
+    }
+
+    /// The recursion whose answer `id`'s next request this frame takes, if
+    /// the pass answered one: that request resumes as the recursion runs.
+    pub(super) fn answered_recursion(&self, id: u64) -> Option<WaitingRequest> {
+        self.path_batch
+            .as_ref()?
+            .ready
+            .get(&id)
+            .filter(|slot| !slot.claimed && slot.request.is_recursion())
+            .map(|slot| slot.request)
     }
 
     /// The urgency `id`'s code-2 ladder searches at, given `now`, the
@@ -641,6 +717,7 @@ impl Simulation {
         // Last pass's left-out urgencies went into this frame's
         // registrations; its left-out urgency-2 re-paths go first.
         let last_left_out = std::mem::take(&mut batch.left_out_code2);
+        batch.left_out_recursions.clear();
         if pending.is_empty() {
             batch.stats.finish(started.elapsed(), 0, 0, 0, 0, 0);
             return;
@@ -666,11 +743,19 @@ impl Simulation {
         );
         turn.truncate(SEARCHES_PER_PASS);
         let urgent = turn.len();
+        // The recursions it leaves out stay recursions.
+        let mut recursions_left_out: BTreeMap<u64, WaitingRequest> = others
+            .iter()
+            .filter(|&&(_, request)| request.is_recursion())
+            .copied()
+            .collect();
         let others = take_turn(others, &mut batch.next_turn, SEARCHES_PER_PASS);
         for (id, _) in &others {
             left_out.remove(id);
+            recursions_left_out.remove(id);
         }
         batch.left_out_code2 = left_out;
+        batch.left_out_recursions = recursions_left_out;
         turn.extend(others);
         let searched = turn.len();
         let (turns, expanded, urgency2_made) = match self.path_grid_snapshot() {
@@ -878,8 +963,10 @@ impl Simulation {
         keep_searching: Option<&dyn Fn(u32) -> bool>,
     ) -> Option<BatchedSearch> {
         let request = match request {
-            WaitingRequest::NoQueue => self.no_queue_request(id)?,
             WaitingRequest::Code2Ladder { urgency } => self.code2_ladder_request(id, urgency)?,
+            WaitingRequest::NoQueue
+            | WaitingRequest::RetryRecursion
+            | WaitingRequest::StraightReentry { .. } => self.no_queue_request(id)?,
         };
         let goal = request.destination;
         let answer = self

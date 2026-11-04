@@ -275,6 +275,14 @@ impl LiveCommandSession {
             .map_or_else(Vec::new, |session| session.take_speed_changes())
     }
 
+    /// VERA: true once, when this game reaches a pause that found it catching
+    /// up. `reached` is whether the simulation has reached the pause.
+    pub fn take_caught_up_in_pause(&mut self, reached: bool, current_frame: u32) -> bool {
+        self.sequenced
+            .as_mut()
+            .is_some_and(|session| session.take_caught_up_in_pause(reached, current_frame))
+    }
+
     /// A hidden window's frames may be throttled by its system, so it never
     /// reports falling behind the relay's clock.
     pub fn set_presentation_hidden(&mut self, hidden: bool) {

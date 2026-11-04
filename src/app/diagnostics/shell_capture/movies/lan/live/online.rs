@@ -17,6 +17,9 @@ enum RoundPhase {
     Main,
     Login,
     Lobby,
+    /// Quick Match pressed: the runner, the matchbot's pairing and the
+    /// automatic room run until gameplay.
+    QuickMatch,
     Create,
     Discover,
     HostSetup,
@@ -29,6 +32,8 @@ enum RoundPhase {
     EndRound,
     Results,
     Returning,
+    LeaveRoom,
+    LeaveLobby,
     ExitFault,
     ExitSignIn,
     MainReturn,
@@ -59,6 +64,13 @@ pub(super) struct LiveRoundFlow {
     loading_cancellation: Option<Value>,
     profile: Option<super::profile::ProfileCheck>,
     ai_input: super::profile::SetupComboInput,
+    /// The host saw its guest back in the reopened room after this match.
+    guest_back: bool,
+    /// Quick Match guest: when this lobby settled, and whether and when the
+    /// host was seen in it and then left.
+    quick_match_wait: Option<(Instant, bool, Option<Instant>)>,
+    /// Quick Match: the paired room, recorded once per round.
+    quick_match_room: Option<String>,
 }
 
 impl LiveRoundFlow {
@@ -106,7 +118,36 @@ impl LiveRoundFlow {
             loading_cancellation: None,
             profile,
             ai_input: Default::default(),
+            guest_back: false,
+            quick_match_wait: None,
+            quick_match_room: None,
         }
+    }
+
+    /// The matchbot makes the earlier waiter the host, so the configured
+    /// guest queues once the host has left this lobby for Quick Match (3 s
+    /// later, for its list, join and request), or 30 s after the lobby
+    /// settled without the host in it.
+    fn quick_match_turn(&mut self, core: &LiveLanCapture, state: &AppState) -> bool {
+        if self.input_host(core) {
+            return true;
+        }
+        let host = self.online_config().host.clone();
+        let present = crate::app::shell_wol::lobby::member_names(state)
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case(&host));
+        let (since, seen, left) =
+            self.quick_match_wait
+                .get_or_insert((Instant::now(), false, None));
+        if present {
+            *seen = true;
+            *left = None;
+            return false;
+        }
+        if *seen {
+            return left.get_or_insert_with(Instant::now).elapsed() >= Duration::from_secs(3);
+        }
+        since.elapsed() >= Duration::from_secs(30)
     }
 
     /// LAN and online use the same normal chooser/generator input owner.
@@ -235,6 +276,12 @@ impl LiveRoundFlow {
 
     pub(super) fn ready(&self) -> bool {
         self.phase == RoundPhase::Finished
+    }
+
+    /// The online part of a co-op capture's receipt.
+    pub(super) fn cooperative_receipt(&self) -> Value {
+        json!({"account":self.config.as_ref().map(|config| &config.account),
+            "host":self.config.as_ref().map(|config| &config.host),"route":self.route})
     }
 
     fn record(&mut self, frame: u32, action: &str) {
@@ -668,6 +715,20 @@ impl LiveRoundFlow {
             self.record(frame, "Real LAN loading reached synchronized gameplay");
             self.phase = RoundPhase::Running;
         }
+        // The host leaves its reopened room only after the guest came back
+        // and left again. Note the visit even while the room still slides in.
+        if self.config.is_none()
+            && core.host()
+            && matches!(self.phase, RoundPhase::Returning | RoundPhase::LeaveRoom)
+            && rendered == PresentedShell::NetworkSetup
+            && state
+                .match_state
+                .session
+                .network_setup()
+                .is_some_and(|launch| launch.humans.len() == 2)
+        {
+            self.guest_back = true;
+        }
         match self.phase {
             RoundPhase::Main
                 if rendered == PresentedShell::MainMenu
@@ -730,6 +791,24 @@ impl LiveRoundFlow {
             RoundPhase::Lobby if lobby_ready(state, rendered) => {
                 if self.reentering() {
                     self.observe_reentry_lobby(state, frame)?;
+                    return Ok(());
+                }
+                if self.online_config().quick_match {
+                    if !self.quick_match_turn(core, state) {
+                        return Ok(());
+                    }
+                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    click(
+                        state,
+                        layout
+                            .page
+                            .button_rect(wol_lobby::QUICK_MATCH)
+                            .context("Quick Match button")?,
+                    );
+                    self.quick_match_wait = None;
+                    self.quick_match_room = None;
+                    self.record(frame, "Quick Match selected");
+                    self.phase = RoundPhase::QuickMatch;
                     return Ok(());
                 }
                 if self.input_host(core) {
@@ -840,6 +919,14 @@ impl LiveRoundFlow {
                             .context("Refresh image button")?,
                     );
                     self.last_refresh = Instant::now();
+                }
+            }
+            RoundPhase::HostSetup if core.cooperative.is_some() => {
+                let run = core.cooperative.as_mut().context("co-op run")?;
+                if run.prepare_host(state, rendered, &mut self.route, frame)? {
+                    core.open_human_rows(state, None)?;
+                    self.record(frame, "Cooperative campaign chosen through Choose Map");
+                    self.phase = RoundPhase::HostReady;
                 }
             }
             RoundPhase::HostSetup => {
@@ -972,14 +1059,24 @@ impl LiveRoundFlow {
                     );
                 }
             }
-            RoundPhase::Loading | RoundPhase::HostReady | RoundPhase::GuestSetup
+            RoundPhase::Loading
+            | RoundPhase::HostReady
+            | RoundPhase::GuestSetup
+            | RoundPhase::QuickMatch
                 if state.frontend.screen == GameScreen::InGame =>
             {
                 ensure!(
                     state.match_state.live_network.is_some(),
                     "online match has no production command transport"
                 );
+                ensure!(
+                    self.phase != RoundPhase::QuickMatch || self.quick_match_room.is_some(),
+                    "Quick Match reached gameplay before its room was checked"
+                );
                 core.startup = Some(startup_receipt(state)?);
+                if let Some(run) = core.cooperative.as_mut() {
+                    run.match_loaded(state);
+                }
                 if let Some(ai) = core.ai.as_mut() {
                     ai.observe(state)?;
                 }
@@ -996,6 +1093,54 @@ impl LiveRoundFlow {
                     "Authenticated relay and synchronized loading reached gameplay",
                 );
                 self.phase = RoundPhase::Running;
+            }
+            // The paired room is the host's `<host>'s_game`: it names the
+            // matchbot's host, which must be the configured one. A second
+            // pairing means the first room never started.
+            RoundPhase::QuickMatch => {
+                let Some(room) = crate::app::shell_wol::lobby::current_channel(state)
+                    .filter(|channel| channel.kind == wol_lobby::GAME_CHANNEL)
+                else {
+                    return Ok(());
+                };
+                if self.quick_match_room.is_some() {
+                    ensure!(
+                        self.quick_match_room.as_deref() == Some(room.name.as_str()),
+                        "the matchbot paired again in {} after {:?} never started",
+                        room.name,
+                        self.quick_match_room
+                    );
+                    return Ok(());
+                }
+                let expected = format!("{}'s_game", self.online_config().host);
+                ensure!(
+                    room.name.eq_ignore_ascii_case(&expected),
+                    "the matchbot paired in {} instead of {expected}",
+                    room.name
+                );
+                self.record(frame, "Matchbot pairing joined the host's room");
+                self.quick_match_room = Some(room.name);
+            }
+            RoundPhase::Running if core.cooperative.is_some() => {
+                let host = core.host();
+                let run = core.cooperative.as_mut().context("co-op run")?;
+                if rendered == PresentedShell::NetworkSetup
+                    && run.room_returned(state, host, &mut self.route, frame)?
+                {
+                    // The next stage starts from the room as a first start does.
+                    self.phase = if host {
+                        RoundPhase::HostReady
+                    } else {
+                        RoundPhase::GuestSetup
+                    };
+                    return Ok(());
+                }
+                run.step(state, &mut self.route, frame)?;
+                if run.done() {
+                    core.phase = Phase::Finished;
+                    self.record(frame, "The kept room's next stage ran");
+                    self.phase = RoundPhase::Finished;
+                }
             }
             RoundPhase::Running => {
                 let startup_failure = core
@@ -1103,6 +1248,10 @@ impl LiveRoundFlow {
                             .config
                             .as_ref()
                             .is_some_and(|config| config.ai.is_some());
+                        let quick_match = self
+                            .config
+                            .as_ref()
+                            .is_some_and(|config| config.quick_match);
                         self.abort = Some(if solo_ai {
                             // Native B6 hides Observe with fewer than two live
                             // humans (4F1938). Use its ordinary Leave button.
@@ -1110,6 +1259,15 @@ impl LiveRoundFlow {
                                 state,
                                 &mut self.route,
                                 frame,
+                            )?
+                        } else if quick_match {
+                            // A Quick Match game is a tournament game: Abort
+                            // opens the Surrender box instead of B6.
+                            super::super::super::abort_return::AbortReturnInput::begin_surrender(
+                                state,
+                                &mut self.route,
+                                frame,
+                                true,
                             )?
                         } else {
                             super::super::super::abort_return::AbortReturnInput::begin_network_observe(
@@ -1119,6 +1277,8 @@ impl LiveRoundFlow {
                             frame,
                             if solo_ai {
                                 "Leave requested through in-game Options"
+                            } else if quick_match {
+                                "Surrender requested through in-game Options"
                             } else {
                                 "Observe requested through in-game Options"
                             },
@@ -1149,6 +1309,12 @@ impl LiveRoundFlow {
                             .is_some_and(|config| config.ai.is_some())
                         {
                             "Leave selected through B6; real EXIT queued"
+                        } else if self
+                            .config
+                            .as_ref()
+                            .is_some_and(|config| config.quick_match)
+                        {
+                            "Surrender OK; real DESTRUCT and EXIT queued"
                         } else {
                             "Observe selected through B6; real DESTRUCT queued"
                         },
@@ -1261,19 +1427,41 @@ impl LiveRoundFlow {
                 );
                 self.phase = RoundPhase::Returning;
             }
+            // Surrender's EXIT ends the match for its player at once.
+            RoundPhase::Results
+                if self
+                    .config
+                    .as_ref()
+                    .is_some_and(|config| config.quick_match)
+                    && self.abort.is_some()
+                    && lobby_ready(state, rendered) =>
+            {
+                self.current_round
+                    .as_mut()
+                    .context("completed Quick Match round")?["result"] =
+                    json!({"shown":false,"completion":"Surrender returned directly to lobby"});
+                self.record(
+                    frame,
+                    "Surrender returned to the lobby without a results page",
+                );
+                self.phase = RoundPhase::Returning;
+            }
             RoundPhase::Returning
                 if if self.config.is_some() {
                     lobby_ready(state, rendered)
+                } else if returns_to_room(core, state) {
+                    room_returned(core, state, rendered)
                 } else {
                     rendered == PresentedShell::LanLobby && lobby_settled(state)
                 } =>
             {
+                let room = self.config.is_none() && returns_to_room(core, state);
                 ensure!(
                     state.match_state.live_network.is_none(),
                     "finished round retained live command owner"
                 );
                 ensure!(
-                    state.match_state.session.network_setup().is_none(),
+                    room || state.match_state.session.network_setup().is_none(),
                     "finished round retained setup"
                 );
                 // The exit fault targets logout only after the final match's
@@ -1302,8 +1490,13 @@ impl LiveRoundFlow {
                     .current_round
                     .take()
                     .context("completed round result")?;
-                round["returned_to_lobby"] = json!(true);
+                round[if room {
+                    "returned_to_room"
+                } else {
+                    "returned_to_lobby"
+                }] = json!(true);
                 self.rounds.push(round);
+                self.abort = None;
                 self.record(
                     frame,
                     if core
@@ -1318,6 +1511,8 @@ impl LiveRoundFlow {
                         } else {
                             "Expected connection Quit returned to the authenticated online lobby"
                         }
+                    } else if room {
+                        "Returned to VERA's reopened room through normal result continuation"
                     } else {
                         "Returned to service lobby through normal result continuation"
                     },
@@ -1342,6 +1537,10 @@ impl LiveRoundFlow {
                         self.phase = RoundPhase::ExitFault;
                         return Ok(());
                     }
+                    if room {
+                        self.phase = RoundPhase::LeaveRoom;
+                        return Ok(());
+                    }
                     if self.config.is_some() {
                         let rect = crate::app::shell_wol::lobby::layout(state)
                             .page
@@ -1360,14 +1559,62 @@ impl LiveRoundFlow {
                     );
                 } else {
                     reset_round(core);
+                    self.guest_back = false;
                     self.phase = if self.config.is_some() {
                         RoundPhase::Lobby
+                    } else if room {
+                        // Already in the room: the host sets up the next
+                        // match again and the guest waits for its Start.
+                        core.phase = if core.host() {
+                            Phase::HostSetup
+                        } else {
+                            Phase::GuestSetup
+                        };
+                        core.event(frame, "next match set up in VERA's reopened room");
+                        RoundPhase::LanEntry
                     } else {
                         core.phase = Phase::Lobby;
-                        core.kick_observed = true;
                         RoundPhase::LanEntry
                     };
                 }
+            }
+            RoundPhase::LeaveRoom
+                if rendered == PresentedShell::NetworkSetup
+                    && setup_settled(state, core.host())
+                    && (!core.host()
+                        || self.guest_back
+                            && state
+                                .match_state
+                                .session
+                                .network_setup()
+                                .is_some_and(|launch| launch.humans.len() == 1)) =>
+            {
+                setup_button(state, crate::ui::multiplayer_setup::BACK)?;
+                MoviesCapture::restore_neutral_pointer(state);
+                self.record(
+                    frame,
+                    if core.host() {
+                        "Guest came back and left; host left the reopened room through Back"
+                    } else {
+                        "Guest left the reopened room through Back"
+                    },
+                );
+                self.phase = RoundPhase::LeaveLobby;
+            }
+            RoundPhase::LeaveLobby
+                if rendered == PresentedShell::LanLobby && lobby_settled(state) =>
+            {
+                ensure!(
+                    state.match_state.session.network_setup().is_none(),
+                    "Back from the reopened room retained its setup"
+                );
+                lobby_button(state, crate::ui::lan_shell::BACK)?;
+                MoviesCapture::restore_neutral_pointer(state);
+                self.record(
+                    frame,
+                    "Final settled lobby Back clicked through ordinary input",
+                );
+                self.phase = RoundPhase::MainReturn;
             }
             RoundPhase::ExitFault => {
                 if self.exit_block_applied(state, rendered, frame)? {
@@ -1520,8 +1767,6 @@ fn reset_round(core: &mut LiveLanCapture) {
     core.stop_observation = super::StopObservation::default();
     core.stopped = false;
     core.last_wait = None;
-    core.kick_observed = false;
-    core.entered_setup = false;
     core.country_selected = false;
     if core.latency.is_some() {
         core.latency = Some(super::latency::LatencyCapture::default());
@@ -1535,6 +1780,24 @@ fn reset_round(core: &mut LiveLanCapture) {
     if core.ai.is_some() {
         core.ai = Some(AiActivity::default());
     }
+}
+
+/// VERA's LAN room comes back after a match (`return_after_match`): its host
+/// opens it again at once and the guest joins it again once it is open. The
+/// original-style room returns to BB, and the desync route keeps its own
+/// return check.
+fn returns_to_room(core: &LiveLanCapture, state: &AppState) -> bool {
+    core.failure.is_none() && !state.frontend.native_shell_ui
+}
+
+fn room_returned(core: &LiveLanCapture, state: &AppState, rendered: PresentedShell) -> bool {
+    rendered == PresentedShell::NetworkSetup
+        && setup_settled(state, core.host())
+        && state
+            .match_state
+            .session
+            .network_setup()
+            .is_some_and(|launch| core.host() || launch.humans.len() == 2)
 }
 
 fn lobby_ready(state: &AppState, rendered: PresentedShell) -> bool {

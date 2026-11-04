@@ -112,7 +112,8 @@ fn apply_screen_shake(
 impl App {
     /// Service the match runtime for one pass: the outcome voice wait, the
     /// scenario exit cascade, the quit cascade, the audio pump and, when
-    /// admitted, each simulation advance due by now. Shared by the render pass and the
+    /// admitted, each simulation advance due by now (only the first without
+    /// `catch_up_allowed`). Shared by the render pass and the
     /// hidden-window service loop in `about_to_wait`, so the world keeps the
     /// same cadence whether or not a frame is drawn. Returns quit state and
     /// the pre-Logic Main_Tick admission for its later consumers.
@@ -120,6 +121,7 @@ impl App {
         state: &mut AppState,
         event_loop: &ActiveEventLoop,
         simulation_allowed: bool,
+        catch_up_allowed: bool,
     ) -> RuntimeServiceResult {
         if state.persistence.pending_load.is_some() {
             return RuntimeServiceResult::default();
@@ -168,6 +170,7 @@ impl App {
             attempts += 1;
             if result.quit_requested
                 || !simulation_allowed
+                || !catch_up_allowed
                 || state.frontend.screen != GameScreen::InGame
                 || state.match_state.scenario_exit.is_some()
                 || state.match_state.scenario_outcome.is_some()
@@ -548,11 +551,12 @@ impl App {
         }
     }
 
-    /// The render continuation is allowed only outside every modal, focus,
-    /// exact-step and terminal path. The sequencer remains frame authority.
+    /// The render continuation is allowed only outside every modal, focus
+    /// freeze, exact-step and terminal path. The sequencer remains frame
+    /// authority. A visible window without focus still catches up: it takes
+    /// no player input, and skipping its draws changes no simulation state.
     pub(super) fn next_online_render_frame(state: &AppState) -> Option<(u32, u32)> {
         if state.frontend.screen != GameScreen::InGame
-            || !state.platform.window_active
             || state.platform.window_hidden
             || state.focus_freeze_active()
             || state.match_state.paused()
@@ -772,10 +776,15 @@ impl App {
         let ordinary_online = tactical_capture.is_none()
             && !shell_capture_owns_simulation
             && Self::next_online_render_frame(state).is_some();
+        // A capture that checks every committed frame needs one per render.
+        let catch_up_allowed = !shell_capture
+            .as_deref()
+            .is_some_and(|capture| capture.observes_every_frame());
         let runtime_pass = Self::service_match_runtime(
             state,
             event_loop,
             tactical_capture.is_none() && !shell_capture_owns_simulation,
+            catch_up_allowed,
         );
         if runtime_pass.quit_requested {
             return Ok(FrameRenderOutcome::Unavailable);
@@ -784,11 +793,19 @@ impl App {
         // teardown starts, is drawn by the ordinary game frame. The native
         // gates below stop drawing once the router has taken the result, so
         // the beat needs this exception.
+        //
+        // The losing commander's clip needs the same exception while the
+        // result waits for it: `RadarClass::Draw 653100` advances the movie,
+        // and a gate that answers `Unavailable` here never reaches it. The
+        // clip then sits on its first frame until the wait times out, which is
+        // the freeze this exception prevents. Nothing is drawn over the movie
+        // in that window — see `outcome_banner::local_outcome`.
         let showing_verdict = state
             .match_state
             .scenario_exit
             .as_ref()
-            .is_some_and(|exit| exit.holding_banner());
+            .is_some_and(|exit| exit.holding_banner())
+            || crate::app::commander_feedback::verdict_is_waiting_for_clip(state);
         if Self::house_outcome_wait_pending(state)
             || (state.frontend.screen == GameScreen::InGame
                 && state.match_state.scenario_exit.is_some()
@@ -811,6 +828,12 @@ impl App {
                 runtime_pass.main_tick_admitted || tactical_capture.is_some(),
             )
         };
+        // Atlas growths publish before the picture is judged. Captures wait
+        // for them, so their pictures never depend on worker timing.
+        crate::app::match_runtime::sim_tick::publish_entity_atlas_growth(
+            state,
+            shell_capture.is_some() || tactical_capture.is_some(),
+        );
         // A changed picture is drawn in this same pass, so each drawn frame
         // still follows exactly one match service. The picture is judged by
         // the clock before the draw (`redraw_gate::PictureClock`).
@@ -1313,6 +1336,7 @@ impl App {
             &output.texture,
         );
         if state.frontend.screen == GameScreen::InGame {
+            let csf = state.process_assets.csf.as_ref();
             let status = state
                 .match_state
                 .match_diagnostics
@@ -1338,26 +1362,35 @@ impl App {
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .is_ok_and(|now| now.as_secs() >= expires)
                             });
-                            Some(if lapsed {
-                                "Reconnecting - VERA20k Online cannot renew this match's game server pass; Quit to leave"
-                            } else {
-                                "Reconnecting - waiting for connection; Quit to leave"
-                            }
-                            .to_owned())
+                            Some(
+                                crate::i18n::text(
+                                    csf,
+                                    if lapsed {
+                                        "VERA:ReconnectPassLapsed"
+                                    } else {
+                                        "VERA:Reconnecting"
+                                    },
+                                )
+                                .into_owned(),
+                            )
                         }
                         crate::net::live_commands::NetworkRecoveryStatus::CatchingUp { frames } => {
-                            Some(if live.restoring_match() {
-                                format!("Rejoining the match - {frames} frames behind")
+                            let key = if live.restoring_match() {
+                                "VERA:Rejoining"
                             } else {
-                                format!("Catching up - {frames} frames behind")
-                            })
+                                "VERA:CatchingUp"
+                            };
+                            Some(crate::i18n::fill(
+                                &crate::i18n::text(csf, key),
+                                &[("frames", &frames)],
+                            ))
                         }
                     }
                 })
                 .or_else(|| {
                     crate::app::input::pause_menu::multiplayer_control(state)?
                         .status
-                        .map(str::to_owned)
+                        .map(|key| crate::i18n::text(csf, key).into_owned())
                 });
             if let Some(status) = status {
                 state.renderer.fps_overlay.encode_status(
@@ -1365,6 +1398,7 @@ impl App {
                     &state.renderer.batch_renderer,
                     &mut encoder,
                     &output.texture,
+                    &state.renderer.bit_font,
                     &status,
                 );
             }

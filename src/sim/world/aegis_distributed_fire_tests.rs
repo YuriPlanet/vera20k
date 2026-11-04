@@ -28,7 +28,7 @@ fn eligible_air_target(sim: &Simulation, rules: &RuleSet, aegis: u64) -> Option<
         Some(sim),
         None,
     )
-    .target()
+    .object()
 }
 
 struct GuardScene {
@@ -68,6 +68,9 @@ impl GuardScene {
             let id = sim
                 .spawn_object_at_height("ZEP", "Russians", x, y, 0, 6, &rules)
                 .expect("retail Kirov high Unlimbo");
+            // The player has seen the Kirov, a VehicleType: the campaign scan
+            // gate needs +0x41B.
+            crate::sim::arena_fixture::discover(&mut sim, id);
             let actor = sim.substrate.entities.get(id).unwrap();
             assert!(!actor.lifecycle.in_limbo());
             assert!(actor.lifecycle.cell_marked());
@@ -504,13 +507,10 @@ fn distributed_scan_preserves_retained_bucket_order_across_reentry_and_movement(
         return;
     };
     let scan = |scene: &mut GuardScene| {
-        scene.sim.greatest_threat_represented(
-            &scene.rules,
-            None,
-            scene.aegis,
-            ScanMission::Guard,
-            None,
-        );
+        scene
+            .sim
+            .greatest_threat_represented(&scene.rules, None, scene.aegis, ScanMission::Guard, None)
+            .and_then(crate::sim::combat::TargetKind::object_id);
         scene
             .sim
             .substrate
@@ -743,7 +743,8 @@ fn distributed_collection_flat_entry_clears_but_class_early_return_preserves() {
     source.remember_distributed_fire_target(target);
     scene
         .sim
-        .greatest_threat_represented(&scene.rules, None, scene.aegis, ScanMission::Hunt, None);
+        .greatest_threat_represented(&scene.rules, None, scene.aegis, ScanMission::Hunt, None)
+        .and_then(crate::sim::combat::TargetKind::object_id);
     let source = scene.sim.substrate.entities.get(scene.aegis).unwrap();
     assert!(
         source.distributed_fire_candidates().is_empty(),
@@ -812,7 +813,8 @@ fn distributed_collection_flat_entry_clears_but_class_early_return_preserves() {
         "native unarmed Infantry class override returns before base"
     );
     assert_eq!(
-        sim.greatest_threat_represented(&rules, None, cow, ScanMission::Guard, None),
+        sim.greatest_threat_represented(&rules, None, cow, ScanMission::Guard, None)
+            .and_then(crate::sim::combat::TargetKind::object_id),
         None
     );
     let actor = sim.substrate.entities.get(cow).unwrap();

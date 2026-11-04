@@ -179,6 +179,7 @@ impl PreparedSavedLocalView {
         // same next-press behavior without persisting a wall-clock Instant.
         // Original reset witnesses: saved_game_layout.json/postload_clock_reset.
         input.last_control_group_press = None;
+        input.build_repeat = Default::default();
         input.reset_cheer_clock();
     }
 }
@@ -186,6 +187,9 @@ impl PreparedSavedLocalView {
 pub(crate) struct MatchInputState {
     /// Presentation display depth; ScenarioSession owns the gameplay lock.
     pub(crate) cursor_visibility: crate::app::input::cursor::CursorVisibility,
+    /// The cursor the last drawn frame showed. Native's SetCursor writes are
+    /// retained state, and over the sidebar only a LEFTUP dispatch writes one.
+    shown_cursor: std::cell::Cell<Option<crate::app::types::CursorFeedbackKind>>,
     pub(crate) camera_x: f32,
     pub(crate) camera_y: f32,
     /// Camera-owned requests awaiting Tactical__AI's next single commit.
@@ -260,6 +264,8 @@ pub(crate) struct MatchInputState {
     /// state: the original stamps `timeGetTime()` here and only a recall writes
     /// it — assigning with Ctrl+digit never does.
     pub(crate) last_control_group_press: Option<(usize, crate::util::time::Instant)>,
+    /// Types the local player builds endlessly (Ctrl + left click on a cameo).
+    pub(crate) build_repeat: crate::app::input::build_repeat::BuildRepeat,
     /// The object the camera is following, i.e. `DisplayClass +0x11A0` behind
     /// its valid byte `+0x119C`. `None` is the cleared pair.
     pub(crate) follow_target: Option<u64>,
@@ -393,10 +399,28 @@ impl MatchInputState {
         }
     }
 
+    /// Record the cursor a drawn frame shows (`None` is the normal arrow).
+    pub(crate) fn note_shown_cursor(&self, kind: Option<crate::app::types::CursorFeedbackKind>) {
+        self.shown_cursor.set(kind);
+    }
+
+    /// The cursor over the sidebar. SBGadget::Action 6ABA40 (flags 8,
+    /// 6A4C12) and SelectClass::Action 6AAD00 (6AAD61) set the normal cursor,
+    /// but their masks take LEFTUP and no LEFTHELD: with the left button held
+    /// nothing writes one and the last cursor stays.
+    pub(crate) fn sidebar_cursor(&self) -> Option<crate::app::types::CursorFeedbackKind> {
+        if self.tactical_mouse.left_held() {
+            self.shown_cursor.get()
+        } else {
+            None
+        }
+    }
+
     /// Construct the match input owner with the ordinary startup defaults.
     pub(crate) fn new(hotkey_bindings: crate::app::input::hotkeys::HotkeyBindings) -> Self {
         Self {
             cursor_visibility: Default::default(),
+            shown_cursor: Default::default(),
             minimap_press_button: None,
             touch_mapper: crate::app::input::touch::TouchMouseMapper::new(),
             cursor_from_touch: false,
@@ -406,6 +430,7 @@ impl MatchInputState {
             selection_voice_enabled: true,
             queued_order_mode: crate::app::types::OrderMode::Move,
             last_control_group_press: None,
+            build_repeat: Default::default(),
             follow_target: None,
             targeting_mode: None,
             building_placement_preview: None,
@@ -624,6 +649,7 @@ impl MatchInputState {
                 self.finish_building_placement();
             }
             LifecycleOutput::BuildingProductionAbandoned { owner }
+            | LifecycleOutput::ConstructionYardCaptured { owner }
                 if local_house == Some(owner) =>
             {
                 self.clear_building_placement();

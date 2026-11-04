@@ -208,10 +208,12 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .network_setup()
         .expect("mode callback retains setup")
         .clone();
+    let banned =
+        crate::app::shell_network_setup::bans::banned_countries(state, launch.options.bans);
     let resolved = state
         .frontend
         .multiplayer_shell_runtime
-        .resolve_network_assignments(&launch)?;
+        .resolve_network_assignments(&launch, &banned)?;
     state
         .match_state
         .session
@@ -362,14 +364,13 @@ pub(crate) fn begin_external_lan_go(state: &mut AppState) -> anyhow::Result<()> 
 
 /// VERA's shared LAN/online admission allows a human to play the ordinary
 /// skirmish AI without creating another network participant. Observers and
-/// a stale declared AI count cannot stand in for an actual opponent slot.
+/// a stale declared AI count cannot stand in for an actual opponent slot,
+/// and players sharing a House count once.
 fn has_minimum_players(launch: &SkirmishLaunchSession) -> bool {
-    let humans = launch
-        .humans
-        .iter()
-        .filter(|human| !human.is_observer())
+    let houses = (0..launch.humans.len())
+        .filter(|&index| !launch.humans[index].is_observer() && launch.house_leader(index) == index)
         .count();
-    humans >= 1 && humans + launch.opponents.len() >= 2
+    houses >= 1 && houses + launch.opponents.len() >= 2
 }
 
 fn all_allied(state: &AppState) -> bool {
@@ -479,6 +480,10 @@ mod tests {
         player.raw_slot_index = Some(2);
         launch.humans.push(player);
         launch.opponents.clear();
+        assert!(!has_minimum_players(&launch));
+
+        // VERA shared control: two players on one start are one House.
+        launch.humans[0].set_observer(false);
         assert!(!has_minimum_players(&launch));
     }
 }

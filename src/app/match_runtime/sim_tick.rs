@@ -17,7 +17,6 @@ use crate::app::match_runtime::session::SessionMode;
 use crate::app::types::SIM_TICK_MS;
 use crate::map::terrain;
 use crate::render::sprite_atlas;
-use crate::render::unit_atlas;
 use crate::sim::production;
 use crate::sim::replay::ScenarioServiceInput;
 use crate::sim::trigger_runtime::TriggerEffect;
@@ -205,12 +204,12 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
         title,
         detail,
         || build_campaign_score_screen_model(state, elapsed_score_ticks),
-        || build_score_screen_model(state, elapsed_seconds),
+        || build_score_screen_model(state, elapsed_seconds, false),
     );
     // Native campaign victories enter the standalone dialog `0x103`; campaign
     // defeats take a separate prompt path. Only GameMode!=0 takes the generic
     // `ScoreDialog__Run 0x5C9720` / SCORE-theme handoff.
-    state.match_state.scenario_exit = Some(
+    let cascade =
         crate::app::match_runtime::scenario_exit::ScenarioExitCascade::start_holding_banner(
             wall_ms,
             destination,
@@ -220,8 +219,18 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
         // `complete_outcome` clears the House's Won flag the moment the sim's
         // own Vox wait ends, which is long before this router runs. Native
         // keeps the choice in its screen text object for the same reason.
-        .with_verdict(outcome),
-    );
+        .with_verdict(outcome);
+    // The card has been up since the result was published. If a clip played
+    // under it, that beat is already spent and the fade may start as soon as
+    // the clip ends; a verdict with no clip still gets the full beat from
+    // here.
+    let cascade = match crate::app::commander_feedback::verdict_card_shown_at_ms(state) {
+        Some(card_at) => cascade.with_banner_hold_until(
+            card_at.saturating_add(crate::app::match_runtime::scenario_exit::BANNER_HOLD_MS),
+        ),
+        None => cascade,
+    };
+    state.match_state.scenario_exit = Some(cascade);
 }
 
 /// The local player's own `[EndGameScreens]` entry for the result just
@@ -520,6 +529,7 @@ fn score_title_key(mode: SessionMode) -> &'static str {
 fn build_score_screen_model(
     state: &AppState,
     elapsed_seconds: i32,
+    aborted: bool,
 ) -> crate::ui::score_shell::ScoreScreenModel {
     use crate::ui::score_shell::ScoreScreenModel;
 
@@ -531,10 +541,20 @@ fn build_score_screen_model(
     else {
         return ScoreScreenModel::default();
     };
-    let Some(raw_snapshot) = sim.terminal_score_snapshot() else {
-        log::error!("Natural match exit reached the score screen without a sim snapshot");
-        return ScoreScreenModel::default();
+    // A natural exit reads the snapshot the terminal edge latched. An aborted
+    // match never reached that edge, so it reads the live rows instead: the
+    // page still shows what the player earned, and leaving consumes none of
+    // the Scenario RNG draws the latch owns.
+    let snapshot = if aborted {
+        sim.live_score_snapshot()
+    } else {
+        let Some(snapshot) = sim.terminal_score_snapshot() else {
+            log::error!("Natural match exit reached the score screen without a sim snapshot");
+            return ScoreScreenModel::default();
+        };
+        snapshot.clone()
     };
+    let raw_snapshot = &snapshot;
     let computer = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER");
     let rows = resolve_score_rows(
         sim,
@@ -549,6 +569,10 @@ fn build_score_screen_model(
         .and_then(|owner| sim.interner().get(owner));
     let local_house = local_owner.and_then(|owner| sim.houses().get(&owner));
     let side = local_house.map_or(0, |house| house.side_index());
+    // Leaving the match is a defeat: the player ended it, so the lose half of
+    // the side's theme and of `[EndGameScreens]` is the one that fits. A match
+    // that ended by itself keeps its own flag.
+    let defeated = aborted || local_house.is_some_and(|house| house.is_defeated());
     // `Global_DrawScoreScreen_ScoreTheme` (0x1002F4B0, patch site 0x5C9B75)
     // selects the side's win or lose theme on the local player's
     // HouseClass+0x1F5 defeated flag; the literal it otherwise pushes is
@@ -558,12 +582,9 @@ fn build_score_screen_model(
     let observing = local_owner.is_some_and(|owner| sim.session().is_observer_house(owner));
     let theme = (!observing)
         .then(|| {
-            state.process_assets.side_score_theme(
-                side,
-                crate::rules::ruleset::ScoreTheme::Multiplayer {
-                    defeated: local_house.is_some_and(|house| house.is_defeated()),
-                },
-            )
+            state
+                .process_assets
+                .side_score_theme(side, crate::rules::ruleset::ScoreTheme::Multiplayer { defeated })
         })
         .flatten()
         .map(str::to_owned);
@@ -591,7 +612,7 @@ fn build_score_screen_model(
     let (country_music, background) = (!observing)
         .then(|| {
             let house = local_house?;
-            let kind = if house.is_defeated() {
+            let kind = if defeated {
                 crate::rules::end_game::EndGameKind::Defeat
             } else {
                 crate::rules::end_game::EndGameKind::Victory
@@ -635,6 +656,20 @@ fn build_score_screen_model(
         background,
         rows,
     }
+}
+
+/// The score page for a match the player left on purpose.
+///
+/// Retail returns to the shell; the score a skirmish has earned up to that
+/// point is still meaningful, and the games this mode follows (RA3, SC2, AoE2)
+/// show it after a resign. The rows come from [`Simulation::live_score_snapshot`]
+/// — the raw counters, no survivor bonus — because an abandoned match has no
+/// terminal edge to latch and leaving must not advance the Scenario RNG.
+pub(crate) fn build_aborted_score_screen_model(
+    state: &AppState,
+    elapsed_seconds: i32,
+) -> crate::ui::score_shell::ScoreScreenModel {
+    build_score_screen_model(state, elapsed_seconds, true)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1048,6 +1083,9 @@ fn advance_in_game_runtime_mode(
     // Transport and UI continue in the outer service loop.
     if state.match_state.multiplayer_paused() {
         return false;
+    }
+    if !replaying {
+        crate::app::input::build_repeat::top_up(state);
     }
     let frame_stepping = matches!(mode, RuntimeAdvanceMode::WallClock { .. })
         && state.diag.debug_frame_step_requested;
@@ -1711,9 +1749,12 @@ fn advance_one_simulation_frame(
                     // must not crash a LAN/online match. The frame did not
                     // commit, so this timeline never runs again; the checksum
                     // box's Stop returns to the shell. Offline, only internal
-                    // defects reach here, so they stay a loud panic.
+                    // defects reach here, so they stay a loud panic. A
+                    // checksum mismatch never arrives here (it suspends the
+                    // frame instead), so neither the log nor the box
+                    // (`network_failure::vera_body`) calls this a desync.
                     if network && let Err(error) = &advanced {
-                        log::error!("{error}");
+                        log::error!("Network match stopped by an error, not a desync: {error}");
                         state.match_state.frame_stopped = true;
                         return false;
                     }
@@ -2052,6 +2093,7 @@ fn advance_one_simulation_frame(
                 | LifecycleOutput::BuildingPlacementRetry { .. }
                 | LifecycleOutput::BuildingPlacementSucceeded { .. }
                 | LifecycleOutput::BuildingProductionAbandoned { .. }
+                | LifecycleOutput::ConstructionYardCaptured { .. }
                 | LifecycleOutput::FollowReleased { .. }
                 | LifecycleOutput::ObjectSelected { .. } => {}
                 LifecycleOutput::ObjectPointerExpired { stable_id } => {
@@ -2414,109 +2456,57 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState) {
         );
 }
 
-/// Refresh entity atlases after entities spawn, die, change type/owner or leave
-/// the display.
+/// Start growing the entity atlases after entities spawn, die, change type or
+/// owner, or leave the display ([`EntityAtlasGrowth::start`]). The rasters run
+/// on workers; [`publish_entity_atlas_growth`] completes them. Reuses the
+/// process asset manager instead of creating a new one (avoids re-opening all
+/// MIX archives from disk).
 ///
-/// This runs on every such event, so the check is per object model, never per
-/// sprite key: a refresh happens only when a voxel model or an object (type,
-/// house colour) appears that the atlas has not collected. The refresh then
-/// renders only those sprites and appends them to a growth page.
-/// Reuses the process asset manager instead of creating a new one (avoids re-opening
-/// all MIX archives from disk).
+/// [`EntityAtlasGrowth::start`]: crate::render::entity_atlas_growth::EntityAtlasGrowth::start
 pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
     let Some(rt) = state.match_state.sim_runtime.as_ref() else {
         return;
     };
-    let sim = &rt.simulation;
-    let bound_rules = Some(&rt.resources.rules);
     let Some(asset_manager) = state.process_assets.manager() else {
         log::warn!("Atlas refresh skipped: no asset manager available");
         return;
     };
-
-    // Check if the unit atlas lacks a voxel model the world now draws.
-    let unit_rebuild = !unit_atlas::atlas_covers_world(
-        state.match_state.match_presentation.unit_atlas.as_ref(),
-        sim.entities(),
-        bound_rules,
-        Some(sim.interner()),
-    );
-
-    // Check if the sprite atlas lacks an object (type, house colour), an
-    // AnimClass colour remap or the harvest overlay the world now draws.
-    // Map load collects the same coverage (`prepare_presentation_manifest`).
-    let coverage = sprite_atlas::EntityAtlasCoverage::collect(
-        sim,
-        bound_rules,
-        &state.match_state.match_presentation.house_color_map,
-    );
-    let sprite_rebuild = !sprite_atlas::atlas_covers_world(
-        state.match_state.match_presentation.sprite_atlas.as_ref(),
-        sim.entities(),
-        &state.match_state.match_presentation.house_color_map,
-        &coverage.extra_buildings,
-        &coverage.anim_remap_keys,
-        Some(sim.interner()),
-    ) || !sprite_atlas::atlas_covers_sprite_keys(
-        state.match_state.match_presentation.sprite_atlas.as_ref(),
-        &coverage.frozen_keys,
-        bound_rules,
-    );
-
-    if !unit_rebuild && !sprite_rebuild {
-        return;
-    }
-
-    // Growth pages must key on the palettes the load-time pages used.
-    let Some((palette, cell_palette)) = crate::map::theater::load_theater_unit_and_iso_palettes(
-        asset_manager,
-        &state.match_state.match_presentation.theater_name,
-    ) else {
-        log::warn!("Atlas refresh skipped: theater palettes not found");
-        return;
-    };
-
-    if unit_rebuild {
-        log::info!("Refreshing the unit atlas: new voxel models");
-        let existing = state.match_state.match_presentation.unit_atlas.take();
-        if let Some(new_unit_atlas) = unit_atlas::build_unit_atlas(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
-            &state.renderer.batch_renderer,
-            sim.entities(),
+    let presentation = &mut state.match_state.match_presentation;
+    presentation.atlas_growth.start(
+        &crate::render::entity_atlas_growth::GrowthSource {
+            sim: &rt.simulation,
+            rules: Some(&rt.resources.rules),
             asset_manager,
-            bound_rules,
-            existing,
-            Some(sim.interner()),
+            house_colors: &presentation.house_color_map,
+            theater_name: &presentation.theater_name,
+            theater_ext: &presentation.theater_ext,
+            max_texture_dimension_2d: state.renderer.gpu.device.limits().max_texture_dimension_2d,
+        },
+        presentation.unit_atlas.as_ref(),
+        presentation.sprite_atlas.as_ref(),
+    );
+}
+
+/// Publish the finished atlas growths before a picture is judged, then start
+/// the growths the world still needs. `wait` blocks until none runs, so
+/// captures draw complete atlases and never depend on worker timing.
+pub(crate) fn publish_entity_atlas_growth(state: &mut AppState, wait: bool) {
+    loop {
+        let gpu = &state.renderer.gpu;
+        let presentation = &mut state.match_state.match_presentation;
+        if !presentation.atlas_growth.publish(
+            &gpu.device,
+            &gpu.queue,
+            &state.renderer.batch_renderer,
+            &mut presentation.unit_atlas,
+            &mut presentation.sprite_atlas,
+            wait,
         ) {
-            state.match_state.match_presentation.unit_atlas = Some(new_unit_atlas);
+            return;
         }
-    }
-
-    if sprite_rebuild {
-        log::info!("Refreshing the sprite atlas: new SHP object types or colour remaps");
-        let existing = state.match_state.match_presentation.sprite_atlas.take();
-        if let Some(new_sprite_atlas) = sprite_atlas::build_sprite_atlas(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
-            &state.renderer.batch_renderer,
-            sim.entities(),
-            asset_manager,
-            &palette,
-            &state.match_state.match_presentation.theater_ext,
-            &state.match_state.match_presentation.theater_name,
-            bound_rules,
-            bound_rules.map(|rules| rules.art()),
-            &state.match_state.match_presentation.house_color_map,
-            &coverage.extra_buildings,
-            &coverage.anim_remap_keys,
-            &coverage.cell_drawer_type_ids,
-            &coverage.frozen_keys,
-            Some(&cell_palette),
-            existing,
-            Some(sim.interner()),
-        ) {
-            state.match_state.match_presentation.sprite_atlas = Some(new_sprite_atlas);
+        refresh_entity_atlases(state);
+        if !wait {
+            return;
         }
     }
 }

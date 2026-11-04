@@ -1053,48 +1053,45 @@ pub(crate) fn wheel_action(delta_lines: f32) -> WheelAction {
     }
 }
 
-/// Apply one wheel notch to a strip's scroll row.
+/// The sidebar command a Winit wheel event issues, if any.
 ///
-/// The native scroll refuses to move above row 0 or past the strip's computed
-/// visible capacity, so both ends saturate rather than wrap.
-pub(crate) fn wheel_scrolled_row(current: usize, max_rows: usize, delta_lines: f32) -> usize {
-    // Winit also forwards touchpad phase boundaries and horizontal-only events.
-    // Their zero vertical delta is no wheel notch, so it must not reach the
-    // native sign mapping (which would interpret zero as SidebarUp).
-    // winit 0.30.13, macOS View::scroll_wheel:
-    // https://github.com/rust-windowing/winit/blob/v0.30.13/src/platform_impl/macos/view.rs#L663-L701
-    if delta_lines == 0.0 {
-        return current;
-    }
-    match wheel_action(delta_lines) {
-        WheelAction::SidebarUp => current.saturating_sub(1),
-        WheelAction::SidebarDown => (current + 1).min(max_rows),
-    }
+/// Winit also forwards touchpad phase boundaries and horizontal-only events.
+/// Their zero vertical delta is no wheel notch, so it must not reach the
+/// native sign mapping (which would interpret zero as SidebarUp).
+/// winit 0.30.13, macOS View::scroll_wheel:
+/// https://github.com/rust-windowing/winit/blob/v0.30.13/src/platform_impl/macos/view.rs#L663-L701
+pub(crate) fn wheel_notch(delta_lines: f32) -> Option<WheelAction> {
+    (delta_lines != 0.0).then(|| wheel_action(delta_lines))
 }
 
-/// Scroll the active build strip by one row.
+/// SidebarUp / SidebarDown (the wheel and their hotkeys): one row on the
+/// active build strip.
 ///
-/// The cursor position is deliberately not consulted. The retail binding is a
-/// window message routed straight to a command, not a hit-tested gadget, so the
-/// wheel scrolls the sidebar from anywhere on the screen — and there is no world
-/// zoom in gamemd for the wheel to reach instead.
-pub(crate) fn sidebar_wheel_scroll(state: &mut AppState, delta_lines: f32) {
+/// SidebarClass::Scroll `0x006A6A00` queues the row in the strip's
+/// PendingScroll; StripClass::AI moves it on the next Sidebar Action, like
+/// the scroll arrows. The cursor position is deliberately not consulted. The
+/// retail binding is a window message routed straight to a command, not a
+/// hit-tested gadget, so the wheel scrolls the sidebar from anywhere on the
+/// screen — and there is no world zoom in gamemd for the wheel to reach instead.
+pub(crate) fn sidebar_scroll_command(state: &mut AppState, action: WheelAction) {
     if crate::app::input::campaign_input::is_locked(state) {
         return;
     }
-    let Some(view) = current_sidebar_view(state).cloned() else {
+    let Some(visible_rows) = current_sidebar_view(state).map(|view| view.layout.side2_tile_count)
+    else {
         return;
     };
-    let row = wheel_scrolled_row(view.scroll_rows, view.max_scroll_rows, delta_lines);
     let presentation = &mut state.match_state.match_presentation;
-    presentation
-        .sidebar_projection
-        .set_scroll_row(presentation.active_sidebar_tab, row);
-    crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+    presentation.sidebar_projection.queue_scroll(
+        presentation.active_sidebar_tab,
+        action == WheelAction::SidebarDown,
+        visible_rows,
+        1,
+    );
 }
 
 /// The local player's queue of record, in queue order (empty without a sim).
-fn local_queue_view(state: &AppState) -> Vec<crate::sim::production::QueueItemView> {
+pub(crate) fn local_queue_view(state: &AppState) -> Vec<crate::sim::production::QueueItemView> {
     let Some(owner) = preferred_local_owner_name(state) else {
         return Vec::new();
     };
@@ -1201,6 +1198,37 @@ fn sidebar_cameo_press(
         at_build_limit,
         building_production_queue,
     );
+    // VERA's own modifiers, all behind the Options page's Shift-Click Batch
+    // Queue (`[VERA] ShiftQueue=`): Shift + right cancels a running build and
+    // its copies at once; Ctrl + left builds a mobile type endlessly, and a
+    // second Ctrl + left or any cancel ends that.
+    let vera_keys = state.persistence.options_profile.shift_queue;
+    let click = if vera_keys {
+        sidebar_eva::shift_right_cancels_running(click, press)
+    } else {
+        click
+    };
+    let ctrl_repeat = vera_keys
+        && press == sidebar_eva::CameoPress::Left
+        && is_ctrl_held(state)
+        && super::build_repeat::repeats(category);
+    let repeat = &mut state.match_state.input.build_repeat;
+    if ctrl_repeat && repeat.stop(type_id) {
+        let sound = state
+            .rules()
+            .and_then(|rules| rules.general.gui_build_sound.clone());
+        crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        return;
+    }
+    match click.order {
+        Some(sidebar_eva::CameoOrder::Produce) if ctrl_repeat => {
+            repeat.toggle(type_id);
+        }
+        Some(sidebar_eva::CameoOrder::Abandon { .. }) => {
+            repeat.stop(type_id);
+        }
+        _ => {}
+    }
     if click.clear_building_placement {
         state.match_state.input.cancel_building_placement();
     }
@@ -1252,7 +1280,51 @@ fn sidebar_cameo_press(
                 profile.shift_queue_count,
                 building_production_queue,
             );
-            queue_build_by_type(state, type_id, repeat);
+            // VERA's Alt + left click (same option): the new copies jump the
+            // waiting builds of other types, through ordinary ABANDON and
+            // PRODUCE events in one frame (`sidebar_eva::front_of_queue`).
+            // A held or finished build of this type takes the resume arm.
+            let appends = !matches!(
+                own_for_repeat,
+                Some(
+                    crate::sim::production::BuildQueueState::Paused
+                        | crate::sim::production::BuildQueueState::Done
+                )
+            );
+            let front = (profile.shift_queue
+                && press == sidebar_eva::CameoPress::Left
+                && is_alt_held(state)
+                && !sidebar_eva::is_structure_strip(category)
+                && appends)
+                .then(|| {
+                    sidebar_eva::front_of_queue(
+                        &queue,
+                        category,
+                        type_iid?,
+                        repeat,
+                        state.rules()?.general.maximum_queued_objects,
+                    )
+                })
+                .flatten();
+            match front {
+                Some((jumped, copies)) => {
+                    let jumped: Vec<String> = jumped
+                        .into_iter()
+                        .filter_map(|id| {
+                            let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+                            Some(sim.interner().resolve(id).to_string())
+                        })
+                        .collect();
+                    for queued in &jumped {
+                        cancel_build_by_type(state, queued, false);
+                    }
+                    queue_build_by_type(state, type_id, copies);
+                    for queued in &jumped {
+                        queue_build_by_type(state, queued, 1);
+                    }
+                }
+                None => queue_build_by_type(state, type_id, repeat),
+            }
         }
         Some(sidebar_eva::CameoOrder::Suspend) => suspend_build(state, type_id),
         Some(sidebar_eva::CameoOrder::Abandon { all }) => {
@@ -1894,10 +1966,10 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::TeamCenter(slot) => {
             handle_control_group_command(state, slot, Some(GroupPressAction::Center))
         }
-        // Native SidebarUp/Down execute the same one-row saturated sidebar
-        // owner as wheel input (up=1, down=0).
-        HotkeyCommand::SidebarUp => sidebar_wheel_scroll(state, 1.0),
-        HotkeyCommand::SidebarDown => sidebar_wheel_scroll(state, -1.0),
+        // Native SidebarUp/Down execute SidebarClass::Scroll 0x6A6A00 on the
+        // active strip (up=true/false, tab -1), as the wheel does.
+        HotkeyCommand::SidebarUp => sidebar_scroll_command(state, WheelAction::SidebarUp),
+        HotkeyCommand::SidebarDown => sidebar_scroll_command(state, WheelAction::SidebarDown),
         HotkeyCommand::Options => handle_options_hotkey(state),
         HotkeyCommand::CenterView => crate::app::input::camera::center_view_on_selection(state),
         HotkeyCommand::Follow => crate::app::input::camera::toggle_follow_target(state),
@@ -2079,7 +2151,14 @@ pub(crate) fn dispatch_command_bar(state: &mut AppState, command: usize, right: 
 // Native 653952 -> GameState1 -> 48C9BA/4F10E0 opens the pause menu.
 // The button and ordinary Options hotkey share this modal entry.
 fn open_pause_menu(state: &mut AppState) {
-    if state.match_state.multiplayer_paused() {
+    // Two states have no tick left to consume the event below: a network
+    // match that is waiting for the relay to resume, and a result that is
+    // already published and waiting for the losing commander's clip (no frame
+    // follows a published result). Both open the same dialog directly, so the
+    // button and the Options hotkey keep working there.
+    if state.match_state.multiplayer_paused()
+        || crate::app::commander_feedback::verdict_is_waiting_for_clip(state)
+    {
         // No future EventClass tail exists until the relay resumes. Open the
         // same local dialog directly so its shared Resume remains reachable.
         crate::app::App::enter_in_game_menu_state(
@@ -2203,7 +2282,7 @@ fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCod
 
 #[cfg(test)]
 mod wheel_tests {
-    use super::{WheelAction, wheel_action, wheel_scrolled_row};
+    use super::{WheelAction, wheel_action, wheel_notch};
 
     /// One notch is one row, whichever way it turns and however large the OS
     /// reports the delta. gamemd tests only the sign of the wheel delta and then
@@ -2226,19 +2305,10 @@ mod wheel_tests {
     }
 
     #[test]
-    fn rows_move_one_at_a_time_and_saturate_at_both_ends() {
-        assert_eq!(wheel_scrolled_row(0, 4, -1.0), 1);
-        assert_eq!(wheel_scrolled_row(3, 4, -1.0), 4);
-        // Refuses to move past the strip's computed capacity.
-        assert_eq!(wheel_scrolled_row(4, 4, -1.0), 4);
-        assert_eq!(wheel_scrolled_row(2, 4, 1.0), 1);
-        // Refuses to move above row 0.
-        assert_eq!(wheel_scrolled_row(0, 4, 1.0), 0);
-        // A strip that fits entirely on screen cannot scroll at all.
-        assert_eq!(wheel_scrolled_row(0, 0, -1.0), 0);
-        // Gesture boundaries and horizontal-only events keep the current row.
-        assert_eq!(wheel_scrolled_row(1, 4, 0.0), 1);
-        assert_eq!(wheel_scrolled_row(1, 4, -0.0), 1);
+    fn zero_motion_events_issue_no_command() {
+        assert_eq!(wheel_notch(0.0), None);
+        assert_eq!(wheel_notch(-0.0), None);
+        assert_eq!(wheel_notch(-1.0), Some(WheelAction::SidebarDown));
     }
 }
 

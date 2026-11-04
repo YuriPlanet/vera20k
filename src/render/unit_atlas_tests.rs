@@ -439,6 +439,7 @@ fn incremental_repack_plan_retains_old_unloading_referent() {
         offset_y: 0.0,
         native_draw_bounds: Some([-4, -4, 14, 12]),
         shadow_center: None,
+        pool_bytes: 0,
     };
     // CMON is CMIN's stock UnloadingClass referent. It may be absent from the
     // current live-key collector but must remain in the rendered cache.
@@ -494,35 +495,6 @@ fn unit_barrel_pitches_walk_the_unlimbo_turn() {
     let half = unit_barrel_pitches(128);
     assert_eq!(half.len(), 17);
     assert_eq!((half[8], half[9], half[16]), (-8, 23, 16));
-}
-
-#[test]
-fn barrel_image_keeps_its_first_drawn_pitch() {
-    let key = |type_id: &str, facing| UnitSpriteKey {
-        type_id: type_id.into(),
-        turret_index: 0,
-        facing,
-        layer: VxlLayer::Turret,
-        frame: 0,
-        slope_type: 0,
-        barrel_pitch: 0,
-    };
-    let mut pitches = BarrelImagePitches::default();
-    // The first unit drawn under a key fixes its image; later ones reuse it.
-    assert_eq!(pitches.pitch(&key("MTNK", 32), None, 0), 0);
-    assert_eq!(pitches.pitch(&key("MTNK", 32), None, -1), 0);
-    assert_eq!(pitches.pitch(&key("MTNK", 40), None, -1), -1);
-    assert_eq!(pitches.pitch(&key("MTNK", 40), None, 0), -1);
-    // A TurretOffset type keys the hull's facing too; each type has its own.
-    assert_eq!(pitches.pitch(&key("MTNK", 32), Some(0), -1), -1);
-    assert_eq!(pitches.pitch(&key("HTNK", 32), None, -1), -1);
-    let mut different_turret = key("MTNK", 32);
-    different_turret.turret_index = 1;
-    assert_eq!(pitches.pitch(&different_turret, None, -2), -2);
-    assert_eq!(pitches.pitch(&key("MTNK", 32), None, -2), 0);
-    // A new scenario starts empty.
-    pitches.clear();
-    assert_eq!(pitches.pitch(&key("MTNK", 32), None, -1), -1);
 }
 
 /// gamemd's voxel loader names a vehicle's models from its rules `Image=`
@@ -968,12 +940,12 @@ fn kirov_direct_matrix_requires_hva_and_wraps_its_native_frame() {
     .unwrap();
     let lighting = crate::render::vxl_raster::VxlLighting::Diffuse;
     let (first, bounds) = model
-        .render_matrix(matrix, 0, true, lighting, Some(&vpl))
+        .render_matrix(matrix, 0, true, lighting, Some(&vpl), false, None)
         .unwrap();
     assert!(bounds.is_some());
     let frames = model.body.as_ref().unwrap().hva().unwrap().frame_count;
     let (wrapped, wrapped_bounds) = model
-        .render_matrix(matrix, frames, true, lighting, Some(&vpl))
+        .render_matrix(matrix, frames, true, lighting, Some(&vpl), false, None)
         .unwrap();
     assert_eq!(first.palette_indices, wrapped.palette_indices);
     assert_eq!(bounds, wrapped_bounds);
@@ -990,13 +962,13 @@ fn kirov_direct_matrix_requires_hva_and_wraps_its_native_frame() {
     let model = UnitModel::load(&no_hva, "ZBOMB", None).unwrap();
     assert!(
         model
-            .render_matrix(matrix, 0, true, lighting, Some(&vpl))
+            .render_matrix(matrix, 0, true, lighting, Some(&vpl), false, None)
             .is_none(),
         "Bullet LoadVoxelAssets requires both main files"
     );
     assert!(
         model
-            .render_matrix(matrix, 0, false, lighting, Some(&vpl))
+            .render_matrix(matrix, 0, false, lighting, Some(&vpl), false, None)
             .is_some(),
         "the explicit debris no-HVA caller still uses the same raster owner"
     );

@@ -1024,3 +1024,71 @@ fn replay_keeps_future_local_work_on_the_admitted_scheduler() {
     assert_eq!(replay.session.game_options().game_speed, 4);
     assert!(replay.pending_command_snapshot().is_empty());
 }
+
+/// VERA shared control: senders 0 and 1 share House 0. A teammate's EXIT
+/// retires only its timing row and neither ends the House nor quits this
+/// process; the last sender's EXIT leaves the House.
+#[test]
+fn a_shared_house_leaves_only_with_its_last_sender() {
+    use crate::sim::command::ExitRecord;
+    use std::num::NonZeroU8;
+    let mut sim = native_dolist_world();
+    let shared = sim.houses.order()[0];
+    let rival = sim.interner.intern("Rival");
+    sim.houses
+        .register(HouseState::new(rival, 1, None, true, 0, 10));
+    sim.session
+        .install_shared_house_sources(vec![0, 0, 1], Some(0));
+    sim.session.set_current_house_for_test(Some(shared));
+    sim.network_command_queues()
+        .install_timing(0, NonZeroU8::new(5).unwrap(), [0, 1, 2]);
+
+    let exit = |house_id, frame| ExitRecord { house_id, frame }.encode().unwrap();
+    sim.admit_native_command_record(exit(1, 0));
+    sim.advance_tick(&[], None, None, None, 33);
+    assert!(!sim.houses[&shared].left_game() && !sim.houses[&shared].is_to_die());
+    assert!(!sim.houses[&rival].left_game());
+    assert!(!sim.quit_requested());
+    assert_eq!(sim.take_departed_senders(), [1]);
+    let timing = sim.session.network_command_timing().unwrap();
+    assert!(timing.admits_source(0) && !timing.admits_source(1));
+
+    sim.admit_native_command_record(exit(0, 1));
+    sim.advance_tick(&[], None, None, None, 33);
+    assert!(sim.houses[&shared].left_game());
+    assert!(sim.quit_requested());
+}
+
+#[test]
+fn a_shared_house_survives_one_players_surrender() {
+    use crate::sim::command::{CommandRecord, DESTRUCT_OPCODE, ExitRecord};
+    use std::num::NonZeroU8;
+    let mut sim = native_dolist_world();
+    let shared = sim.houses.order()[0];
+    // A rival keeps the House from winning, and DESTRUCT never flags a winner.
+    let rival = sim.interner.intern("Rival");
+    sim.houses
+        .register(HouseState::new(rival, 1, None, true, 0, 10));
+    sim.session
+        .install_shared_house_sources(vec![0, 0, 1], Some(0));
+    sim.session.set_current_house_for_test(Some(shared));
+    sim.network_command_queues()
+        .install_timing(0, NonZeroU8::new(5).unwrap(), [0, 1, 2]);
+    let destruct =
+        |sender, frame| CommandRecord::encode(DESTRUCT_OPCODE, sender, frame, &[]).unwrap();
+    let exit = |house_id, frame| ExitRecord { house_id, frame }.encode().unwrap();
+
+    // Surrender's OK and B6's Leave beside Observe queue DESTRUCT, then EXIT.
+    sim.admit_native_command_record(destruct(1, 0));
+    sim.admit_native_command_record(exit(1, 0));
+    sim.advance_tick(&[], None, None, None, 33);
+    let house = &sim.houses[&shared];
+    assert!(!house.is_to_die() && !house.is_defeated() && !house.has_lost());
+    assert!(!house.left_game());
+
+    // The last player's DESTRUCT ends the House, as in gamemd.
+    sim.admit_native_command_record(destruct(0, 1));
+    sim.advance_tick(&[], None, None, None, 33);
+    let house = &sim.houses[&shared];
+    assert!(house.is_to_die() || house.has_lost());
+}
