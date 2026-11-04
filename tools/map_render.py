@@ -18,6 +18,7 @@ start waypoint's cell centre at the terrain's height, and a map whose header
 lists no starts still gets them. Where the game would draw two markers over each
 other, they are pushed apart along the line between them until their anchors
 lie a marker's width and two pixels apart, so every number stays readable.
+Markers at the picture's edges are then moved inward until their whole sprite fits.
 
     python3 -m tools.map_render --map /abs/map.yrm --output /abs/preview.png
 
@@ -165,7 +166,7 @@ def spread(spots: list[tuple[int, int]], distance: float) -> list[tuple[int, int
 def mark_starts(rgb: bytes, width: int, height: int, markers: list[dict],
                 area: tuple[float, float, float, float], factor: int) -> bytes:
     """Packed RGB with each start marker on its anchor, shrunk by `factor` from world `area`,
-    overlapping markers spread apart."""
+    overlapping markers spread apart and edge markers moved inside the picture."""
     scale = max(1, round(max(width / LIST_BOX[0], height / LIST_BOX[1])))
     canvas = bytearray(rgb)
     anchors = [(math.floor((marker['anchor'][0] - area[0]) / factor),
@@ -175,7 +176,8 @@ def mark_starts(rgb: bytes, width: int, height: int, markers: list[dict],
         picture = marker['picture']
         (columns, rows), (origin_x, origin_y) = picture['size'], picture['origin']
         rgba = base64.b64decode(picture['rgba'])
-        left, top = anchor_x - origin_x * scale, anchor_y - origin_y * scale
+        left = max(0, min(anchor_x - origin_x * scale, width - columns * scale))
+        top = max(0, min(anchor_y - origin_y * scale, height - rows * scale))
         for y in range(max(0, -top), min(rows * scale, height - top)):
             for x in range(max(0, -left), min(columns * scale, width - left)):
                 pixel = ((y // scale) * columns + x // scale) * 4
