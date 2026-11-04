@@ -60,3 +60,6 @@ while the effect is held; see [AttachEffect](phobos-attach-effect.md).
   native makes per detonation, shifting the scenario RNG stream.
 - `CellSpread.Cylinder` has no reader, so the pass collects with a spherical
   distance like the unported damage-area cylinder hooks.
+- Phobos' `MapClass_DamageArea` hook is gated on `InDamageArea`, which a
+  bullet detonation clears; VERA's direct area calls always run the pass, so a
+  warhead detonated both ways can visit its targets an extra time. Pre-existing.

@@ -40,6 +40,11 @@
 //!   that receives non-zero damage, with the attacker's house. VERA keeps the
 //!   pass here on the same targets with per-target dice and no prefix draws,
 //!   so the targets and the order against the receivers differ.
+//! - Phobos gates its `MapClass_DamageArea` hook on `InDamageArea`, which the
+//!   bullet hook clears (`WarheadType/Hooks.cpp:18..19`, `39..52`). VERA runs
+//!   the pass for every direct area call, so a warhead detonated both by a
+//!   bullet and later by an external `DamageArea` can visit its targets an
+//!   extra time. Pre-existing; no retail warhead is known to reach both.
 
 use super::effects::DeathEffects;
 use super::receiver_call::EntityDamageEvent;

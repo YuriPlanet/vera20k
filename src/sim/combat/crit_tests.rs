@@ -387,25 +387,31 @@ fn zero_verses_targets_skip_the_per_target_pass() {
 
 /// `BulletClass_Detonate @ 0x46920B` hooks the routine's entry, so a warhead
 /// that claims the impact with a special arm (`IvanBomb=yes`) still runs the
-/// per-target AttachEffect pass before its arm body.
+/// per-target AttachEffect pass before its arm body, for both the intended
+/// target and a cell-spread collection.
 #[test]
 fn special_arm_warheads_still_run_the_per_target_pass() {
-    let (mut sim, rules, firer, target) = scene(
-        "",
-        "IvanBomb=yes\nAttachEffect.AttachTypes=MARK\n",
-        "",
-        "[AttachEffectTypes]\n0=MARK\n[MARK]\nDuration=100\n",
-        "Russians",
-    );
-    shoot(&mut sim, &rules, "WH", firer, target, 0);
-    let attached = sim
-        .entities()
-        .get(target)
-        .expect("target")
-        .phobos_attach_effects()
-        .instances()
-        .len();
-    assert_eq!(attached, 1, "the special arm still visited the target");
+    for cell_spread in ["CellSpread=0", "CellSpread=1"] {
+        let (mut sim, rules, firer, target) = scene(
+            "",
+            &format!("IvanBomb=yes\n{cell_spread}\nAttachEffect.AttachTypes=MARK\n"),
+            "",
+            "[AttachEffectTypes]\n0=MARK\n[MARK]\nDuration=100\n",
+            "Russians",
+        );
+        shoot(&mut sim, &rules, "WH", firer, target, 0);
+        let attached = sim
+            .entities()
+            .get(target)
+            .expect("target")
+            .phobos_attach_effects()
+            .instances()
+            .len();
+        assert_eq!(
+            attached, 1,
+            "the special arm still visited the target ({cell_spread})"
+        );
+    }
 }
 
 /// `MapClass_DamageArea @ 0x489286`: a direct area damage runs the same
