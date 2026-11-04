@@ -1787,6 +1787,7 @@ impl Simulation {
             return;
         };
         let target_category = target_entity.category().into();
+        let target_invulnerability = target_entity.invulnerability.clone();
         let effects = rules.attach_effect_types().types();
         let mut list = std::mem::take(
             self.substrate
@@ -1832,7 +1833,7 @@ impl Simulation {
             }
             // `CreateAndAttach`'s match: a non-cumulative type takes the first
             // same-type instance; a cumulative one only a same-source match,
-            // and even at its cap a missing match appends a new instance.
+            // and only at its cap.
             let matched = if effect.cumulative {
                 let at_cap =
                     effect.cumulative_max_count >= 0 && type_count >= effect.cumulative_max_count;
@@ -1845,6 +1846,36 @@ impl Simulation {
                     .remaining
                     .max(instance.remaining);
                 target_list.instances[index].remaining = duration;
+                continue;
+            }
+            // A same-source cumulative match below the cap takes native's
+            // `if (match)` arm, which writes nothing and discards the source
+            // instance.
+            if effect.cumulative && shortest_same_source.is_some() {
+                continue;
+            }
+            // Otherwise native calls `CreateAndAttach(..., checkCumulative=false)`:
+            // the attach gate runs again, then the first same-type instance
+            // refreshes with the attach duration when it is not longer, or a
+            // new instance is appended when none exists.
+            if !can_attach_effect(
+                target_category,
+                target_invulnerability.as_ref(),
+                target_object,
+                effect,
+                self.session.binary_frame(),
+            ) {
+                continue;
+            }
+            let incoming_duration = if instance.duration_override != 0 {
+                instance.duration_override
+            } else {
+                effect.duration
+            };
+            if let Some(index) = first_match {
+                if incoming_duration >= target_list.instances[index].remaining {
+                    target_list.instances[index].remaining = incoming_duration;
+                }
                 continue;
             }
             target_list.instances.push(instance.transfer_copy());
@@ -3373,13 +3404,13 @@ mod tests {
         effect
     }
 
-    fn transfer_rules(allow_transfer: &str) -> crate::rules::ruleset::RuleSet {
+    fn transfer_rules(allow_transfer: &str, target_attach: &str) -> crate::rules::ruleset::RuleSet {
         let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
             &crate::rules::ini_parser::IniFile::from_str(&format!(
                 "[VehicleTypes]\n0=SMIN\n[BuildingTypes]\n0=YAREFN\n[InfantryTypes]\n0=SLAV\n\
                  [SMIN]\nStrength=100\nSpeed=3\nDeploysInto=YAREFN\nEnslaves=SLAV\n\
                  SlavesNumber=1\n\
-                 [YAREFN]\nStrength=1000\nDeployFacing=0\nUndeploysInto=SMIN\n\
+                 [YAREFN]\nStrength=1000\nDeployFacing=0\nUndeploysInto=SMIN\n{target_attach}\
                  [SLAV]\nStrength=125\nSpeed=3\nStorage=4\n\
                  [AttachEffectTypes]\n0=AE\n[AE]\nDuration=100\n{allow_transfer}\n\
                  [Clear]\nBuildable=yes\n"
@@ -3413,6 +3444,56 @@ mod tests {
             .stable_id()
     }
 
+    /// One externally attached `AE` instance with a distinct source pair.
+    fn attach_external(sim: &mut Simulation, rules: &crate::rules::ruleset::RuleSet, id: u64) {
+        let effect = rules.attach_effect_types().types()[0].clone();
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .phobos_attach_effects_mut()
+            .attach(
+                0,
+                AttachEffectParams::default(),
+                &effect,
+                AttachPolicy::default(),
+                Some(AttachSource {
+                    invoker: Some(id),
+                    source: Some(2),
+                    invoker_house: None,
+                }),
+            );
+    }
+
+    /// A cumulative type already on the target refreshes its first instance
+    /// through `CreateAndAttach(checkCumulative=false)` instead of stacking,
+    /// matching `TransferAttachedEffects` when no same-source match exists.
+    #[test]
+    fn cumulative_transfer_refreshes_an_existing_instance() {
+        let rules = transfer_rules(
+            "AllowTransfer=yes\nCumulative=yes",
+            "AttachEffect.AttachTypes=AE\n",
+        );
+        let mut sim = Simulation::with_seed(7);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        let mcv = sim
+            .spawn_object_at_height("SMIN", "Neutral", 10, 10, 0, 0, &rules)
+            .expect("SMIN spawns");
+        attach_external(&mut sim, &rules, mcv);
+        assert!(sim.deploy_mcv(
+            mcv,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default()
+        ));
+        let yard = only_entity(&sim, "YAREFN");
+        assert_eq!(
+            instances(&sim, yard),
+            1,
+            "the building's own instance absorbed the transfer"
+        );
+    }
+
     /// `AllowTransfer` at Phobos' deploy (`UnitClass_Deploy_Transfer
     /// 0x739956`) and undeploy (`BuildingClass_Mi_Selling_Transfer 0x44A03C`)
     /// hooks: a self-attached effect with `AllowTransfer=yes` follows the
@@ -3420,29 +3501,13 @@ mod tests {
     #[test]
     fn allow_transfer_moves_effects_across_deploy_and_undeploy() {
         for (allow, expected) in [("AllowTransfer=yes", 1), ("AllowTransfer=no", 0)] {
-            let rules = transfer_rules(allow);
+            let rules = transfer_rules(allow, "");
             let mut sim = Simulation::with_seed(7);
             crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
             let mcv = sim
                 .spawn_object_at_height("SMIN", "Neutral", 10, 10, 0, 0, &rules)
                 .expect("SMIN spawns");
-            let effect = rules.attach_effect_types().types()[0].clone();
-            sim.substrate
-                .entities
-                .get_mut(mcv)
-                .unwrap()
-                .phobos_attach_effects_mut()
-                .attach(
-                    0,
-                    AttachEffectParams::default(),
-                    &effect,
-                    AttachPolicy::default(),
-                    Some(AttachSource {
-                        invoker: Some(mcv),
-                        source: Some(2),
-                        invoker_house: None,
-                    }),
-                );
+            attach_external(&mut sim, &rules, mcv);
             assert_eq!(instances(&sim, mcv), 1, "one externally attached effect");
             assert!(sim.deploy_mcv(
                 mcv,

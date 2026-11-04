@@ -560,8 +560,8 @@ impl AttachEffectType {
     /// `Body.Update.cpp:1084`): an effect attached from outside defaults to
     /// carrying across a transfer or conversion, one a techno attaches to
     /// itself does not. `AllowTransfer.Convert` splits the conversion case
-    /// out. RESIDUAL: VERA has no AttachEffect transfer or conversion
-    /// consumer yet, so neither key changes play.
+    /// out; only the deploy/undeploy transfer consumes the base key today,
+    /// because no Ares type conversion is ported.
     pub fn allows_transfer(&self, self_owned: bool, converting: bool) -> bool {
         let base = self.allow_transfer.unwrap_or(!self_owned);
         if converting {
@@ -1395,9 +1395,8 @@ AllowTransfer.Convert=yes
         assert_eq!(catalog.index_of("SECOND"), Some(1));
     }
 
-    /// `LaserTrail.Type` resolves through a trail catalog natively; until that
-    /// owner exists the raw key text is kept and an absent or blank key stays
-    /// `None`.
+    /// `LaserTrail.Type` keeps the ART catalog key text (`ValueableIdx` in
+    /// Phobos, resolved by name at use); an absent or blank key stays `None`.
     #[test]
     fn laser_trail_type_keeps_the_key_text() {
         let catalog = parse("[AttachEffectTypes]\n0=T\n[T]\nLaserTrail.Type=MyTrail\n");

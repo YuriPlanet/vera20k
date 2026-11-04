@@ -161,7 +161,9 @@ AttachEffect.SameSourceOnly=no            ; match only same-source instances
   LaserTrail catalog or trail owner yet, so no trail is drawn.
 - `AllowTransfer` is consumed by the deploy (`(Un)DeploysInto`) conversions;
   `AllowTransfer.Convert` stays unused because VERA ports no Ares type
-  conversion (`TechnoClass_ChangeType`).
+  conversion (`TechnoClass_ChangeType`). A transferred instance copies its
+  source state without native's constructor RNG draw
+  (`Duration.ApplyArmorMultOnTarget`).
 - `Duration.ApplyFirepowerMult` folds a firepower multiplier into the
   duration the way the reader stores it; `ArmorMultiplier` folds onto the
   target's armor the shared combat-stats owner already folds Ares
