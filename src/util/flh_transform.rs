@@ -1,9 +1,10 @@
 //! FLH (Forward/Lateral/Height): the native fire-coordinate offset.
 //!
-//! `native_flh_world_delta` is `TechnoClass::GetFLH`'s integer world delta, the
-//! one FLH transform the engine has; `sim::combat::fire_coord` is its caller.
-//! The presentation's `f32` screen-space variants went with the app-side
-//! muzzle flashes.
+//! `native_flh_world_delta` is `TechnoClass::GetFLH`'s integer world delta;
+//! `native_building_barrel_world_delta` is the `BarrelAnimIsVoxel=` building's
+//! replacement projection through `GetTurretDrawPosition`. `sim::combat::
+//! fire_coord` is their caller. The presentation's `f32` screen-space variants
+//! went with the app-side muzzle flashes.
 //!
 //! ## Dependency rules
 //! - Part of util/; no simulation or presentation dependency.
@@ -131,6 +132,87 @@ pub fn native_flh_world_delta(
     let world = matrix.w_axis;
 
     // Y is negated before the three `Math::ftol @ 0x007C5F00` truncations.
+    let ftol = |value: f32| X87Chop53::ftol_f64_low_masked(f64::from(value));
+    Some((ftol(world.x), ftol(-world.y), ftol(world.z)))
+}
+
+/// `BuildingClass::GetTurretDrawPosition @ 0x00453BF0`'s voxel-barrel world
+/// delta for a `BarrelAnimIsVoxel=` type: the composed pivot matrix applied
+/// to the burst-selected barrel end, truncated into the integer add the
+/// fire coordinate takes.
+///
+/// gamemd-derived. The matrix chain `0x00458810` post-multiplies, per
+/// row-stored floats, from the identity (`0x5AE860`):
+///
+/// ```text
+/// M = T(building_pivot) . Rz(theta_z) . T(rotate_pivot)
+///     . RotY(-theta_y) . T(pitch_pivot) . Scale(s)
+/// p = M . (barrel_end with the burst-signed Y)
+/// out = ( ftol(p.x), ftol(-p.y), ftol(p.z) )   -- Y negated at 0x00453CC9
+/// ```
+///
+/// Both angles come from a `FacingClass::Current @ 0x4C93D0` read quantized
+/// to `((d >> 10) + 1) >> 1 & 0x1F - 8` quarter-facing steps, then scaled by
+/// the double `-(pi/16)` at `0x7E4408` (`0x0045887B..0x0045889F` and
+/// `0x004588EF..0x00458922`): `theta_z` from the body heading (`+0x388`),
+/// `theta_y` from the barrel elevation (`+0x370`), whose input the chain
+/// additionally negates (`fchs` at `0x00458920`). The negated angle is a
+/// step of the same table, answered at the mirrored step, not by negating a
+/// sine: the retail table is asymmetric. `Scale` reads the `+0x1728` double
+/// (scale X/Y/Z at `0x5AEAD0/0x5AEAF0/0x5AEB20`).
+///
+/// RESIDUAL: `+0x1728` has no writer anywhere in the original image (only
+/// this read at `0x0045888D` and the save/load serializer at `0x00464F60`
+/// reference the field; the wholesale-zeroing constructor leaves 0.0). The
+/// unported `VoxelBarrelFile=` voxel loader is what would store a scale, so
+/// this port assumes its 1.0 and skips the operation, while native reads
+/// whatever the field holds.
+///
+/// Each pivot rides its own single-axis translate
+/// ([`crate::util::native_affine::translate_axis`]), and the barrel end goes
+/// through the point transform `0x5AFB80` (`0x00453CA3`), whose first row
+/// sums Z, Y, then X.
+pub fn native_building_barrel_world_delta(
+    building_pivot: [i32; 3],
+    rotate_pivot: [i32; 3],
+    pitch_pivot: [i32; 3],
+    barrel_end: [i32; 3],
+    facing16: u16,
+    elevation16: u16,
+) -> Option<(i32, i32, i32)> {
+    use crate::util::direction_tables::quantize::step32_from_facing16;
+    use crate::util::native_affine::{rotate_y, rotate_z, transform_point, translate_axis};
+    use crate::util::native_trig::native_sin_cos_by_step;
+    use crate::util::native_x87::X87Chop53;
+
+    // 0x458827..0x45886B: T(+0x1748/4C/50), one axis per kernel call.
+    let mut matrix = glam::Mat4::IDENTITY;
+    for (axis, pivot) in building_pivot.into_iter().enumerate() {
+        matrix = translate_axis(matrix, axis, pivot as f32);
+    }
+    // 0x45886F..0x45889F: Rz of the body-facing step.
+    let theta_z = i32::from(step32_from_facing16(facing16)) - 8;
+    let (sin_z, cos_z) = native_sin_cos_by_step(theta_z)?;
+    let matrix = rotate_z(matrix, sin_z, cos_z);
+    // 0x4588A4..0x4588EA: T(+0x173C/40/44).
+    let mut matrix = matrix;
+    for (axis, pivot) in rotate_pivot.into_iter().enumerate() {
+        matrix = translate_axis(matrix, axis, pivot as f32);
+    }
+    // 0x4588EF..0x458925: RotY of the negated elevation step.
+    let theta_y = i32::from(step32_from_facing16(elevation16)) - 8;
+    let (sin_y, cos_y) = native_sin_cos_by_step(-theta_y)?;
+    let matrix = rotate_y(matrix, sin_y, cos_y);
+    // 0x45892A..0x458970: T(+0x1730/34/38). The chain's trailing Scale
+    // (`0x458975..0x4589A2`) is the skipped `+0x1728` identity above.
+    let mut matrix = matrix;
+    for (axis, pivot) in pitch_pivot.into_iter().enumerate() {
+        matrix = translate_axis(matrix, axis, pivot as f32);
+    }
+    // 0x453C7D..0x453CA3: the barrel end rides the composed matrix.
+    let world = transform_point(matrix, glam::Vec3::from_array(barrel_end.map(|v| v as f32)))?;
+    // Y is negated before the three `Math::ftol @ 0x007C5F00` truncations
+    // (`0x00453CB1..0x00453CDD`).
     let ftol = |value: f32| X87Chop53::ftol_f64_low_masked(f64::from(value));
     Some((ftol(world.x), ftol(-world.y), ftol(world.z)))
 }

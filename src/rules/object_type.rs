@@ -383,6 +383,32 @@ impl HouseMasks {
     }
 }
 
+/// The four `VoxelBarrelOffsetTo*` triples of a `BarrelAnimIsVoxel=`
+/// (`+0x16C6`) building type. `BuildingTypeClass::ReadINI @ 0x0045FE50` reads
+/// them in native field order right after `BarrelAnimIsVoxel=` (and the
+/// unread `VoxelBarrelFile=` name) through `Get_TripleInt @ 0x00529CA0`
+/// (`0x00464697`, `0x004646C0`, `0x004646E9`, `0x00464712`), each pass using
+/// the current triple as its self-default; the wholesale-zeroing constructor
+/// makes that `(0,0,0)`. `BuildingClass::GetTurretDrawPosition @ 0x00453BF0`
+/// composes them into its barrel matrix chain `0x00458810`; no other reader
+/// touches them.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct BarrelVoxelOffsets {
+    /// `VoxelBarrelOffsetToPitchPivotPoint=` (`+0x1730/34/38`), the pitch
+    /// pivot the chain translates by after the barrel-elevation turn.
+    pub pitch_pivot: [i32; 3],
+    /// `VoxelBarrelOffsetToRotatePivotPoint=` (`+0x173C/40/44`), translated
+    /// between the body-facing turn and the elevation turn.
+    pub rotate_pivot: [i32; 3],
+    /// `VoxelBarrelOffsetToBuildingPivotPoint=` (`+0x1748/4C/50`), the first
+    /// translation off the identity.
+    pub building_pivot: [i32; 3],
+    /// `VoxelBarrelOffsetToBarrelEnd=` (`+0x1754/58/5C`); the burst-selected
+    /// barrel flips the Y component's sign (`0x00453C30..0x00453C67`) before
+    /// the point rides the matrix.
+    pub barrel_end: [i32; 3],
+}
+
 /// A game object definition parsed from a rules.ini section.
 ///
 /// Fields use sensible defaults when the INI key is absent, matching
@@ -1078,6 +1104,17 @@ pub struct ObjectType {
     /// = nearer the camera). Building vtable `0x7E3EBC+0x2EC` folds it into the
     /// draw Z only when `TurretAnimIsVoxel`; it is not a ground-layer sort key.
     pub turret_anim_z_adjust: i32,
+    /// `BarrelAnimIsVoxel=` (`BuildingType +0x16C6`): arms the
+    /// `BuildingClass::GetFLH @ 0x00453840` arm (`0x004539A1..0x004539DE`)
+    /// that replaces the whole coordinate with `GetTurretDrawPosition`
+    /// (`0x00453BF0`). ReadINI reads it through `Get_Bool @ 0x00464661`
+    /// (`0x00453C08`'s reader family); the wholesale-zeroing constructor
+    /// defaults false. `VoxelBarrelFile=` (`+0x1714`, read at `0x0046467E`)
+    /// names the barrel model but nothing on this fire path consumes it.
+    pub barrel_anim_is_voxel: bool,
+    /// The `VoxelBarrelOffsetTo*` pivot triples ([`BarrelVoxelOffsets`]) the
+    /// barrel arm's matrix chain composes.
+    pub barrel_voxel: BarrelVoxelOffsets,
     /// Scan radius in cells for auto-targeting idle enemies. If None, defaults
     /// to the primary weapon's range at runtime.
     pub guard_range: Option<SimFixed>,
@@ -4309,6 +4346,20 @@ impl ObjectType {
             turret_anim_x: section.read_int("TurretAnimX", 0),
             turret_anim_y: section.read_int("TurretAnimY", 0),
             turret_anim_z_adjust: section.read_int("TurretAnimZAdjust", 0),
+            // Native order after TurretAnimIsVoxel (0x00464647): the
+            // `BarrelAnimIsVoxel` bool (0x00464661), the VoxelBarrelFile name
+            // this port does not read (0x0046467E, retained above), then the
+            // four `Read3Int` triples (0x00464697..0x00464734) whose
+            // self-default keeps an earlier layer's triple.
+            barrel_anim_is_voxel: section.read_bool("BarrelAnimIsVoxel", false),
+            barrel_voxel: BarrelVoxelOffsets {
+                pitch_pivot: section.read_coord3_fold("VoxelBarrelOffsetToPitchPivotPoint", [0; 3]),
+                rotate_pivot: section
+                    .read_coord3_fold("VoxelBarrelOffsetToRotatePivotPoint", [0; 3]),
+                building_pivot: section
+                    .read_coord3_fold("VoxelBarrelOffsetToBuildingPivotPoint", [0; 3]),
+                barrel_end: section.read_coord3_fold("VoxelBarrelOffsetToBarrelEnd", [0; 3]),
+            },
             guard_range: present_range("GuardRange"),
             air_range_bonus: present_range("AirRangeBonus"),
             // Default no (passive acquisition off unless the type opts in).

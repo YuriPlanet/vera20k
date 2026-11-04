@@ -1783,6 +1783,12 @@ impl GameEntity {
         &self.barrel_elevation
     }
 
+    /// Install a fixture's barrel elevation.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_barrel_elevation_for_test(&mut self, facing: crate::sim::movement::FacingClass) {
+        self.barrel_elevation = facing;
+    }
+
     /// Whether the barrel elevation still holds its constructor value, which
     /// an object that never unlimboed keeps.
     pub(crate) fn barrel_elevation_is_constructed(&self) -> bool {

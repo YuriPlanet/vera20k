@@ -108,9 +108,10 @@ pub fn rotate_z(matrix: Mat4, sin: f32, cos: f32) -> Mat4 {
     result
 }
 
-/// Original TranslateX5AE980 and Translate5AE8F0 update the translation
-/// column from the existing basis. A vector in this frame is not a screen
-/// displacement; keep the native float store before the next rotation.
+/// Original vector `Translate5AE8F0` updates the translation column from the
+/// existing basis (the scalar per-axis entry is [`translate_axis`]'s). A
+/// vector in this frame is not a screen displacement; keep the native float
+/// store before the next rotation.
 pub fn translate(matrix: Mat4, offset: &[f32]) -> Mat4 {
     use crate::util::native_x87::X87Chop53 as Fpu;
     debug_assert!(offset.len() == 1 || offset.len() == 3);
@@ -152,6 +153,27 @@ pub(crate) fn translate_xyz(matrix: Mat4, offset: [f32; 3]) -> Mat4 {
         };
         result.col_mut(3)[row] = store(Fpu::add(dot, load(matrix.col(3)[row]).unwrap()))
             .expect("native translation fits float");
+    }
+    result
+}
+
+/// One scalar argument, original `TranslateX/Y/Z 5AE980/5AE9B0/5AE9E0`: the
+/// barrel matrix chain `0x00458810` (behind `GetTurretDrawPosition
+/// 0x00453BF0`) moves each pivot with three separate single-axis calls
+/// instead of one [`translate_xyz`]. Each row's translation column becomes
+/// `value*col[axis][row] + col3[row]`, stored as a float per row.
+pub fn translate_axis(matrix: Mat4, axis: usize, value: f32) -> Mat4 {
+    let value = load(value).expect("finite native translation");
+    let mut result = matrix;
+    for row in 0..3 {
+        let sum = Fpu::add(
+            Fpu::mul(
+                value,
+                load(matrix.col(axis)[row]).expect("finite voxel basis"),
+            ),
+            load(matrix.col(3)[row]).expect("finite voxel translation"),
+        );
+        result.col_mut(3)[row] = store(sum).expect("native translation fits float");
     }
     result
 }
