@@ -162,13 +162,17 @@ pub fn native_flh_world_delta(
 ///
 /// `Scale` (`0x00458975..0x004589A2`; X/Y/Z at `0x5AEAD0/0x5AEAF0/0x5AEB20`)
 /// multiplies the three basis columns by the type's `+0x1728` double, read
-/// at `0x0045897B`. No instruction stores that field: the `VoxelBarrelFile=`
-/// loader (`0x0045FCAF`) loads only the model, and `0x00464F5E` only reads
-/// it. Every type keeps the constructor's 0.0, so the basis is zeroed and
-/// the point transform `0x5AFB80` (`0x00453CA3`) answers the translation
-/// column exactly, whatever the burst-signed barrel end. This port returns
-/// that translation; the barrel end never moves the shot
-/// (`building_voxel_flh.json`'s barrel rows record it natively).
+/// at `0x0045897B`. Nothing initializes that field: no instruction stores
+/// it (the `VoxelBarrelFile=` loader `0x0045FCAF` loads only the model, and
+/// `BuildingTypeClass::ComputeCRC @ 0x00464B30` only hashes it), the
+/// constructor `0x0045DD90` skips `+0x1718..+0x175F`, and
+/// `FindOrAllocate @ 0x004653C0` allocates the type without zeroing
+/// (`HeapAlloc` at `0x007C94B3`). Native scales by whatever the heap block
+/// held; this port uses 0.0, a never-used page's content (a residual of
+/// `fire_coordinate`'s barrel arm). The zero scale clears the basis, so the
+/// point transform `0x5AFB80` (`0x00453CA3`) answers the translation column
+/// exactly, whatever the burst-signed barrel end: this port returns that
+/// translation (`building_voxel_flh.json`'s barrel rows record it natively).
 pub fn native_building_barrel_world_delta(
     building_pivot: [i32; 3],
     rotate_pivot: [i32; 3],

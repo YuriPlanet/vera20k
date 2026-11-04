@@ -294,14 +294,25 @@ pub fn turret_pivot_coordinate(
 ///   (3,28) and YAGGUN (0,15) take it; their projectile, muzzle animation and
 ///   positioned report sound use the resulting fire coordinate.
 ///
-/// RESIDUALS on the `BarrelAnimIsVoxel` arm:
+/// RESIDUALS on the `BarrelAnimIsVoxel` arm, which no retail type arms, so
+/// each reaches modded types only:
+/// - Nothing initializes the type's `+0x1728` chain scale or its
+///   `VoxelBarrelOffsetTo*` triples: the constructor `0x0045DD90` skips
+///   `+0x1718..+0x175F`, `FindOrAllocate @ 0x004653C0` does not zero the
+///   heap block, and no instruction stores the scale. Native fires with
+///   that block's stale content as the scale and as any pivot no rules
+///   layer sets (`Read3Int`'s self-default); VERA uses 0.0 and `(0,0,0)`,
+///   a never-used page's content. The difference moves the projectile's
+///   start coordinate (simulation state), its muzzle animation and report
+///   sound.
+/// - `VoxelBarrelOffsetToBarrelEnd=` (`+0x1754`, read at `0x00464712`) and
+///   the weapon `Burst` that signs it (`0x00453C02..0x00453C67`) feed only
+///   the point VERA's zero scale multiplies away (see the projection fn),
+///   so VERA reads neither; a nonzero stale scale lets them move the native
+///   shot.
 /// - `VoxelBarrelFile=` (`+0x1714`, read at `0x0046467E`) names the barrel
 ///   model; nothing on this fire path consumes it — only the unported voxel
 ///   loader (`0x0045FCAF`) would — so VERA does not read the key at all.
-/// - `VoxelBarrelOffsetToBarrelEnd=` (`+0x1754`, read at `0x00464712`) and
-///   the weapon `Burst` that signs it (`0x00453C02..0x00453C67`) feed only
-///   the point the chain's never-stored `+0x1728` scale (0.0) multiplies
-///   away (see the projection fn), so VERA reads neither.
 /// - `BuildingClass`'s two-argument `GetFLH` variant `0x00453A70` (vtable
 ///   `+0x300`, whose barrel arm calls `0x00453BF0` with the raw
 ///   `CurrentBurstIndex`) has no port; neither caller reaches a building.
@@ -899,10 +910,11 @@ fn building_pixel_offset(art: Option<&ArtEntry>, snap: &FireSource) -> Option<(i
 /// `IsometricPixelToWorld` of the type's `TurretAnimX=`/`TurretAnimY=`
 /// (`0x00453D08..0x00453D44`) — the tail's own add, unconditional on this
 /// path. Native also fetches the weapon (`0x00453C02`) and signs a
-/// burst-selected barrel end (`0x00453C1A..0x00453C67`), but the chain's
-/// zero scale multiplies that point away, so neither moves the shot. No
-/// weapon FLH joins the result; the coordinate and its `ZAdjust` input
-/// `offset_y` follow the other arms' shape.
+/// burst-selected barrel end (`0x00453C1A..0x00453C67`), but VERA's zero
+/// chain scale (a [`fire_coordinate`] residual) multiplies that point away,
+/// so neither moves the shot. No weapon FLH joins the result; the
+/// coordinate and its `ZAdjust` input `offset_y` follow the other arms'
+/// shape.
 fn barrel_voxel_coordinate(
     world: &Simulation,
     snap: &FireSource,

@@ -462,14 +462,14 @@ fn building_voxel_turret_shot_origin_matches_the_original_flh() {
 
 /// The `BarrelAnimIsVoxel=` rows run the original `+0x16C6` arm: the whole
 /// coordinate is `GetTurretDrawPosition @ 0x00453BF0` — the `0x00458810`
-/// pivot chain, whose never-stored `+0x1728` scale (0.0) removes the
-/// burst-signed barrel end, plus the tail's own `TurretAnimX`/`TurretAnimY`
-/// add — with no weapon FLH and no base GetFLH. The rows vary heading,
-/// elevation, and the burst-selected barrel index (`CurrentBurstIndex - 1`,
-/// or, at zero, the weapon's `Burst - 1`). `barrel_pixel_precedence` keeps
-/// the primary-pixel arm in front, `barrel_voxel_turret_pixels` shows a
-/// `TurretAnimIsVoxel` type losing to the barrel arm with its pixels still
-/// added.
+/// pivot chain, whose uninitialized `+0x1728` scale the rows hold at VERA's
+/// 0.0, removing the burst-signed barrel end, plus the tail's own
+/// `TurretAnimX`/`TurretAnimY` add — with no weapon FLH and no base GetFLH.
+/// The rows vary heading, elevation, and the burst-selected barrel index
+/// (`CurrentBurstIndex - 1`, or, at zero, the weapon's `Burst - 1`).
+/// `barrel_pixel_precedence` keeps the primary-pixel arm in front,
+/// `barrel_voxel_turret_pixels` shows a `TurretAnimIsVoxel` type losing to
+/// the barrel arm with its pixels still added.
 #[test]
 fn building_voxel_barrel_shot_origin_matches_the_original_flh() {
     let native = voxel_native();
@@ -749,8 +749,8 @@ fn retail_voxel_turret_inputs_match_the_native_rows() {
             obj.turret_anim_y,
             input["turret_anim_y"].as_i64().unwrap() as i32
         );
-        // The checked stock layers arm no `BarrelAnimIsVoxel=` type: the
-        // constructor's zero flag and pivot triples.
+        // The checked stock layers arm no `BarrelAnimIsVoxel=` type (the
+        // constructor zeroes the flag at 0x0045E16F) and set no pivot triple.
         assert!(!obj.barrel_anim_is_voxel, "{type_id}");
         assert_eq!(
             obj.barrel_voxel,

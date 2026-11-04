@@ -14,9 +14,12 @@ whole coordinate with `GetTurretDrawPosition @ 0x00453BF0`: the type's
 burst-selected barrel end through the point transform `0x5AFB80`, the
 building coordinate (`+0xAC` = `0x00459EF0`) and the tail's own
 `TurretAnimX`/`TurretAnimY` pixel add. The chain ends by scaling its three
-basis columns by the type's `+0x1728` double (`0x00458975..0x004589A2`),
-which no instruction stores, so the constructor's 0.0 removes the barrel end
-and the shot leaves from the pivot translation. Both arms are only reached
+basis columns by the type's `+0x1728` double (`0x00458975..0x004589A2`).
+Nothing initializes it: no instruction stores it, the constructor
+`0x0045DD90` skips it, and `FindOrAllocate @ 0x004653C0` allocates the type
+without zeroing, so native reads stale heap content. The rows hold 0.0, a
+never-used page's content and VERA's value: it removes the barrel end and
+the shot leaves from the pivot translation. Both arms are only reached
 with `PrimaryFirePixelOffset=` (`+0xE44`) unset.
 
 Fixture. `building_prism.LaserScene`'s building fixture: the
@@ -28,8 +31,8 @@ executed natively. Per row the type receives:
 - `+0x11E0`/`+0x11E4` (`TurretAnimX=`, `TurretAnimY=`) as signed dwords and
   `+0x16C5` (`TurretAnimIsVoxel=`),
 - `+0x16C6` (`BarrelAnimIsVoxel=`), the `+0x1730/+0x173C/+0x1748/+0x1754`
-  pivot triples, and the `+0x1728` scale double at the constructor's 0.0
-  (no instruction stores it),
+  pivot triples, and the `+0x1728` scale double at 0.0 (nothing
+  initializes it),
 - `+0xE44` (`PrimaryFirePixelOffset=`) and `+0x1764`
   (`PrimaryFireDualOffset=`), the stock Grand Cannon and Gattling Cannon state
   being the constructor's 0xFFFF/0xFFFF and 0,
@@ -98,7 +101,7 @@ class VoxelFlhScene(prism.LaserScene):
     `LaserScene` already clears `+0x16C5`/`+0x16C6` and writes `+0xE44`,
     `+0x1764` and the FLH slots from the case; this subclass adds the pixel
     offsets the voxel-turret arm reads, the barrel arm's flag, pivot triples
-    and never-stored scale, the fixture weapon's `Burst`, and the barrel-path
+    and 0.0 scale, the fixture weapon's `Burst`, and the barrel-path
     getters.
     """
 
@@ -114,8 +117,10 @@ class VoxelFlhScene(prism.LaserScene):
                             (0x1748, 'voxel_barrel_building_pivot'),
                             (0x1754, 'voxel_barrel_end')):
             u.mem_write(self.kind + offset, dwords(*case[key]))
-        # No instruction stores +0x1728 (not even the VoxelBarrelFile loader at
-        # 0x0045FCAF), so every type keeps the constructor's 0.0 there.
+        # Nothing initializes +0x1728: no instruction stores it (not even the
+        # VoxelBarrelFile loader at 0x0045FCAF), the constructor 0x0045DD90
+        # skips it, and FindOrAllocate 0x004653C0 does not zero the heap
+        # block. Write 0.0, a never-used page's content and VERA's value.
         u.mem_write(self.kind + 0x1728, struct.pack('<d', 0.0))
         weapon = struct.unpack('<I', u.mem_read(self.kind + 0x898, 4))[0]
         assert weapon, 'the fixture primary record carries a WeaponTypeClass'
@@ -256,8 +261,8 @@ def main(argv=None):
                   '+0x11E0/+0x11E4 for a +0x16C5 type; and its voxel-barrel arm '
                   '(0x004539A1..0x004539DE): GetTurretDrawPosition 0x00453BF0\'s '
                   '0x00458810 matrix chain over the +0x1730/+0x173C/+0x1748/+0x1754 pivots '
-                  'and the burst-signed barrel end, which the chain\'s never-stored '
-                  '+0x1728 scale (0.0) removes, with the tail\'s own +0x11E0/+0x11E4 '
+                  'and the burst-signed barrel end, which the chain\'s uninitialized '
+                  '+0x1728 scale, held at 0.0, removes, with the tail\'s own +0x11E0/+0x11E4 '
                   'pixel add. Both arms\' +0x16C5/+0x16C6/+0xE44/+0x1764/+0x89C/+0x8B8 '
                   'inputs, the building\'s own GetCoords 0x00459EF0, and the FacingClass '
                   '0x4C91E0/0x4C9300 heading the FLH turn and the chain\'s Rz read.',
@@ -280,11 +285,14 @@ def main(argv=None):
                          '(+0xE44/+0x1764, the stock constructor state being 0xFFFF/0xFFFF '
                          'and 0), the primary and secondary FLH (+0x89C/+0x8B8), the fixture '
                          'weapon\'s Burst (+0x9C) and the building Location',
-                         'no instruction stores +0x1728 (only this chain\'s read at '
-                         '0x0045897B and a read at 0x00464F5E reference it), so every row '
-                         'holds the constructor\'s 0.0, as every stock or modded type does; '
-                         'the chain\'s Scale 0x5AEAD0/0x5AEAF0/0x5AEB20 then zeroes its basis '
-                         'and the point transform answers the pivot translation',
+                         'nothing initializes +0x1728: no instruction stores it (only this '
+                         'chain\'s read at 0x0045897B and ComputeCRC 0x00464B30\'s read at '
+                         '0x00464F5E reference it), the constructor 0x0045DD90 skips '
+                         '+0x1718..+0x175F, and FindOrAllocate 0x004653C0 allocates the type '
+                         'through a non-zeroing HeapAlloc (0x007C94B3), so native reads stale '
+                         'heap content; every row holds 0.0, a never-used page\'s content and '
+                         'VERA\'s value, so the chain\'s Scale 0x5AEAD0/0x5AEAF0/0x5AEB20 zeroes '
+                         'its basis and the point transform answers the pivot translation',
                          'the stock rows use the retail-authored values the comparison rests '
                          'on: GTGCAN 3/28 with PrimaryFireFLH 250,0,230 and YAGGUN 0/15 with '
                          'Weapon1FLH 150,60,200. A later layer could override them; the '

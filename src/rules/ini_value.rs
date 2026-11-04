@@ -1179,9 +1179,10 @@ impl IniSection {
     /// retained rules passes: `BuildingTypeClass::ReadINI @ 0x0045FE50` reads
     /// the `VoxelBarrelOffsetTo*` keys (`0x00464697..0x00464734`) once per
     /// layer with the destination's current content as the default, so a
-    /// missing or malformed later read keeps the earlier layer's triple and
-    /// the wholesale-zeroing constructor supplies the first pass's `(0,0,0)`.
-    /// Each rules pass supplies its prior triple.
+    /// missing or malformed later read keeps the earlier layer's triple. The
+    /// first pass's native default is uninitialized type memory (the
+    /// constructor `0x0045DD90` never writes the triples), which callers
+    /// replace with `(0,0,0)`. Each rules pass supplies its prior triple.
     pub fn read_coord3_fold(&self, key: &str, default: [i32; 3]) -> [i32; 3] {
         self.fold_rules_values(key, default, |current, raw| {
             let mut out = [0; 3];

@@ -418,12 +418,15 @@ impl HouseMasks {
 /// them in native field order right after `BarrelAnimIsVoxel=` (and the
 /// unread `VoxelBarrelFile=` name) through `Get_TripleInt @ 0x00529CA0`
 /// (`0x00464697`, `0x004646C0`, `0x004646E9`), each pass using the current
-/// triple as its self-default; the wholesale-zeroing constructor makes that
-/// `(0,0,0)`. `BuildingClass::GetTurretDrawPosition @ 0x00453BF0` composes
-/// them into its barrel matrix chain `0x00458810`; no other reader touches
-/// them. The fourth triple, `VoxelBarrelOffsetToBarrelEnd=` (`+0x1754`, read
-/// at `0x00464712`), is the point that chain's never-stored `+0x1728` scale
-/// (0.0) multiplies away, so VERA does not read it.
+/// triple as its self-default. The constructor `0x0045DD90` never writes
+/// them, so native's first default is uninitialized heap memory; VERA's is
+/// `(0,0,0)` (a `fire_coordinate` residual). The barrel matrix chain
+/// `0x00458810` composes them for `BuildingClass::GetTurretDrawPosition`
+/// (`0x00453BF0`) and for the unported barrel draw (`0x0043E63E`);
+/// `BuildingTypeClass::ComputeCRC` (`0x00464B30`) also hashes them. The
+/// fourth triple, `VoxelBarrelOffsetToBarrelEnd=` (`+0x1754`, read at
+/// `0x00464712`), is the point VERA's zero chain scale (`+0x1728`)
+/// multiplies away, so VERA does not read it.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct BarrelVoxelOffsets {
     /// `VoxelBarrelOffsetToPitchPivotPoint=` (`+0x1730/34/38`), the pitch
@@ -1135,10 +1138,11 @@ pub struct ObjectType {
     /// `BarrelAnimIsVoxel=` (`BuildingType +0x16C6`): arms the
     /// `BuildingClass::GetFLH @ 0x00453840` arm (`0x004539A1..0x004539DE`)
     /// that replaces the whole coordinate with `GetTurretDrawPosition`
-    /// (`0x00453BF0`). ReadINI reads it through `Get_Bool @ 0x00464661`
-    /// (`0x00453C08`'s reader family); the wholesale-zeroing constructor
-    /// defaults false. `VoxelBarrelFile=` (`+0x1714`, read at `0x0046467E`)
-    /// names the barrel model but nothing on this fire path consumes it.
+    /// (`0x00453BF0`). ReadINI reads it at `0x00464661` through
+    /// `INIClass::ReadBool @ 0x005295F0` with the current byte as default; the
+    /// constructor zeroes it (`0x0045E16F`), so it defaults false.
+    /// `VoxelBarrelFile=` (`+0x1714`, read at `0x0046467E`) names the barrel
+    /// model but nothing on this fire path consumes it.
     pub barrel_anim_is_voxel: bool,
     /// The `VoxelBarrelOffsetTo*` pivot triples ([`BarrelVoxelOffsets`]) the
     /// barrel arm's matrix chain composes.
@@ -4389,8 +4393,8 @@ impl ObjectType {
             // `BarrelAnimIsVoxel` bool (0x00464661), the VoxelBarrelFile name
             // this port does not read (0x0046467E, retained above), then the
             // `Read3Int` pivot triples (0x00464697..0x004646E9) whose
-            // self-default keeps an earlier layer's triple. The barrel-end
-            // triple (0x00464712) has no effect; see `BarrelVoxelOffsets`.
+            // self-default keeps an earlier layer's triple. VERA does not
+            // read the barrel-end triple (0x00464712); see `BarrelVoxelOffsets`.
             barrel_anim_is_voxel: section.read_bool("BarrelAnimIsVoxel", false),
             barrel_voxel: BarrelVoxelOffsets {
                 pitch_pivot: section.read_coord3_fold("VoxelBarrelOffsetToPitchPivotPoint", [0; 3]),
