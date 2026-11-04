@@ -1181,7 +1181,7 @@ impl App {
             .iter()
             .map(|display| display.choice().clone())
             .collect();
-        let dialog = launcher_dialog_from_profile(
+        let mut dialog = launcher_dialog_from_profile(
             &state.persistence.options_profile,
             labels,
             state.platform.window.fullscreen().is_some(),
@@ -1189,7 +1189,6 @@ impl App {
             state.audio.launcher_audio_available,
             displays,
         );
-        let mut dialog = dialog;
         if let Some(category) = state.frontend.options_reopen_at.take() {
             dialog.select_category(category);
         }
