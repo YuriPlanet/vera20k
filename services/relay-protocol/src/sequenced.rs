@@ -53,6 +53,9 @@ const PUSH_REQUEST: u8 = 4;
 const PAUSE_REQUEST: u8 = 5;
 const PACE_REQUEST: u8 = 6;
 const CHECKSUM_REQUEST: u8 = 7;
+/// Every this many frames each client reports its post-Logic checksum; the
+/// relay takes no other frame's.
+pub const CHECKSUM_INTERVAL: u32 = 15;
 // A checksum report carries the newest sample and the one before, so one
 // lost datagram loses no sample.
 const CHECKSUM_SAMPLES: usize = 2;
@@ -1842,7 +1845,9 @@ impl OrderingRoom {
             let (frame, checksum) = (read_u32(sample, 0), read_u32(sample, 4));
             match federation {
                 Some(federation) if !federation.is_coordinator() => {
-                    if self.forward_checksums.len() < federation::FORWARD_CHECKSUMS {
+                    if self.forward_checksums.len() < federation::FORWARD_CHECKSUMS
+                        && self.reportable_checksum_frame(frame)
+                    {
                         self.forward_checksums
                             .push((ticket.source, frame, checksum));
                     }
@@ -1851,6 +1856,15 @@ impl OrderingRoom {
             }
         }
         Ok(())
+    }
+
+    /// Whether a player may report `frame`: a sampled frame
+    /// ([`CHECKSUM_INTERVAL`]) no later than the one after this relay's
+    /// sealed frames. A client reports frame F's checksum once it has run
+    /// F - 1, which its own relay sealed, and in a federated match every
+    /// relay sealed before any merged it.
+    fn reportable_checksum_frame(&self, frame: u32) -> bool {
+        frame != 0 && frame % CHECKSUM_INTERVAL == 0 && frame <= self.sealed.saturating_add(1)
     }
 
     /// Stores one source's checksum of a sampled frame, its first report
@@ -1869,7 +1883,7 @@ impl OrderingRoom {
             || self.storage_failed
             || self.finished_at.is_some()
             || self.starts_at.is_none()
-            || frame == 0
+            || !self.reportable_checksum_frame(frame)
             || self.active & (1 << source) == 0
             || (self.checksums.len() == CHECKSUM_FRAMES
                 && self
@@ -1879,12 +1893,16 @@ impl OrderingRoom {
         {
             return;
         }
+        let active = self.active;
         let reports = self.checksums.entry(frame).or_default();
         if reports.iter().any(|&(reporter, _)| reporter == source) {
             return;
         }
+        // A player who has left names no outlier, or its last reports could
+        // end the others' match after it is gone.
+        reports.retain(|&(reporter, _)| active & (1 << reporter) != 0);
         reports.push((source, checksum));
-        let found = desync_outlier(reports, self.active);
+        let found = desync_outlier(reports, active);
         while self.checksums.len() > CHECKSUM_FRAMES {
             self.checksums.pop_first();
         }
@@ -2667,7 +2685,8 @@ mod tests {
         assert!(desyncs(&server, &mut players[0]).is_empty());
         report_checksums(&mut server, &mut players[2], &[(30, 9), (15, 7)], 1200);
         let head = ordering(&server).head;
-        // Nothing is compared again.
+        // Nothing is compared again, though the relay has sealed frame 45.
+        server.advance_clock(1300, unix(1300));
         report_checksums(&mut server, &mut players[0], &[(45, 1)], 1300);
         report_checksums(&mut server, &mut players[2], &[(45, 2)], 1300);
         assert!(matches!(
@@ -2688,6 +2707,7 @@ mod tests {
         assert_eq!(server.take_ordering_counts().desyncs, 1);
 
         let (mut server, mut first, mut second) = paced_room(&key);
+        server.advance_clock(1000, unix(1000));
         report_checksums(&mut server, &mut first, &[(15, 9)], 1000);
         report_checksums(&mut server, &mut second, &[(15, 8)], 1000);
         assert!(matches!(
@@ -2703,6 +2723,42 @@ mod tests {
                 }
             )]
         ));
+    }
+
+    /// A player reports only sampled frames the relay has reached, so a flood
+    /// of later ones cannot push the others' reports out of the window.
+    #[test]
+    fn far_future_checksum_reports_cannot_switch_desync_detection_off() {
+        let key = SecretKey::new([73; 32]);
+        let (mut server, mut first, mut second) = paced_room(&key);
+        server.advance_clock(1000, unix(1000));
+        for pair in 0..CHECKSUM_FRAMES as u32 / 2 {
+            let frame = 15_000 + 30 * pair;
+            report_checksums(
+                &mut server,
+                &mut second,
+                &[(frame + 15, 1), (frame, 1)],
+                1000,
+            );
+        }
+        report_checksums(&mut server, &mut first, &[(15, 9)], 1000);
+        report_checksums(&mut server, &mut second, &[(15, 8)], 1000);
+        assert_eq!(desyncs(&server, &mut first).len(), 1);
+    }
+
+    /// A player's reports stop counting when it leaves: one that reports a
+    /// false checksum and then leaves cannot end the other's match.
+    #[test]
+    fn a_departed_players_checksum_names_no_outlier() {
+        let key = SecretKey::new([73; 32]);
+        let (mut server, mut first, mut second) = paced_room(&key);
+        server.advance_clock(1000, unix(1000));
+        report_checksums(&mut server, &mut second, &[(30, 8)], 1000);
+        let mut bytes = Vec::new();
+        second.leave_ordering(&mut bytes).unwrap();
+        events(&mut server, &mut second, &bytes, 1000);
+        report_checksums(&mut server, &mut first, &[(30, 9)], 1000);
+        assert!(desyncs(&server, &mut first).is_empty());
     }
 
     /// A follower whose healed link delivers two rate changes at once applies

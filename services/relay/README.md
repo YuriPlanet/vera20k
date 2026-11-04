@@ -176,7 +176,9 @@ Every 15th frame each client sends its post-Logic checksum as ordering request7,
 with no reply, `[count]` then per sample `[LE frame u32][LE checksum u32]`: the
 newest sample and the one before, so one lost datagram loses nothing. The relay
 keeps each active source's first value per sampled frame for the newest 256
-sampled frames. Once one frame's values differ it names the outlier: the first
+sampled frames. It takes none for a frame past the one after its sealed frames
+(a client reports frame F once it has run F - 1), and a source's values stop
+counting once it leaves. Once one frame's values differ it names the outlier: the first
 reporter off a strict majority of the active and reporting sources, or, once
 every active source reported without one (two players), the later of the first
 two that differ, against the earlier. It then appends the match's one desync

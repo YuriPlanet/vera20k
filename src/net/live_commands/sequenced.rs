@@ -6,8 +6,8 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use vera20k_relay_protocol::{
-    ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent, OrderPace, OrderingCertificate,
-    paced_rates,
+    CHECKSUM_INTERVAL, ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent, OrderPace,
+    OrderingCertificate, paced_rates,
 };
 
 use super::{LiveCommandError, StartupAgreement, StartupError};
@@ -25,8 +25,6 @@ const SAMPLE_HISTORY: usize = 4096;
 // A batch's version byte before its EventPacketCodec packet.
 const BATCH_HEADER: usize = 1;
 const BATCH_VERSION: u8 = 2;
-// Every this many frames each PC reports its post-Logic checksum to the relay.
-const CHECKSUM_INTERVAL: u32 = 15;
 const PUSH_PROBE_INTERVAL_MS: i32 = 500;
 const PUSH_REPROBE_INTERVAL_MS: i32 = 5_000;
 const PUSH_WATERMARK_INTERVAL_MS: i32 = 100;

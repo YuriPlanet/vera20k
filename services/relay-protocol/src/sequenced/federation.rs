@@ -1388,7 +1388,9 @@ mod tests {
     #[test]
     fn both_relays_emit_the_coordinators_desync_after_the_same_frame() {
         let mut game = Match::new(false);
-        while game.ordering(0).sealed < 10 || game.ordering(1).sealed < 10 {
+        // A player reports a sampled frame only once its relays sealed the one
+        // before it.
+        while game.ordering(0).sealed < 14 || game.ordering(1).sealed < 14 {
             game.step();
         }
         game.checksums(0, &[(15, 1)]);
