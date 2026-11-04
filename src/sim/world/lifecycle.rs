@@ -3778,9 +3778,12 @@ impl Simulation {
             //returns before this BuildingDetach arm.
             crate::sim::radio::broadcast_break(self, stable_id, context.rules(), context.effects());
         }
-        // The Foot prelude (`0x004D9744`) leaves the object's team, before
-        // Limbo is set, so the object still takes its idle mode.
-        self.leave_team(stable_id, false, context.rules(), context.effects());
+        // The Foot prelude leaves the object's team before Limbo is set, so
+        // the object still takes its idle mode. It skips that inside an
+        // object-placement scope (`[0x00A8E7AC]`, `0x004D9736..0x004D9744`).
+        if !self.object_placement_scope_active() {
+            self.leave_team(stable_id, false, context.rules(), context.effects());
+        }
         // This Detach_All(1) (`0x005F4D61`) also visits the concealed object
         // itself, so a live spawner's Limbo runs its SpawnManager's owner arm:
         // docked children UnInit with a zero regen timer, and airborne ones
@@ -4376,9 +4379,10 @@ impl Simulation {
                 }
             }
             EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft => {
-                if all {
-                    // `0x004D9744`: the Foot prelude leaves the object's team
-                    // first.
+                // The Foot prelude leaves the object's team first, unless an
+                // object-placement scope is open (`[0x00A8E7AC]`,
+                // `0x004D9736..0x004D9744`).
+                if all && !self.object_placement_scope_active() {
                     self.leave_team(stable_id, false, context.rules(), context.effects());
                 }
                 if let Some(contact) = self
