@@ -102,7 +102,7 @@ pub(crate) const CUSTOM_END_GAME_SCORE_HELP: &str = "Use the same country pictur
 pub(crate) const CUSTOM_END_GAME_MOVIE_LABEL: &str = "Custom End Game Movie";
 pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "Let a beaten computer commander's losing clip finish before the victory or defeat picture and the score screen. Skirmish only. Untick to show them at once, which cuts the clip.";
 pub(crate) const SHIFT_QUEUE_HELP: &str =
-    "Unit cameos: Shift-click queues several, Ctrl-click builds endlessly, Shift-right-click cancels all.";
+    "Unit cameos: Shift-click queues several, Ctrl-click builds endlessly, Alt-click builds next, Shift-right-click cancels all.";
 pub(crate) const DISPLAY_LABEL: &str = "Display";
 pub(crate) const DISPLAY_HELP: &str = "Which screen the game opens on. Auto follows the system.";
 /// VERA's health-strip list on its own page. The retail string table has

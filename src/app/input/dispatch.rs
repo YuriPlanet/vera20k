@@ -1280,7 +1280,51 @@ fn sidebar_cameo_press(
                 profile.shift_queue_count,
                 building_production_queue,
             );
-            queue_build_by_type(state, type_id, repeat);
+            // VERA's Alt + left click (same option): the new copies jump the
+            // waiting builds of other types, through ordinary ABANDON and
+            // PRODUCE events in one frame (`sidebar_eva::front_of_queue`).
+            // A held or finished build of this type takes the resume arm.
+            let appends = !matches!(
+                own_for_repeat,
+                Some(
+                    crate::sim::production::BuildQueueState::Paused
+                        | crate::sim::production::BuildQueueState::Done
+                )
+            );
+            let front = (profile.shift_queue
+                && press == sidebar_eva::CameoPress::Left
+                && is_alt_held(state)
+                && !sidebar_eva::is_structure_strip(category)
+                && appends)
+                .then(|| {
+                    sidebar_eva::front_of_queue(
+                        &queue,
+                        category,
+                        type_iid?,
+                        repeat,
+                        state.rules()?.general.maximum_queued_objects,
+                    )
+                })
+                .flatten();
+            match front {
+                Some((jumped, copies)) => {
+                    let jumped: Vec<String> = jumped
+                        .into_iter()
+                        .filter_map(|id| {
+                            let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+                            Some(sim.interner().resolve(id).to_string())
+                        })
+                        .collect();
+                    for queued in &jumped {
+                        cancel_build_by_type(state, queued, false);
+                    }
+                    queue_build_by_type(state, type_id, copies);
+                    for queued in &jumped {
+                        queue_build_by_type(state, queued, 1);
+                    }
+                }
+                None => queue_build_by_type(state, type_id, repeat),
+            }
         }
         Some(sidebar_eva::CameoOrder::Suspend) => suspend_build(state, type_id),
         Some(sidebar_eva::CameoOrder::Abandon { all }) => {

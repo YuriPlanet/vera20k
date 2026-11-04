@@ -206,8 +206,45 @@ pub(crate) fn shift_right_cancels_running(click: CameoClick, press: CameoPress) 
     }
 }
 
+/// VERA's own Alt + left click on a unit cameo: put the new copies at the
+/// front of the strip's waiting queue, right behind the running build.
+///
+/// Answers the waiting builds the copies must jump, in queue order, and how
+/// many copies fit; the caller abandons one copy of each (ABANDON takes the
+/// first waiting copy, `HouseClass::Abandon_Production @ 0x004FAA10`
+/// `0x004FAAEE`, and a waiting copy was never charged), produces the new
+/// copies and then produces the jumped ones again, all as ordinary events in
+/// one frame. Waiting copies of the clicked type at the front already stand
+/// there and are not jumped. `None`: nothing to jump, or no room in
+/// `[General] MaximumQueuedObjects=` for one more copy, where the plain
+/// PRODUCE keeps its native answer.
+///
+/// Not native: `SelectClass::Action @ 0x006AAD00` ignores modifiers on a left
+/// press. The caller applies it only while `[VERA] ShiftQueue=` is on.
+pub(crate) fn front_of_queue(
+    queue: &[QueueItemView],
+    category: ProductionCategory,
+    type_id: InternedId,
+    copies: u32,
+    max_queued: i32,
+) -> Option<(Vec<InternedId>, u32)> {
+    let waiting: Vec<InternedId> = queue
+        .iter()
+        .filter(|item| item.queue_category == category && item.state == BuildQueueState::Queued)
+        .map(|item| item.type_id)
+        .collect();
+    let ahead = waiting
+        .iter()
+        .take_while(|&&queued| queued == type_id)
+        .count();
+    let jumped = waiting[ahead..].to_vec();
+    let room = u32::try_from(i64::from(max_queued) - waiting.len() as i64).unwrap_or(0);
+    let copies = copies.max(1).min(room);
+    (!jumped.is_empty() && copies > 0).then_some((jumped, copies))
+}
+
 /// RTTI 7 (BuildingType): the structure and defense strips.
-fn is_structure_strip(category: ProductionCategory) -> bool {
+pub(crate) fn is_structure_strip(category: ProductionCategory) -> bool {
     matches!(
         category,
         ProductionCategory::Building | ProductionCategory::Defense
@@ -458,5 +495,49 @@ mod tests {
         // A plain right press still only holds.
         let plain = CameoPress::Right { shift: false };
         assert_eq!(shift_right_cancels_running(running, plain), running);
+    }
+
+    #[test]
+    fn alt_click_jumps_the_waiting_builds_of_other_types() {
+        let mut interner = StringInterner::new();
+        let (gi, dog, eng) = (
+            interner.intern("E1"),
+            interner.intern("ADOG"),
+            interner.intern("ENGINEER"),
+        );
+        let item = |type_id, state| QueueItemView {
+            type_id,
+            display_name: String::new(),
+            queue_category: ProductionCategory::Infantry,
+            state,
+            progress: 0,
+        };
+        let queue = [
+            item(dog, BuildQueueState::Building),
+            item(gi, BuildQueueState::Queued),
+            item(eng, BuildQueueState::Queued),
+            item(gi, BuildQueueState::Queued),
+        ];
+        let infantry = ProductionCategory::Infantry;
+        // The running dog stays; the leading G.I. already stands at the front.
+        assert_eq!(
+            front_of_queue(&queue, infantry, gi, 1, 5),
+            Some((vec![eng, gi], 1))
+        );
+        assert_eq!(
+            front_of_queue(&queue, infantry, eng, 5, 5),
+            Some((vec![gi, eng, gi], 2)),
+            "Shift's copies are cut to the free places"
+        );
+        assert_eq!(
+            front_of_queue(&queue, infantry, eng, 1, 3),
+            None,
+            "full queue"
+        );
+        assert_eq!(
+            front_of_queue(&queue[..2], infantry, gi, 1, 5),
+            None,
+            "nothing to jump"
+        );
     }
 }
