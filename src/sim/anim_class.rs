@@ -3900,6 +3900,8 @@ pub(crate) fn anim_constructor_draws(
     let bounce = if config.is_meteor {
         let launch = crate::sim::bounce::meteor_launch(
             glam::IVec3::new(coord.x, coord.y, coord.z),
+            // 4223D8: a literal lifetime that only places the start.
+            70,
             config.min_z_vel,
             config.max_xy_vel,
             rng,

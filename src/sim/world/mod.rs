@@ -227,6 +227,8 @@ mod team_script_vm_tests;
 #[cfg(test)]
 mod voxel_water_expiry_tests;
 #[cfg(test)]
+pub(in crate::sim) mod voxel_meteor_tests;
+#[cfg(test)]
 mod overlay_explodes_tests;
 
 pub(crate) use crash::CrashLatch;
@@ -5705,8 +5707,9 @@ impl Simulation {
     }
 
     /// Common VoxelAnim7493B0 constructor/admission for typed Techno and
-    /// Bullet debris. Create_ID74944E precedes launch74951D..749559 and
-    /// Bounce4397E0 RNG; admission finishes before the next typed selector.
+    /// Bullet debris, trigger action 43 and meteor children. Create_ID74944E
+    /// precedes the launch and Bounce4397E0 RNG; admission finishes before
+    /// the next typed selector.
     /// `admit_inline=false` is the caller's existing no-callback numeric-fixture
     /// boundary: its packet retains both identities for later registration.
     pub fn emit_debris_voxel(
