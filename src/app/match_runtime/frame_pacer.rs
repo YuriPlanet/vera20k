@@ -17,6 +17,12 @@ pub(crate) const SERVICE_WAKE: std::time::Duration =
 /// A refresh gap the pacer forgives, so a pass at 60 Hz still finds a
 /// one-bucket (GameSpeed 1, 60 FPS) frame on time.
 const CADENCE_SLACK_BUCKETS: u32 = 2;
+// Online catch-up render deferral bounds (`defer_online_render`).
+const MIN_RENDER_STANDING_MS: u64 = 50;
+const MAX_RENDER_STANDING_MS: u64 = 200;
+/// Half the native 256-frame checksum history (`CHECKSUM_HISTORY_LEN`): the
+/// LAN live capture reads that history once per presented frame.
+const MAX_TICKS_BETWEEN_PRESENTS: u32 = 128;
 const MIN_TIMED_GAME_SPEED: u8 = 1;
 const MAX_TIMED_GAME_SPEED: u8 = 6;
 const ELAPSED_CLOCK_STOPPED: u32 = u32::MAX;
@@ -82,7 +88,6 @@ pub(crate) struct LocalFramePacer {
     last_frame_start_ms: Option<u32>,
     last_presented: Option<crate::util::time::Instant>,
     frames_since_present: u32,
-    chunks_since_present: u8,
     render_deferred: bool,
     total_render_deferrals: u64,
     online: Option<OnlinePacer>,
@@ -494,7 +499,6 @@ impl LocalFramePacer {
             last_frame_start_ms: None,
             last_presented: None,
             frames_since_present: 0,
-            chunks_since_present: 0,
             render_deferred: false,
             total_render_deferrals: 0,
             online: None,
@@ -599,7 +603,9 @@ impl LocalFramePacer {
 
     /// Yield to winit between ordinary online catch-up chunks. Only completed
     /// transactions count; neither a blocked frame nor a modal may defer.
-    /// Four existing chunks contain at most 32 ticks, below checksum history.
+    /// The picture may stand for half the buffered backlog's playout time,
+    /// 50 ms to 200 ms: a deep backlog spends more of each second simulating.
+    /// At most `MAX_TICKS_BETWEEN_PRESENTS` run between two presents.
     pub(crate) fn defer_online_render(
         &mut self,
         now: crate::util::time::Instant,
@@ -608,21 +614,35 @@ impl LocalFramePacer {
         next_canonical: Option<(u32, u32)>,
     ) -> bool {
         self.frames_since_present = self.frames_since_present.saturating_add(completed_frames);
-        self.chunks_since_present = self
-            .chunks_since_present
-            .saturating_add(u8::from(completed_frames > 0));
         self.render_deferred = completed_frames > 0
             && last_frame_completed
-            && next_canonical.is_some_and(|(frame, frontier)| frame > 0 && frame <= frontier)
-            && self.last_presented.is_some_and(|last| {
-                now.saturating_duration_since(last) < std::time::Duration::from_millis(50)
+            && next_canonical.is_some_and(|(frame, frontier)| {
+                frame > 0
+                    && frame <= frontier
+                    && self.last_presented.is_some_and(|last| {
+                        now.saturating_duration_since(last)
+                            < self.online_render_standing(frontier - frame + 1)
+                    })
             })
-            && self.frames_since_present < 32
-            && self.chunks_since_present < 4;
+            && self.frames_since_present < MAX_TICKS_BETWEEN_PRESENTS;
         if self.render_deferred {
             self.total_render_deferrals = self.total_render_deferrals.saturating_add(1);
         }
         self.render_deferred
+    }
+
+    /// How long a catch-up may leave the picture standing with `available`
+    /// canonical frames buffered: half their playout time, 50 ms to 200 ms.
+    fn online_render_standing(&self, available: u32) -> std::time::Duration {
+        let fps = self
+            .online
+            .as_ref()
+            .map_or(0, |online| online.receipt.frames_per_second);
+        let half = match fps {
+            0 => 0,
+            fps => u64::from(available) * 500 / u64::from(fps),
+        };
+        std::time::Duration::from_millis(half.clamp(MIN_RENDER_STANDING_MS, MAX_RENDER_STANDING_MS))
     }
 
     pub(crate) fn render_deferred(&self) -> bool {
@@ -638,7 +658,6 @@ impl LocalFramePacer {
     pub(crate) fn record_presented(&mut self, now: crate::util::time::Instant, battlefield: bool) {
         self.last_presented = battlefield.then_some(now);
         self.frames_since_present = 0;
-        self.chunks_since_present = 0;
         self.render_deferred = false;
     }
 
@@ -1029,7 +1048,7 @@ mod tests {
             "first surface must present"
         );
         pacer.record_presented(now, true);
-        assert!(pacer.defer_online_render(now, 8, true, Some((18, 100))));
+        assert!(pacer.defer_online_render(now, 32, true, Some((42, 400))));
         assert!(pacer.render_deferred());
         pacer.clear_render_continuation();
         assert!(
@@ -1037,15 +1056,15 @@ mod tests {
             "hidden/ineligible windows cancel the queued continuation"
         );
         assert_eq!(pacer.total_render_deferrals(), 1);
-        assert!(pacer.defer_online_render(now, 8, true, Some((26, 100))));
-        assert!(pacer.defer_online_render(now, 8, true, Some((34, 100))));
+        assert!(pacer.defer_online_render(now, 32, true, Some((74, 400))));
+        assert!(pacer.defer_online_render(now, 32, true, Some((106, 400))));
         assert!(
-            !pacer.defer_online_render(now, 8, true, Some((42, 100))),
-            "32 ticks force a present"
+            !pacer.defer_online_render(now, 32, true, Some((138, 400))),
+            "128 ticks force a present, below the 256-frame checksum history"
         );
         pacer.clear_render_continuation();
         assert!(
-            !pacer.defer_online_render(now, 1, true, Some((43, 100))),
+            !pacer.defer_online_render(now, 1, true, Some((139, 400))),
             "a failed acquisition cannot reset the budget"
         );
         pacer.record_presented(now, true);
@@ -1062,13 +1081,35 @@ mod tests {
             "a loading surface does not replace the first battlefield present"
         );
         pacer.record_presented(now, true);
-        for _ in 0..3 {
-            assert!(pacer.defer_online_render(now, 1, true, Some((45, 100))));
+        for _ in 0..8 {
+            assert!(
+                pacer.defer_online_render(now, 1, true, Some((45, 100))),
+                "short chunks alone never force a present"
+            );
         }
-        assert!(
-            !pacer.defer_online_render(now, 1, true, Some((45, 100))),
-            "four short chunks also force a present"
-        );
+    }
+
+    /// A deeper buffered backlog may leave the picture standing longer: half
+    /// its playout time, from 50 ms up to 200 ms.
+    #[test]
+    fn online_render_standing_grows_with_the_buffered_backlog() {
+        let now = crate::util::time::Instant::now();
+        let mut pacer = LocalFramePacer::new();
+        let receipt = push_receipt(now, 100);
+        pacer.online_frame_decision(now, 1, 100, receipt, false, false);
+        pacer.record_presented(now, true);
+        let at = |ms| now + std::time::Duration::from_millis(ms);
+        // 45 frames at 45 Hz: one second buffered, half of it capped at 200 ms.
+        assert!(pacer.defer_online_render(at(199), 1, true, Some((56, 100))));
+        assert!(!pacer.defer_online_render(at(200), 1, true, Some((56, 100))));
+        pacer.record_presented(now, true);
+        // 9 frames: 200 ms buffered, so 100 ms.
+        assert!(pacer.defer_online_render(at(99), 1, true, Some((92, 100))));
+        assert!(!pacer.defer_online_render(at(100), 1, true, Some((92, 100))));
+        pacer.record_presented(now, true);
+        // 2 frames keep the 50 ms floor.
+        assert!(pacer.defer_online_render(at(49), 1, true, Some((99, 100))));
+        assert!(!pacer.defer_online_render(at(50), 1, true, Some((99, 100))));
     }
 
     #[test]
