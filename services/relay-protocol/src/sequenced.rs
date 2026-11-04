@@ -914,9 +914,10 @@ struct Pace {
     // Federated: the frame from which the last rate change applies and its
     // due time as an offset from the start, so the start's slew moves it too.
     federated_anchor: Option<(u32, u64)>,
-    // Federated: the coordinator's rate change for frames after this one,
-    // `(frame, rate, source)`, until its due time passes.
-    scheduled: Option<(u32, u16, u8)>,
+    // Federated: the coordinator's rate changes for frames after these,
+    // `(frame, rate, source)`, in order, each until its due time passes. A
+    // healed link can deliver several at once.
+    scheduled: VecDeque<(u32, u16, u8)>,
 }
 
 impl Pace {
@@ -1008,7 +1009,7 @@ impl OrderingRoom {
                 slowdowns: 0,
                 raises: 0,
                 federated_anchor: None,
-                scheduled: None,
+                scheduled: VecDeque::new(),
             },
             head: 0,
             sealed: 0,
@@ -1209,7 +1210,7 @@ impl OrderingRoom {
     /// marker after the head's frame end; later frames are due at the new
     /// rate from its append time.
     fn adjust_pace(&mut self, now_ms: u64, federated: bool) {
-        if self.certificate.pacing == CertificatePacing::Off || self.pace.scheduled.is_some() {
+        if self.certificate.pacing == CertificatePacing::Off || !self.pace.scheduled.is_empty() {
             return;
         }
         let rates = paced_rates(self.certificate.tick_hz);
@@ -1220,7 +1221,7 @@ impl OrderingRoom {
         // The slowest sustainable rate among Behind reporters that cannot
         // hold the current one, and whether a reporter could not hold the
         // next faster rate.
-        let mut slowest: Option<(u32, u8)> = None;
+        let mut slowest: Option<(u32, u16, u8)> = None;
         let mut lagging = false;
         let mut raise_blocked = false;
         for (index, source) in self.sources.iter().enumerate() {
@@ -1238,15 +1239,20 @@ impl OrderingRoom {
             if now_ms.saturating_sub(report.at_ms) > PACE_REPORT_MS {
                 continue;
             }
-            lagging |= report.pace != OrderPace::KeepingUp;
             let sustainable = report.sustainable_rate();
             // A tick-cost reporter that holds the current rate is only
-            // drawing slowly: its own catch-up recovers it.
+            // drawing slowly: its own catch-up recovers it, and it neither
+            // slows the clock nor holds back a raise.
+            let simulation_bound =
+                report.tick_micros.is_none() || sustainable < u32::from(self.pace.rate);
+            lagging |= report.pace != OrderPace::KeepingUp && simulation_bound;
+            // Ties keep the slowest that actually ran, as legacy reports did.
+            let slowness = (sustainable, report.frames_per_second);
             if report.pace == OrderPace::Behind
-                && (report.tick_micros.is_none() || sustainable < u32::from(self.pace.rate))
-                && slowest.is_none_or(|(rate, _)| sustainable < rate)
+                && simulation_bound
+                && slowest.is_none_or(|(rate, ran, _)| slowness < (rate, ran))
             {
-                slowest = Some((sustainable, index as u8));
+                slowest = Some((sustainable, report.frames_per_second, index as u8));
             }
             raise_blocked |= report.tick_micros.is_some()
                 && step > 0
@@ -1260,7 +1266,7 @@ impl OrderingRoom {
             return;
         }
         let (rate, source) = match slowest {
-            Some((sustainable, source)) if step + 1 < rates.len() => (
+            Some((sustainable, _, source)) if step + 1 < rates.len() => (
                 rates[step + 1..]
                     .iter()
                     .copied()
@@ -1294,7 +1300,7 @@ impl OrderingRoom {
                 batch_id: u64::MAX,
                 opaque: tail,
             });
-            self.pace.scheduled = Some((frame, rate, source));
+            self.pace.scheduled.push_back((frame, rate, source));
         } else {
             let record = Self::encoded_entry(self.next_seq, self.head, RATE_EVENT, &tail);
             if !self.append_records(self.head, vec![record]) {
@@ -1326,19 +1332,18 @@ impl OrderingRoom {
     /// old schedule; later frames are due at the new rate from there. The
     /// schedule counts from the start, so every relay derives the same one.
     fn apply_scheduled_rate(&mut self, now_ms: u64, start: u64) {
-        let Some((frame, rate, _)) = self.pace.scheduled else {
-            return;
-        };
-        let (anchor, offset) = self.pace.federated_anchor.unwrap_or((0, 0));
-        let due =
-            offset + u64::from(frame.saturating_sub(anchor)) * 1000 / u64::from(self.pace.rate);
-        if now_ms < start + due {
-            return;
+        while let Some(&(frame, rate, _)) = self.pace.scheduled.front() {
+            let (anchor, offset) = self.pace.federated_anchor.unwrap_or((0, 0));
+            let due =
+                offset + u64::from(frame.saturating_sub(anchor)) * 1000 / u64::from(self.pace.rate);
+            if now_ms < start + due {
+                return;
+            }
+            self.pace.rate = rate;
+            self.pace.federated_anchor = Some((frame, due));
+            self.pace.anchor = Some((frame, start + due));
+            self.pace.scheduled.pop_front();
         }
-        self.pace.rate = rate;
-        self.pace.federated_anchor = Some((frame, due));
-        self.pace.anchor = Some((frame, start + due));
-        self.pace.scheduled = None;
     }
 
     /// About when `frame` was due: exact from the last rate change on, at
@@ -1582,7 +1587,7 @@ impl OrderingRoom {
             {
                 self.storage_failed = true;
             }
-            self.pace.scheduled = Some((frame, rate, opaque[2]));
+            self.pace.scheduled.push_back((frame, rate, opaque[2]));
         } else if batch_id == 0 {
             self.active &= !(1 << source);
         } else {
@@ -1640,7 +1645,8 @@ impl OrderingRoom {
         let target = self
             .pace
             .scheduled
-            .map_or(target, |(frame, ..)| target.min(frame));
+            .front()
+            .map_or(target, |&(frame, ..)| target.min(frame));
         let final_frame = (MAX_MATCH_SECONDS * u64::from(self.certificate.tick_hz)) as u32;
         if target == final_frame && self.sealed < final_frame {
             for source in 0..MAX_PEERS {
@@ -2165,8 +2171,8 @@ mod tests {
     fn a_vo2c_room_slows_only_for_a_simulation_that_cannot_hold_the_rate() {
         use OrderPace::*;
         let key = SecretKey::new([73; 32]);
-        let (mut server, _first, mut second) = paced_room_with(&key, CertificatePacing::On);
-        // 20 ms ticks hold 40 Hz at 80%: below 45, but a slow draw is not it.
+        let (mut server, mut first, mut second) = paced_room_with(&key, CertificatePacing::On);
+        // 10 ms ticks hold 80 Hz at 80%: running 30 is only a slow draw.
         tick_report(&mut server, &mut second, Behind, 30, Some(10_000), 1000);
         server.advance_clock(1000, unix(1000));
         assert_eq!(
@@ -2178,12 +2184,15 @@ mod tests {
         tick_report(&mut server, &mut second, Behind, 25, Some(30_000), 2000);
         server.advance_clock(2000, unix(2000));
         assert_eq!(ordering(&server).pace.rate, 20);
-        // Nobody lags, but 30 ms ticks cannot hold 30 Hz: no raise.
+        // The slow player keeps up, but 30 ms ticks cannot hold 30 Hz: no
+        // raise. A player that only draws slowly holds nothing back.
         for at in (3000..=40_000).step_by(2000) {
+            tick_report(&mut server, &mut first, CatchingUp, 20, Some(5_000), at);
             tick_report(&mut server, &mut second, KeepingUp, 20, Some(30_000), at);
             server.advance_clock(at, unix(at));
         }
         assert_eq!(ordering(&server).pace.rate, 20);
+        tick_report(&mut server, &mut first, CatchingUp, 20, Some(5_000), 41_000);
         tick_report(
             &mut server,
             &mut second,
@@ -2203,6 +2212,30 @@ mod tests {
             45,
             "the host switched pacing off"
         );
+    }
+
+    /// A follower whose healed link delivers two rate changes at once applies
+    /// both in order, each from its frame's due time on the old schedule.
+    #[test]
+    fn queued_federated_rate_changes_apply_in_order_on_one_timeline() {
+        let key = SecretKey::new([73; 32]);
+        let (mut server, _first, _second) = paced_room(&key);
+        let room = server.rooms.get_mut(&[5; 16]).unwrap();
+        let ordering = room.ordering.as_mut().unwrap();
+        let start = ordering.starts_at.unwrap();
+        ordering.pace.scheduled.extend([(90, 30, 1), (180, 20, 1)]);
+        // 90 frames at 45 Hz are due 2 s in; 90 more at 30 Hz, 3 s later.
+        ordering.apply_scheduled_rate(start + 4_999, start);
+        assert_eq!(
+            (ordering.pace.rate, ordering.pace.federated_anchor),
+            (30, Some((90, 2_000)))
+        );
+        ordering.apply_scheduled_rate(start + 5_000, start);
+        assert_eq!(
+            (ordering.pace.rate, ordering.pace.federated_anchor),
+            (20, Some((180, 5_000)))
+        );
+        assert!(ordering.pace.scheduled.is_empty());
     }
 
     /// VO2C adds the host's pacing flag under its own signing domain; the

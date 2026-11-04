@@ -125,8 +125,6 @@ struct PaceMeter {
 }
 
 impl PaceMeter {
-    /// Samples the frames waiting here and returns the report due now, with
-    /// the frames run per second since the last report.
     /// One simulation tick's cost, for the next report's 90th percentile.
     fn record_tick_cost(&mut self, micros: u32) {
         // A report window holds about a second of ticks; a stalled report
@@ -148,6 +146,8 @@ impl PaceMeter {
         Some(p90.max(1))
     }
 
+    /// Samples the frames waiting here and returns the report due now, with
+    /// the frames run per second since the last report.
     fn report(
         &mut self,
         now: u32,

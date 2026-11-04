@@ -321,8 +321,6 @@ impl LiveCommandSession {
             .map_or(0, |session| session.frontier())
     }
 
-    /// The relay's current frame rate: the match's own, or slower while a
-    /// player's PC cannot keep up. The simulation keeps the match's own.
     /// One local simulation tick's wall-clock cost. The relay's pace
     /// reports carry its recent 90th percentile; nothing else reads it.
     pub fn record_tick_cost(&mut self, cost: std::time::Duration) {
@@ -331,6 +329,8 @@ impl LiveCommandSession {
         }
     }
 
+    /// The relay's current frame rate: the match's own, or slower while a
+    /// player's PC cannot keep up. The simulation keeps the match's own.
     pub fn relay_frames_per_second(&self) -> Option<u16> {
         self.sequenced.as_ref().map(|session| session.pace_fps)
     }
