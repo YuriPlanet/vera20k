@@ -2299,10 +2299,14 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
             // A Foot can own cargo while riding another transport (Unit
             // PerCell 0x0073A730..0x0073A77C). Only append a live parent
             // relation, preserving ordinary outside-cargo hash controls.
-            if let Some((parent, open_topped)) = role.inside_transport() {
+            if let Some(link) = role.carrier_link() {
                 3u8.hash(hasher);
-                parent.hash(hasher);
-                open_topped.hash(hasher);
+                link.transport_id().hash(hasher);
+                link.open_topped().hash(hasher);
+                // `+0x11C`, folded only when set (see the arm below).
+                if link.transporter() {
+                    4u8.hash(hasher);
+                }
             }
             // `UnitClass+0x6E4` keep-count, written only by a
             // transport's own Unload state 0. Folded only when set so
@@ -2313,13 +2317,16 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
             }
         }
         None => {
-            if let Some((transport_id, open_topped)) = role.inside_transport() {
+            if let Some(link) = role.carrier_link() {
                 3u8.hash(hasher);
-                transport_id.hash(hasher);
-                // `+0x82`, folded only when set so a closed transport's
-                // cargo keeps its historical hash.
-                if open_topped {
+                link.transport_id().hash(hasher);
+                // `+0x82` and `+0x11C`, folded only when set so cargo that
+                // CargoClass::AddPassenger loaded keeps its historical hash.
+                if link.open_topped() {
                     1u8.hash(hasher);
+                }
+                if link.transporter() {
+                    4u8.hash(hasher);
                 }
             } else {
                 0u8.hash(hasher);
