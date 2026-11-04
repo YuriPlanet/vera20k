@@ -280,13 +280,16 @@ pub(super) struct LiveService {
     /// A match an external launcher formed (docs/spawn.md): adopted bearer,
     /// no lobby pages, and `finish` carries the local result.
     spawned: bool,
-    /// The spawned match's `finish` result (`ExternalMatchResult`).
     /// VERA: the finish asks the lobby to give this player's game room back
     /// (`back_to_room`), set from the visit when the match returns.
     back_to_room: bool,
+    /// The spawned match's `finish` result (`ExternalMatchResult`).
     finish_result: Option<&'static str>,
     /// docs/spawn.md: every opponent left before the local player did.
     finish_opponents_left: bool,
+    /// The lobby match's network report (`network_quality`), kept as its
+    /// transport returned, for its `finish`.
+    network_quality: Option<Value>,
     /// Each admission barrier's client deadline; `[Relay] AdmissionTimeout`
     /// for a spawned match.
     relay_timeout: Duration,
@@ -615,6 +618,7 @@ impl LiveService {
             back_to_room: false,
             finish_result: None,
             finish_opponents_left: false,
+            network_quality: None,
             relay_timeout: RELAY_TIMEOUT,
             outdated_notice: None,
             left_for_match: false,
@@ -674,13 +678,26 @@ impl LiveService {
         self.command("finish", payload);
     }
 
+    /// Keep the network report of the lobby match whose transport just
+    /// returned, for its `finish`. A launcher's match reports in its own
+    /// result (`spawn_result.json`), and a finish already sent stays as it was.
+    fn keep_network_report(&mut self, report: Value) {
+        if !self.spawned && self.match_id.is_some() && self.finishing.is_none() {
+            self.network_quality = Some(report);
+        }
+    }
+
     /// The lobby's `finish` is `{match_id}`, with `back_to_room` when the
-    /// player returns to the room it kept; a spawned match adds its local
-    /// result for the launcher (docs/spawn.md).
+    /// player returns to the room it kept and `network_quality` when the match
+    /// played; a spawned match adds its local result for the launcher
+    /// (docs/spawn.md).
     fn finish_payload(&self, match_id: &str) -> Value {
         let mut payload = json!({"match_id":match_id});
         if self.back_to_room {
             payload["back_to_room"] = json!(true);
+        }
+        if let Some(report) = &self.network_quality {
+            payload["network_quality"] = report.clone();
         }
         if self.spawned {
             payload["result"] = json!(self.finish_result.unwrap_or("quit"));
@@ -697,6 +714,7 @@ impl LiveService {
         {
             self.finishing = None;
             self.match_id = None;
+            self.network_quality = None;
             self.left_for_match = false;
         }
     }
@@ -716,7 +734,13 @@ impl LiveService {
             return false;
         };
         finish.failed(now);
-        let refused = self.back_to_room && matches!(failure, http::CommandFailure::Rejected(_));
+        let rejected = matches!(failure, http::CommandFailure::Rejected(_));
+        // A lobby from before match reports refuses the field: the finish
+        // goes again without it, and then as before.
+        if rejected && self.network_quality.take().is_some() {
+            return false;
+        }
+        let refused = self.back_to_room && rejected;
         if refused {
             self.back_to_room = false;
         }
@@ -1210,6 +1234,23 @@ fn cancel_pending(state: &mut AppState, service: &mut LiveService) {
         // A Ready relay may already have moved into the shared transport owner.
         // Retire either ownership location when this start is canceled.
         crate::app::lan_service::close(state);
+    }
+}
+
+/// The report of the online match whose transport just returned, for that
+/// match's `finish` (docs/lobby-protocol.md).
+pub(crate) fn keep_network_report(
+    state: &mut AppState,
+    report: &crate::app::match_runtime::network_quality::NetworkQualityReport,
+) {
+    if let Some(service) = state
+        .frontend
+        .wol
+        .as_mut()
+        .and_then(|visit| visit.live_service.as_mut())
+        && let Ok(report) = serde_json::to_value(report)
+    {
+        service.keep_network_report(report);
     }
 }
 
@@ -3170,6 +3211,7 @@ mod completion_tests {
             back_to_room: false,
             finish_result: None,
             finish_opponents_left: false,
+            network_quality: None,
             relay_timeout: RELAY_TIMEOUT,
             outdated_notice: None,
             left_for_match: false,
@@ -3288,6 +3330,57 @@ mod completion_tests {
         assert_eq!(retry, payload);
         spawned.finish_opponents_left = true;
         assert_eq!(spawned.finish_payload("m")["opponents_left"], json!(true));
+    }
+
+    #[test]
+    fn a_played_lobby_match_sends_its_network_report_until_a_lobby_refuses_it() {
+        let report = json!({"played_seconds": 600.0});
+        let (mut lobby, input, _output) = control_service(Some("played-match"));
+        lobby.keep_network_report(report.clone());
+        assert_eq!(
+            finish_payload_sent(&mut lobby, &input),
+            json!({"match_id":"played-match","network_quality":report})
+        );
+        // A lobby from before match reports refuses the field: the finish
+        // goes again without it.
+        assert!(!lobby.finish_failed(
+            5,
+            http::CommandFailure::Rejected(0x8000_4005),
+            Instant::now()
+        ));
+        lobby.poll_cleanup(Instant::now() + Duration::from_secs(3));
+        let http::Request::Command { payload: retry, .. } = input.try_recv().unwrap() else {
+            panic!("finish retry");
+        };
+        assert_eq!(retry, json!({"match_id":"played-match"}));
+
+        // A launcher's match reports in spawn_result.json, not to its service.
+        let (mut spawned, input, _output) = control_service(Some("spawned-match"));
+        spawned.spawned = true;
+        spawned.keep_network_report(report);
+        assert!(
+            finish_payload_sent(&mut spawned, &input)
+                .get("network_quality")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_finished_matchs_report_never_reaches_a_later_matchs_finish() {
+        let (mut service, input, _output) = control_service(Some("first-match"));
+        service.keep_network_report(json!({"played_seconds": 600.0}));
+        assert!(
+            finish_payload_sent(&mut service, &input)
+                .get("network_quality")
+                .is_some()
+        );
+        service.finish_completed(5);
+        // The next start is cancelled before it plays.
+        service.match_id = Some("cancelled-match".into());
+        assert_eq!(
+            finish_payload_sent(&mut service, &input),
+            json!({"match_id":"cancelled-match"})
+        );
     }
 
     #[test]
