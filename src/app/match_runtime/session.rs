@@ -1867,6 +1867,72 @@ impl MatchSession {
         }
     }
 
+    /// Whether later arrivals may watch in a VERA room: its host allowed
+    /// spectators at Create Game and its mode keeps an observer row.
+    fn network_spectators_welcome(&self) -> bool {
+        matches!(
+            self.network.as_ref().map(|network| &network.phase),
+            Some(NetworkPhase::Setup {
+                observer_row: Some(_),
+                open_spectators: true,
+                several_observers: true,
+                ..
+            })
+        )
+    }
+
+    /// The most people a VERA room takes, the join limit its host gives the
+    /// online lobby: its Max players, and when no one else may watch, no
+    /// more than the people in it and the seats a newcomer can take, an
+    /// AI's among them ([`Self::free_network_seat_for_newcomer`]).
+    pub(crate) fn network_people_capacity(&self) -> Option<i32> {
+        let Some(NetworkPhase::Setup {
+            launch,
+            people_limit,
+            several_observers: true,
+            ..
+        }) = self.network.as_ref().map(|network| &network.phase)
+        else {
+            return None;
+        };
+        let limit = i32::from(*people_limit);
+        if self.network_spectators_welcome() {
+            return Some(limit);
+        }
+        let seats = (0..self.network_player_row_limit())
+            .filter(|row| {
+                self.network_vacancy(*row) == Some(NetworkVacancy::Open)
+                    || self.network_display_ai(*row).is_some()
+            })
+            .count();
+        Some(limit.min((launch.humans.len() + seats) as i32))
+    }
+
+    /// The seat a newcomer to a VERA room under its host's Max players gets
+    /// when every seat is taken: the AI's on the last row. AI never fill a
+    /// VERA room.
+    pub(crate) fn network_newcomer_ai_seat(&self) -> Option<u8> {
+        if !self.host
+            || !self.network_several_observers()
+            || self.network_room_full()
+            || !self.network_no_open_player_row()
+        {
+            return None;
+        }
+        let launch = self.network_setup()?;
+        launch.opponents.iter().map(|ai| ai.raw_slot_index).max()
+    }
+
+    /// Frees [`Self::network_newcomer_ai_seat`] for the newcomer as the
+    /// host's Remove does ([`Self::choose_network_row_kind`]), and returns it.
+    pub(crate) fn free_network_seat_for_newcomer(&mut self) -> anyhow::Result<Option<u8>> {
+        let Some(row) = self.network_newcomer_ai_seat() else {
+            return Ok(None);
+        };
+        self.choose_network_row_kind(row, NetworkRowKind::Open)?;
+        Ok(Some(row))
+    }
+
     /// The host's own Player choice for a row (`0x005EC9F0`), after which a
     /// VERA room places its open spectator row again.
     pub(crate) fn choose_network_row_kind(
@@ -1888,9 +1954,7 @@ impl MatchSession {
             phase:
                 NetworkPhase::Setup {
                     launch,
-                    observer_row,
                     several_observers: true,
-                    open_spectators,
                     ..
                 },
             ..
@@ -1901,7 +1965,7 @@ impl MatchSession {
         if !self.host {
             return Ok(());
         }
-        let open = *open_spectators && observer_row.is_some() && launch.opponents.is_empty();
+        let open = self.network_spectators_welcome() && launch.opponents.is_empty();
         let seated = |row: u8| {
             launch
                 .humans
@@ -3555,6 +3619,40 @@ mod tests {
             .select_network_map(mode, "EIGHT.MAP".into(), 8)
             .unwrap();
         assert!((2..8).all(|row| session.network_vacancy(row) == Some(NetworkVacancy::Open)));
+    }
+
+    /// A VERA room stays open until its host's Max players: with every seat
+    /// taken, a newcomer gets the last AI's seat. With spectators off its
+    /// limit is the people in it and the seats AI hold or leave open.
+    #[test]
+    fn a_vera_room_gives_a_newcomer_the_last_ai_seat_until_its_limit() {
+        use super::NetworkRowKind;
+        let easy = NetworkRowKind::Ai(crate::skirmish_launch::AiDifficulty::Easy);
+        let mut session = vera_room();
+        for row in [2, 3] {
+            session.choose_network_row_kind(row, easy).unwrap();
+        }
+        assert!(session.network_no_open_player_row());
+        assert_eq!(session.network_people_capacity(), Some(30));
+        session.set_network_spectators(false).unwrap();
+        assert_eq!(session.network_people_capacity(), Some(4));
+        // At its Max players the AI keep their seats.
+        session.set_network_people_limit(2).unwrap();
+        assert_eq!(session.network_people_capacity(), Some(2));
+        assert_eq!(session.network_newcomer_ai_seat(), None);
+        assert_eq!(session.free_network_seat_for_newcomer().unwrap(), None);
+        session.set_network_people_limit(30).unwrap();
+        assert_eq!(session.network_newcomer_ai_seat(), Some(3));
+        assert_eq!(session.free_network_seat_for_newcomer().unwrap(), Some(3));
+        assert_eq!(session.network_free_row(false), Some(3));
+        let ai_rows: Vec<u8> = session
+            .network_setup()
+            .unwrap()
+            .opponents
+            .iter()
+            .map(|ai| ai.raw_slot_index)
+            .collect();
+        assert_eq!(ai_rows, [2]);
     }
 
     /// A larger map's players take the spectators' rows: they move on past

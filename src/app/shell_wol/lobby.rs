@@ -496,6 +496,7 @@ fn admission_context(state: &AppState) -> AdmissionContext {
         quick_match: super::quick_match::mode_active(state),
         clan_id: squad_id(state),
         local_hash: local_ini_hash(state),
+        vera_rooms: modern_lobby(state),
     }
 }
 
@@ -1388,7 +1389,7 @@ fn refill_games(state: &mut AppState) {
     let Some(lobby) = lobby(state) else {
         return;
     };
-    let mut rows = game_rows(&lobby.games, sort, lobby.ui.observer);
+    let mut rows = game_rows(&lobby.games, sort, lobby.ui.observer, lobby.ui.is_modern());
     // VERA: the modern list tags a room whose exInfo names a co-op
     // campaign's map with the Cooperative mode's name (MPModesMD.ini).
     let tag = state
@@ -1996,15 +1997,21 @@ fn republished_limit(
 }
 
 /// `0x0078F000`, the host's republish after its setup changed: the channel
-/// limit and a fresh exInfo (API+0xA8) replace the Create record's.
-/// RESIDUAL: API+0xFC's count (the limit plus the AI rows) has no field in
-/// VERA's channel record.
+/// limit and a fresh exInfo (API+0xA8) replace the Create record's. VERA's
+/// room gives the most people it takes instead
+/// (`MatchSession::network_people_capacity`), which VERA's lobby lists.
+/// RESIDUAL: API+0xFC's count (the limit plus the AI rows,
+/// `0x0078F1D9..0x0078F1E5`) has no field in VERA's channel record, so a
+/// native room's list adds its AI to the count but not to the capacity.
 pub(crate) fn republish_channel(state: &mut AppState) -> Option<WolChannel> {
     let observer = state
         .frontend
         .multiplayer_shell_runtime
         .lan_create_observer();
-    let max_users = republished_limit(&state.match_state.session, observer)?;
+    let session = &state.match_state.session;
+    let max_users = session
+        .network_people_capacity()
+        .or_else(|| republished_limit(session, observer))?;
     let ex_info = ex_info(state);
     let current = lobby_mut(state)?.current.as_mut()?;
     current.max_users = max_users;
@@ -4666,6 +4673,7 @@ mod tests {
             quick_match: true,
             clan_id: 0,
             local_hash: Some(7),
+            vera_rooms: false,
         };
         assert_eq!(admit(&channel, false, context), Ok(()));
     }
