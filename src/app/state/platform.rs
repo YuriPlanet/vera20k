@@ -173,11 +173,13 @@ impl PlatformState {
         if self.window_active {
             return;
         }
-        self.window.request_user_attention(Some(if until_back {
+        let kind = if until_back {
             UserAttentionType::Critical
         } else {
             UserAttentionType::Informational
-        }));
+        };
+        log::info!("Asked for the player's attention ({kind:?})");
+        self.window.request_user_attention(Some(kind));
         self.attention_requested = true;
     }
 
