@@ -387,8 +387,8 @@ struct PendingChoices {
 
 impl PendingChoices {
     fn answered_by(&self, accepted: &Value) -> bool {
-        accepted_human_matches(accepted, &self.expected_human)
-            || accepted_human_matches(accepted, &self.expected_random)
+        accepted_choices_match(accepted, &self.expected_human)
+            || accepted_choices_match(accepted, &self.expected_random)
     }
 }
 
@@ -1659,6 +1659,27 @@ fn accepted_human_matches(accepted: &Value, human: &Value) -> bool {
         .is_some_and(|humans| humans.iter().any(|candidate| candidate == human))
 }
 
+/// Whether the accepted options hold a player's requested choices in
+/// whatever row the host seated it: the host's `choices` takes no row, and a
+/// guest's first choices leave before its seat is known.
+fn accepted_choices_match(accepted: &Value, human: &Value) -> bool {
+    let seatless = |human: &Value| {
+        let mut human = human.clone();
+        if let Some(fields) = human.as_object_mut() {
+            fields.remove("raw_slot_index");
+        }
+        human
+    };
+    let expected = seatless(human);
+    accepted["launch"]["humans"]
+        .as_array()
+        .is_some_and(|humans| {
+            humans
+                .iter()
+                .any(|candidate| seatless(candidate) == expected)
+        })
+}
+
 fn restore_accepted_options(state: &mut AppState, service: &LiveService) {
     let Some(accepted) = service.accepted_options.clone() else {
         return;
@@ -1759,7 +1780,6 @@ fn request_setup(
             // A guest who starts or stops watching changed nothing here: the
             // host picks its row, or keeps it.
             let switch = human.is_observer() != observer;
-            human.raw_slot_index = Some(row);
             human.slot = slot.clone();
             human.set_observer(observer);
             let expected_human = serde_json::to_value(&human)?;
@@ -1777,7 +1797,7 @@ fn request_setup(
                 && !service
                     .accepted_options
                     .as_ref()
-                    .is_some_and(|accepted| accepted_human_matches(accepted, &expected_human)))
+                    .is_some_and(|accepted| accepted_choices_match(accepted, &expected_human)))
             .then_some(PendingChoices {
                 request_id,
                 expected_human,
@@ -3765,6 +3785,31 @@ mod completion_tests {
         let mut launch = session.network_setup().unwrap().clone();
         launch.local_slot_mut().color_random = !launch.local_slot().color_random;
         assert!(!pending.answered_by(&json!({"launch":launch})));
+    }
+
+    #[test]
+    fn a_guests_first_choices_are_answered_in_the_row_the_host_gave_it() {
+        // The first choices leave before the host's options seat the guest,
+        // so they name row 0; the host keeps the guest in its own row.
+        let session = setup_session();
+        let launch = session.network_setup().unwrap();
+        let mut human = launch.humans[1].clone();
+        human.raw_slot_index = Some(0);
+        let expected_human = serde_json::to_value(&human).unwrap();
+        human.slot.country_random = true;
+        let pending = PendingChoices {
+            request_id: 1,
+            expected_human,
+            expected_random: serde_json::to_value(&human).unwrap(),
+            deadline: Instant::now() + RELAY_TIMEOUT,
+        };
+        assert!(pending.answered_by(&json!({"launch":launch})));
+        let mut other = launch.clone();
+        other.humans[1].slot.color_random = !other.humans[1].slot.color_random;
+        assert!(
+            !pending.answered_by(&json!({"launch":other})),
+            "other choices still wait"
+        );
     }
 
     #[test]
