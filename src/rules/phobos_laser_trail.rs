@@ -146,13 +146,16 @@ pub struct LaserTrailTypeRegistry {
 
 impl LaserTrailTypeRegistry {
     /// `[LaserTrailTypes]` list order, each entry reading its own ART section.
+    /// A listed name without a section keeps the constructor defaults, as
+    /// `Enumerable::LoadFromINIList` allocates the entry before its read.
     pub fn from_ini(ini: &IniFile) -> Self {
         let mut types = LookupMap::default();
         for name in crate::rules::ruleset::parse_registry(ini, "LaserTrailTypes") {
-            let Some(section) = ini.section(&name) else {
-                continue;
-            };
-            types.insert(name.to_ascii_uppercase(), LaserTrailType::read(section));
+            let value = ini
+                .section(&name)
+                .map(LaserTrailType::read)
+                .unwrap_or_default();
+            types.insert(name.to_ascii_uppercase(), value);
         }
         Self { types }
     }
@@ -175,7 +178,7 @@ mod tests {
     #[test]
     fn laser_trail_types_read_keys_and_keep_constructor_defaults() {
         let ini = IniFile::from_str(
-            "[LaserTrailTypes]\n0=TRAIL\n1=PLAIN\n\
+            "[LaserTrailTypes]\n0=TRAIL\n1=PLAIN\n2=MISSING\n\
              [TRAIL]\nDrawType=ebolt\nColor=1,2,3\nThickness=2\nIsHouseColor=yes\n\
              FadeDuration=7\nSegmentLength=64\nIgnoreVertical=yes\nIsIntense=yes\n\
              CloakVisible=yes\nBolt.Arcs=5\nBeam.Amplitude=12.5\nBolt.Color2=4,5,6\n\
@@ -203,5 +206,12 @@ mod tests {
         assert_eq!(plain.segment_length, 128);
         assert_eq!(plain.fade_duration(), 64, "laser's FadeDuration default");
         assert!(plain.is_hideable);
+
+        let missing = registry.get("missing").expect("allocated entry");
+        assert_eq!(
+            missing,
+            &LaserTrailType::default(),
+            "a listed name without a section keeps the constructor defaults"
+        );
     }
 }

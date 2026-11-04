@@ -1747,7 +1747,11 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        if entity.phobos_attach_effects().is_empty() {
+        if entity.phobos_attach_effects().is_empty()
+            || entity.lifecycle.in_limbo()
+            || entity.passenger_role.inside_transport_id().is_some()
+            || entity.chrono_warp_latch()
+        {
             return;
         }
         let location = crate::sim::movement::ground_pose::object_get_coords(
@@ -1756,10 +1760,7 @@ impl Simulation {
         );
         let current = [location.x, location.y, location.z];
         let owner = entity.owner();
-        let cloaked = entity
-            .cloak
-            .as_ref()
-            .is_some_and(|cloak| cloak.state() == 2);
+        let cloak_state = entity.cloak.as_ref().map_or(0, |cloak| cloak.state());
         let effects = rules.attach_effect_types().types();
         let art = rules.art();
         let mut list = std::mem::take(
@@ -1779,6 +1780,12 @@ impl Simulation {
             let Some(trail) = art.laser_trail(name) else {
                 continue;
             };
+            // `UpdateLaserTrails` while uncloaking and the type is not
+            // cloak-visible only moves `LastLocation` (`Body.Update.cpp:564..566`).
+            if cloak_state == 3 && !trail.cloak_visible {
+                instance.trail_last_location = Some(current);
+                continue;
+            }
             let Some(last) = instance.trail_last_location else {
                 instance.trail_last_location = Some(current);
                 continue;
@@ -1791,21 +1798,22 @@ impl Simulation {
                 continue;
             }
             instance.trail_last_location = Some(current);
-            if cloaked && !trail.cloak_visible {
+            // EBolt and RadBeam trail types parse but their drawing systems
+            // are unported, so they add no laser.
+            if trail.draw_type != crate::rules::phobos_laser_trail::LaserTrailDrawType::Laser {
+                continue;
+            }
+            if cloak_state == 2 && !trail.cloak_visible {
                 continue;
             }
             if trail.ignore_vertical && dx.abs() <= 16 && dy.abs() <= 16 {
                 continue;
             }
-            let color = if trail.is_house_color {
-                crate::sim::combat::laser::LaserColor::House(owner)
-            } else {
-                crate::sim::combat::laser::LaserColor::Explicit {
-                    inner: trail.color,
-                    outer: [0, 0, 0],
-                    spread: [0, 0, 0],
-                }
-            };
+            // Native constructs the LaserDraw with `CurrentColor`, then forces
+            // `IsHouseColor = true` (`LaserTrailClass.cpp:29..36`): every trail
+            // draws through the house/Special arm, where `Thickness` and
+            // `IsIntense` take effect.
+            let color = crate::sim::combat::laser::LaserColor::House(owner);
             let birth = crate::sim::combat::laser::construct(
                 &self.session,
                 &mut self.lifecycle_outputs,
@@ -1899,6 +1907,12 @@ impl Simulation {
                 expire_shots.push(shot);
             }
             list.instances.remove(index);
+        }
+        // Native clears every trail's `LastLocation` when the carrier enters
+        // Limbo or a transport (`Techno/Hooks.cpp` 0x71067B, `0x4D7221`), so a
+        // carried or re-placed object does not draw a segment across the gap.
+        for instance in &mut list.instances {
+            instance.trail_last_location = None;
         }
         let entity = self
             .substrate
@@ -3397,10 +3411,7 @@ mod tests {
         assert!(!births[0].supported);
         assert!(matches!(
             births[0].color,
-            crate::sim::combat::laser::LaserColor::Explicit {
-                inner: [1, 2, 3],
-                ..
-            }
+            crate::sim::combat::laser::LaserColor::House(_)
         ));
         assert_eq!(births[0].from.y, births[0].to.y, "moved along X");
         sim.update_phobos_laser_trails(tank, &rules);

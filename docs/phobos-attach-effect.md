@@ -165,6 +165,8 @@ AttachEffect.SameSourceOnly=no            ; match only same-source instances
   `CloakVisible.DetectedOnly`, `DropPodOnly` and the global
   `HideLaserTrailEffects` switch have no reader, and the trail update runs in
   the shared techno AI phase rather than after the foot locomotor process.
+  Native forces `IsHouseColor` on the trail LaserDraw, so `Color` and
+  `IsHouseColor` parse but the segment draws in the owner's house color.
 - `AllowTransfer` is retained (`Nullable<bool>`, `AllowTransfer.Convert`
   alongside) but no transfer site consumes it yet.
 - `Duration.ApplyFirepowerMult` folds a firepower multiplier into the
