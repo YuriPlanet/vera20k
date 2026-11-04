@@ -148,6 +148,7 @@ impl Simulation {
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.passenger_role.clear_carrier_relation();
+            entity.passenger_role.clear_transporter();
         }
         Self::foot_neighbors_store_retained_cell(&mut self.substrate, id, retained);
         if airborne {

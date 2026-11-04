@@ -256,7 +256,7 @@ fn scene(input: &Value) -> Scene {
             crate::sim::world::ConcealOutcome::Concealed
         );
         sim.substrate.entities.get_mut(id).unwrap().passenger_role =
-            PassengerRole::inside_for_test(transport, input["open_topped"] == true);
+            PassengerRole::boarded_for_test(transport, input["open_topped"] == true);
         sim.substrate
             .entities
             .get_mut(transport)
@@ -469,11 +469,18 @@ fn compare(row: &Value) {
             expected["limbo"].as_u64().unwrap(),
             "{context}: limbo"
         );
+        // Transporter (`+0x11C`) is cleared after a successful Unlimbo
+        // (`0x007380FA`); the carrier relation ends with it.
         let aboard = entity.passenger_role.inside_transport_id() == Some(transport);
+        assert_eq!(
+            entity.passenger_role.transporter() == Some(transport),
+            expected["transporter"] == "transport",
+            "{context}: transporter"
+        );
         assert_eq!(
             aboard,
             expected["transporter"] == "transport",
-            "{context}: transporter"
+            "{context}: aboard"
         );
         if aboard {
             continue;

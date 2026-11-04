@@ -205,7 +205,7 @@ impl Fixture {
                 .entities
                 .get_mut(pax)
                 .expect("passenger")
-                .passenger_role = PassengerRole::inside_for_test(transport, open_topped);
+                .passenger_role = PassengerRole::boarded_for_test(transport, open_topped);
             ids.push(pax);
         }
         ids
@@ -1345,6 +1345,59 @@ fn nighthawk_ejects_five_passengers_to_scanned_neighbours() {
     assert_eq!(fx.mission(shad), MissionId::from_known(MissionType::Guard));
 }
 
+/// Aircraft Mission_Unload (`0x004151E0`, KickOutUnit `0x00415B10`) never
+/// clears Transporter (`+0x11C`): a soldier who boarded through the
+/// transport arm (`0x0051A463`) keeps it after a landed aircraft sets him
+/// down, so trigger action 128 (`0x0050D6D0`) still skips him, until the
+/// aircraft's removal clears it (PointerExpired `0x007078D5`). Dormant in
+/// retail: no `[AircraftTypes]` entry has `Passengers=` (the fixture's SHAD
+/// is retail's jumpjet `[VehicleTypes]` entry, whose Unit Mission_Unload
+/// clears the field at `0x0073DBD1`).
+#[test]
+fn aircraft_unload_keeps_the_transporter_until_the_aircraft_goes() {
+    use crate::sim::passenger::{BoardingArm, board_passenger};
+    use crate::sim::world::{FrameEffects, UninitContext};
+    let mut fx = Fixture::new(|_, _| false);
+    let shad = fx.spawn("SHAD", 20, 20, 0);
+    let soldier = fx.spawn("E1", 22, 22, 0);
+    assert!(board_passenger(
+        &mut fx.sim,
+        &fx.rules,
+        soldier,
+        shad,
+        BoardingArm::InfantryTransport,
+        None,
+        FrameEffects::default(),
+    ));
+    let transporter = |fx: &Fixture| {
+        let soldier = fx.sim.substrate.entities.get(soldier).unwrap();
+        soldier.passenger_role.transporter()
+    };
+    assert_eq!(transporter(&fx), Some(shad), "boarding sets it");
+    Simulation::set_object_height_unmarked(
+        &mut fx.sim.substrate,
+        &fx.sim.resolved_terrain,
+        shad,
+        0,
+    );
+    assert!(fx.apply(Command::UnloadPassengers { transport_id: shad }));
+    for _ in 0..60 {
+        if fx.revealed(soldier) {
+            break;
+        }
+        fx.tick();
+    }
+    assert!(fx.revealed(soldier), "the soldier left the aircraft");
+    assert_eq!(transporter(&fx), Some(shad), "the aircraft unload keeps it");
+    // UnInit's Limbo announcement finds the aircraft still alive; its class
+    // destructor (`0x00414125`) announces the removal on the next tick.
+    fx.sim
+        .uninit_with_context(shad, UninitContext::with_rules(&fx.rules));
+    assert_eq!(transporter(&fx), Some(shad), "a live hull's Limbo keeps it");
+    fx.tick();
+    assert_eq!(transporter(&fx), None, "the aircraft's removal clears it");
+}
+
 /// The failure tail (`0x0073DC71`..`0x0073DC96`): a Gunner IFV whose only
 /// passenger cannot leave (every neighbour carries the structural bridge
 /// flag the state-3 scan skips at `0x0073D9EB`) re-adds the passenger and
@@ -2449,10 +2502,10 @@ fn retail_bfrt_ejects_while_turning_and_resumes_after_save() {
                             .get(passenger)
                             .unwrap()
                             .passenger_role
-                            .inside_transport_id()
+                            .transporter()
                             .is_none(),
                         ejection["transporter_cleared"].as_bool().unwrap(),
-                        "departure clears the native Transporter link"
+                        "departure clears the native Transporter (0x0073DBD1)"
                     );
                 }
                 assert_eq!(

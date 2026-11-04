@@ -137,35 +137,19 @@ enum CarrierRelation {
     Inside {
         transport_id: u64,
         open_topped: bool,
-        /// [`CarrierLink::transporter`].
-        #[serde(default)]
-        transporter: bool,
     },
 }
 
 /// The hull an entity is inside. VERA keeps one relation for every way in: a
 /// transport's PerCellProcess arm, a building's cargo, a garrison, and
-/// reinforcement or paradrop loading. `transporter` says whether gamemd
-/// records it in Transporter. Only the passenger owner builds one; other
-/// modules read it or restore one they read.
+/// reinforcement or paradrop loading. gamemd's Transporter (`+0x11C`) is a
+/// separate field ([`PassengerRole::transporter`]). Only the passenger owner
+/// builds one; other modules read it or restore one they read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CarrierLink {
     transport_id: u64,
     /// `TechnoClass+0x82` InOpenToppedTransport (see `Role::Inside`).
     open_topped: bool,
-    /// `TechnoClass+0x11C` Transporter is set. Only the transport arms of
-    /// PerCellProcess write it (Infantry `0x0051A463`, Unit `0x0073A768`);
-    /// `CargoClass::AddPassenger @ 0x004733A0` (a building's cargo, Full
-    /// reinforcements `0x0065DF88`, paradrop loading `0x0065E7F5`) and
-    /// `AddGarrisonOccupant @ 0x00522910` leave it NULL.
-    ///
-    /// RESIDUAL: only Unit Mission_Unload (`0x0073DBD1`), a dying Unit's
-    /// passenger escape (`0x007380FA`) and PointerExpired (`0x007078D5`)
-    /// clear it, so a soldier a landed aircraft unloads keeps it until that
-    /// aircraft dies, and action 128 and the other `+0x11C` readers still
-    /// skip him. VERA ends the relation at every unload. It needs infantry
-    /// that boarded a passenger aircraft.
-    transporter: bool,
 }
 
 impl CarrierLink {
@@ -175,11 +159,6 @@ impl CarrierLink {
 
     pub(crate) const fn open_topped(self) -> bool {
         self.open_topped
-    }
-
-    /// Transporter (`+0x11C`) is set; see the field.
-    pub(crate) const fn transporter(self) -> bool {
-        self.transporter
     }
 }
 
@@ -528,8 +507,8 @@ impl Simulation {
             passenger.passenger_role.set_carrier_link(CarrierLink {
                 transport_id: carrier,
                 open_topped,
-                transporter: true,
             });
+            passenger.passenger_role.transporter = Some(carrier);
         }
         if open_topped {
             self.reset_orders_to_guard(passenger, rules, effects);
@@ -583,6 +562,9 @@ pub struct PassengerRole {
     role: Role,
     #[serde(default)]
     occupants: BuildingOccupants,
+    /// `TechnoClass+0x11C` Transporter ([`Self::transporter`]).
+    #[serde(default)]
+    transporter: Option<u64>,
 }
 
 /// The stored shape of a [`PassengerRole`]. A transport keeps its own cargo
@@ -607,9 +589,6 @@ enum Role {
         /// any passenger is removed; a failed
         /// unload re-attaches the passenger with the flag still set.
         open_topped: bool,
-        /// [`CarrierLink::transporter`].
-        #[serde(default)]
-        transporter: bool,
     },
 }
 
@@ -619,6 +598,7 @@ impl PassengerRole {
         Self {
             role: Role::Transport { cargo },
             occupants: BuildingOccupants::default(),
+            transporter: None,
         }
     }
 
@@ -631,12 +611,25 @@ impl PassengerRole {
             .map(|link| (link.transport_id, link.open_topped))
     }
 
-    /// `TechnoClass+0x11C` Transporter: the hull, when a transport arm took
-    /// this entity aboard ([`CarrierLink::transporter`]).
+    /// `TechnoClass+0x11C` Transporter, which gamemd keeps apart from the
+    /// carrier relation. Only the transport arms of PerCellProcess set it
+    /// (Infantry `0x0051A463`, Unit `0x0073A768`); `CargoClass::AddPassenger
+    /// @ 0x004733A0` (a building's cargo, Full reinforcements `0x0065DF88`,
+    /// paradrop loading `0x0065E7F5`) and `AddGarrisonOccupant @ 0x00522910`
+    /// leave it as it is. Only the constructor (`0x006F2B93`), PointerExpired
+    /// (`0x007078D5`), a dying Unit's passenger escape (`0x007380FA`) and Unit
+    /// Mission_Unload's success path (`0x0073DBD1`) clear it, so a soldier an
+    /// aircraft unloads (`0x004151E0`, KickOutUnit `0x00415B10`) keeps it
+    /// until that aircraft dies, through any garrison or cargo he enters (no
+    /// retail `[AircraftTypes]` entry has `Passengers=`).
     pub(crate) fn transporter(&self) -> Option<u64> {
-        self.carrier_link()
-            .filter(|link| link.transporter)
-            .map(|link| link.transport_id)
+        self.transporter
+    }
+
+    /// Clear Transporter (`+0x11C`) at one of its native clear sites
+    /// ([`Self::transporter`]).
+    pub(crate) fn clear_transporter(&mut self) {
+        self.transporter = None;
     }
 
     /// The whole carrier relation, for a caller that restores it.
@@ -644,7 +637,6 @@ impl PassengerRole {
         let (Role::Inside {
             transport_id,
             open_topped,
-            transporter,
         }
         | Role::Transport {
             cargo:
@@ -653,7 +645,6 @@ impl PassengerRole {
                         CarrierRelation::Inside {
                             transport_id,
                             open_topped,
-                            transporter,
                         },
                     ..
                 },
@@ -664,7 +655,6 @@ impl PassengerRole {
         Some(CarrierLink {
             transport_id: *transport_id,
             open_topped: *open_topped,
-            transporter: *transporter,
         })
     }
 
@@ -674,33 +664,29 @@ impl PassengerRole {
         let CarrierLink {
             transport_id,
             open_topped,
-            transporter,
         } = link;
         match &mut self.role {
             Role::Transport { cargo } => {
                 cargo.carrier_relation = CarrierRelation::Inside {
                     transport_id,
                     open_topped,
-                    transporter,
                 };
             }
             role => {
                 *role = Role::Inside {
                     transport_id,
                     open_topped,
-                    transporter,
                 }
             }
         }
     }
 
-    /// Attach without Transporter: a `CargoClass::AddPassenger` caller or a
-    /// garrison ([`CarrierLink::transporter`]).
+    /// Attach without touching Transporter: a `CargoClass::AddPassenger`
+    /// caller or a garrison ([`Self::transporter`]).
     pub(crate) fn set_inside_transport(&mut self, transport_id: u64, open_topped: bool) {
         self.set_carrier_link(CarrierLink {
             transport_id,
             open_topped,
-            transporter: false,
         });
     }
 
@@ -746,20 +732,18 @@ impl PassengerRole {
     /// on first use: every native Techno has its CargoClass (`+0x114`), and
     /// `HouseClass::SendParadropPlanes` fills the paradrop plane's through
     /// `CargoClass::AddPassenger` (`0x0065E7F5`). The entity's own carrier
-    /// relation (`+0x11C`, `+0x82`) is a separate Techno field that
-    /// `CargoClass::AddPassenger` (`0x004733A0`) does not write, so the hold
-    /// keeps it.
+    /// relation and Transporter (`+0x11C`, [`Self::transporter`]) are not the
+    /// hold's: `CargoClass::AddPassenger` (`0x004733A0`) writes neither
+    /// Transporter nor `+0x82`, so the hold keeps them.
     pub(crate) fn ensure_hold(&mut self) -> &mut PassengerCargo {
         if !self.is_transport() {
             let carrier_relation = match self.role {
                 Role::Inside {
                     transport_id,
                     open_topped,
-                    transporter,
                 } => CarrierRelation::Inside {
                     transport_id,
                     open_topped,
-                    transporter,
                 },
                 Role::None | Role::Transport { .. } => CarrierRelation::Outside,
             };
@@ -786,10 +770,13 @@ impl PassengerRole {
         self.inside_transport().map(|(id, _)| id)
     }
 
-    /// `TechnoClass+0x82` with its `+0x11C` Transporter: the `OpenTopped=`
-    /// transport this entity rides in, if any. Read by weapon selection, the
-    /// fire coordinate, InRange, GetFireError, FireAt's damage and muzzle
-    /// anim, kill credit, navigation and the Temporal warp-distance check.
+    /// The `OpenTopped=` transport this entity rides in, if any, from the
+    /// carrier relation. It stands in for gamemd's `+0x82` and Transporter
+    /// (`+0x11C`, [`Self::transporter`]) reads, which can differ for cargo
+    /// that `CargoClass::AddPassenger` loaded (vera20k#3838). Read by weapon
+    /// selection, the fire coordinate, InRange, GetFireError, FireAt's damage
+    /// and muzzle anim, kill credit, navigation and the Temporal
+    /// warp-distance check.
     pub fn open_transport_id(&self) -> Option<u64> {
         self.inside_transport()
             .and_then(|(id, open)| open.then_some(id))
@@ -823,9 +810,20 @@ impl PassengerRole {
             role: Role::Inside {
                 transport_id,
                 open_topped,
-                transporter: false,
             },
             occupants: BuildingOccupants::default(),
+            transporter: None,
+        }
+    }
+
+    /// A fixture's passenger that a transport arm took aboard: inside
+    /// `transport_id` with Transporter (`+0x11C`) set, as Infantry
+    /// `0x0051A463` and Unit `0x0073A768` leave it.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn boarded_for_test(transport_id: u64, open_topped: bool) -> Self {
+        Self {
+            transporter: Some(transport_id),
+            ..Self::inside_for_test(transport_id, open_topped)
         }
     }
 }
@@ -1192,6 +1190,11 @@ pub(crate) fn board_passenger(
     }
     //4733A0 repeats the head's virtual Limbo before its unconditional
     //prepend.
+    let prior_transporter = sim
+        .substrate
+        .entities
+        .get(pax_id)
+        .and_then(|pax| pax.passenger_role.transporter());
     if arm == BoardingArm::InfantryTransport {
         sim.mark_boarded_transport_passenger(pax_id, carrier_id, open_topped, rules, effects);
     }
@@ -1218,6 +1221,7 @@ pub(crate) fn board_passenger(
             && let Some(passenger) = sim.substrate.entities.get_mut(pax_id)
         {
             passenger.passenger_role.clear_carrier_relation();
+            passenger.passenger_role.transporter = prior_transporter;
         }
         let _ = sim.reveal_entity_with_context(pax_id, context);
         return false;
@@ -1225,8 +1229,8 @@ pub(crate) fn board_passenger(
     if arm.building()
         && let Some(pax) = sim.substrate.entities.get_mut(pax_id)
     {
-        // A building's cargo shares VERA's carrier relation, without
-        // Transporter (`+0x11C`; see `CarrierLink`). Boarding keeps the
+        // A building's cargo shares VERA's carrier relation; Transporter
+        // (`+0x11C`, `PassengerRole::transporter`) stays as it is. Boarding keeps the
         // passenger's TarCom and passive flag: neither arm nor Limbo writes
         // them.
         pax.passenger_role
