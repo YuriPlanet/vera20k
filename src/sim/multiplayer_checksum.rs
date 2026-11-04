@@ -261,6 +261,15 @@ impl Simulation {
         for house in self.houses.in_order() {
             checksum.fold_value(house.economy().credits() as u32);
         }
+        // House+314's retained floats gate GiveWeed. Only a non-empty store
+        // joins the VERA extension fold, so a retail game's stream is intact.
+        for house in self.houses.in_order() {
+            for slot in house.economy().owned_weed_amounts() {
+                if slot.bits() != 0 {
+                    checksum.fold_value(slot.bits());
+                }
+            }
+        }
         for entity in self.substrate.entities.values_sorted() {
             checksum.fold_value(entity.health.current() as u32);
         }

@@ -1108,6 +1108,14 @@ impl Simulation {
             house.economy().spent_credits().hash(hasher);
             // The score feeds the terminal Scenario draw.
             house.economy().score().hash(hasher);
+            // House+314's four retained StorageClass floats are authoritative
+            // for GiveWeed's capacity gate. Fold only a non-empty store so
+            // the all-zero constructor state preserves historical hashes.
+            let weed = house.economy().owned_weed_amounts();
+            if weed != crate::sim::storage_class::StorageAmounts::EMPTY.amounts() {
+                b"house-owned-weed-v1".hash(hasher);
+                weed.hash(hasher);
+            }
             // House504080/503040 preserves the kill, loss and built totals
             // through native load. The retained-ship chain needs both its
             // initial and terminal loss. Preserve zero streams.

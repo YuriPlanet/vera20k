@@ -57,6 +57,10 @@ pub(crate) mod crew_survival; // building SpawnSurvivors and vehicle crew escape
 #[cfg(feature = "ares")]
 pub(crate) mod vehicle_theft;
 pub mod economy; // per-house wallet/storage/statistics value-type (production+economy substrate)
+pub(crate) mod storage_class; // one owner of StorageClass GetTotalAmount/Add_Amount
+#[cfg(test)]
+#[path = "weed_storage_tests.rs"]
+mod weed_storage_tests;
 #[cfg(feature = "ares")]
 pub(crate) mod factory_owners;
 #[cfg(feature = "telemetry")]
