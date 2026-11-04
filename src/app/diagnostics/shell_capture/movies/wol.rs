@@ -1551,7 +1551,8 @@ impl WolCapture {
                     );
                     self.phase = WolPhase::Joining;
                 } else {
-                    let [WolServiceRequest::CreateChannel { channel, key }] = requests.as_slice()
+                    let [WolServiceRequest::CreateChannel { channel, key, .. }] =
+                        requests.as_slice()
                     else {
                         bail!("the game channel was not created: {requests:?}");
                     };

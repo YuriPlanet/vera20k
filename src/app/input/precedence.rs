@@ -29,7 +29,6 @@ pub(crate) enum ModalPage {
     NetworkWait,
     /// A3, from the launcher or in-game Options.
     Keyboard,
-    NetworkOptions,
 }
 
 /// The page that owns the current screen when no modal page is open.
@@ -92,7 +91,6 @@ struct Layers {
     network_failure: bool,
     network_wait: bool,
     keyboard: bool,
-    network_options: bool,
     screen: Screen,
     route: ShellRoute,
     fullscreen_movie: bool,
@@ -122,7 +120,6 @@ impl Layers {
             network_wait: frontend.screen == GameScreen::InGame
                 && state.match_state.network_wait.dialog_open(),
             keyboard: frontend.keyboard_dialog.is_some(),
-            network_options: frontend.network_options.is_some(),
             screen: match frontend.screen {
                 GameScreen::MainMenu => Screen::MainMenu,
                 GameScreen::Loading => Screen::Loading,
@@ -153,7 +150,6 @@ impl Layers {
             (self.network_failure, ModalPage::NetworkFailure),
             (self.network_wait, ModalPage::NetworkWait),
             (self.keyboard, ModalPage::Keyboard),
-            (self.network_options, ModalPage::NetworkOptions),
         ]
         .into_iter()
         .find_map(|(open, page)| open.then_some(page))

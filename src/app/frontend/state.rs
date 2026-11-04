@@ -111,6 +111,9 @@ pub(crate) struct FrontendState {
     pub(crate) shell_message_box: Option<ShellMessageBox>,
     /// Retained active-YR launcher Options `0xD5` parent snapshot.
     pub(crate) options_dialog: Option<crate::ui::main_menu_dialogs::OptionsDialogState>,
+    /// The page the launcher Options dialog reopens on after its key-mapping
+    /// child `0xA3` closes, so the page the player came from comes back.
+    pub(crate) options_reopen_at: Option<crate::ui::main_menu_dialogs::options::Category>,
     /// Shared A3 child, reached from launcher Options or paused Game Controls.
     pub(crate) keyboard_dialog: Option<crate::ui::shell::keyboard::KeyboardState>,
     /// Movie list `0x129` instance while `ShellRoute::MovieList` is shown.
@@ -153,10 +156,11 @@ pub(crate) struct FrontendState {
     /// The host's last Room name in VERA's online lobby, which its next
     /// Create Game shows; `None` until one is typed.
     pub(crate) wol_room_name: Option<String>,
+    /// The host unticked Ranked game at its last Create Game in VERA's
+    /// online lobby, which its next Create Game shows.
+    pub(crate) wol_room_unranked: bool,
     /// VERA: how this player returns to its LAN room after the match.
     pub(crate) lan_rematch: Option<crate::app::shell_lan::LanRematch>,
-    /// Options' Network child D7, retained until its teardown completes.
-    pub(crate) network_options: Option<crate::ui::network_options::NetworkOptionsState>,
     /// `0x10E`'s background and icon art (`0x0072C7E0`).
     pub(crate) wol_welcome_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     /// `0x10F`'s background art (`0x0072C600`), freed with the dialog

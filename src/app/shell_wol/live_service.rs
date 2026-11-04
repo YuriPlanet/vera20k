@@ -1428,12 +1428,13 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
                 service.command("join", json!({"channel":channel.name,"key":key}));
             }
         }
-        WolServiceRequest::CreateChannel { channel, key } => {
+        WolServiceRequest::CreateChannel {
+            channel,
+            key,
+            ranked,
+        } => {
             if super::lobby::bind_online_request(state, service.next_request) {
-                service.command(
-                    "create",
-                    json!({"channel":wire::Channel::from(channel),"key":key}),
-                );
+                service.command("create", create_payload(channel, key, ranked));
             }
         }
         WolServiceRequest::LeaveChannel => {
@@ -1519,6 +1520,16 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             }
         }
     }
+}
+
+/// `create`'s payload. Only an unranked room says so, as a lobby from before
+/// the choice refuses the field.
+fn create_payload(channel: crate::ui::wol_lobby::WolChannel, key: String, ranked: bool) -> Value {
+    let mut payload = json!({"channel":wire::Channel::from(channel),"key":key});
+    if !ranked {
+        payload["ranked"] = json!(false);
+    }
+    payload
 }
 
 /// API+0x30's request: ordinary private chat to the matchbot. This game
@@ -3392,6 +3403,21 @@ mod completion_tests {
             lobby: "https://lobby.test".into(),
         };
         (service, input, output)
+    }
+
+    /// A lobby from before the Ranked game choice refuses the field, so a
+    /// ticked box sends none.
+    #[test]
+    fn only_an_unranked_room_sends_ranked() {
+        let channel = crate::ui::wol_lobby::WolChannel::default();
+        assert_eq!(
+            create_payload(channel.clone(), "k".into(), true).get("ranked"),
+            None
+        );
+        assert_eq!(
+            create_payload(channel, "k".into(), false)["ranked"],
+            json!(false)
+        );
     }
 
     #[test]

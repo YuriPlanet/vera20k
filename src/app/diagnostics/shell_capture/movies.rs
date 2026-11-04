@@ -15,9 +15,7 @@ mod lan;
 pub(crate) use lan::{LAN_CHECKPOINTS, LanTarget};
 mod wol;
 pub(crate) use wol::{WOL_CHECKPOINTS, WolTarget};
-mod network_options;
 mod opening;
-pub(crate) use network_options::NetworkOptionsTarget;
 pub(super) use opening::OpeningTarget;
 
 /// Native control corpus read from this checkout's `tools/` at capture time.
@@ -110,14 +108,13 @@ pub(super) enum MoviesTarget {
         entry_tick: Option<u32>,
         /// Rest the pointer here instead of at the neutral point.
         hover: Option<(i32, i32)>,
-        /// The page captured: VERA's is reached by pressing Vera Options on
-        /// the settled main page.
-        page: crate::ui::main_menu_dialogs::options::OptionsPage,
+        /// The page captured. Another page is reached by pressing its
+        /// column button on the settled dialog.
+        category: crate::ui::main_menu_dialogs::options::Category,
     },
     /// Network on `0xE2`: its teardown slide, then a new `0xE2` with its
     /// own entry slide, captured once settled.
     NetworkBounce,
-    NetworkOptions(NetworkOptionsTarget),
     Lan(LanTarget),
     Wol(WolTarget),
     /// Main Menu -> Internet: `0x10E` settled (pointer at `hover` or
@@ -198,12 +195,6 @@ enum Phase {
     CampaignRestart,
     LoadSavedGame,
     Options,
-    NetworkOptions,
-    NetworkOptionsInput,
-    NetworkOptionsMessage,
-    NetworkOptionsPortWarning,
-    NetworkOptionsReturning,
-    NetworkOptionsMainMenu,
     /// Network pressed: waiting for the teardown to commit.
     NetworkLeaving,
     /// A new `0xE2` exists: waiting for its entry slide to be seen.
@@ -501,9 +492,6 @@ impl MoviesCapture {
         if aborting_campaign {
             return self.campaign_abort_after_present(state, frame);
         }
-        if self.network_options_after_present(state, rendered, frame)? {
-            return Ok(());
-        }
         match (self.phase, rendered) {
             (Phase::MainMenu, PresentedShell::MainMenu) => {
                 if steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state))? {
@@ -543,10 +531,7 @@ impl MoviesCapture {
                         self.phase = Phase::NetworkLeaving;
                         return Ok(());
                     }
-                    if matches!(
-                        self.target,
-                        MoviesTarget::Options0xD5 { .. } | MoviesTarget::NetworkOptions(_)
-                    ) {
+                    if matches!(self.target, MoviesTarget::Options0xD5 { .. }) {
                         self.route
                             .push(json!({"dialog": 0xe2, "frame": frame, "action": "Options"}));
                         App::handle_main_menu_shell_action(
@@ -638,7 +623,6 @@ impl MoviesCapture {
                         | MoviesTarget::CampaignBack
                         | MoviesTarget::LoadSavedGame0xB7 { .. }
                         | MoviesTarget::Options0xD5 { .. }
-                        | MoviesTarget::NetworkOptions(_)
                         | MoviesTarget::Lan(_)
                         | MoviesTarget::Wol(_)
                         | MoviesTarget::NetworkBounce
@@ -753,11 +737,11 @@ impl MoviesCapture {
                 }
             }
             (Phase::Options, PresentedShell::Other | PresentedShell::Options) => {
-                use crate::ui::main_menu_dialogs::options::{LauncherButton, OptionsPage};
+                use crate::ui::main_menu_dialogs::options::LauncherButton;
                 let MoviesTarget::Options0xD5 {
                     entry_tick,
                     hover,
-                    page,
+                    category,
                 } = self.target
                 else {
                     bail!("options phase without an options target");
@@ -766,7 +750,7 @@ impl MoviesCapture {
                     .frontend
                     .options_dialog
                     .as_ref()
-                    .map(|dialog| dialog.page());
+                    .map(|dialog| dialog.category());
                 if let Some(target) = entry_tick {
                     let tick = state
                         .frontend
@@ -788,36 +772,42 @@ impl MoviesCapture {
                         }
                     }
                 } else if rendered == PresentedShell::Options
-                    && page == OptionsPage::Vera
-                    && showing == Some(OptionsPage::Main)
+                    && let Some(showing) = showing.filter(|&showing| showing != category)
                     && state.frontend.shell_exit.is_none()
                     && Self::slide_settled(state, ShellSlideKind::Options)
                 {
-                    let layout = crate::app::frontend::shell_layout::launcher_options_layout(
-                        state,
-                        OptionsPage::Main,
-                    );
+                    // The page buttons stay in the column: pressing another
+                    // swaps the controls in place, with no slide.
+                    let layout =
+                        crate::app::frontend::shell_layout::launcher_options_layout(state, showing);
                     let rect = layout
                         .buttons
                         .iter()
-                        .find(|(button, _)| *button == LauncherButton::Page(OptionsPage::Vera))
+                        .find(|(button, _)| *button == LauncherButton::Category(category))
                         .map(|(_, rect)| *rect)
-                        .context("D5 Vera Options button")?;
+                        .context("D5 page button")?;
                     state.match_state.input.cursor_x = (rect.x + rect.w / 2) as f32;
                     state.match_state.input.cursor_y = (rect.y + rect.h / 2) as f32;
                     App::handle_launcher_options_mouse(state, None);
                     App::handle_launcher_options_mouse(state, Some(true));
                     App::handle_launcher_options_mouse(state, Some(false));
                     ensure!(
-                        state.frontend.shell_exit.is_some(),
-                        "Vera Options must run the main page's teardown slide"
+                        state.frontend.shell_exit.is_none(),
+                        "a page button swaps the controls in place; it must not run the teardown slide"
                     );
+                    let swapped = state
+                        .frontend
+                        .options_dialog
+                        .as_ref()
+                        .is_some_and(|dialog| dialog.category() == category);
+                    ensure!(swapped, "the page must be showing after the press");
                     self.route.push(json!({"dialog": 0xd5, "frame": frame,
-                        "action": "Vera Options through ordinary pointer handler"}));
+                        "action": "page button through ordinary pointer handler",
+                        "page": format!("{category:?}")}));
                 } else if rendered == PresentedShell::Options
-                    && showing == Some(page)
+                    && showing == Some(category)
                     && state.frontend.shell_exit.is_none()
-                    && Self::slide_settled(state, ShellSlideKind::options_page(page))
+                    && Self::slide_settled(state, ShellSlideKind::Options)
                 {
                     Self::restore_neutral_pointer(state);
                     if let Some((x, y)) = hover {
@@ -1439,12 +1429,6 @@ impl MoviesCapture {
             } => true,
             MoviesTarget::Lan(_) => unreachable!("LAN driver handled above"),
             MoviesTarget::Wol(_) => unreachable!("WOL driver handled above"),
-            MoviesTarget::NetworkOptions(target) => {
-                target.is_message()
-                    || target == NetworkOptionsTarget::SaveReturn
-                    || (state.frontend.shell_page_title.is_terminal()
-                        && state.frontend.shell_status_line.is_terminal())
-            }
             MoviesTarget::WolWelcome { .. } => {
                 state.frontend.shell_page_title.is_terminal()
                     && state.frontend.shell_status_line.is_terminal()
@@ -1518,15 +1502,16 @@ impl MoviesCapture {
             }
             MoviesTarget::Lan(_) => unreachable!("LAN driver handled above"),
             MoviesTarget::Wol(_) => unreachable!("WOL driver handled above"),
-            MoviesTarget::NetworkOptions(target) => self.network_options_ready(state, target)?,
             MoviesTarget::Options0xD5 {
-                entry_tick, page, ..
+                entry_tick,
+                category,
+                ..
             } => {
                 state
                     .frontend
                     .options_dialog
                     .as_ref()
-                    .is_some_and(|dialog| dialog.page() == page)
+                    .is_some_and(|dialog| dialog.category() == category)
                     && entry_tick.is_none_or(|target| {
                         state
                             .frontend
@@ -1728,9 +1713,6 @@ impl MoviesCapture {
                 "route": format!("{:?}", state.frontend.shell_route),
                 "campaign_page_present": state.frontend.campaign.is_some(),
                 "loading_session_present": state.frontend.loading_session.is_some()});
-        }
-        if let MoviesTarget::NetworkOptions(target) = self.target {
-            manifest["network_options"] = self.network_options_receipt(state, target)?;
         }
         if let Some(lan) = self.lan.as_ref() {
             manifest["lan"] = lan.receipt(state)?;

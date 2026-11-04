@@ -987,9 +987,6 @@ impl ApplicationHandler for App {
                     if let Some(dialog) = state.frontend.keyboard_dialog.as_mut() {
                         dialog.reset_interaction();
                     }
-                    if let Some(dialog) = state.frontend.network_options.as_mut() {
-                        dialog.cancel_pointer();
-                    }
                     if let Some(lan) = state.frontend.lan.as_mut() {
                         lan.lobby.cancel_pointer();
                     }
@@ -1173,10 +1170,6 @@ impl ApplicationHandler for App {
                     }
                     InputLayer::Page(ModalPage::Keyboard) => {
                         crate::app::input::keyboard::key(state, &event);
-                        return;
-                    }
-                    InputLayer::Page(ModalPage::NetworkOptions) => {
-                        crate::app::input::network_options::key(state, &event);
                         return;
                     }
                     // The status card took the shell error's keys.
@@ -1528,10 +1521,6 @@ impl ApplicationHandler for App {
                         crate::app::input::keyboard::cursor_moved(state);
                         return;
                     }
-                    InputLayer::Page(ModalPage::NetworkOptions) => {
-                        crate::app::input::network_options::cursor_moved(state);
-                        return;
-                    }
                     // The status card took the shell error's moves.
                     InputLayer::ShellTransition
                     | InputLayer::HouseOutcomeWait
@@ -1627,14 +1616,6 @@ impl ApplicationHandler for App {
                     }
                     InputLayer::Page(ModalPage::Keyboard) => {
                         crate::app::input::keyboard::mouse(state, button, btn_state.is_pressed());
-                        return;
-                    }
-                    InputLayer::Page(ModalPage::NetworkOptions) => {
-                        crate::app::input::network_options::mouse(
-                            state,
-                            button,
-                            btn_state.is_pressed(),
-                        );
                         return;
                     }
                     // The status card took the shell error's buttons.
@@ -1773,10 +1754,7 @@ impl ApplicationHandler for App {
                     InputLayer::HouseOutcomeWait
                     | InputLayer::ShellTransition
                     | InputLayer::Page(
-                        ModalPage::ShellError
-                        | ModalPage::NetworkFailure
-                        | ModalPage::NetworkWait
-                        | ModalPage::NetworkOptions,
+                        ModalPage::ShellError | ModalPage::NetworkFailure | ModalPage::NetworkWait,
                     ) => return,
                 };
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -1883,7 +1861,6 @@ impl ApplicationHandler for App {
             Self::update_load_saved_game_scroll(state, false);
             [
                 crate::app::input::keyboard::poll_scroll_repeat(state),
-                crate::app::input::network_options::poll_scroll_repeat(state),
                 crate::app::shell_lan::poll(state),
                 crate::app::shell_wol::poll(state),
                 crate::app::shell_network_setup::poll(state),

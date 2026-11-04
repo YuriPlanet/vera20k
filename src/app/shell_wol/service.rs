@@ -147,8 +147,13 @@ pub(crate) enum WolServiceRequest {
     /// API+0x34 from the logout `0x00785EA0`.
     Logout,
     /// `0x00789B60`: API+0x1C with the new game channel's record and its
-    /// key at `+0xD7`.
-    CreateChannel { channel: WolChannel, key: String },
+    /// key at `+0xD7`. `ranked` false is VERA's unticked Ranked game, which
+    /// asks its lobby to keep the room's games unranked.
+    CreateChannel {
+        channel: WolChannel,
+        key: String,
+        ranked: bool,
+    },
     /// `0x0077E1D0`, the pager `0x0078A6B0`/`0x0078A8F0` or the locate
     /// `0x0078A470` from the lobby; `to` are the selected users of a
     /// private line.
@@ -1158,10 +1163,7 @@ fn connect_succeeded(state: &mut AppState) {
         visit.page = WolPage::Backdrop { wait: None };
     }
     // ReadMultiPlayerSettings 0x006980C0.
-    App::prepare_multiplayer_settings(
-        state,
-        crate::app::shell_main_menu::MultiplayerSettingsContext::Shell,
-    );
+    App::prepare_multiplayer_settings(state);
     let nickname = state.frontend.wol_account.nickname.clone();
     let visit = state.frontend.wol.as_ref().expect("WOL visit");
     let online = visit.provider == WolProvider::Online;

@@ -973,18 +973,6 @@ impl App {
                     crate::app::frontend::skirmish_shell_render::render_keyboard_shell(state, &mut encoder, &output.texture)?;
                 }
             }
-            _ if page == Some(ModalPage::NetworkOptions) => {
-                presented_shell = PresentedShell::NetworkOptions;
-                let slid = matches!(
-                    crate::app::frontend::shell_transition::render_shell_first_paint_slide(
-                        state, &mut encoder, &output.texture,
-                    )?,
-                    crate::app::frontend::shell_transition::ShellFirstPaintRenderResult::Rendered { .. }
-                );
-                if !slid {
-                    crate::app::frontend::skirmish_shell_render::render_network_options(state, &mut encoder, &output.texture)?;
-                }
-            }
             _ if screen_page == ScreenPage::FullscreenMovie => {
                 Self::advance_fullscreen_movie(state)?;
                 if state.frontend.fullscreen_movie.is_some() {

@@ -2044,7 +2044,6 @@ pub(crate) use chrome::type3_button_frames;
 
 mod keyboard;
 mod lan_lobby;
-mod network_options;
 mod wol_buddy;
 mod wol_lobby;
 mod wol_login;
@@ -2070,4 +2069,3 @@ mod multiplayer_setup;
 pub(crate) use coop_score::render_coop_score;
 pub(crate) use keyboard::render_keyboard_shell;
 pub(crate) use multiplayer_setup::render_multiplayer_setup;
-pub(crate) use network_options::render_network_options;
