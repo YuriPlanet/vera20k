@@ -131,8 +131,6 @@ pub struct ArtEntry {
     /// Infantry animation sequence definition name (e.g., "ConSequence").
     /// Points to a `[ConSequence]`-style section in art.ini with frame layouts.
     pub sequence: Option<String>,
-    /// Infantry `Crawls=` art flag. Merged into ObjectType for sim stance speed.
-    pub crawls: bool,
     /// `SecondSpawnOffset=` (`TechnoTypeClass+0xDB0`): the same art read's
     /// coordinate read of the image section (`0x0071602E..0x00716058`,
     /// `Read3Int @ 0x00529CA0`), default the constructor's zeros
@@ -162,19 +160,6 @@ pub struct ArtEntry {
     pub standing_frames: Option<u16>,
     /// SHP vehicle: number of facing directions (from `Facings=`, default 8).
     pub shp_facings: u8,
-    /// InfantryType+E40 signed standing discharge frame (`FireUp=`).
-    /// ReadInt5246D6 retains this field; constructor5236D7 writes0.
-    /// Distinct from the `FireUp` sequence action in infantry sequences.
-    pub fire_up: i32,
-    /// InfantryType+E44 signed prone discharge frame (`FireProne=`).
-    /// ReadInt5246F3 retains this field; constructor5236E3 writes0.
-    pub fire_prone: i32,
-    /// InfantryType+E48 signed secondary standing frame (`SecondaryFire=`).
-    /// ReadInt524710 retains this field; constructor5236EA writes0.
-    pub secondary_fire: i32,
-    /// InfantryType+E4C signed secondary prone frame (`SecondaryProne=`).
-    /// ReadInt52472D retains this field; constructor5236F3 writes0.
-    pub secondary_prone: i32,
     /// Animation `Report=` sound ID. Used as a fallback when `StartSound=`
     /// is absent.
     pub report: Option<String>,
@@ -1045,10 +1030,13 @@ const THEATER_LETTERS: &[(&str, char)] = &[
 /// `repo-derived`: generic fallback letter used by original-style building art.
 const NEW_THEATER_GENERIC_LETTER: char = 'G';
 
-/// InfantryType ART prefix5246BE..52473A: four independent signed DWORDs.
-/// Each ReadInt5276D0 receives its own current field, with no clamp or cast.
+/// InfantryType ART prefix5246BE..52473A: four independent signed DWORDs
+/// (`FireUp=`, `FireProne=`, `SecondaryFire=`, `SecondaryProne=`; not the
+/// infantry sequences' `FireUp` action). Each ReadInt5276D0 receives its own
+/// current field, with no clamp or cast; every reached pass reads them
+/// ([`crate::rules::object_type::InfantryArt`]).
 /// Original execution: tools/spatial_oracle/infantry_discharge_rules.json.
-fn read_infantry_discharge_frames(section: &IniSection, frames: &mut [i32; 4]) {
+pub(crate) fn read_infantry_discharge_frames(section: &IniSection, frames: &mut [i32; 4]) {
     frames[0] = section.read_int("FireUp", frames[0]);
     frames[1] = section.read_int("FireProne", frames[1]);
     frames[2] = section.read_int("SecondaryFire", frames[2]);
@@ -1120,7 +1108,6 @@ impl ArtRegistry {
                 sequence_frames("Undeploy"),
                 sequence_frames("DeployedFire"),
             );
-            let crawls = section.read_bool("Crawls", false);
             let second_spawn_offset = Flh::from(section.read_coord3("SecondSpawnOffset", [0; 3]));
             // ReadMinMax (`0x00461305`, `0x00461332`); `None` marks an absent key.
             let present_pair = |key: &str| {
@@ -1148,10 +1135,6 @@ impl ArtRegistry {
             let firing_frames: Option<u16> = present_frames("FiringFrames");
             let standing_frames: Option<u16> = present_frames("StandingFrames");
             let shp_facings: u8 = section.read_int("Facings", 8).clamp(1, 32) as u8;
-            // Fresh ART types use constructor5236D7..5236F9's four zeros.
-            let mut discharge_frames = [0; 4];
-            read_infantry_discharge_frames(section, &mut discharge_frames);
-            let [fire_up, fire_prone, secondary_fire, secondary_prone] = discharge_frames;
             let report = section.read_name("Report", 0x80).map(str::to_owned);
             let start_sound = section.read_name("StartSound", 0x80).map(str::to_owned);
             let anim_runtime_config = parse_anim_runtime_config(section);
@@ -1296,7 +1279,6 @@ impl ArtRegistry {
                     factory_door: FactoryDoorArt::read(section),
                     palette,
                     sequence,
-                    crawls,
                     second_spawn_offset,
                     primary_fire_pixel_offset,
                     secondary_fire_pixel_offset,
@@ -1308,10 +1290,6 @@ impl ArtRegistry {
                     firing_frames,
                     standing_frames,
                     shp_facings,
-                    fire_up,
-                    fire_prone,
-                    secondary_fire,
-                    secondary_prone,
                     report,
                     start_sound,
                     extra_light,
