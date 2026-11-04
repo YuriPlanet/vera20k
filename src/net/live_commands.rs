@@ -16,7 +16,8 @@ mod sequenced;
 mod startup;
 mod timing;
 pub use sequenced::{
-    CommandDeliveryTrace, MatchSpeedChange, MultiplayerPauseStatus, SequencedError, SequencedTiming,
+    CommandDeliveryTrace, DeliveryCounters, MatchSpeedChange, MultiplayerPauseStatus,
+    SequencedError, SequencedTiming,
 };
 pub use startup::{StartupAgreement, StartupError};
 
@@ -324,6 +325,26 @@ impl LiveCommandSession {
     /// player's PC cannot keep up. The simulation keeps the match's own.
     pub fn relay_frames_per_second(&self) -> Option<u16> {
         self.sequenced.as_ref().map(|session| session.pace_fps)
+    }
+
+    /// The relay currently seals slower than the match's own rate.
+    pub fn relay_slowed(&self) -> bool {
+        self.sequenced
+            .as_ref()
+            .is_some_and(|session| session.slowed())
+    }
+
+    /// App-only counts of this match's ordered delivery.
+    pub fn delivery_counters(&self) -> Option<DeliveryCounters> {
+        self.sequenced
+            .as_ref()
+            .map(|session| session.delivery_counters())
+    }
+
+    /// The relay's sealed head as this PC last learned it; the frames past
+    /// the local simulation are its backlog.
+    pub fn relay_head_frame(&self) -> Option<u32> {
+        self.sequenced.as_ref().map(|session| session.head_frame())
     }
 
     /// App-only pacing observation. Availability and canonical dispatch remain

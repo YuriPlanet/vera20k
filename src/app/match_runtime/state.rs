@@ -43,6 +43,8 @@ pub(crate) struct MatchState {
     /// App-owned diagnostic recording (F10) — never inside the simulation, so
     /// no load/install path can silently drop an unflushed segment.
     pub(crate) match_diagnostics: crate::app::match_diagnostics::MatchDiagnosticsState,
+    /// Online match network quality record; wall-clock, never simulation input.
+    pub(crate) network_quality: super::network_quality::NetworkQualityStats,
     /// Read-only process measurements; never inputs to the simulation.
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) telemetry_timing: super::telemetry::TickTimingRing,

@@ -1588,8 +1588,7 @@ fn advance_one_simulation_frame(
             };
             // Recorded whether or not a client is attached: the history ring
             // backfills a dashboard that connects mid-match.
-            #[cfg(feature = "telemetry-dashboard")]
-            let telemetry_advance_started = Instant::now();
+            let advance_started = crate::util::time::Instant::now();
             // F07: the runtime is the one production frame API — bound
             // resources, no caller-substitutable inputs.
             let mut output = {
@@ -1773,9 +1772,10 @@ fn advance_one_simulation_frame(
                 // reached the synchronous boundary above exactly once.
                 return false;
             }
+            let tick_ms = advance_started.elapsed().as_secs_f32() * 1000.0;
+            state.match_state.network_quality.record_tick(tick_ms);
             #[cfg(feature = "telemetry-dashboard")]
             {
-                let tick_ms = telemetry_advance_started.elapsed().as_secs_f32() * 1000.0;
                 let tick = rt.simulation.session().tick();
                 let entities = rt.simulation.entities().len();
                 let houses = rt.simulation.houses().len();

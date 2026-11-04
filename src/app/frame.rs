@@ -248,6 +248,7 @@ impl App {
                 }
             }
         }
+        crate::app::match_runtime::network_quality::observe_pass(state);
         result
     }
 
@@ -1513,10 +1514,18 @@ impl App {
             .queue
             .submit(std::iter::once(encoder.finish()));
         output.present(&state.renderer.gpu.queue);
+        let presented_at = Instant::now();
+        let battlefield = state.frontend.screen == GameScreen::InGame;
         state
             .platform
             .frame_pacer
-            .record_presented(Instant::now(), state.frontend.screen == GameScreen::InGame);
+            .record_presented(presented_at, battlefield);
+        if battlefield {
+            state
+                .match_state
+                .network_quality
+                .record_present(presented_at);
+        }
         if let Some(completed) = state
             .match_state
             .match_diagnostics
