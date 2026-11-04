@@ -188,6 +188,24 @@ pub(crate) fn cameo_click_with_queue(
     result
 }
 
+/// VERA's own Shift + right click on a running build: abandon it and every
+/// queued copy at once (`EVA_Canceled`, ABANDON_ALL), where gamemd's
+/// `0x006AAFE1..0x006AB02A` only holds it and a second press cancels.
+///
+/// Not native. The caller applies it only while the player's
+/// `[VERA] ShiftQueue=` option is on, so the default stays the ported click.
+pub(crate) fn shift_right_cancels_running(click: CameoClick, press: CameoPress) -> CameoClick {
+    if press == (CameoPress::Right { shift: true }) && click.order == Some(CameoOrder::Suspend) {
+        CameoClick {
+            eva: Some(EVA_CANCELED),
+            order: Some(CameoOrder::Abandon { all: true }),
+            ..click
+        }
+    } else {
+        click
+    }
+}
+
 /// RTTI 7 (BuildingType): the structure and defense strips.
 fn is_structure_strip(category: ProductionCategory) -> bool {
     matches!(
@@ -418,5 +436,27 @@ mod tests {
             shift_queue_repeat_with_queue(ProductionCategory::Building, None, true, 5, false),
             1
         );
+    }
+
+    #[test]
+    fn shift_right_on_a_running_build_abandons_every_copy() {
+        let running = cameo_click(
+            &[],
+            ProductionCategory::Infantry,
+            None,
+            Some(BuildQueueState::Building),
+            None,
+            CameoPress::Right { shift: true },
+            false,
+        );
+        assert_eq!(running.order, Some(CameoOrder::Suspend), "native holds");
+        let vera = shift_right_cancels_running(running, CameoPress::Right { shift: true });
+        assert_eq!(vera.order, Some(CameoOrder::Abandon { all: true }));
+        assert_eq!(vera.eva, Some(EVA_CANCELED));
+        assert!(vera.sound && vera.clear_building_placement);
+
+        // A plain right press still only holds.
+        let plain = CameoPress::Right { shift: false };
+        assert_eq!(shift_right_cancels_running(running, plain), running);
     }
 }

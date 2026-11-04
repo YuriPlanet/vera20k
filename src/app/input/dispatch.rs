@@ -1091,7 +1091,7 @@ pub(crate) fn sidebar_scroll_command(state: &mut AppState, action: WheelAction) 
 }
 
 /// The local player's queue of record, in queue order (empty without a sim).
-fn local_queue_view(state: &AppState) -> Vec<crate::sim::production::QueueItemView> {
+pub(crate) fn local_queue_view(state: &AppState) -> Vec<crate::sim::production::QueueItemView> {
     let Some(owner) = preferred_local_owner_name(state) else {
         return Vec::new();
     };
@@ -1198,6 +1198,37 @@ fn sidebar_cameo_press(
         at_build_limit,
         building_production_queue,
     );
+    // VERA's own modifiers, all behind the Options page's Shift-Click Batch
+    // Queue (`[VERA] ShiftQueue=`): Shift + right cancels a running build and
+    // its copies at once; Ctrl + left builds a mobile type endlessly, and a
+    // second Ctrl + left or any cancel ends that.
+    let vera_keys = state.persistence.options_profile.shift_queue;
+    let click = if vera_keys {
+        sidebar_eva::shift_right_cancels_running(click, press)
+    } else {
+        click
+    };
+    let ctrl_repeat = vera_keys
+        && press == sidebar_eva::CameoPress::Left
+        && is_ctrl_held(state)
+        && super::build_repeat::repeats(category);
+    let repeat = &mut state.match_state.input.build_repeat;
+    if ctrl_repeat && repeat.stop(type_id) {
+        let sound = state
+            .rules()
+            .and_then(|rules| rules.general.gui_build_sound.clone());
+        crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        return;
+    }
+    match click.order {
+        Some(sidebar_eva::CameoOrder::Produce) if ctrl_repeat => {
+            repeat.toggle(type_id);
+        }
+        Some(sidebar_eva::CameoOrder::Abandon { .. }) => {
+            repeat.stop(type_id);
+        }
+        _ => {}
+    }
     if click.clear_building_placement {
         state.match_state.input.cancel_building_placement();
     }
