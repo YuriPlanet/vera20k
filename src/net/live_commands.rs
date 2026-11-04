@@ -20,6 +20,8 @@ pub use sequenced::{
     SequencedError, SequencedTiming,
 };
 pub use startup::{StartupAgreement, StartupError};
+/// The relay's turn length, which online playout follows.
+pub use vera20k_relay_protocol::turn_frames;
 
 use crate::sim::world::{NetworkCommandQueues, NetworkQueueContext, NetworkQueuePass};
 

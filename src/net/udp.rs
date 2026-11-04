@@ -701,6 +701,15 @@ impl LanUdpTransport {
         })
     }
 
+    /// See `ClientSession::report_ordering_checksums`.
+    pub fn report_ordering_checksums(&mut self, samples: &[(u32, u32)]) -> io::Result<()> {
+        self.send_ordering(|route| {
+            route
+                .session
+                .report_ordering_checksums(samples, &mut route.encoded)
+        })
+    }
+
     pub fn leave_ordering(&mut self) -> io::Result<()> {
         self.send_ordering(|route| route.session.leave_ordering(&mut route.encoded))
     }
@@ -879,6 +888,18 @@ struct RelayRoute {
     // lease or new path, which the relay starts without its push subscription.
     confirmations: u64,
     retiring: Option<RelayRetirement>,
+}
+
+// One relay datagram may pack a turn's or a whole repair page's entries.
+const ORDERING_INBOX_EVENTS: usize = 1024;
+
+impl RelayRoute {
+    fn push_ordering(&mut self, event: vera20k_relay_protocol::OrderEvent, received_at: Instant) {
+        if self.ordering_inbox.len() < ORDERING_INBOX_EVENTS {
+            self.ordering_inbox
+                .push_back(ReceivedOrderEvent { event, received_at });
+        }
+    }
 }
 
 struct RelayRetirement {
@@ -1589,7 +1610,9 @@ fn drain_socket(
                         }
                         continue;
                     }
-                    ServerEvent::Payload { .. } | ServerEvent::Ordering(_) => {
+                    ServerEvent::Payload { .. }
+                    | ServerEvent::Ordering(_)
+                    | ServerEvent::OrderingPack(_) => {
                         unreachable!("candidate is promoted on READY")
                     }
                 }
@@ -1597,10 +1620,13 @@ fn drain_socket(
             match route.session.receive(&bytes[..length]) {
                 Ok(ServerEvent::Ordering(event)) => {
                     route.last_response = Some(now_ticks);
-                    if route.ordering_inbox.len() < 256 {
-                        route
-                            .ordering_inbox
-                            .push_back(ReceivedOrderEvent { event, received_at });
+                    route.push_ordering(event, received_at);
+                    continue;
+                }
+                Ok(ServerEvent::OrderingPack(events)) => {
+                    route.last_response = Some(now_ticks);
+                    for event in events {
+                        route.push_ordering(event, received_at);
                     }
                     continue;
                 }

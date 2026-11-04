@@ -6,6 +6,8 @@
 //! Player DATA crosses the same links. Synchronized pause is not federated.
 //! Pacing is: the others forward their players' pace reports to the
 //! coordinator, whose rate changes reach them as entries in frame order.
+//! So are checksums: the others forward their players' reports, and only
+//! the coordinator compares them and decides a desync.
 
 use super::*;
 
@@ -28,6 +30,12 @@ const PACE_KIND: u8 = 2;
 const PACE_FORWARD_MS: u64 = 500;
 // source, pace, LE frames run u16, LE tick cost u32 (0: none), LE age u32.
 const PACE_FORWARD_ENTRY: usize = 12;
+// A follower's players' checksum reports, for the coordinator: source,
+// LE sample frame u32, LE checksum u32.
+const CHECKSUM_KIND: u8 = 3;
+const CHECKSUM_FORWARD_ENTRY: usize = 9;
+// Reports a follower holds for one link pass; 64 fit one link datagram.
+pub(super) const FORWARD_CHECKSUMS: usize = 64;
 const FRAME_HEADER: usize = 86;
 const ENTRY_HEADER: usize = 15;
 // A seal sends at once; this only paces startup, acks and clock samples.
@@ -147,6 +155,8 @@ pub(super) struct LinkView {
     pub sealed: u32,
     // A follower's forwarded pace reports, encoded.
     pub paces: Vec<u8>,
+    // A follower's players' checksum reports since its last pass.
+    pub checksums: Vec<(u8, u32, u32)>,
 }
 
 struct Link {
@@ -646,7 +656,51 @@ impl Federation {
                 self.paces_sent_ms = Some(now_ms);
             }
         }
+        // Each client report repeats the sample before, so a lost link
+        // datagram loses none; they go at the pass they arrive in.
+        if self.own != 0
+            && !view.checksums.is_empty()
+            && let Some(position) = self
+                .links
+                .iter()
+                .position(|link| link.index == 0 && !link.lost)
+        {
+            let mut payload = vec![view.checksums.len() as u8];
+            for &(source, frame, checksum) in &view.checksums {
+                payload.push(source);
+                payload.extend_from_slice(&frame.to_le_bytes());
+                payload.extend_from_slice(&checksum.to_le_bytes());
+            }
+            if let Ok(datagram) = self.packet(position, CHECKSUM_KIND, &payload) {
+                output.push(datagram);
+            }
+        }
         output
+    }
+
+    /// The coordinator compares a follower's forwarded checksum reports
+    /// with its own.
+    fn receive_checksums(
+        &self,
+        position: usize,
+        payload: &[u8],
+        ordering: &mut OrderingRoom,
+    ) -> Result<(), RelayError> {
+        let count = usize::from(*payload.first().ok_or(RelayError::Malformed)?);
+        if self.own != 0 || payload.len() != 1 + count * CHECKSUM_FORWARD_ENTRY {
+            return Err(RelayError::Malformed);
+        }
+        let sources = self.links[position].sources;
+        if payload[1..]
+            .chunks_exact(CHECKSUM_FORWARD_ENTRY)
+            .any(|entry| entry[0] >= MAX_PEERS || sources & (1 << entry[0]) == 0)
+        {
+            return Err(RelayError::Malformed);
+        }
+        for entry in payload[1..].chunks_exact(CHECKSUM_FORWARD_ENTRY) {
+            ordering.record_checksum(entry[0], read_u32(entry, 1), read_u32(entry, 5), true);
+        }
+        Ok(())
     }
 
     /// The coordinator stores a follower's forwarded reports as its own.
@@ -715,12 +769,17 @@ impl Federation {
                 payload[offset + 14],
             ]));
             let end = offset + ENTRY_HEADER + length;
-            // The coordinator's rate change: LE rate u16 and the slow source.
-            let rate_change = source == RATE_SOURCE && from_coordinator;
+            // The coordinator's control entries: a rate change, LE rate u16
+            // and the slow source, or a desync record's tail.
+            let control = source == CONTROL_SOURCE && from_coordinator;
             if payload.len() < end
                 || frame == 0
-                || if rate_change {
-                    batch_id != u64::MAX || length != 3
+                || if control {
+                    match batch_id {
+                        RATE_BATCH => length != 3,
+                        DESYNC_BATCH => length != DESYNC_TAIL,
+                        _ => true,
+                    }
                 } else if source >= MAX_PEERS || sources & (1 << source) == 0 {
                     true
                 } else if batch_id == 0 {
@@ -875,6 +934,12 @@ impl RelayServer {
                 }
                 Ok(Vec::new())
             }
+            CHECKSUM_KIND => {
+                if let Some(ordering) = room.ordering.as_mut() {
+                    federation.receive_checksums(position, payload, ordering)?;
+                }
+                Ok(Vec::new())
+            }
             _ => Err(RelayError::Malformed),
         }
     }
@@ -890,7 +955,7 @@ impl RelayServer {
             if let Some(ordering) = room.ordering.as_mut() {
                 federation.coordinate(ordering, now_ms);
             }
-            let view = match room.ordering.as_ref() {
+            let view = match room.ordering.as_mut() {
                 Some(ordering) => LinkView {
                     ready: ordering.ready,
                     agreement: ordering.agreement,
@@ -903,6 +968,7 @@ impl RelayServer {
                     } else {
                         ordering.local_paces(federation.local(), now_ms)
                     },
+                    checksums: std::mem::take(&mut ordering.forward_checksums),
                 },
                 None => LinkView {
                     ready: 0,
@@ -911,6 +977,7 @@ impl RelayServer {
                     starts_at: None,
                     sealed: 0,
                     paces: Vec::new(),
+                    checksums: Vec::new(),
                 },
             };
             let datagrams = federation.frames(&view, now_ms);
@@ -938,6 +1005,8 @@ mod tests {
     use super::*;
 
     const LINK_MS: u64 = 88;
+    // `Match::stream`'s source for a DESYNC record.
+    const DESYNC_MARK: u8 = u8::MAX - 1;
     // Relay B's process clock runs this far ahead of A's.
     const CLOCK_B: u64 = 1000;
 
@@ -1092,7 +1161,10 @@ mod tests {
                 .unwrap();
         }
 
-        /// The merged stream a relay's player reads, without sequence gaps.
+        /// The merged stream a relay's player reads, without sequence gaps. A
+        /// rate marker reads `(CONTROL_SOURCE, rate << 8 | slow source)`, a
+        /// desync `(DESYNC_MARK, sample frame << 40 | outlier << 32 | its
+        /// checksum)`.
         fn stream(&mut self, relay: usize) -> Vec<(u64, u32, Option<(u8, u64)>)> {
             let clock = self.clock(relay);
             let mut entries: Vec<(u64, u32, Option<(u8, u64)>)> = Vec::new();
@@ -1131,9 +1203,26 @@ mod tests {
                         sequence,
                         frame,
                         Some((
-                            RATE_SOURCE,
+                            CONTROL_SOURCE,
                             u64::from(frames_per_second) << 8
-                                | u64::from(source.unwrap_or(RATE_SOURCE)),
+                                | u64::from(source.unwrap_or(CONTROL_SOURCE)),
+                        )),
+                    )),
+                    OrderEvent::Entry(OrderEntry::Desync {
+                        sequence,
+                        frame,
+                        sample_frame,
+                        outlier,
+                        outlier_checksum,
+                        ..
+                    }) => Some((
+                        sequence,
+                        frame,
+                        Some((
+                            DESYNC_MARK,
+                            u64::from(sample_frame) << 40
+                                | u64::from(outlier) << 32
+                                | u64::from(outlier_checksum),
                         )),
                     )),
                     _ => None,
@@ -1144,6 +1233,17 @@ mod tests {
                 }
                 entries.extend(page);
             }
+        }
+
+        fn checksums(&mut self, relay: usize, samples: &[(u32, u32)]) {
+            let clock = self.clock(relay);
+            let mut bytes = Vec::new();
+            self.clients[relay]
+                .report_ordering_checksums(samples, &mut bytes)
+                .unwrap();
+            self.relays[relay]
+                .process_at(endpoint(&self.clients[relay]), &bytes, unix(clock), clock)
+                .unwrap();
         }
 
         fn pace(&mut self, relay: usize, pace: OrderPace, frames_per_second: u16) {
@@ -1191,10 +1291,11 @@ mod tests {
             "both relays seal on one timeline"
         );
         for own in latency {
-            // A seal wait of at most one 45 Hz frame, then one way to the
-            // other relay; a single central relay costs a full round trip.
+            // A seal wait of at most one 45 Hz turn of three frames, then one
+            // way to the other relay; a single central relay costs a full
+            // round trip.
             assert!(
-                (LINK_MS..=LINK_MS + 24).contains(&own),
+                (LINK_MS..=LINK_MS + 68).contains(&own),
                 "own command took {own} ms"
             );
         }
@@ -1243,7 +1344,22 @@ mod tests {
         game.pace(1, Behind, 40);
         for _ in 0..1500 {
             game.step();
+            // Both relays seal whole turns from the same anchor.
+            for relay in 0..2 {
+                let ordering = game.ordering(relay);
+                let (anchor, _) = ordering.pace.federated_anchor.unwrap_or((0, 0));
+                assert_eq!(
+                    (ordering.sealed - anchor) % turn_frames(ordering.pace.rate),
+                    0,
+                    "relay {relay} sealed {} from {anchor}",
+                    ordering.sealed
+                );
+            }
         }
+        assert_eq!(
+            game.ordering(0).pace.federated_anchor,
+            game.ordering(1).pace.federated_anchor
+        );
         assert_eq!(
             [game.ordering(0).pace.rate, game.ordering(1).pace.rate],
             [30, 30]
@@ -1260,10 +1376,38 @@ mod tests {
         assert_eq!(streams[0], streams[1], "one canonical stream");
         let markers: Vec<_> = streams[0]
             .iter()
-            .filter(|(.., entry)| entry.is_some_and(|(source, _)| source == RATE_SOURCE))
+            .filter(|(.., entry)| entry.is_some_and(|(source, _)| source == CONTROL_SOURCE))
             .map(|(_, _, entry)| entry.unwrap().1)
             .collect();
         assert_eq!(markers, [30 << 8 | 1], "slowed to 30 for source 1");
+    }
+
+    /// Only the coordinator compares checksums: a follower forwards its
+    /// player's, and both relays emit the coordinator's one DESYNC record
+    /// after the same frame.
+    #[test]
+    fn both_relays_emit_the_coordinators_desync_after_the_same_frame() {
+        let mut game = Match::new(false);
+        while game.ordering(0).sealed < 10 || game.ordering(1).sealed < 10 {
+            game.step();
+        }
+        game.checksums(0, &[(15, 1)]);
+        game.checksums(1, &[(15, 2)]);
+        for _ in 0..500 {
+            game.step();
+        }
+        let streams = [game.stream(0), game.stream(1)];
+        assert_eq!(streams[0], streams[1], "one canonical stream");
+        let desyncs: Vec<_> = streams[0]
+            .iter()
+            .filter_map(|&(_, _, entry)| entry.filter(|(source, _)| *source == DESYNC_MARK))
+            .map(|(_, desync)| desync)
+            .collect();
+        assert_eq!(
+            desyncs,
+            [15 << 40 | 1 << 32 | 2],
+            "the later reporter, of two"
+        );
     }
 
     #[test]

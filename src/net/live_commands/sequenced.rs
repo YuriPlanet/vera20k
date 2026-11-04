@@ -22,7 +22,11 @@ const BUFFERED_FRAMES: usize = 64;
 const REORDER_WINDOW: u64 = 256;
 const MAX_FRAME_RECORDS: usize = 4096;
 const SAMPLE_HISTORY: usize = 4096;
-const BATCH_HEADER: usize = 9;
+// A batch's version byte before its EventPacketCodec packet.
+const BATCH_HEADER: usize = 1;
+const BATCH_VERSION: u8 = 2;
+// Every this many frames each PC reports its post-Logic checksum to the relay.
+const CHECKSUM_INTERVAL: u32 = 15;
 const PUSH_PROBE_INTERVAL_MS: i32 = 500;
 const PUSH_REPROBE_INTERVAL_MS: i32 = 5_000;
 const PUSH_WATERMARK_INTERVAL_MS: i32 = 100;
@@ -57,7 +61,7 @@ pub struct DeliveryCounters {
     pub round_trips: u64,
     pub round_trip_total_ms: u64,
     pub round_trip_max_ms: u64,
-    /// The first sampled frame whose checksums differed.
+    /// The sampled frame whose checksums differed, from the relay's DESYNC.
     pub desync_frame: Option<u32>,
 }
 
@@ -278,16 +282,25 @@ struct Submission {
     last_sent: Option<u32>,
 }
 
+/// The relay's DESYNC record: the sampled frame and the outlier's and the
+/// other side's source and checksum.
+#[derive(Debug, Clone, Copy)]
+struct RelayDesync {
+    sample_frame: u32,
+    outlier: (u8, u32),
+    other: (u8, u32),
+}
+
 #[derive(Debug, Default)]
 struct CommittedFrame {
     frame: u32,
     records: Vec<CommandRecord>,
-    // Each batch's (House, sample frame, checksum).
-    reports: Vec<(i8, u32, u32)>,
     // Remote Houses whose connection the relay ended in this frame.
     lost: Vec<i8>,
     // A rate marker after the previous frame.
     speed: Option<MatchSpeedChange>,
+    // A DESYNC record after the previous frame ends the match here.
+    desync: Option<RelayDesync>,
 }
 
 #[derive(Debug)]
@@ -351,7 +364,7 @@ pub(super) struct SequencedSession {
     submissions: VecDeque<Submission>,
     sample_sent: Option<u32>,
     // Derived checksum samples from immutable post-Logic contexts, evicted in
-    // frame order. Late reports outside this cache are not compared to aliases.
+    // frame order: the reports to the relay, and this PC's side of a desync.
     samples: VecDeque<(u32, u32)>,
     current: Option<(NetworkQueueContext, bool)>,
     sent_commands: u64,
@@ -990,7 +1003,8 @@ impl SequencedSession {
                     OrderEntry::FrameEnd { sequence, .. }
                     | OrderEntry::Departure { sequence, .. }
                     | OrderEntry::Pause { sequence, .. }
-                    | OrderEntry::Rate { sequence, .. } => *sequence,
+                    | OrderEntry::Rate { sequence, .. }
+                    | OrderEntry::Desync { sequence, .. } => *sequence,
                 };
                 if sequence >= self.next_sequence && sequence - self.next_sequence < REORDER_WINDOW
                 {
@@ -1119,7 +1133,7 @@ impl SequencedSession {
                     let decoded = bytes
                         .as_ref()
                         .and_then(|bytes| decode_batch(bytes.as_bytes(), house, frame).ok());
-                    let Some((records, (sample_frame, checksum))) = decoded else {
+                    let Some(records) = decoded else {
                         // VERA relay adaptation: every client reads the same
                         // ordered bytes, so each refuses the same batch. Its
                         // sender leaves at this frame, as by Leave, instead
@@ -1142,9 +1156,6 @@ impl SequencedSession {
                         return Err(SequencedError::QueueFull);
                     }
                     self.assembling.records.extend(records);
-                    self.assembling
-                        .reports
-                        .push((house, sample_frame, checksum));
                 }
                 OrderEntry::Departure {
                     frame,
@@ -1235,7 +1246,6 @@ impl SequencedSession {
                 } => {
                     if frame.checked_add(1) != Some(self.assembling.frame)
                         || !self.assembling.records.is_empty()
-                        || !self.assembling.reports.is_empty()
                         || epoch.checked_sub(1) != Some(self.pause.epoch)
                         || paused == self.pause.paused
                         || self.houses[usize::from(source)].is_none()
@@ -1274,7 +1284,6 @@ impl SequencedSession {
                     let slowed_by = source.map(|source| self.houses[usize::from(source)]);
                     if frame.checked_add(1) != Some(self.assembling.frame)
                         || !self.assembling.records.is_empty()
-                        || !self.assembling.reports.is_empty()
                         || !paced_rates(self.fps).contains(&frames_per_second)
                         || frames_per_second == self.pace_fps
                         || slowed_by.is_some() != (frames_per_second < self.pace_fps)
@@ -1295,9 +1304,54 @@ impl SequencedSession {
                         clock_epoch: self.pause.epoch,
                     });
                 }
+                OrderEntry::Desync {
+                    frame,
+                    sample_frame,
+                    outlier,
+                    outlier_checksum,
+                    other,
+                    other_checksum,
+                    ..
+                } => {
+                    if frame.checked_add(1) != Some(self.assembling.frame)
+                        || !self.assembling.records.is_empty()
+                        || self.houses[usize::from(outlier)].is_none()
+                        || self.houses[usize::from(other)].is_none()
+                    {
+                        return Err(SequencedError::InvalidTimeline);
+                    }
+                    self.assembling.desync = Some(RelayDesync {
+                        sample_frame,
+                        outlier: (outlier, outlier_checksum),
+                        other: (other, other_checksum),
+                    });
+                }
             }
         }
         Ok(())
+    }
+
+    /// The relay's desync from this PC's side: the House it differs from
+    /// (the outlier, or the other side when this PC is the outlier), this
+    /// PC's own sample when it holds one, and that House's checksum.
+    fn desync_error(&self, desync: RelayDesync) -> SequencedError {
+        let ((source, remote), (_, reported)) = if desync.outlier.0 == self.local_source {
+            (desync.other, desync.outlier)
+        } else {
+            (desync.outlier, desync.other)
+        };
+        let local = self
+            .samples
+            .iter()
+            .rev()
+            .find(|(frame, _)| *frame == desync.sample_frame)
+            .map_or(reported, |&(_, checksum)| checksum);
+        SequencedError::Desync {
+            frame: desync.sample_frame,
+            house: self.houses[usize::from(source)].expect("validated desync source"),
+            local,
+            remote,
+        }
     }
 
     /// Service fresh input without another Logic visit. The current context
@@ -1361,16 +1415,31 @@ impl SequencedSession {
                 .map_err(super::CommandExchangeError::from)?;
             self.sent_commands += pending.records.len() as u64;
         }
+        // The relay compares every PC's post-Logic checksum of each sampled
+        // frame (relay README, Checksums). The previous sample goes again,
+        // so one lost report loses nothing.
+        if context.frame % CHECKSUM_INTERVAL == 0 && self.sample_sent != Some(context.frame) {
+            let mut reports = vec![(context.frame, context.checksum)];
+            reports.extend(
+                self.samples
+                    .iter()
+                    .rev()
+                    .find(|(frame, _)| *frame + CHECKSUM_INTERVAL == context.frame)
+                    .copied(),
+            );
+            if transport.report_ordering_checksums(&reports).is_ok() {
+                self.sample_sent = Some(context.frame);
+            }
+        }
         // Unacknowledged records remain the authoritative OutList prefix.
         // Encode only its not-yet-sealed suffix; do not mirror or requeue it.
-        let sample_due = context.frame % 15 == 0 && self.sample_sent != Some(context.frame);
         if self.submissions.len()
             < vera20k_relay_protocol::ClientSession::ORDERING_SUBMISSION_WINDOW
         {
             let records = queues
                 .local_records_after(self.submissions.iter().flat_map(|batch| &batch.records))
                 .map_err(super::CommandExchangeError::from)?;
-            if !records.is_empty() || sample_due {
+            if !records.is_empty() {
                 if records
                     .iter()
                     .any(|record| !gameplay_opcode(record.opcode()))
@@ -1391,30 +1460,25 @@ impl SequencedSession {
                         ORDERING_BATCH_CAPACITY - BATCH_HEADER,
                     )
                     .map_err(super::CommandExchangeError::from)?;
-                if !records.is_empty() && encoded.mirrors.is_empty() {
+                if encoded.mirrors.is_empty() {
                     return Err(SequencedError::InvalidTimeline.into());
                 }
                 let mut bytes = Vec::with_capacity(ORDERING_BATCH_CAPACITY);
-                bytes.push(1);
-                bytes.extend(context.frame.to_le_bytes());
-                bytes.extend(context.checksum.to_le_bytes());
+                bytes.push(BATCH_VERSION);
                 bytes.extend(encoded.bytes);
-                self.sample_sent = Some(context.frame);
                 let next_batch = self
                     .next_batch
                     .checked_add(1)
                     .ok_or(SequencedError::InvalidTimeline)?;
-                if !encoded.mirrors.is_empty() {
-                    if self.command_traces.len() == COMMAND_TRACE_HISTORY {
-                        self.command_traces.pop_front();
-                    }
-                    self.command_traces.push_back(CommandDeliveryTrace {
-                        batch_id: self.next_batch,
-                        sent_at: None,
-                        assigned: None,
-                        frame_received_at: None,
-                    });
+                if self.command_traces.len() == COMMAND_TRACE_HISTORY {
+                    self.command_traces.pop_front();
                 }
+                self.command_traces.push_back(CommandDeliveryTrace {
+                    batch_id: self.next_batch,
+                    sent_at: None,
+                    assigned: None,
+                    frame_received_at: None,
+                });
                 self.submissions.push_back(Submission {
                     id: self.next_batch,
                     records: encoded.mirrors,
@@ -1490,11 +1554,11 @@ impl SequencedSession {
             return Ok(NetworkQueuePass::Waiting);
         }
         let frame = self.frames.pop_front().unwrap();
-        if let Err(error) = compare_reports(&self.samples, &frame.reports) {
-            if let SequencedError::Desync { frame: desync, .. } = error {
-                self.delivery.desync_frame.get_or_insert(desync);
-            }
-            return Err(error.into());
+        if let Some(desync) = frame.desync {
+            self.delivery
+                .desync_frame
+                .get_or_insert(desync.sample_frame);
+            return Err(self.desync_error(desync).into());
         }
         for record in frame.records {
             if !queues.admit_received(record) {
@@ -1512,28 +1576,6 @@ impl SequencedSession {
     }
 }
 
-/// Compare each batch's checksum report with this client's own sample of that
-/// frame; the first that differs is a desync. A report for a frame the sample
-/// cache no longer holds is not compared.
-fn compare_reports(
-    samples: &VecDeque<(u32, u32)>,
-    reports: &[(i8, u32, u32)],
-) -> Result<(), SequencedError> {
-    for &(house, frame, remote) in reports {
-        if let Some(&(_, local)) = samples.iter().find(|(sample, _)| *sample == frame)
-            && remote != local
-        {
-            return Err(SequencedError::Desync {
-                frame,
-                house,
-                local,
-                remote,
-            });
-        }
-    }
-    Ok(())
-}
-
 fn gameplay_opcode(opcode: u8) -> bool {
     !matches!(
         opcode,
@@ -1549,16 +1591,13 @@ fn roster_mask(houses: &[Option<i8>; 30]) -> u32 {
         .fold(0, |m, (s, _)| m | (1 << s))
 }
 
-fn decode_batch(
-    bytes: &[u8],
-    house: i8,
-    frame: u32,
-) -> Result<(Vec<CommandRecord>, (u32, u32)), SequencedError> {
-    if bytes.len() < BATCH_HEADER + 14 || bytes.len() > ORDERING_BATCH_CAPACITY || bytes[0] != 1 {
+fn decode_batch(bytes: &[u8], house: i8, frame: u32) -> Result<Vec<CommandRecord>, SequencedError> {
+    if bytes.len() < BATCH_HEADER + 14
+        || bytes.len() > ORDERING_BATCH_CAPACITY
+        || bytes[0] != BATCH_VERSION
+    {
         return Err(SequencedError::InvalidTimeline);
     }
-    let sample_frame = u32::from_le_bytes(bytes[1..5].try_into().unwrap());
-    let checksum = u32::from_le_bytes(bytes[5..9].try_into().unwrap());
     let packet = &bytes[BATCH_HEADER..];
     if decode_frame_info(packet).is_none_or(|info| info.house_id != house || info.event_frame != 0)
     {
@@ -1588,7 +1627,7 @@ fn decode_batch(
     {
         return Err(SequencedError::InvalidTimeline);
     }
-    Ok((records, (sample_frame, checksum)))
+    Ok(records)
 }
 
 #[cfg(test)]
@@ -1608,20 +1647,63 @@ mod service_clock_tests {
 
 #[cfg(test)]
 mod desync_tests {
-    use super::{VecDeque, compare_reports};
+    use super::*;
 
-    /// The log names the House whose report differs and both checksums, so
-    /// each player's log shows which side went out of sync.
+    /// The relay's DESYNC ends the match in the frame after it. The log
+    /// names the outlier's House against this PC's own sample, or the other
+    /// side's House when this PC is the outlier.
     #[test]
-    fn a_differing_report_names_its_house_and_both_checksums() {
-        let samples = VecDeque::from([(40, 0x1111), (41, 0x2222)]);
-        // Equal reports, and one for a frame no longer sampled, both pass.
-        assert!(compare_reports(&samples, &[(0, 41, 0x2222), (1, 39, 0x9999)]).is_ok());
-        let error = compare_reports(&samples, &[(0, 40, 0x1111), (1, 41, 0x2a2a)]).unwrap_err();
+    fn a_relay_desync_names_the_house_this_pc_differs_from() {
+        let mut houses = [None; 30];
+        houses[..3].copy_from_slice(&[Some(0), Some(4), Some(2)]);
+        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        session.samples.push_back((15, 0x1111));
+        for entry in [
+            OrderEntry::FrameEnd {
+                sequence: 1,
+                frame: 1,
+            },
+            OrderEntry::Desync {
+                sequence: 2,
+                frame: 1,
+                sample_frame: 15,
+                outlier: 1,
+                outlier_checksum: 0x2a2a,
+                other: 2,
+                other_checksum: 0x1110,
+            },
+            OrderEntry::FrameEnd {
+                sequence: 3,
+                frame: 2,
+            },
+        ] {
+            session
+                .receive(OrderEvent::Entry(entry), Instant::now())
+                .unwrap();
+        }
+        session.assemble().unwrap();
+        let desyncs: Vec<_> = session
+            .frames
+            .iter()
+            .map(|frame| frame.desync.is_some())
+            .collect();
+        assert_eq!(desyncs, [false, true]);
+        let desync = session.frames[1].desync.unwrap();
         assert_eq!(
-            error.to_string(),
-            "online simulation differs for house 1 at frame 41: \
-             local 0x00002222, remote 0x00002a2a"
+            session.desync_error(desync).to_string(),
+            "online simulation differs for house 4 at frame 15: \
+             local 0x00001111, remote 0x00002a2a"
+        );
+        // Without its own sample, the outlier's local value is its report.
+        session.samples.clear();
+        let outlier = RelayDesync {
+            outlier: (0, 0x2a2a),
+            ..desync
+        };
+        assert_eq!(
+            session.desync_error(outlier).to_string(),
+            "online simulation differs for house 2 at frame 15: \
+             local 0x00002a2a, remote 0x00001110"
         );
     }
 }
@@ -1994,10 +2076,11 @@ mod departure_tests {
             replies
                 .unwrap()
                 .into_iter()
-                .filter_map(|reply| match client.receive(&reply.bytes).unwrap() {
-                    ServerEvent::Ordering(event) => Some(Ok(event)),
-                    ServerEvent::Challenge(cookie) => Some(Err(cookie.to_vec())),
-                    _ => None,
+                .flat_map(|reply| match client.receive(&reply.bytes).unwrap() {
+                    ServerEvent::Ordering(event) => vec![Ok(event)],
+                    ServerEvent::OrderingPack(events) => events.into_iter().map(Ok).collect(),
+                    ServerEvent::Challenge(cookie) => vec![Err(cookie.to_vec())],
+                    _ => Vec::new(),
                 })
                 .collect::<Vec<_>>()
         };
@@ -2051,7 +2134,7 @@ mod departure_tests {
         let mut houses = [None; 30];
         houses[..2].copy_from_slice(&[Some(0), Some(1)]);
         let mut session = SequencedSession::with_roster(houses, 0, [7; 32], 30);
-        for event in events(&mut clients[0], &bytes, 300) {
+        for event in events(&mut clients[0], &bytes, 400) {
             if let Ok(event @ OrderEvent::Entry(_)) = event {
                 session.receive(event, Instant::now()).unwrap();
             }
