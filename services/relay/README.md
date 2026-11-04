@@ -91,8 +91,8 @@ These counts contain no player, endpoint, room identity, ticket or packet conten
 Use them to distinguish rate limits, expired grants and authentication failures
 from packet loss and client timeouts.
 
-Modern ordering uses authenticated control kind4 and a lobby-signed `VO1C`
-certificate (see `../../docs/lobby-protocol.md`). Every source that becomes ready
+Modern ordering uses authenticated control kind4 and a lobby-signed `VO1C` or
+`VO2C` certificate (see `../../docs/lobby-protocol.md`). Every source that becomes ready
 certifies the same initial world; fixed FPS deadlines then commit encrypted
 batches sorted by source and
 batch ID, followed by an explicit frame end. An absent input contributes nothing.
@@ -129,17 +129,26 @@ the last explicit Leave appends a resume marker so the departure tail can finish
 
 Pace: clients send ordering request6 about once a second with no reply,
 `[pace][frames run per second, LE u16]`, pace 0 keeping up, 1 behind, 2 catching
-up; the first one advertises reading rate markers. Once every active source has
-reported, a fresh behind report (at most 3 seconds old) slows the clock to the
-fastest Game Speed rate at most nine tenths of what that source ran, at least
-one row slower and at most two rows below the certificate's rate. Each change
-appends an authenticated rate marker after the current head's frame end,
-`[10][seq][frame][rate LE u16][source]`, source 255 for a raise; later frames are
-due at the new rate from that moment. Changes are at least 5 seconds apart.
-After 30 seconds with no fresh behind or catching-up report the clock tries one
-row faster; a slowdown within 30 seconds of a raise doubles that wait, up to 5
-minutes. Pauses displace these times like the start. Status keeps the
-certificate's rate. Federated rooms keep the certificate's rate. The relay's
+up; the first one advertises reading rate markers. Under a `VO2C` certificate
+clients append their recent 90th-percentile simulation tick cost, `[LE u32 µs]`;
+older relays drop that longer report, so clients send it only under `VO2C`. A
+reporter holds the fastest rate its tick cost fits into four fifths of a second
+(legacy reports: nine tenths of what it ran). A fresh behind report (at most 3
+seconds old) from a player who cannot hold the current rate slows the clock to
+the fastest Game Speed rate that player holds, at least one row slower and at
+most two rows below the certificate's rate; a tick-cost reporter that holds the
+rate only draws slowly and catches up on its own. Under `VO1C` every active
+source must have reported, so no released client meets a marker it cannot read;
+under `VO2C` silent sources are ignored, and a certificate whose pacing flag is
+off keeps its rate. Each change appends an authenticated rate marker after the
+current head's frame end, `[10][seq][frame][rate LE u16][source]`, source 255
+for a raise; later frames are due at the new rate from that moment. Changes are
+at least 5 seconds apart. After 30 seconds with no fresh behind or catching-up
+report, and while every tick-cost reporter holds the next faster rate, the clock
+tries one row faster; a slowdown within 30 seconds of a raise doubles that wait,
+up to 5 minutes. Pauses displace these times like the start. Status keeps the
+certificate's rate. In a federated room the coordinator decides from every
+relay's reports (see below). The relay's
 per-minute journal line counts the slowdowns as `slowdowns`, the raises as
 `raises`, and the reports of a player catching up or behind, about a second of
 catching up each, as `catching_up_s`. A paused, rejoining or hidden game
@@ -160,7 +169,14 @@ every relay delivers the same stream and sequence numbers. Player DATA to a remo
 first roster relay picks the start time from measured link round trips; the
 others follow its clock offset. Only it cancels a startup: another relay's Leave
 before the start asks it to, and becomes a frame-1 departure if the start was
-already on its way. Federated rooms cannot pause. Link packets go to the roster
+already on its way. Federated rooms cannot pause. The other relays forward
+their players' latest pace reports to the coordinator every 500 ms as link kind
+2, `[count]` then per source `[source][pace][LE frames u16][LE tick µs u32, 0
+none][LE age ms u32]`. The coordinator's rate change travels as a contribution
+of source 255 (batch ID `u64::MAX`, `[LE rate u16][source]`) for the frame after
+its seal; every relay emits the same rate marker after that frame's end and
+seals later frames at the new rate from that frame's due time on its shared
+start timeline. Link packets go to the roster
 address on the relay's existing UDP port and are authenticated by their MAC,
 whatever address they arrive from. Deploy every relay of a federation at
 once: a relay rejects link entries newer than its own code, and one rejected

@@ -34,11 +34,11 @@ pub fn browser_proxy_url() -> &'static str {
     }
 }
 
-use vera20k_relay_protocol::{ClientSession, RelayError, ServerEvent};
 pub use vera20k_relay_protocol::{
-    MAX_PEERS as RELAY_MAX_PEERS, OrderingCertificate, Ticket as RelayTicket,
+    CertificatePacing, MAX_PEERS as RELAY_MAX_PEERS, OrderingCertificate, Ticket as RelayTicket,
     peer_endpoint as relay_peer_endpoint,
 };
+use vera20k_relay_protocol::{ClientSession, RelayError, ServerEvent};
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support {
@@ -689,11 +689,15 @@ impl LanUdpTransport {
         &mut self,
         pace: vera20k_relay_protocol::OrderPace,
         frames_per_second: u16,
+        tick_micros: Option<u32>,
     ) -> io::Result<()> {
         self.send_ordering(|route| {
-            route
-                .session
-                .report_ordering_pace(pace, frames_per_second, &mut route.encoded)
+            route.session.report_ordering_pace(
+                pace,
+                frames_per_second,
+                tick_micros,
+                &mut route.encoded,
+            )
         })
     }
 

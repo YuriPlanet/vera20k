@@ -196,7 +196,12 @@ a compromised lobby could disclose or replace payload keys; relay-blind payload
 encryption does not protect against that compromise. `source_index` is the immutable canonical user index, 0–29.
 `ordering_certificate` is 66 base64url-encoded bytes: `VO1C`, room UUID16,
 source mask LEu32, fixed FPS LEu16, expiry LEu64, then HMAC-SHA256 over the
-first34 bytes with domain `VERA20k relay ordering certificate v1\0`. The signed
+first34 bytes with domain `VERA20k relay ordering certificate v1\0`. A lobby
+whose every member build reads relay rate markers may instead issue a 67-byte
+`VO2C` certificate: the same fields, then a flags byte (bit 0: the host turned
+relay pacing off; other bits zero), then HMAC-SHA256 over the first35 bytes with
+domain `VERA20k relay ordering certificate v2\0`. Every grant of one match carries
+the same version and flags; clients reject a renewal whose pacing differs. The signed
 mask includes all human sources (including observers); AI has no source. FPS
 follows launch speed `[60,45,30,20,15,12,10]`. The certificate lasts24 hours;
 every UDP control still needs a live authenticated short-lived ticket. The relay

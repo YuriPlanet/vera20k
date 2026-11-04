@@ -39,6 +39,8 @@ const UNREADABLE_REPEAT_MS: u32 = 1_000;
 const PACE_REPORT_INTERVAL_MS: i32 = 1_000;
 // Frames must wait here this long before this PC counts as lagging.
 const PACE_BACKLOG_MS: u32 = 2_000;
+// Ticks kept for one pace report's tick-cost percentile.
+const MAX_TICK_COSTS: usize = 256;
 
 /// App diagnostics for one match's ordered delivery, counted by the session
 /// that owns it. Wall-clock observations; never simulation or delivery input.
@@ -116,6 +118,8 @@ struct PaceMeter {
     last_report: Option<u32>,
     dispatched: u32,
     slow_windows: u8,
+    // Simulation tick costs, in microseconds, since the last report.
+    tick_costs: Vec<u32>,
     // A minimised or covered window may be throttled by its system.
     hidden: bool,
 }
@@ -123,13 +127,34 @@ struct PaceMeter {
 impl PaceMeter {
     /// Samples the frames waiting here and returns the report due now, with
     /// the frames run per second since the last report.
+    /// One simulation tick's cost, for the next report's 90th percentile.
+    fn record_tick_cost(&mut self, micros: u32) {
+        // A report window holds about a second of ticks; a stalled report
+        // keeps the latest.
+        if self.tick_costs.len() == MAX_TICK_COSTS {
+            self.tick_costs.remove(0);
+        }
+        self.tick_costs.push(micros);
+    }
+
+    fn tick_cost_p90(&mut self) -> Option<u32> {
+        if self.tick_costs.is_empty() {
+            return None;
+        }
+        let rank = (self.tick_costs.len() * 9).div_ceil(10) - 1;
+        let (_, p90, _) = self.tick_costs.select_nth_unstable(rank);
+        let p90 = *p90;
+        self.tick_costs.clear();
+        Some(p90.max(1))
+    }
+
     fn report(
         &mut self,
         now: u32,
         buffered: usize,
         pace_fps: u16,
         measured: bool,
-    ) -> Option<(OrderPace, u16)> {
+    ) -> Option<(OrderPace, u16, Option<u32>)> {
         if measured && !self.hidden && buffered >= usize::from(pace_fps / 8).max(4) {
             self.backlog_since.get_or_insert(now);
         } else {
@@ -159,6 +184,7 @@ impl PaceMeter {
                 (true, false) => OrderPace::CatchingUp,
             },
             ran,
+            self.tick_cost_p90(),
         ))
     }
 }
@@ -502,6 +528,10 @@ impl SequencedSession {
     pub(super) fn failed(&self) -> bool {
         self.error.is_some()
     }
+    pub(super) fn record_tick_cost(&mut self, micros: u32) {
+        self.pace_meter.record_tick_cost(micros);
+    }
+
     pub(super) fn sent_commands(&self) -> u64 {
         self.sent_commands
     }
@@ -692,12 +722,12 @@ impl SequencedSession {
             return;
         }
         let measured = !self.restoring && !self.pause.paused && !self.keep_running_for_exit;
-        if let Some((pace, ran)) =
+        if let Some((pace, ran, tick_micros)) =
             self.pace_meter
                 .report(now, self.frames.len(), self.pace_fps, measured)
         {
             // A lost report only goes stale at the relay.
-            let _ = transport.report_ordering_pace(pace, ran);
+            let _ = transport.report_ordering_pace(pace, ran, tick_micros);
         }
     }
 
@@ -1976,6 +2006,7 @@ mod departure_tests {
             sources_mask: 3,
             tick_hz: 30,
             expires: 2000,
+            pacing: Default::default(),
         }
         .sign(&key)
         .unwrap();
@@ -2053,16 +2084,25 @@ mod pace_tests {
             meter.dispatched = ran;
             meter.report(now, 10, 30, true)
         };
-        assert_eq!(meter.report(0, 10, 30, true), Some((KeepingUp, 30)));
+        assert_eq!(meter.report(0, 10, 30, true), Some((KeepingUp, 30, None)));
         assert_eq!(meter.report(500, 3, 30, true), None);
-        assert_eq!(window(&mut meter, 1000, 20), Some((KeepingUp, 20)));
-        assert_eq!(window(&mut meter, 2000, 20), Some((KeepingUp, 20)));
-        assert_eq!(window(&mut meter, 3000, 20), Some((Behind, 20)));
-        assert_eq!(window(&mut meter, 4000, 0), Some((CatchingUp, 0)));
-        assert_eq!(window(&mut meter, 5000, 20), Some((CatchingUp, 20)));
-        assert_eq!(window(&mut meter, 6000, 60), Some((CatchingUp, 60)));
+        assert_eq!(window(&mut meter, 1000, 20), Some((KeepingUp, 20, None)));
+        assert_eq!(window(&mut meter, 2000, 20), Some((KeepingUp, 20, None)));
+        assert_eq!(window(&mut meter, 3000, 20), Some((Behind, 20, None)));
+        assert_eq!(window(&mut meter, 4000, 0), Some((CatchingUp, 0, None)));
+        assert_eq!(window(&mut meter, 5000, 20), Some((CatchingUp, 20, None)));
+        assert_eq!(window(&mut meter, 6000, 60), Some((CatchingUp, 60, None)));
         meter.hidden = true;
-        assert_eq!(window(&mut meter, 7000, 20), Some((KeepingUp, 20)));
+        assert_eq!(window(&mut meter, 7000, 20), Some((KeepingUp, 20, None)));
+        // Each report carries the window's 90th-percentile tick cost.
+        for micros in (1..=10).map(|step| step * 1000) {
+            meter.record_tick_cost(micros);
+        }
+        assert_eq!(
+            window(&mut meter, 8000, 20),
+            Some((KeepingUp, 20, Some(9000)))
+        );
+        assert_eq!(window(&mut meter, 9000, 20), Some((KeepingUp, 20, None)));
     }
 
     /// A rate marker paces the frames after it, keeps the simulation's

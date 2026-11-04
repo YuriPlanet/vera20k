@@ -1772,8 +1772,13 @@ fn advance_one_simulation_frame(
                 // reached the synchronous boundary above exactly once.
                 return false;
             }
-            let tick_ms = advance_started.elapsed().as_secs_f32() * 1000.0;
+            let tick_cost = advance_started.elapsed();
+            let tick_ms = tick_cost.as_secs_f32() * 1000.0;
             state.match_state.network_quality.record_tick(tick_ms);
+            // The relay's pace reports carry the simulation's own cost.
+            if let Some(live) = state.match_state.live_network.as_mut() {
+                live.record_tick_cost(tick_cost);
+            }
             #[cfg(feature = "telemetry-dashboard")]
             {
                 let tick = rt.simulation.session().tick();

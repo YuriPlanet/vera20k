@@ -254,6 +254,7 @@ fn run(started: Instant) -> Result<String> {
         sources_mask: 0b111,
         tick_hz: 45,
         expires: now.as_secs() + 600,
+        pacing: Default::default(),
     }
     .sign(&key)
     .map_err(|_| "certificate")?;

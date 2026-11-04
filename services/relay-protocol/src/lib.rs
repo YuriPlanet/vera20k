@@ -23,7 +23,8 @@ mod journal;
 mod sequenced;
 pub use sequenced::federation::{MAX_FEDERATED_RELAYS, sign_federation_roster};
 pub use sequenced::{
-    ORDERING_BATCH_CAPACITY, ORDERING_CERTIFICATE_LEN, ORDERING_PULL_LIMIT, OrderEntry, OrderError,
+    CertificatePacing, ORDERING_BATCH_CAPACITY, ORDERING_CERTIFICATE_LEN, ORDERING_CERTIFICATE_V2_LEN,
+    ORDERING_PULL_LIMIT, OrderEntry, OrderError, is_ordering_certificate_len,
     OrderEvent, OrderPace, OrderStatus, OrderingCertificate, paced_rates,
 };
 

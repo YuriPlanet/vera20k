@@ -288,6 +288,7 @@ fn run_room(options: &Options, key: &SecretKey, room_index: usize, started: Inst
         sources_mask,
         tick_hz: options.tick_hz,
         expires,
+        pacing: Default::default(),
     }
     .sign(key)
     .expect("certificate");

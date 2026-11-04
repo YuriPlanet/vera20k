@@ -9,11 +9,17 @@ use super::*;
 
 pub(crate) mod federation;
 
+/// A `VO1C` certificate; `VO2C` adds one flags byte.
 pub const ORDERING_CERTIFICATE_LEN: usize = 66;
+pub const ORDERING_CERTIFICATE_V2_LEN: usize = 67;
 pub const ORDERING_BATCH_CAPACITY: usize = 512;
 pub const ORDERING_PULL_LIMIT: usize = 32;
 const CERTIFICATE_MAGIC: &[u8; 4] = b"VO1C";
 const CERTIFICATE_DOMAIN: &[u8] = b"VERA20k relay ordering certificate v1\0";
+const CERTIFICATE_V2_MAGIC: &[u8; 4] = b"VO2C";
+const CERTIFICATE_V2_DOMAIN: &[u8] = b"VERA20k relay ordering certificate v2\0";
+// VO2C flags byte: the host turned relay pacing off.
+const CERTIFICATE_PACING_OFF: u8 = 1;
 const ORDER_KEY_DOMAIN: &[u8] = b"VERA20k relay ordering payload key v1\0";
 const MAX_MATCH_SECONDS: u64 = 24 * 60 * 60;
 const START_DELAY_MS: u64 = 200;
@@ -51,10 +57,15 @@ const PAUSE_EVENT: u8 = 9;
 const PAUSE_ENTRY_BYTES: usize = 23;
 const RATE_EVENT: u8 = 10;
 const RATE_ENTRY_BYTES: usize = 16;
+// A federated rate change travels between relays as an entry of this source.
+pub(super) const RATE_SOURCE: u8 = u8::MAX;
 // Game Speed's frame rates, fastest first: the rates a certificate may name.
 const FRAME_RATES: [u16; 7] = [60, 45, 30, 20, 15, 12, 10];
 // A player's report counts this long; a silent client slows nobody.
 const PACE_REPORT_MS: u64 = 3_000;
+// The share of each second a reporter's simulation may take at a rate it
+// can hold; the rest draws and catches up.
+const SUSTAIN_PERCENT: u32 = 80;
 // Rate changes are at least this far apart, so reports show a step's effect
 // before the next one.
 const PACE_STEP_MS: u64 = 5_000;
@@ -94,27 +105,65 @@ pub(super) const FRAME_END_EVENT: u8 = 4;
 pub(super) const DEPARTURE_EVENT: u8 = 5;
 const ERROR_EVENT: u8 = 6;
 
+/// What a certificate says about relay pacing (README, Pace).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CertificatePacing {
+    /// `VO1C`: members may be released clients that read no rate marker, so
+    /// the clock changes only once every active source has reported.
+    #[default]
+    Legacy,
+    /// `VO2C`: every member reads rate markers; a player who cannot keep up
+    /// slows the clock.
+    On,
+    /// `VO2C` with the host's pacing switch off: the clock keeps its rate.
+    Off,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OrderingCertificate {
     pub room: [u8; 16],
     pub sources_mask: u32,
     pub tick_hz: u16,
     pub expires: u64,
+    pub pacing: CertificatePacing,
+}
+
+/// Either certificate length, for a READY payload's split.
+pub fn is_ordering_certificate_len(length: usize) -> bool {
+    length == ORDERING_CERTIFICATE_LEN || length == ORDERING_CERTIFICATE_V2_LEN
 }
 
 impl OrderingCertificate {
     pub fn parse(bytes: &[u8]) -> Result<Self, RelayError> {
-        if bytes.len() != ORDERING_CERTIFICATE_LEN || &bytes[..4] != CERTIFICATE_MAGIC {
-            return Err(RelayError::Malformed);
-        }
+        let pacing = match (bytes.len(), bytes.get(..4)) {
+            (ORDERING_CERTIFICATE_LEN, Some(magic)) if magic == CERTIFICATE_MAGIC => {
+                CertificatePacing::Legacy
+            }
+            (ORDERING_CERTIFICATE_V2_LEN, Some(magic)) if magic == CERTIFICATE_V2_MAGIC => {
+                match bytes[34] {
+                    0 => CertificatePacing::On,
+                    CERTIFICATE_PACING_OFF => CertificatePacing::Off,
+                    _ => return Err(RelayError::Malformed),
+                }
+            }
+            _ => return Err(RelayError::Malformed),
+        };
         let value = Self {
             room: bytes[4..20].try_into().unwrap(),
             sources_mask: u32::from_le_bytes(bytes[20..24].try_into().unwrap()),
             tick_hz: u16::from_le_bytes(bytes[24..26].try_into().unwrap()),
             expires: u64::from_le_bytes(bytes[26..34].try_into().unwrap()),
+            pacing,
         };
         value.validate()?;
         Ok(value)
+    }
+
+    fn domain(pacing: CertificatePacing) -> &'static [u8] {
+        match pacing {
+            CertificatePacing::Legacy => CERTIFICATE_DOMAIN,
+            _ => CERTIFICATE_V2_DOMAIN,
+        }
     }
 
     fn validate(&self) -> Result<(), RelayError> {
@@ -129,27 +178,35 @@ impl OrderingCertificate {
     }
 
     /// The HTTPS lobby signs this public manifest separately from hop tickets.
-    /// Layout: VO1C, room16, LE mask32, LE Hz16, LE expiry64, domain HMAC32.
-    pub fn sign(self, key: &SecretKey) -> Result<[u8; ORDERING_CERTIFICATE_LEN], RelayError> {
+    /// Layout: VO1C, room16, LE mask32, LE Hz16, LE expiry64, domain HMAC32;
+    /// VO2C adds a flags byte (bit 0: pacing off) before its own domain's HMAC.
+    pub fn sign(self, key: &SecretKey) -> Result<Vec<u8>, RelayError> {
         self.validate()?;
-        let mut bytes = [0; ORDERING_CERTIFICATE_LEN];
-        bytes[..4].copy_from_slice(CERTIFICATE_MAGIC);
-        bytes[4..20].copy_from_slice(&self.room);
-        bytes[20..24].copy_from_slice(&self.sources_mask.to_le_bytes());
-        bytes[24..26].copy_from_slice(&self.tick_hz.to_le_bytes());
-        bytes[26..34].copy_from_slice(&self.expires.to_le_bytes());
+        let (magic, flags) = match self.pacing {
+            CertificatePacing::Legacy => (CERTIFICATE_MAGIC, None),
+            CertificatePacing::On => (CERTIFICATE_V2_MAGIC, Some(0)),
+            CertificatePacing::Off => (CERTIFICATE_V2_MAGIC, Some(CERTIFICATE_PACING_OFF)),
+        };
+        let mut bytes = Vec::with_capacity(ORDERING_CERTIFICATE_V2_LEN);
+        bytes.extend_from_slice(magic);
+        bytes.extend_from_slice(&self.room);
+        bytes.extend_from_slice(&self.sources_mask.to_le_bytes());
+        bytes.extend_from_slice(&self.tick_hz.to_le_bytes());
+        bytes.extend_from_slice(&self.expires.to_le_bytes());
+        bytes.extend(flags);
         let tag = key
-            .mac(CERTIFICATE_DOMAIN, &bytes[..34])
+            .mac(Self::domain(self.pacing), &bytes)
             .finalize()
             .into_bytes();
-        bytes[34..].copy_from_slice(&tag);
+        bytes.extend_from_slice(&tag);
         Ok(bytes)
     }
 
     fn verify(bytes: &[u8], key: &SecretKey, now: u64) -> Result<Self, RelayError> {
         let certificate = Self::parse(bytes)?;
-        key.mac(CERTIFICATE_DOMAIN, &bytes[..34])
-            .verify_slice(&bytes[34..])
+        let signed = bytes.len() - 32;
+        key.mac(Self::domain(certificate.pacing), &bytes[..signed])
+            .verify_slice(&bytes[signed..])
             .map_err(|_| RelayError::Authentication)?;
         if certificate.expires <= now || certificate.expires > now.saturating_add(MAX_MATCH_SECONDS)
         {
@@ -319,7 +376,7 @@ struct SealedBatch {
 
 #[derive(Clone)]
 pub(super) struct ClientOrdering {
-    certificate: [u8; ORDERING_CERTIFICATE_LEN],
+    certificate: Vec<u8>,
     agreement: [u8; 32],
     // The four most recently sealed batches retain their exact ciphertext.
     // Accepted entries stay cached until a new batch needs the slot, so a
@@ -407,22 +464,23 @@ impl ClientSession {
         if parsed.room != self.ticket.room || parsed.sources_mask & (1 << self.ticket.source) == 0 {
             return Err(RelayError::Authentication);
         }
-        let certificate: [u8; ORDERING_CERTIFICATE_LEN] = certificate.try_into().unwrap();
+        let certificate = certificate.to_vec();
         if let Some(current) = &mut self.ordering {
             let old = OrderingCertificate::parse(&current.certificate)?;
             if old.room != parsed.room
                 || old.sources_mask != parsed.sources_mask
                 || old.tick_hz != parsed.tick_hz
+                || old.pacing != parsed.pacing
                 || current.agreement != agreement
             {
                 return Err(RelayError::Authentication);
             }
             if parsed.expires > old.expires {
-                current.certificate = certificate;
+                current.certificate = certificate.clone();
             }
         } else {
             self.ordering = Some(ClientOrdering {
-                certificate,
+                certificate: certificate.clone(),
                 agreement,
                 sealed: VecDeque::new(),
                 next_batch: 1,
@@ -557,21 +615,28 @@ impl ClientSession {
         self.encode(CONTROL, BROADCAST, &payload, out)
     }
 
-    /// Tells the relay whether this PC keeps up with the sealed frames, and
-    /// how many it ran in the last second. Sent about once a second with no
-    /// reply; the first one also advertises reading rate markers. Older
-    /// relays drop it as malformed.
+    /// Tells the relay whether this PC keeps up with the sealed frames, how
+    /// many it ran in the last second and, under a VO2C certificate, its
+    /// recent 90th-percentile simulation tick cost in microseconds. Sent
+    /// about once a second with no reply; the first one also advertises
+    /// reading rate markers. Older relays drop it as malformed, and only a
+    /// relay that admits VO2C reads the longer report.
     pub fn report_ordering_pace(
         &mut self,
         pace: OrderPace,
         frames_per_second: u16,
+        tick_micros: Option<u32>,
         out: &mut Vec<u8>,
     ) -> Result<(), RelayError> {
-        if !self.ready || self.ordering.is_none() {
+        let Some(ordering) = self.ordering.as_ref().filter(|_| self.ready) else {
             return Err(RelayError::Unregistered);
-        }
+        };
+        let v2 = ordering.certificate.len() == ORDERING_CERTIFICATE_V2_LEN;
         let mut payload = vec![PACE_REQUEST, pace as u8];
         payload.extend_from_slice(&frames_per_second.to_le_bytes());
+        if v2 && let Some(tick_micros) = tick_micros {
+            payload.extend_from_slice(&tick_micros.to_le_bytes());
+        }
         self.encode(CONTROL, BROADCAST, &payload, out)
     }
 
@@ -797,7 +862,22 @@ struct PauseRequest {
 struct PaceReport {
     pace: OrderPace,
     frames_per_second: u16,
+    // The reporter's 90th-percentile tick cost; legacy reports carry none.
+    tick_micros: Option<u32>,
     at_ms: u64,
+}
+
+impl PaceReport {
+    /// The fastest rate this reporter can hold while it keeps
+    /// `100 - SUSTAIN_PERCENT` percent of each second for everything else
+    /// (drawing, catching up); legacy reports: nine tenths of what it ran,
+    /// which overstates it during catch-up.
+    fn sustainable_rate(&self) -> u32 {
+        match self.tick_micros {
+            Some(micros) => (1_000_000 * SUSTAIN_PERCENT / 100) / micros.max(1),
+            None => u32::from(self.frames_per_second) * 9 / 10,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -831,6 +911,12 @@ struct Pace {
     // report.
     slowdowns: u32,
     raises: u32,
+    // Federated: the frame from which the last rate change applies and its
+    // due time as an offset from the start, so the start's slew moves it too.
+    federated_anchor: Option<(u32, u64)>,
+    // Federated: the coordinator's rate change for frames after this one,
+    // `(frame, rate, source)`, until its due time passes.
+    scheduled: Option<(u32, u16, u8)>,
 }
 
 impl Pace {
@@ -921,6 +1007,8 @@ impl OrderingRoom {
                 lagging_at: 0,
                 slowdowns: 0,
                 raises: 0,
+                federated_anchor: None,
+                scheduled: None,
             },
             head: 0,
             sealed: 0,
@@ -1096,13 +1184,16 @@ impl OrderingRoom {
             Some(2) => OrderPace::CatchingUp,
             _ => return Err(RelayError::Malformed),
         };
-        if payload.len() != 4 {
-            return Err(RelayError::Malformed);
-        }
+        let tick_micros = match payload.len() {
+            4 => None,
+            8 => Some(u32::from_le_bytes(payload[4..8].try_into().unwrap()).max(1)),
+            _ => return Err(RelayError::Malformed),
+        };
         self.authenticate_reader(ticket)?;
         self.sources[usize::from(ticket.source)].pace = Some(PaceReport {
             pace,
             frames_per_second: u16::from_le_bytes([payload[2], payload[3]]),
+            tick_micros,
             at_ms: now_ms,
         });
         Ok(pace)
@@ -1117,25 +1208,49 @@ impl OrderingRoom {
     /// reported, so no client meets a marker it cannot read. Each change is a
     /// marker after the head's frame end; later frames are due at the new
     /// rate from its append time.
-    fn adjust_pace(&mut self, now_ms: u64) {
-        let mut slowest: Option<(u16, u8)> = None;
+    fn adjust_pace(&mut self, now_ms: u64, federated: bool) {
+        if self.certificate.pacing == CertificatePacing::Off || self.pace.scheduled.is_some() {
+            return;
+        }
+        let rates = paced_rates(self.certificate.tick_hz);
+        let step = rates
+            .iter()
+            .position(|&rate| rate == self.pace.rate)
+            .expect("the clock runs at a paced rate");
+        // The slowest sustainable rate among Behind reporters that cannot
+        // hold the current one, and whether a reporter could not hold the
+        // next faster rate.
+        let mut slowest: Option<(u32, u8)> = None;
         let mut lagging = false;
+        let mut raise_blocked = false;
         for (index, source) in self.sources.iter().enumerate() {
             if self.active & (1 << index) == 0 {
                 continue;
             }
             let Some(report) = source.pace else {
-                return;
+                // A VO1C member may be a released client that reads no rate
+                // marker; under VO2C every member reads them.
+                if self.certificate.pacing == CertificatePacing::Legacy {
+                    return;
+                }
+                continue;
             };
             if now_ms.saturating_sub(report.at_ms) > PACE_REPORT_MS {
                 continue;
             }
             lagging |= report.pace != OrderPace::KeepingUp;
+            let sustainable = report.sustainable_rate();
+            // A tick-cost reporter that holds the current rate is only
+            // drawing slowly: its own catch-up recovers it.
             if report.pace == OrderPace::Behind
-                && slowest.is_none_or(|(rate, _)| report.frames_per_second < rate)
+                && (report.tick_micros.is_none() || sustainable < u32::from(self.pace.rate))
+                && slowest.is_none_or(|(rate, _)| sustainable < rate)
             {
-                slowest = Some((report.frames_per_second, index as u8));
+                slowest = Some((sustainable, index as u8));
             }
+            raise_blocked |= report.tick_micros.is_some()
+                && step > 0
+                && sustainable < u32::from(rates[step - 1]);
         }
         if lagging {
             self.pace.lagging_at = now_ms;
@@ -1144,21 +1259,17 @@ impl OrderingRoom {
         if self.pace.anchor.is_some() && now_ms.saturating_sub(changed_at) < PACE_STEP_MS {
             return;
         }
-        let rates = paced_rates(self.certificate.tick_hz);
-        let step = rates
-            .iter()
-            .position(|&rate| rate == self.pace.rate)
-            .expect("the clock runs at a paced rate");
         let (rate, source) = match slowest {
-            Some((ran, source)) if step + 1 < rates.len() => (
+            Some((sustainable, source)) if step + 1 < rates.len() => (
                 rates[step + 1..]
                     .iter()
                     .copied()
-                    .find(|&rate| u32::from(rate) * 10 <= u32::from(ran) * 9)
+                    .find(|&rate| u32::from(rate) <= sustainable)
                     .unwrap_or(rates[rates.len() - 1]),
                 source,
             ),
             None if step > 0
+                && !raise_blocked
                 && now_ms.saturating_sub(self.pace.lagging_at.max(changed_at))
                     >= self.pace.raise_wait =>
             {
@@ -1173,9 +1284,22 @@ impl OrderingRoom {
         }
         let mut tail = rate.to_le_bytes().to_vec();
         tail.push(source);
-        let record = Self::encoded_entry(self.next_seq, self.head, RATE_EVENT, &tail);
-        if !self.append_records(self.head, vec![record]) {
-            return;
+        if federated {
+            // Every relay must change at the same frame: the entry reaches
+            // the others in frame order with the next seal, and the merge
+            // waits for it there.
+            let frame = self.sealed + 1;
+            self.pending.entry(frame).or_default().push(Pending {
+                source: RATE_SOURCE,
+                batch_id: u64::MAX,
+                opaque: tail,
+            });
+            self.pace.scheduled = Some((frame, rate, source));
+        } else {
+            let record = Self::encoded_entry(self.next_seq, self.head, RATE_EVENT, &tail);
+            if !self.append_records(self.head, vec![record]) {
+                return;
+            }
         }
         let pace = &mut self.pace;
         if source == u8::MAX {
@@ -1192,8 +1316,29 @@ impl OrderingRoom {
             };
             pace.slowdowns += 1;
         }
-        pace.rate = rate;
-        pace.anchor = Some((self.head, now_ms));
+        if !federated {
+            pace.rate = rate;
+            pace.anchor = Some((self.head, now_ms));
+        }
+    }
+
+    /// A federated rate change takes effect when its frame falls due on the
+    /// old schedule; later frames are due at the new rate from there. The
+    /// schedule counts from the start, so every relay derives the same one.
+    fn apply_scheduled_rate(&mut self, now_ms: u64, start: u64) {
+        let Some((frame, rate, _)) = self.pace.scheduled else {
+            return;
+        };
+        let (anchor, offset) = self.pace.federated_anchor.unwrap_or((0, 0));
+        let due =
+            offset + u64::from(frame.saturating_sub(anchor)) * 1000 / u64::from(self.pace.rate);
+        if now_ms < start + due {
+            return;
+        }
+        self.pace.rate = rate;
+        self.pace.federated_anchor = Some((frame, due));
+        self.pace.anchor = Some((frame, start + due));
+        self.pace.scheduled = None;
     }
 
     /// About when `frame` was due: exact from the last rate change on, at
@@ -1402,9 +1547,43 @@ impl OrderingRoom {
         self.finished_at = Some(now_ms);
     }
 
+    /// The latest pace reports of active sources homed here, encoded for
+    /// the federation coordinator.
+    pub(super) fn local_paces(&self, local: u32, now_ms: u64) -> Vec<u8> {
+        let mut encoded = Vec::new();
+        for (index, source) in self.sources.iter().enumerate() {
+            let Some(report) = source
+                .pace
+                .filter(|_| self.active & local & (1 << index) != 0)
+            else {
+                continue;
+            };
+            encoded.push(index as u8);
+            encoded.push(report.pace as u8);
+            encoded.extend_from_slice(&report.frames_per_second.to_le_bytes());
+            encoded.extend_from_slice(&report.tick_micros.unwrap_or(0).to_le_bytes());
+            let age = now_ms.saturating_sub(report.at_ms).min(u64::from(u32::MAX)) as u32;
+            encoded.extend_from_slice(&age.to_le_bytes());
+        }
+        encoded
+    }
+
     /// Another relay's sealed entry, merged with this relay's own.
     fn accept_remote(&mut self, frame: u32, source: u8, batch_id: u64, opaque: &[u8]) {
-        if batch_id == 0 {
+        if source == RATE_SOURCE {
+            // The coordinator's rate change (only its link carries one).
+            let rate = u16::from_le_bytes([opaque[0], opaque[1]]);
+            if !paced_rates(self.certificate.tick_hz).contains(&rate) {
+                self.storage_failed = true;
+                return;
+            }
+            if let Some(journal) = self.journal.as_mut()
+                && !journal.reserve_entries(&[RATE_ENTRY_BYTES])
+            {
+                self.storage_failed = true;
+            }
+            self.pace.scheduled = Some((frame, rate, opaque[2]));
+        } else if batch_id == 0 {
             self.active &= !(1 << source);
         } else {
             // Its home relay reserved it there; this journal stores the same
@@ -1436,7 +1615,20 @@ impl OrderingRoom {
         let Some(start) = self.starts_at else {
             return;
         };
-        let (anchor, anchor_ms) = self.pace.anchor.unwrap_or((0, start));
+        let federated = federation.is_some();
+        let coordinator = federation
+            .as_ref()
+            .is_none_or(|federation| federation.is_coordinator());
+        if federated {
+            self.apply_scheduled_rate(now_ms, start);
+        }
+        let (anchor, anchor_ms) = if federated {
+            self.pace
+                .federated_anchor
+                .map_or((0, start), |(frame, offset)| (frame, start + offset))
+        } else {
+            self.pace.anchor.unwrap_or((0, start))
+        };
         let target = (u64::from(anchor)
             + now_ms
                 .saturating_sub(anchor_ms)
@@ -1444,6 +1636,11 @@ impl OrderingRoom {
                 / 1000)
             .min(MAX_MATCH_SECONDS * u64::from(self.certificate.tick_hz))
             as u32;
+        // Frames past a scheduled change wait for its rate.
+        let target = self
+            .pace
+            .scheduled
+            .map_or(target, |(frame, ..)| target.min(frame));
         let final_frame = (MAX_MATCH_SECONDS * u64::from(self.certificate.tick_hz)) as u32;
         if target == final_frame && self.sealed < final_frame {
             for source in 0..MAX_PEERS {
@@ -1472,7 +1669,13 @@ impl OrderingRoom {
             while self.sealed < target {
                 self.sealed += 1;
                 for entry in self.pending.get(&self.sealed).into_iter().flatten() {
-                    if self.local & (1 << entry.source) != 0 {
+                    // Only the coordinator contributes a rate change; the
+                    // others received theirs from it.
+                    if if entry.source == RATE_SOURCE {
+                        federation.is_coordinator()
+                    } else {
+                        self.local & (1 << entry.source) != 0
+                    } {
                         federation.contribute(
                             self.sealed,
                             entry.source,
@@ -1506,6 +1709,7 @@ impl OrderingRoom {
             }
             let frame = self.head + 1;
             let mut records = Vec::new();
+            let mut rate_change = None;
             if let Some(entries) = self.pending.get_mut(&frame) {
                 // Accepted batches remain executable before their source's
                 // removal at the same boundary; neither is ever rewritten.
@@ -1520,7 +1724,9 @@ impl OrderingRoom {
                     )
                 });
                 for entry in entries.iter() {
-                    if entry.batch_id == 0 {
+                    if entry.source == RATE_SOURCE {
+                        rate_change = Some(entry.opaque.clone());
+                    } else if entry.batch_id == 0 {
                         let mut tail = vec![entry.source];
                         tail.extend_from_slice(&entry.opaque);
                         records.push(Self::encoded_entry(
@@ -1548,26 +1754,32 @@ impl OrderingRoom {
                 FRAME_END_EVENT,
                 &[],
             ));
+            // A federated rate change follows its frame's end on every relay,
+            // as a single relay's marker follows the head's.
+            if let Some(tail) = rate_change {
+                records.push(Self::encoded_entry(
+                    self.next_seq + records.len() as u64,
+                    frame,
+                    RATE_EVENT,
+                    &tail,
+                ));
+            }
             if !self.append_records(frame, records) {
                 return;
             }
             if let Some(entries) = self.pending.remove(&frame) {
                 for entry in entries {
-                    if entry.batch_id != 0 {
+                    if entry.batch_id != 0 && entry.source != RATE_SOURCE {
                         self.sources[usize::from(entry.source)].pending -= 1;
                     }
                 }
             }
             self.head = frame;
         }
-        // A federated relay seals from the shared start alone, so its rooms
-        // keep the certificate's rate.
-        if self.local == self.certificate.sources_mask
-            && self.active != 0
-            && start <= now_ms
-            && self.head < final_frame
-        {
-            self.adjust_pace(now_ms);
+        // A federated match's coordinator decides its rate from every
+        // relay's reports; the others follow its rate entries.
+        if coordinator && self.active != 0 && start <= now_ms && self.head < final_frame {
+            self.adjust_pace(now_ms, federated);
         }
         // Every source has departed, by Leave, silence past its limit or the
         // agreed full-match lifetime; the archive ends after its replay grace.
@@ -1857,16 +2069,13 @@ mod tests {
         server.rooms[&[5; 16]].ordering.as_ref().unwrap()
     }
 
-    pub(super) fn certificate(
-        key: &SecretKey,
-        mask: u32,
-        expires: u64,
-    ) -> [u8; ORDERING_CERTIFICATE_LEN] {
+    pub(super) fn certificate(key: &SecretKey, mask: u32, expires: u64) -> Vec<u8> {
         OrderingCertificate {
             room: [5; 16],
             sources_mask: mask,
             tick_hz: 45,
             expires,
+            pacing: Default::default(),
         }
         .sign(key)
         .unwrap()
@@ -1908,22 +2117,145 @@ mod tests {
         frames_per_second: u16,
         now_ms: u64,
     ) {
+        tick_report(server, client, pace, frames_per_second, None, now_ms);
+    }
+
+    fn tick_report(
+        server: &mut RelayServer,
+        client: &mut ClientSession,
+        pace: OrderPace,
+        frames_per_second: u16,
+        tick_micros: Option<u32>,
+        now_ms: u64,
+    ) {
         let mut bytes = Vec::new();
         client
-            .report_ordering_pace(pace, frames_per_second, &mut bytes)
+            .report_ordering_pace(pace, frames_per_second, tick_micros, &mut bytes)
             .unwrap();
         assert!(events(server, client, &bytes, now_ms).is_empty());
     }
 
     fn paced_room(key: &SecretKey) -> (RelayServer, ClientSession, ClientSession) {
+        paced_room_with(key, CertificatePacing::Legacy)
+    }
+
+    fn paced_room_with(
+        key: &SecretKey,
+        pacing: CertificatePacing,
+    ) -> (RelayServer, ClientSession, ClientSession) {
         let mut server = RelayServer::new(key.clone(), 2);
         let (mut first, mut second) = (client(key, 0), client(key, 1));
-        let cert = certificate(key, 3, 1400);
+        let cert = OrderingCertificate {
+            pacing,
+            ..OrderingCertificate::parse(&certificate(key, 3, 1400)).unwrap()
+        }
+        .sign(key)
+        .unwrap();
         for peer in [&mut first, &mut second] {
             connect(&mut server, peer, 0);
             configure(&mut server, peer, &cert, 0);
         }
         (server, first, second)
+    }
+
+    /// Under VO2C a silent member does not hold the clock, a player that only
+    /// draws slowly catches up on its own, and one whose simulation cannot
+    /// hold the rate slows it to a rate it can; the host can switch it off.
+    #[test]
+    fn a_vo2c_room_slows_only_for_a_simulation_that_cannot_hold_the_rate() {
+        use OrderPace::*;
+        let key = SecretKey::new([73; 32]);
+        let (mut server, _first, mut second) = paced_room_with(&key, CertificatePacing::On);
+        // 20 ms ticks hold 40 Hz at 80%: below 45, but a slow draw is not it.
+        tick_report(&mut server, &mut second, Behind, 30, Some(10_000), 1000);
+        server.advance_clock(1000, unix(1000));
+        assert_eq!(
+            ordering(&server).pace.rate,
+            45,
+            "a slow draw alone holds the rate, and the silent first player holds nothing"
+        );
+        // 30 ms ticks hold 26 Hz: slow to the fastest paced rate at most 26.
+        tick_report(&mut server, &mut second, Behind, 25, Some(30_000), 2000);
+        server.advance_clock(2000, unix(2000));
+        assert_eq!(ordering(&server).pace.rate, 20);
+        // Nobody lags, but 30 ms ticks cannot hold 30 Hz: no raise.
+        for at in (3000..=40_000).step_by(2000) {
+            tick_report(&mut server, &mut second, KeepingUp, 20, Some(30_000), at);
+            server.advance_clock(at, unix(at));
+        }
+        assert_eq!(ordering(&server).pace.rate, 20);
+        tick_report(
+            &mut server,
+            &mut second,
+            KeepingUp,
+            20,
+            Some(20_000),
+            41_000,
+        );
+        server.advance_clock(41_000, unix(41_000));
+        assert_eq!(ordering(&server).pace.rate, 30);
+
+        let (mut server, _first, mut second) = paced_room_with(&key, CertificatePacing::Off);
+        tick_report(&mut server, &mut second, Behind, 5, Some(200_000), 1000);
+        server.advance_clock(1000, unix(1000));
+        assert_eq!(
+            ordering(&server).pace.rate,
+            45,
+            "the host switched pacing off"
+        );
+    }
+
+    /// VO2C adds the host's pacing flag under its own signing domain; the
+    /// vectors are an independent HMAC-SHA256 the lobby also checks against.
+    #[test]
+    fn a_vo2c_certificate_signs_its_pacing_flag_under_its_own_domain() {
+        let key = SecretKey::new([73; 32]);
+        let cert = |pacing| OrderingCertificate {
+            room: [5; 16],
+            sources_mask: 3,
+            tick_hz: 45,
+            expires: 2000,
+            pacing,
+        };
+        let hex = |bytes: &[u8]| bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        let on = cert(CertificatePacing::On).sign(&key).unwrap();
+        let off = cert(CertificatePacing::Off).sign(&key).unwrap();
+        assert_eq!(
+            hex(&on),
+            "564f324305050505050505050505050505050505030000002d00d007000000000000003e4c04db8da83d3705b259262fafbcf274224f6ba8d59b743e14db3d5b10dc48"
+        );
+        assert_eq!(
+            hex(&off),
+            "564f324305050505050505050505050505050505030000002d00d00700000000000001252f63eae21061da149b08caacb3bbecf61985bf996d0932b3e101330bbc461d"
+        );
+        assert_eq!(
+            OrderingCertificate::verify(&off, &key, 1000)
+                .unwrap()
+                .pacing,
+            CertificatePacing::Off
+        );
+        let legacy = cert(CertificatePacing::Legacy).sign(&key).unwrap();
+        assert_eq!(legacy.len(), ORDERING_CERTIFICATE_LEN);
+        assert_eq!(
+            OrderingCertificate::verify(&legacy, &key, 1000)
+                .unwrap()
+                .pacing,
+            CertificatePacing::Legacy
+        );
+        // A VO1C body relabelled VO2C does not verify, and unknown flags fail.
+        let mut relabelled = on.clone();
+        relabelled[34] = 2;
+        assert!(matches!(
+            OrderingCertificate::parse(&relabelled),
+            Err(RelayError::Malformed)
+        ));
+        let mut forged = legacy.clone();
+        forged[..4].copy_from_slice(CERTIFICATE_V2_MAGIC);
+        forged.insert(34, 0);
+        assert!(matches!(
+            OrderingCertificate::verify(&forged, &key, 1000),
+            Err(RelayError::Authentication)
+        ));
     }
 
     #[test]
@@ -3011,6 +3343,7 @@ mod tests {
                 sources_mask: 3,
                 tick_hz: 45,
                 expires: 2000,
+                pacing: Default::default(),
             }
             .sign(&key)
             .unwrap();
@@ -3573,6 +3906,7 @@ mod tests {
             sources_mask: 3,
             tick_hz: 10,
             expires: 2000,
+            pacing: Default::default(),
         }
         .sign(&key)
         .unwrap();
@@ -3666,6 +4000,7 @@ mod tests {
                 sources_mask,
                 tick_hz: 45,
                 expires: 1400,
+                pacing: Default::default(),
             }
             .sign(&key)
             .unwrap();
@@ -3782,7 +4117,7 @@ mod tests {
             connect(&mut server, client, 0);
         }
         let cert = certificate(&key, 3, 1300);
-        let mut forged = cert;
+        let mut forged = cert.clone();
         forged[34] ^= 1;
         let mut bytes = Vec::new();
         // A registered source outside the signed manifest cannot join the
@@ -4555,14 +4890,12 @@ impl RelayServer {
             return self.ordering_reply(message.ticket, replies, now);
         }
         let replies = if payload.first() == Some(&READY_REQUEST) {
-            if payload.len() != 1 + ORDERING_CERTIFICATE_LEN + 32 {
+            let certificate_len = payload.len().saturating_sub(1 + 32);
+            if !is_ordering_certificate_len(certificate_len) {
                 return Err(RelayError::Malformed);
             }
-            let certificate = OrderingCertificate::verify(
-                &payload[1..1 + ORDERING_CERTIFICATE_LEN],
-                &self.key,
-                now,
-            )?;
+            let certificate =
+                OrderingCertificate::verify(&payload[1..1 + certificate_len], &self.key, now)?;
             // A one-source match runs its commands locally (the client's
             // original-singleton policy) and never orders through the relay.
             // The lobby still signs its certificate for released clients, so
@@ -4581,7 +4914,7 @@ impl RelayServer {
             {
                 return self.ordering_reply(message.ticket, error(OrderError::Inactive, 0), now);
             }
-            let agreement: [u8; 32] = payload[1 + ORDERING_CERTIFICATE_LEN..].try_into().unwrap();
+            let agreement: [u8; 32] = payload[1 + certificate_len..].try_into().unwrap();
             let allocation = self
                 .rooms
                 .get(&message.ticket.room)
