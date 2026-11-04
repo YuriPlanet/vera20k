@@ -1651,17 +1651,25 @@ fn default_room_name(nickname: &str) -> String {
 
 /// VERA's line for a guest entering a modern-lobby game room (gamemd's C9
 /// prints none): it names the room's operator, its host, and the room's own
-/// name when the host gave it one. `users` is the room's user list without
-/// the local player, as `(name, operator)`.
+/// name when the host gave it one, and says who starts the game, since the
+/// room accepts for its guests. `users` is the room's user list without the
+/// local player, as `(name, operator)`.
 fn joined_game_line(users: &[(String, bool)], room: &str) -> Option<String> {
     let (host, _) = users.iter().find(|(_, operator)| *operator)?;
     // gamemd's own name is "%s's_game" (`0x00789B60`).
-    Some(if !room.eq_ignore_ascii_case(&format!("{host}'s_game")) {
-        format!("You have joined {host}'s game ({room}).")
+    let named = if !room.eq_ignore_ascii_case(&format!("{host}'s_game")) {
+        format!(" ({room})")
     } else {
-        format!("You have joined {host}'s game.")
-    })
+        String::new()
+    };
+    Some(format!(
+        "You have joined {host}'s game{named}. {host} starts it when everyone is here."
+    ))
 }
+
+/// VERA's line for the host of a modern-lobby game room (gamemd's C2 prints
+/// none): its guests accept on their own (`setup::service::auto_accept`).
+const HOST_ROOM_LINE: &str = "Players join ready. Press Start Game when everyone is here.";
 
 fn modern_lobby(state: &AppState) -> bool {
     lobby(state).is_some_and(|lobby| lobby.ui.is_modern())
@@ -1840,7 +1848,9 @@ pub(crate) fn commit_hide(state: &mut AppState) {
 /// Create's slide has run: `UI__BeginDialog(0xC2)` over a hidden `0x113`.
 pub(crate) fn commit_create(state: &mut AppState, observe: bool) {
     commit_hide(state);
-    App::open_host_setup(state, observe);
+    if App::open_host_setup(state, observe) && modern_lobby(state) {
+        message_line(state, HOST_ROOM_LINE.to_owned());
+    }
 }
 
 /// API+0x1C, then `GUI:CreatingChannel` in a box created with flag 1 whose
@@ -4301,11 +4311,11 @@ mod tests {
         let users = [("Guest".to_owned(), false), ("Host".to_owned(), true)];
         assert_eq!(
             joined_game_line(&users, "Host's_game").as_deref(),
-            Some("You have joined Host's game.")
+            Some("You have joined Host's game. Host starts it when everyone is here.")
         );
         assert_eq!(
             joined_game_line(&users, "No rush").as_deref(),
-            Some("You have joined Host's game (No rush).")
+            Some("You have joined Host's game (No rush). Host starts it when everyone is here.")
         );
         assert_eq!(joined_game_line(&users[..1], "No rush"), None);
     }
