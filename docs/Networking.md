@@ -1,6 +1,6 @@
 # Multiplayer behavior and ownership
 
-Current macOS and Linux source builds provide LAN and online multiplayer through
+Windows, macOS and Linux builds provide LAN and online multiplayer through
 the normal game menus. Both paths use the existing
 owners for session setup, synchronized commands, reliable UDP delivery, frame
 pacing, checksums, disconnects, results and rematches. The function-level

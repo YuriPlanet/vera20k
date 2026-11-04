@@ -41,7 +41,7 @@ Se [färdplanen](https://github.com/orgs/YuriPlanet/projects/1) för aktuella pr
   och slumpgenererade kartor, basbygge, resursinsamling, strider samt möjlighet att spara och ladda spel.
 - **Kampanjer:** Uppdrag går att starta; stödet är fortfarande ofullständigt.
 - **AI:** Delar av originalets AI sköter basbygge och skriptstyrda anfall.
-- **Flerspelarläge:** LAN- och onlinespel finns i aktuella källkodsbyggen för macOS och Linux.
+- **Flerspelarläge:** LAN- och onlinespel finns på Windows, Linux och macOS.
 
 ## Ladda ner och spela
 

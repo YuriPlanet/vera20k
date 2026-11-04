@@ -43,8 +43,7 @@ and future plans.
   base building, harvesting, combat and save/load.
 - **Campaigns:** Missions can launch; support remains incomplete.
 - **AI:** Parts of the original AI handle base building and scripted attacks.
-- **Multiplayer:** LAN and online play are available in current source builds on
-  macOS and Linux.
+- **Multiplayer:** LAN and online play are available on Windows, Linux and macOS.
 
 ## Download and play
 
