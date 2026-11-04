@@ -476,7 +476,7 @@ fn skirmish(
     // *(VERA)* One human is admitted as a network room admits it, in any stock
     // mode and with up to thirty houses, because a lobby plays every one-human
     // game without a relay. Retail Skirmish lists only Battle and Free for All
-    // (`0x005D6263`) in eight slots, which the native skirmish screen keeps.
+    // (`0x005D6263`), which VERA's Skirmish screen keeps.
     let ai_count = ranged(
         settings,
         "AIPlayers",
