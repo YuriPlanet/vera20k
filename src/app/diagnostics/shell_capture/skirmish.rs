@@ -17,7 +17,6 @@ pub(crate) enum PresentedShell {
     Campaign,
     LoadSavedGame,
     Options,
-    NetworkOptions,
     LanLobby,
     NetworkSetup,
     WolWelcome,

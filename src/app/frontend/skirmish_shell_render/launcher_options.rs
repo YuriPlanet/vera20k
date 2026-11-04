@@ -13,7 +13,7 @@ use crate::ui::main_menu_dialogs::options::shell::{
     LauncherLabelAlign, LauncherOptionsLayout, LauncherStatusHelp,
 };
 use crate::ui::main_menu_dialogs::options::{
-    HealthBarMode, LauncherCheckboxId, LauncherComboId, OptionsDialogState, Zoom,
+    HealthBarMode, LauncherButton, LauncherCheckboxId, LauncherComboId, OptionsDialogState, Zoom,
 };
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::util::time::Instant;
@@ -109,16 +109,47 @@ fn build_controls(
             scale,
         );
     }
-    for &(id, rect) in layout.buttons.iter().filter(|_| buttons) {
-        push_right_panel_button_shp(
-            &mut out,
-            atlas,
-            rect,
-            dialog.shell_button_pressed(id),
-            false,
-            SHELL_CONTROL_DEPTH,
-        );
+    let mut page_buttons = Vec::new();
+    for &(id, rect) in &layout.buttons {
+        let pressed = dialog.shell_button_pressed(id);
+        if id == LauncherButton::CheckForUpdates {
+            page_buttons.push(crate::render::shell_paint::ModalButton {
+                rect,
+                pressed,
+                enabled: true,
+            });
+        } else if buttons {
+            // The page that shows keeps its category button lit in the
+            // owner-draw highlight frame (612B70 record+C5, SDBTNANM 3).
+            push_right_panel_button_shp(
+                &mut out,
+                atlas,
+                rect,
+                crate::ui::shell::button::ButtonVisual {
+                    pressed,
+                    highlighted: dialog.shell_button_selected(id),
+                },
+                false,
+                SHELL_CONTROL_DEPTH,
+            );
+        }
     }
+    // Check for Updates is drawn as Sound Options' Play and Stop are
+    // (609FC7..609FE2/60A330): owner-draw type 3, MNBTTN centred on the
+    // control, so it paints with the page's other controls during the slide.
+    let (width, height) = layout.screen();
+    out.extend(crate::render::shell_paint::paint_modal_sprites(
+        None,
+        type3_button_frames(atlas),
+        RectPx::new(0, 0, width as i32, height as i32),
+        &page_buttons,
+        scale,
+        crate::render::shell_paint::ModalDepths {
+            background: SHELL_CONTROL_DEPTH,
+            button: SHELL_CONTROL_DEPTH,
+            text: SHELL_CONTROL_TEXT_DEPTH,
+        },
+    ));
     out
 }
 
@@ -227,7 +258,11 @@ fn build_text(
             glyph,
         ));
     }
-    for &(id, rect) in layout.buttons.iter().filter(|_| buttons) {
+    for &(id, rect) in layout
+        .buttons
+        .iter()
+        .filter(|(id, _)| buttons || *id == LauncherButton::CheckForUpdates)
+    {
         let pressed = dialog.shell_button_pressed(id);
         // 612B70 type1: ordinary press retains AC18A4 foreground; the text
         // rectangle changes at61358D..6135CD, independently of SHP geometry.
@@ -293,23 +328,21 @@ pub(crate) fn render_launcher_options(
 ) -> anyhow::Result<()> {
     use crate::app::frontend::shell_transition::ShellSlideKind;
     let now = Instant::now();
-    let page = state
+    let category = state
         .frontend
         .options_dialog
         .as_ref()
         .expect("launcher active")
-        .page();
-    let layout = crate::app::frontend::shell_layout::launcher_options_layout(state, page);
+        .category();
+    let layout = crate::app::frontend::shell_layout::launcher_options_layout(state, category);
     let scale = layout.scale;
     // The teardown slide starts with a full dialog repaint (`0x00622C4F`) and
     // pumps no messages until it ends: every child stays blank. The entry
     // slide suppresses the heading, status line, monitor and column buttons
     // (`0x00606800`); the left-side controls paint.
-    let exit_wave = crate::app::frontend::shell_transition::shell_exit_wave(
-        state,
-        ShellSlideKind::options_page(page),
-    )
-    .cloned();
+    let exit_wave =
+        crate::app::frontend::shell_transition::shell_exit_wave(state, ShellSlideKind::Options)
+            .cloned();
     let leaving = exit_wave.is_some();
     let wave = exit_wave.or_else(|| state.frontend.shell_first_paint_slide.clone());
     let sliding = wave.is_some();

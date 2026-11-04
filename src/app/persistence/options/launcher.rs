@@ -212,8 +212,6 @@ pub(crate) trait LauncherParentOperations {
     fn apply_voice_output(&mut self, value: f32);
     fn primary_dropped(&mut self);
     fn persist_profile(&mut self);
-    fn prepare_network_settings(&mut self);
-    fn route_network(&mut self);
     fn route_keyboard(&mut self);
     fn reopen_parent(&mut self);
 }
@@ -253,7 +251,7 @@ fn apply_launcher_parent(
 ///
 /// gamemd-derived: `OptionsClass__ShowLauncherDialog @ 0x0055FC80` always
 /// applies and destroys the primary before child preparation/route or the one
-/// final write. Network/Keyboard then rebuild a fresh primary without writing.
+/// final write. Keyboard then rebuilds a fresh primary without writing.
 pub(crate) fn dispatch_launcher_parent_result(
     operations: &mut impl LauncherParentOperations,
     dialog: OptionsDialogState,
@@ -268,11 +266,6 @@ pub(crate) fn dispatch_launcher_parent_result(
     match result {
         LauncherParentResult::Back | LauncherParentResult::Terminal => {
             operations.persist_profile();
-        }
-        LauncherParentResult::Network => {
-            operations.prepare_network_settings();
-            operations.route_network();
-            operations.reopen_parent();
         }
         LauncherParentResult::Keyboard => {
             operations.route_keyboard();

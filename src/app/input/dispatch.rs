@@ -104,8 +104,7 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
             return;
         }
         // The shell error card is main-menu only.
-        Some(ModalPage::ShellError | ModalPage::NetworkFailure | ModalPage::NetworkOptions)
-        | None => {}
+        Some(ModalPage::ShellError | ModalPage::NetworkFailure) | None => {}
     }
     // Paused in-game Options overlay owns the mouse: route press/release/checkbox/
     // Back here and CONSUME the click so it never reaches the tactical viewport or
@@ -916,7 +915,7 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
             crate::app::input::keyboard::cursor_moved(state);
             return;
         }
-        Some(ModalPage::ShellError | ModalPage::NetworkOptions) | None => {}
+        Some(ModalPage::ShellError) | None => {}
     }
     // Paused in-game Options overlay: drive a live slider drag (visual/stored only —
     // cadence applies on close, KD-8) and swallow the move so it can't begin a

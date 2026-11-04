@@ -99,7 +99,7 @@ Die Kartenkapazität wird ohne Build-Schalter automatisch gewählt: Die Summe vo
 VERA20K spielt sich standardmäßig wie das Originalspiel. Jede andere neue Funktion, auch Erweiterungen
 aus Mods wie Ares, muss ausgeschaltet bleiben, bis sie auf einem dieser Wege aktiviert wird:
 
-- **Eine VERA-Spieleroption** unter **Options → Vera Options**, gespeichert im Abschnitt `[VERA]` in `VERA.INI`.
+- **Eine VERA-Spieleroption** unter **Options**, gespeichert im Abschnitt `[VERA]` in `VERA.INI`.
 - **Eine Build-Option**, z. B. `--features ares` für die unterstützten [Ares-Erweiterungen](docs/ares.md).
 - **Ein INI-Schlüssel**, den eine Mod oder eine Karte setzt.
 

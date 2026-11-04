@@ -19,7 +19,7 @@ use crate::app::frontend::main_menu_shell_render::Ra2tsDialogOwner;
 use crate::app::frontend::shell_transition::{MainMenuEntryPresentToken, ShellSlideKind};
 use crate::render::frame_readback::PendingBgra8Readback;
 use crate::ui::game_screen::GameScreen;
-use crate::ui::main_menu_dialogs::options::OptionsPage;
+use crate::ui::main_menu_dialogs::options::Category;
 use crate::ui::main_menu_shell::MainMenuMovieBase;
 use crate::ui::shell::static_reveal::Kind1PaintWindow;
 
@@ -84,37 +84,14 @@ const CHECKPOINT_CAMPAIGN_BACK_RETURN: &str = "campaign-back-return";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY: &str = "load-saved-game-0xb7-steady";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_ENTRY_PREFIX: &str = "load-saved-game-0xb7-entry-tick-";
 const CHECKPOINT_OPTIONS_0XD5_STEADY: &str = "options-0xd5-steady";
-/// Vera Options pressed on the settled `0xD5`: VERA's page settled.
-const CHECKPOINT_OPTIONS_VERA_STEADY: &str = "options-vera-steady";
-const NETWORK_OPTIONS_CHECKPOINTS: [(&str, movies::NetworkOptionsTarget); 7] = [
-    (
-        "network-options-0xd7-steady",
-        movies::NetworkOptionsTarget::Steady,
-    ),
-    (
-        "network-options-0xd7-cards",
-        movies::NetworkOptionsTarget::Cards,
-    ),
-    (
-        "network-options-0xd7-invalid-port",
-        movies::NetworkOptionsTarget::InvalidPort,
-    ),
-    (
-        "network-options-0xd7-warning-1",
-        movies::NetworkOptionsTarget::Warning1,
-    ),
-    (
-        "network-options-0xd7-warning-2",
-        movies::NetworkOptionsTarget::Warning2,
-    ),
-    (
-        "network-options-0xd7-back",
-        movies::NetworkOptionsTarget::Back,
-    ),
-    (
-        "network-options-0xd7-save-return",
-        movies::NetworkOptionsTarget::SaveReturn,
-    ),
+/// A page's column button pressed on the settled `0xD5`: that page showing.
+const OPTIONS_SETTINGS_CHECKPOINTS: [(&str, Category); 6] = [
+    ("options-0xd5-settings-display", Category::Display),
+    ("options-0xd5-settings-gameplay", Category::Gameplay),
+    ("options-0xd5-settings-interface", Category::Interface),
+    ("options-0xd5-settings-audio", Category::Audio),
+    ("options-0xd5-settings-controls", Category::Controls),
+    ("options-0xd5-settings-developer", Category::Developer),
 ];
 const CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE: &str = "main-menu-0xe2-network-bounce";
 const CHECKPOINT_WOL_0X10E_STEADY: &str = "wol-0x10e-steady";
@@ -126,11 +103,20 @@ const CHECKPOINT_WOL_0X10E_BACK: &str = "wol-0x10e-back";
 const WOL_QUICK_MATCH_POINT: (i32, i32) = (720, 220);
 const CHECKPOINT_OPTIONS_0XD5_ENTRY_PREFIX: &str = "options-0xd5-entry-tick-";
 /// `options-0xd5-hover-<control>`: the pointer rests on a control (like the
-/// retail helper's hover capture) so the status line shows its help.
-const OPTIONS_0XD5_HOVER_CHECKPOINTS: [(&str, (i32, i32)); 3] = [
-    ("options-0xd5-hover-difficulty", (180, 214)),
-    ("options-0xd5-hover-tooltips", (175, 315)),
-    ("options-0xd5-hover-music", (140, 480)),
+/// retail helper's hover capture) so the status line shows its help. Each
+/// entry names the page its control is on; the points are at 800x600.
+const OPTIONS_0XD5_HOVER_CHECKPOINTS: [(&str, Category, (i32, i32)); 3] = [
+    (
+        "options-0xd5-hover-difficulty",
+        Category::Gameplay,
+        (224, 157),
+    ),
+    (
+        "options-0xd5-hover-tooltips",
+        Category::Interface,
+        (160, 158),
+    ),
+    ("options-0xd5-hover-music", Category::Audio, (200, 97)),
 ];
 /// `skirmish-0x102-hover-<control>`: once `0x102` settles the pointer rests
 /// on a control, as in the retail stills `sk-hover-start.png` and
@@ -270,10 +256,8 @@ pub enum ShellCaptureCheckpoint {
     LoadSavedGame0xB7Entry(u32),
     /// Main Menu -> Options: `0xD5` settled.
     Options0xD5Steady,
-    /// Then Vera Options: VERA's page settled.
-    OptionsVeraSteady,
-    /// Ordinary D5 -> D7 with explicit service/settings inputs.
-    NetworkOptions(movies::NetworkOptionsTarget),
+    /// Then a page's column button: that page showing.
+    OptionsSettings(Category),
     Lan(movies::LanTarget),
     Wol(movies::WolTarget),
     /// Network on `0xE2`: after its teardown slide and a new `0xE2`'s entry
@@ -758,22 +742,21 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_BACK_RETURN => Ok(Self::CampaignBackReturn),
             CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY => Ok(Self::LoadSavedGame0xB7Steady),
             CHECKPOINT_OPTIONS_0XD5_STEADY => Ok(Self::Options0xD5Steady),
-            CHECKPOINT_OPTIONS_VERA_STEADY => Ok(Self::OptionsVeraSteady),
             CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE => Ok(Self::MainMenu0xE2NetworkBounce),
             CHECKPOINT_WOL_0X10E_STEADY => Ok(Self::Wol0x10ESteady),
             CHECKPOINT_WOL_0X10E_HOVER_QUICK_MATCH => Ok(Self::Wol0x10EHoverQuickMatch),
             CHECKPOINT_WOL_0X10E_API_MISSING => Ok(Self::Wol0x10EApiMissing),
             CHECKPOINT_WOL_0X10E_BACK => Ok(Self::Wol0x10EBack),
             _ => {
-                if let Some((_, target)) = NETWORK_OPTIONS_CHECKPOINTS
+                if let Some((_, category)) = OPTIONS_SETTINGS_CHECKPOINTS
                     .iter()
                     .find(|(name, _)| *name == value)
                 {
-                    return Ok(Self::NetworkOptions(*target));
+                    return Ok(Self::OptionsSettings(*category));
                 }
                 if let Some(index) = OPTIONS_0XD5_HOVER_CHECKPOINTS
                     .iter()
-                    .position(|(name, _)| *name == value)
+                    .position(|(name, ..)| *name == value)
                 {
                     return Ok(Self::Options0xD5Hover(index));
                 }
@@ -951,7 +934,13 @@ impl ShellCaptureCheckpoint {
             Self::LoadSavedGame0xB7Steady => CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY,
             Self::LoadSavedGame0xB7Entry(_) => "load-saved-game-0xb7-entry",
             Self::Options0xD5Steady => CHECKPOINT_OPTIONS_0XD5_STEADY,
-            Self::OptionsVeraSteady => CHECKPOINT_OPTIONS_VERA_STEADY,
+            Self::OptionsSettings(category) => {
+                OPTIONS_SETTINGS_CHECKPOINTS
+                    .iter()
+                    .find(|(_, candidate)| *candidate == category)
+                    .expect("every Category has an options checkpoint")
+                    .0
+            }
             Self::Lan(target) => {
                 movies::LAN_CHECKPOINTS
                     .iter()
@@ -964,13 +953,6 @@ impl ShellCaptureCheckpoint {
                     .iter()
                     .find(|(_, candidate)| *candidate == target)
                     .expect("WOL checkpoint")
-                    .0
-            }
-            Self::NetworkOptions(target) => {
-                NETWORK_OPTIONS_CHECKPOINTS
-                    .iter()
-                    .find(|(_, candidate)| *candidate == target)
-                    .expect("D7 checkpoint")
                     .0
             }
             Self::MainMenu0xE2NetworkBounce => CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE,
@@ -1137,29 +1119,31 @@ impl ShellCaptureCheckpoint {
                 hover: None,
                 press: movies::WolPress::MainMenu,
             },
-            Self::NetworkOptions(target) => movies::MoviesTarget::NetworkOptions(target),
             Self::Lan(target) => movies::MoviesTarget::Lan(target),
             Self::Wol(target) => movies::MoviesTarget::Wol(target),
             Self::Options0xD5Steady => movies::MoviesTarget::Options0xD5 {
                 entry_tick: None,
                 hover: None,
-                page: OptionsPage::Main,
+                category: Category::Display,
             },
-            Self::OptionsVeraSteady => movies::MoviesTarget::Options0xD5 {
+            Self::OptionsSettings(category) => movies::MoviesTarget::Options0xD5 {
                 entry_tick: None,
                 hover: None,
-                page: OptionsPage::Vera,
+                category,
             },
             Self::Options0xD5Entry(tick) => movies::MoviesTarget::Options0xD5 {
                 entry_tick: Some(tick),
                 hover: None,
-                page: OptionsPage::Main,
+                category: Category::Display,
             },
-            Self::Options0xD5Hover(index) => movies::MoviesTarget::Options0xD5 {
-                entry_tick: None,
-                hover: Some(OPTIONS_0XD5_HOVER_CHECKPOINTS[index].1),
-                page: OptionsPage::Main,
-            },
+            Self::Options0xD5Hover(index) => {
+                let (_, category, point) = OPTIONS_0XD5_HOVER_CHECKPOINTS[index];
+                movies::MoviesTarget::Options0xD5 {
+                    entry_tick: None,
+                    hover: Some(point),
+                    category,
+                }
+            }
             Self::CreditsRollFrame(frame) => movies::MoviesTarget::Credits { frame },
             Self::SneakPeekFrame(frame) => movies::MoviesTarget::SneakPeek { frame },
             Self::MainMenu0xE2SlideOut(tick) => movies::MoviesTarget::SlideOut {
@@ -4178,19 +4162,26 @@ mod tests {
 
     #[test]
     fn options_hover_checkpoints_round_trip_their_names() {
-        for (name, _) in OPTIONS_0XD5_HOVER_CHECKPOINTS
+        for (name, ..) in OPTIONS_0XD5_HOVER_CHECKPOINTS {
+            let checkpoint = ShellCaptureCheckpoint::parse(name).expect("hover checkpoint");
+            assert_eq!(checkpoint.as_str(), name);
+        }
+        for (name, _) in SKIRMISH_0X102_HOVER_CHECKPOINTS
             .into_iter()
-            .chain(SKIRMISH_0X102_HOVER_CHECKPOINTS)
             .chain(SKIRMISH_0X105_HOVER_CHECKPOINTS)
         {
             let checkpoint = ShellCaptureCheckpoint::parse(name).expect("hover checkpoint");
             assert_eq!(checkpoint.as_str(), name);
         }
         assert!(ShellCaptureCheckpoint::parse("options-0xd5-hover-nothing").is_err());
-        let vera =
-            ShellCaptureCheckpoint::parse(CHECKPOINT_OPTIONS_VERA_STEADY).expect("VERA page");
-        assert_eq!(vera, ShellCaptureCheckpoint::OptionsVeraSteady);
-        assert_eq!(vera.as_str(), CHECKPOINT_OPTIONS_VERA_STEADY);
+        for (name, category) in OPTIONS_SETTINGS_CHECKPOINTS {
+            let checkpoint = ShellCaptureCheckpoint::parse(name).expect("settings checkpoint");
+            assert_eq!(
+                checkpoint,
+                ShellCaptureCheckpoint::OptionsSettings(category)
+            );
+            assert_eq!(checkpoint.as_str(), name);
+        }
     }
 
     #[test]
@@ -4214,18 +4205,6 @@ mod tests {
             assert_eq!(
                 checkpoint.movies_target(),
                 Some(movies::MoviesTarget::Wol(target))
-            );
-        }
-    }
-
-    #[test]
-    fn network_options_checkpoints_route_through_production_options() {
-        for (name, target) in NETWORK_OPTIONS_CHECKPOINTS {
-            let checkpoint = ShellCaptureCheckpoint::parse(name).expect("D7 checkpoint");
-            assert_eq!(checkpoint.as_str(), name);
-            assert_eq!(
-                checkpoint.movies_target(),
-                Some(movies::MoviesTarget::NetworkOptions(target))
             );
         }
     }

@@ -102,9 +102,6 @@ pub(crate) struct RetailOptionsProfile {
     pub(crate) network_socket: u16,
     pub(crate) network_card: i32,
     pub(crate) network_destination: String,
-    // SessionClass__ReadMultiPlayerSettings 6981E6..698228 and D7 560480.
-    pub(crate) network_send_delay: bool,
-    pub(crate) network_port: i32,
 
     // [WOnline]'s nine WOL preferences, outside OptionsClass: the same
     // profile object (RA2MD.INI in native) `WOL_Main`'s reader `0x0077DED0` reads at every WOL
@@ -294,8 +291,6 @@ impl Default for RetailOptionsProfile {
             network_socket: u16::MAX,
             network_card: 0,
             network_destination: String::new(),
-            network_send_delay: false,
-            network_port: 0,
             wol_preferences: Default::default(),
             full_screen: false,
             zoom: crate::ui::main_menu_dialogs::options::Zoom::Auto,
@@ -524,9 +519,6 @@ impl RetailOptionsProfile {
         self.network_socket = network.read_int("Socket", i32::from(self.network_socket)) as u16;
         self.network_card = network.read_int("NetCard", self.network_card);
         self.network_destination = network.read_string("DestNet", "", 0x40);
-        let multiplayer = ini.section_or_empty("MultiPlayer");
-        self.network_send_delay = multiplayer.read_bool("SendDelay", false);
-        self.network_port = multiplayer.read_int("PortNumberOverride", 0);
         self.wol_preferences = read_wol_preferences(ini.section_or_empty(WONLINE_SECTION));
 
         if let Some(vera) = ini.section(VERA_SECTION) {
@@ -784,13 +776,6 @@ impl RetailOptionsProfile {
         profile_file::update(ra2_dir, |input| self.transform_settings(input))
     }
 
-    /// D7's accepted firewall settings write only these two MultiPlayer keys
-    /// (NetworkOptionsDialog__DlgProc_D7 at 560480). LAN fields are written
-    /// by the parent Options writer.
-    pub(crate) fn commit_network_options(&self, ra2_dir: &Path) -> io::Result<()> {
-        profile_file::update(ra2_dir, |input| self.transform_network_options(input))
-    }
-
     /// WOL Options' writer `0x0077DFD0`: the nine `[WOnline]` keys in the
     /// reader's order, `WriteInt` decimal then `WriteBool` yes/no, and then
     /// `INIClass::Save`. Every other section and key is left as it is.
@@ -836,17 +821,6 @@ impl RetailOptionsProfile {
                 ("DisplayLatin", p.display_latin.to_string()),
                 ("DisplayBuddies", format_bool(p.display_buddies).to_owned()),
                 ("DisplayClan", format_bool(p.display_clan).to_owned()),
-            ],
-        )
-    }
-
-    fn transform_network_options(&self, input: &[u8]) -> Vec<u8> {
-        apply_formatted_section(
-            input,
-            "MultiPlayer",
-            &[
-                ("SendDelay", format_bool(self.network_send_delay).to_owned()),
-                ("PortNumberOverride", self.network_port.to_string()),
             ],
         )
     }
@@ -977,78 +951,15 @@ mod tests {
     #[test]
     fn network_settings_read_native_defaults_and_narrow_socket_only() {
         let defaults = load_snapshot(&RetailStartupOptions::default(), b"").retained_profile;
-        assert_eq!(
-            (
-                defaults.network_socket,
-                defaults.network_card,
-                defaults.network_port
-            ),
-            (65535, 0, 0)
-        );
-        assert!(!defaults.network_send_delay);
+        assert_eq!((defaults.network_socket, defaults.network_card), (65535, 0));
         assert!(defaults.network_destination.is_empty());
-        let loaded = load_snapshot(&RetailStartupOptions::default(), b"[Network]\nSocket=65536\nNetCard=-2\nDestNet=  aa.bb.cc.dd  \n[MultiPlayer]\nSendDelay=yes\nPortNumberOverride=-1\n").retained_profile;
-        assert_eq!(
-            (
-                loaded.network_socket,
-                loaded.network_card,
-                loaded.network_port
-            ),
-            (0, -2, -1)
-        );
-        assert!(loaded.network_send_delay);
+        let loaded = load_snapshot(
+            &RetailStartupOptions::default(),
+            b"[Network]\nSocket=65536\nNetCard=-2\nDestNet=  aa.bb.cc.dd  \n",
+        )
+        .retained_profile;
+        assert_eq!((loaded.network_socket, loaded.network_card), (0, -2));
         assert_eq!(loaded.network_destination, "aa.bb.cc.dd");
-    }
-
-    #[test]
-    fn d7_commit_keeps_lan_pending_until_parent_options_write() {
-        let input = b"; keep\r\n[Network]\r\nSocket=5\r\nNetCard=1\r\nDestNet=1.2.3.4\r\n[MultiPlayer]\r\nHandle=unchanged\r\nSendDelay=no\r\nPortNumberOverride=0\r\n";
-        let profile = RetailOptionsProfile {
-            network_socket: 123,
-            network_card: 2,
-            network_destination: "aa.bb.cc.dd".into(),
-            network_send_delay: true,
-            network_port: -1,
-            ..Default::default()
-        };
-        let d7 = profile.transform_network_options(input);
-        let parsed = IniFile::from_bytes(&d7).unwrap();
-        assert_eq!(parsed.section_or_empty("Network").read_int("Socket", 0), 5);
-        assert_eq!(
-            parsed
-                .section_or_empty("MultiPlayer")
-                .read_string("Handle", "", 64),
-            "unchanged"
-        );
-        assert!(
-            parsed
-                .section_or_empty("MultiPlayer")
-                .read_bool("SendDelay", false)
-        );
-        assert_eq!(
-            parsed
-                .section_or_empty("MultiPlayer")
-                .read_int("PortNumberOverride", 0),
-            -1
-        );
-        let parent = profile.transform_settings(&d7);
-        let parsed = IniFile::from_bytes(&parent).unwrap();
-        assert_eq!(
-            parsed.section_or_empty("Network").read_int("Socket", 0),
-            123
-        );
-        assert_eq!(
-            parsed
-                .section_or_empty("Network")
-                .read_string("DestNet", "", 64),
-            "aa.bb.cc.dd"
-        );
-        assert_eq!(
-            parsed
-                .section_or_empty("MultiPlayer")
-                .read_int("PortNumberOverride", 0),
-            -1
-        );
     }
 
     #[test]

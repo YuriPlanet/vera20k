@@ -4,27 +4,30 @@
 //! 0x00608CD0/0x00609730 anchors the rail, and 0x0060B950 adjusts its title.
 //! This module projects the retained OptionsDialogState instead of owning a
 //! second set of option values or bypassing its ordered preview events.
-//! VERA's page lays its controls out on the main page's bands and rows.
+//! The right-hand column picks a category; its page lays the controls out in
+//! one column at the places retail's first band uses.
 
 use super::{
-    ACCESSIBILITY_LABEL, CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL,
-    CUSTOM_END_GAME_BANNER_HELP, CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP,
-    CUSTOM_END_GAME_MOVIE_LABEL, CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL,
-    DEVELOPER_OPTIONS_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayChoice,
-    DisplayTarget, FPS_COUNTER_HELP, FPS_COUNTER_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL,
-    HAS_CHECK_FOR_UPDATES, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
-    HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode, LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton,
-    LauncherCheckboxId, LauncherComboId, LauncherCue, LauncherOptionsEvent, LauncherParentResult,
-    LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP,
-    ORIGINAL_SHAPE_LABEL, OptionsDialogState, OptionsPage, PhysicalControlFrame,
-    RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP,
-    RIGHT_CLICK_ORDERS_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
-    SKIP_INTRO_HELP, SKIP_INTRO_LABEL, SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL,
-    VERA_OPTIONS_HELP, VERA_OPTIONS_LABEL, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL,
-    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL, CONTROLS_LABEL, CUSTOM_END_GAME_BANNER_HELP,
+    CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL,
+    CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, DEVELOPER_OPTIONS_LABEL,
+    DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget, FPS_COUNTER_HELP,
+    FPS_COUNTER_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, HAS_CHECK_FOR_UPDATES,
+    HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL,
+    HealthBarMode, LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId,
+    LauncherComboId, LauncherCue, LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId,
+    MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL,
+    OptionsDialogState, PhysicalControlFrame, RENDER_INTERPOLATION_HELP,
+    RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL,
+    SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP,
+    SKIP_INTRO_LABEL, Setting, SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL, WOL_TEST_SERVICE_HELP,
+    WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL,
+    Zoom,
 };
 use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{RectPx, ShellScale, center_offset, child_window, dlu_rect};
+use crate::ui::shell::geom::{
+    RectPx, ShellScale, center_offset, child_window, dlu_rect, right_panel_rects,
+};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageSpec};
 use crate::ui::shell::trackbar::{authored_track, thumb_left_at};
 use crate::ui::skirmish_shell::{COMBO_FACE_H, DropdownMetrics, combo_face_rect};
@@ -38,6 +41,19 @@ pub(super) struct ShellInteraction {
     status_help: Option<LauncherStatusHelp>,
 }
 
+impl ShellInteraction {
+    /// After a category switch: the column doesn't move, so the pointer still
+    /// rests on the button it released, and that button's hover and status
+    /// help stay.
+    pub(super) fn page_switched(self) -> Self {
+        Self {
+            hovered_button: self.hovered_button,
+            status_help: self.status_help,
+            ..Self::default()
+        }
+    }
+}
+
 /// What the status line says for a control.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LauncherStatusHelp {
@@ -48,17 +64,31 @@ pub(crate) enum LauncherStatusHelp {
 }
 
 pub(crate) const KEYBOARD_BUTTON: u16 = 0x05CE;
-pub(crate) const NETWORK_BUTTON: u16 = 0x05CD;
 pub(crate) const MAIN_MENU_BUTTON: u16 = 0x0686;
-/// VERA's own button under Network. Not a retail control: the id only names
-/// its rect in the page layout.
-pub(crate) const VERA_OPTIONS_BUTTON: u16 = 0x7FFF;
+/// VERA's category buttons under Keyboard, in [`Category::ALL`]'s order. Not
+/// retail controls: the ids only name their rects in the page layout.
+const CATEGORY_BUTTONS: [u16; 6] = [0x7FF0, 0x7FF1, 0x7FF2, 0x7FF3, 0x7FF4, 0x7FF5];
+const _: () = assert!(CATEGORY_BUTTONS.len() == Category::ALL.len());
+
+/// A category's button: the stacked tops go on 27 DLUs at a time from
+/// Keyboard's, as the family pages' do, so each lands on the next tile.
+/// Its caption is the category's name and its help [`Category::help`].
+const fn category_button(index: usize) -> MenuPageButtonSpec {
+    MenuPageButtonSpec {
+        id: CATEGORY_BUTTONS[index],
+        dlu_top: 149 + 27 * index as i32,
+        csf_key: "",
+        tooltip_key: "",
+        result: None,
+    }
+}
 
 /// `0xD5` as a family page (Session `+0x30D8` clear at the main menu): the
 /// right-panel column is Keyboard and Network (`0x006092CB`), then Main Menu
 /// (`0x0060982C`); the heading and status line sit at the family places.
-/// VERA adds its Vera Options button in the next slot, the third stacked top
-/// the family pages use. Button captions come from the dialog's own labels.
+/// VERA leaves Network (`0x5CD`) out: it opens the IPX settings page `0xD7`,
+/// and VERA's LAN runs on IPv4 UDP. VERA's category buttons take the six
+/// tiles under Keyboard. Button captions come from the dialog's own labels.
 pub(crate) const OPTIONS_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DialogId(0x00D5),
     title_key: "GUI:OptionsMenu",
@@ -70,22 +100,12 @@ pub(crate) const OPTIONS_PAGE: MenuPageSpec = MenuPageSpec {
             tooltip_key: "STT:MainOptButtonKeyboard",
             result: None,
         },
-        MenuPageButtonSpec {
-            id: NETWORK_BUTTON,
-            dlu_top: 149,
-            csf_key: "GUI:Network",
-            tooltip_key: "STT:MainOptButtonNetwork",
-            result: None,
-        },
-        // The string table has nothing for it: its caption and help are
-        // VERA_OPTIONS_LABEL and VERA_OPTIONS_HELP.
-        MenuPageButtonSpec {
-            id: VERA_OPTIONS_BUTTON,
-            dlu_top: 176,
-            csf_key: "",
-            tooltip_key: "",
-            result: None,
-        },
+        category_button(0),
+        category_button(1),
+        category_button(2),
+        category_button(3),
+        category_button(4),
+        category_button(5),
     ],
     back: MenuPageButtonSpec {
         id: MAIN_MENU_BUTTON,
@@ -96,58 +116,70 @@ pub(crate) const OPTIONS_PAGE: MenuPageSpec = MenuPageSpec {
     },
 };
 
-/// VERA's Check for Updates on its page, in the column's first slot. Not a
-/// retail control: the id only names its rect in the page layout.
-pub(crate) const CHECK_FOR_UPDATES_BUTTON: u16 = 0x7FFE;
+/// Whether the retail panel at this window size has a tile for every column
+/// button above Main Menu's. 640x480's six tiles hold five, too few for the
+/// seven, so `0xD5` takes the fitted 800x600 page there instead: not native,
+/// and the only size whose Options art is scaled while the other pages keep
+/// the 640-wide set.
+pub(crate) fn retail_column_fits(width: i32, height: i32) -> bool {
+    right_panel_rects(width, height).tile_count > OPTIONS_PAGE.stacked.len() as i32
+}
 
-/// VERA's page of `0xD5`: Check for Updates at the top of the column (not in
-/// the browser build), and Back in Main Menu's place, as on the Keyboard page
-/// `0xA3`, with the Keyboard page's Back help.
-pub(crate) const VERA_OPTIONS_PAGE: MenuPageSpec = MenuPageSpec {
-    dialog: DialogId(0x00D5),
-    // The heading is VERA's own text, VERA_OPTIONS_LABEL.
-    title_key: "",
-    // Its caption and help are CHECK_FOR_UPDATES_LABEL and _HELP.
-    stacked: if HAS_CHECK_FOR_UPDATES {
-        &[MenuPageButtonSpec {
-            id: CHECK_FOR_UPDATES_BUTTON,
-            dlu_top: 122,
-            csf_key: "",
-            tooltip_key: "",
-            result: None,
-        }]
-    } else {
-        &[]
-    },
-    back: MenuPageButtonSpec {
-        id: MAIN_MENU_BUTTON,
-        dlu_top: 346,
-        csf_key: "GUI:Back",
-        tooltip_key: "STT:KeyboardButtonBack",
-        result: None,
-    },
-};
+// A page in DLUs: the category's name in the first retail band heading's
+// place (`GUI:DisplayOptions` at 20,18), then one column of rows from the
+// Visual Details caption's place (89,38). Boxes keep the UI Options boxes' x
+// and 15-DLU pitch. A slider's track sits 15 DLUs under its caption, as
+// Visual Details' does, and the next row starts 9 DLUs under the track: at
+// 640x480's 0.8 fit, 8 puts a stacked slider's edge where it maps back a
+// pixel off, and that slider loses its frame art. A list's face hangs 16 px
+// under its caption's top, as VERA's lists did on main's page, and the next
+// row starts 4 px under the face.
+const HEADING: (i32, i32) = (20, 18);
+const ROW_X: i32 = 89;
+const BOX_X: i32 = 93;
+const FIRST_ROW: i32 = 38;
+const BOX_PITCH: i32 = 15;
+const SLIDER_PITCH: i32 = 37;
+const LIST_PITCH: i32 = 27;
+/// A box's width. Retail's are 130 DLUs, where VERA's longer captions, such as
+/// "Custom End Game Banner", wrap, and a caption that wraps loses its second
+/// line to the 10-DLU height.
+const BOX_W: i32 = 160;
+
+/// A caption the page paints, by what it names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PageLabel {
+    /// The category's name, in a retail band heading's place.
+    Heading,
+    /// A list's caption, over its face.
+    List(LauncherComboId),
+    /// A slider's caption, over its track.
+    Slider(LauncherTrackbarId),
+    /// The step a plaque-less slider stands at, right-aligned over the
+    /// track's end as retail prints Visual Details'.
+    Step(LauncherTrackbarId),
+    /// Static `GUI:Blank` at the status line's template place.
+    Blank,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LauncherOptionsLayout {
-    /// The page these controls are for.
-    pub(crate) page: OptionsPage,
+    /// The category whose page this is.
+    pub(crate) category: Category,
     pub(crate) title: RectPx,
     pub(crate) warning: RectPx,
     /// Status line `0x695`.
     pub(crate) status_help: RectPx,
-    /// The page's list, in the resolution combo's retail place: Zoom on the
-    /// main page, Sidebar on VERA's.
+    pub(crate) labels: Vec<(RectPx, PageLabel)>,
     pub(crate) combos: Vec<(LauncherComboId, RectPx)>,
     pub(crate) trackbars: Vec<(LauncherTrackbarId, RectPx)>,
     pub(crate) checkboxes: Vec<(LauncherCheckboxId, RectPx)>,
+    /// The column top to bottom, then the page's own Check for Updates.
     pub(crate) buttons: Vec<(LauncherButton, RectPx)>,
     /// The mapping the rects are in: [`ShellScale::RETAIL`] centres the
     /// authored dialog in the window, otherwise the authored dialog is
     /// scaled to fit it, centred. Control sub-rects and art fits key on this.
     pub(crate) scale: ShellScale,
-    offset_x: i32,
-    offset_y: i32,
     /// The window, which a match shares: the zoom list depends on it.
     screen: (u32, u32),
     /// A battle's frame in this window at the chosen zoom and shape: the
@@ -157,17 +189,28 @@ pub(crate) struct LauncherOptionsLayout {
 
 impl LauncherOptionsLayout {
     /// Gamemd's centred `0xD5`: the authored dialog placed in the window at
-    /// [`ShellScale::RETAIL`].
-    pub(crate) fn new(width: i32, height: i32, page: OptionsPage) -> Self {
-        Self::build(width, height, ShellScale::RETAIL, page)
+    /// [`ShellScale::RETAIL`], or fitted where the panel is too short for the
+    /// column ([`retail_column_fits`]).
+    pub(crate) fn new(width: i32, height: i32, category: Category) -> Self {
+        let scale = if retail_column_fits(width, height) {
+            ShellScale::RETAIL
+        } else {
+            ShellScale::from_screen(width, height)
+        };
+        Self::build(width, height, scale, category)
     }
 
     /// The same dialog scaled to fit the window.
-    pub(crate) fn responsive(width: i32, height: i32, page: OptionsPage) -> Self {
-        Self::build(width, height, ShellScale::from_screen(width, height), page)
+    pub(crate) fn responsive(width: i32, height: i32, category: Category) -> Self {
+        Self::build(
+            width,
+            height,
+            ShellScale::from_screen(width, height),
+            category,
+        )
     }
 
-    fn build(width: i32, height: i32, scale: ShellScale, page: OptionsPage) -> Self {
+    fn build(width: i32, height: i32, scale: ShellScale, category: Category) -> Self {
         // The scale centres a scaled page itself, so it takes no centring
         // offset of its own and every authored rect goes through the one scale.
         let stretch = !scale.is_retail();
@@ -187,153 +230,84 @@ impl LauncherOptionsLayout {
         // (retail stills: 181x22 and 129x22).
         let slider = |x, y, w, h| px(child_window(x, y, w, h));
         // The right-panel children follow the panel, not the dialog centring.
-        let spec = match page {
-            OptionsPage::Main => &OPTIONS_PAGE,
-            OptionsPage::Vera => &VERA_OPTIONS_PAGE,
-        };
         let panel = if stretch {
-            menu_page::compute_responsive_layout(spec, width as u32, height as u32)
+            menu_page::compute_responsive_layout(&OPTIONS_PAGE, width as u32, height as u32)
         } else {
-            menu_page::compute_layout(spec, width as u32, height as u32)
+            menu_page::compute_layout(&OPTIONS_PAGE, width as u32, height as u32)
         };
-        let button = |id| panel.button_rect(id).expect("0xD5 page button");
-        // Either page's list takes the resolution combo's place.
-        let combo = px(RectPx::new(351, 86, 180, COMBO_FACE_H));
-        // VERA's page holds two lists in the Display Options band's right
-        // column, each under its own caption. The band spans the Display
-        // Options heading's end to the UI Options heading (45..151 px), and a
-        // caption is 16 px tall, so the four rows stack with no spare:
-        // caption 50..66, face 66..90, caption 94..110, face 110..134.
-        let sidebar_combo = px(RectPx::new(351, 66, 180, COMBO_FACE_H));
-        let display_combo = px(RectPx::new(351, 110, 180, COMBO_FACE_H));
-        // The UI Options band's third right-column row, under Right-Click
-        // Orders and VERA Icon: its caption at 141 DLU and the face at 246 px
-        // end 3 px above the Developer Options heading, like the other lists'
-        // caption gap.
-        let health_bars_combo = px(RectPx::new(351, 246, 180, COMBO_FACE_H));
-        // VERA's Accessibility band takes the main page's Audio Options place:
-        // its heading, then one caption row over one slider. The trackbar's
-        // border art is only authored for the windows in
-        // `skirmish_shell_chrome::TRACKBAR_FRAMES`, and a plaque slider is one
-        // of the 50-reserve ones, so this row takes the 226x22 window the main
-        // page's Generate Map slider uses rather than the plain 181x22 one:
-        // any other size paints the thumb and the plaque over no frame at all.
-        let house_color_slider = slider(82, 289, 150, 13);
-        let (combos, trackbars, checkboxes, buttons) = match page {
-            OptionsPage::Main => (
-                vec![(LauncherComboId::Zoom, combo)],
-                vec![
-                    (LauncherTrackbarId::Detail, slider(89, 53, 120, 13)),
-                    (LauncherTrackbarId::Difficulty, slider(92, 128, 120, 13)),
-                    (LauncherTrackbarId::Scroll, slider(238, 203, 120, 13)),
-                    (LauncherTrackbarId::Score, slider(82, 289, 85, 13)),
-                    (LauncherTrackbarId::Sound, slider(179, 289, 85, 13)),
-                    (LauncherTrackbarId::Voice, slider(277, 289, 85, 13)),
-                ],
-                vec![
-                    (LauncherCheckboxId::Tooltips, dlu(93, 188, 130, 10)),
-                    (LauncherCheckboxId::TargetLines, dlu(93, 203, 130, 10)),
-                    (LauncherCheckboxId::ShowHidden, dlu(93, 218, 130, 10)),
-                ],
-                vec![
-                    (
-                        LauncherButton::Exit(LauncherParentResult::Keyboard),
-                        button(KEYBOARD_BUTTON),
-                    ),
-                    (
-                        LauncherButton::Exit(LauncherParentResult::Network),
-                        button(NETWORK_BUTTON),
-                    ),
-                    (
-                        LauncherButton::Page(OptionsPage::Vera),
-                        button(VERA_OPTIONS_BUTTON),
-                    ),
-                    (
-                        LauncherButton::Exit(LauncherParentResult::Back),
-                        button(MAIN_MENU_BUTTON),
-                    ),
-                ],
-            ),
-            // VERA's page keeps the main page's bands and rows: boxes at the
-            // UI Options boxes' place, 15 DLUs apart. A band whose left column
-            // is full continues at x 238, the main page's Scroll slider column.
-            OptionsPage::Vera => (
-                vec![
-                    (LauncherComboId::Sidebar, sidebar_combo),
-                    (LauncherComboId::Display, display_combo),
-                    (LauncherComboId::HealthBars, health_bars_combo),
-                ],
-                vec![(LauncherTrackbarId::HouseColorStrength, house_color_slider)],
-                vec![
-                    // Display Options: the window and how battles draw.
-                    (LauncherCheckboxId::FullScreen, dlu(93, 38, 130, 10)),
-                    (LauncherCheckboxId::OriginalShape, dlu(93, 53, 130, 10)),
-                    (
-                        LauncherCheckboxId::RenderInterpolation,
-                        dlu(93, 68, 130, 10),
-                    ),
-                    // UI Options, in the main page's Game Options band.
-                    (LauncherCheckboxId::YrOriginalStyle, dlu(93, 113, 130, 10)),
-                    (LauncherCheckboxId::ShiftQueue, dlu(93, 128, 130, 10)),
-                    (LauncherCheckboxId::MouseWheelZoom, dlu(93, 143, 130, 10)),
-                    (LauncherCheckboxId::LockCursor, dlu(93, 158, 130, 10)),
-                    (LauncherCheckboxId::RightClickOrders, dlu(238, 113, 130, 10)),
-                    (LauncherCheckboxId::VeraIcon, dlu(238, 128, 130, 10)),
-                    // Developer Options, in the main page's UI Options band.
-                    // This band carries five rows where the others carry
-                    // three, so it uses a 13 DLU pitch instead of 15:
-                    // 187, 200, 213, 226, 239. At 15 the fifth row would end
-                    // at 258 and run through the Accessibility heading at 254;
-                    // at 13 the last row ends 5 short of it, the same gap the
-                    // other bands keep between their own rows. The last three
-                    // are the `[EndGameScreens]` switches and stay together.
-                    // The three end-game rows are wider than the column's usual
-                    // 130: their labels run to 21 characters ("Custom End Game
-                    // Banner"), and the text rect keeps a 26 px icon column, so
-                    // 130 would wrap them onto a second line the 10 DLU height
-                    // clips. 150 leaves ~124 px of text, enough for 23.
-                    (LauncherCheckboxId::FpsCounter, dlu(93, 187, 130, 10)),
-                    (LauncherCheckboxId::SkipIntro, dlu(93, 200, 130, 10)),
-                    (
-                        LauncherCheckboxId::CustomEndGameBanner,
-                        dlu(93, 213, 150, 10),
-                    ),
-                    (
-                        LauncherCheckboxId::CustomEndGameScore,
-                        dlu(93, 226, 150, 10),
-                    ),
-                    (
-                        LauncherCheckboxId::CustomEndGameMovie,
-                        dlu(93, 239, 150, 10),
-                    ),
-                ],
-                HAS_CHECK_FOR_UPDATES
-                    .then(|| {
-                        (
-                            LauncherButton::CheckForUpdates,
-                            button(CHECK_FOR_UPDATES_BUTTON),
-                        )
-                    })
-                    .into_iter()
-                    .chain([(
-                        LauncherButton::Page(OptionsPage::Main),
-                        button(MAIN_MENU_BUTTON),
-                    )])
-                    .collect(),
-            ),
-        };
+        let column = |id| panel.button_rect(id).expect("0xD5 column button");
+        let mut buttons = vec![(
+            LauncherButton::Exit(LauncherParentResult::Keyboard),
+            column(KEYBOARD_BUTTON),
+        )];
+        buttons.extend(
+            Category::ALL
+                .into_iter()
+                .zip(CATEGORY_BUTTONS)
+                .map(|(category, id)| (LauncherButton::Category(category), column(id))),
+        );
+        buttons.push((
+            LauncherButton::Exit(LauncherParentResult::Back),
+            column(MAIN_MENU_BUTTON),
+        ));
+
+        let mut labels = vec![
+            (dlu(HEADING.0, HEADING.1, 298, 10), PageLabel::Heading),
+            (dlu(2, 355, 303, 12), PageLabel::Blank),
+        ];
+        let mut combos = Vec::new();
+        let mut trackbars = Vec::new();
+        let mut checkboxes = Vec::new();
+        let mut top = FIRST_ROW;
+        for &setting in category.settings() {
+            match setting {
+                Setting::List(id) => {
+                    labels.push((dlu(ROW_X, top, 120, 10), PageLabel::List(id)));
+                    // The chrome atlas keys combo faces on their pixel size:
+                    // 180 is the retail resolution list's face.
+                    let caption = dlu_rect(ROW_X, top, 0, 0);
+                    combos.push((
+                        id,
+                        px(RectPx::new(caption.x, caption.y + 16, 180, COMBO_FACE_H)),
+                    ));
+                    top += LIST_PITCH;
+                }
+                // Trackbar art exists for retail's windows only: 150 DLUs with
+                // a value plaque (Generate Map's), 120 without (Visual Details').
+                Setting::Slider(id) if id.plaque_reserve() > 0 => {
+                    labels.push((dlu(ROW_X, top, 150, 10), PageLabel::Slider(id)));
+                    trackbars.push((id, slider(ROW_X, top + 15, 150, 13)));
+                    top += SLIDER_PITCH;
+                }
+                Setting::Slider(id) => {
+                    labels.push((dlu(ROW_X, top, 60, 10), PageLabel::Slider(id)));
+                    labels.push((dlu(ROW_X + 60, top, 60, 10), PageLabel::Step(id)));
+                    trackbars.push((id, slider(ROW_X, top + 15, 120, 13)));
+                    top += SLIDER_PITCH;
+                }
+                Setting::Checkbox(id) => {
+                    checkboxes.push((id, dlu(BOX_X, top, BOX_W, 10)));
+                    top += BOX_PITCH;
+                }
+            }
+        }
+        // Not retail: the column has no tile left for it, so it sits under the
+        // Developer page's boxes, the size of Sound Options' Play and Stop
+        // (`0xD6`, MNBTTN type 3).
+        if category == Category::Developer && HAS_CHECK_FOR_UPDATES {
+            buttons.push((LauncherButton::CheckForUpdates, dlu(ROW_X, top + 6, 83, 15)));
+        }
         Self {
-            page,
+            category,
             title: panel.title,
             warning: panel.warning_monitor,
             status_help: panel.status_help,
+            labels,
             combos,
             trackbars,
             checkboxes,
             buttons,
             scale,
-            offset_x,
-            offset_y,
             screen: (width.max(0) as u32, height.max(0) as u32),
             battle_frame: (width.max(0) as u32, height.max(0) as u32),
         }
@@ -359,11 +333,6 @@ impl LauncherOptionsLayout {
     /// The Zoom list's rows, top to bottom.
     pub(crate) fn zoom_choices(&self) -> Vec<Zoom> {
         Zoom::choices(self.screen.0, self.screen.1)
-    }
-
-    fn label_rect(&self, x: i32, y: i32, w: i32, h: i32) -> RectPx {
-        self.scale
-            .scale_rect(dlu_rect(x, y, w, h).translate(self.offset_x, self.offset_y))
     }
 
     /// The slider's rect when this page has it.
@@ -449,60 +418,70 @@ impl OptionsDialogState {
         self.shell_interaction.pressed_button = None;
         self.shell_interaction.hovered_button = None;
     }
+
     pub(crate) fn shell_labels(
         &self,
         layout: &LauncherOptionsLayout,
     ) -> Vec<LauncherShellLabel<'_>> {
         use LauncherLabelAlign::{Center, Left, Right};
-        let labels = &self.labels;
         let mut result = vec![LauncherShellLabel {
             rect: layout.title,
             text: self.shell_title_text(),
             align: Center,
             title: true,
         }];
-        let statics: &[(&str, i32, i32, i32, i32, LauncherLabelAlign)] = match layout.page {
-            OptionsPage::Main => &[
-                (labels.display_options.as_str(), 20, 18, 140, 10, Left),
-                (&labels.game_options, 20, 93, 298, 10, Left),
-                (&labels.ui_options, 20, 168, 298, 10, Left),
-                (&labels.audio_options, 20, 254, 298, 10, Left),
-                (&labels.visual_details, 89, 38, 60, 10, Left),
-                (&self.detail_caption, 149, 38, 60, 10, Right),
-                (ZOOM_LABEL, 234, 38, 120, 10, Left),
-                (&labels.difficulty, 92, 113, 60, 10, Left),
-                (&self.difficulty_caption, 152, 113, 60, 10, Right),
-                (&labels.scroll_rate, 238, 188, 60, 10, Left),
-                (&self.scroll_caption, 298, 188, 60, 10, Right),
-                (&labels.music_volume, 82, 274, 85, 10, Center),
-                (&labels.sound_volume, 179, 274, 85, 10, Center),
-                (&labels.voice_volume, 277, 274, 85, 10, Center),
-                (&labels.blank, 2, 355, 303, 12, Left),
-            ],
-            // The main page's band headings at the same places.
-            OptionsPage::Vera => &[
-                (labels.display_options.as_str(), 20, 18, 140, 10, Left),
-                (SIDEBAR_LABEL, 234, 31, 120, 10, Left),
-                (DISPLAY_LABEL, 234, 58, 120, 10, Left),
-                (&labels.ui_options, 20, 93, 298, 10, Left),
-                (HEALTH_BARS_LABEL, 234, 141, 120, 10, Left),
-                (DEVELOPER_OPTIONS_LABEL, 20, 168, 298, 10, Left),
-                // The Accessibility band, in the main page's Audio Options
-                // place, with its one caption over its one slider.
-                (ACCESSIBILITY_LABEL, 20, 254, 298, 10, Left),
-                (HOUSE_COLOR_STRENGTH_LABEL, 82, 274, 150, 10, Center),
-                (&labels.blank, 2, 355, 303, 12, Left),
-            ],
-        };
-        for &(text, x, y, w, h, align) in statics {
-            result.push(LauncherShellLabel {
-                rect: layout.label_rect(x, y, w, h),
+        result.extend(layout.labels.iter().map(|&(rect, label)| {
+            let (text, align) = match label {
+                PageLabel::Heading => (self.shell_category_label(layout.category), Left),
+                PageLabel::List(id) => (list_caption(id), Left),
+                PageLabel::Slider(id) => (self.slider_caption(id), Left),
+                PageLabel::Step(id) => (self.slider_step(id), Right),
+                PageLabel::Blank => (self.labels.blank.as_str(), Left),
+            };
+            LauncherShellLabel {
+                rect,
                 text,
                 align,
                 title: false,
-            });
-        }
+            }
+        }));
         result
+    }
+
+    /// A category's name: retail's band heading for the four bands `0xD5`
+    /// has, VERA's own for the other two.
+    pub(crate) fn shell_category_label(&self, category: Category) -> &str {
+        match category {
+            Category::Display => &self.labels.display_options,
+            Category::Gameplay => &self.labels.game_options,
+            Category::Interface => &self.labels.ui_options,
+            Category::Audio => &self.labels.audio_options,
+            Category::Controls => CONTROLS_LABEL,
+            Category::Developer => DEVELOPER_OPTIONS_LABEL,
+        }
+    }
+
+    fn slider_caption(&self, id: LauncherTrackbarId) -> &str {
+        match id {
+            LauncherTrackbarId::Detail => &self.labels.visual_details,
+            LauncherTrackbarId::Difficulty => &self.labels.difficulty,
+            LauncherTrackbarId::Scroll => &self.labels.scroll_rate,
+            LauncherTrackbarId::Score => &self.labels.music_volume,
+            LauncherTrackbarId::Sound => &self.labels.sound_volume,
+            LauncherTrackbarId::Voice => &self.labels.voice_volume,
+            LauncherTrackbarId::HouseColorStrength => HOUSE_COLOR_STRENGTH_LABEL,
+        }
+    }
+
+    /// The step name a plaque-less slider prints; a plaque slider shows its
+    /// value on the plaque instead.
+    fn slider_step(&self, id: LauncherTrackbarId) -> &str {
+        match id {
+            LauncherTrackbarId::Detail => &self.detail_caption,
+            LauncherTrackbarId::Difficulty => &self.difficulty_caption,
+            LauncherTrackbarId::Scroll => &self.scroll_caption,
+            _ => "",
+        }
     }
 
     pub(crate) fn shell_checkbox_label(&self, id: LauncherCheckboxId) -> &str {
@@ -531,21 +510,21 @@ impl OptionsDialogState {
     pub(crate) fn shell_button_label(&self, id: LauncherButton) -> &str {
         match id {
             LauncherButton::Exit(LauncherParentResult::Keyboard) => &self.labels.keyboard,
-            LauncherButton::Exit(LauncherParentResult::Network) => &self.labels.network,
             LauncherButton::Exit(LauncherParentResult::Back) => &self.labels.main_menu,
             LauncherButton::Exit(LauncherParentResult::Terminal) => "",
-            LauncherButton::Page(OptionsPage::Vera) => VERA_OPTIONS_LABEL,
-            LauncherButton::Page(OptionsPage::Main) => &self.labels.back,
+            LauncherButton::Category(category) => self.shell_category_label(category),
             LauncherButton::CheckForUpdates => CHECK_FOR_UPDATES_LABEL,
         }
     }
 
-    /// The showing page's heading.
+    /// Whether `id` is the column button of the page that shows.
+    pub(crate) fn shell_button_selected(&self, id: LauncherButton) -> bool {
+        id == LauncherButton::Category(self.category)
+    }
+
+    /// The dialog's heading, the same on every page.
     pub(crate) fn shell_title_text(&self) -> &str {
-        match self.page {
-            OptionsPage::Main => &self.labels.options,
-            OptionsPage::Vera => VERA_OPTIONS_LABEL,
-        }
+        &self.labels.options
     }
 
     pub(crate) fn shell_trackbar_thumb_left(
@@ -640,7 +619,7 @@ impl OptionsDialogState {
     }
 
     /// The Display popup's rows, top to bottom: [`DISPLAY_AUTO_LABEL`], then
-    /// each screen's [`DisplayChoice::label`], numbered from 1.
+    /// each screen's `DisplayChoice::label`, numbered from 1.
     pub(crate) fn shell_display_rows(&self) -> Vec<String> {
         std::iter::once(DISPLAY_AUTO_LABEL.to_owned())
             .chain(
@@ -727,25 +706,19 @@ impl OptionsDialogState {
             return None;
         }
         if let Some((id, _)) = layout.buttons.iter().find(|(_, rect)| rect.contains(x, y)) {
-            let (page, control) = match id {
-                LauncherButton::Page(OptionsPage::Vera) => {
-                    return Some(LauncherStatusHelp::Text(VERA_OPTIONS_HELP));
+            let control = match id {
+                LauncherButton::Category(category) => {
+                    return Some(LauncherStatusHelp::Text(category.help()));
                 }
                 LauncherButton::CheckForUpdates => {
                     return Some(LauncherStatusHelp::Text(CHECK_FOR_UPDATES_HELP));
                 }
-                LauncherButton::Page(OptionsPage::Main) => (&VERA_OPTIONS_PAGE, MAIN_MENU_BUTTON),
-                LauncherButton::Exit(LauncherParentResult::Keyboard) => {
-                    (&OPTIONS_PAGE, KEYBOARD_BUTTON)
-                }
-                LauncherButton::Exit(LauncherParentResult::Network) => {
-                    (&OPTIONS_PAGE, NETWORK_BUTTON)
-                }
+                LauncherButton::Exit(LauncherParentResult::Keyboard) => KEYBOARD_BUTTON,
                 LauncherButton::Exit(
                     LauncherParentResult::Back | LauncherParentResult::Terminal,
-                ) => (&OPTIONS_PAGE, MAIN_MENU_BUTTON),
+                ) => MAIN_MENU_BUTTON,
             };
-            return page
+            return OPTIONS_PAGE
                 .button(control)
                 .map(|button| LauncherStatusHelp::Csf(button.tooltip_key));
         }
@@ -932,10 +905,20 @@ impl OptionsDialogState {
         {
             match id {
                 LauncherButton::Exit(result) => self.request_result(result),
-                LauncherButton::Page(page) => self.request_page(page),
+                LauncherButton::Category(category) => self.select_category(category),
                 LauncherButton::CheckForUpdates => self.request_update_check(),
             }
         }
+    }
+}
+
+/// A list's caption: VERA's own, as retail has no such lists.
+fn list_caption(id: LauncherComboId) -> &'static str {
+    match id {
+        LauncherComboId::Zoom => ZOOM_LABEL,
+        LauncherComboId::Sidebar => SIDEBAR_LABEL,
+        LauncherComboId::Display => DISPLAY_LABEL,
+        LauncherComboId::HealthBars => HEALTH_BARS_LABEL,
     }
 }
 
@@ -944,7 +927,8 @@ mod tests {
     use super::*;
     use crate::rules::house_colors::{STRENGTH_MAX, STRENGTH_RETAIL};
     use crate::ui::main_menu_dialogs::options::{
-        LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels, LauncherOptionsValues,
+        DisplayChoice, LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels,
+        LauncherOptionsValues,
     };
     use crate::ui::shell::trackbar::TrackbarHold;
 
@@ -972,41 +956,9 @@ mod tests {
         )
     }
 
-    /// The dialog showing VERA's page, as after its slide-in.
-    fn vera_state() -> OptionsDialogState {
-        let mut state = state();
-        state.show_page(OptionsPage::Vera);
-        state
-    }
-
-    fn main_layout() -> LauncherOptionsLayout {
-        LauncherOptionsLayout::new(800, 600, OptionsPage::Main)
-    }
-
-    fn vera_layout() -> LauncherOptionsLayout {
-        LauncherOptionsLayout::new(800, 600, OptionsPage::Vera)
-    }
-
-    /// Every slider either page lays out must land on one of the chrome
-    /// atlas's nine authored trackbar windows. The frame lookup is an exact
-    /// size match, so a row sized like a plain track but painted with a value
-    /// plaque resolves to no frame at all: the page would draw the thumb and
-    /// the plaque over empty background.
-    #[test]
-    fn every_page_slider_lands_on_an_authored_trackbar_frame() {
-        use crate::render::skirmish_shell_chrome::trackbar_frame_slot;
-        for layout in [main_layout(), vera_layout()] {
-            for &(id, rect) in &layout.trackbars {
-                let base = layout.scale.base_rect(rect);
-                assert!(
-                    trackbar_frame_slot(id.plaque_reserve() > 0, base.w, base.h).is_some(),
-                    "{id:?} on the {:?} page is {}x{}, which no authored trackbar frame covers",
-                    layout.page,
-                    base.w,
-                    base.h
-                );
-            }
-        }
+    /// A category's page in the retail 800x600 window.
+    fn page(category: Category) -> LauncherOptionsLayout {
+        LauncherOptionsLayout::new(800, 600, category)
     }
 
     fn checkbox(layout: &LauncherOptionsLayout, id: LauncherCheckboxId) -> RectPx {
@@ -1015,7 +967,7 @@ mod tests {
             .iter()
             .find(|(candidate, _)| *candidate == id)
             .map(|(_, rect)| *rect)
-            .unwrap_or_else(|| panic!("{id:?} on the {:?} page", layout.page))
+            .unwrap_or_else(|| panic!("{id:?} on the {:?} page", layout.category))
     }
 
     fn button(layout: &LauncherOptionsLayout, id: LauncherButton) -> RectPx {
@@ -1024,34 +976,139 @@ mod tests {
             .iter()
             .find(|(candidate, _)| *candidate == id)
             .map(|(_, rect)| *rect)
-            .unwrap_or_else(|| panic!("{id:?} on the {:?} page", layout.page))
-    }
-
-    /// The Accessibility slider's rect: the 226x22 plaque track, 150 DLUs wide
-    /// in the audio row's place.
-    fn slider_rect() -> RectPx {
-        RectPx::new(123, 470, 226, 22)
-    }
-
-    fn heading(state: &OptionsDialogState, layout: &LauncherOptionsLayout, text: &str) -> RectPx {
-        state
-            .shell_labels(layout)
-            .into_iter()
-            .find(|label| label.text == text)
-            .unwrap_or_else(|| panic!("{text} heading"))
-            .rect
+            .unwrap_or_else(|| panic!("{id:?} on the {:?} page", layout.category))
     }
 
     fn disjoint(a: RectPx, b: RectPx) -> bool {
         a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y
     }
 
+    /// Every slider a page lays out must land on one of the chrome atlas's
+    /// authored trackbar windows. The frame lookup is an exact size match, so
+    /// a row sized like a plain track but painted with a value plaque
+    /// resolves to no frame at all: the page would draw the thumb and the
+    /// plaque over empty background.
+    #[test]
+    fn every_page_slider_lands_on_an_authored_trackbar_frame() {
+        use crate::render::skirmish_shell_chrome::trackbar_frame_slot;
+        for category in Category::ALL {
+            let layout = page(category);
+            for &(id, rect) in &layout.trackbars {
+                let base = layout.scale.base_rect(rect);
+                assert!(
+                    trackbar_frame_slot(id.plaque_reserve() > 0, base.w, base.h).is_some(),
+                    "{id:?} on the {category:?} page is {}x{}, which no authored trackbar frame covers",
+                    base.w,
+                    base.h
+                );
+            }
+        }
+    }
+
+    /// The chrome atlas keys combo faces on exact authored widths, so a combo
+    /// laid out at any other width paints its arrow over no face at all.
+    #[test]
+    fn every_combo_face_uses_an_authored_width() {
+        for category in Category::ALL {
+            let layout = page(category);
+            for &(id, rect) in &layout.combos {
+                assert_eq!(
+                    layout.scale.base_rect(rect).w,
+                    180,
+                    "{id:?} on the {category:?} page"
+                );
+            }
+        }
+    }
+
+    /// The right-hand column: retail's Keyboard, a button per category on the
+    /// tiles under it, and Main Menu on the last of the 800x600 panel's nine
+    /// tiles, each a 156x42 SDBTNANM cell flush with the panel's right edge.
+    #[test]
+    fn the_column_holds_keyboard_every_category_and_main_menu() {
+        let layout = page(Category::Display);
+        let mut expected = vec![LauncherButton::Exit(LauncherParentResult::Keyboard)];
+        expected.extend(Category::ALL.map(LauncherButton::Category));
+        expected.push(LauncherButton::Exit(LauncherParentResult::Back));
+        let ids: Vec<_> = layout.buttons.iter().map(|(id, _)| *id).collect();
+        assert_eq!(ids, expected);
+        let tile = |row: i32| RectPx::new(644, 199 + 42 * row, 156, 42);
+        let (main_menu, stacked) = layout.buttons.split_last().unwrap();
+        for (row, (id, rect)) in stacked.iter().enumerate() {
+            assert_eq!(*rect, tile(row as i32), "{id:?}");
+        }
+        assert_eq!(main_menu.1, tile(8));
+    }
+
+    /// 640x480's retail panel has six tiles, five above Main Menu: too few for
+    /// the column, so the page takes the fitted 800x600 layout there, and
+    /// every button keeps a tile of its own inside the window.
+    #[test]
+    fn a_window_too_short_for_the_column_takes_the_fitted_page() {
+        assert!(retail_column_fits(800, 600));
+        assert!(!retail_column_fits(640, 480));
+        let layout = LauncherOptionsLayout::new(640, 480, Category::Display);
+        assert_eq!(
+            layout,
+            LauncherOptionsLayout::responsive(640, 480, Category::Display)
+        );
+        assert_eq!(layout.buttons.len(), 8);
+        for (index, (id, a)) in layout.buttons.iter().enumerate() {
+            assert!(a.x + a.w <= 640 && a.y + a.h <= 480, "{id:?} at {a:?}");
+            for (other, b) in &layout.buttons[index + 1..] {
+                assert!(disjoint(*a, *b), "{id:?} overlaps {other:?}");
+            }
+        }
+    }
+
+    /// Every page's controls stay left of the column, above the status line
+    /// and clear of one another, at the retail size and fitted ones.
+    #[test]
+    fn every_page_keeps_its_controls_clear_of_one_another_and_the_column() {
+        for (width, height) in [(800, 600), (640, 480), (1920, 1080)] {
+            for category in Category::ALL {
+                let layout = if (width, height) == (1920, 1080) {
+                    LauncherOptionsLayout::responsive(width, height, category)
+                } else {
+                    LauncherOptionsLayout::new(width, height, category)
+                };
+                let column = button(&layout, LauncherButton::Exit(LauncherParentResult::Back));
+                let rects: Vec<RectPx> = layout
+                    .checkboxes
+                    .iter()
+                    .map(|(_, rect)| *rect)
+                    .chain(layout.combos.iter().map(|(_, rect)| *rect))
+                    .chain(layout.trackbars.iter().map(|(_, rect)| *rect))
+                    .chain(
+                        layout
+                            .buttons
+                            .iter()
+                            .filter(|(id, _)| *id == LauncherButton::CheckForUpdates)
+                            .map(|(_, rect)| *rect),
+                    )
+                    .collect();
+                for (index, a) in rects.iter().enumerate() {
+                    assert!(
+                        a.x >= 0 && a.x + a.w <= column.x && a.y + a.h <= layout.status_help.y,
+                        "{category:?} at {width}x{height}: {a:?}"
+                    );
+                    for b in &rects[index + 1..] {
+                        assert!(
+                            disjoint(*a, *b),
+                            "{category:?} at {width}x{height}: {a:?} overlaps {b:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn a_stretched_slider_maps_the_pointer_back_to_its_authored_track() {
         let mut dialog = state();
-        let base = main_layout();
+        let base = page(Category::Audio);
         let scale = ShellScale::from_screen(1600, 1200);
-        let wide = LauncherOptionsLayout::responsive(1600, 1200, OptionsPage::Main);
+        let wide = LauncherOptionsLayout::responsive(1600, 1200, Category::Audio);
         let authored = base.trackbar_rect(LauncherTrackbarId::Score).unwrap();
         let stretched = wide.trackbar_rect(LauncherTrackbarId::Score).unwrap();
         assert_eq!(stretched, scale.scale_rect(authored));
@@ -1101,210 +1158,127 @@ mod tests {
         );
     }
 
+    /// A category button shows its page in place, applying nothing; the
+    /// page's heading is retail's band name. Main Menu closes from any page.
     #[test]
-    fn main_page_keeps_retail_controls_with_zoom_in_the_resolution_place() {
-        let state = state();
-        let layout = main_layout();
-        use LauncherCheckboxId::{ShowHidden, TargetLines, Tooltips};
-        let boxes: Vec<_> = layout.checkboxes.iter().map(|(id, _)| *id).collect();
-        assert_eq!(boxes, [Tooltips, TargetLines, ShowHidden]);
-        assert_eq!(layout.trackbars.len(), 6);
-        assert_eq!(
-            layout.combos,
-            [(
-                LauncherComboId::Zoom,
-                RectPx::new(351, 86, 180, COMBO_FACE_H)
-            )]
-        );
-        let texts: Vec<_> = state
-            .shell_labels(&layout)
-            .into_iter()
-            .map(|label| label.text.to_owned())
-            .collect();
-        for vera in [SIDEBAR_LABEL, DEVELOPER_OPTIONS_LABEL, VERA_OPTIONS_LABEL] {
-            assert!(!texts.iter().any(|text| text == vera), "{vera}");
-        }
-        assert_eq!(texts[0], "Options");
-        // Vera Options takes the slot under Network, the next stacked top.
-        let network = button(&layout, LauncherButton::Exit(LauncherParentResult::Network));
-        let keyboard = button(
-            &layout,
-            LauncherButton::Exit(LauncherParentResult::Keyboard),
-        );
-        let vera = button(&layout, LauncherButton::Page(OptionsPage::Vera));
-        let main_menu = button(&layout, LauncherButton::Exit(LauncherParentResult::Back));
-        assert_eq!((vera.x, vera.w, vera.h), (network.x, network.w, network.h));
-        assert_eq!(vera.y - network.y, network.y - keyboard.y);
-        assert!(vera.y + vera.h <= main_menu.y);
-        assert_eq!(
-            state.shell_button_label(LauncherButton::Page(OptionsPage::Vera)),
-            VERA_OPTIONS_LABEL
-        );
-    }
-
-    #[test]
-    fn vera_page_holds_visible_controls_clear_of_the_others() {
-        let state = vera_state();
-        let layout = vera_layout();
-        // The Accessibility band's one slider, in the main page's audio row.
-        assert_eq!(
-            layout.trackbars,
-            [(LauncherTrackbarId::HouseColorStrength, slider_rect())]
-        );
-        // The Sidebar, Display and Health Bars lists sit in the Display
-        // Options and UI Options bands' right columns, each with its caption.
-        assert_eq!(
-            layout.combos,
-            [
-                (
-                    LauncherComboId::Sidebar,
-                    RectPx::new(351, 66, 180, COMBO_FACE_H)
-                ),
-                (
-                    LauncherComboId::Display,
-                    RectPx::new(351, 110, 180, COMBO_FACE_H)
-                ),
-                (
-                    LauncherComboId::HealthBars,
-                    RectPx::new(351, 246, 180, COMBO_FACE_H)
-                ),
-            ]
-        );
-        // Each visible box is on exactly one page.
-        let main = main_layout();
-        let all: Vec<_> = main
-            .checkboxes
-            .iter()
-            .chain(&layout.checkboxes)
-            .map(|(id, _)| *id)
-            .collect();
-        assert_eq!(all.len(), 17);
-        for id in &all {
-            assert_eq!(all.iter().filter(|other| *other == id).count(), 1, "{id:?}");
-        }
-        // No control or caption overlaps another, and all sit above the
-        // status line.
-        let labels = state.shell_labels(&layout);
-        let mut rects: Vec<RectPx> = layout
-            .checkboxes
-            .iter()
-            .map(|(_, rect)| *rect)
-            .chain(layout.trackbars.iter().map(|(_, rect)| *rect))
-            .chain(layout.combos.iter().map(|(_, rect)| *rect))
-            .collect();
-        rects.extend(
-            labels
-                .iter()
-                .filter(|label| !label.title && !label.text.is_empty())
-                .map(|label| label.rect),
-        );
-        for (index, rect) in rects.iter().enumerate() {
-            assert!(rect.y + rect.h <= layout.status_help.y, "{rect:?}");
-            for other in &rects[index + 1..] {
-                assert!(disjoint(*rect, *other), "{rect:?} overlaps {other:?}");
-            }
-        }
-        // Each band's boxes sit under its heading and above the next.
-        let display = heading(&state, &layout, "Display Options");
-        let ui = heading(&state, &layout, "UI Options");
-        let developer = heading(&state, &layout, DEVELOPER_OPTIONS_LABEL);
-        let accessibility = heading(&state, &layout, ACCESSIBILITY_LABEL);
-        use LauncherCheckboxId::*;
-        for (id, top, bottom) in [
-            (FullScreen, display, ui),
-            (OriginalShape, display, ui),
-            (RenderInterpolation, display, ui),
-            (YrOriginalStyle, ui, developer),
-            (ShiftQueue, ui, developer),
-            (MouseWheelZoom, ui, developer),
-            (LockCursor, ui, developer),
-            (RightClickOrders, ui, developer),
-            (VeraIcon, ui, developer),
-            (FpsCounter, developer, accessibility),
-            (SkipIntro, developer, accessibility),
-            (CustomEndGameBanner, developer, accessibility),
-            (CustomEndGameScore, developer, accessibility),
-            (CustomEndGameMovie, developer, accessibility),
-        ] {
-            let rect = checkbox(&layout, id);
-            assert!(
-                rect.y >= top.y + top.h && rect.y + rect.h <= bottom.y,
-                "{id:?}"
-            );
-        }
-        // The Accessibility slider sits under its own caption, and the caption
-        // under the band's heading.
-        let caption = heading(&state, &layout, HOUSE_COLOR_STRENGTH_LABEL);
-        let slider = layout
-            .trackbar_rect(LauncherTrackbarId::HouseColorStrength)
-            .unwrap();
-        assert!(
-            caption.y >= accessibility.y + accessibility.h,
-            "{caption:?}"
-        );
-        assert!(slider.y >= caption.y + caption.h, "{slider:?}");
-        assert!(slider.y + slider.h <= layout.status_help.y, "{slider:?}");
-        assert_eq!(state.shell_title_text(), VERA_OPTIONS_LABEL);
-        assert_eq!(labels[0].text, VERA_OPTIONS_LABEL);
-        assert_eq!(
-            state.shell_button_label(LauncherButton::Page(OptionsPage::Main)),
-            "Back"
-        );
-    }
-
-    #[test]
-    fn page_buttons_switch_pages_without_applying_anything() {
+    fn pressing_a_category_shows_its_page_in_place_and_main_menu_closes() {
+        let before = state().pack();
         let mut state = state();
-        let main = main_layout();
-        let before = state.pack();
-        let vera = button(&main, LauncherButton::Page(OptionsPage::Vera));
-        state.shell_mouse_down(vera.x + 5, vera.y + 5, &main);
-        assert!(state.shell_button_pressed(LauncherButton::Page(OptionsPage::Vera)));
-        state.shell_mouse_up(vera.x + 5, vera.y + 5, &main);
+        assert_eq!(state.category(), Category::Display);
+        assert!(state.shell_button_selected(LauncherButton::Category(Category::Display)));
+        let display = page(Category::Display);
+        let audio = button(&display, LauncherButton::Category(Category::Audio));
+        state.shell_mouse_down(audio.x + 5, audio.y + 5, &display);
+        assert!(state.shell_button_pressed(LauncherButton::Category(Category::Audio)));
+        state.shell_mouse_up(audio.x + 5, audio.y + 5, &display);
+        assert_eq!(state.category(), Category::Audio);
+        assert!(state.shell_button_selected(LauncherButton::Category(Category::Audio)));
+        assert!(!state.shell_button_selected(LauncherButton::Category(Category::Display)));
         let output = state.drain_output();
         assert_eq!(
             output.events,
             [LauncherOptionsEvent::Cue(LauncherCue::MainButton)]
         );
+        assert_eq!((output.result, output.check_for_updates), (None, false));
+        // The pointer still rests on the button: its help stays up.
         assert_eq!(
-            (output.result, output.page),
-            (None, Some(OptionsPage::Vera))
+            state.shell_status_help(),
+            Some(LauncherStatusHelp::Text(Category::Audio.help()))
         );
-        // The request alone switches nothing: the page slides out first.
-        assert_eq!(state.page(), OptionsPage::Main);
-        state.show_page(OptionsPage::Vera);
-        assert!(!state.shell_button_hovered(LauncherButton::Page(OptionsPage::Vera)));
-        let layout = vera_layout();
-        let back = button(&layout, LauncherButton::Page(OptionsPage::Main));
+        let audio_page = page(Category::Audio);
+        let labels = state.shell_labels(&audio_page);
         assert_eq!(
-            back,
-            button(&main, LauncherButton::Exit(LauncherParentResult::Back))
+            (labels[0].text, labels[1].text),
+            ("Options", "Audio Options")
         );
-        state.shell_mouse_down(back.x + 5, back.y + 5, &layout);
-        state.shell_mouse_up(back.x + 5, back.y + 5, &layout);
-        let output = state.drain_output();
+        let back = button(
+            &audio_page,
+            LauncherButton::Exit(LauncherParentResult::Back),
+        );
+        state.shell_mouse_down(back.x + 5, back.y + 5, &audio_page);
+        state.shell_mouse_up(back.x + 5, back.y + 5, &audio_page);
         assert_eq!(
-            (output.result, output.page),
-            (None, Some(OptionsPage::Main))
+            state.drain_output().result,
+            Some(LauncherParentResult::Back)
         );
-        state.show_page(OptionsPage::Main);
-        assert_eq!(state.shell_title_text(), "Options");
         assert_eq!(state.pack(), before);
     }
 
+    /// Switching pages closes an open list: the next page starts clean.
     #[test]
-    fn check_for_updates_tops_veras_column_and_only_asks() {
+    fn switching_category_drops_an_open_list() {
         let mut state = state();
-        state.show_page(OptionsPage::Vera);
-        let layout = vera_layout();
-        let check = button(&layout, LauncherButton::CheckForUpdates);
-        // Keyboard's slot on the main page.
+        let layout = page(Category::Display);
+        let zoom = layout.combo_rect(LauncherComboId::Zoom).unwrap();
+        state.shell_mouse_down(zoom.x + 10, zoom.y + 5, &layout);
+        assert_eq!(state.open_combo, Some(LauncherComboId::Zoom));
+        state.select_category(Category::Audio);
+        assert_eq!(state.open_combo, None);
+        assert!(state.shell_popup(&page(Category::Audio)).is_none());
+    }
+
+    #[test]
+    fn status_help_names_the_control_under_the_pointer() {
+        let csf = |key| Some(LauncherStatusHelp::Csf(key));
+        let text = |text| Some(LauncherStatusHelp::Text(text));
+        let dialog = state();
+        let layout = page(Category::Display);
+        let at = |rect: RectPx| dialog.shell_status_help_key(rect.x + 2, rect.y + 2, &layout);
+        for (result, key) in [
+            (LauncherParentResult::Keyboard, "STT:MainOptButtonKeyboard"),
+            (LauncherParentResult::Back, "STT:MainOptButtonBack"),
+        ] {
+            assert_eq!(
+                at(button(&layout, LauncherButton::Exit(result))),
+                csf(key),
+                "{result:?}"
+            );
+        }
+        for category in Category::ALL {
+            assert_eq!(
+                at(button(&layout, LauncherButton::Category(category))),
+                text(category.help())
+            );
+        }
+        assert_eq!(dialog.shell_status_help_key(5, 5, &layout), None);
         assert_eq!(
-            check,
-            button(
-                &main_layout(),
-                LauncherButton::Exit(LauncherParentResult::Keyboard)
-            )
+            at(layout.combo_rect(LauncherComboId::Zoom).unwrap()),
+            text(ZOOM_HELP)
+        );
+        use LauncherCheckboxId::*;
+        for (id, help) in [
+            (FullScreen, FULL_SCREEN_HELP),
+            (OriginalShape, ORIGINAL_SHAPE_HELP),
+            (RenderInterpolation, RENDER_INTERPOLATION_HELP),
+            (YrOriginalStyle, YR_ORIGINAL_STYLE_HELP),
+        ] {
+            assert_eq!(at(checkbox(&layout, id)), text(help), "{id:?}");
+        }
+    }
+
+    #[test]
+    fn check_for_updates_sits_on_the_developer_page_and_only_asks() {
+        for category in Category::ALL {
+            assert_eq!(
+                page(category)
+                    .buttons
+                    .iter()
+                    .any(|(id, _)| *id == LauncherButton::CheckForUpdates),
+                HAS_CHECK_FOR_UPDATES && category == Category::Developer,
+                "{category:?}"
+            );
+        }
+        if !HAS_CHECK_FOR_UPDATES {
+            return;
+        }
+        let mut state = state();
+        state.select_category(Category::Developer);
+        let layout = page(Category::Developer);
+        let check = button(&layout, LauncherButton::CheckForUpdates);
+        let last_box = layout.checkboxes.last().unwrap().1;
+        assert!(
+            check.y >= last_box.y + last_box.h,
+            "{check:?} under {last_box:?}"
         );
         assert_eq!(
             state.shell_button_label(LauncherButton::CheckForUpdates),
@@ -1314,96 +1288,14 @@ mod tests {
         state.shell_mouse_down(check.x + 5, check.y + 5, &layout);
         state.shell_mouse_up(check.x + 5, check.y + 5, &layout);
         let output = state.drain_output();
-        assert_eq!(
-            (output.result, output.page, output.check_for_updates),
-            (None, None, true)
-        );
+        assert_eq!((output.result, output.check_for_updates), (None, true));
         assert_eq!(state.pack(), before);
-    }
-
-    #[test]
-    fn showing_a_page_drops_an_open_list() {
-        let mut state = state();
-        let main = main_layout();
-        let zoom = main.combo_rect(LauncherComboId::Zoom).unwrap();
-        state.shell_mouse_down(zoom.x + 10, zoom.y + 5, &main);
-        assert_eq!(state.open_combo, Some(LauncherComboId::Zoom));
-        state.show_page(OptionsPage::Vera);
-        assert_eq!(state.open_combo, None);
-        assert!(state.shell_popup(&vera_layout()).is_none());
-    }
-
-    #[test]
-    fn status_help_names_the_control_under_the_pointer() {
-        let csf = |key| Some(LauncherStatusHelp::Csf(key));
-        let text = |text| Some(LauncherStatusHelp::Text(text));
-        let state = state();
-        let layout = main_layout();
-        let at = |rect: RectPx| state.shell_status_help_key(rect.x + 2, rect.y + 2, &layout);
-        assert_eq!(
-            at(button(
-                &layout,
-                LauncherButton::Exit(LauncherParentResult::Keyboard)
-            )),
-            csf("STT:MainOptButtonKeyboard")
-        );
-        assert_eq!(
-            at(button(
-                &layout,
-                LauncherButton::Exit(LauncherParentResult::Back)
-            )),
-            csf("STT:MainOptButtonBack")
-        );
-        assert_eq!(
-            at(button(&layout, LauncherButton::Page(OptionsPage::Vera))),
-            text(VERA_OPTIONS_HELP)
-        );
-        assert_eq!(
-            at(layout.trackbar_rect(LauncherTrackbarId::Score).unwrap()),
-            csf("STT:MainOptSliderMusic")
-        );
-        // The display controls retail never had explain themselves in VERA text.
-        assert_eq!(at(layout.combos[0].1), text(ZOOM_HELP));
-        assert_eq!(state.shell_status_help_key(5, 5, &layout), None);
-
-        let state = vera_state();
-        let layout = vera_layout();
-        let at = |rect: RectPx| state.shell_status_help_key(rect.x + 2, rect.y + 2, &layout);
-        // Back reads like the Keyboard page's: "Return to the Options Menu."
-        assert_eq!(
-            at(button(&layout, LauncherButton::Page(OptionsPage::Main))),
-            csf("STT:KeyboardButtonBack")
-        );
-        assert_eq!(at(layout.combos[0].1), text(SIDEBAR_HELP));
-        assert_eq!(
-            at(layout.combo_rect(LauncherComboId::HealthBars).unwrap()),
-            text(HEALTH_BARS_HELP)
-        );
-        use LauncherCheckboxId::*;
-        for (id, help) in [
-            (FullScreen, FULL_SCREEN_HELP),
-            (OriginalShape, ORIGINAL_SHAPE_HELP),
-            (RenderInterpolation, RENDER_INTERPOLATION_HELP),
-            (YrOriginalStyle, YR_ORIGINAL_STYLE_HELP),
-            (ShiftQueue, SHIFT_QUEUE_HELP),
-            (MouseWheelZoom, MOUSE_WHEEL_ZOOM_HELP),
-            (LockCursor, LOCK_CURSOR_HELP),
-            (RightClickOrders, RIGHT_CLICK_ORDERS_HELP),
-            (VeraIcon, VERA_ICON_HELP),
-            (FpsCounter, FPS_COUNTER_HELP),
-            (SkipIntro, SKIP_INTRO_HELP),
-            (CustomEndGameBanner, CUSTOM_END_GAME_BANNER_HELP),
-            (CustomEndGameScore, CUSTOM_END_GAME_SCORE_HELP),
-            (CustomEndGameMovie, CUSTOM_END_GAME_MOVIE_HELP),
-        ] {
-            assert_eq!(at(checkbox(&layout, id)), text(help), "{id:?}");
-        }
     }
 
     #[test]
     fn physical_slider_capture_crosses_other_controls_without_activating_them() {
         let mut state = state();
-        let layout = main_layout();
+        let layout = page(Category::Audio);
         let rect = layout.trackbar_rect(LauncherTrackbarId::Score).unwrap();
         let thumb = state.shell_trackbar_thumb_left(LauncherTrackbarId::Score, rect, layout.scale);
         state.shell_mouse_down(rect.x + thumb + 5, rect.y + 10, &layout);
@@ -1426,10 +1318,11 @@ mod tests {
     #[test]
     fn lost_focus_cancels_drag_before_pointer_reentry() {
         let mut state = state();
-        let layout = main_layout();
-        // Fixture starts at4: original128px/50px plaque projection puts the
-        // thumb at client27 (screen150), so155 is inside its12px capture box.
-        state.shell_mouse_down(155, 475, &layout);
+        let layout = page(Category::Audio);
+        // Press inside the Score slider's track to begin a drag.
+        let rect = layout.trackbar_rect(LauncherTrackbarId::Score).unwrap();
+        let thumb = state.shell_trackbar_thumb_left(LauncherTrackbarId::Score, rect, layout.scale);
+        state.shell_mouse_down(rect.x + thumb + 5, rect.y + rect.h / 2, &layout);
         assert_eq!(
             state.capture,
             Some(TrackbarHold {
@@ -1448,47 +1341,54 @@ mod tests {
     #[test]
     fn every_slider_press_holds_the_mouse_until_release() {
         let mut state = state();
-        let layout = main_layout();
+        let gameplay = page(Category::Gameplay);
+        let srect = gameplay
+            .trackbar_rect(LauncherTrackbarId::Difficulty)
+            .unwrap();
         let held = Some(TrackbarHold {
             id: LauncherTrackbarId::Difficulty,
             dragging: false,
         });
-        // Above the admitted strip the press only takes the capture.
-        state.shell_mouse_down(140, 210, &layout);
+        // Above the admitted strip (the window's bottom 18 rows) the press
+        // only takes the capture.
+        state.shell_mouse_down(srect.x + 2, srect.y + 2, &gameplay);
         assert_eq!(
             state.trackbar_position(LauncherTrackbarId::Difficulty),
             1,
             "native lower strip rejects y=2"
         );
         assert_eq!(state.capture, held);
-        state.shell_mouse_up(140, 210, &layout);
+        state.shell_mouse_up(srect.x + 2, srect.y + 2, &gameplay);
         // Beside the thumb it jumps once and holds without dragging.
-        state.shell_mouse_down(140, 218, &layout);
+        state.shell_mouse_down(srect.x + 2, srect.y + 10, &gameplay);
         assert_eq!(state.trackbar_position(LauncherTrackbarId::Difficulty), 0);
         assert_eq!(state.capture, held);
         assert_eq!(
             state.drain_output().events,
             [LauncherOptionsEvent::Cue(LauncherCue::GenericClick)]
         );
-        state.shell_mouse_move(317, 218, &layout);
-        assert_eq!(state.trackbar_position(LauncherTrackbarId::Difficulty), 0);
-        let back = button(&layout, LauncherButton::Exit(LauncherParentResult::Back));
-        state.shell_mouse_move(back.x + 5, back.y + 5, &layout);
+        state.shell_mouse_move(srect.x + 2, srect.y + 10, &gameplay);
         assert_eq!(
             state.shell_status_help(),
             Some(LauncherStatusHelp::Csf("STT:MainOptSliderDifficulty"))
         );
-        state.shell_mouse_up(back.x + 5, back.y + 5, &layout);
+        state.shell_mouse_up(srect.x + srect.w - 2, srect.y + srect.h - 3, &gameplay);
         assert_eq!(state.capture, None);
+        // Main Menu's status help reads after hovering it.
+        let back = button(&gameplay, LauncherButton::Exit(LauncherParentResult::Back));
+        state.shell_mouse_move(back.x + 5, back.y + 5, &gameplay);
         assert_eq!(
             state.shell_status_help(),
             Some(LauncherStatusHelp::Csf("STT:MainOptButtonBack"))
         );
         assert_eq!(state.drain_output().result, None);
-        // The checkbox text takes no press.
-        state.shell_mouse_down(170, 310, &layout);
+        // The Tooltips box: its caption takes no press; its 18x18 icon
+        // toggles, and the box starts ticked.
+        let interface = page(Category::Interface);
+        let crect = checkbox(&interface, LauncherCheckboxId::Tooltips);
+        state.shell_mouse_down(crect.x + 30, crect.y + 5, &interface);
         assert!(state.shell_checkbox_checked(LauncherCheckboxId::Tooltips));
-        state.shell_mouse_down(150, 310, &layout);
+        state.shell_mouse_down(crect.x + 5, crect.y + 5, &interface);
         assert!(!state.shell_checkbox_checked(LauncherCheckboxId::Tooltips));
         assert_eq!(
             state.drain_output().events,
@@ -1498,16 +1398,22 @@ mod tests {
 
     #[test]
     fn button_release_requires_the_pressed_button_and_popup_dismissal_consumes_click() {
+        let layout = page(Category::Display);
         let mut state = state();
-        let layout = main_layout();
-        state.shell_mouse_down(700, 210, &layout);
-        assert!(state.shell_button_pressed(LauncherButton::Exit(LauncherParentResult::Keyboard)));
-        state.shell_mouse_up(700, 250, &layout);
+        // A press lights the button; a release off it does nothing.
+        let audio = button(&layout, LauncherButton::Category(Category::Audio));
+        state.shell_mouse_down(audio.x + 5, audio.y + 5, &layout);
+        assert!(state.shell_button_pressed(LauncherButton::Category(Category::Audio)));
+        state.shell_mouse_up(audio.x - 200, audio.y + 5, &layout);
+        assert_eq!(state.category(), Category::Display);
         assert_eq!(state.drain_output().result, None);
-        state.shell_mouse_down(520, 95, &layout);
+        // With a list open, a click elsewhere only closes it.
+        let zoom = layout.combo_rect(LauncherComboId::Zoom).unwrap();
+        state.shell_mouse_down(zoom.x + 10, zoom.y + 5, &layout);
         assert_eq!(state.open_combo, Some(LauncherComboId::Zoom));
-        state.shell_mouse_down(700, 550, &layout);
-        state.shell_mouse_up(700, 550, &layout);
+        let back = button(&layout, LauncherButton::Exit(LauncherParentResult::Back));
+        state.shell_mouse_down(back.x + 5, back.y + 5, &layout);
+        state.shell_mouse_up(back.x + 5, back.y + 5, &layout);
         assert_eq!(state.open_combo, None);
         let dismissed = state.drain_output();
         assert_eq!(dismissed.result, None);
@@ -1518,14 +1424,8 @@ mod tests {
                 LauncherOptionsEvent::Cue(LauncherCue::ComboClose)
             ]
         );
-        state.shell_mouse_down(700, 550, &layout);
-        let down = state.drain_output();
-        assert_eq!(
-            down.events,
-            [LauncherOptionsEvent::Cue(LauncherCue::MainButton)]
-        );
-        assert_eq!(down.result, None);
-        state.shell_mouse_up(700, 550, &layout);
+        state.shell_mouse_down(back.x + 5, back.y + 5, &layout);
+        state.shell_mouse_up(back.x + 5, back.y + 5, &layout);
         assert_eq!(
             state.drain_output().result,
             Some(LauncherParentResult::Back)
@@ -1535,8 +1435,9 @@ mod tests {
     #[test]
     fn zoom_selection_uses_the_painted_row_and_emits_at_once() {
         let mut state = state();
-        let layout = main_layout();
-        state.shell_mouse_down(520, 95, &layout);
+        let layout = page(Category::Display);
+        let zoom = layout.combo_rect(LauncherComboId::Zoom).unwrap();
+        state.shell_mouse_down(zoom.x + 10, zoom.y + 5, &layout);
         state.drain_output();
         let popup = state.shell_popup(&layout).unwrap();
         // 800x600 has room for Auto and 100% only.
@@ -1567,7 +1468,8 @@ mod tests {
             DisplayTarget::Auto,
         );
         state.open_combo = Some(LauncherComboId::Zoom);
-        let layout = LauncherOptionsLayout::responsive(1920, 1080, OptionsPage::Main);
+        // 1920x1080 lists four steps; 300% is beyond them.
+        let layout = LauncherOptionsLayout::responsive(1920, 1080, Category::Display);
         assert_eq!(state.shell_selected_zoom(&layout), Zoom::Percent(200));
         let popup = state.shell_popup(&layout).unwrap();
         assert_eq!((popup.rows, popup.selected), (4, 3));
@@ -1582,9 +1484,9 @@ mod tests {
 
     #[test]
     fn sidebar_list_offers_the_sizes_the_battle_frame_has_room_for() {
-        let mut state = vera_state();
+        let mut state = state();
         // A 1920x1080 window at 100%: every size fits.
-        let layout = vera_layout().with_battle_frame((1920, 1080));
+        let layout = page(Category::Interface).with_battle_frame((1920, 1080));
         let face = layout.combo_rect(LauncherComboId::Sidebar).unwrap();
         state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
         assert_eq!(state.open_combo, Some(LauncherComboId::Sidebar));
@@ -1611,7 +1513,7 @@ mod tests {
 
         // Zoomed in on a 3440x1440 screen, XL has no room: it shows as Large,
         // and the list stops there.
-        let zoomed = vera_layout().with_battle_frame((1720, 720));
+        let zoomed = page(Category::Interface).with_battle_frame((1720, 720));
         assert_eq!(state.shell_selected_sidebar(&zoomed), SidebarSize::Large);
         state.shell_mouse_down(face.x + 10, face.y + 5, &zoomed);
         let popup = state.shell_popup(&zoomed).unwrap();
@@ -1620,8 +1522,8 @@ mod tests {
 
     #[test]
     fn display_list_picks_the_screen_a_row_names() {
-        let mut state = vera_state();
-        let layout = vera_layout();
+        let mut state = state();
+        let layout = page(Category::Display);
         let face = layout.combo_rect(LauncherComboId::Display).unwrap();
         // Auto is the face's text and the list's first row until a screen is
         // picked, so a fresh profile reads the way it always behaved.
@@ -1686,9 +1588,8 @@ mod tests {
             state().displays().to_vec(),
             DisplayTarget::Fixed("\\\\.\\DISPLAY9".to_owned()),
         );
-        state.show_page(OptionsPage::Vera);
         assert_eq!(state.shell_display_label(), "\\\\.\\DISPLAY9");
-        let layout = vera_layout();
+        let layout = page(Category::Display);
         let face = layout.combo_rect(LauncherComboId::Display).unwrap();
         state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
         let popup = state.shell_popup(&layout).unwrap();
@@ -1699,17 +1600,105 @@ mod tests {
         );
     }
 
-    /// The Health Bars list: Original, All Units, and All Units, Not Full. Its
-    /// pick publishes at once like the Sidebar list, and the caption sits above
-    /// the face in its band.
+    /// Each box on the Display page toggles with its cue and reports the
+    /// change; a fresh dialog per box keeps them independent.
+    #[test]
+    fn settings_checkboxes_toggle_with_their_cue() {
+        use LauncherCheckboxId::*;
+        let layout = page(Category::Display);
+        for (id, label, event) in [
+            (
+                FullScreen,
+                FULL_SCREEN_LABEL,
+                LauncherOptionsEvent::FullScreenChanged as fn(bool) -> LauncherOptionsEvent,
+            ),
+            (
+                OriginalShape,
+                ORIGINAL_SHAPE_LABEL,
+                LauncherOptionsEvent::OriginalShapeChanged,
+            ),
+            (
+                RenderInterpolation,
+                RENDER_INTERPOLATION_LABEL,
+                LauncherOptionsEvent::RenderInterpolationChanged,
+            ),
+            (
+                YrOriginalStyle,
+                YR_ORIGINAL_STYLE_LABEL,
+                LauncherOptionsEvent::YrOriginalStyleChanged,
+            ),
+        ] {
+            let mut state = state();
+            let rect = checkbox(&layout, id);
+            assert_eq!(state.shell_checkbox_label(id), label);
+            let before = state.shell_checkbox_checked(id);
+            state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
+            assert_eq!(state.shell_checkbox_checked(id), !before, "{id:?}");
+            assert_eq!(
+                state.drain_output().events,
+                [
+                    LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
+                    event(!before)
+                ],
+                "{id:?}"
+            );
+        }
+    }
+
+    /// The three end-game boxes start unticked like every VERA box. Each
+    /// publishes its own event and leaves the other two alone.
+    #[test]
+    fn the_end_game_boxes_start_unticked_and_publish_their_own_event() {
+        use LauncherCheckboxId::{CustomEndGameBanner, CustomEndGameMovie, CustomEndGameScore};
+        let layout = page(Category::Gameplay);
+        for (id, label, on) in [
+            (
+                CustomEndGameBanner,
+                CUSTOM_END_GAME_BANNER_LABEL,
+                LauncherOptionsEvent::CustomEndGameBannerChanged(true),
+            ),
+            (
+                CustomEndGameScore,
+                CUSTOM_END_GAME_SCORE_LABEL,
+                LauncherOptionsEvent::CustomEndGameScoreChanged(true),
+            ),
+            (
+                CustomEndGameMovie,
+                CUSTOM_END_GAME_MOVIE_LABEL,
+                LauncherOptionsEvent::CustomEndGameMovieChanged(true),
+            ),
+        ] {
+            // A fresh dialog per box: each click is the player's first, and
+            // the boxes must not remember each other's state.
+            let mut state = state();
+            assert_eq!(state.shell_checkbox_label(id), label);
+            assert!(!state.shell_checkbox_checked(id), "{id:?} starts unticked");
+            let rect = checkbox(&layout, id);
+            state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
+            assert!(state.shell_checkbox_checked(id), "{id:?} ticked");
+            assert_eq!(
+                state.drain_output().events,
+                [LauncherOptionsEvent::Cue(LauncherCue::Checkbox), on],
+                "{id:?}"
+            );
+            for other in [CustomEndGameBanner, CustomEndGameScore, CustomEndGameMovie] {
+                if other != id {
+                    assert!(
+                        !state.shell_checkbox_checked(other),
+                        "{id:?}'s click left {other:?} alone"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The Health Bars list on the Interface page: Original, All Units, and
+    /// All Units, Not Full. Its pick publishes at once like the Sidebar list.
     #[test]
     fn health_bars_list_publishes_its_pick_at_once() {
-        let mut state = vera_state();
-        let layout = vera_layout();
+        let mut state = state();
+        let layout = page(Category::Interface);
         let face = layout.combo_rect(LauncherComboId::HealthBars).unwrap();
-        let caption = heading(&state, &layout, HEALTH_BARS_LABEL);
-        assert!(caption.y + caption.h <= face.y, "{caption:?} {face:?}");
-        assert!(face.y + face.h <= layout.status_help.y);
         assert_eq!(state.shell_selected_health_bars(), HealthBarMode::Vanilla);
         state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
         assert_eq!(state.open_combo, Some(LauncherComboId::HealthBars));
@@ -1735,140 +1724,12 @@ mod tests {
         );
     }
 
-    /// Each VERA box on its page: its caption, and a press that toggles it and
-    /// reports the change after the cue.
-    #[test]
-    fn vera_boxes_toggle_at_once_after_their_cue() {
-        use LauncherCheckboxId::*;
-        let layout = vera_layout();
-        for (id, label, event) in [
-            (
-                FullScreen,
-                FULL_SCREEN_LABEL,
-                LauncherOptionsEvent::FullScreenChanged as fn(bool) -> LauncherOptionsEvent,
-            ),
-            (
-                OriginalShape,
-                ORIGINAL_SHAPE_LABEL,
-                LauncherOptionsEvent::OriginalShapeChanged,
-            ),
-            (
-                RenderInterpolation,
-                RENDER_INTERPOLATION_LABEL,
-                LauncherOptionsEvent::RenderInterpolationChanged,
-            ),
-            (
-                YrOriginalStyle,
-                YR_ORIGINAL_STYLE_LABEL,
-                LauncherOptionsEvent::YrOriginalStyleChanged,
-            ),
-            (
-                ShiftQueue,
-                SHIFT_QUEUE_LABEL,
-                LauncherOptionsEvent::ShiftQueueChanged,
-            ),
-            (
-                MouseWheelZoom,
-                MOUSE_WHEEL_ZOOM_LABEL,
-                LauncherOptionsEvent::MouseWheelZoomChanged,
-            ),
-            (
-                LockCursor,
-                LOCK_CURSOR_LABEL,
-                LauncherOptionsEvent::LockCursorChanged,
-            ),
-            (
-                RightClickOrders,
-                RIGHT_CLICK_ORDERS_LABEL,
-                LauncherOptionsEvent::RightClickOrdersChanged,
-            ),
-            (
-                VeraIcon,
-                VERA_ICON_LABEL,
-                LauncherOptionsEvent::VeraIconChanged,
-            ),
-            (
-                FpsCounter,
-                FPS_COUNTER_LABEL,
-                LauncherOptionsEvent::FpsCounterChanged,
-            ),
-            (
-                SkipIntro,
-                SKIP_INTRO_LABEL,
-                LauncherOptionsEvent::SkipIntroChanged,
-            ),
-        ] {
-            let mut state = vera_state();
-            let rect = checkbox(&layout, id);
-            assert_eq!(state.shell_checkbox_label(id), label);
-            // Off until the player ticks it, the cursor lock included.
-            assert!(!state.shell_checkbox_checked(id), "{id:?}");
-            state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
-            assert!(state.shell_checkbox_checked(id), "{id:?}");
-            assert_eq!(
-                state.drain_output().events,
-                [
-                    LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
-                    event(true)
-                ],
-                "{id:?}"
-            );
-        }
-    }
-
-    /// The three end-game boxes start unticked like every VERA box. Each
-    /// publishes its own event and leaves the other two alone.
-    #[test]
-    fn the_end_game_boxes_start_unticked_and_publish_their_own_event() {
-        use LauncherCheckboxId::{CustomEndGameBanner, CustomEndGameMovie, CustomEndGameScore};
-        let layout = vera_layout();
-        for (id, label, on) in [
-            (
-                CustomEndGameBanner,
-                CUSTOM_END_GAME_BANNER_LABEL,
-                LauncherOptionsEvent::CustomEndGameBannerChanged(true),
-            ),
-            (
-                CustomEndGameScore,
-                CUSTOM_END_GAME_SCORE_LABEL,
-                LauncherOptionsEvent::CustomEndGameScoreChanged(true),
-            ),
-            (
-                CustomEndGameMovie,
-                CUSTOM_END_GAME_MOVIE_LABEL,
-                LauncherOptionsEvent::CustomEndGameMovieChanged(true),
-            ),
-        ] {
-            // A fresh page per box: each click is the player's first, and the
-            // boxes must not remember each other's state.
-            let mut state = vera_state();
-            assert_eq!(state.shell_checkbox_label(id), label);
-            assert!(!state.shell_checkbox_checked(id), "{id:?} starts unticked");
-            let rect = checkbox(&layout, id);
-            state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
-            assert!(state.shell_checkbox_checked(id), "{id:?} ticked");
-            assert_eq!(
-                state.drain_output().events,
-                [LauncherOptionsEvent::Cue(LauncherCue::Checkbox), on],
-                "{id:?}"
-            );
-            for other in [CustomEndGameBanner, CustomEndGameScore, CustomEndGameMovie] {
-                if other != id {
-                    assert!(
-                        !state.shell_checkbox_checked(other),
-                        "{id:?}'s click left {other:?} alone"
-                    );
-                }
-            }
-        }
-    }
-
-    /// The Accessibility slider publishes the level it stops on, not the
-    /// position, so the profile never sees gamemd's bands as 0.
+    /// The Team Color Strength slider publishes the level it stops on, not
+    /// the position, so the profile never sees gamemd's bands as 0.
     #[test]
     fn house_color_strength_slider_publishes_the_level_it_stops_on() {
-        let mut state = vera_state();
-        let layout = vera_layout();
+        let mut state = state();
+        let layout = page(Category::Display);
         let slider = layout
             .trackbar_rect(LauncherTrackbarId::HouseColorStrength)
             .unwrap();
@@ -1911,17 +1772,20 @@ mod tests {
     }
 
     #[test]
-    fn normal_vera_page_cannot_toggle_the_diagnostic_wol_test_service() {
-        let mut state = vera_state();
+    fn the_developer_page_cannot_toggle_the_diagnostic_wol_test_service() {
+        let mut state = state();
         state.values.wol_test_service = true;
-        let layout = vera_layout();
-        assert!(
-            layout
-                .checkboxes
-                .iter()
-                .all(|(id, _)| *id != LauncherCheckboxId::WolTestService)
-        );
-        // The developer rows hold FPS and Skip Intro only.
+        for category in Category::ALL {
+            assert!(
+                page(category)
+                    .checkboxes
+                    .iter()
+                    .all(|(id, _)| *id != LauncherCheckboxId::WolTestService),
+                "{category:?}"
+            );
+        }
+        // The Developer page holds FPS and Skip Startup Logo only.
+        let layout = page(Category::Developer);
         for (id, event) in [
             (
                 LauncherCheckboxId::FpsCounter,
@@ -1944,7 +1808,7 @@ mod tests {
 
     #[test]
     fn fps_counter_box_follows_live_state() {
-        let mut state = vera_state();
+        let mut state = state();
         let id = LauncherCheckboxId::FpsCounter;
         state.checkbox_mouse_down(
             id,

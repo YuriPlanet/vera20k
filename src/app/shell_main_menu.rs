@@ -1,12 +1,6 @@
 use super::*;
 use crate::app::persistence::options::audio::AudioVolumeOperations;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MultiplayerSettingsContext {
-    Options,
-    Shell,
-}
-
 /// Private operation seam for the retail shell's confirmed quit transaction.
 /// Keeping the ordering here lets unit tests observe persistence dispatch
 /// without constructing the window, renderer, or audio-backed `AppState`.
@@ -295,14 +289,6 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
         crate::app::persistence::options::persist_options_profile(self.state);
     }
 
-    fn prepare_network_settings(&mut self) {
-        App::prepare_multiplayer_settings(self.state, MultiplayerSettingsContext::Options);
-    }
-
-    fn route_network(&mut self) {
-        crate::app::input::network_options::open(self.state, &[]);
-    }
-
     fn route_keyboard(&mut self) {
         crate::app::input::keyboard::open(
             self.state,
@@ -311,11 +297,9 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
     }
 
     fn reopen_parent(&mut self) {
-        // Native caller blocks in A3/D7. Our asynchronous child resumes this
+        // Native caller blocks in A3. Our asynchronous child resumes this
         // continuation when it closes (after its teardown slide).
-        if self.state.frontend.keyboard_dialog.is_none()
-            && self.state.frontend.network_options.is_none()
-        {
+        if self.state.frontend.keyboard_dialog.is_none() {
             App::open_launcher_options_dialog(self.state);
         }
     }
@@ -487,15 +471,12 @@ fn display_error(error: &str) -> String {
 }
 
 impl App {
-    /// Shared pre-dialog Session read: D7 at55FD31, Skirmish at52E11E,
-    /// and LAN (including failed IPX admission) at52E37D. Preferences stay
-    /// in their process caches; the original reads INI8870C0, not disk.
-    pub(crate) fn prepare_multiplayer_settings(
-        state: &mut AppState,
-        context: MultiplayerSettingsContext,
-    ) {
+    /// Shared pre-dialog Session read: Skirmish at52E11E and LAN (including
+    /// failed IPX admission) at52E37D. Preferences stay in their process
+    /// caches; the original reads INI8870C0, not disk.
+    pub(crate) fn prepare_multiplayer_settings(state: &mut AppState) {
         //6980D6→6722F0 and475540 read the same process INI each visit and
-        // may allocate a Country before the optional52E123 body pass.
+        // may allocate a Country before the52E123 body pass.
         state
             .frontend
             .multiplayer_shell_runtime
@@ -508,9 +489,7 @@ impl App {
             .match_state
             .session
             .prepare_multiplayer_settings(&main);
-        if context == MultiplayerSettingsContext::Shell {
-            state.process_assets.refresh_multiplayer_country_bodies();
-        }
+        state.process_assets.refresh_multiplayer_country_bodies();
         // These are compatibility projections of the one process registry.
         // A finished world can remain resident behind the shell, and rules()
         // reads its resource projection, so refresh both consumers together.
@@ -1027,7 +1006,7 @@ impl App {
     /// `0x0052E119`, `0x0052E168` -> `0x006AE2C0`). Its Back returns to
     /// Single Player either way (GameMode 0, state 1, `0x0052E175`).
     pub(super) fn enter_native_skirmish_from_single_player(state: &mut AppState) {
-        Self::prepare_multiplayer_settings(state, MultiplayerSettingsContext::Shell);
+        Self::prepare_multiplayer_settings(state);
         // Prepare dialog 0x102 from the process-lifetime MIX list before
         // destroying its 0x100 source. Active YR's FUN_00534E50 registers the
         // neutral pair on that shared list before the shell SHPs are loaded.
@@ -1181,7 +1160,7 @@ impl App {
             .iter()
             .map(|display| display.choice().clone())
             .collect();
-        let dialog = launcher_dialog_from_profile(
+        let mut dialog = launcher_dialog_from_profile(
             &state.persistence.options_profile,
             labels,
             state.platform.window.fullscreen().is_some(),
@@ -1189,6 +1168,9 @@ impl App {
             state.audio.launcher_audio_available,
             displays,
         );
+        if let Some(category) = state.frontend.options_reopen_at.take() {
+            dialog.select_category(category);
+        }
         state.frontend.options_dialog = Some(dialog);
     }
 
@@ -1231,11 +1213,10 @@ impl App {
         }
         match output.result {
             // 0x0055FD06 tears D5 down before every continuation, including
-            // Network (55FD28), Keyboard, and the final Main Menu return.
+            // Keyboard and the final Main Menu return.
             Some(
                 result @ (crate::ui::main_menu_dialogs::options::LauncherParentResult::Back
-                | crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard
-                | crate::ui::main_menu_dialogs::options::LauncherParentResult::Network),
+                | crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard),
             ) => {
                 state.frontend.options_dialog = Some(dialog);
                 Self::leave_shell_dialog(
@@ -1253,13 +1234,6 @@ impl App {
             }
             None => {
                 state.frontend.options_dialog = Some(dialog);
-                // Vera Options or Back: the showing page slides out first.
-                if let Some(page) = output.page {
-                    Self::leave_shell_dialog(
-                        state,
-                        crate::app::frontend::shell_transition::ShellExitThen::OptionsPage(page),
-                    );
-                }
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 if output.check_for_updates {
                     Self::leave_shell_dialog(
@@ -1271,18 +1245,6 @@ impl App {
         }
     }
 
-    /// The other Options page has slid out: show `page`, whose column slides
-    /// in on the next frame. The dialog and its values stay as they are.
-    fn commit_options_page(
-        state: &mut AppState,
-        page: crate::ui::main_menu_dialogs::options::OptionsPage,
-    ) {
-        if let Some(dialog) = state.frontend.options_dialog.as_mut() {
-            dialog.show_page(page);
-        }
-        state.platform.window.request_redraw();
-    }
-
     /// `0xD5`'s teardown slide has run: commit the controls (`0x0055FAA0`),
     /// then write the profile and build `0xE2` (Main Menu, `0x005FAD10`) or
     /// run the Keyboard page.
@@ -1290,6 +1252,17 @@ impl App {
         state: &mut AppState,
         result: crate::ui::main_menu_dialogs::options::LauncherParentResult,
     ) {
+        // The key page is a child of Options: closing it reopens the dialog
+        // on the page the player left. Back and Terminal end the dialog for
+        // good.
+        state.frontend.options_reopen_at = match result {
+            crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard => state
+                .frontend
+                .options_dialog
+                .as_ref()
+                .map(|dialog| dialog.category()),
+            _ => None,
+        };
         let Some(dialog) = state.frontend.options_dialog.take() else {
             return;
         };
@@ -1314,7 +1287,7 @@ impl App {
             state.match_state.input.cursor_y as i32,
         );
         let layout =
-            crate::app::frontend::shell_layout::launcher_options_layout(state, dialog.page());
+            crate::app::frontend::shell_layout::launcher_options_layout(state, dialog.category());
         match down {
             Some(true) => dialog.shell_mouse_down(x, y, &layout),
             Some(false) => dialog.shell_mouse_up(x, y, &layout),
@@ -1761,12 +1734,8 @@ impl App {
             ShellExitThen::CampaignStart(side) => Self::commit_campaign_start(state, side),
             ShellExitThen::LoadSavedGameBack => Self::commit_load_saved_game_back(state),
             ShellExitThen::Options(result) => Self::commit_launcher_options_result(state, result),
-            ShellExitThen::OptionsPage(page) => Self::commit_options_page(state, page),
             ShellExitThen::KeyboardClose(exit) => {
                 crate::app::input::keyboard::commit_close(state, exit)
-            }
-            ShellExitThen::NetworkOptionsClose => {
-                crate::app::input::network_options::commit_close(state)
             }
             ShellExitThen::LanBack => Self::commit_lan_back(state),
             ShellExitThen::LanCreate { observe } => Self::commit_lan_create(state, observe),

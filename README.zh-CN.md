@@ -94,7 +94,7 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 默认情况下，VERA20K 的玩法与原版游戏一致。其他新功能（包括 Ares 等模组的扩展）都必须默认关闭，
 只能通过以下方式之一开启：
 
-- **VERA 玩家选项**，位于 **Options → Vera Options**，保存在 `VERA.INI` 的 `[VERA]` 节下。
+- **VERA 玩家选项**，位于 **Options**，保存在 `VERA.INI` 的 `[VERA]` 节下。
 - **构建选项**，例如用 `--features ares` 编译受支持的 [Ares 扩展](docs/ares.md)。
 - **INI 键**，由模组或地图设置。
 

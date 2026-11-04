@@ -178,17 +178,17 @@ pub(crate) fn score_layout(state: &AppState) -> crate::ui::score_shell::ScoreLay
     }
 }
 
-/// Launcher Options `0xD5`, showing `page`.
+/// Launcher Options `0xD5`, showing `category`'s page.
 pub(crate) fn launcher_options_layout(
     state: &AppState,
-    page: crate::ui::main_menu_dialogs::options::OptionsPage,
+    category: crate::ui::main_menu_dialogs::options::Category,
 ) -> crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout {
     use crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout;
     let (width, height) = (state.render_width() as i32, state.render_height() as i32);
     let layout = if fills_window(state) {
-        LauncherOptionsLayout::responsive(width, height, page)
+        LauncherOptionsLayout::responsive(width, height, category)
     } else {
-        LauncherOptionsLayout::new(width, height, page)
+        LauncherOptionsLayout::new(width, height, category)
     };
     let battle = crate::app::App::match_zoom_geometry(state);
     layout.with_battle_frame((battle.src_width, battle.src_height))

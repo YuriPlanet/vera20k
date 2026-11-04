@@ -1376,16 +1376,16 @@ mod tests {
                 (true, skirmish.unit_count),
                 (true, players),
             ];
-            windows.extend(
-                LauncherOptionsLayout::new(
-                    width as i32,
-                    height as i32,
-                    crate::ui::main_menu_dialogs::options::OptionsPage::Main,
-                )
-                .trackbars
-                .into_iter()
-                .map(|(id, rect)| (id.plaque_reserve() > 0, rect)),
-            );
+            // 640x480 fits Options to the window, so its rects map back first.
+            for category in crate::ui::main_menu_dialogs::options::Category::ALL {
+                let layout = LauncherOptionsLayout::new(width as i32, height as i32, category);
+                windows.extend(
+                    layout
+                        .trackbars
+                        .iter()
+                        .map(|&(id, rect)| (id.plaque_reserve() > 0, layout.scale.base_rect(rect))),
+                );
+            }
             windows.extend(
                 crate::ui::shell::sound::ShellSoundLayout::new(width as i32, height as i32)
                     .sliders

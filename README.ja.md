@@ -81,7 +81,7 @@ cargo run --release --bin vera20k
 
 VERA20K は、既定ではオリジナルのゲームと同じようにプレイできます。Ares などの MOD に由来する拡張を含め、その他の新しい機能はすべて、次のいずれかで有効にされるまでオフのままでなければなりません。
 
-- **VERA のプレイヤーオプション**：**Options → Vera Options** にあり、`VERA.INI` の `[VERA]` に保存されます。
+- **VERA のプレイヤーオプション**：**Options** にあり、`VERA.INI` の `[VERA]` に保存されます。
 - **ビルドオプション**：対応する [Ares 拡張](docs/ares.md)を有効にする `--features ares` など。
 - **INI キー**：MOD またはマップが設定します。
 

@@ -4,8 +4,8 @@
 //! profile, filesystem, audio device, window, or child-dialog callback.
 //! The `shell` child supplies retail resource geometry and physical-pixel input;
 //! the app shell renderer paints that model through the shared retail compositor.
-//! VERA's own controls sit on a second page of the same dialog
-//! ([`OptionsPage::Vera`]), so the main page keeps retail's look.
+//! Retail's controls and VERA's own share one dialog, sorted into the
+//! [`Category`] pages its right-hand column picks between.
 
 use crate::ui::shell::trackbar::{
     TrackbarHold, TrackbarPress, trackbar_position_from_x, trackbar_press,
@@ -20,11 +20,10 @@ pub(crate) mod shell;
 /// `GUI:Faster`) never show: the init renames them by position. The combo's
 /// own caption, `GUI:SetResolution`, left with the resolution list: the combo
 /// is VERA's [`Zoom`] list now.
-pub(crate) const LAUNCHER_LABEL_SPECS: [(&str, &str); 30] = [
+pub(crate) const LAUNCHER_LABEL_SPECS: [(&str, &str); 29] = [
     ("GUI:OptionsMenu", "Options"),
     ("GUI:MainMenu", "Main Menu"),
     ("GUI:Keyboard", "Keyboard"),
-    ("GUI:Network", "Network"),
     ("GUI:DisplayOptions", "Display Options"),
     ("GUI:GameOptions", "Game Options"),
     ("GUI:UIOptions", "UI Options"),
@@ -82,6 +81,8 @@ pub(crate) const VERA_ICON_LABEL: &str = "VERA Icon";
 pub(crate) const VERA_ICON_HELP: &str =
     "Show VERA's own icon instead of Red Alert 2's red star on the game window, taskbar and Dock.";
 pub(crate) const SHIFT_QUEUE_LABEL: &str = "Shift-Click Batch Queue";
+/// The two category pages retail's string table has no band name for.
+pub(crate) const CONTROLS_LABEL: &str = "Controls";
 pub(crate) const DEVELOPER_OPTIONS_LABEL: &str = "Developer Options";
 pub(crate) const WOL_TEST_SERVICE_LABEL: &str = "Offline Internet Test Service";
 pub(crate) const WOL_TEST_SERVICE_HELP: &str =
@@ -100,57 +101,36 @@ pub(crate) const CUSTOM_END_GAME_SCORE_LABEL: &str = "Custom End Game Score";
 pub(crate) const CUSTOM_END_GAME_SCORE_HELP: &str = "Use the same country picture as the score screen's background and its music as the score theme. Untick to keep the standard score screen.";
 pub(crate) const CUSTOM_END_GAME_MOVIE_LABEL: &str = "Custom End Game Movie";
 pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "Let a beaten computer commander's losing clip finish before the victory or defeat picture and the score screen. Skirmish only. Untick to show them at once, which cuts the clip.";
-pub(crate) const SHIFT_QUEUE_HELP: &str =
-    "Unit cameos: Shift-click queues several, Ctrl-click builds endlessly, Alt-click builds next, Shift-right-click cancels all.";
+pub(crate) const SHIFT_QUEUE_HELP: &str = "Unit cameos: Shift-click queues several, Ctrl-click builds endlessly, Alt-click builds next, Shift-right-click cancels all.";
 pub(crate) const DISPLAY_LABEL: &str = "Display";
 pub(crate) const DISPLAY_HELP: &str = "Which screen the game opens on. Auto follows the system.";
-/// VERA's health-strip list on its own page. The retail string table has
-/// nothing for it, so the caption and help are English everywhere.
+/// VERA's health-bar list. The retail string table has nothing for it, so
+/// the caption and help are English everywhere.
 pub(crate) const HEALTH_BARS_LABEL: &str = "Health Bars";
 pub(crate) const HEALTH_BARS_HELP: &str = "When units show a health bar. Original is the hovered unit and the selection; All Units shows every unit you can see; All Units, Not Full hides the full-health ones.";
-/// VERA's Accessibility band on its page: the first accessibility control, the
-/// strength of the `[Colors]` team-colour bands. Retail's string table has
-/// nothing for either.
-pub(crate) const ACCESSIBILITY_LABEL: &str = "Accessibility";
+/// VERA's strength slider for the `[Colors]` team-colour bands. Retail's
+/// string table has nothing for it.
 pub(crate) const HOUSE_COLOR_STRENGTH_LABEL: &str = "Team Color Strength";
 pub(crate) const HOUSE_COLOR_STRENGTH_HELP: &str = "How strongly team colours stand out, from 1 for the original bands to 10 for the boldest. The next battle uses it.";
 /// The Display list's first row: the window system's own choice.
 pub(crate) const DISPLAY_AUTO_LABEL: &str = "Auto";
-/// The main page's button to VERA's page, and that page's heading.
-pub(crate) const VERA_OPTIONS_LABEL: &str = "Vera Options";
-pub(crate) const VERA_OPTIONS_HELP: &str =
-    "Settings VERA20K adds: full screen, sidebar size, smooth motion and more.";
-/// VERA's page's Check for Updates: the desktop updater (`app::updater`)
-/// checks once the page has slid out. The browser build has no updater.
+/// The Developer page's Check for Updates: the desktop updater
+/// (`app::updater`) checks once the dialog has slid out. The browser build
+/// has no updater.
 pub(crate) const HAS_CHECK_FOR_UPDATES: bool =
     !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
 pub(crate) const CHECK_FOR_UPDATES_LABEL: &str = "Check for Updates";
 pub(crate) const CHECK_FOR_UPDATES_HELP: &str =
     "Check for a newer VERA20K now, even one you skipped.";
-/// The VERA page's Back reuses retail's caption; its status help is the
-/// Keyboard page's Back help, "Return to the Options Menu."
-/// (`STT:KeyboardButtonBack`).
-const VERA_PAGE_BACK_LABEL: (&str, &str) = ("GUI:Back", "Back");
 
-/// Which page of Options shows. The main page keeps retail's controls, with
-/// VERA's Zoom in the resolution combo's place; VERA's own controls are on a
-/// page of their own behind the Vera Options button, so the main page looks
-/// like retail's. Both pages are one dialog with one set of values: switching
-/// pages applies, saves and resets nothing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OptionsPage {
-    Main,
-    Vera,
-}
-
-/// A right-column button on either page.
+/// A button of the dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LauncherButton {
-    /// Keyboard, Network or Main Menu: one of gamemd's parent exits.
+    /// Keyboard or Main Menu: one of gamemd's parent exits.
     Exit(LauncherParentResult),
-    /// Vera Options on the main page, Back on VERA's: shows that page.
-    Page(OptionsPage),
-    /// Check for Updates on VERA's page.
+    /// A category in the right-hand column: shows that category's page.
+    Category(Category),
+    /// Check for Updates on the Developer page.
     CheckForUpdates,
 }
 
@@ -426,7 +406,7 @@ pub(crate) enum LauncherComboId {
     Zoom,
     Sidebar,
     Display,
-    /// VERA's page: the `[VERA] HealthBars=` list.
+    /// The `[VERA] HealthBars=` list.
     HealthBars,
 }
 
@@ -435,7 +415,6 @@ pub(crate) struct LauncherOptionsLabels {
     pub(crate) options: String,
     pub(crate) main_menu: String,
     pub(crate) keyboard: String,
-    pub(crate) network: String,
     pub(crate) display_options: String,
     pub(crate) game_options: String,
     pub(crate) ui_options: String,
@@ -450,8 +429,6 @@ pub(crate) struct LauncherOptionsLabels {
     pub(crate) sound_volume: String,
     pub(crate) voice_volume: String,
     pub(crate) blank: String,
-    /// The VERA page's Back.
-    pub(crate) back: String,
     low: String,
     high: String,
     easy: String,
@@ -470,35 +447,33 @@ impl LauncherOptionsLabels {
             options: label(0),
             main_menu: label(1),
             keyboard: label(2),
-            network: label(3),
-            display_options: label(4),
-            game_options: label(5),
-            ui_options: label(6),
-            audio_options: label(7),
-            visual_details: label(8),
-            difficulty: label(9),
-            tooltips: label(10),
-            scroll_rate: label(11),
-            target_lines: label(12),
-            show_hidden: label(13),
-            music_volume: label(14),
-            sound_volume: label(15),
-            voice_volume: label(16),
-            blank: label(17),
-            back: csf(VERA_PAGE_BACK_LABEL.0).unwrap_or_else(|| VERA_PAGE_BACK_LABEL.1.to_string()),
-            low: label(18),
-            high: label(19),
-            easy: label(20),
-            normal: label(21),
-            hard: label(22),
+            display_options: label(3),
+            game_options: label(4),
+            ui_options: label(5),
+            audio_options: label(6),
+            visual_details: label(7),
+            difficulty: label(8),
+            tooltips: label(9),
+            scroll_rate: label(10),
+            target_lines: label(11),
+            show_hidden: label(12),
+            music_volume: label(13),
+            sound_volume: label(14),
+            voice_volume: label(15),
+            blank: label(16),
+            low: label(17),
+            high: label(18),
+            easy: label(19),
+            normal: label(20),
+            hard: label(21),
             scroll_tokens: [
+                label(22),
                 label(23),
                 label(24),
                 label(25),
                 label(26),
                 label(27),
                 label(28),
-                label(29),
             ],
         }
     }
@@ -668,7 +643,6 @@ pub(crate) enum LauncherOptionsEvent {
 /// projects through `OptionsClass__ApplyFromLauncherDialog @ 0x0055FAA0`.
 pub(crate) enum LauncherParentResult {
     Back,
-    Network,
     Keyboard,
     Terminal,
 }
@@ -677,9 +651,7 @@ pub(crate) enum LauncherParentResult {
 pub(crate) struct LauncherOptionsFrameOutput {
     pub(crate) events: Vec<LauncherOptionsEvent>,
     pub(crate) result: Option<LauncherParentResult>,
-    /// The page a button asked for: the showing page slides out first.
-    pub(crate) page: Option<OptionsPage>,
-    /// Check for Updates: VERA's page slides out, then the updater checks.
+    /// Check for Updates: the dialog slides out, then the updater checks.
     pub(crate) check_for_updates: bool,
 }
 
@@ -844,8 +816,8 @@ pub(crate) struct OptionsDialogState {
     capture: Option<TrackbarHold<LauncherTrackbarId>>,
     pending_events: Vec<LauncherOptionsEvent>,
     pending_result: Option<LauncherParentResult>,
-    page: OptionsPage,
-    pending_page: Option<OptionsPage>,
+    /// The category whose page shows.
+    category: Category,
     pending_update_check: bool,
     shell_interaction: shell::ShellInteraction,
 }
@@ -913,8 +885,7 @@ impl OptionsDialogState {
             capture: None,
             pending_events: Vec::new(),
             pending_result: None,
-            page: OptionsPage::Main,
-            pending_page: None,
+            category: Category::ALL[0],
             pending_update_check: false,
             shell_interaction: shell::ShellInteraction::default(),
         }
@@ -1209,7 +1180,7 @@ impl OptionsDialogState {
     /// gamemd-derived: ordinary `0xD5` owner-draw buttons emit
     /// `[AudioVisual] GUIMainButtonSound` on admitted primary mouse-down;
     /// `OptionsClass__ShowLauncherDialog @ 0x0055FC80` observes the distinct
-    /// Back/Network/Keyboard result only on the later activation release.
+    /// Back/Keyboard result only on the later activation release.
     pub(crate) fn main_button_mouse_down(&mut self) {
         self.pending_events
             .push(LauncherOptionsEvent::Cue(LauncherCue::MainButton));
@@ -1259,26 +1230,34 @@ impl OptionsDialogState {
     }
 
     /// gamemd-derived: `OptionsClass__ShowLauncherDialog @ 0x0055FC80` gives
-    /// Back, Network, Keyboard, and terminal completion distinct parent
-    /// results; the first admitted result owns the frame's teardown path.
+    /// Back, Keyboard, and terminal completion distinct parent results; the
+    /// first admitted result owns the frame's teardown path.
     pub(crate) fn request_result(&mut self, result: LauncherParentResult) {
         if !self.requested() {
             self.pending_result = Some(result);
         }
     }
 
-    pub(crate) const fn page(&self) -> OptionsPage {
-        self.page
+    pub(crate) const fn category(&self) -> Category {
+        self.category
     }
 
-    /// Ask for `page`; like a parent result, the first request wins.
-    pub(crate) fn request_page(&mut self, page: OptionsPage) {
-        if !self.requested() {
-            self.pending_page = Some(page);
+    /// Show `category`'s page in place: no slide, and nothing is applied or
+    /// saved. A held slider, an open list and a pressed button don't carry
+    /// over to the new page. A dialog rebuilt after Keyboard closes reopens
+    /// on the page the player left the same way.
+    pub(crate) fn select_category(&mut self, category: Category) {
+        if self.category == category {
+            return;
         }
+        self.category = category;
+        self.open_combo = None;
+        self.capture = None;
+        self.shell_interaction = self.shell_interaction.page_switched();
     }
 
-    /// Ask for Check for Updates; the first request wins here too.
+    /// Ask for Check for Updates; like a parent result, the first request of
+    /// a frame wins.
     pub(crate) fn request_update_check(&mut self) {
         if !self.requested() {
             self.pending_update_check = true;
@@ -1286,16 +1265,7 @@ impl OptionsDialogState {
     }
 
     fn requested(&self) -> bool {
-        self.pending_result.is_some() || self.pending_page.is_some() || self.pending_update_check
-    }
-
-    /// Show `page` once the other has slid out. Nothing is applied or saved;
-    /// a held slider, an open list and a pressed button don't carry over.
-    pub(crate) fn show_page(&mut self, page: OptionsPage) {
-        self.page = page;
-        self.open_combo = None;
-        self.capture = None;
-        self.shell_interaction = shell::ShellInteraction::default();
+        self.pending_result.is_some() || self.pending_update_check
     }
 
     /// gamemd-derived: primary-proc slice `0x0055FDB0..0x0056047A` observes
@@ -1305,10 +1275,120 @@ impl OptionsDialogState {
         LauncherOptionsFrameOutput {
             events: std::mem::take(&mut self.pending_events),
             result: self.pending_result.take(),
-            page: self.pending_page.take(),
             check_for_updates: std::mem::take(&mut self.pending_update_check),
         }
     }
+}
+
+/// The dialog's pages, top to bottom in the right-hand column under retail's
+/// Keyboard. Retail `0xD5` lays its controls out in four bands whose headings
+/// (`GUI:DisplayOptions`, `GUI:GameOptions`, `GUI:UIOptions`,
+/// `GUI:AudioOptions`) name the first four pages; VERA adds the last two.
+/// Picking a page swaps the controls in place; one set of values covers them
+/// all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Category {
+    Display,
+    Gameplay,
+    Interface,
+    Audio,
+    Controls,
+    Developer,
+}
+
+impl Category {
+    /// Every page, in the column's order.
+    pub(crate) const ALL: [Self; 6] = [
+        Self::Display,
+        Self::Gameplay,
+        Self::Interface,
+        Self::Audio,
+        Self::Controls,
+        Self::Developer,
+    ];
+
+    /// The page's controls, top to bottom.
+    pub(crate) const fn settings(self) -> &'static [Setting] {
+        use LauncherCheckboxId as Check;
+        use LauncherComboId as List;
+        use LauncherTrackbarId as Slider;
+        match self {
+            Self::Display => &[
+                Setting::List(List::Zoom),
+                Setting::List(List::Display),
+                Setting::Slider(Slider::HouseColorStrength),
+                Setting::Checkbox(Check::FullScreen),
+                Setting::Checkbox(Check::OriginalShape),
+                Setting::Checkbox(Check::RenderInterpolation),
+                Setting::Checkbox(Check::YrOriginalStyle),
+            ],
+            Self::Gameplay => &[
+                Setting::Slider(Slider::Detail),
+                Setting::Slider(Slider::Difficulty),
+                Setting::Checkbox(Check::TargetLines),
+                Setting::Checkbox(Check::ShowHidden),
+                Setting::Checkbox(Check::ShiftQueue),
+                Setting::Checkbox(Check::CustomEndGameBanner),
+                Setting::Checkbox(Check::CustomEndGameScore),
+                Setting::Checkbox(Check::CustomEndGameMovie),
+            ],
+            Self::Interface => &[
+                Setting::List(List::Sidebar),
+                Setting::List(List::HealthBars),
+                Setting::Checkbox(Check::Tooltips),
+                Setting::Checkbox(Check::VeraIcon),
+            ],
+            Self::Audio => &[
+                Setting::Slider(Slider::Score),
+                Setting::Slider(Slider::Sound),
+                Setting::Slider(Slider::Voice),
+            ],
+            Self::Controls => &[
+                Setting::Slider(Slider::Scroll),
+                Setting::Checkbox(Check::RightClickOrders),
+                Setting::Checkbox(Check::MouseWheelZoom),
+                Setting::Checkbox(Check::LockCursor),
+            ],
+            // The Offline Internet Test Service stays off every page: it swaps
+            // Internet for stand-in servers, so only `[VERA] WolTestService=`
+            // turns it on.
+            Self::Developer => &[
+                Setting::Checkbox(Check::FpsCounter),
+                Setting::Checkbox(Check::SkipIntro),
+            ],
+        }
+    }
+
+    /// The status help for the page's button. Retail's string table has
+    /// nothing for VERA's pages, so it is English everywhere.
+    pub(crate) const fn help(self) -> &'static str {
+        match self {
+            Self::Display => "Zoom, screen, window shape, team colours and how battles are drawn.",
+            Self::Gameplay => {
+                "Detail, difficulty, target lines, hidden objects, queueing and end-game screens."
+            }
+            Self::Interface => "Sidebar size, health bars, tooltips and the VERA icon.",
+            Self::Audio => "Music, sound and voice volume.",
+            Self::Controls => {
+                "Scroll rate, right-click orders, mouse wheel zoom and the cursor lock."
+            }
+            Self::Developer => {
+                if HAS_CHECK_FOR_UPDATES {
+                    "The frame counter, the intro skip and Check for Updates."
+                } else {
+                    "The frame counter and the intro skip."
+                }
+            }
+        }
+    }
+}
+
+/// One control of a page, named by the id its value and events go through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Setting {
+    List(LauncherComboId),
+    Slider(LauncherTrackbarId),
+    Checkbox(LauncherCheckboxId),
 }
 
 #[cfg(test)]
@@ -1764,29 +1844,18 @@ mod tests {
     }
 
     #[test]
-    fn the_first_request_of_a_frame_wins_across_results_and_pages() {
+    fn the_first_request_of_a_frame_wins_across_results_and_the_update_check() {
         let mut state = state(true);
-        state.request_page(OptionsPage::Vera);
-        state.request_result(LauncherParentResult::Back);
-        let output = state.drain_output();
-        assert_eq!(
-            (output.result, output.page),
-            (None, Some(OptionsPage::Vera))
-        );
-        state.request_result(LauncherParentResult::Keyboard);
-        state.request_page(OptionsPage::Vera);
-        let output = state.drain_output();
-        assert_eq!(
-            (output.result, output.page),
-            (Some(LauncherParentResult::Keyboard), None)
-        );
         state.request_update_check();
-        state.request_page(OptionsPage::Main);
         state.request_result(LauncherParentResult::Back);
         let output = state.drain_output();
+        assert_eq!((output.result, output.check_for_updates), (None, true));
+        state.request_result(LauncherParentResult::Keyboard);
+        state.request_update_check();
+        let output = state.drain_output();
         assert_eq!(
-            (output.result, output.page, output.check_for_updates),
-            (None, None, true)
+            (output.result, output.check_for_updates),
+            (Some(LauncherParentResult::Keyboard), false)
         );
     }
 
@@ -1794,11 +1863,11 @@ mod tests {
     fn escape_is_no_event_and_first_parent_result_wins_one_frame() {
         let mut state = state(true);
         assert!(state.drain_output().events.is_empty());
-        state.request_result(LauncherParentResult::Network);
+        state.request_result(LauncherParentResult::Keyboard);
         state.request_result(LauncherParentResult::Back);
         assert_eq!(
             state.drain_output().result,
-            Some(LauncherParentResult::Network)
+            Some(LauncherParentResult::Keyboard)
         );
         assert_eq!(state.drain_output().result, None);
     }
@@ -1909,5 +1978,64 @@ mod tests {
             DisplayTarget::Fixed("\\\\.\\DISPLAY7".to_owned()),
         );
         assert_eq!(state.display_choices().len(), 4);
+    }
+
+    /// Every control is on exactly one page: one the table leaves out could
+    /// not be reached, and one listed twice would show twice. The diagnostic
+    /// test service is on none.
+    #[test]
+    fn every_control_is_on_exactly_one_page() {
+        use LauncherCheckboxId as Check;
+        use LauncherComboId as List;
+        use LauncherTrackbarId as Slider;
+        let placed: Vec<Setting> = Category::ALL
+            .iter()
+            .flat_map(|page| page.settings())
+            .copied()
+            .collect();
+        let every: Vec<Setting> = [List::Zoom, List::Sidebar, List::Display, List::HealthBars]
+            .map(Setting::List)
+            .into_iter()
+            .chain(
+                [
+                    Slider::Detail,
+                    Slider::Difficulty,
+                    Slider::Scroll,
+                    Slider::Score,
+                    Slider::Sound,
+                    Slider::Voice,
+                    Slider::HouseColorStrength,
+                ]
+                .map(Setting::Slider),
+            )
+            .chain(
+                [
+                    Check::Tooltips,
+                    Check::TargetLines,
+                    Check::ShowHidden,
+                    Check::FullScreen,
+                    Check::OriginalShape,
+                    Check::YrOriginalStyle,
+                    Check::RenderInterpolation,
+                    Check::MouseWheelZoom,
+                    Check::RightClickOrders,
+                    Check::LockCursor,
+                    Check::VeraIcon,
+                    Check::ShiftQueue,
+                    Check::FpsCounter,
+                    Check::SkipIntro,
+                    Check::CustomEndGameBanner,
+                    Check::CustomEndGameScore,
+                    Check::CustomEndGameMovie,
+                ]
+                .map(Setting::Checkbox),
+            )
+            .collect();
+        for setting in &every {
+            let pages = placed.iter().filter(|placed| *placed == setting).count();
+            assert_eq!(pages, 1, "{setting:?}");
+        }
+        assert_eq!(placed.len(), every.len());
+        assert!(!placed.contains(&Setting::Checkbox(Check::WolTestService)));
     }
 }
