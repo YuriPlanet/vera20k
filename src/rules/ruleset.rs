@@ -636,7 +636,7 @@ pub struct GeneralRules {
     #[cfg(feature = "phobos")]
     pub prone_speed_crawls: f64,
     /// Phobos `[General] ProneSpeed.NoCrawls=` (default 1.5): the same
-    /// multiplier for a prone type without `Crawls=`.
+    /// multiplier for a prone type with `Crawls=no`.
     #[cfg(feature = "phobos")]
     pub prone_speed_no_crawls: f64,
     /// `[General] VeteranROF=` — `RulesClass+0x690`, read at `0x0066EF61`.
@@ -5418,6 +5418,15 @@ impl RuleSet {
                 object.project_infantry_pips(pips);
             }
         }
+        for (name, art) in processed.infantry_art_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
+            {
+                object.project_infantry_art(art);
+            }
+        }
         for (name, reads) in processed.infantry_sequence_sound_reads() {
             if let Some(object) = rules
                 .object_list
@@ -10142,8 +10151,6 @@ impl RuleSet {
         let ai_base_spacing = self.ai_base_spacing;
         let mut dock_patched: u32 = 0;
         let mut buildings_checked: u32 = 0;
-        let mut infantry_checked: u32 = 0;
-        let mut crawls_patched: u32 = 0;
         for obj in self.object_list.iter_mut() {
             obj.project_silo_damage(art);
             // Resolve the art.ini section: use Image= override if present,
@@ -10153,22 +10160,8 @@ impl RuleSet {
             // Every TechnoType's ReadINI reads CanBeHidden from the ART
             // section of its own ID (0x007121EB); art is not layered.
             obj.can_be_hidden = art.can_be_hidden(&obj.id);
-            if obj.category == crate::rules::object_type::ObjectCategory::Infantry {
-                infantry_checked += 1;
-                if let Some(entry) = entry {
-                    obj.crawls = entry.crawls;
-                    // Original ART5246BE..52473A owns four independent signed
-                    // fields; project them without narrowing or fallback.
-                    obj.fire_up_frame = entry.fire_up;
-                    obj.fire_prone_frame = entry.fire_prone;
-                    obj.secondary_fire_frame = entry.secondary_fire;
-                    obj.secondary_prone_frame = entry.secondary_prone;
-                    if entry.crawls {
-                        crawls_patched += 1;
-                    }
-                }
-                continue;
-            }
+            // Infantry Crawls and discharge frames come from the per-pass
+            // ART reads (`InfantryArt`), not this final-image projection.
             if obj.category != crate::rules::object_type::ObjectCategory::Building {
                 continue;
             }
@@ -10216,11 +10209,6 @@ impl RuleSet {
             "Merged art.ini → RuleSet: {} dock cells ({} buildings checked)",
             dock_patched,
             buildings_checked,
-        );
-        log::trace!(
-            "Merged infantry art metadata: {} Crawls flags ({} infantry checked)",
-            crawls_patched,
-            infantry_checked,
         );
         self.rebuild_animation_sequences(None);
     }
@@ -14266,7 +14254,12 @@ Projectile=Invisible
         else {
             return;
         };
-        let mut rules = RuleSet::from_ini(&retail_rules).expect("retail rules parse");
+        let mut rules = RuleSet::from_processed_rules(
+            &RulesLayerStack::new(retail_rules)
+                .process_with_fixed_art(&retail_art)
+                .unwrap(),
+        )
+        .expect("retail rules parse");
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&retail_art));
         let infantry = rules.object("E1").expect("retail E1");
         assert_eq!(infantry.image, "GI");
@@ -14300,14 +14293,15 @@ Projectile=Invisible
             crate::rules::native_processing::RulesLayerKind::Scenario,
             IniFile::from_str("[E1]\nImage=GI\n"),
         );
-        let mut rules = RuleSet::from_rules_layers(&layers).expect("rules parse");
         let mut art_text = "[GI]\nFixtureOnly=1\n".to_owned();
         for (key, raw) in row["layers"][0].as_object().unwrap() {
             art_text.push_str(&format!("{key}={}\n", raw.as_str().unwrap()));
         }
-        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(
-            &IniFile::from_str(&art_text),
-        ));
+        let art_ini = IniFile::from_str(&art_text);
+        let mut rules =
+            RuleSet::from_processed_rules(&layers.process_with_fixed_art(&art_ini).unwrap())
+                .expect("rules parse");
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
         let infantry = rules.object("E1").expect("E1");
         assert_eq!(
             [
@@ -14352,8 +14346,9 @@ Projectile=Invisible
         assert_eq!(building.foundation, "2x2");
     }
 
-    /// An art section without `Crawls=` keeps the constructor's true: the
-    /// read's default is the type's current value (`0x005246A1..0x005246D0`).
+    /// An art section without `Crawls=`, or no art section, keeps the
+    /// constructor's true (`0x00523788`): the read's default is the type's
+    /// current value (`0x005246A1..0x005246D0`).
     #[test]
     fn an_art_section_without_crawls_keeps_the_constructor_value() {
         let mut layers = RulesLayerStack::new(IniFile::from_str(&make_test_rules()));
@@ -14369,6 +14364,28 @@ Projectile=Invisible
         let infantry = rules.object("E1").expect("E1");
         assert!(infantry.crawls);
         assert_eq!(infantry.fire_up_frame, 2, "the GI art section was read");
+        assert!(rules.object("E2").expect("E2").crawls, "no art section");
+    }
+
+    /// A later pass whose Image names an art section without the keys keeps
+    /// what the earlier pass read: each read's default is the type's current
+    /// value (`0x005246A1..0x0052472D`), not the constructor's.
+    #[test]
+    fn a_later_image_without_the_art_keys_keeps_the_earlier_reads() {
+        let mut layers = RulesLayerStack::new(IniFile::from_str(&make_test_rules()));
+        layers.push(
+            crate::rules::native_processing::RulesLayerKind::Scenario,
+            IniFile::from_str("[E1]\nImage=GIB\n"),
+        );
+        let art_ini = IniFile::from_str("[E1]\nCrawls=no\nFireUp=2\n[GIB]\nFireProne=3\n");
+        let mut rules =
+            RuleSet::from_processed_rules(&layers.process_with_fixed_art(&art_ini).unwrap())
+                .expect("rules parse");
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
+        let infantry = rules.object("E1").expect("E1");
+        assert_eq!(infantry.image, "GIB");
+        assert!(!infantry.crawls);
+        assert_eq!((infantry.fire_up_frame, infantry.fire_prone_frame), (2, 3));
     }
 
     #[test]

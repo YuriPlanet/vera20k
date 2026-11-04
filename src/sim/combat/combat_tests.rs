@@ -236,7 +236,6 @@ fn infantry_fire_frame_rules_with(patch: &str) -> RuleSet {
 [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n",
     );
     rules_ini.merge(&IniFile::from_str(patch));
-    let mut rules = RuleSet::from_ini(&rules_ini).expect("infantry rules should parse");
     // Supplied reader-built records make native action admission explicit.
     // SecondaryFire/SecondaryProne are authored controls, not stock GI ART.
     let art_ini = IniFile::from_str(
@@ -245,6 +244,8 @@ fn infantry_fire_frame_rules_with(patch: &str) -> RuleSet {
          FireProne=212,6,6\nDie1=56,15,0\nDeployed=292,1,0\nDeployedFire=292,6,0\n\
          SecondaryFire=164,6,6\nSecondaryProne=212,6,6\n",
     );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini)
+        .expect("infantry rules should parse");
     let art = crate::rules::art_data::ArtRegistry::from_ini(&art_ini);
     rules.install_art_data(art);
     rules.bind_animation_sequences(
@@ -1763,7 +1764,7 @@ fn retail_gi_scan_asks_only_its_own_house_about_allies() {
 /// (`0x006FC1CC`).
 #[test]
 fn retail_berserk_gi_shoots_its_own_house() {
-    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
         return;
     };
     let mut sim = Simulation::with_seed(0x5CA7);
