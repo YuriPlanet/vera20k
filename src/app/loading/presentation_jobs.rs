@@ -26,7 +26,9 @@ impl PreparedManifest {
     pub(crate) fn finish(self, gpu: &GpuContext, batch: &BatchRenderer) -> PresentationManifest {
         PresentationManifest {
             unit_atlas: self.unit_work.and_then(|(work, upload)| {
-                upload.finish(&gpu.device, &gpu.queue, batch, work.render())
+                let mut atlas = None;
+                upload.finish(&gpu.device, &gpu.queue, batch, work.render(), &mut atlas);
+                atlas
             }),
             sprite_atlas: self
                 .sprite_work
@@ -41,23 +43,9 @@ impl PreparedManifest {
         batch: &BatchRenderer,
     ) -> anyhow::Result<(PresentationManifest, PresentationAtlasJob)> {
         let cancel = Arc::new(AtomicBool::new(false));
-        let unit = if let Some((work, upload)) = self.unit_work {
-            let (sender, receiver) = mpsc::channel();
-            let cancelled = cancel.clone();
-            #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-            {
-                let _ = sender.send(work.render_cancellable(&cancelled));
-            }
-            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-            std::thread::Builder::new()
-                .name("voxel-loading-raster".into())
-                .spawn(move || {
-                    let output = work.render_cancellable(&cancelled);
-                    let _ = sender.send(output);
-                })?;
-            Some((receiver, upload))
-        } else {
-            None
+        let unit = match self.unit_work {
+            Some((work, upload)) => Some((work.spawn(cancel.clone())?, upload)),
+            None => None,
         };
         let sprite = match self
             .sprite_work
@@ -96,7 +84,13 @@ impl PresentationAtlasJob {
             match receiver.try_recv() {
                 Ok(output) => {
                     let (_, upload) = self.unit.take().expect("one voxel completion owner");
-                    presentation.unit_atlas = upload.finish(&gpu.device, &gpu.queue, batch, output);
+                    upload.finish(
+                        &gpu.device,
+                        &gpu.queue,
+                        batch,
+                        output,
+                        &mut presentation.unit_atlas,
+                    );
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
                 Err(mpsc::TryRecvError::Disconnected) => {

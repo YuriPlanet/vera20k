@@ -40,7 +40,9 @@
 //! effects), kept so target scans stay off the main thread at 20,000 units:
 //! an answered scan sees the world as it stood when the pass began, not as
 //! the scanner's turn finds it. A target that an earlier turn in the same
-//! pass admits, brings into reach or makes better is seen one scan later:
+//! pass admits (for a campaign player's scanner, discovers: the target's own
+//! vt+0x4A0 prelude or a reveal, read by the `0x006F81BE` gate), brings into
+//! reach or makes better is seen one scan later:
 //! the targeting slot's `[General] NormalTargetingDelay=` frames later, plus
 //! the 0..2 draw; Area Guard's at its next handler run with the timer run
 //! out; Hunt's at its next handler run. An estimate another scan debited

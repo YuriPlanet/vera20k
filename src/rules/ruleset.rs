@@ -636,7 +636,7 @@ pub struct GeneralRules {
     #[cfg(feature = "phobos")]
     pub prone_speed_crawls: f64,
     /// Phobos `[General] ProneSpeed.NoCrawls=` (default 1.5): the same
-    /// multiplier for a prone type without `Crawls=`.
+    /// multiplier for a prone type with `Crawls=no`.
     #[cfg(feature = "phobos")]
     pub prone_speed_no_crawls: f64,
     /// `[General] VeteranROF=` — `RulesClass+0x690`, read at `0x0066EF61`.
@@ -5418,6 +5418,15 @@ impl RuleSet {
                 object.project_infantry_pips(pips);
             }
         }
+        for (name, art) in processed.infantry_art_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
+            {
+                object.project_infantry_art(art);
+            }
+        }
         for (name, reads) in processed.infantry_sequence_sound_reads() {
             if let Some(object) = rules
                 .object_list
@@ -7153,6 +7162,12 @@ impl RuleSet {
         for (object, weapons) in self.object_list.iter_mut().zip(resolved) {
             object.project_resolved_weapons(weapons);
         }
+    }
+
+    /// Number of WeaponType global88756C allocation slots, including refused
+    /// ambiguous slots. Consumers must preserve these positions for Action42.
+    pub fn weapon_array_len(&self) -> usize {
+        self.weapon_array.len()
     }
 
     /// WeaponType global88756C's allocation index, used by Action42 at
@@ -9322,16 +9337,22 @@ impl RuleSet {
     /// return None here, never an invented entry0 binding.
     pub(crate) fn scenario_country_name(&self, country: Option<&str>) -> Option<&str> {
         let index = match country {
-            Some(name) => {
-                let index = house_type_index_of_name(name, self.country_lookup_members());
-                if index < 0 {
-                    return None;
-                }
-                CountryIdx(u16::try_from(index).expect("[Countries] exceeds u16 identity space"))
-            }
+            Some(name) => self.country_index_of_name(name)?,
             None => CountryIdx(0),
         };
         self.country_name(index)
+    }
+
+    /// `HouseTypeClass__FindIndexOfName @ 0x005117D0` as a registered Country.
+    /// The source-order scan checks each HouseType's `Name=` alias (`+0x64`)
+    /// before its registry ID (`+0x24`), ignoring case. The shared owner
+    /// retains `<random>`=-2 and unknown=-1; this typed projection returns
+    /// only registered Country identities.
+    pub(crate) fn country_index_of_name(&self, name: &str) -> Option<CountryIdx> {
+        let index = house_type_index_of_name(name, self.country_lookup_members());
+        (index >= 0).then(|| {
+            CountryIdx(u16::try_from(index).expect("[Countries] exceeds u16 identity space"))
+        })
     }
 
     /// Cooperative5C34F0/5C35F0 draw over the complete retained HouseType
@@ -9362,23 +9383,17 @@ impl RuleSet {
     /// Resolve a trigger owner token to the canonical HouseType registration.
     ///
     /// gamemd-derived: `TriggerTypeClass::Read` resolves token 1 through
-    /// `HouseTypeClass__FindIndexOfName @ 0x005117D0`. Before that scan,
+    /// `HouseTypeClass__FindIndexOfName @ 0x005117D0`
+    /// ([`Self::country_index_of_name`]). Before that scan,
     /// ReadINI727292..7272AA compares literal817474 (`<none>`) and selects
     /// Country zero. This is a TriggerType caller rule, not lookup behavior.
-    /// The source-order scan
-    /// checks each HouseType's `Name=` alias (`+0x64`) before its registry ID
-    /// (`+0x24`). The shared owner retains `<random>`=-2 and unknown=-1;
-    /// this typed projection returns only registered Country identities.
     /// Original caller controls: tools/input_oracle/campaign_start.py
     /// --houses, side_controls.trigger_type_reader_rows (+meta).
     pub fn trigger_house_type_index(&self, owner: &str) -> Option<CountryIdx> {
         if owner.eq_ignore_ascii_case("<none>") {
             return self.country_name(CountryIdx(0)).map(|_| CountryIdx(0));
         }
-        let index = house_type_index_of_name(owner, self.country_lookup_members());
-        (index >= 0).then(|| {
-            CountryIdx(u16::try_from(index).expect("[Countries] exceeds u16 identity space"))
-        })
+        self.country_index_of_name(owner)
     }
 
     /// Resolve a country index back to its source spelling.
@@ -9997,10 +10012,7 @@ impl RuleSet {
     }
 
     /// Resolve an ordinal in the native ParticleSystemType registry A83D6C.
-    pub(crate) fn particle_system_type_id_by_index(
-        &self,
-        index: i32,
-    ) -> Option<ParticleSystemTypeId> {
+    pub fn particle_system_type_id_by_index(&self, index: i32) -> Option<ParticleSystemTypeId> {
         let index = usize::try_from(index).ok()?;
         self.particle_system_types
             .get(index)
@@ -10139,8 +10151,6 @@ impl RuleSet {
         let ai_base_spacing = self.ai_base_spacing;
         let mut dock_patched: u32 = 0;
         let mut buildings_checked: u32 = 0;
-        let mut infantry_checked: u32 = 0;
-        let mut crawls_patched: u32 = 0;
         for obj in self.object_list.iter_mut() {
             obj.project_silo_damage(art);
             // Resolve the art.ini section: use Image= override if present,
@@ -10150,22 +10160,8 @@ impl RuleSet {
             // Every TechnoType's ReadINI reads CanBeHidden from the ART
             // section of its own ID (0x007121EB); art is not layered.
             obj.can_be_hidden = art.can_be_hidden(&obj.id);
-            if obj.category == crate::rules::object_type::ObjectCategory::Infantry {
-                infantry_checked += 1;
-                if let Some(entry) = entry {
-                    obj.crawls = entry.crawls;
-                    // Original ART5246BE..52473A owns four independent signed
-                    // fields; project them without narrowing or fallback.
-                    obj.fire_up_frame = entry.fire_up;
-                    obj.fire_prone_frame = entry.fire_prone;
-                    obj.secondary_fire_frame = entry.secondary_fire;
-                    obj.secondary_prone_frame = entry.secondary_prone;
-                    if entry.crawls {
-                        crawls_patched += 1;
-                    }
-                }
-                continue;
-            }
+            // Infantry Crawls and discharge frames come from the per-pass
+            // ART reads (`InfantryArt`), not this final-image projection.
             if obj.category != crate::rules::object_type::ObjectCategory::Building {
                 continue;
             }
@@ -10214,11 +10210,6 @@ impl RuleSet {
             dock_patched,
             buildings_checked,
         );
-        log::trace!(
-            "Merged infantry art metadata: {} Crawls flags ({} infantry checked)",
-            crawls_patched,
-            infantry_checked,
-        );
         self.rebuild_animation_sequences(None);
     }
 
@@ -10250,7 +10241,7 @@ impl RuleSet {
     /// discovered before the master list and by later rules/ART readers.
     /// TAction41 indexes this registry at6E2357; `[Animations]` numeric
     /// labels and the membership-only BTreeSet are not ordinal catalogs.
-    pub(crate) fn anim_type_name_by_index(&self, index: i32) -> Option<&str> {
+    pub fn anim_type_name_by_index(&self, index: i32) -> Option<&str> {
         self.anim_type_art_read_states
             .get(usize::try_from(index).ok()?)
             .map(|(name, _)| name.as_str())
@@ -14263,7 +14254,12 @@ Projectile=Invisible
         else {
             return;
         };
-        let mut rules = RuleSet::from_ini(&retail_rules).expect("retail rules parse");
+        let mut rules = RuleSet::from_processed_rules(
+            &RulesLayerStack::new(retail_rules)
+                .process_with_fixed_art(&retail_art)
+                .unwrap(),
+        )
+        .expect("retail rules parse");
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&retail_art));
         let infantry = rules.object("E1").expect("retail E1");
         assert_eq!(infantry.image, "GI");
@@ -14297,14 +14293,15 @@ Projectile=Invisible
             crate::rules::native_processing::RulesLayerKind::Scenario,
             IniFile::from_str("[E1]\nImage=GI\n"),
         );
-        let mut rules = RuleSet::from_rules_layers(&layers).expect("rules parse");
         let mut art_text = "[GI]\nFixtureOnly=1\n".to_owned();
         for (key, raw) in row["layers"][0].as_object().unwrap() {
             art_text.push_str(&format!("{key}={}\n", raw.as_str().unwrap()));
         }
-        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(
-            &IniFile::from_str(&art_text),
-        ));
+        let art_ini = IniFile::from_str(&art_text);
+        let mut rules =
+            RuleSet::from_processed_rules(&layers.process_with_fixed_art(&art_ini).unwrap())
+                .expect("rules parse");
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
         let infantry = rules.object("E1").expect("E1");
         assert_eq!(
             [
@@ -14347,6 +14344,48 @@ Projectile=Invisible
         assert!(!building.crawls);
         assert_eq!(building.fire_up_frame, 0);
         assert_eq!(building.foundation, "2x2");
+    }
+
+    /// An art section without `Crawls=`, or no art section, keeps the
+    /// constructor's true (`0x00523788`): the read's default is the type's
+    /// current value (`0x005246A1..0x005246D0`).
+    #[test]
+    fn an_art_section_without_crawls_keeps_the_constructor_value() {
+        let mut layers = RulesLayerStack::new(IniFile::from_str(&make_test_rules()));
+        layers.push(
+            crate::rules::native_processing::RulesLayerKind::Scenario,
+            IniFile::from_str("[E1]\nName=GI\nImage=GI\nStrength=125\nArmor=flak\nSpeed=4\n"),
+        );
+        let art_ini = IniFile::from_str("[GI]\nFireUp=2\n");
+        let mut rules =
+            RuleSet::from_processed_rules(&layers.process_with_fixed_art(&art_ini).unwrap())
+                .expect("rules parse");
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
+        let infantry = rules.object("E1").expect("E1");
+        assert!(infantry.crawls);
+        assert_eq!(infantry.fire_up_frame, 2, "the GI art section was read");
+        assert!(rules.object("E2").expect("E2").crawls, "no art section");
+    }
+
+    /// A later pass whose Image names an art section without the keys keeps
+    /// what the earlier pass read: each read's default is the type's current
+    /// value (`0x005246A1..0x0052472D`), not the constructor's.
+    #[test]
+    fn a_later_image_without_the_art_keys_keeps_the_earlier_reads() {
+        let mut layers = RulesLayerStack::new(IniFile::from_str(&make_test_rules()));
+        layers.push(
+            crate::rules::native_processing::RulesLayerKind::Scenario,
+            IniFile::from_str("[E1]\nImage=GIB\n"),
+        );
+        let art_ini = IniFile::from_str("[E1]\nCrawls=no\nFireUp=2\n[GIB]\nFireProne=3\n");
+        let mut rules =
+            RuleSet::from_processed_rules(&layers.process_with_fixed_art(&art_ini).unwrap())
+                .expect("rules parse");
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
+        let infantry = rules.object("E1").expect("E1");
+        assert_eq!(infantry.image, "GIB");
+        assert!(!infantry.crawls);
+        assert_eq!((infantry.fire_up_frame, infantry.fire_prone_frame), (2, 3));
     }
 
     #[test]

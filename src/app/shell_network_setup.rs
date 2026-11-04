@@ -8,7 +8,9 @@ mod actions;
 pub(crate) mod bans;
 pub(crate) mod agreement;
 mod cooperative;
-pub(crate) use cooperative::chooser_rows as cooperative_chooser_rows;
+pub(crate) use cooperative::{
+    CooperativeResume, chooser_rows as cooperative_chooser_rows, resume as resume_cooperative,
+};
 pub(crate) mod maps;
 mod service;
 pub(crate) use service::{
@@ -182,6 +184,11 @@ pub(crate) struct NetworkSetupProtocol {
     /// Derived from the same admitted source as the received image.
     received_preview_bounds: Option<crate::map::preview::PreviewSourceBounds>,
     received_preview_count: u32,
+    /// VERA: a kept WOL room came back after BC6's Continue
+    /// (`cooperative::resume`) in place of `+0xAC`'s rematch (`0x005C46E0`),
+    /// which seats both players without a join. The next join is the
+    /// partner coming back to that seat.
+    cooperative_rematch_seat: bool,
     requests: Vec<NetworkSetupRequest>,
 }
 
@@ -368,6 +375,7 @@ impl NetworkSetupProtocol {
             received_preview: None,
             received_preview_bounds: None,
             received_preview_count: 0,
+            cooperative_rematch_seat: false,
             requests: if wol_host {
                 // C2 0x497: advertisement 78F000, then one ping per user.
                 vec![
@@ -393,6 +401,17 @@ impl NetworkSetupProtocol {
 
     pub(crate) fn start_in_progress(&self) -> bool {
         self.wol_start_pending || self.online_start_preparing
+    }
+
+    /// VERA: the next join is the kept room's partner coming back.
+    pub(crate) fn await_cooperative_rematch_seat(&mut self) {
+        self.cooperative_rematch_seat = true;
+    }
+
+    /// Whether this join is the kept room's partner coming back: only the
+    /// first join after [`Self::await_cooperative_rematch_seat`].
+    pub(crate) fn take_cooperative_rematch_seat(&mut self) -> bool {
+        std::mem::take(&mut self.cooperative_rematch_seat)
     }
 
     pub(crate) fn lan_go_send_pending(&self) -> bool {

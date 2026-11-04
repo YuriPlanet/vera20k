@@ -197,17 +197,18 @@ fn gate_piece(
 ) -> (u16, u32, i32) {
     use crate::map::lighting::CellLightGrid;
     use crate::render::batch::DepthAxis;
-    use crate::render::unit_atlas::BarrelImagePitches;
+    use crate::render::voxel_image_cache::VoxelImageCache;
     use std::cell::RefCell;
     let interpolation = RenderInterpolation::new(false);
     let lighting = CellLightGrid::new();
-    let barrel_image_pitches = RefCell::new(BarrelImagePitches::default());
+    let voxel_images = RefCell::new(VoxelImageCache::default());
     let input = ShpInputs {
         runtime,
         atlas: Some(atlas),
         overlay_atlas: None,
         unit_atlas: None,
-        barrel_image_pitches: &barrel_image_pitches,
+        voxel_images: &voxel_images,
+        depth_tested_images: None,
         interpolation: &interpolation,
         camera: [-1000.0, -1000.0],
         render_size: [5000, 5000],

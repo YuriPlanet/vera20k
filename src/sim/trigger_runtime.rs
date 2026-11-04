@@ -835,7 +835,9 @@ pub enum TriggerTraceEvent {
     /// A reinforcement member Place_Reinforcement_Members (0x65E010) could
     /// not place: every direction refused, or the nearby search found no
     /// Cell (`cell` (0,0)). Its residual (the next member left in limbo
-    /// natively) needs one of these followed by another member.
+    /// natively) needs a refused placement followed by another member; with
+    /// no Cell from the start, native deletes every member (0x65E601,
+    /// 0x65E618) and leaves none.
     PlacementRefused {
         seq: u32,
         binary_frame: u32,
@@ -5225,7 +5227,11 @@ impl Simulation {
                 // +0x34..+0x40. ActionEntry.params is chunk[1..], so these are
                 // exactly indices 2..5; params[0]/[1] must never leak in.
                 if let Some(raw_local_size) = parse_visible_map_area(&action.params) {
-                    let _ = self.change_visible_map_area(raw_local_size, rules);
+                    let _ = self.change_visible_map_area(
+                        raw_local_size,
+                        crate::sim::world::UninitContext::new(rules, overlay_registry)
+                            .with_effects(frame_effects),
+                    );
                 }
             }
             145 => {

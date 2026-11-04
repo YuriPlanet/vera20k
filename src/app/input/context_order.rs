@@ -37,7 +37,8 @@ use crate::sim::intern::InternedId;
 ///   mission to attack-move whenever the chord test passes. That test reads the
 ///   raw key state, so the chord still fires when Alt is also held — and because
 ///   the cancel has already cleared Ctrl, the Ctrl+Alt guard-area gate cannot.
-/// * **Ctrl+Alt → guard area** (patrol when the cell carries a waypoint).
+/// * **Ctrl+Alt → guard area.** Native's patrol answer for a cell holding a
+///   legacy House waypoint never fires in YR, which creates none.
 /// * **Shift alone.** On an object it returns the
 ///   add-to-selection action, which the object click handler has no case for and
 ///   therefore sends no mission; on a cell it returns the plain Move action, an
@@ -1659,7 +1660,9 @@ fn object_key_target(
 
 /// Techno object700191..700217 / Cell700830..700894. The keyboard chord
 /// alone is not a Guard action. Object targets must be allied and the actor
-/// no Aircraft (RTTI 2, 7001B4..7001BA); bare ground requires IsActive7010D0. Waypoint/patrol input is not exposed by VERA.
+/// no Aircraft (RTTI 2, 7001B4..7001BA); bare ground requires IsActive7010D0.
+/// The cell rung's patrol answer (0x33, `0x00700897`) needs a legacy House
+/// waypoint, which YR never creates (see `Simulation::cell_move_action`).
 /// A berserk object answers 0 before the rung (object `0x006FFEC9`, Cell
 /// `0x00700609`). Shared by the hover and click producers; no simulation
 /// state is changed.

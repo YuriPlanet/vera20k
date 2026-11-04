@@ -2855,6 +2855,8 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
         );
         building.lifecycle.set_in_limbo_for_test(false);
         sim.substrate.entities.insert(building);
+        // The player has seen the building: the campaign scan gate needs +0x41B.
+        crate::sim::arena_fixture::discover(&mut sim, 2);
         sim.add_entity_occupancy(2);
         sim.fog = crate::sim::vision::FogState::new(3, 1);
         crate::sim::vision::reveal_radius(&mut sim.fog, owner, 0, 0, 3);
@@ -3621,6 +3623,10 @@ fn guard_infantry_acquire_return_fire_and_finish_a_duel() {
     let enemy = sim
         .spawn_object("E1", "Russians", 5, 1, 64, &rules)
         .expect("enemy infantryman");
+    // Both Houses are human, so the campaign scan gate admits each guard's
+    // enemy only as the player's GI (+0x41A) and an enemy it has seen (+0x41B).
+    crate::sim::arena_fixture::own(&mut sim, gi);
+    crate::sim::arena_fixture::discover(&mut sim, enemy);
     sim.path_grid = Some(std::sync::Arc::new(PathGrid::test_all_passable(12, 3)));
     let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
     runtime.resources.rules = rules;
@@ -6147,6 +6153,8 @@ fn attack_move_fight(rules: &RuleSet) -> Simulation {
 fn test_attack_move_lethal_hit_expires_the_target_at_the_kill() {
     let rules = walking_combat_test_rules();
     let mut sim = attack_move_fight(&rules);
+    // The player has seen the enemy: the campaign scan gate needs +0x41B.
+    crate::sim::arena_fixture::discover(&mut sim, 2);
     if let Some(e) = sim.substrate.entities.get_mut(2) {
         e.health.set_for_test(50);
     }
@@ -6378,6 +6386,8 @@ fn test_infantry_attack_move_kills_on_the_way_and_walks_on() {
         &[infantry("Americans", 20), infantry("Russians", 24)],
         Some(&rules),
     );
+    // The player has seen the enemy: the campaign scan gate needs +0x41B.
+    crate::sim::arena_fixture::discover(&mut sim, 2);
     // Infantry fear asks the owner's House whether a human controls it.
     for (owner, side_index, is_human) in [("Americans", 0, true), ("Russians", 1, false)] {
         let name = sim.interner.intern(owner);

@@ -244,12 +244,38 @@ pub(super) fn build_world_instances(
         .vxl_pose_frame_cache
         .borrow_mut()
         .begin_frame();
-    instances::build_unit_instances(state, &mut planned_objects, &display_order);
-    instances::build_voxel_anim_instances(state, &mut planned_objects, &display_order);
-    // A building's voxel turret remains owned by the building display call.
-    // The SHP builder therefore adds it to the same contiguous Ground parent
-    // instead of leaking it into an atlas-level tie.
-    instances::build_shp_instances(state, &mut planned_objects, &display_order);
+    // Every voxel render shares the renderer's buffers and the UseBuffer
+    // latch (`crate::render::voxel_image_cache`), so the objects draw in
+    // the order Tactical draws them: the Display members, layer by layer
+    // (`0x006D8F19..0x006D95A9`). Each member is one unit, piece of debris,
+    // building or infantry, or Bullet. A building's voxel turret remains
+    // owned by the building display call, in the same contiguous Ground
+    // parent instead of an atlas-level tie.
+    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+        let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+        let shp_inputs = instances::shp_inputs(state, local_owner.as_deref());
+        let mut units = instances::unit_visitor(state, &display_order);
+        let mut debris = instances::voxel_anim_visitor(state, &display_order);
+        let mut shp = shp_inputs
+            .as_ref()
+            .map(|input| instances::shp_visitor(input, &display_order));
+        let mut bullets = instances::projectile_visitor(state, &display_order);
+        for &id in runtime.view().display_layers().ordered_ids() {
+            let objects = &mut planned_objects;
+            if let Some(visit) = units.as_mut() {
+                visit(objects, id);
+            }
+            if let Some(visit) = debris.as_mut() {
+                visit(objects, id);
+            }
+            if let Some(visit) = shp.as_mut() {
+                visit(objects, id);
+            }
+            if let Some(visit) = bullets.as_mut() {
+                visit(objects, id);
+            }
+        }
+    }
     let mut particle_draws = state.diagnostic_presentation_ms().map(|_| Vec::new());
     let display_inputs = state.match_state.sim_runtime.as_ref().map(|runtime| {
         let presentation = &state.match_state.match_presentation;
@@ -303,7 +329,6 @@ pub(super) fn build_world_instances(
             prepared_building_anims,
         );
     }
-    instances::build_projectile_visual_instances(state, &mut planned_objects, &display_order);
 
     // Every dynamic pose consumer, including Bullet46B0C0, has now populated
     // the shared page. One upload precedes this frame's draw submission.
@@ -373,6 +398,7 @@ pub(super) fn build_world_instances(
                         zoom: state.match_state.input.zoom_level,
                         ignore_visibility: state.match_state.sandbox_full_visibility,
                     },
+                    state.health_bar_mode(),
                 );
                 status.group = group_labels.remove(&parent.parent.id).unwrap_or_default();
                 // Phobos DigitalDisplay: built here because the GAME.FNT atlas

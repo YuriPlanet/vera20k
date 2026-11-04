@@ -36,7 +36,9 @@ pub(crate) struct ShpInputs<'a> {
     pub atlas: Option<&'a crate::render::sprite_atlas::SpriteAtlas>,
     pub overlay_atlas: Option<&'a crate::render::overlay_atlas::OverlayAtlas>,
     pub unit_atlas: Option<&'a crate::render::unit_atlas::UnitAtlas>,
-    pub barrel_image_pitches: &'a std::cell::RefCell<crate::render::unit_atlas::BarrelImagePitches>,
+    pub voxel_images: &'a std::cell::RefCell<crate::render::voxel_image_cache::VoxelImageCache>,
+    /// Renders a building gun's depth-tested image; None draws the atlas's.
+    pub depth_tested_images: Option<super::units::DepthTestedImages<'a>>,
     pub interpolation: &'a crate::app::presentation::interpolation::RenderInterpolation,
     pub camera: [f32; 2],
     pub render_size: [u32; 2],
@@ -76,26 +78,13 @@ fn shp_body_tint(
     }
 }
 
-/// Iterate visible SHP sprite entities from EntityStore and build SpriteInstances.
-///
-/// Build SpriteInstances for all SHP entities (buildings, infantry).
-/// Ground bodies, building bibs, and building turret VXLs are emitted as
-/// one parent-owned group so the native global order cannot split their display
-/// call at an atlas boundary.
-/// Air and Top bodies retain the same parent ownership in their own Display layers.
-/// Building bodies write their own per-pixel Z in the Ground pass, which is
-/// what the post-shroud selection-bracket redraw tests against; no separate
-/// depth stamp exists any more.
-pub(crate) fn build_shp_instances(
-    state: &AppState,
-    ground_objects: &mut Vec<PlannedObjectInstance>,
-    ground_order: &NativeDisplayOrder,
-) {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
-        return;
-    };
+/// The production inputs; `local_owner` is the preferred local owner's name.
+pub(crate) fn shp_inputs<'a>(
+    state: &'a AppState,
+    local_owner: Option<&'a str>,
+) -> Option<ShpInputs<'a>> {
+    let runtime = state.match_state.sim_runtime.as_ref()?;
     let presentation = &state.match_state.match_presentation;
-    let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
     let camera = [
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
@@ -106,35 +95,55 @@ pub(crate) fn build_shp_instances(
         [x, y, width, height],
         state.renderer.world_zoom_pass.as_ref(),
     );
-    build_shp_instances_from_inputs(
-        &ShpInputs {
-            runtime,
-            atlas: presentation.sprite_atlas.as_ref(),
-            overlay_atlas: presentation.overlay_atlas.as_ref(),
-            unit_atlas: presentation.unit_atlas.as_ref(),
-            barrel_image_pitches: &presentation.barrel_image_pitches,
-            interpolation: &presentation.interpolation,
-            camera,
-            render_size: [state.render_width(), state.render_height()],
-            zoom: state.match_state.input.zoom_level,
-            building_viewport,
-            axis: depth_axis(state),
-            local_owner: local_owner.as_deref(),
-            ignore_visibility: state.match_state.sandbox_full_visibility,
-            lighting: presentation.lighting.grid(),
-            house_colors: &presentation.house_color_map,
-            building_zshape: presentation.building_zshape.is_some(),
-        },
-        ground_objects,
-        ground_order,
-    );
+    Some(ShpInputs {
+        runtime,
+        atlas: presentation.sprite_atlas.as_ref(),
+        overlay_atlas: presentation.overlay_atlas.as_ref(),
+        unit_atlas: presentation.unit_atlas.as_ref(),
+        voxel_images: &presentation.voxel_images,
+        depth_tested_images: super::units::DepthTestedImages::of(state),
+        interpolation: &presentation.interpolation,
+        camera,
+        render_size: [state.render_width(), state.render_height()],
+        zoom: state.match_state.input.zoom_level,
+        building_viewport,
+        axis: depth_axis(state),
+        local_owner,
+        ignore_visibility: state.match_state.sandbox_full_visibility,
+        lighting: presentation.lighting.grid(),
+        house_colors: &presentation.house_color_map,
+        building_zshape: presentation.building_zshape.is_some(),
+    })
 }
 
+/// Tests' driver: [`shp_visitor`] over every object in encounter order.
+#[cfg(test)]
 pub(crate) fn build_shp_instances_from_inputs(
     input: &ShpInputs<'_>,
     ground_objects: &mut Vec<PlannedObjectInstance>,
     ground_order: &NativeDisplayOrder,
 ) {
+    let mut visit = shp_visitor(input, ground_order);
+    for stable_id in super::helpers::tactical_entity_encounter_order(&input.runtime.simulation) {
+        visit(ground_objects, stable_id);
+    }
+}
+
+/// Build the SpriteInstances of one SHP entity (building or infantry), if
+/// `stable_id` names one. The caller visits the members in Display order, so
+/// a building gun's voxel render meets the buffers the render before it left.
+///
+/// Ground bodies, building bibs, and building turret VXLs are emitted as
+/// one parent-owned group so the native global order cannot split their display
+/// call at an atlas boundary.
+/// Air and Top bodies retain the same parent ownership in their own Display layers.
+/// Building bodies write their own per-pixel Z in the Ground pass, which is
+/// what the post-shroud selection-bracket redraw tests against; no separate
+/// depth stamp exists any more.
+pub(crate) fn shp_visitor<'a>(
+    input: &'a ShpInputs<'a>,
+    ground_order: &'a NativeDisplayOrder,
+) -> impl FnMut(&mut Vec<PlannedObjectInstance>, u64) + 'a {
     let runtime = input.runtime;
     let sim = &runtime.simulation;
     let rules = Some(&runtime.resources.rules);
@@ -156,23 +165,22 @@ pub(crate) fn build_shp_instances_from_inputs(
     let cells = sim
         .resolved_terrain()
         .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
-    // `0x00487950` on the local player's map: a sandbox view, or a viewer
-    // with no house, sees no shroud.
-    let shrouded = |cell: (u16, u16)| {
-        !ignore_visibility
-            && local_owner_id
-                .zip(cells.as_ref())
-                .is_some_and(|(viewer, cells)| {
-                    crate::sim::vision::cell_is_shrouded(sim.fog(), cells, viewer, cell)
-                })
-    };
-    let encounter_order = super::helpers::tactical_entity_encounter_order(sim);
-    for stable_id in encounter_order {
+    move |ground_objects: &mut Vec<PlannedObjectInstance>, stable_id: u64| {
+        // `0x00487950` on the local player's map: a sandbox view, or a viewer
+        // with no house, sees no shroud.
+        let shrouded = |cell: (u16, u16)| {
+            !ignore_visibility
+                && local_owner_id
+                    .zip(cells.as_ref())
+                    .is_some_and(|(viewer, cells)| {
+                        crate::sim::vision::cell_is_shrouded(sim.fog(), cells, viewer, cell)
+                    })
+        };
         let Some(entity) = sim.entities().get(stable_id) else {
-            continue;
+            return;
         };
         let Some(_band) = entity_draw_band(sim.display_layers(), stable_id) else {
-            continue;
+            return;
         };
         // Buildings are the one class gamemd draws off its own render-coordinate
         // virtual rather than the plain object coordinate; everything below this
@@ -219,7 +227,7 @@ pub(crate) fn build_shp_instances_from_inputs(
             in_view(sx, sy, 200.0, 200.0, cam_x, cam_y, sw, sh, 200.0)
         };
         if !visible {
-            continue;
+            return;
         }
         // Common visibility, passenger, limbo, and DrawState admission is shared below.
         let owner_str = sim.interner().resolve(entity.owner());
@@ -233,7 +241,7 @@ pub(crate) fn build_shp_instances_from_inputs(
         });
         let type_name = if entity.category() == EntityCategory::Unit {
             if entity.unit_deploying() {
-                continue;
+                return;
             }
             super::units::drawn_model_id(
                 entity,
@@ -252,7 +260,7 @@ pub(crate) fn build_shp_instances_from_inputs(
         };
         let type_str = type_name.as_ref();
         if super::helpers::drawn_type_uses_voxel(entity, type_str, sim.interner(), rules) {
-            continue;
+            return;
         }
         observer.drawn_voxel = Some(false);
         let remap_owner = active_disguise
@@ -268,7 +276,7 @@ pub(crate) fn build_shp_instances_from_inputs(
                 .map(|o| o.wall)
                 .unwrap_or(false);
             if is_wall {
-                continue;
+                return;
             }
         }
         let pos = &entity.position;
@@ -290,7 +298,7 @@ pub(crate) fn build_shp_instances_from_inputs(
             super::units::house_color_to_remap_row(hc),
             observer,
         ) else {
-            continue;
+            return;
         };
         let interp_z = pos.z();
         // The lift `screen_position` drew this body with. A building's draw
@@ -326,9 +334,9 @@ pub(crate) fn build_shp_instances_from_inputs(
                     ground_objects,
                 );
             }
-            continue;
+            return;
         }
-        let Some(atlas) = atlas else { continue };
+        let Some(atlas) = atlas else { return };
         // Determine if this building is in its make/build-up or build-down animation.
         // Only BState 0 runs the construction animation; a pack-up shows
         // the completed body until Sell's stage 1 starts it again
@@ -451,7 +459,7 @@ pub(crate) fn build_shp_instances_from_inputs(
                         render_pose.body,
                         cells.as_ref(),
                     ) else {
-                        continue;
+                        return;
                     };
                     (frame, None)
                 }
@@ -515,7 +523,7 @@ pub(crate) fn build_shp_instances_from_inputs(
                 };
                 match atlas.get(&fallback_key) {
                     Some(e) => (fallback_key, Some(e)),
-                    None => continue,
+                    None => return,
                 }
             }
             // An empty (0x0) body frame has no atlas entry: `NAMISL`'s six
@@ -523,7 +531,7 @@ pub(crate) fn build_shp_instances_from_inputs(
             // draw paints nothing and the building's bib, anims and turret
             // still draw after it.
             None if entity.category() == EntityCategory::Structure => (key.clone(), None),
-            None => continue,
+            None => return,
         };
 
         let base_depth: f32 = match entity.category() {
@@ -686,7 +694,7 @@ pub(crate) fn build_shp_instances_from_inputs(
             )
         };
         let Some(parent) = ground_order.object_draw(stable_id, SpriteEncoding::Plain) else {
-            continue;
+            return;
         };
         // Building DrawBody's pieces use 0x6E00 (Z read/write), whose raw
         // leaf drops the word. Infantry518F90 uses 0x2E00 (Z read only),
@@ -885,7 +893,9 @@ pub(crate) fn build_shp_instances_from_inputs(
                     );
                 emit_building_turret_vxl(
                     unit_atlas,
-                    &mut input.barrel_image_pitches.borrow_mut(),
+                    &mut input.voxel_images.borrow_mut(),
+                    input.depth_tested_images.as_ref(),
+                    super::units::VoxelDrawer::of(rules, type_str),
                     type_str,
                     render_pose.body,
                     render_pose.barrel,
@@ -1143,7 +1153,9 @@ fn building_voxel_turret_visible(
 /// instead would pull the turret over units standing in front of the building.
 fn emit_building_turret_vxl(
     unit_atlas: &crate::render::unit_atlas::UnitAtlas,
-    barrel_image_pitches: &mut crate::render::unit_atlas::BarrelImagePitches,
+    voxel_images: &mut crate::render::voxel_image_cache::VoxelImageCache,
+    depth_tested_images: Option<&super::units::DepthTestedImages<'_>>,
+    drawer: super::units::VoxelDrawer,
     type_id: &str,
     turret_facing: u16,
     barrel_elevation: u16,
@@ -1188,14 +1200,24 @@ fn emit_building_turret_vxl(
         frame: if has_turret { 0 } else { frame(barrel_frames) },
         ..turret_key.clone()
     };
-    let pitch = crate::render::vxl_raster::voxel_facing_step_u16(barrel_elevation) as i8 - 8;
-    barrel_key.barrel_pitch = if has_turret && recoil_active {
-        pitch
-    } else {
-        let mut cache_key = if has_turret { &turret_key } else { &barrel_key }.clone();
-        cache_key.frame &= 0xff;
-        barrel_image_pitches.pitch(&cache_key, None, pitch)
+    // The gun images' key: facing and frame low byte (`0x0043E2FA`), -1
+    // while a turret recoils. A stored barrel keeps the pitch it was drawn at.
+    use crate::render::voxel_image_cache::{VoxelCache, VoxelImageKey};
+    let gun_image = |cache| {
+        (!(has_turret && recoil_active)).then(|| {
+            let mut sprite = if has_turret { &turret_key } else { &barrel_key }.clone();
+            sprite.frame &= 0xff;
+            VoxelImageKey::new(cache, sprite)
+        })
     };
+    let turret_image = gun_image(VoxelCache::Turret);
+    let barrel_image = gun_image(VoxelCache::Barrel);
+    let pitch = crate::render::vxl_raster::voxel_facing_step_u16(barrel_elevation) as i8 - 8;
+    barrel_key.barrel_pitch = barrel_image
+        .as_ref()
+        .filter(|_| !drawer.disable_voxel_cache)
+        .and_then(|image| voxel_images.hit(image))
+        .map_or(pitch, |stored| stored.barrel_pitch);
     let offsets = if has_turret {
         crate::render::vxl_raster::building_gun_screen_offsets(
             turret_offset,
@@ -1206,12 +1228,19 @@ fn emit_building_turret_vxl(
     } else {
         [[0.0; 2]; 2]
     };
-    for (key, [ox, oy]) in super::units::native_turret_barrel_order(
+    for (key, image, [ox, oy]) in super::units::native_turret_barrel_order(
         turret_facing,
-        (&turret_key, offsets[0]),
-        (&barrel_key, offsets[1]),
+        (&turret_key, turret_image, offsets[0]),
+        (&barrel_key, barrel_image, offsets[1]),
     ) {
-        let Some(entry) = unit_atlas.get(key) else {
+        let Some((entry, source)) = super::units::cached_part_entry(
+            voxel_images,
+            unit_atlas,
+            depth_tested_images,
+            drawer,
+            image,
+            key,
+        ) else {
             continue;
         };
         // 43DA80 submits the building draw point plus TurretAnimX/Y. A cache
@@ -1227,7 +1256,7 @@ fn emit_building_turret_vxl(
             kind: BuildingPieceKind::PoweredOrActiveOverlay,
             z_bias: 0,
             policy,
-            target: ObjectTexture::UnitAtlasPage(entry.page),
+            target: source.target(),
             instance: SpriteInstance {
                 position: [tx, ty],
                 size: entry.pixel_size,

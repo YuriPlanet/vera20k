@@ -84,7 +84,9 @@ impl PassiveScan {
         }
     }
 
-    /// The targeting timer.
+    /// The targeting timer (`+0x180` start, `+0x188` duration). Its `due` is
+    /// TechnoClass::TargetingTimerFinished (`0x0070F7E0`): an unarmed timer
+    /// is due only with a zero duration.
     pub const fn timer(self) -> MissionTimer {
         self.timer
     }
@@ -1014,6 +1016,8 @@ mod tests {
             let victim = sim
                 .spawn_object("E1", "Russians", 15, 12, 0, rules)
                 .unwrap();
+            // The player has seen the enemy: the campaign scan gate needs +0x41B.
+            crate::sim::arena_fixture::discover(&mut sim, victim);
             let owner = sim.substrate.entities.get(scanner).unwrap().owner();
             sim.fog.mark_visible_for_owner(owner, 15, 12);
             sim.session.set_binary_frame_for_test(100);

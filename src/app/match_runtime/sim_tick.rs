@@ -17,7 +17,6 @@ use crate::app::match_runtime::session::SessionMode;
 use crate::app::types::SIM_TICK_MS;
 use crate::map::terrain;
 use crate::render::sprite_atlas;
-use crate::render::unit_atlas;
 use crate::sim::production;
 use crate::sim::replay::ScenarioServiceInput;
 use crate::sim::trigger_runtime::TriggerEffect;
@@ -1085,6 +1084,9 @@ fn advance_in_game_runtime_mode(
     if state.match_state.multiplayer_paused() {
         return false;
     }
+    if !replaying {
+        crate::app::input::build_repeat::top_up(state);
+    }
     let frame_stepping = matches!(mode, RuntimeAdvanceMode::WallClock { .. })
         && state.diag.debug_frame_step_requested;
     let resume_wait = state
@@ -1586,8 +1588,7 @@ fn advance_one_simulation_frame(
             };
             // Recorded whether or not a client is attached: the history ring
             // backfills a dashboard that connects mid-match.
-            #[cfg(feature = "telemetry-dashboard")]
-            let telemetry_advance_started = Instant::now();
+            let advance_started = crate::util::time::Instant::now();
             // F07: the runtime is the one production frame API — bound
             // resources, no caller-substitutable inputs.
             let mut output = {
@@ -1771,9 +1772,10 @@ fn advance_one_simulation_frame(
                 // reached the synchronous boundary above exactly once.
                 return false;
             }
+            let tick_ms = advance_started.elapsed().as_secs_f32() * 1000.0;
+            state.match_state.network_quality.record_tick(tick_ms);
             #[cfg(feature = "telemetry-dashboard")]
             {
-                let tick_ms = telemetry_advance_started.elapsed().as_secs_f32() * 1000.0;
                 let tick = rt.simulation.session().tick();
                 let entities = rt.simulation.entities().len();
                 let houses = rt.simulation.houses().len();
@@ -2454,109 +2456,57 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState) {
         );
 }
 
-/// Refresh entity atlases after entities spawn, die, change type/owner or leave
-/// the display.
+/// Start growing the entity atlases after entities spawn, die, change type or
+/// owner, or leave the display ([`EntityAtlasGrowth::start`]). The rasters run
+/// on workers; [`publish_entity_atlas_growth`] completes them. Reuses the
+/// process asset manager instead of creating a new one (avoids re-opening all
+/// MIX archives from disk).
 ///
-/// This runs on every such event, so the check is per object model, never per
-/// sprite key: a refresh happens only when a voxel model or an object (type,
-/// house colour) appears that the atlas has not collected. The refresh then
-/// renders only those sprites and appends them to a growth page.
-/// Reuses the process asset manager instead of creating a new one (avoids re-opening
-/// all MIX archives from disk).
+/// [`EntityAtlasGrowth::start`]: crate::render::entity_atlas_growth::EntityAtlasGrowth::start
 pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
     let Some(rt) = state.match_state.sim_runtime.as_ref() else {
         return;
     };
-    let sim = &rt.simulation;
-    let bound_rules = Some(&rt.resources.rules);
     let Some(asset_manager) = state.process_assets.manager() else {
         log::warn!("Atlas refresh skipped: no asset manager available");
         return;
     };
-
-    // Check if the unit atlas lacks a voxel model the world now draws.
-    let unit_rebuild = !unit_atlas::atlas_covers_world(
-        state.match_state.match_presentation.unit_atlas.as_ref(),
-        sim.entities(),
-        bound_rules,
-        Some(sim.interner()),
-    );
-
-    // Check if the sprite atlas lacks an object (type, house colour), an
-    // AnimClass colour remap or the harvest overlay the world now draws.
-    // Map load collects the same coverage (`prepare_presentation_manifest`).
-    let coverage = sprite_atlas::EntityAtlasCoverage::collect(
-        sim,
-        bound_rules,
-        &state.match_state.match_presentation.house_color_map,
-    );
-    let sprite_rebuild = !sprite_atlas::atlas_covers_world(
-        state.match_state.match_presentation.sprite_atlas.as_ref(),
-        sim.entities(),
-        &state.match_state.match_presentation.house_color_map,
-        &coverage.extra_buildings,
-        &coverage.anim_remap_keys,
-        Some(sim.interner()),
-    ) || !sprite_atlas::atlas_covers_sprite_keys(
-        state.match_state.match_presentation.sprite_atlas.as_ref(),
-        &coverage.frozen_keys,
-        bound_rules,
-    );
-
-    if !unit_rebuild && !sprite_rebuild {
-        return;
-    }
-
-    // Growth pages must key on the palettes the load-time pages used.
-    let Some((palette, cell_palette)) = crate::map::theater::load_theater_unit_and_iso_palettes(
-        asset_manager,
-        &state.match_state.match_presentation.theater_name,
-    ) else {
-        log::warn!("Atlas refresh skipped: theater palettes not found");
-        return;
-    };
-
-    if unit_rebuild {
-        log::info!("Refreshing the unit atlas: new voxel models");
-        let existing = state.match_state.match_presentation.unit_atlas.take();
-        if let Some(new_unit_atlas) = unit_atlas::build_unit_atlas(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
-            &state.renderer.batch_renderer,
-            sim.entities(),
+    let presentation = &mut state.match_state.match_presentation;
+    presentation.atlas_growth.start(
+        &crate::render::entity_atlas_growth::GrowthSource {
+            sim: &rt.simulation,
+            rules: Some(&rt.resources.rules),
             asset_manager,
-            bound_rules,
-            existing,
-            Some(sim.interner()),
+            house_colors: &presentation.house_color_map,
+            theater_name: &presentation.theater_name,
+            theater_ext: &presentation.theater_ext,
+            max_texture_dimension_2d: state.renderer.gpu.device.limits().max_texture_dimension_2d,
+        },
+        presentation.unit_atlas.as_ref(),
+        presentation.sprite_atlas.as_ref(),
+    );
+}
+
+/// Publish the finished atlas growths before a picture is judged, then start
+/// the growths the world still needs. `wait` blocks until none runs, so
+/// captures draw complete atlases and never depend on worker timing.
+pub(crate) fn publish_entity_atlas_growth(state: &mut AppState, wait: bool) {
+    loop {
+        let gpu = &state.renderer.gpu;
+        let presentation = &mut state.match_state.match_presentation;
+        if !presentation.atlas_growth.publish(
+            &gpu.device,
+            &gpu.queue,
+            &state.renderer.batch_renderer,
+            &mut presentation.unit_atlas,
+            &mut presentation.sprite_atlas,
+            wait,
         ) {
-            state.match_state.match_presentation.unit_atlas = Some(new_unit_atlas);
+            return;
         }
-    }
-
-    if sprite_rebuild {
-        log::info!("Refreshing the sprite atlas: new SHP object types or colour remaps");
-        let existing = state.match_state.match_presentation.sprite_atlas.take();
-        if let Some(new_sprite_atlas) = sprite_atlas::build_sprite_atlas(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
-            &state.renderer.batch_renderer,
-            sim.entities(),
-            asset_manager,
-            &palette,
-            &state.match_state.match_presentation.theater_ext,
-            &state.match_state.match_presentation.theater_name,
-            bound_rules,
-            bound_rules.map(|rules| rules.art()),
-            &state.match_state.match_presentation.house_color_map,
-            &coverage.extra_buildings,
-            &coverage.anim_remap_keys,
-            &coverage.cell_drawer_type_ids,
-            &coverage.frozen_keys,
-            Some(&cell_palette),
-            existing,
-            Some(sim.interner()),
-        ) {
-            state.match_state.match_presentation.sprite_atlas = Some(new_sprite_atlas);
+        refresh_entity_atlases(state);
+        if !wait {
+            return;
         }
     }
 }

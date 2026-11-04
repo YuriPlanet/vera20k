@@ -791,14 +791,19 @@ pub struct ForwardDatagram {
     pub bytes: Vec<u8>,
 }
 
-/// How players kept pace, for the relay's journal report.
+/// How players kept pace and read the ordering, for the relay's journal
+/// report. No player, room or endpoint identity.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct PaceCounts {
+pub struct OrderingCounts {
     /// Times the clock slowed a match because a player could not keep up.
     pub slowdowns: u64,
+    /// Times the clock tried a faster rate again.
+    pub raises: u64,
     /// Pace reports from a player catching up or behind. Each player reports
     /// once a second, so this is about the seconds players spent catching up.
     pub catching_up_s: u64,
+    /// Pull requests answered: repairs and pull-only readers.
+    pub pull_replies: u64,
 }
 
 /// Bound storage and packet rate; untrusted data never creates a room until
@@ -828,8 +833,8 @@ pub struct RelayServer {
     // Ordering rooms cleaned up before their certificate expired, until that
     // expiry: a late Ready gets Inactive instead of a new timeline.
     ended_orderings: HashMap<[u8; 16], u64>,
-    // Since `take_pace_counts` last read them.
-    pace_counts: PaceCounts,
+    // Since `take_ordering_counts` last read them.
+    ordering_counts: OrderingCounts,
 }
 
 impl RelayServer {
@@ -853,7 +858,7 @@ impl RelayServer {
             push_after: None,
             journal_directory: None,
             ended_orderings: HashMap::new(),
-            pace_counts: PaceCounts::default(),
+            ordering_counts: OrderingCounts::default(),
         }
     }
 
@@ -877,9 +882,10 @@ impl RelayServer {
         self.rooms.len()
     }
 
-    /// How players kept pace since the last call; the relay's journal reports it.
-    pub fn take_pace_counts(&mut self) -> PaceCounts {
-        std::mem::take(&mut self.pace_counts)
+    /// How players kept pace and read the ordering since the last call; the
+    /// relay's journal reports it.
+    pub fn take_ordering_counts(&mut self) -> OrderingCounts {
+        std::mem::take(&mut self.ordering_counts)
     }
 
     pub fn process(

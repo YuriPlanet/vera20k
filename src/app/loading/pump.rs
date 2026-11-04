@@ -1408,6 +1408,7 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
     // limit). Nothing draws them once loading begins and the install replaces
     // them, so free them before this load builds its own.
     let outgoing = &mut state.match_state.match_presentation;
+    outgoing.atlas_growth.cancel();
     outgoing.sprite_atlas = None;
     outgoing.unit_atlas = None;
     replace_loading_attempt(

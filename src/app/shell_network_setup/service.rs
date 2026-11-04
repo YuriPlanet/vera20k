@@ -775,6 +775,13 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             preview_file_received(state, transferred_file)?;
         }
         NetworkSetupEvent::CooperativeCampaign(text) => {
+            // The 'C' arm (0x005E43CE) follows the parse's WOL drop of every
+            // option text (0x005E3E73..0x005E3E90), as HostSetup does.
+            if dialog.wol()
+                && (crate::app::shell_wol::in_match(state) || super::wol::start_pending(state))
+            {
+                return Ok(());
+            }
             super::cooperative::campaign_received(state, &text)?;
         }
         NetworkSetupEvent::StartStaging(text) => {
@@ -1362,7 +1369,15 @@ pub(crate) fn accept_network_map_source(
     apply_local_map_admission(
         state,
         crate::app::match_runtime::session::NetworkMapAdmission::Present,
-    )
+    )?;
+    // VERA: a Quick Match guest accepts with the host's options
+    // (`0x007A7F72`), but the online lobby verifies the map after them and
+    // VERA's live service refuses an acceptance before then; the verified
+    // map accepts again.
+    if super::quick_match(state) && !state.match_state.session.host() {
+        super::wol::quick_match_accept(state);
+    }
+    Ok(())
 }
 
 fn finish_go(state: &mut AppState) -> anyhow::Result<()> {

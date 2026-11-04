@@ -84,7 +84,9 @@ match/player/source/generation, then replays its original cursor. Ticket expiry
 and endpoint loss never reset the clock or batch counter, and write a departure
 only once the silence limits below pass.
 
-The service journal reports aggregate traffic and rejection counts once a minute.
+The service journal reports aggregate traffic and rejection counts once a minute,
+with the ordering push datagrams and their bytes as `pushed` and `pushed_bytes`
+and the Pull requests answered as `pull_replies`.
 These counts contain no player, endpoint, room identity, ticket or packet contents.
 Use them to distinguish rate limits, expired grants and authentication failures
 from packet loss and client timeouts.
@@ -138,9 +140,10 @@ After 30 seconds with no fresh behind or catching-up report the clock tries one
 row faster; a slowdown within 30 seconds of a raise doubles that wait, up to 5
 minutes. Pauses displace these times like the start. Status keeps the
 certificate's rate. Federated rooms keep the certificate's rate. The relay's
-per-minute journal line counts the slowdowns as `slowdowns`, and the reports of
-a player catching up or behind, about a second of catching up each, as
-`catching_up_s`. A paused, rejoining or hidden game reports keeping up.
+per-minute journal line counts the slowdowns as `slowdowns`, the raises as
+`raises`, and the reports of a player catching up or behind, about a second of
+catching up each, as `catching_up_s`. A paused, rejoining or hidden game
+reports keeping up.
 
 A federated match spreads its sources over up to six relays, each serving the
 players nearest it. The lobby-signed `VO1F` roster (see `../../docs/lobby-protocol.md`)

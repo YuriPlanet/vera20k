@@ -57,6 +57,33 @@ pub fn rival_arena_with_size(rules: &RuleSet, seed: u64, size: u16) -> Simulatio
     sim
 }
 
+/// The player has discovered `id` (Techno `+0x41B`), as a campaign object in
+/// explored ground is from its first AI tick (`update_techno_discovery_from_shroud`).
+/// The arena runs the campaign without a current player, so nothing is
+/// discovered there, and a human player's unit acquires only what the player
+/// owns or has discovered (Evaluate_Candidate `0x006F81BE..0x006F81F4`).
+pub fn discover(sim: &mut Simulation, id: u64) {
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .expect("discovered object")
+        .discovery
+        .set_discovered_by_current_house_for_test(true);
+}
+
+/// The player owns `id` (Techno `+0x41A`), as every object of the campaign
+/// player's house does (InitManagers `0x006F3F40`): a human player's healer
+/// or repairer takes its own side's units only with it, for the reason
+/// [`discover`] gives.
+pub fn own(sim: &mut Simulation, id: u64) {
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .expect("owned object")
+        .discovery
+        .set_owned_by_current_house_for_test(true);
+}
+
 /// The rival-house arena with flat Water cells and the production rules'
 /// land semantics. Ships enter through ordinary Unlimbo; no movement tuning
 /// or missing-terrain placement bypass is needed.
