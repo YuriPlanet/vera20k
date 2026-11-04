@@ -1249,6 +1249,7 @@ impl App {
             process_assets,
             audio: startup_audio_runtime,
             persistence: crate::app::persistence::PersistenceState::new(options_profile),
+            lua: crate::app::lua::LuaHost::new(),
             diag: crate::app::diagnostics::state::DiagnosticsState::new(
                 match crate::sim::parity_digest::ParityDigestSink::from_env() {
                     Ok(sink) => {

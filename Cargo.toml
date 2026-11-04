@@ -62,6 +62,9 @@ verax = ["vera20k-core/verax"]
 # Optional NPBUG bug-fix extension; neither default nor shipping builds enable
 # it.
 npbug = ["vera20k-core/npbug"]
+# Opt-in WolfCTOS-compatible Lua mods (`src/app/lua`). Not in default or
+# shipping builds. Desktop only: the vendored Lua VM cannot target the browser.
+lua = ["dep:mlua"]
 # The Ctrl+Shift dev chord: renderer-native diagnostic overlays (grid, heightmap,
 # pathgrid, foot path, fog), the debug pause and quicksave/quickload. Captures
 # rely on it (literal Ctrl+Shift+M/N quicksave/quickload).
@@ -139,6 +142,10 @@ webpki-roots = "1.0"
 # Ed25519 for the updater's signed release manifest (src/app/updater). Already
 # compiled for ureq's rustls, so it adds no crate.
 ring = "0.17"
+# WolfCTOS-compatible mod scripting (src/app/lua), behind the `lua` feature.
+# Lua 5.4 rather than LuaJIT because shipped mods use `goto`; `vendored` links
+# its own Lua so builds need no system install.
+mlua = { version = "0.12", features = ["lua54", "vendored"], optional = true }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 wasm-bindgen = { version = "0.2", optional = true }
