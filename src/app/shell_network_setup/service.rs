@@ -2,7 +2,8 @@
 //! share these shell boundaries; this owner applies admission and UI effects.
 
 use super::*;
-use crate::skirmish_launch::{SkirmishLaunchSession, SkirmishLocalSlot};
+use crate::app::match_runtime::session::PeerChoicesChange;
+use crate::skirmish_launch::{LaunchTeam, SkirmishLaunchSession, SkirmishLocalSlot};
 use crate::ui::lan_shell::LanChatLine;
 use crate::ui::skirmish_shell::SkirmishValidationModalState;
 use crate::util::time::Instant;
@@ -31,6 +32,9 @@ pub(crate) enum NetworkSetupEvent {
         choices: SkirmishLocalSlot,
         observer: bool,
     },
+    /// The VERA lobby's answer to the host's `/balance`: each participant
+    /// (by index) that moves to another team, and that team.
+    Teams(Vec<(usize, u8)>),
     PlayerReady {
         index: usize,
         accepted: bool,
@@ -185,6 +189,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 NetworkSetupEvent::GameStarted { .. }
                     | NetworkSetupEvent::Ping { .. }
                     | NetworkSetupEvent::PlayerChoices { .. }
+                    | NetworkSetupEvent::Teams(_)
                     | NetworkSetupEvent::VerifyStarted { .. }
                     | NetworkSetupEvent::PeerConnected { .. }
                     | NetworkSetupEvent::Negotiated { .. }
@@ -314,43 +319,30 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         }
         NetworkSetupEvent::PlayerChoices {
             index,
-            mut choices,
+            choices,
             observer,
         } => {
-            super::bans::admit_slot(state, &mut choices);
-            // Cooperative's mode +0x1C (0x5C17B0) admits its campaign's
-            // countries; the other modes' (0x5D67A0) admit any.
-            let countries = super::cooperative::current(state)
-                .then(|| {
-                    state
-                        .frontend
-                        .multiplayer_shell_runtime
-                        .cooperative_player_countries()
-                })
-                .flatten();
-            let change = state.match_state.session.accept_network_peer_choices(
-                index,
-                choices,
-                observer,
-                countries.as_deref(),
-            )?;
-            // 0x5EC9F0's advertisement 0x78F000, 0x77DB90's slot names,
-            // then 0x5E32D0's options and the repaint 0x783C80.
-            let protocol = state
-                .frontend
-                .network_setup_protocol
-                .as_mut()
-                .expect("setup owns protocol");
-            if change.roster {
-                protocol.requests.extend([
-                    NetworkSetupRequest::Advertise,
-                    NetworkSetupRequest::PublishRoster,
-                ]);
+            let change = accept_peer_choices(state, index, choices, observer)?;
+            publish_choices(state, change);
+        }
+        NetworkSetupEvent::Teams(moves) => {
+            // Moves made before one fails still publish.
+            let mut change = PeerChoicesChange::default();
+            let mut result = Ok(());
+            for (index, team) in moves {
+                match move_team(state, index, team) {
+                    Ok(moved) => {
+                        change.roster |= moved.roster;
+                        change.options |= moved.options;
+                    }
+                    Err(error) => {
+                        result = Err(error);
+                        break;
+                    }
+                }
             }
-            if change.options {
-                protocol.requests.push(NetworkSetupRequest::PublishOptions);
-            }
-            state.platform.window.request_redraw();
+            publish_choices(state, change);
+            result?;
         }
         NetworkSetupEvent::PlayerReady { index, accepted } => {
             state
@@ -926,6 +918,77 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
     }
     state.platform.window.request_redraw();
     Ok(())
+}
+
+/// The host checks a guest's `R` (`0x007A8260`): its slot passes the bans,
+/// and Cooperative's mode +0x1C (0x5C17B0) admits its campaign's countries;
+/// the other modes' (0x5D67A0) admit any.
+fn accept_peer_choices(
+    state: &mut AppState,
+    index: usize,
+    mut choices: SkirmishLocalSlot,
+    observer: bool,
+) -> anyhow::Result<PeerChoicesChange> {
+    super::bans::admit_slot(state, &mut choices);
+    let countries = super::cooperative::current(state)
+        .then(|| {
+            state
+                .frontend
+                .multiplayer_shell_runtime
+                .cooperative_player_countries()
+        })
+        .flatten();
+    state.match_state.session.accept_network_peer_choices(
+        index,
+        choices,
+        observer,
+        countries.as_deref(),
+    )
+}
+
+/// Moves participant `index` to `team`: a guest's row as its own `R` would,
+/// the host's as the host's own team combo edit does (`actions::select`).
+fn move_team(state: &mut AppState, index: usize, team: u8) -> anyhow::Result<PeerChoicesChange> {
+    let launch = state
+        .match_state
+        .session
+        .network_setup()
+        .ok_or_else(|| anyhow::anyhow!("no network setup"))?;
+    let human = &launch.humans[index];
+    let mut choices = human.slot.clone();
+    choices.team = LaunchTeam::Team(team);
+    if index != launch.local_player_index {
+        return accept_peer_choices(state, index, choices, false);
+    }
+    let row = human.raw_slot_index.expect("moves name seated rows");
+    state
+        .match_state
+        .session
+        .set_network_row_choices(row, choices)?;
+    Ok(PeerChoicesChange {
+        roster: false,
+        options: true,
+    })
+}
+
+/// 0x5EC9F0's advertisement 0x78F000, 0x77DB90's slot names, then 0x5E32D0's
+/// options and the repaint 0x783C80, for what accepted choices changed.
+fn publish_choices(state: &mut AppState, change: PeerChoicesChange) {
+    let protocol = state
+        .frontend
+        .network_setup_protocol
+        .as_mut()
+        .expect("setup owns protocol");
+    if change.roster {
+        protocol.requests.extend([
+            NetworkSetupRequest::Advertise,
+            NetworkSetupRequest::PublishRoster,
+        ]);
+    }
+    if change.options {
+        protocol.requests.push(NetworkSetupRequest::PublishOptions);
+    }
+    state.platform.window.request_redraw();
 }
 
 /// Verify through the existing map owner before the transport queues Type13.
