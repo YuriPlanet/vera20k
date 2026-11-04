@@ -1085,6 +1085,9 @@ fn advance_in_game_runtime_mode(
     if state.match_state.multiplayer_paused() {
         return false;
     }
+    if !replaying {
+        crate::app::input::build_repeat::top_up(state);
+    }
     let frame_stepping = matches!(mode, RuntimeAdvanceMode::WallClock { .. })
         && state.diag.debug_frame_step_requested;
     let resume_wait = state
