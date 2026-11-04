@@ -302,6 +302,11 @@ was checked:
   labels, not class claims. The pass is recorded for replay on other copies of the
   database as
   [`2026-10-04-vera-cited-names.json`](../tools/ghidra_pass/passes/2026-10-04-vera-cited-names.json).
+- `[2026-11-04 trigger-class audit]`: a correction appended to a plate whose VERA note
+  had gone stale (code it called unported is ported), on `TechnoClass__ChangeOwner`
+  0x7014A0, `TechnoClass__RecordKill` 0x702D40 and `NotifyBridgeSpanCollapse`
+  0x575EE0. Recorded as
+  [`2026-11-04-trigger-audit-notes.json`](../tools/ghidra_pass/passes/2026-11-04-trigger-audit-notes.json).
 
 Destructor and COM-interface method names rest on the bytes. For the 2,356 method
 names taken from YRpp's declaration order, each body's `ret N` was compared with
