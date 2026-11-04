@@ -42,8 +42,10 @@ impl Simulation {
             // 0x50D75D..0x50D78B and 0x50D871..0x50D89D: owner, class, then
             // a NULL Transporter (+0x11C). Garrison occupants and cargo that
             // CargoClass::AddPassenger loaded (a building's, a reinforcement's
-            // or a paradrop plane's) have none, so they are warped in Limbo:
-            // neither WarpTo body (0x4DF7F0, 0x522FE0) tests InLimbo.
+            // or a paradrop plane's) are warped in Limbo unless an earlier
+            // transport left it set: neither WarpTo body (0x4DF7F0, 0x522FE0)
+            // tests InLimbo. A soldier an aircraft unloaded keeps it until
+            // that aircraft dies (`PassengerRole::transporter`).
             if actor.owner() != house
                 || !matches!(
                     actor.category(),

@@ -4718,6 +4718,7 @@ impl Simulation {
         [
             listener.unit_follower(),
             listener.passenger_role.inside_transport_id(),
+            listener.passenger_role.transporter(),
             listener.pending_entry(),
             listener.spawn_owner_id.owner(),
             listener.fire_particle_system.system(),
@@ -5284,12 +5285,14 @@ impl Simulation {
         // Steam gamemd, TechnoPointerExpired7078B2..7078DB:
         // Transporter+11C survives a live hull's ordinary Limbo announcement,
         // for either control. Clear only on Object+90==0, exact Health==0 or
-        // ScenarioInit(A8E7AC)!=0. Negative live HP is not this zero test.
-        let clear_passenger_role = listener.passenger_role.inside_transport_id()
-            == Some(expired_id)
-            && (!expired_object_alive
-                || expired_health == 0
-                || self.object_placement_scope_active());
+        // ScenarioInit(A8E7AC)!=0 (`0x007078D5`). Negative live HP is not
+        // this zero test. VERA's carrier relation follows the same test.
+        let hull_gone =
+            !expired_object_alive || expired_health == 0 || self.object_placement_scope_active();
+        let clear_transporter =
+            hull_gone && listener.passenger_role.transporter() == Some(expired_id);
+        let clear_passenger_role =
+            hull_gone && listener.passenger_role.inside_transport_id() == Some(expired_id);
         let clear_c4_source = listener
             .pending_c4_detonation
             .pending()
@@ -5328,6 +5331,7 @@ impl Simulation {
             || prune_nav_queue
             || clear_dock
             || clear_airfield
+            || clear_transporter
             || clear_passenger_role
             || clear_c4_source
             || expire_mega_pointer
@@ -5383,6 +5387,9 @@ impl Simulation {
         }
         if clear_airfield && let Some(ammo) = listener.ammo_mut() {
             ammo.set_dock(None);
+        }
+        if clear_transporter {
+            listener.passenger_role.clear_transporter();
         }
         if clear_passenger_role {
             listener.passenger_role.clear_carrier_relation();

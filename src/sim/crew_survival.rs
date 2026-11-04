@@ -676,7 +676,7 @@ impl Simulation {
                 (position.sub_x(), position.sub_y())
             });
             // The dying building's expiry broadcast already cleared the
-            // passenger's transporter link; the cargo list still held it.
+            // passenger's carrier relation; the cargo list still held it.
             if let Some(entity) = sim.substrate.entities.get_mut(passenger) {
                 entity.passenger_role.clear_carrier_relation();
                 entity.on_bridge.store(on_bridge);
@@ -937,9 +937,9 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) {
         use crate::sim::movement::ground_pose::{ground_surface_z_at, position_world_coord};
-        // The transporter link (`+0x11C`) is cleared after a successful
-        // Unlimbo (`0x007380FA`); VERA's link also keeps the passenger off its
-        // cell's occupancy, so it goes first. Nothing between reads it.
+        // VERA's carrier relation keeps the passenger off its cell's
+        // occupancy, so it goes before the Unlimbo; Transporter (`+0x11C`)
+        // is cleared after a successful one (`0x007380FA`).
         let Some(entity) = self.substrate.entities.get_mut(passenger) else {
             return;
         };
@@ -1056,6 +1056,10 @@ impl Simulation {
                     UninitContext::new(rules, registry).with_effects(effects),
                 );
                 return;
+            }
+            // `0x007380FA`: Transporter (`+0x11C`) = NULL.
+            if let Some(entity) = sim.substrate.entities.get_mut(passenger) {
+                entity.passenger_role.clear_transporter();
             }
 
             // `0x00738104..0x0073812A`: Assign_Target(NULL).
