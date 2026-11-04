@@ -23,8 +23,10 @@ mod journal;
 mod sequenced;
 pub use sequenced::federation::{MAX_FEDERATED_RELAYS, sign_federation_roster};
 pub use sequenced::{
-    ORDERING_BATCH_CAPACITY, ORDERING_CERTIFICATE_LEN, ORDERING_PULL_LIMIT, OrderEntry, OrderError,
-    OrderEvent, OrderPace, OrderStatus, OrderingCertificate, paced_rates,
+    CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY, ORDERING_CERTIFICATE_LEN,
+    ORDERING_CERTIFICATE_V2_LEN, ORDERING_PULL_LIMIT, OrderEntry, OrderError, OrderEvent,
+    OrderPace, OrderStatus, OrderingCertificate, is_ordering_certificate_len, paced_rates,
+    turn_frames,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -314,8 +316,13 @@ impl fmt::Debug for ClientSession {
 pub enum ServerEvent<'a> {
     Challenge(&'a [u8]),
     Ready,
-    Payload { source: u8, bytes: DecryptedPayload },
+    Payload {
+        source: u8,
+        bytes: DecryptedPayload,
+    },
     Ordering(OrderEvent),
+    /// Consecutive history entries packed into one datagram, in order.
+    OrderingPack(Vec<OrderEvent>),
 }
 
 impl ClientSession {
@@ -512,6 +519,11 @@ impl ClientSession {
                 // Hop authentication protects the ordering authority; batch
                 // contents additionally authenticate under the match-only key.
                 self.received.accept(sequence)?;
+                if payload.first() == Some(&sequenced::PACK_EVENT) {
+                    return Ok(ServerEvent::OrderingPack(
+                        self.receive_ordering_pack(payload)?,
+                    ));
+                }
                 Ok(ServerEvent::Ordering(self.receive_ordering(payload)?))
             }
             LEAVE_ACK
@@ -804,6 +816,8 @@ pub struct OrderingCounts {
     pub catching_up_s: u64,
     /// Pull requests answered: repairs and pull-only readers.
     pub pull_replies: u64,
+    /// Matches this relay ended with a DESYNC record.
+    pub desyncs: u64,
 }
 
 /// Bound storage and packet rate; untrusted data never creates a room until

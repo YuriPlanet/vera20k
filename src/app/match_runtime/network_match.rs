@@ -1930,6 +1930,7 @@ mod tests {
             sources_mask: 0b11,
             tick_hz: 30,
             expires: u64::MAX / 2,
+            pacing: Default::default(),
         }
         .sign(&key)
         .unwrap();

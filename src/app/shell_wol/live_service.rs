@@ -2262,7 +2262,8 @@ fn decode_relay_grant(
         grant.ticket.len() <= 160
             && grant.packet_key.len() == 43
             && grant.payload_key.len() == 43
-            && grant.ordering_certificate.len() == 88,
+            // Base64 of a 66-byte VO1C or a 67-byte VO2C certificate.
+            && matches!(grant.ordering_certificate.len(), 88 | 90),
         "invalid relay grant"
     );
     let ticket = base64::engine::general_purpose::URL_SAFE_NO_PAD
@@ -3182,6 +3183,7 @@ mod completion_tests {
                     sources_mask: 3,
                     tick_hz: 45,
                     expires: 86400,
+                    pacing: Default::default(),
                 }
                 .sign(&signing_key)
                 .unwrap(),
@@ -3196,6 +3198,23 @@ mod completion_tests {
         );
         assert!(decode_relay_grant(&grant, player_id, player_id).is_err());
         assert!(decode_relay_grant(&grant, match_id, match_id).is_err());
+        // A VO2C certificate carries the host's pacing switch.
+        let vo2c = crate::net::udp::OrderingCertificate {
+            room: [0x11; 16],
+            sources_mask: 3,
+            tick_hz: 45,
+            expires: 86400,
+            pacing: crate::net::udp::CertificatePacing::Off,
+        }
+        .sign(&signing_key)
+        .unwrap();
+        grant.ordering_certificate = encode(&vo2c);
+        assert_eq!(
+            decode_relay_grant(&grant, match_id, player_id)
+                .unwrap()
+                .ordering_certificate,
+            vo2c
+        );
         grant.payload_key.clear();
         assert!(decode_relay_grant(&grant, match_id, player_id).is_err());
     }

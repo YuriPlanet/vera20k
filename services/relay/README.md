@@ -64,7 +64,9 @@ and asks for a newer VERA20k; v0.2.3 and older stall instead. Extend replies
 only by appending fields, and add a record kind, departure reason or entry field
 only after clients that read it have shipped. A new error code counts as
 unreadable too, so one the relay repeats while a client's cursor waits ends that
-client's match the same way.
+client's match the same way. The turn-based transport (packed entries, turns,
+relay checksums; below) replaced the one-entry datagrams outright: clients and
+relays from before it cannot play together.
 
 Install the executable as `/usr/local/bin/vera20k-relay`, create the unprivileged
 `vera20k-relay` user, and install `vera20k-relay.service`. Allow UDP port 5000 in
@@ -86,17 +88,24 @@ only once the silence limits below pass.
 
 The service journal reports aggregate traffic and rejection counts once a minute,
 with the ordering push datagrams and their bytes as `pushed` and `pushed_bytes`
-and the Pull requests answered as `pull_replies`.
+the Pull requests answered as `pull_replies`, and the matches it ended with a
+desync record as `desyncs`.
 These counts contain no player, endpoint, room identity, ticket or packet contents.
 Use them to distinguish rate limits, expired grants and authentication failures
 from packet loss and client timeouts.
 
-Modern ordering uses authenticated control kind4 and a lobby-signed `VO1C`
-certificate (see `../../docs/lobby-protocol.md`). Every source that becomes ready
+Modern ordering uses authenticated control kind4 and a lobby-signed `VO1C` or
+`VO2C` certificate (see `../../docs/lobby-protocol.md`). Every source that becomes ready
 certifies the same initial world; fixed FPS deadlines then commit encrypted
 batches sorted by source and
 batch ID, followed by an explicit frame end. An absent input contributes nothing.
-Input joins the open frame after the sealed head. New clients opt in
+The clock seals in turns of `turn_frames(rate)` = ⌈rate / 15⌉ frames (4 at
+60 Hz, 3 at 45, 2 at 30 and 20, 1 at 15 and slower), counted in whole turns
+from the last rate change, or from the start; the final frame and the last
+departures still seal at once. Input joins the open frame after the sealed head,
+the first frame of the next turn. A turn's frames reach the players together
+when its last frame is due, so clients play them a turn's span behind receipt,
+evenly, and count a backlog only beyond a whole turn. New clients opt in
 to server-pushed updates through ordering request4 and its authenticated
 `PushState` acknowledgement. Older clients continue pulling the same history.
 The subscription is bound to the confirmed hop and expires after3seconds without
@@ -105,13 +114,21 @@ Control-envelope ordering prevents a delayed enable from undoing a newer disable
 Retries are idempotent; modified batch retries and source impersonation fail
 authentication.
 
-Each pushed reader has64entries of independent delivery credit. Receive
-watermarks acknowledge contiguous retained data, never simulation progress or
-another reader's input. Each socket-loop drain rotates recipients and emits at
-most128packets/96KiB total,32packets per room and8per reader, using the same
-authenticated output budgets as replies. A250ms status heartbeat exposes a lost
-tail. Clients use the existing Pull operation to repair gaps, reading at most32
-entries at a time; healthy pushed clients do not continually request frames.
+History entries travel packed: consecutive entries fill one datagram up to the
+681-byte server payload as `[12][base seq LE u64][count]`, then per entry
+`[len LE u16]` and the entry without its 8-byte sequence (its kind byte, then
+the rest); the client rebuilds each canonical entry with sequence base plus its
+index and reads it as if it had come alone. Status, Ack, Error and the other
+replies stay datagrams of their own. Each pushed reader has 64 entries of
+independent delivery credit, counted in entries. Receive watermarks acknowledge
+contiguous retained data, never simulation progress or another reader's input.
+Each socket-loop drain rotates recipients and emits at most 128 datagrams/96 KiB
+total, 32 datagrams per room and 8 per reader, using the same authenticated output
+budgets as replies. Unacknowledged entries go once more, packed, 8 ms after
+they were first sent. A 250 ms status heartbeat exposes a lost tail. Clients use
+the existing Pull operation to repair gaps: a reply is a Status, then at
+most 32 entries packed; healthy pushed clients do not continually request
+frames.
 
 Synchronized pause is opt-in for every active match source. Ordering request5
 uses request ID0 to advertise support and query status; positive IDs carry an
@@ -129,21 +146,47 @@ the last explicit Leave appends a resume marker so the departure tail can finish
 
 Pace: clients send ordering request6 about once a second with no reply,
 `[pace][frames run per second, LE u16]`, pace 0 keeping up, 1 behind, 2 catching
-up; the first one advertises reading rate markers. Once every active source has
-reported, a fresh behind report (at most 3 seconds old) slows the clock to the
-fastest Game Speed rate at most nine tenths of what that source ran, at least
-one row slower and at most two rows below the certificate's rate. Each change
-appends an authenticated rate marker after the current head's frame end,
-`[10][seq][frame][rate LE u16][source]`, source 255 for a raise; later frames are
-due at the new rate from that moment. Changes are at least 5 seconds apart.
-After 30 seconds with no fresh behind or catching-up report the clock tries one
-row faster; a slowdown within 30 seconds of a raise doubles that wait, up to 5
-minutes. Pauses displace these times like the start. Status keeps the
-certificate's rate. Federated rooms keep the certificate's rate. The relay's
+up; the first one advertises reading rate markers. Under a `VO2C` certificate
+clients append their recent 90th-percentile simulation tick cost, `[LE u32 µs]`;
+older relays drop that longer report, so clients send it only under `VO2C`. A
+reporter holds the fastest rate its tick cost fits into four fifths of a second
+(legacy reports: nine tenths of what it ran). A fresh behind report (at most 3
+seconds old) from a player who cannot hold the current rate slows the clock to
+the fastest Game Speed rate that player holds, at least one row slower and at
+most two rows below the certificate's rate; a tick-cost reporter that holds the
+rate only draws slowly and catches up on its own. Under `VO1C` every active
+source must have reported, so no released client meets a marker it cannot read;
+under `VO2C` silent sources are ignored, and a certificate whose pacing flag is
+off keeps its rate. Each change appends an authenticated rate marker after the
+current head's frame end, `[10][seq][frame][rate LE u16][source]`, source 255
+for a raise; later frames are due at the new rate from that moment. Changes are
+at least 5 seconds apart. After 30 seconds with no fresh behind or catching-up
+report, and while every tick-cost reporter holds the next faster rate, the clock
+tries one row faster; a slowdown within 30 seconds of a raise doubles that wait,
+up to 5 minutes. Pauses displace these times like the start. Status keeps the
+certificate's rate. In a federated room the coordinator decides from every
+relay's reports (see below). The relay's
 per-minute journal line counts the slowdowns as `slowdowns`, the raises as
 `raises`, and the reports of a player catching up or behind, about a second of
 catching up each, as `catching_up_s`. A paused, rejoining or hidden game
 reports keeping up.
+
+Checksums: batches carry only commands, `[2]` then the EventPacketCodec packet.
+Every 15th frame each client sends its post-Logic checksum as ordering request7,
+with no reply, `[count]` then per sample `[LE frame u32][LE checksum u32]`: the
+newest sample and the one before, so one lost datagram loses nothing. The relay
+keeps each active source's first value per sampled frame for the newest 256
+sampled frames. It takes none for a frame past the one after its sealed frames
+(a client reports frame F once it has run F - 1), and a source's values stop
+counting once it leaves. Once one frame's values differ it names the outlier: the first
+reporter off a strict majority of the active and reporting sources, or, once
+every active source reported without one (two players), the later of the first
+two that differ, against the earlier. It then appends the match's one desync
+record after the current head's frame end, `[11][seq][frame][LE sample frame
+u32][outlier source][LE outlier checksum u32][other source][LE other checksum
+u32]`, and compares nothing more. Each client ends the match with a desync
+error, naming the outlier's House (or the other side's, if it is the outlier),
+as it reaches the frame after that record.
 
 A federated match spreads its sources over up to six relays, each serving the
 players nearest it. The lobby-signed `VO1F` roster (see `../../docs/lobby-protocol.md`)
@@ -160,7 +203,19 @@ every relay delivers the same stream and sequence numbers. Player DATA to a remo
 first roster relay picks the start time from measured link round trips; the
 others follow its clock offset. Only it cancels a startup: another relay's Leave
 before the start asks it to, and becomes a frame-1 departure if the start was
-already on its way. Federated rooms cannot pause. Link packets go to the roster
+already on its way. Federated rooms cannot pause. The other relays forward
+their players' latest pace reports to the coordinator every 500 ms as link kind
+2, `[count]` then per source `[source][pace][LE frames u16][LE tick µs u32, 0
+none][LE age ms u32]`. The coordinator's rate change travels as a contribution
+of source 255 (batch ID `u64::MAX`, `[LE rate u16][source]`) for the frame after
+its seal; every relay emits the same rate marker after that frame's end and
+seals later frames at the new rate from that frame's due time on its shared
+start timeline. The others forward their players' checksum reports to the
+coordinator as they arrive, as link kind 3, `[count]` then per report
+`[source][LE sample frame u32][LE checksum u32]`; only the coordinator compares
+them, and its desync travels as a contribution of source 255 (batch ID
+`u64::MAX - 1`, the record's 14 bytes after its frame) for the frame after its
+seal, which every relay emits after that frame's end. Link packets go to the roster
 address on the relay's existing UDP port and are authenticated by their MAC,
 whatever address they arrive from. Deploy every relay of a federation at
 once: a relay rejects link entries newer than its own code, and one rejected

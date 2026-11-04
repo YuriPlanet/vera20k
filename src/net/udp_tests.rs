@@ -375,6 +375,7 @@ fn ordered_relay() -> (
         sources_mask: 3,
         tick_hz: 45,
         expires: 2000,
+        pacing: Default::default(),
     }
     .sign(&key)
     .unwrap();

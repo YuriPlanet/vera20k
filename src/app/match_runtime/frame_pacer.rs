@@ -191,9 +191,18 @@ impl OnlinePacer {
         }
     }
 
+    /// The relay seals a turn's frames at once, sent when its last frame is
+    /// due (relay README, ordering).
+    fn turn(&self) -> u32 {
+        crate::net::live_commands::turn_frames(self.receipt.frames_per_second)
+    }
+
+    /// A turn's frames arrive together, so playout runs a turn's span behind
+    /// the schedule to play them evenly until the next turn arrives.
     fn deadline(&self, frame: u32) -> Instant {
         let base = self.scheduled(frame);
-        base.checked_add(self.reserve).unwrap_or(base)
+        base.checked_add(self.reserve + self.span(self.turn() - 1))
+            .unwrap_or(base)
     }
 
     fn learn(&mut self, required: Duration, now: Instant) {
@@ -274,9 +283,12 @@ impl OnlinePacer {
         {
             self.learn(receipt.received_at.saturating_duration_since(deadline), now);
         }
+        // A whole turn waiting is on time; two frames beyond it, or one
+        // beyond it two frames late, is a backlog.
+        let turn = self.turn();
         if !self.catching_up
-            && (available >= 3
-                || (available >= 2
+            && (available >= turn + 2
+                || (available > turn
                     && now.saturating_duration_since(self.deadline(next_frame)) > self.span(2)))
         {
             self.catching_up = true;
@@ -871,7 +883,8 @@ mod tests {
             clock_epoch: 1,
             ..push_receipt(resumed_at, 2)
         };
-        let due = resumed_at + tick + Duration::from_millis(15);
+        // A frame, the reserve and the 45 Hz turn's two more frames.
+        let due = resumed_at + tick * 3 + Duration::from_millis(15);
         assert!(!pacer.online_catch_up_ready(resumed_at, 3, 3, resumed, false));
         for _ in 0..2 {
             assert_eq!(
@@ -890,11 +903,13 @@ mod tests {
     #[test]
     fn early_receipt_moves_a_late_origin_and_repeated_queries_are_idempotent() {
         let start = Instant::now();
+        // Playout runs the 45 Hz turn's two more frames behind receipt.
+        let turn = Duration::from_nanos(2 * 1_000_000_000 / 45);
         let mut pacer = LocalFramePacer::new();
         let delayed = push_receipt(start + Duration::from_millis(15), 1);
         assert_eq!(
             pacer.online_frame_decision(delayed.received_at, 1, 1, delayed, false, false),
-            OnlineFrameDecision::Run
+            OnlineFrameDecision::HoldUntil(delayed.received_at + turn)
         );
         // Frame 2 arrives 15ms before the delayed anchor's schedule. Holding it
         // to that schedule would delay every later frame without any reserve.
@@ -902,7 +917,7 @@ mod tests {
         for _ in 0..2 {
             assert_eq!(
                 pacer.online_frame_decision(on_time.received_at, 2, 2, on_time, false, false),
-                OnlineFrameDecision::Run
+                OnlineFrameDecision::HoldUntil(on_time.received_at + turn)
             );
         }
         assert_eq!(
@@ -913,7 +928,7 @@ mod tests {
         assert_eq!(pacer.online_pacing_status().unwrap().underruns, 0);
         assert_eq!(
             pacer.online.as_ref().unwrap().deadline(1_001),
-            on_time.received_at + Duration::from_nanos(999 * 1_000_000_000 / 45)
+            on_time.received_at + Duration::from_nanos(999 * 1_000_000_000 / 45) + turn
         );
         let duplicate = push_receipt(on_time.received_at + Duration::from_millis(15), 2);
         pacer.online_frame_decision(duplicate.received_at, 2, 2, duplicate, false, false);
@@ -1032,11 +1047,51 @@ mod tests {
         pacer.reset_for_new_world();
         assert!(pacer.online_pacing_status().is_none());
         let restart = push_receipt(bulk.received_at + Duration::from_secs(10), 1);
+        // A fresh schedule plays a turn's span behind its first receipt.
         assert_eq!(
             pacer.online_frame_decision(restart.received_at, 1, 1, restart, false, false),
-            OnlineFrameDecision::Run
+            OnlineFrameDecision::HoldUntil(
+                restart.received_at + Duration::from_nanos(2 * 1_000_000_000 / 45)
+            )
         );
         assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 0);
+    }
+
+    /// At 45 Hz the relay sends three frames a turn, together when the last
+    /// is due: playout spreads them a frame apart, a turn's span behind, and
+    /// only frames past a turn and one more are a backlog.
+    #[test]
+    fn a_three_frame_turn_plays_evenly_and_catches_up_only_past_the_turn() {
+        use OnlineFrameDecision::*;
+        let start = Instant::now();
+        let tick = Duration::from_nanos(1_000_000_000 / 45);
+        let mut pacer = LocalFramePacer::new();
+        let turn = push_receipt(start, 3);
+        let mut decisions = Vec::new();
+        for (now, next) in [(start, 1), (start, 2), (start + tick, 2), (start + tick, 3)] {
+            decisions.push(pacer.online_frame_decision(now, next, 3, turn, false, false));
+        }
+        assert_eq!(
+            decisions,
+            [
+                Run,
+                HoldUntil(start + tick),
+                Run,
+                HoldUntil(start + tick * 2)
+            ]
+        );
+        let mut pacer = LocalFramePacer::new();
+        let ahead = push_receipt(start, 4);
+        assert_eq!(
+            pacer.online_frame_decision(start, 1, 4, ahead, false, false),
+            Run
+        );
+        let mut pacer = LocalFramePacer::new();
+        let backlog = push_receipt(start, 5);
+        assert_eq!(
+            pacer.online_frame_decision(start, 1, 5, backlog, false, false),
+            CatchUp
+        );
     }
 
     #[test]

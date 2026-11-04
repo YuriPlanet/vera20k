@@ -20,6 +20,8 @@ pub use sequenced::{
     SequencedError, SequencedTiming,
 };
 pub use startup::{StartupAgreement, StartupError};
+/// The relay's turn length, which online playout follows.
+pub use vera20k_relay_protocol::turn_frames;
 
 use crate::sim::world::{NetworkCommandQueues, NetworkQueueContext, NetworkQueuePass};
 
@@ -319,6 +321,14 @@ impl LiveCommandSession {
         self.sequenced
             .as_ref()
             .map_or(0, |session| session.frontier())
+    }
+
+    /// One local simulation tick's wall-clock cost. The relay's pace
+    /// reports carry its recent 90th percentile; nothing else reads it.
+    pub fn record_tick_cost(&mut self, cost: std::time::Duration) {
+        if let Some(session) = self.sequenced.as_mut() {
+            session.record_tick_cost(cost.as_micros().min(u128::from(u32::MAX)) as u32);
+        }
     }
 
     /// The relay's current frame rate: the match's own, or slower while a

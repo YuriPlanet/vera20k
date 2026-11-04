@@ -78,28 +78,37 @@ impl Peer {
             {
                 return Err("undecodable_status".into());
             }
-            match event {
-                Ok(ServerEvent::Ordering(OrderEvent::Entry(entry))) => {
-                    if let Some((sequence, record)) = record(&entry) {
-                        if *self.records.entry(sequence).or_insert(record) != record {
-                            return Err(format!("record_{sequence}_changed"));
+            let events = match event {
+                Ok(ServerEvent::OrderingPack(events)) => events
+                    .into_iter()
+                    .map(|event| Ok(ServerEvent::Ordering(event)))
+                    .collect(),
+                event => vec![event],
+            };
+            for event in events {
+                match event {
+                    Ok(ServerEvent::Ordering(OrderEvent::Entry(entry))) => {
+                        if let Some((sequence, record)) = record(&entry) {
+                            if *self.records.entry(sequence).or_insert(record) != record {
+                                return Err(format!("record_{sequence}_changed"));
+                            }
                         }
                     }
+                    Ok(ServerEvent::Ordering(OrderEvent::Ready { ready_mask, .. })) => {
+                        ready = Some(ready_mask)
+                    }
+                    Ok(ServerEvent::Ordering(OrderEvent::Left)) => self.left = true,
+                    // Pull answers this until the relay removes player 2 and starts.
+                    Ok(ServerEvent::Ordering(OrderEvent::Error {
+                        code: OrderError::NotStarted,
+                        ..
+                    })) => {}
+                    Ok(ServerEvent::Ordering(OrderEvent::Error { code, .. })) => {
+                        return Err(format!("ordering_error_{code:?}"));
+                    }
+                    Ok(_) => {}
+                    Err(_) => self.undecodable += 1,
                 }
-                Ok(ServerEvent::Ordering(OrderEvent::Ready { ready_mask, .. })) => {
-                    ready = Some(ready_mask)
-                }
-                Ok(ServerEvent::Ordering(OrderEvent::Left)) => self.left = true,
-                // Pull answers this until the relay removes player 2 and starts.
-                Ok(ServerEvent::Ordering(OrderEvent::Error {
-                    code: OrderError::NotStarted,
-                    ..
-                })) => {}
-                Ok(ServerEvent::Ordering(OrderEvent::Error { code, .. })) => {
-                    return Err(format!("ordering_error_{code:?}"));
-                }
-                Ok(_) => {}
-                Err(_) => self.undecodable += 1,
             }
         }
         Ok(ready)
@@ -254,6 +263,7 @@ fn run(started: Instant) -> Result<String> {
         sources_mask: 0b111,
         tick_hz: 45,
         expires: now.as_secs() + 600,
+        pacing: Default::default(),
     }
     .sign(&key)
     .map_err(|_| "certificate")?;

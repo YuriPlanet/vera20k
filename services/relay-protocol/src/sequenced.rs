@@ -9,11 +9,17 @@ use super::*;
 
 pub(crate) mod federation;
 
+/// A `VO1C` certificate; `VO2C` adds one flags byte.
 pub const ORDERING_CERTIFICATE_LEN: usize = 66;
+pub const ORDERING_CERTIFICATE_V2_LEN: usize = 67;
 pub const ORDERING_BATCH_CAPACITY: usize = 512;
 pub const ORDERING_PULL_LIMIT: usize = 32;
 const CERTIFICATE_MAGIC: &[u8; 4] = b"VO1C";
 const CERTIFICATE_DOMAIN: &[u8] = b"VERA20k relay ordering certificate v1\0";
+const CERTIFICATE_V2_MAGIC: &[u8; 4] = b"VO2C";
+const CERTIFICATE_V2_DOMAIN: &[u8] = b"VERA20k relay ordering certificate v2\0";
+// VO2C flags byte: the host turned relay pacing off.
+const CERTIFICATE_PACING_OFF: u8 = 1;
 const ORDER_KEY_DOMAIN: &[u8] = b"VERA20k relay ordering payload key v1\0";
 const MAX_MATCH_SECONDS: u64 = 24 * 60 * 60;
 const START_DELAY_MS: u64 = 200;
@@ -46,15 +52,41 @@ const PULL_REQUEST: u8 = 2;
 const PUSH_REQUEST: u8 = 4;
 const PAUSE_REQUEST: u8 = 5;
 const PACE_REQUEST: u8 = 6;
+const CHECKSUM_REQUEST: u8 = 7;
+/// Every this many frames each client reports its post-Logic checksum; the
+/// relay takes no other frame's.
+pub const CHECKSUM_INTERVAL: u32 = 15;
+// A checksum report carries the newest sample and the one before, so one
+// lost datagram loses no sample.
+const CHECKSUM_SAMPLES: usize = 2;
+// Sampled frames whose checksums a room keeps, the newest.
+const CHECKSUM_FRAMES: usize = 256;
 const PAUSE_STATUS_EVENT: u8 = 8;
 const PAUSE_EVENT: u8 = 9;
 const PAUSE_ENTRY_BYTES: usize = 23;
 const RATE_EVENT: u8 = 10;
 const RATE_ENTRY_BYTES: usize = 16;
+const DESYNC_EVENT: u8 = 11;
+const DESYNC_ENTRY_BYTES: usize = 27;
+// A DESYNC record after its sequence and frame: sample frame u32, outlier
+// source u8 and checksum u32, other source u8 and checksum u32.
+pub(super) const DESYNC_TAIL: usize = DESYNC_ENTRY_BYTES - 13;
+// Consecutive history entries in one datagram: `[event][base seq u64][count
+// u8]`, then per entry `[len u16]` and its bytes without the sequence.
+pub(super) const PACK_EVENT: u8 = 12;
+const PACK_HEADER: usize = 10;
+// A federated control record travels between relays as an entry of this
+// source: a rate change under `RATE_BATCH`, a desync under `DESYNC_BATCH`.
+pub(super) const CONTROL_SOURCE: u8 = u8::MAX;
+pub(super) const RATE_BATCH: u64 = u64::MAX;
+pub(super) const DESYNC_BATCH: u64 = u64::MAX - 1;
 // Game Speed's frame rates, fastest first: the rates a certificate may name.
 const FRAME_RATES: [u16; 7] = [60, 45, 30, 20, 15, 12, 10];
 // A player's report counts this long; a silent client slows nobody.
 const PACE_REPORT_MS: u64 = 3_000;
+// The share of each second a reporter's simulation may take at a rate it
+// can hold; the rest draws and catches up.
+const SUSTAIN_PERCENT: u32 = 80;
 // Rate changes are at least this far apart, so reports show a step's effect
 // before the next one.
 const PACE_STEP_MS: u64 = 5_000;
@@ -78,11 +110,10 @@ const PUSH_REPEAT_MS: u64 = 8;
 // Repeats per second relay-wide. They spend no fresh budget, so they add at
 // most half the relay's fresh total to its ordering output.
 const PUSH_REPEAT_PACKETS: u64 = 8192;
-// One room's fresh ordering packets per second. Every entry goes to every
-// reader as its own packet, so a full 30-source room at 60 Hz needs about
-// 8,200 at 150 actions a minute and 10,600 at 300, before repairs. The cap
-// stays below the
-// relay-wide total so a flooding room's asks leave the rest unreserved for
+// One room's fresh ordering packets per second. Entries reach each reader
+// packed, a turn's in about one packet, so a full 30-source room at 60 Hz
+// needs under a thousand at 300 actions a minute, before repairs. The cap stays
+// below the relay-wide total so a flooding room's asks leave the rest unreserved for
 // matches that start or repair.
 const ROOM_ORDER_PACKETS: u64 = 12_288;
 pub(super) const LEAVE_REQUEST: u8 = 3;
@@ -94,27 +125,65 @@ pub(super) const FRAME_END_EVENT: u8 = 4;
 pub(super) const DEPARTURE_EVENT: u8 = 5;
 const ERROR_EVENT: u8 = 6;
 
+/// What a certificate says about relay pacing (README, Pace).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CertificatePacing {
+    /// `VO1C`: members may be released clients that read no rate marker, so
+    /// the clock changes only once every active source has reported.
+    #[default]
+    Legacy,
+    /// `VO2C`: every member reads rate markers; a player who cannot keep up
+    /// slows the clock.
+    On,
+    /// `VO2C` with the host's pacing switch off: the clock keeps its rate.
+    Off,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OrderingCertificate {
     pub room: [u8; 16],
     pub sources_mask: u32,
     pub tick_hz: u16,
     pub expires: u64,
+    pub pacing: CertificatePacing,
+}
+
+/// Either certificate length, for a READY payload's split.
+pub fn is_ordering_certificate_len(length: usize) -> bool {
+    length == ORDERING_CERTIFICATE_LEN || length == ORDERING_CERTIFICATE_V2_LEN
 }
 
 impl OrderingCertificate {
     pub fn parse(bytes: &[u8]) -> Result<Self, RelayError> {
-        if bytes.len() != ORDERING_CERTIFICATE_LEN || &bytes[..4] != CERTIFICATE_MAGIC {
-            return Err(RelayError::Malformed);
-        }
+        let pacing = match (bytes.len(), bytes.get(..4)) {
+            (ORDERING_CERTIFICATE_LEN, Some(magic)) if magic == CERTIFICATE_MAGIC => {
+                CertificatePacing::Legacy
+            }
+            (ORDERING_CERTIFICATE_V2_LEN, Some(magic)) if magic == CERTIFICATE_V2_MAGIC => {
+                match bytes[34] {
+                    0 => CertificatePacing::On,
+                    CERTIFICATE_PACING_OFF => CertificatePacing::Off,
+                    _ => return Err(RelayError::Malformed),
+                }
+            }
+            _ => return Err(RelayError::Malformed),
+        };
         let value = Self {
             room: bytes[4..20].try_into().unwrap(),
             sources_mask: u32::from_le_bytes(bytes[20..24].try_into().unwrap()),
             tick_hz: u16::from_le_bytes(bytes[24..26].try_into().unwrap()),
             expires: u64::from_le_bytes(bytes[26..34].try_into().unwrap()),
+            pacing,
         };
         value.validate()?;
         Ok(value)
+    }
+
+    fn domain(pacing: CertificatePacing) -> &'static [u8] {
+        match pacing {
+            CertificatePacing::Legacy => CERTIFICATE_DOMAIN,
+            _ => CERTIFICATE_V2_DOMAIN,
+        }
     }
 
     fn validate(&self) -> Result<(), RelayError> {
@@ -129,27 +198,35 @@ impl OrderingCertificate {
     }
 
     /// The HTTPS lobby signs this public manifest separately from hop tickets.
-    /// Layout: VO1C, room16, LE mask32, LE Hz16, LE expiry64, domain HMAC32.
-    pub fn sign(self, key: &SecretKey) -> Result<[u8; ORDERING_CERTIFICATE_LEN], RelayError> {
+    /// Layout: VO1C, room16, LE mask32, LE Hz16, LE expiry64, domain HMAC32;
+    /// VO2C adds a flags byte (bit 0: pacing off) before its own domain's HMAC.
+    pub fn sign(self, key: &SecretKey) -> Result<Vec<u8>, RelayError> {
         self.validate()?;
-        let mut bytes = [0; ORDERING_CERTIFICATE_LEN];
-        bytes[..4].copy_from_slice(CERTIFICATE_MAGIC);
-        bytes[4..20].copy_from_slice(&self.room);
-        bytes[20..24].copy_from_slice(&self.sources_mask.to_le_bytes());
-        bytes[24..26].copy_from_slice(&self.tick_hz.to_le_bytes());
-        bytes[26..34].copy_from_slice(&self.expires.to_le_bytes());
+        let (magic, flags) = match self.pacing {
+            CertificatePacing::Legacy => (CERTIFICATE_MAGIC, None),
+            CertificatePacing::On => (CERTIFICATE_V2_MAGIC, Some(0)),
+            CertificatePacing::Off => (CERTIFICATE_V2_MAGIC, Some(CERTIFICATE_PACING_OFF)),
+        };
+        let mut bytes = Vec::with_capacity(ORDERING_CERTIFICATE_V2_LEN);
+        bytes.extend_from_slice(magic);
+        bytes.extend_from_slice(&self.room);
+        bytes.extend_from_slice(&self.sources_mask.to_le_bytes());
+        bytes.extend_from_slice(&self.tick_hz.to_le_bytes());
+        bytes.extend_from_slice(&self.expires.to_le_bytes());
+        bytes.extend(flags);
         let tag = key
-            .mac(CERTIFICATE_DOMAIN, &bytes[..34])
+            .mac(Self::domain(self.pacing), &bytes)
             .finalize()
             .into_bytes();
-        bytes[34..].copy_from_slice(&tag);
+        bytes.extend_from_slice(&tag);
         Ok(bytes)
     }
 
     fn verify(bytes: &[u8], key: &SecretKey, now: u64) -> Result<Self, RelayError> {
         let certificate = Self::parse(bytes)?;
-        key.mac(CERTIFICATE_DOMAIN, &bytes[..34])
-            .verify_slice(&bytes[34..])
+        let signed = bytes.len() - 32;
+        key.mac(Self::domain(certificate.pacing), &bytes[..signed])
+            .verify_slice(&bytes[signed..])
             .map_err(|_| RelayError::Authentication)?;
         if certificate.expires <= now || certificate.expires > now.saturating_add(MAX_MATCH_SECONDS)
         {
@@ -180,6 +257,13 @@ pub fn paced_rates(tick_hz: u16) -> &'static [u16] {
         .position(|&rate| rate == tick_hz)
         .unwrap_or(FRAME_RATES.len() - 1);
     &FRAME_RATES[fastest..(fastest + 3).min(FRAME_RATES.len())]
+}
+
+/// Frames the relay seals at once at `rate`, about fifteen turns a second:
+/// 4 at 60 Hz, 3 at 45, 2 at 30 and 20, 1 at 15 and below. A turn's frames
+/// reach the players together when its last frame is due.
+pub fn turn_frames(rate: u16) -> u32 {
+    u32::from(rate).div_ceil(15).max(1)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -269,6 +353,18 @@ pub enum OrderEntry {
         frames_per_second: u16,
         source: Option<u8>,
     },
+    /// A barrier after `frame`: players' checksums of `sample_frame`
+    /// differed. `outlier` reported a value the majority did not (of two,
+    /// the later reporter); `other` is a source it differed from.
+    Desync {
+        sequence: u64,
+        frame: u32,
+        sample_frame: u32,
+        outlier: u8,
+        outlier_checksum: u32,
+        other: u8,
+        other_checksum: u32,
+    },
 }
 
 #[derive(Debug)]
@@ -319,7 +415,7 @@ struct SealedBatch {
 
 #[derive(Clone)]
 pub(super) struct ClientOrdering {
-    certificate: [u8; ORDERING_CERTIFICATE_LEN],
+    certificate: Vec<u8>,
     agreement: [u8; 32],
     // The four most recently sealed batches retain their exact ciphertext.
     // Accepted entries stay cached until a new batch needs the slot, so a
@@ -407,22 +503,23 @@ impl ClientSession {
         if parsed.room != self.ticket.room || parsed.sources_mask & (1 << self.ticket.source) == 0 {
             return Err(RelayError::Authentication);
         }
-        let certificate: [u8; ORDERING_CERTIFICATE_LEN] = certificate.try_into().unwrap();
+        let certificate = certificate.to_vec();
         if let Some(current) = &mut self.ordering {
             let old = OrderingCertificate::parse(&current.certificate)?;
             if old.room != parsed.room
                 || old.sources_mask != parsed.sources_mask
                 || old.tick_hz != parsed.tick_hz
+                || old.pacing != parsed.pacing
                 || current.agreement != agreement
             {
                 return Err(RelayError::Authentication);
             }
             if parsed.expires > old.expires {
-                current.certificate = certificate;
+                current.certificate = certificate.clone();
             }
         } else {
             self.ordering = Some(ClientOrdering {
-                certificate,
+                certificate: certificate.clone(),
                 agreement,
                 sealed: VecDeque::new(),
                 next_batch: 1,
@@ -557,21 +654,50 @@ impl ClientSession {
         self.encode(CONTROL, BROADCAST, &payload, out)
     }
 
-    /// Tells the relay whether this PC keeps up with the sealed frames, and
-    /// how many it ran in the last second. Sent about once a second with no
-    /// reply; the first one also advertises reading rate markers. Older
-    /// relays drop it as malformed.
+    /// Tells the relay whether this PC keeps up with the sealed frames, how
+    /// many it ran in the last second and, under a VO2C certificate, its
+    /// recent 90th-percentile simulation tick cost in microseconds. Sent
+    /// about once a second with no reply; the first one also advertises
+    /// reading rate markers. Older relays drop it as malformed, and only a
+    /// relay that admits VO2C reads the longer report.
     pub fn report_ordering_pace(
         &mut self,
         pace: OrderPace,
         frames_per_second: u16,
+        tick_micros: Option<u32>,
+        out: &mut Vec<u8>,
+    ) -> Result<(), RelayError> {
+        let Some(ordering) = self.ordering.as_ref().filter(|_| self.ready) else {
+            return Err(RelayError::Unregistered);
+        };
+        let v2 = ordering.certificate.len() == ORDERING_CERTIFICATE_V2_LEN;
+        let mut payload = vec![PACE_REQUEST, pace as u8];
+        payload.extend_from_slice(&frames_per_second.to_le_bytes());
+        if v2 && let Some(tick_micros) = tick_micros {
+            payload.extend_from_slice(&tick_micros.to_le_bytes());
+        }
+        self.encode(CONTROL, BROADCAST, &payload, out)
+    }
+
+    /// Reports this PC's post-Logic checksums of sampled frames, the newest
+    /// and the one before, with no reply. Only the relay compares them; it
+    /// ends the match with a DESYNC record (README, Checksums).
+    pub fn report_ordering_checksums(
+        &mut self,
+        samples: &[(u32, u32)],
         out: &mut Vec<u8>,
     ) -> Result<(), RelayError> {
         if !self.ready || self.ordering.is_none() {
             return Err(RelayError::Unregistered);
         }
-        let mut payload = vec![PACE_REQUEST, pace as u8];
-        payload.extend_from_slice(&frames_per_second.to_le_bytes());
+        if samples.is_empty() || samples.len() > CHECKSUM_SAMPLES {
+            return Err(RelayError::Malformed);
+        }
+        let mut payload = vec![CHECKSUM_REQUEST, samples.len() as u8];
+        for (frame, checksum) in samples {
+            payload.extend_from_slice(&frame.to_le_bytes());
+            payload.extend_from_slice(&checksum.to_le_bytes());
+        }
         self.encode(CONTROL, BROADCAST, &payload, out)
     }
 
@@ -634,6 +760,21 @@ impl ClientSession {
                     frame: read_u32(payload, 9),
                     frames_per_second: u16::from_le_bytes([payload[13], payload[14]]),
                     source: (payload[15] != u8::MAX).then_some(payload[15]),
+                })
+            }
+            (DESYNC_EVENT, DESYNC_ENTRY_BYTES)
+                if payload[17] < MAX_PEERS
+                    && payload[22] < MAX_PEERS
+                    && payload[17] != payload[22] =>
+            {
+                OrderEvent::Entry(OrderEntry::Desync {
+                    sequence: read_u64(payload, 1),
+                    frame: read_u32(payload, 9),
+                    sample_frame: read_u32(payload, 13),
+                    outlier: payload[17],
+                    outlier_checksum: read_u32(payload, 18),
+                    other: payload[22],
+                    other_checksum: read_u32(payload, 23),
                 })
             }
             (PUSH_EVENT, 10..) if payload[1] <= 1 && read_u64(payload, 2) != 0 => {
@@ -750,6 +891,117 @@ impl ClientSession {
             _ => OrderEvent::Unrecognized,
         })
     }
+
+    /// A PACK reply: each entry read as if it had come alone.
+    pub(super) fn receive_ordering_pack(
+        &mut self,
+        payload: &[u8],
+    ) -> Result<Vec<OrderEvent>, RelayError> {
+        unpack_entries(payload)?
+            .iter()
+            .map(|entry| self.receive_ordering(entry))
+            .collect()
+    }
+}
+
+/// A PACK reply's entries, each rebuilt to its canonical bytes with its
+/// sequence: the pack's base plus its index.
+fn unpack_entries(payload: &[u8]) -> Result<Vec<Vec<u8>>, RelayError> {
+    if payload.len() < PACK_HEADER || payload[0] != PACK_EVENT || payload[9] == 0 {
+        return Err(RelayError::Malformed);
+    }
+    let base = read_u64(payload, 1);
+    let mut entries = Vec::with_capacity(usize::from(payload[9]));
+    let mut offset = PACK_HEADER;
+    for index in 0..u64::from(payload[9]) {
+        let Some(length) = payload
+            .get(offset..offset + 2)
+            .map(|length| usize::from(u16::from_le_bytes([length[0], length[1]])))
+        else {
+            return Err(RelayError::Malformed);
+        };
+        let end = offset + 2 + length;
+        // Replies never travel packed: only history entries do.
+        if length == 0
+            || end > payload.len()
+            || matches!(
+                payload[offset + 2],
+                READY_EVENT
+                    | STATUS_EVENT
+                    | ACK_EVENT
+                    | ERROR_EVENT
+                    | PUSH_EVENT
+                    | PAUSE_STATUS_EVENT
+                    | PACK_EVENT
+            )
+        {
+            return Err(RelayError::Malformed);
+        }
+        let sequence = base.checked_add(index).ok_or(RelayError::Malformed)?;
+        let mut entry = Vec::with_capacity(length + 8);
+        entry.push(payload[offset + 2]);
+        entry.extend_from_slice(&sequence.to_le_bytes());
+        entry.extend_from_slice(&payload[offset + 3..end]);
+        entries.push(entry);
+        offset = end;
+    }
+    if offset != payload.len() {
+        return Err(RelayError::Malformed);
+    }
+    Ok(entries)
+}
+
+/// Packs consecutive committed entries into PACK replies, at most
+/// `datagrams` of them, each as full as the server payload allows. Returns
+/// each reply with the number of entries it carries.
+fn pack_entries(records: &[Vec<u8>], datagrams: usize) -> Vec<(Vec<u8>, usize)> {
+    let mut packs = Vec::new();
+    let mut next = 0;
+    while next < records.len() && packs.len() < datagrams {
+        let mut pack = Vec::with_capacity(MAX_WIRE_PAYLOAD);
+        pack.push(PACK_EVENT);
+        pack.extend_from_slice(&records[next][1..9]);
+        pack.push(0);
+        let mut count = 0;
+        // Every entry fits a pack alone: a full batch packs to 578 bytes.
+        while next < records.len()
+            && count < usize::from(u8::MAX)
+            && pack.len() + records[next].len() - 6 <= MAX_WIRE_PAYLOAD
+        {
+            let record = &records[next];
+            pack.extend_from_slice(&((record.len() - 8) as u16).to_le_bytes());
+            pack.push(record[0]);
+            pack.extend_from_slice(&record[9..]);
+            count += 1;
+            next += 1;
+        }
+        pack[9] = count as u8;
+        packs.push((pack, count));
+    }
+    packs
+}
+
+/// The outlier and a source it differed from, once one sampled frame's
+/// reports tell: the first reporter off a strict majority of the active and
+/// reporting sources, or once every active source reported without such a
+/// majority (two players), the first reporter off the first value and the
+/// first reporter.
+fn desync_outlier(reports: &[(u8, u32)], active: u32) -> Option<((u8, u32), (u8, u32))> {
+    let first = reports[0];
+    let differing = *reports.iter().find(|report| report.1 != first.1)?;
+    let reported = reports
+        .iter()
+        .fold(0u32, |mask, &(source, _)| mask | 1 << source);
+    let voters = (active | reported).count_ones() as usize;
+    let holders = |value: u32| reports.iter().filter(|report| report.1 == value).count();
+    if let Some(&majority) = reports.iter().find(|report| 2 * holders(report.1) > voters) {
+        let outlier = *reports
+            .iter()
+            .find(|report| report.1 != majority.1)
+            .expect("a differing report");
+        return Some((outlier, majority));
+    }
+    (active & !reported == 0).then_some((differing, first))
 }
 
 fn read_u32(bytes: &[u8], offset: usize) -> u32 {
@@ -797,7 +1049,22 @@ struct PauseRequest {
 struct PaceReport {
     pace: OrderPace,
     frames_per_second: u16,
+    // The reporter's 90th-percentile tick cost; legacy reports carry none.
+    tick_micros: Option<u32>,
     at_ms: u64,
+}
+
+impl PaceReport {
+    /// The fastest rate this reporter can hold while it keeps
+    /// `100 - SUSTAIN_PERCENT` percent of each second for everything else
+    /// (drawing, catching up); legacy reports: nine tenths of what it ran,
+    /// which overstates it during catch-up.
+    fn sustainable_rate(&self) -> u32 {
+        match self.tick_micros {
+            Some(micros) => (1_000_000 * SUSTAIN_PERCENT / 100) / micros.max(1),
+            None => u32::from(self.frames_per_second) * 9 / 10,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -831,6 +1098,13 @@ struct Pace {
     // report.
     slowdowns: u32,
     raises: u32,
+    // Federated: the frame from which the last rate change applies and its
+    // due time as an offset from the start, so the start's slew moves it too.
+    federated_anchor: Option<(u32, u64)>,
+    // Federated: the coordinator's rate changes for frames after these,
+    // `(frame, rate, source)`, in order, each until its due time passes. A
+    // healed link can deliver several at once.
+    scheduled: VecDeque<(u32, u16, u8)>,
 }
 
 impl Pace {
@@ -890,6 +1164,16 @@ pub(super) struct OrderingRoom {
     failed_at: Option<u64>,
     finished_at: Option<u64>,
     created_ms: u64,
+    // Players' checksums by sampled frame, `(source, checksum)` in arrival
+    // order, for the newest `CHECKSUM_FRAMES` sampled frames.
+    checksums: BTreeMap<u32, Vec<(u8, u32)>>,
+    // A DESYNC record was emitted or is on its way; nothing is compared again.
+    desync_found: bool,
+    // A federated follower's own sources' reports, `(source, frame,
+    // checksum)`, until its next link pass forwards them to the coordinator.
+    pub(super) forward_checksums: Vec<(u8, u32, u32)>,
+    // DESYNC records the server has not yet counted for its journal report.
+    desyncs: u32,
 }
 
 impl OrderingRoom {
@@ -921,6 +1205,8 @@ impl OrderingRoom {
                 lagging_at: 0,
                 slowdowns: 0,
                 raises: 0,
+                federated_anchor: None,
+                scheduled: VecDeque::new(),
             },
             head: 0,
             sealed: 0,
@@ -935,7 +1221,18 @@ impl OrderingRoom {
             failed_at: None,
             finished_at: None,
             created_ms: now_ms,
+            checksums: BTreeMap::new(),
+            desync_found: false,
+            forward_checksums: Vec::new(),
+            desyncs: 0,
         }
+    }
+
+    /// Move the rate changes and desyncs not yet counted into the journal
+    /// report's counts.
+    pub(super) fn count_changes(&mut self, counts: &mut crate::OrderingCounts) {
+        self.pace.count_changes(counts);
+        counts.desyncs += u64::from(std::mem::take(&mut self.desyncs));
     }
 
     /// Any authenticated packet keeps a source's place; a newer admission of
@@ -1096,13 +1393,16 @@ impl OrderingRoom {
             Some(2) => OrderPace::CatchingUp,
             _ => return Err(RelayError::Malformed),
         };
-        if payload.len() != 4 {
-            return Err(RelayError::Malformed);
-        }
+        let tick_micros = match payload.len() {
+            4 => None,
+            8 => Some(u32::from_le_bytes(payload[4..8].try_into().unwrap()).max(1)),
+            _ => return Err(RelayError::Malformed),
+        };
         self.authenticate_reader(ticket)?;
         self.sources[usize::from(ticket.source)].pace = Some(PaceReport {
             pace,
             frames_per_second: u16::from_le_bytes([payload[2], payload[3]]),
+            tick_micros,
             at_ms: now_ms,
         });
         Ok(pace)
@@ -1117,25 +1417,54 @@ impl OrderingRoom {
     /// reported, so no client meets a marker it cannot read. Each change is a
     /// marker after the head's frame end; later frames are due at the new
     /// rate from its append time.
-    fn adjust_pace(&mut self, now_ms: u64) {
-        let mut slowest: Option<(u16, u8)> = None;
+    fn adjust_pace(&mut self, now_ms: u64, federated: bool) {
+        if self.certificate.pacing == CertificatePacing::Off || !self.pace.scheduled.is_empty() {
+            return;
+        }
+        let rates = paced_rates(self.certificate.tick_hz);
+        let step = rates
+            .iter()
+            .position(|&rate| rate == self.pace.rate)
+            .expect("the clock runs at a paced rate");
+        // The slowest sustainable rate among Behind reporters that cannot
+        // hold the current one, and whether a reporter could not hold the
+        // next faster rate.
+        let mut slowest: Option<(u32, u16, u8)> = None;
         let mut lagging = false;
+        let mut raise_blocked = false;
         for (index, source) in self.sources.iter().enumerate() {
             if self.active & (1 << index) == 0 {
                 continue;
             }
             let Some(report) = source.pace else {
-                return;
+                // A VO1C member may be a released client that reads no rate
+                // marker; under VO2C every member reads them.
+                if self.certificate.pacing == CertificatePacing::Legacy {
+                    return;
+                }
+                continue;
             };
             if now_ms.saturating_sub(report.at_ms) > PACE_REPORT_MS {
                 continue;
             }
-            lagging |= report.pace != OrderPace::KeepingUp;
+            let sustainable = report.sustainable_rate();
+            // A tick-cost reporter that holds the current rate is only
+            // drawing slowly: its own catch-up recovers it, and it neither
+            // slows the clock nor holds back a raise.
+            let simulation_bound =
+                report.tick_micros.is_none() || sustainable < u32::from(self.pace.rate);
+            lagging |= report.pace != OrderPace::KeepingUp && simulation_bound;
+            // Ties keep the slowest that actually ran, as legacy reports did.
+            let slowness = (sustainable, report.frames_per_second);
             if report.pace == OrderPace::Behind
-                && slowest.is_none_or(|(rate, _)| report.frames_per_second < rate)
+                && simulation_bound
+                && slowest.is_none_or(|(rate, ran, _)| slowness < (rate, ran))
             {
-                slowest = Some((report.frames_per_second, index as u8));
+                slowest = Some((sustainable, report.frames_per_second, index as u8));
             }
+            raise_blocked |= report.tick_micros.is_some()
+                && step > 0
+                && sustainable < u32::from(rates[step - 1]);
         }
         if lagging {
             self.pace.lagging_at = now_ms;
@@ -1144,21 +1473,17 @@ impl OrderingRoom {
         if self.pace.anchor.is_some() && now_ms.saturating_sub(changed_at) < PACE_STEP_MS {
             return;
         }
-        let rates = paced_rates(self.certificate.tick_hz);
-        let step = rates
-            .iter()
-            .position(|&rate| rate == self.pace.rate)
-            .expect("the clock runs at a paced rate");
         let (rate, source) = match slowest {
-            Some((ran, source)) if step + 1 < rates.len() => (
+            Some((sustainable, _, source)) if step + 1 < rates.len() => (
                 rates[step + 1..]
                     .iter()
                     .copied()
-                    .find(|&rate| u32::from(rate) * 10 <= u32::from(ran) * 9)
+                    .find(|&rate| u32::from(rate) <= sustainable)
                     .unwrap_or(rates[rates.len() - 1]),
                 source,
             ),
             None if step > 0
+                && !raise_blocked
                 && now_ms.saturating_sub(self.pace.lagging_at.max(changed_at))
                     >= self.pace.raise_wait =>
             {
@@ -1173,9 +1498,22 @@ impl OrderingRoom {
         }
         let mut tail = rate.to_le_bytes().to_vec();
         tail.push(source);
-        let record = Self::encoded_entry(self.next_seq, self.head, RATE_EVENT, &tail);
-        if !self.append_records(self.head, vec![record]) {
-            return;
+        if federated {
+            // Every relay must change at the same frame: the entry reaches
+            // the others in frame order with the next seal, and the merge
+            // waits for it there.
+            let frame = self.sealed + 1;
+            self.pending.entry(frame).or_default().push(Pending {
+                source: CONTROL_SOURCE,
+                batch_id: RATE_BATCH,
+                opaque: tail,
+            });
+            self.pace.scheduled.push_back((frame, rate, source));
+        } else {
+            let record = Self::encoded_entry(self.next_seq, self.head, RATE_EVENT, &tail);
+            if !self.append_records(self.head, vec![record]) {
+                return;
+            }
         }
         let pace = &mut self.pace;
         if source == u8::MAX {
@@ -1192,8 +1530,28 @@ impl OrderingRoom {
             };
             pace.slowdowns += 1;
         }
-        pace.rate = rate;
-        pace.anchor = Some((self.head, now_ms));
+        if !federated {
+            pace.rate = rate;
+            pace.anchor = Some((self.head, now_ms));
+        }
+    }
+
+    /// A federated rate change takes effect when its frame falls due on the
+    /// old schedule; later frames are due at the new rate from there. The
+    /// schedule counts from the start, so every relay derives the same one.
+    fn apply_scheduled_rate(&mut self, now_ms: u64, start: u64) {
+        while let Some(&(frame, rate, _)) = self.pace.scheduled.front() {
+            let (anchor, offset) = self.pace.federated_anchor.unwrap_or((0, 0));
+            let due =
+                offset + u64::from(frame.saturating_sub(anchor)) * 1000 / u64::from(self.pace.rate);
+            if now_ms < start + due {
+                return;
+            }
+            self.pace.rate = rate;
+            self.pace.federated_anchor = Some((frame, due));
+            self.pace.anchor = Some((frame, start + due));
+            self.pace.scheduled.pop_front();
+        }
     }
 
     /// About when `frame` was due: exact from the last rate change on, at
@@ -1402,9 +1760,55 @@ impl OrderingRoom {
         self.finished_at = Some(now_ms);
     }
 
+    /// The latest pace reports of active sources homed here, encoded for
+    /// the federation coordinator.
+    pub(super) fn local_paces(&self, local: u32, now_ms: u64) -> Vec<u8> {
+        let mut encoded = Vec::new();
+        for (index, source) in self.sources.iter().enumerate() {
+            let Some(report) = source
+                .pace
+                .filter(|_| self.active & local & (1 << index) != 0)
+            else {
+                continue;
+            };
+            encoded.push(index as u8);
+            encoded.push(report.pace as u8);
+            encoded.extend_from_slice(&report.frames_per_second.to_le_bytes());
+            encoded.extend_from_slice(&report.tick_micros.unwrap_or(0).to_le_bytes());
+            let age = now_ms.saturating_sub(report.at_ms).min(u64::from(u32::MAX)) as u32;
+            encoded.extend_from_slice(&age.to_le_bytes());
+        }
+        encoded
+    }
+
     /// Another relay's sealed entry, merged with this relay's own.
     fn accept_remote(&mut self, frame: u32, source: u8, batch_id: u64, opaque: &[u8]) {
-        if batch_id == 0 {
+        if source == CONTROL_SOURCE && batch_id == DESYNC_BATCH {
+            // The coordinator's desync decision (only its link carries one).
+            if opaque[4] >= MAX_PEERS || opaque[9] >= MAX_PEERS || opaque[4] == opaque[9] {
+                self.storage_failed = true;
+                return;
+            }
+            if let Some(journal) = self.journal.as_mut()
+                && !journal.reserve_entries(&[DESYNC_ENTRY_BYTES])
+            {
+                self.storage_failed = true;
+            }
+            self.desync_found = true;
+        } else if source == CONTROL_SOURCE {
+            // The coordinator's rate change.
+            let rate = u16::from_le_bytes([opaque[0], opaque[1]]);
+            if !paced_rates(self.certificate.tick_hz).contains(&rate) {
+                self.storage_failed = true;
+                return;
+            }
+            if let Some(journal) = self.journal.as_mut()
+                && !journal.reserve_entries(&[RATE_ENTRY_BYTES])
+            {
+                self.storage_failed = true;
+            }
+            self.pace.scheduled.push_back((frame, rate, opaque[2]));
+        } else if batch_id == 0 {
             self.active &= !(1 << source);
         } else {
             // Its home relay reserved it there; this journal stores the same
@@ -1424,6 +1828,116 @@ impl OrderingRoom {
         });
     }
 
+    /// A player's checksum report. A federated follower forwards it to the
+    /// coordinator, which alone compares.
+    fn report_checksums(
+        &mut self,
+        ticket: Ticket,
+        payload: &[u8],
+        federation: Option<&federation::Federation>,
+    ) -> Result<(), RelayError> {
+        let count = usize::from(*payload.get(1).ok_or(RelayError::Malformed)?);
+        if !(1..=CHECKSUM_SAMPLES).contains(&count) || payload.len() != 2 + 8 * count {
+            return Err(RelayError::Malformed);
+        }
+        self.authenticate_reader(ticket)?;
+        for sample in payload[2..].chunks_exact(8) {
+            let (frame, checksum) = (read_u32(sample, 0), read_u32(sample, 4));
+            match federation {
+                Some(federation) if !federation.is_coordinator() => {
+                    if self.forward_checksums.len() < federation::FORWARD_CHECKSUMS
+                        && self.reportable_checksum_frame(frame)
+                    {
+                        self.forward_checksums
+                            .push((ticket.source, frame, checksum));
+                    }
+                }
+                _ => self.record_checksum(ticket.source, frame, checksum, federation.is_some()),
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether a player may report `frame`: a sampled frame
+    /// ([`CHECKSUM_INTERVAL`]) no later than the one after this relay's
+    /// sealed frames. A client reports frame F's checksum once it has run
+    /// F - 1, which its own relay sealed, and in a federated match every
+    /// relay sealed before any merged it.
+    fn reportable_checksum_frame(&self, frame: u32) -> bool {
+        frame != 0 && frame % CHECKSUM_INTERVAL == 0 && frame <= self.sealed.saturating_add(1)
+    }
+
+    /// Stores one source's checksum of a sampled frame, its first report
+    /// only, and emits the match's one DESYNC record once that frame's
+    /// values name an outlier: after the head's frame end on a single relay,
+    /// or as the coordinator's entry for the next frame it seals, which
+    /// every relay emits after that frame's end.
+    pub(super) fn record_checksum(
+        &mut self,
+        source: u8,
+        frame: u32,
+        checksum: u32,
+        federated: bool,
+    ) {
+        if self.desync_found
+            || self.storage_failed
+            || self.finished_at.is_some()
+            || self.starts_at.is_none()
+            || !self.reportable_checksum_frame(frame)
+            || self.active & (1 << source) == 0
+            || (self.checksums.len() == CHECKSUM_FRAMES
+                && self
+                    .checksums
+                    .first_key_value()
+                    .is_some_and(|(&oldest, _)| frame < oldest))
+        {
+            return;
+        }
+        let active = self.active;
+        let reports = self.checksums.entry(frame).or_default();
+        if reports.iter().any(|&(reporter, _)| reporter == source) {
+            return;
+        }
+        // A player who has left names no outlier, or its last reports could
+        // end the others' match after it is gone.
+        reports.retain(|&(reporter, _)| active & (1 << reporter) != 0);
+        reports.push((source, checksum));
+        let found = desync_outlier(reports, active);
+        while self.checksums.len() > CHECKSUM_FRAMES {
+            self.checksums.pop_first();
+        }
+        let Some(((outlier, outlier_checksum), (other, other_checksum))) = found else {
+            return;
+        };
+        if let Some(journal) = self.journal.as_mut()
+            && !journal.reserve_entries(&[DESYNC_ENTRY_BYTES])
+        {
+            return;
+        }
+        let mut tail = frame.to_le_bytes().to_vec();
+        tail.push(outlier);
+        tail.extend_from_slice(&outlier_checksum.to_le_bytes());
+        tail.push(other);
+        tail.extend_from_slice(&other_checksum.to_le_bytes());
+        if federated {
+            self.pending
+                .entry(self.sealed + 1)
+                .or_default()
+                .push(Pending {
+                    source: CONTROL_SOURCE,
+                    batch_id: DESYNC_BATCH,
+                    opaque: tail,
+                });
+        } else {
+            let record = Self::encoded_entry(self.next_seq, self.head, DESYNC_EVENT, &tail);
+            if !self.append_records(self.head, vec![record]) {
+                return;
+            }
+            self.desyncs += 1;
+        }
+        self.desync_found = true;
+    }
+
     fn advance(&mut self, now_ms: u64, federation: Option<&mut federation::Federation>) {
         if self.storage_failed {
             self.failed_at.get_or_insert(now_ms);
@@ -1436,14 +1950,37 @@ impl OrderingRoom {
         let Some(start) = self.starts_at else {
             return;
         };
-        let (anchor, anchor_ms) = self.pace.anchor.unwrap_or((0, start));
-        let target = (u64::from(anchor)
-            + now_ms
-                .saturating_sub(anchor_ms)
-                .saturating_mul(u64::from(self.pace.rate))
-                / 1000)
+        let federated = federation.is_some();
+        let coordinator = federation
+            .as_ref()
+            .is_none_or(|federation| federation.is_coordinator());
+        if federated {
+            self.apply_scheduled_rate(now_ms, start);
+        }
+        let (anchor, anchor_ms) = if federated {
+            self.pace
+                .federated_anchor
+                .map_or((0, start), |(frame, offset)| (frame, start + offset))
+        } else {
+            self.pace.anchor.unwrap_or((0, start))
+        };
+        // Frames are sealed a turn at a time, in whole turns from the anchor,
+        // so every federated relay seals the same turns. The final frame
+        // closes the match whatever its turn.
+        let elapsed = now_ms
+            .saturating_sub(anchor_ms)
+            .saturating_mul(u64::from(self.pace.rate))
+            / 1000;
+        let turn = u64::from(turn_frames(self.pace.rate));
+        let target = (u64::from(anchor) + elapsed / turn * turn)
             .min(MAX_MATCH_SECONDS * u64::from(self.certificate.tick_hz))
             as u32;
+        // Frames past a scheduled change wait for its rate.
+        let target = self
+            .pace
+            .scheduled
+            .front()
+            .map_or(target, |&(frame, ..)| target.min(frame));
         let final_frame = (MAX_MATCH_SECONDS * u64::from(self.certificate.tick_hz)) as u32;
         if target == final_frame && self.sealed < final_frame {
             for source in 0..MAX_PEERS {
@@ -1472,7 +2009,13 @@ impl OrderingRoom {
             while self.sealed < target {
                 self.sealed += 1;
                 for entry in self.pending.get(&self.sealed).into_iter().flatten() {
-                    if self.local & (1 << entry.source) != 0 {
+                    // Only the coordinator contributes a rate change; the
+                    // others received theirs from it.
+                    if if entry.source == CONTROL_SOURCE {
+                        federation.is_coordinator()
+                    } else {
+                        self.local & (1 << entry.source) != 0
+                    } {
                         federation.contribute(
                             self.sealed,
                             entry.source,
@@ -1506,6 +2049,7 @@ impl OrderingRoom {
             }
             let frame = self.head + 1;
             let mut records = Vec::new();
+            let mut controls = Vec::new();
             if let Some(entries) = self.pending.get_mut(&frame) {
                 // Accepted batches remain executable before their source's
                 // removal at the same boundary; neither is ever rewritten.
@@ -1520,7 +2064,14 @@ impl OrderingRoom {
                     )
                 });
                 for entry in entries.iter() {
-                    if entry.batch_id == 0 {
+                    if entry.source == CONTROL_SOURCE {
+                        let kind = if entry.batch_id == DESYNC_BATCH {
+                            DESYNC_EVENT
+                        } else {
+                            RATE_EVENT
+                        };
+                        controls.push((kind, entry.opaque.clone()));
+                    } else if entry.batch_id == 0 {
                         let mut tail = vec![entry.source];
                         tail.extend_from_slice(&entry.opaque);
                         records.push(Self::encoded_entry(
@@ -1548,26 +2099,37 @@ impl OrderingRoom {
                 FRAME_END_EVENT,
                 &[],
             ));
+            // A federated desync or rate change follows its frame's end on
+            // every relay, as a single relay's marker follows the head's.
+            let desyncs = controls
+                .iter()
+                .filter(|(kind, _)| *kind == DESYNC_EVENT)
+                .count() as u32;
+            for (kind, tail) in controls {
+                records.push(Self::encoded_entry(
+                    self.next_seq + records.len() as u64,
+                    frame,
+                    kind,
+                    &tail,
+                ));
+            }
             if !self.append_records(frame, records) {
                 return;
             }
+            self.desyncs += desyncs;
             if let Some(entries) = self.pending.remove(&frame) {
                 for entry in entries {
-                    if entry.batch_id != 0 {
+                    if entry.batch_id != 0 && entry.source != CONTROL_SOURCE {
                         self.sources[usize::from(entry.source)].pending -= 1;
                     }
                 }
             }
             self.head = frame;
         }
-        // A federated relay seals from the shared start alone, so its rooms
-        // keep the certificate's rate.
-        if self.local == self.certificate.sources_mask
-            && self.active != 0
-            && start <= now_ms
-            && self.head < final_frame
-        {
-            self.adjust_pace(now_ms);
+        // A federated match's coordinator decides its rate from every
+        // relay's reports; the others follow its rate entries.
+        if coordinator && self.active != 0 && start <= now_ms && self.head < final_frame {
+            self.adjust_pace(now_ms, federated);
         }
         // Every source has departed, by Leave, silence past its limit or the
         // agreed full-match lifetime; the archive ends after its replay grace.
@@ -1716,7 +2278,11 @@ impl OrderingRoom {
                 match self.history_page(read_u64(payload, 1), ORDERING_PULL_LIMIT) {
                     Ok(records) => {
                         let mut output = vec![self.status(now_ms)];
-                        output.extend(records);
+                        output.extend(
+                            pack_entries(&records, records.len())
+                                .into_iter()
+                                .map(|(pack, _)| pack),
+                        );
                         Ok(output)
                     }
                     Err((code, expected)) => Ok(error(code, expected)),
@@ -1820,13 +2386,17 @@ mod tests {
             .process_at(endpoint(client), bytes, unix(now_ms), now_ms)
             .unwrap()
             .into_iter()
-            .map(|packet| {
-                let ServerEvent::Ordering(event) = client.receive(&packet.bytes).unwrap() else {
-                    panic!("ordering");
-                };
-                event
-            })
+            .flat_map(|packet| received(client, &packet.bytes))
             .collect()
+    }
+
+    /// One server datagram's ordering events, each entry of a pack.
+    pub(super) fn received(client: &mut ClientSession, bytes: &[u8]) -> Vec<OrderEvent> {
+        match client.receive(bytes).unwrap() {
+            ServerEvent::Ordering(event) => vec![event],
+            ServerEvent::OrderingPack(events) => events,
+            _ => panic!("ordering"),
+        }
     }
 
     pub(super) fn configure(
@@ -1857,16 +2427,13 @@ mod tests {
         server.rooms[&[5; 16]].ordering.as_ref().unwrap()
     }
 
-    pub(super) fn certificate(
-        key: &SecretKey,
-        mask: u32,
-        expires: u64,
-    ) -> [u8; ORDERING_CERTIFICATE_LEN] {
+    pub(super) fn certificate(key: &SecretKey, mask: u32, expires: u64) -> Vec<u8> {
         OrderingCertificate {
             room: [5; 16],
             sources_mask: mask,
             tick_hz: 45,
             expires,
+            pacing: Default::default(),
         }
         .sign(key)
         .unwrap()
@@ -1908,22 +2475,367 @@ mod tests {
         frames_per_second: u16,
         now_ms: u64,
     ) {
+        tick_report(server, client, pace, frames_per_second, None, now_ms);
+    }
+
+    fn tick_report(
+        server: &mut RelayServer,
+        client: &mut ClientSession,
+        pace: OrderPace,
+        frames_per_second: u16,
+        tick_micros: Option<u32>,
+        now_ms: u64,
+    ) {
         let mut bytes = Vec::new();
         client
-            .report_ordering_pace(pace, frames_per_second, &mut bytes)
+            .report_ordering_pace(pace, frames_per_second, tick_micros, &mut bytes)
             .unwrap();
         assert!(events(server, client, &bytes, now_ms).is_empty());
     }
 
     fn paced_room(key: &SecretKey) -> (RelayServer, ClientSession, ClientSession) {
+        paced_room_with(key, CertificatePacing::Legacy)
+    }
+
+    fn paced_room_with(
+        key: &SecretKey,
+        pacing: CertificatePacing,
+    ) -> (RelayServer, ClientSession, ClientSession) {
         let mut server = RelayServer::new(key.clone(), 2);
         let (mut first, mut second) = (client(key, 0), client(key, 1));
-        let cert = certificate(key, 3, 1400);
+        let cert = OrderingCertificate {
+            pacing,
+            ..OrderingCertificate::parse(&certificate(key, 3, 1400)).unwrap()
+        }
+        .sign(key)
+        .unwrap();
         for peer in [&mut first, &mut second] {
             connect(&mut server, peer, 0);
             configure(&mut server, peer, &cert, 0);
         }
         (server, first, second)
+    }
+
+    /// Under VO2C a silent member does not hold the clock, a player that only
+    /// draws slowly catches up on its own, and one whose simulation cannot
+    /// hold the rate slows it to a rate it can; the host can switch it off.
+    #[test]
+    fn a_vo2c_room_slows_only_for_a_simulation_that_cannot_hold_the_rate() {
+        use OrderPace::*;
+        let key = SecretKey::new([73; 32]);
+        let (mut server, mut first, mut second) = paced_room_with(&key, CertificatePacing::On);
+        // 10 ms ticks hold 80 Hz at 80%: running 30 is only a slow draw.
+        tick_report(&mut server, &mut second, Behind, 30, Some(10_000), 1000);
+        server.advance_clock(1000, unix(1000));
+        assert_eq!(
+            ordering(&server).pace.rate,
+            45,
+            "a slow draw alone holds the rate, and the silent first player holds nothing"
+        );
+        // 30 ms ticks hold 26 Hz: slow to the fastest paced rate at most 26.
+        tick_report(&mut server, &mut second, Behind, 25, Some(30_000), 2000);
+        server.advance_clock(2000, unix(2000));
+        assert_eq!(ordering(&server).pace.rate, 20);
+        // The slow player keeps up, but 30 ms ticks cannot hold 30 Hz: no
+        // raise. A player that only draws slowly holds nothing back.
+        for at in (3000..=40_000).step_by(2000) {
+            tick_report(&mut server, &mut first, CatchingUp, 20, Some(5_000), at);
+            tick_report(&mut server, &mut second, KeepingUp, 20, Some(30_000), at);
+            server.advance_clock(at, unix(at));
+        }
+        assert_eq!(ordering(&server).pace.rate, 20);
+        tick_report(&mut server, &mut first, CatchingUp, 20, Some(5_000), 41_000);
+        tick_report(
+            &mut server,
+            &mut second,
+            KeepingUp,
+            20,
+            Some(20_000),
+            41_000,
+        );
+        server.advance_clock(41_000, unix(41_000));
+        assert_eq!(ordering(&server).pace.rate, 30);
+
+        let (mut server, _first, mut second) = paced_room_with(&key, CertificatePacing::Off);
+        tick_report(&mut server, &mut second, Behind, 5, Some(200_000), 1000);
+        server.advance_clock(1000, unix(1000));
+        assert_eq!(
+            ordering(&server).pace.rate,
+            45,
+            "the host switched pacing off"
+        );
+    }
+
+    /// The clock seals whole turns: three frames at a time at 45 Hz, about
+    /// fifteen turns a second at every rate.
+    #[test]
+    fn a_45_hz_room_seals_in_three_frame_turns() {
+        assert_eq!(
+            [60, 45, 30, 20, 15, 10].map(turn_frames),
+            [4, 3, 2, 2, 1, 1]
+        );
+        let key = SecretKey::new([73; 32]);
+        let (mut server, _first, _second) = paced_room(&key);
+        let start = ordering(&server).starts_at.unwrap();
+        let mut heads = Vec::new();
+        // Frame 3 is due 66.7 ms after the start, frame 6 at 133.3 ms.
+        for at in [66, 67, 100, 133, 134] {
+            server.advance_clock(start + at, unix(start + at));
+            heads.push(ordering(&server).head);
+        }
+        assert_eq!(heads, [0, 3, 3, 3, 6]);
+    }
+
+    /// A pull carries its page packed after the status, and the client
+    /// rebuilds every entry's exact canonical bytes and sequence.
+    #[test]
+    fn a_pull_packs_its_page_and_the_client_reads_each_canonical_entry() {
+        let key = SecretKey::new([73; 32]);
+        let (mut server, mut first, mut second) = paced_room(&key);
+        let mut bytes = Vec::new();
+        second
+            .submit_ordering(1, b"packed input", &mut bytes)
+            .unwrap();
+        events(&mut server, &mut second, &bytes, 0);
+        server.advance_clock(400, unix(400));
+        first.pull_ordering(1, &mut bytes).unwrap();
+        let packets = server
+            .process_at(endpoint(&first), &bytes, unix(400), 400)
+            .unwrap();
+        assert_eq!(packets.len(), 2, "a status and one pack");
+        let payload = &packets[1].bytes[SERVER_HEADER..packets[1].bytes.len() - MAC_LEN];
+        let history: Vec<_> = ordering(&server)
+            .history
+            .iter()
+            .map(|entry| entry.bytes.clone())
+            .collect();
+        assert_eq!(unpack_entries(payload).unwrap(), history);
+        let entries: Vec<_> = received(&mut first, &packets[1].bytes)
+            .into_iter()
+            .map(|event| match event {
+                OrderEvent::Entry(OrderEntry::Batch {
+                    sequence, bytes, ..
+                }) => (sequence, Some(bytes.unwrap().as_bytes().to_vec())),
+                OrderEvent::Entry(OrderEntry::FrameEnd { sequence, .. }) => (sequence, None),
+                _ => panic!("a batch or frame end"),
+            })
+            .collect();
+        assert_eq!(entries.len(), 10, "a batch and nine frame ends");
+        assert_eq!(entries[0], (1, Some(b"packed input".to_vec())));
+        assert!(
+            entries
+                .iter()
+                .enumerate()
+                .all(|(index, (sequence, _))| *sequence == index as u64 + 1)
+        );
+    }
+
+    fn report_checksums(
+        server: &mut RelayServer,
+        client: &mut ClientSession,
+        samples: &[(u32, u32)],
+        now_ms: u64,
+    ) {
+        let mut bytes = Vec::new();
+        client
+            .report_ordering_checksums(samples, &mut bytes)
+            .unwrap();
+        assert!(events(server, client, &bytes, now_ms).is_empty());
+    }
+
+    /// The DESYNC records of a room's history, decoded, each with the entry
+    /// before it.
+    fn desyncs(server: &RelayServer, reader: &mut ClientSession) -> Vec<(u8, OrderEntry)> {
+        let history = &ordering(server).history;
+        (1..history.len())
+            .filter(|&index| history[index].bytes[0] == DESYNC_EVENT)
+            .map(|index| {
+                let OrderEvent::Entry(entry) =
+                    reader.receive_ordering(&history[index].bytes).unwrap()
+                else {
+                    panic!("a desync entry");
+                };
+                (history[index - 1].bytes[0], entry)
+            })
+            .collect()
+    }
+
+    /// The relay compares every player's checksum of a sampled frame and
+    /// ends the match once, with a DESYNC record after the head's frame
+    /// end: of three players it names the one off the majority, of two the
+    /// later reporter.
+    #[test]
+    fn the_relay_names_the_player_whose_checksum_differs_once() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 2);
+        let mut players: Vec<_> = (0..3).map(|source| client(&key, source)).collect();
+        let cert = certificate(&key, 7, 1400);
+        for player in &mut players {
+            connect(&mut server, player, 0);
+            configure(&mut server, player, &cert, 0);
+        }
+        server.advance_clock(1000, unix(1000));
+        for player in &mut players {
+            report_checksums(&mut server, player, &[(15, 7)], 1000);
+        }
+        // Repeats of a report change nothing; one against one of three waits.
+        report_checksums(&mut server, &mut players[0], &[(30, 9), (15, 7)], 1100);
+        report_checksums(&mut server, &mut players[1], &[(30, 8), (15, 7)], 1100);
+        report_checksums(&mut server, &mut players[1], &[(30, 9)], 1100);
+        assert!(desyncs(&server, &mut players[0]).is_empty());
+        report_checksums(&mut server, &mut players[2], &[(30, 9), (15, 7)], 1200);
+        let head = ordering(&server).head;
+        // Nothing is compared again, though the relay has sealed frame 45.
+        server.advance_clock(1300, unix(1300));
+        report_checksums(&mut server, &mut players[0], &[(45, 1)], 1300);
+        report_checksums(&mut server, &mut players[2], &[(45, 2)], 1300);
+        assert!(matches!(
+            &desyncs(&server, &mut players[0])[..],
+            [(
+                FRAME_END_EVENT,
+                OrderEntry::Desync {
+                    frame,
+                    sample_frame: 30,
+                    outlier: 1,
+                    outlier_checksum: 8,
+                    other: 0,
+                    other_checksum: 9,
+                    ..
+                }
+            )] if *frame == head
+        ));
+        assert_eq!(server.take_ordering_counts().desyncs, 1);
+
+        let (mut server, mut first, mut second) = paced_room(&key);
+        server.advance_clock(1000, unix(1000));
+        report_checksums(&mut server, &mut first, &[(15, 9)], 1000);
+        report_checksums(&mut server, &mut second, &[(15, 8)], 1000);
+        assert!(matches!(
+            &desyncs(&server, &mut first)[..],
+            [(
+                _,
+                OrderEntry::Desync {
+                    outlier: 1,
+                    outlier_checksum: 8,
+                    other: 0,
+                    other_checksum: 9,
+                    ..
+                }
+            )]
+        ));
+    }
+
+    /// A player reports only sampled frames the relay has reached, so a flood
+    /// of later ones cannot push the others' reports out of the window.
+    #[test]
+    fn far_future_checksum_reports_cannot_switch_desync_detection_off() {
+        let key = SecretKey::new([73; 32]);
+        let (mut server, mut first, mut second) = paced_room(&key);
+        server.advance_clock(1000, unix(1000));
+        for pair in 0..CHECKSUM_FRAMES as u32 / 2 {
+            let frame = 15_000 + 30 * pair;
+            report_checksums(
+                &mut server,
+                &mut second,
+                &[(frame + 15, 1), (frame, 1)],
+                1000,
+            );
+        }
+        report_checksums(&mut server, &mut first, &[(15, 9)], 1000);
+        report_checksums(&mut server, &mut second, &[(15, 8)], 1000);
+        assert_eq!(desyncs(&server, &mut first).len(), 1);
+    }
+
+    /// A player's reports stop counting when it leaves: one that reports a
+    /// false checksum and then leaves cannot end the other's match.
+    #[test]
+    fn a_departed_players_checksum_names_no_outlier() {
+        let key = SecretKey::new([73; 32]);
+        let (mut server, mut first, mut second) = paced_room(&key);
+        server.advance_clock(1000, unix(1000));
+        report_checksums(&mut server, &mut second, &[(30, 8)], 1000);
+        let mut bytes = Vec::new();
+        second.leave_ordering(&mut bytes).unwrap();
+        events(&mut server, &mut second, &bytes, 1000);
+        report_checksums(&mut server, &mut first, &[(30, 9)], 1000);
+        assert!(desyncs(&server, &mut first).is_empty());
+    }
+
+    /// A follower whose healed link delivers two rate changes at once applies
+    /// both in order, each from its frame's due time on the old schedule.
+    #[test]
+    fn queued_federated_rate_changes_apply_in_order_on_one_timeline() {
+        let key = SecretKey::new([73; 32]);
+        let (mut server, _first, _second) = paced_room(&key);
+        let room = server.rooms.get_mut(&[5; 16]).unwrap();
+        let ordering = room.ordering.as_mut().unwrap();
+        let start = ordering.starts_at.unwrap();
+        ordering.pace.scheduled.extend([(90, 30, 1), (180, 20, 1)]);
+        // 90 frames at 45 Hz are due 2 s in; 90 more at 30 Hz, 3 s later.
+        ordering.apply_scheduled_rate(start + 4_999, start);
+        assert_eq!(
+            (ordering.pace.rate, ordering.pace.federated_anchor),
+            (30, Some((90, 2_000)))
+        );
+        ordering.apply_scheduled_rate(start + 5_000, start);
+        assert_eq!(
+            (ordering.pace.rate, ordering.pace.federated_anchor),
+            (20, Some((180, 5_000)))
+        );
+        assert!(ordering.pace.scheduled.is_empty());
+    }
+
+    /// VO2C adds the host's pacing flag under its own signing domain; the
+    /// vectors are an independent HMAC-SHA256 the lobby also checks against.
+    #[test]
+    fn a_vo2c_certificate_signs_its_pacing_flag_under_its_own_domain() {
+        let key = SecretKey::new([73; 32]);
+        let cert = |pacing| OrderingCertificate {
+            room: [5; 16],
+            sources_mask: 3,
+            tick_hz: 45,
+            expires: 2000,
+            pacing,
+        };
+        let hex = |bytes: &[u8]| bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        let on = cert(CertificatePacing::On).sign(&key).unwrap();
+        let off = cert(CertificatePacing::Off).sign(&key).unwrap();
+        assert_eq!(
+            hex(&on),
+            "564f324305050505050505050505050505050505030000002d00d007000000000000003e4c04db8da83d3705b259262fafbcf274224f6ba8d59b743e14db3d5b10dc48"
+        );
+        assert_eq!(
+            hex(&off),
+            "564f324305050505050505050505050505050505030000002d00d00700000000000001252f63eae21061da149b08caacb3bbecf61985bf996d0932b3e101330bbc461d"
+        );
+        assert_eq!(
+            OrderingCertificate::verify(&off, &key, 1000)
+                .unwrap()
+                .pacing,
+            CertificatePacing::Off
+        );
+        let legacy = cert(CertificatePacing::Legacy).sign(&key).unwrap();
+        assert_eq!(legacy.len(), ORDERING_CERTIFICATE_LEN);
+        assert_eq!(
+            OrderingCertificate::verify(&legacy, &key, 1000)
+                .unwrap()
+                .pacing,
+            CertificatePacing::Legacy
+        );
+        // A VO1C body relabelled VO2C does not verify, and unknown flags fail.
+        let mut relabelled = on.clone();
+        relabelled[34] = 2;
+        assert!(matches!(
+            OrderingCertificate::parse(&relabelled),
+            Err(RelayError::Malformed)
+        ));
+        let mut forged = legacy.clone();
+        forged[..4].copy_from_slice(CERTIFICATE_V2_MAGIC);
+        forged.insert(34, 0);
+        assert!(matches!(
+            OrderingCertificate::verify(&forged, &key, 1000),
+            Err(RelayError::Authentication)
+        ));
     }
 
     #[test]
@@ -2200,7 +3112,7 @@ mod tests {
                 request_id: 2,
                 epoch: 1,
                 paused: true,
-                frame: 4,
+                frame: 3,
                 ..
             }
         ));
@@ -2209,7 +3121,7 @@ mod tests {
             pause_control(&mut server, &mut first, 2, 0, true, 1000),
             OrderEvent::PauseStatus {
                 epoch: 1,
-                frame: 4,
+                frame: 3,
                 paused: true,
                 ..
             }
@@ -2235,19 +3147,19 @@ mod tests {
             OrderEvent::PauseStatus {
                 epoch: 2,
                 paused: false,
-                frame: 4,
+                frame: 3,
                 ..
             }
         ));
-        server.advance_clock(2001, unix(2001));
-        assert_eq!(server.rooms[&[5; 16]].ordering.as_ref().unwrap().head, 4);
-        server.advance_clock(2020, unix(2020));
+        server.advance_clock(2023, unix(2023));
+        assert_eq!(server.rooms[&[5; 16]].ordering.as_ref().unwrap().head, 3);
+        server.advance_clock(2024, unix(2024));
         assert_eq!(
             server.rooms[&[5; 16]].ordering.as_ref().unwrap().head,
-            5,
+            6,
             "resume preserves the next frame deadline instead of catching up paused time"
         );
-        let markers: Vec<_> = pull(&mut server, &mut first, 1, 2020)
+        let markers: Vec<_> = pull(&mut server, &mut first, 1, 2024)
             .into_iter()
             .filter_map(|event| match event {
                 OrderEvent::Entry(OrderEntry::Pause {
@@ -2259,7 +3171,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(markers, [(1, true, 4), (2, false, 4)]);
+        assert_eq!(markers, [(1, true, 3), (2, false, 3)]);
     }
 
     #[test]
@@ -2283,15 +3195,19 @@ mod tests {
         pause_control(&mut server, &mut first, 1, 0, true, 300);
         let mut lost = None;
         for packet in server.drain_ordering_push(300, unix(300)) {
-            if packet.bytes[SERVER_HEADER] == PAUSE_EVENT {
-                lost = Some(packet.bytes[SERVER_HEADER..packet.bytes.len() - MAC_LEN].to_vec());
+            let payload = &packet.bytes[SERVER_HEADER..packet.bytes.len() - MAC_LEN];
+            if payload[0] == PACK_EVENT {
+                lost = unpack_entries(payload)
+                    .unwrap()
+                    .into_iter()
+                    .find(|entry| entry[0] == PAUSE_EVENT);
             } else {
                 first.receive(&packet.bytes).unwrap();
             }
         }
-        let lost = lost.expect("the pause marker was the intentionally lost push");
+        let lost = lost.expect("the pause marker was in the intentionally lost push");
         server.advance_clock(1000, unix(1000));
-        assert_eq!(server.rooms[&[5; 16]].ordering.as_ref().unwrap().head, 4);
+        assert_eq!(server.rooms[&[5; 16]].ordering.as_ref().unwrap().head, 3);
         renew(&mut server, &mut first, 1000);
         configure(&mut server, &mut first, &cert, 1000);
         assert!(matches!(
@@ -2308,7 +3224,7 @@ mod tests {
             OrderEvent::PauseStatus {
                 epoch: 2,
                 paused: false,
-                frame: 4,
+                frame: 3,
                 ..
             }
         ));
@@ -2328,30 +3244,29 @@ mod tests {
             .process_at(endpoint(&first), &bytes, unix(250_000), 250_000)
             .unwrap();
         assert!(
-            packets
-                .iter()
-                .any(|packet| packet.bytes[SERVER_HEADER..packet.bytes.len() - MAC_LEN] == lost),
+            packets.iter().any(|packet| {
+                let payload = &packet.bytes[SERVER_HEADER..packet.bytes.len() - MAC_LEN];
+                payload[0] == PACK_EVENT && unpack_entries(payload).unwrap().contains(&lost)
+            }),
             "disk replay retains exactly the lost canonical marker bytes"
         );
         let mut markers = Vec::new();
         let mut inputs = Vec::new();
         for packet in packets {
-            match first.receive(&packet.bytes).unwrap() {
-                ServerEvent::Ordering(OrderEvent::Entry(OrderEntry::Pause {
-                    epoch,
-                    paused,
-                    ..
-                })) => markers.push((epoch, paused)),
-                ServerEvent::Ordering(OrderEvent::Entry(OrderEntry::Batch {
-                    frame,
-                    bytes,
-                    ..
-                })) => inputs.push((frame, bytes.unwrap().as_bytes().to_vec())),
-                _ => {}
+            for event in received(&mut first, &packet.bytes) {
+                match event {
+                    OrderEvent::Entry(OrderEntry::Pause { epoch, paused, .. }) => {
+                        markers.push((epoch, paused))
+                    }
+                    OrderEvent::Entry(OrderEntry::Batch { frame, bytes, .. }) => {
+                        inputs.push((frame, bytes.unwrap().as_bytes().to_vec()))
+                    }
+                    _ => {}
+                }
             }
         }
         assert_eq!(markers, [(1, true), (2, false)]);
-        assert_eq!(inputs, [(5, b"accepted before pause".to_vec())]);
+        assert_eq!(inputs, [(4, b"accepted before pause".to_vec())]);
     }
 
     #[test]
@@ -2439,13 +3354,14 @@ mod tests {
         let mut pushed_ends = Vec::new();
         let mut started = false;
         for packet in packets {
-            match pushed.receive(&packet.bytes).unwrap() {
-                ServerEvent::Ordering(OrderEvent::Status(status)) => started |= status.started,
-                ServerEvent::Ordering(OrderEvent::Entry(OrderEntry::FrameEnd {
-                    sequence,
-                    frame,
-                })) => pushed_ends.push((sequence, frame)),
-                _ => {}
+            for event in received(&mut pushed, &packet.bytes) {
+                match event {
+                    OrderEvent::Status(status) => started |= status.started,
+                    OrderEvent::Entry(OrderEntry::FrameEnd { sequence, frame }) => {
+                        pushed_ends.push((sequence, frame))
+                    }
+                    _ => {}
+                }
             }
         }
         assert!(
@@ -2547,9 +3463,11 @@ mod tests {
         ));
     }
 
+    /// Credit counts entries and caps count datagrams: one pack carries a
+    /// reader's whole credit of frame ends.
     #[test]
-    fn push_credit_rotates_readers_and_existing_pull_repairs_loss() {
-        use std::collections::{BTreeMap, BTreeSet};
+    fn push_credit_counts_entries_and_existing_pull_repairs_a_lost_pack() {
+        use std::collections::BTreeMap;
         let key = SecretKey::new([73; 32]);
         let mut server = RelayServer::new(key.clone(), 2);
         let mut clients: Vec<_> = (0..6).map(|source| client(&key, source)).collect();
@@ -2559,86 +3477,50 @@ mod tests {
             configure(&mut server, peer, &cert, 0);
             subscribe(&mut server, peer, true, 1, 0);
         }
+        // 81 frame ends.
         server.advance_clock(2000, unix(2000));
         let mut sent = [0; 6];
-        let mut seen = BTreeSet::new();
         let mut lost = false;
-        for turn in 0..20 {
-            let packets = server.drain_ordering_push(2000, unix(2000));
-            assert!(packets.len() <= 32);
-            assert!(
-                packets
-                    .iter()
-                    .map(|packet| packet.bytes.len())
-                    .sum::<usize>()
-                    <= 96 * 1024
-            );
+        for _ in 0..20 {
             let mut per_peer = BTreeMap::new();
-            for packet in packets {
+            for packet in server.drain_ordering_push(2000, unix(2000)) {
                 let index = clients
                     .iter()
                     .position(|peer| endpoint(peer) == packet.endpoint)
                     .unwrap();
-                seen.insert(index);
                 *per_peer.entry(index).or_insert(0) += 1;
-                if packet.bytes[SERVER_HEADER] == FRAME_END_EVENT {
-                    sent[index] += 1;
+                if packet.bytes[SERVER_HEADER] == PACK_EVENT {
+                    sent[index] += usize::from(packet.bytes[SERVER_HEADER + 9]);
                     if index == 0 && !lost {
                         lost = true;
                         continue; // a real missing authenticated datagram
                     }
                 }
-                clients[index].receive(&packet.bytes).unwrap();
+                received(&mut clients[index], &packet.bytes);
             }
-            assert!(per_peer.values().all(|count| *count <= 8));
-            if turn == 1 {
-                assert_eq!(
-                    seen.len(),
-                    clients.len(),
-                    "room budget rotates past the first readers"
-                );
-            }
+            assert!(
+                per_peer.values().all(|count| *count <= 2),
+                "a status and a pack"
+            );
         }
         assert!(lost);
         assert_eq!(
             sent, [64; 6],
             "unacknowledged readers cannot exceed their individual credit"
         );
-        assert!(server.drain_ordering_push(2000, unix(2000)).is_empty());
         // A healthy reader continues without granting the stalled readers credit.
         subscribe(&mut server, &mut clients[1], true, 65, 2001);
         let next = server.drain_ordering_push(2001, unix(2001));
-        assert_eq!(next.len(), 8);
-        for packet in next {
-            assert_eq!(packet.endpoint, endpoint(&clients[1]));
-            assert!(matches!(
-                clients[1].receive(&packet.bytes),
-                Ok(ServerEvent::Ordering(OrderEvent::Entry(
-                    OrderEntry::FrameEnd {
-                        sequence: 65..=72,
-                        ..
-                    }
-                )))
-            ));
-        }
-        assert!(matches!(
-            subscribe(&mut server, &mut clients[1], true, 1, 2002)[0],
-            OrderEvent::PushState {
-                next_sequence: 65,
-                ..
-            }
-        ));
-        for packet in server.drain_ordering_push(2002, unix(2002)) {
-            assert!(matches!(
-                clients[1].receive(&packet.bytes),
-                Ok(ServerEvent::Ordering(OrderEvent::Entry(
-                    OrderEntry::FrameEnd {
-                        sequence: 73..=80,
-                        ..
-                    }
-                )))
-            ));
-        }
+        assert_eq!(next.len(), 1);
+        assert_eq!(next[0].endpoint, endpoint(&clients[1]));
+        let sequences: Vec<_> = received(&mut clients[1], &next[0].bytes)
+            .into_iter()
+            .map(|event| match event {
+                OrderEvent::Entry(OrderEntry::FrameEnd { sequence, .. }) => sequence,
+                _ => panic!("a frame end"),
+            })
+            .collect();
+        assert_eq!(sequences, (65..=81).collect::<Vec<_>>());
         assert!(
             pull(&mut server, &mut clients[0], 1, 2002)
                 .iter()
@@ -2649,7 +3531,7 @@ mod tests {
                         frame: 1
                     })
                 )),
-            "the unchanged bounded Pull recovers the dropped entry"
+            "the unchanged bounded Pull recovers the lost pack"
         );
     }
 
@@ -2658,11 +3540,9 @@ mod tests {
         fn frame_ends(reader: &mut ClientSession, packets: Vec<ForwardDatagram>) -> Vec<u64> {
             packets
                 .into_iter()
-                .filter_map(|packet| match reader.receive(&packet.bytes).unwrap() {
-                    ServerEvent::Ordering(OrderEvent::Entry(OrderEntry::FrameEnd {
-                        sequence,
-                        ..
-                    })) => Some(sequence),
+                .flat_map(|packet| received(reader, &packet.bytes))
+                .filter_map(|event| match event {
+                    OrderEvent::Entry(OrderEntry::FrameEnd { sequence, .. }) => Some(sequence),
                     _ => None,
                 })
                 .collect()
@@ -2676,21 +3556,32 @@ mod tests {
             configure(&mut server, peer, &cert, 0);
         }
         subscribe(&mut server, &mut reader, true, 1, 0);
+        server.advance_clock(300, unix(300));
+        assert_eq!(
+            frame_ends(&mut reader, server.drain_ordering_push(300, unix(300))),
+            [1, 2, 3]
+        );
+        // The next turn's pack is lost; the first pack goes once more.
         server.advance_clock(350, unix(350));
-        let mut first = server.drain_ordering_push(350, unix(350));
-        let lost = first.pop().unwrap();
-        assert_eq!(lost.bytes[SERVER_HEADER], FRAME_END_EVENT);
-        assert_eq!(frame_ends(&mut reader, first), [1, 2, 3, 4, 5]);
-        // Requests advance the clock, and frame 7 is due only at 355.6 ms.
-        subscribe(&mut server, &mut reader, true, 5, 351);
+        let (lost, repeated): (Vec<_>, Vec<_>) = server
+            .drain_ordering_push(350, unix(350))
+            .into_iter()
+            .partition(|packet| {
+                packet.bytes[SERVER_HEADER] == PACK_EVENT
+                    && read_u64(&packet.bytes, SERVER_HEADER + 1) == 4
+            });
+        assert_eq!(lost.len(), 1);
+        assert_eq!(frame_ends(&mut reader, repeated), [1, 2, 3]);
+        // Requests advance the clock, and the next turn is due only at 400 ms.
+        subscribe(&mut server, &mut reader, true, 4, 351);
         assert!(server.drain_ordering_push(357, unix(357)).is_empty());
         assert_eq!(
             frame_ends(&mut reader, server.drain_ordering_push(358, unix(358))),
-            [5, 6],
+            [4, 5, 6],
             "unacknowledged entries return without a reader request"
         );
         assert!(
-            server.drain_ordering_push(400, unix(400)).is_empty(),
+            server.drain_ordering_push(399, unix(399)).is_empty(),
             "each entry is repeated once"
         );
     }
@@ -2706,14 +3597,23 @@ mod tests {
             configure(&mut server, reader, &cert, 0);
             subscribe(&mut server, reader, true, 1, 0);
         }
-        // Every reader holds frames 1-7, due for a repeat when frame 8 commits.
-        // A fresh entry plus seven repeats fill one reader's pass share, so
-        // four readers could otherwise take the room's whole pass.
+        // Seven full batches in frame 1: each fills a pack of its own.
+        let mut bytes = Vec::new();
+        for (source, id) in [(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (0, 2), (1, 2)] {
+            readers[source]
+                .submit_ordering(id, &[source as u8; ORDERING_BATCH_CAPACITY], &mut bytes)
+                .unwrap();
+            events(&mut server, &mut readers[source], &bytes, 0);
+        }
+        // Every reader holds frames 1-6 in seven packs, due for a repeat when
+        // the next turn commits. Its fresh pack plus seven repeats fill one
+        // reader's pass share, so four readers could otherwise take the
+        // room's whole pass.
         server.advance_clock(360, unix(360));
         while !server.drain_ordering_push(360, unix(360)).is_empty() {}
-        server.advance_clock(380, unix(380));
+        server.advance_clock(400, unix(400));
         let spent = server.rooms[&[5; 16]].order_packets.spent;
-        let packets = server.drain_ordering_push(380, unix(380));
+        let packets = server.drain_ordering_push(400, unix(400));
         assert_eq!(packets.len(), PUSH_ROOM_PACKETS);
         let fresh = packets
             .iter()
@@ -2722,12 +3622,12 @@ mod tests {
                     .iter_mut()
                     .find(|reader| endpoint(reader) == packet.endpoint)
                     .unwrap();
-                matches!(
-                    reader.receive(&packet.bytes),
-                    Ok(ServerEvent::Ordering(OrderEvent::Entry(
-                        OrderEntry::FrameEnd { sequence: 8, .. }
-                    )))
-                )
+                received(reader, &packet.bytes).iter().any(|event| {
+                    matches!(
+                        event,
+                        OrderEvent::Entry(OrderEntry::FrameEnd { frame: 7, .. })
+                    )
+                })
             })
             .count();
         assert_eq!(
@@ -2764,7 +3664,7 @@ mod tests {
             connect(&mut server, peer, 0);
             configure(&mut server, peer, &cert, 0);
         }
-        // A full 30-source room at 60 Hz pushes more than half the total.
+        // A busy room may push more than half the total.
         spend(&mut server, INGRESS_PER_SECOND / 2);
         let mut bytes = Vec::new();
         reader.pull_ordering(1, &mut bytes).unwrap();
@@ -2805,12 +3705,17 @@ mod tests {
         server.advance_clock(350, unix(350));
         let mut canonical = None;
         for packet in server.drain_ordering_push(350, unix(350)) {
-            if let ServerEvent::Ordering(OrderEvent::Entry(OrderEntry::Batch { bytes, .. })) =
-                reader.receive(&packet.bytes).unwrap()
-            {
-                assert_eq!(bytes.unwrap().as_bytes(), b"immutable pushed input");
-                canonical =
-                    Some(packet.bytes[SERVER_HEADER..packet.bytes.len() - MAC_LEN].to_vec());
+            let payload = &packet.bytes[SERVER_HEADER..packet.bytes.len() - MAC_LEN];
+            if payload[0] == PACK_EVENT {
+                canonical = canonical.or(unpack_entries(payload)
+                    .unwrap()
+                    .into_iter()
+                    .find(|entry| entry[0] == BATCH_EVENT));
+            }
+            for event in received(&mut reader, &packet.bytes) {
+                if let OrderEvent::Entry(OrderEntry::Batch { bytes, .. }) = event {
+                    assert_eq!(bytes.unwrap().as_bytes(), b"immutable pushed input");
+                }
             }
         }
         let canonical = canonical.expect("the original encrypted batch was pushed");
@@ -2833,11 +3738,10 @@ mod tests {
         );
         subscribe(&mut server, &mut reader, true, 1, 250_000);
         let replay = server.drain_ordering_push(250_000, unix(250_000));
-        assert!(
-            replay.iter().any(
-                |packet| packet.bytes[SERVER_HEADER..packet.bytes.len() - MAC_LEN] == canonical
-            )
-        );
+        assert!(replay.iter().any(|packet| {
+            let payload = &packet.bytes[SERVER_HEADER..packet.bytes.len() - MAC_LEN];
+            payload[0] == PACK_EVENT && unpack_entries(payload).unwrap().contains(&canonical)
+        }));
         for packet in replay {
             reader.receive(&packet.bytes).unwrap();
         }
@@ -2876,6 +3780,11 @@ mod tests {
                 .iter()
                 .all(|packet| packet.endpoint == rebound)
         );
+        // The reader acknowledges the credit pushed, so the next pass reads disk.
+        reader.set_ordering_push(true, 73, &mut bytes).unwrap();
+        server
+            .process_at(rebound, &bytes, unix(250_001), 250_001)
+            .unwrap();
         // Disk failure keeps the archive and becomes the existing terminal error.
         std::fs::OpenOptions::new()
             .write(true)
@@ -3011,6 +3920,7 @@ mod tests {
                 sources_mask: 3,
                 tick_hz: 45,
                 expires: 2000,
+                pacing: Default::default(),
             }
             .sign(&key)
             .unwrap();
@@ -3195,7 +4105,8 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(ends, [(3, 1), (4, 2), (5, 3), (6, 4)]);
+        // 100 ms at 45 Hz: one 3-frame turn.
+        assert_eq!(ends, [(3, 1), (4, 2), (5, 3)]);
         active
             .submit_ordering(2, b"healthy input during outage", &mut bytes)
             .unwrap();
@@ -3389,26 +4300,26 @@ mod tests {
             events(&mut server, &mut first, &bytes, 300)[0],
             OrderEvent::Ack {
                 batch_id: 2,
-                frame: 5
+                frame: 4
             }
         ));
         first.leave_ordering(&mut bytes).unwrap();
         events(&mut server, &mut first, &bytes, 300);
         server.advance_clock(400, 1000);
-        let tail = pull(&mut server, &mut second, 6, 400);
-        let at_five: Vec<_> = tail
+        let tail = pull(&mut server, &mut second, 5, 400);
+        let at_four: Vec<_> = tail
             .iter()
             .filter_map(|event| match event {
-                OrderEvent::Entry(OrderEntry::Batch { frame: 5, .. }) => Some("batch"),
+                OrderEvent::Entry(OrderEntry::Batch { frame: 4, .. }) => Some("batch"),
                 OrderEvent::Entry(OrderEntry::Departure {
-                    frame: 5,
+                    frame: 4,
                     source: 0,
                     ..
                 }) => Some("departure"),
                 _ => None,
             })
             .collect();
-        assert_eq!(at_five, ["batch", "departure"]);
+        assert_eq!(at_four, ["batch", "departure"]);
         second.leave_ordering(&mut bytes).unwrap();
         events(&mut server, &mut second, &bytes, 400);
         server.advance_clock(600, unix(600));
@@ -3573,6 +4484,7 @@ mod tests {
             sources_mask: 3,
             tick_hz: 10,
             expires: 2000,
+            pacing: Default::default(),
         }
         .sign(&key)
         .unwrap();
@@ -3666,6 +4578,7 @@ mod tests {
                 sources_mask,
                 tick_hz: 45,
                 expires: 1400,
+                pacing: Default::default(),
             }
             .sign(&key)
             .unwrap();
@@ -3782,7 +4695,7 @@ mod tests {
             connect(&mut server, client, 0);
         }
         let cert = certificate(&key, 3, 1300);
-        let mut forged = cert;
+        let mut forged = cert.clone();
         forged[34] ^= 1;
         let mut bytes = Vec::new();
         // A registered source outside the signed manifest cannot join the
@@ -3819,15 +4732,19 @@ mod tests {
         let packets = server
             .process_at(endpoint(&second), &bytes, 1000, 300)
             .unwrap();
+        // The pack's first entry is the batch.
         let mut tampered = packets
             .into_iter()
-            .find(|packet| packet.bytes[SERVER_HEADER] == BATCH_EVENT)
+            .find(|packet| {
+                packet.bytes[SERVER_HEADER] == PACK_EVENT
+                    && packet.bytes[SERVER_HEADER + PACK_HEADER + 2] == BATCH_EVENT
+            })
             .unwrap()
             .bytes;
         // Even a hop-authenticated ciphertext with altered associated batch id
         // cannot be released as plaintext to the gameplay owner; it arrives
-        // unreadable in its place.
-        tampered[SERVER_HEADER + 14] ^= 1;
+        // unreadable in its place. Packed, its byte 14 is 4 bytes later.
+        tampered[SERVER_HEADER + 18] ^= 1;
         let split = tampered.len() - MAC_LEN;
         let tag = second
             .key
@@ -3836,10 +4753,8 @@ mod tests {
             .into_bytes();
         tampered[split..].copy_from_slice(&tag);
         assert!(matches!(
-            second.receive(&tampered),
-            Ok(ServerEvent::Ordering(OrderEvent::Entry(
-                OrderEntry::Batch { bytes: None, .. }
-            )))
+            &received(&mut second, &tampered)[0],
+            OrderEvent::Entry(OrderEntry::Batch { bytes: None, .. })
         ));
         server.advance_clock(112_000, unix(112_000));
         let replay = pull(&mut server, &mut second, 1, 112_000);
@@ -4399,7 +5314,7 @@ impl RelayServer {
             {
                 let before = ordering.memory();
                 ordering.advance(now_ms, room.federation.as_mut());
-                ordering.pace.count_changes(&mut self.ordering_counts);
+                ordering.count_changes(&mut self.ordering_counts);
                 total = total
                     .saturating_sub(before)
                     .saturating_add(ordering.memory());
@@ -4476,7 +5391,7 @@ impl RelayServer {
         {
             let before = ordering.memory();
             ordering.advance(now_ms, room.federation.as_mut());
-            ordering.pace.count_changes(&mut self.ordering_counts);
+            ordering.count_changes(&mut self.ordering_counts);
             if ordering.memory() > before {
                 self.reserve_ordering(0);
             }
@@ -4536,6 +5451,17 @@ impl RelayServer {
             }
             return Ok(Vec::new());
         }
+        if payload.first() == Some(&CHECKSUM_REQUEST) {
+            let room = self
+                .rooms
+                .get_mut(&message.ticket.room)
+                .ok_or(RelayError::Unregistered)?;
+            if let Some(ordering) = room.ordering.as_mut() {
+                ordering.report_checksums(message.ticket, payload, room.federation.as_ref())?;
+                ordering.count_changes(&mut self.ordering_counts);
+            }
+            return Ok(Vec::new());
+        }
         if payload.first() == Some(&PAUSE_REQUEST) {
             if !self.reserve_ordering(2 * (PAUSE_ENTRY_BYTES + ENTRY_OVERHEAD)) {
                 return self.ordering_reply(
@@ -4555,14 +5481,12 @@ impl RelayServer {
             return self.ordering_reply(message.ticket, replies, now);
         }
         let replies = if payload.first() == Some(&READY_REQUEST) {
-            if payload.len() != 1 + ORDERING_CERTIFICATE_LEN + 32 {
+            let certificate_len = payload.len().saturating_sub(1 + 32);
+            if !is_ordering_certificate_len(certificate_len) {
                 return Err(RelayError::Malformed);
             }
-            let certificate = OrderingCertificate::verify(
-                &payload[1..1 + ORDERING_CERTIFICATE_LEN],
-                &self.key,
-                now,
-            )?;
+            let certificate =
+                OrderingCertificate::verify(&payload[1..1 + certificate_len], &self.key, now)?;
             // A one-source match runs its commands locally (the client's
             // original-singleton policy) and never orders through the relay.
             // The lobby still signs its certificate for released clients, so
@@ -4581,7 +5505,7 @@ impl RelayServer {
             {
                 return self.ordering_reply(message.ticket, error(OrderError::Inactive, 0), now);
             }
-            let agreement: [u8; 32] = payload[1 + ORDERING_CERTIFICATE_LEN..].try_into().unwrap();
+            let agreement: [u8; 32] = payload[1 + certificate_len..].try_into().unwrap();
             let allocation = self
                 .rooms
                 .get(&message.ticket.room)
@@ -4832,18 +5756,21 @@ impl RelayServer {
             let state = ordering.push_status_state(now_ms);
             let status_due = state != push.status_state
                 || now_ms.saturating_sub(push.status_at) >= PUSH_STATUS_MS;
+            // Credit counts entries; the caps count datagrams, each a pack.
             let credit =
                 PUSH_WINDOW.saturating_sub(push.sent_next - push.acknowledged_next) as usize;
+            let datagrams = limit - usize::from(status_due);
             let records =
-                ordering.history_page(push.sent_next, credit.min(limit - usize::from(status_due)));
+                ordering.history_page(push.sent_next, if datagrams == 0 { 0 } else { credit });
             let (replies, entries, terminal) = match records {
                 Ok(records) => {
-                    let entries = records.len();
-                    let mut replies = Vec::with_capacity(entries + usize::from(status_due));
+                    let packs = pack_entries(&records, datagrams);
+                    let entries = packs.iter().map(|(_, count)| count).sum::<usize>();
+                    let mut replies = Vec::with_capacity(packs.len() + usize::from(status_due));
                     if status_due {
                         replies.push(ordering.status(now_ms));
                     }
-                    replies.extend(records);
+                    replies.extend(packs.into_iter().map(|(pack, _)| pack));
                     (replies, entries, false)
                 }
                 Err((code, expected)) => (error(code, expected), 0, true),
@@ -4921,28 +5848,29 @@ impl RelayServer {
                 .max(ordering.hot_oldest_seq());
             let capacity = (PUSH_PEER_PACKETS - fresh)
                 .min(PUSH_ROOM_PACKETS - room_used)
-                .min(PUSH_DRAIN_PACKETS - output.len());
-            let count = before
-                .saturating_sub(from)
-                .min(capacity as u64)
-                .min(self.repeat_packets.remaining(now, PUSH_REPEAT_PACKETS));
+                .min(PUSH_DRAIN_PACKETS - output.len())
+                .min(self.repeat_packets.remaining(now, PUSH_REPEAT_PACKETS) as usize);
+            let owed = before.saturating_sub(from);
             let mut repeated = 0;
-            if count > 0 {
-                for payload in ordering.hot_page(from, count as usize) {
-                    let bytes = SERVER_HEADER + MAC_LEN + payload.len();
+            let mut packets = 0;
+            if owed > 0 && capacity > 0 {
+                let records = ordering.hot_page(from, owed as usize);
+                for (pack, entries) in pack_entries(&records, capacity) {
+                    let bytes = SERVER_HEADER + MAC_LEN + pack.len();
                     if output_bytes + bytes > PUSH_DRAIN_BYTES {
                         break;
                     }
-                    let Ok(datagram) = server_packet(peer, CONTROL, ticket.source, &payload) else {
+                    let Ok(datagram) = server_packet(peer, CONTROL, ticket.source, &pack) else {
                         break;
                     };
                     output_bytes += bytes;
                     output.push(datagram);
-                    repeated += 1;
+                    repeated += entries as u64;
+                    packets += 1;
                 }
             }
-            self.repeat_packets.charge(now, repeated);
-            *room_packets.entry(id).or_insert(0) += repeated as usize;
+            self.repeat_packets.charge(now, packets);
+            *room_packets.entry(id).or_insert(0) += packets as usize;
             let push = peer.push.as_mut().expect("subscribed reader");
             push.repeat_next = from + repeated;
             // Once every entry sent before this pass went twice, this pass's

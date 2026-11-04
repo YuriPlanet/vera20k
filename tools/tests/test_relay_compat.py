@@ -1,10 +1,14 @@
 """Which released clients the relay compatibility check plays against, and how it cleans up."""
+import contextlib
+import io
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
-from tools.relay_compat import EXAMPLE, ROOT, restore_example, supported_clients, use_checkout_example
+from tools.relay_compat import (EXAMPLE, ROOT, BuildFailed, released_client, restore_example, supported_clients,
+                                use_checkout_example)
 
 
 def release(tag, created, prerelease=False, draft=False):
@@ -45,6 +49,27 @@ class ReleasedTreeTest(unittest.TestCase):
             restore_example(tree, original)
             git("worktree", "remove", str(tree))
             self.assertFalse(tree.exists())
+
+    def test_only_a_break_plays_the_releases_own_example_when_the_checkouts_does_not_build(self):
+        checkout, own = "// the checkout's example\n", "// the release's own example\n"
+        with tempfile.TemporaryDirectory() as scratch:
+            tree = Path(scratch)
+            (tree / EXAMPLE).parent.mkdir(parents=True)
+            (tree / EXAMPLE).write_text(checkout)
+            built = []
+
+            def build(tree, package, target, output):
+                built.append((tree / EXAMPLE).read_text())
+                if built[-1] == checkout:
+                    raise BuildFailed("no such variant")
+                return output
+
+            with mock.patch("tools.relay_compat.build", build), contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(BuildFailed):
+                    released_client(tree, own.encode(), tree / "client", allow_break=False)
+                self.assertEqual(released_client(tree, own.encode(), tree / "client", allow_break=True),
+                                 tree / "client")
+            self.assertEqual(built, [checkout, checkout, own])
 
 
 if __name__ == "__main__":
