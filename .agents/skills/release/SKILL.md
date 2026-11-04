@@ -37,7 +37,10 @@ disabled (`gh workflow list --all` shows its state). By hand:
    `macos-signing` environment until the maintainer approves them on the run's page (Review
    deployments); a nightly's do too. Tell the maintainer when you start the run, and don't
    approve them yourself.
-3. Wait with one background `gh run watch <run> --exit-status`.
+3. Wait with one background `gh run watch <run> --exit-status`. When GitHub never gives a job
+   a machine ("not acquired by Runner"), `release-rerun.yml` reruns the failed jobs, up to the
+   run's third attempt: watch the run again rather than rerunning it by hand. A rerun build or
+   signing job brings signing back to the `macos-signing` approval, so tell the maintainer.
 
 ## Release
 

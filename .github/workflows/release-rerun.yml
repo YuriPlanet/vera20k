@@ -1,0 +1,67 @@
+name: Release rerun
+
+# Reruns a Release run's failed jobs when GitHub never gave one of them a
+# machine ("The job was not acquired by Runner of type hosted even after
+# multiple attempts"), as happened to its Apple Silicon jobs four times on
+# 2026-11-03 and 04, so nobody has to notice and rerun it by hand. Every
+# other failure needs a person: a run where any job failed for another reason
+# is left alone, and so is a run already on its third attempt, which a long
+# shortage can reach (41869182067 lost its Apple Silicon build three times).
+# Rerunning a dropped build or signing job runs signing again, which waits for
+# approval. A run cancelled by hand ends "cancelled", not "failure", and is
+# never rerun. GitHub sends this event for a run a person started, including
+# the reruns made here, but not for one nightly.yml dispatches with
+# GITHUB_TOKEN, like other events that token causes: a nightly's drops still
+# need a rerun by hand.
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  rerun:
+    name: rerun dropped jobs
+    if: >-
+      github.event.workflow_run.conclusion == 'failure'
+      && github.event.workflow_run.run_attempt < 3
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      # Rerun the run's jobs, and read why each failed.
+      actions: write
+      checks: read
+    steps:
+      - name: Rerun the jobs GitHub never started
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.event.workflow_run.id }}
+          ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          set -euo pipefail
+          # This attempt's jobs that neither passed nor were skipped. A job
+          # skipped because one it needs failed is rerun with that one.
+          jobs="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN/attempts/$ATTEMPT/jobs?per_page=100" \
+            --jq '.jobs[] | select(.conclusion != "success" and .conclusion != "skipped") | "\(.id)\t\(.name)"')"
+          dropped=0
+          other=0
+          while IFS=$'\t' read -r id name; do
+            [ -n "$id" ] || continue
+            reason="$(gh api --paginate "repos/$GITHUB_REPOSITORY/check-runs/$id/annotations" \
+              --jq '.[] | select(.message | contains("not acquired by Runner")) | .message')"
+            if [ -n "$reason" ]; then
+              echo "GitHub never started $name."
+              dropped=$((dropped + 1))
+            else
+              echo "$name failed for another reason."
+              other=$((other + 1))
+            fi
+          done <<< "$jobs"
+          if [ "$dropped" -eq 0 ] || [ "$other" -gt 0 ]; then
+            echo "Not rerun: $dropped dropped, $other failed otherwise."
+            exit 0
+          fi
+          gh run rerun "$RUN" --repo "$GITHUB_REPOSITORY" --failed
+          echo "::notice::Reran run $RUN's $dropped dropped job(s) as attempt $((ATTEMPT + 1))."
