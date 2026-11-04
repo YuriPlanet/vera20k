@@ -453,7 +453,8 @@ impl Simulation {
         // the Foot's first request in a frame the batch answered; the request
         // that takes its answer resumes with the retry spent, as the
         // recursion runs. A request for the Foot's own cell never waits.
-        let resumes_recursion = self.answers_retry_recursion(request.entity_id);
+        let resumes_recursion = self.answered_recursion(request.entity_id)
+            == Some(super::path_batch::WaitingRequest::RetryRecursion);
         let waiting = if request.walk_retry_spent() {
             super::path_batch::WaitingRequest::RetryRecursion
         } else {
