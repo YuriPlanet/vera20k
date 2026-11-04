@@ -186,6 +186,7 @@ Event kinds and payloads:
 | `located` | `{channel:<Channel or null>}` |
 | `kicked` | `{channel:<Channel>,user:<Member>,by:<Member>}` |
 | `ladder` | `{season,records:[{name,points,rank,wins,losses,disconnects}]}` |
+| `balance` | `{teams:[{name,team}]}` |
 | `error` | `{code,message}` |
 
 A `chat` event's `sent_at` is the Unix time in seconds the service sent it. Games from
@@ -553,3 +554,15 @@ team ladders refuses `winners`; the game then finishes again without it.
 played a rated game in it (`season` is `null` and `records` empty when no season runs).
 The game shows them as each player's rank and badge: one lookup fills both its ladder
 and high-score tables.
+
+While a season runs, the host's options for a game room whose players are all on two
+teams give an odds line, which the room hears from the `VERA20k` notice sender each time
+it changes: `Team A 54%, Team B 46%. Ranked.`, or `Unranked:` and why. Quick Match
+rooms get none. In a game room the host's chat line `/balance` is a command, not chat.
+The room hears the two teams with the most even odds on the team ratings, keeping as
+many players on their teams as it can, and the host's game gets a `balance` event with
+every playing human's `team` (0 to 3 for A to D). The host's game moves each named player
+to that team, as their own team choice would, and publishes the options. A game that
+ignores the event leaves the teams to the host. The host alone hears why nothing moves:
+a Quick Match room, a mode without teams, AI players, fewer than two players, or teams
+already as even as they can be. Anyone else typing `/balance` hears that only the host can.

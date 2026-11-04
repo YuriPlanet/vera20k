@@ -2625,6 +2625,27 @@ fn apply_event(
                 },
             );
         }
+        // The lobby's answer to the host's `/balance` (docs/lobby-protocol.md).
+        "balance" => {
+            #[derive(Deserialize)]
+            struct Team {
+                name: String,
+                team: u8,
+            }
+            #[derive(Deserialize)]
+            struct Payload {
+                teams: Vec<Team>,
+            }
+            let p: Payload = decode(payload)?;
+            let teams: Vec<_> = p
+                .teams
+                .into_iter()
+                .map(|team| (team.name, team.team))
+                .collect();
+            if let Err(error) = crate::app::shell_network_setup::balance_teams(state, &teams) {
+                log::warn!("lobby balance: {error:#}");
+            }
+        }
         "ready" => {
             if payload["revision"].as_u64() != Some(service.revision) {
                 return Ok(());
