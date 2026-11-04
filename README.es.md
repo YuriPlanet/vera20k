@@ -37,7 +37,7 @@ Consulta la [hoja de ruta](https://github.com/orgs/YuriPlanet/projects/1) para c
 - **Campañas:** Las misiones se pueden iniciar; el soporte sigue incompleto.
 - **IA:** Partes de la IA original se encargan de construir bases y de los ataques definidos por
   scripts.
-- **Multijugador:** Las compilaciones actuales del código fuente permiten jugar por LAN y en línea en macOS y Linux.
+- **Multijugador:** El juego por LAN y en línea está disponible en Windows, Linux y macOS.
 
 ## Descargar y jugar
 

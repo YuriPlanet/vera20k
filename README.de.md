@@ -36,7 +36,7 @@ Die [Roadmap](https://github.com/orgs/YuriPlanet/projects/1) zeigt die aktuellen
   generierten Karten, Basisbau, Rohstoffernte, Kämpfen sowie Speichern und Laden.
 - **Kampagnen:** Missionen lassen sich starten; die Unterstützung bleibt unvollständig.
 - **KI:** Teile der ursprünglichen KI übernehmen den Basisbau und skriptgesteuerte Angriffe.
-- **Mehrspielermodus:** Aktuelle Quellcode-Builds unterstützen LAN- und Online-Spiele auf macOS und Linux.
+- **Mehrspielermodus:** LAN- und Online-Spiele sind unter Windows, Linux und macOS verfügbar.
 
 ## Herunterladen und spielen
 

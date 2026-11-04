@@ -36,7 +36,7 @@ Güncel öncelikler ve gelecek planları için [yol haritasına](https://github.
   haritalar, üs kurma, kaynak toplama, çatışma ve kaydetme/yükleme mevcut.
 - **Senaryolar:** Görevler başlatılabiliyor; destek henüz tamamlanmış değil.
 - **Yapay zekâ:** Orijinal yapay zekânın bazı bölümleri üs kurma ve betiklerle yönetilen saldırıları yürütüyor.
-- **Çok oyunculu mod:** Güncel kaynak kodu derlemelerinde macOS ve Linux üzerinde LAN ve çevrimiçi oyun kullanılabilir.
+- **Çok oyunculu mod:** LAN ve çevrimiçi oyun Windows, Linux ve macOS'ta kullanılabilir.
 
 ## İndir ve oyna
 
