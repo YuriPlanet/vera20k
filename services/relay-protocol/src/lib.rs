@@ -791,6 +791,18 @@ pub struct ForwardDatagram {
     pub bytes: Vec<u8>,
 }
 
+/// Ordering activity since the last `RelayServer::take_ordering_counts`, for
+/// the service's aggregate report. No player, room or endpoint identity.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OrderingCounts {
+    /// Pull requests answered from history (repairs and pull-only readers).
+    pub pull_replies: u64,
+    /// Rate markers that slowed a match for a player who could not keep up.
+    pub slowdowns: u64,
+    /// Rate markers that tried a faster rate again.
+    pub raises: u64,
+}
+
 /// Bound storage and packet rate; untrusted data never creates a room until
 /// both ticket authentication and UDP source reachability are established.
 pub struct RelayServer {
@@ -818,6 +830,7 @@ pub struct RelayServer {
     // Ordering rooms cleaned up before their certificate expired, until that
     // expiry: a late Ready gets Inactive instead of a new timeline.
     ended_orderings: HashMap<[u8; 16], u64>,
+    ordering_counts: OrderingCounts,
 }
 
 impl RelayServer {
@@ -841,7 +854,13 @@ impl RelayServer {
             push_after: None,
             journal_directory: None,
             ended_orderings: HashMap::new(),
+            ordering_counts: OrderingCounts::default(),
         }
+    }
+
+    /// The ordering activity since the previous call.
+    pub fn take_ordering_counts(&mut self) -> OrderingCounts {
+        std::mem::take(&mut self.ordering_counts)
     }
 
     /// Enable full-match encrypted replay on the existing relay's private

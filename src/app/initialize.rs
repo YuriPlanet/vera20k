@@ -1077,6 +1077,7 @@ impl App {
                 },
                 match_audio: Default::default(),
                 match_diagnostics: Default::default(),
+                network_quality: Default::default(),
                 #[cfg(feature = "telemetry-dashboard")]
                 telemetry_timing: Default::default(),
                 #[cfg(feature = "telemetry-dashboard")]

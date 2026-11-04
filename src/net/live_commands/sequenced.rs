@@ -43,6 +43,25 @@ const PACE_BACKLOG_MS: u32 = 2_000;
 /// App diagnostics for one local command batch: its first transmission, the
 /// relay's frame assignment and the contiguous receipt of that sealed frame.
 /// Socket receipt times; this never enters simulation or delivery decisions.
+/// App diagnostics for one match's ordered delivery, counted by the session
+/// that owns it. Wall-clock observations; never simulation or delivery input.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DeliveryCounters {
+    /// Times the pushed stream stood behind the relay's head past its
+    /// one-frame reorder grace: lost datagrams, or push credit the relay had
+    /// not yet sent while this PC was behind.
+    pub gaps: u64,
+    /// Pull requests sent to repair a gap or a silent push subscription.
+    pub repair_pulls: u64,
+    /// Local command batches whose sealed frame came back, with the
+    /// first-transmission to frame-receipt time of each.
+    pub round_trips: u64,
+    pub round_trip_total_ms: u64,
+    pub round_trip_max_ms: u64,
+    /// The first sampled frame whose checksums differed.
+    pub desync_frame: Option<u32>,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct CommandDeliveryTrace {
     pub batch_id: u64,
@@ -262,6 +281,8 @@ pub(super) struct SequencedSession {
     push_confirmations: u64,
     remote_next_sequence: u64,
     repair_gap_since: Option<u32>,
+    gap_counted: bool,
+    delivery: DeliveryCounters,
     pause: CanonicalPause,
     pause_relay_supported: bool,
     pause_supported_sources: u32,
@@ -365,6 +386,8 @@ impl SequencedSession {
             push_confirmations: 0,
             remote_next_sequence: 1,
             repair_gap_since: None,
+            gap_counted: false,
+            delivery: DeliveryCounters::default(),
             pause: CanonicalPause::default(),
             pause_relay_supported: false,
             pause_supported_sources: 0,
@@ -470,6 +493,19 @@ impl SequencedSession {
 
     pub(super) fn command_traces(&self) -> &VecDeque<CommandDeliveryTrace> {
         &self.command_traces
+    }
+
+    pub(super) fn delivery_counters(&self) -> DeliveryCounters {
+        self.delivery
+    }
+
+    /// The relay's sealed head as this PC last learned it.
+    pub(super) fn head_frame(&self) -> u32 {
+        self.head_frame
+    }
+
+    pub(super) fn slowed(&self) -> bool {
+        self.pace_fps < self.fps
     }
 
     fn trace_assignment(&mut self, batch_id: u64, frame: u32, received_at: Instant) {
@@ -727,8 +763,13 @@ impl SequencedSession {
             now.wrapping_sub(since) >= 1000_u32.div_ceil(u32::from(self.pace_fps))
         } else {
             self.repair_gap_since = None;
+            self.gap_counted = false;
             false
         };
+        if active_push && gap_ready && !self.gap_counted {
+            self.gap_counted = true;
+            self.delivery.gaps += 1;
+        }
         let silent = self
             .last_response
             .is_some_and(|last| now.wrapping_sub(last) > PUSH_SILENCE_REPAIR_MS);
@@ -748,6 +789,9 @@ impl SequencedSession {
             }
             if transport.pull_ordering(self.next_sequence).is_ok() {
                 self.last_control = Some(now);
+                if active_push {
+                    self.delivery.repair_pulls += 1;
+                }
             }
         }
     }
@@ -1091,8 +1135,17 @@ impl SequencedSession {
                         if trace
                             .assigned
                             .is_some_and(|(assigned, _)| assigned == frame)
+                            && trace.frame_received_at.is_none()
                         {
-                            trace.frame_received_at.get_or_insert(received_at);
+                            trace.frame_received_at = Some(received_at);
+                            if let Some(sent_at) = trace.sent_at {
+                                let ms = received_at.saturating_duration_since(sent_at).as_millis()
+                                    as u64;
+                                self.delivery.round_trips += 1;
+                                self.delivery.round_trip_total_ms += ms;
+                                self.delivery.round_trip_max_ms =
+                                    self.delivery.round_trip_max_ms.max(ms);
+                            }
                         }
                     }
                     self.latest_frame_receipt = Some(SequencedTiming {
@@ -1370,6 +1423,7 @@ impl SequencedSession {
             if let Some((_, local)) = self.samples.iter().find(|(f, _)| *f == sample_frame)
                 && checksum != *local
             {
+                self.delivery.desync_frame.get_or_insert(sample_frame);
                 return Err(SequencedError::Desync {
                     frame: sample_frame,
                 }
@@ -1557,6 +1611,43 @@ mod stall_tests {
             .receive(OrderEvent::Status(status), Instant::now())
             .unwrap();
         assert_eq!(session.recovery_status(now, 0), None);
+    }
+}
+
+#[cfg(test)]
+mod delivery_counter_tests {
+    use super::*;
+
+    /// A local batch's round trip runs from its first transmission to the
+    /// receipt of the frame the relay sealed it into, counted once.
+    #[test]
+    fn a_sealed_frame_counts_each_local_batch_round_trip_once() {
+        let mut houses = [None; 30];
+        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
+        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let sent = Instant::now();
+        session.command_traces.push_back(CommandDeliveryTrace {
+            batch_id: 1,
+            sent_at: Some(sent),
+            assigned: Some((1, sent)),
+            frame_received_at: None,
+        });
+        let received = sent + std::time::Duration::from_millis(40);
+        let frame_end =
+            |sequence, frame| OrderEvent::Entry(OrderEntry::FrameEnd { sequence, frame });
+        session.receive(frame_end(1, 1), received).unwrap();
+        session.assemble().unwrap();
+        session.receive(frame_end(2, 2), received).unwrap();
+        session.assemble().unwrap();
+        let counters = session.delivery_counters();
+        assert_eq!(
+            (
+                counters.round_trips,
+                counters.round_trip_total_ms,
+                counters.round_trip_max_ms
+            ),
+            (1, 40, 40)
+        );
     }
 }
 

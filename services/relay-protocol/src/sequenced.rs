@@ -174,6 +174,14 @@ pub enum OrderPace {
 /// The rates a match certified at `tick_hz` may be sealed at, fastest first:
 /// its own and at most two Game Speed rows slower. A player whose PC cannot
 /// keep up slows the match this far and no further.
+fn count_rate_change(counts: &mut crate::OrderingCounts, before: u16, after: u16) {
+    if after < before {
+        counts.slowdowns += 1;
+    } else if after > before {
+        counts.raises += 1;
+    }
+}
+
 pub fn paced_rates(tick_hz: u16) -> &'static [u16] {
     let fastest = FRAME_RATES
         .iter()
@@ -1980,6 +1988,16 @@ mod tests {
         assert_eq!(ordering(&server).pace.rate, 30);
         server.advance_clock(107_000, unix(107_000));
         assert_eq!(ordering(&server).pace.rate, 45);
+        pull(&mut server, &mut first, 1, 107_000);
+        assert_eq!(
+            server.take_ordering_counts(),
+            crate::OrderingCounts {
+                pull_replies: 1,
+                slowdowns: 2,
+                raises: 2,
+            }
+        );
+        assert_eq!(server.take_ordering_counts(), Default::default());
     }
 
     #[test]
@@ -4348,7 +4366,9 @@ impl RelayServer {
                 && let Some(ordering) = room.ordering.as_mut()
             {
                 let before = ordering.memory();
+                let rate = ordering.pace.rate;
                 ordering.advance(now_ms, room.federation.as_mut());
+                count_rate_change(&mut self.ordering_counts, rate, ordering.pace.rate);
                 total = total
                     .saturating_sub(before)
                     .saturating_add(ordering.memory());
@@ -4424,7 +4444,9 @@ impl RelayServer {
             && let Some(ordering) = room.ordering.as_mut()
         {
             let before = ordering.memory();
+            let rate = ordering.pace.rate;
             ordering.advance(now_ms, room.federation.as_mut());
+            count_rate_change(&mut self.ordering_counts, rate, ordering.pace.rate);
             if ordering.memory() > before {
                 self.reserve_ordering(0);
             }
@@ -4630,7 +4652,11 @@ impl RelayServer {
                 .get_mut(&message.ticket.room)
                 .ok_or(RelayError::Unregistered)?;
             if let Some(ordering) = room.ordering.as_mut() {
-                ordering.request(message.ticket, payload, now_ms)?
+                let replies = ordering.request(message.ticket, payload, now_ms)?;
+                if payload.first() == Some(&PULL_REQUEST) {
+                    self.ordering_counts.pull_replies += 1;
+                }
+                replies
             } else {
                 error(OrderError::NotConfigured, 0)
             }

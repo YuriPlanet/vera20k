@@ -84,7 +84,9 @@ match/player/source/generation, then replays its original cursor. Ticket expiry
 and endpoint loss never reset the clock or batch counter, and write a departure
 only once the silence limits below pass.
 
-The service journal reports aggregate traffic and rejection counts once a minute.
+The service journal reports aggregate traffic and rejection counts once a minute,
+with the ordering push datagrams and bytes, the Pull requests answered, and the
+rate markers that slowed or raised a match in that minute.
 These counts contain no player, endpoint, room identity, ticket or packet contents.
 Use them to distinguish rate limits, expired grants and authentication failures
 from packet loss and client timeouts.
