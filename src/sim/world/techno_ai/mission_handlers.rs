@@ -1989,9 +1989,9 @@ fn evaluate_foot_rescue(
 /// Where Area Guard's Retaliate_And_Scan looks for an object holding no
 /// target: `post`'s coordinate, once the object can acquire a target and its
 /// targeting timer has run out; `None` when the handler does not scan.
-/// `0x004D6EF5..0x004D6F06` uses archive+48. A queued mission can leave no
-/// archive; that invalid native pointer is outside this ordinary lane. Every
-/// term is a pure read, so their order is not observable.
+/// `0x004D6EF5..0x004D6F06` uses archive+48; a guard without a post never
+/// reaches the scan (`0x004D6E6E`), so it answers `None`. Every term is a
+/// pure read, so their order is not observable.
 fn area_guard_scan_point(
     sim: &Simulation,
     id: u64,
@@ -2200,12 +2200,13 @@ pub(super) fn evaluate_foot_area_guard(
     {
         return MissionHandlerEvaluation::cadence(1);
     }
-    if sim
-        .substrate
-        .entities
-        .get(id)
-        .is_some_and(|entity| entity.attack_target.target().is_none())
-    {
+    // `0x004D6ED1..0x004D6F25`: the idle action belongs to the post branch's
+    // no-Target arm (a Target the scan found returned above). A guard that
+    // approached skips it even when Approach dropped its Target
+    // (`0x004D6F2D` jumps to `0x004D6F38`), and so does a guard without a
+    // post (a queued mission kept the head from archiving one,
+    // `0x004D6D78..0x004D6D87`).
+    if archive.is_some() && needs_target {
         let _ = sim.infantry_idle_action(id, rules, ctx.overlay_registry, ctx.effects);
     }
     //4D6F38..4D701F re-reads TarCom after idle and queues before the cadence

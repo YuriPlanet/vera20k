@@ -37,9 +37,9 @@
 //! 5. The best is kept only on a **strictly greater** score (init −1), so ties
 //!    go to whatever the walk reached first.
 //! 6. After each ring, `if (best && (r == radius/4 || r == radius/2)) return`
-//!    (`0x006F94F1`). A close-enough target ends the scan early — this is why a
-//!    defence shoots the attacker at its feet rather than the juicier one three
-//!    cells further out.
+//!    (`0x006F9AE2..0x006F9B0A`). A close-enough target ends the scan early —
+//!    this is why a defence shoots the attacker at its feet rather than the
+//!    juicier one three cells further out.
 //!
 //! ## The score
 //!
@@ -569,7 +569,7 @@ fn finish_score(score: i32) -> Option<i32> {
 }
 
 /// The ring index at which the native walk returns early once it holds a
-/// candidate (`0x006F94D0..0x006F94F1`).
+/// candidate (`0x006F9AE2..0x006F9B0A`; both divides truncate toward zero).
 fn is_early_return_ring(ring: i32, radius: i32) -> bool {
     ring == radius / 4 || ring == radius / 2
 }
@@ -1797,7 +1797,7 @@ fn scanner_mask<'r>(
 /// overwhelmingly nearest-first where a ring scanner barely weighs distance at
 /// all. Carried here by [`WalkArgs::reference`].
 ///
-/// There is no band early return on this path (`0x006F94D0` sits below the
+/// There is no band early return on this path (`0x006F9AE2` sits below the
 /// jump target), so each walk sees every object once. A landed aircraft is
 /// Ground-layer and can be scored by both walks, at the two scales.
 ///
