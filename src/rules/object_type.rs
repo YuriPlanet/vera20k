@@ -1392,7 +1392,9 @@ pub struct ObjectType {
     pub fearless: bool,
     /// `Fraidycat=yes` on InfantryType. First fear hit immediately maxes fear.
     pub fraidycat: bool,
-    /// `Crawls=yes` from art.ini. Controls the prone movement speed branch.
+    /// `Crawls=` from ARTMD (InfantryTypeClass `+0xEBD`): true from the
+    /// constructor (`0x00523788`), read from the image section with that
+    /// default (`0x005246A1..0x005246D0`). Gates Down and the prone speed.
     pub crawls: bool,
     /// Phobos `InfantryTypeExt::ProneSpeed`: the prone movement multiplier for
     /// this type. Unset defers to the `[General]` value `Crawls=` selects.
@@ -4437,7 +4439,10 @@ impl ObjectType {
             slaved: section.read_bool("Slaved", false),
             fearless: section.read_bool("Fearless", false),
             fraidycat: section.read_bool("Fraidycat", false),
-            crawls: false,
+            // InfantryTypeClass's constructor sets Crawls (`+0xEBD`) to true
+            // (`0x00523788`); only the art read changes it. Other types have
+            // no such field.
+            crawls: category == ObjectCategory::Infantry,
             fire_up_frame: 0,
             fire_prone_frame: 0,
             secondary_fire_frame: 0,

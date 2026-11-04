@@ -131,7 +131,8 @@ pub struct ArtEntry {
     /// Infantry animation sequence definition name (e.g., "ConSequence").
     /// Points to a `[ConSequence]`-style section in art.ini with frame layouts.
     pub sequence: Option<String>,
-    /// Infantry `Crawls=` art flag. Merged into ObjectType for sim stance speed.
+    /// Infantry `Crawls=` art flag, default true (`0x005246A1..0x005246D0`).
+    /// Merged into infantry ObjectTypes only.
     pub crawls: bool,
     /// `SecondSpawnOffset=` (`TechnoTypeClass+0xDB0`): the same art read's
     /// coordinate read of the image section (`0x0071602E..0x00716058`,
@@ -1120,7 +1121,9 @@ impl ArtRegistry {
                 sequence_frames("Undeploy"),
                 sequence_frames("DeployedFire"),
             );
-            let crawls = section.read_bool("Crawls", false);
+            // InfantryTypeClass::ReadINI reads it with the type's current
+            // value, the constructor's true (`0x005246A1..0x005246D0`).
+            let crawls = section.read_bool("Crawls", true);
             let second_spawn_offset = Flh::from(section.read_coord3("SecondSpawnOffset", [0; 3]));
             // ReadMinMax (`0x00461305`, `0x00461332`); `None` marks an absent key.
             let present_pair = |key: &str| {

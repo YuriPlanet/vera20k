@@ -14352,6 +14352,25 @@ Projectile=Invisible
         assert_eq!(building.foundation, "2x2");
     }
 
+    /// An art section without `Crawls=` keeps the constructor's true: the
+    /// read's default is the type's current value (`0x005246A1..0x005246D0`).
+    #[test]
+    fn an_art_section_without_crawls_keeps_the_constructor_value() {
+        let mut layers = RulesLayerStack::new(IniFile::from_str(&make_test_rules()));
+        layers.push(
+            crate::rules::native_processing::RulesLayerKind::Scenario,
+            IniFile::from_str("[E1]\nName=GI\nImage=GI\nStrength=125\nArmor=flak\nSpeed=4\n"),
+        );
+        let art_ini = IniFile::from_str("[GI]\nFireUp=2\n");
+        let mut rules =
+            RuleSet::from_processed_rules(&layers.process_with_fixed_art(&art_ini).unwrap())
+                .expect("rules parse");
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
+        let infantry = rules.object("E1").expect("E1");
+        assert!(infantry.crawls);
+        assert_eq!(infantry.fire_up_frame, 2, "the GI art section was read");
+    }
+
     #[test]
     fn wall_overlay_first_match_order_survives_registry_move() {
         // F04: the overlay registry moved from map to rules. Pin the two
