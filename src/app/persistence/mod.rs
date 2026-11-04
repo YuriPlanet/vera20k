@@ -7,6 +7,7 @@
 
 pub(crate) mod commands;
 pub(crate) mod intro_play;
+pub(crate) mod ladder_keys;
 pub(crate) mod options;
 pub(crate) mod options_profile;
 #[cfg(feature = "phobos")]

@@ -128,7 +128,7 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
         "Match end ready for local player '{owner}': {}",
         crate::app::match_runtime::scenario_exit::outcome_title(outcome)
     );
-    crate::app::App::record_external_match_result(
+    crate::app::App::record_match_result(
         state,
         match outcome {
             crate::sim::house_state::HouseOutcomeKind::Victory => {
@@ -582,9 +582,10 @@ fn build_score_screen_model(
     let observing = local_owner.is_some_and(|owner| sim.session().is_observer_house(owner));
     let theme = (!observing)
         .then(|| {
-            state
-                .process_assets
-                .side_score_theme(side, crate::rules::ruleset::ScoreTheme::Multiplayer { defeated })
+            state.process_assets.side_score_theme(
+                side,
+                crate::rules::ruleset::ScoreTheme::Multiplayer { defeated },
+            )
         })
         .flatten()
         .map(str::to_owned);
