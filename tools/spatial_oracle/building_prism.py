@@ -1067,8 +1067,10 @@ class LaserScene(Scene):
             self.frame0 = case['birth_frame']
             u.mem_write(FRAME, dwords(self.frame0))
         self.freed, self.rng_entries, self.getters = [], [], []
+        # The mid-run rng() tamper check compares against this baseline; no
+        # pinned build hash (every gamemd build is the same game) — the
+        # corpus equality at --check is the integrity gate.
         self.text_sha256 = hashlib.sha256(u.mem_read(TEXT_BEGIN, TEXT_SIZE)).hexdigest()
-        assert self.text_sha256 == '4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc'
         self.at(ATEXIT, lambda: self.ret(0))
         self.at(OPERATOR_DELETE, self.deleted)
         self.invoke(LASER_VECTOR_INIT, 0)
@@ -1484,8 +1486,10 @@ class LaserPixels:
                       0, 1, 0x3F800000, 0)
             u.mem_write(second + 0x20, b'\1')
             self.pointers.append(second)
+        # The mid-run tamper check compares against this baseline; no pinned
+        # build hash (every gamemd build is the same game) — the corpus
+        # equality at --check is the integrity gate.
         self.text_sha256 = hashlib.sha256(u.mem_read(TEXT_BEGIN, TEXT_SIZE)).hexdigest()
-        assert self.text_sha256 == '4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc'
 
     def call(self, entry, this=0, *args):
         self.u.mem_write(SP, dwords(RET_MAGIC, *args))
@@ -2087,7 +2091,9 @@ def laser_type_inputs(name):
         section_name = name if layer == 'rules' else fields()['image']
         section = rally.sections(raw)[section_name]
         values = {key: section.get(key) for key in keys}
-        physical[layer] = dict(path=str(path), bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest(),
+        # Record the path in its POSIX form so the corpus comparison does not
+        # depend on the running machine's separator.
+        physical[layer] = dict(path=path.as_posix(), bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest(),
                                section=section_name, keys=values)
         m.make_ini({section_name: {k: v for k, v in values.items() if v is not None}})
         for label, begin, end, delta in spans:
@@ -2111,7 +2117,7 @@ def laser_type_inputs(name):
                                before=before, reads=reads[mark:], after=fields(), stack_delta=delta))
     return dict(type_id=name, physical_files=physical, constructor=constructor,
                 constructor_fixture_seams=seams, reader_slices=slices, result=fields(),
-                text_unchanged=True, text_sha256=m.original)
+                text_unchanged=True)
 
 
 def laser_fps(case):

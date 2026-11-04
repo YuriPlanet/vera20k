@@ -75,6 +75,6 @@
     "detail_normal_startup": "0x006850F5",
     "radar_movie_minimum": "0x00657974"
   },
-  "payload_sha256": "80d91e3e3439d5918032abf3e38227ae559e6443f31a4b03d43282b6c4bbaab6",
-  "replay_command": "python -m tools.spatial_oracle.building_prism"
+  "replay_command": "python -m tools.spatial_oracle.building_prism",
+  "payload_sha256": "a5558f633d4a3db185fabe9bea1e82d76128827e511bea018832c41113618b0d"
 }
