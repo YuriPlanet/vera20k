@@ -835,7 +835,9 @@ pub enum TriggerTraceEvent {
     /// A reinforcement member Place_Reinforcement_Members (0x65E010) could
     /// not place: every direction refused, or the nearby search found no
     /// Cell (`cell` (0,0)). Its residual (the next member left in limbo
-    /// natively) needs one of these followed by another member.
+    /// natively) needs a refused placement followed by another member; with
+    /// no Cell from the start, native deletes every member (0x65E601,
+    /// 0x65E618) and leaves none.
     PlacementRefused {
         seq: u32,
         binary_frame: u32,
