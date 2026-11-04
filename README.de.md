@@ -29,6 +29,8 @@ das Projekt entwickelt.
 3. Bekannte RTS-Funktionen integrieren und einige, die es noch nie gab.
 4. Integrierter Mehrspieler-Client
 
+Die [Roadmap](https://github.com/orgs/YuriPlanet/projects/1) zeigt die aktuellen Prioritäten und zukünftigen Pläne.
+
 ## Aktueller Stand
 
 **In aktiver Entwicklung.**

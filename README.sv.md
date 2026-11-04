@@ -28,6 +28,8 @@ ska gå.
 3. Integrera kända RTS-funktioner och några som aldrig setts förut.
 4. Integrerad flerspelarklient
 
+Se [färdplanen](https://github.com/orgs/YuriPlanet/projects/1) för aktuella prioriteringar och framtida planer.
+
 ## Aktuellt läge
 
 **Under aktiv utveckling.**
