@@ -6,7 +6,9 @@
 
 pub(crate) mod cooperative;
 mod persistence;
+mod saved_setups;
 
+use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -19,8 +21,8 @@ use crate::skirmish_launch::{
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
 use crate::ui::skirmish_shell::{
-    PlayerNameEditState, SkirmishAiRowType, SkirmishShellState, SkirmishTrackbarId,
-    game_speed_from_visual_position, game_speed_visual_position,
+    PlayerNameEditState, SkirmishAiRowType, SkirmishSavedSetup, SkirmishShellState,
+    SkirmishTrackbarId, game_speed_from_visual_position, game_speed_visual_position,
 };
 use cooperative::{
     CooperativeCountryRole, CooperativeCountryRosterEntry, CooperativeError,
@@ -204,6 +206,9 @@ pub(crate) struct MultiplayerShellRuntime {
     /// working copy, but closing it does not reconstruct this global record.
     random_map_options: crate::map::rmg::RmgOptions,
     ini_path: Option<PathBuf>,
+    /// VERA's per-map Skirmish setups, by `SkirmishSetups.ini` section; read
+    /// once at startup like the profile.
+    saved_setups: HashMap<String, SkirmishSavedSetup>,
     cooperative_registry: CooperativeRegistry,
     cooperative_progress: CooperativeProgressState,
     cooperative_country_roster: Vec<CooperativeCountryRosterEntry>,
@@ -904,6 +909,10 @@ impl MultiplayerShellRuntime {
             lan_observer_mode,
             settings_ini,
         ) = load_persistence(ini_path.as_deref(), defaults);
+        let saved_setups = saved_setups_path(ini_path.as_deref())
+            .and_then(|path| crate::util::file_system::read(path).ok())
+            .map(|bytes| saved_setups::read_setups(&bytes))
+            .unwrap_or_default();
 
         let mut runtime = Self {
             snapshot,
@@ -916,6 +925,7 @@ impl MultiplayerShellRuntime {
             scenario_rng,
             random_map_options: crate::map::rmg::RmgOptions::default(),
             ini_path,
+            saved_setups,
             cooperative_registry,
             cooperative_progress,
             cooperative_country_roster,
@@ -1373,6 +1383,35 @@ impl MultiplayerShellRuntime {
             .map(|dir| dir.join(cooperative::COOP_SAVE_INI))
     }
 
+    /// The setup Save Setup last kept for the shell's selected map.
+    pub(crate) fn saved_setup(
+        &self,
+        state: &SkirmishShellState,
+        maps: &[MapMenuEntry],
+    ) -> Option<&SkirmishSavedSetup> {
+        let map = maps.get(state.selected_map_idx)?;
+        self.saved_setups
+            .get(&saved_setups::section_name(&map.file_name))
+    }
+
+    /// Save Setup: keep the page as the selected map's setup and write its
+    /// section of `SkirmishSetups.ini`. A failed write keeps it for this run.
+    pub(crate) fn save_setup(&mut self, state: &SkirmishShellState, maps: &[MapMenuEntry]) {
+        let Some(map) = maps.get(state.selected_map_idx) else {
+            return;
+        };
+        let setup = SkirmishSavedSetup::capture(state, maps);
+        let section = saved_setups::section_name(&map.file_name);
+        if let Some(path) = saved_setups_path(self.ini_path.as_deref()) {
+            let existing = crate::util::file_system::read(&path).unwrap_or_default();
+            let updated = saved_setups::write_setup(&existing, &section, &setup);
+            if let Err(err) = crate::util::file_system::write(&path, updated) {
+                log::warn!("Could not write {}: {err}", path.display());
+            }
+        }
+        self.saved_setups.insert(section, setup);
+    }
+
     /// The saved-campaign readers' file (`0x0049D120`, `0x0049D390`,
     /// `0x0049C0D0`): `None` when it cannot be read, as `ReadCCFile`
     /// failing makes each of them return false.
@@ -1816,6 +1855,11 @@ fn persisted_row_type(value: SkirmishAiRowType) -> i32 {
     }
 }
 
+/// `SkirmishSetups.ini` beside the profile, like coopsave.ini.
+fn saved_setups_path(ini_path: Option<&Path>) -> Option<PathBuf> {
+    Some(ini_path?.parent()?.join(saved_setups::FILE_NAME))
+}
+
 /// `0x0069B760(value, 0)` / `0x0069B7E0(value, 0)`'s item data and Ex
 /// ([`MultiplayerShellRuntime::set_side_and_color`]).
 fn persona_pick(value: i32) -> (i32, i32) {
@@ -2037,6 +2081,7 @@ mod tests {
             scenario_rng,
             random_map_options: crate::map::rmg::RmgOptions::default(),
             ini_path: None,
+            saved_setups: HashMap::new(),
             cooperative_registry,
             cooperative_progress,
             cooperative_country_roster: controlled_ten_country_roster(),
@@ -2066,6 +2111,7 @@ mod tests {
             scenario_rng: SimRng::new(u64::from(seed)),
             random_map_options: crate::map::rmg::RmgOptions::default(),
             ini_path: None,
+            saved_setups: HashMap::new(),
             cooperative_registry: CooperativeRegistry::default(),
             cooperative_progress: CooperativeProgressState::default(),
             cooperative_country_roster: controlled_ten_country_roster(),

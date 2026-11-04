@@ -8,6 +8,7 @@ mod opponent_scroll;
 mod player_name;
 mod random_map_setup;
 mod saved_seed_browser;
+mod saved_setup;
 mod trackbars;
 
 #[cfg(test)]
@@ -60,6 +61,7 @@ pub use saved_seed_browser::{
     SAVED_SEED_DESCRIPTION_MAX_UNITS, SavedSeedBrowserRow, SavedSeedBrowserState,
     SavedSeedDescriptionEdit, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
 };
+pub use saved_setup::{SkirmishSavedSetup, SkirmishSetupComputer, SkirmishSetupSeat};
 pub use trackbars::{
     SkirmishTrackbarBounds, game_speed_from_visual_position, game_speed_visual_position,
     handle_option_mouse_down, handle_option_mouse_move, handle_option_mouse_up,
@@ -79,6 +81,9 @@ use super::layout::{ChooseMapModalButton, ColorComboId, SkirmishCheckboxId, Skir
 pub enum OwnerDrawButton {
     StartGame0x617,
     ChooseMap0x5aa,
+    /// VERA's Save Setup and Load Setup ([`SkirmishSavedSetup`]).
+    SaveSetup,
+    LoadSetup,
     Back0x5c0,
 }
 
@@ -88,6 +93,8 @@ pub enum SkirmishShellAction {
     StartGame,
     BackOrExit,
     ChooseMap,
+    SaveSetup,
+    LoadSetup,
     SelectColor(ColorComboId),
     SelectMap(usize),
 }

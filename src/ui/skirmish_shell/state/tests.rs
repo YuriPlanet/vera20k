@@ -2419,3 +2419,102 @@ fn ares_country_catalog_sorts_hides_and_exposes_flag_and_status() {
         Some("STT:PlayerSideRandom")
     );
 }
+
+/// VERA's Load Setup puts back what Save Setup kept, clearing the page's own
+/// claims first; a saved choice the page does not offer leaves Random.
+#[test]
+fn saved_setup_loads_back_through_the_combo_rules() {
+    use SkirmishComboId as Id;
+    use SkirmishComboItem as Item;
+    let maps = [test_map_entry_with_starts("four.map", 4)];
+    let country = |index| {
+        Item::Country(SkirmishCountryChoice::Country(
+            LaunchCountry::from_country_index(index),
+        ))
+    };
+    let page = || {
+        let mut shell = controlled_country_shell();
+        initialize_rows_for_selected_map(&mut shell, &maps);
+        shell
+    };
+    let mut shell = page();
+    for (id, item) in [
+        (Id::Side(0), country(6)),
+        (Id::Color(0), Item::Color(2)),
+        (Id::Start(0), Item::Start(LaunchStartPosition::Position(3))),
+        (Id::Team(0), Item::Team(1)),
+        (Id::AiType(0), Item::AiType(SkirmishAiRowType::Hard)),
+        (Id::Side(1), country(2)),
+        (Id::Color(1), Item::Color(5)),
+        (Id::Start(1), Item::Start(LaunchStartPosition::Position(0))),
+        (Id::Team(1), Item::Team(0)),
+        (Id::AiType(1), Item::AiType(SkirmishAiRowType::Normal)),
+        (Id::Side(2), country(8)),
+        (Id::Team(2), Item::Team(1)),
+    ] {
+        apply_combo_selection_for_test(&mut shell, id, item);
+    }
+    shell.game_speed = 2;
+    shell.starting_credits = 7500;
+    shell.short_game = false;
+    shell.crates = false;
+    let saved = SkirmishSavedSetup::capture(&shell, &maps);
+    assert_eq!(saved.computers.len(), 3, "a four-start map shows three");
+
+    // The page to load on gives the player's saved colour and start to a
+    // third computer row.
+    let mut loaded = page();
+    for (id, item) in [
+        (Id::AiType(2), Item::AiType(SkirmishAiRowType::Easy)),
+        (Id::Color(3), Item::Color(2)),
+        (Id::Start(3), Item::Start(LaunchStartPosition::Position(3))),
+    ] {
+        apply_combo_selection_for_test(&mut loaded, id, item);
+    }
+    loaded.game_speed = 5;
+    saved.apply(&mut loaded, &maps);
+    assert_eq!(SkirmishSavedSetup::capture(&loaded, &maps), saved);
+
+    // Row 2's list lacks the colour row 1 took and any start past the map's
+    // four.
+    let mut clash = saved.clone();
+    clash.computers[1].seat.color = Some(5);
+    clash.computers[1].seat.start = LaunchStartPosition::Position(4);
+    clash.apply(&mut loaded, &maps);
+    let shown = SkirmishSavedSetup::capture(&loaded, &maps);
+    assert_eq!(shown.computers[0].seat.color, Some(5));
+    assert_eq!(shown.computers[1].seat.color, None);
+    assert_eq!(shown.computers[1].seat.start, LaunchStartPosition::Auto);
+}
+
+/// Save and Load reach every computer row the map seats, not only the rows
+/// VERA's scrollbar shows.
+#[test]
+fn saved_setup_keeps_computer_rows_scrolled_out_of_view() {
+    let maps = [test_map_entry_with_starts("thirty.mmx", 30)];
+    let page = || {
+        let mut shell = controlled_country_shell();
+        initialize_rows_for_selected_map(&mut shell, &maps);
+        shell
+    };
+    // Player thirty takes the last start while the page shows rows 1-7.
+    let mut shell = page();
+    apply_combo_selection_for_test(
+        &mut shell,
+        SkirmishComboId::AiType(28),
+        SkirmishComboItem::AiType(SkirmishAiRowType::Hard),
+    );
+    apply_combo_selection_for_test(
+        &mut shell,
+        SkirmishComboId::Start(29),
+        SkirmishComboItem::Start(LaunchStartPosition::Position(29)),
+    );
+    assert!(!player_row_visible(&shell, &maps, 29));
+    let saved = SkirmishSavedSetup::capture(&shell, &maps);
+    assert_eq!(saved.computers.len(), 29);
+
+    let mut loaded = page();
+    saved.apply(&mut loaded, &maps);
+    assert_eq!(loaded.opponents[28].row_type, SkirmishAiRowType::Hard);
+    assert_eq!(SkirmishSavedSetup::capture(&loaded, &maps), saved);
+}

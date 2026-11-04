@@ -171,6 +171,7 @@ pub(super) fn push_button_label_draw(
     label: &str,
     rect: RectPx,
     pressed: bool,
+    disabled: bool,
     depth: f32,
     scale: ShellScale,
 ) {
@@ -180,7 +181,7 @@ pub(super) fn push_button_label_draw(
         state,
         label,
         text_rect,
-        button_label_color(),
+        button_label_color_for_disabled(disabled),
         ShellAlign::H_CENTER | ShellAlign::V_CENTER,
         depth,
         scale.factor(),
@@ -846,23 +847,41 @@ fn push_right_panel_text_draws(
 ) {
     let start = localized_label(state, "GUI:StartGame", "Start Game");
     let choose = localized_label(state, "GUI:ChooseMap", "Choose Map");
+    let save = localized_label(state, "VERA:SaveSetup", "Save Setup");
+    let load = localized_label(state, "VERA:LoadSetup", "Load Setup");
     let back = localized_label(state, "GUI:Back", "Back");
+    let load_disabled = !crate::app::App::skirmish_setup_saved(state);
 
-    for (label, rect, button) in [
+    for (label, rect, button, disabled) in [
         (
             start.as_str(),
             layout.start_button,
             OwnerDrawButton::StartGame0x617,
+            false,
         ),
         (
             choose.as_str(),
             layout.choose_map_button,
             OwnerDrawButton::ChooseMap0x5aa,
+            false,
+        ),
+        (
+            save.as_str(),
+            layout.save_setup_button,
+            OwnerDrawButton::SaveSetup,
+            false,
+        ),
+        (
+            load.as_str(),
+            layout.load_setup_button,
+            OwnerDrawButton::LoadSetup,
+            load_disabled,
         ),
         (
             back.as_str(),
             layout.back_button,
             OwnerDrawButton::Back0x5c0,
+            false,
         ),
     ] {
         push_button_label_draw(
@@ -871,6 +890,7 @@ fn push_right_panel_text_draws(
             label,
             rect,
             shell.pressed_owner_draw_button == Some(button),
+            disabled,
             0.00041,
             layout.scale,
         );

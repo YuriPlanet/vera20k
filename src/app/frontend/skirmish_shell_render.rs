@@ -234,6 +234,7 @@ fn build_skirmish_shell_instances(
     maps: &[MapMenuEntry],
     wave: Option<&ShellFrameWave>,
     leaving: bool,
+    load_setup_enabled: bool,
 ) -> Vec<SpriteInstance> {
     let mut instances = Vec::new();
 
@@ -395,6 +396,12 @@ fn build_skirmish_shell_instances(
                     layout.choose_map_button,
                     OwnerDrawButton::ChooseMap0x5aa,
                     false,
+                ),
+                (layout.save_setup_button, OwnerDrawButton::SaveSetup, false),
+                (
+                    layout.load_setup_button,
+                    OwnerDrawButton::LoadSetup,
+                    !load_setup_enabled,
                 ),
                 (layout.back_button, OwnerDrawButton::Back0x5c0, false),
             ] {
@@ -726,6 +733,7 @@ fn render_skirmish_shell_with_atlas(
             state.frontend.scenario_catalog.shell_maps(),
             wave.as_ref(),
             leaving,
+            crate::app::App::skirmish_setup_saved(state),
         )
     };
     if preview_instance.is_some() {
