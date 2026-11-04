@@ -674,7 +674,7 @@ pub fn build_skirmish_shell_chrome_atlas(
         );
     }
 
-    for name in ["STARTBUT.SHP", "mmpb.shp"] {
+    for name in [START_MARKER_SHP, "mmpb.shp"] {
         push_optional(
             &mut rendered,
             render_shp_entry(assets, name, &shell_palette, 0),
@@ -918,6 +918,15 @@ fn setup_background_pair(
 
 fn load_shell_palette(assets: &AssetManager) -> Option<Palette> {
     load_named_palette(assets, "SHELL.PAL")
+}
+
+/// The skirmish preview's start marker, drawn by `DrawStartPositions 0x00640710`.
+const START_MARKER_SHP: &str = "STARTBUT.SHP";
+
+/// The start marker piece the atlas packs (frame 0 on its canvas in
+/// SHELL.PAL), for pictures of a map drawn outside the shell.
+pub(crate) fn start_marker_art(assets: &AssetManager) -> Option<ChromePiece> {
+    render_shp_entry(assets, START_MARKER_SHP, &load_shell_palette(assets)?, 0)
 }
 
 /// Shell palettes come from ConvertClass__BuildFromPaletteFile `0x0072ADE0`,
