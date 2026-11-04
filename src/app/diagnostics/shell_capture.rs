@@ -139,7 +139,7 @@ const OPTIONS_0XD5_HOVER_CHECKPOINTS: [(&str, Category, (i32, i32)); 3] = [
     (
         "options-0xd5-hover-difficulty",
         Category::Gameplay,
-        (224, 156),
+        (224, 157),
     ),
     (
         "options-0xd5-hover-tooltips",

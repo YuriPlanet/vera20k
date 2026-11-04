@@ -136,19 +136,21 @@ pub(crate) fn retail_column_fits(width: i32, height: i32) -> bool {
 // place (`GUI:DisplayOptions` at 20,18), then one column of rows from the
 // Visual Details caption's place (89,38). Boxes keep the UI Options boxes' x
 // and 15-DLU pitch. A slider's track sits 15 DLUs under its caption, as
-// Visual Details' does, and the next row starts 8 DLUs under the track. A
-// list's face hangs 16 px under its caption's top, as VERA's lists did on
-// main's page, and the next row starts 4 px under the face.
+// Visual Details' does, and the next row starts 9 DLUs under the track: at
+// 640x480's 0.8 fit, 8 puts a stacked slider's edge where it maps back a
+// pixel off, and that slider loses its frame art. A list's face hangs 16 px
+// under its caption's top, as VERA's lists did on main's page, and the next
+// row starts 4 px under the face.
 const HEADING: (i32, i32) = (20, 18);
 const ROW_X: i32 = 89;
 const BOX_X: i32 = 93;
 const FIRST_ROW: i32 = 38;
 const BOX_PITCH: i32 = 15;
-const SLIDER_PITCH: i32 = 36;
+const SLIDER_PITCH: i32 = 37;
 const LIST_PITCH: i32 = 27;
-/// A box's width. Retail's are 130 DLUs, but VERA's longest captions ("Offline
-/// Internet Test Service") need about 205 px beside the 26-px icon column, and
-/// a caption that wraps loses its second line to the 10-DLU height.
+/// A box's width. Retail's are 130 DLUs, where VERA's longer captions, such as
+/// "Custom End Game Banner", wrap, and a caption that wraps loses its second
+/// line to the 10-DLU height.
 const BOX_W: i32 = 160;
 
 /// A caption the page paints, by what it names.

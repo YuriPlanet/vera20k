@@ -1291,7 +1291,7 @@ impl OptionsDialogState {
 /// Picking a page swaps the controls in place; one set of values covers them
 /// all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Category {
+pub enum Category {
     Display,
     Gameplay,
     Interface,
