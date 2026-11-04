@@ -16,6 +16,12 @@ de ursprungliga spelfilerna, så du behöver en egen kopia av Red Alert 2: Yuri'
 VERA20K görs av spelare, för spelare, och det är spelarna som har sista ordet om vart projektet
 ska gå.
 
+**Vi behöver fler underhållare.** Om du vill hjälpa till att granska PR:er, stötta nya
+medverkande eller ta hand om en del av motorn, säg till på [Discord](https://discord.gg/kmjRUn5m5F) eller i
+QQ-gruppen (1097193563).
+
+**Var inte rädd för att skicka in en PR.** Den behöver inte vara perfekt; vi hjälper till med resten.
+
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K: inställningar för skirmish och bild från spelet" width="100%">
 
 ## Projektets mål
