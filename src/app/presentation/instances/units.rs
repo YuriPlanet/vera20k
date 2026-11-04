@@ -328,40 +328,6 @@ fn unit_render_slope_state(
     ))
 }
 
-/// The slope a Unit's ground shadow lies on. Hover's Shadow_Matrix
-/// (`0x005142A0`) keys a rocking draw -1 and returns the base
-/// `LocomotionClass::Shadow_Matrix @ 0x0055A7D0`, its cell's slope and its
-/// facing, whatever its body draws: a powered Hover's shadow stays on the
-/// ramp its level body crosses. Every other body's shadow keeps its body
-/// slope here.
-///
-/// RESIDUAL: Drive's and Ship's Shadow_Matrix (`0x004B0410`, `0x0069FB20`)
-/// key -1 while their slope changes or they rock, then also end in
-/// `0x0055A7D0`, so natively their shadow lies on the slope of the cell under
-/// their Location as well. Trigger: a Drive or Ship body whose slope state
-/// (the transition's `to_slope` mid-transition) differs from that cell's
-/// slope. Effect: its shadow lies on the other slope. Frequency: untraced, at
-/// most the frames around a slope change. Risk: visual only.
-fn unit_shadow_slope(
-    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
-    entity: &crate::sim::game_entity::GameEntity,
-    body: UnitRenderSlopeState,
-) -> u8 {
-    if entity.locomotor.as_ref().is_some_and(|locomotor| {
-        locomotor.active_kind() == crate::rules::locomotor_type::LocomotorKind::Hover
-    }) {
-        // Base Shadow_Matrix 0x0055A801..0x0055A80C reads the current
-        // Map cell, including replacements made by cliff collapse.
-        terrain_slope_for_render(
-            cells.map(crate::map::resolved_terrain::NativeCellQuery::terrain),
-            entity.position.rx(),
-            entity.position.ry(),
-        )
-    } else {
-        stable_slope_for_key(body)
-    }
-}
-
 fn locomotor_render_slope_state(
     entity: &crate::sim::game_entity::GameEntity,
     display_binary_frame: u32,
@@ -685,7 +651,20 @@ pub(crate) fn unit_visitor<'a>(
                         render_pose.angles,
                     )
                 });
-            let shadow_slope = unit_shadow_slope(cells.as_ref(), entity, slope_state);
+            // The flat-ground shadow lies on its body's slope. A lifted body's
+            // shadow (Jumpjet, Hover) lies on its cell's slope instead, through
+            // [`emit_lifted_unit_shadow`].
+            //
+            // RESIDUAL: Drive's and Ship's Shadow_Matrix (`0x004B0410`,
+            // `0x0069FB20`) key -1 while their slope changes or they rock, then
+            // end in the base `LocomotionClass::Shadow_Matrix @ 0x0055A7D0`, so
+            // natively their shadow lies on the slope of the cell under their
+            // Location. Trigger: a Drive or Ship body whose slope state (the
+            // transition's `to_slope` mid-transition) differs from that cell's
+            // slope. Effect: its shadow lies on the other slope. Frequency:
+            // untraced, at most the frames around a slope change. Risk: visual
+            // only.
+            let shadow_slope = stable_slope_for_key(slope_state);
             let interp_z = pos.z();
             let draw_state = draw_decision.state;
             let extra_light = state.rules().map_or(0, |rules| {
@@ -1016,7 +995,7 @@ pub(crate) fn unit_visitor<'a>(
                 }
             }
 
-            emit_jumpjet_unit_shadow(
+            emit_lifted_unit_shadow(
                 state,
                 atlas,
                 drawer,
@@ -1814,14 +1793,28 @@ fn unit_shadow_admitted(
 ) -> bool {
     entity.category() == EntityCategory::Unit
         && !entity.sinking.is_active()
-        && (band == EntityDrawBand::Ground || has_jumpjet_unit_shadow(entity))
+        && (band == EntityDrawBand::Ground || has_lifted_unit_shadow(entity))
         && techno_shadow_admitted(entity, no_shadow)
 }
 
-fn has_jumpjet_unit_shadow(entity: &crate::sim::game_entity::GameEntity) -> bool {
+/// Whether a Unit draws its shadow through [`emit_lifted_unit_shadow`], the
+/// port of `UnitClass::DrawVoxelBody`'s shadow suffix (`0x0073C1D2..
+/// 0x0073C5C4`). Native runs that suffix for every Unit: it adds the
+/// locomotor's Shadow_Point (`0x004DB13E..0x004DB153`), which Jumpjet and
+/// Hover inherit from `LocomotionClass::Shadow_Point @ 0x0055A8C0`,
+/// `(0, AdjustForZ(height))`, so a lifted body's shadow lies on the ground
+/// below it, and Hover's Shadow_Matrix (`0x005142A0`) ends in the base
+/// `0x0055A7D0`, the cell's slope and the facing, as the port draws it.
+/// Every other Unit stays on the ground (height 0, offset 0) and keeps the
+/// flat-ground path.
+fn has_lifted_unit_shadow(entity: &crate::sim::game_entity::GameEntity) -> bool {
+    use crate::rules::locomotor_type::LocomotorKind;
     entity.category() == EntityCategory::Unit
         && entity.locomotor.as_ref().is_some_and(|l| {
-            l.active_kind() == crate::rules::locomotor_type::LocomotorKind::Jumpjet
+            matches!(
+                l.active_kind(),
+                LocomotorKind::Jumpjet | LocomotorKind::Hover
+            )
         })
 }
 
@@ -1848,7 +1841,6 @@ fn shadow_lookup_key(mut key: UnitSpriteKey, native_shadow: bool) -> UnitSpriteK
 /// Cloak states suppress this shadow; aircraft and building VXL paths remain
 /// separate. The voxel pipeline reads depth and uses FX_SHADOW alpha darkening;
 /// packed RGB565 half and full native cache lifecycle remain outside this fix.
-/// `shadow_slope` is [`unit_shadow_slope`]'s.
 fn emit_unit_shadow_sprite(
     state: &AppState,
     drawer: VoxelDrawer,
@@ -1869,7 +1861,7 @@ fn emit_unit_shadow_sprite(
     pieces: &mut Vec<ObjectPieceInstance>,
 ) {
     // Original Unit73C1D2 also skips its shadow suffix while sinking +3CD.
-    if !unit_shadow_admitted(entity, no_shadow, band) || has_jumpjet_unit_shadow(entity) {
+    if !unit_shadow_admitted(entity, no_shadow, band) || has_lifted_unit_shadow(entity) {
         return;
     }
     let key = UnitSpriteKey {
@@ -1980,10 +1972,35 @@ fn emit_shadow_stencil(
     push_unit_sprite(source, sprite, pieces);
 }
 
+/// Where [`emit_lifted_unit_shadow`] draws `entity`'s shadow: its live
+/// Location, cell mark and PrimaryFacing through the suffix port, over the
+/// live map cell (base Shadow_Matrix `0x0055A801..0x0055A80C` reads the
+/// current Map cell, including replacements made by cliff collapse).
+fn lifted_unit_shadow_pose(
+    entity: &crate::sim::game_entity::GameEntity,
+    terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
+    binary_frame: u32,
+) -> Option<crate::render::unit_shadow::UnitShadowPose> {
+    let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+    crate::render::unit_shadow::pose(
+        crate::render::unit_shadow::UnitShadowContext {
+            xyz: [
+                xy[0],
+                xy[1],
+                crate::sim::movement::ground_pose::object_world_z_leptons(entity, Some(terrain)),
+            ],
+            on_bridge: entity.on_bridge(),
+            marked: entity.lifecycle.cell_marked(),
+            primary_facing: entity.body_facing_current(binary_frame),
+        },
+        |coord| super::foot_depth::depth_cell(terrain, None, None, coord),
+    )
+}
+
 /// The original Unit suffix follows stable, split-gun and posed bodies alike.
 /// Its composed mask reads those exact pieces; a high-flight stencil is
 /// unmasked, and positive low flight uses the existing frame-local pages.
-fn emit_jumpjet_unit_shadow(
+fn emit_lifted_unit_shadow(
     state: &AppState,
     atlas: &crate::render::unit_atlas::UnitAtlas,
     drawer: VoxelDrawer,
@@ -1995,8 +2012,8 @@ fn emit_jumpjet_unit_shadow(
     band: EntityDrawBand,
     pieces: &mut Vec<ObjectPieceInstance>,
 ) {
-    use crate::render::unit_shadow::{UnitShadowContext, UnitShadowMask};
-    if !has_jumpjet_unit_shadow(entity)
+    use crate::render::unit_shadow::UnitShadowMask;
+    if !has_lifted_unit_shadow(entity)
         || !unit_shadow_admitted(entity, no_shadow, band)
         || pieces.is_empty()
     {
@@ -2009,27 +2026,16 @@ fn emit_jumpjet_unit_shadow(
     let Some(terrain) = view.resolved_terrain() else {
         return;
     };
-    let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
-    let Some(mut pose) = crate::render::unit_shadow::pose(
-        UnitShadowContext {
-            xyz: [
-                xy[0],
-                xy[1],
-                crate::sim::movement::ground_pose::object_world_z_leptons(entity, Some(terrain)),
-            ],
-            on_bridge: entity.on_bridge(),
-            marked: entity.lifecycle.cell_marked(),
-            primary_facing: entity.body_facing_current(view.session().binary_frame()),
-        },
-        |coord| super::foot_depth::depth_cell(terrain, None, None, coord),
-    ) else {
+    let Some(mut pose) = lifted_unit_shadow_pose(entity, terrain, view.session().binary_frame())
+    else {
         return;
     };
     pose.anchor[1] -= f32::from(entity.ion_blast_lift_pixels());
     let key = pose.key(type_id);
     // `0x0073C21E..0x0073C287`, `0x0073C43F..0x0073C472`: a BalloonHover or
     // Track/Wheel type keys its grounded mask apart and its low flight -1;
-    // any other type (stock SCHP, SHAD, HIND) keeps its plain key.
+    // any other type (stock SCHP, SHAD, HIND, the Hover types) keeps its
+    // plain key.
     let keyed_by_mask = state
         .rules()
         .and_then(|rules| view.interner().object_type(entity.type_ref(), rules))

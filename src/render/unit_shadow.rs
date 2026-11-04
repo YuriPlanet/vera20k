@@ -1,5 +1,6 @@
-//! Unit73C1D2..73C5C4's Jumpjet shadow suffix. Unlike Aircraft414687,
-//! it keeps the live height and draws after the body. Original execution:
+//! Unit73C1D2..73C5C4's shadow suffix as a lifted Unit (Jumpjet, Hover)
+//! draws it. Unlike Aircraft414687, it keeps the live height and draws after
+//! the body. Original execution:
 //! tools/voxel_oracle/aircraft_shadow.py --unit (unit_shadow.json).
 
 use crate::render::foot_depth::DepthCell;
@@ -67,7 +68,8 @@ pub(crate) fn pose(
     //sets key -1, while a grounded mask has its own high-bit cache entry.
     // Residual: 73C43F..73C457 takes that key change only for BalloonHover
     // (+D6A) or SpeedType Track/Wheel (+67C 1/2); other Jumpjets (stock
-    // SCHP, SHAD, HIND) keep the plain cached key with the mask present.
+    // SCHP, SHAD, HIND) and the Hover types (LCRF, ROBO, SAPC, YHVR) keep the
+    // plain cached key with the mask present.
     // Unported: those types take this path while grounded or in low flight,
     // likely a cached rather than fresh mask (a pixel-level difference).
     let high_flying = crate::sim::movement::air_movement::object_flight_predicate(

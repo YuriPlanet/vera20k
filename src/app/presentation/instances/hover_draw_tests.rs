@@ -57,6 +57,11 @@ fn body_slope(
     )
 }
 
+/// The slope [`lifted_unit_shadow_pose`] lays a Hover's shadow on.
+fn shadow_slope(terrain: &ResolvedTerrainGrid, entity: &GameEntity) -> u8 {
+    lifted_unit_shadow_pose(entity, terrain, 0).unwrap().slope
+}
+
 /// Is_Powered (`0x00516C70`) holds through the powered byte or any height,
 /// and either one draws the level facing matrix (`0x0051407F..0x00514092`).
 /// Only an unpowered Hover resting on its cell takes the ramp
@@ -74,7 +79,7 @@ fn a_powered_hover_draws_level_and_only_an_unpowered_one_takes_its_cell_slope() 
     assert_eq!(height(&resting), 0);
     let slope = body_slope(&terrain, &resting, [0.; 2]);
     assert_eq!(slope, UnitRenderSlopeState::Stable(0), "powered byte");
-    assert_eq!(unit_shadow_slope(Some(&cells), &resting, slope), RAMP);
+    assert_eq!(shadow_slope(&terrain, &resting), RAMP);
     // A terrain replacement must change the shadow even while the powered
     // body's level matrix and immutable initial template remain unchanged.
     let mut replacement = ramp_terrain();
@@ -82,14 +87,7 @@ fn a_powered_hover_draws_level_and_only_an_unpowered_one_takes_its_cell_slope() 
         .cell_mut_for_test(CELL.0, CELL.1)
         .unwrap()
         .slope_type = 4;
-    assert_eq!(
-        unit_shadow_slope(
-            Some(&NativeCellQuery::isolated(&replacement)),
-            &resting,
-            slope
-        ),
-        4
-    );
+    assert_eq!(shadow_slope(&replacement, &resting), 4);
     assert!(ground_pose_with_angles(&resting, slope, 0, [0.; 2]).is_none());
     assert!(turret_images_cached(&resting, slope));
 
@@ -106,7 +104,24 @@ fn a_powered_hover_draws_level_and_only_an_unpowered_one_takes_its_cell_slope() 
     settled.locomotor.as_mut().unwrap().power_off();
     let slope = body_slope(&terrain, &settled, [0.; 2]);
     assert_eq!(slope, UnitRenderSlopeState::Stable(RAMP));
-    assert_eq!(unit_shadow_slope(Some(&cells), &settled, slope), RAMP);
+    assert_eq!(shadow_slope(&terrain, &settled), RAMP);
+}
+
+/// Unit73C5C4 -> Foot4DB0D0 adds the inherited Shadow_Point
+/// (`0x0055A8C0`, `(0, AdjustForZ(height))`) for a Hover body too, so a
+/// floating Hover's shadow is drawn on the ground below its body, not under
+/// it through the flat-ground path.
+#[test]
+fn a_floating_hover_draws_its_shadow_on_the_ground_below_its_body() {
+    let terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
+    let hover = hover_on_ramp(&terrain, "LCRF", 80);
+    assert!(has_lifted_unit_shadow(&hover));
+    let pose = lifted_unit_shadow_pose(&hover, &terrain, 0).unwrap();
+    let (x, y) = crate::render::locomotor_visual::screen_position(&hover);
+    let drop = crate::util::native_x87::adjust_for_z_standard(80);
+    assert!(drop > 0);
+    assert_eq!(pose.anchor, [x, y + drop as f32]);
+    assert_eq!(pose.slope, 0);
 }
 
 /// Either angle at the double 0.005 gate (`0x00513F53..0x00513F7F`) keys the
@@ -130,10 +145,7 @@ fn a_rocking_hover_tilts_its_level_facing_matrix_through_the_ground_pose() {
         let pose = ground_pose_with_angles(&hover, slope, 0, angles);
         assert_eq!(pose.is_some(), tilted, "{angles:?}");
         assert_eq!(turret_images_cached(&hover, slope), !tilted, "{angles:?}");
-        assert_eq!(
-            unit_shadow_slope(Some(&NativeCellQuery::isolated(&terrain)), &hover, slope),
-            RAMP
-        );
+        assert_eq!(shadow_slope(&terrain, &hover), RAMP);
         if let Some(pose) = pose {
             assert_eq!(slope, UnitRenderSlopeState::Stable(0), "{angles:?}");
             assert_eq!(pose.angles, angles);
