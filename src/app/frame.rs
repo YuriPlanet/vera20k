@@ -547,11 +547,12 @@ impl App {
         }
     }
 
-    /// The render continuation is allowed only outside every modal, focus,
-    /// exact-step and terminal path. The sequencer remains frame authority.
+    /// The render continuation is allowed only outside every modal, focus
+    /// freeze, exact-step and terminal path. The sequencer remains frame
+    /// authority. A visible window without focus still catches up: it takes
+    /// no player input, and skipping its draws changes no simulation state.
     pub(super) fn next_online_render_frame(state: &AppState) -> Option<(u32, u32)> {
         if state.frontend.screen != GameScreen::InGame
-            || !state.platform.window_active
             || state.platform.window_hidden
             || state.focus_freeze_active()
             || state.match_state.paused()
