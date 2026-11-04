@@ -36,6 +36,8 @@ pub(crate) const TOURNAMENT: u16 = 0x7A3;
 pub(crate) const NEWS: u16 = 0x7A6;
 pub(crate) const OPTIONS: u16 = 0x61F;
 pub(crate) const PAGE_BUTTON: u16 = 0x5C2;
+/// The online page's Quick Match: the welcome's control.
+pub(crate) const QUICK_MATCH: u16 = crate::ui::wol_shell::QUICK_MATCH;
 pub(crate) const BACK: u16 = 0x686;
 pub(crate) const REFRESH: u16 = 0x55D;
 pub(crate) const EMOTE: u16 = 0x3ED;
@@ -100,13 +102,21 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     back: button(BACK, 332, "GUI:Back", "STT:WOLLobbyBack"),
 };
 
-/// The normal VERA lobby keeps core play and Options, with Options in the third
-/// row. The retail page above remains the owner for legacy service diagnostics.
+/// The normal VERA lobby keeps core play and Options. It has no welcome
+/// `0x10E`, so its third row is that page's Quick Match (`0x6E0`, its caption
+/// and tooltip) and Options moves to the fourth. The retail page above remains
+/// the owner for legacy service diagnostics.
 const ONLINE_PAGE: MenuPageSpec = MenuPageSpec {
     stacked: &[
         button(CREATE, 111, "GUI:CreateGame", "STT:LobbyButtonNew"),
         button(JOIN, 138, "GUI:JoinGame", "STT:LobbyButtonJoin"),
-        button(OPTIONS, 166, "GUI:WOLOptions", "STT:WOLLobbyOptions"),
+        button(
+            QUICK_MATCH,
+            166,
+            "GUI:QuickMatch",
+            "STT:WOLWelcomeQuickMatch",
+        ),
+        button(OPTIONS, 193, "GUI:WOLOptions", "STT:WOLLobbyOptions"),
     ],
     ..PAGE
 };
@@ -506,6 +516,8 @@ pub(crate) enum WolLobbyAction {
     Options,
     /// `0x5C2`: the page dialog `0xCF` (`0x0078BA3E`).
     Page,
+    /// The online page's Quick Match: the Quick Match runner `0x0079FC40`.
+    QuickMatch,
     /// Buddy List, Clan, Tournament and News run dialogs or web pages that
     /// are later chains.
     Unported(u16),
@@ -824,6 +836,7 @@ impl WolLobbyState {
             }
             OPTIONS => WolLobbyAction::Options,
             PAGE_BUTTON => WolLobbyAction::Page,
+            QUICK_MATCH if self.modern => WolLobbyAction::QuickMatch,
             BUDDY | CLAN | TOURNAMENT | NEWS => WolLobbyAction::Unported(control),
             _ => return None,
         })
@@ -923,9 +936,17 @@ mod tests {
         let mut lobby = WolLobbyState::new(false, true);
         let layout = WolLobbyLayout::new(800, 600, lobby.page_spec());
         let controls: Vec<_> = layout.page.buttons.iter().map(|button| button.id).collect();
-        assert_eq!(controls, [CREATE, JOIN, OPTIONS, BACK]);
+        assert_eq!(controls, [CREATE, JOIN, QUICK_MATCH, OPTIONS, BACK]);
         let retail = WolLobbyLayout::new(800, 600, &PAGE);
-        assert_eq!(layout.control_rect(OPTIONS), retail.control_rect(BUDDY));
+        assert_eq!(layout.control_rect(QUICK_MATCH), retail.control_rect(BUDDY));
+        assert_eq!(layout.control_rect(OPTIONS), retail.control_rect(CLAN));
+        assert_eq!(
+            tooltip_key(QUICK_MATCH, lobby.page_spec()),
+            Some("STT:WOLWelcomeQuickMatch")
+        );
+        // Only the online page offers it; the retail page has its welcome.
+        assert_eq!(WolLobbyState::new(false, false).activate(QUICK_MATCH), None);
+        assert_eq!(retail.control_rect(QUICK_MATCH), None);
         lobby.disable_commands();
         lobby.enable_commands(true);
         lobby.begin_lobby_switch();
@@ -937,6 +958,10 @@ mod tests {
             assert_eq!(tooltip_key(control, lobby.page_spec()), None);
         }
         assert_eq!(lobby.activate(OPTIONS), Some(WolLobbyAction::Options));
+        assert_eq!(
+            lobby.activate(QUICK_MATCH),
+            Some(WolLobbyAction::QuickMatch)
+        );
     }
 
     #[test]
@@ -1018,6 +1043,7 @@ mod tests {
             keyed: false,
             limit_icon: None,
             ping: -1,
+            tag: None,
         };
         let mut lobby = WolLobbyState::new(false, false);
         lobby.replace_games(vec![row("a"), row("b")]);

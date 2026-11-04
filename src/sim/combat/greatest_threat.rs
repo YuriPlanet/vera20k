@@ -37,9 +37,9 @@
 //! 5. The best is kept only on a **strictly greater** score (init −1), so ties
 //!    go to whatever the walk reached first.
 //! 6. After each ring, `if (best && (r == radius/4 || r == radius/2)) return`
-//!    (`0x006F94F1`). A close-enough target ends the scan early — this is why a
-//!    defence shoots the attacker at its feet rather than the juicier one three
-//!    cells further out.
+//!    (`0x006F9AE2..0x006F9B0A`). A close-enough target ends the scan early —
+//!    this is why a defence shoots the attacker at its feet rather than the
+//!    juicier one three cells further out.
 //!
 //! ## The score
 //!
@@ -59,11 +59,14 @@
 //! (`FogState::is_cell_visible` on the candidate's cell) has been removed.
 //! `Evaluate_Candidate` was read end to end: its only visibility arms are the
 //! cloak/sensor test at `0x006F7DA9` and the "discovered by the local player"
-//! test at `0x006F81B8`, and the latter is behind `g_GameMode == 0` — campaign
-//! only, since a skirmish runs mode 5. Retail therefore lets a skirmish unit
-//! acquire an enemy standing in unexplored ground, and fires on it: no fire
-//! path reads shroud either (GetFireError `0x006FC0B0` has no shroud code, and
-//! `IsFogged @ 0x005865E0` is a constant false).
+//! test at `0x006F81BE..0x006F81F4`, and the latter is behind
+//! `g_GameMode == 0` — campaign only, since a skirmish runs mode 5. In the
+//! campaign a human player's scanner skips a non-aircraft candidate the player
+//! has neither owned nor discovered (the Techno history bytes, not the cell's
+//! shroud). Retail therefore lets a skirmish unit acquire an enemy standing in
+//! unexplored ground, and fires on it: no fire path reads shroud either
+//! (GetFireError `0x006FC0B0` has no shroud code, and `IsFogged @
+//! 0x005865E0` is a constant false).
 //!
 //! ## Other residuals
 //!
@@ -86,10 +89,10 @@ use std::ops::ControlFlow;
 
 use super::combat_targeting::AttackerSnapshot;
 use super::combat_weapon::{
-    AttackerFacts, SelectedWeapon, attacker_facts, controlled_transport_house, get_weapon,
-    is_ally_by_object, is_armed, is_occupied, occupied_reach_cells, passive_scan_class_bits,
-    primary_warhead_spares_medium_and_wood, resolve_selected_weapon, resolve_weapon_index,
-    techno_target_facts, weapon_damage_value, what_weapon_should_i_use,
+    AttackerFacts, SelectedWeapon, attacker_facts, controlled_transport_house, current_weapon,
+    get_weapon, is_ally_by_object, is_armed, is_occupied, occupied_reach_cells,
+    passive_scan_class_bits, primary_warhead_spares_medium_and_wood, resolve_selected_weapon,
+    resolve_weapon_index, techno_target_facts, weapon_damage_value, what_weapon_should_i_use,
 };
 use super::threat_mask::{self, InfantryScanner};
 use super::threat_range::{ScanRange, scan_range};
@@ -566,7 +569,7 @@ fn finish_score(score: i32) -> Option<i32> {
 }
 
 /// The ring index at which the native walk returns early once it holds a
-/// candidate (`0x006F94D0..0x006F94F1`).
+/// candidate (`0x006F9AE2..0x006F9B0A`; both divides truncate toward zero).
 fn is_early_return_ring(ring: i32, radius: i32) -> bool {
     ring == radius / 4 || ring == radius / 2
 }
@@ -1794,7 +1797,7 @@ fn scanner_mask<'r>(
 /// overwhelmingly nearest-first where a ring scanner barely weighs distance at
 /// all. Carried here by [`WalkArgs::reference`].
 ///
-/// There is no band early return on this path (`0x006F94D0` sits below the
+/// There is no band early return on this path (`0x006F9AE2` sits below the
 /// jump target), so each walk sees every object once. A landed aircraft is
 /// Ground-layer and can be scored by both walks, at the two scales.
 ///
@@ -2458,6 +2461,21 @@ fn evaluate_candidate(
         return None;
     }
 
+    // `0x006F81BE..0x006F81F4`: in the campaign (`[0x00A8B238] == 0`), a
+    // scanner whose owner is a human player (`IsHumanPlayer @ 0x0050B6F0`,
+    // which there equals `standing.human`) passes over a candidate the current
+    // house neither owns (`+0x41A`) nor has discovered (`+0x41B`), unless it
+    // is an aircraft (WhatAmI 2): the player's units do not acquire enemies
+    // in ground the player has not explored.
+    if ctx.standing.human
+        && !ctx.standing.game_mode_nonzero
+        && !candidate.discovery.owned_by_current_house()
+        && !candidate.discovery.discovered_by_current_house()
+        && candidate.category() != EntityCategory::Aircraft
+    {
+        return None;
+    }
+
     // `0x006F81FA..0x006F8214`: an `InvisibleInGame=` building (`+0x1701`).
     let building = candidate.category() == EntityCategory::Structure;
     if building && candidate_obj.invisible_in_game {
@@ -2744,10 +2762,75 @@ fn evaluate_candidate(
             ),
         },
     )?;
-    // `0x006F88BF..0x006F8924`: the ThreatAvoidance factor is 1.0 unless the
-    // scanner's current weapon is `Supress=` (`Weapon+0x146`), which no
-    // retail weapon is; VERA does not read the key.
-    finish_score(score)
+    finish_score(threat_avoidance(ctx, candidate, score))
+}
+
+/// `Evaluate_Candidate @ 0x006F88BF..0x006F8924`: the score times
+/// `TechnoClass::ThreatAvoidance_Modifier @ 0x006F79A0`'s factor, at the cell
+/// of the candidate's GetCoords (vt+0x48). The factor is 1.0, and the score
+/// kept, unless the scanner's current weapon (vt+0x3F4) is `Supress=`
+/// (`Weapon+0x146`); then it halves (`0x007E1738`) for every cell holding a
+/// building (`0x0047C520`) its owner is allied with (`0x004F9A90`, its own
+/// included), on the square rings 1 to `FireSupress=` cells less one around
+/// that cell. A row cell needs its X inside MapRect and one bound of its Y,
+/// a column cell the reverse (`0x006F7A28..0x006F7C61`), so a building
+/// counts once per foundation cell. `_ftol` (`0x007C5F00`) chops the
+/// product; halving is exact, so an integer divide gives the same score.
+///
+/// Dormant in retail: no weapon is `Supress=`, and `FireSupress=1` leaves
+/// no ring.
+fn threat_avoidance(ctx: &ScanContext<'_>, candidate: &GameEntity, score: i32) -> i32 {
+    // Native reads the weapon first; both reads are pure, and the ring count
+    // spares retail scans the weapon lookup per candidate.
+    let rings = ctx.rules.combat_damage.fire_supress / 256;
+    if rings <= 1
+        || !current_weapon(
+            ctx.scanner,
+            ctx.attacker_obj,
+            ctx.entities,
+            ctx.rules,
+            ctx.interner,
+        )
+        .is_some_and(|weapon| weapon.supress)
+    {
+        return score;
+    }
+    let Some([left, top, width, height]) = ctx.fire_world.and_then(|world| world.map_rect()) else {
+        return score;
+    };
+    let coords = object_get_coords(candidate, ctx.terrain);
+    let (cx, cy) = (lepton_to_cell(coords.x), lepton_to_cell(coords.y));
+    // `0x005657A0` stamps the Dummy on a miss, whose ground list is empty.
+    let cells = ctx.terrain.map(NativeCellQuery::canonical);
+    let allied_building = |x: i32, y: i32| {
+        let (x, y) = (x as i16, y as i16);
+        let (x, y) = match &cells {
+            Some(cells) => match cells.lookup((x, y)) {
+                NativeCellIdentity::Dummy => return false,
+                cell => cells.coord(cell),
+            },
+            None => (x, y),
+        };
+        ctx.cells
+            .first_building_on_layer(x as u16, y as u16, MovementLayer::Ground)
+            .and_then(|id| ctx.entities.get(id))
+            .is_some_and(|building| ctx.is_ally_owner(building.owner()))
+    };
+    // A row cell needs X inside MapRect and only its own side's Y bound; a
+    // column cell the reverse.
+    let inside = |(x, y): (i32, i32), ring: i32| {
+        let (columns, rows) = (left..left + width, top..top + height);
+        if (y - cy).abs() == ring {
+            columns.contains(&x) && if y < cy { y >= top } else { y < rows.end }
+        } else {
+            rows.contains(&y) && if x < cx { x >= left } else { x < columns.end }
+        }
+    };
+    let halvings = (1..rings)
+        .flat_map(|ring| square_ring_cells((cx, cy), ring).map(move |cell| (cell, ring)))
+        .filter(|&(cell, ring)| inside(cell, ring) && allied_building(cell.0, cell.1))
+        .count();
+    (i64::from(score) / (1i64 << halvings.min(40))) as i32
 }
 
 /// What `Evaluate_Candidate`'s quarry terms read of a candidate.
@@ -3136,6 +3219,8 @@ mod tests {
             let target = sim
                 .spawn_object("TARGET", "Russians", 10 + distance, 16, 0, &rules)
                 .unwrap();
+            // The player has seen the enemy: the campaign scan gate needs +0x41B.
+            crate::sim::arena_fixture::discover(&mut sim, target);
             sim.substrate
                 .entities
                 .get_mut(ifv)
@@ -3323,3 +3408,7 @@ mod healer_guard_tests;
 #[cfg(test)]
 #[path = "greatest_threat_coefficient_tests.rs"]
 mod coefficient_tests;
+
+#[cfg(test)]
+#[path = "greatest_threat_avoidance_tests.rs"]
+mod avoidance_tests;

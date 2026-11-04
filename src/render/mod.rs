@@ -39,6 +39,7 @@ pub mod cursor_atlas;
 pub(crate) mod depth_gpu_tests;
 pub mod draw_state;
 pub(crate) mod electric_bolt;
+pub(crate) mod entity_atlas_growth;
 pub(crate) mod foot_depth;
 pub mod frame_readback;
 pub mod gpu;
@@ -94,6 +95,7 @@ pub mod unit_atlas;
 pub mod unit_pose_cache;
 pub(crate) mod unit_shadow;
 pub mod upscale_pass;
+pub mod voxel_image_cache;
 #[cfg(test)]
 mod voxel_parity_tests;
 pub mod vxl_normals;

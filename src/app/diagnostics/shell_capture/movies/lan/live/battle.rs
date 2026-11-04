@@ -3154,11 +3154,34 @@ pub(super) fn mobile_move_with_mouse(
             );
             legal_move_cell(state, id, desired)
                 .ok()
-                .filter(|cell| *cell != from)
+                .filter(|cell| *cell != from && clicks_own_cell(state, *cell))
         })
         .context("reachable tactical Move target")?;
     ground_order_with_mouse(state, id, to)?;
     Ok((id, from, to))
+}
+
+/// A click on a cell's centre orders that cell only when no taller cell or
+/// object covers the point: random Quick Match maps put some candidates
+/// behind a cliff.
+fn clicks_own_cell(state: &AppState, cell: (u16, u16)) -> bool {
+    let (Ok(world), Ok(sim), Ok(owner)) = (
+        ground_world_point(state, cell),
+        simulation(state),
+        local_owner(state),
+    ) else {
+        return false;
+    };
+    crate::app::match_runtime::sim_tick::world_point_to_cell(
+        world.0,
+        world.1,
+        crate::app::match_runtime::sim_tick::tactical_cells(sim),
+    ) == cell
+        && empty_ground_point(
+            crate::app::input::entity_pick::presented(state, sim),
+            world,
+            &owner,
+        )
 }
 
 pub(super) fn mobile_stop_with_keyboard(state: &mut AppState, id: u64) -> Result<()> {

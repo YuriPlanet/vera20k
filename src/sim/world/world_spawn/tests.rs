@@ -497,6 +497,44 @@ fn map_veterancy_seed_matches_native_percent_and_rank() {
     assert_eq!(compared, 81, "native percent and atoi boundary controls");
 }
 
+/// `UnitClass::Read_INI` queues and commences a map line's mission after
+/// Unlimbo (`0x0074361B..0x0074363B`) for every Unit, miners included.
+/// SOV03's Chrono Miner (`Civie2,CMIN,...,Sleep,06B56D1C`) sleeps instead of
+/// keeping the Harvest its Unlimbo idle mode chose. An authored Harvest
+/// leaves the miner harvesting.
+#[test]
+fn a_map_placed_chrono_miner_takes_its_authored_mission() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let place = |mission: &str| {
+        let mut sim = crate::sim::arena_fixture::rival_arena(rules, 1);
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        let ini = IniFile::from_str(&format!(
+            "[Units]\n0=Russians,CMIN,256,16,16,64,{mission},None\n"
+        ));
+        let placements = crate::map::entities::parse_map_entities(&ini, 4);
+        assert_eq!(sim.spawn_from_map(&placements, Some(rules)), 1);
+        let miner = sim.substrate.entities.values().next().unwrap();
+        assert!(miner.is_harvester());
+        let id = miner.stable_id();
+        (sim, id)
+    };
+    use crate::sim::mission::MissionType;
+    let current = |sim: &Simulation, id: u64| {
+        let mission = sim.substrate.entities.get(id).unwrap().mission;
+        (mission.current().known(), mission.queued().known())
+    };
+
+    let (sim, miner) = place("Sleep");
+    assert_eq!(current(&sim, miner), (Some(MissionType::Sleep), None));
+
+    let (sim, miner) = place("Harvest");
+    assert_eq!(current(&sim, miner), (Some(MissionType::Harvest), None));
+}
+
 /// Radio65A750 and Building43BCBD..43BCD5 execute unchanged in the retained
 /// refinery packet. Both production construction routes must install those
 /// actual slots before any HELLO; the component prefix consumes no RNG.

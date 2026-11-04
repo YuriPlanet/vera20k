@@ -431,6 +431,25 @@ fn equal_ammo_retarget_transfers_marker_and_gives_planes_object_targets() {
     }
 }
 
+/// The abort voice's IsHumanPlayer (`0x0041D5A5`) accepts a campaign
+/// `PlayerControl=` house that is not the player.
+#[test]
+#[ignore = "slow; run when changing what it covers"]
+fn a_campaign_player_control_designators_abort_voice_plays() {
+    let Some(mut f) = Fixture::new() else { return };
+    let house = f.sim.substrate.entities.get(f.boris).unwrap().owner();
+    let state = f.sim.houses.get_mut(&house).unwrap();
+    state.set_is_human_for_test(false);
+    state.set_player_control_for_test(true);
+    f.hit(f.boris, f.target);
+    f.sim
+        .airstrike_pointer_expired(f.boris, f.boris, &f.rules, FrameEffects::default());
+    assert!(f.sim.sound_events.iter().any(|event| matches!(event,
+        SimSoundEvent::VocAt { sound_id, audible_to: Some(houses), .. }
+            if sound_id == "MIGMissionAborted" && *houses == [house, house]
+    )));
+}
+
 #[test]
 #[ignore = "slow; run when changing what it covers"]
 fn owner_expiry_unlinks_surviving_planes_and_clears_the_designation() {

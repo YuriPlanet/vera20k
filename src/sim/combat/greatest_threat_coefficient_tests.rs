@@ -15,10 +15,14 @@ fn guard_pick(rules: &RuleSet) -> (Option<u64>, u64) {
     let tank = sim
         .spawn_object("MTNK", "Russians", 12, 10, 64, rules)
         .expect("wounded Grizzly");
+    // The player has seen both enemies: the campaign scan gate needs +0x41B.
+    crate::sim::arena_fixture::discover(&mut sim, tank);
     let target = sim.substrate.entities.get_mut(tank).unwrap();
     target.health.set_for_test(target.health.current() / 2);
-    sim.spawn_object("E1", "Russians", 12, 12, 64, rules)
+    let enemy_gi = sim
+        .spawn_object("E1", "Russians", 12, 12, 64, rules)
         .expect("healthy enemy GI in the same scan ring");
+    crate::sim::arena_fixture::discover(&mut sim, enemy_gi);
     (
         sim.greatest_threat_represented(rules, None, gi, ScanMission::Guard, None)
             .and_then(crate::sim::combat::TargetKind::object_id),

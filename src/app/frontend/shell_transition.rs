@@ -314,9 +314,9 @@ pub(crate) enum ShellExitThen {
     WolLoginClose(u16),
     /// `0x113` Back (`0x686`): the runner leaves its channel and returns 0.
     WolLobbyBack,
-    /// `0x113` Buddy List (`0x689`): the runner ends as for Back, with mode
-    /// 5 and return mode 4.
-    WolLobbyBuddy,
+    /// `0x113` Buddy List (`0x689`), or the online page's Quick Match: the
+    /// runner ends as for Back, with mode 5 or 1 and return mode 4.
+    WolLobbyRunner(crate::ui::wol_shell::WolMode),
     /// A game join was requested (`0x0078C281`): `0x113` slides out and hides.
     WolLobbyHide,
     /// The create succeeded: `0x113` slides out and hides, then C2 opens.
@@ -385,7 +385,7 @@ impl ShellExitThen {
             Self::WolBack | Self::WolAction(_) => ShellSlideKind::WolWelcome,
             Self::WolLoginClose(_) => ShellSlideKind::WolLogin,
             Self::WolLobbyBack
-            | Self::WolLobbyBuddy
+            | Self::WolLobbyRunner(_)
             | Self::WolLobbyHide
             | Self::WolCreateAccepted { .. }
             | Self::WolOptionsOpen => ShellSlideKind::WolLobby,
@@ -1566,7 +1566,7 @@ mod tests {
         let column = ShellSlideKind::WolLobby.column(9, Some(lobby.page_spec()));
         assert_eq!(
             (column.top_buttons, column.bottom_button, column.top_panel),
-            (3, true, false)
+            (4, true, false)
         );
         assert_eq!(ShellSlideKind::WolWelcome.column(9, None).top_buttons, 6);
         let retail = ShellSlideKind::WolLobby.column(9, None);

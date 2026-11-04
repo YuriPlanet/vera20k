@@ -94,7 +94,7 @@ impl Simulation {
             return false;
         };
         entity.on_bridge.store(on_bridge);
-        let prior_carrier = entity.passenger_role.inside_transport();
+        let prior_carrier = entity.passenger_role.carrier_link();
         let infantry = entity.category() == EntityCategory::Infantry;
         let airborne = point.z.wrapping_sub(floor) > 0xd0;
         let placed = if airborne {
@@ -139,12 +139,10 @@ impl Simulation {
             self.unlimbo_crew(rules, id, unlimbo, Some(facing), registry, effects)
         };
         if !placed {
-            if let Some((carrier, open_topped)) = prior_carrier
+            if let Some(link) = prior_carrier
                 && let Some(entity) = self.substrate.entities.get_mut(id)
             {
-                entity
-                    .passenger_role
-                    .set_inside_transport(carrier, open_topped);
+                entity.passenger_role.set_carrier_link(link);
             }
             return false;
         }

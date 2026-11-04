@@ -487,6 +487,7 @@ fn engine_per_client_reads_have_pinned_callers() {
             "owned_by_current_house",
             &[
                 ("sim/cloak_disguise.rs", 13),
+                ("sim/combat/greatest_threat.rs", 1),
                 ("sim/game_entity.rs", 3),
                 ("sim/miner/ore_scan.rs", 1),
                 ("sim/world/camera_home.rs", 1),
@@ -497,6 +498,7 @@ fn engine_per_client_reads_have_pinned_callers() {
         (
             "discovered_by_current_house",
             &[
+                ("sim/combat/greatest_threat.rs", 1),
                 ("sim/combat/world_fire.rs", 1),
                 ("sim/house_state.rs", 5),
                 ("sim/power_system.rs", 2),
@@ -1743,8 +1745,8 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         (
             "sim/combat/object_health.rs",
             "set",
-            "the Strength store of the native death paths (Crush 0x007416A0, \
-             KillPassengers 0x00707CB0, KillOccupants 0x004585C0)",
+            "the native +0x6C stores outside ReceiveDamage listed on Health::set, \
+             such as a crash's kill (0x004DEC72) and a parasite's death (0x0062A46A)",
         ),
         (
             "sim/game_entity.rs",

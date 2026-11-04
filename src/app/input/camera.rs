@@ -2092,18 +2092,33 @@ pub(crate) fn tactical_scroll_rect(
     )
 }
 
+/// The world rectangle `(x, y, width, height)` that clamped views of scroll
+/// `area` show: every top-left the clamp allows, across the visible extent.
+/// It starts 30 px left of the area, the half cell `tactical_scroll_rect`
+/// adds back.
+fn shown_world_rect(area: (f32, f32, f32, f32)) -> (f32, f32, f32, f32) {
+    (area.0 - 30.0, area.1, area.2, area.3)
+}
+
+/// The world rectangle the tactical camera can show on the loaded map
+/// (`shown_world_rect` of its scroll rectangle), or None before a simulation
+/// has its LocalSize. Captures record it to frame the whole map.
+pub(crate) fn tactical_view_area(state: &AppState) -> Option<(f32, f32, f32, f32)> {
+    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let bounds = runtime.view().playfield_authority().0?;
+    Some(shown_world_rect(tactical_scroll_rect(bounds)))
+}
+
 fn clamp_camera_point_to_rect(
     point: (f32, f32),
     area: (f32, f32, f32, f32),
     viewport: (f32, f32),
     zoom: f32,
 ) -> (f32, f32) {
-    let (area_x, area_y, area_w, area_h) = area;
+    let (x_min, y_min, area_w, area_h) = shown_world_rect(area);
     let visible_w = viewport.0 / zoom;
     let visible_h = viewport.1 / zoom;
-    let x_min = area_x - 30.0;
     let x_max = x_min + area_w - visible_w;
-    let y_min = area_y;
     let y_max = y_min + area_h - visible_h;
 
     // Native comparison order is Y low/high, then X low/high. Each side is a

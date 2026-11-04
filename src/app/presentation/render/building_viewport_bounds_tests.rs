@@ -11,7 +11,7 @@ use crate::render::batch::{BatchRenderer, DepthAxis, InstanceBufferPool};
 use crate::render::sprite_atlas::build_sprite_atlas;
 use crate::render::terrain_draw::TerrainDrawRenderer;
 use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear};
-use crate::render::unit_atlas::BarrelImagePitches;
+use crate::render::voxel_image_cache::VoxelImageCache;
 use crate::rules::house_colors::NO_REMAP;
 use std::cell::RefCell;
 
@@ -118,7 +118,7 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
     );
     let zbind = batch.create_zshape_bind_group_on_device(&gpu.device, &zview);
     let lighting = CellLightGrid::new();
-    let pitches = RefCell::new(BarrelImagePitches::default());
+    let voxel_images = RefCell::new(VoxelImageCache::default());
     let order = NativeDisplayOrder::from_display(sim.display_layers());
     let before = (sim.state_hash(), sim.rng_state());
     let mut parents = Vec::new();
@@ -128,7 +128,8 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
             atlas: Some(&atlas),
             overlay_atlas: None,
             unit_atlas: None,
-            barrel_image_pitches: &pitches,
+            voxel_images: &voxel_images,
+            depth_tested_images: None,
             interpolation: &interpolation,
             camera: [1160., 2502.],
             render_size: [1024, 768],

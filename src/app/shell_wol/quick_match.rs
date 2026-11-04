@@ -1,6 +1,7 @@
 //! The Quick Match runner `0x0079FC40` (WOL mode 1) and its page `0x117`
-//! (proc `0x007A2110`), from the login to a match or back to the welcome,
-//! and the postmatch add-buddy query `0x122` (`0x007A2970`).
+//! (proc `0x007A2110`), from the login to a match or back to the welcome
+//! (for VERA's online lobby, back to that lobby), and the postmatch
+//! add-buddy query `0x122` (`0x007A2970`).
 //!
 //! The runner lists the chat lobbies, takes the first whose name starts
 //! with `Lob_40_`, shows `0x117`, joins that lobby and, when its user list
@@ -424,7 +425,10 @@ fn open_dialog(state: &mut AppState) {
 
 /// The runner loop's stage tests (`0x0079FF50..0x0079FFC5`): stage 2 joins
 /// the lobby (`0x00788800`; one already joined or pending answers 0) and
-/// moves to stage 3 (20 s).
+/// moves to stage 3 (20 s), then falls into the stage-3 test. Every way
+/// back to stage 2 returns to that loop: a guest's failed search and a
+/// failed create (`0x007A1BB0` under event 0x10), a timeout (the pump's
+/// event 5, `0x0077F900`).
 pub(super) fn advance(state: &mut AppState) {
     if !lobby::quick_match_runner(state) || stage(state) != stage::JOIN_LOBBY {
         return;
@@ -434,16 +438,20 @@ pub(super) fn advance(state: &mut AppState) {
     };
     lobby::quick_match_join(state, target, QUICK_MATCH_KEY);
     set_stage(state, stage::IN_LOBBY, Some(20));
+    runner_request(state);
 }
 
 /// The runner's own stage-3 test (`0x0079FFCA..0x007A0009`): with the
-/// lobby current, the request, its result ignored. It runs once per event
-/// the runner handles, which right after the join is never the lobby's,
-/// so in practice only a stage-3 retry (bad `Start` parameters) reaches
-/// it.
+/// lobby current, the request, its result ignored. Right after a join the
+/// lobby is not current yet and its user list asks instead
+/// ([`lobby_users_listed`]); a runner that never left the lobby asks here:
+/// a guest whose search found no game, as when its host crashed after the
+/// pairing, or a bad `Start`. Native never runs it during a leave
+/// ([`lobby::leaving`]): a timeout there finds the lobby already left.
 fn runner_request(state: &mut AppState) {
     let lobby_name = globals(state).and_then(|globals| Some(globals.lobby.as_ref()?.name.clone()));
     if stage(state) == stage::IN_LOBBY
+        && !lobby::leaving(state)
         && lobby::current_channel(state).is_some_and(|current| Some(current.name) == lobby_name)
     {
         request(state);
@@ -1440,7 +1448,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
 
 /// RunMain's postmatch re-entry in modes 1/2 (`0x0077B439..0x0077B442`):
 /// `0x007A2970`, then mode 0, whose category change logs out before the
-/// welcome. `0x007A2970` clears `[0xB77DC1]` and asks `0x122` only without a
+/// welcome (VERA: the online lobby, [`return_to_lobby`]). `0x007A2970` clears `[0xB77DC1]` and asks `0x122` only without a
 /// lost connection (`[0xB77DC2]`), with `[Ask] AddMatchBuddies` and an
 /// opponent that may become a buddy (`0x0079C520`).
 pub(super) fn postmatch(state: &mut AppState) {
@@ -1459,16 +1467,42 @@ pub(super) fn postmatch(state: &mut AppState) {
     welcome(state);
 }
 
-/// Mode 0 after `0x007A2970`: the network visit ends and the welcome runs.
+/// Mode 0 after `0x007A2970`: the network visit ends and the welcome runs,
+/// or the online lobby that started the runner opens again.
 fn welcome(state: &mut AppState) {
     state.match_state.session.leave_network();
+    if return_to_lobby(state) {
+        return;
+    }
     App::reopen_wol_welcome(state);
+}
+
+/// VERA: the runner ended (`0x007A0282`, or after `0x007A2970`) and the
+/// online lobby started it. Native modes 1 and 2 always end in mode 0
+/// (`WOL__RunMain` reads the return mode `[0xA8B248]` only for mode 5),
+/// which in the online visit would sign the player out. This takes return
+/// mode 4 as after Buddy List instead, rejoining the lobby whatever its
+/// population. Returns false for mode 0.
+pub(super) fn return_to_lobby(state: &mut AppState) -> bool {
+    let Some(visit) = state
+        .frontend
+        .wol
+        .as_mut()
+        .filter(|visit| visit.return_mode == Some(WolMode::CustomMatch))
+    else {
+        return false;
+    };
+    visit.return_mode = None;
+    visit.lobby_joined_before = false;
+    visit.lobby = None;
+    super::reopen_lobby(state);
+    true
 }
 
 /// `0x122`'s teardown has run (`0x007A29E0`): both buttons write
 /// `[Ask] AddMatchBuddies` from Don't Ask; Yes adds the opponent while it
 /// may still become a buddy (API+0xE0, the mirror, the locate and ladder
-/// queues). Then mode 0 and the welcome.
+/// queues). Then mode 0 and the welcome, or the online lobby.
 pub(crate) fn add_buddy_answered(state: &mut AppState, yes: bool, ask_again: bool) {
     if let Some(file) = super::persona::info_file(state) {
         file.set_ask_add_match_buddies(ask_again);

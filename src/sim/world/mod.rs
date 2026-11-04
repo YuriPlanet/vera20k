@@ -5073,8 +5073,14 @@ impl Simulation {
     /// rebuilds zone connectivity/all levels, and refreshes radar before it
     /// returns to `TriggerAction__Execute @ 0x006DD8B0`. Rust performs every
     /// corresponding owned update synchronously here, so later actions and
-    /// the same master frame observe one coherent authority.
-    pub fn change_visible_map_area(&mut self, raw_local_size: [i32; 4], rules: &RuleSet) -> bool {
+    /// the same master frame observe one coherent authority. `context`
+    /// carries the trigger's rules, overlay table and frame effects into the
+    /// See callbacks, whose discoveries may Grand_Open a building.
+    pub fn change_visible_map_area(
+        &mut self,
+        raw_local_size: [i32; 4],
+        context: UninitContext<'_>,
+    ) -> bool {
         let (Some(current), Some(size_height)) =
             (self.playfield_bounds, self.playfield_size_height)
         else {
@@ -5096,6 +5102,11 @@ impl Simulation {
         // canonical TechnoClass+0x3D5 byte for every represented Techno. This
         // must precede later action consumers and may both demote and promote;
         // ordinary per-cell movement's writer is deliberately only 0 -> 1.
+        // RESIDUAL: native stores, gates and Sees one object at a time
+        // (0x0056730E..0x00567351); VERA gates every object and stores every
+        // byte before the first See. They differ only if a See's discovery
+        // springs a Tag that changes a later object's owner, IsAlive or Limbo
+        // within the same action.
         let membership_updates = self
             .substrate
             .entities
@@ -5111,18 +5122,23 @@ impl Simulation {
                     Some(bounds),
                     self.resolved_terrain.as_ref(),
                 );
-                let reveal = !entity.in_playfield()
+                // 0x00567314..0x00567347: a 0 -> 1 flip, an owner passing
+                // IsHumanPlayer 0x0050B6F0, not a Building, IsAlive (+0x90)
+                // and not InLimbo (+0x81). No Health test, so an infantry
+                // corpse still Sees; a dying SHP wreck does not, since its
+                // native UnInit already cleared IsAlive (`is_active`). The
+                // clients are those on which 0x0050B6F0 passes.
+                let see = !entity.in_playfield()
                     && member
-                    && entity.lifecycle.object_alive()
-                    && !entity.lifecycle.in_limbo()
-                    && !entity.death.is_dying()
-                    && entity.health.current() > 0
                     && entity.category() != EntityCategory::Structure
-                    && self
-                        .houses
-                        .get(&entity.owner())
-                        .is_some_and(|house| house.is_human());
-                Some((stable_id, member, reveal))
+                    && entity.is_active()
+                    && !entity.lifecycle.in_limbo();
+                let clients = if see {
+                    self.human_player_clients(entity.owner())
+                } else {
+                    Vec::new()
+                };
+                Some((stable_id, member, clients))
             })
             .collect::<Vec<_>>();
         // Set_Clipped_LocalSize's exact store (`0x0056730E`).
@@ -5131,13 +5147,26 @@ impl Simulation {
                 entity.in_playfield.store(member);
             }
         }
-        // FUN_006E21E0's false->true callback is Object See (virtual+120):
-        // Aircraft41ADF0 or Techno70ADC0, only for human-owned live nonlimbo
-        // mobiles; Buildings are explicitly excluded. The shared dispatch
-        // commits the sight reveal before this action returns.
-        for (stable_id, _, reveal) in membership_updates {
-            if reveal {
-                self.reveal_uncached_object_sight(stable_id, false, false, None, UninitContext::new(rules, None));
+        // The false->true callback is Object See(0, 0) (vt+0x120 at
+        // 0x00567351): Aircraft 0x0041ADF0 or Techno 0x0070ADC0. A network
+        // game's 0x0050B6F0 passes only on the owner's own client
+        // (0x0050B716), so See writes only that map, as Display See's
+        // projection does (`refresh_techno_shroud`); other modes keep one
+        // shared reveal. It commits before this action returns.
+        let network = self.session.game_mode().is_network();
+        for (stable_id, _, clients) in membership_updates {
+            if network {
+                for client in clients {
+                    self.reveal_uncached_object_sight(
+                        stable_id,
+                        false,
+                        false,
+                        Some(client),
+                        context,
+                    );
+                }
+            } else if !clients.is_empty() {
+                self.reveal_uncached_object_sight(stable_id, false, false, None, context);
             }
         }
 
@@ -5505,7 +5534,7 @@ impl Simulation {
                 );
                 debug_assert!(
                     entity.kill_record.is_recorded(),
-                    "dead entity {} must record its destruction exactly once before alive clear",
+                    "dead entity {} must close its kill record before alive clear",
                     entity.stable_id()
                 );
                 debug_assert!(

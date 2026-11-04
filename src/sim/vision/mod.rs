@@ -2948,13 +2948,14 @@ fn reveal_candidates(
 }
 
 /// The house gate of `MapClass::RevealArea @ 0x005678E0`
-/// (`0x00567AB0..0x00567B12`), asked with `viewer` as the player whose map
+/// (`0x00567AB0..0x00567B12`) and of Map `0x005673A0`
+/// (`0x0056756A..0x005675D0`), asked with `viewer` as the player whose map
 /// the leaf writes: a reveal by `owner` maps `owner`'s own cells, and an
 /// allied house's when `[AudioVisual] AllyReveal=` is set (`0x00567AEF`).
 ///
 /// RESIDUAL: a house that infiltrated `owner`'s radar (the `+0x54E4` bit
-/// of its index, `0x00567AC1..0x00567ADB`) is mapped too, allied or not;
-/// VERA keeps no radar-spy bits.
+/// of its index, `0x00567AC1..0x00567ADB`, `0x0056757F..0x00567599`) is
+/// mapped too, allied or not; VERA keeps no radar-spy bits.
 pub(crate) fn reveal_admits(
     alliances: &HouseAlliances,
     owner: InternedId,

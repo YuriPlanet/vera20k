@@ -356,7 +356,7 @@ pub struct GameEntity {
     /// [`RemovalFacts`]: crate::sim::world::RemovalFacts
     #[serde(default)]
     pub(crate) removal_facts: crate::sim::world::RemovalFacts,
-    /// The kill credit and the UnInit loss guard, a [`KillRecord`] that
+    /// The kill credit and the closed-record guard, a [`KillRecord`] that
     /// `combat::record_kill` owns.
     ///
     /// [`KillRecord`]: crate::sim::combat::KillRecord
@@ -1781,6 +1781,12 @@ impl GameEntity {
     /// (`FacingClass::Current @ 0x004C93D0`).
     pub fn barrel_elevation(&self) -> &crate::sim::movement::FacingClass {
         &self.barrel_elevation
+    }
+
+    /// Install a fixture's barrel elevation.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_barrel_elevation_for_test(&mut self, facing: crate::sim::movement::FacingClass) {
+        self.barrel_elevation = facing;
     }
 
     /// Whether the barrel elevation still holds its constructor value, which

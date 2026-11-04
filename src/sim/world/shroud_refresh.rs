@@ -1436,7 +1436,7 @@ impl Simulation {
         }
     }
 
-    pub(super) fn fog_viewers(&self) -> Vec<crate::sim::intern::InternedId> {
+    pub(crate) fn fog_viewers(&self) -> Vec<crate::sim::intern::InternedId> {
         if self.session.game_mode().is_network() {
             return self.represented_player_maps();
         }
@@ -1454,6 +1454,34 @@ impl Simulation {
             viewers.push(current);
         }
         viewers
+    }
+
+    /// The logical clients ([`Self::fog_viewers`]) on which
+    /// `HouseClass::IsHumanPlayer @ 0x0050B6F0` passes for `house`, each
+    /// asking with its own PlayerPtr ([`Self::is_human_player_on`]). A
+    /// nonzero mode's clients are its human houses, and its PlayerPtr test
+    /// (`0x0050B716`) passes only on `house`'s own. Mode zero reads `house`'s
+    /// human and PlayerControl flags (`+0x1EC`, `+0x1ED`), so a campaign
+    /// PlayerControl house passes on the player's client too.
+    pub(crate) fn human_player_clients(
+        &self,
+        house: crate::sim::intern::InternedId,
+    ) -> Vec<crate::sim::intern::InternedId> {
+        let candidates = if self.session.game_mode_nonzero() {
+            if self.owner_is_human(house) {
+                vec![house]
+            } else {
+                Vec::new()
+            }
+        } else {
+            self.fog_viewers()
+        };
+        candidates
+            .into_iter()
+            .filter(|&client| {
+                Self::is_human_player_on(&self.session, &self.houses, house, Some(client))
+            })
+            .collect()
     }
 
     fn fog_clients_current_first(&self) -> Vec<crate::sim::intern::InternedId> {

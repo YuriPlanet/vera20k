@@ -205,6 +205,12 @@ pub(crate) struct RetailOptionsProfile {
     /// only, and skirmish only: the clip layer's own `CommanderFeedback=`
     /// switch still decides whether clips exist at all.
     pub(crate) custom_end_game_movie: bool,
+    /// `[VERA] HealthBars=`: which objects draw the health strip besides
+    /// gamemd's selected/hovered pair, as a
+    /// [`HealthBarMode`](crate::ui::main_menu_dialogs::options::HealthBarMode)
+    /// value. Defaults to the native rule. Client presentation only: the
+    /// simulation never reads it, and the profile writer round-trips the value.
+    pub(crate) health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode,
     /// `[VERA] TranslateChat=`: the language received online chat is
     /// translated into, or `None`, the default, for off. Only the `/translate`
     /// chat command changes it ([`Self::commit_chat_translation`]).
@@ -312,6 +318,7 @@ impl Default for RetailOptionsProfile {
             custom_end_game_banner: true,
             custom_end_game_score: true,
             custom_end_game_movie: true,
+            health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode::Vanilla,
             translate_chat: None,
             language: crate::i18n::DEFAULT_LANGUAGE.to_owned(),
             skipped_update: String::new(),
@@ -333,7 +340,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 26],
+    pub(crate) vera: [(&'static str, String); 27],
 }
 
 impl RetailOptionsLoad {
@@ -560,6 +567,11 @@ impl RetailOptionsProfile {
                 vera.read_bool("CustomEndGameScore", self.custom_end_game_score);
             self.custom_end_game_movie =
                 vera.read_bool("CustomEndGameMovie", self.custom_end_game_movie);
+            // Absent keeps the current value; a value this build does not know
+            // reads as the native rule instead of hiding the original strip.
+            self.health_bars = crate::ui::main_menu_dialogs::options::HealthBarMode::from_ini_value(
+                vera.read_int("HealthBars", self.health_bars.ini_value()),
+            );
             if let Some(value) = vera.read_name("TranslateChat", 16) {
                 self.translate_chat = crate::ui::chat_translation::ChatLanguage::from_tag(value);
             }
@@ -723,6 +735,7 @@ impl RetailOptionsProfile {
                 ),
                 ("LockCursor", format_bool(self.lock_cursor).to_string()),
                 ("VeraIcon", format_bool(self.vera_icon).to_string()),
+                ("HealthBars", self.health_bars.ini_value().to_string()),
             ],
         }
     }
@@ -1792,6 +1805,39 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                     .retained_profile
                     .commander_feedback,
                 expected
+            );
+        }
+    }
+
+    /// `[VERA] HealthBars=` is the client health-strip policy: zero is the
+    /// native rule and the default, and a value this build does not know reads
+    /// as it, so a hand-edited INI never hides the original strip.
+    #[test]
+    fn health_bar_modes_read_and_round_trip() {
+        use crate::ui::main_menu_dialogs::options::HealthBarMode;
+
+        let startup = RetailStartupOptions::default();
+        assert_eq!(
+            load_snapshot(&startup, b"").retained_profile.health_bars,
+            HealthBarMode::Vanilla
+        );
+        for (value, expected) in [
+            (0, HealthBarMode::Vanilla),
+            (1, HealthBarMode::Always),
+            (2, HealthBarMode::AlwaysExceptFull),
+            (7, HealthBarMode::Vanilla),
+        ] {
+            let input = format!("[VERA]\nHealthBars={value}\nUnowned=keep\n");
+            let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
+            assert_eq!(profile.health_bars, expected, "HealthBars={value}");
+            let written = String::from_utf8(profile.transform_settings(input.as_bytes())).unwrap();
+            assert!(written.contains("Unowned=keep"), "{written}");
+            assert_eq!(
+                load_snapshot(&startup, written.as_bytes())
+                    .retained_profile
+                    .health_bars,
+                expected,
+                "HealthBars={value} survives the profile writer"
             );
         }
     }

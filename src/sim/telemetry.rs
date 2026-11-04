@@ -73,7 +73,9 @@ use crate::sim::world::Simulation;
 /// v29: `session` — which match a stream belongs to: map name, `GameMode`, the
 /// game speed the pacer uses, the local player and its accepted result, and the
 /// running binary's version stamp.
-pub const TELEMETRY_SCHEMA_VERSION: u32 = 29;
+/// v30: `network` — an online relay match's backlog, catch-up state, skipped
+/// draws and relay slowdown.
+pub const TELEMETRY_SCHEMA_VERSION: u32 = 30;
 
 /// One house row of a [`ReportPoint`]: just what the report's party table and
 /// pie captions read.
@@ -288,6 +290,19 @@ pub struct TerrainGrid {
     /// carries no raised deck, which includes low, ground-level bridges). The
     /// dashboard lifts those cells' tops by this much and draws their sides.
     pub deck_rises: String,
+}
+
+/// An online relay match's delivery state, measured by the app.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct NetworkSample {
+    /// Frames the relay has sealed past the local simulation.
+    pub backlog_frames: u32,
+    /// The playout pacer is running buffered frames to catch up.
+    pub catching_up: bool,
+    /// Draws skipped while catching up, this match.
+    pub skipped_draws: u64,
+    /// The relay seals slower than the match's own rate for a slow player.
+    pub relay_slowed: bool,
 }
 
 /// Frame-timing sample, filled by the app layer (the simulation never
@@ -672,6 +687,8 @@ pub struct TelemetrySnapshot {
     pub render: Option<RenderTimingReport>,
     /// App-filled log records since the previous snapshot.
     pub logs: Option<LogBatch>,
+    /// App-filled online relay match delivery state; `None` otherwise.
+    pub network: Option<NetworkSample>,
     #[cfg(feature = "debug-tools")]
     pub debug_tools: DebugToolsReport,
 }
@@ -900,6 +917,7 @@ impl Simulation {
             report_point: None,
             render: None,
             logs: None,
+            network: None,
             #[cfg(feature = "debug-tools")]
             debug_tools: {
                 let flags = self.cheat_flags();

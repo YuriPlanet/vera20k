@@ -1194,8 +1194,8 @@ pub(crate) fn enter_idle_mode(
 /// 0x004176F0`, `BuildingClass::Enter_Idle_Mode @ 0x0044D6A0`), then
 /// Ready_To_Commence and Commence, so the mission it picks is current at once
 /// when the object is ready.
-/// A fresh object with nowhere to go takes Guard; a map placement then assigns
-/// its authored mission over it. A factory-built vehicle used to keep no
+/// A fresh object with nowhere to go takes Guard; a map placement then queues
+/// and commences its authored mission over it (`commit_map_placement_mission`). A factory-built vehicle used to keep no
 /// mission at all, so its dispatch took the missionless 450-frame arm instead
 /// of Mission_Guard's cadence. A placed building queues Construction; its
 /// ready byte (`+0x6DD`, `0x00454250`) is clear unless its cell-put discovery
@@ -1989,9 +1989,9 @@ fn evaluate_foot_rescue(
 /// Where Area Guard's Retaliate_And_Scan looks for an object holding no
 /// target: `post`'s coordinate, once the object can acquire a target and its
 /// targeting timer has run out; `None` when the handler does not scan.
-/// `0x004D6EF5..0x004D6F06` uses archive+48. A queued mission can leave no
-/// archive; that invalid native pointer is outside this ordinary lane. Every
-/// term is a pure read, so their order is not observable.
+/// `0x004D6EF5..0x004D6F06` uses archive+48; a guard without a post never
+/// reaches the scan (`0x004D6E6E`), so it answers `None`. Every term is a
+/// pure read, so their order is not observable.
 fn area_guard_scan_point(
     sim: &Simulation,
     id: u64,
@@ -2200,12 +2200,13 @@ pub(super) fn evaluate_foot_area_guard(
     {
         return MissionHandlerEvaluation::cadence(1);
     }
-    if sim
-        .substrate
-        .entities
-        .get(id)
-        .is_some_and(|entity| entity.attack_target.target().is_none())
-    {
+    // `0x004D6ED1..0x004D6F25`: the idle action belongs to the post branch's
+    // no-Target arm (a Target the scan found returned above). A guard that
+    // approached skips it even when Approach dropped its Target
+    // (`0x004D6F2D` jumps to `0x004D6F38`), and so does a guard without a
+    // post (a queued mission kept the head from archiving one,
+    // `0x004D6D78..0x004D6D87`).
+    if archive.is_some() && needs_target {
         let _ = sim.infantry_idle_action(id, rules, ctx.overlay_registry, ctx.effects);
     }
     //4D6F38..4D701F re-reads TarCom after idle and queues before the cadence
