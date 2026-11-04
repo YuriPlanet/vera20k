@@ -177,7 +177,11 @@ jobs:
           - os: ubuntu-22.04
             target: linux-x64
             program: vera20k
-          - os: macos-latest
+          # Apple Silicon jobs here use macos-15, not macos-latest (macOS 26),
+          # which dropped this job unstarted ("not acquired by Runner of type
+          # hosted") in four of five attempts on 2026-11-03 and 04. The oldest
+          # supported macOS stays MACOSX_DEPLOYMENT_TARGET on either image.
+          - os: macos-15
             target: macos-arm64
             program: vera20k
           # Intel Macs, built and started on GitHub's last Intel image, which
@@ -588,7 +592,7 @@ jobs:
     name: sign and notarize (${{ matrix.target }})
     needs: [prepare, build]
     if: inputs.promote == '' && github.ref == 'refs/heads/main'
-    runs-on: macos-latest
+    runs-on: macos-15
     # Apple's two-hour wait (notarize.py) plus signing, upload and stapling.
     timeout-minutes: 150
     environment: macos-signing
@@ -667,7 +671,7 @@ jobs:
           - os: ubuntu-22.04
             target: linux-x64
             program: vera20k
-          - os: macos-latest
+          - os: macos-15
             target: macos-arm64
             program: vera20k
           - os: macos-15-intel
@@ -825,7 +829,7 @@ jobs:
         # not the build's 22.04: rust-cache keys on the OS family, not its
         # version, so a cache saved on the newer image could hand 22.04 build
         # scripts linked against a glibc it lacks.
-        os: [windows-latest, ubuntu-latest, macos-latest, macos-15-intel]
+        os: [windows-latest, ubuntu-latest, macos-15, macos-15-intel]
     uses: ./.github/workflows/test.yml
     with:
       os: ${{ matrix.os }}
@@ -952,7 +956,7 @@ jobs:
     name: promote
     if: inputs.promote != ''
     # Apple's signature and ticket checks run on the same files we publish.
-    runs-on: macos-latest
+    runs-on: macos-15
     timeout-minutes: 15
     permissions:
       contents: write
