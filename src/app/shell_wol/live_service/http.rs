@@ -61,6 +61,8 @@ pub(super) enum Request {
     OpenSession {
         attempt: u64,
         nickname: String,
+        /// The name's ranked-ladder key this computer holds (docs/lobby-protocol.md).
+        ladder_key: Option<String>,
     },
     /// The shell gave up on an unanswering lobby outside a match: stop
     /// polling and log this bearer out at the next sign-in.
@@ -260,6 +262,9 @@ enum RequestFailure {
     /// 503 `service_full` or `network_full`: the lobby has no room for this
     /// sign-in, with the same kind of message.
     Full(Option<String>),
+    /// 403 `name_claimed`: the name is on the ranked ladder and this sign-in
+    /// lacks its key, with the same kind of message.
+    NameClaimed(Option<String>),
 }
 
 /// What a lobby refusal of a sign-in tells the player: its own plain
@@ -271,6 +276,9 @@ fn sign_in_refusal(failure: RequestFailure) -> String {
         }),
         RequestFailure::Full(message) => message.unwrap_or_else(|| {
             "VERA20k Online is full right now. Please try again later.".to_owned()
+        }),
+        RequestFailure::NameClaimed(message) => message.unwrap_or_else(|| {
+            "That name is on the ranked ladder. Sign in from the computer that holds its ladder key, or choose another username.".to_owned()
         }),
         _ => "VERA20k Online is busy right now. Please try again in a minute.".to_owned(),
     }
@@ -341,6 +349,9 @@ impl RequestFailure {
             Some("service_full" | "network_full") if status == 503 => {
                 Self::Full(plain_message(value.as_ref()))
             }
+            Some("name_claimed") if status == 403 => {
+                Self::NameClaimed(plain_message(value.as_ref()))
+            }
             _ if status == 426 => Self::UpgradeRequired(plain_message(value.as_ref())),
             _ => Self::Status(status),
         }
@@ -361,6 +372,7 @@ impl RequestFailure {
             Self::LostCursor | Self::AlreadyFinished => 409,
             Self::UpgradeRequired(_) => 426,
             Self::Maintenance(_) | Self::Full(_) => 503,
+            Self::NameClaimed(_) => 403,
         }
     }
 }
@@ -938,7 +950,11 @@ macro_rules! serial_driver {
                 };
                 let _ = output.send(response);
             }
-            Some(Request::OpenSession { attempt, nickname }) => {
+            Some(Request::OpenSession {
+                attempt,
+                nickname,
+                ladder_key,
+            }) => {
                 // A held bearer still holds its name: log it out first, and
                 // while the lobby is away, report that instead of the name.
                 if !platform_await!(client.release_held_session()) {
@@ -950,7 +966,9 @@ macro_rules! serial_driver {
                 let result = platform_await!(client
                     .request(
                         "/v1/sessions",
-                        Some(&json!({"nickname": nickname, "protocol": 4})),
+                        // `ladder_key` is null when this computer holds
+                        // none for the name.
+                        Some(&json!({"nickname": nickname, "protocol": 4, "ladder_key": ladder_key})),
                     ))
                     .and_then(|value| decode_session(value, &nickname));
                 match result {
@@ -989,6 +1007,7 @@ macro_rules! serial_driver {
                     }
                     Err(error @ (RequestFailure::Maintenance(_)
                     | RequestFailure::Full(_)
+                    | RequestFailure::NameClaimed(_)
                     | RequestFailure::Status(429))) => {
                         let message = sign_in_refusal(error);
                         let _ = output.send(Response::SignInRefused { attempt, message });
@@ -1483,6 +1502,22 @@ mod tests {
         assert_eq!(sign_in_refusal(full), reason);
         assert!(sign_in_refusal(RequestFailure::Full(None)).contains("full"));
         assert!(sign_in_refusal(RequestFailure::Status(429)).contains("busy"));
+    }
+
+    /// A name on the ranked ladder, signed in without its key, says so
+    /// instead of failing as a wrong password.
+    #[test]
+    fn a_claimed_name_refuses_a_sign_in_without_its_key() {
+        let reason = "That name is on the ranked ladder.";
+        let claimed = RequestFailure::response(
+            403,
+            json!({"error":{"code":"name_claimed","message":reason}})
+                .to_string()
+                .as_bytes(),
+        );
+        assert_eq!(claimed, RequestFailure::NameClaimed(Some(reason.into())));
+        assert_eq!(sign_in_refusal(claimed), reason);
+        assert!(sign_in_refusal(RequestFailure::NameClaimed(None)).contains("ladder key"));
     }
 
     #[test]

@@ -1123,7 +1123,8 @@ impl App {
                 campaign_speed_control: startup_options.campaign_speed_control,
                 external_launch: false,
                 external_launch_error: None,
-                external_match_result: None,
+                match_result: None,
+                match_winners: None,
                 external_progress: Default::default(),
                 network_goodbye_deadline: None,
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]

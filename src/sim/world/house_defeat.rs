@@ -517,6 +517,38 @@ impl Simulation {
     /// this process's PlayerPtr receives native's final Win/Lose flags.
     /// VERA network worlds retain the same per-human result on every client.
     fn complete_multiplayer_after_defeat(&mut self, rules: &RuleSet, effects: FrameEffects<'_>) {
+        let Some(decision) = self.multiplayer_decision() else {
+            return;
+        };
+        for (owner, won) in decision {
+            if won {
+                self.flag_house_to_win(owner, rules, false, effects);
+            } else {
+                self.flag_house_to_lose(owner, rules, false, effects);
+            }
+        }
+    }
+
+    /// VERA: the human Houses a finished network match's completion
+    /// (MPlayer_Defeated4FC3DE..6B7) flags to win, for the online lobby's
+    /// ladder; `None` while the match runs.
+    pub fn network_match_winners(&self) -> Option<Vec<InternedId>> {
+        if !self.session.game_mode().is_network() {
+            return None;
+        }
+        let decision = self.multiplayer_decision()?;
+        Some(
+            decision
+                .into_iter()
+                .filter_map(|(owner, won)| won.then_some(owner))
+                .collect(),
+        )
+    }
+
+    /// MPlayer_Defeated4FC3DE..6B7's decision: `None` while hostile
+    /// survivors and a human remain, else each outcome viewpoint and whether
+    /// it wins.
+    fn multiplayer_decision(&self) -> Option<Vec<(InternedId, bool)>> {
         let alive: Vec<_> = self
             .houses
             .order()
@@ -546,7 +578,7 @@ impl Simulation {
             })
         });
         if !all_allied && alive.len() != 1 && living_humans != 0 {
-            return;
+            return None;
         }
         //4FC5DD/5EC: both class virtuals are true only for Cooperative
         //(5C4EE0/5C4EF0); ordinary5C0E40 returns false.4FC62C's final
@@ -559,13 +591,15 @@ impl Simulation {
                 .houses
                 .values()
                 .any(|house| !house.is_defeated() && house.is_controlled_by_human(true));
-        for owner in self.outcome_viewpoints() {
-            if !self.houses[&owner].is_defeated() || cooperative_shared_win {
-                self.flag_house_to_win(owner, rules, false, effects);
-            } else {
-                self.flag_house_to_lose(owner, rules, false, effects);
-            }
-        }
+        Some(
+            self.outcome_viewpoints()
+                .into_iter()
+                .map(|owner| {
+                    let won = !self.houses[&owner].is_defeated() || cooperative_shared_win;
+                    (owner, won)
+                })
+                .collect(),
+        )
     }
 
     /// FlagWin4FCA5C..E7 /FlagLose4FCC45..D0 apply MaxAhead and then align
