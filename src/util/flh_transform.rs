@@ -137,9 +137,8 @@ pub fn native_flh_world_delta(
 }
 
 /// `BuildingClass::GetTurretDrawPosition @ 0x00453BF0`'s voxel-barrel world
-/// delta for a `BarrelAnimIsVoxel=` type: the composed pivot matrix applied
-/// to the burst-selected barrel end, truncated into the integer add the
-/// fire coordinate takes.
+/// delta for a `BarrelAnimIsVoxel=` type: the composed pivot matrix's
+/// translation, truncated into the integer add the fire coordinate takes.
 ///
 /// gamemd-derived. The matrix chain `0x00458810` post-multiplies, per
 /// row-stored floats, from the identity (`0x5AE860`):
@@ -158,30 +157,27 @@ pub fn native_flh_world_delta(
 /// `theta_y` from the barrel elevation (`+0x370`), whose input the chain
 /// additionally negates (`fchs` at `0x00458920`). The negated angle is a
 /// step of the same table, answered at the mirrored step, not by negating a
-/// sine: the retail table is asymmetric. `Scale` reads the `+0x1728` double
-/// (scale X/Y/Z at `0x5AEAD0/0x5AEAF0/0x5AEB20`).
+/// sine: the retail table is asymmetric. Each pivot rides its own
+/// single-axis translate ([`crate::util::native_affine::translate_axis`]).
 ///
-/// RESIDUAL: `+0x1728` has no writer anywhere in the original image (only
-/// this read at `0x0045888D` and the save/load serializer at `0x00464F60`
-/// reference the field; the wholesale-zeroing constructor leaves 0.0). The
-/// unported `VoxelBarrelFile=` voxel loader is what would store a scale, so
-/// this port assumes its 1.0 and skips the operation, while native reads
-/// whatever the field holds.
-///
-/// Each pivot rides its own single-axis translate
-/// ([`crate::util::native_affine::translate_axis`]), and the barrel end goes
-/// through the point transform `0x5AFB80` (`0x00453CA3`), whose first row
-/// sums Z, Y, then X.
+/// `Scale` (`0x00458975..0x004589A2`; X/Y/Z at `0x5AEAD0/0x5AEAF0/0x5AEB20`)
+/// multiplies the three basis columns by the type's `+0x1728` double, read
+/// at `0x0045897B`. No instruction stores that field: the `VoxelBarrelFile=`
+/// loader (`0x0045FCAF`) loads only the model, and `0x00464F5E` only reads
+/// it. Every type keeps the constructor's 0.0, so the basis is zeroed and
+/// the point transform `0x5AFB80` (`0x00453CA3`) answers the translation
+/// column exactly, whatever the burst-signed barrel end. This port returns
+/// that translation; the barrel end never moves the shot
+/// (`building_voxel_flh.json`'s barrel rows record it natively).
 pub fn native_building_barrel_world_delta(
     building_pivot: [i32; 3],
     rotate_pivot: [i32; 3],
     pitch_pivot: [i32; 3],
-    barrel_end: [i32; 3],
     facing16: u16,
     elevation16: u16,
 ) -> Option<(i32, i32, i32)> {
     use crate::util::direction_tables::quantize::step32_from_facing16;
-    use crate::util::native_affine::{rotate_y, rotate_z, transform_point, translate_axis};
+    use crate::util::native_affine::{rotate_y, rotate_z, translate_axis};
     use crate::util::native_trig::native_sin_cos_by_step;
     use crate::util::native_x87::X87Chop53;
 
@@ -203,16 +199,16 @@ pub fn native_building_barrel_world_delta(
     let theta_y = i32::from(step32_from_facing16(elevation16)) - 8;
     let (sin_y, cos_y) = native_sin_cos_by_step(-theta_y)?;
     let matrix = rotate_y(matrix, sin_y, cos_y);
-    // 0x45892A..0x458970: T(+0x1730/34/38). The chain's trailing Scale
-    // (`0x458975..0x4589A2`) is the skipped `+0x1728` identity above.
+    // 0x45892A..0x458970: T(+0x1730/34/38).
     let mut matrix = matrix;
     for (axis, pivot) in pitch_pivot.into_iter().enumerate() {
         matrix = translate_axis(matrix, axis, pivot as f32);
     }
-    // 0x453C7D..0x453CA3: the barrel end rides the composed matrix.
-    let world = transform_point(matrix, glam::Vec3::from_array(barrel_end.map(|v| v as f32)))?;
+    // 0x458975..0x4589A2 then 0x453CA3: the zero scale clears the basis, so
+    // the transformed barrel end is the translation column.
+    let origin = matrix.col(3);
     // Y is negated before the three `Math::ftol @ 0x007C5F00` truncations
     // (`0x00453CB1..0x00453CDD`).
     let ftol = |value: f32| X87Chop53::ftol_f64_low_masked(f64::from(value));
-    Some((ftol(world.x), ftol(-world.y), ftol(world.z)))
+    Some((ftol(origin.x), ftol(-origin.y), ftol(origin.z)))
 }

@@ -413,15 +413,17 @@ impl HouseMasks {
     }
 }
 
-/// The four `VoxelBarrelOffsetTo*` triples of a `BarrelAnimIsVoxel=`
+/// The `VoxelBarrelOffsetTo*` pivot triples of a `BarrelAnimIsVoxel=`
 /// (`+0x16C6`) building type. `BuildingTypeClass::ReadINI @ 0x0045FE50` reads
 /// them in native field order right after `BarrelAnimIsVoxel=` (and the
 /// unread `VoxelBarrelFile=` name) through `Get_TripleInt @ 0x00529CA0`
-/// (`0x00464697`, `0x004646C0`, `0x004646E9`, `0x00464712`), each pass using
-/// the current triple as its self-default; the wholesale-zeroing constructor
-/// makes that `(0,0,0)`. `BuildingClass::GetTurretDrawPosition @ 0x00453BF0`
-/// composes them into its barrel matrix chain `0x00458810`; no other reader
-/// touches them.
+/// (`0x00464697`, `0x004646C0`, `0x004646E9`), each pass using the current
+/// triple as its self-default; the wholesale-zeroing constructor makes that
+/// `(0,0,0)`. `BuildingClass::GetTurretDrawPosition @ 0x00453BF0` composes
+/// them into its barrel matrix chain `0x00458810`; no other reader touches
+/// them. The fourth triple, `VoxelBarrelOffsetToBarrelEnd=` (`+0x1754`, read
+/// at `0x00464712`), is the point that chain's never-stored `+0x1728` scale
+/// (0.0) multiplies away, so VERA does not read it.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct BarrelVoxelOffsets {
     /// `VoxelBarrelOffsetToPitchPivotPoint=` (`+0x1730/34/38`), the pitch
@@ -433,10 +435,6 @@ pub struct BarrelVoxelOffsets {
     /// `VoxelBarrelOffsetToBuildingPivotPoint=` (`+0x1748/4C/50`), the first
     /// translation off the identity.
     pub building_pivot: [i32; 3],
-    /// `VoxelBarrelOffsetToBarrelEnd=` (`+0x1754/58/5C`); the burst-selected
-    /// barrel flips the Y component's sign (`0x00453C30..0x00453C67`) before
-    /// the point rides the matrix.
-    pub barrel_end: [i32; 3],
 }
 
 /// A game object definition parsed from a rules.ini section.
@@ -4390,8 +4388,9 @@ impl ObjectType {
             // Native order after TurretAnimIsVoxel (0x00464647): the
             // `BarrelAnimIsVoxel` bool (0x00464661), the VoxelBarrelFile name
             // this port does not read (0x0046467E, retained above), then the
-            // four `Read3Int` triples (0x00464697..0x00464734) whose
-            // self-default keeps an earlier layer's triple.
+            // `Read3Int` pivot triples (0x00464697..0x004646E9) whose
+            // self-default keeps an earlier layer's triple. The barrel-end
+            // triple (0x00464712) has no effect; see `BarrelVoxelOffsets`.
             barrel_anim_is_voxel: section.read_bool("BarrelAnimIsVoxel", false),
             barrel_voxel: BarrelVoxelOffsets {
                 pitch_pivot: section.read_coord3_fold("VoxelBarrelOffsetToPitchPivotPoint", [0; 3]),
@@ -4399,7 +4398,6 @@ impl ObjectType {
                     .read_coord3_fold("VoxelBarrelOffsetToRotatePivotPoint", [0; 3]),
                 building_pivot: section
                     .read_coord3_fold("VoxelBarrelOffsetToBuildingPivotPoint", [0; 3]),
-                barrel_end: section.read_coord3_fold("VoxelBarrelOffsetToBarrelEnd", [0; 3]),
             },
             guard_range: present_range("GuardRange"),
             air_range_bonus: present_range("AirRangeBonus"),

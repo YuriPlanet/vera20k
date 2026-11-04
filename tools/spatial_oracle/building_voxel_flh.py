@@ -10,11 +10,14 @@ Retail `gamemd.exe` under Unicorn (identity in the meta sidecar).
 (`0x00453A12..0x00453A4C`). For a type whose `BarrelAnimIsVoxel=` byte
 (`+0x16C6`) is set, the earlier arm (`0x004539A1..0x004539DE`) replaces the
 whole coordinate with `GetTurretDrawPosition @ 0x00453BF0`: the type's
-`VoxelBarrelOffsetTo*` pivots composed by the matrix chain `0x00458810`
-(trailing `+0x1728` scale included), the burst-selected barrel end through
-the point transform `0x5AFB80`, the building coordinate (`+0xAC` =
-`0x00459EF0`) and the tail's own `TurretAnimX`/`TurretAnimY` pixel add.
-Both arms are only reached with `PrimaryFirePixelOffset=` (`+0xE44`) unset.
+`VoxelBarrelOffsetTo*` pivots composed by the matrix chain `0x00458810`, the
+burst-selected barrel end through the point transform `0x5AFB80`, the
+building coordinate (`+0xAC` = `0x00459EF0`) and the tail's own
+`TurretAnimX`/`TurretAnimY` pixel add. The chain ends by scaling its three
+basis columns by the type's `+0x1728` double (`0x00458975..0x004589A2`),
+which no instruction stores, so the constructor's 0.0 removes the barrel end
+and the shot leaves from the pivot translation. Both arms are only reached
+with `PrimaryFirePixelOffset=` (`+0xE44`) unset.
 
 Fixture. `building_prism.LaserScene`'s building fixture: the
 `building_construction` BuildingClass (vtable 0x7E3EBC, its `+0xAC` =
@@ -25,9 +28,8 @@ executed natively. Per row the type receives:
 - `+0x11E0`/`+0x11E4` (`TurretAnimX=`, `TurretAnimY=`) as signed dwords and
   `+0x16C5` (`TurretAnimIsVoxel=`),
 - `+0x16C6` (`BarrelAnimIsVoxel=`), the `+0x1730/+0x173C/+0x1748/+0x1754`
-  pivot triples, and the `+0x1728` scale double. No instruction stores
-  `+0x1728`, so these rows model the unported `VoxelBarrelFile=` loader by
-  writing 1.0; stock execution reads the constructor's 0.0 there,
+  pivot triples, and the `+0x1728` scale double at the constructor's 0.0
+  (no instruction stores it),
 - `+0xE44` (`PrimaryFirePixelOffset=`) and `+0x1764`
   (`PrimaryFireDualOffset=`), the stock Grand Cannon and Gattling Cannon state
   being the constructor's 0xFFFF/0xFFFF and 0,
@@ -48,7 +50,9 @@ the FLH turn (`0x006F3B2E..0x006F3C52`) and the barrel chain's `Rz` read.
 `+0x370`, the barrel elevation, is constructed and snapped the same way.
 `+0x3B8` is the burst index the odd-shot lateral mirror and the barrel-end
 sign (`0x00453C1A..0x00453C67`: `CurrentBurstIndex - 1`, or, at zero, the
-weapon's `Burst - 1`; barrel 0 adds `+Y`, 1 `-Y`, later ones none) read.
+weapon's `Burst - 1`; barrel 0 adds `+Y`, 1 `-Y`, later ones none) read. The
+zero scale multiplies that signed barrel end away, so every burst row of the
+barrel arm records the same origin.
 
 Each row executes `BuildingClass::GetFLH` with the original five arguments
 (out, weapon index, base x, base y, base z), then the building's own
@@ -94,7 +98,8 @@ class VoxelFlhScene(prism.LaserScene):
     `LaserScene` already clears `+0x16C5`/`+0x16C6` and writes `+0xE44`,
     `+0x1764` and the FLH slots from the case; this subclass adds the pixel
     offsets the voxel-turret arm reads, the barrel arm's flag, pivot triples
-    and scale, the fixture weapon's `Burst`, and the barrel-path getters.
+    and never-stored scale, the fixture weapon's `Burst`, and the barrel-path
+    getters.
     """
 
     def __init__(self, case):
@@ -109,9 +114,9 @@ class VoxelFlhScene(prism.LaserScene):
                             (0x1748, 'voxel_barrel_building_pivot'),
                             (0x1754, 'voxel_barrel_end')):
             u.mem_write(self.kind + offset, dwords(*case[key]))
-        # No instruction stores +0x1728; model the unported VoxelBarrelFile
-        # loader's 1.0 (stock execution would read the constructor's 0.0).
-        u.mem_write(self.kind + 0x1728, struct.pack('<d', case['voxel_barrel_scale']))
+        # No instruction stores +0x1728 (not even the VoxelBarrelFile loader at
+        # 0x0045FCAF), so every type keeps the constructor's 0.0 there.
+        u.mem_write(self.kind + 0x1728, struct.pack('<d', 0.0))
         weapon = struct.unpack('<I', u.mem_read(self.kind + 0x898, 4))[0]
         assert weapon, 'the fixture primary record carries a WeaponTypeClass'
         u.mem_write(weapon + 0x9C, dwords(case['weapon_burst']))
@@ -129,7 +134,7 @@ def row(name, **fields):
                 voxel_barrel_rotate_pivot=[0, 0, 0],
                 voxel_barrel_building_pivot=[0, 0, 0],
                 voxel_barrel_end=[0, 0, 0],
-                voxel_barrel_scale=1.0, elevation=0x4000, weapon_burst=1,
+                elevation=0x4000, weapon_burst=1,
                 pixel_offset=list(UNSET_PIXEL_OFFSET), primary_dual=0,
                 primary_flh=[0, 0, 0], secondary_flh=[0, 0, 0])
     case.update(fields)
@@ -171,7 +176,9 @@ def case_rows():
         row('gtgcan_weapon1', weapon_index=1, **GTGCAN),
         # The `+0x16C6` arm. The barrel index is CurrentBurstIndex - 1, or,
         # at index zero, the weapon's Burst - 1 (`barrel_burst0_wrap`):
-        # barrel 0 adds +Y, 1 -Y, and a third or later barrel none.
+        # barrel 0 signs the barrel end +Y, 1 -Y, and a third or later barrel
+        # zeroes it. The zero scale removes the barrel end, so the three burst
+        # rows record one origin.
         row('barrel_burst0_wrap', burst=0, weapon_burst=2, **BARREL),
         row('barrel_burst1_positive', burst=1, **BARREL),
         row('barrel_burst3_beyond', burst=3, **BARREL),
@@ -218,7 +225,6 @@ def voxel_flh(case):
             barrel_anim_is_voxel=int(bool(case['barrel_anim_is_voxel'])),
             elevation=case['elevation'],
             weapon_burst=case['weapon_burst'],
-            voxel_barrel_scale=case['voxel_barrel_scale'],
             voxel_barrel_pitch_pivot=list(case['voxel_barrel_pitch_pivot']),
             voxel_barrel_rotate_pivot=list(case['voxel_barrel_rotate_pivot']),
             voxel_barrel_building_pivot=list(case['voxel_barrel_building_pivot']),
@@ -250,7 +256,8 @@ def main(argv=None):
                   '+0x11E0/+0x11E4 for a +0x16C5 type; and its voxel-barrel arm '
                   '(0x004539A1..0x004539DE): GetTurretDrawPosition 0x00453BF0\'s '
                   '0x00458810 matrix chain over the +0x1730/+0x173C/+0x1748/+0x1754 pivots '
-                  'and the burst-signed barrel end, with the tail\'s own +0x11E0/+0x11E4 '
+                  'and the burst-signed barrel end, which the chain\'s never-stored '
+                  '+0x1728 scale (0.0) removes, with the tail\'s own +0x11E0/+0x11E4 '
                   'pixel add. Both arms\' +0x16C5/+0x16C6/+0xE44/+0x1764/+0x89C/+0x8B8 '
                   'inputs, the building\'s own GetCoords 0x00459EF0, and the FacingClass '
                   '0x4C91E0/0x4C9300 heading the FLH turn and the chain\'s Rz read.',
@@ -269,15 +276,15 @@ def main(argv=None):
                          'TurretAnimIsVoxel/TurretAnimX/TurretAnimY (+0x16C5/+0x11E0/'
                          '+0x11E4), BarrelAnimIsVoxel and the four VoxelBarrelOffsetTo* '
                          'triples (+0x16C6, +0x1730/+0x173C/+0x1748/+0x1754), the +0x1728 '
-                         'scale double, PrimaryFirePixelOffset/PrimaryFireDualOffset '
+                         'scale double (0.0), PrimaryFirePixelOffset/PrimaryFireDualOffset '
                          '(+0xE44/+0x1764, the stock constructor state being 0xFFFF/0xFFFF '
                          'and 0), the primary and secondary FLH (+0x89C/+0x8B8), the fixture '
                          'weapon\'s Burst (+0x9C) and the building Location',
                          'no instruction stores +0x1728 (only this chain\'s read at '
-                         '0x0045888D and the save/load serializer 0x00464F60 reference it), '
-                         'so every row models the unported VoxelBarrelFile loader by writing '
-                         '1.0; stock execution reads the constructor\'s 0.0, which would '
-                         'collapse the chain to the pivot translations alone',
+                         '0x0045897B and a read at 0x00464F5E reference it), so every row '
+                         'holds the constructor\'s 0.0, as every stock or modded type does; '
+                         'the chain\'s Scale 0x5AEAD0/0x5AEAF0/0x5AEB20 then zeroes its basis '
+                         'and the point transform answers the pivot translation',
                          'the stock rows use the retail-authored values the comparison rests '
                          'on: GTGCAN 3/28 with PrimaryFireFLH 250,0,230 and YAGGUN 0/15 with '
                          'Weapon1FLH 150,60,200. A later layer could override them; the '

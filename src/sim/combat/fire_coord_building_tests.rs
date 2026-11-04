@@ -462,15 +462,14 @@ fn building_voxel_turret_shot_origin_matches_the_original_flh() {
 
 /// The `BarrelAnimIsVoxel=` rows run the original `+0x16C6` arm: the whole
 /// coordinate is `GetTurretDrawPosition @ 0x00453BF0` — the `0x00458810`
-/// pivot chain over the burst-signed barrel end, plus the tail's own
-/// `TurretAnimX`/`TurretAnimY` add — with no weapon FLH and no base GetFLH.
-/// The rows vary heading, elevation, and the burst-selected barrel index
-/// (`CurrentBurstIndex - 1`, or, at zero, the weapon's `Burst - 1`; barrel 0
-/// adds +Y, 1 -Y, later ones none). `barrel_pixel_precedence` keeps the
-/// primary-pixel arm in front, `barrel_voxel_turret_pixels` shows a
+/// pivot chain, whose never-stored `+0x1728` scale (0.0) removes the
+/// burst-signed barrel end, plus the tail's own `TurretAnimX`/`TurretAnimY`
+/// add — with no weapon FLH and no base GetFLH. The rows vary heading,
+/// elevation, and the burst-selected barrel index (`CurrentBurstIndex - 1`,
+/// or, at zero, the weapon's `Burst - 1`). `barrel_pixel_precedence` keeps
+/// the primary-pixel arm in front, `barrel_voxel_turret_pixels` shows a
 /// `TurretAnimIsVoxel` type losing to the barrel arm with its pixels still
-/// added. The rows' recorded scale input is 1.0, modelling the unported
-/// `VoxelBarrelFile` loader; native stock reads the never-written 0.0.
+/// added.
 #[test]
 fn building_voxel_barrel_shot_origin_matches_the_original_flh() {
     let native = voxel_native();
@@ -541,14 +540,13 @@ fn building_voxel_barrel_shot_origin_matches_the_original_flh() {
         assert!(getters.contains(&"0x6d2070"), "{name} tail pixel add");
         assert!(row["rng_unchanged"].as_bool().unwrap(), "{name} RNG");
     }
-    // A third or later barrel contributes none of the barrel-end Y, and the
-    // +Y/−Y pair straddles it: the recorded scale-1.0 chain actually moves
-    // with the selected barrel.
+    // The zero scale removes the barrel end: the +Y, -Y and unsigned
+    // barrels all fire from the same pivot point.
     let positive = triple(&voxel_row(&native, "barrel_burst1_positive")["source"]);
     let wrap = triple(&voxel_row(&native, "barrel_burst0_wrap")["source"]);
     let beyond = triple(&voxel_row(&native, "barrel_burst3_beyond")["source"]);
-    assert_ne!(positive, beyond);
-    assert_ne!(wrap, beyond);
+    assert_eq!(positive, wrap);
+    assert_eq!(positive, beyond);
     // The barrel arm wins over a voxel-turret type and its tail already
     // carries the TurretAnimX/Y add: the only difference from the bare
     // barrel row is the (251, 226) iso(3, 28), its authored FLH inert.
