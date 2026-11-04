@@ -201,7 +201,9 @@ fn aircraft_uncached_ground_sight_uses_one_cell_radius_without_replacing_its_sou
         let rng = sim.scenario_rng.native_state_hex();
         let ((), trace) = trace_reveal_calls(|| {
             if resize {
-                assert!(sim.change_visible_map_area([2, 2, 16, 12], &rules));
+                assert!(
+                    sim.change_visible_map_area([2, 2, 16, 12], UninitContext::with_rules(&rules))
+                );
                 assert!(sim.entities().get(id).unwrap().in_playfield());
             } else {
                 sim.grow_shroud(UninitContext::with_rules(&rules));
