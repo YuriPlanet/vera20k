@@ -401,10 +401,7 @@ def command_run(args) -> None:
         pristine = work / "published"
         shutil.copytree(objects, pristine)
         if "rekey" in args.scenario:
-            new_key = work / "new-key"
-            new_key.mkdir()
-            signing_key(new_key)
-            rekeyed = publish(work / "rekey", new_key / "signing-key.pem", args.version, args.release)
+            rekeyed = publish_rekeyed(work, args.version, args.release)
         print(f"published {sorted(p.relative_to(objects).as_posix() for p in objects.rglob('*') if p.is_file())}",
               flush=True)
         server = serve(objects, args.rate)
@@ -440,11 +437,21 @@ def command_run(args) -> None:
 
 def update_key(directory: Path) -> str:
     """A new signing key whose public half Git Bash passes on unchanged: it
-    rewrites a value starting with "/" as a path before a native program such
-    as Cargo sees it (MSYS2 path conversion), and the build embeds that."""
+    rewrites a value starting with "/" as a path before a native program sees
+    it (MSYS2 path conversion), so Cargo would embed, or publish-r2.sh's jq
+    write as the manifest's `update_key`, another value."""
     while (key := signing_key(directory)[1]).startswith("/"):
         pass
     return key
+
+
+def publish_rekeyed(work: Path, version: str, release: Path | None) -> Path:
+    """`version` published after a key change: signed by a new key, which its
+    manifest names."""
+    new_key = work / "new-key"
+    new_key.mkdir()
+    update_key(new_key)
+    return publish(work / "rekey", new_key / "signing-key.pem", version, release)
 
 
 def command_fixture(directory: Path) -> None:

@@ -42,6 +42,16 @@ class UpdateKeyTest(unittest.TestCase):
         with mock.patch.object(update_test, "signing_key", side_effect=keys):
             self.assertEqual(update_test.update_key(Path("unused")), keys[1][1])
 
+    def test_the_rekeyed_releases_new_key_is_drawn_again_too(self):
+        keys = [("pem", "/NtLEIKtreh/Pov9g+VmZOivzbKxYAmanXTFtZQI2iI="),
+                ("pem", "NtLEIKtreh/Pov9g+VmZOivzbKxYAmanXTFtZQI2iI/=")]
+        with tempfile.TemporaryDirectory() as temp, \
+                mock.patch.object(update_test, "signing_key", side_effect=keys) as drawn, \
+                mock.patch.object(update_test, "publish") as publish:
+            update_test.publish_rekeyed(Path(temp), "1.2.3", None)
+        self.assertEqual(drawn.call_count, 2)
+        publish.assert_called_once()
+
 
 class RunTest(unittest.TestCase):
     def test_a_program_that_hangs_fails_the_run_instead_of_holding_it(self):
