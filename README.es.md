@@ -34,17 +34,6 @@ grupo de QQ (1097193563).
 
 Consulta la [hoja de ruta](https://github.com/orgs/YuriPlanet/projects/1) para conocer las prioridades actuales y los planes futuros.
 
-## Estado actual
-
-**En desarrollo activo.**
-
-- **Escaramuza:** Se puede jugar en Windows, Linux y macOS, con mapas originales y aleatorios,
-  construcción de bases, recolección de recursos, combate y guardado y carga de partidas.
-- **Campañas:** Las misiones se pueden iniciar; el soporte sigue incompleto.
-- **IA:** Partes de la IA original se encargan de construir bases y de los ataques definidos por
-  scripts.
-- **Multijugador:** El juego por LAN y en línea está disponible en Windows, Linux y macOS.
-
 ## Descargar y jugar
 
 Descarga el instalador para Windows, macOS o Linux desde la
@@ -56,9 +45,16 @@ Para iniciar escaramuzas o campañas de YR para un jugador desde un cliente de C
 
 ## Contribuir
 
-Toda ayuda es bienvenida. Puedes escribir código, refactorizar el motor, probar el juego, compartir
-ideas o jugarlo junto al original y decirnos qué no se siente como debería. Abre un PR y nosotros
-nos encargamos a partir de ahí.
+Toda ayuda es bienvenida, y estas áreas son las que más la necesitan. Cada una enlaza a su
+página en la hoja de ruta, con el trabajo en curso y el siguiente paso:
+
+- **[Jugabilidad y combate](https://github.com/YuriPlanet/vera20k/issues/3830):** comportamiento de las unidades, daño y fiabilidad de las escaramuzas.
+- **[Rendimiento](https://github.com/YuriPlanet/vera20k/issues/3831):** fotogramas por segundo y respuesta en batallas grandes y en equipos antiguos.
+- **[Multijugador](https://github.com/YuriPlanet/vera20k/issues/3832):** unirse a partidas en línea, empezarlas y mantenerlas en marcha, y la fiabilidad del juego cooperativo.
+- **[Interfaz y audio](https://github.com/YuriPlanet/vera20k/issues/3833):** menús, textos, traducciones y sonido.
+- **[Campañas](https://github.com/YuriPlanet/vera20k/issues/3834):** las misiones se pueden iniciar, pero jugarlas hasta el final aún requiere trabajo: objetivos, disparadores, transiciones con scripts, guardado y carga, y el paso a la siguiente misión.
+- **[Compatibilidad con mods](https://github.com/YuriPlanet/vera20k/issues/3835):** funciones de Ares y Phobos, sin cambiar los valores predeterminados del juego original.
+- **[Pruebas](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** jugar VERA20K junto al original e informar de lo que se juega de forma distinta.
 
 Los colaboradores pueden hacerse cargo de áreas del motor, con amplia libertad para introducir
 cambios que hagan avanzar VERA20K.
