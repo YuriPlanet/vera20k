@@ -5,6 +5,7 @@
 
 use super::chat_notice as message;
 use super::*;
+use crate::skirmish_launch::LaunchTeam;
 use crate::ui::lan_shell::LanChatLine;
 use crate::ui::wol_chat;
 use std::time::Duration;
@@ -286,6 +287,49 @@ pub(crate) fn player_choices(
     )
 }
 
+/// The VERA lobby's `balance` event, its answer to the host's `/balance` (no
+/// native counterpart): a team for each named player. It has `player_choices`'
+/// gates, and acts only in a mode that lets players ally outside a clan room,
+/// where the team combos show.
+pub(crate) fn balance_teams(state: &mut AppState, teams: &[(String, u8)]) -> anyhow::Result<()> {
+    if crate::app::shell_wol::in_match(state)
+        || start_pending(state)
+        || super::quick_match(state)
+        || !state.match_state.session.host()
+    {
+        return Ok(());
+    }
+    let session = &state.match_state.session;
+    let Some(launch) = session.network_setup() else {
+        return Ok(());
+    };
+    if !launch.mode.allies_allowed || session.network_room().clan {
+        return Ok(());
+    }
+    let moves = team_moves(launch, teams);
+    if moves.is_empty() {
+        return Ok(());
+    }
+    service::service_event(state, service::NetworkSetupEvent::Teams(moves))
+}
+
+/// The participants `teams` move to another team: playing humans with a row,
+/// on a team the combos list (0..3, `team_choices`).
+fn team_moves(launch: &SkirmishLaunchSession, teams: &[(String, u8)]) -> Vec<(usize, u8)> {
+    teams
+        .iter()
+        .filter_map(|(name, team)| {
+            let index = participant_in(launch, name)?;
+            let human = &launch.humans[index];
+            (*team <= 3
+                && !human.is_observer()
+                && human.raw_slot_index.is_some()
+                && human.slot.team != LaunchTeam::Team(*team))
+            .then_some((index, *team))
+        })
+        .collect()
+}
+
 /// A user's `A<n>` (`0x5E3D10` arm `'A'`, `0x5E4388` → `0x77E900`): the
 /// parse drops it while a WOL match runs or a start is requested
 /// (`0x5E3E73..0x5E3E90`); the user's node takes the value, and its
@@ -506,12 +550,15 @@ fn participant(state: &AppState, name: &str) -> Option<usize> {
         .match_state
         .session
         .network_setup()
-        .and_then(|launch| {
-            // strcmpi 0x7C8D20 (0x7A8416).
-            launch.humans.iter().position(|human| {
-                crate::util::native_string::crt_strcmpi(&human.name, name).is_eq()
-            })
-        })
+        .and_then(|launch| participant_in(launch, name))
+}
+
+fn participant_in(launch: &SkirmishLaunchSession, name: &str) -> Option<usize> {
+    // strcmpi 0x7C8D20 (0x7A8416).
+    launch
+        .humans
+        .iter()
+        .position(|human| crate::util::native_string::crt_strcmpi(&human.name, name).is_eq())
 }
 
 /// The kick sink `0x7AB670` for another user in this game channel: its
@@ -1003,4 +1050,43 @@ pub(super) fn ping(state: &mut AppState, name: String, ping: i32) -> anyhow::Res
         None => protocol.pings.push((name, ping)),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn balance_moves_seated_players_only_onto_listed_teams() {
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.command-bar.example.json",
+        ))
+        .unwrap();
+        let mut launch: SkirmishLaunchSession =
+            serde_json::from_value(fixture["launch"].clone()).unwrap();
+        let player = launch.humans[0].clone();
+        launch.humans = ["Host", "Guest", "Watcher", "Gone"]
+            .into_iter()
+            .enumerate()
+            .map(|(row, name)| {
+                let mut human = player.clone();
+                human.name = name.into();
+                human.raw_slot_index = Some(row as u8);
+                human.slot.team = LaunchTeam::Team(0);
+                human
+            })
+            .collect();
+        launch.humans[2].set_observer(true);
+        launch.humans[3].raw_slot_index = None;
+        let teams = [
+            ("host", 1),
+            ("Guest", 0),
+            ("Watcher", 1),
+            ("Gone", 1),
+            ("Nobody", 1),
+        ];
+        let teams: Vec<_> = teams.map(|(name, team)| (name.to_owned(), team)).into();
+        assert_eq!(team_moves(&launch, &teams), [(0, 1)]);
+        assert_eq!(team_moves(&launch, &[("Guest".into(), 4)]), []);
+    }
 }
