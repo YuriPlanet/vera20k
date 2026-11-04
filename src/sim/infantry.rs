@@ -1125,6 +1125,16 @@ mod tests {
         assert_native_fear_state(&sim, row);
     }
 
+    /// WEEDGUY is the retail infantry without an ARTMD image section, so it
+    /// keeps the InfantryTypeClass constructor's Crawls (`0x00523788`).
+    #[test]
+    fn retail_weedguy_keeps_the_constructor_crawls() {
+        let Some(rules) = retail_e1_rules() else {
+            return;
+        };
+        assert!(rules.object("WEEDGUY").unwrap().crawls);
+    }
+
     /// Stock E1's Crawls/Fearless/Fraidycat/Ammo/Walk inputs come through
     /// the production retail RULES/ART readers. For these receivers the Up/
     /// Down record count participates only in the zero predicate51D70F;
