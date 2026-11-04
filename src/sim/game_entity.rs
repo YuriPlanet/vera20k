@@ -356,7 +356,7 @@ pub struct GameEntity {
     /// [`RemovalFacts`]: crate::sim::world::RemovalFacts
     #[serde(default)]
     pub(crate) removal_facts: crate::sim::world::RemovalFacts,
-    /// The kill credit and the UnInit loss guard, a [`KillRecord`] that
+    /// The kill credit and the closed-record guard, a [`KillRecord`] that
     /// `combat::record_kill` owns.
     ///
     /// [`KillRecord`]: crate::sim::combat::KillRecord

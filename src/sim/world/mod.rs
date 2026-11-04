@@ -5505,7 +5505,7 @@ impl Simulation {
                 );
                 debug_assert!(
                     entity.kill_record.is_recorded(),
-                    "dead entity {} must record its destruction exactly once before alive clear",
+                    "dead entity {} must close its kill record before alive clear",
                     entity.stable_id()
                 );
                 debug_assert!(

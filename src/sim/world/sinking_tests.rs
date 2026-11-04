@@ -42,8 +42,16 @@ fn fixture(relative_z: i32) -> (Simulation, RuleSet, u64) {
         .position
         .set_exact_z_leptons_for_test(Some(208 + relative_z));
     sim.substrate.entities.insert(entity);
+    // The corpus starts from the actual C4 receiver's kill: its RecordKill
+    // books the first loss, then Destroy closes the record.
     sim.substrate.begin_receiver_kill_record(id);
-    Simulation::record_destruction_once(&mut sim.substrate, &mut sim.houses, id);
+    sim.record_the_kill(
+        id,
+        crate::sim::combat::KillSource::Techno(None),
+        crate::sim::combat::KillCallback::Terminal,
+        crate::sim::world::UninitContext::with_rules(&rules),
+    );
+    Simulation::close_kill_record(&mut sim.substrate, id);
     sim.begin_ship_sinking(id, &rules, crate::sim::world::FrameEffects::default());
     (sim, rules, id)
 }
