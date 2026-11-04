@@ -177,6 +177,36 @@ impl InfantryPips {
     }
 }
 
+/// InfantryType's fixed-ART reads, retained by the process-resident type.
+/// The constructor sets Crawls (`+0xEBD`) to true (`0x00523788`) and clears
+/// the four discharge frames (`+0xE40..+0xE4C`, `0x005236D7..0x005236F9`).
+/// Every reached ReadINI pass reads all five from the ART section its Image
+/// names, each with its current value as the default
+/// (`InfantryTypeClass::ReadINI`, `0x005246A1..0x0052472D`), so a pass whose
+/// section lacks a key keeps the value an earlier pass read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct InfantryArt {
+    crawls: bool,
+    discharge_frames: [i32; 4],
+}
+
+impl Default for InfantryArt {
+    fn default() -> Self {
+        Self {
+            crawls: true,
+            discharge_frames: [0; 4],
+        }
+    }
+}
+
+impl InfantryArt {
+    /// One pass's reads from its Image's ART section.
+    pub(crate) fn read_pass(&mut self, section: &IniSection) {
+        self.crawls = section.read_bool("Crawls", self.crawls);
+        crate::rules::art_data::read_infantry_discharge_frames(section, &mut self.discharge_frames);
+    }
+}
+
 /// InfantryType constructor clears EBE/EC2..EC6. ReadINI reads these
 /// current-default flags, then 52466E..52469A forces Infiltrate for C4,
 /// Engineer or Agent, independently of either theft byte.
@@ -1392,9 +1422,8 @@ pub struct ObjectType {
     pub fearless: bool,
     /// `Fraidycat=yes` on InfantryType. First fear hit immediately maxes fear.
     pub fraidycat: bool,
-    /// `Crawls=` from ARTMD (InfantryTypeClass `+0xEBD`): true from the
-    /// constructor (`0x00523788`), read from the image section with that
-    /// default (`0x005246A1..0x005246D0`). Gates Down and the prone speed.
+    /// `Crawls=` from ARTMD (InfantryTypeClass `+0xEBD`), the last reached
+    /// pass's read ([`InfantryArt`]). Gates Down and the prone speed.
     pub crawls: bool,
     /// Phobos `InfantryTypeExt::ProneSpeed`: the prone movement multiplier for
     /// this type. Unset defers to the `[General]` value `Crawls=` selects.
@@ -3317,6 +3346,16 @@ impl ObjectType {
         self.infantry_pips = pips;
     }
 
+    pub(crate) fn project_infantry_art(&mut self, art: InfantryArt) {
+        self.crawls = art.crawls;
+        [
+            self.fire_up_frame,
+            self.fire_prone_frame,
+            self.secondary_fire_frame,
+            self.secondary_prone_frame,
+        ] = art.discharge_frames;
+    }
+
     pub(crate) fn project_sequence_sound_reads(
         &mut self,
         reads: &[crate::rules::infantry_sequence::SequenceSoundRead],
@@ -4440,8 +4479,8 @@ impl ObjectType {
             fearless: section.read_bool("Fearless", false),
             fraidycat: section.read_bool("Fraidycat", false),
             // InfantryTypeClass's constructor sets Crawls (`+0xEBD`) to true
-            // (`0x00523788`); only the art read changes it. Other types have
-            // no such field.
+            // (`0x00523788`); the per-pass ART read projects over it
+            // ([`InfantryArt`]). Other types have no such field.
             crawls: category == ObjectCategory::Infantry,
             fire_up_frame: 0,
             fire_prone_frame: 0,

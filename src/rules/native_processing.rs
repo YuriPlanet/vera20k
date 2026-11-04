@@ -27,7 +27,7 @@ use crate::rules::sound_ini::EvaRegistry;
 use crate::rules::missile_spawn::{MissileFamily, MissileSpawnRules};
 use crate::rules::object_image::{ImageTheater, ObjectImageKind, ObjectImageState};
 use crate::rules::object_type::{
-    InfantryInfiltration, InfantryPips, ObjectCategory, WEAPON_SLOT_COUNT,
+    InfantryArt, InfantryInfiltration, InfantryPips, ObjectCategory, WEAPON_SLOT_COUNT,
 };
 use crate::rules::powerups::{PowerupTable, PowerupsAccumulator};
 use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup, parse_prerequisites};
@@ -1386,6 +1386,17 @@ impl ProcessedRulesLayers {
             .into_iter()
             .flatten()
             .map(|member| (member.native_stored_id.as_str(), member.infantry_pips))
+    }
+
+    /// Each InfantryType's fixed-ART reads after every reached pass.
+    pub(crate) fn infantry_art_states(&self) -> impl Iterator<Item = (&str, InfantryArt)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Infantry)
+            .into_iter()
+            .flatten()
+            .map(|member| (member.native_stored_id.as_str(), member.infantry_art))
     }
 
     /// Each InfantryType's sequence sound pairs from every reached pass, in
@@ -4367,6 +4378,10 @@ struct ProcessedType {
     infantry_pips: InfantryPips,
     #[serde(default)]
     infantry_infiltration: InfantryInfiltration,
+    /// Infantry ctor `0x00523788`/`0x005236D7..0x005236F9` and the fixed-ART
+    /// reads of every reached ReadINI pass (`0x005246A1..0x0052472D`).
+    #[serde(default)]
+    infantry_art: InfantryArt,
     /// Every reached InfantryType ReadINI pass ends in ReadSequenceData
     /// (`0x0052473A`), whose sound pairs append without a reset.
     #[serde(default)]
@@ -4922,6 +4937,7 @@ impl ProcessedType {
             gunner_turrets: GunnerTurrets::default(),
             infantry_pips: InfantryPips::default(),
             infantry_infiltration: InfantryInfiltration::default(),
+            infantry_art: InfantryArt::default(),
             infantry_sequence_sound_reads: Vec::new(),
             recoil: crate::rules::recoil::RecoilConfig::default(),
             airstrike: crate::rules::airstrike::AirstrikeSettings::default(),
@@ -7357,6 +7373,11 @@ impl RulesPassProcessor {
                             RulesTypeFamily::Animation,
                             0x80,
                         );
+                        // InfantryRead5246A1..52472D: Crawls and the four
+                        // discharge frames from this pass's Image section.
+                        self.family_mut(family)[index]
+                            .infantry_art
+                            .read_pass(fixed_art.section_or_empty(&image));
                         let reads = crate::rules::infantry_sequence::read_sequence_sounds(
                             fixed_art, &image,
                         );

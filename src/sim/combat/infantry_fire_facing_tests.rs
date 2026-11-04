@@ -260,21 +260,24 @@ fn infantry_speed_refusal_at_fire_frame_clears_firing_latch() {
 /// `[RocketeerSequence]`) hovering at 500 over (5, 5), firing at a GI three
 /// cells off.
 fn rocketeer_pair() -> (EntityStore, RuleSet) {
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(
-        "[InfantryTypes]\n0=JJ\n1=E2\n\
+    let art_ini = IniFile::from_str(
+        "[ROCK]\nSequence=RocketeerSequence\nFireUp=2\n\
+         [RocketeerSequence]\nReady=0,1,1\nGuard=0,1,1\nWalk=8,6,6\nFireUp=164,6,6\n\
+         Fly=292,6,6\nHover=292,6,6\nFireFly=370,6,6\n",
+    );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[InfantryTypes]\n0=JJ\n1=E2\n\
          [JJ]\nStrength=125\nArmor=flak\nSpeed=9\nImage=ROCK\nPrimary=M60\nJumpJet=yes\n\
          BalloonHover=yes\nLocomotor={92612C46-F71F-11d1-AC9F-006008055BB5}\n\
          SpeedType=Hover\nMovementZone=Fly\nJumpjetSpeed=30\nJumpjetHeight=500\n\
          [E2]\nStrength=125\nArmor=flak\nSpeed=4\n\
          [M60]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\n\
          [SA]\nVerses=100%,100%,100%,90%,70%,0%,100%,25%,25%,0%,0%\n",
-    ))
+        ),
+        &art_ini,
+    )
     .unwrap();
-    let art_ini = IniFile::from_str(
-        "[ROCK]\nSequence=RocketeerSequence\nFireUp=2\n\
-         [RocketeerSequence]\nReady=0,1,1\nGuard=0,1,1\nWalk=8,6,6\nFireUp=164,6,6\n\
-         Fly=292,6,6\nHover=292,6,6\nFireFly=370,6,6\n",
-    );
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
     let registry = crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini);
     rules.replace_animation_sequences_for_test(
