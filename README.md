@@ -98,7 +98,7 @@ VERA20K plays like the original game by default. Map capacity is selected automa
 without a build flag: `Size` width plus height can be up to 1024. Other new features,
 including extensions from mods such as Ares, stay off until they are turned on with one of:
 
-- **A VERA player option**, in **Options → Vera Options**, saved under `[VERA]` in `VERA.INI`.
+- **A VERA player option**, in **Options**, saved under `[VERA]` in `VERA.INI`.
 - **A build option**, such as `--features ares` for the supported [Ares extensions](docs/ares.md).
 - **An INI key**, set by a mod or a map.
 

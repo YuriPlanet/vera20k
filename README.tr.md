@@ -98,7 +98,7 @@ Harita kapasitesi derleme bayrağı olmadan otomatik seçilir: `Size` genişliğ
 VERA20K varsayılan olarak orijinal oyun gibi oynanır. Ares gibi modlardan gelen eklentiler dahil
 diğer her yeni özellik, şu yollardan biriyle açılana kadar kapalı kalmalıdır:
 
-- **Bir VERA oyuncu seçeneği**: **Options → Vera Options** altında bulunur ve `VERA.INI` dosyasının `[VERA]` bölümüne kaydedilir.
+- **Bir VERA oyuncu seçeneği**: **Options** altında bulunur ve `VERA.INI` dosyasının `[VERA]` bölümüne kaydedilir.
 - **Bir derleme seçeneği**: örneğin desteklenen [Ares eklentileri](docs/ares.md) için `--features ares`.
 - **Bir INI anahtarı**: bir mod ya da harita tarafından ayarlanır.
 

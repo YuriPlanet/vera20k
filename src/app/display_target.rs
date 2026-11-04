@@ -11,8 +11,7 @@
 //! desktop no longer lists answers nothing in the same way.
 //!
 //! VERA's own option: `[VERA]` is VERA's section and no engine reads it, and
-//! the list sits on the Vera options page rather than the retail page whose
-//! layout this repository ports.
+//! retail's `0xD5` has no such list.
 //!
 //! Presentation-only: nothing here is serialized into a replay, hashed, or read
 //! by the deterministic simulation.
