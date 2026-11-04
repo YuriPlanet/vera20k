@@ -704,6 +704,8 @@ fn armor_and_firepower_crates_multiply_once_and_announce() {
 #[test]
 fn reveal_crate_reveals_the_whole_map_for_the_owner() {
     let (mut sim, _, registry, owner, actor) = multiplayer_fixture(POWERUP_REVEAL as u8);
+    // Reveal `0x00577D90` changes only PlayerPtr's map: the owner plays here.
+    sim.session.set_current_house_for_test(Some(owner));
     let rules = effect_rules("[AudioVisual]\nCrateRevealSound=CrateReveal\n");
     sim.fog.set_width_for_test(sim.session.map_width());
     sim.fog.set_height_for_test(sim.session.map_height());
