@@ -1,4 +1,4 @@
-; Windows installer for VERA. The Release workflow (.github/workflows/release.yml)
+; Windows installer for VERA20K. The Release workflow (.github/workflows/release.yml)
 ; compiles it with the Inno Setup compiler pinned in the workflow:
 ;
 ;   ISCC /DAppVersion=<x.y.z> /DBuild=<YYYYMMDD-HHMMSS> /DPackageDir=<package folder>
@@ -30,12 +30,12 @@
 [Setup]
 ; Fixed for the life of the program: upgrades find the previous install by it.
 AppId={{9C9BFC32-A7B8-48ED-A428-72333354BDDB}
-AppName=VERA
+AppName=VERA20K
 AppVersion={#AppVersion}
 ; The version and build, which stay true when a release republishes this
 ; installer under a plain name.
-AppVerName=VERA {#AppVersion} (build {#Build})
-AppPublisher=VERA
+AppVerName=VERA20K {#AppVersion} (build {#Build})
+AppPublisher=VERA20K
 AppPublisherURL=https://github.com/YuriPlanet/vera20k
 AppSupportURL=https://github.com/YuriPlanet/vera20k/issues
 AppUpdatesURL=https://github.com/YuriPlanet/vera20k/releases
@@ -49,7 +49,8 @@ SignedUninstallerDir={#SignedUninstallerDir}
 #endif
 ; Per user: {autopf} is %LOCALAPPDATA%\Programs, which the program can write to.
 PrivilegesRequired=lowest
-DefaultDirName={autopf}\VERA
+; An upgrade keeps the folder of the install it replaces.
+DefaultDirName={autopf}\VERA20K
 DisableProgramGroupPage=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -59,7 +60,7 @@ DisableWelcomePage=no
 ShowLanguageDialog=auto
 ; Use Inno Setup's built-in setup icon and wizard images.
 UninstallDisplayIcon={app}\vera20k.exe
-UninstallDisplayName=VERA
+UninstallDisplayName=VERA20K
 SourceDir={#PackageDir}
 OutputDir={#OutputDir}
 OutputBaseFilename={#OutputBaseFilename}
@@ -74,8 +75,8 @@ Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.i
 ; Credit the actual compiler in the title bar; keep the standard footer clear.
 english.SetupWindowTitle=Setup - %1 | Inno Setup {#DecodeVer(Ver)}
 chinesesimplified.SetupWindowTitle=安装 - %1 | Inno Setup {#DecodeVer(Ver)}
-english.WelcomeLabel2=VERA is a community-built engine for Yuri's Revenge.%n%nRequires game files from your own copy of Yuri's Revenge 1.001.
-chinesesimplified.WelcomeLabel2=VERA 是由社区开发的《尤里的复仇》游戏引擎。%n%n需要您自己拥有的《尤里的复仇》1.001 版游戏文件。
+english.WelcomeLabel2=VERA20K is a community-built engine for Yuri's Revenge.%n%nRequires game files from your own copy of Yuri's Revenge 1.001.
+chinesesimplified.WelcomeLabel2=VERA20K 是由社区开发的《尤里的复仇》游戏引擎。%n%n需要您自己拥有的《尤里的复仇》1.001 版游戏文件。
 
 [CustomMessages]
 english.GameDirCaption=Yuri's Revenge folder
@@ -185,17 +186,18 @@ Source: "THIRD_PARTY_LICENSES.html"; DestDir: "{app}"; Flags: ignoreversion
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Icons]
-Name: "{autoprograms}\VERA"; Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\VERA"; Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\VERA20K"; Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"
+Name: "{autodesktop}\VERA20K"; Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [InstallDelete]
 ; AppId and the previous install directory still identify upgrades. Replace
-; our old shortcuts so an upgrade has one visible product name.
-Type: files; Name: "{autoprograms}\VERA20K.lnk"
-Type: files; Name: "{autodesktop}\VERA20K.lnk"
+; the shortcuts that 0.2.x installers named VERA, so an upgrade has one
+; visible product name.
+Type: files; Name: "{autoprograms}\VERA.lnk"
+Type: files; Name: "{autodesktop}\VERA.lnk"
 
 [Run]
-Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,VERA}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,VERA20K}"; Flags: nowait postinstall skipifsilent
 ; An update the game started returns the player to the game.
 Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Flags: nowait skipifnotsilent; Check: IsGameUpdate
 

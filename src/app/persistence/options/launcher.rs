@@ -42,7 +42,7 @@ pub(crate) fn launcher_values_from_profile(
         shift_queue: profile.shift_queue,
         wol_test_service: profile.wol_test_service,
         fps_counter: false,
-        skip_startup_logo: profile.skip_startup_logo,
+        skip_intro: profile.skip_intro,
         custom_end_game_banner: profile.custom_end_game_banner,
         custom_end_game_score: profile.custom_end_game_score,
         custom_end_game_movie: profile.custom_end_game_movie,
@@ -112,7 +112,7 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_shift_queue(&mut self, shift_queue: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
     fn set_fps_counter(&mut self, shown: bool);
-    fn store_skip_startup_logo(&mut self, skip: bool);
+    fn store_skip_intro(&mut self, skip: bool);
     /// Whether a finished match draws the country's own end-game picture.
     fn store_custom_end_game_banner(&mut self, enabled: bool);
     /// Whether a finished match starts the country's own end-game music.
@@ -163,8 +163,8 @@ pub(crate) fn dispatch_launcher_preview_event(
             operations.store_wol_test_service(wol_test_service);
         }
         LauncherOptionsEvent::FpsCounterChanged(shown) => operations.set_fps_counter(shown),
-        LauncherOptionsEvent::SkipStartupLogoChanged(skip) => {
-            operations.store_skip_startup_logo(skip);
+        LauncherOptionsEvent::SkipIntroChanged(skip) => {
+            operations.store_skip_intro(skip);
         }
         LauncherOptionsEvent::CustomEndGameBannerChanged(enabled) => {
             operations.store_custom_end_game_banner(enabled);
@@ -375,7 +375,7 @@ mod tests {
             unit_action_lines: false,
             show_hidden: true,
             yr_original_style: true,
-            skip_startup_logo: true,
+            skip_intro: true,
             render_interpolation: false,
             mouse_wheel_zoom: true,
             shift_queue: true,
@@ -386,7 +386,7 @@ mod tests {
         assert!(!booleans.target_lines);
         assert!(booleans.show_hidden);
         assert!(booleans.yr_original_style);
-        assert!(booleans.skip_startup_logo);
+        assert!(booleans.skip_intro);
         assert!(!booleans.render_interpolation);
         assert!(booleans.mouse_wheel_zoom);
         assert!(booleans.shift_queue);

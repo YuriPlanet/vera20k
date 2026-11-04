@@ -157,7 +157,8 @@ impl ShellSlideKind {
     /// rendered shell has a `slide` table entry, so a miss is a programming
     /// error. Options' two pages adjust `0xD5`'s retail column to VERA's
     /// buttons: the main page slides Vera Options under Network too, and
-    /// VERA's page slides Check for Updates above Back.
+    /// VERA's page slides Check for Updates above Back. Skirmish slides
+    /// VERA's Save Setup and Load Setup under Choose Map.
     pub(crate) fn column(self, rows: u32, page: Option<&MenuPageSpec>) -> SlideColumn {
         let spec = crate::ui::shell::slide::slide_spec_for(self.dialog_id())
             .expect("rendered shell dialog must have a slide column");
@@ -166,6 +167,7 @@ impl ShellSlideKind {
         let top_buttons = page.map_or_else(
             || match self {
                 ShellSlideKind::Options => spec.top_buttons + 1,
+                ShellSlideKind::Skirmish => spec.top_buttons + 2,
                 ShellSlideKind::VeraOptions => {
                     crate::ui::main_menu_dialogs::options::shell::VERA_OPTIONS_PAGE
                         .stacked
@@ -1543,7 +1545,9 @@ mod tests {
             (3, true, false)
         );
         assert_eq!(top_and_bottom(ShellSlideKind::MovieList), (1, true, false));
-        assert_eq!(top_and_bottom(ShellSlideKind::Skirmish), (2, true, true));
+        // Retail `0x102` slides Start Game and Choose Map; VERA's Save Setup
+        // and Load Setup slide under them.
+        assert_eq!(top_and_bottom(ShellSlideKind::Skirmish), (4, true, true));
         // Retail `0xD5` slides Keyboard and Network; VERA's main page adds
         // Vera Options under them, and VERA's page slides Check for Updates
         // above Back.

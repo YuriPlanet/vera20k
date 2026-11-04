@@ -1642,8 +1642,10 @@ impl Simulation {
     /// Satellite byte (`+0x577A`), which its caller changes only afterwards.
     /// The map-clear byte (`+0x241`) is written whatever the map does. A
     /// reveal is skipped once the map is revealed (`+0x240`); a reset never
-    /// is. Natively only `PlayerPtr`'s shroud changes; VERA keeps one plane
-    /// per house.
+    /// is. Natively only `PlayerPtr`'s shroud changes: after the `+0x241`
+    /// store, `0x00577DB6..0x00577DC0` and `0x00577AD0..0x00577ADA` leave
+    /// for any other house. VERA keeps one plane per represented client, so a
+    /// computer house's transition stops there.
     fn transition_house_map(
         &mut self,
         owner: crate::sim::intern::InternedId,
@@ -1663,7 +1665,8 @@ impl Simulation {
                 house.mark_map_clear();
             }
         }
-        if !self.fog.begin_map_transition(owner, transition) {
+        if !self.fog_viewers().contains(&owner) || !self.fog.begin_map_transition(owner, transition)
+        {
             return;
         }
         let context = UninitContext::with_rules(rules);
@@ -1811,7 +1814,6 @@ impl Simulation {
             None => self
                 .reveal_viewers
                 .direct(
-                    &self.fog,
                     self.house_alliances.as_map(),
                     entity.owner(),
                     config,
@@ -1951,7 +1953,6 @@ impl Simulation {
         let viewers = if let Some(entity) = self.substrate.entities.get(id) {
             let clients = self.fog_viewers();
             let projected = self.reveal_viewers.direct(
-                &self.fog,
                 self.house_alliances.as_map(),
                 entity.owner(),
                 &config,
@@ -2124,7 +2125,6 @@ impl Simulation {
             None => {
                 let clients = self.fog_viewers();
                 let projected = self.reveal_viewers.direct(
-                    &self.fog,
                     self.house_alliances.as_map(),
                     entity.owner(),
                     &config,
@@ -2264,7 +2264,6 @@ impl Simulation {
                 let config = self.sight_reveal_config(context.rules());
                 let clients = self.fog_viewers();
                 let viewers = self.reveal_viewers.direct(
-                    &self.fog,
                     self.house_alliances.as_map(),
                     owner,
                     &config,
@@ -2317,7 +2316,6 @@ impl Simulation {
         }
         let clients = self.fog_viewers();
         let viewers = self.reveal_viewers.direct(
-            &self.fog,
             self.house_alliances.as_map(),
             entity.owner(),
             &config,
@@ -2704,8 +2702,8 @@ impl Simulation {
     /// independently decides whether that client's map receives the walk.
     /// Whole-map reveal/reshroud and live diplomacy share this visitor.
     ///
-    /// It visits every House's map in House order, or `only_viewers`' maps
-    /// in their order. Each map's callbacks read and write only that map
+    /// It visits every client map in House order, or `only_viewers`' client
+    /// maps in their order. Each map's callbacks read and write only that map
     /// ([`ParanoidMaps`]), so leaving maps out changes nothing on the rest.
     fn walk_map_sight(
         &mut self,
@@ -2715,8 +2713,14 @@ impl Simulation {
         skip_buildings: bool,
     ) {
         let count = self.substrate.entities.techno_registry_len();
-        let viewers = only_viewers.map_or_else(|| self.houses.order().to_vec(), <[_]>::to_vec);
         let clients = self.fog_clients_current_first();
+        // Map4ADEE0/4ADCD0 walk only Map0087F7E8, PlayerPtr's: a computer
+        // house is no client and has no map to walk.
+        let viewers: Vec<_> = only_viewers
+            .map_or_else(|| self.houses.order().to_vec(), <[_]>::to_vec)
+            .into_iter()
+            .filter(|viewer| clients.contains(viewer))
+            .collect();
         let config = self.sight_reveal_config(context.rules());
         let network = self.session.game_mode().is_network();
         // Map4ADEE0/4ADCD0 retain registration and viewer order. Scratch is
@@ -3162,11 +3166,12 @@ impl Simulation {
         }
         //4DA6B4 loads SOURCE House before4F9A50; reverse-only alliance
         //does not admit this event or mutate this viewer's countdown.
+        let clients = self.fog_viewers();
         let viewers = self.reveal_viewers.allied(
-            &self.fog,
             self.house_alliances.as_map(),
             entity.owner(),
             &self.interner,
+            &clients,
         );
         let due: Vec<_> = viewers
             .iter()

@@ -1656,7 +1656,6 @@ impl Simulation {
         for owner in owners {
             let clients = self.fog_viewers();
             let viewers = self.reveal_viewers.direct(
-                &self.fog,
                 self.house_alliances.as_map(),
                 owner,
                 &config,

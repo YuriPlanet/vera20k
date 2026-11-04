@@ -2304,7 +2304,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
                 link.transport_id().hash(hasher);
                 link.open_topped().hash(hasher);
                 // `+0x11C`, folded only when set (see the arm below).
-                if link.transporter() {
+                if role.transporter() == Some(link.transport_id()) {
                     4u8.hash(hasher);
                 }
             }
@@ -2325,13 +2325,21 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
                 if link.open_topped() {
                     1u8.hash(hasher);
                 }
-                if link.transporter() {
+                if role.transporter() == Some(link.transport_id()) {
                     4u8.hash(hasher);
                 }
             } else {
                 0u8.hash(hasher);
             }
         }
+    }
+    // `+0x11C` naming another hull than the carrier relation, or none: a
+    // soldier an aircraft unloaded keeps it (`PassengerRole::transporter`).
+    if let Some(transporter) = role.transporter()
+        && role.carrier_link().map(|link| link.transport_id()) != Some(transporter)
+    {
+        5u8.hash(hasher);
+        transporter.hash(hasher);
     }
     // BuildingCtor43B8DC..43B907 and GetCount4581F0: independent vector,
     // not Cargo+114. The unique empty/zero constructor state adds no bytes,

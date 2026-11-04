@@ -93,9 +93,10 @@ pub fn depart_cargo_head(
     {
         passenger.passenger_role.clear_carrier_relation();
     }
-    // A failed Unlimbo re-attaches the passenger with `+0x82` and `+0x11C`
-    // untouched (CargoClass::AddPassenger 0x004733A0 writes neither); only a
-    // successful unload clears them (`0x0073DB98`, `0x0073DBD1`).
+    // A failed Unlimbo re-attaches the passenger with `+0x82` untouched
+    // (CargoClass::AddPassenger 0x004733A0 does not write it); only a
+    // successful unload clears it (`0x0073DB98`). Departure never touches
+    // Transporter (`+0x11C`, `PassengerRole::transporter`).
     let prior = sim
         .substrate
         .entities
@@ -104,7 +105,6 @@ pub fn depart_cargo_head(
     let link = CarrierLink {
         transport_id,
         open_topped: prior.is_some_and(|link| link.open_topped),
-        transporter: prior.is_some_and(|link| link.transporter),
     };
     let result = attempt(sim, passenger_id);
     if let Err(failure) = result.as_ref()

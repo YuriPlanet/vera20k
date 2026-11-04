@@ -1894,6 +1894,7 @@ impl ApplicationHandler for App {
                 crate::app::input::sound::poll_scroll_repeat(state),
                 Self::poll_movie_list_scroll(state),
                 Self::poll_choose_map_scroll(state),
+                Self::poll_skirmish_opponent_scroll(state),
                 // Captures replay sealed input; they never read the library.
                 (self.shell_capture.is_none() && self.tactical_capture.is_none())
                     .then(|| crate::app::map_library::poll(state))

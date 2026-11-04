@@ -171,6 +171,7 @@ pub(super) fn push_button_label_draw(
     label: &str,
     rect: RectPx,
     pressed: bool,
+    disabled: bool,
     depth: f32,
     scale: ShellScale,
 ) {
@@ -180,7 +181,7 @@ pub(super) fn push_button_label_draw(
         state,
         label,
         text_rect,
-        button_label_color(),
+        button_label_color_for_disabled(disabled),
         ShellAlign::H_CENTER | ShellAlign::V_CENTER,
         depth,
         scale.factor(),
@@ -736,11 +737,7 @@ pub(super) fn build_shell_text_draws(
         scale,
     );
 
-    for (idx, opponent) in shell.opponents.iter().enumerate() {
-        if idx >= layout.rows.ai_type_combos.len() {
-            break;
-        }
-        let row = idx + 1;
+    for (slot, row, opponent) in shell.paged_opponents() {
         if !player_row_visible(shell, maps, row) {
             continue;
         }
@@ -750,7 +747,7 @@ pub(super) fn build_shell_text_draws(
             &mut shell_draws,
             state,
             &row_type,
-            layout.rows.ai_type_combos[idx],
+            layout.rows.ai_type_combos[slot - 1],
             scale,
         );
         let sibling_text_color = opponent_sibling_combo_text_color(opponent);
@@ -758,7 +755,7 @@ pub(super) fn build_shell_text_draws(
             &mut shell_draws,
             state,
             &country_choice_label(state, opponent.country_random, opponent.country),
-            layout.rows.side_combos[row],
+            layout.rows.side_combos[slot],
             sibling_text_color,
             scale,
         );
@@ -768,7 +765,7 @@ pub(super) fn build_shell_text_draws(
                 &mut shell_draws,
                 state,
                 &random_color,
-                layout.color_combos[row],
+                layout.color_combos[slot],
                 sibling_text_color,
                 scale,
             );
@@ -777,7 +774,7 @@ pub(super) fn build_shell_text_draws(
             &mut shell_draws,
             state,
             &combo_item_label(state, SkirmishComboItem::Start(opponent.start_position)),
-            layout.rows.start_combos[row],
+            layout.rows.start_combos[slot],
             sibling_text_color,
             scale,
         );
@@ -785,7 +782,7 @@ pub(super) fn build_shell_text_draws(
             &mut shell_draws,
             state,
             &team_label(state, opponent.team),
-            layout.rows.team_combos[row],
+            layout.rows.team_combos[slot],
             // Row-active alone does not decide the Team face: the mode's
             // AlliesAllowed gate greys it as well.
             combo_face_text_color(!combo_enabled(shell, maps, SkirmishComboId::Team(row))),
@@ -850,23 +847,41 @@ fn push_right_panel_text_draws(
 ) {
     let start = localized_label(state, "GUI:StartGame", "Start Game");
     let choose = localized_label(state, "GUI:ChooseMap", "Choose Map");
+    let save = localized_label(state, "VERA:SaveSetup", "Save Setup");
+    let load = localized_label(state, "VERA:LoadSetup", "Load Setup");
     let back = localized_label(state, "GUI:Back", "Back");
+    let load_disabled = !crate::app::App::skirmish_setup_saved(state);
 
-    for (label, rect, button) in [
+    for (label, rect, button, disabled) in [
         (
             start.as_str(),
             layout.start_button,
             OwnerDrawButton::StartGame0x617,
+            false,
         ),
         (
             choose.as_str(),
             layout.choose_map_button,
             OwnerDrawButton::ChooseMap0x5aa,
+            false,
+        ),
+        (
+            save.as_str(),
+            layout.save_setup_button,
+            OwnerDrawButton::SaveSetup,
+            false,
+        ),
+        (
+            load.as_str(),
+            layout.load_setup_button,
+            OwnerDrawButton::LoadSetup,
+            load_disabled,
         ),
         (
             back.as_str(),
             layout.back_button,
             OwnerDrawButton::Back0x5c0,
+            false,
         ),
     ] {
         push_button_label_draw(
@@ -875,6 +890,7 @@ fn push_right_panel_text_draws(
             label,
             rect,
             shell.pressed_owner_draw_button == Some(button),
+            disabled,
             0.00041,
             layout.scale,
         );
