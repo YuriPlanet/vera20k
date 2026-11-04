@@ -1193,7 +1193,6 @@ impl App {
                 wol_account: Default::default(),
                 wol_test_credentials: Vec::new(),
                 native_shell_ui: false,
-                network_options: None,
                 lan: None,
                 multiplayer_setup: None,
                 room_limits: Default::default(),

@@ -87,8 +87,6 @@ pub(crate) enum ShellSlideKind {
     WolAddBuddyQuery,
     /// Dialog 0xA3 — Options' Keyboard page (front-end parent only).
     Keyboard,
-    /// Dialog D7, Options' Network child.
-    NetworkOptions,
     LanLobby,
     /// BC/BD (LAN) or C2/C9 (WOL) network setup.
     NetworkSetup(crate::ui::multiplayer_setup::SetupDialog),
@@ -140,7 +138,6 @@ impl ShellSlideKind {
             ShellSlideKind::WolQuickMatch => 0x0117,
             ShellSlideKind::WolAddBuddyQuery => 0x0122,
             ShellSlideKind::Keyboard => 0x00A3,
-            ShellSlideKind::NetworkOptions => 0x00D7,
             ShellSlideKind::LanLobby => 0xBB,
             ShellSlideKind::NetworkSetup(dialog) => dialog.page().dialog.0,
             ShellSlideKind::ChooseMap => 0x006B,
@@ -153,9 +150,8 @@ impl ShellSlideKind {
 
     /// The dialog's slide column with the panel's `rows` tile rows. Every
     /// rendered shell has a `slide` table entry, so a miss is a programming
-    /// error. Options slides VERA's page buttons under retail's Keyboard and
-    /// Network. Skirmish slides VERA's Save Setup and Load Setup under Choose
-    /// Map.
+    /// error. Options slides VERA's page buttons under retail's Keyboard.
+    /// Skirmish slides VERA's Save Setup and Load Setup under Choose Map.
     pub(crate) fn column(self, rows: u32, page: Option<&MenuPageSpec>) -> SlideColumn {
         let spec = crate::ui::shell::slide::slide_spec_for(self.dialog_id())
             .expect("rendered shell dialog must have a slide column");
@@ -259,7 +255,6 @@ pub(crate) enum ShellExitThen {
     /// Keyboard `0xA3` Back or Cancel: `0x005FBEF0` tears it down with its
     /// slide, then the bindings save or reload and a new `0xD5` is built.
     KeyboardClose(crate::app::input::keyboard::KeyboardExit),
-    NetworkOptionsClose,
     LanBack,
     LanCreate {
         observe: bool,
@@ -356,7 +351,6 @@ impl ShellExitThen {
             Self::LoadSavedGameBack => ShellSlideKind::LoadSavedGame,
             Self::Options(_) => ShellSlideKind::Options,
             Self::KeyboardClose(_) => ShellSlideKind::Keyboard,
-            Self::NetworkOptionsClose => ShellSlideKind::NetworkOptions,
             Self::LanBack | Self::LanCreate { .. } | Self::LanJoinAccepted(_) => {
                 ShellSlideKind::LanLobby
             }
@@ -674,7 +668,6 @@ impl<'a> ShellLifecycleReducer<'a> {
             | ShellSlideKind::WolQuickMatch
             | ShellSlideKind::WolAddBuddyQuery
             | ShellSlideKind::Keyboard
-            | ShellSlideKind::NetworkOptions
             | ShellSlideKind::LanLobby => ShellWaveCompletion::MenuPage,
             ShellSlideKind::NetworkSetup(_) => ShellWaveCompletion::MultiplayerSetup,
             ShellSlideKind::Skirmish => ShellWaveCompletion::Skirmish,
@@ -879,9 +872,6 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     // Keyboard page `0xA3` runs after `0xD5` is destroyed (`0x0055FD06`) and
     // slides like it. The Exit confirmation (state 6) and the quit after it
     // (state 7) run without a family dialog.
-    if state.frontend.network_options.is_some() {
-        return Some(ShellSlideKind::NetworkOptions);
-    }
     if let Some(dialog) = state.frontend.keyboard_dialog.as_ref() {
         return (dialog.parent == crate::ui::shell::keyboard::KeyboardParent::Launcher)
             .then_some(ShellSlideKind::Keyboard)
@@ -1185,14 +1175,6 @@ pub(crate) fn render_shell_first_paint_slide(
         }
         ShellSlideKind::NetworkSetup(_) => {
             crate::app::frontend::skirmish_shell_render::render_multiplayer_setup(
-                state,
-                encoder,
-                destination,
-            )?;
-            true
-        }
-        ShellSlideKind::NetworkOptions => {
-            crate::app::frontend::skirmish_shell_render::render_network_options(
                 state,
                 encoder,
                 destination,
@@ -1526,15 +1508,15 @@ mod tests {
         // Retail `0x102` slides Start Game and Choose Map; VERA's Save Setup
         // and Load Setup slide under them.
         assert_eq!(top_and_bottom(ShellSlideKind::Skirmish), (4, true, true));
-        // Retail `0xD5` slides Keyboard and Network; VERA's six page buttons
-        // slide under them.
+        // Retail `0xD5` slides Keyboard and Network; VERA leaves Network out
+        // and slides its six page buttons under Keyboard.
         assert_eq!(
             crate::ui::shell::slide::slide_spec_for(DialogId(0x00D5))
                 .unwrap()
                 .top_buttons,
             2
         );
-        assert_eq!(top_and_bottom(ShellSlideKind::Options), (8, true, false));
+        assert_eq!(top_and_bottom(ShellSlideKind::Options), (7, true, false));
     }
 
     #[test]

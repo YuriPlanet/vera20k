@@ -93,36 +93,6 @@ const OPTIONS_SETTINGS_CHECKPOINTS: [(&str, Category); 6] = [
     ("options-0xd5-settings-controls", Category::Controls),
     ("options-0xd5-settings-developer", Category::Developer),
 ];
-const NETWORK_OPTIONS_CHECKPOINTS: [(&str, movies::NetworkOptionsTarget); 7] = [
-    (
-        "network-options-0xd7-steady",
-        movies::NetworkOptionsTarget::Steady,
-    ),
-    (
-        "network-options-0xd7-cards",
-        movies::NetworkOptionsTarget::Cards,
-    ),
-    (
-        "network-options-0xd7-invalid-port",
-        movies::NetworkOptionsTarget::InvalidPort,
-    ),
-    (
-        "network-options-0xd7-warning-1",
-        movies::NetworkOptionsTarget::Warning1,
-    ),
-    (
-        "network-options-0xd7-warning-2",
-        movies::NetworkOptionsTarget::Warning2,
-    ),
-    (
-        "network-options-0xd7-back",
-        movies::NetworkOptionsTarget::Back,
-    ),
-    (
-        "network-options-0xd7-save-return",
-        movies::NetworkOptionsTarget::SaveReturn,
-    ),
-];
 const CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE: &str = "main-menu-0xe2-network-bounce";
 const CHECKPOINT_WOL_0X10E_STEADY: &str = "wol-0x10e-steady";
 const CHECKPOINT_WOL_0X10E_ENTRY_PREFIX: &str = "wol-0x10e-entry-tick-";
@@ -288,8 +258,6 @@ pub enum ShellCaptureCheckpoint {
     Options0xD5Steady,
     /// Then a page's column button: that page showing.
     OptionsSettings(Category),
-    /// Ordinary D5 -> D7 with explicit service/settings inputs.
-    NetworkOptions(movies::NetworkOptionsTarget),
     Lan(movies::LanTarget),
     Wol(movies::WolTarget),
     /// Network on `0xE2`: after its teardown slide and a new `0xE2`'s entry
@@ -780,12 +748,6 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_WOL_0X10E_API_MISSING => Ok(Self::Wol0x10EApiMissing),
             CHECKPOINT_WOL_0X10E_BACK => Ok(Self::Wol0x10EBack),
             _ => {
-                if let Some((_, target)) = NETWORK_OPTIONS_CHECKPOINTS
-                    .iter()
-                    .find(|(name, _)| *name == value)
-                {
-                    return Ok(Self::NetworkOptions(*target));
-                }
                 if let Some((_, category)) = OPTIONS_SETTINGS_CHECKPOINTS
                     .iter()
                     .find(|(name, _)| *name == value)
@@ -993,13 +955,6 @@ impl ShellCaptureCheckpoint {
                     .expect("WOL checkpoint")
                     .0
             }
-            Self::NetworkOptions(target) => {
-                NETWORK_OPTIONS_CHECKPOINTS
-                    .iter()
-                    .find(|(_, candidate)| *candidate == target)
-                    .expect("D7 checkpoint")
-                    .0
-            }
             Self::MainMenu0xE2NetworkBounce => CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE,
             Self::Wol0x10ESteady => CHECKPOINT_WOL_0X10E_STEADY,
             Self::Wol0x10EEntry(_) => "wol-0x10e-entry",
@@ -1164,7 +1119,6 @@ impl ShellCaptureCheckpoint {
                 hover: None,
                 press: movies::WolPress::MainMenu,
             },
-            Self::NetworkOptions(target) => movies::MoviesTarget::NetworkOptions(target),
             Self::Lan(target) => movies::MoviesTarget::Lan(target),
             Self::Wol(target) => movies::MoviesTarget::Wol(target),
             Self::Options0xD5Steady => movies::MoviesTarget::Options0xD5 {
@@ -4251,18 +4205,6 @@ mod tests {
             assert_eq!(
                 checkpoint.movies_target(),
                 Some(movies::MoviesTarget::Wol(target))
-            );
-        }
-    }
-
-    #[test]
-    fn network_options_checkpoints_route_through_production_options() {
-        for (name, target) in NETWORK_OPTIONS_CHECKPOINTS {
-            let checkpoint = ShellCaptureCheckpoint::parse(name).expect("D7 checkpoint");
-            assert_eq!(checkpoint.as_str(), name);
-            assert_eq!(
-                checkpoint.movies_target(),
-                Some(movies::MoviesTarget::NetworkOptions(target))
             );
         }
     }

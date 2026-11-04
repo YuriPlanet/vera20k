@@ -229,7 +229,6 @@ pub(crate) fn active_page_title_text(
         ShellSlideKind::WolQuickMatch => crate::ui::wol_quick_match::PAGE.title_key,
         ShellSlideKind::WolAddBuddyQuery => crate::ui::wol_persona::ADD_BUDDY_PAGE.title_key,
         ShellSlideKind::Keyboard => crate::ui::shell::keyboard::KEYBOARD_PAGE.title_key,
-        ShellSlideKind::NetworkOptions => crate::ui::network_options::PAGE.title_key,
         ShellSlideKind::LanLobby => crate::ui::lan_shell::PAGE.title_key,
         ShellSlideKind::NetworkSetup(dialog) => dialog.page().title_key,
         ShellSlideKind::ChooseMap => crate::ui::skirmish_shell::CHOOSE_MAP_TITLE_KEY,

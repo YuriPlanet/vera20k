@@ -1158,10 +1158,7 @@ fn connect_succeeded(state: &mut AppState) {
         visit.page = WolPage::Backdrop { wait: None };
     }
     // ReadMultiPlayerSettings 0x006980C0.
-    App::prepare_multiplayer_settings(
-        state,
-        crate::app::shell_main_menu::MultiplayerSettingsContext::Shell,
-    );
+    App::prepare_multiplayer_settings(state);
     let nickname = state.frontend.wol_account.nickname.clone();
     let visit = state.frontend.wol.as_ref().expect("WOL visit");
     let online = visit.provider == WolProvider::Online;

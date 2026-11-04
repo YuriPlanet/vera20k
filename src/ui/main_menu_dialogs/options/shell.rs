@@ -64,20 +64,19 @@ pub(crate) enum LauncherStatusHelp {
 }
 
 pub(crate) const KEYBOARD_BUTTON: u16 = 0x05CE;
-pub(crate) const NETWORK_BUTTON: u16 = 0x05CD;
 pub(crate) const MAIN_MENU_BUTTON: u16 = 0x0686;
-/// VERA's category buttons under Network, in [`Category::ALL`]'s order. Not
+/// VERA's category buttons under Keyboard, in [`Category::ALL`]'s order. Not
 /// retail controls: the ids only name their rects in the page layout.
 const CATEGORY_BUTTONS: [u16; 6] = [0x7FF0, 0x7FF1, 0x7FF2, 0x7FF3, 0x7FF4, 0x7FF5];
 const _: () = assert!(CATEGORY_BUTTONS.len() == Category::ALL.len());
 
 /// A category's button: the stacked tops go on 27 DLUs at a time from
-/// Network's, as the family pages' do, so each lands on the next tile.
+/// Keyboard's, as the family pages' do, so each lands on the next tile.
 /// Its caption is the category's name and its help [`Category::help`].
 const fn category_button(index: usize) -> MenuPageButtonSpec {
     MenuPageButtonSpec {
         id: CATEGORY_BUTTONS[index],
-        dlu_top: 176 + 27 * index as i32,
+        dlu_top: 149 + 27 * index as i32,
         csf_key: "",
         tooltip_key: "",
         result: None,
@@ -87,8 +86,9 @@ const fn category_button(index: usize) -> MenuPageButtonSpec {
 /// `0xD5` as a family page (Session `+0x30D8` clear at the main menu): the
 /// right-panel column is Keyboard and Network (`0x006092CB`), then Main Menu
 /// (`0x0060982C`); the heading and status line sit at the family places.
-/// VERA's category buttons fill the six tiles between Network and Main Menu.
-/// Button captions come from the dialog's own labels.
+/// VERA leaves Network (`0x5CD`) out: it opens the IPX settings page `0xD7`,
+/// and VERA's LAN runs on IPv4 UDP. VERA's category buttons take the six
+/// tiles under Keyboard. Button captions come from the dialog's own labels.
 pub(crate) const OPTIONS_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DialogId(0x00D5),
     title_key: "GUI:OptionsMenu",
@@ -98,13 +98,6 @@ pub(crate) const OPTIONS_PAGE: MenuPageSpec = MenuPageSpec {
             dlu_top: 122,
             csf_key: "GUI:Keyboard",
             tooltip_key: "STT:MainOptButtonKeyboard",
-            result: None,
-        },
-        MenuPageButtonSpec {
-            id: NETWORK_BUTTON,
-            dlu_top: 149,
-            csf_key: "GUI:Network",
-            tooltip_key: "STT:MainOptButtonNetwork",
             result: None,
         },
         category_button(0),
@@ -125,7 +118,7 @@ pub(crate) const OPTIONS_PAGE: MenuPageSpec = MenuPageSpec {
 
 /// Whether the retail panel at this window size has a tile for every column
 /// button above Main Menu's. 640x480's six tiles hold five, too few for the
-/// eight, so `0xD5` takes the fitted 800x600 page there instead: not native,
+/// seven, so `0xD5` takes the fitted 800x600 page there instead: not native,
 /// and the only size whose Options art is scaled while the other pages keep
 /// the 640-wide set.
 pub(crate) fn retail_column_fits(width: i32, height: i32) -> bool {
@@ -243,16 +236,10 @@ impl LauncherOptionsLayout {
             menu_page::compute_layout(&OPTIONS_PAGE, width as u32, height as u32)
         };
         let column = |id| panel.button_rect(id).expect("0xD5 column button");
-        let mut buttons = vec![
-            (
-                LauncherButton::Exit(LauncherParentResult::Keyboard),
-                column(KEYBOARD_BUTTON),
-            ),
-            (
-                LauncherButton::Exit(LauncherParentResult::Network),
-                column(NETWORK_BUTTON),
-            ),
-        ];
+        let mut buttons = vec![(
+            LauncherButton::Exit(LauncherParentResult::Keyboard),
+            column(KEYBOARD_BUTTON),
+        )];
         buttons.extend(
             Category::ALL
                 .into_iter()
@@ -523,7 +510,6 @@ impl OptionsDialogState {
     pub(crate) fn shell_button_label(&self, id: LauncherButton) -> &str {
         match id {
             LauncherButton::Exit(LauncherParentResult::Keyboard) => &self.labels.keyboard,
-            LauncherButton::Exit(LauncherParentResult::Network) => &self.labels.network,
             LauncherButton::Exit(LauncherParentResult::Back) => &self.labels.main_menu,
             LauncherButton::Exit(LauncherParentResult::Terminal) => "",
             LauncherButton::Category(category) => self.shell_category_label(category),
@@ -728,7 +714,6 @@ impl OptionsDialogState {
                     return Some(LauncherStatusHelp::Text(CHECK_FOR_UPDATES_HELP));
                 }
                 LauncherButton::Exit(LauncherParentResult::Keyboard) => KEYBOARD_BUTTON,
-                LauncherButton::Exit(LauncherParentResult::Network) => NETWORK_BUTTON,
                 LauncherButton::Exit(
                     LauncherParentResult::Back | LauncherParentResult::Terminal,
                 ) => MAIN_MENU_BUTTON,
@@ -1036,27 +1021,23 @@ mod tests {
         }
     }
 
-    /// The right-hand column: retail's Keyboard and Network, a button per
-    /// category on the tiles under them, and Main Menu on the last tile, each
-    /// a 156x42 SDBTNANM cell flush with the 800x600 panel's right edge.
+    /// The right-hand column: retail's Keyboard, a button per category on the
+    /// tiles under it, and Main Menu on the last of the 800x600 panel's nine
+    /// tiles, each a 156x42 SDBTNANM cell flush with the panel's right edge.
     #[test]
-    fn the_column_holds_keyboard_network_every_category_and_main_menu() {
+    fn the_column_holds_keyboard_every_category_and_main_menu() {
         let layout = page(Category::Display);
-        let mut expected = vec![
-            LauncherButton::Exit(LauncherParentResult::Keyboard),
-            LauncherButton::Exit(LauncherParentResult::Network),
-        ];
+        let mut expected = vec![LauncherButton::Exit(LauncherParentResult::Keyboard)];
         expected.extend(Category::ALL.map(LauncherButton::Category));
         expected.push(LauncherButton::Exit(LauncherParentResult::Back));
         let ids: Vec<_> = layout.buttons.iter().map(|(id, _)| *id).collect();
         assert_eq!(ids, expected);
-        for (row, (id, rect)) in layout.buttons.iter().enumerate() {
-            assert_eq!(
-                *rect,
-                RectPx::new(644, 199 + 42 * row as i32, 156, 42),
-                "{id:?}"
-            );
+        let tile = |row: i32| RectPx::new(644, 199 + 42 * row, 156, 42);
+        let (main_menu, stacked) = layout.buttons.split_last().unwrap();
+        for (row, (id, rect)) in stacked.iter().enumerate() {
+            assert_eq!(*rect, tile(row as i32), "{id:?}");
         }
+        assert_eq!(main_menu.1, tile(8));
     }
 
     /// 640x480's retail panel has six tiles, five above Main Menu: too few for
@@ -1071,7 +1052,7 @@ mod tests {
             layout,
             LauncherOptionsLayout::responsive(640, 480, Category::Display)
         );
-        assert_eq!(layout.buttons.len(), 9);
+        assert_eq!(layout.buttons.len(), 8);
         for (index, (id, a)) in layout.buttons.iter().enumerate() {
             assert!(a.x + a.w <= 640 && a.y + a.h <= 480, "{id:?} at {a:?}");
             for (other, b) in &layout.buttons[index + 1..] {
@@ -1245,7 +1226,6 @@ mod tests {
         let at = |rect: RectPx| dialog.shell_status_help_key(rect.x + 2, rect.y + 2, &layout);
         for (result, key) in [
             (LauncherParentResult::Keyboard, "STT:MainOptButtonKeyboard"),
-            (LauncherParentResult::Network, "STT:MainOptButtonNetwork"),
             (LauncherParentResult::Back, "STT:MainOptButtonBack"),
         ] {
             assert_eq!(

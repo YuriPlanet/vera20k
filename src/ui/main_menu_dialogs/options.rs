@@ -20,11 +20,10 @@ pub(crate) mod shell;
 /// `GUI:Faster`) never show: the init renames them by position. The combo's
 /// own caption, `GUI:SetResolution`, left with the resolution list: the combo
 /// is VERA's [`Zoom`] list now.
-pub(crate) const LAUNCHER_LABEL_SPECS: [(&str, &str); 30] = [
+pub(crate) const LAUNCHER_LABEL_SPECS: [(&str, &str); 29] = [
     ("GUI:OptionsMenu", "Options"),
     ("GUI:MainMenu", "Main Menu"),
     ("GUI:Keyboard", "Keyboard"),
-    ("GUI:Network", "Network"),
     ("GUI:DisplayOptions", "Display Options"),
     ("GUI:GameOptions", "Game Options"),
     ("GUI:UIOptions", "UI Options"),
@@ -127,7 +126,7 @@ pub(crate) const CHECK_FOR_UPDATES_HELP: &str =
 /// A button of the dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LauncherButton {
-    /// Keyboard, Network or Main Menu: one of gamemd's parent exits.
+    /// Keyboard or Main Menu: one of gamemd's parent exits.
     Exit(LauncherParentResult),
     /// A category in the right-hand column: shows that category's page.
     Category(Category),
@@ -416,7 +415,6 @@ pub(crate) struct LauncherOptionsLabels {
     pub(crate) options: String,
     pub(crate) main_menu: String,
     pub(crate) keyboard: String,
-    pub(crate) network: String,
     pub(crate) display_options: String,
     pub(crate) game_options: String,
     pub(crate) ui_options: String,
@@ -449,34 +447,33 @@ impl LauncherOptionsLabels {
             options: label(0),
             main_menu: label(1),
             keyboard: label(2),
-            network: label(3),
-            display_options: label(4),
-            game_options: label(5),
-            ui_options: label(6),
-            audio_options: label(7),
-            visual_details: label(8),
-            difficulty: label(9),
-            tooltips: label(10),
-            scroll_rate: label(11),
-            target_lines: label(12),
-            show_hidden: label(13),
-            music_volume: label(14),
-            sound_volume: label(15),
-            voice_volume: label(16),
-            blank: label(17),
-            low: label(18),
-            high: label(19),
-            easy: label(20),
-            normal: label(21),
-            hard: label(22),
+            display_options: label(3),
+            game_options: label(4),
+            ui_options: label(5),
+            audio_options: label(6),
+            visual_details: label(7),
+            difficulty: label(8),
+            tooltips: label(9),
+            scroll_rate: label(10),
+            target_lines: label(11),
+            show_hidden: label(12),
+            music_volume: label(13),
+            sound_volume: label(14),
+            voice_volume: label(15),
+            blank: label(16),
+            low: label(17),
+            high: label(18),
+            easy: label(19),
+            normal: label(20),
+            hard: label(21),
             scroll_tokens: [
+                label(22),
                 label(23),
                 label(24),
                 label(25),
                 label(26),
                 label(27),
                 label(28),
-                label(29),
             ],
         }
     }
@@ -646,7 +643,6 @@ pub(crate) enum LauncherOptionsEvent {
 /// projects through `OptionsClass__ApplyFromLauncherDialog @ 0x0055FAA0`.
 pub(crate) enum LauncherParentResult {
     Back,
-    Network,
     Keyboard,
     Terminal,
 }
@@ -1184,7 +1180,7 @@ impl OptionsDialogState {
     /// gamemd-derived: ordinary `0xD5` owner-draw buttons emit
     /// `[AudioVisual] GUIMainButtonSound` on admitted primary mouse-down;
     /// `OptionsClass__ShowLauncherDialog @ 0x0055FC80` observes the distinct
-    /// Back/Network/Keyboard result only on the later activation release.
+    /// Back/Keyboard result only on the later activation release.
     pub(crate) fn main_button_mouse_down(&mut self) {
         self.pending_events
             .push(LauncherOptionsEvent::Cue(LauncherCue::MainButton));
@@ -1234,8 +1230,8 @@ impl OptionsDialogState {
     }
 
     /// gamemd-derived: `OptionsClass__ShowLauncherDialog @ 0x0055FC80` gives
-    /// Back, Network, Keyboard, and terminal completion distinct parent
-    /// results; the first admitted result owns the frame's teardown path.
+    /// Back, Keyboard, and terminal completion distinct parent results; the
+    /// first admitted result owns the frame's teardown path.
     pub(crate) fn request_result(&mut self, result: LauncherParentResult) {
         if !self.requested() {
             self.pending_result = Some(result);
@@ -1248,8 +1244,8 @@ impl OptionsDialogState {
 
     /// Show `category`'s page in place: no slide, and nothing is applied or
     /// saved. A held slider, an open list and a pressed button don't carry
-    /// over to the new page. A dialog rebuilt after Keyboard or Network
-    /// closes reopens on the page the player left the same way.
+    /// over to the new page. A dialog rebuilt after Keyboard closes reopens
+    /// on the page the player left the same way.
     pub(crate) fn select_category(&mut self, category: Category) {
         if self.category == category {
             return;
@@ -1285,8 +1281,8 @@ impl OptionsDialogState {
 }
 
 /// The dialog's pages, top to bottom in the right-hand column under retail's
-/// Keyboard and Network. Retail `0xD5` lays its controls out in four bands
-/// whose headings (`GUI:DisplayOptions`, `GUI:GameOptions`, `GUI:UIOptions`,
+/// Keyboard. Retail `0xD5` lays its controls out in four bands whose headings
+/// (`GUI:DisplayOptions`, `GUI:GameOptions`, `GUI:UIOptions`,
 /// `GUI:AudioOptions`) name the first four pages; VERA adds the last two.
 /// Picking a page swaps the controls in place; one set of values covers them
 /// all.
@@ -1867,11 +1863,11 @@ mod tests {
     fn escape_is_no_event_and_first_parent_result_wins_one_frame() {
         let mut state = state(true);
         assert!(state.drain_output().events.is_empty());
-        state.request_result(LauncherParentResult::Network);
+        state.request_result(LauncherParentResult::Keyboard);
         state.request_result(LauncherParentResult::Back);
         assert_eq!(
             state.drain_output().result,
-            Some(LauncherParentResult::Network)
+            Some(LauncherParentResult::Keyboard)
         );
         assert_eq!(state.drain_output().result, None);
     }

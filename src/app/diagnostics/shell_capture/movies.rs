@@ -15,9 +15,7 @@ mod lan;
 pub(crate) use lan::{LAN_CHECKPOINTS, LanTarget};
 mod wol;
 pub(crate) use wol::{WOL_CHECKPOINTS, WolTarget};
-mod network_options;
 mod opening;
-pub(crate) use network_options::NetworkOptionsTarget;
 pub(super) use opening::OpeningTarget;
 
 /// Native control corpus read from this checkout's `tools/` at capture time.
@@ -117,7 +115,6 @@ pub(super) enum MoviesTarget {
     /// Network on `0xE2`: its teardown slide, then a new `0xE2` with its
     /// own entry slide, captured once settled.
     NetworkBounce,
-    NetworkOptions(NetworkOptionsTarget),
     Lan(LanTarget),
     Wol(WolTarget),
     /// Main Menu -> Internet: `0x10E` settled (pointer at `hover` or
@@ -198,12 +195,6 @@ enum Phase {
     CampaignRestart,
     LoadSavedGame,
     Options,
-    NetworkOptions,
-    NetworkOptionsInput,
-    NetworkOptionsMessage,
-    NetworkOptionsPortWarning,
-    NetworkOptionsReturning,
-    NetworkOptionsMainMenu,
     /// Network pressed: waiting for the teardown to commit.
     NetworkLeaving,
     /// A new `0xE2` exists: waiting for its entry slide to be seen.
@@ -501,9 +492,6 @@ impl MoviesCapture {
         if aborting_campaign {
             return self.campaign_abort_after_present(state, frame);
         }
-        if self.network_options_after_present(state, rendered, frame)? {
-            return Ok(());
-        }
         match (self.phase, rendered) {
             (Phase::MainMenu, PresentedShell::MainMenu) => {
                 if steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state))? {
@@ -543,10 +531,7 @@ impl MoviesCapture {
                         self.phase = Phase::NetworkLeaving;
                         return Ok(());
                     }
-                    if matches!(
-                        self.target,
-                        MoviesTarget::Options0xD5 { .. } | MoviesTarget::NetworkOptions(_)
-                    ) {
+                    if matches!(self.target, MoviesTarget::Options0xD5 { .. }) {
                         self.route
                             .push(json!({"dialog": 0xe2, "frame": frame, "action": "Options"}));
                         App::handle_main_menu_shell_action(
@@ -638,7 +623,6 @@ impl MoviesCapture {
                         | MoviesTarget::CampaignBack
                         | MoviesTarget::LoadSavedGame0xB7 { .. }
                         | MoviesTarget::Options0xD5 { .. }
-                        | MoviesTarget::NetworkOptions(_)
                         | MoviesTarget::Lan(_)
                         | MoviesTarget::Wol(_)
                         | MoviesTarget::NetworkBounce
@@ -1445,12 +1429,6 @@ impl MoviesCapture {
             } => true,
             MoviesTarget::Lan(_) => unreachable!("LAN driver handled above"),
             MoviesTarget::Wol(_) => unreachable!("WOL driver handled above"),
-            MoviesTarget::NetworkOptions(target) => {
-                target.is_message()
-                    || target == NetworkOptionsTarget::SaveReturn
-                    || (state.frontend.shell_page_title.is_terminal()
-                        && state.frontend.shell_status_line.is_terminal())
-            }
             MoviesTarget::WolWelcome { .. } => {
                 state.frontend.shell_page_title.is_terminal()
                     && state.frontend.shell_status_line.is_terminal()
@@ -1524,7 +1502,6 @@ impl MoviesCapture {
             }
             MoviesTarget::Lan(_) => unreachable!("LAN driver handled above"),
             MoviesTarget::Wol(_) => unreachable!("WOL driver handled above"),
-            MoviesTarget::NetworkOptions(target) => self.network_options_ready(state, target)?,
             MoviesTarget::Options0xD5 {
                 entry_tick,
                 category,
@@ -1736,9 +1713,6 @@ impl MoviesCapture {
                 "route": format!("{:?}", state.frontend.shell_route),
                 "campaign_page_present": state.frontend.campaign.is_some(),
                 "loading_session_present": state.frontend.loading_session.is_some()});
-        }
-        if let MoviesTarget::NetworkOptions(target) = self.target {
-            manifest["network_options"] = self.network_options_receipt(state, target)?;
         }
         if let Some(lan) = self.lan.as_ref() {
             manifest["lan"] = lan.receipt(state)?;
