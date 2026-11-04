@@ -1,21 +1,26 @@
 //! `0x10F`'s left-side children on the shared control owners: the two
 //! labels, the nickname combo (face `0x00617250` with its NewEdit), the
-//! `ES_PASSWORD` NewEdit, the Remember checkbox and the combo's drop list.
-//! The WOL page compositor draws them over its own backdrop and chrome.
+//! `ES_PASSWORD` NewEdit, the Remember checkbox and the combo's drop list,
+//! and VERA online's account popup over them. The WOL page compositor draws
+//! them over its own backdrop and chrome.
 
 use super::controls::{
     ControlPaint, NewEditPaint, dropdown_scroll_part, paint_control, push_new_edit_caret,
     push_new_edit_instances, push_popup_instances,
 };
 use super::text::{button_label_color_for_disabled, combo_face_text_color, rect_to_text_rect};
+use super::wol_lobby::{POPUP_DEPTHS, WolLobbyPaint, label as csf_label, push_edit};
 use super::{
     SHELL_CONTROL_TEXT_DEPTH, SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH,
     SHELL_EDIT_CARET_DEPTH, SHELL_EDIT_FRAME_DEPTH, SHELL_LABEL_TEXT_RGB,
 };
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
+use crate::render::shell_paint::{self, ModalButton, PaintLabel};
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
-use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::modal::WolAccountFormLayout;
+use crate::ui::wol_account::{FORM_CANCEL, FORM_OK, WolAccountForm};
 use crate::ui::wol_login::{LoginPolicy, WolLoginLayout, WolLoginState};
 use crate::util::time::Instant;
 
@@ -59,24 +64,13 @@ pub(crate) fn paint_wol_login_children(
             scale.factor(),
         )
     };
-    let label = |key: &str| {
-        state
-            .process_assets
-            .csf
-            .as_ref()
-            .map_or_else(|| key.to_owned(), |csf| csf.text(key).into_owned())
-    };
-    let labels = if online {
-        &layout.labels[..1]
-    } else {
-        &layout.labels[..]
-    };
-    for (key, rect) in labels {
+    let label = |key: &str| csf_label(state, key);
+    for (index, (key, rect)) in layout.labels.iter().enumerate() {
         paint.texts.push(text(
-            &if online {
-                "Username".to_owned()
-            } else {
-                label(key)
+            &match (online, index) {
+                (true, 0) => "Username".to_owned(),
+                (true, _) => "Password".to_owned(),
+                _ => label(key),
             },
             *rect,
             ShellAlign::H_RIGHT,
@@ -140,7 +134,7 @@ pub(crate) fn paint_wol_login_children(
         SHELL_CONTROL_TEXT_DEPTH,
     ));
 
-    if !online {
+    {
         // 614FAB: the text starts two columns into the inset window.
         let password_text = scale.derive_rect(layout.password, |rect| {
             RectPx::new(rect.x + 2, rect.y, rect.w - 1, rect.h + 1)
@@ -180,22 +174,14 @@ pub(crate) fn paint_wol_login_children(
             scale,
         );
         paint.texts.push(text(
-            &label("GUI:RememberAccount"),
+            &if online {
+                "Remember password".to_owned()
+            } else {
+                label("GUI:RememberAccount")
+            },
             crate::ui::skirmish_shell::checkbox_text_rect(layout.remember, scale),
             ShellAlign::V_CENTER,
             wol_button_label_rgb(login.remember_enabled),
-            SHELL_CONTROL_TEXT_DEPTH,
-        ));
-    } else {
-        // Under the field, starting where its text does.
-        let rect = scale.derive_rect(layout.nickname_face, |rect| {
-            RectPx::new(rect.x + 3, rect.y + rect.h + 4, rect.w - 6, 16)
-        });
-        paint.texts.push(text(
-            "Use 1-24 letters, digits, _ or -.",
-            rect,
-            ShellAlign::V_CENTER,
-            SHELL_LABEL_TEXT_RGB,
             SHELL_CONTROL_TEXT_DEPTH,
         ));
     }
@@ -226,6 +212,106 @@ pub(crate) fn paint_wol_login_children(
                 SHELL_DROPDOWN_TEXT_DEPTH,
             ));
         }
+    }
+    paint
+}
+
+/// VERA online's account popup on Red Alert 2's box art, as the online
+/// Create Game box: a caption and edit per field, OK and Cancel, and the
+/// status line.
+pub(crate) fn paint_wol_account_form(
+    state: &AppState,
+    form: &WolAccountForm,
+    layout: &WolAccountFormLayout,
+    scale: ShellScale,
+) -> WolLobbyPaint {
+    let mut paint = WolLobbyPaint::default();
+    let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
+        return paint;
+    };
+    let plain = |text: String, rect: RectPx, align: ShellAlign, rgb: [f32; 3]| PaintLabel {
+        text: text.into(),
+        rect,
+        align,
+        rgb,
+        path_a_reveal: None,
+    };
+    let button_align = ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0);
+    let button_label = |id: u16, rect: RectPx| {
+        crate::app::frontend::shell_pass::owner_draw_button_label_rect(
+            rect,
+            form.buttons.is_pressed(id),
+        )
+    };
+    let mut labels: Vec<PaintLabel> = form
+        .fields
+        .iter()
+        .zip(&layout.fields)
+        .map(|(field, (caption, _))| {
+            plain(
+                field.label.to_owned(),
+                *caption,
+                ShellAlign::H_RIGHT,
+                SHELL_LABEL_TEXT_RGB,
+            )
+        })
+        .collect();
+    labels.push(plain(
+        csf_label(state, "GUI:OK"),
+        button_label(FORM_OK, layout.ok),
+        button_align,
+        wol_button_label_rgb(form.ok_enabled()),
+    ));
+    labels.push(plain(
+        csf_label(state, "GUI:Cancel"),
+        button_label(FORM_CANCEL, layout.cancel),
+        button_align,
+        SHELL_LABEL_TEXT_RGB,
+    ));
+    labels.push(plain(
+        form.status.clone(),
+        layout.status,
+        ShellAlign::NONE,
+        SHELL_LABEL_TEXT_RGB,
+    ));
+    let buttons = [
+        ModalButton {
+            rect: layout.ok,
+            pressed: form.buttons.is_pressed(FORM_OK),
+            enabled: form.ok_enabled(),
+        },
+        ModalButton {
+            rect: layout.cancel,
+            pressed: form.buttons.is_pressed(FORM_CANCEL),
+            enabled: true,
+        },
+    ];
+    let background = atlas
+        .ra2_dialog_background
+        .or_else(|| atlas.mode_two_dialog_background(None));
+    let draw = shell_paint::paint_modal_shp(
+        &state.renderer.bit_font,
+        background,
+        super::type3_button_frames(atlas),
+        layout.dialog,
+        &buttons,
+        &labels,
+        scale,
+        POPUP_DEPTHS,
+    );
+    paint.controls = draw.sprites;
+    paint.texts = draw.text;
+    let caret_visible = form.caret_visible(Instant::now());
+    for (field, (_, rect)) in form.fields.iter().zip(&layout.fields) {
+        push_edit(
+            &mut paint,
+            state,
+            &field.edit,
+            *rect,
+            caret_visible && field.edit.focused,
+            scale,
+            POPUP_DEPTHS.text,
+        );
     }
     paint
 }

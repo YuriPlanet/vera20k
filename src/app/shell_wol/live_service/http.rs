@@ -61,8 +61,15 @@ pub(super) enum Request {
     OpenSession {
         attempt: u64,
         nickname: String,
-        /// The name's ranked-ladder key this computer holds (docs/lobby-protocol.md).
-        ladder_key: Option<String>,
+        credential: Credential,
+    },
+    /// An `/v1/accounts/` request, answered by [`Response::AccountAnswered`].
+    Account(crate::ui::wol_account::AccountRequest),
+    /// `/v1/accounts/forget`: the lobby drops this computer's remembered
+    /// sign-in. Nothing answers.
+    ForgetSignIn {
+        name: String,
+        sign_in_token: String,
     },
     /// The shell gave up on an unanswering lobby outside a match: stop
     /// polling and log this bearer out at the next sign-in.
@@ -87,6 +94,58 @@ pub(super) enum Request {
         text: String,
         target: &'static str,
     },
+}
+
+/// How a sign-in proves its name (docs/lobby-protocol.md "Accounts"). It
+/// holds a password or a remembered sign-in, so it has no Debug.
+pub(super) enum Credential {
+    /// No password: a guest, or `name_claimed` for an account's name.
+    Guest,
+    /// The typed password; `remember` asks for a `sign_in_token`.
+    Password { password: String, remember: bool },
+    /// The `sign_in_token` this computer remembers for the name.
+    Remembered(String),
+}
+
+/// The `/v1/sessions` body: a password or a remembered sign-in, never both.
+fn session_body(nickname: &str, credential: &Credential) -> Value {
+    let mut body = json!({"nickname": nickname, "protocol": 4});
+    match credential {
+        Credential::Guest => {}
+        Credential::Password { password, remember } => {
+            body["password"] = json!(password);
+            body["remember"] = json!(remember);
+        }
+        Credential::Remembered(token) => body["sign_in_token"] = json!(token),
+    }
+    body
+}
+
+/// An account request's path and body.
+fn account_call(request: &crate::ui::wol_account::AccountRequest) -> (&'static str, Value) {
+    use crate::ui::wol_account::AccountRequest;
+    match request {
+        AccountRequest::Register {
+            name,
+            email,
+            password,
+        } => (
+            "/v1/accounts/register",
+            json!({"name": name, "email": email, "password": password}),
+        ),
+        AccountRequest::Verify { name, code } => {
+            ("/v1/accounts/verify", json!({"name": name, "code": code}))
+        }
+        AccountRequest::Forgot { name } => ("/v1/accounts/forgot", json!({"name": name})),
+        AccountRequest::Reset {
+            name,
+            code,
+            password,
+        } => (
+            "/v1/accounts/reset",
+            json!({"name": name, "code": code, "password": password}),
+        ),
+    }
 }
 
 impl Request {
@@ -170,6 +229,9 @@ pub(super) enum Response {
         player_id: String,
         nickname: String,
         motd: Option<String>,
+        /// A password sign-in with `remember`: what signs this computer in
+        /// next time.
+        sign_in_token: Option<String>,
     },
     LoginFailed {
         attempt: u64,
@@ -206,11 +268,15 @@ pub(super) enum Response {
     /// About a minute of failed polls outside a match: polling stopped.
     LobbyLost,
     /// The lobby refused a sign-in for a reason of its own (maintenance,
-    /// full or busy): the text to show.
+    /// full, busy, or the name's account): the text to show.
     SignInRefused {
         attempt: u64,
         message: String,
+        /// 403 `wrong_password`: the password or remembered sign-in is wrong.
+        wrong_password: bool,
     },
+    /// The answer to a [`Request::Account`], or the message to show.
+    AccountAnswered(Result<(), String>),
     StartRejected {
         id: u64,
         /// 429, 5xx or no answer: the lobby, not the setup, refused it.
@@ -262,9 +328,15 @@ enum RequestFailure {
     /// 503 `service_full` or `network_full`: the lobby has no room for this
     /// sign-in, with the same kind of message.
     Full(Option<String>),
-    /// 403 `name_claimed`: the name is on the ranked ladder and this sign-in
-    /// lacks its key, with the same kind of message.
-    NameClaimed(Option<String>),
+    /// A refusal about an account (docs/lobby-protocol.md "Accounts"): a
+    /// sign-in's `name_claimed`, `wrong_password`, `no_account` or
+    /// `account_locked`, or any refusal of an `/v1/accounts/` request, with
+    /// the message to show.
+    Account {
+        status: u16,
+        wrong_password: bool,
+        message: String,
+    },
 }
 
 /// What a lobby refusal of a sign-in tells the player: its own plain
@@ -277,9 +349,7 @@ fn sign_in_refusal(failure: RequestFailure) -> String {
         RequestFailure::Full(message) => message.unwrap_or_else(|| {
             "VERA20k Online is full right now. Please try again later.".to_owned()
         }),
-        RequestFailure::NameClaimed(message) => message.unwrap_or_else(|| {
-            "That name is on the ranked ladder. Sign in from the computer that holds its ladder key, or choose another username.".to_owned()
-        }),
+        RequestFailure::Account { message, .. } => message,
         _ => "VERA20k Online is busy right now. Please try again in a minute.".to_owned(),
     }
 }
@@ -349,11 +419,57 @@ impl RequestFailure {
             Some("service_full" | "network_full") if status == 503 => {
                 Self::Full(plain_message(value.as_ref()))
             }
-            Some("name_claimed") if status == 403 => {
-                Self::NameClaimed(plain_message(value.as_ref()))
+            Some(code @ ("name_claimed" | "wrong_password")) if status == 403 => {
+                Self::account(status, Some(code), value.as_ref())
+            }
+            Some(code @ "no_account") if status == 404 => {
+                Self::account(status, Some(code), value.as_ref())
+            }
+            Some(code @ "account_locked") if status == 429 => {
+                Self::account(status, Some(code), value.as_ref())
             }
             _ if status == 426 => Self::UpgradeRequired(plain_message(value.as_ref())),
             _ => Self::Status(status),
+        }
+    }
+
+    /// An answer to `path`: an `/v1/accounts/` request's refusals all
+    /// carry their message, since `name_unavailable` there names an account.
+    fn answer(path: &str, status: u16, bytes: &[u8]) -> Self {
+        if !path.starts_with("/v1/accounts/") {
+            return Self::response(status, bytes);
+        }
+        let value = serde_json::from_slice::<Value>(bytes).ok();
+        let code = value
+            .as_ref()
+            .and_then(|value| value["error"]["code"].as_str());
+        Self::account(status, code, value.as_ref())
+    }
+
+    /// An account refusal with the lobby's plain message, or one for its code.
+    fn account(status: u16, code: Option<&str>, value: Option<&Value>) -> Self {
+        let message = plain_message(value).unwrap_or_else(|| {
+            match code {
+                Some("name_claimed") => {
+                    "That name has an account. Enter its password, or choose another username."
+                }
+                Some("wrong_password") => "Wrong password.",
+                Some("no_account") => "No account has that name.",
+                Some("account_locked") => {
+                    "Too many wrong passwords. Try again later, or use Forgot Password."
+                }
+                _ if status == 429 => "Too many tries. Please try again later.",
+                _ if status == 0 || status >= 500 => {
+                    "VERA20k Online is busy right now. Please try again in a minute."
+                }
+                _ => "VERA20k Online refused that. Check what you entered.",
+            }
+            .to_owned()
+        });
+        Self::Account {
+            status,
+            wrong_password: code == Some("wrong_password"),
+            message,
         }
     }
 
@@ -372,7 +488,7 @@ impl RequestFailure {
             Self::LostCursor | Self::AlreadyFinished => 409,
             Self::UpgradeRequired(_) => 426,
             Self::Maintenance(_) | Self::Full(_) => 503,
-            Self::NameClaimed(_) => 403,
+            Self::Account { status, .. } => *status,
         }
     }
 }
@@ -549,7 +665,7 @@ impl Client {
             return Err(RequestFailure::Status(0));
         }
         if !(200..300).contains(&status) {
-            return Err(RequestFailure::response(status, &bytes));
+            return Err(RequestFailure::answer(path, status, &bytes));
         }
         serde_json::from_slice(&bytes).map_err(|_| RequestFailure::Status(0))
     }
@@ -953,7 +1069,7 @@ macro_rules! serial_driver {
             Some(Request::OpenSession {
                 attempt,
                 nickname,
-                ladder_key,
+                credential,
             }) => {
                 // A held bearer still holds its name: log it out first, and
                 // while the lobby is away, report that instead of the name.
@@ -964,12 +1080,7 @@ macro_rules! serial_driver {
                 client.cursor = 0;
                 client.active_match = None;
                 let result = platform_await!(client
-                    .request(
-                        "/v1/sessions",
-                        // `ladder_key` is null when this computer holds
-                        // none for the name.
-                        Some(&json!({"nickname": nickname, "protocol": 4, "ladder_key": ladder_key})),
-                    ))
+                    .request("/v1/sessions", Some(&session_body(&nickname, &credential))))
                     .and_then(|value| decode_session(value, &nickname));
                 match result {
                     Ok(session) => {
@@ -981,6 +1092,9 @@ macro_rules! serial_driver {
                                 player_id: session.player_id,
                                 nickname: session.nickname,
                                 motd: session.motd,
+                                sign_in_token: session
+                                    .sign_in_token
+                                    .filter(|_| matches!(credential, Credential::Password { remember: true, .. })),
                             })
                             .is_err()
                         {
@@ -1007,14 +1121,38 @@ macro_rules! serial_driver {
                     }
                     Err(error @ (RequestFailure::Maintenance(_)
                     | RequestFailure::Full(_)
-                    | RequestFailure::NameClaimed(_)
+                    | RequestFailure::Account { .. }
                     | RequestFailure::Status(429))) => {
+                        let wrong_password = matches!(
+                            error,
+                            RequestFailure::Account { wrong_password: true, .. }
+                        );
                         let message = sign_in_refusal(error);
-                        let _ = output.send(Response::SignInRefused { attempt, message });
+                        let _ = output.send(Response::SignInRefused {
+                            attempt,
+                            message,
+                            wrong_password,
+                        });
                     }
                     Err(_) => {
                         let _ = output.send(Response::LoginFailed { attempt, code: 0 });
                     }
+                }
+            }
+            Some(Request::Account(request)) => {
+                let (path, body) = account_call(&request);
+                let answer = platform_await!(client.request(path, Some(&body)))
+                    .map(|_| ())
+                    .map_err(sign_in_refusal);
+                let _ = output.send(Response::AccountAnswered(answer));
+            }
+            Some(Request::ForgetSignIn {
+                name,
+                sign_in_token,
+            }) => {
+                let body = json!({"name": name, "sign_in_token": sign_in_token});
+                if let Err(error) = platform_await!(client.request("/v1/accounts/forget", Some(&body))) {
+                    log::warn!("Could not forget the remembered sign-in: status={}", error.status());
                 }
             }
             Some(Request::Abandon) => client.abandoned = client.token.is_some(),
@@ -1504,20 +1642,61 @@ mod tests {
         assert!(sign_in_refusal(RequestFailure::Status(429)).contains("busy"));
     }
 
-    /// A name on the ranked ladder, signed in without its key, says so
-    /// instead of failing as a wrong password.
+    /// An account's refusals show the lobby's words; only `wrong_password`
+    /// says a remembered sign-in no longer works, and an account request's
+    /// `name_unavailable` is a message, not a room's join code.
     #[test]
-    fn a_claimed_name_refuses_a_sign_in_without_its_key() {
-        let reason = "That name is on the ranked ladder.";
-        let claimed = RequestFailure::response(
+    fn account_refusals_carry_the_lobby_message() {
+        let refusal = |code: &str, message: &str| {
+            json!({"error":{"code":code,"message":message}}).to_string()
+        };
+        let wrong = RequestFailure::response(
             403,
-            json!({"error":{"code":"name_claimed","message":reason}})
-                .to_string()
-                .as_bytes(),
+            refusal("wrong_password", "Sign in again with your password.").as_bytes(),
         );
-        assert_eq!(claimed, RequestFailure::NameClaimed(Some(reason.into())));
-        assert_eq!(sign_in_refusal(claimed), reason);
-        assert!(sign_in_refusal(RequestFailure::NameClaimed(None)).contains("ladder key"));
+        assert_eq!(
+            wrong,
+            RequestFailure::Account {
+                status: 403,
+                wrong_password: true,
+                message: "Sign in again with your password.".into(),
+            }
+        );
+        let claimed = RequestFailure::response(403, br#"{"error":{"code":"name_claimed"}}"#);
+        assert!(!matches!(
+            claimed,
+            RequestFailure::Account {
+                wrong_password: true,
+                ..
+            }
+        ));
+        assert!(sign_in_refusal(claimed).contains("has an account"));
+        let taken = RequestFailure::answer(
+            "/v1/accounts/register",
+            409,
+            refusal("name_unavailable", "That name is taken.").as_bytes(),
+        );
+        assert_eq!(sign_in_refusal(taken), "That name is taken.");
+    }
+
+    /// A sign-in sends the typed password or the remembered sign-in, never
+    /// both, and a guest sends neither.
+    #[test]
+    fn a_session_sends_a_password_or_a_remembered_sign_in() {
+        let token = "A".repeat(43);
+        let body = |credential| session_body("Tanya", &credential);
+        let guest = body(Credential::Guest);
+        assert_eq!(guest, json!({"nickname":"Tanya","protocol":4}));
+        let password = body(Credential::Password {
+            password: "s3cret-pw".into(),
+            remember: true,
+        });
+        assert_eq!(password["password"], "s3cret-pw");
+        assert_eq!(password["remember"], true);
+        assert!(password.get("sign_in_token").is_none());
+        let remembered = body(Credential::Remembered(token.clone()));
+        assert_eq!(remembered["sign_in_token"], token);
+        assert!(remembered.get("password").is_none() && remembered.get("remember").is_none());
     }
 
     #[test]

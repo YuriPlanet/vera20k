@@ -527,6 +527,8 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         }
         // Every WOL:Locale00..37 the retail CSF holds.
         WolServiceRequest::LocaleCount => WolServiceEvent::LocaleCount(38),
+        // VERA online's account requests: the stand-in lobby accepts each.
+        WolServiceRequest::Account(_) => WolServiceEvent::Account(Ok(())),
         // Nothing to cancel or deliver: nobody is online.
         WolServiceRequest::SetLocale(_)
         | WolServiceRequest::LeaveChannel

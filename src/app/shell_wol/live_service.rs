@@ -27,6 +27,7 @@ use super::{
     WolServerList, WolServiceEvent, WolServiceRequest, service_event,
 };
 use crate::app::AppState;
+use crate::app::persistence::account;
 use crate::app::shell_network_setup::{NetworkSetupEvent, NetworkSetupRequest};
 use crate::net::reliable::{LanConnectionConfig, LanConnections, RetryTiming};
 use crate::net::udp::{LanUdpTransport, UdpBindConfig};
@@ -305,8 +306,11 @@ pub(super) struct LiveService {
     /// The names of the last ladder lookup, which the high-score request
     /// for the same names shares (one `ladder` event answers both tables).
     ladder_lookup: Option<Vec<String>>,
-    /// The lobby's origin, whose ladder keys this service sends and keeps.
+    /// The lobby's origin, whose remembered sign-in this service sends and
+    /// keeps.
     lobby: String,
+    /// The current sign-in sends this computer's remembered sign-in.
+    signing_in_remembered: bool,
 }
 
 /// Where players download a newer build (README "Download and play").
@@ -635,6 +639,7 @@ impl LiveService {
             left_for_match: false,
             ladder_lookup: None,
             lobby,
+            signing_in_remembered: false,
         })
     }
 
@@ -1396,6 +1401,96 @@ fn answer_local_request(state: &mut AppState, request: &WolServiceRequest) -> bo
     true
 }
 
+/// The configured lobby's origin, as [`LiveService::open`] takes it without an
+/// external launch.
+fn configured_lobby() -> Option<String> {
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    let lobby = lobby_base_url().ok()?;
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    let lobby = DEFAULT_LOBBY_URL.to_owned();
+    Some(lobby.trim_end_matches('/').to_owned())
+}
+
+/// The name this computer signs in to without its password on this visit's
+/// lobby (docs/lobby-protocol.md "Accounts").
+pub(super) fn remembered_name(state: &AppState) -> Option<String> {
+    let dir = state.platform.game_config.as_ref()?.paths.settings_dir();
+    let lobby = match state.frontend.wol.as_ref()?.live_service.as_ref() {
+        Some(service) => service.lobby.clone(),
+        None => configured_lobby()?,
+    };
+    account::load(dir, &lobby).map(|remembered| remembered.name)
+}
+
+/// How this sign-in proves its name: the typed password, else, while
+/// Remember password stays ticked, the sign-in this computer remembers for
+/// the name, else nothing (a guest). A remembered sign-in it does not use is
+/// forgotten here and at the lobby.
+fn sign_in_credential(
+    state: &AppState,
+    service: &LiveService,
+    nickname: &str,
+    password: String,
+    remember: bool,
+) -> http::Credential {
+    let remembered = state
+        .platform
+        .game_config
+        .as_ref()
+        .and_then(|config| account::load(config.paths.settings_dir(), &service.lobby));
+    if password.is_empty()
+        && remember
+        && let Some(remembered) = remembered
+            .as_ref()
+            .filter(|remembered| remembered.name.eq_ignore_ascii_case(nickname))
+    {
+        return http::Credential::Remembered(remembered.sign_in_token.clone());
+    }
+    if remembered.is_some() {
+        forget_sign_in(state, service);
+    }
+    if password.is_empty() {
+        http::Credential::Guest
+    } else {
+        http::Credential::Password { password, remember }
+    }
+}
+
+/// Drop this computer's remembered sign-in, here and at the lobby.
+fn forget_sign_in(state: &AppState, service: &LiveService) {
+    let Some(config) = state.platform.game_config.as_ref() else {
+        return;
+    };
+    match account::forget(config.paths.settings_dir(), &service.lobby) {
+        Ok(Some(remembered)) => {
+            let _ = service.requests.send(http::Request::ForgetSignIn {
+                name: remembered.name,
+                sign_in_token: remembered.sign_in_token,
+            });
+        }
+        Ok(None) => {}
+        Err(error) => log::warn!("Could not forget the remembered sign-in: {error}"),
+    }
+}
+
+/// Keep the sign-in the lobby gave a password sign-in with Remember password.
+fn remember_sign_in(state: &AppState, service: &LiveService, name: &str, token: String) {
+    let Some(config) = state.platform.game_config.as_ref() else {
+        return;
+    };
+    let remembered = account::Remembered {
+        name: name.to_owned(),
+        sign_in_token: token,
+    };
+    if !account::valid_token(&remembered.sign_in_token) {
+        log::warn!("The lobby's remembered sign-in for {name} is malformed");
+    } else if let Err(error) =
+        account::save(config.paths.settings_dir(), &service.lobby, remembered)
+    {
+        log::warn!("Could not remember the sign-in of {name}: {error}");
+    }
+}
+
 fn request_service(state: &mut AppState, service: &mut LiveService, request: WolServiceRequest) {
     if answer_local_request(state, &request) {
         return;
@@ -1404,21 +1499,24 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
         WolServiceRequest::EnsureApi
         | WolServiceRequest::ListCredentials
         | WolServiceRequest::FetchServers { .. } => {}
-        WolServiceRequest::Connect { nickname, .. } => {
+        WolServiceRequest::Connect {
+            nickname,
+            password,
+            remember,
+            ..
+        } => {
             service.clear_cleanup();
             service.auth_attempt = service.auth_attempt.wrapping_add(1);
-            let ladder_key = state.platform.game_config.as_ref().and_then(|config| {
-                crate::app::persistence::ladder_keys::load(
-                    config.paths.settings_dir(),
-                    &service.lobby,
-                    &nickname,
-                )
-            });
+            let credential = sign_in_credential(state, service, &nickname, password, remember);
+            service.signing_in_remembered = matches!(credential, http::Credential::Remembered(_));
             let _ = service.requests.send(http::Request::OpenSession {
                 attempt: service.auth_attempt,
                 nickname,
-                ladder_key,
+                credential,
             });
+        }
+        WolServiceRequest::Account(request) => {
+            let _ = service.requests.send(http::Request::Account(request));
         }
         WolServiceRequest::ListChannels { kind, .. } => {
             let _ = service.requests.send(http::Request::Channels(kind));
@@ -2035,11 +2133,15 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             player_id,
             nickname,
             motd,
+            sign_in_token,
         } if attempt == service.auth_attempt => {
             if validate_online_identity(&player_id, &nickname).is_err() {
                 state.frontend.wol_account.password.clear();
                 service_event(state, WolServiceEvent::Login(Err(0x8000_4005)));
                 return;
+            }
+            if let Some(token) = sign_in_token {
+                remember_sign_in(state, service, &nickname, token);
             }
             service.player_id = player_id;
             state.frontend.wol_account.nickname = nickname;
@@ -2057,7 +2159,14 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 super::service::replace_open_box_body(state, CANT_CONNECT_TEXT);
             }
         }
-        http::Response::SignInRefused { attempt, message } if attempt == service.auth_attempt => {
+        http::Response::SignInRefused {
+            attempt,
+            message,
+            wrong_password,
+        } if attempt == service.auth_attempt => {
+            if wrong_password && service.signing_in_remembered {
+                forget_sign_in(state, service);
+            }
             state.frontend.wol_account.password.clear();
             service_event(state, WolServiceEvent::Login(Err(0)));
             if !super::service::replace_open_box_body(state, &message) {
@@ -2197,6 +2306,9 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             if let Some((line, text)) = service.translations.reply(id, outcome, Instant::now()) {
                 super::translation::show(state, line, &text);
             }
+        }
+        http::Response::AccountAnswered(answer) => {
+            service_event(state, WolServiceEvent::Account(answer));
         }
         http::Response::Failure(message) => notice(state, message),
         http::Response::LobbyUnreachable => {
@@ -2805,12 +2917,6 @@ fn apply_event(
             }
         }
         "timing_confirmed" => {
-            // The key of this player's name, which the ranked match just
-            // claimed for the ladder. The lobby sends it once: keep it before
-            // anything about this start can fail.
-            if let Some(key) = payload["ladder_key"].as_str() {
-                save_ladder_key(state, &service.lobby, key);
-            }
             #[derive(Deserialize)]
             struct TimingConfirmed {
                 match_id: String,
@@ -2852,30 +2958,6 @@ fn apply_event(
         _ => {}
     }
     Ok(())
-}
-
-/// Keep the ladder key the lobby gave this player's name. Without it the
-/// name signs in nowhere until the lobby's operator releases it.
-fn save_ladder_key(state: &mut AppState, lobby: &str, key: &str) {
-    use crate::app::persistence::ladder_keys;
-    let name = state.frontend.wol_account.nickname.clone();
-    let saved = if !ladder_keys::valid_key(key) {
-        Err(std::io::Error::other("invalid key"))
-    } else if let Some(config) = state.platform.game_config.as_ref() {
-        ladder_keys::save(config.paths.settings_dir(), lobby, &name, key)
-    } else {
-        Err(std::io::Error::other("no settings folder"))
-    };
-    match saved {
-        Ok(()) => log::info!("Saved the ranked ladder key of {name}"),
-        Err(error) => {
-            log::error!("Could not save the ranked ladder key of {name}: {error}");
-            notice(
-                state,
-                "Your ranked ladder key could not be saved. Ask the VERA20k Online operator to release your name.",
-            );
-        }
-    }
 }
 
 /// The agreed timing is known and the current grant is fresh: leave the online
@@ -3401,6 +3483,7 @@ mod completion_tests {
             left_for_match: false,
             ladder_lookup: None,
             lobby: "https://lobby.test".into(),
+            signing_in_remembered: false,
         };
         (service, input, output)
     }
@@ -4297,7 +4380,8 @@ mod completion_tests {
                     attempt: 0,
                     player_id: "old-player".into(),
                     nickname: "OldVisit".into(),
-                    motd: None
+                    motd: None,
+                    sign_in_token: None,
                 })
                 .is_ok()
         );

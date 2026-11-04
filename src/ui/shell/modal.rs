@@ -576,6 +576,75 @@ pub fn wol_create_game_layout_on(
     }
 }
 
+/// VERA online's account popups (Create Account, its mailed code, Forgot
+/// Password) on the online Create Game box: one caption and edit per field,
+/// OK and Cancel, and a two-line status inside the frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WolAccountFormLayout {
+    pub dialog: RectPx,
+    /// Each field's right-aligned caption and its edit.
+    pub fields: Vec<(RectPx, RectPx)>,
+    pub ok: RectPx,
+    pub cancel: RectPx,
+    pub status: RectPx,
+}
+
+/// `count` fields (at most four) 18 units apart, centred on the Create Game
+/// box's Room name and Password rows.
+pub fn wol_account_form_layout(screen_w: i32, screen_h: i32, count: usize) -> WolAccountFormLayout {
+    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
+    let count = count.min(4) as i32;
+    let top = 40 + 9 * (4 - count);
+    let status = child(0, 172, 291, 24);
+    WolAccountFormLayout {
+        dialog,
+        fields: (0..count)
+            .map(|row| {
+                let y = top + 18 * row;
+                (
+                    child(11, y + 1, 113, 12),
+                    new_edit_window(child(133, y, 140, 12)),
+                )
+            })
+            .collect(),
+        ok: child(33, 128, 83, 15),
+        cancel: child(184, 128, 83, 15),
+        status: RectPx::new(
+            dialog.x + ONLINE_STATUS_INSET,
+            status.y,
+            dialog.w - 2 * ONLINE_STATUS_INSET,
+            status.h,
+        ),
+    }
+}
+
+/// The account popup on the login page's shell mapping, as
+/// [`wol_create_game_layout_on`].
+pub fn wol_account_form_layout_on(
+    screen_w: i32,
+    screen_h: i32,
+    count: usize,
+    scale: geom::ShellScale,
+) -> WolAccountFormLayout {
+    if scale.is_retail() {
+        return wol_account_form_layout(screen_w, screen_h, count);
+    }
+    let base = wol_account_form_layout(geom::SHELL_BASE_W, geom::SHELL_BASE_H, count);
+    let s = |rect| scale.scale_rect(rect);
+    WolAccountFormLayout {
+        dialog: s(base.dialog),
+        fields: base
+            .fields
+            .iter()
+            .map(|&(caption, edit)| (s(caption), s(edit)))
+            .collect(),
+        ok: s(base.ok),
+        cancel: s(base.cancel),
+        status: s(base.status),
+    }
+}
+
 /// VERA's Create Game box in the LAN lobby, the online box's art and
 /// buttons: Max players in the password row, Allow spectators in the clan row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1115,6 +1184,25 @@ mod tests {
             wol_create_game_layout_on(1024, 768, true, geom::ShellScale::RETAIL),
             wol_create_game_layout(1024, 768, true)
         );
+    }
+
+    #[test]
+    fn account_popups_keep_their_fields_between_the_title_and_the_buttons() {
+        let create = wol_account_form_layout(800, 600, 4);
+        let frame = create.dialog;
+        let (_, first) = create.fields[0];
+        let (_, last) = create.fields[3];
+        // The Create Game box's Room name row, and the last above OK.
+        assert_eq!(
+            first,
+            wol_create_game_layout(800, 600, true).name.unwrap().1
+        );
+        assert!(last.y + last.h < create.ok.y);
+        assert!(create.status.y >= create.ok.y + create.ok.h);
+        assert!(create.status.y + create.status.h <= frame.y + frame.h);
+        // One field sits mid-way between the four's first and last rows.
+        let (_, code) = wol_account_form_layout(800, 600, 1).fields[0];
+        assert!(((code.y - first.y) - (last.y - code.y)).abs() <= 1);
     }
 
     #[test]

@@ -10,24 +10,23 @@ arriving bodies. Every JSON string and property name must be well-formed Unicode
 Escaped unpaired surrogates are rejected, not replaced, before any event or
 persistent state is created.
 
-`POST /v1/sessions` accepts exactly `{nickname,protocol:4,ladder_key?}` and returns
+`POST /v1/sessions` accepts exactly
+`{nickname,protocol:4,password?,remember?,sign_in_token?}` and returns
 `{player_id,nickname,token,expires_at}`, plus `motd` while an operator welcome is set:
 text the game prints in the chat lobby in place of its own welcome, one line per `\n`.
 Each entry receives a fresh random player
 UUID and bearer token. `expires_at` is a Unix timestamp in seconds. An active name
 returns 409 `name_unavailable`; entering its name never replaces that session.
-A name on the ranked ladder signs in only with its `ladder_key` and otherwise returns
-403 `name_claimed` ([Ranked games](#ranked-games)).
+An account's name signs in only with its password or a remembered sign-in, and a name
+without an account enters as a guest ([Accounts](#accounts)).
 Guest locale, buddies and relay admission counters belong to this player identity
 and are removed with its session on logout or expiry. Idle lobby visits expire
 after 120 seconds without a request or stream ack; admitted v4 players retain their session during
 a network outage while another unfinished player of their match is online, and
 otherwise through 10 minutes of silence, until explicit finish/leave or the
 match/session lifetime.
-A later entry gets a new identity and empty preferences. No password account is
-created or consulted. Existing stored accounts and their current v3 sessions remain
-intact until their ordinary cleanup; active legacy sessions reserve their names too.
-`POST /v1/accounts` and password-bearing sign-in requests return 426 `upgrade_required`.
+A later entry gets a new identity and empty preferences. The old
+`POST /v1/accounts` returns 426 `upgrade_required`.
 Failed requests return `{error:{code,message}}`; messages must not echo credentials.
 Clients show a 426 `message` (plain text, at most 160 characters) to the player with
 the releases link, so it should name the version players need; older clients show a
@@ -177,7 +176,7 @@ Event kinds and payloads:
 | `chat` | `{from:<Member>,text,private,action,sent_at,ansi?,quick_match?}` |
 | `game_started` | `{match_id,revision,version,rules_digest,seed,users:[{player_id,name,flags,source_index}],relay:<RelayGrant>}` |
 | `start_confirmed` | `{match_id}` |
-| `timing_confirmed` | `{match_id,pings:[integer],relay:<RelayGrant>,ranked?,ladder_key?}` |
+| `timing_confirmed` | `{match_id,pings:[integer],relay:<RelayGrant>,ranked?}` |
 | `relay_renewed` | `{match_id,relay:<RelayGrant>}` |
 | `map_available` | `{digest,byte_length,resource?}` |
 | `start_rejected` | `{message}` |
@@ -529,25 +528,55 @@ the mode admits. A guest colour the host holds becomes Random; each Random is th
 ignores the guest's `choices`; the guest's game accepts the options by itself, and the
 host's starts once it has.
 
+## Accounts
+
+A player enters as a guest by name alone, or signs in to an account with its name and
+password. Every request below is a `POST` with a JSON body; a refusal's
+`{error:{code,message}}` message is plain text the game shows as it is.
+
+- `/v1/accounts/register` `{name,email,password}` returns 202 and mails a 6-digit code.
+  It refuses with 400 `invalid_name`, `invalid_email` or `invalid_password`, 409
+  `name_unavailable` or `email_in_use`, or 429. Names follow the session rule;
+  passwords are 8–64 printable ASCII characters; emails are at most 254 characters of
+  the `x@y.z` shape, one account each.
+- `/v1/accounts/verify` `{name,code}` returns 200 and creates the account: 400
+  `invalid_code` (5 tries), 410 `code_expired` (30 minutes, or the tries used up).
+- `/v1/accounts/forgot` `{name}` always returns 202, and mails a code to that account's
+  email when there is one.
+- `/v1/accounts/reset` `{name,code,password}` returns 200, sets the password, signs out
+  every remembered computer and mails the owner. It refuses as verify does, and with
+  `invalid_password`.
+- `/v1/accounts/forget` `{name,sign_in_token}` returns 200 and drops that remembered
+  sign-in.
+
+At `/v1/sessions` an account's name needs its `password` or a `sign_in_token`, never
+both: with neither it returns 403 `name_claimed`, with a wrong one 403 `wrong_password`,
+and 10 wrong passwords in an hour return 429 `account_locked` for 15 minutes and mail
+the owner. `remember:true` with the right password adds a `sign_in_token` (32 bytes,
+base64url without padding) and `account:true` to the response. A password for a name
+without an account returns 404 `no_account`; otherwise that name enters as a guest.
+
+VERA20k's online login page has Password and Remember password under the name, and
+Create Account and Forgot Password under Login. Create Account asks for the name,
+email and password, then the mailed code, and signs in. Forgot Password mails the
+typed name's code, then asks for it and a new password, and signs in. A remembered
+sign-in lives in `Account.json` beside `VERA.INI` as `{name, sign_in_token}` per lobby,
+readable only by its owner; the page then shows the name with a masked password. A
+Login that does not use it, such as one with Remember password unticked, forgets it
+here and at the lobby, and a `wrong_password` answer to it forgets it here.
+
 ## Ranked games
 
 While the operator runs a season, the lobby ranks a 1v1 Quick Match pairing played by its
 two players alone, and a game room's match in a mode that lets players ally, with every
 player on one of two teams of the same size (at least two each) whose chances are within
-80/20. Ranked matches have no AI, and every player's game can hold a ladder key.
+80/20. Ranked matches have no AI, and every player signed in to an account.
 
 A host who unticks Ranked game at Create Game sends `ranked:false` on `create`, and that
 room's games never rank; its odds line says why. A ticked box sends nothing, as a lobby
 from before the choice refuses the field.
 
-A game that can hold one sends `ladder_key` at sign-in: the name's key, or `null` when it
-holds none for that name. A game that omits the field plays unranked. As a ranked match
-begins play, the lobby claims each of its names not yet on the ladder, and sends that
-player's game its key once, as `ladder_key` in `timing_confirmed`: 32 bytes, base64url
-without padding. VERA20k keeps it in `LadderKeys.json` beside `VERA.INI`, one key per
-lobby and lowercased name, readable only by its owner. A name whose key is lost signs in again once
-the operator releases it. One network claims at most 3 names a day; past that, the match
-plays unranked. `ranked:true` in `timing_confirmed` marks a ranked match.
+A guest's match plays unranked. `ranked:true` in `timing_confirmed` marks a ranked match.
 
 A `finish` after play adds the game's own `result`: `won`, `lost`, `quit` (the player
 left) or `disconnected` (the game lost its connection). A player who leaves after the game

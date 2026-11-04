@@ -1294,15 +1294,17 @@ impl ShellCaptureRequest {
     /// BD's Accept; the live LAN and online runs play as players do.
     pub(crate) fn native_shell_ui(&self) -> bool {
         match self.checkpoint.movies_target() {
-            Some(movies::MoviesTarget::Wol(target)) => !matches!(
-                target,
-                movies::WolTarget::ModernLobby
-                    | movies::WolTarget::ModernCreate
-                    | movies::WolTarget::ModernRoomOptions
-                    | movies::WolTarget::ModernSpectators
-                    | movies::WolTarget::ModernOptions
-                    | movies::WolTarget::ModernUsername
-            ),
+            Some(movies::MoviesTarget::Wol(target)) => {
+                !target.online_login()
+                    && !matches!(
+                        target,
+                        movies::WolTarget::ModernLobby
+                            | movies::WolTarget::ModernCreate
+                            | movies::WolTarget::ModernRoomOptions
+                            | movies::WolTarget::ModernSpectators
+                            | movies::WolTarget::ModernOptions
+                    )
+            }
             Some(movies::MoviesTarget::WolWelcome {
                 provider: crate::app::shell_wol::WolProvider::Unavailable,
                 ..
