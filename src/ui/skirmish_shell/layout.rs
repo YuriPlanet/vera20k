@@ -217,6 +217,9 @@ pub struct SkirmishShellLayout {
     pub rows: SkirmishRowRects,
     pub color_combos: [RectPx; 8],
     pub flags: [RectPx; 8],
+    /// VERA's scrollbar for a map with more than eight starts: the list frame
+    /// round it, beside the computer rows ([`opponent_scrollbar_rect`]).
+    pub opponent_scrollbar: RectPx,
     pub trackbars: SkirmishTrackbarRects,
     pub trackbar_labels: SkirmishTrackbarLabelRects,
     pub checkboxes: [SkirmishCheckboxRect; SKIRMISH_CHECKBOX_COUNT],
@@ -406,6 +409,7 @@ pub fn translate_layout(mut layout: SkirmishShellLayout, dx: i32, dy: i32) -> Sk
     for rect in &mut layout.flags {
         *rect = rect.translate(dx, dy);
     }
+    layout.opponent_scrollbar = layout.opponent_scrollbar.translate(dx, dy);
     layout.trackbars.game_speed = layout.trackbars.game_speed.translate(dx, dy);
     layout.trackbars.credits = layout.trackbars.credits.translate(dx, dy);
     layout.trackbars.unit_count = layout.trackbars.unit_count.translate(dx, dy);
@@ -657,6 +661,7 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
             dlu_rect(364, 148, 25, 73),
         ],
     };
+    let opponent_scrollbar = opponent_scrollbar_rect(&rows);
 
     SkirmishShellLayout {
         scale: ShellScale::RETAIL,
@@ -691,6 +696,7 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
         rows,
         color_combos,
         flags,
+        opponent_scrollbar,
         trackbars: SkirmishTrackbarRects {
             game_speed: child_window(269, 176, 85, 13),
             credits: child_window(269, 193, 85, 13),
@@ -725,6 +731,26 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
         ],
         status_help: status_help_rect(screen_w, screen_h),
     }
+}
+
+/// How far right of the Team column VERA's scrollbar frame starts.
+const OPPONENT_SCROLLBAR_GAP: i32 = 12;
+
+/// VERA's scrollbar beside the computer rows (rows 2 to 8), right of Team:
+/// the shared list's frame window round the native scrollbar child
+/// (`0x0061C690`), its outer ring level with the rows' faces. The width is
+/// the retail scrollbar's; a scaled page takes the scaled scrollbar's.
+fn opponent_scrollbar_rect(rows: &SkirmishRowRects) -> RectPx {
+    let first = rows.team_combos[1];
+    let last = rows.team_combos[SKIRMISH_ROW_COUNT - 1];
+    let top = first.y + 1;
+    let bottom = last.y + COMBO_FACE_H - 1;
+    RectPx::new(
+        first.x + first.w + OPPONENT_SCROLLBAR_GAP,
+        top,
+        crate::ui::shell::list::ListMetrics::RETAIL.scrollbar_w + 2,
+        bottom - top,
+    )
 }
 
 pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMapModalLayout {
@@ -1171,6 +1197,7 @@ impl ScaledRects for SkirmishShellLayout {
             rows: self.rows.scaled_rects(scale),
             color_combos: self.color_combos.scaled_rects(scale),
             flags: self.flags.scaled_rects(scale),
+            opponent_scrollbar: self.opponent_scrollbar.scaled_rects(scale),
             trackbars: self.trackbars.scaled_rects(scale),
             trackbar_labels: self.trackbar_labels.scaled_rects(scale),
             checkboxes: self.checkboxes.scaled_rects(scale),

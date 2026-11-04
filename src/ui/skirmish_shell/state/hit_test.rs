@@ -5,8 +5,8 @@ use crate::skirmish_launch::{LaunchCountry, SKIRMISH_PLAYER_SLOT_COUNT};
 
 use super::super::layout::{
     ChooseMapModalButton, ChooseMapModalLayout, ColorComboId, DropdownMetrics,
-    RandomMapSetupControl, RectPx, SKIRMISH_AI_ROW_COUNT, SkirmishCheckboxId, SkirmishShellLayout,
-    SkirmishTrackbarId, combo_face_rect,
+    RandomMapSetupControl, RectPx, SkirmishCheckboxId, SkirmishShellLayout, SkirmishTrackbarId,
+    combo_face_rect,
 };
 use super::trackbars::{trackbar_ids, trackbar_rect};
 use super::{
@@ -76,7 +76,8 @@ pub fn hovered_shell_control(
             return Some(SkirmishHoverTarget::Trackbar(id));
         }
     }
-    for row in 0..SKIRMISH_PLAYER_SLOT_COUNT {
+    for slot in 0..SKIRMISH_PLAYER_SLOT_COUNT {
+        let row = state.slot_row(slot);
         if !player_row_visible(state, maps, row) {
             continue;
         }
@@ -86,19 +87,20 @@ pub fn hovered_shell_control(
             SkirmishComboId::Start(row),
             SkirmishComboId::Team(row),
         ] {
-            if combo_rect(layout, id)
+            if combo_rect(layout, state, id)
                 .is_some_and(|rect| combo_face_rect(rect, layout.scale).contains(x, y))
             {
                 return Some(SkirmishHoverTarget::ComboFace(id));
             }
         }
     }
-    for row in 0..SKIRMISH_AI_ROW_COUNT {
-        if !player_row_visible(state, maps, row + 1) {
+    for slot in 1..SKIRMISH_PLAYER_SLOT_COUNT {
+        let row = state.slot_row(slot);
+        if !player_row_visible(state, maps, row) {
             continue;
         }
-        let id = SkirmishComboId::AiType(row);
-        if combo_rect(layout, id)
+        let id = SkirmishComboId::AiType(row - 1);
+        if combo_rect(layout, state, id)
             .is_some_and(|rect| combo_face_rect(rect, layout.scale).contains(x, y))
         {
             return Some(SkirmishHoverTarget::ComboFace(id));
@@ -108,8 +110,8 @@ pub fn hovered_shell_control(
     // Static (non-interactive) controls are tested last: they do not overlap
     // the interactive widgets above, so order does not change any result, and
     // gamemd does not restrict 0x102 status help to interactive widgets.
-    for (row, flag) in layout.flags.iter().enumerate() {
-        if !player_row_visible(state, maps, row) {
+    for (slot, flag) in layout.flags.iter().enumerate() {
+        if !player_row_visible(state, maps, state.slot_row(slot)) {
             continue;
         }
         if flag.contains(x, y) {
