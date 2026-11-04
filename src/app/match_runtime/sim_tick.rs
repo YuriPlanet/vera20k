@@ -2835,6 +2835,29 @@ mod tests {
     }
 
     #[test]
+    fn high_terrain_picking_round_trips_camera_and_zoom() {
+        let cells = (0..32)
+            .flat_map(|ry| {
+                (0..32).map(move |rx| {
+                    let mut cell = ResolvedTerrainCell::clear_for_test(rx, ry);
+                    cell.level = 16;
+                    cell
+                })
+            })
+            .collect();
+        let terrain = ResolvedTerrainGrid::from_cells(32, 32, cells);
+        let camera = (-93.5, 80.25);
+        let zoom = 1.5;
+        let (x, y) = crate::map::terrain::iso_to_screen(16, 16, 16);
+        let screen = ((x + 30.0 - camera.0) * zoom, (y + 15.0 - camera.1) * zoom);
+        let world = super::screen_point_to_world_with_camera(screen, camera, zoom);
+        assert_eq!(
+            world_point_to_cell(world.0, world.1, Some(&terrain)),
+            (16, 16)
+        );
+    }
+
+    #[test]
     fn world_point_to_cell_forwards_bridge_lookup() {
         let (world_x, world_y) = (150.0, 180.0);
         let height_map = BTreeMap::new();

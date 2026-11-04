@@ -726,7 +726,7 @@ pub struct ResolvedTerrainGrid {
     /// level writer, widens it and nothing narrows it. The raw test accessors
     /// widen it to [`LevelSpan::FULL`]. A restored cell (the rollback in
     /// [`Self::apply_dynamic_cell_state`]) brings back a level it already held.
-    /// Presentation bounds a cell's projected height with it;
+    /// Presentation and tactical picking bound a cell's projected height with it;
     /// [`Self::level_span`] checks it in debug builds.
     level_span: LevelSpan,
     /// One live identity handle, normally bound to the process owner before
@@ -1463,6 +1463,10 @@ impl ResolvedTerrainGrid {
 }
 
 impl crate::map::terrain::TacticalCellLookup for ResolvedTerrainGrid {
+    fn max_cell_level(&self) -> i8 {
+        self.level_span().max
+    }
+
     fn cell_level(&self, rx: u16, ry: u16) -> Option<u8> {
         // Original6D6753 reads the current candidate, not a load-time level.
         self.cell(rx, ry).map(|cell| cell.level)
