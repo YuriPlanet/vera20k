@@ -5030,6 +5030,12 @@ impl Simulation {
                     frame_effects,
                 );
             }
+            43 => {
+                let (Some(index), Some(waypoint)) = (value, action.waypoint_index) else {
+                    return false;
+                };
+                return self.trigger_play_voxel_anim_at_waypoint(rules, index, waypoint as i32);
+            }
             58 => {
                 let (Some(intensity), Some(waypoint)) = (value, action.waypoint_index) else {
                     return false;
@@ -5943,7 +5949,9 @@ mod direct_strike_tests;
 #[cfg(test)]
 mod meteor_action_tests {
     use super::*;
+    use crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art;
     use crate::sim::anim_class::meteor_tests::{formed_rules, formed_sim};
+    use crate::sim::world::voxel_meteor_tests::{fly_to_expiry, waypoint_sim};
     #[test]
     fn counted_action58_uses_literal_intensity_and_tail_waypoint_through_live_dispatch() {
         let rules = formed_rules("");
@@ -6013,6 +6021,58 @@ mod meteor_action_tests {
             )]));
         assert!(!invalid.trigger_meteor_shower(&missing, 0, 7));
         assert_eq!(invalid.anims().count(), 0);
+    }
+
+    /// Active43 PlayVoxelAnimAtWP6E2520 through live dispatch: retail
+    /// METEOR01 starts above its waypoint (749668..74981F), keeps a straight
+    /// line back to the waypoint cell (74A7C8) and scatters PEBBLEs where it
+    /// ends (74A288..301).
+    #[test]
+    fn action43_drops_retail_meteor01_on_its_waypoint_cell_and_scatters_pebbles() {
+        let Some(rules) = retail_unlayered_rules_with_art() else {
+            return;
+        };
+        let meteor = rules.voxel_anim_type_id_by_name("METEOR01").unwrap();
+        let pebble = rules.voxel_anim_type_id_by_name("PEBBLE").unwrap();
+        let actions =
+            crate::map::actions::parse_actions(&crate::rules::ini_parser::IniFile::from_str(
+                &format!("[Actions]\nCUE=1,43,0,{},0,0,0,0,H\n", meteor.0),
+            ));
+        let entry = actions["CUE"].entries()[0].clone();
+        let action = RuntimeDefinitions::default().resolve_action(entry, None, None, None);
+        let mut sim = waypoint_sim(&rules);
+        assert!(sim.apply_live_trigger_action(
+            &action,
+            TriggerActionContext {
+                live_index: None,
+                incoming_house: None,
+                input: TagEventInput::default()
+            },
+            &mut Vec::new(),
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::empty()
+        ));
+        let ids = sim.voxel_anims().ids();
+        assert_eq!(ids.len(), 1);
+        let piece = sim.voxel_anims().get(ids[0]).unwrap();
+        assert_eq!(piece.type_id(), meteor);
+        assert_eq!(piece.owner_house(), None);
+        assert!(piece.in_logic_vector());
+        // Unlimbo749794 and Bounce4397E0 both take the raised launch start.
+        assert_eq!(piece.world_coord(), piece.bounce().position_leptons());
+        assert!(piece.world_coord().z > 0);
+        let impact = fly_to_expiry(&mut sim, &rules, ids[0]);
+        assert_eq!((impact.x / 256, impact.y / 256), (40, 40));
+        let children = sim.voxel_anims().ids();
+        assert!(!children.is_empty());
+        assert!(children.len() as i32 <= 2 * rules.voxel_anim_type(meteor).spawn_count);
+        for child in children {
+            let child = sim.voxel_anims().get(child).unwrap();
+            assert_eq!(child.type_id(), pebble);
+            assert_eq!(child.owner_house(), None);
+            assert_eq!(child.world_coord(), impact);
+        }
     }
 }
 

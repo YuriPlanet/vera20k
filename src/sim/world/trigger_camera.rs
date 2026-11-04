@@ -31,6 +31,8 @@ impl Simulation {
         Some([x, y, z])
     }
 
+    /// The same query plus the deck height, shared by cases 41 (6E2290) and
+    /// 43 (6E2520).
     pub(crate) fn trigger_waypoint_coord(&self, index: i32) -> Option<[i32; 3]> {
         let [x, y, mut z] = self.trigger_waypoint_ground_coord(index)?;
         let cell = self.session.waypoint_cell(index)?;
