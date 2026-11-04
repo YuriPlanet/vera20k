@@ -162,7 +162,6 @@ AttachEffect.SameSourceOnly=no            ; match only same-source instances
   duration the way the reader stores it; `ArmorMultiplier` folds onto the
   target's armor the shared combat-stats owner already folds Ares
   attachments through.
-- The per-target pass runs only in the ordinary-damage arm of bullet
-  detonation and `DamageArea`; a warhead on a special arm (Ivan bomb, mind
-  control, temporal, locomotor, ...) skips its per-target effects and
-  prefix draws.
+- The per-target pass runs at the entry of `BulletClass_Detonate 0x46920B` and
+  `MapClass_DamageArea 0x489286`, before the special/ordinary arm split and the
+  native area damage, on Phobos' `getCellSpreadItemsExt` items.

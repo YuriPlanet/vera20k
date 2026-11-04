@@ -5,15 +5,13 @@
 //! (`src/Ext/WarheadType/Detonate.cpp:156..199`), `DetonateOnOneUnit`
 //! (`201..275`), `GetCritChance`/`ApplyCrit` (`525..608`, `735..778`), called
 //! from the `BulletClass_Detonate @ 0x46920B` and `MapClass_DamageArea
-//! @ 0x489286` hooks. The pass runs before the native area damage, so a hit
-//! it kills is already gone when the main warhead dispatches.
+//! @ 0x489286` hooks. Both hooks run at the entry of those routines, before
+//! the special/ordinary arm split and before the native area damage: the pass
+//! visits its own `getCellSpreadItemsExt` collection, so it runs even for a
+//! special arm (IvanBomb, MindControl, Temporal, Locomotor, ...) and before
+//! SpawnShrapnel's draws.
 //!
 //! RESIDUALS:
-//! - The pass runs only in the ordinary-damage arm of the bullet detonation
-//!   and in `MapClass::DamageArea`; Phobos runs it before the whole bullet arm
-//!   chain (`0x46920B`). A warhead with a special arm (IvanBomb, MindControl,
-//!   Temporal, Locomotor, ...) therefore skips its per-target effects and the
-//!   prefix draws.
 //! - Of `PossibleCellSpreadDetonate`'s members VERA reads only the
 //!   AttachEffect lists. A warhead that sets only an unread member
 //!   (`RemoveDisguise`, `Shield.*`, `Convert.*`, `ReturnWarhead`, `Taunt`, ...)
@@ -23,14 +21,10 @@
 //!   `TransactMoney`, `SpawnsCrate.Types`' `RandomDouble`, `LaunchSW`) and
 //!   `InterceptBullets` are not ported; a warhead with `SpawnsCrate.Types`
 //!   misses one draw before this prefix.
-//! - The per-target list reuses the area receiver collection instead of
-//!   Phobos' own `getCellSpreadItemsExt` walk, which also reads the
-//!   `AircraftTracker` for airborne items; membership and order can differ
-//!   (no airborne phase, different cell-list filters). Because that collection
-//!   happens after SpawnShrapnel, the pass also runs after the shrapnel
-//!   draws, where native runs it first.
 //! - `CanAffectTarget`'s `AffectsAbovePercent`/`AffectsBelowPercent`,
 //!   `AffectsVeterancy` and `AffectsInvokerOnly` gates are unread and pass.
+//! - `CellSpread.Cylinder` has no VERA reader yet, so the pass collects with
+//!   the spherical distance the AoE cylinder hooks also leave unported.
 //! - `Crit.Warhead`'s full detonation creates a projectile with no
 //!   `Projectile=` type, so the default bullet type's `Cluster` is not read.
 //! - `Crit.ExtraDamage.ApplyFirepowerMult` reads the owner's live multiplier;
@@ -47,7 +41,6 @@
 //!   pass here on the same targets with per-target dice and no prefix draws,
 //!   so the targets and the order against the receivers differ.
 
-use super::combat_aoe::AreaDamageReceiver;
 use super::effects::DeathEffects;
 use super::receiver_call::EntityDamageEvent;
 use super::world_receiver::{
@@ -80,9 +73,9 @@ pub(crate) struct CritRoll {
 /// (`Detonate.cpp:156..199`): `Crit_CurrentChance = GetCritChance(owner)`;
 /// when the warhead has a per-target effect or a chance, the crit and
 /// `ReturnWarhead` buffers and `Crit.ActiveChanceAnims`; then
-/// `DetonateOnOneUnit` on every collected receiver of a cell-spread warhead,
-/// or on `intended_target` (the bullet's target, or `DamageAreaTarget`) within
-/// 64 leptons of `impact`. `source_house` is the hook's house; a direct
+/// `DetonateOnOneUnit` on every `getCellSpreadItemsExt` item of a cell-spread
+/// warhead, or on `intended_target` (the bullet's target, or `DamageAreaTarget`)
+/// within 64 leptons of `impact`. `source_house` is the hook's house; a direct
 /// `DamageArea` without one takes the owner's (`0x489286`). Returns
 /// `Crit_Active`, which the damage-animation selection reads.
 #[cfg(feature = "phobos")]
@@ -98,7 +91,6 @@ pub(crate) fn detonate(
     source_house: Option<InternedId>,
     impact: ProjectileCoord,
     intended_target: Option<u64>,
-    receivers: &[AreaDamageReceiver],
     effects: &mut DeathEffects,
 ) -> bool {
     let crit = &warhead.crit;
@@ -148,7 +140,7 @@ pub(crate) fn detonate(
     }
     let invoker = (source_id != 0).then_some(source_id);
     let mut active = false;
-    for target_id in detonation_targets(world, warhead, impact, intended_target, receivers) {
+    for target_id in detonation_targets(world, rules, warhead, impact, intended_target) {
         if !can_detonate_on(world, rules, warhead, house, target_id) {
             continue;
         }
@@ -693,25 +685,28 @@ fn spawn_anim_at_coord(
     }
 }
 
-/// The targets `DetonateOnOneUnit` visits for this detonation: every collected
-/// entity receiver in order for a cell-spread warhead, else the intended target
-/// within 64 leptons of the impact (Ares' quarter-cell tolerance).
+/// The targets `DetonateOnOneUnit` visits for this detonation: every item of
+/// Phobos' `getCellSpreadItemsExt` walk for a cell-spread warhead, else the
+/// intended target within 64 leptons of the impact (Ares' quarter-cell
+/// tolerance).
 #[cfg(feature = "phobos")]
 fn detonation_targets(
     world: &Simulation,
+    rules: &RuleSet,
     warhead: &WarheadType,
     impact: ProjectileCoord,
     intended_target: Option<u64>,
-    receivers: &[AreaDamageReceiver],
 ) -> Vec<u64> {
     if warhead.cell_spread_f64 > 0.0 {
-        return receivers
-            .iter()
-            .filter_map(|receiver| match receiver {
-                AreaDamageReceiver::Entity(event) => Some(event.target_id),
-                AreaDamageReceiver::Terrain(_) => None,
-            })
-            .collect();
+        // `CellSpread.Cylinder` stays unread, matching the unported AoE
+        // cylinder hooks.
+        return super::phobos_airburst::cell_spread_technos(
+            world,
+            rules,
+            impact,
+            warhead.cell_spread_f64,
+            false,
+        );
     }
     intended_target
         .filter(|&id| {
