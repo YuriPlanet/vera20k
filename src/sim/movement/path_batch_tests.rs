@@ -17,16 +17,23 @@ const WEST_STEP: u8 = 6;
 /// out asks it.
 const CODE2: WaitingRequest = WaitingRequest::Code2Ladder { urgency: 1 };
 
-/// A tank, a tank that cannot move, an infantryman and a one-cell building.
+/// A tank, a tank that cannot move, an armed tank, an infantryman and a
+/// one-cell building.
 fn rules() -> RuleSet {
     // This synthetic scene needs native buildable Clear ground and the
     // explicitly intended one-cell HUT foundation in the fixed ART reader.
     let ini = crate::sim::arena_fixture::clear_ground_ini(
-        "[VehicleTypes]\n0=TANK\n1=STUCK\n[InfantryTypes]\n0=E1\n[BuildingTypes]\n0=HUT\n\
+        "[VehicleTypes]\n0=TANK\n1=STUCK\n2=GUNTANK\n[InfantryTypes]\n0=E1\n\
+         [BuildingTypes]\n0=HUT\n\
          [TANK]\nStrength=300\nSpeed=6\n\
          Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
          [STUCK]\nStrength=300\nSpeed=0\n\
          Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+         [GUNTANK]\nStrength=300\nSpeed=6\nPrimary=TankGun\n\
+         Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+         [TankGun]\nDamage=10\nROF=20\nRange=4\nProjectile=InvisibleAll\nWarhead=HITWH\n\
+         [InvisibleAll]\nInviso=yes\nAA=yes\nAG=yes\n\
+         [HITWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
          [E1]\nStrength=100\nSpeed=4\n\
          Locomotor={4A582744-9839-11D1-B709-00A024DDAFD1}\n\
          [HUT]\nStrength=100\n",
@@ -168,12 +175,12 @@ fn a_batched_answer_is_the_serial_search() {
                     );
                 }
                 let request = match kind {
-                    WaitingRequest::NoQueue | WaitingRequest::RetryRecursion => {
-                        sim.no_queue_request(id)
-                    }
                     WaitingRequest::Code2Ladder { urgency } => {
                         sim.code2_ladder_request(id, urgency)
                     }
+                    WaitingRequest::NoQueue
+                    | WaitingRequest::RetryRecursion
+                    | WaitingRequest::StraightReentry { .. } => sim.no_queue_request(id),
                 }
                 .expect("a request");
                 assert_eq!(request.urgency, urgency);
@@ -925,15 +932,18 @@ fn a_walker_refused_by_a_full_cell_near_its_destination_stops() {
     }
 }
 
-/// A retry recursion the cap leaves out stays one: the Foot's no-queue
-/// registration next frame repeats it. The left-out set is saved and hashed.
+/// A recursion the cap leaves out stays one: the Foot's no-queue
+/// registration next frame repeats it, a retry's or the second stage's
+/// straight re-entry with its argument 2. The left-out recursions are saved
+/// and hashed.
 #[test]
-fn a_left_out_retry_recursions_stays_a_retry() {
+fn a_left_out_recursion_stays_one() {
     let rules = rules();
     let (mut sim, _) = arena(&rules);
     sim.batch_path_searches();
+    let reentry = WaitingRequest::StraightReentry { allow_retry: true };
     // Ids no object holds: each search finds no request to answer.
-    let (first, end) = (1_000_000, 1_000_000 + SEARCHES_PER_PASS as u64 + 1);
+    let (first, end) = (1_000_000, 1_000_000 + SEARCHES_PER_PASS as u64 + 2);
     let defer = |sim: &mut Simulation, id, request| {
         crate::sim::world::Simulation::defer_path_search(
             &mut sim.path_batch,
@@ -944,13 +954,17 @@ fn a_left_out_retry_recursions_stays_a_retry() {
             request,
         )
     };
-    for id in first..end {
+    for id in first..end - 1 {
         assert!(defer(&mut sim, id, WaitingRequest::RetryRecursion));
     }
+    assert!(defer(&mut sim, end - 1, reentry));
     sim.answer_batched_path_searches(&rules, None);
-    let left_out = BTreeSet::from([end - 1]);
+    let left_out = BTreeMap::from([
+        (end - 2, WaitingRequest::RetryRecursion),
+        (end - 1, reentry),
+    ]);
     assert_eq!(
-        sim.path_batch.as_ref().unwrap().left_out_retry_recursions,
+        sim.path_batch.as_ref().unwrap().left_out_recursions,
         left_out
     );
 
@@ -958,26 +972,28 @@ fn a_left_out_retry_recursions_stays_a_retry() {
     let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .expect("the save loads")
         .sim;
-    assert_eq!(
-        restored.path_batch.unwrap().left_out_retry_recursions,
-        left_out
-    );
+    assert_eq!(restored.path_batch.unwrap().left_out_recursions, left_out);
     let hash = sim.state_hash();
-    sim.path_batch
-        .as_mut()
-        .unwrap()
-        .left_out_retry_recursions
-        .clear();
-    assert_ne!(sim.state_hash(), hash, "the left-out retries are hashed");
-    sim.path_batch.as_mut().unwrap().left_out_retry_recursions = left_out;
+    let batch = sim.path_batch.as_mut().unwrap();
+    batch.left_out_recursions.clear();
+    assert_ne!(sim.state_hash(), hash, "the left-out recursions are hashed");
+    let batch = sim.path_batch.as_mut().unwrap();
+    batch.left_out_recursions = left_out.clone();
+    batch
+        .left_out_recursions
+        .insert(end - 1, WaitingRequest::RetryRecursion);
+    assert_ne!(sim.state_hash(), hash, "and so are their arguments");
+    sim.path_batch.as_mut().unwrap().left_out_recursions = left_out;
 
     sim.finish_batched_path_searches();
-    assert!(defer(&mut sim, end - 1, WaitingRequest::NoQueue));
-    assert!(defer(&mut sim, first, WaitingRequest::NoQueue));
+    for id in [end - 2, end - 1, first] {
+        assert!(defer(&mut sim, id, WaitingRequest::NoQueue));
+    }
     assert_eq!(
         sim.path_batch.as_ref().unwrap().pending,
         [
-            (end - 1, WaitingRequest::RetryRecursion),
+            (end - 2, WaitingRequest::RetryRecursion),
+            (end - 1, reentry),
             (first, WaitingRequest::NoQueue)
         ]
     );
@@ -1080,6 +1096,58 @@ fn a_drive_retry_recursion_answer_resumes_with_the_retry_spent() {
         sim.path_batch.as_ref().unwrap().pending.is_empty(),
         "no retry waits"
     );
+}
+
+/// The request that takes the answer to Drive's second-stage code-4/5
+/// re-entry, Process_Movement(1, 1) once it cleared the path
+/// (0x4B41B3..0x4B41F7), resumes with argument 3 set, so the new route's
+/// first track runs straight (0x4B3F7D..0x4B3F93) instead of turning into the
+/// same refusal. A HUT leaves the armed tank one two-step route, east and
+/// then south-east into an enemy, which refuses it with code 5
+/// (0x0073FB71..0x0073FB90 refuses only an unarmed Unit).
+#[test]
+fn a_drive_reentry_answer_runs_the_new_route_straight() {
+    use super::super::track_fresh::ProcessMovementArgs;
+    use super::super::track_process::TrackFamily;
+    const SOUTH_EAST_STEP: u8 = 3;
+    let rules = rules();
+    let (mut sim, _) = arena(&rules);
+    spawn(&mut sim, &rules, "HUT", (11, 11));
+    sim.spawn_object_at_height("STUCK", "Russians", 12, 11, 0, 0, &rules)
+        .expect("spawns");
+    let tank = spawn(&mut sim, &rules, "GUNTANK", (10, 10));
+    send(&mut sim, &rules, tank, (12, 11));
+    rolling(&mut sim, tank, EAST);
+    sim.batch_path_searches();
+    let process = |sim: &mut Simulation| {
+        sim.run_track_process_movement(
+            tank,
+            TrackFamily::Drive,
+            ProcessMovementArgs::OUTER,
+            &rules,
+            None,
+            FrameEffects::default(),
+        )
+        .expect("Process_Movement runs");
+    };
+    process(&mut sim);
+    sim.answer_batched_path_searches(&rules, None);
+    process(&mut sim);
+    assert_eq!(
+        sim.path_batch.as_ref().unwrap().pending,
+        [(tank, WaitingRequest::StraightReentry { allow_retry: true })],
+        "the second cell refused the turn and the re-entry waits"
+    );
+
+    sim.answer_batched_path_searches(&rules, None);
+    process(&mut sim);
+    let foot = sim.substrate.entities.get(tank).unwrap();
+    assert_eq!(
+        foot.navigation.path_replay().remaining_directions(),
+        [SOUTH_EAST_STEP],
+        "the straight track takes one word"
+    );
+    assert!(sim.path_batch.as_ref().unwrap().pending.is_empty());
 }
 
 /// Over the cap a pass takes the registrations from the next turn on,
