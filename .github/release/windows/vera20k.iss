@@ -72,9 +72,6 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
 [Messages]
-; Credit the actual compiler in the title bar; keep the standard footer clear.
-english.SetupWindowTitle=Setup - %1 | Inno Setup {#DecodeVer(Ver)}
-chinesesimplified.SetupWindowTitle=安装 - %1 | Inno Setup {#DecodeVer(Ver)}
 english.WelcomeLabel2=VERA20K is a community-built engine for Yuri's Revenge.%n%nRequires game files from your own copy of Yuri's Revenge 1.001.
 chinesesimplified.WelcomeLabel2=VERA20K 是由社区开发的《尤里的复仇》游戏引擎。%n%n需要您自己拥有的《尤里的复仇》1.001 版游戏文件。
 
@@ -124,7 +121,7 @@ english.ReadyFiles=Files to install / replace:
 english.ReadyChanges=Other changes:
 english.ReadyConfigNew=Create config.toml with the selected game folder.
 english.ReadyConfigExisting=Keep config.toml settings; update the game-folder path.
-english.ReadyExtras=Add an Inno Setup uninstaller and a Start menu shortcut.
+english.ReadyExtras=Add an uninstaller and a Start menu shortcut.
 english.ReadyPreserved=Existing saves, replays and personal settings are kept.
 chinesesimplified.GameDirCaption=《尤里的复仇》文件夹
 chinesesimplified.GameDirDescription=《尤里的复仇》安装在哪里？
@@ -171,7 +168,7 @@ chinesesimplified.ReadyFiles=将安装或替换的文件：
 chinesesimplified.ReadyChanges=其他更改：
 chinesesimplified.ReadyConfigNew=创建 config.toml，记录所选游戏文件夹。
 chinesesimplified.ReadyConfigExisting=保留 config.toml 中的设置，仅更新游戏文件夹路径。
-chinesesimplified.ReadyExtras=添加 Inno Setup 卸载程序和开始菜单快捷方式。
+chinesesimplified.ReadyExtras=添加卸载程序和开始菜单快捷方式。
 chinesesimplified.ReadyPreserved=保留已有的存档、录像和个人设置。
 
 [Files]
