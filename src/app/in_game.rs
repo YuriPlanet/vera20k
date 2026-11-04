@@ -257,6 +257,9 @@ impl App {
             return;
         }
         state.platform.window_active = active;
+        if active {
+            state.platform.clear_attention();
+        }
         let movie_active = crate::app::radar_movie::playback_active(state);
         state
             .match_state

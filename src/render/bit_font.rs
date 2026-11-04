@@ -27,8 +27,12 @@ pub const TAB_ORIGIN: u32 = 0;
 pub const CELL_HEIGHT: u32 = 17;
 /// Bitmap rows per glyph for GAME.FNT.
 pub const BITMAP_ROWS: u32 = 16;
-/// Source codepoint for the missing-glyph fallback (CP1252 'deg').
-pub const MISSING_GLYPH_CODEPOINT: u16 = 0xB0;
+/// Source codepoint for the missing-glyph stand-in: the letter `X`. Native
+/// reaches it as the lookup-table **byte offset** `0xB0` (`0x0043472A`), so the
+/// codepoint is `0xB0 / 2`; reading the offset as a codepoint gave the old
+/// value `0xB0`, which is CP1252 'deg' - slot #133 of retail `GAME.FNT`, width
+/// 4, where `X` is slot #58, width 7.
+pub const MISSING_GLYPH_CODEPOINT: u16 = 0x58;
 /// Darken-strip alpha for sidebar Ready overlay.
 pub const DARKEN_ALPHA: u8 = 175;
 /// Default fallback space width when FNT lacks a glyph at 0x20 (defensive).
@@ -612,6 +616,45 @@ impl BitFont {
         }
     }
 
+    /// The stand-in bitmap for a codepoint the font does not carry.
+    ///
+    /// gamemd-derived: `BitFont`'s ctor calls `0x00434700` right after the
+    /// loader (`0x004338ED`), which reads `word ptr [lookup table + 0xB0]`
+    /// (`0x0043472A`) - a byte offset, so the source codepoint is
+    /// `0xB0 / 2 = 0x58`, the letter `X` - copies that glyph's width byte
+    /// (`0x00434743..0x00434748`) and then copies its rows as `not row_byte`
+    /// (`0x00434764..0x00434774`). Inverting the 1-bit mask, not the colour,
+    /// is what makes the cell fill where the glyph was clear.
+    fn missing_glyph_stand_in(src: &FntGlyph) -> FntGlyph {
+        let width = src.width.max(1) as usize;
+        let rows = src.rgba.len() / (width * 4);
+        let mut rgba = vec![0u8; width * rows * 4];
+        for row in 0..rows {
+            for x in 0..width {
+                let i = (row * width + x) * 4;
+                let set = src.rgba.get(i + 3).copied().unwrap_or(0) != 0;
+                if !set {
+                    rgba[i] = 255;
+                    rgba[i + 1] = 255;
+                    rgba[i + 2] = 255;
+                    rgba[i + 3] = 255;
+                }
+            }
+        }
+        FntGlyph {
+            width: src.width,
+            rgba,
+        }
+    }
+
+    /// The record the stand-in is cut from. Native's row-cache builder
+    /// (`0x00434700`) indexes the lookup table at the **byte** offset
+    /// `0xB0`, so the source codepoint is `0x58` ('X'), not `0xB0` ('deg').
+    fn missing_glyph_record(fnt: &FntFile) -> Option<FntGlyph> {
+        fnt.glyph(MISSING_GLYPH_CODEPOINT)
+            .map(Self::missing_glyph_stand_in)
+    }
+
     pub fn from_fnt(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -625,24 +668,7 @@ impl BitFont {
             }
         }
 
-        // Synthesize the missing-glyph bitmap: inverted '°' (codepoint 0xB0).
-        // Source is white-on-transparent; invert RGB on set pixels so the
-        // fallback is visually distinct against tinted destinations.
-        let missing_owned: Option<FntGlyph> = fnt.glyph(MISSING_GLYPH_CODEPOINT).map(|src| {
-            let mut rgba = src.rgba.clone();
-            let mut i = 0;
-            while i + 3 < rgba.len() {
-                let a = rgba[i + 3];
-                rgba[i] = !rgba[i] & a;
-                rgba[i + 1] = !rgba[i + 1] & a;
-                rgba[i + 2] = !rgba[i + 2] & a;
-                i += 4;
-            }
-            FntGlyph {
-                width: src.width,
-                rgba,
-            }
-        });
+        let missing_owned: Option<FntGlyph> = Self::missing_glyph_record(fnt);
 
         if entries.is_empty() && missing_owned.is_none() {
             log::warn!("FNT has no glyphs, falling back to hardcoded font");
@@ -1233,6 +1259,69 @@ pub(crate) mod tests {
         // 'b': x += 6 = 70, count = 2.
         // End: x + count * char_spacing = 70 + 2 = 72.
         assert_eq!(font.text_width("a\tb"), 72);
+    }
+
+    /// Native's stand-in is the `X` glyph with its 1-bit rows inverted, so the
+    /// cell fills where the glyph was clear and keeps the source width byte.
+    #[test]
+    fn the_missing_glyph_stand_in_complements_the_mask() {
+        let src = FntGlyph {
+            width: 3,
+            rgba: vec![
+                255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0,
+            ],
+        };
+        let stand_in = BitFont::missing_glyph_stand_in(&src);
+        assert_eq!(
+            stand_in.width, 3,
+            "the width byte is copied, not recomputed"
+        );
+        let alpha: Vec<u8> = (0..6).map(|pixel| stand_in.rgba[pixel * 4 + 3]).collect();
+        assert_eq!(
+            alpha,
+            vec![0, 0, 255, 255, 255, 255],
+            "lit pixels clear and clear pixels fill, as `not row_byte` does"
+        );
+    }
+
+    /// Two-record font: codepoint `0x58` ('X') width 7 with clear rows,
+    /// codepoint `0xB0` ('deg') width 4 with set rows, so picking the wrong
+    /// source changes the observed width.
+    fn two_record_fnt() -> FntFile {
+        const HEADER_BYTES: usize = 4 + 6 * 4;
+        const TABLE_BYTES: usize = 65536 * 2;
+        const STRIDE: usize = 3; // 1 width byte + 2 rows of 1 byte
+        let mut data = vec![0u8; HEADER_BYTES + TABLE_BYTES + STRIDE * 2];
+        data[..4].copy_from_slice(&0x546E_6F66u32.to_le_bytes());
+        for (i, field) in [20u32, 1, 2, 3, 2, STRIDE as u32].iter().enumerate() {
+            data[4 + i * 4..8 + i * 4].copy_from_slice(&field.to_le_bytes());
+        }
+        for (codepoint, index) in [(0x58u16, 1u16), (0xB0, 2)] {
+            // The retail table stores 1-based glyph indices.
+            let off = HEADER_BYTES + codepoint as usize * 2;
+            data[off..off + 2].copy_from_slice(&index.to_le_bytes());
+        }
+        let glyphs = HEADER_BYTES + TABLE_BYTES;
+        data[glyphs] = 7; // 'X': width 7, both rows clear
+        data[glyphs + STRIDE] = 4; // 'deg': width 4, both rows set
+        data[glyphs + STRIDE + 1] = 0xFF;
+        data[glyphs + STRIDE + 2] = 0xFF;
+        FntFile::from_bytes(&data).expect("synthetic FNT parses")
+    }
+
+    #[test]
+    fn the_missing_glyph_record_uses_the_table_byte_offset() {
+        let record = BitFont::missing_glyph_record(&two_record_fnt())
+            .expect("the fixture carries the stand-in");
+        assert_eq!(
+            record.width, 7,
+            "the stand-in is the record at byte offset 0xB0 (codepoint 0x58, 'X'), not 0xB0 ('deg')"
+        );
+        assert!(
+            record.rgba.chunks(4).all(|pixel| pixel[3] == 255),
+            "'X' is clear where it is set in 'deg', so the cell fills"
+        );
     }
 
     #[test]

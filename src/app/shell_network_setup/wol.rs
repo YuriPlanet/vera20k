@@ -733,6 +733,10 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
                 .session
                 .network_start_seed()
                 .ok_or_else(|| anyhow::anyhow!("WOL start has no admitted seed"))?;
+            // VERA: a guest's match, or a Quick Match the matchbot paired,
+            // starts without a click. Call back a player in another window
+            // now: a hidden window's slide waits for its frames.
+            state.platform.request_attention(true);
             let protocol = state
                 .frontend
                 .network_setup_protocol
