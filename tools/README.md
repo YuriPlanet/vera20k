@@ -16,6 +16,7 @@ oracle families index their own fixtures and producers.
 | Wait for builds; test, check, lint or build the current checkout; preserve A/B binaries | `python -m tools.cargo_run` (below) |
 | Compile and test one optional capability (`ares`, `phobos`, `npatch`, diagnostic builds), or all of them | [capabilities](../docs/capabilities.md), `python -m tools.capability_tests` |
 | Run a committed test map headless or interactive, by scenario name | [capabilities](../docs/capabilities.md#test-maps), `python -m tools.run_test_map` |
+| Generate a large map, such as 500×500 with 30 starts | `python -m tools.scale_map large500.map --size 500 --starts 30` |
 | Find a built or preserved host executable for shell use | `python -m tools.cargo_run --resolve asset --profile release` (below) |
 | Run retail corpus checks or export a decoder-baseline candidate | [retail corpus](retail_corpus.md) |
 | Check hermetic gameplay fixtures against production-selected retail sources | [retail fixture contracts](retail_fixture_contracts.md), ordinary library tests with `RA2_DIR` |

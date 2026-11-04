@@ -40,6 +40,8 @@ the deterministic frame phases.
 
 The app turns player input into commands for the simulation. After each frame it hands the new state to the renderer and plays the sounds the frame produced. Rendering only reads simulation state, and `sim/` never depends on `render/`, `ui/`, `audio/` or `net/`.
 
+![Application sends commands to simulation, which returns world state; application sends draw data to rendering.](images/architecture.png)
+
 ## Determinism
 
 The same state, inputs and random seed must give the same result on every platform and CPU.
@@ -52,3 +54,8 @@ Normal play hashes the whole state once every 15 frames for its diagnostic repla
 log; tests and benchmarks can hash every frame. Multiplayer has a separate
 per-frame sync checksum, with calculation, exchange and comparison handled by the
 simulation, session and network command owners.
+
+## Feature docs
+
+- [End-game screens](ini-end-game-screens.md): the verdict card, its theme and the score page's own art.
+- [Health-strip modes](health-bars.md): the `[VERA] HealthBars=` client option.
