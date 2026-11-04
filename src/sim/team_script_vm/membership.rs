@@ -354,9 +354,10 @@ impl Simulation {
     /// against the first entry of its type, leaves the list, drops its
     /// suspended mission, destination and target (`+0xB0`, `+0x5A8`,
     /// `+0x2B8`) and, active, not falling (`+0x425`), out of limbo and
-    /// unless `no_idle`, enters its idle mode (`vt+0x484(0, 1)`). If no
-    /// member left is initiated, the head is, and the team loses its centre.
-    /// The team is marked altered.
+    /// unless `no_idle`, enters its idle mode (`vt+0x484(0, 1)`), which an
+    /// object-placement scope skips: `0x006EAA1E` tests `[0x00A8E7AC]` first.
+    /// If no member left is initiated, the head is, and the team loses its
+    /// centre. The team is marked altered.
     pub(crate) fn team_remove_member(
         &mut self,
         team_id: u64,
@@ -415,7 +416,7 @@ impl Simulation {
                     && !entity.crash.is_crashing()
                     && !entity.lifecycle.in_limbo()
             });
-        if idles && !no_idle {
+        if idles && !no_idle && !self.object_placement_scope_active() {
             crate::sim::world::enter_idle_mode(self, entity_id, rules, None, frame_effects);
         }
         if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
