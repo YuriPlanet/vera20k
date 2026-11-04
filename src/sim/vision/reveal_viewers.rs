@@ -11,7 +11,7 @@ use crate::sim::intern::{InternedId, StringInterner};
 /// Each owner's [`super::direct_reveal_viewers`] and [`super::allied_viewers`],
 /// remembered from [`Self::begin`] to [`Self::end`], which bracket the object
 /// pass and the fog pass. An answer depends on the owner, the planes, the ally
-/// graph, `AllyReveal=` and the interned names. Inside the bracket planes and
+/// graph, `AllyReveal=`, the interned names and (direct answers) the client maps. Inside the bracket planes and
 /// names only grow (`Planes` has no remove, and the fog pass replaces planes
 /// before its `begin`), so their counts key the answers, with `AllyReveal=`
 /// beside each direct one; the ally graph's writers (`install_house_alliances`,
@@ -25,6 +25,8 @@ pub(crate) struct RevealViewers {
     /// The planes and interned names the answers were computed with.
     counts: (usize, usize),
     direct: BTreeMap<(InternedId, bool), Arc<[InternedId]>>,
+    /// The client maps the direct answers were computed among.
+    clients: Arc<[InternedId]>,
     allied: BTreeMap<InternedId, Arc<[InternedId]>>,
 }
 
@@ -45,10 +47,11 @@ impl RevealViewers {
     /// Drop the answers: the ally graph changed.
     pub(crate) fn forget(&mut self) {
         self.direct.clear();
+        self.clients = Arc::default();
         self.allied.clear();
     }
 
-    /// [`super::direct_reveal_viewers`] of `owner`.
+    /// [`super::direct_reveal_viewers`] of `owner` among `clients`.
     pub(crate) fn direct(
         &mut self,
         fog: &FogState,
@@ -56,10 +59,16 @@ impl RevealViewers {
         owner: InternedId,
         config: &VisionConfig,
         interner: &StringInterner,
+        clients: &[InternedId],
     ) -> Arc<[InternedId]> {
-        let fresh = || super::direct_reveal_viewers(fog, alliances, owner, config, interner).into();
+        let fresh =
+            || super::direct_reveal_viewers(alliances, owner, config, interner, clients).into();
         if !self.current(fog, interner) {
             return fresh();
+        }
+        if *self.clients != *clients {
+            self.direct.clear();
+            self.clients = clients.into();
         }
         let answer = Arc::clone(
             self.direct

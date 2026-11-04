@@ -464,6 +464,11 @@ fn sparse_native_sight_indexes_real_cells_and_keeps_diagnostics_read_only() {
     sim.session.set_binary_frame_for_test(1);
     sim.fog = crate::sim::vision::FogState::new(33, 33);
     let owner = sim.interner.intern("Americans");
+    // A human player's house: its client map is the plane under test.
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
     let type_ref = sim.interner.intern("E1");
     let mut object =
         crate::sim::game_entity::GameEntity::test_default(101, "E1", "Americans", 16, 16);
