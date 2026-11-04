@@ -40,9 +40,6 @@ const PACE_REPORT_INTERVAL_MS: i32 = 1_000;
 // Frames must wait here this long before this PC counts as lagging.
 const PACE_BACKLOG_MS: u32 = 2_000;
 
-/// App diagnostics for one local command batch: its first transmission, the
-/// relay's frame assignment and the contiguous receipt of that sealed frame.
-/// Socket receipt times; this never enters simulation or delivery decisions.
 /// App diagnostics for one match's ordered delivery, counted by the session
 /// that owns it. Wall-clock observations; never simulation or delivery input.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -62,6 +59,9 @@ pub struct DeliveryCounters {
     pub desync_frame: Option<u32>,
 }
 
+/// App diagnostics for one local command batch: its first transmission, the
+/// relay's frame assignment and the contiguous receipt of that sealed frame.
+/// Socket receipt times; this never enters simulation or delivery decisions.
 #[derive(Debug, Clone, Copy)]
 pub struct CommandDeliveryTrace {
     pub batch_id: u64,

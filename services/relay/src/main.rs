@@ -26,7 +26,8 @@ struct TrafficCounts {
     rate_limited: u64,
     counter_exhausted: u64,
     entropy_unavailable: u64,
-    // Ordering push datagrams and their bytes, part of `forwarded`.
+    // Ordering push datagrams and their bytes; each also counts in `forwarded`
+    // or `send_errors`.
     pushed: u64,
     pushed_bytes: u64,
 }

@@ -292,10 +292,6 @@ pub struct TerrainGrid {
     pub deck_rises: String,
 }
 
-/// Frame-timing sample, filled by the app layer (the simulation never
-/// measures wall time). `budget_utilization` is `tick_ms` over `budget_ms`;
-/// values above 1.0 mean the tick cost exceeded its budget and the pacer can
-/// no longer hold the tick rate.
 /// An online relay match's delivery state, measured by the app.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NetworkSample {
@@ -309,6 +305,10 @@ pub struct NetworkSample {
     pub relay_slowed: bool,
 }
 
+/// Frame-timing sample, filled by the app layer (the simulation never
+/// measures wall time). `budget_utilization` is `tick_ms` over `budget_ms`;
+/// values above 1.0 mean the tick cost exceeded its budget and the pacer can
+/// no longer hold the tick rate.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TimingSample {
     /// The most recent tick's cost, in milliseconds.
