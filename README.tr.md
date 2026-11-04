@@ -37,16 +37,6 @@ bulunanlara yol göstermek veya motorun bir bölümünün sorumluluğunu almak i
 
 Güncel öncelikler ve gelecek planları için [yol haritasına](https://github.com/orgs/YuriPlanet/projects/1) bakın.
 
-## Mevcut durum
-
-**Aktif geliştirme aşamasında.**
-
-- **Çatışma:** Windows, Linux ve macOS'ta oynanabiliyor. Orijinal ve rastgele oluşturulan
-  haritalar, üs kurma, kaynak toplama, çatışma ve kaydetme/yükleme mevcut.
-- **Senaryolar:** Görevler başlatılabiliyor; destek henüz tamamlanmış değil.
-- **Yapay zekâ:** Orijinal yapay zekânın bazı bölümleri üs kurma ve betiklerle yönetilen saldırıları yürütüyor.
-- **Çok oyunculu mod:** LAN ve çevrimiçi oyun Windows, Linux ve macOS'ta kullanılabilir.
-
 ## İndir ve oyna
 
 Windows, macOS veya Linux yükleyicisini
@@ -58,9 +48,16 @@ Tek oyunculu YR çatışmalarını veya senaryolarını bir CnCNet istemcisinden
 
 ## Katkıda bulunma
 
-Yardımlarınızı bekliyoruz. Kod yazabilir, motoru yeniden düzenleyebilir, oyunu test edebilir,
-fikirlerinizi paylaşabilir veya orijinal oyunla yan yana oynayıp neyin yanlış hissettirdiğini
-bize anlatabilirsiniz. Bir PR açın, gerisini biz hallederiz.
+Her alanda yardımınızı bekliyoruz; en çok yardıma ihtiyaç duyan alanlar aşağıda. Her biri yol
+haritasındaki sayfasına bağlanır; orada süren çalışmayı ve sonraki adımı bulabilirsiniz:
+
+- **[Oynanış ve çatışma](https://github.com/YuriPlanet/vera20k/issues/3830):** birim davranışı, hasar ve çatışma maçlarının güvenilirliği.
+- **[Performans](https://github.com/YuriPlanet/vera20k/issues/3831):** büyük savaşlarda ve eski donanımda kare hızı ve tepki süresi.
+- **[Çok oyunculu mod](https://github.com/YuriPlanet/vera20k/issues/3832):** çevrimiçi maçlara katılma, maç başlatma ve maçları sürdürme, ayrıca ortak oyunun güvenilirliği.
+- **[Arayüz ve ses](https://github.com/YuriPlanet/vera20k/issues/3833):** menüler, metinler, çeviriler ve ses.
+- **[Senaryolar](https://github.com/YuriPlanet/vera20k/issues/3834):** görevler başlatılabiliyor, ancak sonuna kadar oynanabilmeleri için daha çalışma gerekiyor: hedefler, tetikleyiciler, betikli geçişler, kaydetme/yükleme ve sonraki göreve geçiş.
+- **[Mod uyumluluğu](https://github.com/YuriPlanet/vera20k/issues/3835):** orijinal oyunun varsayılanlarını değiştirmeden Ares ve Phobos özellikleri.
+- **[Test](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** VERA20K'yi orijinal oyunla yan yana oynayıp farklı oynanan yerleri bildirmek.
 
 Katkıda bulunanlar motorun belirli alanlarının sorumluluğunu üstlenebilir ve VERA20K'yi
 ileriye taşıyan değişiklikleri geniş bir özgürlükle yapabilir.

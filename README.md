@@ -38,16 +38,6 @@ group (1097193563).
 See the [roadmap](https://github.com/orgs/YuriPlanet/projects/1) for current priorities
 and future plans.
 
-## Current status
-
-**In active development.**
-
-- **Skirmish:** Playable on Windows, Linux and macOS, with original and random maps,
-  base building, harvesting, combat and save/load.
-- **Campaigns:** Missions can launch; support remains incomplete.
-- **AI:** Parts of the original AI handle base building and scripted attacks.
-- **Multiplayer:** LAN and online play are available on Windows, Linux and macOS.
-
 ## Download and play
 
 Download the installer for Windows, macOS or Linux from the
@@ -59,8 +49,16 @@ To launch single-player YR skirmishes or campaigns from a CnCNet client, see the
 
 ## Contributing
 
-Help is welcome. You can write code, refactor the engine, test the game, share ideas, or play
-it next to the original and tell us what feels wrong. Open a PR and we'll take it from there.
+Help is welcome anywhere, and these areas need it most. Each links to its roadmap issue, with
+the work in progress and the next step:
+
+- **[Gameplay and combat](https://github.com/YuriPlanet/vera20k/issues/3830):** unit behavior, damage and everyday skirmish reliability.
+- **[Performance](https://github.com/YuriPlanet/vera20k/issues/3831):** frame rate and responsiveness in large battles and on older hardware.
+- **[Multiplayer](https://github.com/YuriPlanet/vera20k/issues/3832):** joining, starting and keeping online matches going, and co-op reliability.
+- **[UI and audio](https://github.com/YuriPlanet/vera20k/issues/3833):** menus, text, translations and sound.
+- **[Campaigns](https://github.com/YuriPlanet/vera20k/issues/3834):** missions launch, but playing them to the end still needs work: objectives, triggers, scripted transitions, save/load and moving on to the next mission.
+- **[Mod compatibility](https://github.com/YuriPlanet/vera20k/issues/3835):** Ares and Phobos features, without changing the original game's defaults.
+- **[Testing](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** play VERA20K next to the original and report what plays differently.
 
 Contributors can take responsibility for engine areas, with broad freedom to make changes that
 move VERA20K forward.

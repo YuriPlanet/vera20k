@@ -37,16 +37,6 @@ unterstützen oder dich um einen Teil der Engine kümmern möchtest, sag uns auf
 
 Die [Roadmap](https://github.com/orgs/YuriPlanet/projects/1) zeigt die aktuellen Prioritäten und zukünftigen Pläne.
 
-## Aktueller Stand
-
-**In aktiver Entwicklung.**
-
-- **Gefechte:** Unter Windows, Linux und macOS spielbar, mit Originalkarten und zufällig
-  generierten Karten, Basisbau, Rohstoffernte, Kämpfen sowie Speichern und Laden.
-- **Kampagnen:** Missionen lassen sich starten; die Unterstützung bleibt unvollständig.
-- **KI:** Teile der ursprünglichen KI übernehmen den Basisbau und skriptgesteuerte Angriffe.
-- **Mehrspielermodus:** LAN- und Online-Spiele sind unter Windows, Linux und macOS verfügbar.
-
 ## Herunterladen und spielen
 
 Lade den Installer für Windows, macOS oder Linux von der
@@ -58,9 +48,16 @@ Wie du Einzelspieler-Gefechte oder Kampagnen von YR über einen CnCNet-Client st
 
 ## Mitmachen
 
-Hilfe ist willkommen. Du kannst Code schreiben, die Engine refaktorieren, das Spiel testen,
-Ideen einbringen oder es neben dem Original spielen und uns sagen, was sich falsch anfühlt.
-Öffne einen PR, und wir kümmern uns um den Rest.
+Hilfe ist überall willkommen, und diese Bereiche brauchen sie am meisten. Jeder Bereich
+verlinkt auf seine Seite in der Roadmap, mit der laufenden Arbeit und dem nächsten Schritt:
+
+- **[Spielmechanik und Kampf](https://github.com/YuriPlanet/vera20k/issues/3830):** Einheitenverhalten, Schaden und zuverlässige Gefechte.
+- **[Leistung](https://github.com/YuriPlanet/vera20k/issues/3831):** Bildrate und Reaktionsfähigkeit in großen Schlachten und auf älterer Hardware.
+- **[Mehrspielermodus](https://github.com/YuriPlanet/vera20k/issues/3832):** Online-Partien beitreten, starten und am Laufen halten sowie zuverlässiges Koop-Spiel.
+- **[Oberfläche und Audio](https://github.com/YuriPlanet/vera20k/issues/3833):** Menüs, Texte, Übersetzungen und Ton.
+- **[Kampagnen](https://github.com/YuriPlanet/vera20k/issues/3834):** Missionen lassen sich starten, aber sie bis zum Ende durchzuspielen braucht noch Arbeit: Ziele, Trigger, geskriptete Übergänge, Speichern/Laden und der Wechsel zur nächsten Mission.
+- **[Mod-Kompatibilität](https://github.com/YuriPlanet/vera20k/issues/3835):** Funktionen aus Ares und Phobos, ohne die Standardwerte des Originalspiels zu ändern.
+- **[Testen](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** VERA20K neben dem Original spielen und melden, was sich anders spielt.
 
 Mitwirkende können Verantwortung für Bereiche der Engine übernehmen und haben dabei viel
 Spielraum für Änderungen, die VERA20K voranbringen.

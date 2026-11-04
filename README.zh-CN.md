@@ -32,16 +32,6 @@ VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 
 当前优先事项和未来计划请查看[路线图](https://github.com/orgs/YuriPlanet/projects/1)。
 
-## 当前进度
-
-**积极开发中。**
-
-- **遭遇战：** Windows、Linux 和 macOS 上均可游玩，支持原版地图和随机地图、
-  基地建设、采矿、战斗以及存档和读档。
-- **战役：** 任务已可启动，支持尚不完整。
-- **AI：** 部分原版 AI 已能处理基地建设和脚本攻击。
-- **多人模式：** Windows、Linux 和 macOS 上均支持局域网和在线对战。
-
 ## 下载与游玩
 
 从[发布页面](https://github.com/YuriPlanet/vera20k/releases)下载适用于 Windows、macOS 或 Linux 的安装程序。它会找到你的《尤里的复仇》，并把 VERA20K 安装到一个新文件夹。
@@ -50,8 +40,15 @@ VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 
 ## 参与贡献
 
-欢迎帮忙。你可以编写代码、重构引擎、测试游戏、提出想法，或对照原版游玩，告诉我们哪些地方感觉不对。
-直接提交 PR 即可，剩下的交给我们。
+欢迎任何形式的帮助，以下方向最需要人手。每一项都链接到它在路线图中的页面，里面有正在进行的工作和下一步：
+
+- **[玩法与战斗](https://github.com/YuriPlanet/vera20k/issues/3830)：** 单位行为、伤害，以及遭遇战日常运行的稳定性。
+- **[性能](https://github.com/YuriPlanet/vera20k/issues/3831)：** 大规模战斗和旧硬件上的帧率与响应速度。
+- **[多人模式](https://github.com/YuriPlanet/vera20k/issues/3832)：** 加入、开始和持续进行在线对战，以及合作模式的稳定性。
+- **[界面与音频](https://github.com/YuriPlanet/vera20k/issues/3833)：** 菜单、文本、翻译和声音。
+- **[战役](https://github.com/YuriPlanet/vera20k/issues/3834)：** 任务已可启动，但要完整打通仍需努力：任务目标、触发器、脚本过场、存档读档和进入下一关。
+- **[模组兼容](https://github.com/YuriPlanet/vera20k/issues/3835)：** Ares 和 Phobos 的功能，同时不改变原版游戏的默认行为。
+- **[测试](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity)：** 对照原版游玩 VERA20K，报告玩起来不一样的地方。
 
 贡献者可以负责引擎的某些部分，并有很大的自由度去做推动 VERA20K 发展的改动。
 
