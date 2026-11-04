@@ -59,7 +59,8 @@ pub const TILE_HEIGHT: f32 = 30.0;
 /// (Note: Tiberian Sun uses 24/2 = 12 — do NOT use TS values here.)
 pub const HEIGHT_STEP: f32 = 15.0;
 
-/// Tactical screen-to-cell inverse scan cap from gamemd.exe `0x006D6590`.
+/// Native tactical inverse scan cap (`ScreenPixelToCell @ 0x006D6590`).
+/// Higher VERA terrain extends this baseline using the live grid's level bound.
 pub const TACTICAL_INVERSE_MAX_SCAN_ATTEMPTS: usize = 180;
 
 /// Tactical bridge open-edge threshold. The binary uses strict `> 15`.
@@ -89,6 +90,8 @@ pub struct TacticalBridgeCell {
 pub trait TacticalCellLookup: std::fmt::Debug {
     fn cell_level(&self, rx: u16, ry: u16) -> Option<u8>;
     fn bridge_cell(&self, rx: u16, ry: u16) -> Option<TacticalBridgeCell>;
+    /// Conservative upper bound on live signed cell levels, including zero.
+    fn max_cell_level(&self) -> i8;
 }
 
 /// Literal inputs to the native comparisons; production borrows its live grid.
@@ -106,6 +109,11 @@ impl TacticalCellLookup for TacticalCellFixture<'_> {
     }
     fn bridge_cell(&self, rx: u16, ry: u16) -> Option<TacticalBridgeCell> {
         self.bridges?.get(&(rx, ry)).copied()
+    }
+    fn max_cell_level(&self) -> i8 {
+        self.levels
+            .values()
+            .fold(0, |max, &level| max.max(level as i8))
     }
 }
 
@@ -334,9 +342,21 @@ pub fn screen_to_cell_tactical_inverse(
     let input_x = (screen_x - context.viewport_offset_x).floor();
     let input_y = (screen_y - context.viewport_offset_y).floor();
     let (fallback_rx, fallback_ry) = screen_to_iso(input_x, input_y);
-    let mut scan_y = input_y + TACTICAL_INVERSE_MAX_SCAN_ATTEMPTS as f32;
+    // VERA extension: ScreenPixelToCell @ 0x006D6590 starts 180 pixels
+    // below the cursor (0x006D668E), so it cannot reach higher terrain's
+    // unprojected cell. Keep 180 pixels as the minimum, but allow the native
+    // 60-pixel bridge lift above the live level bound even when the bridge's
+    // base still fits in the original window.
+    // The grid owns this bound and widens it after native level writes.
+    let terrain_lift = context
+        .cells
+        .map_or(0, |cells| cells.max_cell_level().max(0) as usize)
+        * HEIGHT_STEP as usize;
+    let scan_attempts = TACTICAL_INVERSE_MAX_SCAN_ATTEMPTS
+        .max(terrain_lift + TACTICAL_BRIDGE_EXTRA_HEIGHT_PX as usize);
+    let mut scan_y = input_y + scan_attempts as f32;
 
-    for _ in 0..TACTICAL_INVERSE_MAX_SCAN_ATTEMPTS {
+    for _ in 0..scan_attempts {
         let (candidate_rx, candidate_ry) = screen_to_iso(input_x, scan_y);
         let Some((cell_rx, cell_ry)) = rounded_lookup_cell(candidate_rx, candidate_ry) else {
             scan_y -= 1.0;
@@ -562,6 +582,73 @@ mod tests {
     use super::*;
     use std::collections::{HashMap, HashSet};
     use std::path::PathBuf;
+
+    #[test]
+    fn high_terrain_picking_tracks_live_level_bound() {
+        let cells = (0..32)
+            .flat_map(|ry| {
+                (0..32).map(move |rx| {
+                    let mut cell =
+                        crate::map::resolved_terrain::ResolvedTerrainCell::clear_for_test(rx, ry);
+                    cell.level = 12;
+                    cell
+                })
+            })
+            .collect();
+        let mut terrain = ResolvedTerrainGrid::from_cells(32, 32, cells);
+        let cell = terrain.native_cell_identity((16, 16));
+        // Use the production level writer: the raised cell needs a larger
+        // bound, and lowering it leaves a conservative bound behind.
+        for level in [12, 20, 12] {
+            terrain.write_native_cell_level(cell, level);
+            let (x, y) = iso_to_screen(16, 16, level);
+            let picked = screen_to_cell_tactical_inverse(
+                x + TILE_WIDTH / 2.0,
+                y + TILE_HEIGHT / 2.0,
+                TacticalInverseContext {
+                    cells: Some(&terrain),
+                    viewport_offset_x: 0.0,
+                    viewport_offset_y: 0.0,
+                },
+            );
+            assert_eq!(picked, TacticalInverseResult::Cell { rx: 16.0, ry: 16.0 });
+        }
+    }
+
+    #[test]
+    fn high_terrain_picking_reaches_the_bridge_deck() {
+        let levels = (0..32)
+            .flat_map(|ry| (0..32).map(move |rx| ((rx, ry), 12)))
+            .collect();
+        let bridges = (0..32)
+            .flat_map(|ry| {
+                (0..32).map(move |rx| {
+                    (
+                        (rx, ry),
+                        TacticalBridgeCell {
+                            structural: true,
+                            direction_zero: true,
+                        },
+                    )
+                })
+            })
+            .collect();
+        // The native bridge surface is four levels above its Cell level.
+        let (x, y) = iso_to_screen(16, 16, 16);
+        let picked = screen_to_cell_tactical_inverse(
+            x + TILE_WIDTH / 2.0,
+            y + TILE_HEIGHT / 2.0,
+            TacticalInverseContext {
+                cells: Some(&TacticalCellFixture {
+                    levels: &levels,
+                    bridges: Some(&bridges),
+                }),
+                viewport_offset_x: 0.0,
+                viewport_offset_y: 0.0,
+            },
+        );
+        assert_eq!(picked, TacticalInverseResult::Cell { rx: 16.0, ry: 16.0 });
+    }
 
     #[test]
     fn gsi_04_03b_iso_to_screen_sign_extends_raw_level() {
