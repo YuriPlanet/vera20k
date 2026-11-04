@@ -204,6 +204,11 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 .and_then(|rules| rules.general.player_joined_sound())
                 .map(str::to_owned);
             App::play_shell_ui_sound_by_id(state, sound.as_deref());
+            if dialog.host {
+                // VERA: the host may wait in another window, which hears no
+                // sound (the activation edge stops the primary output).
+                state.platform.request_attention(false);
+            }
             let quick_match = super::quick_match(state);
             if dialog.host && quick_match {
                 // 0x007A6DC2..0x007A6E50: modes 1/2 parse the matchbot's
@@ -260,6 +265,8 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 .map(str::to_owned);
             App::play_shell_ui_sound_by_id(state, sound.as_deref());
             if dialog.host {
+                // VERA: as in a WOL room, the host may be in another window.
+                state.platform.request_attention(false);
                 // 0x5E1B5A..0x5E1BF2: the options, the 0x16 roster to every
                 // guest, then 0x5E2FA0's mode +94.
                 let protocol = state
@@ -1404,6 +1411,9 @@ fn finish_go(state: &mut AppState) -> anyhow::Result<()> {
         .session
         .network_start_seed()
         .ok_or_else(|| anyhow::anyhow!("GO has no admitted seed"))?;
+    // VERA: a guest's match starts without a click. Call back a player in
+    // another window now: a hidden window's slide waits for its frames.
+    state.platform.request_attention(true);
     if super::external(state) {
         // A direct spawn has no dialog to slide out.
         super::commit_start(state, seed);

@@ -2057,10 +2057,14 @@ impl ApplicationHandler for App {
                         Instant::now() + crate::app::match_runtime::frame_pacer::SERVICE_WAKE,
                     ));
                 } else {
-                    // Nothing on screen to keep fresh. Park the redraw loop
-                    // until a window event (including the un-occlude edge)
-                    // wakes it, rather than rendering frames no one can see.
-                    event_loop.set_control_flow(ControlFlow::Wait);
+                    // Nothing on screen to keep fresh: draw no frames until a
+                    // window event (including the un-occlude edge). The shell's
+                    // services still wake it, so a lobby, a LAN room or a Quick
+                    // Match search keeps answering while the player is in
+                    // another window.
+                    event_loop.set_control_flow(
+                        shell_scroll_wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil),
+                    );
                 }
             } else if state.platform.redraw_gate.next_pass()
                 == crate::app::match_runtime::redraw_gate::NextPass::Probe

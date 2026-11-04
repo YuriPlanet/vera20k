@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use winit::dpi::PhysicalSize;
-use winit::window::Window;
+use winit::window::{UserAttentionType, Window};
 
 use crate::app::match_runtime::frame_pacer::LocalFramePacer;
 use crate::ui::game_screen::GameScreen;
@@ -86,6 +86,10 @@ pub(crate) struct PlatformState {
     /// zero-sized `Resized` instead. Both signals feed this flag, so the redraw
     /// loop parks on every platform. Presentation-only.
     pub(crate) window_hidden: bool,
+    /// Whether [`Self::request_attention`] asked for the player's attention
+    /// since the window was last active, so the regain edge clears it: X11
+    /// keeps its urgency hint until then. Presentation-only.
+    pub(crate) attention_requested: bool,
     /// Local wall-clock admission state. Never serialized or read by the sim.
     pub(crate) frame_pacer: LocalFramePacer,
     /// Whether the next visible pass must draw, or may only service the
@@ -131,6 +135,7 @@ impl PlatformState {
             window_active: true,
             pause_on_focus_loss,
             window_hidden: false,
+            attention_requested: false,
             frame_pacer: LocalFramePacer::new(),
             redraw_gate: crate::app::match_runtime::redraw_gate::RedrawGate::from_environment(),
             game_config,
@@ -157,5 +162,31 @@ impl PlatformState {
     /// cursor. Presentation-only.
     pub(crate) fn owns_pointer(&self) -> bool {
         self.pointer_in_client && self.window_active
+    }
+    /// VERA's own (gamemd never flashes its window): while another
+    /// application is in front, flash the taskbar button (Windows), bounce
+    /// the Dock icon (macOS) or mark the window urgent (X11, Wayland), so a
+    /// player waiting in the background sees that their game needs them.
+    /// `until_back` keeps the Dock icon bouncing until the player returns;
+    /// otherwise it bounces once. Presentation-only.
+    pub(crate) fn request_attention(&mut self, until_back: bool) {
+        if self.window_active {
+            return;
+        }
+        let kind = if until_back {
+            UserAttentionType::Critical
+        } else {
+            UserAttentionType::Informational
+        };
+        log::info!("Asked for the player's attention ({kind:?})");
+        self.window.request_user_attention(Some(kind));
+        self.attention_requested = true;
+    }
+
+    /// The window is active again: drop a request the window system keeps.
+    pub(crate) fn clear_attention(&mut self) {
+        if std::mem::take(&mut self.attention_requested) {
+            self.window.request_user_attention(None);
+        }
     }
 }
