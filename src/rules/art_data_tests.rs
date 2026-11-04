@@ -6,7 +6,7 @@ use super::*;
 fn native_discharge_art_reader_matches_original_signed_independent_keys() {
     // Original InfantryType ART reads 5246BE..52473A call ReadInt5276D0
     // independently over E40/E44/E48/E4C. Replay every cached-input row
-    // through the production read owner, then fresh file/registry inputs.
+    // through the production read owner, then fresh physical file inputs.
     let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/infantry_discharge_rules.json",
     ))
@@ -48,14 +48,10 @@ fn native_discharge_art_reader_matches_original_signed_independent_keys() {
                 text.push_str(&format!("{key}={raw}\n"));
             }
         }
-        let registry = ArtRegistry::from_ini(&IniFile::from_str(&text));
-        let entry = registry.get(section).unwrap();
-        let actual = [
-            entry.fire_up,
-            entry.fire_prone,
-            entry.secondary_fire,
-            entry.secondary_prone,
-        ];
+        let ini = IniFile::from_str(&text);
+        // A fresh type starts from constructor5236D7..5236F9's four zeros.
+        let mut actual = [0; 4];
+        read_infantry_discharge_frames(ini.section(section).unwrap(), &mut actual);
         let expected: [i32; 4] = serde_json::from_value(row["after"].clone()).unwrap();
         assert_eq!(actual, expected, "original row {}", row["case"]);
         compared += 1;
