@@ -148,6 +148,33 @@ impl AttachEffectInstance {
         self.source.is_none()
     }
 
+    /// A copy for `TransferAttachedEffects` (`AttachEffectClass.cpp:1294..1332`):
+    /// the delays, source pair, duration and counters travel, while the target
+    /// creates its own animation and starts a fresh `CurrentDelay`.
+    #[cfg(feature = "phobos")]
+    fn transfer_copy(&self) -> Self {
+        Self {
+            type_index: self.type_index,
+            remaining: self.remaining,
+            duration_override: self.duration_override,
+            delay: self.delay,
+            initial_delay: self.initial_delay,
+            recreation_delay: self.recreation_delay,
+            current_delay: 0,
+            should_refresh: false,
+            has_initialized: self.has_initialized,
+            source: self.source,
+            is_online: self.is_online,
+            anim: None,
+            should_be_discarded: self.should_be_discarded,
+            firing_count: self.firing_count,
+            received_damage_count: self.received_damage_count,
+            last_sequence_check: self.last_sequence_check,
+            armor_multiplier_timer: self.armor_multiplier_timer,
+            reflect_damage_timer: self.reflect_damage_timer,
+        }
+    }
+
     /// The frame's `AI()` walk reaches the animation check: not in the initial
     /// delay, the re-creation delay or the queued refresh (those return early),
     /// and the effect still has a duration to show.
@@ -659,6 +686,27 @@ fn paired(list: &[i32], index: usize, default: i32) -> i32 {
         .unwrap_or(default)
 }
 
+/// `EnumFunctions::IsTechnoEligible`'s type side: the category mask, then
+/// `AffectTypes` (when non-empty) and `IgnoreTypes` against the target's type
+/// id. Shared by every attach gate and by the transfer hook.
+#[cfg(feature = "phobos")]
+fn effect_target_eligible(
+    category: crate::rules::object_type::ObjectCategory,
+    object: &crate::rules::object_type::ObjectType,
+    effect: &AttachEffectType,
+) -> bool {
+    effect.affects_target.allows(category)
+        && (effect.affect_types.is_empty()
+            || effect
+                .affect_types
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(&object.id)))
+        && !effect
+            .ignore_types
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case(&object.id))
+}
+
 /// `AttachEffectClass::CreateAndAttach` (`AttachEffectClass.cpp:883..898`)
 /// gates every attach site before the cumulative decision: an active Iron
 /// Curtain or Force Shield needs the type's matching penetration flag,
@@ -685,21 +733,7 @@ pub fn can_attach_effect(
             return false;
         }
     }
-    if !effect.affects_target.allows(category) {
-        return false;
-    }
-    if !effect.affect_types.is_empty()
-        && !effect
-            .affect_types
-            .iter()
-            .any(|name| name.eq_ignore_ascii_case(&object.id))
-    {
-        return false;
-    }
-    !effect
-        .ignore_types
-        .iter()
-        .any(|name| name.eq_ignore_ascii_case(&object.id))
+    effect_target_eligible(category, object, effect)
 }
 
 /// Phobos attaches a techno type's `AttachEffect.AttachTypes` once when the
@@ -1720,6 +1754,108 @@ impl Simulation {
             .get_mut(id)
             .expect("the gated entity still exists")
             .phobos_attach_effects_mut() = list;
+    }
+
+    /// Phobos `AttachEffectClass::TransferAttachedEffects`
+    /// (`AttachEffectClass.cpp:1222..1333`) at the deploy
+    /// (`UnitClass_Deploy_Transfer 0x739956`) and undeploy
+    /// (`BuildingClass_Mi_Selling_Transfer 0x44A03C`) hooks: the source techno
+    /// is deleted afterwards, so its instances move to the target unless
+    /// `AllowTransfer` refuses or the target fails the category/type gates.
+    /// An existing instance keeps the longer duration; a cumulative type
+    /// appends until its own cap, and only a same-source match is refreshed.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn transfer_phobos_attach_effects(
+        &mut self,
+        source: u64,
+        target: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
+        if source == target {
+            return;
+        }
+        let (Some(source_entity), Some(target_entity)) = (
+            self.substrate.entities.get(source),
+            self.substrate.entities.get(target),
+        ) else {
+            return;
+        };
+        if source_entity.phobos_attach_effects().is_empty() {
+            return;
+        }
+        let Some(target_object) = self.interner.object_type(target_entity.type_ref(), rules) else {
+            return;
+        };
+        let target_category = target_entity.category().into();
+        let effects = rules.attach_effect_types().types();
+        let mut list = std::mem::take(
+            self.substrate
+                .entities
+                .get_mut(source)
+                .expect("the gated source still exists")
+                .phobos_attach_effects_mut(),
+        );
+        let mut target_list = std::mem::take(
+            self.substrate
+                .entities
+                .get_mut(target)
+                .expect("the gated target still exists")
+                .phobos_attach_effects_mut(),
+        );
+        for instance in std::mem::take(&mut list.instances) {
+            let Some(effect) = effects.get(instance.type_index) else {
+                continue;
+            };
+            if !effect.allows_transfer(instance.is_self_owned(), false)
+                || !effect_target_eligible(target_category, target_object, effect)
+            {
+                continue;
+            }
+            let mut type_count = 0;
+            let mut first_match: Option<usize> = None;
+            let mut shortest_same_source: Option<usize> = None;
+            for (index, held) in target_list.instances.iter().enumerate() {
+                if held.type_index != instance.type_index {
+                    continue;
+                }
+                type_count += 1;
+                first_match.get_or_insert(index);
+                if held.source.map(|held| (held.invoker, held.source))
+                    == instance
+                        .source
+                        .map(|incoming| (incoming.invoker, incoming.source))
+                    && shortest_same_source
+                        .is_none_or(|best| held.remaining < target_list.instances[best].remaining)
+                {
+                    shortest_same_source = Some(index);
+                }
+            }
+            // `CreateAndAttach`'s match: a non-cumulative type takes the first
+            // same-type instance; a cumulative one only a same-source match,
+            // and even at its cap a missing match appends a new instance.
+            let matched = if effect.cumulative {
+                let at_cap =
+                    effect.cumulative_max_count >= 0 && type_count >= effect.cumulative_max_count;
+                at_cap.then_some(shortest_same_source).flatten()
+            } else {
+                first_match
+            };
+            if let Some(index) = matched {
+                let duration = target_list.instances[index]
+                    .remaining
+                    .max(instance.remaining);
+                target_list.instances[index].remaining = duration;
+                continue;
+            }
+            target_list.instances.push(instance.transfer_copy());
+        }
+        let target_entity = self
+            .substrate
+            .entities
+            .get_mut(target)
+            .expect("the gated target still exists");
+        *target_entity.phobos_attach_effects_mut() = target_list;
+        target_entity.recalculate_phobos_stat_multipliers(effects);
     }
 
     /// Phobos `TechnoClass_Limbo_Wrapper` (`Ext/Techno/Hooks.cpp:400..472`,
@@ -3235,6 +3371,111 @@ mod tests {
         let mut effect = AttachEffectType::default();
         effect.duration = duration;
         effect
+    }
+
+    fn transfer_rules(allow_transfer: &str) -> crate::rules::ruleset::RuleSet {
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+            &crate::rules::ini_parser::IniFile::from_str(&format!(
+                "[VehicleTypes]\n0=SMIN\n[BuildingTypes]\n0=YAREFN\n[InfantryTypes]\n0=SLAV\n\
+                 [SMIN]\nStrength=100\nSpeed=3\nDeploysInto=YAREFN\nEnslaves=SLAV\n\
+                 SlavesNumber=1\n\
+                 [YAREFN]\nStrength=1000\nDeployFacing=0\nUndeploysInto=SMIN\n\
+                 [SLAV]\nStrength=125\nSpeed=3\nStorage=4\n\
+                 [AttachEffectTypes]\n0=AE\n[AE]\nDuration=100\n{allow_transfer}\n\
+                 [Clear]\nBuildable=yes\n"
+            )),
+            &crate::rules::ini_parser::IniFile::from_str("[YAREFN]\nFoundation=1x1\n"),
+        )
+        .unwrap();
+        // A building without a buildup SHP cannot be sold or undeployed.
+        rules.set_buildup_control_for_test("YAREFN", [0, 17, 3]);
+        rules
+    }
+
+    fn instances(sim: &Simulation, id: u64) -> usize {
+        sim.substrate
+            .entities
+            .get(id)
+            .expect("entity")
+            .phobos_attach_effects()
+            .instances()
+            .len()
+    }
+
+    fn only_entity(sim: &Simulation, name: &str) -> u64 {
+        sim.substrate
+            .entities
+            .values()
+            .find(|entity| {
+                entity.lifecycle.object_alive() && sim.interner.resolve(entity.type_ref()) == name
+            })
+            .expect("converted entity")
+            .stable_id()
+    }
+
+    /// `AllowTransfer` at Phobos' deploy (`UnitClass_Deploy_Transfer
+    /// 0x739956`) and undeploy (`BuildingClass_Mi_Selling_Transfer 0x44A03C`)
+    /// hooks: a self-attached effect with `AllowTransfer=yes` follows the
+    /// techno across both conversions, while `no` drops it.
+    #[test]
+    fn allow_transfer_moves_effects_across_deploy_and_undeploy() {
+        for (allow, expected) in [("AllowTransfer=yes", 1), ("AllowTransfer=no", 0)] {
+            let rules = transfer_rules(allow);
+            let mut sim = Simulation::with_seed(7);
+            crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+            let mcv = sim
+                .spawn_object_at_height("SMIN", "Neutral", 10, 10, 0, 0, &rules)
+                .expect("SMIN spawns");
+            let effect = rules.attach_effect_types().types()[0].clone();
+            sim.substrate
+                .entities
+                .get_mut(mcv)
+                .unwrap()
+                .phobos_attach_effects_mut()
+                .attach(
+                    0,
+                    AttachEffectParams::default(),
+                    &effect,
+                    AttachPolicy::default(),
+                    Some(AttachSource {
+                        invoker: Some(mcv),
+                        source: Some(2),
+                        invoker_house: None,
+                    }),
+                );
+            assert_eq!(instances(&sim, mcv), 1, "one externally attached effect");
+            assert!(sim.deploy_mcv(
+                mcv,
+                &rules,
+                None,
+                crate::sim::world::FrameEffects::default()
+            ));
+            let yard = only_entity(&sim, "YAREFN");
+            assert_eq!(instances(&sim, yard), expected, "deploy transfer ({allow})");
+            sim.substrate
+                .entities
+                .get_mut(yard)
+                .unwrap()
+                .finish_building_construction_for_test();
+            assert!(sim.undeploy_building(
+                yard,
+                &rules,
+                None,
+                crate::sim::world::FrameEffects::default()
+            ));
+            sim.substrate
+                .entities
+                .get_mut(yard)
+                .unwrap()
+                .finish_pack_up_for_test();
+            sim.advance_tick(&[], Some(&rules), None, None, 22);
+            let unit = only_entity(&sim, "SMIN");
+            assert_eq!(
+                instances(&sim, unit),
+                expected,
+                "undeploy transfer ({allow})"
+            );
+        }
     }
 
     /// The initial delay gates everything, then the duration counts down and a
