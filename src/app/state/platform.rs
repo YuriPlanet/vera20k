@@ -30,7 +30,8 @@ pub(crate) struct PlatformState {
     pub(crate) window: Arc<Window>,
     /// Whether the OS cursor is clipped to the window rectangle
     /// edge-scroll lock), so it cannot leave the game while the player scrolls
-    /// the map. On by default, by default; the cursor-lock hotkey flips it,
+    /// the map. Off until startup copies the player's saved `LockCursor`
+    /// choice (off by default); the cursor-lock hotkey flips it,
     /// and `apply_cursor_confinement` re-applies it on every focus regain because
     /// the OS drops the clip on alt-tab. Presentation-only — never serialized or
     /// read by the deterministic simulation.
@@ -125,7 +126,7 @@ impl PlatformState {
             .is_some_and(|config| config.gameplay.pause_on_focus_loss);
         Self {
             window,
-            cursor_confined: true,
+            cursor_confined: false,
             pointer_held: std::cell::Cell::new(false),
             pointer_in_client: true,
             os_cursor_visible: None,

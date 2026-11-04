@@ -57,7 +57,7 @@ version occupies exactly 50 characters. If a version changes width (for example,
 configurations before retrying. See Inno's
 [resource writer](https://github.com/jrsoftware/issrc/blob/is-7_1_0/Projects/Src/Compiler.ExeUpdateFunc.pas)
 and [version resources](https://github.com/jrsoftware/issrc/blob/is-7_1_0/Projects/Src/Setup.version.rc).
-The installer can keep its visible `VERA` name. ZIP archives
+The installer's visible name (`AppName`) is not matched. ZIP archives
 contain the files directly at their root, as GitHub's artifact upload creates
 them. See [SignPath's GitHub integration](https://docs.signpath.io/trusted-build-systems/github)
 and [artifact configuration reference](https://docs.signpath.io/artifact-configuration/reference).

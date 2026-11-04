@@ -86,9 +86,8 @@ pub(crate) const DEVELOPER_OPTIONS_LABEL: &str = "Developer Options";
 pub(crate) const WOL_TEST_SERVICE_LABEL: &str = "Offline Internet Test Service";
 pub(crate) const WOL_TEST_SERVICE_HELP: &str =
     "Internet opens with stand-in servers, lobbies and players, for testing its screens.";
-pub(crate) const SKIP_STARTUP_LOGO_LABEL: &str = "Skip Startup Logo";
-pub(crate) const SKIP_STARTUP_LOGO_HELP: &str =
-    "Start without the logo movie; the loading screen still shows. Applies at the next start.";
+pub(crate) const SKIP_INTRO_LABEL: &str = "Skip Intro";
+pub(crate) const SKIP_INTRO_HELP: &str = "Start straight at the main menu, without the logo, the splash picture or the first-start intro movie. Applies at the next start.";
 pub(crate) const FPS_COUNTER_LABEL: &str = "FPS Counter";
 pub(crate) const FPS_COUNTER_HELP: &str = "Show frames per second in the top-left corner. Off at every start; Ctrl+Alt+F also switches it.";
 /// VERA's end-game switches, the pair of `[EndGameScreens]` presentation
@@ -594,7 +593,7 @@ pub(crate) enum LauncherCheckboxId {
     FpsCounter,
     /// VERA's developer box: the next launch skips `Init_Game`'s logo movie
     /// (`0x0052C5E2`); the splash and the first-run intro still play.
-    SkipStartupLogo,
+    SkipIntro,
     /// VERA's box: the score page draws the country's own victory or defeat
     /// picture from `[EndGameScreens]` instead of the side's `MP*SCRN` art. On
     /// by default — a rules set that names pictures shows them — and it covers
@@ -652,7 +651,7 @@ pub(crate) enum LauncherOptionsEvent {
     LockCursorChanged(bool),
     VeraIconChanged(bool),
     FpsCounterChanged(bool),
-    SkipStartupLogoChanged(bool),
+    SkipIntroChanged(bool),
     CustomEndGameBannerChanged(bool),
     CustomEndGameScoreChanged(bool),
     CustomEndGameMovieChanged(bool),
@@ -705,7 +704,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) wol_test_service: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
     pub(crate) fps_counter: bool,
-    pub(crate) skip_startup_logo: bool,
+    pub(crate) skip_intro: bool,
     /// The country's own end-game picture is allowed; see
     /// [`LauncherCheckboxId::CustomEndGameBanner`].
     pub(crate) custom_end_game_banner: bool,
@@ -743,15 +742,15 @@ impl Default for LauncherOptionsValues {
             render_interpolation: false,
             mouse_wheel_zoom: false,
             right_click_orders: false,
-            lock_cursor: true,
+            lock_cursor: false,
             vera_icon: false,
             shift_queue: false,
             wol_test_service: false,
             fps_counter: false,
-            skip_startup_logo: false,
-            custom_end_game_banner: true,
-            custom_end_game_score: true,
-            custom_end_game_movie: true,
+            skip_intro: false,
+            custom_end_game_banner: false,
+            custom_end_game_score: false,
+            custom_end_game_movie: false,
             sidebar: SidebarSize::Normal,
             health_bars: HealthBarMode::Vanilla,
             house_color_position: 0,
@@ -1119,7 +1118,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::LockCursor => &mut self.values.lock_cursor,
             LauncherCheckboxId::VeraIcon => &mut self.values.vera_icon,
             LauncherCheckboxId::FpsCounter => &mut self.values.fps_counter,
-            LauncherCheckboxId::SkipStartupLogo => &mut self.values.skip_startup_logo,
+            LauncherCheckboxId::SkipIntro => &mut self.values.skip_intro,
             LauncherCheckboxId::CustomEndGameBanner => &mut self.values.custom_end_game_banner,
             LauncherCheckboxId::CustomEndGameScore => &mut self.values.custom_end_game_score,
             LauncherCheckboxId::CustomEndGameMovie => &mut self.values.custom_end_game_movie,
@@ -1162,9 +1161,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::FpsCounter => self
                 .pending_events
                 .push(LauncherOptionsEvent::FpsCounterChanged(checked)),
-            LauncherCheckboxId::SkipStartupLogo => self
+            LauncherCheckboxId::SkipIntro => self
                 .pending_events
-                .push(LauncherOptionsEvent::SkipStartupLogoChanged(checked)),
+                .push(LauncherOptionsEvent::SkipIntroChanged(checked)),
             LauncherCheckboxId::CustomEndGameBanner => self
                 .pending_events
                 .push(LauncherOptionsEvent::CustomEndGameBannerChanged(checked)),
