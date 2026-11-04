@@ -10724,7 +10724,7 @@ impl RuleSet {
 ///
 /// Registry sections use numbered keys: `0=E1`, `1=E2`, ...
 /// Returns empty Vec if the section doesn't exist.
-fn parse_registry(ini: &IniFile, section_name: &str) -> Vec<String> {
+pub(crate) fn parse_registry(ini: &IniFile, section_name: &str) -> Vec<String> {
     match ini.section(section_name) {
         Some(section) => {
             // Every caller consumes NativeRulesRegistryState::finish's

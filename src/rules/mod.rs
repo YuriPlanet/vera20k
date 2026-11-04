@@ -143,6 +143,8 @@ pub mod phobos_placement_preview;
 #[cfg(feature = "phobos")]
 pub mod phobos_crit;
 #[cfg(feature = "phobos")]
+pub mod phobos_laser_trail;
+#[cfg(feature = "phobos")]
 pub mod phobos_power_plant_enhancer;
 #[cfg(feature = "phobos")]
 pub mod phobos_selection_flash;

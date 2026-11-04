@@ -1493,6 +1493,10 @@ fn techno_common_steps(
     // phase and the animation check for every AttachEffect on this object.
     #[cfg(feature = "phobos")]
     sim.update_phobos_attach_effects_with(id, rules, effects, overlay_registry);
+    // Phobos `TechnoExt::UpdateLaserTrails` (`Body.Update.cpp:526`), reached
+    // from the building and foot AI hooks; the shared techno phase owns it.
+    #[cfg(feature = "phobos")]
+    sim.update_phobos_laser_trails(id, rules);
     #[cfg(feature = "ares")]
     sim.update_ares_operator_operability(id, rules, effects);
     // Installed6F9E50 ->1004B320 owns delayed Building reactivation before
