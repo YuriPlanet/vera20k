@@ -984,8 +984,8 @@ fn a_left_out_retry_recursions_stays_a_retry() {
 }
 
 /// Drive's no-queue arm in a retry recursion (Process_Movement(0, 0)) waits
-/// the same way: without an answer, and after the outer call took the
-/// frame's.
+/// the same way, as a retry recursion: without an answer, and after the outer
+/// call took the frame's.
 #[test]
 fn a_drive_retry_recursion_waits_after_the_frames_answer() {
     use super::super::track_fresh::ProcessMovementArgs;
@@ -1011,7 +1011,7 @@ fn a_drive_retry_recursion_waits_after_the_frames_answer() {
     process(&mut sim, retry);
     assert_eq!(
         sim.path_batch.as_ref().unwrap().pending,
-        [(tank, WaitingRequest::NoQueue)],
+        [(tank, WaitingRequest::RetryRecursion)],
         "without an answer the recursion waits"
     );
 
@@ -1027,8 +1027,59 @@ fn a_drive_retry_recursion_waits_after_the_frames_answer() {
     foot.navigation.path_runtime_mut().start_movement(frame, 0);
     process(&mut sim, retry);
     let batch = sim.path_batch.as_ref().unwrap();
-    assert_eq!(batch.pending.last(), Some(&(tank, WaitingRequest::NoQueue)));
+    assert_eq!(
+        batch.pending.last(),
+        Some(&(tank, WaitingRequest::RetryRecursion))
+    );
     assert_eq!(batch.used, [1, 0], "the recursion did not search");
+}
+
+/// The request that takes a Drive retry recursion's answer resumes with the
+/// retry spent. An enemy that takes the route's first cell after the search
+/// refuses the unarmed tank (code 7, Unit 0x0073FB71..0x0073FB90), and with
+/// the retry spent it stops (0x4B3C26..0x4B3C62) instead of retrying again
+/// (0x4B3BF6..0x4B3C21, then 0x4B4541).
+#[test]
+fn a_drive_retry_recursion_answer_resumes_with_the_retry_spent() {
+    use super::super::track_fresh::ProcessMovementArgs;
+    use super::super::track_process::TrackFamily;
+    let rules = rules();
+    let (mut sim, _) = arena(&rules);
+    let tank = spawn(&mut sim, &rules, "TANK", (10, 10));
+    send(&mut sim, &rules, tank, (12, 10));
+    rolling(&mut sim, tank, EAST);
+    sim.batch_path_searches();
+    let process = |sim: &mut Simulation, args| {
+        sim.run_track_process_movement(
+            tank,
+            TrackFamily::Drive,
+            args,
+            &rules,
+            None,
+            FrameEffects::default(),
+        )
+        .expect("Process_Movement runs");
+    };
+    let retry = ProcessMovementArgs {
+        allow_retry: false,
+        force_single: false,
+    };
+    process(&mut sim, retry);
+    assert_eq!(
+        sim.path_batch.as_ref().unwrap().pending,
+        [(tank, WaitingRequest::RetryRecursion)]
+    );
+
+    sim.answer_batched_path_searches(&rules, None);
+    sim.spawn_object_at_height("STUCK", "Russians", 11, 10, 0, 0, &rules)
+        .expect("spawns");
+    process(&mut sim, ProcessMovementArgs::OUTER);
+    let foot = sim.substrate.entities.get(tank).unwrap();
+    assert_eq!(foot.navigation.nav_com(), None, "the refused step stops it");
+    assert!(
+        sim.path_batch.as_ref().unwrap().pending.is_empty(),
+        "no retry waits"
+    );
 }
 
 /// Over the cap a pass takes the registrations from the next turn on,

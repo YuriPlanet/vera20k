@@ -232,17 +232,31 @@ impl Simulation {
         // recursion's (the retries at 0x4B397F, 0x4B4480 and the 0x4B4541
         // tail, the second stage's re-entries at 0x4B41B3 and 0x4B420B),
         // unless it is the Foot's first request in a frame the batch answered.
-        // A request for the Foot's own cell never waits.
+        // A retry's recursion, argument 2 clear (Drive 0x4B397F, 0x4B4480,
+        // 0x4B4552; Ship 0x6A2FCE, 0x6A3AAC, 0x6A3B7E), registers as one, and
+        // the request that takes its answer resumes with the retry spent, as
+        // the recursion runs. A request for the Foot's own cell never waits.
+        let resumes_recursion = self.answers_retry_recursion(id);
+        let waiting = if call.args.allow_retry {
+            super::path_batch::WaitingRequest::NoQueue
+        } else {
+            super::path_batch::WaitingRequest::RetryRecursion
+        };
         if Self::defer_path_search(
             &mut self.path_batch,
             &self.resolved_terrain,
             &self.overlay_grid,
             &self.substrate.entities,
             id,
-            super::path_batch::WaitingRequest::NoQueue,
+            waiting,
         ) {
             return Ok(false);
         }
+        let call = &if resumes_recursion {
+            call.with_args(ProcessMovementArgs::RETRY)
+        } else {
+            *call
+        };
         let request = self.track_path_request(call, destination, 0)?;
         match self.run_track_path_request(
             &request,

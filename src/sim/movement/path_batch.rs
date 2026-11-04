@@ -39,22 +39,23 @@
 //! whose next cell refuses it stands that frame with its head cleared and
 //! re-paths the next, where native re-paths and usually steps at once, and a
 //! Foot whose new route is blocked at its first step by a moving friendly
-//! re-paths a frame later. Walk's recursion registers as such
-//! ([`WaitingRequest::RetryRecursion`]), and the request that takes its answer
-//! resumes with the retry spent, as the recursion (Process argument 0) runs:
-//! a step refused again takes the argument-0 arms, such as code 6's stop
-//! within CloseEnough of the destination (0x75B725..0x75B836), instead of
-//! retrying every frame. A recursion a capped pass leaves out stays one
-//! through the Foot's registrations, as a left-out code-2 re-path keeps its
-//! urgency. The request that takes the answer resumes with the retry spent
-//! even when the Foot was given a new destination in between, which native's
+//! re-paths a frame later. A retry's recursion registers as such
+//! ([`WaitingRequest::RetryRecursion`]), Walk's (Process argument 0) and
+//! Drive/Ship's (Process_Movement(0, 0)), and the request that takes its
+//! answer resumes with the retry spent, as the recursion runs: a step refused
+//! again takes the argument-0 arms, such as code 6's stop within CloseEnough
+//! of the destination (Walk 0x75B725..0x75B836, Drive 0x4B3742..0x4B38A1) or
+//! Drive's code-7 stop (0x4B3C26), instead of retrying every frame. A
+//! recursion a capped pass leaves out stays one through the Foot's
+//! registrations, as a left-out code-2 re-path keeps its urgency. The
+//! request that takes the answer resumes with the retry spent even when the
+//! Foot was given a new destination in between, which native's
 //! same-frame recursion never meets; its retry would usually reach the same
-//! arm. Residual: Drive/Ship re-entries (Process_Movement(0, 0)) register as
-//! plain no-queue requests, so the next frame's Process_Movement retries
-//! again. A vehicle's own path search prices a cell a stationary friendly
-//! holds at code 6, so that re-path usually routes round the refusal or fails
-//! and stops it; a refusal that outlasts it, not yet seen in a run, would
-//! repeat every frame and hold a team waiting on the vehicle (#3768).
+//! arm. Residual: Drive/Ship's second-stage code-4/5 re-entry keeps argument
+//! 2, passes argument 3 = 1 and clears the path first (Drive 0x4B41F7, Ship
+//! 0x6A3823); when its request waits, the answer resumes with argument 3
+//! clear, so the new route's first track may turn where the recursion's
+//! would run straight.
 //! Hover's own timer-gated Find_Path is not batched.
 //! The batch draws no random numbers; later draws follow the changed
 //! movement. Each search reads only that frame-start world, so no result
@@ -397,10 +398,12 @@ pub(crate) enum WaitingRequest {
     /// A code-2 ladder's re-path, at the urgency the ladder asked; see the
     /// module docs.
     Code2Ladder { urgency: u8 },
-    /// The no-queue request of Walk's refused-step retry recursion
+    /// The no-queue request of a refused-step retry recursion: Walk's
     /// (`WalkLocomotionClass::Process(0)` at 0x75B716, 0x75BABB and
-    /// 0x75BC04): the request that takes its answer resumes with the retry
-    /// spent; see the module docs.
+    /// 0x75BC04) or Drive/Ship's (`Process_Movement(0, 0)` at 0x4B397F,
+    /// 0x4B4480 and 0x4B4552; Ship 0x6A2FCE, 0x6A3AAC and 0x6A3B7E): the
+    /// request that takes its answer resumes with the retry spent; see the
+    /// module docs.
     RetryRecursion,
 }
 
@@ -602,8 +605,8 @@ impl Simulation {
         true
     }
 
-    /// Whether `id`'s next request this frame takes the answer to a Walk
-    /// retry recursion, and so resumes with the retry spent.
+    /// Whether `id`'s next request this frame takes the answer to a retry
+    /// recursion, and so resumes with the retry spent.
     pub(super) fn answers_retry_recursion(&self, id: u64) -> bool {
         self.path_batch
             .as_ref()
