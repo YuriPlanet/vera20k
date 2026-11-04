@@ -17,6 +17,12 @@ game files, so you'll need your own copy of Red Alert 2: Yuri's Revenge.
 
 VERA20K is made by gamers, for gamers, and gamers have the final say in where it goes.
 
+**We need more maintainers.** If you'd like to help review PRs, guide new contributors or look
+after part of the engine, say so on [Discord](https://discord.gg/kmjRUn5m5F) or in the QQ
+group (1097193563).
+
+**Don't be afraid to send a PR.** It doesn't have to be perfect; we'll help with the rest.
+
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K skirmish setup screen and in-game view" width="100%">
 
 ## Project goals
