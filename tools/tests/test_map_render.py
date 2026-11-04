@@ -74,6 +74,10 @@ class MapRenderTests(unittest.TestCase):
         red = [(index // 3 % 480, index // 3 // 480) for index in range(0, len(marked), 3) if marked[index]]
         self.assertEqual(red, [(0, 0), (0, 1)])
 
+    def test_overlapping_markers_part_about_their_midpoint_and_others_stay(self):
+        self.assertEqual(map_render.spread([(10, 10), (12, 10), (100, 100)], 20), [(1, 10), (21, 10), (100, 100)])
+        self.assertEqual(map_render.spread([(5, 5), (5, 5)], 20), [(-5, 5), (15, 5)])
+
 
 if __name__ == '__main__':
     unittest.main()
