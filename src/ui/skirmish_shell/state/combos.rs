@@ -441,9 +441,12 @@ pub fn combo_enabled(
     maps: &[MapMenuEntry],
     id: SkirmishComboId,
 ) -> bool {
-    if !player_row_visible(state, maps, combo_player_row(id)) {
-        return false;
-    }
+    player_row_visible(state, maps, combo_player_row(id)) && combo_open(state, id)
+}
+
+/// Whether the combo takes a pick wherever its row shows: the row's player
+/// type and the mode's `AlliesAllowed` decide.
+pub(super) fn combo_open(state: &SkirmishShellState, id: SkirmishComboId) -> bool {
     match id {
         SkirmishComboId::AiType(_) => true,
         SkirmishComboId::Side(0) | SkirmishComboId::Color(0) | SkirmishComboId::Start(0) => true,

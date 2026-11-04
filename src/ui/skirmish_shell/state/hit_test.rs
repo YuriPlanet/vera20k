@@ -157,6 +157,12 @@ pub fn status_help_key_for_hover(target: SkirmishHoverTarget) -> Option<&'static
         SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::ChooseMap0x5aa) => {
             Some("STT:SkirmishButtonChooseMap")
         }
+        SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::SaveSetup) => {
+            Some("VERA:SaveSetupHelp")
+        }
+        SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::LoadSetup) => {
+            Some("VERA:LoadSetupHelp")
+        }
         SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::Back0x5c0) => {
             Some("STT:SkirmishButtonBack")
         }
@@ -343,6 +349,8 @@ pub fn action_for_owner_draw_button(button: OwnerDrawButton) -> SkirmishShellAct
     match button {
         OwnerDrawButton::StartGame0x617 => SkirmishShellAction::StartGame,
         OwnerDrawButton::ChooseMap0x5aa => SkirmishShellAction::ChooseMap,
+        OwnerDrawButton::SaveSetup => SkirmishShellAction::SaveSetup,
+        OwnerDrawButton::LoadSetup => SkirmishShellAction::LoadSetup,
         OwnerDrawButton::Back0x5c0 => SkirmishShellAction::BackOrExit,
     }
 }
@@ -357,6 +365,12 @@ pub fn hit_test_owner_draw_button(
     }
     if layout.choose_map_button.contains(x, y) {
         return Some(OwnerDrawButton::ChooseMap0x5aa);
+    }
+    if layout.save_setup_button.contains(x, y) {
+        return Some(OwnerDrawButton::SaveSetup);
+    }
+    if layout.load_setup_button.contains(x, y) {
+        return Some(OwnerDrawButton::LoadSetup);
     }
     if layout.back_button.contains(x, y) {
         return Some(OwnerDrawButton::Back0x5c0);
@@ -398,6 +412,9 @@ pub fn apply_action(
         SkirmishShellAction::StartGame => SkirmishShellAction::StartGame,
         SkirmishShellAction::BackOrExit => SkirmishShellAction::BackOrExit,
         SkirmishShellAction::ChooseMap => SkirmishShellAction::ChooseMap,
+        // The app owns the saved setups.
+        SkirmishShellAction::SaveSetup => SkirmishShellAction::SaveSetup,
+        SkirmishShellAction::LoadSetup => SkirmishShellAction::LoadSetup,
         SkirmishShellAction::SelectMap(idx) => {
             accept_selected_map(state, maps, idx);
             SkirmishShellAction::None
