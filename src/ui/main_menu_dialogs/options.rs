@@ -743,7 +743,7 @@ impl Default for LauncherOptionsValues {
             render_interpolation: false,
             mouse_wheel_zoom: false,
             right_click_orders: false,
-            lock_cursor: true,
+            lock_cursor: false,
             vera_icon: false,
             shift_queue: false,
             wol_test_service: false,

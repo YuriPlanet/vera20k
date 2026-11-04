@@ -1803,16 +1803,15 @@ mod tests {
             let mut state = vera_state();
             let rect = checkbox(&layout, id);
             assert_eq!(state.shell_checkbox_label(id), label);
-            // Off until the player ticks it; the cursor lock starts on.
-            let initially = id == LockCursor;
-            assert_eq!(state.shell_checkbox_checked(id), initially, "{id:?}");
+            // Off until the player ticks it, the cursor lock included.
+            assert!(!state.shell_checkbox_checked(id), "{id:?}");
             state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
-            assert_eq!(state.shell_checkbox_checked(id), !initially, "{id:?}");
+            assert!(state.shell_checkbox_checked(id), "{id:?}");
             assert_eq!(
                 state.drain_output().events,
                 [
                     LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
-                    event(!initially)
+                    event(true)
                 ],
                 "{id:?}"
             );

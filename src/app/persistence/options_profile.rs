@@ -143,8 +143,8 @@ pub(crate) struct RetailOptionsProfile {
     /// `[VERA] RightClickOrders=`: left selects, right issues context orders.
     /// VERA-only input preference; off by default.
     pub(crate) right_click_orders: bool,
-    /// `[VERA] LockCursor=`: keep the pointer inside the game window. On
-    /// unless the player turns it off.
+    /// `[VERA] LockCursor=`: keep the pointer inside the game window. Off
+    /// unless the player turns it on, so a new install leaves the pointer free.
     pub(crate) lock_cursor: bool,
     /// `[VERA] VeraIcon=`: the window, taskbar and Dock show VERA's artwork
     /// instead of Red Alert 2's red star. Off by default; the installed
@@ -306,7 +306,7 @@ impl Default for RetailOptionsProfile {
             render_interpolation: false,
             mouse_wheel_zoom: false,
             right_click_orders: false,
-            lock_cursor: true,
+            lock_cursor: false,
             vera_icon: false,
             window_maximized: false,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
@@ -1625,18 +1625,18 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         let unset = RetailOptionsProfile::default().transform_settings(b"");
         let unset = load_snapshot(&startup, &unset).retained_profile;
         assert_eq!(unset.window_placement, None);
-        // The lock starts on, a window starts unmaximised and its icon is the
+        // The lock starts off, a window starts unmaximised and its icon is the
         // red star; all three round-trip.
-        assert!(unset.lock_cursor && !unset.window_maximized && !unset.vera_icon);
+        assert!(!unset.lock_cursor && !unset.window_maximized && !unset.vera_icon);
         let changed = RetailOptionsProfile {
-            lock_cursor: false,
+            lock_cursor: true,
             window_maximized: true,
             vera_icon: true,
             ..RetailOptionsProfile::default()
         }
         .transform_settings(b"");
         let changed = load_snapshot(&startup, &changed).retained_profile;
-        assert!(!changed.lock_cursor && changed.window_maximized && changed.vera_icon);
+        assert!(changed.lock_cursor && changed.window_maximized && changed.vera_icon);
     }
 
     #[test]
