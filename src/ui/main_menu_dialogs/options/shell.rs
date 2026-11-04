@@ -19,7 +19,7 @@ use super::{
     ORIGINAL_SHAPE_LABEL, OptionsDialogState, OptionsPage, PhysicalControlFrame,
     RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP,
     RIGHT_CLICK_ORDERS_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
-    SKIP_STARTUP_LOGO_HELP, SKIP_STARTUP_LOGO_LABEL, SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL,
+    SKIP_INTRO_HELP, SKIP_INTRO_LABEL, SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL,
     VERA_OPTIONS_HELP, VERA_OPTIONS_LABEL, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL,
     YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
@@ -293,7 +293,7 @@ impl LauncherOptionsLayout {
                     // 130 would wrap them onto a second line the 10 DLU height
                     // clips. 150 leaves ~124 px of text, enough for 23.
                     (LauncherCheckboxId::FpsCounter, dlu(93, 187, 130, 10)),
-                    (LauncherCheckboxId::SkipStartupLogo, dlu(93, 200, 130, 10)),
+                    (LauncherCheckboxId::SkipIntro, dlu(93, 200, 130, 10)),
                     (
                         LauncherCheckboxId::CustomEndGameBanner,
                         dlu(93, 213, 150, 10),
@@ -521,7 +521,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
             LauncherCheckboxId::WolTestService => WOL_TEST_SERVICE_LABEL,
             LauncherCheckboxId::FpsCounter => FPS_COUNTER_LABEL,
-            LauncherCheckboxId::SkipStartupLogo => SKIP_STARTUP_LOGO_LABEL,
+            LauncherCheckboxId::SkipIntro => SKIP_INTRO_LABEL,
             LauncherCheckboxId::CustomEndGameBanner => CUSTOM_END_GAME_BANNER_LABEL,
             LauncherCheckboxId::CustomEndGameScore => CUSTOM_END_GAME_SCORE_LABEL,
             LauncherCheckboxId::CustomEndGameMovie => CUSTOM_END_GAME_MOVIE_LABEL,
@@ -579,7 +579,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
             LauncherCheckboxId::WolTestService => self.values.wol_test_service,
             LauncherCheckboxId::FpsCounter => self.values.fps_counter,
-            LauncherCheckboxId::SkipStartupLogo => self.values.skip_startup_logo,
+            LauncherCheckboxId::SkipIntro => self.values.skip_intro,
             LauncherCheckboxId::CustomEndGameBanner => self.values.custom_end_game_banner,
             LauncherCheckboxId::CustomEndGameScore => self.values.custom_end_game_score,
             LauncherCheckboxId::CustomEndGameMovie => self.values.custom_end_game_movie,
@@ -801,9 +801,7 @@ impl OptionsDialogState {
                     LauncherStatusHelp::Text(WOL_TEST_SERVICE_HELP)
                 }
                 LauncherCheckboxId::FpsCounter => LauncherStatusHelp::Text(FPS_COUNTER_HELP),
-                LauncherCheckboxId::SkipStartupLogo => {
-                    LauncherStatusHelp::Text(SKIP_STARTUP_LOGO_HELP)
-                }
+                LauncherCheckboxId::SkipIntro => LauncherStatusHelp::Text(SKIP_INTRO_HELP),
                 LauncherCheckboxId::CustomEndGameBanner => {
                     LauncherStatusHelp::Text(CUSTOM_END_GAME_BANNER_HELP)
                 }
@@ -1223,7 +1221,7 @@ mod tests {
             (RightClickOrders, ui, developer),
             (VeraIcon, ui, developer),
             (FpsCounter, developer, accessibility),
-            (SkipStartupLogo, developer, accessibility),
+            (SkipIntro, developer, accessibility),
             (CustomEndGameBanner, developer, accessibility),
             (CustomEndGameScore, developer, accessibility),
             (CustomEndGameMovie, developer, accessibility),
@@ -1393,7 +1391,7 @@ mod tests {
             (RightClickOrders, RIGHT_CLICK_ORDERS_HELP),
             (VeraIcon, VERA_ICON_HELP),
             (FpsCounter, FPS_COUNTER_HELP),
-            (SkipStartupLogo, SKIP_STARTUP_LOGO_HELP),
+            (SkipIntro, SKIP_INTRO_HELP),
             (CustomEndGameBanner, CUSTOM_END_GAME_BANNER_HELP),
             (CustomEndGameScore, CUSTOM_END_GAME_SCORE_HELP),
             (CustomEndGameMovie, CUSTOM_END_GAME_MOVIE_HELP),
@@ -1795,9 +1793,9 @@ mod tests {
                 LauncherOptionsEvent::FpsCounterChanged,
             ),
             (
-                SkipStartupLogo,
-                SKIP_STARTUP_LOGO_LABEL,
-                LauncherOptionsEvent::SkipStartupLogoChanged,
+                SkipIntro,
+                SKIP_INTRO_LABEL,
+                LauncherOptionsEvent::SkipIntroChanged,
             ),
         ] {
             let mut state = vera_state();
@@ -1818,48 +1816,46 @@ mod tests {
         }
     }
 
-    /// The three end-game boxes are the VERA boxes that start ticked: a stock
-    /// profile plays and draws whatever a rules set names, so the player's
-    /// first click turns that override off rather than on. Each publishes its
-    /// own event and leaves the other two alone.
+    /// The three end-game boxes start unticked like every VERA box. Each
+    /// publishes its own event and leaves the other two alone.
     #[test]
-    fn the_end_game_boxes_start_ticked_and_publish_their_own_event() {
+    fn the_end_game_boxes_start_unticked_and_publish_their_own_event() {
         use LauncherCheckboxId::{CustomEndGameBanner, CustomEndGameMovie, CustomEndGameScore};
         let layout = vera_layout();
-        for (id, label, off) in [
+        for (id, label, on) in [
             (
                 CustomEndGameBanner,
                 CUSTOM_END_GAME_BANNER_LABEL,
-                LauncherOptionsEvent::CustomEndGameBannerChanged(false),
+                LauncherOptionsEvent::CustomEndGameBannerChanged(true),
             ),
             (
                 CustomEndGameScore,
                 CUSTOM_END_GAME_SCORE_LABEL,
-                LauncherOptionsEvent::CustomEndGameScoreChanged(false),
+                LauncherOptionsEvent::CustomEndGameScoreChanged(true),
             ),
             (
                 CustomEndGameMovie,
                 CUSTOM_END_GAME_MOVIE_LABEL,
-                LauncherOptionsEvent::CustomEndGameMovieChanged(false),
+                LauncherOptionsEvent::CustomEndGameMovieChanged(true),
             ),
         ] {
             // A fresh page per box: each click is the player's first, and the
             // boxes must not remember each other's state.
             let mut state = vera_state();
             assert_eq!(state.shell_checkbox_label(id), label);
-            assert!(state.shell_checkbox_checked(id), "{id:?} starts ticked");
+            assert!(!state.shell_checkbox_checked(id), "{id:?} starts unticked");
             let rect = checkbox(&layout, id);
             state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
-            assert!(!state.shell_checkbox_checked(id), "{id:?} unticked");
+            assert!(state.shell_checkbox_checked(id), "{id:?} ticked");
             assert_eq!(
                 state.drain_output().events,
-                [LauncherOptionsEvent::Cue(LauncherCue::Checkbox), off],
+                [LauncherOptionsEvent::Cue(LauncherCue::Checkbox), on],
                 "{id:?}"
             );
             for other in [CustomEndGameBanner, CustomEndGameScore, CustomEndGameMovie] {
                 if other != id {
                     assert!(
-                        state.shell_checkbox_checked(other),
+                        !state.shell_checkbox_checked(other),
                         "{id:?}'s click left {other:?} alone"
                     );
                 }
@@ -1925,15 +1921,15 @@ mod tests {
                 .iter()
                 .all(|(id, _)| *id != LauncherCheckboxId::WolTestService)
         );
-        // The developer rows hold FPS and Skip Startup Logo only.
+        // The developer rows hold FPS and Skip Intro only.
         for (id, event) in [
             (
                 LauncherCheckboxId::FpsCounter,
                 LauncherOptionsEvent::FpsCounterChanged(true),
             ),
             (
-                LauncherCheckboxId::SkipStartupLogo,
-                LauncherOptionsEvent::SkipStartupLogoChanged(true),
+                LauncherCheckboxId::SkipIntro,
+                LauncherOptionsEvent::SkipIntroChanged(true),
             ),
         ] {
             let rect = checkbox(&layout, id);
