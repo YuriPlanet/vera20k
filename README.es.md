@@ -29,6 +29,8 @@ palabra sobre su rumbo.
 3. Incorporar funciones ya conocidas de otros RTS y algunas nunca vistas.
 4. Cliente multijugador integrado
 
+Consulta la [hoja de ruta](https://github.com/orgs/YuriPlanet/projects/1) para conocer las prioridades actuales y los planes futuros.
+
 ## Estado actual
 
 **En desarrollo activo.**
