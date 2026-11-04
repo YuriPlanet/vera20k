@@ -461,6 +461,8 @@ pub struct WolCreateGameLayout {
     /// VERA's online popup's Room name caption and edit, a row above the
     /// password.
     pub name: Option<(RectPx, RectPx)>,
+    /// VERA's online popup's Ranked game box, below Allow spectators.
+    pub ranked: Option<RectPx>,
     pub ok: RectPx,
     pub cancel: RectPx,
     /// Its own status line `0x695`.
@@ -477,9 +479,9 @@ const ONLINE_STATUS_INSET: i32 = 10;
 
 /// `online` is VERA's online lobby on Red Alert 2's box art: no clan or
 /// observer box (the lobby's own Observe box still seats an observer); Room
-/// name, Password, Limit Screen Resolution, Max players and Allow spectators
-/// in the field column clear of the art's Tesla Trooper, and the status line
-/// inside the frame.
+/// name, Password, Limit Screen Resolution, Max players, Allow spectators and
+/// Ranked game in the field column clear of the art's Tesla Trooper, and the
+/// status line inside the frame.
 pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> WolCreateGameLayout {
     let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
@@ -497,6 +499,7 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
         observe: Some(observe),
         room: None,
         name: None,
+        ranked: None,
         ok: child(33, 128, 83, 15),
         cancel: child(184, 128, 83, 15),
         status,
@@ -504,8 +507,8 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
     if !online {
         return layout;
     }
-    // Room name and Password, then the three option rows at the native
-    // 17-unit pitch, centred between the art's top edge and the status line.
+    // Room name and Password, then the four option rows at the native
+    // 17-unit pitch, and the buttons a row lower than the native box's.
     let row = |y| child(133, y, 140, 12);
     let caption = |y| child(11, y + 1, 113, 12);
     let password_label = caption(58);
@@ -524,8 +527,9 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
             check(113),
         )),
         name: Some((caption(40), new_edit_window(row(40)))),
-        ok: child(33, 135, 83, 15),
-        cancel: child(184, 135, 83, 15),
+        ranked: Some(check(130)),
+        ok: child(33, 152, 83, 15),
+        cancel: child(184, 152, 83, 15),
         status: RectPx::new(
             dialog.x + ONLINE_STATUS_INSET,
             status.y,
@@ -565,6 +569,7 @@ pub fn wol_create_game_layout_on(
                 spectators: s(room.spectators),
             }),
         name: base.name.map(|(label, edit)| (s(label), s(edit))),
+        ranked: base.ranked.map(s),
         ok: s(base.ok),
         cancel: s(base.cancel),
         status: s(base.status),
@@ -1127,6 +1132,14 @@ mod tests {
         // Limit sits between the password field and the buttons.
         assert!(online.limit.y >= online.password.y + online.password.h);
         assert!(online.limit.y + online.limit.h <= online.ok.y);
+        // Ranked game sits below Allow spectators, above the buttons, which
+        // stay above the status line.
+        let ranked = online.ranked.unwrap();
+        let spectators = online.room.unwrap().spectators;
+        assert!(inside(ranked), "{ranked:?}");
+        assert!(ranked.y >= spectators.y + spectators.h);
+        assert!(ranked.y + ranked.h <= online.ok.y);
+        assert!(online.ok.y + online.ok.h <= online.status.y);
     }
 
     #[test]

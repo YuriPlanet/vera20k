@@ -647,6 +647,24 @@ pub(crate) fn paint_wol_lobby_popup(
                     scale,
                 );
             }
+            if let (Some(ranked), Some(rect)) = (create.ranked, layout.ranked) {
+                paint_control(
+                    &mut paint.controls,
+                    &atlas.control_chrome(),
+                    ControlPaint::Checkbox {
+                        rect,
+                        checked: ranked,
+                    },
+                    scale,
+                );
+                labels.push(PaintLabel {
+                    text: "Ranked game".to_owned().into(),
+                    rect: crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
+                    align: ShellAlign::V_CENTER,
+                    rgb: SHELL_LABEL_TEXT_RGB,
+                    path_a_reveal: None,
+                });
+            }
             if let (Some(edit), Some((label, rect))) = (&create.name, layout.name) {
                 labels.push(PaintLabel {
                     text: "Room name".to_owned().into(),

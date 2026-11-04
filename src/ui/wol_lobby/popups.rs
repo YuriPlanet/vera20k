@@ -22,6 +22,8 @@ pub(crate) const CREATE_LIMIT: u16 = 0x71E;
 pub(crate) const CREATE_OBSERVE: u16 = 0x71F;
 /// VERA's online popup's Room name edit (no gamemd control).
 pub(crate) const CREATE_NAME: u16 = 0x7FF0;
+/// VERA's online popup's Ranked game box (no gamemd control).
+pub(crate) const CREATE_RANKED: u16 = 0x7FF1;
 
 /// The Room name edit's limit: a nickname's 24, in units below `0x100`.
 const ROOM_NAME_LIMIT: usize = 24;
@@ -53,6 +55,8 @@ pub(crate) enum WolPopupAction {
         room: Option<RoomLimits>,
         /// VERA's online popup's Room name, trimmed and not empty.
         name: Option<String>,
+        /// VERA's online popup's Ranked game.
+        ranked: Option<bool>,
     },
     CreateCancelled,
     PasswordConfirmed(String),
@@ -83,6 +87,8 @@ pub(crate) struct WolCreateGame {
     pub(crate) limit_enabled: bool,
     pub(crate) observe: bool,
     pub(crate) room: Option<RoomLimitsPicker>,
+    /// VERA's Ranked game: whether the lobby may rank the room's games.
+    pub(crate) ranked: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -101,16 +107,16 @@ impl WolLobbyPopup {
     /// `0x0078DB70`'s `0x497`. `screen_width` is Options' ScreenWidth
     /// (`[0xA8EB84]`); `limit` the process byte `[0xA8B540]`, already cleared
     /// by `0x00789B60` at 1024 or wider; `clan_id` `[0xB77DE4]`; `room` the
-    /// host's last limits and room name in VERA's online lobby.
+    /// host's last limits, room name and Ranked game in VERA's online lobby.
     pub(crate) fn create(
         screen_width: i32,
         limit: bool,
         clan_id: i32,
         observe: bool,
-        room: Option<(RoomLimits, &str)>,
+        room: Option<(RoomLimits, &str, bool)>,
     ) -> Self {
         let narrow = screen_width < 1024;
-        let name = room.map(|(_, name)| {
+        let name = room.map(|(_, name, _)| {
             let mut edit = SavedSeedDescriptionEdit {
                 focused: true,
                 ..Default::default()
@@ -129,7 +135,8 @@ impl WolLobbyPopup {
                 limit: limit && narrow,
                 limit_enabled: narrow,
                 observe,
-                room: room.map(|(limits, _)| RoomLimitsPicker::new(limits)),
+                room: room.map(|(limits, _, _)| RoomLimitsPicker::new(limits)),
+                ranked: room.map(|(_, _, ranked)| ranked),
             }),
             buttons: ShellButtonInteraction::default(),
         }
@@ -218,6 +225,9 @@ impl WolLobbyPopup {
             CREATE_LIMIT => {
                 matches!(&self.kind, WolPopupKind::Create(create) if create.limit_enabled)
             }
+            CREATE_RANKED => {
+                matches!(&self.kind, WolPopupKind::Create(create) if create.ranked.is_some())
+            }
             _ => true,
         }
     }
@@ -238,6 +248,10 @@ impl WolLobbyPopup {
             CREATE_CLAN => &mut create.clan,
             CREATE_LIMIT => &mut create.limit,
             CREATE_OBSERVE => &mut create.observe,
+            CREATE_RANKED => match create.ranked.as_mut() {
+                Some(ranked) => ranked,
+                None => return false,
+            },
             _ => return false,
         };
         *value = !*value;
@@ -258,6 +272,7 @@ impl WolLobbyPopup {
                 observe: create.observe,
                 room: create.room.as_ref().map(|room| room.limits),
                 name: self.room_name(),
+                ranked: create.ranked,
             },
             (WolPopupKind::Create(_), POPUP_CANCEL) => WolPopupAction::CreateCancelled,
             (WolPopupKind::Password(_), POPUP_OK) => WolPopupAction::PasswordConfirmed(password),
@@ -333,11 +348,21 @@ mod tests {
             spectators: false,
         };
         let mut modern =
-            WolLobbyPopup::create(1024, false, 0, false, Some((limits, "Boris's game")));
+            WolLobbyPopup::create(1024, false, 0, false, Some((limits, "Boris's game", true)));
         assert!(matches!(
             modern.activate(POPUP_OK),
-            Some(WolPopupAction::CreateConfirmed { room: Some(room), .. }) if room == limits
+            Some(WolPopupAction::CreateConfirmed { room: Some(room), ranked: Some(true), .. }) if room == limits
         ));
+        // Its Ranked game box toggles; the native popup has none.
+        assert!(modern.toggle(CREATE_RANKED));
+        assert!(matches!(
+            modern.activate(POPUP_OK),
+            Some(WolPopupAction::CreateConfirmed {
+                ranked: Some(false),
+                ..
+            })
+        ));
+        assert!(!wide.clone().toggle(CREATE_RANKED));
     }
 
     #[test]
@@ -360,6 +385,7 @@ mod tests {
                 observe: false,
                 room: None,
                 name: None,
+                ranked: None,
             })
         );
         let mut password = WolLobbyPopup::password();
@@ -380,7 +406,7 @@ mod tests {
             false,
             0,
             false,
-            Some((RoomLimits::default(), "Boris's game")),
+            Some((RoomLimits::default(), "Boris's game", true)),
         );
         for _ in 0.."Boris's game".len() {
             popup.edit_key(LanEditKey::Backspace);
