@@ -1,4 +1,4 @@
-**/target/
+﻿**/target/
 **/__pycache__/
 **/*.py[co]
 **/graphify-out/
@@ -41,6 +41,7 @@ Thumbs.db
 !/docs/capabilities.md
 !/docs/wasm.md
 !/docs/ares.md
+!/docs/android.md
 !/docs/ares-side-defaults.md
 !/docs/ares-country-presentation.md
 !/docs/ares-country-paradrop.md

@@ -1,9 +1,9 @@
 # Android build
 
-**Status: skeleton, not yet built.** The Rust entry, the Gradle project and the
-manifest exist so the shape is reviewable; nothing here has been compiled for
-Android, and no APK has been produced. The gap list at the bottom is what M0 has
-to close.
+**Status: plays on hardware.** A debug APK builds from this checkout, currently tests on
+an Android 16 arm64 tablet (Oneplus PAD 2 Pro), plays the intro movie, reaches the main menu, and
+imports a retail installation from the system folder picker. The open items at
+the bottom are what still separates it from a release.
 
 ## Layout
 
@@ -11,7 +11,8 @@ to close.
 |---|---|
 | `crates/vera20k-android/` | The cdylib: `android_main`, the working-directory fix, and the hand-off to `vera20k::entry::run_with_loop`. Body is `#![cfg(target_os = "android")]`, so desktop builds compile it empty. |
 | `src/entry.rs` | Start-up shared with the desktop binary: logging, panic hook, banner, event loop, exit status. `main.rs` is now just the CLI switches plus a call into it. |
-| `android/app/` | The only Gradle module: `NativeActivity`, `hasCode="false"`, no Java yet. |
+| `android/app/` | The only Gradle module: `VeraActivity`, `hasCode="true"`. |
+| `android/app/src/main/java/org/vera20k/VeraActivity.kt` | The app's only JVM class, and about as small as it can be: it starts the system folder picker, receives its answer, and copies the chosen tree. A Storage Access Framework tree is readable only through `ContentResolver`, so this cannot be Rust. |
 | `android/app/src/main/jniLibs/` | Where `cargo ndk -o` writes `libvera20k_android.so`. Generated, git-ignored. |
 
 The library name must stay in sync: the crate is `vera20k-android`, so the
@@ -24,6 +25,8 @@ Prerequisites: `platforms;android-36`, `build-tools;36.x`, `ndk;28.x`,
 `cargo-ndk`, a JDK 17+ that `JAVA_HOME` and `PATH` agree on. The Gradle wrapper
 is committed, so no separate Gradle install is needed — the first `gradlew` run
 downloads the distribution it pins.
+
+Run every command below from the repository root.
 
 ```powershell
 # 0. Once per checkout. AGP only auto-generates a debug keystore at
@@ -60,10 +63,10 @@ for releases.
   GLES-only devices cannot install. Whether to port the existing `webgl`
   fallback to a runtime capability check is P4's call.
 - **`configChanges` covers everything winit handles** so rotation and
-  split-screen arrive as a resize, not an activity rebuild. Rebuilds still
-  happen (locale change, process death under memory pressure) and
-  `android_main` handles the reuse case by finishing instead of building a
-  second event loop.
+  split-screen arrive as a resize, not an activity rebuild. A second activity in
+  the same process cannot work — winit builds one event loop per process — so
+  `android_main` ends the process rather than leaving the new activity on its
+  splash.
 - **No updater, no `MANAGE_EXTERNAL_STORAGE`.** In-app updates are a Play
   violation, and asking for all-files access effectively bars Play distribution.
 
@@ -139,8 +142,7 @@ for releases.
   `Could not initialize native services … Failed to load native library
   'native-platform.dll'`.
 
-## Not startable yet
+## TODO
 
-P2–P11 of the plan (settings and logs in the data directory, asset import,
-lifecycle, touch UI, audio focus, LAN locks, signing, CI). See the plan document
-for the order and acceptance criteria.
+Settings and logs in the data directory, Save/Map files import/export,
+,touch UI, audio focus, LAN locks, CI.
