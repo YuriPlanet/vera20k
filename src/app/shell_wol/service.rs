@@ -1520,8 +1520,8 @@ mod tests {
         let column = ShellSlideKind::WolLogin.column(9, Some(modern));
         assert_eq!(
             (column.top_buttons, column.bottom_button),
-            (4, true),
-            "Delete Account is the fourth"
+            (5, true),
+            "Login, Play as Guest and the three account buttons"
         );
         visit.page = WolPage::Login(Box::new(WolLoginState::open(&mut globals, &[])));
         let native = visit.login().unwrap().policy.page_spec();

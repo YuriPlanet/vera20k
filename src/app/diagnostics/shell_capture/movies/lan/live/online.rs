@@ -768,7 +768,7 @@ impl LiveRoundFlow {
                     App::handle_wol_key(state, Some(KeyCode::Delete), true, None);
                 }
                 App::handle_wol_key(state, None, true, Some(&self.online_config().account));
-                let control = crate::ui::wol_login::LOGIN;
+                let control = crate::ui::wol_login::PLAY_AS_GUEST;
                 ensure!(
                     state
                         .frontend
@@ -776,16 +776,16 @@ impl LiveRoundFlow {
                         .as_ref()
                         .and_then(|visit| visit.login())
                         .is_some_and(|login| login.button_enabled(control)),
-                    "online credentials did not enable login"
+                    "the online username did not enable Play as Guest"
                 );
                 click(
                     state,
                     layout
                         .page
                         .button_rect(control)
-                        .context("online authentication button")?,
+                        .context("Play as Guest button")?,
                 );
-                self.record(frame, "Username submitted through OK");
+                self.record(frame, "Username submitted through Play as Guest");
                 self.phase = RoundPhase::Lobby;
             }
             RoundPhase::Lobby if lobby_ready(state, rendered) => {
