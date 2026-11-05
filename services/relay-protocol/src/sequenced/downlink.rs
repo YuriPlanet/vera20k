@@ -865,6 +865,32 @@ mod tests {
         );
     }
 
+    /// Spec §5.2: a congested reader stays congested until DELAYED has not
+    /// held for 10 s, so neither loss nor JITTERY repeats in that time;
+    /// DELAYED again restarts the 10 s.
+    #[test]
+    fn a_congested_reader_holds_congestion_for_ten_seconds() {
+        let (mut server, _reader) = reader_room(88);
+        fn peer(server: &mut RelayServer) -> &mut Peer {
+            &mut server.rooms.get_mut(&[5; 16]).unwrap().peers[0]
+        }
+        let at = |server: &mut RelayServer, now: u64, delayed: bool| {
+            let reader = peer(server);
+            reader.link.delayed = delayed;
+            (reader.link.jittery, reader.link.loss.lossy) = (true, true);
+            reader.link.last_heard_ms = now;
+            reader.evaluate_reader(now);
+            (reader.link.clock.state, reader.link.piggyback_depth())
+        };
+        assert_eq!(at(&mut server, 1000, true), (LinkState::Congested, 2));
+        // Lossy and JITTERY, but DELAYED 9999 ms ago: still congested.
+        assert_eq!(at(&mut server, 10_999, false), (LinkState::Congested, 2));
+        assert_eq!(at(&mut server, 11_000, false), (LinkState::Lossy, 2));
+        at(&mut server, 12_000, true);
+        assert_eq!(at(&mut server, 21_999, false).0, LinkState::Congested);
+        assert_eq!(at(&mut server, 22_000, false).0, LinkState::Lossy);
+    }
+
     #[test]
     fn queued_ranges_go_first_as_retransmissions() {
         let (mut server, _reader) = reader_room(81);
