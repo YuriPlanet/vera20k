@@ -97,7 +97,7 @@ pub(crate) fn render_multiplayer_setup(
     let wave = exit.or_else(|| state.frontend.shell_first_paint_slide.clone());
     let sliding = wave.is_some();
     if let Some(index) = view.selected_map_index {
-        ensure_map_preview_texture(state, index);
+        ensure_map_preview_texture(state, index, layout.map_preview);
     } else if !view.host {
         super::preview::ensure_received_preview_texture(state);
     } else {

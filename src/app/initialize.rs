@@ -413,8 +413,15 @@ impl App {
         let wanted_display = super::display_target::screen_for(&displays, &options_profile.display);
         let fullscreen = (!capture && !hidden_spawn_window && options_profile.full_screen)
             .then(|| super::display_target::fullscreen_for(&displays, &options_profile.display));
+        // A hidden run's window has a title of its own, so a second launch's
+        // single-instance search (`util::single_instance`) finds the player's.
+        let title = if capture {
+            concat!("VERA20K hidden run ", env!("CARGO_PKG_VERSION"))
+        } else {
+            super::WINDOW_TITLE
+        };
         let mut window_attrs: WindowAttributes = WindowAttributes::default()
-            .with_title(super::WINDOW_TITLE)
+            .with_title(title)
             .with_inner_size(inner_size)
             .with_resizable(!capture)
             .with_fullscreen(fullscreen)
@@ -1155,6 +1162,7 @@ impl App {
                 shell_preview_overlay_registry: None,
                 map_library: Default::default(),
                 login_info: Default::default(),
+                map_pictures: Default::default(),
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 updater: Default::default(),
                 skirmish_shell_state,
@@ -1329,8 +1337,9 @@ impl App {
 /// `RA2_QUICKPLAY=<map>`: VERA-internal authored-map sandbox using the legacy
 /// Battle loader, with one local house and no generated opponents or forces.
 /// The mode is the roster's Battle row, as the skirmish shell would select it;
-/// without one the shortcut does not launch.
-fn quickplay_launch_session(
+/// without one the shortcut does not launch. Map pictures load their map with
+/// it too (`map_picture::session`).
+pub(crate) fn quickplay_launch_session(
     selected_map: String,
     modes: &[crate::skirmish_modes::SkirmishGameMode],
 ) -> Option<crate::skirmish_launch::SkirmishLaunchSession> {

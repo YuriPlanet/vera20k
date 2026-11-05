@@ -142,6 +142,10 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // A battle's next frame sizes the sidebar and scales its art from it.
         self.persistence.options_profile.smooth_sidebar = enabled;
     }
+    fn store_hd_map_previews(&mut self, enabled: bool) {
+        // The next setup screen picks its preview from it.
+        self.persistence.options_profile.hd_map_previews = enabled;
+    }
     fn store_mouse_wheel_zoom(&mut self, enabled: bool) {
         self.persistence.options_profile.mouse_wheel_zoom = enabled;
         if !enabled {

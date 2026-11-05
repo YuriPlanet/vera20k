@@ -439,11 +439,11 @@ impl App {
                 if let Some(session) = self.shell_capture.as_mut() {
                     session.prepare_state(&mut state);
                 }
-                if let Some(session) = self.tactical_capture.as_mut()
+                if let Some(session) = self.hidden_run.as_mut()
                     && let Err(err) = session.prepare_state(&mut state)
                 {
-                    log::error!("Tactical capture preparation failed: {err:#}");
-                    session.fail(format!("tactical capture preparation failed: {err:#}"));
+                    log::error!("The {} could not start: {err:#}", session.name());
+                    session.fail(format!("{} preparation failed: {err:#}", session.name()));
                     event_loop.exit();
                     return;
                 }
@@ -481,7 +481,7 @@ impl App {
                     self.startup_failure = Some(format!("CnCNet initialization failed: {err:#}"));
                 } else if cfg!(not(all(target_arch = "wasm32", target_os = "unknown")))
                     && self.shell_capture.is_none()
-                    && self.tactical_capture.is_none()
+                    && self.hidden_run.is_none()
                 {
                     // A player's launch: say why before the process exits with
                     // a failure status (`finish_capture`). The browser page
@@ -493,8 +493,8 @@ impl App {
                 if let Some(session) = self.shell_capture.as_mut() {
                     session.fail(format!("shell capture initialization failed: {err:#}"));
                 }
-                if let Some(session) = self.tactical_capture.as_mut() {
-                    session.fail(format!("tactical capture initialization failed: {err:#}"));
+                if let Some(session) = self.hidden_run.as_mut() {
+                    session.fail(format!("{} initialization failed: {err:#}", session.name()));
                 }
                 event_loop.exit();
             }
@@ -522,13 +522,12 @@ impl ApplicationHandler for App {
             return;
         }
         log::info!("Application resumed — creating window and GPU context");
-        let capture_dimensions = match (self.shell_capture.as_ref(), self.tactical_capture.as_ref())
-        {
+        let capture_dimensions = match (self.shell_capture.as_ref(), self.hidden_run.as_ref()) {
             (Some(session), None) => Some((session.request().width(), session.request().height())),
-            (None, Some(session)) => Some((session.request().width(), session.request().height())),
+            (None, Some(session)) => Some(session.size()),
             (None, None) => None,
             (Some(_), Some(_)) => {
-                log::error!("Shell and tactical capture modes are mutually exclusive");
+                log::error!("Shell capture and hidden runs are mutually exclusive");
                 event_loop.exit();
                 return;
             }
@@ -594,7 +593,7 @@ impl ApplicationHandler for App {
             Self::remember_window_placement(state);
         }
         let shell_capture_active = self.shell_capture.is_some();
-        let tactical_capture_active = self.tactical_capture.is_some();
+        let hidden_run_active = self.hidden_run.is_some();
         // Set while this call re-dispatches a touch's mouse events: those carry
         // the parked touch cursor, not the hardware pointer.
         let from_touch = self.dispatching_touch;
@@ -606,7 +605,7 @@ impl ApplicationHandler for App {
         #[cfg(not(target_os = "linux"))]
         {
             if !shell_capture_active
-                && !tactical_capture_active
+                && !hidden_run_active
                 && let WindowEvent::Touch(touch) = &event
             {
                 let Some(state) = self.state.as_mut() else {
@@ -711,7 +710,7 @@ impl ApplicationHandler for App {
         // the guards below still own every keyboard/pointer/IME input event.
         // https://github.com/rust-windowing/winit/blob/v0.30.12/src/platform_impl/linux/x11/ime/mod.rs
         #[cfg(target_os = "linux")]
-        if (shell_capture_active || tactical_capture_active)
+        if (shell_capture_active || hidden_run_active)
             && state.platform.window.is_visible() == Some(false)
             && !state.platform.window.has_focus()
             && matches!(&event, WindowEvent::Ime(winit::event::Ime::Disabled))
@@ -719,34 +718,27 @@ impl ApplicationHandler for App {
             return;
         }
 
-        // This checkpoint is driven entirely from `about_to_wait`. Focused
-        // input would contaminate its hidden, no-input production oracle.
-        if tactical_capture_active {
-            let session = self
-                .tactical_capture
-                .as_mut()
-                .expect("tactical capture session exists");
+        // A hidden run is driven entirely from `about_to_wait`. Input would
+        // contaminate a capture's no-input production oracle or move a map
+        // picture's camera, so none is ever dispatched.
+        if hidden_run_active {
+            let session = self.hidden_run.as_mut().expect("hidden run exists");
             match event {
                 WindowEvent::CloseRequested => {
-                    session.fail("tactical-capture window closed before bundle completion");
+                    session.close_requested();
                     event_loop.exit();
                 }
                 WindowEvent::Resized(size) => {
-                    let expected =
-                        PhysicalSize::new(session.request().width(), session.request().height());
-                    if size != expected {
-                        session.fail(format!(
-                            "tactical-capture surface resized to {}x{}, expected {}x{}",
-                            size.width, size.height, expected.width, expected.height
-                        ));
-                        event_loop.exit();
-                    } else {
+                    if session.accepts_size(size) {
                         Self::resize_surface_for_window_size(state, size);
+                    } else {
+                        event_loop.exit();
                     }
                 }
                 WindowEvent::Focused(true) => {
-                    session.record_focus_violation();
-                    event_loop.exit();
+                    if session.reject_focus() {
+                        event_loop.exit();
+                    }
                 }
                 WindowEvent::KeyboardInput { .. }
                 | WindowEvent::ModifiersChanged(_)
@@ -766,8 +758,9 @@ impl ApplicationHandler for App {
                 | WindowEvent::DroppedFile(_)
                 | WindowEvent::HoveredFile(_)
                 | WindowEvent::HoveredFileCancelled => {
-                    session.record_input_violation("window");
-                    event_loop.exit();
+                    if session.reject_input("window") {
+                        event_loop.exit();
+                    }
                 }
                 _ => {}
             }
@@ -1855,7 +1848,7 @@ impl ApplicationHandler for App {
             // the window is focused. Presentation-only, never part of the sim.
             crate::app::input::cursor::reassert_cursor_confinement(state);
             // Captures keep their sealed input; they never ask for an IME.
-            if self.shell_capture.is_none() && self.tactical_capture.is_none() {
+            if self.shell_capture.is_none() && self.hidden_run.is_none() {
                 crate::app::input::ime::sync(state);
             }
             Self::update_saved_seed_browser_scroll(state, false);
@@ -1874,18 +1867,21 @@ impl ApplicationHandler for App {
                 Self::poll_choose_map_scroll(state),
                 Self::poll_skirmish_opponent_scroll(state),
                 // Captures replay sealed input; they never read the library.
-                (self.shell_capture.is_none() && self.tactical_capture.is_none())
+                (self.shell_capture.is_none() && self.hidden_run.is_none())
                     .then(|| crate::app::map_library::poll(state))
                     .flatten(),
                 // Nor the login page's counts and news.
-                (self.shell_capture.is_none() && self.tactical_capture.is_none())
+                (self.shell_capture.is_none() && self.hidden_run.is_none())
                     .then(|| crate::app::shell_wol::login_info::poll(state))
+                    .flatten(),
+                (self.shell_capture.is_none() && self.hidden_run.is_none())
+                    .then(|| crate::app::map_picture::poll(state))
                     .flatten(),
                 Self::poll_campaign(state),
                 Self::campaign_score_animation_deadline(state),
                 // Captures replay sealed input; they never check or ask.
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-                (self.shell_capture.is_none() && self.tactical_capture.is_none())
+                (self.shell_capture.is_none() && self.hidden_run.is_none())
                     .then(|| crate::app::updater::poll(state))
                     .flatten(),
             ]
@@ -1895,7 +1891,7 @@ impl ApplicationHandler for App {
         } else {
             None
         };
-        if self.shell_capture.is_some() || self.tactical_capture.is_some() {
+        if self.shell_capture.is_some() || self.hidden_run.is_some() {
             // A callback already queued by the platform can arrive after the
             // completed one-shot capture requested exit. Never render it again.
             if self
@@ -1903,7 +1899,7 @@ impl ApplicationHandler for App {
                 .as_ref()
                 .is_some_and(|session| session.is_finished())
                 || self
-                    .tactical_capture
+                    .hidden_run
                     .as_ref()
                     .is_some_and(|session| session.is_finished())
             {
@@ -1917,8 +1913,7 @@ impl ApplicationHandler for App {
                 return;
             }
         }
-        if let (Some(state), Some(session)) = (self.state.as_mut(), self.tactical_capture.as_mut())
-        {
+        if let (Some(state), Some(session)) = (self.state.as_mut(), self.hidden_run.as_mut()) {
             let outcome = match Self::render_frame(
                 state,
                 event_loop,
@@ -1928,8 +1923,8 @@ impl ApplicationHandler for App {
             ) {
                 Ok(outcome) => outcome,
                 Err(err) => {
-                    log::error!("Tactical capture render: {err:#}");
-                    session.fail(format!("tactical capture render failed: {err:#}"));
+                    log::error!("The {} could not render: {err:#}", session.name());
+                    session.fail(format!("{} render failed: {err:#}", session.name()));
                     event_loop.exit();
                     return;
                 }
@@ -2096,6 +2091,7 @@ impl ApplicationHandler for App {
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         if let Some(state) = self.state.as_mut() {
             crate::app::match_runtime::sim_tick::flush_replay_log(state);
+            crate::app::map_picture::stop_for_exit(&mut state.frontend.map_pictures);
             // However the game ends (Exit, the close button, Cmd-Q), the
             // next launch opens the window where the player left it.
             if std::mem::take(&mut state.platform.window_placement_unsaved) {

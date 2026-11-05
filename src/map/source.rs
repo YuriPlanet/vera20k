@@ -449,6 +449,17 @@ pub fn load_map_by_name_or_path_with_assets(
     })
 }
 
+/// The file a game of `map_name` would load, chosen as metadata and gameplay
+/// choose it (loose before MIX) but not parsed: its source, whose
+/// `physical_identity` is the file's length and SHA-256.
+pub fn map_source_identity(
+    ra2_dir: &Path,
+    map_name: &str,
+    assets: &AssetManager,
+) -> Result<LoadedMapSource> {
+    load_map_input_with_assets(ra2_dir, map_name, assets, None, |input| Ok(input.source))
+}
+
 pub fn load_map_ini_by_name_or_path_with_assets(
     ra2_dir: &Path,
     map_name: &str,

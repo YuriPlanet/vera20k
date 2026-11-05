@@ -33,7 +33,14 @@ fn main() -> Result<()> {
     // A launch from the macOS app bundle or the Linux AppImage works in the
     // app's data folder. Enter it before the logger opens logs/ there.
     let app_bundle = vera20k::app::app_bundle::enter_data_folder();
-    let log_path = match vera20k::util::logging::init_file_logger("ra2") {
+    // A hidden map-picture run, which the menus start while the game runs,
+    // keeps its own log beside the game's.
+    let log_name = if vera20k::app::map_picture::is_invocation(std::env::args_os().skip(1)) {
+        "map-picture"
+    } else {
+        "ra2"
+    };
+    let log_path = match vera20k::util::logging::init_file_logger(log_name) {
         Ok(path) => {
             eprintln!("Logging to {}", path.display());
             Some(path)
@@ -151,9 +158,12 @@ fn run(app_bundle: bool) -> Result<i32> {
     // window events, input, redraws, lifecycle events.
     let mut builder = EventLoop::builder();
     // A `-SPAWN` test run with its opt-in invisible window (tools/spawn/README.md)
-    // also stays out of the Dock and menu bar.
+    // and a hidden map-picture run also stay out of the Dock and menu bar.
     #[cfg(target_os = "macos")]
     if matches!(
+        &launch_mode,
+        vera20k::app::frontend::launch::AppLaunchMode::MapPicture(_)
+    ) || matches!(
         &launch_mode,
         vera20k::app::frontend::launch::AppLaunchMode::Spawn(_)
     ) && vera20k::app::App::spawn_hidden_window_requested()
@@ -192,6 +202,10 @@ fn run(app_bundle: bool) -> Result<i32> {
         vera20k::app::frontend::launch::AppLaunchMode::TacticalCapture(request) => {
             request.validate_runtime_environment()?;
             vera20k::app::App::new_tactical_capture(request)
+        }
+        vera20k::app::frontend::launch::AppLaunchMode::MapPicture(request) => {
+            vera20k::app::map_picture::watch_lifetime();
+            vera20k::app::App::new_map_picture(request)
         }
     };
     // A panic skips `exiting`, where the match replay is saved. winit stops

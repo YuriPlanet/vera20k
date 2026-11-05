@@ -623,7 +623,7 @@ fn pick_map_ini(archive: &MixArchive, transferred: bool) -> Result<IniFile, MapE
 }
 
 /// Extract the [Map] header fields.
-fn parse_header(ini: &IniFile) -> Result<MapHeader, MapError> {
+pub fn parse_header(ini: &IniFile) -> Result<MapHeader, MapError> {
     let map_section = ini
         .section("Map")
         .ok_or(MapError::MissingSection { name: "Map".into() })?;

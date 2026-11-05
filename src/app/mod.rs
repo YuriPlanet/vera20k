@@ -58,6 +58,7 @@ mod frame;
 pub mod frontend;
 mod game_data_check;
 mod handler;
+mod hidden_run;
 mod in_game;
 mod initialize;
 pub(crate) mod input;
@@ -65,6 +66,7 @@ pub(crate) mod lan_service;
 pub(crate) mod loading;
 pub(crate) mod lua;
 pub(crate) mod map_library;
+pub mod map_picture;
 pub(crate) mod match_audio;
 pub mod match_bootstrap;
 pub(crate) mod match_diagnostics;
@@ -155,8 +157,8 @@ pub struct App {
     state: Option<AppState>,
     pending_initialization: Option<initialize::InitializationJob>,
     shell_capture: Option<crate::app::diagnostics::shell_capture::ShellCaptureSession>,
-    tactical_capture:
-        Option<crate::app::diagnostics::tactical_capture::session::TacticalCaptureSession>,
+    /// A tactical capture or a map picture, which the app drives itself.
+    hidden_run: Option<hidden_run::HiddenRun>,
     /// Render admission for hidden captures; service events may wake earlier.
     capture_render_not_before: Option<Instant>,
     /// Retained until `resumed()` so the profile's pre-window Video read can
@@ -217,7 +219,7 @@ impl App {
             state: None,
             pending_initialization: None,
             shell_capture: None,
-            tactical_capture: None,
+            hidden_run: None,
             capture_render_not_before: None,
             startup_options,
             spawn_request: None,
@@ -238,7 +240,7 @@ impl App {
             shell_capture: Some(
                 crate::app::diagnostics::shell_capture::ShellCaptureSession::new(request),
             ),
-            tactical_capture: None,
+            hidden_run: None,
             capture_render_not_before: None,
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
             spawn_request: None,
@@ -257,13 +259,36 @@ impl App {
             state: None,
             pending_initialization: None,
             shell_capture: None,
-            tactical_capture: Some(
+            hidden_run: Some(hidden_run::HiddenRun::Capture(Box::new(
                 crate::app::diagnostics::tactical_capture::session::TacticalCaptureSession::new(
                     request,
                 ),
-            ),
+            ))),
             capture_render_not_before: None,
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
+            spawn_request: None,
+            spawn_result_path: None,
+            replay_request: None,
+            startup_failure: None,
+            ask_for_game_folder: false,
+            dispatching_touch: false,
+        }
+    }
+
+    /// A hidden map-picture run (`map_picture`), silent: it never opens audio.
+    pub fn new_map_picture(request: crate::app::map_picture::MapPictureRequest) -> Self {
+        Self {
+            state: None,
+            pending_initialization: None,
+            shell_capture: None,
+            hidden_run: Some(hidden_run::HiddenRun::Picture(Box::new(
+                crate::app::map_picture::session::MapPictureSession::new(request),
+            ))),
+            capture_render_not_before: None,
+            startup_options: crate::app::frontend::startup_options::RetailStartupOptions {
+                audio_enabled: false,
+                ..Default::default()
+            },
             spawn_request: None,
             spawn_result_path: None,
             replay_request: None,
@@ -294,7 +319,7 @@ impl App {
         }) {
             anyhow::bail!("{error}");
         }
-        match (self.shell_capture.as_mut(), self.tactical_capture.as_mut()) {
+        match (self.shell_capture.as_mut(), self.hidden_run.as_mut()) {
             (Some(session), None) => session.take_outcome(),
             (None, Some(session)) => session.take_outcome(),
             (None, None) => Ok(()),

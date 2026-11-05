@@ -2993,6 +2993,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "typenum",
  "unicode-ident",
  "vera20k-relay-protocol",
  "wasm-bindgen",

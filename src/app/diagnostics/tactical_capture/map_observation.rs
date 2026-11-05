@@ -90,6 +90,7 @@ impl MapPresentationProfile {
             sidebar: SidebarSize::from_ini_value(self.sidebar),
             hd_radar: self.hd_radar,
             smooth_sidebar: self.smooth_sidebar,
+            map_picture: false,
         };
         crate::app::App::sync_zoom_pass(state);
     }
@@ -609,24 +610,6 @@ pub(crate) struct MapCaptureProfile {
         skip_serializing_if = "Option::is_none"
     )]
     camera_cell: Option<[u16; 2]>,
-    // The tactical view's world top-left instead of camera_cell's centred
-    // cell, clamped like any view change: exact framing, such as one tile of
-    // a whole-map render (tools/map_render.py).
-    #[serde(
-        default,
-        deserialize_with = "deserialize_present",
-        skip_serializing_if = "Option::is_none"
-    )]
-    camera_top_left: Option<[i32; 2]>,
-    // Opt-in start markers in the render evidence: each multiplayer start
-    // waypoint's number, world pixel and marker picture, for whole-map
-    // pictures (tools/map_render.py).
-    #[serde(
-        default,
-        deserialize_with = "deserialize_present",
-        skip_serializing_if = "Option::is_none"
-    )]
-    observe_start_markers: Option<bool>,
     #[serde(
         default,
         deserialize_with = "deserialize_present",
@@ -720,8 +703,6 @@ impl MapCaptureProfile {
                     && self.observe_spawns.is_none()
                     && self.observe_crates.is_none()
                     && self.camera_cell.is_none()
-                    && self.camera_top_left.is_none()
-                    && self.observe_start_markers.is_none()
                     && self.cursor_position.is_none()
                     && self.terrain_cells.is_none()
                     && self.observe_super_weapons.is_none()
@@ -741,10 +722,6 @@ impl MapCaptureProfile {
         ensure!(
             (640..=4096).contains(&self.width) && (480..=4096).contains(&self.height),
             "capture extent must be 640..4096 by 480..4096"
-        );
-        ensure!(
-            self.camera_cell.is_none() || self.camera_top_left.is_none(),
-            "camera_cell and camera_top_left are exclusive"
         );
         if let Some([x, y]) = self.cursor_position {
             ensure!(
@@ -3372,7 +3349,6 @@ impl TacticalCaptureSession {
                 );
             }
             let camera_cell = profile.camera_cell;
-            let camera_top_left = profile.camera_top_left;
             let cursor_position = profile.cursor_position;
             let audio_config = profile.observe_audio.as_ref().map(MapAudioProfile::config);
             let allow_load_segments = profile.allow_load_segments == Some(true);
@@ -3435,12 +3411,6 @@ impl TacticalCaptureSession {
             }
             if let Some([rx, ry]) = camera_cell {
                 crate::app::input::camera::center_camera_on_cell(state, rx, ry);
-            }
-            if let Some([x, y]) = camera_top_left {
-                let (sw, sh) = (state.render_width() as f32, state.render_height() as f32);
-                let input = &mut state.match_state.input;
-                crate::app::input::camera::set_camera_position(input, (x as f32, y as f32));
-                crate::app::input::camera::clamp_camera_to_playable_area(state, sw, sh);
             }
             self.record_map_frame(state)?;
             self.post_l0_started_at = Some(Instant::now());
@@ -4683,14 +4653,6 @@ impl TacticalCaptureSession {
         if profile.cursor_position.is_some() {
             render["cursor_position"] = json!(cursor_position);
         }
-        // Where the battlefield sits in the frame (tactical_viewport_px: its
-        // top-left corner) and the world rectangle the camera can show, so
-        // tiles of a whole-map render can be cropped and placed.
-        let (tactical_w, tactical_h) = crate::app::input::camera::tactical_viewport_size(state);
-        render["tactical_extent"] = json!([tactical_w, tactical_h]);
-        if let Some((x, y, w, h)) = crate::app::input::camera::tactical_view_area(state) {
-            render["view_area"] = json!([x, y, w, h]);
-        }
         Ok((ready, render))
     }
 
@@ -4732,9 +4694,6 @@ impl TacticalCaptureSession {
             .last_render_evidence
             .clone()
             .context("map render evidence absent")?;
-        if profile.value.observe_start_markers == Some(true) {
-            render["start_markers"] = start_marker_evidence(state)?;
-        }
         // Serialize the actual transcript only once, avoiding quadratic work
         // across the up-to-100000-step capture route.
         render["presentation_clock"] = json!({"policy": MAP_PRESENTATION_CLOCK_POLICY,
@@ -4795,49 +4754,6 @@ impl TacticalCaptureSession {
             PublishFault::None,
         )
     }
-}
-
-/// Each multiplayer start waypoint with the mark the skirmish preview draws
-/// for a start (`DrawStartPositions 0x00640710`), for whole-map pictures
-/// (tools/map_render.py): its 1-based number, the world pixel at its cell's
-/// centre on the terrain, and the marker picture with that pixel at `origin`.
-fn start_marker_evidence(state: &AppState) -> Result<Value> {
-    use base64::Engine;
-    let assets = state
-        .process_assets
-        .manager()
-        .context("start markers need the process assets")?;
-    let art = crate::render::skirmish_shell_chrome::start_marker_art(assets)
-        .context("start marker art STARTBUT.SHP is unavailable")?;
-    let font = crate::assets::fnt_file::FntFile::from_bytes(
-        assets
-            .get_ref("GAME.FNT")
-            .context("start marker font GAME.FNT is unavailable")?,
-    )
-    .context("GAME.FNT")?;
-    let view = state
-        .sim_view()
-        .context("start markers lost the simulation")?;
-    let terrain = view
-        .resolved_terrain()
-        .context("start markers lost the terrain")?;
-    let (sub_x, sub_y) = crate::util::lepton::subcell_lepton_offset(None);
-    let mut markers = Vec::new();
-    for (&index, &(rx, ry)) in view.session().mp_start_waypoints() {
-        let cell = terrain
-            .cell(rx, ry)
-            .with_context(|| format!("start waypoint {index} at ({rx}, {ry}) has no cell"))?;
-        let label = (index + 1).to_string();
-        let picture =
-            crate::app::frontend::skirmish_shell_render::start_marker_picture(&art, &font, &label)
-                .with_context(|| format!("GAME.FNT cannot draw start number {label}"))?;
-        let (x, y) = crate::util::lepton::lepton_to_screen(rx, ry, sub_x, sub_y, cell.level);
-        markers.push(json!({"label": label, "anchor": [x as i32, y as i32],
-            "picture": {"size": [picture.width, picture.height],
-                "origin": [picture.origin.0, picture.origin.1],
-                "rgba": base64::engine::general_purpose::STANDARD.encode(&picture.rgba)}}));
-    }
-    Ok(Value::Array(markers))
 }
 
 /// A scene with no voxel demand never builds the unit atlas (the builder keeps
@@ -5848,21 +5764,6 @@ mod tests {
         profile.observe_electric_bolts = Some(false);
         assert!(profile.validate().is_err());
         profile.observe_electric_bolts = None;
-        assert!(profile.validate().is_err());
-    }
-
-    #[test]
-    fn camera_top_left_and_start_markers_are_v2_fields() {
-        let mut profile = example();
-        profile.camera_top_left = Some([-1766, 908]);
-        profile.validate().unwrap();
-        profile.camera_cell = Some([50, 50]);
-        assert!(profile.validate().is_err());
-        profile.camera_cell = None;
-        profile.schema_version = PROFILE_V1.to_owned();
-        assert!(profile.validate().is_err());
-        profile.camera_top_left = None;
-        profile.observe_start_markers = Some(true);
         assert!(profile.validate().is_err());
     }
 
