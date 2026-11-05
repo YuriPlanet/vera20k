@@ -65,6 +65,13 @@ pub struct Scenario {
     /// PULL, over `[from_ms, to_ms)` (adaptive client).
     #[serde(default)]
     pub restoring: Vec<ClientWindow>,
+    /// Start both directions of every client as already measured good,
+    /// through the test-support presets (`ClientSession::
+    /// preset_uplink_measured_good`, `RelayServer::preset_reader_measured_good`
+    /// after each CONFIRM), instead of lossy until the first fold (spec
+    /// §5.4). Only appendix A and judgments that must start good use it.
+    #[serde(default)]
+    pub preset_measured_good: bool,
 }
 
 /// `periodic`: every client serves every 16 ms with its own phase, as the

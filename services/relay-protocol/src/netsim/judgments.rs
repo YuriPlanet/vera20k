@@ -338,7 +338,6 @@ fn j02_a_good_link_sends_each_batch_once_without_copies() {
 /// §4.5, §6.3 row 4, §10.1: on a 40 ms RTT without loss every ACK beats
 /// the RTO (at least 48 ms), so `rto_timeouts` stays 0.
 #[test]
-#[ignore = "A: rto_timeouts counts about one expiry per batch on a lossless 40 ms link (81 for 85 batches) though no batch rides a resend (1.08 UPLINKs per batch); spec §10.1 counts RTO expiries that resent batches"]
 fn j02_a_good_link_never_times_out() {
     let (_, trace) = run(r#"{ "name": "j02-rto", "players": 2,
         "warmup_ms": 0, "duration_ms": 15000, "apm": 300 }"#);
@@ -420,7 +419,6 @@ fn check_copies(trace: &Trace, client: usize) -> Check {
 }
 
 #[test]
-#[ignore = "A: a batch first sent in an UPLINK that stood in for an earlier copy gets no copy of its own 16 ms later (j03 client 1: batch 43 first sent at 8303.8 ms, unacknowledged until 8343, no UPLINK at 8319.8; spec §6.3 row 6)"]
 fn j03_a_lossy_uplink_copies_each_new_batch_16_ms_later() {
     let (_, trace) = run(r#"{ "name": "j03", "players": 2,
         "warmup_ms": 0, "duration_ms": 20000, "apm": 300,
@@ -435,7 +433,6 @@ fn j03_a_lossy_uplink_copies_each_new_batch_16_ms_later() {
 }
 
 #[test]
-#[ignore = "A: after an ordinary UPLINK stands in for a copy, no further copy follows, neither the 32 ms one of the old batch nor the 16 ms one of a batch first sent in it (batches 20, 21 at 4719.8 and 4735.8 ms, both unacknowledged until 4775; spec §6.3 row 6)"]
 fn j03_a_severely_lossy_uplink_copies_at_16_and_32_ms() {
     let (_, trace) = run(r#"{ "name": "j03-severe", "players": 2,
         "warmup_ms": 0, "duration_ms": 20000, "apm": 300,
@@ -1154,7 +1151,6 @@ fn j09_offline_sends_only_probes_and_recovers_from_the_watermark() {
 }
 
 #[test]
-#[ignore = "A: the client judges datagrams sent while offline as lost once the link is back (uplink loss 157‰ after a 5 s outage; spec §5.5 says eval_next skips them)"]
 fn j09_an_outage_adds_no_loss() {
     let (_, trace) = run(r#"{ "name": "j09-loss", "players": 2,
         "warmup_ms": 0, "duration_ms": 12000, "apm": 120,
@@ -1248,7 +1244,6 @@ fn check_congestion(trace: &Trace, client: usize) -> Check {
 }
 
 #[test]
-#[ignore = "A: while congested a new batch goes 32 ms after the previous UPLINK (17615.8 -> 17647.8 ms, batch 87), under the 33 ms of spec §6.3 row 1"]
 fn j10_a_rising_rtt_congests_without_copies_or_repeats() {
     // RTT 40 ms, then 300 ms from 6 s (spec §13.2).
     let (_, trace) = run(r#"{ "name": "j10", "players": 2,
@@ -1294,9 +1289,15 @@ fn j11_a_lost_first_uplink_is_resent_after_one_rto() {
         .expect("a push");
     assert!(push.sent_us >= arrived && push.sent_us <= arrived + 1000);
     // §6.0: once a PACK arrived, the RTO resends stop: the next UPLINK has
-    // another reason (here the watermark's 100 ms interval of row 3).
+    // another reason, here the watermark's interval of §6.3 row 3, which
+    // is `turn_ms` while the uplink is still lossy before its first fold
+    // (§5.4) and 100 ms once good.
     if let Some(third) = ups.get(2) {
-        assert!(third.sent_us >= second.sent_us + 100_000 - 16_000);
+        let lossy = trace
+            .client_stats_at(1, second.sent_us)
+            .is_some_and(|s| s.uplink == LinkState::Lossy);
+        let interval = if lossy { 67_000 } else { 100_000 };
+        assert!(third.sent_us + 16_000 >= second.sent_us + interval);
     }
 }
 
@@ -1522,7 +1523,6 @@ fn smoke_good_idle() {
 }
 
 #[test]
-#[ignore = "A: with 5% loss each way the command p99 is 213.7 ms against 1.5 x 127.7 ms on the good link (spec §13.2); the missing copies of j03 are a likely cause"]
 fn smoke_loss_keeps_latency_within_one_and_a_half_good_links() {
     let (good, good_trace) = run(
         r#"{ "name": "smoke-good-300", "players": 4, "warmup_ms": 2000, "duration_ms": 13000, "apm": 300 }"#,
@@ -1615,7 +1615,6 @@ fn smoke_mixed_room() {
 // --- §5.1 and §13.2: a PING ends the reader's offline state ---
 
 #[test]
-#[ignore = "waits for the adaptive transport implementation: a PING ends the reader's offline state (spec §13.2, A's fix pending)"]
 fn j09_a_ping_ends_the_readers_offline_state() {
     // After a 5 s outage the client's first datagram to arrive is its 2 s
     // PING; §5.1 ends the reader's offline state on any datagram of the
@@ -1677,7 +1676,8 @@ fn check_jitter(trace: &Trace, client: usize, tick_hz: u16) -> Result<bool, Stri
             && let Some(frame) = turn
         {
             if let Some((t_prev, f_prev)) = previous {
-                let d = ms(at - t_prev) - f64::from(frame - f_prev) * 1000.0 / rate;
+                let frames = f64::from(frame) - f64::from(f_prev);
+                let d = ms(at - t_prev) - frames * 1000.0 / rate;
                 j += (d.abs() - j) / 16.0;
                 samples += 1;
                 if samples >= 16 {
@@ -1744,7 +1744,6 @@ fn baseline_scenario(file: &str, name: &str) -> Scenario {
 }
 
 #[test]
-#[ignore = "waits for the adaptive transport implementation: downlink jitter (spec §4.8)"]
 fn jt1_a_jittery_good_link_gets_repeats_and_two_deep_piggyback() {
     // RTT 200 ms ± 50 ms jitter, no loss (spec §13.2).
     let (_, trace) = run(r#"{ "name": "jt1", "players": 2,
@@ -1757,8 +1756,8 @@ fn jt1_a_jittery_good_link_gets_repeats_and_two_deep_piggyback() {
         !check_jitter(&trace, 0, 30).unwrap(),
         "the steady client was JITTERY"
     );
-    // §7.2: JITTERY keeps the reader Good (after the initial lossy state of
-    // §5.4) and makes K = 2 there.
+    // §7.2: a Good and JITTERY reader gets K = 2. (That it stays Good is
+    // jt1b.)
     let ups = uplinks(&trace, 1);
     for (at, c, stats) in &trace.reader_stats {
         if *c != 1 || !stats.subscribed {
@@ -1769,9 +1768,6 @@ fn jt1_a_jittery_good_link_gets_repeats_and_two_deep_piggyback() {
             .filter(|r| r.arrived_us().is_some_and(|arrived| arrived <= *at))
             .max_by_key(|r| r.arrived_us())
             .is_some_and(|r| r.uplink().unwrap().link & 8 != 0);
-        if *at >= downlink_settled_us(&trace, 1) {
-            assert_ne!(stats.downlink, LinkState::Lossy, "at {} ms", ms(*at));
-        }
         if jittery && stats.downlink == LinkState::Good {
             assert_eq!(stats.piggyback_depth, 2, "at {} ms", ms(*at));
         }
@@ -1782,8 +1778,24 @@ fn jt1_a_jittery_good_link_gets_repeats_and_two_deep_piggyback() {
     check_repeats_only_when_lossy(&trace, 1).unwrap();
 }
 
+/// §7.2: JITTERY does not change the reader's state, so a jittery link
+/// without loss stays Good after its initial lossy state (§5.4).
 #[test]
-#[ignore = "waits for the adaptive transport implementation: downlink jitter (spec §4.8)"]
+#[ignore = "spec (c): reordering by more than 3 datagrams under ±50 ms jitter is judged loss (§4.3), and one such datagram per fold passes the 5‰ entry of §5.4, so a lossless jittery reader goes Lossy (jt1 scenario: Lossy at 12110.7 ms, no datagram lost)"]
+fn jt1b_a_lossless_jittery_reader_stays_good() {
+    let (_, trace) = run(r#"{ "name": "jt1", "players": 2,
+        "warmup_ms": 0, "duration_ms": 30000, "apm": 60,
+        "groups": [ { "label": "jittery", "first": 1, "last": 1,
+            "network": { "link": { "delay_ms": 100, "jitter_ms": 50 } } } ] }"#);
+    let settled = downlink_settled_us(&trace, 1);
+    for (at, c, stats) in &trace.reader_stats {
+        if *c == 1 && stats.subscribed && *at >= settled {
+            assert_ne!(stats.downlink, LinkState::Lossy, "at {} ms", ms(*at));
+        }
+    }
+}
+
+#[test]
 fn jt2_a_steady_link_is_not_jittery() {
     let (_, trace) = run(r#"{ "name": "jt2", "players": 2,
         "warmup_ms": 0, "duration_ms": 20000, "apm": 300 }"#);
@@ -1800,7 +1812,7 @@ fn jt2_a_steady_link_is_not_jittery() {
 }
 
 #[test]
-#[ignore = "waits for the adaptive transport implementation: the 5‰ / 2‰ lossy band (spec §5.4)"]
+#[ignore = "spec (c): at 1% loss the 5‰ / 2‰ band flips state (folds of 32 with no loss decay the estimate below 2‰), so every reader spends part of the minute Good without repeats, and its full packs then need PULL: 3.6 hitches a minute against 0.2, p99 140 ms against 127.2"]
 fn jt3_one_percent_loss_in_a_full_room_is_no_worse_than_the_baseline() {
     let scenario = baseline_scenario(
         include_str!("../../netsim/loss-1pct.json"),
@@ -1835,7 +1847,7 @@ fn jt3_one_percent_loss_in_a_full_room_is_no_worse_than_the_baseline() {
 }
 
 #[test]
-#[ignore = "waits for the adaptive transport implementation: downlink jitter (spec §4.8)"]
+#[ignore = "spec (c): ±50 ms jitter each way puts srtt (about 200 ms) at base (about 100 ms) + max(base, 100), so §5.3 judges DELAYED, the reader is Congested and §7.2 sends no repeats though JITTERY: 23 hitches a minute against 14.5 (client 0 ends Congested with 28)"]
 fn jt4_pure_jitter_hitches_no_more_than_the_baseline() {
     let file = include_str!("../../netsim/rtt200-jitter50.json");
     for (name, baseline) in [
@@ -1855,7 +1867,6 @@ fn jt4_pure_jitter_hitches_no_more_than_the_baseline() {
 }
 
 #[test]
-#[ignore = "waits for the adaptive transport implementation: downlink jitter (spec §4.8)"]
 fn jt5_a_congested_jittery_reader_gets_no_repeats() {
     // RTT 40 ms, then 300 ms ± 50 ms from 6 s: DELAYED and jittery at once.
     let (_, trace) = run(r#"{ "name": "jt5", "players": 2,
@@ -1877,7 +1888,6 @@ fn jt5_a_congested_jittery_reader_gets_no_repeats() {
 // --- Spec §5.4: lossy until the first fold ---
 
 #[test]
-#[ignore = "waits for the adaptive transport implementation: the initial lossy state (spec §5.4)"]
 fn j15_each_direction_starts_lossy_until_its_first_fold() {
     let (_, trace) = run(r#"{ "name": "j15", "players": 2,
         "warmup_ms": 0, "duration_ms": 10000, "apm": 300 }"#);

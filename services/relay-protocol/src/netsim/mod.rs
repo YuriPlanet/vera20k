@@ -196,12 +196,15 @@ impl Simulation {
                 generation: 1,
             };
             let signed = ticket.sign(&key).expect("ticket");
-            let session = ClientSession::new(
+            let mut session = ClientSession::new(
                 &signed,
                 *derive_packet_key(&key, &signed).expose_for_https(),
                 PAYLOAD_KEY,
             )
             .expect("client session");
+            if scenario.preset_measured_good {
+                session.preset_uplink_measured_good();
+            }
             let stream = |n: u64| Rng::new(scenario.seed, index as u64 * STREAMS + n);
             let endpoint = SocketAddrV4::new(Ipv4Addr::new(10, 0, 0, source + 1), 40_000);
             endpoints.insert(endpoint, index);
@@ -635,6 +638,12 @@ impl Simulation {
                                 .map(|_| ())
                                 .map_err(|error| format!("{error:?}")),
                         );
+                    }
+                    if result.is_ok()
+                        && self.scenario.preset_measured_good
+                        && inspect::client_datagram(&bytes).is_ok_and(|d| d.kind == "CONFIRM")
+                    {
+                        self.relay.preset_reader_measured_good(ROOM, index as u8);
                     }
                     match result {
                         Ok(output) => {
