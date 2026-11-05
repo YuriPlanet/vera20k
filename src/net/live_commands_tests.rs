@@ -4622,12 +4622,14 @@ fn sequenced_fresh_batch_survives_one_lost_datagram_within_an_rto() {
                 .filter(|(from, _)| *from == first_address)
                 .map(|(_, bytes)| bytes.len())
                 .max();
-            let index = packets
+            // The batch may leave on the next service: wait for it.
+            if let Some(index) = packets
                 .iter()
                 .position(|(from, bytes)| *from == first_address && Some(bytes.len()) == largest)
-                .unwrap();
-            packets.remove(index);
-            lost = true;
+            {
+                packets.remove(index);
+                lost = true;
+            }
         }
         for (from, bytes) in packets {
             for forwarded in relay
