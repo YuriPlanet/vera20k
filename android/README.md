@@ -20,12 +20,20 @@ artifact is `libvera20k_android.so`, and the manifest's
 
 ## Building
 
-Prerequisites (none of this is installed on the machine this was written on):
-`cmdline-tools` with `sdkmanager`, `platforms;android-36`, `build-tools;36.x`,
-`ndk;28.x`, `cargo-ndk`, a JDK 17 or 21 that both `JAVA_HOME` and `PATH` agree
-on, and a Gradle wrapper (see the gap list).
+Prerequisites: `platforms;android-36`, `build-tools;36.x`, `ndk;28.x`,
+`cargo-ndk`, a JDK 17+ that `JAVA_HOME` and `PATH` agree on. The Gradle wrapper
+is committed, so no separate Gradle install is needed — the first `gradlew` run
+downloads the distribution it pins.
 
 ```powershell
+# 0. Once per checkout. AGP only auto-generates a debug keystore at
+#    %USERPROFILE%\.android, and build.gradle.kts points it into the checkout
+#    instead, so it has to be created here. android/.android/ is git-ignored.
+keytool -genkeypair -keystore android\.android\debug.keystore `
+  -storepass android -alias androiddebugkey -keypass android `
+  -keyalg RSA -keysize 2048 -validity 10000 `
+  -dname "CN=Android Debug,O=Android,C=US"
+
 # 1. Native library for one ABI. Shipping strips symbols: an unstripped Rust
 #    .so is commonly 100 MB+.
 #    --platform 26 is required, not cosmetic: cpal's AAudio backend links
@@ -36,7 +44,7 @@ cargo ndk -t arm64-v8a --platform 26 -o android\app\src\main\jniLibs build `
   --profile shipping -p vera20k-android --no-default-features
 
 # 2. Package. Point android\local.properties at the SDK first:
-#    sdk.dir=C\:\\Users\\<you>\\AppData\\Local\\Android\\Sdk
+#    sdk.dir=D\:\\Programming\\android-sdk
 android\gradlew.bat :app:assembleDebug
 ```
 
@@ -59,32 +67,33 @@ for releases.
 - **No updater, no `MANAGE_EXTERNAL_STORAGE`.** In-app updates are a Play
   violation, and asking for all-files access effectively bars Play distribution.
 
-## What M0 still needs
+## What is still open
 
-1. **A Gradle wrapper.** `gradlew`/`gradlew.bat` and
-   `gradle/wrapper/gradle-wrapper.{jar,properties}` are not committed; generate
-   them once with a local Gradle (`gradle wrapper --gradle-version 8.13`) and
-   commit. Until then step 2 above fails.
-2. **A shipping build.** The debug `cargo ndk` build links (verified on
-   aarch64 against NDK 28.2 with `--platform 26`), but carries 257 MB of
-   unstripped symbols. Confirm `--profile shipping` plus `-C strip=symbols`
-   brings it to a shippable size.
-3. **The working directory contract.** `entry::init_logging` opens `logs/`
+1. **A shipping build.** `--profile shipping` plus `-C strip=symbols`, then
+   compare against the debug APK's 37 MB. AGP strips the packaged `.so` already
+   (257 MB on disk became 37 MB inside the APK), so the gain is mostly link time
+   and disk, not download size.
+2. **The working directory contract.** `entry::init_logging` opens `logs/`
    beside the current directory and `util::config` resolves the settings folder
    from `HOME`, which Android does not set. `android_main` only calls
    `set_current_dir(internal_data_path())`; `default_settings_dir` still needs an
    Android branch (P2), and `sim::rng` reads the same paths.
-4. **A first window.** `App::initialize` has never run on Android: expect the
-   surface, `VIEW_FORMATS` and the format-selection code to need work (P4).
+3. **A first window.** No APK has been installed on a device or emulator yet, so
+   `App::initialize` has never run on Android: expect the surface, `VIEW_FORMATS`
+   and the format-selection code to need work (P4).
 
 ## Verified on this machine
 
 - `cargo check -p vera20k -p vera20k-core -p vera20k-android` (host): passes.
-- `cargo ndk -t arm64-v8a --platform 26 ... build`: links `libvera20k_android.so`,
+- `cargo ndk -t arm64-v8a --platform 26 ... build` links `libvera20k_android.so`:
   ELF64 AArch64, `android_main` exported, all LOAD segments 0x4000-aligned, so
-  Android 15's 16 KB page requirement is already met by NDK r28.
+  NDK r28 already satisfies Android 15's 16 KB pages.
+- `gradlew :app:assembleDebug` produces `app-debug.apk` (37.3 MB):
+  `org.vera20k`, versionCode 207, versionName 0.2.7 (read from `Cargo.toml`),
+  minSdk 26, targetSdk 36, native-code `arm64-v8a`. `zipalign -c -P 16` reports
+  the packaged `.so` at 16384-byte alignment and `apksigner verify` passes.
 - Toolchain used: cmdline-tools 23.0, platforms/android-36, build-tools 36.1.0,
-  NDK 28.2.13676358, AGP 8.11.1. Gradle itself has not run yet (no wrapper).
+  NDK 28.2.13676358, AGP 8.11.1, Gradle 8.13, JDK 19.
 
 ## Windows local-build gotchas
 
@@ -93,6 +102,10 @@ for releases.
 - Point `TMP`/`TEMP` at a directory inside the checkout. The Android Clang
   driver otherwise fails `unable to make temporary file: Permission denied`
   while `ring` builds its assembly in parallel.
+- Point `GRADLE_USER_HOME` inside the checkout when `%USERPROFILE%\.gradle` is
+  not writable: Gradle otherwise fails with
+  `Could not initialize native services … Failed to load native library
+  'native-platform.dll'`.
 
 ## Not startable yet
 

@@ -41,6 +41,16 @@ android {
         }
     }
 
+    // The debug keystore AGP generates lives in the checkout, not in
+    // %USERPROFILE%\.android. That folder is not writable in a sandboxed shell
+    // or most CI containers, and validateSigningDebug then fails on
+    // `debug.keystore.lock` after every other task has already succeeded.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = rootProject.file(".android/debug.keystore")
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false

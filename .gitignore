@@ -152,10 +152,12 @@ tools/vendor-eval/
 /tools/telemetry-dashboard/node_modules/
 
 # --- Android (android/) ---
-# Gradle output, the machine-local SDK path, and the native libraries cargo-ndk
-# writes into the APK's jniLibs directory: all generated, none committed.
+# Gradle output, the machine-local SDK path, the generated debug keystore, and
+# the native libraries cargo-ndk writes into the APK's jniLibs directory: all
+# generated, none committed.
 /android/.gradle/
 /android/.kotlin/
+/android/.android/
 /android/local.properties
 /android/**/build/
 /android/app/src/main/jniLibs/
