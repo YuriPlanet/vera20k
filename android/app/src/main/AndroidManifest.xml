@@ -23,7 +23,7 @@
         android:largeHeap="true"
         android:extractNativeLibs="false"
         android:allowBackup="false"
-        android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+        android:theme="@style/Theme.Vera20k">
 
         <!-- NativeActivity loads android.app.lib_name and calls android_main in
              libvera20k_android.so (crates/vera20k-android). configChanges lists
