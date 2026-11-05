@@ -239,6 +239,9 @@ impl CombatLightRenderer {
 
     /// Initialize5FF5AA..5FF727 owns surfaces64..73, driven by Rules+7A8.
     /// This renderer keeps one cache keyed by the effective retained radius.
+    /// RESIDUAL (dormant): native builds them once per process (flag AC1834 set
+    /// at 5FF727, from Init_Game 52BA60), so a map or mode SpotlightRadius never
+    /// reaches them. No retail map or mode sets it.
     pub(crate) fn set_spotlight_radius(&mut self, queue: &wgpu::Queue, radius: i32) {
         if self.spotlight_radius == Some(radius) {
             return;
@@ -662,6 +665,9 @@ fn create_native_mask_texture(device: &wgpu::Device, queue: &wgpu::Queue) -> wgp
 
 /// Build BSurface indices 0..63: draw odd-radius concentric filled circles on
 /// a 256x256 byte surface, then retain every other source scanline.
+/// RESIDUAL (invisible): native copies rows 0xFF wide (0x005FF54B, and
+/// 0x005FF6B5 for the type16 masks), leaving column 255 at 0. Only layer 63
+/// and type16 radii of 127 or more have data there.
 fn build_native_mask_atlas() -> Vec<u8> {
     const SOURCE_HEIGHT: usize = 256;
     let mut atlas =
