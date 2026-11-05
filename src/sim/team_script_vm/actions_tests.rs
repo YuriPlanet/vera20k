@@ -1000,6 +1000,56 @@ fn sound_movie_and_music_actions_play_and_advance() {
     ));
 }
 
+/// Script actions 32 (`0x006E9A74`) and 33 (`0x006E9AAE`) start and end the
+/// Lightning Storm as trigger actions 44 and 45 do, and finish either way
+/// instead of leaving the team stalled.
+#[test]
+fn lightning_storm_actions_start_and_end_the_storm_and_advance() {
+    use crate::sim::superweapon::lightning_storm::LightningStorm;
+    let rules = rules();
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern("Russians");
+    sim.houses
+        .register(HouseState::new(owner, 1, None, false, 0, 10));
+    let script = sim.interner.intern("STORM SCRIPT");
+    sim.team_script_vm.register_script(TeamScriptDefinition {
+        id: script,
+        source: TeamAiDefinitionSource::FixedAimd,
+        actions: [(32, 600), (33, 0), (33, 0), (32, 900)]
+            .map(|(action_id, argument)| TeamScriptAction {
+                action_id,
+                argument,
+            })
+            .to_vec(),
+    });
+    let team = sim.team_script_vm.create_team(owner, script, Vec::new(), 0);
+    {
+        let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
+        state.cursor = -1;
+        state.advance_pending = true;
+    }
+    let deferment = rules.general.lightning_deferment;
+    assert_ne!(deferment, 0);
+    let step = |sim: &mut Simulation| {
+        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.lightning_storm.globals_for_test()
+    };
+    // No storm: the argument becomes the deferred storm's duration.
+    assert_eq!(
+        step(&mut sim),
+        (false, false, deferment, 600, -1, (0, 0), None)
+    );
+    // Only a raging storm takes the end request.
+    assert!(!step(&mut sim).1);
+    sim.lightning_storm = LightningStorm::raging_for_test(owner, (5, 5));
+    assert!(step(&mut sim).1);
+    // A raging storm is not restarted.
+    assert_eq!(step(&mut sim), (true, true, 0, -1, -1, (5, 5), Some(owner)));
+    let state = sim.team_script_vm.team(team).unwrap();
+    assert_eq!(state.cursor(), 3);
+    assert!(state.refusal().is_none());
+}
+
 /// Script34 uses Zone GetCoords, then the same ground/deck owners as the
 /// original camera-coordinate controls. An object Zone keeps its subcell XY.
 #[test]

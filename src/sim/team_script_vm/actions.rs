@@ -154,6 +154,8 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 27
             | 30
             | 31
+            | 32
+            | 33
             | 34
             | 37
             | 38
@@ -824,6 +826,39 @@ impl Simulation {
                     if !called_receiver {
                         break;
                     }
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
+            // Case 32 (`0x006E9A74..0x006E9A9F`), named Ion Storm Start but
+            // the Lightning Storm in YR, like trigger action 44: unless
+            // IsActive `0x0053A100`, Start `0x00539EB0` with the argument as
+            // duration, LightningDeferment (Rules `+0x1794`), the zero cell
+            // `[0x00B0E948]` and no house. Then Team+80=1 either way.
+            32 => {
+                if !crate::sim::superweapon::lightning_storm::raging(self) {
+                    crate::sim::superweapon::lightning_storm::start(
+                        self,
+                        rules,
+                        action.argument,
+                        rules.general.lightning_deferment,
+                        (0, 0),
+                        None,
+                    );
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
+            // Case 33 (`0x006E9AAE..0x006E9AC0`), like trigger action 45: a
+            // raging storm gets Stop `0x0053A090`'s end request. Then
+            // Team+80=1 either way.
+            33 => {
+                if crate::sim::superweapon::lightning_storm::raging(self) {
+                    crate::sim::superweapon::lightning_storm::request_end(
+                        &mut self.lightning_storm,
+                    );
                 }
                 if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
                     team.advance_pending = true;
