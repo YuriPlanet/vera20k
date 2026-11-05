@@ -66,6 +66,10 @@ pub mod audio;
 // The app orchestrator. Public for testing but not intended for direct use.
 pub mod app;
 
+// Process start-up shared by the desktop binary and the Android cdylib, which
+// has no `main` of its own.
+pub mod entry;
+
 // Source-level dependency guards for the domain-boundaries ledger.
 #[cfg(test)]
 mod architecture_guards;

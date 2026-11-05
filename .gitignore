@@ -150,3 +150,12 @@ tools/vendor-eval/
 
 # Dashboard build dependencies; compiled JS is intentionally tracked.
 /tools/telemetry-dashboard/node_modules/
+
+# --- Android (android/) ---
+# Gradle output, the machine-local SDK path, and the native libraries cargo-ndk
+# writes into the APK's jniLibs directory: all generated, none committed.
+/android/.gradle/
+/android/.kotlin/
+/android/local.properties
+/android/**/build/
+/android/app/src/main/jniLibs/

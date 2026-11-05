@@ -2906,6 +2906,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "vera20k-android"
+version = "0.2.7"
+dependencies = [
+ "android-activity",
+ "anyhow",
+ "log",
+ "vera20k",
+ "winit",
+]
+
+[[package]]
 name = "vera20k-core"
 version = "0.2.7"
 dependencies = [
