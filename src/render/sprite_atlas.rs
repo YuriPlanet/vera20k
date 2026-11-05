@@ -281,7 +281,7 @@ fn register_building_anim(
         anim_type,
         resident_count,
         house_color,
-        attached_anim_palette_context(config),
+        anim_frame_context(config, attached_anim_palette_context(config)),
     );
 }
 
@@ -298,10 +298,11 @@ fn insert_building_anim_frame_keys(
             type_id: anim_type.to_string(),
             facing: 0,
             frame,
-            house_color: if palette_context == ShpPaletteContext::GlobalAnim {
-                HouseColorIndex(0)
-            } else {
-                house_color
+            house_color: match palette_context {
+                ShpPaletteContext::GlobalAnim | ShpPaletteContext::AnimPalette => {
+                    HouseColorIndex(0)
+                }
+                _ => house_color,
             },
         });
     }
@@ -323,7 +324,8 @@ pub enum ShpPaletteContext {
     /// AnimType. DrawIt62D015 selects the global ANIM Convert87F6C0.
     Particle,
     /// FoggedObject4D2176 selects the literal ANIM.PAL Convert without
-    /// AnimClass's AltPalette override or a producer-specific palette.
+    /// AnimClass's AltPalette override or a producer-specific palette, and
+    /// so does AnimClass's Tiled column ([`tiled_anim_key`]).
     AnimPalette,
     SelectedScheme,
     Cell,
@@ -401,6 +403,32 @@ pub fn projectile_key(
         } else {
             HouseColorIndex(0)
         },
+    }
+}
+
+/// The key one tile of AnimClass DrawIt's Tiled column draws: the literal
+/// ANIM.PAL Convert (`[0x0087F6C0]`, `0x004236F0`) and no remap
+/// (`0x004236DC`), whatever Convert the instance selected.
+pub(crate) fn tiled_anim_key(type_id: &str, frame: u16) -> ShpSpriteKey {
+    ShpSpriteKey {
+        palette_context: ShpPaletteContext::AnimPalette,
+        type_id: type_id.to_string(),
+        facing: 0,
+        frame,
+        house_color: HouseColorIndex(0),
+    }
+}
+
+/// The palette an AnimType's frames are registered in: a Tiled type's body
+/// draws only through [`tiled_anim_key`], any other through `selected`.
+fn anim_frame_context(
+    config: Option<&art_data::AnimTypeRuntimeConfig>,
+    selected: ShpPaletteContext,
+) -> ShpPaletteContext {
+    if config.is_some_and(|config| config.tiled) {
+        ShpPaletteContext::AnimPalette
+    } else {
+        selected
     }
 }
 
@@ -2366,10 +2394,10 @@ pub(crate) fn prepare_sprite_atlas(
                         && art.is_some_and(|registry| {
                             registry.scheduler_anim_types().contains(&name_upper)
                         });
-                    let shadow = *kind == ShpImageKind::Animation
-                        && art
-                            .and_then(|registry| registry.anim_runtime_config(name))
-                            .is_some_and(|config| config.shadow);
+                    let config = art
+                        .filter(|_| *kind == ShpImageKind::Animation)
+                        .and_then(|registry| registry.anim_runtime_config(name));
+                    let shadow = config.is_some_and(|config| config.shadow);
                     // Keep body timing separate from shadow-frame residency.
                     let count = register_effect_anim_frames(
                         &mut needed,
@@ -2379,7 +2407,7 @@ pub(crate) fn prepare_sprite_atlas(
                         scheduler_owned,
                         shadow,
                         if *kind == ShpImageKind::Animation {
-                            ShpPaletteContext::GlobalAnim
+                            anim_frame_context(config, ShpPaletteContext::GlobalAnim)
                         } else {
                             ShpPaletteContext::Particle
                         },

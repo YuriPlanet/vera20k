@@ -515,17 +515,10 @@ pub(crate) fn build_display_effect_instances(
             }
             continue;
         }
-        // DrawIt423055..42305D resolves the ordinary source as AC + AnimType.Start,
-        // just as the building-slot caller. Special draw arms retain their
-        // existing frame selection until their own renderer is ported, and so
-        // does a HasBounce ground shadow ahead of them, which natively takes
-        // AC + Start in every arm (4233CD). Residual: no retail Tiled type
-        // sets Bouncer=, IsMeteor= or Start=.
-        let start = if super::anim_draw::ordinary_anim_type(config) {
-            config.map_or(0, |config| config.start)
-        } else {
-            0
-        };
+        // DrawIt423055..42305D resolves every arm's source, and the HasBounce
+        // ground shadow's (4233CD), as AC + AnimType.Start, just as the
+        // building-slot caller.
+        let start = config.map_or(0, |config| config.start);
         let Ok(frame) = u16::try_from(anim.runtime().current_frame.wrapping_add(start)) else {
             continue;
         };
@@ -562,8 +555,7 @@ pub(crate) fn build_display_effect_instances(
         // it is not a reason to choose the compatibility material.
         let instance_scheme = remap_color.is_some()
             && !anim.use_cell_drawer()
-            && entry.is_some_and(|entry| entry.source_palette != 0)
-            && super::anim_draw::ordinary_anim_type(config);
+            && entry.is_some_and(|entry| entry.source_palette != 0);
         let tint = if is_parachute || instance_scheme {
             [1.0; 3]
         } else {
@@ -585,16 +577,14 @@ pub(crate) fn build_display_effect_instances(
         // Ordinary DrawIt422CA0 -> 4AED70 carries Convert's selector into
         // the packed RGB565 blitter, rather than alpha-blending the source.
         // Original full draw controls: spatial_oracle/anim_translucency.
-        let (alpha, draw_state) = if (remap_color.is_none() || instance_scheme)
-            && super::anim_draw::ordinary_anim_type(config)
-        {
+        let (alpha, draw_state) = if remap_color.is_none() || instance_scheme {
             (
                 1.0,
                 crate::render::draw_state::DrawState::from_native_selector(0, (flags & 6) as u8),
             )
         } else {
-            // Separate native draw arms and remapped compatibility sources
-            // without native palette metadata retain their existing material.
+            // Remapped compatibility sources without native palette metadata
+            // retain their existing material.
             (anim_translucency_source_alpha(flags), Default::default())
         };
         let (origin_y, world_height) = (input.axis.origin_y, input.axis.world_height);

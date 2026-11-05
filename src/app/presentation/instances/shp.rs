@@ -1864,7 +1864,6 @@ fn emit_building_anims(
         // cloak/offset/effect composition is a separate, unresolved owner.
         // The shared pass builder replaces this material for the shadow.
         let (alpha, draw_state) = if flags & 6 != 0
-            && super::anim_draw::ordinary_anim_type(Some(runtime_config))
             && anim_entry.is_some_and(|entry| entry.source_palette != 0)
             && palette_light.rows() != 0
             && draw_state
