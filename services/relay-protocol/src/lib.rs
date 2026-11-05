@@ -20,15 +20,17 @@ use sha2::Sha256;
 use zeroize::Zeroize;
 
 mod journal;
+mod link;
 #[cfg(any(test, feature = "test-support"))]
 pub mod netsim;
 mod sequenced;
+pub use link::{ClientLinkStats, HopFeedback, LinkState, OrderingGap, ReaderLinkStats, RecvWindow};
 pub use sequenced::federation::{MAX_FEDERATED_RELAYS, sign_federation_roster};
 pub use sequenced::{
     CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY, ORDERING_CERTIFICATE_LEN,
     ORDERING_CERTIFICATE_V2_LEN, ORDERING_PULL_LIMIT, OrderEntry, OrderError, OrderEvent,
     OrderPace, OrderStatus, OrderingCertificate, is_ordering_certificate_len, paced_rates,
-    turn_frames,
+    turn_frames, turn_ms,
 };
 
 type HmacSha256 = Hmac<Sha256>;
