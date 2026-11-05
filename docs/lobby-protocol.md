@@ -584,9 +584,11 @@ sign-in of that name or a remembered sign-in of another account. A `wrong_passwo
 ## Ranked games
 
 While the operator runs a season, the lobby ranks a 1v1 Quick Match pairing played by its
-two players alone, and a game room's match in a mode that lets players ally, with every
-player on one of two teams of the same size (at least two each) whose chances are within
-80/20. Ranked matches have no AI, and every player is signed in to an account.
+two players alone, and a game room's match of at least three players on sides of the same
+size: teams, in a mode that lets players ally, or each player alone, in a mode that does
+not. Three or more teams also need in-game allying off. Every side's chance against every
+other is within 80/20. Ranked matches have no AI, and every player is signed in to an
+account.
 
 A host who unticks Ranked game at Create Game sends `ranked:false` on `create`, and that
 room's games never rank; its odds line says why. A ticked box sends nothing, as a lobby
@@ -605,10 +607,12 @@ played a rated game in it (`season` is `null` and `records` empty when no season
 The game shows them as each player's rank and badge: one lookup fills both its ladder
 and high-score tables.
 
-While a season runs, the host's options for a game room whose players are all on two
-teams give an odds line, which the room hears from the `VERA20k` notice sender each time
-it changes: `Team A 54%, Team B 46%. Ranked.`, or `Unranked:` and why. Quick Match
-rooms get none. In a game room the host's chat line `/balance` is a command, not chat.
+While a season runs, the host's options for a game room whose players are all on teams,
+or in a mode without alliances, give an odds line, which the room hears from the `VERA20k`
+notice sender each time it changes: each side's chance to win, such as
+`Team A 54%, Team B 46%. Ranked.` (a free-for-all names its players), or `Unranked:` and
+why. Quick Match rooms get none. In a game room the host's chat line `/balance` is a
+command, not chat.
 The room hears the two teams with the most even odds on the team ratings, keeping as
 many players on their teams as it can, and the host's game gets a `balance` event with
 every playing human's `team` (0 to 3 for A to D). The host's game moves each named player
