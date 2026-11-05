@@ -105,7 +105,7 @@ pub(crate) fn render_multiplayer_setup(
     } else {
         state.frontend.skirmish_preview_texture = None;
     }
-    let zoom_rect = ensure_zoom_texture(state, scale, !sliding && !view.preview_hidden);
+    let zoom_layout = ensure_zoom_texture(state, scale, !sliding && !view.preview_hidden);
     let heading = localized_label(state, view.page().title_key, view.page().title_key);
     let accept_highlight = state
         .frontend
@@ -497,8 +497,9 @@ pub(crate) fn render_multiplayer_setup(
                             .filter(|entry| !super::preview::is_random_map_sentinel_entry(entry))
                             .and_then(|entry| entry.preview_source_bounds.as_ref())
                     });
-                overlay.zoom =
-                    zoom_rect.map(|fitted| zoom_draws(state, atlas, fitted, bounds, scale));
+                overlay.zoom = zoom_layout
+                    .as_ref()
+                    .map(|zoom_layout| zoom_draws(state, atlas, zoom_layout, bounds, scale));
                 if let Some(bounds) = bounds {
                     let fitted = aspect_fit_rect(layout.map_preview, preview.width, preview.height);
                     let positions = project_preview_start_positions(bounds, fitted);

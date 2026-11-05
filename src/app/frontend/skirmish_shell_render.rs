@@ -635,7 +635,7 @@ fn render_skirmish_shell_with_atlas(
         .or_else(|| choose_map_layout.as_ref().map(|layout| layout.preview))
         .unwrap_or(layout.map_preview);
     ensure_selected_preview_texture(state, preview_rect);
-    let zoom_rect =
+    let zoom_layout =
         ensure_zoom_texture(state, layout.scale, !sliding && !leaving && !message_box_up);
     let selected_entry = state
         .frontend
@@ -662,11 +662,11 @@ fn render_skirmish_shell_with_atlas(
         .zip(fitted_preview_rect)
         .map(|(bounds, rect)| project_preview_start_positions(bounds, rect))
         .unwrap_or_default();
-    let zoom = zoom_rect.map(|fitted| {
+    let zoom = zoom_layout.as_ref().map(|zoom_layout| {
         zoom_draws(
             state,
             atlas,
-            fitted,
+            zoom_layout,
             selected_preview_bounds.filter(|_| !preview_has_baked_start_markers),
             layout.scale,
         )
