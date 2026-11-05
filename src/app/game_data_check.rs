@@ -40,7 +40,9 @@ fn inspect(game_dir: &Path) -> InstallReport {
 
     match CsfFile::load_active(|name| assets.get_ref(name)) {
         Ok((csf, _)) => report.language = Some(csf.language),
-        Err(error) => report.required.push(format!("ra2md.csf: {error}")),
+        Err(error) => report.required.push(format!(
+            "ra2md.csf / ra2md.strings.ini / vera20k.strings.ini string table: {error}"
+        )),
     }
     // Read the startup roots through the production selector, including loose
     // overrides and nested archives. Optional LANGRULE is not a prerequisite.

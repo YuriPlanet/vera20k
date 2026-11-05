@@ -10,11 +10,36 @@
 //! - Repeating label entries: ` LBL` marker, pair count, ASCII label name, then one or more
 //!   string values encoded as bitwise-NOT'd UTF-16-LE.
 //!
+//! ## INI overlays (VERA-only)
+//! gamemd reads no such file. [`CsfFile::load_active`] looks for two optional
+//! author-written INI files through the same asset lookup (a loose file in the
+//! game directory or a MIX entry), in this order:
+//! 1. `ra2md.strings.ini` — hand edits standing in for `ra2md.csf`
+//!    (localisation, corrected copy). The file is VERA's, not retail data.
+//! 2. `vera20k.strings.ini` — VERA20k's own labels, which retail CSF never had.
+//!    Convention: use a `VERA:` prefix. It is applied last so an INI overlay
+//!    that replaces retail text cannot shadow engine-owned labels.
+//!
+//! Both use the same hand-editable format as `crate::i18n`'s language files
+//! ([`crate::assets::string_ini`]): a `[Strings]` section of `Label=Text`
+//! lines, `;` comments, `\n` for a line break. Values are applied *after* the
+//! retail table and any Ares supplements: a label in several sources uses the
+//! last INI value, and a label only in INI is added. Lookup precedence is
+//! `vera20k.strings.ini`, `ra2md.strings.ini`, Ares supplements, `ra2md.csf`,
+//! then VERA's compiled-in `i18n` fallback (`crate::i18n`), which still only
+//! answers labels the table lacks. Labels are matched case-insensitively.
+//! Overlay text is displayed verbatim — unlike binary CSF records it skips the
+//! engine's load-time whitespace normalisation, and there is no `WRTS` extra
+//! field. Missing files leave the table unchanged; an unreadable or malformed
+//! INI is an error naming the file, never a silent fallback. `from_bytes` and
+//! an explicit `asset csf-* --source` read stay raw and never apply either
+//! overlay.
+//!
 //! ## Dependency rules
 //! - Part of assets/ — no dependencies on game modules.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::assets::error::AssetError;
 use crate::util::read_helpers::read_u32_le;
@@ -34,6 +59,12 @@ const STRING_MAGIC: u32 = 0x5354_5220;
 const STRING_EXTRA_MAGIC: u32 = 0x5354_5257;
 /// Minimum file size: 24-byte header.
 const MIN_FILE_SIZE: usize = 24;
+/// Optional VERA-only INI stand-in for hand edits of `ra2md.csf`; gamemd
+/// never reads it. Applied before [`VERA_STRINGS_OVERLAY_NAME`].
+const RA2MD_STRINGS_OVERLAY_NAME: &str = "ra2md.strings.ini";
+/// Optional VERA-only table of labels the retail CSF never had. Applied last,
+/// so engine text wins over both retail and localisation overlays.
+const VERA_STRINGS_OVERLAY_NAME: &str = "vera20k.strings.ini";
 
 /// Parsed CSF string table.
 ///
@@ -148,6 +179,9 @@ impl CsfFile {
     /// The process string table used by both the game and asset diagnostics.
     /// Stock YR loads the md table alone. Installed Ares6BD886->10060DF0
     /// appends its fixed candidates; native controls: tools/rules_oracle/ares_csf.
+    /// The returned names are the layered sources above `ra2md.csf`, in load
+    /// order: admitted Ares supplements, then whichever VERA-only INI
+    /// overlays were found.
     pub fn load_active<'a>(
         mut lookup: impl FnMut(&str) -> Option<&'a [u8]>,
     ) -> Result<(Self, Vec<String>), AssetError> {
@@ -175,10 +209,77 @@ impl CsfFile {
                 admitted.push(name);
             }
         }
-        // Keep the feature-OFF load route unchanged.
-        #[cfg(not(feature = "ares"))]
-        let _ = (&mut table, &mut admitted);
+        // VERA's overlays are applied above the retail table and every Ares
+        // supplement. The engine-owned table goes last so a localisation file
+        // cannot shadow text the engine added for its own UI. A malformed
+        // overlay must not silently fall back: the author needs the reason.
+        for name in [RA2MD_STRINGS_OVERLAY_NAME, VERA_STRINGS_OVERLAY_NAME] {
+            if let Some(bytes) = lookup(name) {
+                let count = table.apply_string_overlay(bytes, name)?;
+                log::info!("CSF: applied {count} overrides from {name}");
+                admitted.push(name.to_string());
+            }
+        }
         Ok((table, admitted))
+    }
+
+    /// Apply one author-written INI overlay on top of the active table.
+    /// Labels are ASCII-uppercased like binary CSF labels. Overlay text is the
+    /// displayed text itself, so `raw` and `value` coincide: the engine's
+    /// load-time whitespace normalisation is a property of binary CSF records.
+    fn apply_string_overlay(&mut self, data: &[u8], name: &str) -> Result<usize, AssetError> {
+        let text = std::str::from_utf8(data).map_err(|err| AssetError::ParseError {
+            format: "INI".to_string(),
+            detail: format!("{name} is not UTF-8: {err}"),
+        })?;
+        let parsed =
+            crate::assets::string_ini::parse(text).map_err(|err| AssetError::ParseError {
+                format: "INI".to_string(),
+                detail: format!("{name}: {err}"),
+            })?;
+        // Normalise before collecting: two INI labels differing only in case
+        // become one label, so both table representations see the same input.
+        let mut overlay = BTreeMap::new();
+        for (key, value) in parsed {
+            overlay.insert(
+                key.clone(),
+                CsfText {
+                    raw: value.clone(),
+                    value,
+                    stored_key: key,
+                },
+            );
+        }
+        let count = overlay.len();
+        match &mut self.entries {
+            CsfEntries::Raw(entries) => {
+                for (key, text) in overlay {
+                    entries.insert(key, Some(text));
+                }
+            }
+            #[cfg(feature = "ares")]
+            CsfEntries::Ares(labels) => {
+                // The native bsearch needs a sorted array. Find the genuinely
+                // new labels first, append them in one pass, sort once, then
+                // write through the very same search the reader uses, so a
+                // duplicate slot resolves to the slot `lookup_text` selects.
+                let missing: Vec<String> = overlay
+                    .iter()
+                    .filter(|(key, _)| native_label_search(labels, key).is_none())
+                    .map(|(key, _)| key.clone())
+                    .collect();
+                for key in missing {
+                    labels.push((key, None));
+                }
+                ares_sort_labels(labels);
+                for (key, text) in overlay {
+                    let slot = native_label_search(labels, &key)
+                        .expect("every overlay label was just inserted");
+                    labels[slot].1 = Some(text);
+                }
+            }
+        }
+        Ok(count)
     }
 
     #[cfg(feature = "ares")]
@@ -622,18 +723,25 @@ fn build_test_csf(label: &str, value: &str) -> Vec<u8> {
     data
 }
 
-/// Authored localization fixture using the CSF owner's binary encoder.
+/// Build a multi-entry CSF file from authored entries. `from_bytes`-level
+/// fixtures (the loader lookups) need the bytes, not a parsed table.
 #[cfg(any(test, feature = "test-support"))]
-pub fn test_csf(entries: &[(&str, &str)]) -> CsfFile {
+fn build_test_csf_table(entries: &[(&str, &str)]) -> Vec<u8> {
     assert!(!entries.is_empty());
     let mut data = build_test_csf(entries[0].0, entries[0].1);
     let count = u32::try_from(entries.len()).unwrap().to_le_bytes();
     data[8..12].copy_from_slice(&count);
     data[12..16].copy_from_slice(&count);
     for &(key, value) in &entries[1..] {
-        data.extend_from_slice(&build_test_csf(key, value)[24..]);
+        data.extend_from_slice(&build_test_csf(key, value)[MIN_FILE_SIZE..]);
     }
-    CsfFile::from_bytes(&data).unwrap()
+    data
+}
+
+/// Authored localization fixture using the CSF owner's binary encoder.
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_csf(entries: &[(&str, &str)]) -> CsfFile {
+    CsfFile::from_bytes(&build_test_csf_table(entries)).unwrap()
 }
 
 #[cfg(test)]
@@ -667,10 +775,7 @@ mod tests {
         version: u32,
         counts: u32,
     ) -> Vec<u8> {
-        let mut data = build_test_csf(entries[0].0, entries[0].1);
-        for &(key, value) in &entries[1..] {
-            data.extend_from_slice(&build_test_csf(key, value)[24..]);
-        }
+        let mut data = build_test_csf_table(entries);
         data[4..8].copy_from_slice(&version.to_le_bytes());
         data[8..12].copy_from_slice(&counts.to_le_bytes());
         data[12..16].copy_from_slice(&counts.to_le_bytes());
@@ -684,7 +789,10 @@ mod tests {
         let extra = build_test_csf("A", "extra");
         let mut requested = Vec::new();
         let (table, admitted) = CsfFile::load_active(|name| {
-            requested.push(name.to_string());
+            // This counts native table lookups; VERA's own overlays are not one.
+            if name != RA2MD_STRINGS_OVERLAY_NAME && name != VERA_STRINGS_OVERLAY_NAME {
+                requested.push(name.to_string());
+            }
             match name {
                 "ra2md.csf" => Some(base.as_slice()),
                 "stringtable00.csf" => Some(extra.as_slice()),
@@ -709,6 +817,167 @@ mod tests {
             CsfFile::load_active(|_| None).is_err(),
             "base table is required in both profiles"
         );
+    }
+
+    #[test]
+    fn ini_overlay_wins_over_retail_and_keeps_unmentioned_labels() {
+        let base = build_test_csf_table(&[
+            ("NAME:MTNK", "Grizzly Battle Tank"),
+            ("KEEP", "retail keep"),
+        ]);
+        // `;` comments, the `[Strings]` section and an unquoted `:` label are
+        // the authoring format; a printf specifier stays literal.
+        let overlay = "[Strings]\n\
+             ; hand-edited localisation\n\
+             name:mtnk=灰熊坦克\n\
+             ONLY_INI=new label\n\
+             TXT_FORMAT=%s $%d\n";
+        let (table, admitted) = CsfFile::load_active(|name| match name {
+            "ra2md.csf" => Some(base.as_slice()),
+            RA2MD_STRINGS_OVERLAY_NAME => Some(overlay.as_bytes()),
+            _ => None,
+        })
+        .unwrap();
+        assert_eq!(table.get("NAME:MTNK"), Some("灰熊坦克"), "same key wins");
+        assert_eq!(table.get("KEEP"), Some("retail keep"), "rest stays retail");
+        assert_eq!(table.get("ONLY_INI"), Some("new label"), "new label");
+        assert_eq!(table.get("TXT_FORMAT"), Some("%s $%d"));
+        assert_eq!(
+            table.raw_entry("ONLY_INI"),
+            Some(("ONLY_INI", "new label")),
+            "overlay text is already the displayed form"
+        );
+        assert!(
+            admitted
+                .iter()
+                .any(|name| name == RA2MD_STRINGS_OVERLAY_NAME)
+        );
+
+        let (plain, plain_admitted) = CsfFile::load_active(|name| match name {
+            "ra2md.csf" => Some(base.as_slice()),
+            _ => None,
+        })
+        .unwrap();
+        assert_eq!(plain.get("NAME:MTNK"), Some("Grizzly Battle Tank"));
+        assert!(
+            !plain_admitted
+                .iter()
+                .any(|name| name == RA2MD_STRINGS_OVERLAY_NAME)
+        );
+    }
+
+    #[test]
+    fn malformed_ini_overlay_is_an_error_not_a_silent_fallback() {
+        let base = build_test_csf_table(&[("A", "base")]);
+        let bad: [&[u8]; 3] = [
+            b"[Strings]\nA=1\nNO_SEPARATOR\n",
+            b"[Strings]\n=x\n",
+            b"\xff\xfe",
+        ];
+        for overlay in bad {
+            let err = CsfFile::load_active(|name| match name {
+                "ra2md.csf" => Some(base.as_slice()),
+                RA2MD_STRINGS_OVERLAY_NAME => Some(overlay),
+                _ => None,
+            })
+            .unwrap_err();
+            assert!(err.to_string().contains("INI"), "{err}");
+            assert!(
+                err.to_string().contains(RA2MD_STRINGS_OVERLAY_NAME),
+                "{err}"
+            );
+        }
+        for overlay in ["[Strings]\n", "; nothing here\n"] {
+            let (table, _) = CsfFile::load_active(|name| match name {
+                "ra2md.csf" => Some(base.as_slice()),
+                RA2MD_STRINGS_OVERLAY_NAME => Some(overlay.as_bytes()),
+                _ => None,
+            })
+            .unwrap();
+            assert_eq!(table.get("A"), Some("base"), "an empty overlay is harmless");
+        }
+    }
+
+    #[test]
+    fn vera_ini_wins_over_retail_ini_and_adds_engine_labels() {
+        let base = build_test_csf_table(&[("A", "retail")]);
+        let retail_overlay = "[Strings]\n\
+             A=from ra2md.strings.ini\n\
+             VERA:SHARED=from ra2md.strings.ini\n\
+             RETAIL_ONLY=kept\n";
+        let vera_overlay = "[Strings]\n\
+             ; Engine-owned labels; VERA: is the recommended namespace.\n\
+             VERA:SHARED=engine wins\n\
+             vera:new=added by engine\n";
+        let (table, admitted) = CsfFile::load_active(|name| match name {
+            "ra2md.csf" => Some(base.as_slice()),
+            RA2MD_STRINGS_OVERLAY_NAME => Some(retail_overlay.as_bytes()),
+            VERA_STRINGS_OVERLAY_NAME => Some(vera_overlay.as_bytes()),
+            _ => None,
+        })
+        .unwrap();
+        assert_eq!(table.get("A"), Some("from ra2md.strings.ini"));
+        assert_eq!(table.get("RETAIL_ONLY"), Some("kept"));
+        assert_eq!(
+            table.get("VERA:SHARED"),
+            Some("engine wins"),
+            "vera20k.strings.ini is applied last"
+        );
+        assert_eq!(
+            table.get("VERA:NEW"),
+            Some("added by engine"),
+            "engine labels are new keys and still case-insensitive"
+        );
+        assert_eq!(
+            admitted,
+            [RA2MD_STRINGS_OVERLAY_NAME, VERA_STRINGS_OVERLAY_NAME],
+            "load order is visible to diagnostics"
+        );
+    }
+
+    #[test]
+    fn vera_ini_alone_applies_and_names_bad_files_in_errors() {
+        let base = build_test_csf_table(&[("A", "retail")]);
+        let (table, admitted) = CsfFile::load_active(|name| match name {
+            "ra2md.csf" => Some(base.as_slice()),
+            VERA_STRINGS_OVERLAY_NAME => Some(b"[Strings]\nVERA:ONLY=engine\n".as_slice()),
+            _ => None,
+        })
+        .unwrap();
+        assert_eq!(table.get("A"), Some("retail"), "no retail overlay needed");
+        assert_eq!(table.get("VERA:ONLY"), Some("engine"));
+        assert_eq!(admitted, [VERA_STRINGS_OVERLAY_NAME]);
+
+        let err = CsfFile::load_active(|name| match name {
+            "ra2md.csf" => Some(base.as_slice()),
+            VERA_STRINGS_OVERLAY_NAME => Some(b"[Strings]\nVERA:X\n"),
+            _ => None,
+        })
+        .unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("INI"), "{message}");
+        assert!(
+            message.contains(VERA_STRINGS_OVERLAY_NAME),
+            "the error names the offending file: {message}"
+        );
+    }
+
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ini_overlay_wins_over_ares_supplements() {
+        let base = supplemental_fixture(&[("A", "base"), ("KEEP", "keep")], 0, 3, 2);
+        let extra = supplemental_fixture(&[("A", "ares")], 0, 3, 1);
+        let overlay = "[Strings]\na=ini\nNEW=added\n";
+        let (table, _) = CsfFile::load_active(|name| match name {
+            "ra2md.csf" => Some(base.as_slice()),
+            "stringtable00.csf" => Some(extra.as_slice()),
+            RA2MD_STRINGS_OVERLAY_NAME => Some(overlay.as_bytes()),
+            _ => None,
+        })
+        .unwrap();
+        assert_eq!(table.get("A"), Some("ini"));
+        assert_eq!(table.get("KEEP"), Some("keep"));
+        assert_eq!(table.get("NEW"), Some("added"));
     }
 
     #[cfg(feature = "ares")]
@@ -762,7 +1031,11 @@ mod tests {
             );
             let mut requested = Vec::new();
             let (table, admitted) = CsfFile::load_active(|name| {
-                if name != "ra2md.csf" {
+                // The fixture records native supplement attempts only.
+                if name != "ra2md.csf"
+                    && name != RA2MD_STRINGS_OVERLAY_NAME
+                    && name != VERA_STRINGS_OVERLAY_NAME
+                {
                     requested.push(name.to_string());
                 }
                 files.get(name).map(Vec::as_slice)

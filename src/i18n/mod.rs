@@ -8,6 +8,12 @@
 //! `VERA:` labels. English fills labels that neither the CSF nor the
 //! selected file has, which keeps them readable in a half-translated language.
 //!
+//! VERA's optional INI overlays (`ra2md.strings.ini`, `vera20k.strings.ini`)
+//! are author-editing inputs owned by [`crate::assets::csf_file`], not
+//! translations: they replace table text. This module stays a fallback and
+//! only answers labels the resulting table lacks. Both use the same format
+//! reader, [`crate::assets::string_ini`].
+//!
 //! File format, UTF-8: a `[Strings]` section of `Label=Text` lines; `;`
 //! starts a comment line, `\n` in a text is a line break, and `{name}` marks
 //! a value the caller fills in through [`fill`].
@@ -56,25 +62,10 @@ fn selected_index() -> usize {
 }
 
 fn parse(text: &str) -> HashMap<String, String> {
-    let mut strings = HashMap::new();
-    let mut in_strings = false;
-    for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with(';') {
-            continue;
-        }
-        if let Some(section) = line.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
-            in_strings = section.trim().eq_ignore_ascii_case("Strings");
-            continue;
-        }
-        if let (true, Some((key, value))) = (in_strings, line.split_once('=')) {
-            strings.insert(
-                key.trim().to_ascii_uppercase(),
-                value.trim().replace("\\n", "\n"),
-            );
-        }
-    }
-    strings
+    crate::assets::string_ini::parse(text)
+        .expect("compiled-in vera20k string file is well formed")
+        .into_iter()
+        .collect()
 }
 
 /// Put the selected language behind a freshly loaded CSF. Called by the one

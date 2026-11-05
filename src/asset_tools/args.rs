@@ -180,7 +180,9 @@ palette-for
 
 csf-get / csf-grep
   --source <NAME>      Inspect one raw .csf. Default: the active game table
-                       (ra2md.csf; Ares builds also apply its supplements).
+                       (ra2md.csf; Ares builds also apply its supplements;
+                       then ra2md.strings.ini for retail labels, then
+                       vera20k.strings.ini for VERA20k's own labels).
   --raw                Also report the stored text before normalisation.
   --limit/--offset     Paging. Default limit 50.
 

@@ -26,6 +26,14 @@
 //! string escaping preserves them exactly, so `\n` in the output is a real line
 //! break in the retail string, not a rendering artefact.
 //!
+//! The default active table also carries VERA's two INI overlays, applied in
+//! order: `ra2md.strings.ini` (retail labels) then `vera20k.strings.ini`
+//! (labels VERA20k added, conventionally `VERA:`-prefixed). They win over both
+//! the retail table and Ares supplements, and their stored text equals the
+//! displayed text (no CSF whitespace normalisation). Overlay files appear in
+//! the report's source list via `load_active`'s layered source names, in load
+//! order. `--source` deliberately reads one raw `.csf` instead.
+//!
 //! ## Dependency rules
 //! - Depends on `assets/` (archive resolution, the CSF parser), `util/`
 //!   (byte-widening for label names) and the sibling `locate` / `report`
@@ -186,7 +194,7 @@ fn query_report(
     }
     // Same owner/candidate admission as app/loading/init::load_csf; --source
     // deliberately bypasses composition so individual files remain inspectable.
-    let (csf, admitted) =
+    let (csf, layered_sources) =
         CsfFile::load_active(|name| asset_manager.get_ref(name)).map_err(|error| ErrorReport {
             error: error.to_string(),
             hint: None,
@@ -210,7 +218,7 @@ fn query_report(
             .collect(),
         truncated: false,
     };
-    for name in admitted {
+    for name in layered_sources {
         if let Some(resolved) = crate::asset_tools::locate::locate(asset_manager, &name) {
             table.source.push_str(" + ");
             table.source.push_str(&name);

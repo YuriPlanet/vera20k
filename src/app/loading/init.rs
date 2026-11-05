@@ -2376,16 +2376,18 @@ impl MapLoadInitial {
 pub(crate) fn load_csf(
     asset_manager: &AssetManager,
 ) -> anyhow::Result<crate::assets::csf_file::CsfFile> {
-    let (mut csf, supplements) =
+    let (mut csf, layered_sources) =
         crate::assets::csf_file::CsfFile::load_active(|name| asset_manager.get_ref(name)).map_err(
             |err| match err {
                 crate::assets::error::AssetError::AssetNotFound { .. } => {
                     anyhow::anyhow!("required retail string table ra2md.csf is missing")
                 }
-                err => anyhow::anyhow!("could not parse required ra2md.csf: {err:#}"),
+                err => anyhow::anyhow!(
+                    "could not parse the active string table (ra2md.csf or the ra2md.strings.ini / vera20k.strings.ini overlays): {err:#}"
+                ),
             },
         )?;
-    log::info!("Loaded CSF string table: ra2md.csf; supplements={supplements:?}");
+    log::info!("Loaded CSF string table: ra2md.csf; layered sources={layered_sources:?}");
     crate::i18n::apply(&mut csf);
     Ok(csf)
 }
