@@ -28,12 +28,11 @@ pub(crate) fn fills_window(state: &AppState) -> bool {
     window_takes_fitted_shell(shell_screen_size(state))
 }
 
-/// Only the two sizes gamemd's shell runs at keep the retail layout: 800x600,
-/// and 640x480 with its own 640-wide art (`AllowModeToggle`). Any other window
-/// gets the 800x600 dialog scaled to fit at its own shape, centred. The startup
-/// splash asks by surface size, before the app state exists.
+/// Whether a window of `size` gets the fitted shell
+/// ([`ShellScale::for_window`](crate::ui::shell::geom::ShellScale::for_window)).
+/// The startup splash asks by surface size, before the app state exists.
 pub(crate) fn window_takes_fitted_shell(size: (u32, u32)) -> bool {
-    !matches!(size, (800, 600) | (640, 480))
+    !shell_scale_for_screen(size).is_retail()
 }
 
 /// How much a menu's software cursor grows: with a fitted menu's art, by the
@@ -75,12 +74,7 @@ fn message_box_layout_for_screen(
 }
 
 pub(crate) fn shell_scale_for_screen(size: (u32, u32)) -> crate::ui::shell::geom::ShellScale {
-    use crate::ui::shell::geom::ShellScale;
-    if window_takes_fitted_shell(size) {
-        ShellScale::from_screen(size.0 as i32, size.1 as i32)
-    } else {
-        ShellScale::RETAIL
-    }
+    crate::ui::shell::geom::ShellScale::for_window(size.0 as i32, size.1 as i32)
 }
 
 /// The shared right-panel menu pages (`0x100` Single Player, `0x101` Movies &
@@ -240,14 +234,14 @@ mod tests {
         use crate::ui::shell::geom::RectPx;
         use crate::ui::shell::modal::ModalKind;
         let layout = super::message_box_layout_for_screen(ModalKind::Confirm, (2560, 1600));
-        assert_eq!(layout.dialog, RectPx::new(680, 365, 1202, 870));
-        assert_eq!(layout.ok, RectPx::new(1509, 1037, 336, 67));
+        assert_eq!(layout.dialog, RectPx::new(456, 323, 1202, 869));
+        assert_eq!(layout.ok, RectPx::new(1285, 995, 336, 66));
         let cancel = layout.cancel.unwrap();
-        assert_eq!(cancel, RectPx::new(1509, 1123, 336, 66));
-        assert!(layout.ok.contains(1673, 1071));
-        assert!(cancel.contains(1673, 1156));
-        assert!(!layout.ok.contains(1673, 1156));
-        assert!(!cancel.contains(1673, 1071));
+        assert_eq!(cancel, RectPx::new(1285, 1080, 336, 67));
+        assert!(layout.ok.contains(1453, 1028));
+        assert!(cancel.contains(1453, 1113));
+        assert!(!layout.ok.contains(1453, 1113));
+        assert!(!cancel.contains(1453, 1028));
         for size in [(800, 600), (640, 480)] {
             let layout = super::message_box_layout_for_screen(ModalKind::Confirm, size);
             assert_eq!((layout.dialog.w, layout.dialog.h), (451, 326));

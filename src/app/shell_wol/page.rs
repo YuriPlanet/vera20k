@@ -15,7 +15,8 @@ use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::shell::modal::{
-    WolPageLayout, WolPageReceivedLayout, wol_page_layout, wol_page_received_layout,
+    WolPageLayout, WolPageReceivedLayout, wol_page_layout, wol_page_layout_in,
+    wol_page_received_layout, wol_page_received_layout_in,
 };
 use crate::ui::wol_chat::{self, WolChatLine};
 use crate::ui::wol_page::*;
@@ -23,27 +24,45 @@ use crate::ui::wol_page::*;
 /// `[0x7EEF2C]`: `0x11E`'s own echo.
 const REPLY_COLOR: u32 = 0xF0F0;
 
-/// The shell's window, or in a match the frame the battlefield draws into
-/// (the in-match `0xCF` centres over it, at its source size).
-fn screen(state: &AppState) -> (i32, i32) {
-    if state.frontend.screen == crate::app::GameScreen::InGame {
-        (state.render_width() as i32, state.render_height() as i32)
-    } else {
-        (
-            state.renderer.gpu.config.width as i32,
-            state.renderer.gpu.config.height as i32,
+/// In a match, the frame the battlefield draws into: the in-match `0xCF`
+/// centres over it, at its source size. Elsewhere the boxes centre like the
+/// shell's other menu boxes, over the window.
+fn match_frame(state: &AppState) -> Option<RectPx> {
+    (state.frontend.screen == crate::app::GameScreen::InGame).then(|| {
+        RectPx::new(
+            0,
+            0,
+            state.render_width() as i32,
+            state.render_height() as i32,
         )
-    }
+    })
+}
+
+fn window(state: &AppState) -> (i32, i32) {
+    (
+        state.renderer.gpu.config.width as i32,
+        state.renderer.gpu.config.height as i32,
+    )
 }
 
 pub(crate) fn page_layout(state: &AppState) -> WolPageLayout {
-    let (width, height) = screen(state);
-    wol_page_layout(width, height)
+    match match_frame(state) {
+        Some(frame) => wol_page_layout_in(frame),
+        None => {
+            let (width, height) = window(state);
+            wol_page_layout(width, height)
+        }
+    }
 }
 
 pub(crate) fn received_layout(state: &AppState) -> WolPageReceivedLayout {
-    let (width, height) = screen(state);
-    wol_page_received_layout(width, height)
+    match match_frame(state) {
+        Some(frame) => wol_page_received_layout_in(frame),
+        None => {
+            let (width, height) = window(state);
+            wol_page_received_layout(width, height)
+        }
+    }
 }
 
 /// The popups paint and hit-test at the retail scale.
