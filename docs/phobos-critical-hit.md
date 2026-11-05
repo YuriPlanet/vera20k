@@ -45,20 +45,21 @@ while the effect is held; see [AttachEffect](phobos-attach-effect.md).
   defaults and the rank-ability parse (`ReadAdditionalAbilities`).
 - `sim/combat/crit.rs`: `GetCritChance`/`ApplyCrit`
   (`Detonate.cpp:525..608, 735..778`) inside the per-target warhead pass
-  called from `BulletClass_Detonate 0x46920B` and
-  `MapClass_DamageArea 0x489286`. The pass runs before the native area
-  damage, so a target it kills is gone when the main warhead dispatches.
+  called at the entry of `BulletClass_Detonate 0x46920B` and
+  `MapClass_DamageArea 0x489286`. The pass collects its own
+  `getCellSpreadItemsExt` items and runs before the special/ordinary arm split,
+  SpawnShrapnel and the native area damage, so a target it kills is gone when
+  the main warhead dispatches.
+- `sim/combat/phobos_airburst.rs`: the shared `getCellSpreadItemsExt` walk.
 - `rules/object_type.rs`: `ImmuneToCrit`.
 
 ## Residuals
 
-- The per-target pass runs only in the ordinary-damage arm of bullet
-  detonation and in `DamageArea`; Phobos runs it before the whole bullet arm,
-  so a warhead on a special arm (Ivan bomb, mind control, temporal,
-  locomotor, ...) skips its critical roll and prefix draws.
 - Of `PossibleCellSpreadDetonate`'s members VERA reads only the AttachEffect
   lists; a warhead setting only an unread member skips the two buffer draws
   native makes per detonation, shifting the scenario RNG stream.
-- The per-target list reuses the area receiver collection instead of
-  Phobos's `getCellSpreadItemsExt` walk, so membership and order can differ
-  (no airborne phase, different cell filters).
+- `CellSpread.Cylinder` has no reader, so the pass collects with a spherical
+  distance like the unported damage-area cylinder hooks.
+- Phobos' `MapClass_DamageArea` hook is gated on `InDamageArea`, which a
+  bullet detonation clears; VERA's direct area calls always run the pass, so a
+  warhead detonated both ways can visit its targets an extra time. Pre-existing.

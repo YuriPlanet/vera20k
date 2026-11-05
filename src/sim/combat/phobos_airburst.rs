@@ -683,9 +683,10 @@ fn select_even_clusters(cells: &[ProjectileTarget], cluster_count: i32) -> Vec<P
         .collect()
 }
 
-/// Phobos' copy of `Helpers::Alex::getCellSpreadItemsExt(..., includeInAir =
-/// true, ...)`, returning Technos in native UniqueID order.
-fn cell_spread_technos(
+/// Phobos' shared `Helpers::Alex::getCellSpreadItemsExt(..., includeInAir =
+/// true, ...)`, returning Technos in native UniqueID order. Airburst's clusters
+/// and the warhead per-target pass both visit this collection.
+pub(super) fn cell_spread_technos(
     world: &Simulation,
     rules: &RuleSet,
     coords: ProjectileCoord,
