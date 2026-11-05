@@ -5862,6 +5862,7 @@ mod tests {
         map_b.header.fill = "Water".to_string();
         map_b.header.level = 9;
         map_b.cells.push(MapCell {
+            legacy_ice_byte: 0,
             rx: 36,
             ry: 36,
             tile_index: 777,
