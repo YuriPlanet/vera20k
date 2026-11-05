@@ -243,21 +243,8 @@ fn object_target_is_legal(
 /// [`friendly_attack_is_admitted`]. A different allied House therefore takes
 /// the identity-sensitive tail, then the existing class postprocessing.
 ///
-/// Unforced, an object target must pass [`object_target_is_legal`].
-///
-/// RESIDUAL (#605): the rest of admission (`0x00700255..0x0070043E`) is not
-/// ported as one gate. Unforced, native also leaves the rung for:
-/// - an object disguised to the actor's house (vt+0xC8), unless that grant
-///   holds, `[Rules+0xD6C]` is set, its type is `PermaDisguise=` (`+0xD30`),
-///   its `+0x1EC`/`+0x1F4` timer runs, or it wears no house (vt+0xD0) and the
-///   weapon may fire at terrain (vt+0x398, `0x0070EF00`, `TerrainFire=`).
-///
-/// DORMANT: `[Rules+0xD6C]` is `AttackCursorOnDisguise=` ([General], stored
-/// at `0x0066FC50`), which retail RULESMD sets to yes, so the grant always
-/// holds and retail never reaches the disguise refusal (SPY also authors
-/// `PermaDisguise=yes`). Trigger: a rules or map layer setting it to no, then
-/// an unforced hover or click over a disguised Spy or Mirage. Effect: VERA
-/// may answer Attack where native's rung refuses and the tail answers.
+/// Unforced, an object target must pass [`object_target_is_legal`] and the
+/// disguise gate in [`base_action`]. Both cursor and click use that answer.
 ///
 /// [`Simulation::cell_attack_rung_admits`]: crate::sim::world::Simulation::cell_attack_rung_admits
 pub(crate) fn attack_action(
@@ -529,13 +516,46 @@ pub(super) fn base_action(
         sim.interner(),
     );
     let infiltrator = actor.category() == EntityCategory::Infantry && kind.infiltrate;
+    // TechnoClass::What_Action_OnObject6FFEC0, original70025D..70030F.
+    // This manual-action gate reads the firing blink, not the reacquisition
+    // timer. A refused Attack still takes the native class/movement tail.
+    let disguise_admits = |target_id| {
+        let Some(target) = sim.entities().get(target_id) else {
+            return false;
+        };
+        rules.general.attack_cursor_on_disguise
+            || sim
+                .interner()
+                .object_type(target.type_ref(), rules)
+                .is_some_and(|target_type| target_type.perma_disguise)
+            || target
+                .disguise
+                .as_ref()
+                .is_some_and(|disguise| disguise.blink_remaining(sim.session().binary_frame()) != 0)
+            || !target.is_disguised_to(
+                actor.owner(),
+                Some(sim.fog()),
+                Some(sim.house_alliances()),
+                sim.interner(),
+            )
+            || (target
+                .disguise_house(true, sim.session().current_house(), false)
+                .is_none()
+                && sim.fires_at_terrain(
+                    actor_id,
+                    &TargetKind::Entity(target_id),
+                    rules,
+                    overlay_registry,
+                ))
+    };
     let admitted = match target {
         TargetKind::Entity(target_id) => {
             human
                 && (armed || infiltrator)
                 && (forced
                     || (friendly_attack_is_admitted(sim, rules, actor_id, *target_id)
-                        && object_target_is_legal(sim, rules, actor_id, *target_id)))
+                        && object_target_is_legal(sim, rules, actor_id, *target_id)
+                        && disguise_admits(*target_id)))
         }
         TargetKind::Cell(..) => human,
     };
@@ -8443,6 +8463,10 @@ mod retail_garrison_tests;
 #[cfg(test)]
 #[path = "context_order_retail_entry_tests.rs"]
 mod retail_entry_tests;
+
+#[cfg(test)]
+#[path = "disguise_cursor_tests.rs"]
+mod disguise_cursor_tests;
 
 #[cfg(test)]
 #[path = "context_order_retail_terrain_tests.rs"]
