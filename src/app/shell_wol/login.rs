@@ -95,11 +95,16 @@ pub(crate) fn combo_popup(login: &WolLoginState, layout: &WolLoginLayout) -> Opt
 /// process global the flow prefilled.
 pub(super) fn open(state: &mut AppState) {
     let remembered = super::live_service::remembered_name(state);
+    let last = &state.persistence.options_profile.online_name;
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
     let login = if visit.provider == super::WolProvider::Online {
-        WolLoginState::open_online(&mut state.frontend.wol_account, remembered.as_deref())
+        WolLoginState::open_online(
+            &mut state.frontend.wol_account,
+            remembered.as_deref(),
+            Some(last.as_str()),
+        )
     } else {
         WolLoginState::open(&mut state.frontend.wol_account, &visit.credentials)
     };
