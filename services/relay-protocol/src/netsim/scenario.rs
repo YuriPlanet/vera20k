@@ -47,10 +47,6 @@ pub struct Scenario {
     pub drop_rules: Vec<DropRule>,
     #[serde(default)]
     pub desync: Option<Desync>,
-    /// Which headless client runs: the phase 1 model of the current
-    /// production policy, or the production adaptive `ClientSession`.
-    #[serde(default)]
-    pub client: ClientKind,
     #[serde(default)]
     pub service: ServiceMode,
     /// Each client's first service in ms; random within 50 ms when absent.
@@ -69,14 +65,6 @@ pub struct Scenario {
     /// PULL, over `[from_ms, to_ms)` (adaptive client).
     #[serde(default)]
     pub restoring: Vec<ClientWindow>,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ClientKind {
-    #[default]
-    Model,
-    Adaptive,
 }
 
 /// `periodic`: every client serves every 16 ms with its own phase, as the

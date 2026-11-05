@@ -17,7 +17,7 @@ use super::*;
 const A: usize = 0;
 const B: usize = 1;
 
-const SCENARIO: &str = r#"{ "name": "appendix-a", "client": "adaptive", "service": "event",
+const SCENARIO: &str = r#"{ "name": "appendix-a", "service": "event",
     "players": 2, "tick_hz": 30, "warmup_ms": 0, "duration_ms": 2100,
     "start_offsets_ms": [0, 30],
     "network": { "link": { "delay_ms": 20 } },
@@ -105,7 +105,6 @@ fn shape(records: &[PackRecord]) -> Vec<(u64, u8, u32)> {
 }
 
 #[test]
-#[ignore = "waits for the adaptive transport implementation"]
 fn appendix_a_packet_by_packet() {
     let (_, trace) = Simulation::new(Scenario::from_json(SCENARIO).unwrap()).run_traced();
     use Direction::{Down, Up};

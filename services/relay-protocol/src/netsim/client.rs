@@ -1,9 +1,32 @@
-//! What the simulation needs of a headless client, whichever one runs: the
-//! phase 1 model of the current policy or the adaptive production client.
+//! What the simulation needs of a headless client.
+//!
+//! The phase 1 model of the old production policy (`model_client.rs`) was
+//! removed when the relay dropped requests 1, 4, 6 and 7 (spec §1.2); its
+//! baseline is the phase 1 run of commit 720f12400 on the same scenario
+//! files and seeds, which is deterministic.
 
-use super::model_client::ModelLog;
-use super::reader::StreamReader;
+use std::collections::BTreeMap;
+
+use super::reader::{GapTriggers, StreamReader};
 use crate::ClientLinkStats;
+
+/// What a client did, timestamped in virtual µs for the measurement window.
+#[derive(Debug, Default)]
+pub struct ClientLog {
+    /// (issue time, execution time) of each command, both in µs.
+    pub commands: Vec<(u64, u64)>,
+    /// Times frame ends advanced the executed frame.
+    pub advances: Vec<u64>,
+    pub errors: BTreeMap<String, u64>,
+    /// Datagrams `ClientSession::receive_at` refused (duplicates, replays).
+    pub refused: BTreeMap<String, u64>,
+    /// Spec §6.3 row 2 triggers this stream makes.
+    pub gap_triggers: GapTriggers,
+    /// Fallback PULLs `poll_repair_pull` sent (spec §7.7).
+    pub repair_pulls: Vec<u64>,
+    /// (time µs, batch id) of each batch sealed.
+    pub seals: Vec<(u64, u64)>,
+}
 
 /// A datagram a client sends.
 #[derive(Debug)]
@@ -28,7 +51,7 @@ pub trait HeadlessClient {
     fn reader(&self) -> &StreamReader;
     /// A player command issued at `at_us`, batched at the next service.
     fn queue_command(&mut self, at_us: u64);
-    fn log(&self) -> &ModelLog;
+    fn log(&self) -> &ClientLog;
     /// Client-clock milliseconds at which event-mode service should run.
     fn wakeups(&self) -> Vec<u64> {
         Vec::new()

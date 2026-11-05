@@ -8,8 +8,7 @@
 
 use std::collections::HashMap;
 
-use super::client::{HeadlessClient, Outgoing};
-use super::model_client::ModelLog;
+use super::client::{ClientLog, HeadlessClient, Outgoing};
 use super::reader::{Record, StreamReader};
 use crate::{
     CHECKSUM_INTERVAL, ClientLinkStats, ClientSession, ORDERING_BATCH_CAPACITY, OrderEvent,
@@ -20,9 +19,7 @@ use crate::{
 const CONFIGURE_INTERVAL_MS: u64 = 125;
 /// Spec §6.3 pace segment: one measurement a second.
 const PACE_INTERVAL_MS: u64 = 1_000;
-/// The PULL spacing while restoring; the spec leaves it to the sequencing
-/// layer (§7.7), so this keeps the current client's 100 ms
-/// (src/net/live_commands/sequenced.rs line 31).
+/// The PULL spacing while restoring (spec §7.7).
 const RESTORE_PULL_MS: u64 = 100;
 /// Hop keepalive and handshake retries, src/net/udp.rs line 1370-1374 (in
 /// 16 ms buckets), and its 10 s readiness timeout (line 1361-1365). Spec
@@ -75,7 +72,7 @@ pub struct AdaptiveClient {
     out: Vec<Outgoing>,
     services: u64,
     in_service: bool,
-    pub log: ModelLog,
+    pub log: ClientLog,
 }
 
 impl AdaptiveClient {
@@ -122,7 +119,7 @@ impl AdaptiveClient {
             out: Vec::new(),
             services: 0,
             in_service: false,
-            log: ModelLog::default(),
+            log: ClientLog::default(),
         }
     }
 
@@ -348,7 +345,9 @@ impl AdaptiveClient {
         }
         let turn_ms = self.turn_ms();
         self.log.gap_triggers.observe(gap, now, turn_ms, at_us);
-        if self.restoring && due(self.last_restore_pull, now, RESTORE_PULL_MS) {
+        // Spec §6.7 item 7: while restoring, PULL every 100 ms only while
+        // a gap remains.
+        if self.restoring && gap.is_some() && due(self.last_restore_pull, now, RESTORE_PULL_MS) {
             self.last_restore_pull = Some(now);
             let mut out = Vec::new();
             let result = self
@@ -458,7 +457,7 @@ impl HeadlessClient for AdaptiveClient {
     fn queue_command(&mut self, at_us: u64) {
         self.queued.push(at_us);
     }
-    fn log(&self) -> &ModelLog {
+    fn log(&self) -> &ClientLog {
         &self.log
     }
     fn wakeups(&self) -> Vec<u64> {
@@ -503,6 +502,6 @@ impl HeadlessClient for AdaptiveClient {
         self.session.set_ordering_restore(restoring);
     }
     fn link_stats(&self) -> Option<ClientLinkStats> {
-        self.started().then(|| self.session.link_stats())
+        Some(self.session.link_stats())
     }
 }

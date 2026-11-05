@@ -16,7 +16,6 @@
 pub mod adaptive_client;
 pub mod client;
 pub mod inspect;
-pub mod model_client;
 pub mod network;
 pub mod reader;
 pub mod report;
@@ -34,12 +33,11 @@ use crate::{
 use adaptive_client::AdaptiveClient;
 use client::{HeadlessClient, Outgoing};
 use inspect::Detail;
-use model_client::ModelClient;
 use network::{Link, Loss, Rng};
 use reader::Record;
 use report::{ClientReport, Distribution, Report, Traffic};
 pub use scenario::Scenario;
-use scenario::{ClientKind, Direction, DropRule, ServiceMode};
+use scenario::{Direction, DropRule, ServiceMode};
 use trace::{Origin, Trace, WireRecord};
 
 /// The relay's wall clock in Unix seconds at virtual time zero.
@@ -207,24 +205,14 @@ impl Simulation {
                 .desync
                 .filter(|desync| desync.client == source)
                 .map(|desync| desync.frame);
-            let driver: Box<dyn HeadlessClient> = match scenario.client {
-                ClientKind::Model => Box::new(ModelClient::new(
-                    session,
-                    certificate.clone(),
-                    scenario.players,
-                    scenario.tick_hz,
-                    scenario.command_bytes,
-                    fault,
-                )),
-                ClientKind::Adaptive => Box::new(AdaptiveClient::new(
-                    session,
-                    certificate.clone(),
-                    PAYLOAD_KEY,
-                    scenario.tick_hz,
-                    scenario.command_bytes,
-                    fault,
-                )),
-            };
+            let driver: Box<dyn HeadlessClient> = Box::new(AdaptiveClient::new(
+                session,
+                certificate.clone(),
+                PAYLOAD_KEY,
+                scenario.tick_hz,
+                scenario.command_bytes,
+                fault,
+            ));
             clients.push(Client {
                 label,
                 endpoint,
@@ -500,7 +488,7 @@ impl Simulation {
         self.relay.advance_clock(now_ms, unix(now_ms));
         let pushed = self.relay.drain_ordering_push(now_ms, unix(now_ms));
         self.route(pushed, at_us, Origin::Push);
-        if self.trace.is_some() && self.scenario.client == ClientKind::Adaptive {
+        if self.trace.is_some() {
             for index in 0..self.clients.len() {
                 let stats = self.relay.reader_link_stats(ROOM, index as u8);
                 if stats != self.clients[index].last_reader {
@@ -743,6 +731,7 @@ impl Simulation {
                     .map(|(key, value)| (key.clone(), *value as f64))
                     .collect()
             };
+            let link = client.driver.link_stats().map(report::LinkSummary::of);
             let row = ClientReport {
                 label: client.label.clone(),
                 clients: 1,
@@ -751,10 +740,10 @@ impl Simulation {
                 command_latency_ms: Distribution::of(latencies.clone()),
                 turn_interval_ms: Distribution::of(turns.clone()),
                 hitches: turns.iter().filter(|gap| **gap > 2.0 * turn_ms).count() as f64,
-                gaps: count(&log.gaps),
+                gaps: link.as_ref().map_or(0.0, |link| link.gaps as f64),
                 pulls: pulls as f64,
                 repair_pulls: count(&log.repair_pulls),
-                resends: count(&log.resends),
+                resends: link.as_ref().map_or(0.0, |link| link.rto_timeouts as f64),
                 submits_per_batch: if batches.is_empty() {
                     0.0
                 } else {
@@ -771,10 +760,10 @@ impl Simulation {
                 errors: to_f64(&log.errors),
                 refused: to_f64(&log.refused),
                 gap_uplink_triggers: count(&log.gap_triggers.times),
-                link: client.driver.link_stats().map(report::LinkSummary::of),
-                reader: (self.scenario.client == ClientKind::Adaptive)
-                    .then(|| self.relay.reader_link_stats(ROOM, index as u8))
-                    .flatten()
+                link,
+                reader: self
+                    .relay
+                    .reader_link_stats(ROOM, index as u8)
                     .map(report::ReaderSummary::of),
             };
             rows.push((row, latencies, turns));
@@ -830,7 +819,6 @@ impl Simulation {
             .count();
         Report {
             scenario: self.scenario.name.clone(),
-            client: self.scenario.client,
             seed: self.scenario.seed,
             players: self.scenario.players,
             tick_hz: rate,

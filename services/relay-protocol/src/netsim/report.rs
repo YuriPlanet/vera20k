@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use super::scenario::ClientKind;
 use crate::{ClientLinkStats, ReaderLinkStats};
 
 /// IPv4 and UDP headers, counted into every datagram's bytes.
@@ -83,15 +82,15 @@ pub struct ClientReport {
     pub turn_interval_ms: Distribution,
     /// Advances more than two turns apart.
     pub hitches: f64,
-    /// Gaps that outlived their grace while push was active.
+    /// Gaps reported to the session (§10.1 `gaps`, whole run).
     pub gaps: f64,
     /// PULL requests sent in the window.
     pub pulls: f64,
-    /// Of those, Pulls while push was active.
+    /// Of those, fallback PULLs from `poll_repair_pull` (spec §7.7).
     pub repair_pulls: f64,
-    /// Batch transmissions after the first.
+    /// RTO expiries that resent batches (§10.1 `rto_timeouts`, whole run).
     pub resends: f64,
-    /// SUBMIT datagrams per batch first sent in the window.
+    /// UPLINKs per batch first sent in the window.
     pub submits_per_batch: f64,
     pub batches: f64,
     pub executed_frames: f64,
@@ -190,7 +189,6 @@ impl ReaderSummary {
 #[derive(Debug, Serialize, Clone)]
 pub struct Report {
     pub scenario: String,
-    pub client: ClientKind,
     pub seed: u64,
     pub players: u8,
     pub tick_hz: u16,
