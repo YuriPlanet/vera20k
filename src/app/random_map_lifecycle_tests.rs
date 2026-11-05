@@ -2,9 +2,10 @@ use super::RandomMapGenerationRetention;
 use super::frontend::skirmish_session::{MultiplayerShellRuntime, skirmish_global_defaults};
 use super::loading::pump::{LoadingProgressSink, LoadingRequest};
 use super::shell_random_map::{
-    RandomMapUpdate, accept_random_map_setup_owners, begin_random_map_generation_owners,
-    cancel_random_map_setup_owners, finish_random_map_generation_owners,
-    prepare_random_map_generation, spawn_random_map_generation_worker,
+    RandomMapRulesPreparation, RandomMapUpdate, accept_random_map_setup_owners,
+    begin_random_map_generation_owners, cancel_random_map_setup_owners,
+    finish_random_map_generation_owners, prepare_random_map_generation,
+    spawn_random_map_generation_worker,
 };
 use crate::map::rmg::{RmgConstructionPhase, RmgConstructionTrace, RmgOptions, RmgRng};
 use crate::skirmish_launch::{
@@ -76,11 +77,17 @@ fn start_production_worker(
     shared_cell_dummy: &crate::map::resolved_terrain::SharedCellDummy,
 ) -> std::sync::mpsc::Receiver<RandomMapUpdate> {
     begin_random_map_generation_owners(runtime, retention, options);
-    let decision = retention.map_storage_decision(options);
-    let terrain = native_rules.prepare_random_map_terrain_rules(None, decision.reinitializes());
-    let prepared =
-        prepare_random_map_generation(assets, options, Some(native_rules), None, terrain)
-            .expect("production retail generation preparation");
+    let decision = retention.begin_map_storage_decision(options);
+    let prepared = prepare_random_map_generation(
+        assets,
+        options,
+        RandomMapRulesPreparation::Generation {
+            owner: Some(native_rules),
+            reinitialize: decision.reinitializes(),
+        },
+        None,
+    )
+    .expect("production retail generation preparation");
     let receiver = spawn_random_map_generation_worker(
         options.clone(),
         prepared.settings,
@@ -276,6 +283,10 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         Some(&seed_dir),
     )
     .expect("Use Map accepts the completed production result");
+    assert!(
+        retention.map_storage_decision(&options).reinitializes(),
+        "accepted teardown must force the next preview reset before Full_Init can replace Rules"
+    );
     assert_eq!(generation_entries, 2, "valid preview adds no worker run");
     assert!(randmap_img.is_file());
     assert!(!randmap_sed.exists(), "accepted caller follows teardown");
@@ -362,6 +373,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     ));
     let shell_after_preview = runtime.scenario_rng_logical_state_for_test();
     assert_ne!(shell_after_preview, shell_before_cancel_generation);
+    let preview_before_cancel = native_rules.prepared_random_map_rules().unwrap() as *const _;
     assert_eq!(
         cancel_random_map_setup_owners(
             &mut runtime,
@@ -370,6 +382,15 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
             Some(&seed_dir),
         ),
         Some(previous_selection)
+    );
+    assert_eq!(
+        native_rules.prepared_random_map_rules().unwrap() as *const _,
+        preview_before_cancel,
+        "Cancel keeps the same live Rules registry"
+    );
+    assert!(
+        retention.map_storage_decision(&options).reinitializes(),
+        "Cancel drops the dialog cache key before a later scenario can replace Rules"
     );
     assert_eq!(generation_entries, 4);
     assert!(randmap_img.is_file(), "Cancel publishes completed preview");
@@ -414,8 +435,11 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         seed_dir.clone(),
         &mut assets,
         Some(&mut native_rules),
+        None,
         Some(seed_name),
         Some("MPBattleMD.ini"),
+        crate::app::match_runtime::session::SessionMode::Skirmish,
+        false,
         &mut SilentProgress,
     )
     .expect("direct .SED launch regeneration");

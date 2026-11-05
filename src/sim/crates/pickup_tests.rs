@@ -1347,6 +1347,175 @@ fn random_unit_crate_keeps_rejected_draws_before_an_eligible_vehicle() {
     );
 }
 
+#[test]
+fn retained_powerup_ordinal_keeps_a_late_duplicate_anim_constructor() {
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+
+    let first = RulesLayerStack::new(IniFile::from_str(
+        "[Animations]\n0=OLD\n1=MONEY\n[Powerups]\nMoney=20,MONEY,yes,2000\n",
+    ))
+    .process()
+    .unwrap();
+    let (_, trace) = first.into_ini_and_native_type_construction_trace();
+    let mut layers = RulesLayerStack::new(IniFile::empty());
+    // AbstractType410800 truncates IDs to24 bytes. WeaponRead772589 uses
+    // the full25-byte name after AnimRead679A5D, allocating an unread twin.
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str(
+            "[Animations]\n0=ABCDEFGHIJKLMNOPQRSTUVWXY\n\
+             [VehicleTypes]\n0=U\n[U]\nPrimary=W\n\
+             [W]\nAssaultAnim=ABCDEFGHIJKLMNOPQRSTUVWXY\n",
+        ),
+    );
+    let art = IniFile::from_str("[ABCDEFGHIJKLMNOPQRSTUVWX]\nRandomRate=900,300\n");
+    let processed = layers
+        .process_with_fixed_art_and_registry_state(
+            &art,
+            trace
+                .into_registry_state_discarding_events()
+                .destructive_reset(),
+        )
+        .unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    assert_eq!(
+        rules.anim_type_art_read_states(),
+        &[
+            ("ABCDEFGHIJKLMNOPQRSTUVWX".into(), true),
+            ("ABCDEFGHIJKLMNOPQRSTUVWX".into(), false)
+        ]
+    );
+    assert_eq!(rules.powerups.animation_index(POWERUP_MONEY), 1);
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    rules.bind_anim_frame_count_for_test("ABCDEFGHIJKLMNOPQRSTUVWX", 2);
+    let mut sim = sim_with_grid(31);
+    let rng = sim.scenario_rng.native_state_hex();
+    assert!(spawn_pickup_anim(
+        &mut sim,
+        &rules,
+        POWERUP_MONEY,
+        CELL,
+        None
+    ));
+    assert_eq!(sim.anims().count(), 1);
+    // The late twin's4275C0/C6 defaults are zero: ctor4221C5 skips the
+    // RandomRate draw. The first same-named type must not supply its ART.
+    assert_eq!(sim.scenario_rng.native_state_hex(), rng);
+    let bytes = crate::util::save_codec::serialize(&sim).unwrap();
+    let mut sim: Simulation = crate::util::save_codec::deserialize(&bytes).unwrap();
+    // Native loading restarts Scenario RNG from the saved seed; the visit
+    // must not advance that new stream either.
+    let rng = sim.scenario_rng.native_state_hex();
+    let id = *sim.anims().next().unwrap().0;
+    let key = sim.interner.resolve(sim.anim(id).unwrap().type_id());
+    assert!(!rules.art().anim_runtime_config(key).unwrap().art_body_read);
+    assert!(
+        crate::rules::art_data::effect_shp_candidates(
+            crate::rules::art_data::EffectImageKind::Animation,
+            Some(rules.art()),
+            key,
+            key,
+            ".TEM",
+            "TEMPERATE",
+        )
+        .is_empty()
+    );
+    sim.visit_anim(id, &rules, None, FrameEffects::default());
+    assert!(sim.anim(id).is_some());
+    assert_eq!(sim.scenario_rng.native_state_hex(), rng);
+}
+
+#[test]
+fn retail_cash_pickup_does_not_rebind_a_failed_animation_until_reread() {
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+
+    let Some((mut root, mut art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let money = root
+        .section_or_empty("Powerups")
+        .read_string("Money", "", 128);
+    assert!(money.contains(",MONEY,"));
+    // Keep the retail reward, but select only Money and request a type that
+    // the following physical pass will register too late for this read.
+    let only_money = IniFile::from_str(&format!(
+        "[Powerups]\nMoney={}\n",
+        money.replace(",MONEY,", ",LATE,")
+    ));
+    root.remove_section("Powerups");
+    root.merge(&only_money);
+    art.merge(&IniFile::from_str("[LATE]\nImage=MONEY\nStart=0\n"));
+    let mut layers = RulesLayerStack::new(root);
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Animations]\nLATE=LATE\n"),
+    );
+    let processed = layers.process_with_fixed_art(&art).unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let count = crate::assets::shp_file::ShpFile::frame_count_from_bytes(
+        &crate::rules::retail_ini_fixture::retail_archive_bytes("MONEY.SHP").unwrap(),
+    )
+    .unwrap();
+    let bind = |rules: &mut RuleSet| {
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+        rules.bind_anim_frame_count_for_test("LATE", i32::from(count));
+    };
+    bind(&mut rules);
+    let pickup = |rules: &RuleSet| {
+        let mut sim = crate::sim::arena_fixture::rival_arena(rules, 31);
+        sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
+        sim.session.game_options_mut_for_test().crates = false;
+        sim.session.game_options_mut_for_test().bases = false;
+        let actor = sim
+            .spawn_object("MTNK", "Americans", 20, 22, 0, rules)
+            .unwrap();
+        let owner = sim.interner.intern("Americans");
+        assert!(super::super::place_crate(
+            &mut sim,
+            rules,
+            rules.overlay_registry(),
+            (21, 22),
+            Some(0)
+        ));
+        assert!(pickup_crate(
+            &mut sim,
+            rules,
+            rules.overlay_registry(),
+            (21, 22),
+            actor,
+            FrameEffects::default()
+        ));
+        (sim.houses[&owner].economy().credits(), anim_briefs(&sim))
+    };
+    assert!(!crate::rules::effect_asset_catalog::anim_class_roots(&rules).contains(&"LATE".into()));
+    let (credits, animations) = pickup(&rules);
+    let reward = credits;
+    assert!(reward > 0);
+    assert!(animations.is_empty());
+
+    let (_, trace) = processed.into_ini_and_native_type_construction_trace();
+    let reread = RulesLayerStack::new(only_money)
+        .process_with_fixed_art_and_registry_state(
+            &art,
+            trace.into_registry_state_discarding_events(),
+        )
+        .unwrap();
+    let mut rules = RuleSet::from_processed_rules(&reread).unwrap();
+    bind(&mut rules);
+    assert!(crate::rules::effect_asset_catalog::anim_class_roots(&rules).contains(&"LATE".into()));
+    let (credits, animations) = pickup(&rules);
+    assert_eq!(
+        credits, reward,
+        "animation admission does not change the reward"
+    );
+    assert_eq!(animations.len(), 1);
+    assert_eq!(animations[0].0, "LATE");
+    assert_eq!(animations[0].2, 0x600);
+}
+
 /// Original481A00→56BD40→4824A0→421EA0/423AC0/725C70. The native
 /// corpus independently seeds each stream at the pickup boundary, after an
 /// original placement; geometry/House priors are explicit, not a native map
@@ -1380,7 +1549,7 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
         );
         assert_eq!(json!(rules.powerups.weights), row["retail"]["weights"]);
         assert_eq!(
-            rules.powerups.anims[POWERUP_MONEY].as_deref(),
+            rules.anim_type_name_by_index(rules.powerups.animation_index(POWERUP_MONEY)),
             Some("MONEY")
         );
         assert_eq!(
