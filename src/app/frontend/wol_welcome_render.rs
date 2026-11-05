@@ -20,13 +20,14 @@ use crate::app::frontend::shell_pass::{
     software_cursor,
 };
 use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::frontend::skirmish_shell_render::WolLobbyPaint;
 use crate::app::shell_wol::WolPage;
 use crate::render::shell_paint::{
     self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel,
     SHELL_TEXT_RGB_ENABLED, push_entry_scaled,
 };
 use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::geom::{ShellScale, centred_in_window};
+use crate::ui::shell::geom::{RectPx, ShellScale, centred_in_window};
 use crate::ui::shell::menu_page::{MenuPageButtonRect, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::slide::PanelArt;
 use crate::ui::wol_shell::{
@@ -136,26 +137,21 @@ pub(crate) fn presented_wol_page(state: &AppState) -> PresentedShell {
     }
 }
 
-/// `0xCF` or `0x11E` over whatever the page shows.
-pub(crate) fn page_dialogs_paint(
-    state: &AppState,
-) -> Option<crate::app::frontend::skirmish_shell_render::WolLobbyPaint> {
+/// `0xCF` or `0x11E` over whatever the page shows, and where it sits.
+pub(crate) fn page_dialogs_paint(state: &AppState) -> Option<(RectPx, WolLobbyPaint)> {
     use crate::app::frontend::skirmish_shell_render::{
         paint_wol_page_dialog, paint_wol_page_received,
     };
     use crate::app::shell_wol::page;
     if let Some(dialog) = page::page_dialog(state) {
-        return Some(paint_wol_page_dialog(
-            state,
-            dialog,
-            &page::page_layout(state),
-        ));
+        let layout = page::page_layout(state);
+        return Some((layout.dialog, paint_wol_page_dialog(state, dialog, &layout)));
     }
     let received = page::page_received(state)?;
-    Some(paint_wol_page_received(
-        state,
-        received,
-        &page::received_layout(state),
+    let layout = page::received_layout(state);
+    Some((
+        layout.dialog,
+        paint_wol_page_received(state, received, &layout),
     ))
 }
 
@@ -524,13 +520,10 @@ pub(crate) fn render_wol_page(
                 &crate::ui::shell::modal::wol_add_buddy_layout(screen_w, screen_h),
             )
         });
-    // 0x115 and the modal 0x11E sit over 0x116 without covering it.
+    // 0x115 sits over 0x116 without covering it.
     let buddy_popup = match &painted {
         Painted::Buddy(_) if add_buddy.is_some() => {
             Some(crate::ui::shell::modal::wol_add_buddy_layout(screen_w, screen_h).dialog)
-        }
-        Painted::Buddy(_) if crate::app::shell_wol::page::page_received(state).is_some() => {
-            Some(crate::app::shell_wol::page::received_layout(state).dialog)
         }
         _ => None,
     };
@@ -1103,7 +1096,10 @@ pub(crate) fn render_wol_page(
         });
         text.extend(popup.texts);
     }
-    if let (Some(atlas), Some(page)) = (controls_atlas, page_dialogs) {
+    // 0xCF and 0x11E leave the page painting beneath them, over the lobby,
+    // the buddy list or any other page.
+    if let (Some(atlas), Some((dialog, page))) = (controls_atlas, page_dialogs) {
+        hide_glyphs_under(&mut text, dialog);
         draws.push(TexturedDraw {
             texture: &atlas.texture,
             instances: page.controls,

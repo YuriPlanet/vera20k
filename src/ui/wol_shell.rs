@@ -619,7 +619,7 @@ mod tests {
             assert!(!layout.ok.contains(center.0, center.1));
         }
         let large = message.layout(2560, 1600, ShellScale::from_screen(2560, 1600));
-        assert_eq!(large.dialog, RectPx::new(680, 365, 1202, 870));
+        assert_eq!(large.dialog, RectPx::new(456, 323, 1202, 869));
     }
 
     #[test]

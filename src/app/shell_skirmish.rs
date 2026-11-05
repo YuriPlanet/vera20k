@@ -697,6 +697,9 @@ impl App {
             return false;
         }
         let layout = Self::skirmish_choose_map_layout(state);
+        if crate::app::frontend::preview_zoom::press_on_box(state, layout.preview) {
+            return true;
+        }
         let (x, y) = state.match_state.input.cursor_px();
         let frontend = &mut state.frontend;
         let modal = frontend
@@ -1179,21 +1182,28 @@ impl App {
         if state.frontend.skirmish_shell_state.trackbar_hold.is_some() {
             return;
         }
-        let text = crate::ui::skirmish_shell::hovered_shell_control(
+        let target = crate::ui::skirmish_shell::hovered_shell_control(
             layout,
             &state.frontend.skirmish_shell_state,
             state.frontend.scenario_catalog.shell_maps(),
             x,
             y,
-        )
-        .and_then(|target| {
-            crate::ui::skirmish_shell::status_help_key_for_hover_with_catalog(
-                target,
-                Some(&state.frontend.skirmish_shell_state.country_catalog),
-            )
-        })
-        .map(|key| Self::localized_status_help_text(state, key))
-        .unwrap_or_default();
+        );
+        let text = target
+            .and_then(|target| {
+                crate::ui::skirmish_shell::status_help_key_for_hover_with_catalog(
+                    target,
+                    Some(&state.frontend.skirmish_shell_state.country_catalog),
+                )
+            })
+            .map(|key| Self::localized_status_help_text(state, key))
+            .unwrap_or_default();
+        let text =
+            if target == Some(crate::ui::skirmish_shell::SkirmishHoverTarget::MapPreview0x468) {
+                crate::app::frontend::preview_zoom::box_help(state, text)
+            } else {
+                text
+            };
 
         // `0x102`'s proc runs the common handler first (`0x006AE40A`): every
         // move writes the help, which repaints the status line.
@@ -1223,9 +1233,14 @@ impl App {
             }
         }
 
-        crate::ui::skirmish_shell::status_help_key_for_choose_map_hover(target)
+        let text = crate::ui::skirmish_shell::status_help_key_for_choose_map_hover(target)
             .map(|key| Self::localized_status_help_text(state, key))
-            .unwrap_or_default()
+            .unwrap_or_default();
+        if target == crate::ui::skirmish_shell::ChooseMapHoverTarget::Preview0x468 {
+            crate::app::frontend::preview_zoom::box_help(state, text)
+        } else {
+            text
+        }
     }
 
     /// A child's mouse move writes its help; over the background the last
@@ -1436,6 +1451,9 @@ impl App {
             Self::drain_skirmish_shell_ui_sounds(state);
             return;
         }
+        if crate::app::frontend::preview_zoom::press_on_box(state, layout.map_preview) {
+            return;
+        }
         // Load Setup stays disabled until the selected map has a saved setup.
         let load_setup_enabled = Self::skirmish_setup_saved(state);
         state
@@ -1512,8 +1530,8 @@ impl App {
         // which holds the mouse; freeing it lets the dialog's hit test run
         // again.
         let shell = &state.frontend.skirmish_shell_state;
-        let held = shell.trackbar_hold.is_some()
-            || crate::ui::skirmish_shell::opponent_scroll_held(shell);
+        let held =
+            shell.trackbar_hold.is_some() || crate::ui::skirmish_shell::opponent_scroll_held(shell);
         crate::ui::skirmish_shell::handle_option_mouse_up(&mut state.frontend.skirmish_shell_state);
         Self::drain_skirmish_shell_ui_sounds(state);
         if held {

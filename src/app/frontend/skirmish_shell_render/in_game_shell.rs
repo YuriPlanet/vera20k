@@ -334,6 +334,8 @@ pub(super) struct ShellFrameOverlay {
     pub preview: Option<SpriteInstance>,
     pub controls: Vec<SpriteInstance>,
     pub texts: Vec<crate::render::shell_text::ShellTextDraw>,
+    /// VERA's enlarged map preview, over everything but the cursor.
+    pub zoom: Option<super::preview::ZoomDraws>,
 }
 
 /// Shared shell compositor. Only the parent art atlas differs between launcher
@@ -436,6 +438,7 @@ pub(super) fn render_shell_frame(
         .iter()
         .map(|d| batch.create_instance_buffer(gpu, &d.instances))
         .collect();
+    let zoom_buffers = overlay.zoom.as_ref().map(|zoom| zoom.buffers(state));
     let cursor: Vec<_> = match cursor_policy {
         ShellFrameCursor::Visible => {
             crate::app::frontend::shell_pass::software_cursor(state, super::SHELL_CURSOR_DEPTH)
@@ -532,6 +535,10 @@ pub(super) fn render_shell_frame(
                 *count,
             );
         }
+    }
+    if let (Some(buffers), Some(atlas)) = (&zoom_buffers, control_atlas) {
+        pass.set_scissor_rect(0, 0, shell_width, shell_height);
+        super::preview::draw_zoom(&mut pass, state, atlas, buffers);
     }
     drop(pass);
     if let Some(surface) = shell_surface {

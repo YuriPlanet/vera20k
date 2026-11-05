@@ -1376,6 +1376,45 @@ impl ProcessedRulesLayers {
         })
     }
 
+    /// TechnoType+CD5/CD8..D10 after the last admitted ReadINI712170 body.
+    pub(crate) fn gattling_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            bool,
+            &crate::rules::gattling_type::GattlingStages,
+        ),
+    > {
+        let families = &self
+            .native_type_construction_trace
+            .registry_state()
+            .families;
+        [
+            RulesTypeFamily::Building,
+            RulesTypeFamily::Aircraft,
+            RulesTypeFamily::Vehicle,
+            RulesTypeFamily::Infantry,
+        ]
+        .into_iter()
+        .flat_map(move |family| {
+            let category = family.object_category().expect("TechnoType family");
+            families
+                .get(&family)
+                .into_iter()
+                .flatten()
+                .map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        member.is_gattling,
+                        &member.gattling_stages,
+                    )
+                })
+        })
+    }
+
     /// Final retained InfantryType state; the merged present-key history cannot
     /// represent admitted missing-Pip calls. Projection performs no new read.
     pub(crate) fn infantry_pip_states(&self) -> impl Iterator<Item = (&str, InfantryPips)> {
@@ -2381,6 +2420,13 @@ impl ProcessedRulesLayers {
             .rules_patrol_scan_minutes
     }
 
+    pub(crate) fn ai_hate_delays(&self) -> &[i32] {
+        &self
+            .native_type_construction_trace
+            .registry_state()
+            .rules_ai_hate_delays
+    }
+
     /// Rules+147C/+14BC after ordered General/AudioVisual reads. Original
     /// ctor665650 and read blocks66E5D5/66B385 establish null/1024 defaults,
     /// empty retention and exact-case keys; the existing factory owns identity.
@@ -2500,6 +2546,15 @@ impl ProcessedRulesLayers {
         self.native_type_construction_trace
             .registry_state()
             .rules_mind_control_attack_line_frames
+    }
+
+    /// Rules+314/+318, retained ReadCombatDamage66C973..66C9AC scalars.
+    pub(crate) fn drain_money_controls(&self) -> (i32, i32) {
+        let state = self.native_type_construction_trace.registry_state();
+        (
+            state.rules_drain_money_frame_delay,
+            state.rules_drain_money_amount,
+        )
     }
 
     /// Rules+D6C, retained ReadGeneral66FC36..66FC50 boolean.
@@ -3534,10 +3589,17 @@ pub(crate) struct NativeRulesRegistryState {
     #[serde(default = "crate::rules::ruleset::default_missing_cameo")]
     rules_missing_cameo: String,
     rules_mind_control_attack_line_frames: i32,
+    rules_drain_money_frame_delay: i32,
+    rules_drain_money_amount: i32,
     rules_line_trail_override: [u8; 3],
     rules_chrono_beam_color: [u8; 3],
     rules_prism_support: PrismSupportRules,
     rules_patrol_scan_minutes: NativeF64Bits,
+    /// RulesClass+1174: constructor00665650 at00666E3F..00666E59 makes an
+    /// empty integer vector. ReadGeneral0066FDB1..0066FDD9 uses
+    /// ReadINI_IntVector00475D70 with the current vector as its default.
+    /// It survives Type reset006686C0 and saved Rules state.
+    rules_ai_hate_delays: Vec<i32>,
     rules_comp_easy_bonus: bool,
     rules_prism_type: Option<String>,
     rules_drop_zone_anim: Option<String>,
@@ -3630,10 +3692,13 @@ impl Default for NativeRulesRegistryState {
             rules_missing_cameo: crate::rules::ruleset::DEFAULT_MISSING_CAMEO.to_owned(),
             // MindControlAttackLineFrames, Rules+310: constructor 0x00665ABE.
             rules_mind_control_attack_line_frames: 15,
+            rules_drain_money_frame_delay: general.drain_money_frame_delay,
+            rules_drain_money_amount: general.drain_money_amount,
             rules_line_trail_override: general.line_trail_color_override,
             rules_chrono_beam_color: general.chrono_beam_color,
             rules_prism_support: PrismSupportRules::default(),
             rules_patrol_scan_minutes: general.patrol_scan_minutes,
+            rules_ai_hate_delays: general.ai_hate_delays().to_vec(),
             rules_comp_easy_bonus: general.comp_easy_bonus,
             rules_prism_type: None,
             rules_drop_zone_anim: None,
@@ -4041,10 +4106,13 @@ impl NativeRulesRegistryState {
             rules_tiberium_explosion_damage: self.rules_tiberium_explosion_damage,
             rules_ion_cannon_damage: self.rules_ion_cannon_damage,
             rules_mind_control_attack_line_frames: self.rules_mind_control_attack_line_frames,
+            rules_drain_money_frame_delay: self.rules_drain_money_frame_delay,
+            rules_drain_money_amount: self.rules_drain_money_amount,
             rules_line_trail_override: self.rules_line_trail_override,
             rules_chrono_beam_color: self.rules_chrono_beam_color,
             rules_prism_support: self.rules_prism_support,
             rules_patrol_scan_minutes: self.rules_patrol_scan_minutes,
+            rules_ai_hate_delays: self.rules_ai_hate_delays,
             rules_comp_easy_bonus: self.rules_comp_easy_bonus,
             // Plain index vectors, so RulesClass keeps them; the next pass
             // reads them as its default.
@@ -4382,6 +4450,9 @@ struct ProcessedType {
     /// TechnoType ctor71136F/711781, generic flag read71287E and FV pair
     /// reads747BBD..747E90, retained across every reached Rules pass.
     gunner_turrets: GunnerTurrets,
+    /// TechnoType ctor71148A/711490..49C/711765..77F; ReadINI714016..71410F.
+    is_gattling: bool,
+    gattling_stages: crate::rules::gattling_type::GattlingStages,
     /// Infantry ctor5236BD/C7 and unconditional ReadPip5240D1..524125.
     /// Missing type sections skip the whole reader; missing keys do not.
     #[serde(default)]
@@ -4945,6 +5016,8 @@ impl ProcessedType {
             unit_shp: Default::default(),
             unit_speed_type: SpeedType::Invalid,
             gunner_turrets: GunnerTurrets::default(),
+            is_gattling: false,
+            gattling_stages: Default::default(),
             infantry_pips: InfantryPips::default(),
             infantry_infiltration: InfantryInfiltration::default(),
             infantry_art: InfantryArt::default(),
@@ -5168,10 +5241,13 @@ struct RulesPassProcessor {
     #[cfg(feature = "phobos")]
     rules_missing_cameo: String,
     rules_mind_control_attack_line_frames: i32,
+    rules_drain_money_frame_delay: i32,
+    rules_drain_money_amount: i32,
     rules_line_trail_override: [u8; 3],
     rules_chrono_beam_color: [u8; 3],
     rules_prism_support: PrismSupportRules,
     rules_patrol_scan_minutes: NativeF64Bits,
+    rules_ai_hate_delays: Vec<i32>,
     rules_comp_easy_bonus: bool,
     rules_prism_type: Option<String>,
     rules_drop_zone_anim: Option<String>,
@@ -5249,10 +5325,13 @@ impl RulesPassProcessor {
             rules_missing_cameo: registry_state.rules_missing_cameo,
             rules_mind_control_attack_line_frames: registry_state
                 .rules_mind_control_attack_line_frames,
+            rules_drain_money_frame_delay: registry_state.rules_drain_money_frame_delay,
+            rules_drain_money_amount: registry_state.rules_drain_money_amount,
             rules_line_trail_override: registry_state.rules_line_trail_override,
             rules_chrono_beam_color: registry_state.rules_chrono_beam_color,
             rules_prism_support: registry_state.rules_prism_support,
             rules_patrol_scan_minutes: registry_state.rules_patrol_scan_minutes,
+            rules_ai_hate_delays: registry_state.rules_ai_hate_delays,
             rules_comp_easy_bonus: registry_state.rules_comp_easy_bonus,
             rules_prism_type: registry_state.rules_prism_type,
             rules_drop_zone_anim: registry_state.rules_drop_zone_anim,
@@ -5932,6 +6011,12 @@ impl RulesPassProcessor {
         let Some(section) = pass.section("General") else {
             return;
         };
+        // ReadGeneral0066FDB1..0066FDD9 / ReadINI_IntVector00475D70:
+        // exact key, 512-byte string, comma tokens through CRT atoi; an
+        // absent/empty read keeps the prior vector. Counts are raw frames.
+        if let Some(delays) = section.read_int_list("AIHateDelays") {
+            self.rules_ai_hate_delays = delays;
+        }
         // ReadGeneral66EBD4..66EBEE: exact-case signed ReadInt5276D0,
         // current Rules+580 as default, no clamp. Ctor665D92 stores1.
         self.rules_maximum_cheer_rate =
@@ -7649,6 +7734,12 @@ impl RulesPassProcessor {
                 .techno_references
                 .destroy_particle_systems = systems;
         }
+        // TechnoTypeClass::ReadINI712170, original714016..71410F:
+        // read the current-default flag before the count/rates and stage gate.
+        let member = &mut self.family_mut(family)[index];
+        member.is_gattling = raw.read_bool("IsGattling", member.is_gattling);
+        member.gattling_stages.apply_pass(raw, member.is_gattling);
+
         // ReadINI714570..71458A passes the current+634 to ReadInt5276D0.
         // An absent exact-case key (also physically blank values omitted by
         // the INI loader) retains it. Present integers stay signed/unclamped.
@@ -8248,11 +8339,21 @@ impl RulesPassProcessor {
             "MindControlAttackLineFrames",
             self.rules_mind_control_attack_line_frames,
         );
-        for key in [
+        let anim = self.resolve_scalar_from(
+            section,
             "DrainAnimationType",
-            "ControlledAnimationType",
-            "PermaControlledAnimationType",
-        ] {
+            RulesTypeFamily::Animation,
+            0x80,
+        );
+        self.rules_type_references
+            .read_pointer("DrainAnimationType", anim);
+        // RulesClass::ReadCombatDamage66BBB0, original66C973..66C9AC:
+        // signed ReadInt5276D0, current defaults, no clamps, in this order.
+        self.rules_drain_money_frame_delay =
+            section.read_int("DrainMoneyFrameDelay", self.rules_drain_money_frame_delay);
+        self.rules_drain_money_amount =
+            section.read_int("DrainMoneyAmount", self.rules_drain_money_amount);
+        for key in ["ControlledAnimationType", "PermaControlledAnimationType"] {
             let anim = self.resolve_scalar_from(section, key, RulesTypeFamily::Animation, 0x80);
             self.rules_type_references.read_pointer(key, anim);
         }
@@ -8618,10 +8719,13 @@ impl RulesPassProcessor {
                     rules_missing_cameo: self.rules_missing_cameo,
                     rules_mind_control_attack_line_frames: self
                         .rules_mind_control_attack_line_frames,
+                    rules_drain_money_frame_delay: self.rules_drain_money_frame_delay,
+                    rules_drain_money_amount: self.rules_drain_money_amount,
                     rules_line_trail_override: self.rules_line_trail_override,
                     rules_chrono_beam_color: self.rules_chrono_beam_color,
                     rules_prism_support: self.rules_prism_support,
                     rules_patrol_scan_minutes: self.rules_patrol_scan_minutes,
+                    rules_ai_hate_delays: self.rules_ai_hate_delays,
                     rules_comp_easy_bonus: self.rules_comp_easy_bonus,
                     rules_prism_type: self.rules_prism_type,
                     rules_drop_zone_anim: self.rules_drop_zone_anim,

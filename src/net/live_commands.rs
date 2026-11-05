@@ -22,6 +22,8 @@ pub use sequenced::{
 pub use startup::{StartupAgreement, StartupError};
 /// The relay's turn length, which online playout follows.
 pub use vera20k_relay_protocol::turn_frames;
+/// The relay link measurements a match's network report reads.
+pub use vera20k_relay_protocol::{ClientLinkStats, LinkState};
 
 use crate::sim::world::{NetworkCommandQueues, NetworkQueueContext, NetworkQueuePass};
 

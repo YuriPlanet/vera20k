@@ -37,13 +37,13 @@ use super::current_cell::CurrentRadarCellAuthority;
 use super::events::{ClientRadarEvents, RadarEventSource};
 use super::geometry::NativeRadarSurfaceGeometry;
 use super::hd::HdRadar;
-pub(crate) use super::helpers::minimap_overlay_datum;
 use super::helpers::{
     COLOR_SHROUD, CellVisibility, MINIMAP_DEPTH, MINIMAP_HEIGHT, MINIMAP_WIDTH, RadarSurfacePixel,
     cell_visibility_color, dim_color, set_pixel, surface_visibility_color,
 };
 pub use super::helpers::{OverlayClassification, default_minimap_rect};
 use super::helpers::{OverlayPixel, TerrainPixels};
+pub(crate) use super::helpers::{minimap_overlay_datum, overlay_classification};
 #[cfg(test)]
 use super::projection::minimap_screen_point_to_camera_top_left;
 use super::projection::{MinimapPlayfieldProjection, aperture_pixel, generated_primary_copy_frame};

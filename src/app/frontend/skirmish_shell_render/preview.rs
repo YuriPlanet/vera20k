@@ -3,13 +3,16 @@
 //! Keeps preview decoding, random-map preview cache handling, and live
 //! marker sprite projection separate from the shell render orchestration.
 
+use std::cell::OnceCell;
 use std::path::Path;
 
 use crate::app::AppState;
 use crate::app::loading::init::MapMenuEntry;
 use crate::assets::asset_manager::AssetManager;
 use crate::map::preview::{DecodedPreview, PreviewSourceBounds};
+use crate::map::skirmish_scenarios::SkirmishScenarioSource;
 use crate::render::batch::{BatchTexture, SpriteInstance};
+use crate::render::bit_font::BitFont;
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::rules::ini_parser::IniFile;
 use crate::ui::shell::geom::ShellScale;
@@ -42,7 +45,27 @@ pub(crate) struct SkirmishPreviewTexture {
     /// (`app::map_picture`) rather than the map's `[PreviewPack]`, the size
     /// of the preview box it was shrunk for.
     pub hd_picture: Option<(i32, i32)>,
+    /// The picture the texture was made from, at its own size, for the
+    /// enlarged preview (`frontend::preview_zoom`).
+    pub source: DecodedPreview,
+    /// The enlarged preview's texture of `source`, and the size it was made
+    /// for ([`ensure_zoom_texture`]).
+    pub zoom: Option<(BatchTexture, (u32, u32))>,
+    /// The map's briefing under the enlarged preview ([`map_briefing`]), read
+    /// when that first shows; none for a received or generated picture.
+    pub briefing: OnceCell<Option<String>>,
 }
+
+/// The enlarged preview's margin from the window's edges, in retail pixels.
+const ZOOM_MARGIN: f32 = 12.0;
+/// The opacity of the black over the screen behind the enlarged preview. The
+/// shell target blends in linear light, so the screen keeps 7% of its light,
+/// which shows at about 30% of its brightness.
+const ZOOM_DIM: f32 = 0.93;
+/// The enlarged picture's frame.
+const ZOOM_FRAME_RGB: [f32; 3] = [0.55, 0.55, 0.55];
+/// Above every shell draw but the cursor; shell draws keep their order.
+const ZOOM_DEPTH: f32 = 0.00020;
 
 fn preview_fits_texture(width: u32, height: u32, rgba_len: usize, maximum_side: u32) -> bool {
     width != 0
@@ -93,6 +116,7 @@ pub(super) fn ensure_received_preview_texture(state: &mut AppState) {
         preview.height,
     );
     let (width, height) = (preview.width, preview.height);
+    let source = preview.clone();
     state.frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
         selected_map_idx: usize::MAX,
         texture,
@@ -102,6 +126,9 @@ pub(super) fn ensure_received_preview_texture(state: &mut AppState) {
         received_preview: Some(arrival),
         hd_setting: false,
         hd_picture: None,
+        source,
+        zoom: None,
+        briefing: OnceCell::from(None),
     });
 }
 
@@ -409,15 +436,23 @@ pub(super) fn ensure_random_map_setup_preview_texture(state: &mut AppState) -> b
         preview.width,
         preview.height,
     );
+    let source = DecodedPreview {
+        width: preview.width,
+        height: preview.height,
+        rgba: preview.rgba.clone(),
+    };
     state.frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
         selected_map_idx: state.frontend.skirmish_shell_state.selected_map_idx,
         texture,
-        width: preview.width,
-        height: preview.height,
+        width: source.width,
+        height: source.height,
         setup_preview_generation: Some(generation),
         received_preview: None,
         hd_setting: false,
         hd_picture: None,
+        source,
+        zoom: None,
+        briefing: OnceCell::from(None),
     });
     true
 }
@@ -453,6 +488,21 @@ pub(super) fn ensure_selected_preview_texture(state: &mut AppState, preview_box:
     ensure_map_preview_texture(state, selected_map_idx, preview_box);
 }
 
+/// The game folder map lookups start from.
+fn ra2_dir(state: &AppState) -> Option<&Path> {
+    state
+        .platform
+        .game_config
+        .as_ref()
+        .map(|config| config.paths.ra2_dir.as_path())
+        .or_else(|| {
+            state
+                .process_assets
+                .manager()
+                .map(|assets| assets.ra2_dir())
+        })
+}
+
 /// Shared map preview cache used by offline and network setup/chooser pages,
 /// for a preview drawn in `preview_box`.
 pub(super) fn ensure_map_preview_texture(
@@ -483,17 +533,7 @@ pub(super) fn ensure_map_preview_texture(
         return;
     }
     let hd_setting = state.hd_map_previews();
-    let ra2_dir = state
-        .platform
-        .game_config
-        .as_ref()
-        .map(|config| config.paths.ra2_dir.as_path())
-        .or_else(|| {
-            state
-                .process_assets
-                .manager()
-                .map(|assets| assets.ra2_dir())
-        });
+    let ra2_dir = ra2_dir(state);
     let decoded = selected_entry
         .as_ref()
         .and_then(|entry| {
@@ -502,7 +542,7 @@ pub(super) fn ensure_map_preview_texture(
         // An online library row has no file: its catalog header holds it.
         .or_else(|| crate::app::map_library::online_preview(state, selected_map_idx));
     // VERA's own picture of the map, once one is kept, shrunk here by area to
-    // the size the box shows it at: it is up to four times that size, and the
+    // the size the box shows it at: it is up to eight times that size, and the
     // GPU's linear filter, which reads four texels, would alias the shrink.
     if hd_setting
         && selected_entry.is_some()
@@ -526,28 +566,7 @@ pub(super) fn ensure_map_preview_texture(
             .filter(|&own| same_shape(own, (picture.width, picture.height)));
         let (fit_w, fit_h) = own.unwrap_or((picture.width, picture.height));
         let fitted = aspect_fit_rect(preview_box, fit_w, fit_h);
-        let (width, height, rgba) =
-            if fitted.w > 0 && fitted.h > 0 && (fitted.w as u32) < picture.width {
-                let (width, height) = (fitted.w as u32, fitted.h as u32);
-                let rgba = crate::render::area_scale::scale(
-                    &picture.rgba,
-                    picture.width as usize,
-                    picture.height as usize,
-                    width as usize,
-                    height as usize,
-                );
-                (width, height, rgba)
-            } else {
-                (picture.width, picture.height, picture.rgba)
-            };
-        let (_, texture) = state.renderer.batch_renderer.create_updatable_texture(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
-            &rgba,
-            width,
-            height,
-            wgpu::FilterMode::Linear,
-        );
+        let texture = picture_texture(state, &picture, (fitted.w, fitted.h));
         state.frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
             selected_map_idx,
             texture,
@@ -557,11 +576,14 @@ pub(super) fn ensure_map_preview_texture(
             received_preview: None,
             hd_setting,
             hd_picture: Some((preview_box.w, preview_box.h)),
+            source: picture,
+            zoom: None,
+            briefing: OnceCell::new(),
         });
         return;
     }
 
-    let Some(decoded) = decoded.as_ref() else {
+    let Some(decoded) = decoded else {
         state.frontend.skirmish_preview_texture = None;
         return;
     };
@@ -590,7 +612,371 @@ pub(super) fn ensure_map_preview_texture(
         received_preview: None,
         hd_setting,
         hd_picture: None,
+        source: decoded,
+        zoom: None,
+        briefing: OnceCell::new(),
     });
+}
+
+/// A texture of `picture` for drawing it `size` large: shrunk here by area
+/// when that is smaller, else at its own size for the GPU's linear filter to
+/// enlarge.
+fn picture_texture(state: &AppState, picture: &DecodedPreview, size: (i32, i32)) -> BatchTexture {
+    let shrunk = (size.0 > 0 && size.1 > 0 && (size.0 as u32) < picture.width).then(|| {
+        let (width, height) = (size.0 as u32, size.1 as u32);
+        let rgba = crate::render::area_scale::scale(
+            &picture.rgba,
+            picture.width as usize,
+            picture.height as usize,
+            width as usize,
+            height as usize,
+        );
+        (width, height, rgba)
+    });
+    let (width, height, rgba) = match &shrunk {
+        Some((width, height, rgba)) => (*width, *height, rgba.as_slice()),
+        None => (picture.width, picture.height, picture.rgba.as_slice()),
+    };
+    let (_, texture) = state.renderer.batch_renderer.create_updatable_texture(
+        &state.renderer.gpu.device,
+        &state.renderer.gpu.queue,
+        rgba,
+        width,
+        height,
+        wgpu::FilterMode::Linear,
+    );
+    texture
+}
+
+/// The briefing of the catalog map at `map_idx` (`map::basic::
+/// briefing_text`): from its `.yrm` file here, or an online row's catalog
+/// header. The retail maps in mixfiles carry none.
+fn map_briefing(state: &AppState, map_idx: usize) -> Option<String> {
+    let record = state.frontend.scenario_catalog.records().get(map_idx)?;
+    match record.source {
+        SkirmishScenarioSource::Online(_) => {
+            crate::app::map_library::online_briefing(state, map_idx)
+        }
+        SkirmishScenarioSource::LooseYrm(_) => {
+            let path =
+                crate::map::source::local_map_path(ra2_dir(state)?, &record.file_name).ok()?;
+            crate::map::basic::briefing_text(&crate::util::file_system::read(path).ok()?)
+        }
+        _ => None,
+    }
+}
+
+/// The briefing box's least distance from the enlarged picture's edges, and
+/// its margin around its text, in retail pixels.
+const BRIEFING_INSET: f32 = 12.0;
+const BRIEFING_PADDING: f32 = 6.0;
+/// The briefing box's most width, in retail pixels.
+const BRIEFING_MAX_WIDTH: f32 = 560.0;
+/// The last line of a briefing cut to fit.
+const BRIEFING_CUT: &str = "...";
+
+/// Where the enlarged preview's parts go, in window pixels.
+pub(super) struct ZoomLayout {
+    /// The rectangle the picture fills.
+    picture: RectPx,
+    /// The map's briefing over the picture, while it shows.
+    briefing: Option<BriefingBox>,
+}
+
+/// The map's briefing in a box over the middle of the enlarged picture.
+struct BriefingBox {
+    /// The box, darkened and framed as the screen behind the picture is.
+    frame: RectPx,
+    /// Its lines, wrapped to the box.
+    lines: Vec<String>,
+}
+
+/// The enlarged `picture` (its width and height) fitted in `area`, with the
+/// map's `briefing` over it ([`briefing_box`]).
+fn zoom_layout(
+    area: RectPx,
+    picture: (u32, u32),
+    briefing: Option<&str>,
+    font: &BitFont,
+    scale: f32,
+) -> ZoomLayout {
+    let fitted = aspect_fit_rect(area, picture.0, picture.1);
+    ZoomLayout {
+        picture: fitted,
+        briefing: briefing.and_then(|text| briefing_box(fitted, text, font, scale)),
+    }
+}
+
+/// `text` in a box centred over `picture`, as lobby programs show a map's
+/// briefing over its preview: as wide as its widest line, at most
+/// `BRIEFING_MAX_WIDTH`, and no taller than the picture, its last line "..."
+/// when not every line fits. `None` when the picture has no room for a line.
+fn briefing_box(picture: RectPx, text: &str, font: &BitFont, scale: f32) -> Option<BriefingBox> {
+    let px = |retail: f32| (retail * scale).round() as i32;
+    let (inset, padding) = (px(BRIEFING_INSET), px(BRIEFING_PADDING));
+    let line_height = font.cell_height() * scale;
+    let most_width = (picture.w - 2 * inset).min(px(BRIEFING_MAX_WIDTH));
+    let most_lines = ((picture.h - 2 * inset - 2 * padding) as f32 / line_height) as usize;
+    if most_width <= 2 * padding || most_lines == 0 {
+        return None;
+    }
+    // Wrapped in the font's own pixels; the glyphs draw `scale` times their
+    // size.
+    let wrapped = font.wrap_layout(text, ((most_width - 2 * padding) as f32 / scale) as u32);
+    let mut lines: Vec<String> = wrapped
+        .lines
+        .iter()
+        .map(|line| text[line.start_byte..line.end_byte].to_owned())
+        .collect();
+    if lines.len() > most_lines {
+        lines.truncate(most_lines - 1);
+        lines.push(BRIEFING_CUT.to_owned());
+    }
+    let width = ((wrapped.width as f32 * scale).ceil() as i32 + 2 * padding).min(most_width);
+    let height = (lines.len() as f32 * line_height).ceil() as i32 + 2 * padding;
+    Some(BriefingBox {
+        frame: RectPx::new(
+            picture.x + (picture.w - width) / 2,
+            picture.y + (picture.h - height) / 2,
+            width,
+            height,
+        ),
+        lines,
+    })
+}
+
+/// Keep the enlarged preview's texture made for the window while it shows,
+/// and close it once the box it enlarges is no longer `shown` or holds no
+/// picture. Where its parts go, while it shows.
+pub(super) fn ensure_zoom_texture(
+    state: &mut AppState,
+    scale: ShellScale,
+    shown: bool,
+) -> Option<ZoomLayout> {
+    if !crate::app::frontend::preview_zoom::is_open(state) {
+        if let Some(preview) = state.frontend.skirmish_preview_texture.as_mut() {
+            preview.zoom = None;
+        }
+        return None;
+    }
+    let margin = (ZOOM_MARGIN * scale.factor()).round() as i32;
+    let area = RectPx::new(
+        margin,
+        margin,
+        state.render_width() as i32 - 2 * margin,
+        state.render_height() as i32 - 2 * margin,
+    );
+    let shared: &AppState = state;
+    let layout = shared
+        .frontend
+        .skirmish_preview_texture
+        .as_ref()
+        .filter(|_| shown)
+        .map(|preview| {
+            let briefing = preview
+                .briefing
+                .get_or_init(|| map_briefing(shared, preview.selected_map_idx));
+            zoom_layout(
+                area,
+                (preview.width, preview.height),
+                briefing.as_deref(),
+                &shared.renderer.bit_font,
+                scale.factor(),
+            )
+        })
+        .filter(|layout| layout.picture.w > 0 && layout.picture.h > 0);
+    let Some(mut layout) = layout else {
+        crate::app::frontend::preview_zoom::close(state);
+        return None;
+    };
+    if let Some(briefing) = &layout.briefing
+        && !crate::app::frontend::preview_zoom::shows_briefing(state, briefing.frame)
+    {
+        layout.briefing = None;
+    }
+    let fitted = layout.picture;
+    let preview = state
+        .frontend
+        .skirmish_preview_texture
+        .as_ref()
+        .expect("a fitted picture");
+    let size = (fitted.w as u32, fitted.h as u32);
+    if preview
+        .zoom
+        .as_ref()
+        .is_none_or(|(_, made_for)| *made_for != size)
+    {
+        let texture = picture_texture(state, &preview.source, (fitted.w, fitted.h));
+        state
+            .frontend
+            .skirmish_preview_texture
+            .as_mut()
+            .expect("a fitted picture")
+            .zoom = Some((texture, size));
+    }
+    Some(layout)
+}
+
+/// The enlarged preview's draws, made before the pass that draws them
+/// ([`draw_zoom`]): the screen darkened behind a framed picture, with the
+/// box's start markers placed over it as the box places them, and over them
+/// the map's briefing in a darkened, framed box.
+pub(super) struct ZoomDraws {
+    /// The darkening and the picture's frame, from the shell atlas.
+    backdrop: Vec<SpriteInstance>,
+    picture: SpriteInstance,
+    /// The markers from the shell atlas, their numbers in the bit font.
+    markers: Vec<SpriteInstance>,
+    numbers: Vec<SpriteInstance>,
+    /// The briefing's box from the shell atlas, its lines in the bit font.
+    briefing: Vec<SpriteInstance>,
+    briefing_text: Vec<SpriteInstance>,
+}
+
+pub(super) struct ZoomBuffers {
+    backdrop: Option<(wgpu::Buffer, u32)>,
+    picture: Option<(wgpu::Buffer, u32)>,
+    markers: Option<(wgpu::Buffer, u32)>,
+    numbers: Option<(wgpu::Buffer, u32)>,
+    briefing: Option<(wgpu::Buffer, u32)>,
+    briefing_text: Option<(wgpu::Buffer, u32)>,
+}
+
+/// The enlarged preview as `layout` places it, with the start markers of
+/// `bounds` when the box draws them.
+pub(super) fn zoom_draws(
+    state: &AppState,
+    atlas: &SkirmishShellChromeAtlas,
+    layout: &ZoomLayout,
+    bounds: Option<&PreviewSourceBounds>,
+    scale: ShellScale,
+) -> ZoomDraws {
+    let fitted = layout.picture;
+    let font = &state.renderer.bit_font;
+    // The screen and the briefing's box are darkened alike, and framed as
+    // the picture is.
+    let darken = |out: &mut Vec<SpriteInstance>, rect: RectPx| {
+        out.extend(atlas.white_pixel.map(|pixel| SpriteInstance {
+            position: [rect.x as f32, rect.y as f32],
+            size: [rect.w as f32, rect.h as f32],
+            uv_origin: pixel.uv_origin,
+            uv_size: pixel.uv_size,
+            depth: ZOOM_DEPTH,
+            tint: [0.0; 3],
+            alpha: ZOOM_DIM,
+            ..Default::default()
+        }));
+    };
+    let frame = |out: &mut Vec<SpriteInstance>, rect: RectPx| {
+        super::chrome::push_rect_outline(
+            out,
+            atlas,
+            RectPx::new(rect.x - 1, rect.y - 1, rect.w + 2, rect.h + 2),
+            ZOOM_FRAME_RGB,
+            ZOOM_DEPTH,
+        );
+    };
+    let mut backdrop = Vec::new();
+    darken(
+        &mut backdrop,
+        RectPx::new(
+            0,
+            0,
+            state.render_width() as i32,
+            state.render_height() as i32,
+        ),
+    );
+    frame(&mut backdrop, fitted);
+    let positions = bounds
+        .map(|bounds| project_preview_start_positions(bounds, fitted))
+        .unwrap_or_default();
+    let mut markers = Vec::new();
+    push_start_marker_sprites(&mut markers, atlas, &positions, scale, ZOOM_DEPTH);
+    let mut numbers = Vec::new();
+    super::text::push_start_marker_labels(&mut numbers, state, &positions, scale, ZOOM_DEPTH);
+    let mut briefing = Vec::new();
+    let mut briefing_text = Vec::new();
+    if let Some(shown) = &layout.briefing {
+        darken(&mut briefing, shown.frame);
+        frame(&mut briefing, shown.frame);
+        let padding = (BRIEFING_PADDING * scale.factor()).round() as i32;
+        let line_height = font.cell_height() * scale.factor();
+        for (index, line) in shown.lines.iter().enumerate() {
+            briefing_text.extend(font.build_text(
+                line,
+                (shown.frame.x + padding) as f32,
+                (shown.frame.y + padding) as f32 + index as f32 * line_height,
+                scale.factor(),
+                ZOOM_DEPTH,
+                super::SHELL_LABEL_TEXT_RGB,
+                [0.0, 0.0],
+            ));
+        }
+    }
+    ZoomDraws {
+        backdrop,
+        picture: SpriteInstance {
+            position: [fitted.x as f32, fitted.y as f32],
+            size: [fitted.w as f32, fitted.h as f32],
+            uv_origin: [0.0, 0.0],
+            uv_size: [1.0, 1.0],
+            depth: ZOOM_DEPTH,
+            tint: [1.0, 1.0, 1.0],
+            alpha: 1.0,
+            ..Default::default()
+        },
+        markers,
+        numbers,
+        briefing,
+        briefing_text,
+    }
+}
+
+impl ZoomDraws {
+    pub(super) fn buffers(&self, state: &AppState) -> ZoomBuffers {
+        let batch = &state.renderer.batch_renderer;
+        let gpu = &state.renderer.gpu;
+        ZoomBuffers {
+            backdrop: batch.create_instance_buffer(gpu, &self.backdrop),
+            picture: batch.create_instance_buffer(gpu, &[self.picture]),
+            markers: batch.create_instance_buffer(gpu, &self.markers),
+            numbers: batch.create_instance_buffer(gpu, &self.numbers),
+            briefing: batch.create_instance_buffer(gpu, &self.briefing),
+            briefing_text: batch.create_instance_buffer(gpu, &self.briefing_text),
+        }
+    }
+}
+
+/// Draw the enlarged preview over everything but the cursor; the caller's
+/// scissor must cover the window.
+pub(super) fn draw_zoom<'a>(
+    pass: &mut wgpu::RenderPass<'a>,
+    state: &'a AppState,
+    atlas: &'a SkirmishShellChromeAtlas,
+    buffers: &'a ZoomBuffers,
+) {
+    let batch = &state.renderer.batch_renderer;
+    let Some((zoom, _)) = state
+        .frontend
+        .skirmish_preview_texture
+        .as_ref()
+        .and_then(|preview| preview.zoom.as_ref())
+    else {
+        return;
+    };
+    let font = state.renderer.bit_font.atlas();
+    for (buffer, texture) in [
+        (&buffers.backdrop, &atlas.texture),
+        (&buffers.picture, zoom),
+        (&buffers.markers, &atlas.texture),
+        (&buffers.numbers, font),
+        (&buffers.briefing, &atlas.texture),
+        (&buffers.briefing_text, font),
+    ] {
+        if let Some((buffer, count)) = buffer {
+            batch.draw_with_buffer_passthrough(pass, texture, buffer, *count);
+        }
+    }
 }
 
 pub(super) fn should_draw_start_marker_overlays(
@@ -655,6 +1041,40 @@ pub(super) fn build_preview_surface_instance(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_briefing_box_hugs_its_lines_in_the_pictures_middle_and_cuts_what_does_not_fit() {
+        let font = crate::render::bit_font::tests::make_test_font(&[(u16::from(b'x'), 6)], 3);
+        let area = RectPx::new(12, 12, 776, 576);
+        let (inset, padding) = (BRIEFING_INSET as i32, BRIEFING_PADDING as i32);
+
+        // The picture fills the area as without a briefing; the box over its
+        // middle is as wide as the widest line.
+        let short = zoom_layout(area, (400, 100), Some("x\nxx\nx"), &font, 1.0);
+        assert_eq!(short.picture, aspect_fit_rect(area, 400, 100));
+        let briefing = short.briefing.expect("a briefing");
+        let (picture, frame) = (short.picture, briefing.frame);
+        assert_eq!(briefing.lines, ["x", "xx", "x"]);
+        assert_eq!(frame.w, font.text_width("xx") as i32 + 2 * padding);
+        assert_eq!(
+            (frame.x, frame.y),
+            (
+                picture.x + (picture.w - frame.w) / 2,
+                picture.y + (picture.h - frame.h) / 2
+            )
+        );
+
+        // Forty lines over a low picture: cut to it, the last line shown "...".
+        let long = zoom_layout(area, (400, 100), Some(&["x"; 40].join("\n")), &font, 1.0);
+        let briefing = long.briefing.expect("a briefing");
+        assert!(briefing.lines.len() < 40);
+        assert_eq!(
+            briefing.lines.last().map(String::as_str),
+            Some(BRIEFING_CUT)
+        );
+        assert!(briefing.frame.y >= long.picture.y + inset);
+        assert!(briefing.frame.y + briefing.frame.h <= long.picture.y + long.picture.h - inset);
+    }
 
     #[test]
     fn received_preview_upload_respects_device_edges_and_exact_rgba_shape() {

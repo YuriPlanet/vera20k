@@ -127,21 +127,18 @@ impl TerrainPixels {
     }
 }
 
-pub(crate) fn minimap_overlay_datum(
-    rx: u16,
-    ry: u16,
+/// The kind of overlay `overlay_id` is, for the minimap and for VERA's map
+/// pictures' ore and gem marks (`app::map_picture`). Only Ore against Gem
+/// reads the stock three-character name family.
+pub(crate) fn overlay_classification(
     overlay_id: u8,
-    frame: u8,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    rules: Option<&RuleSet>,
-) -> MinimapOverlayDatum {
+) -> OverlayClassification {
     let flags = overlay_registry.and_then(|registry| registry.flags(overlay_id));
-    let name = overlay_registry
-        .and_then(|registry| registry.name(overlay_id))
-        .unwrap_or("");
-    let is_tiberium = flags.is_some_and(|flags| flags.tiberium);
-    let has_cell_anim = flags.is_some_and(|flags| flags.cell_anim.is_some());
-    let classification = if is_tiberium {
+    if flags.is_some_and(|flags| flags.tiberium) {
+        let name = overlay_registry
+            .and_then(|registry| registry.name(overlay_id))
+            .unwrap_or("");
         if name
             .get(..3)
             .is_some_and(|prefix| prefix.eq_ignore_ascii_case("GEM"))
@@ -156,7 +153,21 @@ pub(crate) fn minimap_overlay_datum(
         OverlayClassification::Bridge
     } else {
         OverlayClassification::Other
-    };
+    }
+}
+
+pub(crate) fn minimap_overlay_datum(
+    rx: u16,
+    ry: u16,
+    overlay_id: u8,
+    frame: u8,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    rules: Option<&RuleSet>,
+) -> MinimapOverlayDatum {
+    let flags = overlay_registry.and_then(|registry| registry.flags(overlay_id));
+    let is_tiberium = flags.is_some_and(|flags| flags.tiberium);
+    let has_cell_anim = flags.is_some_and(|flags| flags.cell_anim.is_some());
+    let classification = overlay_classification(overlay_id, overlay_registry);
     let has_tiberium_type = is_tiberium
         && overlay_registry
             .zip(rules)

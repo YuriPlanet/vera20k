@@ -935,6 +935,11 @@ impl App {
         Self::update_saved_game_browser(state, false);
         // Input routes to these same pages (`input::precedence`).
         let (page, screen_page) = crate::app::input::precedence::presented(state);
+        // VERA's enlarged map preview shows only over the pages that open it.
+        if page.is_some() || !matches!(screen_page, ScreenPage::Skirmish | ScreenPage::NetworkSetup)
+        {
+            crate::app::frontend::preview_zoom::close(state);
+        }
         match &state.frontend.screen {
             _ if page == Some(ModalPage::ShellError) => {
                 Self::render_shell_error(state, &mut encoder, &view)?;

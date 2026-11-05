@@ -3911,8 +3911,6 @@ impl ObjectType {
             } else {
                 (false, false, false, false, false)
             };
-        // `IsGattling=` gates the Stage loop read beside it (`0x0071407E`).
-        let is_gattling = section.read_bool("IsGattling", false);
         // `GuardRange=` and `AirRangeBonus=` are ReadRange whole leptons
         // (`0x007122B3`, `0x007147A9`), kept here as cells; `None` marks an
         // absent key.
@@ -4854,11 +4852,9 @@ impl ObjectType {
             tick_tank: category == ObjectCategory::Building && section.read_bool("TickTank", false),
             artillary: category == ObjectCategory::Building
                 && section.read_bool("Artillary", false),
-            is_gattling,
-            gattling_stages: crate::rules::gattling_type::GattlingStages::read(
-                section,
-                is_gattling,
-            ),
+            // Retained per-pass flag/table from the ordered Rules owner.
+            is_gattling: false,
+            gattling_stages: Default::default(),
             turret_count: 0,
             has_turret_tooltips: section.read_bool("HasTurretTooltips", false),
             drainable: section.read_bool("Drainable", false),
