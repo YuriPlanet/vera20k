@@ -68,6 +68,22 @@ mérito de tu contribución.
 
 Hablamos en [Discord](https://discord.gg/kmjRUn5m5F) y en el grupo de QQ (1097193563).
 
+## Arquitectura
+
+El motor tiene tres partes principales:
+
+- **Simulación:** Gestiona el estado y la lógica del juego.
+- **Renderizado:** Un pipeline de renderizado por GPU totalmente nuevo que usa los recursos
+  originales del juego, diseñado para conservar el aspecto original.
+- **Aplicación:** Se encarga de la entrada, los menús, el audio y la integración con la plataforma,
+  y conecta los sistemas entre sí.
+
+Esta separación favorece una jugabilidad determinista.
+
+Las flechas muestran el flujo de datos:
+
+![La aplicación envía comandos a la simulación, que devuelve el estado del mundo; la aplicación envía datos de dibujado al renderizado.](docs/images/architecture.es.png)
+
 ## Compilar y ejecutar
 
 Necesitas:

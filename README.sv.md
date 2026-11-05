@@ -67,6 +67,21 @@ erkännande för ditt bidrag.
 
 Diskussionen sker på [Discord](https://discord.gg/kmjRUn5m5F) och i QQ-gruppen (1097193563).
 
+## Arkitektur
+
+Motorn har tre huvuddelar:
+
+- **Simulering:** Ansvarar för speltillstånd och spellogik.
+- **Rendering:** En helt ny GPU-renderingspipeline som använder originalets spelresurser,
+  byggd för att bevara originalets utseende.
+- **Applikation:** Hanterar inmatning, menyer, ljud och plattformsintegration och kopplar ihop systemen.
+
+Denna uppdelning stöder deterministiskt spel.
+
+Pilarna visar dataflödet:
+
+![Applikationen skickar kommandon till simuleringen, som returnerar världstillståndet; applikationen skickar renderingsdata till renderingen.](docs/images/architecture.sv.png)
+
 ## Bygg och kör
 
 Du behöver:
