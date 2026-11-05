@@ -27,10 +27,8 @@ const BATCH_HEADER: usize = 1;
 const BATCH_VERSION: u8 = 2;
 // READY_REQUEST resends until the start (spec §6.0).
 const CONFIGURE_INTERVAL_MS: i32 = 125;
-// A restoring process reads history by PULL (spec §7.7), and gaps fall back
-// to it before A4's scheduler.
+// A restoring process reads history by PULL every 100 ms (spec §7.7).
 const REPLAY_RETRY_INTERVAL_MS: i32 = 100;
-const PUSH_SILENCE_REPAIR_MS: u32 = 1_000;
 const PAUSE_PROBE_INTERVAL_MS: i32 = 500;
 const PAUSE_COMPATIBILITY_PROBE_INTERVAL_MS: i32 = 5_000;
 const COMMAND_TRACE_HISTORY: usize = 256;
@@ -49,11 +47,9 @@ const MAX_TICK_COSTS: usize = 256;
 /// that owns it. Wall-clock observations; never simulation or delivery input.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DeliveryCounters {
-    /// Times the pushed stream stood behind the relay's head past its
-    /// one-frame reorder grace: lost datagrams, or push credit the relay had
-    /// not yet sent while this PC was behind.
+    /// Gaps in the pushed stream the relay session was told of, and the
+    /// fallback Pulls it sent for them (spec §7.7, §10.1).
     pub gaps: u64,
-    /// Pull requests sent to repair a gap or a silent push subscription.
     pub repair_pulls: u64,
     /// Local command batches whose sealed frame came back, with the
     /// first-transmission to frame-receipt time of each.
@@ -319,8 +315,6 @@ pub(super) struct SequencedSession {
     unreadable: Option<Unreadable>,
     last_control: Option<u32>,
     remote_next_sequence: u64,
-    repair_gap_since: Option<u32>,
-    gap_counted: bool,
     delivery: DeliveryCounters,
     pause: CanonicalPause,
     /// VERA: the current pause found this game catching up, and it has not
@@ -423,8 +417,6 @@ impl SequencedSession {
             unreadable: None,
             last_control: None,
             remote_next_sequence: 1,
-            repair_gap_since: None,
-            gap_counted: false,
             delivery: DeliveryCounters::default(),
             pause: CanonicalPause::default(),
             pause_found_behind: false,
@@ -804,31 +796,12 @@ impl SequencedSession {
             }
             return;
         }
-        let gap = self.cursor_gap();
-        // A status can overtake its immediately following pushed datagrams.
-        // Allow one nominal frame for reordering before requesting repair;
-        // healthy delivery must not turn every watermark into another Pull.
-        let gap_ready = if gap {
-            let since = *self.repair_gap_since.get_or_insert(now);
-            now.wrapping_sub(since) >= 1000_u32.div_ceil(u32::from(self.pace_fps))
-        } else {
-            self.repair_gap_since = None;
-            self.gap_counted = false;
-            false
-        };
-        if gap_ready && !self.gap_counted {
-            self.gap_counted = true;
-            self.delivery.gaps += 1;
-        }
-        let silent = self
-            .last_response
-            .is_some_and(|last| now.wrapping_sub(last) > PUSH_SILENCE_REPAIR_MS);
-        if (gap_ready || silent)
-            && service_due(self.last_control, now, REPLAY_RETRY_INTERVAL_MS)
-            && transport.pull_ordering(self.next_sequence).is_ok()
-        {
-            self.last_control = Some(now);
-            self.delivery.repair_pulls += 1;
+        // Gaps go to the relay first by UPLINK; the session pulls only
+        // after its grace (spec §7.7).
+        let _ = transport.poll_repair_pull();
+        if let Some(stats) = transport.relay_link_stats() {
+            self.delivery.gaps = stats.gaps;
+            self.delivery.repair_pulls = stats.repair_pulls;
         }
     }
 
@@ -984,7 +957,6 @@ impl SequencedSession {
                 OrderError::NotConfigured => {
                     self.started = false;
                     self.last_control = None;
-                    self.repair_gap_since = None;
                 }
                 OrderError::NotStarted | OrderError::Backpressure => {}
                 OrderError::BatchGap => {

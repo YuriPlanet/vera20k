@@ -730,6 +730,29 @@ impl LanUdpTransport {
         Ok(true)
     }
 
+    /// Sends the fallback PULL the session wants, if any (spec §7.7).
+    pub(super) fn poll_repair_pull(&mut self) -> io::Result<bool> {
+        let mut io = self.lock();
+        let io = &mut *io;
+        let Some(route) = io.relay.as_mut().filter(|route| route.retiring.is_none()) else {
+            return Ok(false);
+        };
+        let now_ms = route.now_ms();
+        if !route.session.poll_repair_pull(now_ms, &mut route.encoded) {
+            return Ok(false);
+        }
+        io.primary.send_to(&route.encoded, route.address)?;
+        Ok(true)
+    }
+
+    /// See `ClientSession::link_stats`.
+    pub fn relay_link_stats(&self) -> Option<vera20k_relay_protocol::ClientLinkStats> {
+        self.lock()
+            .relay
+            .as_ref()
+            .map(|route| route.session.link_stats())
+    }
+
     pub fn pull_ordering(&mut self, next_sequence: u64) -> io::Result<()> {
         self.send_ordering(|route, now_ms| {
             route

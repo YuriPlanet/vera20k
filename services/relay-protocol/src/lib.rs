@@ -835,6 +835,24 @@ pub struct OrderingCounts {
     pub pull_replies: u64,
     /// Matches this relay ended with a DESYNC record.
     pub desyncs: u64,
+    /// Reader downlink (spec §10.2). Pushed datagrams and their bytes by
+    /// send-log kind: 0 status, 1 new pack, 2 repeat, 3 retransmission,
+    /// 4 tail probe.
+    pub push_packets: [u64; 5],
+    pub push_bytes: [u64; 5],
+    /// Old records piggybacked in new packs.
+    pub piggybacked_records: u64,
+    /// Downlink datagrams judged lost.
+    pub down_lost_packets: u64,
+    /// Records retransmitted for them.
+    pub retransmitted_records: u64,
+    /// Subscribed readers seen by push passes in each state (by
+    /// `LinkState::index`), and the passes: their ratio is the average
+    /// number of readers in that state.
+    pub reader_states: [u64; 4],
+    pub reader_passes: u64,
+    /// About one new pack per new stream head an offline reader missed.
+    pub offline_unsent_packets: u64,
 }
 
 /// Bound storage and packet rate; untrusted data never creates a room until

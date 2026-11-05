@@ -7,6 +7,7 @@ use sha2::Digest;
 
 use super::*;
 
+mod downlink;
 pub(crate) mod federation;
 
 /// A `VO1C` certificate; `VO2C` adds one flags byte.
@@ -972,7 +973,6 @@ fn ack(batch_id: u64, frame: u32) -> Vec<Vec<u8>> {
 
 /// Per authenticated hop delivery credit, derived from the immutable stream.
 /// No packet bodies or simulation progress are retained here.
-#[derive(Clone, Copy)]
 pub(super) struct PushSubscription {
     acknowledged_next: u64,
     sent_next: u64,
@@ -985,6 +985,14 @@ pub(super) struct PushSubscription {
     status_state: (bool, u32),
     // UPLINK RESTORING: keep the subscription, push no records (spec §7.1).
     restoring: bool,
+    // Record ranges `[from, to)` owed again (spec §7.3), sorted, disjoint.
+    retransmit: VecDeque<(u64, u64)>,
+    // Ranges retransmitted recently, with when, for once-per-srtt.
+    retransmitted: VecDeque<(u64, u64, u64)>,
+    pto_backoff: u32,
+    last_ack_progress_ms: u64,
+    // The stream end last counted as missed while offline (spec §10.2).
+    offline_seen_next: u64,
 }
 
 impl PushSubscription {
@@ -1000,6 +1008,11 @@ impl PushSubscription {
             status_at: now_ms,
             status_state,
             restoring,
+            retransmit: VecDeque::new(),
+            retransmitted: VecDeque::new(),
+            pto_backoff: 0,
+            last_ack_progress_ms: now_ms,
+            offline_seen_next: 0,
         }
     }
 
@@ -1007,6 +1020,8 @@ impl PushSubscription {
     pub(super) fn fill_stats(&self, stats: &mut crate::ReaderLinkStats) {
         stats.acked_next = self.acknowledged_next;
         stats.sent_next = self.sent_next;
+        stats.retransmit_ranges = self.retransmit.len();
+        stats.pto_backoff = self.pto_backoff;
     }
 }
 
@@ -2435,7 +2450,7 @@ mod tests {
     }
 
     /// An UPLINK with PUSH acknowledging `cursor`, without batches.
-    fn subscribe(
+    pub(super) fn subscribe(
         server: &mut RelayServer,
         client: &mut ClientSession,
         cursor: u64,
@@ -3630,7 +3645,10 @@ mod tests {
         }
         // 81 frame ends.
         server.advance_clock(2000, unix(2000));
-        let mut sent = [0; 6];
+        // Heard within the 1500 ms offline limit (spec §5.1).
+        for peer in &mut clients {
+            subscribe(&mut server, peer, 1, 1999);
+        }
         let mut lost = false;
         for _ in 0..20 {
             let mut per_peer = BTreeMap::new();
@@ -3641,7 +3659,6 @@ mod tests {
                     .unwrap();
                 *per_peer.entry(index).or_insert(0) += 1;
                 if packet.bytes[SERVER_HEADER] == PACK_EVENT {
-                    sent[index] += usize::from(packet.bytes[SERVER_HEADER + 9]);
                     if index == 0 && !lost {
                         lost = true;
                         continue; // a real missing authenticated datagram
@@ -3650,15 +3667,18 @@ mod tests {
                 received(&mut clients[index], &packet.bytes);
             }
             assert!(
-                per_peer.values().all(|count| *count <= 2),
-                "a status and a pack"
+                per_peer.values().all(|count| *count <= 3),
+                "a status, a pack and a tail probe"
             );
         }
         assert!(lost);
-        assert_eq!(
-            sent, [64; 6],
-            "unacknowledged readers cannot exceed their individual credit"
-        );
+        for source in 0..6 {
+            assert_eq!(
+                server.reader_link_stats([5; 16], source).unwrap().sent_next,
+                65,
+                "unacknowledged readers cannot exceed their individual credit"
+            );
+        }
         // A healthy reader continues without granting the stalled readers credit.
         subscribe(&mut server, &mut clients[1], 65, 2001);
         let next = server.drain_ordering_push(2001, unix(2001));
@@ -3686,8 +3706,9 @@ mod tests {
         );
     }
 
+    /// Spec §7.5: only a lossy reader gets the 8 ms repeat, once.
     #[test]
-    fn push_repeats_unacknowledged_entries_once_after_a_short_delay() {
+    fn push_repeats_unacknowledged_entries_once_8_ms_on_only_while_lossy() {
         fn frame_ends(reader: &mut ClientSession, packets: Vec<ForwardDatagram>) -> Vec<u64> {
             packets
                 .into_iter()
@@ -3700,41 +3721,46 @@ mod tests {
         }
         let key = SecretKey::new([73; 32]);
         let mut server = RelayServer::new(key.clone(), 2);
-        let (mut reader, mut other) = (client(&key, 0), client(&key, 1));
+        let (mut lossy, mut good) = (client(&key, 0), client(&key, 1));
         let cert = certificate(&key, 3, 1400);
-        for peer in [&mut reader, &mut other] {
+        for peer in [&mut lossy, &mut good] {
             connect(&mut server, peer, 0);
             configure(&mut server, peer, &cert, 0);
+            subscribe(&mut server, peer, 1, 0);
         }
-        subscribe(&mut server, &mut reader, 1, 0);
+        server.rooms.get_mut(&[5; 16]).unwrap().peers[0]
+            .link
+            .loss
+            .lossy = true;
         server.advance_clock(300, unix(300));
-        assert_eq!(
-            frame_ends(&mut reader, server.drain_ordering_push(300, unix(300))),
-            [1, 2, 3]
-        );
-        // The next turn's pack is lost; the first pack goes once more.
-        server.advance_clock(350, unix(350));
-        let (lost, repeated): (Vec<_>, Vec<_>) = server
-            .drain_ordering_push(350, unix(350))
-            .into_iter()
-            .partition(|packet| {
-                packet.bytes[SERVER_HEADER] == PACK_EVENT
-                    && read_u64(&packet.bytes, SERVER_HEADER + 1) == 4
-            });
-        assert_eq!(lost.len(), 1);
-        assert_eq!(frame_ends(&mut reader, repeated), [1, 2, 3]);
-        // Requests advance the clock, and the next turn is due only at 400 ms.
-        subscribe(&mut server, &mut reader, 4, 351);
-        assert!(server.drain_ordering_push(357, unix(357)).is_empty());
-        assert_eq!(
-            frame_ends(&mut reader, server.drain_ordering_push(358, unix(358))),
-            [4, 5, 6],
-            "unacknowledged entries return without a reader request"
-        );
+        let first = server.drain_ordering_push(300, unix(300));
+        let (lossy_at, good_at) = (endpoint(&lossy), endpoint(&good));
+        let to = |at: SocketAddrV4, packets: &[ForwardDatagram]| -> Vec<ForwardDatagram> {
+            packets
+                .iter()
+                .filter(|packet| packet.endpoint == at)
+                .map(|packet| ForwardDatagram {
+                    endpoint: packet.endpoint,
+                    bytes: packet.bytes.clone(),
+                })
+                .collect()
+        };
+        assert_eq!(frame_ends(&mut lossy, to(lossy_at, &first)), [1, 2, 3]);
+        assert_eq!(frame_ends(&mut good, to(good_at, &first)), [1, 2, 3]);
+        assert!(server.drain_ordering_push(307, unix(307)).is_empty());
+        let repeat = server.drain_ordering_push(308, unix(308));
         assert!(
-            server.drain_ordering_push(399, unix(399)).is_empty(),
+            to(good_at, &repeat).is_empty(),
+            "a good reader gets no repeat"
+        );
+        assert_eq!(frame_ends(&mut lossy, to(lossy_at, &repeat)), [1, 2, 3]);
+        assert!(
+            server.drain_ordering_push(330, unix(330)).is_empty(),
             "each entry is repeated once"
         );
+        let stats = server.reader_link_stats([5; 16], 0).unwrap();
+        assert_eq!(stats.packets_by_kind[2], 1);
+        assert_eq!(stats.piggyback_depth, 2);
     }
 
     #[test]
@@ -3747,6 +3773,10 @@ mod tests {
             connect(&mut server, reader, 0);
             configure(&mut server, reader, &cert, 0);
             subscribe(&mut server, reader, 1, 0);
+        }
+        // Only lossy readers get repeats (spec §7.5).
+        for peer in &mut server.rooms.get_mut(&[5; 16]).unwrap().peers {
+            peer.link.loss.lossy = true;
         }
         // Seven full batches in frame 1: each fills a pack of its own.
         let mut bytes = Vec::new();
@@ -5921,6 +5951,8 @@ impl RelayServer {
             .iter_mut()
             .find(|peer| peer.ticket == ticket)
             .ok_or(RelayError::Unregistered)?;
+        // A reader back from offline restarts from its watermark (§5.5).
+        peer.evaluate_reader(now_ms);
         // §7.1 step 2: the watermark only grows, so a reordered UPLINK
         // cannot move it back. PUSH subscribes or renews the 3000 ms lease.
         if peer
@@ -5937,8 +5969,7 @@ impl RelayServer {
         if cursor_error.is_none() {
             let restoring = uplink.flags & crate::link::FLAG_RESTORING != 0;
             if let Some(push) = peer.push.as_mut() {
-                push.acknowledged_next = cursor;
-                push.sent_next = push.sent_next.max(cursor);
+                push.acknowledge(cursor, now_ms);
                 push.restoring = restoring;
                 if uplink.flags & crate::link::FLAG_PUSH != 0 {
                     push.refreshed_at = now_ms;
@@ -5955,6 +5986,20 @@ impl RelayServer {
         // §7.1 step 3.
         peer.link.delayed = uplink.link & crate::link::LINK_DELAYED != 0;
         peer.link.srtt_c = uplink.srtt_ms;
+        // §7.1 step 4: downlink loss, and what the lost packs owe (§7.3).
+        let lost = peer.link.judge(uplink.down);
+        self.ordering_counts.down_lost_packets += lost.len() as u64;
+        if let Some(push) = peer.push.as_mut() {
+            for send in lost.iter().filter(|send| send.count > 0) {
+                push.enqueue_lost(
+                    send,
+                    peer.link.sent_after(send.sequence),
+                    peer.link.srtt_c,
+                    now_ms,
+                );
+            }
+        }
+        peer.evaluate_reader(now_ms);
         let mut batch_error = None;
         for (index, opaque) in uplink.batches.iter().enumerate() {
             let id = uplink.first_batch_id + index as u64;
@@ -5991,207 +6036,6 @@ impl RelayServer {
             return Ok(Vec::new());
         }
         self.ordering_reply(ticket, replies, now, now_ms, crate::link::SEND_OTHER)
-    }
-
-    /// Drain a bounded fair share of already committed history. Canonical
-    /// advancement remains solely in `advance_clock`; a slow reader consumes
-    /// only its own delivery credit and never stalls another participant.
-    pub fn drain_ordering_push(&mut self, now_ms: u64, now: u64) -> Vec<ForwardDatagram> {
-        self.prune(now);
-        let mut recipients = Vec::new();
-        for (id, room) in &mut self.rooms {
-            for peer in &mut room.peers {
-                if room.ordering.is_none()
-                    || peer.ticket.expires <= now
-                    || peer.push.is_some_and(|push| {
-                        now_ms.saturating_sub(push.refreshed_at) >= PUSH_LEASE_MS
-                    })
-                {
-                    peer.push = None;
-                }
-                if peer.push.is_some() {
-                    recipients.push((*id, peer.ticket.source));
-                }
-            }
-        }
-        recipients.sort_unstable();
-        if recipients.is_empty() {
-            return Vec::new();
-        }
-        if let Some(after) = self.push_after {
-            let start = recipients.partition_point(|recipient| *recipient <= after);
-            let count = recipients.len();
-            recipients.rotate_left(start % count);
-        }
-        let mut output = Vec::new();
-        let mut output_bytes = 0;
-        let mut room_packets = HashMap::new();
-        // Each reader reached, with its stream end before this pass and the
-        // fresh packets it was sent.
-        let mut reached = Vec::new();
-        for (id, source) in recipients {
-            if output.len() == PUSH_DRAIN_PACKETS || output_bytes >= PUSH_DRAIN_BYTES {
-                break;
-            }
-            let room_used = *room_packets.get(&id).unwrap_or(&0);
-            let limit = PUSH_PEER_PACKETS
-                .min(PUSH_ROOM_PACKETS - room_used)
-                .min(PUSH_DRAIN_PACKETS - output.len());
-            if limit == 0 {
-                continue;
-            }
-            self.push_after = Some((id, source));
-            let room = self.rooms.get_mut(&id).expect("listed room");
-            let peer = room
-                .peers
-                .iter()
-                .find(|peer| peer.ticket.source == source)
-                .expect("listed peer");
-            let ticket = peer.ticket;
-            let push = peer.push.expect("listed subscription");
-            reached.push((id, ticket, push.sent_next, 0));
-            let ordering = room.ordering.as_mut().expect("subscribed ordering room");
-            let state = ordering.push_status_state(now_ms);
-            let status_due = state != push.status_state
-                || now_ms.saturating_sub(push.status_at) >= PUSH_STATUS_MS;
-            // Credit counts entries; the caps count datagrams, each a pack.
-            let credit =
-                PUSH_WINDOW.saturating_sub(push.sent_next - push.acknowledged_next) as usize;
-            let datagrams = if push.restoring {
-                0
-            } else {
-                limit - usize::from(status_due)
-            };
-            let records =
-                ordering.history_page(push.sent_next, if datagrams == 0 { 0 } else { credit });
-            let (replies, entries, terminal) = match records {
-                Ok(records) => {
-                    let packs = pack_entries(&records, datagrams);
-                    let entries = packs.iter().map(|(_, count)| count).sum::<usize>();
-                    let mut replies = Vec::with_capacity(packs.len() + usize::from(status_due));
-                    if status_due {
-                        replies.push(ordering.status(now_ms));
-                    }
-                    replies.extend(packs.into_iter().map(|(pack, _)| pack));
-                    (replies, entries, false)
-                }
-                Err((code, expected)) => (error(code, expected), 0, true),
-            };
-            if replies.is_empty() {
-                continue;
-            }
-            let bytes = replies
-                .iter()
-                .map(|payload| SERVER_HEADER + MAC_LEN + payload.len())
-                .sum::<usize>();
-            if bytes > PUSH_DRAIN_BYTES - output_bytes {
-                continue;
-            }
-            // Reuse the request-reply authentication and all three rate-budget
-            // owners. Failed budget admission cannot move the stream cursor.
-            let Ok(datagrams) =
-                self.ordering_reply(ticket, replies, now, now_ms, crate::link::SEND_FRESH)
-            else {
-                continue;
-            };
-            if let Some((.., fresh)) = reached.last_mut() {
-                *fresh = datagrams.len();
-            }
-            *room_packets.entry(id).or_insert(0) += datagrams.len();
-            output_bytes += bytes;
-            output.extend(datagrams);
-            let peer = self
-                .rooms
-                .get_mut(&id)
-                .unwrap()
-                .peers
-                .iter_mut()
-                .find(|peer| peer.ticket == ticket)
-                .unwrap();
-            if terminal {
-                peer.push = None;
-            } else if let Some(push) = peer.push.as_mut() {
-                // With no older entry owed a copy, this pass starts the delay.
-                if entries > 0 && push.repeat_next.max(push.acknowledged_next) >= push.sent_next {
-                    push.unrepeated_since = Some(now_ms);
-                }
-                push.sent_next += entries as u64;
-                if status_due {
-                    push.status_at = now_ms;
-                    push.status_state = state;
-                }
-            }
-        }
-        // Fresh delivery has priority. Repeats then use only what this pass
-        // has left and a budget of their own, checked before any history is
-        // copied, so they never delay or rate-limit a fresh entry or a request
-        // reply. They copy entries sent before this pass, which the reader
-        // holds or lost, so they take no credit; a reader replaying the
-        // journal repairs its own losses.
-        for (id, ticket, before, fresh) in reached {
-            if output.len() == PUSH_DRAIN_PACKETS || output_bytes >= PUSH_DRAIN_BYTES {
-                break;
-            }
-            let room_used = *room_packets.get(&id).unwrap_or(&0);
-            let room = self.rooms.get_mut(&id).expect("listed room");
-            let Some(peer) = room.peers.iter_mut().find(|peer| peer.ticket == ticket) else {
-                continue;
-            };
-            let (Some(push), Some(ordering)) = (peer.push, room.ordering.as_ref()) else {
-                continue;
-            };
-            if push.restoring
-                || push
-                    .unrepeated_since
-                    .is_none_or(|at| now_ms.saturating_sub(at) < PUSH_REPEAT_MS)
-            {
-                continue;
-            }
-            let from = push
-                .repeat_next
-                .max(push.acknowledged_next)
-                .max(ordering.hot_oldest_seq());
-            let capacity = (PUSH_PEER_PACKETS - fresh)
-                .min(PUSH_ROOM_PACKETS - room_used)
-                .min(PUSH_DRAIN_PACKETS - output.len())
-                .min(self.repeat_packets.remaining(now, PUSH_REPEAT_PACKETS) as usize);
-            let owed = before.saturating_sub(from);
-            let mut repeated = 0;
-            let mut packets = 0;
-            if owed > 0 && capacity > 0 {
-                let records = ordering.hot_page(from, owed as usize);
-                for (pack, entries) in pack_entries(&records, capacity) {
-                    let bytes = SERVER_HEADER + MAC_LEN + pack.len();
-                    if output_bytes + bytes > PUSH_DRAIN_BYTES {
-                        break;
-                    }
-                    let Ok(datagram) = server_packet(
-                        peer,
-                        CONTROL,
-                        ticket.source,
-                        &pack,
-                        now_ms,
-                        crate::link::SEND_REPEAT,
-                    ) else {
-                        break;
-                    };
-                    output_bytes += bytes;
-                    output.push(datagram);
-                    repeated += entries as u64;
-                    packets += 1;
-                }
-            }
-            self.repeat_packets.charge(now, packets);
-            *room_packets.entry(id).or_insert(0) += packets as usize;
-            let push = peer.push.as_mut().expect("subscribed reader");
-            push.repeat_next = from + repeated;
-            // Once every entry sent before this pass went twice, this pass's
-            // entries start the next wait.
-            if push.repeat_next >= before {
-                push.unrepeated_since = (push.sent_next > before).then_some(now_ms);
-            }
-        }
-        output
     }
 
     /// Sends `replies` on `ticket`'s hop under every rate budget. STATUS and

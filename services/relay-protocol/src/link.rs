@@ -19,7 +19,7 @@ pub(crate) use codec::{
     FEEDBACK_LEN, FLAG_PROBE, FLAG_PUSH, FLAG_RESTORING, LINK_DELAYED, PaceSegment, UPLINK_REQUEST,
     append_feedback, decode_uplink, read_feedback,
 };
-pub(crate) use measure::{LossCursor, LossStats, RttEstimator, StateClock, link_state};
+pub(crate) use measure::{LossCursor, LossStats, RttEstimator, StateClock, link_state, pto};
 
 use crate::{
     ClientSession, OrderError, OrderEvent, OrderPace, OrderStatus, RelayError, RelayServer,
@@ -328,7 +328,11 @@ impl ClientSession {
         );
         let feedback = match &event {
             ServerEvent::Ordering(OrderEvent::Ack { feedback, .. }) => Some(*feedback),
-            ServerEvent::Ordering(OrderEvent::Status(status)) => Some(status.feedback),
+            ServerEvent::Ordering(OrderEvent::Status(status)) => {
+                let (next_seq, feedback) = (status.next_seq, status.feedback);
+                self.note_status_next(next_seq);
+                Some(feedback)
+            }
             ServerEvent::Ordering(OrderEvent::Error {
                 code: OrderError::Backpressure,
                 ..
@@ -471,10 +475,13 @@ impl ClientSession {
     /// `out` when a gap reported through `set_ordering_gap` has lasted
     /// `G = clamp(srtt + 4 * rttvar + turn_ms, 100, 1000)` ms without the
     /// watermark advancing, then again after each further `G` multiple, at
-    /// most 1000 ms apart (spec §7.7). Returns whether it encoded one.
+    /// most 1000 ms apart (spec §7.7). Before any RTT sample `G` uses srtt
+    /// 100 and rttvar 50. While the newest STATUS `next_seq` is more than 64
+    /// past `recv_next` it pulls at once and then every `G` instead. Never
+    /// before the start or while RESTORING, where the sequencing layer pulls
+    /// itself. Returns whether it encoded one.
     pub fn poll_repair_pull(&mut self, now_ms: u64, out: &mut Vec<u8>) -> bool {
-        let _ = (now_ms, out);
-        todo!("A4")
+        self.poll_repair(now_ms, out)
     }
 
     // --- Observation ---
@@ -707,6 +714,11 @@ impl ReaderLink {
             self.up_high_at_ms = now_ms;
         }
         self.last_heard_ms = self.last_heard_ms.max(now_ms);
+    }
+
+    /// Judges nothing sent before hop sequence `next` (spec §5.5).
+    pub(crate) fn skip_judged_to(&mut self, next: u64) {
+        self.cursor.skip_to(next);
     }
 
     /// The ACK and STATUS tail, read when the reply is encoded (spec §4.1).

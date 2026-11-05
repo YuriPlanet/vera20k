@@ -50,7 +50,7 @@ impl TrafficCounts {
 
     fn report(&self, seconds: u64, rooms: usize, ordering: OrderingCounts) {
         eprintln!(
-            "VERA20k relay interval_s={seconds} rooms={rooms} slowdowns={} raises={} catching_up_s={} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={} pushed={} pushed_bytes={} pull_replies={} desyncs={}",
+            "VERA20k relay interval_s={seconds} rooms={rooms} slowdowns={} raises={} catching_up_s={} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={} pushed={} pushed_bytes={} pull_replies={} desyncs={} push_packets={:?} push_bytes={:?} piggybacked_records={} down_lost={} retransmitted_records={} readers_avg={:?} offline_unsent={}",
             ordering.slowdowns,
             ordering.raises,
             ordering.catching_up_s,
@@ -70,6 +70,17 @@ impl TrafficCounts {
             self.pushed_bytes,
             ordering.pull_replies,
             ordering.desyncs,
+            ordering.push_packets,
+            ordering.push_bytes,
+            ordering.piggybacked_records,
+            ordering.down_lost_packets,
+            ordering.retransmitted_records,
+            // Average subscribed readers per state: good, lossy, congested,
+            // offline (spec §10.2).
+            ordering
+                .reader_states
+                .map(|seen| seen as f64 / ordering.reader_passes.max(1) as f64),
+            ordering.offline_unsent_packets,
         );
     }
 }

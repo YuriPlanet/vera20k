@@ -14,6 +14,10 @@ const ACK_INTERVAL_CONGESTED_MS: u64 = 200;
 /// A checksum sample waits this long for another UPLINK (spec §6.3).
 const CHECKSUM_SEND_MS: u64 = 100;
 const MAX_BATCHES: usize = super::codec::MAX_UPLINK_BATCHES;
+const PULL_GRACE_MIN: u64 = 100;
+const PULL_GRACE_MAX: u64 = 1000;
+/// A STATUS this far ahead of the watermark is pulled at once (spec §7.7).
+const FAR_BEHIND: u64 = 64;
 
 /// The uplink scheduler's state, carried across hop renewals with the
 /// ordering state; the per-hop part is in `HopLink`.
@@ -38,6 +42,10 @@ pub(crate) struct Schedule {
     copies: Option<Copies>,
     pub(crate) gap: Option<Gap>,
     last: Option<LastUplink>,
+    /// The newest STATUS `next_seq` (spec §7.7).
+    pub(crate) status_next_seq: u64,
+    // When the next far-behind PULL is due.
+    far_pull_ms: Option<u64>,
 }
 
 /// Lossy-state copies still owed for a first transmission (row 6).
@@ -56,9 +64,11 @@ pub(crate) struct Gap {
     pub(crate) since_ms: u64,
     // An UPLINK went out while this gap was open.
     pub(crate) uplinked: bool,
-    // Fallback PULLs sent for it, and the watermark when it opened.
+    // Fallback PULLs sent for it, when the next is due, and the watermark
+    // it last saw: an advance restarts the grace (spec §7.7).
     pub(crate) pulls: u32,
     pub(crate) next_pull_ms: Option<u64>,
+    pub(crate) watermark: u64,
 }
 
 /// What the IO-thread heartbeat repeats (spec §6.6).
@@ -502,6 +512,7 @@ impl ClientSession {
                     uplinked: false,
                     pulls: 0,
                     next_pull_ms: None,
+                    watermark: link.schedule.recv_next.max(1),
                 });
             }
             (Some(open), Some(kind)) => open.kind = kind,
@@ -515,8 +526,74 @@ impl ClientSession {
         }
     }
 
+    /// `G = clamp(srtt + 4 * rttvar + turn_ms, 100, 1000)` (spec §7.7), with
+    /// the §4.6 defaults srtt 100 and rttvar 50 before any sample.
+    fn pull_grace(&self) -> u64 {
+        let link = &self.ordering.as_ref().expect("ordering").link;
+        let (srtt, rttvar) = link.rtt.srtt.map_or((100, 50), |srtt| {
+            (u64::from(srtt), u64::from(link.rtt.rttvar))
+        });
+        (srtt + 4 * rttvar + u64::from(link.schedule.turn_ms)).clamp(PULL_GRACE_MIN, PULL_GRACE_MAX)
+    }
+
+    /// `poll_repair_pull`'s body (spec §7.7).
+    pub(crate) fn poll_repair(&mut self, now_ms: u64, out: &mut Vec<u8>) -> bool {
+        if !self.uplink_open() || self.ordering.as_ref().expect("ordering").restoring {
+            return false;
+        }
+        let grace = self.pull_grace();
+        let schedule = &mut self.ordering.as_mut().expect("ordering").link.schedule;
+        let recv_next = schedule.recv_next.max(1);
+        let far = schedule.status_next_seq > recv_next + FAR_BEHIND;
+        let due = if far {
+            schedule.far_pull_ms.is_none_or(|at| at <= now_ms)
+        } else {
+            schedule.far_pull_ms = None;
+            match schedule.gap.as_mut() {
+                Some(gap) => {
+                    if recv_next > gap.watermark {
+                        gap.watermark = recv_next;
+                        gap.since_ms = now_ms;
+                        gap.pulls = 0;
+                        gap.next_pull_ms = None;
+                    }
+                    gap.next_pull_ms.unwrap_or(gap.since_ms + grace) <= now_ms
+                }
+                None => false,
+            }
+        };
+        if !due {
+            return false;
+        }
+        self.clock_ms = now_ms;
+        if self.pull_ordering(recv_next, out).is_err() {
+            return false;
+        }
+        let link = &mut self.ordering.as_mut().expect("ordering").link;
+        link.repair_pulls += 1;
+        let schedule = &mut link.schedule;
+        if far {
+            schedule.far_pull_ms = Some(now_ms + grace);
+        } else if let Some(gap) = schedule.gap.as_mut() {
+            gap.pulls += 1;
+            let backoff = grace
+                .checked_shl(gap.pulls)
+                .unwrap_or(PULL_GRACE_MAX)
+                .min(PULL_GRACE_MAX);
+            gap.next_pull_ms = Some(now_ms + backoff);
+        }
+        true
+    }
+
     /// Receipt bookkeeping of `receive_at`: the start (spec §6.0) and a PACK
     /// confirming this hop's subscription.
+    pub(crate) fn note_status_next(&mut self, next_seq: u64) {
+        if let Some(ordering) = self.ordering.as_mut() {
+            let schedule = &mut ordering.link.schedule;
+            schedule.status_next_seq = schedule.status_next_seq.max(next_seq);
+        }
+    }
+
     pub(crate) fn note_ordering_receipt(&mut self, started: bool, pack: bool) {
         if pack {
             self.hop.first_pack = true;
@@ -529,11 +606,6 @@ impl ClientSession {
 
 #[cfg(test)]
 impl ClientSession {
-    /// Test support: marks the match started, as its STATUS would.
-    pub(crate) fn test_start(&mut self) {
-        self.note_ordering_receipt(true, false);
-    }
-
     /// Test support: an UPLINK with the queued content and only batch `id`
     /// (sealed or retained), sent regardless of the schedule.
     pub(crate) fn test_uplink(
@@ -793,6 +865,41 @@ mod tests {
         assert_eq!(decoded(&paced).pace.unwrap().tick_micros, 2100);
         assert!(decoded(&paced).checksums.is_empty());
         assert!(decoded(&poll(&mut session, 610).unwrap()).pace.is_none());
+    }
+
+    #[test]
+    fn a_gap_pulls_after_its_grace_and_backs_off_unless_the_watermark_moves() {
+        let mut session = started();
+        let mut out = Vec::new();
+        poll(&mut session, 0).unwrap();
+        session.set_ordering_gap(Some(OrderingGap::Reordered), 5);
+        // No sample: G = 100 + 4 * 50 + turn_ms 67.
+        assert!(!session.poll_repair_pull(371, &mut out));
+        assert!(session.poll_repair_pull(372, &mut out));
+        assert!(!session.poll_repair_pull(1105, &mut out), "twice G next");
+        assert!(session.poll_repair_pull(1106, &mut out));
+        // Progress restarts the grace from the service that sees it; the
+        // closed gap was not repaired by push.
+        session.set_ordering_received_next(4);
+        assert!(!session.poll_repair_pull(1200, &mut out));
+        assert!(!session.poll_repair_pull(1566, &mut out));
+        assert!(session.poll_repair_pull(1567, &mut out));
+        session.set_ordering_gap(None, 1600);
+        let stats = session.link_stats();
+        assert_eq!(
+            (stats.gaps, stats.repair_pulls, stats.gaps_repaired_by_push),
+            (1, 3, 0)
+        );
+        // A STATUS 64 or more past the watermark pulls at once, then every G.
+        session.note_status_next(68);
+        assert!(
+            !session.poll_repair_pull(1600, &mut out),
+            "64 ahead is near"
+        );
+        session.note_status_next(69);
+        assert!(session.poll_repair_pull(1600, &mut out));
+        assert!(!session.poll_repair_pull(1966, &mut out));
+        assert!(session.poll_repair_pull(1967, &mut out));
     }
 
     #[test]
