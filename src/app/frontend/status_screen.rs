@@ -86,7 +86,14 @@ impl Action {
                 }
                 state.platform.window.request_redraw();
             }
-            Self::CancelImport | Self::CloseImport => {
+            Self::CancelImport => {
+                state.frontend.asset_import.press_right();
+                if crate::util::folder_picker::cancel_import() {
+                    state.frontend.asset_import.cancel_copy();
+                }
+                state.platform.window.request_redraw();
+            }
+            Self::CloseImport => {
                 state.frontend.asset_import.close();
                 state.platform.window.request_redraw();
             }
@@ -144,6 +151,7 @@ impl Buttons {
                 Self([Some(Action::ChooseFolder), Some(Action::CancelImport)])
             }
             ImportStep::Copying { .. } => Self([None, Some(Action::CancelImport)]),
+            ImportStep::Cancelling => Self::NONE,
             ImportStep::Done => Self([Some(Action::CloseImport), None]),
         }
     }
@@ -168,6 +176,7 @@ fn apply_import_events(state: &mut AppState) {
             ImportEvent::Progress(bytes) => state.frontend.asset_import.advance_copy(bytes),
             ImportEvent::Done(path) => state.frontend.asset_import.finish_copy(path),
             ImportEvent::Failed(reason) => state.frontend.asset_import.fail(reason),
+            ImportEvent::Cancelled => state.frontend.asset_import.close(),
         }
     }
 }

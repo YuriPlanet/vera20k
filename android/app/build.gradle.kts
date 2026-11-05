@@ -9,6 +9,10 @@ kotlin {
     }
 }
 
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+}
+
 // versionName reads the Cargo package version, so the APK and the binary inside
 // it cannot drift apart (they did once: a 0.2.7 bump changed Cargo.toml while
 // this file still said 0.2.6). versionCode is a monotonically rising integer
@@ -63,8 +67,8 @@ android {
             isMinifyEnabled = false
         }
         release {
-            // Rust symbols are stripped by RUSTFLAGS at compile time, not by
-            // R8; there is no Java code to shrink yet (hasCode="false").
+            // Keep JVM entry points named for the native JNI callbacks.
+            // The shipping Cargo command strips native symbols separately.
             isMinifyEnabled = false
         }
     }

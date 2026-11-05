@@ -68,6 +68,11 @@ class VeraActivity : NativeActivity() {
     /** Implemented in `crates/vera20k-android`; bytes copied so far. */
     private external fun nativeImportProgress(copiedBytes: Long)
 
+    /** Uses the engine's config editor, retaining the player's other settings. */
+    private external fun nativeConfigForImport(directory: String): String
+
+    fun cancelImport(): Boolean = AssetImportJob.cancelActive()
+
     private var copiedBytes = 0L
     private var reportedBytes = 0L
 
@@ -87,13 +92,10 @@ class VeraActivity : NativeActivity() {
      * "failed:<reason>".
      */
     fun startImport(treeUri: String) {
-        Thread {
-            val target = File(filesDir, "ra2")
+        val job = AssetImportJob.begin() ?: return
+        val worker = Thread {
             val result = try {
-                target.mkdirs()
-                // Refuse before copying rather than half-way: a retail
-                // installation is about 1.5 GB and the copy is all-or-nothing.
-                val free = target.usableSpace
+                val free = filesDir.usableSpace
                 if (free < REQUIRED_BYTES) {
                     throw IOException(
                         "not enough free space: " + (free shr 20) + " MB free, " +
@@ -110,26 +112,34 @@ class VeraActivity : NativeActivity() {
                 if (missing.isNotEmpty()) {
                     throw IOException("that folder has no " + missing.joinToString(" or "))
                 }
-                copyTree(Uri.parse(treeUri), target)
-                writeConfig(target.absolutePath)
+                val target = job.run(filesDir,
+                    { staging -> copyTree(Uri.parse(treeUri), staging, job) },
+                    { staging -> nativeConfigForImport(staging.absolutePath) },
+                )
                 "ok:${target.absolutePath}"
+            } catch (_: AssetImportJob.Cancelled) {
+                "cancelled"
             } catch (error: Throwable) {
                 "failed:" + (error.message ?: error.toString())
             }
-            nativeImportFinished(result)
-        }.start()
-    }
-
-    private fun writeConfig(ra2Dir: String) {
-        // The engine's own config.toml; only the retail path is set, every other
-        // section keeps its default.
-        File(filesDir, "config.toml").writeText("[paths]\nra2_dir = \"$ra2Dir\"\n")
+            try {
+                nativeImportFinished(result)
+            } finally {
+                job.close()
+            }
+        }
+        try {
+            worker.start()
+        } catch (error: Throwable) {
+            job.close()
+            throw error
+        }
     }
 
     /** Recursively copies one SAF directory into [dir]. */
-    private fun copyTree(treeUri: Uri, dir: File) {
+    private fun copyTree(treeUri: Uri, dir: File, job: AssetImportJob) {
         val rootId = DocumentsContract.getTreeDocumentId(treeUri)
-        copyChildren(treeUri, rootId, dir)
+        copyChildren(treeUri, rootId, dir, job)
     }
 
     /**
@@ -157,7 +167,8 @@ class VeraActivity : NativeActivity() {
         return REQUIRED_ARCHIVES.filterNot(present::contains)
     }
 
-    private fun copyChildren(treeUri: Uri, documentId: String, dir: File) {
+    private fun copyChildren(treeUri: Uri, documentId: String, dir: File, job: AssetImportJob) {
+        job.checkCancelled()
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
         val columns = arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -166,17 +177,26 @@ class VeraActivity : NativeActivity() {
         )
         contentResolver.query(children, columns, null, null, null)?.use { cursor ->
             while (cursor.moveToNext()) {
+                job.checkCancelled()
                 val id = cursor.getString(0)
                 val name = cursor.getString(1) ?: continue
                 val mime = cursor.getString(2)
-                val out = File(dir, name)
+                val out = AssetImportJob.child(dir, name)
                 if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                    out.mkdirs()
-                    copyChildren(treeUri, id, out)
+                    if (!out.mkdir()) throw IOException("cannot create $name")
+                    copyChildren(treeUri, id, out, job)
                 } else {
                     val source = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
                     contentResolver.openInputStream(source)?.use { input ->
-                        out.outputStream().use { output -> input.copyTo(output, 1 shl 16) }
+                        out.outputStream().use { output ->
+                            val buffer = ByteArray(1 shl 16)
+                            while (true) {
+                                job.checkCancelled()
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                output.write(buffer, 0, count)
+                            }
+                        }
                     } ?: throw IOException("cannot read $name")
                     copiedBytes += out.length()
                     // Report in 16 MB steps: the native side only draws text,

@@ -10,7 +10,10 @@
 //! window (working directory, logging, panic reporting) belongs here, not in
 //! `main.rs`, or Android silently skips it.
 
-use anyhow::{Context, Result};
+#[cfg(target_os = "android")]
+use anyhow::Context;
+use anyhow::Result;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use winit::event_loop::EventLoop;
 
@@ -94,7 +97,17 @@ pub fn adopt_android_data_dir(dir: &Path) -> Result<()> {
 ///
 /// Returns the process exit status: 0, or a `-SPAWN` launch's result status.
 pub fn run(app_bundle: bool) -> Result<i32> {
-    let launch_mode = parse_launch_args(std::env::args_os().skip(1))?;
+    run_with_args(app_bundle, std::env::args_os().skip(1))
+}
+
+fn run_with_args(app_bundle: bool, args: impl IntoIterator<Item = OsString>) -> Result<i32> {
+    let launch_mode = parse_launch_args(args)?;
+
+    // Help must work without a display server or an OS event loop, including
+    // when called from a non-main thread by a headless command-line tool.
+    if matches!(launch_mode, AppLaunchMode::Usage) {
+        return Ok(print_usage());
+    }
 
     // Create the OS event loop. This drives the entire application:
     // window events, input, redraws, lifecycle events.
@@ -114,6 +127,11 @@ pub fn run(app_bundle: bool) -> Result<i32> {
     run_with_loop(launch_mode, app_bundle, event_loop)
 }
 
+fn print_usage() -> i32 {
+    println!("{}", crate::app::frontend::startup_options::usage_text());
+    0
+}
+
 /// Shared start-up once an event loop exists.
 ///
 /// Android passes a loop built from its `AndroidApp`; the desktop passes the one
@@ -130,11 +148,10 @@ pub fn run_with_loop(
         crate::app::system_dialog::enable_fatal_messages();
     }
 
-    // A help switch terminates before anything else is created, matching the
-    // native switch parser returning a failure that makes WinMain bail.
+    // Callers supplying their own loop share the same help output. Desktop
+    // startup handles this before creating its event loop.
     if matches!(launch_mode, AppLaunchMode::Usage) {
-        println!("{}", crate::app::frontend::startup_options::usage_text());
-        return Ok(0);
+        return Ok(print_usage());
     }
 
     // Native claims its single-instance gate before it creates a window: a
@@ -233,5 +250,18 @@ pub fn finish(result: Result<i32>) -> Result<()> {
     match result? {
         0 => Ok(()),
         status => std::process::exit(status),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::run_with_args;
+    use std::ffi::OsString;
+
+    #[test]
+    fn native_help_exits_without_initializing_an_event_loop() {
+        // The test runs off the main thread, where constructing an OS event
+        // loop would fail even on a machine with a display server.
+        assert_eq!(run_with_args(false, [OsString::from("-h")]).unwrap(), 0);
     }
 }

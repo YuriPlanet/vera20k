@@ -16,14 +16,19 @@
 
 use std::sync::{Mutex, OnceLock};
 
-static HOOK: OnceLock<fn() -> bool> = OnceLock::new();
+struct Hooks {
+    request: fn() -> bool,
+    cancel: fn() -> bool,
+}
+
+static HOOK: OnceLock<Hooks> = OnceLock::new();
 /// Outer `Some` means an answer has arrived; the inner one is the choice
 /// (`None` = the player cancelled).
 static PICKED: Mutex<Option<Option<String>>> = Mutex::new(None);
 
 /// Install the platform hook. The first install wins.
-pub fn install(hook: fn() -> bool) -> bool {
-    HOOK.set(hook).is_ok()
+pub fn install(request: fn() -> bool, cancel: fn() -> bool) -> bool {
+    HOOK.set(Hooks { request, cancel }).is_ok()
 }
 
 /// Ask the platform to show its folder picker.
@@ -31,7 +36,13 @@ pub fn install(hook: fn() -> bool) -> bool {
 /// `true` means the picker opened and its answer will arrive later; `false`
 /// means this build has no picker (or the platform refused to start one).
 pub fn request() -> bool {
-    HOOK.get().is_some_and(|hook| hook())
+    HOOK.get().is_some_and(|hooks| (hooks.request)())
+}
+
+/// Ask the active copy to stop. A true result still needs its completion event:
+/// the worker retains ownership until its partial files have been removed.
+pub fn cancel_import() -> bool {
+    HOOK.get().is_some_and(|hooks| (hooks.cancel)())
 }
 
 /// Record the platform's answer: a tree identifier, or `None` when the player

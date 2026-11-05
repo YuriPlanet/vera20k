@@ -1,9 +1,10 @@
 # Android build
 
-**Status: plays on hardware.** A debug APK builds from this checkout, currently tests on
-an Android 16 arm64 tablet (Oneplus PAD 2 Pro), plays the intro movie, reaches the main menu, and
-imports a retail installation from the system folder picker. The open items at
-the bottom are what still separates it from a release.
+**Status: initial Android support.** The contributor reported a debug APK playing
+the intro movie, reaching the main menu, and importing a retail installation on an
+Android 16 arm64 tablet (OnePlus Pad 2 Pro). The review fixes have not been built or
+tested on Android hardware; the earlier results below do not validate them. The
+open items at the bottom still separate this from a release.
 
 ## Layout
 
@@ -12,7 +13,8 @@ the bottom are what still separates it from a release.
 | `crates/vera20k-android/` | The cdylib: `android_main`, the working-directory fix, and the hand-off to `vera20k::entry::run_with_loop`. Body is `#![cfg(target_os = "android")]`, so desktop builds compile it empty. |
 | `src/entry.rs` | Start-up shared with the desktop binary: logging, panic hook, banner, event loop, exit status. `main.rs` is now just the CLI switches plus a call into it. |
 | `android/app/` | The only Gradle module: `VeraActivity`, `hasCode="true"`. |
-| `android/app/src/main/java/org/vera20k/VeraActivity.kt` | The app's only JVM class, and about as small as it can be: it starts the system folder picker, receives its answer, and copies the chosen tree. A Storage Access Framework tree is readable only through `ContentResolver`, so this cannot be Rust. |
+| `android/app/src/main/java/org/vera20k/VeraActivity.kt` | Starts the system folder picker and reads the selected tree through Android's `ContentResolver`. |
+| `android/app/src/main/java/org/vera20k/AssetImportJob.java` | Owns import admission, cancellation, safe destination paths and atomic publication of the completed copy. Its filesystem tests run on the JVM. |
 | `android/app/src/main/jniLibs/` | Where `cargo ndk -o` writes `libvera20k_android.so`. Generated, git-ignored. |
 
 The library name must stay in sync: the crate is `vera20k-android`, so the
@@ -21,7 +23,7 @@ artifact is `libvera20k_android.so`, and the manifest's
 
 ## Building
 
-Prerequisites: `platforms;android-36`, `build-tools;36.x`, `ndk;28.x`,
+Prerequisites: `platforms;android-36`, `build-tools;36.1.0`, `ndk;28.2.13676358`,
 `cargo-ndk`, a JDK 17+ that `JAVA_HOME` and `PATH` agree on. The Gradle wrapper
 is committed, so no separate Gradle install is needed — the first `gradlew` run
 downloads the distribution it pins.
@@ -32,10 +34,12 @@ Run every command below from the repository root.
 # 0. Once per checkout. AGP only auto-generates a debug keystore at
 #    %USERPROFILE%\.android, and build.gradle.kts points it into the checkout
 #    instead, so it has to be created here. android/.android/ is git-ignored.
+New-Item -ItemType Directory -Force android\.android | Out-Null
 keytool -genkeypair -keystore android\.android\debug.keystore `
   -storepass android -alias androiddebugkey -keypass android `
   -keyalg RSA -keysize 2048 -validity 10000 `
   -dname "CN=Android Debug,O=Android,C=US"
+rustup target add aarch64-linux-android
 
 # 1. Native library for one ABI. Shipping strips symbols: an unstripped Rust
 #    .so is commonly 100 MB+.
@@ -43,16 +47,20 @@ keytool -genkeypair -keystore android\.android\debug.keystore `
 #    -laaudio, which only exists in the NDK sysroot from API 26, and
 #    cargo-ndk otherwise links at its default level (21) and fails with
 #    "ld.lld: error: unable to find library -laaudio".
+$env:CARGO_PROFILE_SHIPPING_STRIP = "symbols"
 cargo ndk -t arm64-v8a --platform 26 -o android\app\src\main\jniLibs build `
   --profile shipping -p vera20k-android --no-default-features
 
 # 2. Package. Point android\local.properties at the SDK first:
 #    sdk.dir=D\:\\Programming\\android-sdk
-android\gradlew.bat :app:assembleDebug
+android\gradlew.bat -p android :app:assembleDebug
 ```
 
-`x86_64` is only for the emulator; add `-t x86_64` when you need it and drop it
-for releases.
+`x86_64` is only for the emulator; install `x86_64-linux-android` with `rustup`
+and add `-t x86_64` when you need it. Drop it for releases. On macOS/Linux, use
+`mkdir -p android/.android`, forward-slash paths, a shell environment assignment
+for `CARGO_PROFILE_SHIPPING_STRIP`, and
+`./android/gradlew -p android :app:assembleDebug`.
 
 ## Deliberate choices
 
@@ -67,16 +75,23 @@ for releases.
   the same process cannot work — winit builds one event loop per process — so
   `android_main` ends the process rather than leaving the new activity on its
   splash.
-- **No updater, no `MANAGE_EXTERNAL_STORAGE`.** In-app updates are a Play
-  violation, and asking for all-files access effectively bars Play distribution.
+- **System folder picker.** The importer requests read access to the selected
+  tree and writes only to app-private storage. It needs no all-files permission.
+- **Import before switching installations.** Each copy goes into a new
+  app-private directory. Only a successful copy updates the game path through
+  the Rust configuration owner, preserving other settings and the previous
+  installation. Cancelling waits for the worker to stop and clean up before
+  another attempt can start.
+
+Run the import regression tests with `./android/gradlew -p android :app:testDebugUnitTest`
+(`android\\gradlew.bat -p android :app:testDebugUnitTest` on Windows).
 
 ## What is still open
 
-1. **A shipping build.** `--profile shipping` plus `-C strip=symbols`. The
-   debug `.so` is 257 MB on disk and AGP's own stripping already cut the first
-   APK to 37 MB, so the remaining gain is link time and disk more than download
-   size — but debug-symbol handling is AGP's business and the size moved between
-   builds (37 MB, then 75 MB), which a pinned shipping profile would settle.
+1. **Release validation.** The recipe uses `--profile shipping` and strips
+   symbols, but the contributor's earlier device results were from a debug APK.
+   Rebuild the current code, inspect ELF/APK alignment and signing, and repeat
+   device testing before treating it as a release.
 2. **Live import progress.** The dialog shows the copy's step and the folder it
    landed in, and the copy refuses a folder without `ra2md.mix`/`ra2.mix` before
    touching anything, but the byte counter is wired and unexercised: the copy
@@ -94,7 +109,10 @@ for releases.
    launcher's next tap nothing but a splash. A future multi-activity design would
    have to rework the entry around that constraint.
 
-## Verified on this machine
+## Contributor-reported results before review fixes
+
+These are the original contributor's results, retained as historical context.
+They have not been independently reproduced for the current code.
 
 - `cargo check -p vera20k -p vera20k-core -p vera20k-android` (host): passes.
 - `cargo ndk -t arm64-v8a --platform 26 ... build` links `libvera20k_android.so`:
@@ -118,12 +136,12 @@ for releases.
 - **Leaving and returning works both ways**: screen-off then wake, and HOME then
   re-entry, both log `Application resumed — surface rebuilt` and draw the menu
   again; exiting from the menu then tapping the icon is a cold start.
-- **The import flow is complete.** With no installation the card offers
+- **A successful import was exercised.** With no installation the card offers
   Import Game Files; Choose Folder opens the system picker, the chosen tree is
   copied into `files/ra2`, `files/config.toml` is written, the card names that
   copy (`Game files: /data/user/0/org.vera20k/files/ra2`), and the next launch
-  plays. A folder without `ra2md.mix`/`ra2.mix` is refused before anything is
-  copied, so a failed import cannot damage a working installation.
+  plays. A folder without `ra2md.mix`/`ra2.mix` was refused before copying. Failed
+  and cancelled copies need device testing with the updated import flow.
 - Build the native side with `--profile fast` (or `shipping`) for anything you
   run on the device: the `dev` profile is slow enough that the intro movie
   starves the main thread and Android kills the app for an ANR.
@@ -144,5 +162,4 @@ for releases.
 
 ## TODO
 
-Settings and logs in the data directory, Save/Map files import/export,
-,touch UI, audio focus, LAN locks, CI.
+Save/Map files import/export, touch UI, audio focus, LAN locks, CI.

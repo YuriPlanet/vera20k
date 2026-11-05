@@ -23,6 +23,8 @@ pub enum ImportEvent {
     Done(String),
     /// The copy stopped, with what to tell the player.
     Failed(String),
+    /// Cancellation finished and the temporary copy was removed.
+    Cancelled,
 }
 
 static EVENTS: Mutex<VecDeque<ImportEvent>> = Mutex::new(VecDeque::new());

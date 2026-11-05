@@ -14,8 +14,6 @@
 //! Every string here is ASCII: the card's in-repo face carries ASCII only, and
 //! the exact paths live in the log.
 
-use std::path::PathBuf;
-
 /// Whether this build offers the import wizard.
 ///
 /// Android only. The desktop builds keep the startup card exactly as it was
@@ -35,6 +33,8 @@ pub(crate) enum ImportStep {
     ChooseFolder,
     /// Copying the installation into the app's own folder.
     Copying { done: u64, total: Option<u64> },
+    /// Waiting for the copying worker to stop and remove its partial files.
+    Cancelling,
     /// Copied; the engine needs a restart to read the new folder.
     Done,
     /// The last attempt failed; the reason is what the card shows.
@@ -79,6 +79,10 @@ impl AssetImport {
         self.step = ImportStep::Copying { done: 0, total };
     }
 
+    pub(crate) fn cancel_copy(&mut self) {
+        self.step = ImportStep::Cancelling;
+    }
+
     /// Bytes copied so far, so the card can show how far along it is.
     pub(crate) fn advance_copy(&mut self, done: u64) {
         if let ImportStep::Copying { total, .. } = self.step {
@@ -91,11 +95,6 @@ impl AssetImport {
     pub(crate) fn finish_copy(&mut self, path: impl Into<String>) {
         self.imported = Some(path.into());
         self.step = ImportStep::Done;
-    }
-
-    /// The copy this dialog made, once one has finished.
-    pub(crate) fn imported_path(&self) -> Option<&str> {
-        self.imported.as_deref()
     }
 
     pub(crate) fn fail(&mut self, why: impl Into<String>) {
@@ -137,6 +136,7 @@ About 1.5 GB is needed.\n\n",
                 None => format!("Copying: {} MB.\n\n", done / (1024 * 1024)),
             },
             ImportStep::Done => "Copied. Restart VERA20K to play.\n\n".to_owned(),
+            ImportStep::Cancelling => "Cancelling. Please wait.\n\n".to_owned(),
             ImportStep::Failed(why) => format!("Failed: {why}\n\n"),
         });
         // Once the copy exists, name it: the caller's `game_files` still holds
@@ -150,8 +150,8 @@ About 1.5 GB is needed.\n\n",
         text
     }
 
-    /// Button labels for the card, left slot first. The right slot is `None`
-    /// while a copy is running, so the only way out is to let it finish.
+    /// Button labels for the card, left slot first. Cancellation keeps the
+    /// dialog busy until the platform confirms that copying has stopped.
     pub(crate) fn buttons(&self) -> [Option<&'static str>; 2] {
         match &self.step {
             ImportStep::Closed => [Some("Import Game Files"), None],
@@ -159,6 +159,7 @@ About 1.5 GB is needed.\n\n",
                 [Some("Choose Folder"), Some("Cancel")]
             }
             ImportStep::Copying { .. } => [None, Some("Cancel")],
+            ImportStep::Cancelling => [None, None],
             ImportStep::Done => [Some("Close"), None],
         }
     }
@@ -171,7 +172,7 @@ About 1.5 GB is needed.\n\n",
                 ButtonPress::PickFolder
             }
             ImportStep::ChooseFolder | ImportStep::Failed(_) => ButtonPress::PickFolder,
-            ImportStep::Copying { .. } => ButtonPress::Ignored,
+            ImportStep::Copying { .. } | ImportStep::Cancelling => ButtonPress::Ignored,
             ImportStep::Done => {
                 self.close();
                 ButtonPress::Ignored
@@ -180,11 +181,13 @@ About 1.5 GB is needed.\n\n",
     }
 
     pub(crate) fn press_right(&mut self) -> ButtonPress {
-        if matches!(
-            self.step,
-            ImportStep::ChooseFolder | ImportStep::Failed(_) | ImportStep::Copying { .. }
-        ) {
-            self.close();
+        match self.step {
+            ImportStep::ChooseFolder | ImportStep::Failed(_) => self.close(),
+            ImportStep::Copying { .. } => {
+                self.cancel_copy();
+                return ButtonPress::CancelCopy;
+            }
+            _ => {}
         }
         ButtonPress::Ignored
     }
@@ -195,6 +198,7 @@ About 1.5 GB is needed.\n\n",
 pub(crate) enum ButtonPress {
     /// Open the platform's folder picker.
     PickFolder,
+    CancelCopy,
     /// Handled inside the dialog.
     Ignored,
 }
@@ -258,12 +262,23 @@ mod tests {
         dialog.open();
         dialog.start_copy(Some(10));
         dialog.fail("not enough space");
-        assert!(
-            dialog
-                .body("", "")
-                .contains("Copy failed: not enough space")
-        );
+        assert!(dialog.body("", "").contains("Failed: not enough space"));
         assert_eq!(dialog.buttons(), [Some("Choose Folder"), Some("Cancel")]);
+        assert_eq!(dialog.press_left(), ButtonPress::PickFolder);
+    }
+
+    #[test]
+    fn cancelling_cannot_start_another_copy_before_the_worker_finishes() {
+        let mut dialog = AssetImport::default();
+        dialog.start_copy(None);
+        assert_eq!(dialog.press_right(), ButtonPress::CancelCopy);
+        dialog.open();
+        dialog.advance_copy(16);
+        assert_eq!(dialog.step(), &ImportStep::Cancelling);
+        assert_eq!(dialog.buttons(), [None, None]);
+        assert_eq!(dialog.press_left(), ButtonPress::Ignored);
+        dialog.close(); // The platform's Cancelled completion event.
+        dialog.open();
         assert_eq!(dialog.press_left(), ButtonPress::PickFolder);
     }
 }

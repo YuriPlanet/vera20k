@@ -513,16 +513,20 @@ impl ApplicationHandler for App {
         if self.pending_initialization.is_some() {
             return;
         }
-        // A backend that destroys the window's native surface while suspended
-        // (Android, on screen-off or a background trip) resumes with a new
-        // handle. The wgpu surface still holds the old one, so nothing would
-        // ever draw again; replace it and keep every other piece of app state.
-        if let Some(state) = self.state.as_mut() {
-            match state.renderer.gpu.restore_surface() {
-                Ok(()) => log::info!("Application resumed — surface rebuilt"),
-                Err(error) => log::error!("Could not rebuild the surface: {error:#}"),
+        if self.state.is_some() {
+            #[cfg(target_os = "android")]
+            {
+                let state = self.state.as_mut().expect("checked initialized app");
+                if let Err(error) = state.renderer.gpu.restore_surface() {
+                    log::error!("Could not rebuild the surface: {error:#}");
+                    event_loop.exit();
+                    return;
+                }
+                // This owner resizes depth and offscreen targets as well, even
+                // when Android changed dimensions without a resize event.
+                Self::follow_window_size(state);
+                state.platform.window.request_redraw();
             }
-            state.platform.window.request_redraw();
             return;
         }
         // Asked once AppKit has launched and activated the app; macOS keeps a
@@ -563,14 +567,33 @@ impl ApplicationHandler for App {
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
-        // The activity's surface is destroyed here and replaced on the next
-        // `resumed`; the stale wgpu surface still references it, but nothing
-        // draws between the two events, so there is nothing to release. Audio
-        // keeps its stream, which AAudio pauses itself on screen-off.
+        #[cfg(target_os = "android")]
+        {
+            // winit requires every native render surface to be dropped before
+            // this callback returns. A startup continuation owns its GPU in a
+            // closure, so drop it too and restart initialization on resume.
+            // https://docs.rs/winit/0.30.13/winit/application/trait.ApplicationHandler.html#method.suspended
+            self.pending_initialization = None;
+            if let Some(state) = self.state.as_mut() {
+                state.renderer.gpu.suspend_surface();
+            }
+            _event_loop.set_control_flow(ControlFlow::Wait);
+        }
         log::info!("Application suspended");
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        // Android may deliver a queued redraw after suspension. Keep focus and
+        // input-release events flowing, but never render on a destroyed surface.
+        #[cfg(target_os = "android")]
+        if matches!(event, WindowEvent::RedrawRequested)
+            && self
+                .state
+                .as_ref()
+                .is_some_and(|state| !state.renderer.gpu.has_surface())
+        {
+            return;
+        }
         if let Some(job) = &mut self.pending_initialization {
             if job.window_id() == _id {
                 if matches!(event, WindowEvent::CloseRequested) {
@@ -1949,6 +1972,27 @@ impl ApplicationHandler for App {
         } else {
             None
         };
+        // Keep background services on their existing owners while Android has
+        // no surface, without scheduling a render or an acquire-retry loop.
+        #[cfg(target_os = "android")]
+        if self
+            .state
+            .as_ref()
+            .is_some_and(|state| !state.renderer.gpu.has_surface())
+        {
+            let state = self.state.as_mut().expect("checked initialized app");
+            let wake = if Self::match_runs_while_hidden(state) {
+                if Self::service_match_runtime(state, event_loop, true, true).quit_requested {
+                    return;
+                }
+                let service = Instant::now() + crate::app::match_runtime::frame_pacer::SERVICE_WAKE;
+                Some(shell_scroll_wake.map_or(service, |wake| wake.min(service)))
+            } else {
+                shell_scroll_wake
+            };
+            event_loop.set_control_flow(wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
+            return;
+        }
         if self.shell_capture.is_some() || self.hidden_run.is_some() {
             // A callback already queued by the platform can arrive after the
             // completed one-shot capture requested exit. Never render it again.

@@ -20,7 +20,7 @@
 use android_activity::AndroidApp;
 use jni::JavaVM;
 use jni::objects::{JObject, JString};
-use jni::sys::{JNI_VERSION_1_6, jint};
+use jni::sys::jstring;
 use winit::platform::android::EventLoopBuilderExtAndroid;
 
 /// Run `f` with the activity this process belongs to.
@@ -54,6 +54,15 @@ fn request_folder_picker() -> bool {
     .unwrap_or(false)
 }
 
+fn cancel_import() -> bool {
+    with_activity(|env, activity| {
+        env.call_method(activity, "cancelImport", "()Z", &[])
+            .and_then(|value| value.z())
+            .unwrap_or(false)
+    })
+    .unwrap_or(false)
+}
+
 /// The activity's folder-picker answer: the chosen tree as a `content://` URI,
 /// or an empty string when the player cancelled.
 #[unsafe(no_mangle)]
@@ -75,12 +84,19 @@ pub extern "system" fn Java_org_vera20k_VeraActivity_nativeOnFolderPicked(
             vera20k::util::import_status::note(vera20k::util::import_status::ImportEvent::Started);
             // The copy itself runs on the Java side (only ContentResolver can
             // read a SAF tree); this starts it and returns immediately.
-            let _ = env.call_method(
+            if let Err(error) = env.call_method(
                 &activity,
                 "startImport",
                 "(Ljava/lang/String;)V",
                 &[jni::objects::JValue::Object(&tree_uri)],
-            );
+            ) {
+                let _ = env.exception_clear();
+                vera20k::util::import_status::note(
+                    vera20k::util::import_status::ImportEvent::Failed(format!(
+                        "Could not start the copy: {error}"
+                    )),
+                );
+            }
         }
         None => log::info!("asset import: folder picker cancelled"),
     }
@@ -102,7 +118,9 @@ pub extern "system" fn Java_org_vera20k_VeraActivity_nativeImportFinished(
         .map(|value| value.to_string_lossy().into_owned())
         .unwrap_or_default();
     use vera20k::util::import_status::{self, ImportEvent};
-    if let Some(path) = text.strip_prefix("ok:") {
+    if text == "cancelled" {
+        import_status::note(ImportEvent::Cancelled);
+    } else if let Some(path) = text.strip_prefix("ok:") {
         log::info!("asset import: copied into {path}; config.toml written");
         import_status::note(ImportEvent::Done(path.to_owned()));
     } else {
@@ -111,6 +129,36 @@ pub extern "system" fn Java_org_vera20k_VeraActivity_nativeImportFinished(
         import_status::note(ImportEvent::Failed(reason));
     }
     let _ = env.exception_clear();
+}
+
+/// Prepare the next config using the same editor as the desktop folder picker.
+/// Java atomically publishes it only after the complete copy is ready.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_vera20k_VeraActivity_nativeConfigForImport(
+    mut env: jni::JNIEnv,
+    _activity: JObject,
+    directory: JString,
+) -> jstring {
+    let result = (|| -> anyhow::Result<jstring> {
+        let directory: String = env.get_string(&directory)?.into();
+        let config_path = vera20k::util::platform_dir::get()
+            .ok_or_else(|| anyhow::anyhow!("The app data directory is unavailable"))?
+            .join("config.toml");
+        let previous = match std::fs::read_to_string(config_path) {
+            Ok(contents) => contents,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(error) => return Err(error.into()),
+        };
+        let contents = vera20k::util::config::set_paths_key(&previous, "ra2_dir", &directory);
+        Ok(env.new_string(contents)?.into_raw())
+    })();
+    match result {
+        Ok(contents) => contents,
+        Err(error) => {
+            let _ = env.throw_new("java/io/IOException", error.to_string());
+            std::ptr::null_mut()
+        }
+    }
 }
 
 /// The import's copy progress, in bytes. Runs on the copy's own thread.
@@ -157,6 +205,12 @@ fn register_folder_picker_native() -> bool {
                 sig: "(J)V".into(),
                 fn_ptr: Java_org_vera20k_VeraActivity_nativeImportProgress as *mut std::ffi::c_void,
             },
+            jni::NativeMethod {
+                name: "nativeConfigForImport".into(),
+                sig: "(Ljava/lang/String;)Ljava/lang/String;".into(),
+                fn_ptr: Java_org_vera20k_VeraActivity_nativeConfigForImport
+                    as *mut std::ffi::c_void,
+            },
         ];
         let registered = env.register_native_methods(class, &methods).is_ok();
         if !registered {
@@ -193,7 +247,7 @@ fn keep_screen_on(app: &AndroidApp) {
 #[unsafe(no_mangle)]
 fn android_main(app: AndroidApp) {
     keep_screen_on(&app);
-    vera20k::util::folder_picker::install(request_folder_picker);
+    vera20k::util::folder_picker::install(request_folder_picker, cancel_import);
     // Android starts every process in "/" with no writable home. Hand the app's
     // private folder to the engine before anything opens a file: it becomes
     // both the working directory and the settings folder, so logs, config.toml,
