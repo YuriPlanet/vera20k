@@ -21,6 +21,12 @@ pub(crate) struct AlphaImageBindingSummary {
 /// types retain the final strings in their existing owners; this scenario pass
 /// visits those admitted values and reuses AssetManager's sticky cache without
 /// adding drawing state or an SHP decoder.
+///
+/// RESIDUAL (unreachable in retail): AlphaShapeClass is not ported.
+/// `ObjectClass::Unlimbo @ 0x005F4EC0` creates one only when the type's loaded
+/// AlphaImage pointer (+0xAC) is non-null (0x005F5045..0x005F504D). Retail's
+/// values are ALPHATST (TSTLAMP) and NONE (GALITE and the coloured lamps), and
+/// no retail archive holds either SHP, so the pointer stays null.
 pub fn bind(rules: &RuleSet, overlays: &OverlayTypeRegistry, assets: &AssetManager) {
     let _ = bind_with_summary(rules, overlays, assets);
 }

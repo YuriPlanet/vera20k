@@ -8192,7 +8192,7 @@ def ripple_step_bits(fpcw):
 
 def ion_blast_ripple():
     """The ring step's initializers under the startup and the process control
-    words; the generator 0x53D330 (Show_Loading_Screen's call) under the
+    words; the generator 0x53D330 (Init_Bulk_Data's call) under the
     process word after the startup initializers: each frame's FNV-1a over its
     512x256 bytes, its written (not -1) count and its byte values; and the
     spiral functions 0x53D8E0 (index 1..288, DrawAll's table) and 0x53D960

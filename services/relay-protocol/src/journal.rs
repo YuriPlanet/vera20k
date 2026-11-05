@@ -1,4 +1,4 @@
-//! The ordering owner's encrypted full-match archive. Sequence offsets stay on
+//! The ordering owner's full-match archive. Sequence offsets stay on
 //! disk; the in-memory deque is only a bounded cache of this same stream.
 
 use super::sequenced::{DEPARTURE_EVENT, FRAME_END_EVENT};
@@ -14,7 +14,7 @@ const GLOBAL_QUOTA: u64 = 8 * 1024 * 1024 * 1024;
 const SOURCE_COMMAND_QUOTA: u64 = 32 * 1024 * 1024;
 const FRAME_END_BYTES: u64 = 4 + 13 + 8;
 const DEPARTURE_BYTES: u64 = 4 + 15 + 8;
-const MAX_RECORD_BYTES: usize = 22 + 40 + super::ORDERING_BATCH_CAPACITY;
+const MAX_RECORD_BYTES: usize = 22 + super::ORDERING_BATCH_CAPACITY;
 // A leftover last written longer ago than a room can live, plus its replay
 // grace, belongs to an ended match. Startup moves it into this subfolder,
 // where it counts against no quota and blocks no match. Nothing deletes it.

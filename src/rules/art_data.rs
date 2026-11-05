@@ -324,6 +324,9 @@ pub struct AnimTypeRuntimeConfig {
     /// contained tiberium value at which a `HideIfNoOre=` anim still draws.
     #[cfg(feature = "phobos")]
     pub hide_if_no_ore_threshold: i32,
+    /// Read only by `Anims_Refresh_Tiberium_LightConverts @ 0x004261D0` after a
+    /// save load (0x006851B1), for anims `OverlayClass::Mark` creates from
+    /// `CellAnim=` (0x005FD1E7). Not ported: retail sets no `CellAnim=`.
     pub is_animated_tiberium: bool,
     pub tiberium_spread_radius: i32,
     /// The Type references (`TiberiumSpawnType=`, `Spawns=`, `Warhead=`,

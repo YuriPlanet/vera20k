@@ -593,14 +593,10 @@ pub struct WolAccountFormLayout {
 }
 
 /// `count` fields and the `remember` row (at most four rows) 18 units apart,
-/// centred on the Create Game box's Room name and Password rows.
-pub fn wol_account_form_layout(
-    screen_w: i32,
-    screen_h: i32,
-    count: usize,
-    remember: bool,
-) -> WolAccountFormLayout {
-    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+/// centred on the Create Game box's Room name and Password rows. The box is
+/// centred on `area`, in the shell's authored 800x600 units.
+pub fn wol_account_form_layout(area: RectPx, count: usize, remember: bool) -> WolAccountFormLayout {
+    let dialog = centered_modal_dialog_in(area, MESSAGE_BOX_W, MESSAGE_BOX_H);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
     let count = count.min(4 - usize::from(remember)) as i32;
     let top = 40 + 9 * (4 - count - i32::from(remember));
@@ -638,16 +634,15 @@ pub fn wol_account_form_layout(
 /// The account popup on the login page's shell mapping, as
 /// [`wol_create_game_layout_on`].
 pub fn wol_account_form_layout_on(
-    screen_w: i32,
-    screen_h: i32,
+    area: RectPx,
     count: usize,
     remember: bool,
     scale: geom::ShellScale,
 ) -> WolAccountFormLayout {
+    let base = wol_account_form_layout(area, count, remember);
     if scale.is_retail() {
-        return wol_account_form_layout(screen_w, screen_h, count, remember);
+        return base;
     }
-    let base = wol_account_form_layout(geom::SHELL_BASE_W, geom::SHELL_BASE_H, count, remember);
     let s = |rect| scale.scale_rect(rect);
     WolAccountFormLayout {
         dialog: s(base.dialog),
@@ -869,9 +864,14 @@ pub fn wol_verify_layout(screen_w: i32, screen_h: i32) -> WolVerifyLayout {
 /// Center a modal panel of `(w, h)` on the live screen. Byte-identical to the
 /// skirmish validation-modal centering (`((screen - size) + 1) / 2`, clamped >= 0).
 fn centered_modal_dialog(screen_w: i32, screen_h: i32, w: i32, h: i32) -> RectPx {
+    centered_modal_dialog_in(RectPx::new(0, 0, screen_w, screen_h), w, h)
+}
+
+/// The same centring on `area`.
+fn centered_modal_dialog_in(area: RectPx, w: i32, h: i32) -> RectPx {
     RectPx::new(
-        (((screen_w - w) + 1) / 2).max(0),
-        (((screen_h - h) + 1) / 2).max(0),
+        area.x + (((area.w - w) + 1) / 2).max(0),
+        area.y + (((area.h - h) + 1) / 2).max(0),
         w,
         h,
     )
@@ -1206,7 +1206,8 @@ mod tests {
 
     #[test]
     fn account_popups_keep_their_fields_between_the_title_and_the_buttons() {
-        let create = wol_account_form_layout(800, 600, 4, false);
+        let screen = RectPx::new(0, 0, 800, 600);
+        let create = wol_account_form_layout(screen, 4, false);
         let frame = create.dialog;
         let (_, first) = create.fields[0];
         let (_, last) = create.fields[3];
@@ -1219,12 +1220,12 @@ mod tests {
         assert!(create.status.y >= create.ok.y + create.ok.h);
         assert!(create.status.y + create.status.h <= frame.y + frame.h);
         // One field sits mid-way between the four's first and last rows.
-        let (_, code) = wol_account_form_layout(800, 600, 1, false).fields[0];
+        let (_, code) = wol_account_form_layout(screen, 1, false).fields[0];
         assert!(((code.y - first.y) - (last.y - code.y)).abs() <= 1);
         // Login's two fields and Remember password take the rows of three
         // fields, the box in the edits' column.
-        let login = wol_account_form_layout(800, 600, 2, true);
-        let three = wol_account_form_layout(800, 600, 3, false);
+        let login = wol_account_form_layout(screen, 2, true);
+        let three = wol_account_form_layout(screen, 3, false);
         assert_eq!(login.fields[..], three.fields[..2]);
         let (remember, (_, third)) = (login.remember.unwrap(), three.fields[2]);
         assert_eq!(remember.x, three.fields[2].1.x - 1);

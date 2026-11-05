@@ -58,13 +58,11 @@ pub(crate) fn open_login_art(state: &mut AppState) -> bool {
 /// The open popup's rects on the login page's shell mapping.
 pub(crate) fn account_form_layout(state: &AppState) -> Option<WolAccountFormLayout> {
     let form = state.frontend.wol.as_ref()?.login()?.account.as_ref()?;
-    let page = login_layout(state).page;
     Some(crate::ui::shell::modal::wol_account_form_layout_on(
-        page.screen.w,
-        page.screen.h,
+        POPUP_AREA,
         form.fields.len(),
         form.remember.is_some(),
-        page.scale,
+        login_layout(state).page.scale,
     ))
 }
 

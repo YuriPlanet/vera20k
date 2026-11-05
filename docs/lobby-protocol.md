@@ -195,13 +195,12 @@ RelayGrant is `{address,ticket,packet_key,payload_key,source_index,ordering_cert
 of the user's relay in the match. The service chooses it at start and every later grant for that match names it;
 ticket is the signed relay protocol ticket encoded base64url without padding and
 packet_key is 32 bytes encoded the same way. Credentials are unique to each user
-and each new match. `payload_key` is a random 32-byte match payload-encryption key
-shared by the participants and encoded the same way. It is delivered only over
-authenticated HTTPS, stored only in private match state, and never placed in a
-relay ticket or disclosed to the relay. It remains unchanged through bootstrap,
-timing confirmation and renewal. The HTTPS lobby is a trusted key distributor:
-a compromised lobby could disclose or replace payload keys; relay-blind payload
-encryption does not protect against that compromise. `source_index` is the immutable canonical user index, 0–29.
+and each new match. `payload_key` is a random 32-byte match key encoded the same way.
+It remains unchanged through bootstrap, timing confirmation and renewal. Current
+clients accept it and do not use it: gameplay batches and DATA travel in plain
+text under the per-hop MAC, and the relay can read them
+(`services/relay/bandwidth-compaction/spec.md` §3). The field stays in the grant
+so the lobby needs no change; removing it is a follow-up. `source_index` is the immutable canonical user index, 0–29.
 `ordering_certificate` is 66 base64url-encoded bytes: `VO1C`, room UUID16,
 source mask LEu32, fixed FPS LEu16, expiry LEu64, then HMAC-SHA256 over the
 first34 bytes with domain `VERA20k relay ordering certificate v1\0`. A lobby
@@ -462,9 +461,10 @@ sets the welcome that sign-in responses carry as `motd`: non-blank text of at mo
 2048 UTF-8 bytes. `{text:null}` clears it. Both return `{welcome}`, the text or `null`.
 
 Released clients sign in with `User-Agent: VERA20k/<MAJOR.MINOR.PATCH> multiplayer-client`.
-A client that names a version older than 0.2.6 is refused at sign-in with 426
-`upgrade_required`, since clients before it cannot play through the relays' turn
-transport (#3845); one that names no version is not.
+A client that names a version older than 0.2.7 is refused at sign-in with 426
+`upgrade_required`, since clients before it cannot play through the relays'
+adaptive transport (UPLINK, `services/relay/README.md`); one that names no
+version is not.
 A session whose version is older than `version` in
 `https://downloads.vera20k.org/latest.json`, which the lobby reads at most every
 10 minutes, receives one such chat line per newer release, naming both versions,
