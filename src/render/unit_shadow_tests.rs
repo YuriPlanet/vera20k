@@ -205,7 +205,7 @@ fn jumpjet_native_masks_keep_ground_flight_and_frame_payloads_separate() {
             .render_unit_shadow(&atlas, &key, offset, &parts)
             .unwrap();
         fresh_first.get_or_insert(entry);
-        poses.upload(&gpu.device, &gpu.queue, &batch);
+        poses.submit(&gpu.device, &gpu.queue, &batch);
         let tex = poses.page_texture(entry.page).unwrap();
         assert_eq!(
             gpu.read_uint_texels(
@@ -254,7 +254,7 @@ fn jumpjet_native_masks_keep_ground_flight_and_frame_payloads_separate() {
     let masked = poses
         .render_unit_shadow(&atlas, &key, [0, 15], &posed)
         .unwrap();
-    poses.upload(&gpu.device, &gpu.queue, &batch);
+    poses.submit(&gpu.device, &gpu.queue, &batch);
     let tex = poses.page_texture(masked.page).unwrap();
     assert!(
         gpu.read_uint_texels(
@@ -288,7 +288,7 @@ fn jumpjet_native_masks_keep_ground_flight_and_frame_payloads_separate() {
         next.page, first.page,
         "begin_frame must discard old shadow-source identities"
     );
-    poses.upload(&gpu.device, &gpu.queue, &batch);
+    poses.submit(&gpu.device, &gpu.queue, &batch);
     let tex = poses.page_texture(next.page).unwrap();
     assert_eq!(
         gpu.read_uint_texels(

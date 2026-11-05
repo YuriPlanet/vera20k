@@ -83,7 +83,7 @@ const ORIENTATIONS: [[i32; 8]; 8] = [
 ];
 
 #[derive(Debug, Clone)]
-pub(super) struct RasterParams {
+pub(crate) struct RasterParams {
     pub column_steps: [i32; 3],
     pub origin_xy: [u16; 2],
     pub axis_xy: [[i16; 2]; 3],
@@ -523,15 +523,12 @@ fn paint_section(
     Some(())
 }
 
-/// `depth` is the shared depth map a depth-tested draw reads and writes;
-/// None draws on a clear one.
-pub(super) fn prepare_draw(
+/// A draw's geometry and the lighting pages its normals select.
+fn prepare_lit(
     vxl: &VxlFile,
     hva: Option<&HvaFile>,
     params: &super::VxlRenderParams,
-    vpl: Option<&super::VplFile>,
-    depth: Option<&mut super::DepthMap>,
-) -> Option<PreparedDraw> {
+) -> Option<(Geometry, [u8; 256])> {
     if params.scale != 1.0 || vxl.limbs.iter().any(|limb| limb.native_spans.is_none()) {
         return None;
     }
@@ -543,7 +540,191 @@ pub(super) fn prepare_draw(
     // normal mode from limb zero, not switched for every limb.
     let normals_mode = vxl.limbs.first()?.normals_mode;
     let rotation = glam::Mat3::from_mat4(draw_matrix);
-    let pages = params.lighting.pages(normals_mode, rotation);
+    Some((geometry, params.lighting.pages(normals_mode, rotation)))
+}
+
+/// A crop inside the 256-square buffer, which [`PreparedDraw::crop_indices`]
+/// can read.
+fn crop_fits([_, _, x, y, width, height]: [i32; 6]) -> bool {
+    x >= 0
+        && y >= 0
+        && width > 0
+        && height > 0
+        && x.checked_add(width).is_some_and(|right| right <= 256)
+        && y.checked_add(height).is_some_and(|bottom| bottom <= 256)
+}
+
+/// An ordinary draw's raster before its stores, for the GPU to execute: the
+/// sections in 754510's raster order with their 8.8 parameters, the lighting
+/// pages, and the crop.
+#[derive(Debug, Clone)]
+pub(crate) struct NativeRaster {
+    pub sections: Vec<(usize, RasterParams)>,
+    pub pages: [u8; 256],
+    pub rect: [i32; 6],
+}
+
+/// [`prepare_draw`]'s preparation of a draw that is not depth-tested, with a
+/// crop it can read; None where that draw takes another path.
+pub(super) fn prepare_raster(
+    vxl: &VxlFile,
+    hva: Option<&HvaFile>,
+    params: &super::VxlRenderParams,
+) -> Option<NativeRaster> {
+    if params.use_buffer {
+        return None;
+    }
+    let (geometry, pages) = prepare_lit(vxl, hva, params)?;
+    if !crop_fits(geometry.rect) {
+        return None;
+    }
+    Some(NativeRaster {
+        sections: geometry
+            .raster_order()
+            .map(|index| (index, geometry.sections[index].params.clone()))
+            .collect(),
+        pages,
+        rect: geometry.rect,
+    })
+}
+
+/// One run of an encoded column: the empty cells below it and its voxels'
+/// colour and normal bytes, bottom to top.
+#[derive(PartialEq)]
+struct Run {
+    skip: u8,
+    voxels: Vec<[u8; 2]>,
+}
+
+/// The runs 7DF9C0 reads forward from a column's start offset, with the
+/// reads and checks of [`paint_section`]'s forward arm.
+fn forward_runs(body: &[u8], mut pos: usize, nz: usize) -> Option<Vec<Run>> {
+    let mut runs = Vec::new();
+    let mut z = 0usize;
+    while z < nz {
+        let skip = *body.get(pos)?;
+        let count = usize::from(*body.get(pos.checked_add(1)?)?);
+        pos = pos.checked_add(2)?;
+        z = z.checked_add(usize::from(skip))?;
+        if z.checked_add(count)? > nz {
+            return None;
+        }
+        let mut voxels = Vec::with_capacity(count);
+        for _ in 0..count {
+            voxels.push([*body.get(pos)?, *body.get(pos.checked_add(1)?)?]);
+            pos = pos.checked_add(2)?;
+        }
+        z += count;
+        body.get(pos)?;
+        pos = pos.checked_add(1)?;
+        runs.push(Run { skip, voxels });
+    }
+    Some(runs)
+}
+
+/// The runs 7DFAE0 reads backward from a column's end offset, top run
+/// first, each run's voxels put back bottom to top, with the reads and
+/// checks of [`paint_section`]'s backward arm.
+fn backward_runs(body: &[u8], mut pos: usize, nz: usize) -> Option<Vec<Run>> {
+    let mut runs = Vec::new();
+    let mut z = 0usize;
+    while z < nz {
+        let count = usize::from(*body.get(pos)?);
+        pos = pos.checked_sub(1)?;
+        if z.checked_add(count)? > nz {
+            return None;
+        }
+        let mut voxels = Vec::with_capacity(count);
+        for _ in 0..count {
+            let normal = *body.get(pos)?;
+            let color = *body.get(pos.checked_sub(1)?)?;
+            pos = pos.checked_sub(2)?;
+            voxels.push([color, normal]);
+        }
+        z += count;
+        voxels.reverse();
+        pos = pos.checked_sub(1)?;
+        let skip = *body.get(pos)?;
+        pos = pos.saturating_sub(1);
+        z = z.checked_add(usize::from(skip))?;
+        if z > nz {
+            return None;
+        }
+        runs.push(Run { skip, voxels });
+    }
+    Some(runs)
+}
+
+/// A section's voxels as the GPU raster reads them, column by column and
+/// bottom to top. Each is `[column x, column y, colour, normal]`, `[place
+/// among its column's voxels, the column's voxel count, run, run count]`
+/// as bytes, and where its column's run skips start in `skips`.
+pub(crate) struct SectionVoxels {
+    pub voxels: Vec<[u32; 3]>,
+    pub skips: Vec<u8>,
+}
+
+/// `limb`'s columns for the GPU raster, or None when a draw of them could
+/// fail or when the forward and backward walks read different voxels, so
+/// such a section keeps the CPU raster. A column's backward walk is then its
+/// forward walk mirrored: a voxel `j` places up a column of `n`, in run `r`,
+/// is reached after the skips of the runs above it and `n - 1 - j` steps.
+pub(crate) fn section_voxels(limb: &super::VxlLimb) -> Option<SectionVoxels> {
+    let spans = limb.native_spans.as_ref()?;
+    let body = &spans.body[..];
+    let [nx, ny, nz] = [limb.size_x, limb.size_y, limb.size_z].map(usize::from);
+    let mut voxels = Vec::new();
+    let mut skips = Vec::new();
+    for column in 0..nx * ny {
+        let start = column_offset(body, spans.start_offset, column)?;
+        let end = column_offset(body, spans.end_offset, column)?;
+        if start < 0 && end < 0 {
+            continue;
+        }
+        let forward = forward_runs(
+            body,
+            spans
+                .data_offset
+                .checked_add(usize::try_from(start).ok()?)?,
+            nz,
+        )?;
+        let mut backward = backward_runs(
+            body,
+            spans.data_offset.checked_add(usize::try_from(end).ok()?)?,
+            nz,
+        )?;
+        backward.reverse();
+        let count: usize = forward.iter().map(|run| run.voxels.len()).sum();
+        if backward != forward || count > 255 || forward.len() > 255 {
+            return None;
+        }
+        let first_skip = u32::try_from(skips.len()).ok()?;
+        skips.extend(forward.iter().map(|run| run.skip));
+        let mut place = 0;
+        for (index, run) in forward.iter().enumerate() {
+            for &[color, normal] in &run.voxels {
+                voxels.push([
+                    u32::from_le_bytes([(column % nx) as u8, (column / nx) as u8, color, normal]),
+                    u32::from_le_bytes([place, count as u8, index as u8, forward.len() as u8]),
+                    first_skip,
+                ]);
+                place += 1;
+            }
+        }
+    }
+    Some(SectionVoxels { voxels, skips })
+}
+
+/// `depth` is the shared depth map a depth-tested draw reads and writes;
+/// None draws on a clear one.
+pub(super) fn prepare_draw(
+    vxl: &VxlFile,
+    hva: Option<&HvaFile>,
+    params: &super::VxlRenderParams,
+    vpl: Option<&super::VplFile>,
+    depth: Option<&mut super::DepthMap>,
+) -> Option<PreparedDraw> {
+    let (geometry, pages) = prepare_lit(vxl, hva, params)?;
     let mut writes = Vec::with_capacity(vxl.limbs.iter().map(|limb| limb.voxels.len()).sum());
     let mut clear = Vec::new();
     let mut depth_map = geometry.use_buffer.then(|| match depth {
@@ -577,14 +758,7 @@ impl PreparedDraw {
     /// the original does, while reading outside its surface is never allowed.
     pub(crate) fn crop_indices(&self, visibility: &[u8]) -> Option<Vec<u8>> {
         let [_, _, x, y, width, height] = self.rect;
-        if visibility.len() != 65536
-            || x < 0
-            || y < 0
-            || width <= 0
-            || height <= 0
-            || x.checked_add(width)? > 256
-            || y.checked_add(height)? > 256
-        {
+        if visibility.len() != 65536 || !crop_fits(self.rect) {
             return None;
         }
         let mut pixels = Vec::with_capacity((width * height) as usize);
