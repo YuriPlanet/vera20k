@@ -10,7 +10,6 @@ use crate::app::AppState;
 use crate::app::loading::init::MapMenuEntry;
 use crate::assets::asset_manager::AssetManager;
 use crate::map::preview::{DecodedPreview, PreviewSourceBounds};
-use crate::map::skirmish_scenarios::SkirmishScenarioSource;
 use crate::render::batch::{BatchTexture, SpriteInstance};
 use crate::render::bit_font::BitFont;
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
@@ -51,8 +50,9 @@ pub(crate) struct SkirmishPreviewTexture {
     /// The enlarged preview's texture of `source`, and the size it was made
     /// for ([`ensure_zoom_texture`]).
     pub zoom: Option<(BatchTexture, (u32, u32))>,
-    /// The map's briefing under the enlarged preview ([`map_briefing`]), read
-    /// when that first shows; none for a received or generated picture.
+    /// The map's briefing over the enlarged preview
+    /// ([`crate::app::map_library::briefing`]), read when that first shows;
+    /// none for a received or generated picture.
     pub briefing: OnceCell<Option<String>>,
 }
 
@@ -488,21 +488,6 @@ pub(super) fn ensure_selected_preview_texture(state: &mut AppState, preview_box:
     ensure_map_preview_texture(state, selected_map_idx, preview_box);
 }
 
-/// The game folder map lookups start from.
-fn ra2_dir(state: &AppState) -> Option<&Path> {
-    state
-        .platform
-        .game_config
-        .as_ref()
-        .map(|config| config.paths.ra2_dir.as_path())
-        .or_else(|| {
-            state
-                .process_assets
-                .manager()
-                .map(|assets| assets.ra2_dir())
-        })
-}
-
 /// Shared map preview cache used by offline and network setup/chooser pages,
 /// for a preview drawn in `preview_box`.
 pub(super) fn ensure_map_preview_texture(
@@ -533,7 +518,7 @@ pub(super) fn ensure_map_preview_texture(
         return;
     }
     let hd_setting = state.hd_map_previews();
-    let ra2_dir = ra2_dir(state);
+    let ra2_dir = state.ra2_dir();
     let decoded = selected_entry
         .as_ref()
         .and_then(|entry| {
@@ -648,24 +633,6 @@ fn picture_texture(state: &AppState, picture: &DecodedPreview, size: (i32, i32))
     texture
 }
 
-/// The briefing of the catalog map at `map_idx` (`map::basic::
-/// briefing_text`): from its `.yrm` file here, or an online row's catalog
-/// header. The retail maps in mixfiles carry none.
-fn map_briefing(state: &AppState, map_idx: usize) -> Option<String> {
-    let record = state.frontend.scenario_catalog.records().get(map_idx)?;
-    match record.source {
-        SkirmishScenarioSource::Online(_) => {
-            crate::app::map_library::online_briefing(state, map_idx)
-        }
-        SkirmishScenarioSource::LooseYrm(_) => {
-            let path =
-                crate::map::source::local_map_path(ra2_dir(state)?, &record.file_name).ok()?;
-            crate::map::basic::briefing_text(&crate::util::file_system::read(path).ok()?)
-        }
-        _ => None,
-    }
-}
-
 /// The briefing box's least distance from the enlarged picture's edges, and
 /// its margin around its text, in retail pixels.
 const BRIEFING_INSET: f32 = 12.0;
@@ -773,9 +740,9 @@ pub(super) fn ensure_zoom_texture(
         .as_ref()
         .filter(|_| shown)
         .map(|preview| {
-            let briefing = preview
-                .briefing
-                .get_or_init(|| map_briefing(shared, preview.selected_map_idx));
+            let briefing = preview.briefing.get_or_init(|| {
+                crate::app::map_library::briefing(shared, preview.selected_map_idx)
+            });
             zoom_layout(
                 area,
                 (preview.width, preview.height),

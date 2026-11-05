@@ -74,6 +74,16 @@ impl AppState {
             && self.match_state.session_mode().is_single_player()
     }
 
+    /// The game folder map lookups start from: the configured one, else the
+    /// asset manager's.
+    pub(crate) fn ra2_dir(&self) -> Option<&std::path::Path> {
+        self.platform
+            .game_config
+            .as_ref()
+            .map(|config| config.paths.ra2_dir.as_path())
+            .or_else(|| self.process_assets.manager().map(|assets| assets.ra2_dir()))
+    }
+
     /// Current projection: frontend/result use physical window pixels; tactical
     /// rendering and pending tactical installation use the optional zoom pass.
     /// Loading artwork explicitly uses GPU/window dimensions in loading::pump.
