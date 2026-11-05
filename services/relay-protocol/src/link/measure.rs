@@ -10,6 +10,7 @@ pub(crate) const REORDER_THRESHOLD: u64 = 3;
 const LOSS_FOLD_PACKETS: u32 = 32;
 const LOSSY_ENTER: u16 = 5;
 const LOSSY_EXIT: u16 = 2;
+const LOSSY_EXIT_CLEAN_FOLDS: u32 = 8;
 const SEVERE_ENTER: u16 = 150;
 const SEVERE_EXIT: u16 = 100;
 const QUEUE_DELAY_FLOOR: u32 = 100;
@@ -70,18 +71,24 @@ pub(crate) struct LossStats {
     pub(crate) permille_max: u16,
     pub(crate) lossy: bool,
     pub(crate) severe: bool,
+    // Consecutive folds that found no lost packet (spec §5.4).
+    clean_folds: u32,
 }
 
 impl LossCursor {
     /// Judges feedback `(high, bits)` against what this hop sent (spec §4.3).
-    /// `sent(s)` tells whether hop sequence `s` was sent and is still logged;
-    /// `lost(s)` is called for each one judged lost. Returns the judged and
-    /// lost counts.
+    /// `sent(s)` is the send time of hop sequence `s` if it was sent and is
+    /// still logged; `lost(s)` is called for each one judged lost. A missing
+    /// sequence sent less than `wait_ms` before `now_ms` stops the
+    /// judgement there until the next feedback. Returns the judged and lost
+    /// counts.
     pub(crate) fn judge(
         &mut self,
         high: u64,
         bits: u64,
-        mut sent: impl FnMut(u64) -> bool,
+        now_ms: u64,
+        wait_ms: u64,
+        mut sent: impl FnMut(u64) -> Option<u64>,
         mut lost: impl FnMut(u64),
     ) -> (u32, u32) {
         if high == 0 || high < self.max_high {
@@ -93,11 +100,18 @@ impl LossCursor {
             // Older sequences are outside the bitmap and never counted.
             let first = self.eval_next.max(high.saturating_sub(63)).max(1);
             for sequence in first..=high - REORDER_THRESHOLD {
-                if !sent(sequence) {
+                let Some(at) = sent(sequence) else {
                     continue;
+                };
+                let received = (bits >> (high - sequence)) & 1 == 1;
+                if !received && now_ms.saturating_sub(at) < wait_ms {
+                    // Maybe only reordered: judge it at a later feedback,
+                    // unless it leaves the bitmap first.
+                    self.eval_next = sequence;
+                    return (judged, missing);
                 }
                 judged += 1;
-                if (bits >> (high - sequence)) & 1 == 0 {
+                if !received {
                     missing += 1;
                     lost(sequence);
                 }
@@ -146,6 +160,11 @@ impl LossStats {
             return;
         }
         let sample = (u64::from(self.lost) * 1000 / u64::from(self.judged)) as u32;
+        self.clean_folds = if self.lost == 0 {
+            self.clean_folds + 1
+        } else {
+            0
+        };
         self.permille = ((3 * u32::from(self.permille) + sample) / 4) as u16;
         self.judged = 0;
         self.lost = 0;
@@ -156,7 +175,8 @@ impl LossStats {
         // measurement (spec §5.4). Later folds keep the hysteresis.
         let first = self.folds == 1;
         self.lossy = if self.lossy && !first {
-            self.permille > LOSSY_EXIT
+            // Leaving also takes eight folds in a row without a loss.
+            self.permille > LOSSY_EXIT || self.clean_folds < LOSSY_EXIT_CLEAN_FOLDS
         } else {
             self.permille >= LOSSY_ENTER
         };
@@ -231,10 +251,12 @@ impl RttEstimator {
         if self.samples >= DELAY_MIN_SAMPLES {
             let base = self.base().expect("sampled");
             let queue = base.max(QUEUE_DELAY_FLOOR);
+            // Jitter is no queueing delay (spec §5.3).
+            let steady = srtt.saturating_sub(2 * self.rttvar);
             if self.delayed {
-                self.delayed = srtt > base + queue / 2;
+                self.delayed = steady > base + queue / 2;
             } else {
-                self.delayed = srtt >= base + queue;
+                self.delayed = steady >= base + queue;
             }
         }
     }
@@ -468,22 +490,34 @@ mod tests {
         let mut lost = Vec::new();
         // 1..=10 sent; 7 and 8 missing. Up to 10 - 3 = 7 is judged now.
         let bits = 0b11_1111_1111 & !(1 << 3) & !(1 << 2);
-        assert_eq!(cursor.judge(10, bits, |_| true, |s| lost.push(s)), (7, 1));
+        assert_eq!(
+            cursor.judge(10, bits, 1000, 0, |_| Some(0), |s| lost.push(s)),
+            (7, 1)
+        );
         assert_eq!(lost, [7]);
         // An older feedback arriving late is skipped.
-        assert_eq!(cursor.judge(9, 0, |_| true, |s| lost.push(s)), (0, 0));
+        assert_eq!(
+            cursor.judge(9, 0, 1000, 0, |_| Some(0), |s| lost.push(s)),
+            (0, 0)
+        );
         // 8..=10 are judged at the next feedback; 8 is still missing.
         assert_eq!(
-            cursor.judge(13, !(1 << 5), |_| true, |s| lost.push(s)),
+            cursor.judge(13, !(1 << 5), 1000, 0, |_| Some(0), |s| lost.push(s)),
             (3, 1)
         );
         assert_eq!(lost, [7, 8]);
         // Beyond the 64-bit map: only 137..=197 can be judged from 200.
         let mut far = LossCursor::default();
-        assert_eq!(far.judge(200, u64::MAX, |_| true, |_| {}), (61, 0));
+        assert_eq!(
+            far.judge(200, u64::MAX, 1000, 0, |_| Some(0), |_| {}),
+            (61, 0)
+        );
         // Unsent sequences (HELLO) are not judged.
         let mut cursor = LossCursor::default();
-        assert_eq!(cursor.judge(8, 0x7F, |s| s >= 2, |_| {}), (4, 0));
+        assert_eq!(
+            cursor.judge(8, 0x7F, 1000, 0, |s| (s >= 2).then_some(0), |_| {}),
+            (4, 0)
+        );
     }
 
     #[test]
@@ -492,7 +526,7 @@ mod tests {
         // Offline through 20; the recovery's next send is 21.
         cursor.skip_to(21);
         // Only 24 arrived of 1..=24, yet nothing up to 20 counts.
-        assert_eq!(cursor.judge(24, 1, |_| true, |_| {}), (1, 1));
+        assert_eq!(cursor.judge(24, 1, 1000, 0, |_| Some(0), |_| {}), (1, 1));
     }
 
     #[test]
@@ -505,20 +539,36 @@ mod tests {
         // 1 of 32: sample 31, (0 + 31) / 4 = 7, at least the 5‰ entry.
         stats.add(32, 1);
         assert_eq!((stats.permille, stats.lossy), (7, true));
-        stats.add(32, 0); // 5
-        stats.add(32, 0); // 3: still lossy above 2
-        assert!(stats.lossy);
-        stats.add(32, 0); // 2: leaves
-        assert_eq!((stats.permille, stats.lossy), (2, false));
-        stats.add(32, 32); // (6 + 1000) / 4 = 251
-        assert_eq!((stats.permille, stats.severe), (251, true));
-        stats.add(32, 0); // 188
-        stats.add(32, 0); // 141
+        // 5, 3, 2 (at the 2‰ exit), 1, 0, 0, 0: seven clean folds stay
+        // lossy; leaving also takes eight in a row without a loss.
+        for _ in 0..7 {
+            stats.add(32, 0);
+        }
+        assert_eq!((stats.permille, stats.lossy), (0, true));
+        stats.add(32, 0);
+        assert!(!stats.lossy);
+        stats.add(32, 32); // (0 + 1000) / 4 = 250
+        assert_eq!((stats.permille, stats.severe), (250, true));
+        stats.add(32, 0); // 187
+        stats.add(32, 0); // 140
         stats.add(32, 0); // 105
         assert!(stats.severe);
         stats.add(32, 0); // 78
         assert!(!stats.severe);
-        assert_eq!(stats.permille_max, 251);
+        assert_eq!(stats.permille_max, 250);
+        // A lost packet restarts the clean count.
+        let mut stats = LossStats::initial();
+        stats.add(32, 1); // first fold: 7, lossy
+        for _ in 0..7 {
+            stats.add(32, 0);
+        }
+        stats.add(320, 1); // 0‰ by rounding, but a loss
+        for _ in 0..7 {
+            stats.add(32, 0);
+        }
+        assert!(stats.lossy);
+        stats.add(32, 0);
+        assert!(!stats.lossy);
     }
 
     #[test]
@@ -562,8 +612,9 @@ mod tests {
         assert_eq!(rtt.base(), Some(40));
         rtt.sample(60, 20_000);
         assert_eq!(rtt.base(), Some(60));
-        // Eight samples, then srtt >= base + max(base, 100) sets DELAYED.
-        for at in 0..20 {
+        // Eight samples, then srtt - 2 rttvar >= base + max(base, 100) sets
+        // DELAYED.
+        for at in 0..40 {
             rtt.sample(400, 20_100 + at);
         }
         assert!(rtt.delayed);
@@ -572,6 +623,46 @@ mod tests {
         }
         assert!(!rtt.delayed);
         assert_eq!(rtt.srtt_percentile(0), Some(40));
+    }
+
+    #[test]
+    fn the_initial_lossy_state_turns_good_at_a_clean_first_fold() {
+        // Spec §5.4: the eight clean folds apply only to a measured loss.
+        let mut stats = LossStats::initial();
+        assert!(stats.lossy);
+        stats.add(32, 0);
+        assert_eq!((stats.folds, stats.permille, stats.lossy), (1, 0, false));
+    }
+
+    #[test]
+    fn jitter_around_a_doubled_srtt_is_no_queueing_delay() {
+        // ±50 ms around 200 ms each way: srtt about twice a base of ~100.
+        let mut rtt = RttEstimator::default();
+        for at in 0..200u64 {
+            rtt.sample(if at % 2 == 0 { 100 } else { 300 }, at * 50);
+        }
+        assert!(rtt.srtt.unwrap() >= rtt.base().unwrap() + 100);
+        assert!(!rtt.delayed, "srtt {:?} rttvar {}", rtt.srtt, rtt.rttvar);
+    }
+
+    #[test]
+    fn a_missing_packet_waits_an_rtt_before_it_counts_as_lost() {
+        let mut cursor = LossCursor::default();
+        let mut lost = Vec::new();
+        // 1..=10 sent at 100 + s; 5 missing. At 150 it is 45 ms old: under
+        // the 100 ms wait, judging stops before it.
+        let bits = 0b11_1111_1111 & !(1 << 5);
+        let sent = |s: u64| Some(100 + s);
+        assert_eq!(
+            cursor.judge(10, bits, 150, 100, sent, |s| lost.push(s)),
+            (4, 0)
+        );
+        // 105 ms old at the next feedback: lost, and judging goes on.
+        assert_eq!(
+            cursor.judge(11, bits << 1 | 1, 210, 100, sent, |s| lost.push(s)),
+            (4, 1)
+        );
+        assert_eq!(lost, [5]);
     }
 
     #[test]

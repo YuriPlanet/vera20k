@@ -862,13 +862,24 @@ impl ReaderLink {
 
     /// Judges `UPLINK.down_high` / `down_bits` (spec §4.3, §7.1 step 4) and
     /// returns the logged sends judged lost, oldest first.
-    pub(crate) fn judge(&mut self, down: RecvWindow) -> Vec<SendRecord> {
+    pub(crate) fn judge(&mut self, down: RecvWindow, now_ms: u64) -> Vec<SendRecord> {
         let mut lost = Vec::new();
         let log = &mut self.log;
+        // §4.3: wait srtt_c + 4 rttvar_c, rttvar_c = srtt_c / 2 (§4.6).
+        let srtt = if self.srtt_c == 0 {
+            100
+        } else {
+            u64::from(self.srtt_c)
+        };
         let (judged, missing) = self.cursor.judge(
             down.high,
             down.bits,
-            |sequence| log[(sequence % SENDLOG_READER as u64) as usize].sequence == sequence,
+            now_ms,
+            srtt + 4 * (srtt / 2),
+            |sequence| {
+                let entry = log[(sequence % SENDLOG_READER as u64) as usize];
+                (entry.sequence == sequence).then_some(entry.at_ms)
+            },
             |sequence| lost.push(sequence),
         );
         self.loss.add(judged, missing);
@@ -1024,14 +1035,21 @@ impl ClientSession {
                 .rtt
                 .sample(rtt.min(u64::from(u32::MAX)) as u32, now_ms);
         }
+        // §4.3: wait srtt + 4 rttvar, the §4.6 defaults before a sample.
+        let rtt = &ordering.link.rtt;
+        let wait = rtt
+            .srtt
+            .map_or(300, |srtt| u64::from(srtt) + 4 * u64::from(rtt.rttvar));
         let hop = &mut self.hop;
         let log = &hop.log;
         let (judged, lost) = hop.cursor.judge(
             high,
             feedback.up.bits,
+            now_ms,
+            wait,
             |sequence| {
                 let entry = log[(sequence % SENDLOG_CLIENT as u64) as usize];
-                entry.sequence == sequence
+                (entry.sequence == sequence).then_some(entry.at_ms)
             },
             |_| {},
         );

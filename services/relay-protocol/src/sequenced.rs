@@ -6005,7 +6005,7 @@ impl RelayServer {
         peer.link.jittery = jittery;
         peer.link.srtt_c = uplink.srtt_ms;
         // §7.1 step 4: downlink loss, and what the lost packs owe (§7.3).
-        let lost = peer.link.judge(uplink.down);
+        let lost = peer.link.judge(uplink.down, now_ms);
         self.ordering_counts.down_lost_packets += lost.len() as u64;
         if let Some(push) = peer.push.as_mut() {
             for send in lost.iter().filter(|send| send.count > 0) {
