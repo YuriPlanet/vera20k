@@ -650,6 +650,8 @@ const SENDLOG_READER: usize = 64;
 pub(crate) const CLIENT_OFFLINE_MS: u64 = 1000;
 pub(crate) const READER_OFFLINE_MS: u64 = 1500;
 pub(crate) const BACKPRESSURE_HOLD_MS: u64 = 2000;
+/// JITTERY waits this long after the reader was last congested (§7.2).
+const JITTER_CONGESTION_HOLD_MS: u64 = 10_000;
 
 /// Send-log kinds (spec §4.2).
 pub(crate) const SEND_OTHER: u8 = 0;
@@ -787,6 +789,8 @@ pub(crate) struct ReaderLink {
     pub(crate) srtt_c: u16,
     pub(crate) rttvar_c: u16,
     pub(crate) jittery: bool,
+    // The latest evaluation that found the reader congested (spec §7.2).
+    pub(crate) congested_at: Option<u64>,
     pub(crate) last_heard_ms: u64,
     pub(crate) clock: StateClock,
     pub(crate) packets_by_kind: [u64; 5],
@@ -807,6 +811,7 @@ impl ReaderLink {
             srtt_c: 0,
             rttvar_c: 0,
             jittery: false,
+            congested_at: None,
             last_heard_ms: now_ms,
             clock,
             packets_by_kind: [0; 5],
@@ -933,7 +938,19 @@ impl ReaderLink {
         if previous.is_some() && state == LinkState::Offline {
             self.loss.clear_counts();
         }
+        if state == LinkState::Congested {
+            self.congested_at = Some(now_ms);
+        }
         previous
+    }
+
+    /// JITTERY as it acts on K and the repeat (spec §7.2): not within 10 s
+    /// of the reader's last congested evaluation, as of the latest one.
+    pub(crate) fn jitter_on(&self) -> bool {
+        self.jittery
+            && self.congested_at.is_none_or(|at| {
+                self.clock.last_ms().saturating_sub(at) >= JITTER_CONGESTION_HOLD_MS
+            })
     }
 
     /// K for this reader's state (spec §7.2): JITTERY raises a good
@@ -946,7 +963,7 @@ impl ReaderLink {
         };
         match self.clock.state {
             LinkState::Offline => 0,
-            LinkState::Good => 1 + u8::from(self.jittery),
+            LinkState::Good => 1 + u8::from(self.jitter_on()),
             LinkState::Lossy => by_loss,
             LinkState::Congested => by_loss.min(2),
         }
