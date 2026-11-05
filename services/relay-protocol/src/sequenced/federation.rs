@@ -925,7 +925,9 @@ impl RelayServer {
                 room.peers
                     .iter_mut()
                     .filter(|peer| recipients(peer))
-                    .map(|peer| server_packet(peer, DATA, source, data))
+                    .map(|peer| {
+                        server_packet(peer, DATA, source, data, now_ms, crate::link::SEND_OTHER)
+                    })
                     .collect()
             }
             PACE_KIND => {

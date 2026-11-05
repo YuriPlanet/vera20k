@@ -124,6 +124,9 @@ const BATCH_EVENT: u8 = 3;
 pub(super) const FRAME_END_EVENT: u8 = 4;
 pub(super) const DEPARTURE_EVENT: u8 = 5;
 const ERROR_EVENT: u8 = 6;
+/// STATUS and ACK with their hop feedback tail (spec §3.3, §3.4).
+const STATUS_LEN: usize = 32 + crate::link::FEEDBACK_LEN;
+const ACK_LEN: usize = 13 + crate::link::FEEDBACK_LEN;
 
 /// What a certificate says about relay pacing (README, Pace).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -267,7 +270,7 @@ pub fn turn_frames(rate: u16) -> u32 {
 }
 
 /// A turn's duration `turn_frames(rate) * 1000 / rate` in whole
-/// milliseconds, rounded up (spec §2): 67 at 30 Hz, 50 at 45 Hz, 100 at
+/// milliseconds, rounded up (spec §2): 67 at 30 Hz and at 45 Hz, 100 at
 /// 20 Hz. `ClientSession::set_ordering_turn_ms` takes this value.
 pub fn turn_ms(rate: u16) -> u32 {
     (turn_frames(rate) * 1000).div_ceil(u32::from(rate.max(1)))
@@ -443,6 +446,8 @@ pub(super) struct ClientOrdering {
     // receipts of what this process sent.
     restoring: bool,
     leave: Option<(u64, Vec<u8>)>,
+    // Path measurement carried across hop renewals (spec §4.7).
+    pub(super) link: crate::link::ClientLink,
 }
 
 impl ClientOrdering {
@@ -498,6 +503,10 @@ impl ClientSession {
             return Err(RelayError::Authentication);
         }
         self.ordering = previous.ordering.take();
+        let previous_received = previous.hop_received();
+        if let Some(ordering) = self.ordering.as_mut() {
+            ordering.link.earlier_hops_received += previous_received;
+        }
         Ok(())
     }
 
@@ -551,6 +560,7 @@ impl ClientSession {
                 accepted_through: 0,
                 restoring: false,
                 leave: None,
+                link: Default::default(),
             });
         }
         let mut payload = vec![READY_REQUEST];
@@ -812,7 +822,7 @@ impl ClientSession {
                 ready_mask: read_u32(payload, 1),
                 sources_mask: read_u32(payload, 5),
             },
-            (STATUS_EVENT, 32..) => OrderEvent::Status(OrderStatus {
+            (STATUS_EVENT, STATUS_LEN..) => OrderEvent::Status(OrderStatus {
                 head_frame: read_u32(payload, 1),
                 oldest_seq: read_u64(payload, 5),
                 next_seq: read_u64(payload, 13),
@@ -820,10 +830,12 @@ impl ClientSession {
                 tick_hz: u16::from_le_bytes(payload[25..27].try_into().unwrap()),
                 start_delay_ms: read_u32(payload, 27),
                 started: payload[31] != 0,
-                // A1: the 50-byte layout arrives with A2.
-                feedback: hop_feedback(payload, 32),
+                feedback: crate::link::read_feedback(
+                    payload,
+                    STATUS_LEN - crate::link::FEEDBACK_LEN,
+                ),
             }),
-            (ACK_EVENT, 13..) => {
+            (ACK_EVENT, ACK_LEN..) => {
                 let batch_id = read_u64(payload, 1);
                 if batch_id == 0 {
                     return Err(RelayError::Malformed);
@@ -836,7 +848,10 @@ impl ClientSession {
                 OrderEvent::Ack {
                     batch_id,
                     frame: read_u32(payload, 9),
-                    feedback: hop_feedback(payload, 13),
+                    feedback: crate::link::read_feedback(
+                        payload,
+                        ACK_LEN - crate::link::FEEDBACK_LEN,
+                    ),
                 }
             }
             (FRAME_END_EVENT, 13) => OrderEvent::Entry(OrderEntry::FrameEnd {
@@ -1032,21 +1047,6 @@ fn desync_outlier(reports: &[(u8, u32)], active: u32) -> Option<((u8, u32), (u8,
     (active & !reported == 0).then_some((differing, first))
 }
 
-/// The `[up_high u64][up_bits u64][echo_delay u16]` tail of ACK and STATUS
-/// at `offset`, or none when the reply is shorter.
-fn hop_feedback(payload: &[u8], offset: usize) -> HopFeedback {
-    if payload.len() < offset + 18 {
-        return HopFeedback::default();
-    }
-    HopFeedback {
-        up: RecvWindow {
-            high: read_u64(payload, offset),
-            bits: read_u64(payload, offset + 8),
-        },
-        echo_delay_ms: u16::from_le_bytes([payload[offset + 16], payload[offset + 17]]),
-    }
-}
-
 fn read_u32(bytes: &[u8], offset: usize) -> u32 {
     u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap())
 }
@@ -1078,6 +1078,14 @@ pub(super) struct PushSubscription {
     refreshed_at: u64,
     status_at: u64,
     status_state: (bool, u32),
+}
+
+impl PushSubscription {
+    /// This subscription's part of `RelayServer::reader_link_stats`.
+    pub(super) fn fill_stats(&self, stats: &mut crate::ReaderLinkStats) {
+        stats.acked_next = self.acknowledged_next;
+        stats.sent_next = self.sent_next;
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -2631,6 +2639,190 @@ mod tests {
 
     /// A pull carries its page packed after the status, and the client
     /// rebuilds every entry's exact canonical bytes and sequence.
+    /// Spec appendix A packets 5 to 7: the relay's window starts at CONFIRM,
+    /// its STATUS reply carries it, and the client takes its first RTT
+    /// sample from the socket times.
+    #[test]
+    fn a_status_reply_carries_the_hop_window_and_gives_the_first_rtt_sample() {
+        let key = SecretKey::new([75; 32]);
+        let mut server = RelayServer::new(key.clone(), 1);
+        let mut first = client(&key, 0);
+        connect(&mut server, &mut first, 0);
+        let mut bytes = Vec::new();
+        first
+            .configure_ordering_at(&certificate(&key, 3, 1400), [7; 32], 80, &mut bytes)
+            .unwrap();
+        let replies = server
+            .process_at(endpoint(&first), &bytes, unix(100), 100)
+            .unwrap();
+        first.receive_at(&replies[0].bytes, 120).unwrap();
+        let ServerEvent::Ordering(OrderEvent::Status(status)) =
+            first.receive_at(&replies[1].bytes, 120).unwrap()
+        else {
+            panic!("status");
+        };
+        assert_eq!(
+            status.feedback.up,
+            RecvWindow {
+                high: 3,
+                bits: 0b11
+            }
+        );
+        assert_eq!(status.feedback.echo_delay_ms, 0);
+        let stats = first.link_stats();
+        assert_eq!((stats.srtt_ms, stats.rttvar_ms), (Some(40), Some(20)));
+        // READY (1), ordering READY (2) and STATUS (3).
+        assert_eq!(
+            stats.down,
+            RecvWindow {
+                high: 3,
+                bits: 0b111
+            }
+        );
+        assert_eq!(stats.datagrams_received, 3);
+    }
+
+    #[test]
+    fn rtt_samples_subtract_the_echo_delay_once_per_logged_sequence() {
+        let key = SecretKey::new([76; 32]);
+        let mut session = client(&key, 0);
+        session.ready = true;
+        let mut bytes = Vec::new();
+        session
+            .configure_ordering_at(&certificate(&key, 3, 1400), [7; 32], 1000, &mut bytes)
+            .unwrap();
+        let feedback = |high, echo_delay_ms| HopFeedback {
+            up: RecvWindow { high, bits: 1 },
+            echo_delay_ms,
+        };
+        session.take_feedback(feedback(1, 25), 1100);
+        assert_eq!(session.link_stats().srtt_ms, Some(75));
+        // The same up_high again, or a saturated echo delay, gives no sample.
+        session.take_feedback(feedback(1, 0), 1200);
+        for _ in 0..129 {
+            session.pull_ordering_at(1, 1300, &mut bytes).unwrap();
+        }
+        // Sequence 2 was overwritten in the 128-entry log by 130.
+        session.take_feedback(feedback(2, 0), 1400);
+        session.take_feedback(feedback(129, u16::MAX), 1400);
+        assert_eq!(session.link_stats().rtt_samples, 1);
+        session.take_feedback(feedback(130, 0), 1400);
+        assert_eq!(session.link_stats().rtt_samples, 2);
+    }
+
+    #[test]
+    fn the_uplink_goes_offline_after_a_silent_second_and_recovers_on_receipt() {
+        let key = SecretKey::new([77; 32]);
+        let mut server = RelayServer::new(key.clone(), 1);
+        let mut first = client(&key, 0);
+        connect(&mut server, &mut first, 0);
+        let mut bytes = Vec::new();
+        first
+            .configure_ordering_at(&certificate(&key, 3, 1400), [7; 32], 0, &mut bytes)
+            .unwrap();
+        let replies = server
+            .process_at(endpoint(&first), &bytes, unix(0), 0)
+            .unwrap();
+        for reply in &replies {
+            first.receive_at(&reply.bytes, 0).unwrap();
+        }
+        first.evaluate_uplink(999);
+        assert_eq!(first.link_stats().uplink, LinkState::Good);
+        first.evaluate_uplink(1000);
+        assert_eq!(first.link_stats().uplink, LinkState::Offline);
+        first.ordering.as_mut().unwrap().link.rto_backoff = 3;
+        // A Backpressure error ends the silence and holds congestion 2 s.
+        let mut error = vec![ERROR_EVENT, OrderError::Backpressure as u8];
+        error.extend_from_slice(&[0; 8]);
+        let datagram = server_packet(
+            server
+                .rooms
+                .get_mut(&[5; 16])
+                .unwrap()
+                .peers
+                .get_mut(0)
+                .unwrap(),
+            crate::CONTROL,
+            0,
+            &error,
+            1500,
+            crate::link::SEND_OTHER,
+        )
+        .unwrap();
+        first.receive_at(&datagram.bytes, 1500).unwrap();
+        let link = &first.ordering.as_ref().unwrap().link;
+        assert!(link.recovered);
+        assert_eq!(link.rto_backoff, 0);
+        assert_eq!(first.link_stats().uplink, LinkState::Congested);
+        first.evaluate_uplink(3499);
+        assert_eq!(first.link_stats().uplink, LinkState::Offline);
+        let stats = first.link_stats();
+        assert_eq!(stats.uplink_state_entries, [0, 0, 1, 2]);
+        assert_eq!(stats.uplink_state_ms, [1000, 0, 1999, 500]);
+    }
+
+    /// Spec appendix A packets 20 and 25: a pack with two piggybacked frame
+    /// ends before a batch, and a status heartbeat's feedback.
+    #[test]
+    fn appendix_pack_and_status_heartbeat_have_their_layouts() {
+        let opaque = [9; 74];
+        let mut batch = vec![0];
+        batch.extend_from_slice(&1u64.to_le_bytes());
+        batch.extend_from_slice(&opaque);
+        let records = [
+            OrderingRoom::encoded_entry(3, 3, FRAME_END_EVENT, &[]),
+            OrderingRoom::encoded_entry(4, 4, FRAME_END_EVENT, &[]),
+            OrderingRoom::encoded_entry(5, 5, BATCH_EVENT, &batch),
+            OrderingRoom::encoded_entry(6, 5, FRAME_END_EVENT, &[]),
+            OrderingRoom::encoded_entry(7, 6, FRAME_END_EVENT, &[]),
+        ];
+        let packs = pack_entries(&records, 1);
+        let (pack, count) = &packs[0];
+        assert_eq!((pack.len(), *count), (128, 5));
+        assert_eq!(&pack[..10], &[PACK_EVENT, 3, 0, 0, 0, 0, 0, 0, 0, 5]);
+        assert_eq!(&pack[10..17], &[5, 0, FRAME_END_EVENT, 3, 0, 0, 0]);
+        assert_eq!(&pack[24..27], &[88, 0, BATCH_EVENT]);
+        assert_eq!(&pack[114..121], &[5, 0, FRAME_END_EVENT, 5, 0, 0, 0]);
+
+        let key = SecretKey::new([78; 32]);
+        let mut reader = client(&key, 1);
+        reader.ready = true;
+        reader
+            .configure_ordering(&certificate(&key, 3, 1400), [7; 32], &mut Vec::new())
+            .unwrap();
+        let mut status = vec![STATUS_EVENT];
+        for (value, width) in [
+            (10u64, 4),
+            (1, 8),
+            (12, 8),
+            (0b11, 4),
+            (30, 2),
+            (0, 4),
+            (1, 1),
+            (8, 8),
+            (0x7D, 8),
+            (33, 2),
+        ] {
+            status.extend_from_slice(&value.to_le_bytes()[..width]);
+        }
+        assert_eq!(status.len(), 50);
+        let Ok(OrderEvent::Status(status)) = reader.receive_ordering(&status) else {
+            panic!("status");
+        };
+        assert_eq!(
+            (status.head_frame, status.next_seq, status.started),
+            (10, 12, true)
+        );
+        assert_eq!(
+            status.feedback.up,
+            RecvWindow {
+                high: 8,
+                bits: 0x7D
+            }
+        );
+        assert_eq!(status.feedback.echo_delay_ms, 33);
+    }
+
     #[test]
     fn a_pull_packs_its_page_and_the_client_reads_each_canonical_entry() {
         let key = SecretKey::new([73; 32]);
@@ -3021,7 +3213,7 @@ mod tests {
         reader
             .configure_ordering(&certificate(&key, 3, 1400), [7; 32], &mut Vec::new())
             .unwrap();
-        let mut status = vec![STATUS_EVENT; 33];
+        let mut status = vec![STATUS_EVENT; STATUS_LEN + 1];
         status[31] = 1;
         assert!(matches!(
             reader.receive_ordering(&status),
@@ -5512,6 +5704,8 @@ impl RelayServer {
                     message.ticket,
                     error(OrderError::Backpressure, 0),
                     now,
+                    now_ms,
+                    crate::link::SEND_OTHER,
                 );
             }
             let room = self
@@ -5522,7 +5716,13 @@ impl RelayServer {
                 Some(ordering) => ordering.control_pause(message.ticket, payload, now_ms)?,
                 None => error(OrderError::NotConfigured, 0),
             };
-            return self.ordering_reply(message.ticket, replies, now);
+            return self.ordering_reply(
+                message.ticket,
+                replies,
+                now,
+                now_ms,
+                crate::link::SEND_OTHER,
+            );
         }
         let replies = if payload.first() == Some(&READY_REQUEST) {
             let certificate_len = payload.len().saturating_sub(1 + 32);
@@ -5547,7 +5747,13 @@ impl RelayServer {
                 .is_some_and(|room| room.ordering_cancelled)
                 || self.ended_orderings.contains_key(&message.ticket.room)
             {
-                return self.ordering_reply(message.ticket, error(OrderError::Inactive, 0), now);
+                return self.ordering_reply(
+                    message.ticket,
+                    error(OrderError::Inactive, 0),
+                    now,
+                    now_ms,
+                    crate::link::SEND_OTHER,
+                );
             }
             let agreement: [u8; 32] = payload[1 + certificate_len..].try_into().unwrap();
             let allocation = self
@@ -5575,6 +5781,8 @@ impl RelayServer {
                                     message.ticket,
                                     error(OrderError::StorageUnavailable, 0),
                                     now,
+                                    now_ms,
+                                    crate::link::SEND_OTHER,
                                 );
                             }
                         }
@@ -5661,7 +5869,13 @@ impl RelayServer {
                 error(OrderError::NotConfigured, 0)
             }
         };
-        self.ordering_reply(message.ticket, replies, now)
+        self.ordering_reply(
+            message.ticket,
+            replies,
+            now,
+            now_ms,
+            crate::link::SEND_OTHER,
+        )
     }
 
     fn ordering_push_request(
@@ -5736,7 +5950,7 @@ impl RelayServer {
         } else {
             error(OrderError::NotConfigured, 0)
         };
-        self.ordering_reply(ticket, replies, now)
+        self.ordering_reply(ticket, replies, now, now_ms, crate::link::SEND_OTHER)
     }
 
     /// Drain a bounded fair share of already committed history. Canonical
@@ -5831,7 +6045,9 @@ impl RelayServer {
             }
             // Reuse the request-reply authentication and all three rate-budget
             // owners. Failed budget admission cannot move the stream cursor.
-            let Ok(datagrams) = self.ordering_reply(ticket, replies, now) else {
+            let Ok(datagrams) =
+                self.ordering_reply(ticket, replies, now, now_ms, crate::link::SEND_FRESH)
+            else {
                 continue;
             };
             if let Some((.., fresh)) = reached.last_mut() {
@@ -5904,7 +6120,14 @@ impl RelayServer {
                     if output_bytes + bytes > PUSH_DRAIN_BYTES {
                         break;
                     }
-                    let Ok(datagram) = server_packet(peer, CONTROL, ticket.source, &pack) else {
+                    let Ok(datagram) = server_packet(
+                        peer,
+                        CONTROL,
+                        ticket.source,
+                        &pack,
+                        now_ms,
+                        crate::link::SEND_REPEAT,
+                    ) else {
                         break;
                     };
                     output_bytes += bytes;
@@ -5926,12 +6149,29 @@ impl RelayServer {
         output
     }
 
+    /// Sends `replies` on `ticket`'s hop under every rate budget. STATUS and
+    /// ACK get the hop feedback tail as they are encoded (spec §4.1); PACKs
+    /// are logged as `pack_kind`, everything else as non-PACK (spec §4.2).
     fn ordering_reply(
         &mut self,
         ticket: Ticket,
         mut replies: Vec<Vec<u8>>,
         now: u64,
+        now_ms: u64,
+        pack_kind: u8,
     ) -> Result<Vec<ForwardDatagram>, RelayError> {
+        if let Some(peer) = self
+            .rooms
+            .get(&ticket.room)
+            .and_then(|room| room.peers.iter().find(|peer| peer.ticket == ticket))
+        {
+            let feedback = peer.link.feedback(now_ms);
+            for reply in &mut replies {
+                if matches!(reply.first(), Some(&STATUS_EVENT | &ACK_EVENT)) {
+                    crate::link::append_feedback(reply, feedback);
+                }
+            }
+        }
         let cost = replies
             .iter()
             .map(|payload| SERVER_HEADER + MAC_LEN + payload.len())
@@ -5979,7 +6219,14 @@ impl RelayServer {
             .ok_or(RelayError::Unregistered)?;
         replies
             .drain(..)
-            .map(|payload| server_packet(peer, CONTROL, ticket.source, &payload))
+            .map(|payload| {
+                let kind = if payload.first() == Some(&PACK_EVENT) {
+                    pack_kind
+                } else {
+                    crate::link::SEND_OTHER
+                };
+                server_packet(peer, CONTROL, ticket.source, &payload, now_ms, kind)
+            })
             .collect()
     }
 }

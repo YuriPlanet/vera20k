@@ -303,6 +303,9 @@ pub struct ClientSession {
     ordering: Option<sequenced::ClientOrdering>,
     // The lobby's relay roster of a federated match, sent with each CONFIRM.
     federation: Option<Vec<u8>>,
+    hop: link::HopLink,
+    // The `now_ms` of the timed call in progress (spec §4.2, §4.4).
+    clock_ms: u64,
 }
 
 impl fmt::Debug for ClientSession {
@@ -347,6 +350,8 @@ impl ClientSession {
             ready: false,
             ordering: None,
             federation: None,
+            hop: link::HopLink::default(),
+            clock_ms: 0,
         })
     }
 
@@ -483,6 +488,9 @@ impl ClientSession {
         out.extend_from_slice(payload);
         let tag = self.key.mac(CLIENT_DOMAIN, out).finalize().into_bytes();
         out.extend_from_slice(&tag);
+        if kind != HELLO {
+            self.hop_sent(self.sent);
+        }
         Ok(())
     }
 
@@ -514,6 +522,7 @@ impl ClientSession {
             }
             READY if payload.is_empty() && bytes[45] == self.ticket.source => {
                 self.received.accept(sequence)?;
+                self.hop_heard(sequence);
                 self.ready = true;
                 Ok(ServerEvent::Ready)
             }
@@ -521,6 +530,7 @@ impl ClientSession {
                 // Hop authentication protects the ordering authority; batch
                 // contents additionally authenticate under the match-only key.
                 self.received.accept(sequence)?;
+                self.hop_heard(sequence);
                 if payload.first() == Some(&sequenced::PACK_EVENT) {
                     return Ok(ServerEvent::OrderingPack(
                         self.receive_ordering_pack(payload)?,
@@ -565,6 +575,7 @@ impl ClientSession {
                     )
                     .map_err(|_| RelayError::Authentication)?;
                 self.received.accept(sequence)?;
+                self.hop_heard(sequence);
                 Ok(ServerEvent::Payload {
                     source: bytes[45],
                     bytes: plaintext,
@@ -772,6 +783,7 @@ struct Peer {
     last_seen: u64,
     push: Option<sequenced::PushSubscription>,
     push_control_sequence: u64,
+    link: link::ReaderLink,
 }
 
 #[derive(Default)]
@@ -975,6 +987,7 @@ impl RelayServer {
             };
         }
         room.peers[index].received.accept(message.sequence)?;
+        room.peers[index].link.heard(message.sequence, now_millis);
         let admission = self
             .admissions
             .get_mut(&message.ticket.player)
@@ -1049,6 +1062,8 @@ impl RelayServer {
                 READY,
                 message.ticket.source,
                 &[],
+                now_millis,
+                link::SEND_OTHER,
             )?]);
         }
         let mut output = Vec::with_capacity(recipients);
@@ -1062,6 +1077,8 @@ impl RelayServer {
                     DATA,
                     message.ticket.source,
                     message.payload,
+                    now_millis,
+                    link::SEND_OTHER,
                 )?);
             }
         }
@@ -1258,12 +1275,13 @@ impl RelayServer {
                 if message.ticket.expires <= peer.ticket.expires {
                     return Err(RelayError::Authentication);
                 }
-                *peer = new_peer(message, source, now);
+                *peer = new_peer(message, source, now, now_ms);
             }
             if message.sequence <= peer.received.maximum && peer.endpoint != source {
                 return Err(RelayError::Replay);
             }
             peer.received.accept(message.sequence)?;
+            peer.link.heard(message.sequence, now_ms);
             if peer.endpoint != source {
                 // A confirmed new path must opt in before receiving history.
                 peer.push = None;
@@ -1271,11 +1289,26 @@ impl RelayServer {
             }
             peer.endpoint = source;
             peer.last_seen = now;
-            server_packet(peer, READY, message.ticket.source, &[])?
+            server_packet(
+                peer,
+                READY,
+                message.ticket.source,
+                &[],
+                now_ms,
+                link::SEND_OTHER,
+            )?
         } else {
-            let mut peer = new_peer(message, source, now);
+            let mut peer = new_peer(message, source, now, now_ms);
             peer.received.accept(message.sequence)?;
-            let reply = server_packet(&mut peer, READY, message.ticket.source, &[])?;
+            peer.link.heard(message.sequence, now_ms);
+            let reply = server_packet(
+                &mut peer,
+                READY,
+                message.ticket.source,
+                &[],
+                now_ms,
+                link::SEND_OTHER,
+            )?;
             room.peers.push(peer);
             reply
         };
@@ -1365,7 +1398,7 @@ impl RelayServer {
     }
 }
 
-fn new_peer(message: &Incoming<'_>, endpoint: SocketAddrV4, now: u64) -> Peer {
+fn new_peer(message: &Incoming<'_>, endpoint: SocketAddrV4, now: u64, now_ms: u64) -> Peer {
     Peer {
         ticket: message.ticket,
         key: message.key.clone(),
@@ -1375,22 +1408,32 @@ fn new_peer(message: &Incoming<'_>, endpoint: SocketAddrV4, now: u64) -> Peer {
         last_seen: now,
         push: None,
         push_control_sequence: 0,
+        link: link::ReaderLink::new(now_ms),
     }
 }
 
+/// One datagram on `peer`'s hop, logged at `now_ms` as `send_kind`
+/// (spec §4.2; `link::SEND_*`).
 fn server_packet(
     peer: &mut Peer,
     kind: u8,
     source: u8,
     payload: &[u8],
+    now_ms: u64,
+    send_kind: u8,
 ) -> Result<ForwardDatagram, RelayError> {
     peer.sent = peer
         .sent
         .checked_add(1)
         .ok_or(RelayError::CounterExhausted)?;
+    let bytes = encode_server(&peer.ticket, &peer.key, kind, peer.sent, source, payload);
+    let pack =
+        (kind == CONTROL && payload.first() == Some(&sequenced::PACK_EVENT)).then_some(payload);
+    peer.link
+        .record_send(peer.sent, pack, send_kind, bytes.len(), now_ms);
     Ok(ForwardDatagram {
         endpoint: peer.endpoint,
-        bytes: encode_server(&peer.ticket, &peer.key, kind, peer.sent, source, payload),
+        bytes,
     })
 }
 

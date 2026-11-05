@@ -9,7 +9,15 @@
 //! time is the moment its socket read returned, not when a game thread
 //! handled it.
 
-use crate::{ClientSession, OrderPace, RelayError, RelayServer, ServerEvent};
+mod codec;
+mod measure;
+
+pub(crate) use codec::{FEEDBACK_LEN, LINK_DELAYED, append_feedback, read_feedback};
+pub(crate) use measure::{LossCursor, LossStats, RttEstimator, StateClock, link_state};
+
+use crate::{
+    ClientSession, OrderError, OrderEvent, OrderPace, RelayError, RelayServer, ServerEvent,
+};
 
 /// A direction's link state (spec §5.2), first match wins: offline, then
 /// congested, then lossy, then good. The discriminant is the wire value of
@@ -200,8 +208,7 @@ impl ClientSession {
     /// [`ClientSession::probe`] at `now_ms`: HELLO before readiness (not
     /// counted in any window, spec §4.1), otherwise a PING keepalive.
     pub fn probe_at(&mut self, now_ms: u64, out: &mut Vec<u8>) -> Result<(), RelayError> {
-        // A1: the send log arrives with A2.
-        let _ = now_ms;
+        self.clock_ms = now_ms;
         self.probe(out)
     }
 
@@ -213,7 +220,7 @@ impl ClientSession {
         now_ms: u64,
         out: &mut Vec<u8>,
     ) -> Result<(), RelayError> {
-        let _ = now_ms;
+        self.clock_ms = now_ms;
         self.confirm(cookie, out)
     }
 
@@ -225,7 +232,7 @@ impl ClientSession {
         now_ms: u64,
         out: &mut Vec<u8>,
     ) -> Result<(), RelayError> {
-        let _ = now_ms;
+        self.clock_ms = now_ms;
         self.data(target, payload, out)
     }
 
@@ -241,7 +248,7 @@ impl ClientSession {
         now_ms: u64,
         out: &mut Vec<u8>,
     ) -> Result<(), RelayError> {
-        let _ = now_ms;
+        self.clock_ms = now_ms;
         self.configure_ordering(certificate, agreement, out)
     }
 
@@ -255,7 +262,7 @@ impl ClientSession {
         now_ms: u64,
         out: &mut Vec<u8>,
     ) -> Result<(), RelayError> {
-        let _ = now_ms;
+        self.clock_ms = now_ms;
         self.pull_ordering(next_seq, out)
     }
 
@@ -268,7 +275,7 @@ impl ClientSession {
         now_ms: u64,
         out: &mut Vec<u8>,
     ) -> Result<(), RelayError> {
-        let _ = now_ms;
+        self.clock_ms = now_ms;
         self.control_ordering_pause(request_id, expected_epoch, paused, out)
     }
 
@@ -277,7 +284,7 @@ impl ClientSession {
     /// only the first call is a new send. No UPLINK follows a Leave
     /// (spec §11 row 8): `poll_uplink` and `heartbeat_uplink` return false.
     pub fn leave_ordering_at(&mut self, now_ms: u64, out: &mut Vec<u8>) -> Result<(), RelayError> {
-        let _ = now_ms;
+        self.clock_ms = now_ms;
         self.leave_ordering(out)
     }
 
@@ -294,8 +301,27 @@ impl ClientSession {
         bytes: &'a [u8],
         now_ms: u64,
     ) -> Result<ServerEvent<'a>, RelayError> {
-        let _ = now_ms;
-        self.receive(bytes)
+        self.clock_ms = now_ms;
+        let event = self.receive(bytes)?;
+        let feedback = match &event {
+            ServerEvent::Ordering(OrderEvent::Ack { feedback, .. }) => Some(*feedback),
+            ServerEvent::Ordering(OrderEvent::Status(status)) => Some(status.feedback),
+            ServerEvent::Ordering(OrderEvent::Error {
+                code: OrderError::Backpressure,
+                ..
+            }) => {
+                if let Some(ordering) = self.ordering.as_mut() {
+                    ordering.link.backpressure_at = Some(now_ms);
+                }
+                None
+            }
+            _ => None,
+        };
+        if let Some(feedback) = feedback {
+            self.take_feedback(feedback, now_ms);
+        }
+        self.evaluate_uplink(now_ms);
+        Ok(event)
     }
 
     // --- Content from the sequencing layer (spec §6.7). None of these
@@ -306,8 +332,8 @@ impl ClientSession {
     /// ciphertext stays fixed until the batch is acknowledged. The batch goes
     /// out with the next UPLINK (§6.2, §6.3 row 1).
     ///
-    /// Errors: `Unregistered` before ordering is configured, before
-    /// `set_ordering_started`, while restoring, or after Leave (spec §6.0:
+    /// Errors: `Unregistered` before ordering is configured, before a STATUS
+    /// with `started = 1` arrived, while restoring, or after Leave (spec §6.0:
     /// no batches before the start); `Malformed` for an empty plaintext or one
     /// over `ORDERING_BATCH_CAPACITY` bytes; `Full` while
     /// `ORDERING_SUBMISSION_WINDOW` (4) batches are unacknowledged.
@@ -376,37 +402,23 @@ impl ClientSession {
         todo!("A3")
     }
 
-    /// Reports that the match started: a STATUS with `started = 1` arrived
-    /// (spec §6.0). The next `poll_uplink`, in the same service, sends the
-    /// first UPLINK with PUSH; until the first PACK arrives it resends one
-    /// every RTO (§4.5) to confirm the subscription. Batches may be sealed
-    /// from now on. Later calls change nothing.
-    pub fn set_ordering_started(&mut self) {
-        todo!("A3")
-    }
-
-    /// Reports that a PACK (event 12) arrived on this hop, which confirms
-    /// the push subscription and ends the RTO subscription resends (spec §6.0).
-    /// Calling it for every PACK is fine; only the first on a hop counts.
-    pub fn note_ordering_pack(&mut self) {
-        todo!("A3")
-    }
-
     // --- Scheduling: the state machine decides when to send. ---
 
     /// Encodes one UPLINK (request 8, spec §3.2) into `out` if §6.3 says one
     /// is due at `now_ms`, returning true; otherwise leaves `out` alone and
     /// returns false. Covers rows 1-7 of §6.3, the standalone checksum send,
-    /// the subscription resends of §6.0 and the immediate UPLINK on a renewed
-    /// hop (§4.7); while offline the only UPLINK is the 250 ms PROBE. Every
-    /// UPLINK but a probe carries all unacknowledged batches that fit from
-    /// `accepted_through + 1` (§6.2).
+    /// the first UPLINK once a STATUS with `started = 1` arrived and the
+    /// subscription resends until this hop's first PACK (§6.0), and the
+    /// immediate UPLINK on a renewed hop (§4.7); while offline the only
+    /// UPLINK is the 250 ms PROBE. Every UPLINK but a probe carries all
+    /// unacknowledged batches that fit from `accepted_through + 1` (§6.2).
     ///
-    /// Call it every service (about 16 ms) and loop until it returns false;
-    /// each call makes at most one datagram, and one service normally yields
-    /// one UPLINK (lossy copies are their own later sends, §6.3 row 6).
-    /// Returns false before `set_ordering_started`, after Leave, when the hop
-    /// is not ready, or if the hop counter is exhausted.
+    /// At most one UPLINK per service, with no exception (spec §6.3): call it
+    /// once each service (about 16 ms); calling again at the same `now_ms`
+    /// returns false and is harmless. When two lossy copies are due at once
+    /// only one goes, and the next is due 16 ms after it.
+    /// Returns false before the start, after Leave, when the hop is not
+    /// ready, or if the hop counter is exhausted.
     pub fn poll_uplink(&mut self, now_ms: u64, out: &mut Vec<u8>) -> bool {
         let _ = (now_ms, out);
         todo!("A3")
@@ -446,7 +458,41 @@ impl ClientSession {
     /// A snapshot of this hop's link measurement and the match's §10.1
     /// counters; see [`ClientLinkStats`].
     pub fn link_stats(&self) -> ClientLinkStats {
-        todo!("A2")
+        let mut stats = ClientLinkStats {
+            down: self.hop.down,
+            datagrams_received: self.hop.received,
+            ..ClientLinkStats::default()
+        };
+        let Some(ordering) = self.ordering.as_ref() else {
+            return stats;
+        };
+        let link = &ordering.link;
+        let (state_ms, delayed_ms) = link.clock.totals(link.clock.last_ms());
+        stats.uplink = link.clock.state;
+        stats.up_loss_permille = link.loss.permille;
+        stats.severe = link.loss.severe;
+        stats.srtt_ms = link.rtt.srtt;
+        stats.rttvar_ms = link.rtt.srtt.map(|_| link.rtt.rttvar);
+        stats.base_ms = link.rtt.base();
+        stats.rtt_samples = link.rtt.samples;
+        stats.delayed = link.rtt.delayed;
+        stats.rto_backoff = link.rto_backoff;
+        stats.up_loss_folds = link.loss.folds;
+        stats.up_loss_permille_sum = link.loss.permille_sum;
+        stats.up_loss_permille_max = link.loss.permille_max;
+        stats.uplink_state_ms = state_ms;
+        stats.uplink_state_entries = link.clock.entries;
+        stats.copies = link.copies;
+        stats.rto_timeouts = link.rto_timeouts;
+        stats.rto_backoff_max = link.rto_backoff_max;
+        stats.datagrams_received += link.earlier_hops_received;
+        stats.gaps = link.gaps;
+        stats.gaps_repaired_by_push = link.gaps_repaired_by_push;
+        stats.repair_pulls = link.repair_pulls;
+        stats.srtt_p50_ms = link.rtt.srtt_percentile(50);
+        stats.srtt_p99_ms = link.rtt.srtt_percentile(99);
+        stats.delayed_ms = delayed_ms;
+        stats
     }
 }
 
@@ -455,7 +501,379 @@ impl RelayServer {
     /// `room`; see [`ReaderLinkStats`]. `None` when the relay holds no such
     /// room or no admitted hop for that source.
     pub fn reader_link_stats(&self, room: [u8; 16], source: u8) -> Option<ReaderLinkStats> {
-        let _ = (room, source);
-        todo!("A2")
+        let peer = self
+            .rooms
+            .get(&room)?
+            .peers
+            .iter()
+            .find(|peer| peer.ticket.source == source)?;
+        let link = &peer.link;
+        let mut stats = ReaderLinkStats {
+            subscribed: peer.push.is_some(),
+            downlink: link.clock.state,
+            down_loss_permille: link.loss.permille,
+            severe: link.loss.severe,
+            packets_by_kind: link.packets_by_kind,
+            bytes_by_kind: link.bytes_by_kind,
+            up: link.up,
+            ..ReaderLinkStats::default()
+        };
+        if let Some(push) = peer.push.as_ref() {
+            stats.piggyback_depth = link.piggyback_depth();
+            push.fill_stats(&mut stats);
+        }
+        Some(stats)
+    }
+}
+
+// --- Internal state ---
+
+/// Client hop sequence log length (spec §4.2).
+const SENDLOG_CLIENT: usize = 128;
+/// Relay per-reader send log length (spec §4.2).
+const SENDLOG_READER: usize = 64;
+pub(crate) const CLIENT_OFFLINE_MS: u64 = 1000;
+pub(crate) const READER_OFFLINE_MS: u64 = 1500;
+pub(crate) const BACKPRESSURE_HOLD_MS: u64 = 2000;
+
+/// Send-log kinds (spec §4.2).
+pub(crate) const SEND_OTHER: u8 = 0;
+pub(crate) const SEND_FRESH: u8 = 1;
+pub(crate) const SEND_REPEAT: u8 = 2;
+pub(crate) const SEND_RETRANSMIT: u8 = 3;
+pub(crate) const SEND_PROBE: u8 = 4;
+
+#[derive(Debug, Clone, Copy, Default)]
+struct ClientSend {
+    sequence: u64,
+    at_ms: u64,
+    // Sent while the uplink was offline: never judged (spec §5.5).
+    offline: bool,
+}
+
+/// One client hop's own measurement state (spec §4.1, §4.2, §4.3 steps
+/// 1-3, §4.4 steps 1-2). A renewed hop starts with a fresh one (§4.7).
+#[derive(Debug)]
+pub(crate) struct HopLink {
+    pub(crate) down: RecvWindow,
+    log: Vec<ClientSend>,
+    cursor: LossCursor,
+    // The `up_high` of the last reply that gave an RTT sample.
+    rtt_high: u64,
+    pub(crate) last_heard_ms: Option<u64>,
+    pub(crate) received: u64,
+}
+
+impl Default for HopLink {
+    fn default() -> Self {
+        Self {
+            down: RecvWindow::default(),
+            log: vec![ClientSend::default(); SENDLOG_CLIENT],
+            cursor: LossCursor::default(),
+            rtt_high: 0,
+            last_heard_ms: None,
+            received: 0,
+        }
+    }
+}
+
+impl HopLink {
+    pub(crate) fn record_send(&mut self, sequence: u64, now_ms: u64, offline: bool) {
+        self.log[(sequence % SENDLOG_CLIENT as u64) as usize] = ClientSend {
+            sequence,
+            at_ms: now_ms,
+            offline,
+        };
+    }
+
+    fn sent(&self, sequence: u64) -> Option<ClientSend> {
+        let entry = self.log[(sequence % SENDLOG_CLIENT as u64) as usize];
+        (entry.sequence == sequence).then_some(entry)
+    }
+}
+
+/// The client's path measurement and uplink statistics, carried across hop
+/// renewals with the ordering state (spec §4.7).
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ClientLink {
+    pub(crate) loss: LossStats,
+    pub(crate) rtt: RttEstimator,
+    pub(crate) clock: StateClock,
+    pub(crate) backpressure_at: Option<u64>,
+    pub(crate) rto_backoff: u32,
+    pub(crate) rto_backoff_max: u32,
+    pub(crate) rto_timeouts: u64,
+    pub(crate) copies: u64,
+    // Datagrams counted on hops this session replaced.
+    pub(crate) earlier_hops_received: u64,
+    pub(crate) gaps: u64,
+    pub(crate) gaps_repaired_by_push: u64,
+    pub(crate) repair_pulls: u64,
+    // Set on leaving the offline state until its recovery UPLINK went.
+    pub(crate) recovered: bool,
+}
+
+impl ClientLink {
+    /// The `UPLINK.link` byte (spec §3.2).
+    pub(crate) fn link_byte(&self) -> u8 {
+        self.clock.state as u8 | if self.rtt.delayed { LINK_DELAYED } else { 0 }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct SendRecord {
+    pub(crate) sequence: u64,
+    pub(crate) first: u64,
+    pub(crate) count: u8,
+    pub(crate) at_ms: u64,
+    pub(crate) kind: u8,
+    pub(crate) lost: bool,
+}
+
+/// One reader hop's downlink measurement at the relay (spec §4.1, §4.2,
+/// §4.3, §5, §7.1). It belongs to the hop's `Peer`, so a renewed hop starts
+/// from Good and zero loss (§4.7).
+#[derive(Debug)]
+pub(crate) struct ReaderLink {
+    pub(crate) up: RecvWindow,
+    up_high_at_ms: u64,
+    log: Vec<SendRecord>,
+    cursor: LossCursor,
+    pub(crate) loss: LossStats,
+    pub(crate) delayed: bool,
+    pub(crate) srtt_c: u16,
+    pub(crate) last_heard_ms: u64,
+    pub(crate) clock: StateClock,
+    pub(crate) packets_by_kind: [u64; 5],
+    pub(crate) bytes_by_kind: [u64; 5],
+}
+
+impl ReaderLink {
+    pub(crate) fn new(now_ms: u64) -> Self {
+        let mut clock = StateClock::default();
+        clock.enter(LinkState::Good, false, now_ms);
+        Self {
+            up: RecvWindow::default(),
+            up_high_at_ms: now_ms,
+            log: vec![SendRecord::default(); SENDLOG_READER],
+            cursor: LossCursor::default(),
+            loss: LossStats::default(),
+            delayed: false,
+            srtt_c: 0,
+            last_heard_ms: now_ms,
+            clock,
+            packets_by_kind: [0; 5],
+            bytes_by_kind: [0; 5],
+        }
+    }
+
+    /// An authenticated datagram of this hop (spec §4.1, §5.1).
+    pub(crate) fn heard(&mut self, sequence: u64, now_ms: u64) {
+        if self.up.record(sequence) {
+            self.up_high_at_ms = now_ms;
+        }
+        self.last_heard_ms = self.last_heard_ms.max(now_ms);
+    }
+
+    /// The ACK and STATUS tail, read when the reply is encoded (spec §4.1).
+    pub(crate) fn feedback(&self, now_ms: u64) -> HopFeedback {
+        HopFeedback {
+            up: self.up,
+            echo_delay_ms: now_ms
+                .saturating_sub(self.up_high_at_ms)
+                .min(u64::from(u16::MAX)) as u16,
+        }
+    }
+
+    /// Logs one datagram sent on this hop (spec §4.2): `pack` is the control
+    /// payload when it is a PACK, `bytes` the whole datagram length.
+    pub(crate) fn record_send(
+        &mut self,
+        sequence: u64,
+        pack: Option<&[u8]>,
+        kind: u8,
+        bytes: usize,
+        now_ms: u64,
+    ) {
+        let (first, count) = pack.map_or((0, 0), |pack| {
+            (u64::from_le_bytes(pack[1..9].try_into().unwrap()), pack[9])
+        });
+        self.log[(sequence % SENDLOG_READER as u64) as usize] = SendRecord {
+            sequence,
+            first,
+            count,
+            at_ms: now_ms,
+            kind,
+            lost: false,
+        };
+        self.packets_by_kind[usize::from(kind)] += 1;
+        self.bytes_by_kind[usize::from(kind)] += bytes as u64;
+    }
+
+    /// Judges `UPLINK.down_high` / `down_bits` (spec §4.3, §7.1 step 4) and
+    /// returns the logged sends judged lost, oldest first.
+    pub(crate) fn judge(&mut self, down: RecvWindow) -> Vec<SendRecord> {
+        let mut lost = Vec::new();
+        let log = &mut self.log;
+        let (judged, missing) = self.cursor.judge(
+            down.high,
+            down.bits,
+            |sequence| log[(sequence % SENDLOG_READER as u64) as usize].sequence == sequence,
+            |sequence| lost.push(sequence),
+        );
+        self.loss.add(judged, missing);
+        lost.into_iter()
+            .map(|sequence| {
+                let entry = &mut self.log[(sequence % SENDLOG_READER as u64) as usize];
+                entry.lost = true;
+                *entry
+            })
+            .collect()
+    }
+
+    /// The logged sends newer than `sequence`, oldest first.
+    pub(crate) fn sent_after(&self, sequence: u64) -> impl Iterator<Item = &SendRecord> {
+        let mut later: Vec<_> = self
+            .log
+            .iter()
+            .filter(move |entry| entry.sequence > sequence)
+            .collect();
+        later.sort_unstable_by_key(|entry| entry.sequence);
+        later.into_iter()
+    }
+
+    /// The newest logged send of `kind`s matching `keep`.
+    pub(crate) fn latest(&self, keep: impl Fn(&SendRecord) -> bool) -> Option<SendRecord> {
+        self.log
+            .iter()
+            .filter(|entry| entry.sequence != 0 && keep(entry))
+            .max_by_key(|entry| entry.sequence)
+            .copied()
+    }
+
+    /// The `n` newest new packs sent, newest first (spec §7.4 step 1).
+    pub(crate) fn latest_fresh(&self, n: usize) -> Vec<SendRecord> {
+        let mut fresh: Vec<_> = self
+            .log
+            .iter()
+            .filter(|entry| entry.sequence != 0 && entry.kind == SEND_FRESH)
+            .copied()
+            .collect();
+        fresh.sort_unstable_by_key(|entry| std::cmp::Reverse(entry.sequence));
+        fresh.truncate(n);
+        fresh
+    }
+
+    /// Re-evaluates the downlink state at `now_ms` (spec §5.2); returns the
+    /// previous state if it changed. Entering offline discards open counts.
+    pub(crate) fn evaluate(&mut self, now_ms: u64) -> Option<LinkState> {
+        let offline = now_ms.saturating_sub(self.last_heard_ms) >= READER_OFFLINE_MS;
+        let state = link_state(offline, self.delayed, self.loss.lossy);
+        let previous = self.clock.enter(state, self.delayed, now_ms);
+        if previous.is_some() && state == LinkState::Offline {
+            self.loss.clear_counts();
+        }
+        previous
+    }
+
+    /// K for this reader's state (spec §7.2); 0 while offline.
+    pub(crate) fn piggyback_depth(&self) -> u8 {
+        let by_loss = if self.loss.lossy {
+            if self.loss.severe { 3 } else { 2 }
+        } else {
+            1
+        };
+        match self.clock.state {
+            LinkState::Offline => 0,
+            LinkState::Good => 1,
+            LinkState::Lossy => by_loss,
+            LinkState::Congested => by_loss.min(2),
+        }
+    }
+}
+
+impl ClientSession {
+    /// Counts an authenticated datagram of this hop at `clock_ms` (spec
+    /// §4.1, §5.1). CHALLENGE and LEAVE_ACK never reach here.
+    pub(crate) fn hop_heard(&mut self, sequence: u64) {
+        self.hop.down.record(sequence);
+        self.hop.last_heard_ms = Some(self.clock_ms);
+        self.hop.received += 1;
+    }
+
+    /// Logs a datagram this hop sends (spec §4.2); HELLO is not counted by
+    /// the relay's window and is never logged.
+    pub(crate) fn hop_sent(&mut self, sequence: u64) {
+        let offline = self
+            .ordering
+            .as_ref()
+            .is_some_and(|ordering| ordering.link.clock.state == LinkState::Offline);
+        self.hop.record_send(sequence, self.clock_ms, offline);
+    }
+
+    /// ACK or STATUS feedback received at `now_ms` (spec §4.3, §4.4).
+    pub(crate) fn take_feedback(&mut self, feedback: HopFeedback, now_ms: u64) {
+        let Some(ordering) = self.ordering.as_mut() else {
+            return;
+        };
+        let high = feedback.up.high;
+        if high == 0 {
+            return;
+        }
+        if high > self.hop.rtt_high
+            && feedback.echo_delay_ms != u16::MAX
+            && let Some(sent) = self.hop.sent(high)
+        {
+            self.hop.rtt_high = high;
+            let rtt = now_ms
+                .saturating_sub(sent.at_ms)
+                .saturating_sub(u64::from(feedback.echo_delay_ms));
+            ordering
+                .link
+                .rtt
+                .sample(rtt.min(u64::from(u32::MAX)) as u32, now_ms);
+        }
+        let hop = &mut self.hop;
+        let log = &hop.log;
+        let (judged, lost) = hop.cursor.judge(
+            high,
+            feedback.up.bits,
+            |sequence| {
+                let entry = log[(sequence % SENDLOG_CLIENT as u64) as usize];
+                entry.sequence == sequence && !entry.offline
+            },
+            |_| {},
+        );
+        ordering.link.loss.add(judged, lost);
+    }
+
+    /// Re-evaluates the uplink state at `now_ms` (spec §5.2, §5.5).
+    pub(crate) fn evaluate_uplink(&mut self, now_ms: u64) {
+        let offline = self
+            .hop
+            .last_heard_ms
+            .is_some_and(|heard| now_ms.saturating_sub(heard) >= CLIENT_OFFLINE_MS);
+        let Some(ordering) = self.ordering.as_mut() else {
+            return;
+        };
+        let link = &mut ordering.link;
+        let congested = link.rtt.delayed
+            || link
+                .backpressure_at
+                .is_some_and(|at| now_ms.saturating_sub(at) < BACKPRESSURE_HOLD_MS);
+        let state = link_state(offline, congested, link.loss.lossy);
+        match link.clock.enter(state, link.rtt.delayed, now_ms) {
+            Some(_) if state == LinkState::Offline => link.loss.clear_counts(),
+            Some(LinkState::Offline) => {
+                link.recovered = true;
+                link.rto_backoff = 0;
+            }
+            _ => {}
+        }
+    }
+
+    /// The previous hop's datagram count, carried when this hop takes over.
+    pub(crate) fn hop_received(&self) -> u64 {
+        self.hop.received
     }
 }
