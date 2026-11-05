@@ -208,31 +208,51 @@ impl StreamReader {
     }
 }
 
-/// How often spec §6.3 row 2 would send a gap UPLINK on this stream: once
-/// per gap, at once for reordering, after `turn_ms` for a STATUS ahead.
-/// Both clients count it the same way, so the baseline and the adaptive
-/// transport compare (coordinator's phase 2 note on RTT 200 ms with jitter).
+/// How often spec §6.3 row 2 sends a gap UPLINK on this stream (§6.7 item
+/// 1): first when a gap appears, at once for reordering or after `turn_ms`
+/// for a STATUS ahead; then once more if it is still open `max(16, 4
+/// rttvar)` ms after that first send. The spec counts the second from "缺口
+/// 出现后"; this counts it from the first trigger, which is the same for
+/// reordering and the later of the two for a STATUS gap.
 #[derive(Debug, Default)]
 pub struct GapTriggers {
     since: Option<u64>,
-    counted: bool,
-    /// When each trigger fired, in virtual µs.
+    first: Option<u64>,
+    second: bool,
+    /// When each first trigger fired, in virtual µs.
     pub times: Vec<u64>,
+    /// When each second trigger fired.
+    pub second_times: Vec<u64>,
 }
 
 impl GapTriggers {
-    pub fn observe(&mut self, gap: Option<OrderingGap>, now_ms: u64, turn_ms: u64, at_us: u64) {
+    pub fn observe(
+        &mut self,
+        gap: Option<OrderingGap>,
+        now_ms: u64,
+        turn_ms: u64,
+        rttvar_ms: u64,
+        at_us: u64,
+    ) {
         let Some(gap) = gap else {
             self.since = None;
-            self.counted = false;
+            self.first = None;
+            self.second = false;
             return;
         };
         let since = *self.since.get_or_insert(now_ms);
-        if !self.counted
-            && (gap == OrderingGap::Reordered || now_ms.saturating_sub(since) >= turn_ms)
-        {
-            self.counted = true;
-            self.times.push(at_us);
+        match self.first {
+            None if gap == OrderingGap::Reordered || now_ms.saturating_sub(since) >= turn_ms => {
+                self.first = Some(now_ms);
+                self.times.push(at_us);
+            }
+            Some(first)
+                if !self.second && now_ms.saturating_sub(first) >= (4 * rttvar_ms).max(16) =>
+            {
+                self.second = true;
+                self.second_times.push(at_us);
+            }
+            _ => {}
         }
     }
 }

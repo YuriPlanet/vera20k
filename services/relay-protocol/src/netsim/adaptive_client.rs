@@ -344,7 +344,10 @@ impl AdaptiveClient {
             self.session.set_ordering_gap(gap, now);
         }
         let turn_ms = self.turn_ms();
-        self.log.gap_triggers.observe(gap, now, turn_ms, at_us);
+        let rttvar = u64::from(self.session.link_stats().rttvar_ms.unwrap_or(50));
+        self.log
+            .gap_triggers
+            .observe(gap, now, turn_ms, rttvar, at_us);
         // Spec §6.7 item 7: while restoring, PULL every 100 ms only while
         // a gap remains.
         if self.restoring && gap.is_some() && due(self.last_restore_pull, now, RESTORE_PULL_MS) {

@@ -781,6 +781,7 @@ impl Simulation {
                 errors: to_f64(&log.errors),
                 refused: to_f64(&log.refused),
                 gap_uplink_triggers: count(&log.gap_triggers.times),
+                gap_uplink_resends: count(&log.gap_triggers.second_times),
                 link,
                 reader: self
                     .relay

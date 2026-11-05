@@ -103,6 +103,9 @@ pub struct ClientReport {
     /// same way for both clients, so the baseline shows how often the
     /// adaptive transport would fire it.
     pub gap_uplink_triggers: f64,
+    /// Second gap UPLINKs for gaps still open `max(16, 4 rttvar)` ms
+    /// after the first (§6.7 item 1).
+    pub gap_uplink_resends: f64,
     /// The adaptive client's §10.1 statistics at the end of the run.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link: Option<LinkSummary>,
@@ -284,6 +287,7 @@ pub fn mean(label: &str, members: &[(&ClientReport, Vec<f64>, Vec<f64>)]) -> Cli
         errors: sum_maps(&|report| &report.errors),
         refused: sum_maps(&|report| &report.refused),
         gap_uplink_triggers: avg(&|report| report.gap_uplink_triggers),
+        gap_uplink_resends: avg(&|report| report.gap_uplink_resends),
         link: None,
         reader: None,
     }
