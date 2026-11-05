@@ -424,19 +424,29 @@ pub(crate) fn paint_wol_lobby_children(
         .enumerate()
     {
         let rect = players.row(visible);
+        // VERA: the modern list shows only the badge of a row's high-score
+        // cells, at its left, and every name as far right of it as the retail
+        // list's, so names line up whether or not a row has a badge.
+        if modern {
+            paint.texts.push(text(
+                &row.name,
+                cell(rect, 2 + PLAYER_NAME_X - PLAYER_BADGE_X, 0),
+                ShellAlign::V_CENTER,
+                SHELL_LABEL_TEXT_RGB,
+            ));
+            if let Some(art) = art
+                && let Some((file, _)) = row.score_icons.iter().find(|(_, x)| *x == PLAYER_BADGE_X)
+            {
+                push_icon(&mut paint.icons, art, file, rect, 2, scale);
+            }
+            continue;
+        }
         paint.texts.push(text(
             &row.name,
-            if modern {
-                cell(rect, 2, 0)
-            } else {
-                cell(rect, PLAYER_NAME_X, PLAYER_NAME_W)
-            },
+            cell(rect, PLAYER_NAME_X, PLAYER_NAME_W),
             ShellAlign::V_CENTER,
             SHELL_LABEL_TEXT_RGB,
         ));
-        if modern {
-            continue;
-        }
         if let Some((tag, _)) = &row.clan {
             paint.texts.push(text(
                 tag,

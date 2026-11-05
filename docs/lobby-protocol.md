@@ -615,12 +615,12 @@ team ladders refuses `winners`; the game then finishes again without it.
 
 `ladder` with up to 64 names answers with the running season's records of those that
 played a rated game in it (`season` is `null` and `records` empty when no season runs),
-and the all-time `high_scores` of those that ever played one: each season's points and
-wins added up, and the rank they give. One lookup fills both of the game's tables: its
-ladder table from `records`, and its high-score table, whose points pick each player's
-badge (Private below 32 up to Commander in Chief at 2001), from `high_scores`. Badges
-therefore outlast seasons. A lobby from before them sends no `high_scores`, and the game
-then shows no badges.
+and the `high_scores` of those that ever played one: their badge points, the ranked games
+of every season times the OS, over ten, rounded, and the rank they give. One lookup fills
+both of the game's tables: its ladder table from `records`, and its high-score table, whose
+points pick each player's badge (Private below 32 up to Commander in Chief at 2001), from
+`high_scores`. Badges therefore grow with play and skill and outlast seasons. A lobby from
+before them sends no `high_scores`, and the game then shows no badges.
 
 While a season runs, the host's options for a game room whose players are all on teams,
 or in a mode without alliances, give an odds line, which the room hears from the `VERA20k`

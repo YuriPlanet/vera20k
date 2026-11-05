@@ -301,7 +301,7 @@ pub(super) struct Start {
 
 /// The `ladder` event for the names a `ladder` command asked for: the running
 /// season's records, which a name without a rated game there lacks, and the
-/// all-time totals of those that have played one.
+/// badge points of those that have played one.
 #[derive(Deserialize)]
 pub(super) struct Ladder {
     pub records: Vec<LadderRecord>,
@@ -312,7 +312,7 @@ pub(super) struct Ladder {
 
 impl Ladder {
     /// The ladder table from the season's records, and the high-score table,
-    /// whose points pick the badges (`0x00783B80`), from the all-time totals.
+    /// whose points pick the badges (`0x00783B80`), from the badge points.
     pub(super) fn tables(&self) -> (Vec<WolLadderRecord>, Vec<WolHighScoreRecord>) {
         (
             self.records.iter().map(WolLadderRecord::from).collect(),
@@ -324,8 +324,8 @@ impl Ladder {
     }
 }
 
-/// A player's points and wins added up over every season, and the rank they
-/// give.
+/// A player's badge points, their ranked games of every season times their
+/// OS, over ten, and the rank they give.
 #[derive(Deserialize)]
 pub(super) struct HighScoreRecord {
     pub name: String,
