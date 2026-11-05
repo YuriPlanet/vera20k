@@ -18,8 +18,9 @@ pub enum ImportEvent {
     Started,
     /// Bytes copied so far.
     Progress(u64),
-    /// Every file was copied and the config was written.
-    Done,
+    /// Every file was copied and the config was written; the path is the copy
+    /// the next launch will read.
+    Done(String),
     /// The copy stopped, with what to tell the player.
     Failed(String),
 }

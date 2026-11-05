@@ -45,6 +45,10 @@ pub(crate) enum ImportStep {
 #[derive(Debug, Default)]
 pub(crate) struct AssetImport {
     step: ImportStep,
+    /// Where the finished copy landed. The running process still holds the
+    /// config it read at start-up, so this is the only way the card can name the
+    /// folder the next launch will use.
+    imported: Option<String>,
 }
 
 impl AssetImport {
@@ -82,8 +86,16 @@ impl AssetImport {
         }
     }
 
-    pub(crate) fn finish_copy(&mut self) {
+    /// The copy finished, at [path]: the card names that folder from here on,
+    /// because the running process still holds the config it read at start-up.
+    pub(crate) fn finish_copy(&mut self, path: impl Into<String>) {
+        self.imported = Some(path.into());
         self.step = ImportStep::Done;
+    }
+
+    /// The copy this dialog made, once one has finished.
+    pub(crate) fn imported_path(&self) -> Option<&str> {
+        self.imported.as_deref()
     }
 
     pub(crate) fn fail(&mut self, why: impl Into<String>) {
@@ -127,7 +139,11 @@ About 1.5 GB is needed.\n\n",
             ImportStep::Done => "Copied. Restart VERA20K to play.\n\n".to_owned(),
             ImportStep::Failed(why) => format!("Failed: {why}\n\n"),
         });
-        text.push_str(&format!("Game files: {game_files}"));
+        // Once the copy exists, name it: the caller's `game_files` still holds
+        // the folder this process started with, which is exactly the stale value
+        // the copy just replaced.
+        let shown = self.imported.as_deref().unwrap_or(game_files);
+        text.push_str(&format!("Game files: {shown}"));
         if !config.is_empty() {
             text.push_str(&format!("\nConfig: {config}"));
         }

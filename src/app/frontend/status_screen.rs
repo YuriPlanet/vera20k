@@ -166,7 +166,7 @@ fn apply_import_events(state: &mut AppState) {
         match event {
             ImportEvent::Started => state.frontend.asset_import.start_copy(None),
             ImportEvent::Progress(bytes) => state.frontend.asset_import.advance_copy(bytes),
-            ImportEvent::Done => state.frontend.asset_import.finish_copy(),
+            ImportEvent::Done(path) => state.frontend.asset_import.finish_copy(path),
             ImportEvent::Failed(reason) => state.frontend.asset_import.fail(reason),
         }
     }

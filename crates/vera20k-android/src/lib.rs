@@ -104,7 +104,7 @@ pub extern "system" fn Java_org_vera20k_VeraActivity_nativeImportFinished(
     use vera20k::util::import_status::{self, ImportEvent};
     if let Some(path) = text.strip_prefix("ok:") {
         log::info!("asset import: copied into {path}; config.toml written");
-        import_status::note(ImportEvent::Done);
+        import_status::note(ImportEvent::Done(path.to_owned()));
     } else {
         let reason = text.strip_prefix("failed:").unwrap_or(&text).to_owned();
         log::error!("asset import: {reason}");
