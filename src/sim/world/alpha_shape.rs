@@ -16,15 +16,18 @@
 //! (`Save_Game_Content_To_Stream`, `0x0067E22E`), but no sync CRC walks it,
 //! so the world hash leaves it out.
 //!
-//! RESIDUAL: only Technos make glows here. Native Unlimbo makes one for any
-//! object, so a Terrain, Overlay, Smudge, Anim, Bullet, Particle or VoxelAnim
-//! type given a loaded `AlphaImage=` glows in gamemd and not in VERA. Retail
-//! gives none of them one; maps and mods can. Nothing in gameplay reads a
-//! glow.
+//! RESIDUAL: only Technos make glows here. Native `ObjectClass::Unlimbo`
+//! makes one for any object whose type's AlphaImage loaded, so another object
+//! kind that reaches it (this port traces none) glows in gamemd and not in
+//! VERA. Retail loads no AlphaImage; maps and mods can. Nothing in gameplay
+//! reads a glow.
 //!
 //! RESIDUAL: the A plane redraws whenever the glow list changes, so a glow
-//! appears and goes at once. gamemd redraws only dirtied areas of its ABuffer:
-//! a cloaked object's glow stays there until something redraws that area.
+//! appears and goes at once. gamemd redraws only dirtied areas of its ABuffer,
+//! and Limbo dirties the AlphaImage-sized rect at the object's current
+//! GetCoords (`0x005F4E0B..0x005F4E8F`), not where its glow was drawn. So the
+//! glow of a cloaked object, or of one that moved after Unlimbo and then died
+//! or left the map, stays until something redraws that area.
 
 use super::Simulation;
 use crate::rules::ruleset::RuleSet;

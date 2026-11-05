@@ -18,8 +18,9 @@ pub struct AlphaImage {
 
 impl AlphaImage {
     /// The SHP header's width and height words (+2/+4), sign-extended: the
-    /// AlphaShapeClass ctor's size (`0x004209A2..0x004209B8`), which
-    /// `ObjectClass::Unlimbo` halves to centre the shape (`0x005F5070`).
+    /// AlphaShapeClass ctor's size (`0x004209B0`/`0x004209B4`), which
+    /// `ObjectClass::Unlimbo` halves to centre the shape
+    /// (`0x005F50C3..0x005F50DD`).
     pub fn canvas(&self) -> [i32; 2] {
         self.canvas
     }

@@ -31,6 +31,8 @@ const NEUTRAL: u8 = 0x7F;
 
 /// The default retains native A. The optional translucent style uses 500;
 /// simulation visibility, shroud knowledge and stored A bytes stay unchanged.
+/// The lift also halves the AlphaShapeClass glows (`draw_alpha_shape`), which
+/// share the plane with the shroud.
 const FOG_STRENGTH_MILLI: u32 = 1000;
 
 /// Lift one A value toward [`NEUTRAL`] by `strength_milli` (0 = no shading,
@@ -796,7 +798,8 @@ fn blit_frame_pixels(
 
 /// One shape of `AlphaShapeClass::DrawAll_NoMask @ 0x00421350` over the
 /// whole plane, `origin` in plane pixels. Nothing is drawn unless the canvas
-/// meets the plane (`0x004213A7`). Frame 0 then starts at its own offset: the
+/// meets the plane (`Rect_Intersect` at `0x004213FA`, tested at
+/// `0x00421411..0x0042141E`). Frame 0 then starts at its own offset: the
 /// left and top edges clip to the canvas and plane, the right and bottom to
 /// the plane alone (`0x00421480..0x004214F4`). Every frame byte, 0 included,
 /// rescales the A beneath it through table `0x0088A118` (built by the ctor
@@ -1096,8 +1099,9 @@ mod tests {
     }
 
     /// `AlphaShapeClass::DrawAll_NoMask @ 0x00421350` after the cells: frame
-    /// 0 from its own offset, its left edge and the plane's bottom clipping
-    /// it, each byte rescaling A (254 doubles, 0 zeroes). A changed glow list
+    /// 0 from its own offset and past its canvas's right edge (only the plane
+    /// clips right and bottom), the plane's left and bottom edges clipping it,
+    /// each byte rescaling A (254 doubles, 0 zeroes). A changed glow list
     /// redraws a plane whose fog is unchanged; an equal one does not.
     #[test]
     fn a_glow_rescales_a_under_frame_zero_and_redraws_when_it_changes() {
@@ -1131,11 +1135,12 @@ mod tests {
         };
         assert!(rebuild(&mut source));
         let image = std::sync::Arc::new(crate::rules::alpha_image_assets::AlphaImage::for_test(
-            [6, 4],
+            [3, 4],
             [1, 1, 3, 2],
             vec![255, 254, 0, 9, 9, 9],
         ));
-        // Plane origin (-2,30): frame 0 covers x -1..2 and y 31..33.
+        // Plane origin (-2,30): the canvas ends at x 1, and frame 0 covers
+        // x -1..2 and y 31..33.
         let glow = || AlphaShapeDraw {
             origin: [98, 80],
             image: image.clone(),
