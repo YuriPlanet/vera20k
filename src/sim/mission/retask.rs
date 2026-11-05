@@ -158,11 +158,11 @@ impl Simulation {
     /// after a Stop where retail resumes its archived move on the next Restore.
     ///
     /// A Harvest order also uses this funnel, retaining its unload-latch reset
-    /// after radio Break. EjectBunker and dormant aircraft passenger Unload
-    /// still bypass the prefix. These
-    /// pre-existing command routes can Restore a cancelled archive; their
-    /// complete DTO/mission migration is separate from ordinary Unit depot
-    /// servicing.
+    /// after radio Break. Event9 DEPLOY orders (including the VERA-only
+    /// bunker-eject record, #3675) and dormant aircraft passenger Unload
+    /// still bypass the prefix. These pre-existing command routes can Restore
+    /// a cancelled archive; their complete DTO/mission migration is separate
+    /// from ordinary Unit depot servicing.
     ///
     /// Without the clear on the sites that DO need it, a unit Overridden by a
     /// blocked step or by the retaliation at 0x00702B41, then retasked, then

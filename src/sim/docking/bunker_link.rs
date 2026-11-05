@@ -245,8 +245,9 @@ pub(crate) fn unit_unload_empties_bunker(
 }
 
 /// Normal release4595C0, reached by linked Unit Mission_Unload73D66D
-/// ([`unit_unload_empties_bunker`]), its one native caller. VERA's
-/// `Command::EjectBunker` also calls it, but no player input sends that (#3675).
+/// ([`unit_unload_empties_bunker`]), its one native caller. The VERA-only
+/// bunker-eject record also reaches this owner, through that same Unload
+/// mission rather than at command time (#3675).
 /// Unlike sell/death, it clears the unit link before Power_On/Force, then
 /// assigns a nearby destination ([`bunker_exit_cell`]) and queues Move before
 /// clearing the building. The wall-animation projection remains a bounded

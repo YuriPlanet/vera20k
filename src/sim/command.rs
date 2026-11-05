@@ -508,8 +508,9 @@ impl CommandRecord {
 }
 
 /// TargetClass events share constructor4C65E0's five-byte object token.
-/// SELL is Event16 (4C6F12), Primary is Event11 (4C718C). Bunker eject is
-/// an explicit VERA event for the existing release owner, not a native opcode.
+/// SELL is Event16 (4C6F12), Primary is Event11 (4C718C). Bunker eject is a
+/// VERA-only token, kept on the wire so old recordings decode; its decoded
+/// command routes through the tank's Unload mission, not a direct release.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ObjectAction {
     Sell,
@@ -1401,10 +1402,11 @@ pub enum Command {
     SellBuilding { entity_id: u64 },
     /// Toggle repair mode on a building (spend credits to heal over time).
     ToggleRepair { entity_id: u64 },
-    /// VERA-only: release a tank bunker's occupant through
-    /// `bunker_link::release_normal` at command time. No player input sends
-    /// it; the D key and a click on the tank reach the same release through
-    /// the tank's Unload mission (`0x0073D66D`). Removal: #3675.
+    /// VERA-only opcode 0x31, retained so older recordings still decode.
+    /// No player input sends it. Its handler resolves the bunker's occupant
+    /// and issues the tank's Unload mission (`0x0073D66D`) through Event9's
+    /// DEPLOY owner; `bunker_link::release_normal` then runs in that Unit's
+    /// Logic update, never at command time (#3675).
     EjectBunker { bunker_id: u64 },
     /// Order a transport or garrison to unload: the Unload mission of its class.
     UnloadPassengers { transport_id: u64 },
