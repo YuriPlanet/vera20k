@@ -308,6 +308,10 @@ pub struct ClientSession {
     hop: link::HopLink,
     // The `now_ms` of the timed call in progress (spec §4.2, §4.4).
     clock_ms: u64,
+    // Test support: start the uplink measured good (see
+    // `preset_uplink_measured_good`).
+    #[cfg(any(test, feature = "test-support"))]
+    measured_good: bool,
 }
 
 impl fmt::Debug for ClientSession {
@@ -354,6 +358,8 @@ impl ClientSession {
             federation: None,
             hop: link::HopLink::default(),
             clock_ms: 0,
+            #[cfg(any(test, feature = "test-support"))]
+            measured_good: false,
         })
     }
 
@@ -1011,6 +1017,9 @@ impl RelayServer {
         }
         room.peers[index].received.accept(message.sequence)?;
         room.peers[index].link.heard(message.sequence, now_millis);
+        // Any datagram of the hop ends the reader's offline state (§5.1);
+        // push still waits for its subscription.
+        room.peers[index].evaluate_reader(now_millis);
         let admission = self
             .admissions
             .get_mut(&message.ticket.player)
@@ -1298,13 +1307,17 @@ impl RelayServer {
                 if message.ticket.expires <= peer.ticket.expires {
                     return Err(RelayError::Authentication);
                 }
+                // A renewed hop keeps the measured loss (spec §5.4).
+                let loss = peer.link.loss;
                 *peer = new_peer(message, source, now, now_ms);
+                peer.link.loss = loss;
             }
             if message.sequence <= peer.received.maximum && peer.endpoint != source {
                 return Err(RelayError::Replay);
             }
             peer.received.accept(message.sequence)?;
             peer.link.heard(message.sequence, now_ms);
+            peer.evaluate_reader(now_ms);
             if peer.endpoint != source {
                 // A confirmed new path must opt in before receiving history.
                 peer.push = None;

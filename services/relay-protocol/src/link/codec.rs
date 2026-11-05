@@ -10,6 +10,7 @@ pub(crate) const FLAG_PACE: u8 = 1 << 1;
 pub(crate) const FLAG_PROBE: u8 = 1 << 2;
 pub(crate) const FLAG_RESTORING: u8 = 1 << 3;
 pub(crate) const LINK_DELAYED: u8 = 1 << 2;
+pub(crate) const LINK_JITTERY: u8 = 1 << 3;
 /// `[up_high u64][up_bits u64][echo_delay u16]`.
 pub(crate) const FEEDBACK_LEN: usize = 18;
 pub(crate) const MAX_UPLINK_CHECKSUMS: usize = 2;
@@ -82,7 +83,7 @@ impl Uplink<'_> {
 
 /// Decodes an UPLINK control payload under every Malformed rule of spec
 /// §3.2: exact length, at most 2 checksums and 4 batches, reserved bits 0
-/// (flags 4..7, link 3..7), `first_batch_id ≥ 1`, `40 < len ≤ 552`,
+/// (flags 4..7, link 4..7), `first_batch_id ≥ 1`, `40 < len ≤ 552`,
 /// `recv_next ≥ 1`, and bit0 of `down_bits` set when `down_high > 0`. The
 /// pace byte must also name an [`crate::OrderPace`].
 pub(crate) fn decode_uplink(payload: &[u8]) -> Result<Uplink<'_>, RelayError> {
@@ -101,7 +102,7 @@ pub(crate) fn decode_uplink(payload: &[u8]) -> Result<Uplink<'_>, RelayError> {
     let link = reader.u8()?;
     let checksum_count = usize::from(reader.u8()?);
     if flags & 0xF0 != 0
-        || link & 0xF8 != 0
+        || link & 0xF0 != 0
         || checksum_count > MAX_UPLINK_CHECKSUMS
         || recv_next == 0
         || (down.high > 0 && down.bits & 1 == 0)
@@ -335,7 +336,8 @@ mod tests {
         assert_eq!(mutate(&|b| b[31] = 3), malformed);
         assert_eq!(mutate(&|b| b[32] = 5), malformed);
         assert_eq!(mutate(&|b| b[1] |= 0x10), malformed);
-        assert_eq!(mutate(&|b| b[30] |= 0x08), malformed);
+        assert_eq!(mutate(&|b| b[30] |= 0x10), malformed);
+        assert!(mutate(&|b| b[30] |= 0x08).is_ok(), "bit3 JITTERY");
         // 3: first_batch_id ≥ 1.
         assert_eq!(mutate(&|b| b[33..41].fill(0)), malformed);
         // 4: 40 < len ≤ 552.
