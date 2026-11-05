@@ -1584,6 +1584,7 @@ fn choices_material(a: &SkirmishLocalSlot, b: &SkirmishLocalSlot) -> bool {
 
 pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     auto_accept(state);
+    point_out_briefing(state);
     let pings = super::wol::poll(state);
     let go = poll_go(state);
     let offer = poll_preview_offer(state);
@@ -1616,6 +1617,53 @@ fn auto_accept(state: &mut AppState) {
     if let Err(error) = super::actions::accept(state) {
         log::warn!("automatic Accept refused: {error:#}");
     }
+    state.platform.window.request_redraw();
+}
+
+/// VERA's line pointing a player in its game room at the map's briefing
+/// (`map::basic::briefing_text`), which a press on the map preview shows
+/// (`frontend::preview_zoom`).
+const BRIEFING_HINT: &str =
+    "This map has a briefing. Click the map preview at the top right to read it.";
+
+/// VERA's game room tells the player in their own chat, once per map, that
+/// the room's map has a briefing: when they enter the room on such a map and
+/// when the room changes to one. Nothing is sent to the others.
+fn point_out_briefing(state: &mut AppState) {
+    if state.frontend.shell_route != crate::app::shell_route::ShellRoute::NetworkSetup
+        || !super::dialog(state).modern
+        || super::quick_match(state)
+        || super::external(state)
+        || state
+            .frontend
+            .network_setup_protocol
+            .as_ref()
+            .is_none_or(|protocol| protocol.wol_no_preview() != (false, false))
+    {
+        return;
+    }
+    let Some(index) = super::view::local_map_index(state) else {
+        return;
+    };
+    let Some(record) = state.frontend.scenario_catalog.records().get(index) else {
+        return;
+    };
+    if !state
+        .frontend
+        .multiplayer_setup
+        .as_mut()
+        .is_some_and(|ui| ui.first_briefing_check(&record.file_name))
+        || crate::app::map_library::briefing(state, index).is_none()
+    {
+        return;
+    }
+    crate::app::shell_lan::append_chat(
+        state,
+        LanChatLine {
+            text: BRIEFING_HINT.encode_utf16().collect(),
+            color: u32::MAX,
+        },
+    );
     state.platform.window.request_redraw();
 }
 

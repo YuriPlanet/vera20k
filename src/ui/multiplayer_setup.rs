@@ -574,6 +574,9 @@ pub(crate) struct MultiplayerSetupState {
     /// VERA's missing-map offer; open until its map arrives, it takes the
     /// room's input.
     pub(crate) map_offer: Option<MapOffer>,
+    /// The maps whose briefing VERA's room has looked for, by file name, so
+    /// it points each one out once while the room stays open.
+    briefings_checked: Vec<String>,
 }
 impl Default for MultiplayerSetupState {
     fn default() -> Self {
@@ -595,6 +598,7 @@ impl Default for MultiplayerSetupState {
             accept_flash_started: None,
             options_open: false,
             map_offer: None,
+            briefings_checked: Vec::new(),
         }
     }
 }
@@ -617,6 +621,19 @@ impl MultiplayerSetupState {
         self.first_visible_row = self.first_row(row_count, rows);
         self.popup.close();
         self.cancel_pointer();
+    }
+    /// Whether the room looks for `file`'s briefing now: only the first time
+    /// it shows that map.
+    pub(crate) fn first_briefing_check(&mut self, file: &str) -> bool {
+        if self
+            .briefings_checked
+            .iter()
+            .any(|checked| checked.eq_ignore_ascii_case(file))
+        {
+            return false;
+        }
+        self.briefings_checked.push(file.to_owned());
+        true
     }
     pub(crate) fn show_options(&mut self, open: bool) {
         self.options_open = open;
@@ -1093,6 +1110,18 @@ mod tests {
             flavor,
             modern,
         }
+    }
+
+    #[test]
+    fn the_room_looks_for_each_maps_briefing_once() {
+        let mut room = MultiplayerSetupState::default();
+        assert!(room.first_briefing_check("normandy.yrm"));
+        assert!(!room.first_briefing_check("NORMANDY.YRM"), "the same map");
+        assert!(room.first_briefing_check("tour.yrm"));
+        assert!(
+            !room.first_briefing_check("normandy.yrm"),
+            "back to the first"
+        );
     }
 
     /// Native pages hold eight rows and VERA's room twelve, whose last row
