@@ -150,10 +150,10 @@ fn check_wire(trace: &Trace) -> Check {
     Ok(())
 }
 
-/// Spec §6.1, §6.2: every UPLINK but a PROBE or an IO heartbeat carries
-/// the unacknowledged batches from `accepted_through + 1`, all of them up
-/// to four (the batches here are small, so all fit); an IO heartbeat
-/// repeats the batch segment of the UPLINK before it (§6.6).
+/// Spec §6.1, §6.2: every UPLINK but a PROBE, IO heartbeats included
+/// (§6.6), carries the unacknowledged batches from `accepted_through + 1`,
+/// all of them up to four (the batches here are small, so all fit); a
+/// heartbeat keeps the previous UPLINK's checksum segment (§6.6).
 fn check_batch_segments(trace: &Trace) -> Check {
     for client in 0..trace.seals.len() {
         let mut previous: Option<&Uplink> = None;
@@ -163,21 +163,17 @@ fn check_batch_segments(trace: &Trace) -> Check {
                 previous = Some(uplink);
                 continue;
             }
-            if record.heartbeat {
-                if let Some(previous) = previous {
-                    ensure(
-                        previous.first_batch_id == uplink.first_batch_id
-                            && previous.batches == uplink.batches,
-                        || {
-                            format!(
-                                "heartbeat at {} ms changed the batches (spec §6.6)",
-                                record.sent_ms()
-                            )
-                        },
-                    )?;
-                }
-                previous = Some(uplink);
-                continue;
+            // §6.6: a heartbeat repacks its batches by §6.2 like any other
+            // UPLINK and repeats the previous UPLINK's checksum segment.
+            if record.heartbeat
+                && let Some(previous) = previous
+            {
+                ensure(previous.checksums == uplink.checksums, || {
+                    format!(
+                        "heartbeat at {} ms changed the checksums (spec §6.6)",
+                        record.sent_ms()
+                    )
+                })?;
             }
             let sealed = trace.seals[client]
                 .iter()
@@ -232,11 +228,13 @@ fn j01_every_datagram_has_the_spec_layout() {
 // --- Judgment 2 (spec §6.3 rows 1 and 6, §13.2 row 1) ---
 
 /// On a good link no copy is sent (`copies` stays 0, §6.3 row 6 is lossy
-/// only), each batch's first UPLINK goes out in the service that sealed it
-/// (row 1, "立即"), and a batch with no other batch sealed within 200 ms of
-/// it rides exactly one UPLINK (§13.2 row 1). Batches near another one also
-/// ride that one's UPLINK while unacknowledged (§6.2), so §13.2's "1 个上行包"
-/// is asserted only for isolated batches.
+/// only); each batch's first UPLINK goes out in the service that sealed it
+/// (row 1, "立即"); and that first send is one datagram with no copy after
+/// it (§13.2 row 1): no UPLINK in the next service window (16-32 ms later,
+/// where a copy would go) carries the batch unless it has a reason of its
+/// own on a good link, a never-sent batch (row 1) or checksums (the
+/// checksum segment). Later UPLINKs before the ACK carry it too; §13.2
+/// calls that normal redundancy (§6.2).
 fn check_good_uplink(trace: &Trace, client: usize) -> Check {
     let copies = trace
         .client_stats
@@ -248,16 +246,13 @@ fn check_good_uplink(trace: &Trace, client: usize) -> Check {
     ensure(copies == 0, || {
         format!("client {client}: {copies} copies on a good link")
     })?;
-    let seals = &trace.seals[client];
     let ups = uplinks(trace, client);
-    for &(sealed_at, id) in seals {
-        let carrying: Vec<&&WireRecord> = ups
+    for &(sealed_at, id) in &trace.seals[client] {
+        let first_index = ups
             .iter()
-            .filter(|record| record.uplink().unwrap().carries(id))
-            .collect();
-        let first = carrying
-            .first()
+            .position(|record| record.uplink().unwrap().carries(id))
             .ok_or_else(|| format!("batch {id} never sent"))?;
+        let first = ups[first_index];
         ensure(first.sent_us == sealed_at, || {
             format!(
                 "batch {id} sealed at {} ms, first sent at {} ms (spec §6.3 row 1)",
@@ -265,16 +260,29 @@ fn check_good_uplink(trace: &Trace, client: usize) -> Check {
                 first.sent_ms()
             )
         })?;
-        let isolated = seals
+        let mut sent: BTreeSet<u64> = ups[..first_index]
             .iter()
-            .all(|&(other, other_id)| other_id == id || other.abs_diff(sealed_at) > 200_000);
-        if isolated {
-            ensure(carrying.len() == 1, || {
-                format!(
-                    "isolated batch {id} rode {} UPLINKs (spec §13.2)",
-                    carrying.len()
-                )
-            })?;
+            .flat_map(|record| record.uplink().unwrap().batch_ids().collect::<Vec<_>>())
+            .collect();
+        sent.extend(first.uplink().unwrap().batch_ids());
+        for record in &ups[first_index + 1..] {
+            if record.sent_us >= first.sent_us + 32_000 {
+                break;
+            }
+            let uplink = record.uplink().unwrap();
+            let own_reason = uplink.batch_ids().any(|other| !sent.contains(&other))
+                || !uplink.checksums.is_empty();
+            ensure(
+                !(record.sent_us >= first.sent_us + 16_000 && uplink.carries(id) && !own_reason),
+                || {
+                    format!(
+                        "batch {id} first sent at {} ms looks copied at {} ms (spec §13.2)",
+                        first.sent_ms(),
+                        record.sent_ms()
+                    )
+                },
+            )?;
+            sent.extend(uplink.batch_ids());
         }
     }
     Ok(())
@@ -860,13 +868,15 @@ fn j08_reported_loss_tracks_the_network_loss() {
 ///   pushes nothing to it until it hears it again (§7.2, "断开: 不发");
 /// - the first push after the relay hears it again starts at the
 ///   reader's `acked_next` (§5.5: `sent_next = acked_next`), and leaves the
-///   relay within one pass of hearing it;
+///   relay within one pass of hearing it, so it reaches the client within
+///   one RTT of the client's first datagram after the outage (§13.2);
 /// - the client is caught up to the relay's `next_seq` (from the first
 ///   STATUS after recovery) within one RTT plus, for each 64 records of
 ///   backlog (`PUSH_WINDOW`, §7.4), one acknowledgement round (RTT + the
 ///   100 ms good interval of §6.3 row 3 + a service);
-/// - the outage loses no loss statistics (§5.5, §13.2): with no loss besides
-///   it, `up_loss_permille_max` and the reader's `down_loss_permille` stay 0.
+/// - the outage adds no loss (§5.5: on recovery `eval_next` skips every
+///   datagram sent before it; §13.2): with no loss besides it,
+///   `up_loss_permille_max` and the reader's `down_loss_permille` stay 0.
 fn check_outage(trace: &Trace, client: usize, from_ms: u64, to_ms: u64) -> Check {
     let from = from_ms * 1000;
     let to = to_ms * 1000;
@@ -941,6 +951,20 @@ fn check_outage(trace: &Trace, client: usize, from_ms: u64, to_ms: u64) -> Check
             ms(first.sent_us - heard_again)
         )
     })?;
+    let rtt = 2 * 20_000;
+    let resent = up
+        .iter()
+        .filter(|r| r.sent_us >= to && r.arrived_us().is_some())
+        .map(|r| r.sent_us)
+        .min()
+        .ok_or("the client sent nothing after the outage")?;
+    let first_in = first.arrived_us().ok_or("the recovery push was lost")?;
+    ensure(first_in <= resent + rtt + 1000, || {
+        format!(
+            "recovery push reached the client {} ms after its first datagram (spec §13.2: 1 RTT)",
+            ms(first_in - resent)
+        )
+    })?;
     let acked = up
         .iter()
         .filter(|r| r.arrived_us().is_some_and(|at| at <= first.sent_us))
@@ -959,7 +983,6 @@ fn check_outage(trace: &Trace, client: usize, from_ms: u64, to_ms: u64) -> Check
             _ => None,
         })
         .ok_or("no STATUS after recovery")?;
-    let rtt = 2 * 20_000;
     let rounds = next_seq.saturating_sub(acked).div_ceil(64);
     let deadline = heard_again + rtt + rounds * (rtt + 116_000);
     let caught = up

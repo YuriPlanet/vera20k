@@ -221,6 +221,7 @@ fn appendix_a_packet_by_packet() {
     assert_eq!(shape(&records), [(1, 4, 1), (2, 4, 2)]);
     let turn = packet(&trace, Down, B, "PACK", 420.0);
     envelope(turn, 8, 24);
+    arrives(turn, 440.0);
     assert_eq!(pack(turn).0, 1);
 
     // Packet 16: turn 2 with turn 1 piggybacked, to both.
@@ -358,8 +359,9 @@ fn appendix_a_packet_by_packet() {
     assert_eq!(reader.packets_by_kind[3], 0);
     assert_eq!(reader.downlink, crate::LinkState::Good);
 
-    // Packets 27-28: frame 15's checksum, alone, from both, within 100 ms
-    // of frame 15 running (turn 8 sealed at 863.3 arrives at 883.3).
+    // Packets 27-28: frame 15's checksum, alone, from both, in the next
+    // UPLINK after frame 15 runs (turn 8 sealed at 863.3 arrives at 883.3),
+    // at the latest the standalone one 100 ms later (§6.3).
     for client in [A, B] {
         let carrying: Vec<&WireRecord> = trace
             .of(client, Up)
