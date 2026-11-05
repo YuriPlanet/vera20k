@@ -110,11 +110,12 @@ pub(crate) enum AttackAction {
     AttackSupport,
 }
 
-/// The allied-object part of Techno6FFEC0's unforced attack admission,
-/// 700314..7003D4. All consumers ask this through the existing action owner.
+/// Techno6FFEC0's disguise and real-owner admission,70025D..70041E.
+/// Native friendly-attack grants also override a disguise refusal.
+/// All consumers ask this through the existing action owner.
 /// IsAlly reads the real owner and the asking House's directional mask;
 /// display friendliness alone cannot decide whether to attack or select.
-fn friendly_attack_is_admitted(
+fn object_attack_is_admitted(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     actor_id: u64,
@@ -126,8 +127,8 @@ fn friendly_attack_is_admitted(
         return false;
     };
     let Some(target) = sim.entities().get(target_id) else {
-        // House4F9A90 sees Terrain's null owner (Object4104A0), so
-        // the allied-only restrictions do not apply to a real Terrain.
+        // Terrain has no House (Object4104A0) and IsDisguisedTo426430
+        // returns false. Neither restriction applies to a real Terrain.
         return crate::sim::movement::ground_pose::target_get_coords(
             TargetKind::Entity(target_id),
             sim,
@@ -135,12 +136,33 @@ fn friendly_attack_is_admitted(
         )
         .is_some();
     };
-    if !combat_weapon::is_ally_by_object(
+    let allied = combat_weapon::is_ally_by_object(
         Some(sim.house_alliances()),
         sim.interner(),
         actor.owner(),
         target.owner(),
-    ) {
+    );
+    //70025D..70030F: this is the firing blink, not the reacquisition timer.
+    let disguise_admitted = rules.general.attack_cursor_on_disguise
+        || sim
+            .interner()
+            .object_type(target.type_ref(), rules)
+            .is_some_and(|target_type| target_type.perma_disguise)
+        || target
+            .disguise
+            .as_ref()
+            .is_some_and(|disguise| disguise.blink_remaining(sim.session().binary_frame()) != 0)
+        || !target.is_disguised_to(
+            actor.owner(),
+            Some(sim.fog()),
+            Some(sim.house_alliances()),
+            sim.interner(),
+        )
+        || (target
+            .disguise_house(true, sim.session().current_house(), false)
+            .is_none()
+            && sim.fires_at_terrain(actor_id, &TargetKind::Entity(target_id), rules, None));
+    if !allied && disguise_admitted {
         return true;
     }
     let Some(kind) = sim.interner().object_type(actor.type_ref(), rules) else {
@@ -240,11 +262,11 @@ fn object_target_is_legal(
 /// in tools/spatial_oracle/bunker_attack_action.json.
 ///
 /// The real-owner ally gate and its shared weapon/type grants are handled by
-/// [`friendly_attack_is_admitted`]. A different allied House therefore takes
+/// [`object_attack_is_admitted`]. A different allied House therefore takes
 /// the identity-sensitive tail, then the existing class postprocessing.
 ///
-/// Unforced, an object target must pass [`object_target_is_legal`] and the
-/// disguise gate in [`base_action`]. Both cursor and click use that answer.
+/// Unforced, an object target must pass [`object_target_is_legal`] and
+/// [`object_attack_is_admitted`]. Both cursor and click use that answer.
 ///
 /// [`Simulation::cell_attack_rung_admits`]: crate::sim::world::Simulation::cell_attack_rung_admits
 pub(crate) fn attack_action(
@@ -516,46 +538,13 @@ pub(super) fn base_action(
         sim.interner(),
     );
     let infiltrator = actor.category() == EntityCategory::Infantry && kind.infiltrate;
-    // TechnoClass::What_Action_OnObject6FFEC0, original70025D..70030F.
-    // This manual-action gate reads the firing blink, not the reacquisition
-    // timer. A refused Attack still takes the native class/movement tail.
-    let disguise_admits = |target_id| {
-        let Some(target) = sim.entities().get(target_id) else {
-            return false;
-        };
-        rules.general.attack_cursor_on_disguise
-            || sim
-                .interner()
-                .object_type(target.type_ref(), rules)
-                .is_some_and(|target_type| target_type.perma_disguise)
-            || target
-                .disguise
-                .as_ref()
-                .is_some_and(|disguise| disguise.blink_remaining(sim.session().binary_frame()) != 0)
-            || !target.is_disguised_to(
-                actor.owner(),
-                Some(sim.fog()),
-                Some(sim.house_alliances()),
-                sim.interner(),
-            )
-            || (target
-                .disguise_house(true, sim.session().current_house(), false)
-                .is_none()
-                && sim.fires_at_terrain(
-                    actor_id,
-                    &TargetKind::Entity(target_id),
-                    rules,
-                    overlay_registry,
-                ))
-    };
     let admitted = match target {
         TargetKind::Entity(target_id) => {
             human
                 && (armed || infiltrator)
                 && (forced
-                    || (friendly_attack_is_admitted(sim, rules, actor_id, *target_id)
-                        && object_target_is_legal(sim, rules, actor_id, *target_id)
-                        && disguise_admits(*target_id)))
+                    || (object_attack_is_admitted(sim, rules, actor_id, *target_id)
+                        && object_target_is_legal(sim, rules, actor_id, *target_id)))
         }
         TargetKind::Cell(..) => human,
     };

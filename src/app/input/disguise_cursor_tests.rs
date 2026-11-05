@@ -216,7 +216,8 @@ fn attack_cursor_disguise_keeps_permanent_and_terrain_weapon_exceptions() {
         AttackAction::Attack
     );
 
-    let Some((rules, overlays, sim, actor, mirage)) = scene("[105mm]\nTerrainFire=yes\n") else {
+    let Some((rules, overlays, mut sim, actor, mirage)) = scene("[105mm]\nTerrainFire=yes\n")
+    else {
         return;
     };
     assert!(disguised_to_actor(&sim, actor, mirage));
@@ -225,4 +226,70 @@ fn attack_cursor_disguise_keeps_permanent_and_terrain_weapon_exceptions() {
         action(&sim, &rules, &overlays, actor, mirage, false),
         AttackAction::Attack
     );
+    assert_eq!(
+        crate::sim::terrain_spawn::construct_terrain_objects(
+            &mut sim,
+            &[crate::map::overlay::TerrainObject {
+                rx: 18,
+                ry: 16,
+                name: "TREE01".into(),
+            }],
+            &rules,
+            false,
+        ),
+        1
+    );
+    let tree = sim.terrain_objects().id_at((18, 16)).unwrap();
+    let terrain_feedback = crate::app::input::cursor::terrain_object_feedback(
+        &sim,
+        actor,
+        tree,
+        false,
+        1,
+        Some(&rules),
+        Some(&overlays),
+    );
+    let terrain_orders = attack_branch_orders(
+        &sim,
+        &rules,
+        &[actor],
+        TargetKind::Entity(tree),
+        false,
+        OrderMode::Move,
+        &overlays,
+    );
+    let terrain_admitted = terrain_feedback
+        == Some(crate::app::types::CursorFeedbackKind::EnemyUnit)
+        && terrain_orders.commands
+            == vec![Command::Attack {
+                attacker_id: actor,
+                target_id: tree,
+            }];
+
+    let Some((rules, overlays, sim, actor, mirage)) =
+        scene("[MTNK]\nAttackCursorOnFriendlies=yes\n")
+    else {
+        return;
+    };
+    assert!(disguised_to_actor(&sim, actor, mirage));
+    let owner = sim.entities().get(actor).unwrap().owner();
+    let friendly_orders = object_attack_click_command(
+        &sim,
+        &rules,
+        &overlays,
+        owner,
+        OrderMode::Move,
+        OrderModifier::Normal,
+        false,
+        actor,
+        mirage,
+    );
+    let friendly_override = cursor(&sim, &rules, &overlays, actor, mirage)
+        == Some(CursorId::Attack)
+        && friendly_orders
+            == Some(Command::Attack {
+                attacker_id: actor,
+                target_id: mirage,
+            });
+    assert_eq!((terrain_admitted, friendly_override), (true, true));
 }
