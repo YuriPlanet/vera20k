@@ -501,7 +501,6 @@ impl UnitAtlas {
     }
 }
 
-/// UV rectangle and draw data of `sprite` placed at `origin` on a page.
 /// [`UnitAtlas::rendered_index`]: the first resident sprite of each key, and
 /// of each placement its key's entry currently names.
 #[derive(Default)]
@@ -562,6 +561,7 @@ impl UnitAtlas {
     }
 }
 
+/// UV rectangle and draw data of `sprite` placed at `origin` on a page.
 fn unit_entry(
     sprite: &CachedUnitSprite,
     origin: [u32; 2],
