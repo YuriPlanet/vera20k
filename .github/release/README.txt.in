@@ -49,9 +49,11 @@ Copyright 2026 Halvor Nikolai Rusten and VERA20k contributors.
 VERA20k is licensed under the GNU General Public License version 3
 (LICENSE-GPL). The source of this build is at
 https://github.com/YuriPlanet/vera20k/tree/@COMMIT@
-Its Bink video decoder is ported from FFmpeg, copyright 2007-2011 Peter Ross,
-2009 Daniel Verkamp and 2009 Konstantin Shishkov, and licensed under the GNU
-Lesser General Public License version 2.1 or later (LGPL-2.1-or-later.txt).
+Its Bink video decoder and its sidebar's xBR scaler are ported from FFmpeg and
+licensed under the GNU Lesser General Public License version 2.1 or later
+(LGPL-2.1-or-later.txt). The decoder is copyright 2007-2011 Peter Ross, 2009
+Daniel Verkamp and 2009 Konstantin Shishkov; the scaler 2011-2012
+Hyllian/Jararaca and 2014 Arwa Arif.
 THIRD_PARTY_LICENSES.html lists the open-source libraries it includes and
 their licenses.
 

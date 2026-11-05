@@ -33,8 +33,13 @@ fn texel(at: vec2i) -> vec4f {
 
 @fragment
 fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
-    // `position.xy` is the pixel centre; here it is in source pixels.
-    let centre = (position.xy - params.origin) / params.scale;
+    return scaled(position.xy);
+}
+
+// The target pixel centred on `position`.
+fn scaled(position: vec2f) -> vec4f {
+    // `position` is the pixel centre; here it is in source pixels.
+    let centre = (position - params.origin) / params.scale;
     if params.sharp != 0.0 {
         // The floor names the block.
         return texel(vec2i(floor(centre)));
@@ -44,8 +49,8 @@ fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
         // depth and destination-dependent blits have already been resolved.
         // textureLoad addresses texels directly:
         // https://www.w3.org/TR/WGSL/#textureload
-        let lo = (position.xy - vec2f(0.5) - params.origin) / params.scale;
-        let hi = (position.xy + vec2f(0.5) - params.origin) / params.scale;
+        let lo = (position - vec2f(0.5) - params.origin) / params.scale;
+        let hi = (position + vec2f(0.5) - params.origin) / params.scale;
         var sum = vec4f(0.0);
         for (var y = i32(floor(lo.y)); y < i32(ceil(hi.y)); y += 1) {
             let wy = min(hi.y, f32(y + 1)) - max(lo.y, f32(y));
@@ -65,4 +70,37 @@ fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let top = mix(texel(at), texel(at + vec2i(1, 0)), t.x);
     let bottom = mix(texel(at + vec2i(0, 1)), texel(at + vec2i(1, 1)), t.x);
     return mix(top, bottom, t.y);
+}
+
+// The window copy over a zoomed frame (`MaskedCopy`): the same copy, kept off
+// every window pixel over a frame pixel that UI drawn after the surface's
+// frame copy covered. That UI writes the frame's depth; every other pixel
+// there keeps the cleared depth, 1.
+struct Mask {
+    origin: vec2f, // window pixel where frame pixel (0, 0) lands
+    scale: f32,    // window pixels per frame pixel, at least 1
+    pad: f32,
+};
+
+@group(0) @binding(2) var t_mask: texture_depth_2d;
+@group(0) @binding(3) var<uniform> mask: Mask;
+
+fn drawn_over(at: vec2i) -> bool {
+    let last = vec2i(textureDimensions(t_mask)) - 1;
+    return textureLoad(t_mask, clamp(at, vec2i(0), last), 0) < 1.0;
+}
+
+@fragment
+fn fs_masked(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    // The frame pixels this window pixel covers: at most two per axis.
+    let lo = vec2i(floor((position.xy - vec2f(0.5) - mask.origin) / mask.scale));
+    let hi = vec2i(ceil((position.xy + vec2f(0.5) - mask.origin) / mask.scale)) - 1;
+    for (var y = lo.y; y <= hi.y; y += 1) {
+        for (var x = lo.x; x <= hi.x; x += 1) {
+            if drawn_over(vec2i(x, y)) {
+                discard;
+            }
+        }
+    }
+    return scaled(position.xy);
 }

@@ -12,6 +12,13 @@
 //! `layout width - 168`, the strip's top at `layout height - 32`. At Normal it
 //! is the frame space itself, so only Large and XL map points and rects
 //! between the two.
+//!
+//! A zoomed match enlarges the whole frame into the window. The surfaces then
+//! draw at the window's pixels instead (`in_window`): each sidebar pixel as a
+//! block of as many whole window pixels as it covers. The frame still gets
+//! them at its own size, and the window copy (`app::presentation::
+//! sidebar_surface`) shows them over the zoomed frame. Layout, hit tests and
+//! the native coordinates stay in sidebar pixels.
 
 use super::Rect;
 
@@ -29,6 +36,10 @@ pub struct SidebarFrame {
     frame_height: u32,
     /// Frame pixels per 100 sidebar pixels: 100 at Normal.
     percent: u32,
+    /// Surface pixels per sidebar pixel (`in_window`): 1 unless zoomed.
+    draw_scale: u32,
+    /// Window pixels per 100 frame pixels: the match zoom, 100 unzoomed.
+    zoom_percent: u32,
 }
 
 impl SidebarFrame {
@@ -37,6 +48,27 @@ impl SidebarFrame {
             frame_width,
             frame_height,
             percent: percent.max(100),
+            draw_scale: 1,
+            zoom_percent: 100,
+        }
+    }
+
+    /// This frame as a window shows it at `zoom_percent`: the surfaces draw
+    /// with as many whole window pixels per sidebar pixel as the zoom and the
+    /// size give, at least one. Large keeps its own pixels unless `sharpen`
+    /// (the HD radar or the smooth sidebar, which draw at the window's): in
+    /// the window's, the seams it blends between pixels would turn sharp.
+    pub fn in_window(self, zoom_percent: u32, sharpen: bool) -> Self {
+        let zoom_percent = zoom_percent.max(100);
+        let draw_scale = if self.is_sharp() || sharpen {
+            (self.percent * zoom_percent / 10_000).max(1)
+        } else {
+            1
+        };
+        Self {
+            draw_scale,
+            zoom_percent,
+            ..self
         }
     }
 
@@ -117,6 +149,51 @@ impl SidebarFrame {
             self.layout_size().0.saturating_sub(SIDEBAR_WIDTH_PX).max(1),
             BOTTOM_STRIP_HEIGHT_PX,
         )
+    }
+
+    /// Surface pixels per sidebar pixel.
+    pub fn draw_scale(self) -> u32 {
+        self.draw_scale
+    }
+
+    /// [`Self::surface_size`] in surface pixels: what the sidebar draws into.
+    pub fn surface_draw_size(self) -> (u32, u32) {
+        let (width, height) = self.surface_size();
+        (width * self.draw_scale, height * self.draw_scale)
+    }
+
+    /// [`Self::bar_surface_size`] in surface pixels.
+    pub fn bar_draw_size(self) -> (u32, u32) {
+        let (width, height) = self.bar_surface_size();
+        (width * self.draw_scale, height * self.draw_scale)
+    }
+
+    /// The copy into the frame: frame pixels per surface pixel, below one
+    /// when the surfaces draw at the window's pixels.
+    pub fn copy_scale(self) -> f32 {
+        self.percent as f32 / (100 * self.draw_scale) as f32
+    }
+
+    /// Whether every surface pixel is a whole block of frame pixels.
+    pub fn copy_is_sharp(self) -> bool {
+        self.percent.is_multiple_of(100 * self.draw_scale)
+    }
+
+    /// Whether the surfaces hold more pixels than the frame shows of them:
+    /// then the window copy shows them over the zoomed frame.
+    pub fn has_window_copy(self) -> bool {
+        100 * self.draw_scale > self.percent
+    }
+
+    /// The window copy: window pixels per surface pixel, 1 when the size
+    /// and the zoom give whole window pixels per sidebar pixel.
+    pub fn window_copy_scale(self) -> f32 {
+        (self.percent * self.zoom_percent) as f32 / (10_000 * self.draw_scale) as f32
+    }
+
+    /// Whether every surface pixel is a whole block of window pixels.
+    pub fn window_copy_is_sharp(self) -> bool {
+        (self.percent * self.zoom_percent).is_multiple_of(10_000 * self.draw_scale)
     }
 
     /// The column's left edge in frame pixels; left of the frame when the
@@ -291,6 +368,45 @@ mod tests {
                 assert_eq!(frame.point_to_layout(x, y), (0.0, 0.0));
             }
         }
+    }
+
+    /// Zoomed frames draw the sidebar in whole window pixels per sidebar
+    /// pixel and shrink it into the frame; Large keeps its blended look.
+    #[test]
+    fn zoomed_frames_draw_the_surfaces_at_the_window_pixels() {
+        // Normal at 4K Auto (300%): 3x3 window pixels per sidebar pixel.
+        let normal = SidebarFrame::new(1280, 720, 100).in_window(300, false);
+        assert_eq!(normal.draw_scale(), 3);
+        assert_eq!(normal.surface_draw_size(), (504, 2160));
+        assert_eq!(normal.bar_draw_size(), (3336, 96));
+        assert_eq!(normal.copy_scale(), 1.0 / 3.0);
+        assert!(!normal.copy_is_sharp() && normal.has_window_copy());
+        assert_eq!(normal.window_copy_scale(), 1.0);
+        assert!(normal.window_copy_is_sharp());
+        // A zoom between whole steps blends in the window, as the zoom did.
+        let between = SidebarFrame::new(1024, 576, 100).in_window(250, false);
+        assert_eq!(
+            (between.draw_scale(), between.window_copy_scale()),
+            (2, 1.25)
+        );
+        assert!(!between.window_copy_is_sharp());
+        // Unzoomed XL draws 2x and copies 1:1; nothing more to show.
+        let xl = SidebarFrame::new(1920, 1080, 200).in_window(100, false);
+        assert_eq!((xl.draw_scale(), xl.copy_scale()), (2, 1.0));
+        assert!(xl.copy_is_sharp() && !xl.has_window_copy());
+        // Large keeps its own pixels, unless asked to sharpen.
+        let large = SidebarFrame::new(1280, 720, 150);
+        assert_eq!(large.in_window(200, false).draw_scale(), 1);
+        assert!(!large.in_window(200, false).has_window_copy());
+        let sharp = large.in_window(200, true);
+        assert_eq!((sharp.draw_scale(), sharp.copy_scale()), (3, 0.5));
+        assert!(sharp.window_copy_is_sharp());
+        // Layout stays in sidebar pixels.
+        assert_eq!(
+            normal.layout_size(),
+            SidebarFrame::native(1280, 720).layout_size()
+        );
+        assert_eq!(normal.surface_size(), (168, 720));
     }
 
     #[test]

@@ -375,7 +375,9 @@ pub(crate) fn render_game(
     #[cfg(feature = "telemetry-dashboard")]
     let after_ui = render_started.map(|_| Instant::now());
 
-    // Phase 5: Build sidebar instances.
+    // Phase 5: Build sidebar instances, once the smooth sidebar's copies
+    // follow this frame's draw scale.
+    crate::app::presentation::sidebar_render::prepare_smooth_sidebar(state);
     let sidebar = build_instances::build_sidebar_instances(state);
     #[cfg(feature = "telemetry-dashboard")]
     let after_sidebar = render_started.map(|_| Instant::now());
@@ -785,6 +787,8 @@ pub(crate) fn render_game(
             sidebar_unavailable: &sidebar.unavailable,
             sidebar_flash: &sidebar.flash,
             sidebar_gclock: &sidebar.gclock,
+            smooth_chrome: sidebar.smooth_chrome,
+            smooth_command_bar: sidebar.smooth_command_bar,
         },
     );
     // Prep before phase 1 plus everything after phase 6 is the `other` row:
