@@ -1299,6 +1299,32 @@ impl BatchRenderer {
         width: u32,
         height: u32,
     ) -> BatchTexture {
+        self.unit_atlas_texture(device, width, height, wgpu::TextureUsages::empty())
+    }
+
+    /// A blank palette-index page the GPU voxel raster draws into
+    /// ([`crate::render::voxel_gpu`]).
+    pub(crate) fn create_unit_page_texture(
+        &self,
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+    ) -> BatchTexture {
+        self.unit_atlas_texture(
+            device,
+            width,
+            height,
+            wgpu::TextureUsages::RENDER_ATTACHMENT,
+        )
+    }
+
+    fn unit_atlas_texture(
+        &self,
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+        usage: wgpu::TextureUsages,
+    ) -> BatchTexture {
         let texture: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("unit_atlas_r8uint"),
             size: wgpu::Extent3d {
@@ -1310,7 +1336,7 @@ impl BatchRenderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::R8Uint,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            usage: usage | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
 

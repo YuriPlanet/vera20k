@@ -1291,6 +1291,7 @@ mod webgl_shader_tests {
                 "radar compose",
                 crate::render::radar::compose::shader_source(),
             ),
+            ("voxel raster", crate::render::voxel_gpu::shader_source()),
         ]
     }
 

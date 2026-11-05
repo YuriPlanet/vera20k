@@ -335,12 +335,7 @@ pub(super) fn build_world_instances(
     }
 
     // Every dynamic pose consumer, including Bullet46B0C0, has now populated
-    // the shared page. One upload precedes this frame's draw submission.
-    state.renderer.vxl_pose_frame_cache.borrow_mut().upload(
-        &state.renderer.gpu.device,
-        &state.renderer.gpu.queue,
-        &state.renderer.batch_renderer,
-    );
+    // the shared pages; the draw passes encode them before the main pass.
 
     // Selection is read by its existing presentation producer; only parents
     // admitted by the Display/body plan receive commands. Native6D913C and
