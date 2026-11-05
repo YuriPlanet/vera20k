@@ -786,7 +786,7 @@ impl Federation {
                     // A departure carries nothing, or 1 when silence ended it.
                     length > 1 || (length == 1 && payload[offset + ENTRY_HEADER] != 1)
                 } else {
-                    length <= OPAQUE_OVERHEAD || length > OPAQUE_OVERHEAD + ORDERING_BATCH_CAPACITY
+                    length == 0 || length > ORDERING_BATCH_CAPACITY
                 }
             {
                 return Err(RelayError::Malformed);
@@ -895,13 +895,13 @@ impl RelayServer {
                 if payload.len() < 3 {
                     return Err(RelayError::Malformed);
                 }
+                // `[source][target][data]`.
                 let (source, target, data) = (payload[0], payload[1], &payload[2..]);
                 if source >= MAX_PEERS
                     || federation.links[position].sources & (1 << source) == 0
                     || (target >= MAX_PEERS && target != BROADCAST)
-                    || data.len() <= PAYLOAD_HEADER + PAYLOAD_TAG
-                    || data.len() > MAX_WIRE_PAYLOAD
-                    || data[0] != target
+                    // Plaintext DATA (compaction spec §3.2).
+                    || data.len() > MAX_PAYLOAD
                 {
                     return Err(RelayError::Malformed);
                 }
@@ -910,7 +910,7 @@ impl RelayServer {
                         && (target == BROADCAST || target == peer.ticket.source)
                 };
                 let cost = (room.peers.iter().filter(|peer| recipients(peer)).count()
-                    * (SERVER_HEADER + MAC_LEN + data.len())) as u64;
+                    * (envelope::OVERHEAD + 1 + data.len())) as u64;
                 if !room.outgoing.permits(now, cost, ROOM_BYTES_PER_SECOND)
                     || !self.outgoing.admit_part(
                         &mut room.outgoing,
@@ -925,7 +925,9 @@ impl RelayServer {
                 room.peers
                     .iter_mut()
                     .filter(|peer| recipients(peer))
-                    .map(|peer| server_packet(peer, DATA, source, data))
+                    .map(|peer| {
+                        server_packet(peer, DATA, source, data, now_ms, crate::link::SEND_OTHER)
+                    })
                     .collect()
             }
             PACE_KIND => {
@@ -1000,7 +1002,7 @@ impl RelayServer {
 #[cfg(test)]
 mod tests {
     use super::super::tests::{
-        TestDirectory, certificate, client, configure, connect, endpoint, events, pull, unix,
+        TestDirectory, certificate, client, configure, connect, endpoint, events, pull, renew, unix,
     };
     use super::*;
 
@@ -1139,7 +1141,7 @@ mod tests {
             let clock = self.clock(relay);
             let mut bytes = Vec::new();
             self.clients[relay]
-                .submit_ordering(1, b"move", &mut bytes)
+                .test_submit(1, b"move", &mut bytes)
                 .unwrap();
             let OrderEvent::Ack { frame, .. } = events(
                 &mut self.relays[relay],
@@ -1167,6 +1169,15 @@ mod tests {
         /// checksum)`.
         fn stream(&mut self, relay: usize) -> Vec<(u64, u32, Option<(u8, u64)>)> {
             let clock = self.clock(relay);
+            // A hop that left takes only LEAVE (compaction spec §6.2); its
+            // player reads on a renewed one.
+            if self.clients[relay]
+                .ordering
+                .as_ref()
+                .is_some_and(|ordering| ordering.leave.is_some())
+            {
+                renew(&mut self.relays[relay], &mut self.clients[relay], clock);
+            }
             let mut entries: Vec<(u64, u32, Option<(u8, u64)>)> = Vec::new();
             loop {
                 let cursor = entries.last().map_or(1, |(sequence, ..)| sequence + 1);
@@ -1238,9 +1249,9 @@ mod tests {
         fn checksums(&mut self, relay: usize, samples: &[(u32, u32)]) {
             let clock = self.clock(relay);
             let mut bytes = Vec::new();
-            self.clients[relay]
-                .report_ordering_checksums(samples, &mut bytes)
-                .unwrap();
+            let client = &mut self.clients[relay];
+            client.queue_ordering_checksums(samples, clock).unwrap();
+            client.test_uplink(None, clock, &mut bytes).unwrap();
             self.relays[relay]
                 .process_at(endpoint(&self.clients[relay]), &bytes, unix(clock), clock)
                 .unwrap();
@@ -1249,9 +1260,9 @@ mod tests {
         fn pace(&mut self, relay: usize, pace: OrderPace, frames_per_second: u16) {
             let clock = self.clock(relay);
             let mut bytes = Vec::new();
-            self.clients[relay]
-                .report_ordering_pace(pace, frames_per_second, None, &mut bytes)
-                .unwrap();
+            let client = &mut self.clients[relay];
+            client.queue_ordering_pace(pace, frames_per_second, None);
+            client.test_uplink(None, clock, &mut bytes).unwrap();
             self.relays[relay]
                 .process_at(endpoint(&self.clients[relay]), &bytes, unix(clock), clock)
                 .unwrap();
@@ -1320,7 +1331,7 @@ mod tests {
         else {
             panic!("forwarded player data");
         };
-        assert_eq!(bytes.as_bytes(), b"probe");
+        assert_eq!(bytes, b"probe");
         let streams = [game.stream(0), game.stream(1)];
         assert_eq!(
             streams[0], streams[1],

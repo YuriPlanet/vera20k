@@ -1,0 +1,62 @@
+[
+  {
+    "name": "2p-burst-idle",
+    "players": 2,
+    "apm": 0,
+    "network": {
+      "link": {
+        "delay_ms": 20,
+        "burst": {
+          "p_good_to_bad": 0.01,
+          "p_bad_to_good": 0.25,
+          "bad_loss": 0.75
+        }
+      }
+    }
+  },
+  {
+    "name": "2p-burst-300apm",
+    "players": 2,
+    "apm": 300,
+    "network": {
+      "link": {
+        "delay_ms": 20,
+        "burst": {
+          "p_good_to_bad": 0.01,
+          "p_bad_to_good": 0.25,
+          "bad_loss": 0.75
+        }
+      }
+    }
+  },
+  {
+    "name": "30p-burst-idle",
+    "players": 30,
+    "apm": 0,
+    "network": {
+      "link": {
+        "delay_ms": 20,
+        "burst": {
+          "p_good_to_bad": 0.01,
+          "p_bad_to_good": 0.25,
+          "bad_loss": 0.75
+        }
+      }
+    }
+  },
+  {
+    "name": "30p-burst-300apm",
+    "players": 30,
+    "apm": 300,
+    "network": {
+      "link": {
+        "delay_ms": 20,
+        "burst": {
+          "p_good_to_bad": 0.01,
+          "p_bad_to_good": 0.25,
+          "bad_loss": 0.75
+        }
+      }
+    }
+  }
+]
