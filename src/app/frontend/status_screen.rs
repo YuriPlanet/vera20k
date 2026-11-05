@@ -75,18 +75,17 @@ impl Action {
                 state.frontend.asset_import.open();
                 state.platform.window.request_redraw();
             }
-            Self::ChooseFolder => match crate::ui::asset_import::choose_folder() {
-                Some(path) => log::info!("asset import: picked {}", path.display()),
-                // The build has no system picker yet. Say so on the card: a
-                // button that only writes to the log looks broken.
-                None => {
+            Self::ChooseFolder => {
+                if !crate::ui::asset_import::choose_folder() {
+                    // The build has no system picker. Say so on the card: a
+                    // button that only writes to the log looks broken.
                     state
                         .frontend
                         .asset_import
                         .fail("no folder picker in this build yet");
-                    state.platform.window.request_redraw();
                 }
-            },
+                state.platform.window.request_redraw();
+            }
             Self::CancelImport | Self::CloseImport => {
                 state.frontend.asset_import.close();
                 state.platform.window.request_redraw();

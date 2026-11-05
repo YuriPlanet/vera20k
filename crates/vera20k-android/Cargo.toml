@@ -30,6 +30,10 @@ android-activity = { version = "0.6", features = ["native-activity"] }
 # Same version and default-feature set as the client's dependency; the Android
 # backend feature must agree with it or winit compiles without a backend.
 winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "android-native-activity"] }
+# The folder picker: a Storage Access Framework tree has no filesystem path, so
+# the activity and its ContentResolver are reached through JNI.
+jni = "0.21"
+ndk-context = "0.1"
 anyhow = { workspace = true }
 log = { workspace = true }
 

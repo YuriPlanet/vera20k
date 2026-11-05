@@ -18,7 +18,60 @@
 #![cfg(target_os = "android")]
 
 use android_activity::AndroidApp;
+use jni::JavaVM;
+use jni::objects::{JObject, JString};
 use winit::platform::android::EventLoopBuilderExtAndroid;
+
+/// Run `f` with the activity this process belongs to.
+///
+/// The picks go through `ndk_context`'s raw pointers rather than
+/// `AndroidApp`'s own helpers: the engine calls this from inside winit's event
+/// callback, where android-activity's activity lock is already held, and taking
+/// it again would deadlock the loop.
+fn with_activity<R>(f: impl FnOnce(&mut jni::JNIEnv, &JObject) -> R) -> Option<R> {
+    let context = ndk_context::android_context();
+    // SAFETY: android-activity published both handles at start-up and keeps the
+    // Java VM alive for the process's lifetime; the activity reference is a JNI
+    // global reference the loader owns.
+    let vm = unsafe { JavaVM::from_raw(context.vm().cast()) }.ok()?;
+    let mut env = vm.attach_current_thread().ok()?;
+    let activity = unsafe { JObject::from_raw(context.context().cast()) };
+    Some(f(&mut env, &activity))
+}
+
+/// Folder-picker hook for `vera20k::util::folder_picker`.
+///
+/// The picker is the one thing the NDK cannot do itself: a Storage Access
+/// Framework tree is readable only through Java's `ContentResolver`, so the
+/// activity starts `ACTION_OPEN_DOCUMENT_TREE` and reports back through
+/// [`Java_org_vera20k_VeraActivity_nativeOnFolderPicked`].
+fn request_folder_picker() -> bool {
+    with_activity(|env, activity| {
+        env.call_method(activity, "startFolderPicker", "()V", &[])
+            .is_ok()
+    })
+    .unwrap_or(false)
+}
+
+/// The activity's folder-picker answer: the chosen tree as a `content://` URI,
+/// or an empty string when the player cancelled.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_vera20k_VeraActivity_nativeOnFolderPicked(
+    mut env: jni::JNIEnv,
+    _activity: JObject,
+    tree_uri: JString,
+) {
+    let picked = env
+        .get_string(&tree_uri)
+        .ok()
+        .map(|text| text.to_string_lossy().into_owned())
+        .filter(|text| !text.is_empty());
+    match &picked {
+        Some(uri) => log::info!("asset import: folder picked: {uri}"),
+        None => log::info!("asset import: folder picker cancelled"),
+    }
+    vera20k::util::folder_picker::deliver(picked);
+}
 
 /// Ask the system to keep the display on while this window is visible.
 ///
@@ -46,6 +99,7 @@ fn keep_screen_on(app: &AndroidApp) {
 #[unsafe(no_mangle)]
 fn android_main(app: AndroidApp) {
     keep_screen_on(&app);
+    vera20k::util::folder_picker::install(request_folder_picker);
     // Android starts every process in "/" with no writable home. Hand the app's
     // private folder to the engine before anything opens a file: it becomes
     // both the working directory and the settings folder, so logs, config.toml,

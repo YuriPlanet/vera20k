@@ -176,11 +176,14 @@ pub(crate) enum ButtonPress {
 
 /// Ask the platform for the folder holding the retail installation.
 ///
-/// `None` means this build has no picker yet: Android still has to reach SAF
-/// through JNI, and the dialog then says so rather than pretending to import.
-pub(crate) fn choose_folder() -> Option<PathBuf> {
-    log::info!("asset import: this build has no folder picker wired yet");
-    None
+/// `false` means this build has no picker; `true` means the picker opened and
+/// the platform will deliver the choice through `folder_picker` later.
+pub(crate) fn choose_folder() -> bool {
+    if !crate::util::folder_picker::request() {
+        log::info!("asset import: this build has no folder picker wired yet");
+        return false;
+    }
+    true
 }
 
 #[cfg(test)]
@@ -230,7 +233,11 @@ mod tests {
         dialog.open();
         dialog.start_copy(Some(10));
         dialog.fail("not enough space");
-        assert!(dialog.body("", "").contains("Copy failed: not enough space"));
+        assert!(
+            dialog
+                .body("", "")
+                .contains("Copy failed: not enough space")
+        );
         assert_eq!(dialog.buttons(), [Some("Choose Folder"), Some("Cancel")]);
         assert_eq!(dialog.press_left(), ButtonPress::PickFolder);
     }

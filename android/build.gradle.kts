@@ -4,4 +4,8 @@
 // minimum AGP requires — 8.13 for this version.
 plugins {
     id("com.android.application") version "8.11.1" apply false
+    // The activity is Kotlin: it is the only Java-side class in the app, and it
+    // exists solely for the Storage Access Framework picker the NDK cannot
+    // reach. Kotlin also gives it a null-safe Intent result.
+    id("org.jetbrains.kotlin.android") version "2.1.20" apply false
 }
