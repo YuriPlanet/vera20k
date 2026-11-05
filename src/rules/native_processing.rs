@@ -2557,6 +2557,13 @@ impl ProcessedRulesLayers {
         )
     }
 
+    /// Rules+D6C, retained ReadGeneral66FC36..66FC50 boolean.
+    pub(crate) fn attack_cursor_on_disguise(&self) -> bool {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_attack_cursor_on_disguise
+    }
+
     /// Rules+1866, retained by AudioVisual66B7A7..66B7D2 through the
     /// current-RGB default of ReadColorRGB474B50.
     pub(crate) fn chrono_beam_color(&self) -> [u8; 3] {
@@ -3562,6 +3569,7 @@ pub(crate) struct NativeRulesRegistryState {
     rules_infantry_repair_rate: NativeF64Bits,
     rules_maximum_cheer_rate: i32,
     rules_talk_bubble_time: i32,
+    rules_attack_cursor_on_disguise: bool,
     rules_spotlight: crate::rules::ruleset::SpotlightRules,
     rules_ammo_crate_damage: i32,
     rules_tiberium_explosion_damage: i32,
@@ -3666,6 +3674,7 @@ impl Default for NativeRulesRegistryState {
             ),
             rules_maximum_cheer_rate: crate::rules::ruleset::DEFAULT_MAXIMUM_CHEER_RATE,
             rules_talk_bubble_time: general.talk_bubble_time,
+            rules_attack_cursor_on_disguise: general.attack_cursor_on_disguise,
             rules_spotlight: general.spotlight,
             // Rules665CD4=700; pointer fields665A18/665A24/666BD5 start null.
             rules_ammo_crate_damage: 100,
@@ -4091,6 +4100,7 @@ impl NativeRulesRegistryState {
             rules_infantry_repair_rate: self.rules_infantry_repair_rate,
             rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
             rules_talk_bubble_time: self.rules_talk_bubble_time,
+            rules_attack_cursor_on_disguise: self.rules_attack_cursor_on_disguise,
             rules_spotlight: self.rules_spotlight,
             rules_ammo_crate_damage: self.rules_ammo_crate_damage,
             rules_tiberium_explosion_damage: self.rules_tiberium_explosion_damage,
@@ -5216,6 +5226,7 @@ struct RulesPassProcessor {
     rules_infantry_repair_rate: NativeF64Bits,
     rules_maximum_cheer_rate: i32,
     rules_talk_bubble_time: i32,
+    rules_attack_cursor_on_disguise: bool,
     rules_spotlight: crate::rules::ruleset::SpotlightRules,
     rules_ammo_crate_damage: i32,
     rules_tiberium_explosion_damage: i32,
@@ -5300,6 +5311,7 @@ impl RulesPassProcessor {
             rules_infantry_repair_rate: registry_state.rules_infantry_repair_rate,
             rules_maximum_cheer_rate: registry_state.rules_maximum_cheer_rate,
             rules_talk_bubble_time: registry_state.rules_talk_bubble_time,
+            rules_attack_cursor_on_disguise: registry_state.rules_attack_cursor_on_disguise,
             rules_spotlight: registry_state.rules_spotlight,
             rules_ammo_crate_damage: registry_state.rules_ammo_crate_damage,
             rules_tiberium_explosion_damage: registry_state.rules_tiberium_explosion_damage,
@@ -6065,6 +6077,12 @@ impl RulesPassProcessor {
         // and RulesClass survives the destructive Type reset6686C0.
         self.rules_tree_strength = section.read_int("TreeStrength", self.rules_tree_strength);
         self.rules_talk_bubble_time = section.read_talk_bubble_time(self.rules_talk_bubble_time);
+        // RulesClass::ReadGeneral66D530, original66FC36..66FC50:
+        // current byte through ReadBool5295F0; Type reset retains this scalar.
+        self.rules_attack_cursor_on_disguise = section.read_bool(
+            "AttackCursorOnDisguise",
+            self.rules_attack_cursor_on_disguise,
+        );
 
         for &(key, family, is_list) in SITES {
             // An ordinary build never reads the NPSE extension, so it neither
@@ -8687,6 +8705,7 @@ impl RulesPassProcessor {
                     rules_infantry_repair_rate: self.rules_infantry_repair_rate,
                     rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
                     rules_talk_bubble_time: self.rules_talk_bubble_time,
+                    rules_attack_cursor_on_disguise: self.rules_attack_cursor_on_disguise,
                     rules_spotlight: self.rules_spotlight,
                     rules_ammo_crate_damage: self.rules_ammo_crate_damage,
                     rules_tiberium_explosion_damage: self.rules_tiberium_explosion_damage,
@@ -8799,6 +8818,10 @@ mod chrono_beam_rules_tests;
 #[cfg(test)]
 #[path = "control_line_rules_tests.rs"]
 mod control_line_rules_tests;
+
+#[cfg(test)]
+#[path = "disguise_cursor_rules_tests.rs"]
+mod disguise_cursor_rules_tests;
 
 #[cfg(test)]
 #[path = "native_type_reader_tests.rs"]
