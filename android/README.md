@@ -74,10 +74,11 @@ for releases.
    APK to 37 MB, so the remaining gain is link time and disk more than download
    size — but debug-symbol handling is AGP's business and the size moved between
    builds (37 MB, then 75 MB), which a pinned shipping profile would settle.
-2. **Retail assets (P3).** The launch reaches `Initialization complete` but no
-   window content: with no game data, asset resolution falls back to the
-   executable's directory (`/system/bin`) and is refused. Everything below that
-   — the main menu — needs the import path from the plan's P3.
+2. **Retail assets (P3).** The engine runs once game data is present, but the
+   only path today is a `config.toml` pointing at a folder the player cannot
+   reach from inside the app. The plan's P3 import flow is still the gate for a
+   real user; the smoke test pushed the data over adb and wrote
+   `files/config.toml` by hand.
 3. **Portrait, not landscape.** The manifest asks for `sensorLandscape`, but
    Android 16 ignores manifest orientation on large screens: the surface came up
    2400x3392 in portrait (log below). Rotation and a portrait-capable layout are
@@ -85,6 +86,11 @@ for releases.
 4. **No on-device error surface.** `system_dialog` has no Android branch, so a
    fatal start-up error here is only visible in `files/logs/ra2.log`. A
    `Toast`/`AlertDialog` via JNI is still open.
+5. **Movie audio and frame pacing.** The intro only plays after a touch skips
+   it on this device; the tap-to-skip path is what reaches the main menu. Why the
+   movie itself renders black there is open — the same run shows
+   `Drok` playing and the shell loading, so it is the movie presenter, not the
+   engine loop.
 
 ## Verified on this machine
 
@@ -98,10 +104,19 @@ for releases.
   the packaged `.so` at 16384-byte alignment and `apksigner verify` passes.
 - **On hardware** (OnePlus/OPPO OPD2413, Android 16, API 36, Adreno 830):
   `adb install` + launch reaches `Initialization complete` with
-  `Vulkan` adapter `Adreno (TM) 830`, surface `2400x3392 Rgba8UnormSrgb`,
+  `Vulkan` adapter `Adreno (TM) 830`, surface `3392x2400 Rgba8UnormSrgb`,
   AAudio at 512 frames/44100 Hz, and the log at
   `/data/user/0/org.vera20k/files/logs/ra2.log` — so the data-directory,
   settings, logging, Vulkan and audio paths all work on Android.
+- **The main menu renders on it.** With retail data pushed under
+  `Android/data/org.vera20k/files/ra2` and `files/config.toml` naming it, a tap
+  during the intro movie skips it (`Touch skipped the movie`), the shell loads
+  (`Loaded ra2ts_l.bik for main menu`, music `Drok`) and the menu paints. The
+  window carries `KEEP_SCREEN_ON`, and after screen-off and wake it draws again
+  (`Application resumed — surface rebuilt`).
+- Build the native side with `--profile fast` (or `shipping`) for anything you
+  run on the device: the `dev` profile is slow enough that the intro movie
+  starves the main thread and Android kills the app for an ANR.
 - Toolchain used: cmdline-tools 23.0, platforms/android-36, build-tools 36.1.0,
   NDK 28.2.13676358, AGP 8.11.1, Gradle 8.13, JDK 19.
 
