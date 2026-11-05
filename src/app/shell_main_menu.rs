@@ -1088,21 +1088,32 @@ impl App {
             .game_config
             .as_ref()
             .map(|config| config.paths.ra2_dir.clone());
-        let (title, text) = shell_error_card(
-            CardHost::CURRENT,
-            &state.frontend.startup_files,
-            state.process_assets.manager().is_some(),
-            game_files.as_deref(),
-            crate::util::logging::log_file(),
-            &display_error(&error),
-        );
+        let (title, text) = if state.frontend.asset_import.is_open() {
+            let game_files_text = game_files.as_deref().map_or_else(
+                || "No game installation configured".to_owned(),
+                |path| path.display().to_string(),
+            );
+            (
+                state.frontend.asset_import.title(),
+                state.frontend.asset_import.body(&game_files_text, ""),
+            )
+        } else {
+            shell_error_card(
+                CardHost::CURRENT,
+                &state.frontend.startup_files,
+                state.process_assets.manager().is_some(),
+                game_files.as_deref(),
+                crate::util::logging::log_file(),
+                &display_error(&error),
+            )
+        };
         crate::app::frontend::status_screen::render(
             state,
             encoder,
             view,
             title,
             &text,
-            crate::app::frontend::status_screen::Buttons::QUIT,
+            crate::app::frontend::status_screen::shell_error_buttons(state),
         );
         Ok(())
     }
