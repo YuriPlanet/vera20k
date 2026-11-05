@@ -242,6 +242,10 @@ pub(super) struct Session {
     // The operator's welcome, when one is set; the game's own otherwise.
     #[serde(default)]
     pub motd: Option<String>,
+    /// An account's password sign-in with `remember`: this computer's
+    /// remembered sign-in (docs/lobby-protocol.md "Accounts").
+    #[serde(default)]
+    pub sign_in_token: Option<String>,
 }
 
 #[derive(Deserialize)]

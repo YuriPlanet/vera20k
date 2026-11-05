@@ -48,11 +48,7 @@ const DEFAULT_MULTIPLAYER_GAME_MODE: i32 = 1;
 /// admission shared by the HTTP response, login continuation and handle owner.
 pub(crate) fn validate_online_handle(name: &str) -> anyhow::Result<()> {
     anyhow::ensure!(
-        !name.is_empty()
-            && name.len() <= 24
-            && name
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte)),
+        crate::ui::wol_account::valid_name(name),
         "online service returned an invalid player name"
     );
     Ok(())
