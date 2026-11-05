@@ -20,12 +20,32 @@
 use android_activity::AndroidApp;
 use winit::platform::android::EventLoopBuilderExtAndroid;
 
+/// Ask the system to keep the display on while this window is visible.
+///
+/// The intro movie runs for minutes with nothing to touch, and Android's own
+/// display timeout would otherwise cut it off; no synthetic input event needs
+/// to stand in for a tap.
+///
+/// Only called before the event loop starts, on purpose:
+/// `AndroidApp::set_window_flags` takes the activity's lock, and winit holds it
+/// for the whole of an event callback, so setting the flag from inside one (say,
+/// when a movie begins) deadlocks the loop. The flag lives with the window, so
+/// one call at start-up covers every screen until the activity is destroyed.
+fn keep_screen_on(app: &AndroidApp) {
+    use android_activity::WindowManagerFlags;
+    app.set_window_flags(
+        WindowManagerFlags::KEEP_SCREEN_ON,
+        WindowManagerFlags::empty(),
+    );
+}
+
 /// Resolved by `android-activity`'s loader trampoline; the name is the ABI.
 ///
 /// Android calls the symbol with the activity's handle, which
 /// `android-activity` turns into an `AndroidApp`.
 #[unsafe(no_mangle)]
 fn android_main(app: AndroidApp) {
+    keep_screen_on(&app);
     // Android starts every process in "/" with no writable home. Hand the app's
     // private folder to the engine before anything opens a file: it becomes
     // both the working directory and the settings folder, so logs, config.toml,

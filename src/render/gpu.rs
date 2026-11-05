@@ -451,6 +451,33 @@ impl GpuContext {
         GpuAdapterObservation::from(&self.adapter_info)
     }
 
+    /// Rebuild the swapchain against the window's current native surface.
+    ///
+    /// Android destroys the activity's surface when the screen turns off or the
+    /// app goes to the background, and winit's `Window` reports the replacement
+    /// native handle once it is resumed. A wgpu surface keeps the handle it was
+    /// created with, so it can never present again — reconfiguring it is not
+    /// enough, it has to be replaced.
+    pub fn restore_surface(&mut self) -> anyhow::Result<()> {
+        let size = self.window.inner_size();
+        let surface = self
+            .instance
+            .create_surface(self.window.clone())
+            .context("recreate the wgpu surface after a resume")?;
+        let mut config = self.config.clone();
+        config.width = size.width.max(1);
+        config.height = size.height.max(1);
+        surface.configure(&self.device, &config);
+        *self.surface.lock().unwrap_or_else(PoisonError::into_inner) = surface;
+        self.config = config;
+        log::info!(
+            "Surface restored at {}x{}",
+            self.config.width,
+            self.config.height
+        );
+        Ok(())
+    }
+
     /// Handle window resize — reconfigure the surface with new dimensions.
     ///
     /// Called from ApplicationHandler::window_event when WindowEvent::Resized fires.

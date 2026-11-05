@@ -510,7 +510,19 @@ impl ApplicationHandler for App {
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.state.is_some() || self.pending_initialization.is_some() {
+        if self.pending_initialization.is_some() {
+            return;
+        }
+        // A backend that destroys the window's native surface while suspended
+        // (Android, on screen-off or a background trip) resumes with a new
+        // handle. The wgpu surface still holds the old one, so nothing would
+        // ever draw again; replace it and keep every other piece of app state.
+        if let Some(state) = self.state.as_mut() {
+            match state.renderer.gpu.restore_surface() {
+                Ok(()) => log::info!("Application resumed — surface rebuilt"),
+                Err(error) => log::error!("Could not rebuild the surface: {error:#}"),
+            }
+            state.platform.window.request_redraw();
             return;
         }
         // Asked once AppKit has launched and activated the app; macOS keeps a
@@ -548,6 +560,14 @@ impl ApplicationHandler for App {
             result
         };
         self.accept_initialization_step(event_loop, result);
+    }
+
+    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
+        // The activity's surface is destroyed here and replaced on the next
+        // `resumed`; the stale wgpu surface still references it, but nothing
+        // draws between the two events, so there is nothing to release. Audio
+        // keeps its stream, which AAudio pauses itself on screen-off.
+        log::info!("Application suspended");
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -612,6 +632,19 @@ impl ApplicationHandler for App {
                     return;
                 };
                 if state.persistence.pending_load.is_some() {
+                    return;
+                }
+                // Android has no Escape key to offer, so a touch skips a playing
+                // movie the way Escape does on desktop. An external mouse or
+                // trackpad still does not: its clicks stay consumed and ignored
+                // while a movie plays, exactly as on every other platform.
+                #[cfg(target_os = "android")]
+                if matches!(touch.phase, winit::event::TouchPhase::Started)
+                    && let Some(movie) = state.frontend.fullscreen_movie.as_mut()
+                {
+                    log::info!("Touch skipped the movie");
+                    movie.abort();
+                    state.platform.window.request_redraw();
                     return;
                 }
                 let in_game = state.frontend.screen == GameScreen::InGame;
