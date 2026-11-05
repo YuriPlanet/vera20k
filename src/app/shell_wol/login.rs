@@ -11,17 +11,12 @@ use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::ui::shell::combobox::{ComboPopup, ComboPress};
 use crate::ui::shell::modal::WolAccountFormLayout;
 use crate::ui::skirmish_shell::{COMBO_DROPDOWN_ROW_H, COMBO_FACE_H};
-use crate::ui::wol_account::{AccountFormAction, FORM_CANCEL, WolAccountForm};
+use crate::ui::wol_account::{AccountDone, AccountFormAction, FORM_CANCEL, WolAccountForm};
 use crate::ui::wol_login::*;
 use winit::keyboard::KeyCode;
 
 pub(crate) fn login_layout(state: &AppState) -> WolLoginLayout {
     let (width, height) = shell_layout::shell_screen_size(state);
-    let layout = if shell_layout::fills_window(state) {
-        WolLoginLayout::responsive(width as i32, height as i32)
-    } else {
-        WolLoginLayout::new(width as i32, height as i32)
-    };
     let policy = if state
         .frontend
         .wol
@@ -32,7 +27,11 @@ pub(crate) fn login_layout(state: &AppState) -> WolLoginLayout {
     } else {
         LoginPolicy::Legacy
     };
-    layout.with_policy(policy)
+    if shell_layout::fills_window(state) {
+        WolLoginLayout::responsive(width as i32, height as i32, policy)
+    } else {
+        WolLoginLayout::new(width as i32, height as i32, policy)
+    }
 }
 
 /// `0x0072C600`: LoginScreen.shp through LoginScreen.PAL, only at 800 wide.
@@ -162,19 +161,25 @@ fn form_action(state: &mut AppState, action: AccountFormAction) {
         AccountFormAction::Send(request) => {
             service::request(state, WolServiceRequest::Account(request));
         }
-        AccountFormAction::Cancel => {
+        AccountFormAction::Close => {
             with_login(state, |login, _, _| login.account = None);
         }
     }
 }
 
 /// The lobby answered the account popup: a refusal shows in it, a sent code
-/// moves it on, and a confirmed account or new password signs in.
+/// moves it on, a confirmed account or new password signs in, and a deleted
+/// account's popup says so.
 pub(super) fn account_answered(state: &mut AppState, answer: Result<(), String>) {
     let action = with_login(state, |login, globals, _| {
         let form = login.account.as_mut().filter(|form| form.busy)?;
-        let sign_in = form.answered(answer)?;
-        login.sign_in(sign_in, globals)
+        match form.answered(answer)? {
+            AccountDone::SignIn(sign_in) => login.sign_in(sign_in, globals),
+            AccountDone::Deleted => {
+                login.account_deleted(globals);
+                None
+            }
+        }
     })
     .flatten();
     update_geometry(state);
@@ -227,12 +232,15 @@ pub(super) fn update_geometry(state: &mut AppState) {
         (scale.base_rect(layout.password).w - 3).max(0) as u32,
         |value| font.text_width(value),
     );
-    if let (Some(form), Some(rects)) = (login.account.as_mut(), form_rects) {
-        let (_, edit) = rects.fields[form.focused];
-        form.focused_edit_mut()
-            .scroll_to_caret((scale.base_rect(edit).w - 3).max(0) as u32, |value| {
-                font.text_width(value)
-            });
+    if let Some(form) = login.account.as_mut()
+        && let Some(&(_, edit)) = form_rects
+            .as_ref()
+            .and_then(|rects| rects.fields.get(form.focused))
+        && let Some(focused) = form.focused_edit_mut()
+    {
+        focused.scroll_to_caret((scale.base_rect(edit).w - 3).max(0) as u32, |value| {
+            font.text_width(value)
+        });
     }
 }
 

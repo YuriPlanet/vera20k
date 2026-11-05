@@ -1518,7 +1518,11 @@ mod tests {
         let modern = visit.login().unwrap().policy.page_spec();
         assert_eq!(modern, LoginPolicy::Online.page_spec());
         let column = ShellSlideKind::WolLogin.column(9, Some(modern));
-        assert_eq!((column.top_buttons, column.bottom_button), (3, true));
+        assert_eq!(
+            (column.top_buttons, column.bottom_button),
+            (4, true),
+            "Delete Account is the fourth"
+        );
         visit.page = WolPage::Login(Box::new(WolLoginState::open(&mut globals, &[])));
         let native = visit.login().unwrap().policy.page_spec();
         assert_eq!(native, LoginPolicy::Legacy.page_spec());

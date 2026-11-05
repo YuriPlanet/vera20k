@@ -31,6 +31,7 @@ use crate::app::persistence::account;
 use crate::app::shell_network_setup::{NetworkSetupEvent, NetworkSetupRequest};
 use crate::net::reliable::{LanConnectionConfig, LanConnections, RetryTiming};
 use crate::net::udp::{LanUdpTransport, UdpBindConfig};
+use crate::ui::wol_account::AccountRequest;
 use crate::ui::wol_chat::WolChatLine;
 
 // The deployment sets this at build time; a runtime override supports staging.
@@ -314,6 +315,9 @@ pub(super) struct LiveService {
     /// The latest account request: an answer to an earlier one, whose popup
     /// was cancelled, is dropped.
     account_attempt: u64,
+    /// The pending Delete Account request's attempt and name. Its answer
+    /// forgets this computer's sign-in of the name, popup or not.
+    deleting: Option<(u64, String)>,
 }
 
 /// Where players download a newer build (README "Download and play").
@@ -644,6 +648,7 @@ impl LiveService {
             lobby,
             signing_in_remembered: false,
             account_attempt: 0,
+            deleting: None,
         })
     }
 
@@ -1482,6 +1487,41 @@ fn forget_sign_in(settings: Option<&std::path::Path>, service: &LiveService) {
     }
 }
 
+fn send_account_request(service: &mut LiveService, request: AccountRequest) {
+    service.account_attempt = service.account_attempt.wrapping_add(1);
+    if let AccountRequest::Delete { name, .. } = &request {
+        service.deleting = Some((service.account_attempt, name.clone()));
+    }
+    let _ = service.requests.send(http::Request::Account {
+        attempt: service.account_attempt,
+        request,
+    });
+}
+
+/// The lobby answered account request `attempt`. A deletion it accepted
+/// took the account's remembered sign-ins with it, so this computer's
+/// sign-in of that name goes too, even when its popup closed meanwhile;
+/// another account's stays.
+fn account_answered(
+    settings: Option<&std::path::Path>,
+    service: &mut LiveService,
+    attempt: u64,
+    answer: &Result<(), String>,
+) {
+    let Some((_, name)) = service.deleting.take_if(|(sent, _)| *sent == attempt) else {
+        return;
+    };
+    let Some(dir) = settings.filter(|_| answer.is_ok()) else {
+        return;
+    };
+    if account::load(dir, &service.lobby)
+        .is_some_and(|remembered| remembered.name.eq_ignore_ascii_case(&name))
+        && let Err(error) = account::forget(dir, &service.lobby)
+    {
+        log::warn!("Could not forget the deleted account's sign-in: {error}");
+    }
+}
+
 /// Keep the sign-in the lobby gave a password sign-in with Remember password,
 /// in place of another account's, which the lobby then forgets.
 fn remember_sign_in(
@@ -1532,13 +1572,7 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
                 credential,
             });
         }
-        WolServiceRequest::Account(request) => {
-            service.account_attempt = service.account_attempt.wrapping_add(1);
-            let _ = service.requests.send(http::Request::Account {
-                attempt: service.account_attempt,
-                request,
-            });
-        }
+        WolServiceRequest::Account(request) => send_account_request(service, request),
         WolServiceRequest::ForgetSignIn => forget_sign_in(settings_dir(state), service),
         WolServiceRequest::ListChannels { kind, .. } => {
             let _ = service.requests.send(http::Request::Channels(kind));
@@ -2330,6 +2364,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             }
         }
         http::Response::AccountAnswered { attempt, answer } => {
+            account_answered(settings_dir(state), service, attempt, &answer);
             if attempt == service.account_attempt {
                 service_event(state, WolServiceEvent::Account(answer));
             }
@@ -3509,6 +3544,7 @@ mod completion_tests {
             lobby: "https://lobby.test".into(),
             signing_in_remembered: false,
             account_attempt: 0,
+            deleting: None,
         };
         (service, input, output)
     }
@@ -3542,6 +3578,36 @@ mod completion_tests {
             http::Credential::Password { remember: true, .. }
         ));
         assert_eq!(forgotten(&input), Some(token('B')));
+        assert_eq!(account::load(directory.path(), &service.lobby), None);
+    }
+
+    #[test]
+    fn a_deleted_account_forgets_its_sign_in_even_after_its_popup_closed() {
+        let directory = crate::map::source::test_support::TestDirectory::new("live-delete");
+        let settings = Some(directory.path());
+        let (mut service, _input, _output) = control_service(None);
+        remember_sign_in(settings, &service, "Tanya", "A".repeat(43));
+        let delete = |name: &str| AccountRequest::Delete {
+            name: name.into(),
+            password: "s3cret-pw".into(),
+        };
+        send_account_request(&mut service, delete("Boris"));
+        let boris = service.account_attempt;
+        account_answered(settings, &mut service, boris, &Ok(()));
+        assert!(
+            account::load(directory.path(), &service.lobby).is_some(),
+            "another account's sign-in stays"
+        );
+        send_account_request(&mut service, delete("tanya"));
+        let tanya = service.account_attempt;
+        // Cancelled, then Forgot Password sent: the deletion's answer still counts.
+        send_account_request(
+            &mut service,
+            AccountRequest::Forgot {
+                name: "Tanya".into(),
+            },
+        );
+        account_answered(settings, &mut service, tanya, &Ok(()));
         assert_eq!(account::load(directory.path(), &service.lobby), None);
     }
 
