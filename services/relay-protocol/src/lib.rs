@@ -409,13 +409,13 @@ impl ClientSession {
         self.ready = false;
     }
 
-    pub fn probe(&mut self, out: &mut Vec<u8>) -> Result<(), RelayError> {
+    pub(crate) fn probe(&mut self, out: &mut Vec<u8>) -> Result<(), RelayError> {
         self.encode(if self.ready { PING } else { HELLO }, BROADCAST, &[], out)?;
         self.probe = Some(self.sent);
         Ok(())
     }
 
-    pub fn confirm(&mut self, cookie: &[u8], out: &mut Vec<u8>) -> Result<(), RelayError> {
+    pub(crate) fn confirm(&mut self, cookie: &[u8], out: &mut Vec<u8>) -> Result<(), RelayError> {
         if cookie.len() != COOKIE_LEN {
             return Err(RelayError::Malformed);
         }
@@ -424,7 +424,7 @@ impl ClientSession {
         self.encode(CONFIRM, BROADCAST, &payload, out)
     }
 
-    pub fn data(
+    pub(crate) fn data(
         &mut self,
         target: u8,
         payload: &[u8],
@@ -494,7 +494,7 @@ impl ClientSession {
         Ok(())
     }
 
-    pub fn receive<'a>(&mut self, bytes: &'a [u8]) -> Result<ServerEvent<'a>, RelayError> {
+    pub(crate) fn receive<'a>(&mut self, bytes: &'a [u8]) -> Result<ServerEvent<'a>, RelayError> {
         if bytes.len() < SERVER_HEADER + MAC_LEN || &bytes[..4] != SERVER_MAGIC {
             return Err(RelayError::Malformed);
         }
@@ -518,6 +518,10 @@ impl ClientSession {
             CHALLENGE if length == COOKIE_LEN && self.probe == Some(sequence) => {
                 self.probe = None;
                 self.ready = false;
+                // The relay drops the subscription of a new path, so its
+                // first UPLINK goes at once again (spec §4.7, §6.0).
+                self.hop.uplinks = 0;
+                self.hop.first_pack = false;
                 Ok(ServerEvent::Challenge(payload))
             }
             READY if payload.is_empty() && bytes[45] == self.ticket.source => {
@@ -782,7 +786,6 @@ struct Peer {
     sent: u64,
     last_seen: u64,
     push: Option<sequenced::PushSubscription>,
-    push_control_sequence: u64,
     link: link::ReaderLink,
 }
 
@@ -1285,7 +1288,6 @@ impl RelayServer {
             if peer.endpoint != source {
                 // A confirmed new path must opt in before receiving history.
                 peer.push = None;
-                peer.push_control_sequence = 0;
             }
             peer.endpoint = source;
             peer.last_seen = now;
@@ -1407,7 +1409,6 @@ fn new_peer(message: &Incoming<'_>, endpoint: SocketAddrV4, now: u64, now_ms: u6
         sent: 0,
         last_seen: now,
         push: None,
-        push_control_sequence: 0,
         link: link::ReaderLink::new(now_ms),
     }
 }

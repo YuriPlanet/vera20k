@@ -1141,7 +1141,7 @@ mod tests {
             let clock = self.clock(relay);
             let mut bytes = Vec::new();
             self.clients[relay]
-                .submit_ordering(1, b"move", &mut bytes)
+                .test_submit(1, b"move", &mut bytes)
                 .unwrap();
             let OrderEvent::Ack { frame, .. } = events(
                 &mut self.relays[relay],
@@ -1240,9 +1240,9 @@ mod tests {
         fn checksums(&mut self, relay: usize, samples: &[(u32, u32)]) {
             let clock = self.clock(relay);
             let mut bytes = Vec::new();
-            self.clients[relay]
-                .report_ordering_checksums(samples, &mut bytes)
-                .unwrap();
+            let client = &mut self.clients[relay];
+            client.queue_ordering_checksums(samples, clock).unwrap();
+            client.test_uplink(None, clock, &mut bytes).unwrap();
             self.relays[relay]
                 .process_at(endpoint(&self.clients[relay]), &bytes, unix(clock), clock)
                 .unwrap();
@@ -1251,9 +1251,9 @@ mod tests {
         fn pace(&mut self, relay: usize, pace: OrderPace, frames_per_second: u16) {
             let clock = self.clock(relay);
             let mut bytes = Vec::new();
-            self.clients[relay]
-                .report_ordering_pace(pace, frames_per_second, None, &mut bytes)
-                .unwrap();
+            let client = &mut self.clients[relay];
+            client.queue_ordering_pace(pace, frames_per_second, None);
+            client.test_uplink(None, clock, &mut bytes).unwrap();
             self.relays[relay]
                 .process_at(endpoint(&self.clients[relay]), &bytes, unix(clock), clock)
                 .unwrap();

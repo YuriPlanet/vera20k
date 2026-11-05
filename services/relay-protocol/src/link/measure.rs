@@ -107,6 +107,13 @@ impl LossCursor {
     }
 }
 
+impl LossCursor {
+    /// Judges nothing before hop sequence `next` (spec §5.5, on recovery).
+    pub(crate) fn skip_to(&mut self, next: u64) {
+        self.eval_next = self.eval_next.max(next);
+    }
+}
+
 impl LossStats {
     /// Adds one judgement's counts and folds once 32 are judged (spec §4.3
     /// step 4), then applies the lossy and severe bands (spec §5.2, §5.4).
@@ -382,6 +389,15 @@ mod tests {
         // Unsent sequences (HELLO) are not judged.
         let mut cursor = LossCursor::default();
         assert_eq!(cursor.judge(8, 0x7F, |s| s >= 2, |_| {}), (4, 0));
+    }
+
+    #[test]
+    fn a_recovered_link_judges_nothing_it_sent_before() {
+        let mut cursor = LossCursor::default();
+        // Offline through 20; the recovery's next send is 21.
+        cursor.skip_to(21);
+        // Only 24 arrived of 1..=24, yet nothing up to 20 counts.
+        assert_eq!(cursor.judge(24, 1, |_| true, |_| {}), (1, 1));
     }
 
     #[test]
