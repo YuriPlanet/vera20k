@@ -10,7 +10,7 @@
 //! window (working directory, logging, panic reporting) belongs here, not in
 //! `main.rs`, or Android silently skips it.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use winit::event_loop::EventLoop;
 
@@ -70,6 +70,24 @@ pub fn log_banner(log_path: Option<&Path>) {
     if let Some(path) = log_path {
         log::info!("Log file: {}", path.display());
     }
+}
+
+/// Adopt the platform's writable data directory and make it the working
+/// directory.
+///
+/// Android starts every process in `/` with no writable home, so its cdylib
+/// calls this before logging opens `logs/`. Everything below that resolves a
+/// relative or per-user path — the log directory, `config.toml`, `VERA.INI`,
+/// saves and replays — then lands somewhere writable, and the settings folder
+/// resolves to this same directory rather than to a `HOME` that does not exist.
+#[cfg(target_os = "android")]
+pub fn adopt_android_data_dir(dir: &Path) -> Result<()> {
+    crate::util::platform_dir::set(dir.to_path_buf());
+    std::fs::create_dir_all(dir)
+        .with_context(|| format!("create the Android data directory {}", dir.display()))?;
+    std::env::set_current_dir(dir)
+        .with_context(|| format!("enter the Android data directory {}", dir.display()))?;
+    Ok(())
 }
 
 /// Desktop start-up: parse the process arguments, then drive a fresh event loop.

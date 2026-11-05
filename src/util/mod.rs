@@ -33,6 +33,7 @@ pub mod native_trig;
 pub mod native_x87;
 pub(crate) mod native_quaternion;
 pub mod pixel_conversion;
+pub mod platform_dir;
 pub mod read_helpers;
 pub mod retail_pointer_sort;
 pub mod retail_trig;

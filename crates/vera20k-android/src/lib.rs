@@ -26,16 +26,17 @@ use winit::platform::android::EventLoopBuilderExtAndroid;
 /// `android-activity` turns into an `AndroidApp`.
 #[unsafe(no_mangle)]
 fn android_main(app: AndroidApp) {
-    // Android starts every process in "/" with no writable working directory.
-    // The logger opens `logs/` beside it and the settings reader resolves
-    // VERA.INI from HOME, so enter the app's private folder first: everything
-    // below assumes a real, writable current directory.
-    if let Some(dir) = app.internal_data_path() {
-        if let Err(error) = std::env::set_current_dir(&dir) {
-            eprintln!("cannot enter {}: {error}", dir.display());
+    // Android starts every process in "/" with no writable home. Hand the app's
+    // private folder to the engine before anything opens a file: it becomes
+    // both the working directory and the settings folder, so logs, config.toml,
+    // VERA.INI, saves and replays all persist there.
+    match app.internal_data_path() {
+        Some(dir) => {
+            if let Err(error) = vera20k::entry::adopt_android_data_dir(&dir) {
+                eprintln!("cannot use the app data directory: {error:#}");
+            }
         }
-    } else {
-        eprintln!("no internal data path; logs and settings will not persist");
+        None => eprintln!("no internal data path; logs and settings will not persist"),
     }
 
     let log_path = vera20k::entry::init_logging();

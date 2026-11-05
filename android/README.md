@@ -69,18 +69,22 @@ for releases.
 
 ## What is still open
 
-1. **A shipping build.** `--profile shipping` plus `-C strip=symbols`, then
-   compare against the debug APK's 37 MB. AGP strips the packaged `.so` already
-   (257 MB on disk became 37 MB inside the APK), so the gain is mostly link time
-   and disk, not download size.
-2. **The working directory contract.** `entry::init_logging` opens `logs/`
-   beside the current directory and `util::config` resolves the settings folder
-   from `HOME`, which Android does not set. `android_main` only calls
-   `set_current_dir(internal_data_path())`; `default_settings_dir` still needs an
-   Android branch (P2), and `sim::rng` reads the same paths.
-3. **A first window.** No APK has been installed on a device or emulator yet, so
-   `App::initialize` has never run on Android: expect the surface, `VIEW_FORMATS`
-   and the format-selection code to need work (P4).
+1. **A shipping build.** `--profile shipping` plus `-C strip=symbols`. The
+   debug `.so` is 257 MB on disk and AGP's own stripping already cut the first
+   APK to 37 MB, so the remaining gain is link time and disk more than download
+   size — but debug-symbol handling is AGP's business and the size moved between
+   builds (37 MB, then 75 MB), which a pinned shipping profile would settle.
+2. **Retail assets (P3).** The launch reaches `Initialization complete` but no
+   window content: with no game data, asset resolution falls back to the
+   executable's directory (`/system/bin`) and is refused. Everything below that
+   — the main menu — needs the import path from the plan's P3.
+3. **Portrait, not landscape.** The manifest asks for `sensorLandscape`, but
+   Android 16 ignores manifest orientation on large screens: the surface came up
+   2400x3392 in portrait (log below). Rotation and a portrait-capable layout are
+   P4/P6 work, not a manifest fix.
+4. **No on-device error surface.** `system_dialog` has no Android branch, so a
+   fatal start-up error here is only visible in `files/logs/ra2.log`. A
+   `Toast`/`AlertDialog` via JNI is still open.
 
 ## Verified on this machine
 
@@ -88,10 +92,16 @@ for releases.
 - `cargo ndk -t arm64-v8a --platform 26 ... build` links `libvera20k_android.so`:
   ELF64 AArch64, `android_main` exported, all LOAD segments 0x4000-aligned, so
   NDK r28 already satisfies Android 15's 16 KB pages.
-- `gradlew :app:assembleDebug` produces `app-debug.apk` (37.3 MB):
+- `gradlew :app:assembleDebug` produces an installable APK:
   `org.vera20k`, versionCode 207, versionName 0.2.7 (read from `Cargo.toml`),
   minSdk 26, targetSdk 36, native-code `arm64-v8a`. `zipalign -c -P 16` reports
   the packaged `.so` at 16384-byte alignment and `apksigner verify` passes.
+- **On hardware** (OnePlus/OPPO OPD2413, Android 16, API 36, Adreno 830):
+  `adb install` + launch reaches `Initialization complete` with
+  `Vulkan` adapter `Adreno (TM) 830`, surface `2400x3392 Rgba8UnormSrgb`,
+  AAudio at 512 frames/44100 Hz, and the log at
+  `/data/user/0/org.vera20k/files/logs/ra2.log` — so the data-directory,
+  settings, logging, Vulkan and audio paths all work on Android.
 - Toolchain used: cmdline-tools 23.0, platforms/android-36, build-tools 36.1.0,
   NDK 28.2.13676358, AGP 8.11.1, Gradle 8.13, JDK 19.
 
