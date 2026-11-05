@@ -5994,7 +5994,7 @@ impl RelayServer {
         // §7.1 step 3.
         peer.link.delayed = uplink.link & crate::link::LINK_DELAYED != 0;
         let jittery = uplink.link & crate::link::LINK_JITTERY != 0;
-        if peer.link.jitter_on()
+        if peer.link.jittery
             && !jittery
             && peer.link.clock.state == crate::link::LinkState::Good
             && let Some(push) = peer.push.as_mut()

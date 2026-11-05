@@ -650,8 +650,9 @@ const SENDLOG_READER: usize = 64;
 pub(crate) const CLIENT_OFFLINE_MS: u64 = 1000;
 pub(crate) const READER_OFFLINE_MS: u64 = 1500;
 pub(crate) const BACKPRESSURE_HOLD_MS: u64 = 2000;
-/// JITTERY waits this long after the reader was last congested (§7.2).
-const JITTER_CONGESTION_HOLD_MS: u64 = 10_000;
+/// A congested direction stays congested until its conditions have not
+/// held for this long (spec §5.2).
+const CONGESTION_HOLD_MS: u64 = 10_000;
 
 /// Send-log kinds (spec §4.2).
 pub(crate) const SEND_OTHER: u8 = 0;
@@ -735,6 +736,8 @@ pub(crate) struct ClientLink {
     pub(crate) repair_pulls: u64,
     // Set on leaving the offline state until its recovery UPLINK went.
     pub(crate) recovered: bool,
+    // The latest evaluation that found DELAYED or Backpressure (§5.2 hold).
+    pub(crate) congested_at: Option<u64>,
     // Downlink new-turn jitter (spec §4.8), with the sealing rate it
     // measures against, a pause in the stream, and a PULL whose reply
     // packs are not measured.
@@ -789,7 +792,7 @@ pub(crate) struct ReaderLink {
     pub(crate) srtt_c: u16,
     pub(crate) rttvar_c: u16,
     pub(crate) jittery: bool,
-    // The latest evaluation that found the reader congested (spec §7.2).
+    // The latest evaluation that found DELAYED (spec §5.2 hold).
     pub(crate) congested_at: Option<u64>,
     pub(crate) last_heard_ms: u64,
     pub(crate) clock: StateClock,
@@ -933,24 +936,19 @@ impl ReaderLink {
     /// previous state if it changed. Entering offline discards open counts.
     pub(crate) fn evaluate(&mut self, now_ms: u64) -> Option<LinkState> {
         let offline = now_ms.saturating_sub(self.last_heard_ms) >= READER_OFFLINE_MS;
-        let state = link_state(offline, self.delayed, self.loss.lossy);
+        if self.delayed {
+            self.congested_at = Some(now_ms);
+        }
+        // Congested until DELAYED has not held for 10 s (spec §5.2).
+        let congested = self
+            .congested_at
+            .is_some_and(|at| now_ms.saturating_sub(at) < CONGESTION_HOLD_MS);
+        let state = link_state(offline, congested, self.loss.lossy);
         let previous = self.clock.enter(state, self.delayed, now_ms);
         if previous.is_some() && state == LinkState::Offline {
             self.loss.clear_counts();
         }
-        if state == LinkState::Congested {
-            self.congested_at = Some(now_ms);
-        }
         previous
-    }
-
-    /// JITTERY as it acts on K and the repeat (spec §7.2): not within 10 s
-    /// of the reader's last congested evaluation, as of the latest one.
-    pub(crate) fn jitter_on(&self) -> bool {
-        self.jittery
-            && self.congested_at.is_none_or(|at| {
-                self.clock.last_ms().saturating_sub(at) >= JITTER_CONGESTION_HOLD_MS
-            })
     }
 
     /// K for this reader's state (spec §7.2): JITTERY raises a good
@@ -963,7 +961,7 @@ impl ReaderLink {
         };
         match self.clock.state {
             LinkState::Offline => 0,
-            LinkState::Good => 1 + u8::from(self.jitter_on()),
+            LinkState::Good => 1 + u8::from(self.jittery),
             LinkState::Lossy => by_loss,
             LinkState::Congested => by_loss.min(2),
         }
@@ -1087,10 +1085,17 @@ impl ClientSession {
             return;
         };
         let link = &mut ordering.link;
-        let congested = link.rtt.delayed
+        if link.rtt.delayed
             || link
                 .backpressure_at
-                .is_some_and(|at| now_ms.saturating_sub(at) < BACKPRESSURE_HOLD_MS);
+                .is_some_and(|at| now_ms.saturating_sub(at) < BACKPRESSURE_HOLD_MS)
+        {
+            link.congested_at = Some(now_ms);
+        }
+        // Congested until neither condition has held for 10 s (§5.2).
+        let congested = link
+            .congested_at
+            .is_some_and(|at| now_ms.saturating_sub(at) < CONGESTION_HOLD_MS);
         let state = link_state(offline, congested, link.loss.lossy);
         match link.clock.enter(state, link.rtt.delayed, now_ms) {
             Some(_) if state == LinkState::Offline => link.loss.clear_counts(),

@@ -847,6 +847,30 @@ mod tests {
     }
 
     #[test]
+    fn the_uplink_stays_congested_ten_seconds_after_its_last_backpressure() {
+        let mut session = started();
+        link(&mut session).backpressure_at = Some(1000);
+        link(&mut session).loss.lossy = true;
+        poll(&mut session, 1000);
+        assert_eq!(session.link_stats().uplink, LinkState::Congested);
+        // The 2 s Backpressure condition ended at 3000; the hold runs from
+        // its last evaluation, 2999, so lossy copies wait until 12_999.
+        session.hop.last_heard_ms = Some(12_998);
+        session.evaluate_uplink(2999);
+        session.evaluate_uplink(12_998);
+        assert_eq!(session.link_stats().uplink, LinkState::Congested);
+        session.seal_ordering_batch(b"held").unwrap();
+        session.hop.last_heard_ms = Some(12_998);
+        poll_silent(&mut session, 12_998).unwrap();
+        assert!(
+            poll(&mut session, 13_014).is_none(),
+            "no copy while congested"
+        );
+        session.evaluate_uplink(12_999);
+        assert_eq!(session.link_stats().uplink, LinkState::Lossy);
+    }
+
+    #[test]
     fn a_new_batch_goes_at_once_but_waits_33_ms_and_merges_while_congested() {
         let mut session = started();
         poll(&mut session, 0).unwrap();

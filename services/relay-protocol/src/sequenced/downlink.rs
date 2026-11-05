@@ -176,7 +176,7 @@ impl Peer {
                 self.link.skip_judged_to(self.sent + 1);
             }
             if let Some(push) = self.push.as_mut() {
-                push.on_transition(previous, state, self.link.jitter_on());
+                push.on_transition(previous, state, self.link.jittery);
             }
         }
         self.link.clock.state
@@ -458,7 +458,7 @@ impl RelayServer {
             room.peers
                 .iter()
                 .find(|peer| peer.ticket == ticket)
-                .map(|peer| repeats_on(peer.link.clock.state, peer.link.jitter_on()))
+                .map(|peer| repeats_on(peer.link.clock.state, peer.link.jittery))
         })?;
         let push = self
             .rooms
@@ -541,7 +541,7 @@ impl RelayServer {
         // Item 4: repeats, less what the retransmission queue holds.
         let mut repeats = Vec::new();
         let mut repeated_to = None;
-        if repeats_on(state, peer.link.jitter_on())
+        if repeats_on(state, peer.link.jittery)
             && push
                 .unrepeated_since
                 .is_some_and(|at| now_ms.saturating_sub(at) >= PUSH_REPEAT_MS)
@@ -865,32 +865,30 @@ mod tests {
         );
     }
 
-    /// Spec §7.2: within 10 s of a congested evaluation JITTERY neither
-    /// repeats nor raises K; another congestion restarts the 10 s.
+    /// Spec §5.2: a congested reader stays congested until DELAYED has not
+    /// held for 10 s, so neither loss nor JITTERY repeats in that time;
+    /// DELAYED again restarts the 10 s.
     #[test]
-    fn jittery_waits_ten_seconds_after_the_reader_was_congested() {
+    fn a_congested_reader_holds_congestion_for_ten_seconds() {
         let (mut server, _reader) = reader_room(88);
         fn peer(server: &mut RelayServer) -> &mut Peer {
             &mut server.rooms.get_mut(&[5; 16]).unwrap().peers[0]
         }
         let at = |server: &mut RelayServer, now: u64, delayed: bool| {
             let reader = peer(server);
-            (reader.link.delayed, reader.link.jittery) = (delayed, true);
+            reader.link.delayed = delayed;
+            (reader.link.jittery, reader.link.loss.lossy) = (true, true);
             reader.link.last_heard_ms = now;
             reader.evaluate_reader(now);
-            reader.link.piggyback_depth()
+            (reader.link.clock.state, reader.link.piggyback_depth())
         };
-        assert_eq!(at(&mut server, 1000, true), 1, "congested: JITTERY no effect");
-        assert_eq!(peer(&mut server).link.clock.state, LinkState::Congested);
-        // Good and JITTERY, but congested 9999 ms ago: K stays 1, no repeat.
-        assert_eq!(at(&mut server, 10_999, false), 1);
-        assert!(!peer(&mut server).link.jitter_on());
-        assert_eq!(at(&mut server, 11_000, false), 2);
-        assert!(peer(&mut server).link.jitter_on());
-        // Congested again: the 10 s start over.
+        assert_eq!(at(&mut server, 1000, true), (LinkState::Congested, 2));
+        // Lossy and JITTERY, but DELAYED 9999 ms ago: still congested.
+        assert_eq!(at(&mut server, 10_999, false), (LinkState::Congested, 2));
+        assert_eq!(at(&mut server, 11_000, false), (LinkState::Lossy, 2));
         at(&mut server, 12_000, true);
-        assert_eq!(at(&mut server, 21_999, false), 1);
-        assert_eq!(at(&mut server, 22_000, false), 2);
+        assert_eq!(at(&mut server, 21_999, false).0, LinkState::Congested);
+        assert_eq!(at(&mut server, 22_000, false).0, LinkState::Lossy);
     }
 
     #[test]
