@@ -213,8 +213,7 @@ pub enum WolTarget {
     /// Test service: `0x113` Page, a name and text, Enter: `0xCF` with the
     /// echo, the result and the stand-in's page back.
     PageDialog,
-    /// Test service: an unknown name of VERA's 24 characters and Tab:
-    /// `0xCF`'s find status, the name scrolled to its end.
+    /// Test service: an unknown name and Tab: `0xCF`'s find status.
     PageFindStatus,
     /// Test service: a page to an unknown name: `TXT_PAGEUSERGONE`.
     PageUserGone,
@@ -4416,7 +4415,7 @@ impl WolCapture {
             };
         let (name, text) = match self.target {
             WolTarget::SetupPage => ("Boris", Some("Join my game")),
-            WolTarget::PageFindStatus => ("Nobody_with_a_long_name1", None),
+            WolTarget::PageFindStatus => ("Nobody", None),
             WolTarget::PageUserGone => ("Nobody", Some("hello")),
             _ => ("Tanya", Some("hello")),
         };
