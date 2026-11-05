@@ -1,8 +1,10 @@
 //! One released client's side of `tools/relay_compat.py`.
 //!
 //! The tool builds this file against a release's own `vera20k-relay-protocol`
-//! and runs it against a loopback relay built from the checkout. It uses only
-//! the client API every supported release has: Pull, never Push or Pause.
+//! and runs it against a loopback relay built from the checkout. It reads by
+//! Pull, never by push or Pause, and sends its one batch the way its release
+//! does: by UPLINK from the adaptive transport on (spec
+//! `services/relay/adaptive-transport/spec.md`), which no older relay reads.
 //!
 //! Three players are signed, but player 2 never connects. After
 //! `LOADING_SILENCE_MS` (60 s) the relay removes it with the departure it writes
@@ -45,9 +47,15 @@ struct Peer {
     records: BTreeMap<u64, Record>,
     undecodable: usize,
     left: bool,
+    // The session's monotonic millisecond clock starts here.
+    epoch: Instant,
 }
 
 impl Peer {
+    fn now_ms(&self) -> u64 {
+        self.epoch.elapsed().as_millis() as u64
+    }
+
     fn send(&self, bytes: &[u8]) -> Result<()> {
         match self.socket.send(bytes) {
             Ok(sent) if sent == bytes.len() => Ok(()),
@@ -72,7 +80,8 @@ impl Peer {
     fn service(&mut self) -> Result<Option<u32>> {
         let mut ready = None;
         while let Some(packet) = self.packet()? {
-            let event = self.client.receive(&packet);
+            let now_ms = self.now_ms();
+            let event = self.client.receive_at(&packet, now_ms);
             if is_status(&packet)
                 && !matches!(event, Ok(ServerEvent::Ordering(OrderEvent::Status(_))))
             {
@@ -196,21 +205,25 @@ fn connect(
         records: BTreeMap::new(),
         undecodable: 0,
         left: false,
+        epoch: Instant::now(),
     };
     let mut bytes = Vec::new();
-    peer.client.probe(&mut bytes).map_err(|_| "probe")?;
+    peer.client
+        .probe_at(peer.now_ms(), &mut bytes)
+        .map_err(|_| "probe")?;
     peer.send(&bytes)?;
     loop {
         if let Some(packet) = peer.packet()? {
+            let now_ms = peer.now_ms();
             match peer
                 .client
-                .receive(&packet)
+                .receive_at(&packet, now_ms)
                 .map_err(|_| "handshake_decode")?
             {
                 ServerEvent::Challenge(cookie) => {
                     let cookie = cookie.to_vec();
                     peer.client
-                        .confirm(&cookie, &mut bytes)
+                        .confirm_at(&cookie, now_ms, &mut bytes)
                         .map_err(|_| "confirm")?;
                     peer.send(&bytes)?;
                 }
@@ -273,8 +286,9 @@ fn run(started: Instant) -> Result<String> {
     while ready != [true; 2] {
         if Instant::now() >= retry_at {
             for peer in &mut peers {
+                let now_ms = peer.now_ms();
                 peer.client
-                    .configure_ordering(&certificate, [7; 32], &mut bytes)
+                    .configure_ordering_at(&certificate, [7; 32], now_ms, &mut bytes)
                     .map_err(|_| "configure")?;
                 peer.send(&bytes)?;
             }
@@ -294,16 +308,23 @@ fn run(started: Instant) -> Result<String> {
         if !submitted && !peers[1].records.is_empty() {
             peers[1]
                 .client
-                .submit_ordering(1, BATCH, &mut bytes)
+                .seal_ordering_batch(BATCH)
                 .map_err(|_| "submit")?;
-            peers[1].send(&bytes)?;
             submitted = true;
+        }
+        // The session sends the batch and its retries, and keeps both
+        // subscribed; nothing here reads the push.
+        for peer in peers.iter_mut().filter(|peer| !peer.left) {
+            let now_ms = peer.now_ms();
+            if peer.client.poll_uplink(now_ms, &mut bytes) {
+                peer.send(&bytes)?;
+            }
         }
         if Instant::now() >= pull_at {
             for peer in peers.iter_mut().filter(|peer| !peer.left) {
-                let next = peer.next();
+                let (next, now_ms) = (peer.next(), peer.now_ms());
                 peer.client
-                    .pull_ordering(next, &mut bytes)
+                    .pull_ordering_at(next, now_ms, &mut bytes)
                     .map_err(|_| "pull")?;
                 peer.send(&bytes)?;
             }
@@ -317,9 +338,10 @@ fn run(started: Instant) -> Result<String> {
             .values()
             .any(|record| matches!(record, Record::Batch(_, 1, 1)));
         if seen_batch && !peers[1].left && leave_at.is_none_or(|at| Instant::now() >= at) {
+            let now_ms = peers[1].now_ms();
             peers[1]
                 .client
-                .leave_ordering(&mut bytes)
+                .leave_ordering_at(now_ms, &mut bytes)
                 .map_err(|_| "leave")?;
             peers[1].send(&bytes)?;
             leave_at = Some(Instant::now() + Duration::from_millis(500));
@@ -358,9 +380,10 @@ fn run(started: Instant) -> Result<String> {
     let mut leave_at = Instant::now();
     while !peers[0].left {
         if Instant::now() >= leave_at {
+            let now_ms = peers[0].now_ms();
             peers[0]
                 .client
-                .leave_ordering(&mut bytes)
+                .leave_ordering_at(now_ms, &mut bytes)
                 .map_err(|_| "leave")?;
             peers[0].send(&bytes)?;
             leave_at = Instant::now() + Duration::from_millis(500);

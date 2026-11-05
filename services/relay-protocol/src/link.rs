@@ -462,11 +462,14 @@ impl ClientSession {
 
     /// The transport's IO-thread heartbeat (spec §6.6). If no UPLINK went out
     /// on this hop for 250 ms by `now_ms`, re-encodes the most recent
-    /// UPLINK's contents into `out` with a new hop sequence and the current
-    /// `down_high` / `down_bits`, keeping its batch and checksum segments and
-    /// dropping its pace segment, and returns true. Returns false when not
-    /// due, when this hop has sent no UPLINK yet, or after Leave. A heartbeat
-    /// counts as an UPLINK for every later interval.
+    /// UPLINK into `out` with a new hop sequence and the current
+    /// `down_high` / `down_bits`: its checksum segment repeats, its pace
+    /// segment is dropped, and the batches are packed again by §6.2 from the
+    /// current `accepted_through + 1`. While the uplink is offline it sends
+    /// the probe instead (PROBE set, no batches or checksums). Returns true
+    /// if it encoded one; false when not due, when this hop has sent no
+    /// UPLINK yet, or after Leave. A heartbeat counts as an UPLINK for every
+    /// later interval.
     pub fn heartbeat_uplink(&mut self, now_ms: u64, out: &mut Vec<u8>) -> bool {
         self.heartbeat_uplink_at(now_ms, out)
     }
