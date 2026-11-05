@@ -2460,6 +2460,12 @@ impl ProcessedRulesLayers {
             .psychic_reveal()
     }
 
+    /// ReadAudioVisual6693AC/6693F6/66AA93 fixed Voc bindings. RulesClass
+    /// keeps these scalars through type reset, RMG and Save674730/Load675210.
+    pub(crate) fn ui_sounds(&self) -> [Option<&str>; 3] {
+        self.native_registry_state().rules_global_sounds.ui_sounds()
+    }
+
     /// Final Difficulty readers after the ordered Process passes. Keeping the
     /// typed rows preserves literal f64 defaults separately from ReadDouble's
     /// widened f32 authored values (ReadDifficulty @ 0x0066D270).

@@ -336,12 +336,25 @@ pub struct SoundRegistry {
 /// Ctor665946/66594C/6659AC stores -1; names represent resolved catalog IDs.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct GlobalSoundReferences {
+    /// RulesCtor665886/66588C: +18C/+190 start at -1.
+    gui_build: Option<String>,
+    gui_tab: Option<String>,
     bomb_ticking: Option<String>,
     bomb_attach: Option<String>,
     psychic_reveal: Option<String>,
+    /// RulesCtor666009: +6EC starts at -1.
+    building_slam: Option<String>,
 }
 
 impl GlobalSoundReferences {
+    pub(crate) fn ui_sounds(&self) -> [Option<&str>; 3] {
+        [
+            self.gui_build.as_deref(),
+            self.gui_tab.as_deref(),
+            self.building_slam.as_deref(),
+        ]
+    }
+
     pub(crate) fn bomb_ticking(&self) -> Option<&str> {
         self.bomb_ticking.as_deref()
     }
@@ -358,6 +371,11 @@ impl GlobalSoundReferences {
         let Some(section) = pass.section("AudioVisual") else {
             return;
         };
+        // ReadAudioVisual6693AC..66942C: each current index survives an
+        // absent, empty or unknown ReadString128 / VocFind7514D0 result.
+        self.gui_build =
+            sounds.read_rules_reference(section, "GUIBuildSound", self.gui_build.take());
+        self.gui_tab = sounds.read_rules_reference(section, "GUITabSound", self.gui_tab.take());
         // ReadAudioVisual669A60..669AD8 /669FC3..669FF0: current-ID defaults,
         // ReadString128 and fixed VocFind7514D0. A registered none is a cue.
         self.bomb_ticking =
@@ -369,6 +387,9 @@ impl GlobalSoundReferences {
             "PsychicRevealActivateSound",
             self.psychic_reveal.take(),
         );
+        // ReadAudioVisual66AA93..66AAC9, after the earlier AV sound reads.
+        self.building_slam =
+            sounds.read_rules_reference(section, "BuildingSlam", self.building_slam.take());
     }
 }
 
