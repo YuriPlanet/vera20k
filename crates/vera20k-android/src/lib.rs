@@ -59,7 +59,7 @@ fn request_folder_picker() -> bool {
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_org_vera20k_VeraActivity_nativeOnFolderPicked(
     mut env: jni::JNIEnv,
-    _activity: JObject,
+    activity: JObject,
     tree_uri: JString,
 ) {
     let picked = env
@@ -68,10 +68,45 @@ pub extern "system" fn Java_org_vera20k_VeraActivity_nativeOnFolderPicked(
         .map(|text| text.to_string_lossy().into_owned())
         .filter(|text| !text.is_empty());
     match &picked {
-        Some(uri) => log::info!("asset import: folder picked: {uri}"),
+        Some(uri) => {
+            log::info!("asset import: folder picked: {uri}");
+            // The copy itself runs on the Java side (only ContentResolver can
+            // read a SAF tree); this starts it and returns immediately.
+            let _ = env.call_method(
+                &activity,
+                "startImport",
+                "(Ljava/lang/String;)V",
+                &[jni::objects::JValue::Object(&tree_uri)],
+            );
+        }
         None => log::info!("asset import: folder picker cancelled"),
     }
     vera20k::util::folder_picker::deliver(picked);
+}
+
+/// The import finished: `ok:<path>` after the copy and config.toml are written,
+/// `failed:<reason>` otherwise. Runs on the copy's own thread, so it only
+/// records the outcome.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_vera20k_VeraActivity_nativeImportFinished(
+    mut env: jni::JNIEnv,
+    _activity: JObject,
+    result: JString,
+) {
+    let text = env
+        .get_string(&result)
+        .ok()
+        .map(|value| value.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if let Some(path) = text.strip_prefix("ok:") {
+        log::info!("asset import: copied into {path}; config.toml written");
+    } else {
+        log::error!(
+            "asset import: {}",
+            text.strip_prefix("failed:").unwrap_or(&text)
+        );
+    }
+    let _ = env.exception_clear();
 }
 
 /// Bind `nativeOnFolderPicked` to this activity's class.
@@ -91,11 +126,18 @@ fn register_folder_picker_native() -> bool {
             let _ = env.exception_clear();
             return false;
         };
-        let methods = [jni::NativeMethod {
-            name: "nativeOnFolderPicked".into(),
-            sig: "(Ljava/lang/String;)V".into(),
-            fn_ptr: Java_org_vera20k_VeraActivity_nativeOnFolderPicked as *mut std::ffi::c_void,
-        }];
+        let methods = [
+            jni::NativeMethod {
+                name: "nativeOnFolderPicked".into(),
+                sig: "(Ljava/lang/String;)V".into(),
+                fn_ptr: Java_org_vera20k_VeraActivity_nativeOnFolderPicked as *mut std::ffi::c_void,
+            },
+            jni::NativeMethod {
+                name: "nativeImportFinished".into(),
+                sig: "(Ljava/lang/String;)V".into(),
+                fn_ptr: Java_org_vera20k_VeraActivity_nativeImportFinished as *mut std::ffi::c_void,
+            },
+        ];
         let registered = env.register_native_methods(class, &methods).is_ok();
         if !registered {
             let _ = env.exception_clear();
