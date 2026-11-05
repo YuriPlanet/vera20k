@@ -20,6 +20,8 @@ use sha2::Sha256;
 use zeroize::Zeroize;
 
 mod journal;
+#[cfg(any(test, feature = "test-support"))]
+pub mod netsim;
 mod sequenced;
 pub use sequenced::federation::{MAX_FEDERATED_RELAYS, sign_federation_roster};
 pub use sequenced::{
