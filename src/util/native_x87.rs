@@ -30,6 +30,11 @@ impl NativeF32Bits {
     pub const fn bits(self) -> u32 {
         self.0
     }
+
+    /// IEEE binary32 zero, independent of its sign bit.
+    pub const fn is_zero(self) -> bool {
+        self.0 & 0x7fff_ffff == 0
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

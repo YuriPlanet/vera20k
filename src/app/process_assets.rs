@@ -334,6 +334,10 @@ impl ProcessAssets {
             options,
             self.native_rules.as_ref(),
             mode_rules.as_ref(),
+            self.native_rules
+                .as_ref()
+                .map(|owner| owner.project_random_map_terrain_rules(mode_rules.as_ref(), true))
+                .unwrap_or_default(),
         )
         .ok_or("generated map theater is unavailable")?;
         let mut bytes = b"VERA20k generated rules agreement v1\0".to_vec();
@@ -528,12 +532,12 @@ impl ProcessAssets {
         &mut self,
     ) -> (
         Option<&mut AssetManager>,
-        Option<&crate::rules::process_owner::NativeRulesProcessOwner>,
+        Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
         &mut crate::map::tile_variant_selector::TileVariantSelectorCache,
     ) {
         (
             self.manager.as_mut(),
-            self.native_rules.as_ref(),
+            self.native_rules.as_mut(),
             &mut self.tile_variant_selector_cache,
         )
     }

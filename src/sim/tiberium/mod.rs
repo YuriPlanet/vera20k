@@ -1768,8 +1768,8 @@ SpreadPercentage=.06
             .reset_native_tiberium_classes(rules.tiberium_types.len(), 0);
         let mut terrain = flat_clear_terrain();
         let cell = terrain.cell_mut_for_test(0, 0).unwrap();
-        cell.speed_costs.foot = Some(37);
-        cell.base_speed_costs.foot = Some(37);
+        cell.speed_costs.foot = Some(crate::rules::terrain_rules::test_speed_percent(37));
+        cell.base_speed_costs.foot = Some(crate::rules::terrain_rules::test_speed_percent(37));
         let mut overlay = OverlayGrid::new(1, 1);
         overlay.place_overlay(0, 0, overlay_registry.id_for_name("TIB01").unwrap(), 3);
         assert!(crate::sim::overlay_grid::recalc_overlay_passability(
@@ -1819,7 +1819,7 @@ SpreadPercentage=.06
                 .unwrap()
                 .speed_costs
                 .foot,
-            Some(37),
+            Some(crate::rules::terrain_rules::test_speed_percent(37)),
             "the restored land row is the cell's own, read without publication"
         );
         let repeated = sim.overlay_grid.as_mut().unwrap().recalculate_runtime_cell(

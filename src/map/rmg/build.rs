@@ -26,9 +26,6 @@ use super::x87::{Gaussian, TruncF64};
 use super::{GeneratedMap, MapGeometry, RmgOptions, RmgSettings, Stage, emit, grid};
 use crate::util::retail_trig::TrigTable;
 
-/// Wheel speed at or below this percent classifies the land as wheel-impassable.
-const WHEEL_IMPASSABLE_MAX: u8 = 1;
-
 /// Per-land-type "Wheel speed <= 1%" flags for the zone classifier, read from
 /// the terrain rules' rows in `LandType` order (the classifier's
 /// `LAND_WATER == 2` / `LAND_BEACH == 6`); indices past the twelve land types
@@ -39,7 +36,10 @@ pub fn wheel_impassable_from_rules(rules: &TerrainRules) -> [bool; LAND_TYPES] {
             .ok()
             .and_then(|land| rules.semantics_for_land_type(land))
             .and_then(|row| row.cost_for_speed_type(SpeedType::Wheel))
-            .is_some_and(|wheel| wheel <= WHEEL_IMPASSABLE_MAX)
+            .is_some_and(|wheel| {
+                crate::rules::terrain_rules::compare_speed_to_one_percent(wheel)
+                    != crate::util::native_x87::MaskedX87Ordering::Greater
+            })
     })
 }
 

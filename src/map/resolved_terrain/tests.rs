@@ -259,6 +259,140 @@ fn scenario_land_speed_rows_survive_nonempty_and_empty_grid_construction() {
     }
 }
 
+#[test]
+fn fractional_retail_land_row_reaches_rhino_entry_and_drive() {
+    use crate::sim::movement::infantry_entry::{EntryQueryMode, InfantryEntryArgs};
+    use crate::sim::movement::track_process::TrackFamily;
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &IniFile::from_str("[Clear]\nTrack=0.5%\nWheel=1.00001%\n"),
+    ) else {
+        return;
+    };
+    let rules = &retail.rules;
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE")
+        .expect("retail temperate theater");
+    let mut map = make_map(
+        vec![
+            MapCell {
+                rx: 12,
+                ry: 12,
+                tile_index: 0,
+                sub_tile: 0,
+                z: 0,
+            },
+            MapCell {
+                rx: 13,
+                ry: 12,
+                tile_index: 0,
+                sub_tile: 0,
+                z: 0,
+            },
+        ],
+        Vec::new(),
+        Vec::new(),
+    );
+    map.header.width = 16;
+    map.header.height = 16;
+    map.header.local_width = 16;
+    map.header.local_height = 16;
+    let bounds = crate::sim::cell_rect::PlayfieldBounds::from_map_header(&map.header);
+    let mut variants = crate::map::tile_variant_selector::TileVariantSelectorCache::default();
+    let mut raw_draw = || 0;
+    let mut selector = variants.begin_load(&mut raw_draw);
+    let mut fill = |low, _high| low;
+    let terrain = ResolvedTerrainGrid::build_with_variant_selector(
+        &map,
+        Some(&theater),
+        Some(&assets),
+        Some(&rules.terrain_rules),
+        Some(rules.overlay_registry()),
+        None,
+        false,
+        rules.general.cliff_back_impassability,
+        &mut fill,
+        &mut selector,
+    );
+    let cells = NativeCellQuery::canonical(&terrain);
+    assert!(crate::sim::cell_rect::retained_cell_is_in_playfield(
+        cells.lookup((13, 12)),
+        Some(bounds),
+        &cells
+    ));
+    assert_eq!(terrain.cell(13, 12).unwrap().zone_type, zone_class::GROUND);
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 29);
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
+    sim.install_bridge_runtime(
+        crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain_with_map_size(
+            &terrain,
+            true,
+            rules.bridge_rules.strength,
+            (map.header.width as i32, map.header.height as i32),
+        ),
+    );
+    sim.install_resolved_terrain_for_new_map(terrain);
+    sim.install_playfield_from_map_header(&map.header);
+    sim.session.set_map_width_for_test(map.header.width as u16);
+    sim.session
+        .set_map_height_for_test(map.header.height as u16);
+    assert!(sim.rebuild_dynamic_navigation(rules));
+    let tank = sim
+        .spawn_object_with_overlay_registry(
+            "HTNK",
+            "Russians",
+            12,
+            12,
+            64,
+            rules,
+            rules.overlay_registry(),
+        )
+        .expect("Rhino enters the fractional Clear row");
+    assert_eq!(
+        sim.mover_can_enter(
+            tank,
+            (13, 12),
+            InfantryEntryArgs::REPAIR,
+            EntryQueryMode::CheckLocomotor,
+            rules,
+            Some(rules.overlay_registry())
+        )
+        .unwrap(),
+        0
+    );
+    assert!(sim.set_unit_destination(
+        tank,
+        crate::sim::components::NavTargetRef::cell(13, 12),
+        rules,
+        true,
+        crate::sim::world::FrameEffects::default()
+    ));
+    sim.session.set_binary_frame_for_test(101);
+    sim.entities_mut_for_test()
+        .get_mut(tank)
+        .unwrap()
+        .mission_leaf
+        .set_foot_idle_entry_latch(0);
+    let grid = sim.path_grid().cloned();
+    sim.process_ground_locomotor_for_test(tank, Some(rules), grid.as_ref(), None)
+        .unwrap();
+    let tank = sim.entities().get(tank).unwrap();
+    let value = tank
+        .locomotor
+        .as_ref()
+        .unwrap()
+        .track_target_fraction_native(TrackFamily::Drive)
+        .unwrap();
+    let value = f64::from_bits(value.bits());
+    assert!(
+        value > 0.0 && value < 0.01,
+        "fractional land value must reach Drive, got {value}"
+    );
+}
+
 /// The production builder binds the scenario registry's `Wall=` and
 /// `Crushable=` for every overlay identity, on empty and nonempty grids, so
 /// `0x004834A0` reads retail sandbags as a crushable wall.
@@ -323,14 +457,14 @@ fn retail_clear_test_rows_are_the_retail_scenario_clear_row() {
     };
     assert_eq!(
         clear(&test_retail_clear_rules()),
-        TEST_RETAIL_CLEAR_SPEED_COSTS
+        test_retail_clear_speed_costs()
     );
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
     assert_eq!(
         clear(&retail.rules.terrain_rules),
-        TEST_RETAIL_CLEAR_SPEED_COSTS
+        test_retail_clear_speed_costs()
     );
 }
 
@@ -2710,13 +2844,14 @@ fn an_unauthored_rock_row_is_zero_for_tmp_and_cliff_back_rock_alike() {
     assert_eq!(tmp_rock.land_type, LandType::Rock.as_index());
     assert_eq!(cliff_back.land_type, LandType::Rock.as_index());
     let zero = SpeedCostProfile {
-        foot: Some(0),
-        track: Some(0),
-        wheel: Some(0),
-        float: Some(0),
-        amphibious: Some(0),
-        float_beach: Some(0),
-        hover: Some(0),
+        foot: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        track: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        float: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        amphibious: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        float_beach: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        hover: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        winged: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
     };
     let attributes = |cell: &ResolvedTerrainCell| {
         (
@@ -3415,7 +3550,7 @@ fn gsi_04_04_outside_precedes_overlay_land_and_terrain_occupation() {
             outside,
             Some(zone_class::CRUSHABLE),
             LandType::Water.as_index(),
-            Some(0),
+            Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
             Some(7),
         ),
         zone_class::OUTSIDE
@@ -3731,7 +3866,12 @@ fn gsi_04_04_rules_backed_land_type_uses_canonical_tmp_conversion() {
     apply_land_type_semantics(&mut metadata, Some(&terrain_rules));
 
     assert_eq!(metadata.land_type, LandType::Rough.as_index());
-    assert_eq!(metadata.speed_costs.track, Some(75));
+    assert_eq!(
+        metadata.speed_costs.track,
+        Some(crate::util::native_x87::NativeF32Bits::from_bits(
+            0x3f40_0000
+        ))
+    );
     assert!(!metadata.ground_blocked);
     assert!(!metadata.build_blocked);
 }

@@ -1811,15 +1811,16 @@ mod tests {
         for cell in terrain.cells_mut_for_test() {
             cell.ground_walk_blocked = true;
             cell.base_ground_walk_blocked = true;
-            cell.speed_costs.track = Some(0);
-            cell.base_speed_costs.track = Some(0);
+            cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+            cell.base_speed_costs.track =
+                Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
         }
         for &(x, y) in open {
             let cell = terrain.cell_mut_for_test(x, y).expect("open cell");
             cell.ground_walk_blocked = false;
             cell.base_ground_walk_blocked = false;
-            cell.speed_costs.track = Some(100);
-            cell.base_speed_costs.track = Some(100);
+            cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
+            cell.base_speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
         }
         terrain
     }

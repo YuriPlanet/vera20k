@@ -6133,7 +6133,7 @@ impl RuleSet {
         let initial_veteran = ini
             .section_or_empty("SpecialFlags")
             .read_bool("InitialVeteran", false);
-        let terrain_rules: TerrainRules = TerrainRules::from_ini(ini);
+        let terrain_rules: TerrainRules = processed.terrain_rules().clone();
         let tiberium_types = TiberiumTypeRegistry::from_processed_rules(processed);
         let bridge_rules: BridgeRules = BridgeRules::from_ini(ini);
         let crate_rules = CrateRules::default();
@@ -7410,6 +7410,9 @@ impl RuleSet {
         // v34: Country starting-veterancy; optional extensions add domains below.
         b"rules-simulation-config-v34".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        // The separately saved global89EA40 table can differ for identical
+        // current INI text after earlier Process passes or a load.
+        self.terrain_rules.hash(&mut hasher);
         // ReadINI71551E..715720 can retain different weights for identical
         // current text. Include the projected bits and process-resident defaults.
         b"threat-coefficients-v1".hash(&mut hasher);

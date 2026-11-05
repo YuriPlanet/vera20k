@@ -187,7 +187,7 @@ impl EntryCell {
         };
         costs
             .cost_for_speed_type(speed)
-            .map(|speed| speed != 0)
+            .map(|speed| !speed.is_zero())
             .ok_or_else(|| "repair admission has no resolved speed row".into())
     }
 

@@ -488,7 +488,9 @@ fn evaluate_is_clear_to_move(input: IsClearToMoveRequest) -> IsClearToMoveResult
     // `0x004835DE..0x004835F4`: a cost equal to 0.0 refuses unless the deck
     // was selected. A row the scenario rules lack reads as 0.0.
     if selected_layer != MovementLayer::Bridge
-        && row.cost_for_speed_type(input.speed_type).unwrap_or(0) == 0
+        && row
+            .cost_for_speed_type(input.speed_type)
+            .is_none_or(|cost| cost.is_zero())
     {
         return IsClearToMoveResult::LandBlocked;
     }
@@ -1186,7 +1188,7 @@ mod tests {
     use super::*;
     use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
     use crate::map::map_file::MapHeader;
-    use crate::map::resolved_terrain::TEST_RETAIL_CLEAR_SPEED_COSTS;
+    use crate::map::resolved_terrain::test_retail_clear_speed_costs;
     use crate::rules::overlay_types::OverlayTypeRegistry;
     use crate::rules::terrain_rules::{SpeedCostProfile, TerrainRules};
     use crate::sim::occupancy::CellListInsertion;
@@ -1211,8 +1213,8 @@ mod tests {
 
     fn clear_land() -> CellLand {
         CellLand {
-            row: TEST_RETAIL_CLEAR_SPEED_COSTS,
-            clear_row: TEST_RETAIL_CLEAR_SPEED_COSTS,
+            row: test_retail_clear_speed_costs(),
+            clear_row: test_retail_clear_speed_costs(),
             overlay: None,
         }
     }
@@ -1239,13 +1241,14 @@ mod tests {
     fn zero_row_land(overlay: Option<OverlayPassability>) -> Option<CellLand> {
         Some(CellLand {
             row: SpeedCostProfile {
-                foot: Some(0),
-                track: Some(0),
-                wheel: Some(0),
-                float: Some(0),
-                amphibious: Some(0),
-                float_beach: Some(0),
-                hover: Some(0),
+                foot: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                track: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                wheel: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                float: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                amphibious: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                float_beach: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                hover: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
             },
             overlay,
             ..clear_land()

@@ -154,6 +154,16 @@ impl NativeRulesRegistryOwner {
         }
     }
 
+    fn install_terrain_rules(&mut self, rules: crate::rules::terrain_rules::TerrainRules) {
+        match self {
+            Self::BeforeReset(trace) => trace.install_terrain_rules(rules),
+            Self::Live(state) => state.install_terrain_rules(rules),
+            Self::Scenario(processed) => processed.install_terrain_rules(rules),
+            #[cfg(feature = "ares")]
+            Self::PreparedNonCampaign { trace, .. } => trace.install_terrain_rules(rules),
+        }
+    }
+
     fn into_shell_state(self) -> (Vec<NativeTypeConstructionEvent>, NativeRulesRegistryState) {
         match self {
             Self::BeforeReset(trace) => {
@@ -808,6 +818,50 @@ impl NativeRulesProcessOwner {
             .map_err(|failure| failure.into_parts().0)
     }
 
+    /// Read the RMG land table without committing a preview or launch. Network
+    /// agreement uses this projection and must not change the live global rows.
+    pub fn project_random_map_terrain_rules(
+        &self,
+        mode_rules_override: Option<&IniFile>,
+        reinitialize: bool,
+    ) -> crate::rules::terrain_rules::TerrainRules {
+        let mut land = self
+            .registry
+            .as_ref()
+            .expect("Rules transition reentered")
+            .registry_state()
+            .terrain_rules()
+            .clone();
+        if reinitialize {
+            let (layers, _) = self.random_map_reset_layers(mode_rules_override);
+            for (_, pass) in layers.iter_passes() {
+                land.apply_pass(pass);
+            }
+        }
+        land
+    }
+
+    /// InitMapFromSyntheticINI599650 reloads root/LANG/mode at59A0F0 on a
+    /// preview cache miss;59A0D0..59A0E2 skips it on a matching seed tuple.
+    /// The accepted .SED arm always enters Full_Init at599A56. Both happen
+    /// before Generate598E48 -> CellRecalc483D57 reads global89EA40 for zones.
+    /// Only this global table is updated here; other preview Type/scalar
+    /// projections retain their own existing lifecycle.
+    pub fn prepare_random_map_terrain_rules(
+        &mut self,
+        mode_rules_override: Option<&IniFile>,
+        reinitialize: bool,
+    ) -> crate::rules::terrain_rules::TerrainRules {
+        let land = self.project_random_map_terrain_rules(mode_rules_override, reinitialize);
+        if reinitialize {
+            self.registry
+                .as_mut()
+                .expect("Rules transition reentered")
+                .install_terrain_rules(land.clone());
+        }
+        land
+    }
+
     /// RMG InitMapFromSyntheticINI599650 calls ResetTypeRegistriesAndReloadRules
     /// 6686C0 at59A0F0: root, LANG, then committed Session mode668B8E..668BAA.
     /// Preview does not Process the synthetic map
@@ -817,7 +871,33 @@ impl NativeRulesProcessOwner {
         &self,
         mode_rules_override: Option<&IniFile>,
         theater_name: &str,
+        terrain_rules: crate::rules::terrain_rules::TerrainRules,
     ) -> Result<ProcessedRulesLayers, RulesError> {
+        let (layers, skip_root_color_add_and_mode) =
+            self.random_map_reset_layers(mode_rules_override);
+        layers
+            .process_with_fixed_art_and_registry_state_recovering(
+                &self.sources.fixed_art,
+                NativeRulesRegistryState::default(),
+                RulesProcessContext::ScenarioReset {
+                    theater: crate::rules::object_image::ImageTheater::from_name(theater_name),
+                    skip_root_color_add_and_mode,
+                },
+                &self.sources.fixed_eva,
+            )
+            .map(|mut processed| {
+                // The live RMG entry selected this table, including a cache
+                // hit that skipped all land reads and rows retained on a miss.
+                processed.install_terrain_rules(terrain_rules);
+                processed
+            })
+            .map_err(|failure| failure.into_parts().0)
+    }
+
+    fn random_map_reset_layers(
+        &self,
+        mode_rules_override: Option<&IniFile>,
+    ) -> (RulesLayerStack, bool) {
         let langrule = self.read_langrule_for_process();
         let skip_root_color_add_and_mode = matches!(
             langrule,
@@ -834,17 +914,7 @@ impl NativeRulesProcessOwner {
         if !skip_root_color_add_and_mode && let Some(mode) = mode_rules_override {
             layers.push(RulesLayerKind::GameMode, self.personalized_layer(mode));
         }
-        layers
-            .process_with_fixed_art_and_registry_state_recovering(
-                &self.sources.fixed_art,
-                NativeRulesRegistryState::default(),
-                RulesProcessContext::ScenarioReset {
-                    theater: crate::rules::object_image::ImageTheater::from_name(theater_name),
-                    skip_root_color_add_and_mode,
-                },
-                &self.sources.fixed_eva,
-            )
-            .map_err(|failure| failure.into_parts().0)
+        (layers, skip_root_color_add_and_mode)
     }
 
     /// Run ordinary Full_Init's pre-reset E_multi exactly once, before Draw.
@@ -1206,6 +1276,87 @@ mod tests {
     use crate::map::source::test_support::TestDirectory;
     use crate::rules::native_processing::RulesLayerStack;
     use crate::rules::retail_sources::RetailRulesSources;
+
+    #[test]
+    fn rmg_land_reads_obey_cache_and_preserve_untouched_rows() {
+        use crate::rules::terrain_rules::{LandType, test_speed_percent};
+        let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+            IniFile::from_str("[Clear]\nWheel=25%\n"),
+            Some(IniFile::from_str("[Clear]\nWheel=40%\n")),
+            IniFile::empty(),
+            Arc::default(),
+            Arc::default(),
+        )
+        .unwrap();
+        let mode = IniFile::from_str("[Clear]\nWheel=0.5%\n[Tunnel]\nTrack=-0.5%\n");
+        let first = owner.prepare_random_map_terrain_rules(Some(&mode), true);
+        assert_eq!(
+            first.row(LandType::Clear).speed_costs.wheel,
+            Some(test_speed_percent(0.5))
+        );
+
+        // Changing only the mode is not one of InitMap's four cache keys.
+        let changed = IniFile::from_str("[Clear]\nWheel=0%\n[Tunnel]\nTrack=0%\n");
+        let hit = owner.prepare_random_map_terrain_rules(Some(&changed), false);
+        assert_eq!(hit.row(LandType::Clear), first.row(LandType::Clear));
+        assert_eq!(hit.row(LandType::Tunnel), first.row(LandType::Tunnel));
+        let digest = owner.project_random_map_terrain_rules(Some(&changed), true);
+        assert!(
+            digest
+                .row(LandType::Clear)
+                .speed_costs
+                .wheel
+                .unwrap()
+                .is_zero()
+        );
+        assert_eq!(
+            owner
+                .project_random_map_terrain_rules(None, false)
+                .row(LandType::Clear),
+            first.row(LandType::Clear),
+            "read-only agreement must not change the process table"
+        );
+
+        // Accepted .SED bypasses the preview cache: root then LANG replace
+        // Clear; neither reaches Tunnel, whose prior global row survives.
+        let launch = owner.prepare_random_map_terrain_rules(None, true);
+        assert_eq!(
+            launch.row(LandType::Clear).speed_costs.wheel,
+            Some(test_speed_percent(40))
+        );
+        assert_eq!(launch.row(LandType::Tunnel), first.row(LandType::Tunnel));
+        let preview = owner
+            .random_map_preview_projection(None, "TEMPERATE", hit)
+            .unwrap();
+        assert_eq!(
+            preview.terrain_rules().row(LandType::Clear),
+            first.row(LandType::Clear)
+        );
+
+        // A completed scenario owns the same global table through its saved
+        // processed envelope; forwarding a later RMG write must update it too.
+        let loaded = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::RandomMap(None),
+                &IniFile::empty(),
+            )
+            .unwrap();
+        assert_eq!(
+            loaded.rules.terrain_rules.row(LandType::Tunnel),
+            first.row(LandType::Tunnel)
+        );
+        owner.prepare_random_map_terrain_rules(Some(&changed), true);
+        let saved = owner.saved_scenario_rules().unwrap();
+        assert!(
+            saved
+                .terrain_rules()
+                .row(LandType::Clear)
+                .speed_costs
+                .wheel
+                .unwrap()
+                .is_zero()
+        );
+    }
 
     #[test]
     fn retired_voxel_damage_survives_omitted_read_until_type_reset() {

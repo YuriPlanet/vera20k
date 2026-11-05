@@ -476,7 +476,7 @@ pub(super) fn scene_with(input: &Value, rules: RuleSet, ini: &IniFile) -> Scene 
             .cell_mut_for_test(spawn_x, spawn_y)
             .unwrap();
         let prior = cell.speed_costs;
-        cell.speed_costs.wheel = Some(100);
+        cell.speed_costs.wheel = Some(crate::util::native_x87::NativeF32Bits::ONE);
         prior
     };
     let miner = sim

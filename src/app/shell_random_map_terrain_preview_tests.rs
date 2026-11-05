@@ -28,8 +28,14 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
     };
     let mode =
         crate::rules::retail_sources::select_mode_ini(&assets, Some("MPBattleMD.ini")).unwrap();
-    let prepared =
-        prepare_random_map_generation(&mut assets, &options, Some(&owner), mode.as_ref()).unwrap();
+    let prepared = prepare_random_map_generation(
+        &mut assets,
+        &options,
+        Some(&owner),
+        mode.as_ref(),
+        owner.project_random_map_terrain_rules(mode.as_ref(), true),
+    )
+    .unwrap();
     let decision = RandomMapGenerationRetention::default().map_storage_decision(&options);
     let receiver = spawn_random_map_generation_worker(
         options.clone(),
@@ -72,7 +78,7 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
     // Expected source is the same production reset/type/asset reader. The
     // existing independently native-tested4BF650 port owns packed arithmetic.
     let processed = owner
-        .random_map_preview_projection(mode.as_ref(), "TEMPERATE")
+        .random_map_preview_projection(mode.as_ref(), "TEMPERATE", prepared.terrain_rules.clone())
         .unwrap();
     let mut types = crate::rules::ruleset::RuleSet::from_processed_rules(&processed).unwrap();
     types.bind_terrain_assets(

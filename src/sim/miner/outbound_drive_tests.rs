@@ -65,7 +65,10 @@ fn outbound_contract_oracle() -> OutboundContractOracle {
         .expect("merged [Tiberium]")
         .speed_costs;
 
-    assert_eq!(tiberium_speed_costs.track, Some(70));
+    assert_eq!(
+        tiberium_speed_costs.track,
+        Some(crate::rules::terrain_rules::test_speed_percent(70))
+    );
     assert!(overlays.flags(tib01).is_some_and(|flags| flags.tiberium));
     for (type_id, expected_locomotor, teleporter) in [
         ("HARV", LocomotorKind::Drive, false),
@@ -198,7 +201,7 @@ fn install_world(
         let cell = sim.resolved_terrain.as_ref().unwrap().cell(rx, ry).unwrap();
         assert_eq!(
             cell.speed_costs.cost_for_speed_type(SpeedType::Track),
-            Some(70)
+            Some(crate::rules::terrain_rules::test_speed_percent(70))
         );
     }
 }
@@ -210,13 +213,14 @@ fn install_world(
 /// land; their occupant answers for them.
 fn rock_where_grid_blocks(sim: &mut Simulation, grid: &PathGrid) {
     let rock = SpeedCostProfile {
-        foot: Some(0),
-        track: Some(0),
-        wheel: Some(0),
-        float: Some(0),
-        amphibious: Some(0),
-        float_beach: Some(0),
-        hover: Some(0),
+        foot: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        track: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        float: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        amphibious: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        float_beach: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        hover: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
     };
     for ry in 0..GRID_SIZE {
         for rx in 0..GRID_SIZE {

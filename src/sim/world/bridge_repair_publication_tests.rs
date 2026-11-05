@@ -1655,7 +1655,7 @@ fn failed_jumpjet_stop_stock_fatal_receiver_precedes_cache_retirement() {
                     .cell_mut_for_test(x, y)
                     .unwrap()
                     .speed_costs
-                    .hover = Some(0);
+                    .hover = Some(crate::rules::terrain_rules::test_speed_percent(0));
             }
         }
         let e = sim.substrate.entities.get_mut(id).unwrap();

@@ -396,9 +396,18 @@ fn assert_incoming_resources(
         (2, 7, 0)
     );
     assert!(!cell.overlay_blocks);
-    assert_eq!(cell.speed_costs.track, Some(0));
-    assert_eq!(cell.speed_costs.wheel, Some(0));
-    assert_eq!(cell.speed_costs.float, Some(100));
+    assert_eq!(
+        cell.speed_costs.track,
+        Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO)
+    );
+    assert_eq!(
+        cell.speed_costs.wheel,
+        Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO)
+    );
+    assert_eq!(
+        cell.speed_costs.float,
+        Some(crate::util::native_x87::NativeF32Bits::ONE)
+    );
     assert!(sim.path_grid().unwrap().is_walkable(8, 8));
     assert_eq!(sim.overlay_grid().unwrap().cell(8, 8).overlay_id, None);
     assert_eq!(sim.overlay_grid().unwrap().cell(7, 8).overlay_id, None);
