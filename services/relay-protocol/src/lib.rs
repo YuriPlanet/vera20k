@@ -872,19 +872,23 @@ pub struct OrderingCounts {
 /// player, room or endpoint identity.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct MacFailureCounts {
-    /// Datagrams whose tag the relay computed and found wrong (§6.3).
+    /// Datagrams whose tag the relay computed and found wrong (§6.3),
+    /// HELLO and CONFIRM included, plus `unknown_sessions`. Each counts
+    /// toward its source IP's limit.
     pub failures: u64,
-    /// Datagrams dropped without computing HMAC because their source
-    /// address had already failed 64 times in the same second of `now`
-    /// (§6.4 condition 1).
+    /// Of `failures`, datagrams with an unknown session, or session 0 on a
+    /// kind other than HELLO and CONFIRM: no key to verify, dropped and
+    /// charged to their address (§6.4 condition 1).
+    pub unknown_sessions: u64,
+    /// Datagrams dropped without computing HMAC because their source IP
+    /// (any port) had already failed 64 times in the same fixed second of
+    /// `now` (§6.4 condition 1).
     pub address_limited: u64,
     /// Datagrams dropped without computing HMAC because their session had
-    /// already failed 256 times in the same second (§6.4 condition 1).
-    /// Pending: §6.4 sets the 256 per second limit but not what a datagram
-    /// beyond it gets; this count assumes the address limit's treatment.
+    /// already failed 256 times in the same fixed second (§6.4 condition 1).
     pub session_limited: u64,
     /// Warnings logged because one session failed more than 4096 times
-    /// within a minute (§6.4 condition 1).
+    /// within one fixed 60-second window (§6.4 condition 1).
     pub session_alerts: u64,
 }
 
@@ -1520,13 +1524,22 @@ fn encode_server(
 // Milestone C1 of the bandwidth compaction: envelope v3 interface only.
 #[allow(unused_variables)]
 impl ClientSession {
-    /// The session the relay assigned this hop in READY's payload
-    /// (compaction spec §6.2), which every later datagram of the hop
-    /// carries both ways; `None` before that READY. A renewal is a new
-    /// `ClientSession` with its own session (§6.2), so the old and new hops
-    /// of a renewal tell their datagrams apart by it (`envelope::peek`).
+    /// The session the relay assigned this hop in the envelope of the READY
+    /// answering its CONFIRM (compaction spec §6.1, §6.2), which every later
+    /// datagram of the hop carries both ways; `None` before that READY. The
+    /// client claims that READY by its tag under this hop's key, so of a
+    /// renewal's two handshaking hops the one whose key verifies takes it.
+    /// A renewal is a new `ClientSession` with its own session (§6.2), so
+    /// the old and new hops tell their datagrams apart by it
+    /// (`envelope::peek`).
     pub fn session(&self) -> Option<u32> {
         todo!("C2: compaction spec §6.2")
+    }
+
+    /// Relay datagrams this hop dropped for a wrong tag (§6.4: the client
+    /// does not rate-limit, it only counts).
+    pub fn mac_failures(&self) -> u64 {
+        todo!("C2: compaction spec §6.4")
     }
 
     /// Whether this hop's next sequence has reached
@@ -1584,15 +1597,16 @@ impl ClientSession {
 #[allow(unused_variables)]
 impl RelayServer {
     /// Test support only: every hop in the session table (§6.2), ordered by
-    /// session. A hop is in it from its accepted CONFIRM until its ticket
-    /// expires or it leaves.
+    /// session. A hop is in it from its accepted CONFIRM until it leaves or
+    /// its ticket has been expired for `LEAVE_GRACE` seconds; after expiry
+    /// it accepts only Leave.
     pub fn session_table(&self) -> Vec<SessionEntry> {
         todo!("C2: compaction spec §6.2")
     }
 
     /// Test support only: until when a released `session` may not be
-    /// assigned again, unix seconds (at least its release `now` + 600,
-    /// §6.2); `None` when it is held or was never released.
+    /// assigned again, unix seconds: its release `now` + 600 (§6.2);
+    /// `None` when it is held or was never released.
     pub fn session_retired_until(&self, session: u32) -> Option<u64> {
         todo!("C2: compaction spec §6.2")
     }
@@ -1606,7 +1620,8 @@ impl RelayServer {
 
     /// Test support only: the relay's next datagram on `session`'s hop
     /// carries sequence `next` (1..=`u32::MAX`), so tests reach the end of
-    /// its counter (§6.1, §11 case 7). Returns false when no hop holds
+    /// its counter (§6.1, §11 case 7). Past `u32::MAX` the relay stops
+    /// sending on that hop (§6.1). Returns false when no hop holds
     /// `session`.
     pub fn preset_relay_sequence(&mut self, session: u32, next: u32) -> bool {
         todo!("C2: compaction spec §6.1, §11 case 7")
