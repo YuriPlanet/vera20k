@@ -459,6 +459,12 @@ impl CellLightGrid {
             .map(|normal| (self.saved_local_lighting(), normal))
     }
 
+    /// RESIDUAL: `CellClass::Load` clears the cell's Convert (`0x00483A1E`),
+    /// so native's first draw of each cell reruns the full
+    /// `InitLightConvert @ 0x00483E30` from the loaded sources, replacing these
+    /// saved values; a cell not yet drawn keeps them. VERA keeps them for every
+    /// cell. They differ only where a retained refresh (`0x00484680`) left a
+    /// cell apart from a full relight, and only after loading a save.
     pub fn apply_saved_local_lighting(&mut self, saved: &SavedCellLighting) {
         for &(cell, scale16, additive, top) in &saved.cells {
             if let Some(light) = self.cells.get_mut(&cell) {
