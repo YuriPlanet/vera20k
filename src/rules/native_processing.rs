@@ -22,7 +22,7 @@ use crate::rules::insignia_type::InsigniaTypeCatalog;
 use crate::rules::locomotor_type::SpeedType;
 use crate::rules::phobos_radiation::RadiationTypeCatalog;
 use crate::rules::phobos_shields::ShieldTypeCatalog;
-use crate::rules::sound_ini::EvaRegistry;
+use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
 
 use crate::rules::missile_spawn::{MissileFamily, MissileSpawnRules};
 use crate::rules::object_image::{ImageTheater, ObjectImageKind, ObjectImageState};
@@ -285,6 +285,7 @@ impl RulesLayerStack {
             registry_state,
             RulesProcessContext::Ordinary,
             &EvaRegistry::default(),
+            &crate::rules::sound_ini::SoundRegistry::default(),
         )
         .map_err(NativeRulesProcessingFailure::into_error)
     }
@@ -304,6 +305,7 @@ impl RulesLayerStack {
         registry_state: NativeRulesRegistryState,
         context: RulesProcessContext,
         fixed_eva: &EvaRegistry,
+        fixed_sounds: &SoundRegistry,
     ) -> Result<ProcessedRulesLayers, NativeRulesProcessingFailure> {
         self.process_internal(
             fixed_art,
@@ -311,6 +313,7 @@ impl RulesLayerStack {
             context,
             fixed_eva,
             None::<fn(RuleSet)>,
+            fixed_sounds,
         )
         .map(|(processed, _)| processed)
     }
@@ -327,6 +330,7 @@ impl RulesLayerStack {
         context: RulesProcessContext,
         fixed_eva: &EvaRegistry,
         after_map: F,
+        fixed_sounds: &SoundRegistry,
     ) -> Result<(ProcessedRulesLayers, T), NativeRulesProcessingFailure>
     where
         F: FnOnce(RuleSet) -> T,
@@ -337,6 +341,7 @@ impl RulesLayerStack {
             context,
             fixed_eva,
             Some(after_map),
+            fixed_sounds,
         )?;
         Ok((
             processed,
@@ -351,6 +356,7 @@ impl RulesLayerStack {
         context: RulesProcessContext,
         fixed_eva: &EvaRegistry,
         mut after_map: Option<F>,
+        fixed_sounds: &SoundRegistry,
     ) -> Result<(ProcessedRulesLayers, Option<T>), NativeRulesProcessingFailure>
     where
         F: FnOnce(RuleSet) -> T,
@@ -383,9 +389,13 @@ impl RulesLayerStack {
                 // particular, LANG's AudioVisual selectors stay current.
                 processor.rules_color_add.apply_pass(root);
             }
-            if let Err(error) =
-                processor.apply_pass(ini, fixed_art, fixed_eva, kind == RulesLayerKind::RulesMd)
-            {
+            if let Err(error) = processor.apply_pass(
+                ini,
+                fixed_art,
+                fixed_eva,
+                kind == RulesLayerKind::RulesMd,
+                fixed_sounds,
+            ) {
                 let (_, partial_trace, _) = processor.finish();
                 return Err(NativeRulesProcessingFailure {
                     error,
@@ -480,6 +490,7 @@ pub(crate) fn process_native_rules_cold_start(
     fixed_art: &IniFile,
     langrule: Option<&IniFile>,
     fixed_eva: &EvaRegistry,
+    fixed_sounds: &SoundRegistry,
 ) -> Result<NativeTypeConstructionTrace, RulesError> {
     process_native_rules_cold_start_inner(
         registry_state,
@@ -487,6 +498,7 @@ pub(crate) fn process_native_rules_cold_start(
         fixed_art,
         langrule,
         fixed_eva,
+        fixed_sounds,
     )
     .map(|(trace, _phase_event_counts)| trace)
 }
@@ -501,6 +513,7 @@ fn process_native_rules_cold_start_inner(
     fixed_art: &IniFile,
     langrule: Option<&IniFile>,
     fixed_eva: &EvaRegistry,
+    fixed_sounds: &SoundRegistry,
 ) -> Result<(NativeTypeConstructionTrace, [usize; 5]), RulesError> {
     let mut processor = RulesPassProcessor::with_registry_state(registry_state);
     // Load_Game_Rules52D0FF calls Colors66D3A0 on the selected root before
@@ -508,10 +521,10 @@ fn process_native_rules_cold_start_inner(
     // Executed prefix: tools/rules_oracle/cold_colors.{py,json,meta.json}.
     processor.allocate_colors(selected_rules_root);
     processor.rules_color_add.apply_pass(selected_rules_root);
-    processor.allocate_audio_visual_references(selected_rules_root);
+    processor.allocate_audio_visual_references(selected_rules_root, fixed_sounds);
     let after_audio_visual = processor.native_type_construction_events.len();
     if let Some(langrule) = langrule {
-        processor.apply_pass(langrule, fixed_art, fixed_eva, false)?;
+        processor.apply_pass(langrule, fixed_art, fixed_eva, false, fixed_sounds)?;
     }
     processor.allocate_explicit_family(
         selected_rules_root,
@@ -566,10 +579,11 @@ pub(crate) fn process_native_campaign_rules_prepass(
     scenario_named_ini: Option<&IniFile>,
     fixed_art: &IniFile,
     fixed_eva: &EvaRegistry,
+    fixed_sounds: &SoundRegistry,
 ) -> Result<NativeTypeConstructionTrace, NativeRulesProcessingFailure> {
     let mut processor = RulesPassProcessor::with_registry_state(registry_state);
     if let Some(ini) = scenario_named_ini
-        && let Err(error) = processor.apply_pass(ini, fixed_art, fixed_eva, false)
+        && let Err(error) = processor.apply_pass(ini, fixed_art, fixed_eva, false, fixed_sounds)
     {
         let (_, partial_trace, _) = processor.finish();
         return Err(NativeRulesProcessingFailure {
@@ -2328,6 +2342,26 @@ impl ProcessedRulesLayers {
             .rules_fog_rate
     }
 
+    /// ReadAudioVisual669A60/669A99/669FC3 fixed-catalog IDs. These scalar
+    /// Rules fields survive TypeReset6686C0 and Rules Save674730/Load675210.
+    pub(crate) fn bomb_ticking_sound(&self) -> Option<&str> {
+        self.native_registry_state()
+            .rules_bomb_ticking_sound
+            .as_deref()
+    }
+
+    pub(crate) fn bomb_attach_sound(&self) -> Option<&str> {
+        self.native_registry_state()
+            .rules_bomb_attach_sound
+            .as_deref()
+    }
+
+    pub(crate) fn psychic_reveal_activate_sound(&self) -> Option<&str> {
+        self.native_registry_state()
+            .rules_psychic_reveal_activate_sound
+            .as_deref()
+    }
+
     /// Final Difficulty readers after the ordered Process passes. Keeping the
     /// typed rows preserves literal f64 defaults separately from ReadDouble's
     /// widened f32 authored values (ReadDifficulty @ 0x0066D270).
@@ -3492,6 +3526,10 @@ pub(crate) struct NativeRulesRegistryState {
     rules_shroud_rate: NativeF64Bits,
     #[serde(default = "crate::rules::ruleset::default_fog_rate")]
     rules_fog_rate: NativeF64Bits,
+    // Ctor665946/66594C/6659AC=-1; fixed Voc IDs represented by canonical names.
+    rules_bomb_ticking_sound: Option<String>,
+    rules_bomb_attach_sound: Option<String>,
+    rules_psychic_reveal_activate_sound: Option<String>,
     rules_difficulty_rows: [crate::rules::ruleset::DifficultyRules; 3],
     rules_gravity: i32,
     rules_tree_strength: i32,
@@ -3587,6 +3625,9 @@ impl Default for NativeRulesRegistryState {
             rules_shroud_grow: general.shroud_grow,
             rules_shroud_rate: general.shroud_rate,
             rules_fog_rate: general.fog_rate,
+            rules_bomb_ticking_sound: None,
+            rules_bomb_attach_sound: None,
+            rules_psychic_reveal_activate_sound: None,
             rules_difficulty_rows: general.difficulty_rows,
             rules_gravity: general.gravity,
             rules_tree_strength: general.tree_strength,
@@ -4010,6 +4051,9 @@ impl NativeRulesRegistryState {
             rules_shroud_grow: self.rules_shroud_grow,
             rules_shroud_rate: self.rules_shroud_rate,
             rules_fog_rate: self.rules_fog_rate,
+            rules_bomb_ticking_sound: self.rules_bomb_ticking_sound,
+            rules_bomb_attach_sound: self.rules_bomb_attach_sound,
+            rules_psychic_reveal_activate_sound: self.rules_psychic_reveal_activate_sound,
             rules_difficulty_rows: self.rules_difficulty_rows,
             rules_gravity: self.rules_gravity,
             rules_tree_strength: self.rules_tree_strength,
@@ -5128,6 +5172,10 @@ struct RulesPassProcessor {
     rules_shroud_grow: bool,
     rules_shroud_rate: NativeF64Bits,
     rules_fog_rate: NativeF64Bits,
+    // Ctor665946/66594C/6659AC=-1; fixed Voc IDs represented by canonical names.
+    rules_bomb_ticking_sound: Option<String>,
+    rules_bomb_attach_sound: Option<String>,
+    rules_psychic_reveal_activate_sound: Option<String>,
     rules_difficulty_rows: [crate::rules::ruleset::DifficultyRules; 3],
     rules_gravity: i32,
     rules_tree_strength: i32,
@@ -5209,6 +5257,9 @@ impl RulesPassProcessor {
             rules_shroud_grow: registry_state.rules_shroud_grow,
             rules_shroud_rate: registry_state.rules_shroud_rate,
             rules_fog_rate: registry_state.rules_fog_rate,
+            rules_bomb_ticking_sound: registry_state.rules_bomb_ticking_sound,
+            rules_bomb_attach_sound: registry_state.rules_bomb_attach_sound,
+            rules_psychic_reveal_activate_sound: registry_state.rules_psychic_reveal_activate_sound,
             rules_difficulty_rows: registry_state.rules_difficulty_rows,
             rules_gravity: registry_state.rules_gravity,
             rules_tree_strength: registry_state.rules_tree_strength,
@@ -5267,6 +5318,7 @@ impl RulesPassProcessor {
         fixed_art: &IniFile,
         fixed_eva: &EvaRegistry,
         primary_rules: bool,
+        fixed_sounds: &SoundRegistry,
     ) -> Result<(), RulesError> {
         #[cfg(feature = "ares")]
         self.ares_global_controls.read_pass(pass);
@@ -5370,7 +5422,7 @@ impl RulesPassProcessor {
         #[cfg(feature = "phobos")]
         self.allocate_attach_effect_types(pass);
         // Elevation and Wall contain no Type factories.
-        self.allocate_audio_visual_references(pass);
+        self.allocate_audio_visual_references(pass, fixed_sounds);
         self.process_special_weapons(pass);
         self.process_tiberiums(pass)?;
         // AdvancedCommandBar contains no Type factory.
@@ -8358,13 +8410,31 @@ impl RulesPassProcessor {
         self.phobos_attach_effect_types = Some(catalog);
     }
 
-    fn allocate_audio_visual_references(&mut self, pass: &IniFile) {
+    fn allocate_audio_visual_references(&mut self, pass: &IniFile, fixed_sounds: &SoundRegistry) {
         let Some(section) = pass.section("AudioVisual") else {
             return;
         };
         // Original 66920D..669258 reads these first, including the cold
         // startup's same AudioVisual call before any complete Process.
         self.rules_detail = self.rules_detail.read_pass(section);
+        // ReadAudioVisual669A60..669AD8 /669FC3..669FF0 reads these fixed
+        // Voc IDs with the current ID as default. Missing/unknown retains it;
+        // even a registered "none" is a real cue. Ctor665946/66594C/6659AC=-1.
+        self.rules_bomb_ticking_sound = fixed_sounds.read_rules_reference(
+            section,
+            "BombTickingSound",
+            self.rules_bomb_ticking_sound.take(),
+        );
+        self.rules_bomb_attach_sound = fixed_sounds.read_rules_reference(
+            section,
+            "BombAttachSound",
+            self.rules_bomb_attach_sound.take(),
+        );
+        self.rules_psychic_reveal_activate_sound = fixed_sounds.read_rules_reference(
+            section,
+            "PsychicRevealActivateSound",
+            self.rules_psychic_reveal_activate_sound.take(),
+        );
         // gamemd.exe ReadAudioVisual66A68E/66A693: current byte default.
         self.rules_shroud_grow = section.read_bool("ShroudGrow", self.rules_shroud_grow);
         // AudioVisual66B385..66B39E: ReadRange474620, current +14BC default.
@@ -8571,6 +8641,9 @@ impl RulesPassProcessor {
                     rules_shroud_grow: self.rules_shroud_grow,
                     rules_shroud_rate: self.rules_shroud_rate,
                     rules_fog_rate: self.rules_fog_rate,
+                    rules_bomb_ticking_sound: self.rules_bomb_ticking_sound,
+                    rules_bomb_attach_sound: self.rules_bomb_attach_sound,
+                    rules_psychic_reveal_activate_sound: self.rules_psychic_reveal_activate_sound,
                     rules_difficulty_rows: self.rules_difficulty_rows,
                     rules_gravity: self.rules_gravity,
                     rules_tree_strength: self.rules_tree_strength,

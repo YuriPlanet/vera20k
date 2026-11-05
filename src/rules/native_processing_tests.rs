@@ -132,6 +132,7 @@ fn cold_root_colors_exist_without_langrule_or_rules_process() {
         &IniFile::empty(),
         None,
         &EvaRegistry::default(),
+        &crate::rules::sound_ini::SoundRegistry::default(),
     )
     .unwrap();
     let colors = &trace.registry_state().colors;
@@ -159,6 +160,7 @@ fn langrule_country_resolves_color_from_the_earlier_cold_root() {
         &IniFile::empty(),
         Some(&langrule),
         &EvaRegistry::default(),
+        &crate::rules::sound_ini::SoundRegistry::default(),
     )
     .unwrap();
     let country = &trace.registry_state().families[&RulesTypeFamily::Country][0];
@@ -1988,6 +1990,7 @@ fn retail_cold_start_and_noncampaign_prepass_match_verified_native_oracles() {
         &fixed_art,
         None,
         &crate::rules::sound_ini::EvaRegistry::default(),
+        &crate::rules::sound_ini::SoundRegistry::default(),
     )
     .expect("stock cold startup processes");
 
@@ -2124,6 +2127,7 @@ fn native_startup_prepass_repeat_and_reset_keep_each_phase_on_one_registry_owner
         &fixed_art,
         None,
         &crate::rules::sound_ini::EvaRegistry::default(),
+        &crate::rules::sound_ini::SoundRegistry::default(),
     )
     .expect("synthetic startup processes");
     assert_eq!(startup.registry_state().rules_tree_strength, 25);
@@ -2168,6 +2172,7 @@ fn native_startup_prepass_repeat_and_reset_keep_each_phase_on_one_registry_owner
         &fixed_art,
         None,
         &crate::rules::sound_ini::EvaRegistry::default(),
+        &crate::rules::sound_ini::SoundRegistry::default(),
     )
     .expect("direct startup repeat processes retained state");
     assert_eq!(repeat_boundaries, [0, 0, 1, 1, 1]);

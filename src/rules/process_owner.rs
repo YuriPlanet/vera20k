@@ -350,6 +350,7 @@ impl NativeRulesProcessOwner {
             &fixed_art,
             startup_langrule.as_ref(),
             &fixed_eva,
+            &fixed_sounds,
         )?;
         Ok(Self {
             sources: NativeRulesSourceSnapshot {
@@ -804,6 +805,7 @@ impl NativeRulesProcessOwner {
                 NativeRulesRegistryState::default(),
                 RulesProcessContext::Ordinary,
                 &self.sources.fixed_eva,
+                &self.sources.fixed_sounds,
             )
             .map_err(|failure| failure.into_parts().0)
     }
@@ -843,6 +845,7 @@ impl NativeRulesProcessOwner {
                     skip_root_color_add_and_mode,
                 },
                 &self.sources.fixed_eva,
+                &self.sources.fixed_sounds,
             )
             .map_err(|failure| failure.into_parts().0)
     }
@@ -1031,6 +1034,7 @@ impl NativeRulesProcessOwner {
                     named.as_ref(),
                     &self.sources.fixed_art,
                     &self.sources.fixed_eva,
+                    &self.sources.fixed_sounds,
                 ) {
                     Ok(trace) => trace,
                     Err(failure) => {
@@ -1077,6 +1081,7 @@ impl NativeRulesProcessOwner {
                     },
                     &self.sources.fixed_eva,
                     after_map,
+                    &self.sources.fixed_sounds,
                 )
                 .map(|(processed, result)| (processed, Some(result))),
             (None, None) => layers
@@ -1090,6 +1095,7 @@ impl NativeRulesProcessOwner {
                         skip_root_color_add_and_mode,
                     },
                     &self.sources.fixed_eva,
+                    &self.sources.fixed_sounds,
                 )
                 .map(|processed| (processed, None)),
             _ => unreachable!("TMCJ4F Rules and its post-map callback are admitted together"),
@@ -1206,6 +1212,88 @@ mod tests {
     use crate::map::source::test_support::TestDirectory;
     use crate::rules::native_processing::RulesLayerStack;
     use crate::rules::retail_sources::RetailRulesSources;
+
+    #[test]
+    fn global_sound_bindings_survive_invalid_layers_reset_and_save() {
+        let root = IniFile::from_str(
+            "[AudioVisual]\nBombTickingSound=Unknown\nBombAttachSound=Unknown\n\
+             PsychicRevealActivateSound=Unknown\n",
+        );
+        let sounds = Arc::new(SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=Tick\n1=Attach\n2=Reveal\n3=none\n",
+        )));
+        let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+            root.clone(),
+            None,
+            IniFile::empty(),
+            Arc::clone(&sounds),
+            Arc::default(),
+        )
+        .unwrap();
+        let early = IniFile::from_str(
+            "[AudioVisual]\nBombTickingSound=tIcK\nBombAttachSound=Attach\n\
+             PsychicRevealActivateSound=Reveal\n",
+        );
+        let cues = |rules: &RuleSet| {
+            [
+                rules.general.bomb_ticking_sound.clone(),
+                rules.general.bomb_attach_sound.clone(),
+                rules.general.psychic_reveal_activate_sound.clone(),
+            ]
+        };
+        let expected = [
+            Some("Tick".into()),
+            Some("Attach".into()),
+            Some("Reveal".into()),
+        ];
+        // Campaign's named INI precedes TypeReset; the root and map then
+        // name unknown cues. All three must keep the pre-reset fixed IDs.
+        let loaded = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(Some(&early)), &root)
+            .unwrap();
+        assert_eq!(cues(&loaded.rules), expected);
+        let bytes =
+            crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+        let restored = crate::util::save_codec::deserialize(&bytes).unwrap();
+        owner.install_saved_scenario_rules(restored);
+        let restored_rules = owner
+            .project_saved_scenario_rules(owner.saved_scenario_rules().unwrap())
+            .unwrap();
+        assert_eq!(cues(&restored_rules), expected);
+
+        let later = IniFile::from_str("[AudioVisual]\nBombTickingSound=\nBombAttachSound=none\n");
+        let loaded = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &later)
+            .unwrap();
+        assert_eq!(
+            cues(&loaded.rules),
+            [
+                Some("Tick".into()),
+                Some("none".into()),
+                Some("Reveal".into())
+            ]
+        );
+        let mut fresh = NativeRulesProcessOwner::from_cold_start_sources(
+            root,
+            None,
+            IniFile::empty(),
+            sounds,
+            Arc::default(),
+        )
+        .unwrap();
+        let fresh = fresh
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &later)
+            .unwrap();
+        assert_eq!(cues(&fresh.rules), [None, Some("none".into()), None]);
+        assert_eq!(
+            loaded.rules.source_ini_hash(),
+            fresh.rules.source_ini_hash()
+        );
+        assert_ne!(
+            loaded.rules.simulation_config_hash(),
+            fresh.rules.simulation_config_hash()
+        );
+    }
 
     #[test]
     fn retired_voxel_damage_survives_omitted_read_until_type_reset() {

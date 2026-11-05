@@ -6377,7 +6377,12 @@ impl Simulation {
         }
         // ObjectClass::UnInit's first statement (`0x005F65F3`) defuses a
         // carried bomb silently: sold, crushed, erased.
-        Self::bomb_defuse(&mut self.substrate, &mut self.bombs, stable_id);
+        Self::bomb_defuse(
+            &mut self.substrate,
+            &mut self.bombs,
+            &mut self.sound_events,
+            stable_id,
+        );
         self.notify_pointer_expired(stable_id, context);
 
         match kind {
@@ -6819,7 +6824,12 @@ impl Simulation {
             entity.lifecycle.object_alive = false;
         }
         // The ObjectClass destructor's defensive Defuse (`0x005F3BA6`).
-        Self::bomb_defuse(&mut self.substrate, &mut self.bombs, stable_id);
+        Self::bomb_defuse(
+            &mut self.substrate,
+            &mut self.bombs,
+            &mut self.sound_events,
+            stable_id,
+        );
         self.team_script_vm.object_deleted(stable_id);
         Self::release_house_base_tracking(&self.substrate, &mut self.houses, stable_id);
         // Selected original Foot destructor4D3632..4D366E clears only its

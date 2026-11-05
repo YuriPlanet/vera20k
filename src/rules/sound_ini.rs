@@ -441,8 +441,13 @@ impl SoundRegistry {
     /// Voc FindIndex7514D0. Missing, empty and unknown names retain the
     /// previous signed ID (constructor -1); later rules passes do not erase
     /// an earlier valid selection. Names here represent that resolved ID.
-    pub(crate) fn read_rules_reference(&self, section: &IniSection, key: &str) -> Option<String> {
-        section.read_string_with(key, 0x80, None, |current, name| {
+    pub(crate) fn read_rules_reference(
+        &self,
+        section: &IniSection,
+        key: &str,
+        current: Option<String>,
+    ) -> Option<String> {
+        section.read_string_with(key, 0x80, current, |current, name| {
             self.get(name).map(|entry| entry.id.clone()).or(current)
         })
     }

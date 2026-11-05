@@ -758,6 +758,7 @@ fn after_rules_class_references(context: RulesProcessContext) -> RuleSet {
             trace.into_registry_state_discarding_events(),
             context,
             &crate::rules::sound_ini::EvaRegistry::default(),
+            &crate::rules::sound_ini::SoundRegistry::default(),
         )
         .unwrap();
     RuleSet::from_processed_rules(&processed).unwrap()
@@ -1019,6 +1020,7 @@ fn retail_published_references_are_pinned() {
                             skip_root_color_add_and_mode: false,
                         },
                         &crate::rules::sound_ini::EvaRegistry::default(),
+                        &crate::rules::sound_ini::SoundRegistry::default(),
                     )
                     .unwrap();
                 assert_eq!(publish(&reset), published, "{mode:?} after a reset");

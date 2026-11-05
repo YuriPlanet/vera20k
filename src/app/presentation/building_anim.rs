@@ -503,9 +503,6 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
         .sim_runtime
         .as_ref()
         .map(|rt| &rt.simulation);
-    let ticking_sound = state
-        .rules()
-        .and_then(|rules| rules.general.bomb_ticking_sound.clone());
     let (Some(sfx), Some(assets), Some(catalog)) = (
         &mut state.audio.sfx_player,
         state.process_assets.manager(),
@@ -532,20 +529,25 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
 
     // `BombListClass::UpdateAll @ 0x00438BF0`'s ticking pass
     // (0x00438C6C..0x00438CFE): a carrier out of limbo starts
-    // `BombTickingSound=` at its Location for every player (`VocClass::PlayAt`
-    // with the bomb's own handle, 0x00438CCA) and re-drives it after that
-    // (0x00438CF8); in limbo, spent or defused, the handle stops. Here the
-    // start is taken for any carrier with no live handle; the owner loop below
-    // re-drives and stops it through `bomb_ticking_coord`.
-    // `RulesClass::ReadAudioVisual` keeps only `VocClass::FindByName`'s index:
-    // an unregistered name is -1, which the ticking pass skips (0x00438C7F).
-    let ticking_sound = ticking_sound.filter(|sound_id| registry.get(sound_id).is_some());
-    if let (Some(sim), Some(sound_id)) = (sim, ticking_sound.as_deref()) {
+    // the cue retained at attach (0x00438EFD) at its Location for every player
+    // (`VocClass::PlayAt` with the bomb's own handle, 0x00438CCA), then re-drives it
+    // (0x00438CF8). The ordered events hard-stop it in limbo and detach it on
+    // defuse/detonation. Here a carrier without a bound handle starts its cue;
+    // the owner loop below re-drives it through `bomb_ticking_coord`.
+    // `BombClass::Load @ 0x00438B40` retains that cue. The ticking pass reads
+    // it at 0x00438C7C and skips -1 at 0x00438C7F.
+    if let Some(sim) = sim {
         for &carrier in sim.bomb_carriers() {
             let owner = crate::sim::bomb::ticking_sound_owner(carrier);
             if sfx.loop_handle_sound_id(owner).is_some() {
                 continue;
             }
+            let Some(sound_id) = sim
+                .bomb_ticking_sound(carrier)
+                .filter(|sound_id| registry.get(sound_id).is_some())
+            else {
+                continue;
+            };
             let Some(world) = sim.bomb_ticking_coord(carrier) else {
                 continue;
             };

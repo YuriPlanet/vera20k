@@ -1379,7 +1379,7 @@ pub(crate) fn techno_extras_for_parent(
         };
         if bomb_visible
             && let (Some(bomb), Some(rules), Some(shape)) =
-                (entity.bomb, rules, overlay.bomb_clock())
+                (entity.bomb.as_ref(), rules, overlay.bomb_clock())
             && let Some(frame) = bomb.clock_frame(
                 sim.session().binary_frame() as i32,
                 rules.combat_damage.ivan_timed_delay,
