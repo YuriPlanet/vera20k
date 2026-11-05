@@ -499,6 +499,38 @@ fn production_install_refuses_fixed_resolution_loss_but_keeps_scenario_omissions
 }
 
 #[test]
+fn fixed_trigger_naming_an_absent_team_type_installs_without_a_team() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\n",
+    ))
+    .expect("minimal rules");
+    let comparison = zero_ai_trigger_comparison();
+    let fixed = IniFile::from_str(&format!(
+        "[AITriggerTypes]\nA=Dangling,NO_SUCH_TT,<all>,2,4,<none>,{comparison},40,10,40,1,0,1,0,<none>,1,1,1\n"
+    ));
+    let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+    let mut sim = Simulation::new();
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+
+    let diagnostics = sim
+        .install_team_ai_registry(&registry, &rules)
+        .expect("a fixed trigger's absent TeamType does not refuse the install");
+
+    assert_eq!(
+        diagnostics,
+        vec![TeamAiInstallDiagnostic::MissingAiTriggerTeamType {
+            trigger_id: "A".to_string(),
+            team_type_id: "NO_SUCH_TT".to_string(),
+            source: TeamAiDefinitionSource::FixedAimd,
+        }]
+    );
+    let vm = &sim.team_script_vm;
+    let trigger = vm.ai_trigger(vm.ai_trigger_order()[0]).unwrap();
+    assert_eq!(trigger.primary_team_type, None);
+}
+
+#[test]
 fn production_install_refuses_fixed_resolution_loss_masked_by_same_identity_map_overlays() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\n",
