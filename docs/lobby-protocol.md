@@ -626,6 +626,10 @@ OS from `VERA20k`, such as `Ranked game won: your OS is now 19.57 (+2.90).`
 `{name,os,season,rank,wins,losses,disconnects,games}`, `rank` being `null` when the player
 is unranked in the running season, and `games` their 20 newest rated games, each
 `{ended,sides,size,won,os,change}`. A name without an account answers 404.
+`GET /v1/leaderboard` answers the leaderboard vera20k.org shows, renewed once a minute:
+`{season,updated_at,total,players}`, `season` being `null` when no season runs, `total` the
+players ranked in it and `players` the best 1,000 of them by OS, then wins, each
+`{name,os,rank,wins,losses}`.
 
 While a season runs, the host's options for a game room whose players are all on teams,
 or in a mode without alliances, give an odds line, which the room hears from the `VERA20k`
