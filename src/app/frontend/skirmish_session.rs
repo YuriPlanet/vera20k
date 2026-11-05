@@ -1228,6 +1228,10 @@ impl MultiplayerShellRuntime {
         self.cooperative_registry.campaigns.len() as u32
     }
 
+    pub(crate) fn cooperative_registry(&self) -> &CooperativeRegistry {
+        &self.cooperative_registry
+    }
+
     /// A campaign's `CampaignName` string-table key, for `+0x4C`'s rows.
     pub(crate) fn cooperative_campaign_name(&self, campaign: usize) -> Option<&str> {
         self.cooperative_registry
