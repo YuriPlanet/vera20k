@@ -329,9 +329,9 @@ pub(super) fn push_download_progress_bar(
     }
 }
 
-/// Use Map's two-button box. gamemd's eject-AI question draws gamemd's art;
-/// VERA's map-library download boxes draw Red Alert 2's, like its other
-/// online-service boxes.
+/// Use Map's two-button box. gamemd's eject-AI question and VERA's random-map
+/// failure draw gamemd's art; VERA's map-library download boxes draw Red
+/// Alert 2's, like its other online-service boxes.
 pub(super) fn push_choose_map_prompt_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
@@ -365,7 +365,8 @@ pub(super) fn push_choose_map_prompt_instances(
         },
     ];
     let background = match prompt.kind {
-        crate::ui::skirmish_shell::ChooseMapPromptKind::EjectAi => None,
+        crate::ui::skirmish_shell::ChooseMapPromptKind::EjectAi
+        | crate::ui::skirmish_shell::ChooseMapPromptKind::RandomMapFailed => None,
         _ => atlas.ra2_dialog_background,
     }
     .or_else(|| atlas.mode_two_dialog_background(None));

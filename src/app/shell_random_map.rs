@@ -1,7 +1,8 @@
 use super::*;
 
 /// The random-map seed file the `.SED` launch branch recognises. Written into
-/// the RA2 directory so `map_load` finds it where the original puts it.
+/// VERA's folder for it (`map::source::random_map_dir`), where `map_load`
+/// reads it; gamemd keeps it in the game folder.
 pub(crate) const RANDMAP_SED_FILE: &str = "RandMap.Sed";
 /// Description the setup dialog stamps onto a randomized configuration; it also
 /// becomes the sentinel row's displayed name.
@@ -709,13 +710,13 @@ pub(super) fn begin_random_map_generation_owners(
 }
 
 /// Serialize the completed dialog preview at the native common-teardown
-/// boundary. Passing no directory models startup without a configured retail
-/// install; teardown itself still proceeds.
+/// boundary into `dir` (`App::random_map_dir`). Passing no directory models
+/// startup without a configured retail install; teardown itself still proceeds.
 fn write_random_map_preview_to_dir(
-    ra2_dir: Option<&std::path::Path>,
+    dir: Option<&std::path::Path>,
     preview: &crate::map::rmg::preview::PreviewImage,
 ) {
-    let Some(ra2_dir) = ra2_dir else {
+    let Some(dir) = dir else {
         return;
     };
     let (Ok(width), Ok(height)) = (u16::try_from(preview.width), u16::try_from(preview.height))
@@ -739,8 +740,10 @@ fn write_random_map_preview_to_dir(
         .collect();
     match crate::assets::pcx_file::encode_direct_rgb(width, height, &rgb) {
         Ok(encoded) => {
-            let path = ra2_dir.join(RANDMAP_PREVIEW_FILE);
-            if let Err(err) = crate::util::file_system::write(&path, encoded) {
+            let path = dir.join(RANDMAP_PREVIEW_FILE);
+            if let Err(err) = crate::util::file_system::create_dir_all(dir)
+                .and_then(|()| crate::util::file_system::write(&path, encoded))
+            {
                 log::warn!("random map: could not write {}: {err}", path.display());
             }
         }
@@ -759,13 +762,13 @@ fn write_random_map_preview_to_dir(
 fn dismiss_random_map_setup_owners(
     modal: &mut Option<crate::ui::skirmish_shell::RandomMapSetupModalState>,
     retention: &mut RandomMapGenerationRetention,
-    ra2_dir: Option<&std::path::Path>,
+    dir: Option<&std::path::Path>,
 ) {
     if let Some(preview) = modal
         .as_ref()
         .and_then(|modal| modal.generated_preview.as_ref())
     {
-        write_random_map_preview_to_dir(ra2_dir, preview);
+        write_random_map_preview_to_dir(dir, preview);
     }
     *modal = None;
     retention.destroy_map_storage();
@@ -775,12 +778,12 @@ pub(super) fn cancel_random_map_setup_owners(
     runtime: &mut crate::app::frontend::skirmish_session::MultiplayerShellRuntime,
     modal: &mut Option<crate::ui::skirmish_shell::RandomMapSetupModalState>,
     retention: &mut RandomMapGenerationRetention,
-    ra2_dir: Option<&std::path::Path>,
+    dir: Option<&std::path::Path>,
 ) -> Option<crate::ui::skirmish_shell::ChooseMapSelection> {
     let modal_ref = modal.as_ref()?;
     runtime.remember_random_map_options(&modal_ref.options);
     let previous_selection = modal_ref.cancel();
-    dismiss_random_map_setup_owners(modal, retention, ra2_dir);
+    dismiss_random_map_setup_owners(modal, retention, dir);
     retention.cancel_setup();
     previous_selection
 }
@@ -791,7 +794,7 @@ pub(super) fn accept_random_map_setup_owners(
     runtime: &mut crate::app::frontend::skirmish_session::MultiplayerShellRuntime,
     modal: &mut Option<crate::ui::skirmish_shell::RandomMapSetupModalState>,
     retention: &mut RandomMapGenerationRetention,
-    ra2_dir: Option<&std::path::Path>,
+    dir: Option<&std::path::Path>,
 ) -> Option<crate::map::rmg::RmgOptions> {
     let crate::ui::skirmish_shell::AcceptOutcome::Commit(options) = modal.as_ref()?.accept() else {
         return None;
@@ -809,7 +812,7 @@ pub(super) fn accept_random_map_setup_owners(
         ));
     }
     retention.accept_setup(RANDMAP_SED_FILE);
-    dismiss_random_map_setup_owners(modal, retention, ra2_dir);
+    dismiss_random_map_setup_owners(modal, retention, dir);
     Some(*options)
 }
 
@@ -845,6 +848,16 @@ fn draws_preview(point: crate::map::rmg::build::GenerationPoint) -> bool {
 }
 
 impl App {
+    /// The folder of `RandMap.Sed`, `RandMap.img` and the saved seeds
+    /// (`map::source::random_map_dir`), never the game folder.
+    pub(super) fn random_map_dir(state: &AppState) -> Option<std::path::PathBuf> {
+        state
+            .platform
+            .game_config
+            .as_ref()
+            .map(|config| crate::map::source::random_map_dir(&config.paths.ra2_dir).to_path_buf())
+    }
+
     /// Kick off generation on a worker and return immediately.
     ///
     /// Everything that needs the asset manager is done here, up front; only
@@ -1101,18 +1114,14 @@ impl App {
     /// `RandMap.img`, changing the chooser's thumbnail to a map the player
     /// walked away from.
     pub(super) fn cancel_random_map_setup(state: &mut AppState) {
-        let ra2_dir = state
-            .platform
-            .game_config
-            .as_ref()
-            .map(|config| config.paths.ra2_dir.clone());
+        let dir = Self::random_map_dir(state);
         state.frontend.random_map_generation = None;
         let frontend = &mut state.frontend;
         let _ = cancel_random_map_setup_owners(
             &mut frontend.multiplayer_shell_runtime,
             &mut frontend.skirmish_shell_state.random_map_setup_modal,
             &mut frontend.random_map_retention,
-            ra2_dir.as_deref(),
+            dir.as_deref(),
         );
         Self::show_choose_map_after_random_map(state);
     }
@@ -1135,18 +1144,14 @@ impl App {
     /// Commit the dialog's options and close it. Shared by the immediate accept
     /// and the one deferred behind a generation.
     pub(super) fn accept_random_map_setup(state: &mut AppState) {
-        let ra2_dir = state
-            .platform
-            .game_config
-            .as_ref()
-            .map(|config| config.paths.ra2_dir.clone());
+        let dir = Self::random_map_dir(state);
         let options = {
             let frontend = &mut state.frontend;
             accept_random_map_setup_owners(
                 &mut frontend.multiplayer_shell_runtime,
                 &mut frontend.skirmish_shell_state.random_map_setup_modal,
                 &mut frontend.random_map_retention,
-                ra2_dir.as_deref(),
+                dir.as_deref(),
             )
         };
         let Some(options) = options else {
@@ -1165,6 +1170,14 @@ impl App {
                 // commit failed and no random-map selection was installed.
                 state.frontend.random_map_retention.cancel_setup();
                 log::error!("random map: could not write {RANDMAP_SED_FILE}: {err}");
+                if let Some(chooser) = state
+                    .frontend
+                    .skirmish_shell_state
+                    .choose_map_modal
+                    .as_mut()
+                {
+                    chooser.show_random_map_failure();
+                }
             }
         }
         Self::show_choose_map_after_random_map(state);
@@ -1232,13 +1245,10 @@ impl App {
         state: &mut AppState,
         options: &crate::map::rmg::RmgOptions,
     ) -> anyhow::Result<()> {
-        let ra2_dir = state
-            .platform
-            .game_config
-            .as_ref()
-            .map(|config| config.paths.ra2_dir.clone())
-            .ok_or_else(|| anyhow::anyhow!("no game config; cannot locate the RA2 directory"))?;
-        crate::util::file_system::write(ra2_dir.join(RANDMAP_SED_FILE), options.to_sed_bytes())?;
+        let dir = Self::random_map_dir(state)
+            .ok_or_else(|| anyhow::anyhow!("no game config; cannot locate VERA's Maps folder"))?;
+        crate::util::file_system::create_dir_all(&dir)?;
+        crate::util::file_system::write(dir.join(RANDMAP_SED_FILE), options.to_sed_bytes())?;
 
         let description_text = options.description.display_text();
         let display = if options.description.is_empty() {
@@ -1963,11 +1973,12 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .expect("clock after epoch")
             .as_nanos();
-        let base = std::env::temp_dir().join(format!(
+        let profile = std::env::temp_dir().join(format!(
             "vera20k-rmg-teardown-{}-{unique}",
             std::process::id()
         ));
-        std::fs::create_dir_all(&base).expect("create teardown fixture directory");
+        // VERA's Maps folder, which a new profile does not have yet.
+        let base = profile.join("Maps");
         let img_path = base.join(RANDMAP_PREVIEW_FILE);
         let sed_path = base.join(RANDMAP_SED_FILE);
         let options = crate::map::rmg::RmgOptions {
@@ -2054,6 +2065,7 @@ mod tests {
 
         std::fs::remove_file(&img_path).expect("remove preview fixture");
         std::fs::remove_dir(&base).expect("remove teardown fixture directory");
+        std::fs::remove_dir(&profile).expect("remove teardown profile directory");
     }
 
     #[test]

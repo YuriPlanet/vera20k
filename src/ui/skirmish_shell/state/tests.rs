@@ -611,6 +611,27 @@ fn a_downloaded_map_waits_for_ok_before_use_map_goes_on() {
 }
 
 #[test]
+fn a_random_map_that_could_not_be_saved_says_so_over_the_hidden_chooser() {
+    let layout = compute_choose_map_modal_layout(800, 600);
+    let mut chooser = ChooseMapModalState::open(
+        crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+        1,
+        None,
+        &[],
+        &[],
+        &layout,
+    );
+    chooser.hide(); // The random-map run hid it.
+    chooser.show_random_map_failure();
+    // VERA: OK never goes on with Use Map, as no random map is selected.
+    let prompt = chooser.message_box.expect("the failure box");
+    assert_eq!(prompt.answer(true), ChooseMapPromptAnswer::Close);
+    assert!(chooser.is_hidden());
+    assert!(chooser.close_prompt());
+    assert!(!chooser.is_hidden());
+}
+
+#[test]
 fn hovered_shell_control_blocks_parent_targets_when_modal_owns_input() {
     let layout = compute_layout(800, 600);
     let mut shell = controlled_country_shell();

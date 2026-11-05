@@ -536,7 +536,8 @@ impl Transfers {
                             .as_ref()
                             .ok_or_else(|| anyhow!("no asset directory"))?;
                         let source = crate::map::source::transfer_file_source(
-                            &config.paths.ra2_dir.join("RandMap.img"),
+                            &crate::map::source::random_map_dir(&config.paths.ra2_dir)
+                                .join("RandMap.img"),
                             resource,
                         )?;
                         ensure!(

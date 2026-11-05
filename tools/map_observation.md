@@ -8,11 +8,12 @@ native comparator or a gameplay/pixel parity certification.
 ## Accepted random maps
 
 A profile selecting the exact normal `RandMap.Sed` record can observe a generated
-match. Place the desired `.SED` in a real isolated retail directory and point the
-capture's `config.toml` there. The capture runs the existing setup generator and
-acceptance before normal launch regeneration. Setup writes `RandMap.Sed` and
-`RandMap.img` in that directory; retain original retail files separately. The
-`.SED` seed controls MapGen, while the profile seed controls match startup.
+match. Place the desired seed as `RandMap.Sed` in the `Maps` folder of the
+capture's `[paths] settings_dir`, a private profile, never the player's. The
+capture runs the existing setup generator and acceptance before normal launch
+regeneration. Setup rewrites `RandMap.Sed` and writes `RandMap.img` in that
+folder; the game folder is not written. The `.SED` seed controls MapGen, while
+the profile seed controls match startup.
 
 The generated `map_source` receipt retains `seed_name` and nested `seed_source`
 (`path`, `payload_len`, `source_sha256`) from the exact seed buffer consumed by

@@ -260,7 +260,8 @@ pub(super) fn is_random_map_sentinel_entry(entry: &MapMenuEntry) -> bool {
 pub(super) fn decode_randmap_preview_from_runtime_file()
 -> Option<crate::map::preview::DecodedPreview> {
     let config = crate::util::config::GameConfig::load().ok()?;
-    let preview_path = config.paths.ra2_dir.join(RANDMAP_PREVIEW_FILE_NAME);
+    let preview_path =
+        crate::map::source::random_map_dir(&config.paths.ra2_dir).join(RANDMAP_PREVIEW_FILE_NAME);
     let bytes = match crate::util::file_system::read(&preview_path) {
         Ok(bytes) => bytes,
         Err(err) => {

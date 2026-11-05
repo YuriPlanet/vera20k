@@ -1657,8 +1657,8 @@ pub(super) fn push_choose_map_prompt_text(
     ));
 }
 
-/// The body and first button of Use Map's box. The download texts are
-/// VERA's own; the retail string table has none.
+/// The body and first button of Use Map's box. The download and random-map
+/// failure texts are VERA's own; the retail string table has none.
 fn choose_map_prompt_labels(
     state: &AppState,
     prompt: &crate::ui::skirmish_shell::ChooseMapPrompt,
@@ -1697,12 +1697,15 @@ fn choose_map_prompt_labels(
         (ChooseMapPromptKind::SaveFailed, Some((name, ..))) => {
             format!("{name} was downloaded but could not be saved in VERA20k's Maps folder.")
         }
+        (ChooseMapPromptKind::RandomMapFailed, _) => {
+            "The random map could not be saved in VERA20k's Maps folder.".to_owned()
+        }
         _ => localized_label(state, "GUI:EjectAIPlayers", "GUI:EjectAIPlayers"),
     };
     let ok = match prompt.kind {
-        ChooseMapPromptKind::EjectAi | ChooseMapPromptKind::Downloaded => {
-            localized_label(state, "GUI:Ok", "OK")
-        }
+        ChooseMapPromptKind::EjectAi
+        | ChooseMapPromptKind::Downloaded
+        | ChooseMapPromptKind::RandomMapFailed => localized_label(state, "GUI:Ok", "OK"),
         _ => "Download".to_owned(),
     };
     (body, ok)

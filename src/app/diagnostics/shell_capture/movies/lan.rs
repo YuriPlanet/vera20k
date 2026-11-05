@@ -1147,16 +1147,15 @@ impl LanCapture {
             ..Default::default()
         };
         let sed = options.to_sed_bytes();
-        fs::write(
-            host_dir.join(crate::map::skirmish_scenarios::RANDMAP_SED),
-            &sed,
-        )?;
+        // A path, as a bare name would be read from VERA's random-map folder.
+        let sed_path = host_dir.join(crate::map::skirmish_scenarios::RANDMAP_SED);
+        fs::write(&sed_path, &sed)?;
         let (manager, rules, _) = state.process_assets.manager_and_rules_with_tile_cache();
         let initial = crate::app::loading::init::load_map_initial_with_assets(
             host_dir,
             manager.context("controlled host assets")?,
             rules,
-            Some(crate::map::skirmish_scenarios::RANDMAP_SED),
+            Some(sed_path.to_str().context("controlled host seed path")?),
             &mut Silent,
         )?;
         let map = initial.map_data();
@@ -1217,7 +1216,8 @@ impl LanCapture {
         Ok(())
     }
     /// A random map's two GO receives land in the install directory,
-    /// overwriting the guest's own files (`0x005DDA31..0x005DDA6F`).
+    /// overwriting the guest's own files (`0x005DDA31..0x005DDA6F`). VERA's
+    /// land in its random-map folder, inside the marked settings root.
     fn deliver_random_map_file(&self, state: &AppState, file: &str) -> Result<()> {
         let random_map = self
             .random_map_host
@@ -1228,7 +1228,10 @@ impl LanCapture {
         } else {
             &random_map.sed
         };
-        fs::write(Self::isolated_root(state)?.join(file), bytes)?;
+        let settings = Self::isolated_settings_root(state)?;
+        let dir = crate::map::source::random_map_dir(&settings);
+        fs::create_dir_all(dir)?;
+        fs::write(dir.join(file), bytes)?;
         Ok(())
     }
     /// RandMap.Sed never verifies, so the map change sends one 0x1B; a
@@ -3911,7 +3914,10 @@ impl LanCapture {
                     .context("retail root")?
                     .paths
                     .ra2_dir;
-                let sed = std::fs::read(root.join(crate::map::skirmish_scenarios::RANDMAP_SED))?;
+                let sed = std::fs::read(
+                    crate::map::source::random_map_dir(root)
+                        .join(crate::map::skirmish_scenarios::RANDMAP_SED),
+                )?;
                 let mut options = crate::map::rmg::RmgOptions::default();
                 options.apply_sed(&crate::rules::ini_parser::IniFile::from_bytes(&sed)?);
                 ensure!(

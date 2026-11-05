@@ -63,6 +63,9 @@ pub enum ChooseMapPromptKind {
     /// It is saved in VERA's maps folder. The box waits: OK goes on with the
     /// selection, and Cancel keeps the chooser with the map selected.
     Downloaded,
+    /// VERA: the random-map dialog's seed could not be saved, so no random
+    /// map is selected. Either button keeps the chooser.
+    RandomMapFailed,
 }
 
 /// What answering Use Map's box does.
@@ -96,7 +99,7 @@ impl ChooseMapPrompt {
     pub fn answer(&self, ok: bool) -> ChooseMapPromptAnswer {
         use ChooseMapPromptKind as Kind;
         match (self.kind, ok) {
-            (_, false) => ChooseMapPromptAnswer::Close,
+            (_, false) | (Kind::RandomMapFailed, true) => ChooseMapPromptAnswer::Close,
             (Kind::EjectAi | Kind::Downloaded, true) => ChooseMapPromptAnswer::UseMap,
             (Kind::Downloading, true) => ChooseMapPromptAnswer::Wait,
             (Kind::Download | Kind::DownloadFailed | Kind::SaveFailed, true) => {
@@ -787,6 +790,19 @@ impl ChooseMapModalState {
         }
         self.show();
         true
+    }
+
+    /// VERA: the random-map dialog could not save its seed. The box says so
+    /// over the chooser the run hid, which has no random map selected.
+    pub fn show_random_map_failure(&mut self) {
+        self.message_box = Some(ChooseMapPrompt {
+            selection: ChooseMapSelection {
+                mode_id: self.selected_mode_id,
+                record_index: None,
+            },
+            pressed: None,
+            kind: ChooseMapPromptKind::RandomMapFailed,
+        });
     }
 
     pub fn create_random_map(
