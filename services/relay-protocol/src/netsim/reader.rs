@@ -211,9 +211,7 @@ impl StreamReader {
 /// How often spec §6.3 row 2 sends a gap UPLINK on this stream (§6.7 item
 /// 1): first when a gap appears, at once for reordering or after `turn_ms`
 /// for a STATUS ahead; then once more if it is still open `max(16, 4
-/// rttvar)` ms after that first send. The spec counts the second from "缺口
-/// 出现后"; this counts it from the first trigger, which is the same for
-/// reordering and the later of the two for a STATUS gap.
+/// rttvar)` ms after that first send (counted from the first, §6.7).
 #[derive(Debug, Default)]
 pub struct GapTriggers {
     since: Option<u64>,

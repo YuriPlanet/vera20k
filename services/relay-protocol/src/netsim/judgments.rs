@@ -1742,6 +1742,9 @@ const BASELINE_30P_LOSS_1PCT_300APM_P99_MS: [f64; 5] =
 const BASELINE_2P_JITTER_IDLE_HITCHES: [u64; 5] = [29, 32, 35, 31, 35];
 const BASELINE_2P_JITTER_300APM_HITCHES: [u64; 5] = [26, 38, 34, 30, 34];
 const SEEDS: [u64; 5] = [1, 2, 3, 4, 5];
+/// §13.2: latency comparisons with a baseline allow 5 ms besides the
+/// statistical bound, less than one 16 ms service.
+const LATENCY_TOLERANCE_MS: f64 = 5.0;
 
 /// Hitches of the new protocol against the baseline over the same seeds
 /// and clients, so both counts cover the same client-minutes. Taking each
@@ -1922,10 +1925,11 @@ fn jt3_one_percent_loss_in_a_full_room_is_no_worse_than_the_baseline() {
         BASELINE_30P_LOSS_1PCT_300APM_HITCHES.iter().sum(),
     );
     // The p99 per seed: the new mean is no worse when within two standard
-    // errors of the difference of the two means (Welch, five seeds each).
+    // errors of the difference of the two means (Welch, five seeds each)
+    // plus the 5 ms absolute tolerance of §13.2 for latencies.
     let (new_mean, new_var) = mean_variance(&p99s);
     let (old_mean, old_var) = mean_variance(&BASELINE_30P_LOSS_1PCT_300APM_P99_MS);
-    let bound = old_mean + 2.0 * ((new_var + old_var) / 5.0).sqrt();
+    let bound = old_mean + 2.0 * ((new_var + old_var) / 5.0).sqrt() + LATENCY_TOLERANCE_MS;
     assert!(
         new_mean <= bound,
         "p99 per seed {p99s:?}, mean {new_mean:.1}, baseline {old_mean:.1}, bound {bound:.1}"
