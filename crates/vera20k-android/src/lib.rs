@@ -67,7 +67,10 @@ fn android_main(app: AndroidApp) {
     );
 
     match vera20k::entry::run_with_loop(launch_mode, false, event_loop) {
-        Ok(()) => {}
+        Ok(0) => {}
+        // Android has no `-SPAWN` status to propagate; a non-zero one still
+        // belongs in the log before the activity finishes.
+        Ok(status) => log::warn!("VERA20k exited with status {status}"),
         Err(error) => log::error!("VERA20k stopped: {error:#}"),
     }
     log::logger().flush();

@@ -17,6 +17,10 @@ val veraVersionCode = 207
 android {
     namespace = "org.vera20k"
     compileSdk = 36
+    // Pinned to the installed version: AGP otherwise downloads the build-tools
+    // release it prefers, which fails on a machine without network access to
+    // dl.google.com in the middle of a build.
+    buildToolsVersion = "36.1.0"
     // NDK r28 aligns LOAD segments for Android 15's 16 KB pages by default;
     // r27 and older need -Wl,-z,max-page-size=16384 instead (see P9).
     ndkVersion = "28.2.13676358"

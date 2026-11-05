@@ -28,7 +28,11 @@ on, and a Gradle wrapper (see the gap list).
 ```powershell
 # 1. Native library for one ABI. Shipping strips symbols: an unstripped Rust
 #    .so is commonly 100 MB+.
-cargo ndk -t arm64-v8a -o android\app\src\main\jniLibs build `
+#    --platform 26 is required, not cosmetic: cpal's AAudio backend links
+#    -laaudio, which only exists in the NDK sysroot from API 26, and
+#    cargo-ndk otherwise links at its default level (21) and fails with
+#    "ld.lld: error: unable to find library -laaudio".
+cargo ndk -t arm64-v8a --platform 26 -o android\app\src\main\jniLibs build `
   --profile shipping -p vera20k-android --no-default-features
 
 # 2. Package. Point android\local.properties at the SDK first:
@@ -61,19 +65,34 @@ for releases.
    `gradle/wrapper/gradle-wrapper.{jar,properties}` are not committed; generate
    them once with a local Gradle (`gradle wrapper --gradle-version 8.13`) and
    commit. Until then step 2 above fails.
-2. **A verified toolchain matrix.** AGP 8.11.1 / Gradle 8.13 / compileSdk 36 /
-   NDK 28.2 are the intended versions, not tested ones. Confirm against the
-   installed Android Studio, then pin them in `android/build.gradle.kts`.
-3. **`cargo check --target aarch64-linux-android -p vera20k`** and a real
-   `cargo ndk` build. Both need `ANDROID_NDK_HOME`; the cross-check compiles
-   `android-activity`'s C glue, so it needs the NDK even without linking.
-4. **The working directory contract.** `entry::init_logging` opens `logs/`
+2. **A shipping build.** The debug `cargo ndk` build links (verified on
+   aarch64 against NDK 28.2 with `--platform 26`), but carries 257 MB of
+   unstripped symbols. Confirm `--profile shipping` plus `-C strip=symbols`
+   brings it to a shippable size.
+3. **The working directory contract.** `entry::init_logging` opens `logs/`
    beside the current directory and `util::config` resolves the settings folder
    from `HOME`, which Android does not set. `android_main` only calls
    `set_current_dir(internal_data_path())`; `default_settings_dir` still needs an
    Android branch (P2), and `sim::rng` reads the same paths.
-5. **A first window.** `App::initialize` has never run on Android: expect the
+4. **A first window.** `App::initialize` has never run on Android: expect the
    surface, `VIEW_FORMATS` and the format-selection code to need work (P4).
+
+## Verified on this machine
+
+- `cargo check -p vera20k -p vera20k-core -p vera20k-android` (host): passes.
+- `cargo ndk -t arm64-v8a --platform 26 ... build`: links `libvera20k_android.so`,
+  ELF64 AArch64, `android_main` exported, all LOAD segments 0x4000-aligned, so
+  Android 15's 16 KB page requirement is already met by NDK r28.
+- Toolchain used: cmdline-tools 23.0, platforms/android-36, build-tools 36.1.0,
+  NDK 28.2.13676358, AGP 8.11.1. Gradle itself has not run yet (no wrapper).
+
+## Windows local-build gotchas
+
+- Run Cargo from a Developer PowerShell. Without `INCLUDE`/`LIB`, `ring`'s C
+  build dies with `D8050: cannot execute 'c1.dll'`.
+- Point `TMP`/`TEMP` at a directory inside the checkout. The Android Clang
+  driver otherwise fails `unable to make temporary file: Permission denied`
+  while `ring` builds its assembly in parallel.
 
 ## Not startable yet
 
