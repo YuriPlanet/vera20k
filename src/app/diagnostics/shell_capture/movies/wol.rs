@@ -31,8 +31,16 @@ mod quick_match;
 pub enum WolTarget {
     /// `0x10F` settled after a controlled server list, empty fields.
     LoginSteady,
-    /// Normal online username-only page, with no authentication submitted.
+    /// The online login page with a typed guest name, with no
+    /// authentication submitted.
     ModernUsername,
+    /// Create Account over it, filled in; nothing is sent.
+    ModernCreateAccount,
+    /// Create Account's mailed-code popup, its request answered in place.
+    ModernAccountCode,
+    /// Forgot Password's code and new password popup, its code request
+    /// answered in place.
+    ModernForgotPassword,
     /// A typed nickname and an eight-character password: Login enabled.
     LoginTyped,
     /// Back on `0x10F`: a fresh `0x10E` settled.
@@ -332,7 +340,7 @@ pub enum WolTarget {
 impl WolTarget {
     /// Choose the diagnostic backend before the native welcome prefill runs.
     pub(in crate::app::diagnostics::shell_capture) fn welcome_provider(self) -> WolProvider {
-        if self == Self::ModernUsername {
+        if self.online_login() {
             WolProvider::Online
         } else if self.test_service() {
             WolProvider::TestService
@@ -341,12 +349,27 @@ impl WolTarget {
         }
     }
 
+    /// The online login page and its account popups, on the online provider
+    /// with nothing sent.
+    pub(in crate::app::diagnostics::shell_capture) fn online_login(self) -> bool {
+        matches!(
+            self,
+            Self::ModernUsername
+                | Self::ModernCreateAccount
+                | Self::ModernAccountCode
+                | Self::ModernForgotPassword
+        )
+    }
+
     /// The login is accepted and the custom lobby runs.
     fn lobby(self) -> bool {
         !matches!(
             self,
             Self::LoginSteady
                 | Self::ModernUsername
+                | Self::ModernCreateAccount
+                | Self::ModernAccountCode
+                | Self::ModernForgotPassword
                 | Self::LoginTyped
                 | Self::LoginBack
                 | Self::ServerListWait
@@ -618,6 +641,12 @@ impl WolTarget {
 pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-0x10f-steady", WolTarget::LoginSteady),
     ("wol-modern-username", WolTarget::ModernUsername),
+    ("wol-modern-create-account", WolTarget::ModernCreateAccount),
+    ("wol-modern-account-code", WolTarget::ModernAccountCode),
+    (
+        "wol-modern-forgot-password",
+        WolTarget::ModernForgotPassword,
+    ),
     ("wol-0x10f-typed", WolTarget::LoginTyped),
     ("wol-0x10f-back", WolTarget::LoginBack),
     ("wol-0xc4-server-list-wait", WolTarget::ServerListWait),
@@ -956,7 +985,7 @@ impl WolCapture {
                         password: PASSWORD.into(),
                     }];
                 }
-                if self.target != WolTarget::ModernUsername {
+                if !self.target.online_login() {
                     write_wolinfo(state, self.target)?;
                 }
                 App::leave_shell_dialog(
@@ -968,7 +997,7 @@ impl WolCapture {
                 self.event(frame, "0xE2 Internet");
                 // The normal online visit has no welcome: Internet signs in.
                 self.phase = match self.target {
-                    WolTarget::ModernUsername => WolPhase::Login,
+                    target if target.online_login() => WolPhase::Login,
                     WolTarget::ModernLobby
                     | WolTarget::ModernCreate
                     | WolTarget::ModernRoomOptions
@@ -1153,6 +1182,7 @@ impl WolCapture {
                                         nickname: NICKNAME.into(),
                                         password: PASSWORD.into(),
                                         changed: false,
+                                        remember: false,
                                     }],
                             "AutoLogin did not connect the stored account to the persona's server: {requests:?}"
                         );
@@ -1223,7 +1253,7 @@ impl WolCapture {
             {
                 let layout = crate::app::shell_wol::login_layout(state);
                 match self.target {
-                    WolTarget::ModernUsername => {
+                    target if target.online_login() => {
                         login_click(state, layout.nickname_face);
                         App::handle_wol_key(
                             state,
@@ -1251,9 +1281,12 @@ impl WolCapture {
                                 && login.password.units.is_empty()
                                 && login.login_enabled
                                 && !login.remember_enabled,
-                            "modern username form retained password controls"
+                            "the online login page did not take a guest name"
                         );
                         self.event(frame, "Username typed; Login enabled without a password");
+                        if target != WolTarget::ModernUsername {
+                            self.account_popup(state, frame, target, &layout)?;
+                        }
                         MoviesCapture::restore_neutral_pointer(state);
                         self.settle();
                         return Ok(());
@@ -1335,6 +1368,7 @@ impl WolCapture {
                             nickname: NICKNAME.into(),
                             password: PASSWORD.into(),
                             changed: true,
+                            remember: false,
                         }],
                     "Login did not connect to the selected record"
                 );
@@ -4548,13 +4582,63 @@ impl WolCapture {
             && state.frontend.shell_first_paint_slide.is_none())
     }
 
+    /// Create Account or Forgot Password over the online login page. The
+    /// lobby's answers come in place, so nothing reaches the live lobby.
+    fn account_popup(
+        &mut self,
+        state: &mut AppState,
+        frame: u32,
+        target: WolTarget,
+        layout: &crate::ui::wol_login::WolLoginLayout,
+    ) -> Result<()> {
+        use crate::ui::wol_account::{AccountFormAction, FORM_OK, FormKind, WolAccountForm};
+        const PASSWORD: &str = "s3cret-pw";
+        if target == WolTarget::ModernForgotPassword {
+            let mut form = WolAccountForm::reset("Player");
+            ensure!(
+                form.answered(Ok(())).is_none(),
+                "the code request signed in"
+            );
+            login_mut(state)?.account = Some(form);
+            account_type(state, &["123456", PASSWORD, PASSWORD]);
+            self.event(frame, "Forgot Password: code and new password typed");
+        } else {
+            login_click(state, button(layout, crate::ui::wol_login::CREATE_ACCOUNT)?);
+            account_type(state, &["player@example.com", PASSWORD, PASSWORD]);
+            self.event(frame, "Create Account filled in");
+            if target == WolTarget::ModernAccountCode {
+                let form = login_mut(state)?
+                    .account
+                    .as_mut()
+                    .context("Create Account")?;
+                ensure!(
+                    matches!(form.activate(FORM_OK), Some(AccountFormAction::Send(_)))
+                        && form.answered(Ok(())).is_none()
+                        && form.kind == FormKind::Verify,
+                    "Create Account did not move on to its code"
+                );
+                account_type(state, &["123456"]);
+                self.event(frame, "the mailed code typed");
+            }
+        }
+        let form = login_mut(state)?
+            .account
+            .as_ref()
+            .context("account popup")?;
+        ensure!(
+            form.ok_enabled(),
+            "the filled account popup kept OK disabled"
+        );
+        Ok(())
+    }
+
     pub(super) fn receipt(&self, state: &AppState) -> Value {
         let visit = state.frontend.wol.as_ref();
         json!({
             "target": format!("{:?}", self.target),
             "route": self.route,
-            "service_boundary": if self.target == WolTarget::ModernUsername {
-                "ordinary online username page; visual capture only, no authenticated backend claim"
+            "service_boundary": if self.target.online_login() {
+                "ordinary online login page; visual capture only, no authenticated backend claim"
             } else { "controlled decoded WOL results; no WOLAPI, transport or backend claim" },
             "shell_route": format!("{:?}", state.frontend.shell_route),
             "mode": visit.and_then(|visit| visit.mode()).map(|mode| mode.native()),
@@ -4828,6 +4912,23 @@ fn welcome_click(state: &mut AppState, rect: RectPx) {
     App::handle_wol_mouse_down(state);
     App::handle_wol_mouse_up(state);
     MoviesCapture::restore_neutral_pointer(state);
+}
+
+fn login_mut(state: &mut AppState) -> Result<&mut crate::ui::wol_login::WolLoginState> {
+    match state.frontend.wol.as_mut().map(|visit| &mut visit.page) {
+        Some(crate::app::shell_wol::WolPage::Login(login)) => Ok(login),
+        _ => bail!("0x10F is not open"),
+    }
+}
+
+/// Type into the account popup's fields from the focused one, Tab between.
+fn account_type(state: &mut AppState, values: &[&str]) {
+    for (index, value) in values.iter().enumerate() {
+        if index > 0 {
+            App::handle_wol_key(state, Some(winit::keyboard::KeyCode::Tab), true, None);
+        }
+        App::handle_wol_key(state, None, true, Some(value));
+    }
 }
 
 fn login_click(state: &mut AppState, rect: RectPx) {

@@ -66,6 +66,7 @@ class MapObservationTests(unittest.TestCase):
         self.sidebar_frames = []
         self.tooltip_frames = {}
         self.tactical_extent = None
+        self.internal_extent = None
         self.change = lambda manifest: None
         self.result = ChildResult(42, 0, False, b'child output\n', b'', ())
         environment = patch.dict('os.environ', {}, clear=True)
@@ -106,7 +107,8 @@ class MapObservationTests(unittest.TestCase):
             'lifecycle': {'window_hidden': True, 'window_focused': False,
                           'focus_violations': 0, 'input_violations': 0},
             'render': {'ready': True, 'sidebar_view_present': True,
-                       'surface_extent': [width, height], 'internal_extent': [width, height],
+                       'surface_extent': [width, height],
+                       'internal_extent': self.internal_extent or [width, height],
                        'unit_atlas': deepcopy(self.unit_atlas),
                        'presentation_clock': self.clock(ticks),
                        'camera': {'requested_cell': self.profile.get('camera_cell'),
@@ -296,6 +298,27 @@ class MapObservationTests(unittest.TestCase):
         for value in (None, 0, 1, 'true', [], {}):
             with self.subTest(value=value), self.assertRaises(ValidationError):
                 observation._profile_extensions(dict(self.profile, observe_crates=value))
+
+    def test_presentation_admits_a_zoomed_frame_and_rejects_unknown_values(self):
+        self.profile.update(schema_version=observation.PROFILE_V2,
+                            presentation={'zoom': 0, 'sidebar': 150, 'hd_radar': True,
+                                          'smooth_sidebar': True})
+        self.profile_path.write_text(json.dumps(self.profile))
+        self.internal_extent = [1, 1]
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        for bad in ({'zoom': 125, 'sidebar': 100}, {'zoom': 50, 'sidebar': 100},
+                    {'zoom': 100, 'sidebar': 120}, {'zoom': 100},
+                    {'zoom': 100, 'sidebar': 100, 'hd_radar': 1},
+                    {'zoom': 100, 'sidebar': 100, 'smooth_sidebar': 'yes'}):
+            with self.subTest(bad=bad), self.assertRaises(ValidationError):
+                observation._profile_extensions(dict(self.profile, presentation=bad))
+        with self.assertRaises(ValidationError):
+            observation._profile_extensions(dict(self.profile, cursor_position=[1, 1]))
+        del self.profile['presentation']
+        self.profile_path.write_text(json.dumps(self.profile))
+        shutil.rmtree(self.output)
+        self.assertEqual(self.run_capture()['status'], 'INVALID')
 
     def test_crate_slots_reject_empty_duplicate_and_malformed_rows(self):
         slot = {'slot': 3, 'cell': [10, 12], 'start_frame': 50,

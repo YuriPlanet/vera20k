@@ -2055,7 +2055,9 @@ mod wol_quick_match;
 pub(crate) use lan_lobby::render_lan_lobby;
 pub(crate) use wol_buddy::paint_wol_buddy_children;
 pub(crate) use wol_lobby::{WolLobbyPaint, paint_wol_lobby_children, paint_wol_lobby_popup};
-pub(crate) use wol_login::{paint_wol_login_children, wol_button_label_rgb};
+pub(crate) use wol_login::{
+    paint_wol_account_form, paint_wol_login_children, wol_button_label_rgb,
+};
 pub(crate) use wol_my_info::paint_wol_my_info_children;
 pub(crate) use wol_options::{paint_shell_sound_children, paint_wol_options_children};
 pub(crate) use wol_page::{

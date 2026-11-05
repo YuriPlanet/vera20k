@@ -24,7 +24,8 @@ pub(crate) struct RendererState {
     /// Encoded-byte RGB565 presentation boundary for stock shell/loading surfaces.
     pub(crate) shell_surface_presenter: crate::render::shell_surface_present::ShellSurfacePresenter,
     /// The match zoom pass, present only while the Options zoom gives a factor
-    /// above 1 for this window (`App::sync_zoom_pass`). Captures never zoom.
+    /// above 1 for this window (`App::sync_zoom_pass`). Captures zoom only
+    /// when their profile asks (`CapturePresentation`).
     pub(crate) upscale_pass: Option<crate::render::upscale_pass::UpscalePass>,
     /// Wheel zoom resolves the native world before adding screen-fixed UI.
     pub(crate) world_zoom_pass: Option<crate::render::upscale_pass::WorldZoomPass>,

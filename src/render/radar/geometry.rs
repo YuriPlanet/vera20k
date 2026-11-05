@@ -258,6 +258,21 @@ impl NativeRadarSurfaceGeometry {
         self.zoom
     }
 
+    /// VERA's HD radar: the same raw frame generated at `scale` times the
+    /// size, so HD pixel (x, y) is drawn inside native pixel
+    /// (x / scale, y / scale). Its pixel and cell mappings work in HD pixels;
+    /// its aperture placement is the native one times `scale`, never
+    /// [`Self::aperture_offset`], which assumes the native size.
+    pub fn subdivided(self, scale: u32) -> Self {
+        let scale = scale.max(1) as i32;
+        Self {
+            zoom: self.zoom * scale as f32,
+            generated_width: self.generated_width.wrapping_mul(scale),
+            generated_height: self.generated_height.wrapping_mul(scale),
+            ..self
+        }
+    }
+
     /// `RadarClass::GetObjectAtRadarPixel @ 0x00656750` fallback inverse.
     ///
     /// The binary uses the same x87 divide/half/+0.5/ftol sequence as
