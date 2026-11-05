@@ -18,10 +18,7 @@ use crate::ui::shell::geom::{
 use crate::ui::shell::layout::status_line_rect;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::skirmish_shell::{COMBO_FACE_H, SavedSeedDescriptionEdit};
-use crate::ui::wol_account::{
-    AccountRequest, AccountSignIn, NAME_LIMIT as ONLINE_NAME_LIMIT,
-    PASSWORD_LIMIT as ONLINE_PASSWORD_LIMIT, WolAccountForm, valid_name, valid_password,
-};
+use crate::ui::wol_account::{AccountSignIn, WolAccountForm, valid_name};
 
 pub(crate) const DIALOG: DialogId = DialogId(0x010F);
 pub(crate) const LOGIN: u16 = 0x0539;
@@ -43,9 +40,6 @@ pub(crate) const NICKNAME_LIMIT: usize = 9;
 pub(crate) const PASSWORD_LIMIT: usize = 8;
 /// Login is enabled only for a password of exactly this length.
 const PASSWORD_LENGTH: usize = 8;
-/// What the password edit holds for a remembered account: masked, it shows
-/// that this computer signs in without the password.
-const REMEMBERED_PLACEHOLDER: [u16; 8] = [b'*' as u16; 8];
 /// The combo lists stored slots 1..31 (`lParam < 0x20`); every lookup scans
 /// slots 1..32 (`< 0x21`).
 const LISTED_SLOTS: std::ops::RangeInclusive<u32> = 1..=31;
@@ -90,10 +84,11 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
 };
 
 /// The online sign-in opens the visit: Login (an account) and Play as Guest,
-/// then Create Account, Forgot Password and Delete Account
-/// (docs/lobby-protocol.md "Accounts"), and Back leaves WOL with the welcome
-/// Main Menu's help. The fourth and fifth take My Info's stacked places
-/// (`wol_my_info`).
+/// then Create Account, Forgot Password and Delete Account, each opening its
+/// popup (docs/lobby-protocol.md "Accounts"), and Back leaves WOL with the
+/// welcome Main Menu's help. The fourth and fifth take My Info's stacked
+/// places (`wol_my_info`). The page's left side shows the info pane in
+/// place of gamemd's fields.
 const ONLINE_PAGE: MenuPageSpec = MenuPageSpec {
     stacked: &[
         MenuPageButtonSpec {
@@ -189,9 +184,9 @@ impl std::fmt::Debug for WolAccountGlobals {
     }
 }
 
-/// Modern online admission takes an account's username and password, or a
-/// guest's username alone (docs/lobby-protocol.md "Accounts"); native
-/// diagnostics retain WOL credentials.
+/// The online page signs in through its popups: an account's username and
+/// password, or a guest's username alone (docs/lobby-protocol.md
+/// "Accounts"); native diagnostics retain gamemd's WOL credential page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LoginPolicy {
     Legacy,
@@ -203,29 +198,6 @@ impl LoginPolicy {
         match self {
             Self::Legacy => &PAGE,
             Self::Online => &ONLINE_PAGE,
-        }
-    }
-
-    fn nickname_limit(self) -> usize {
-        match self {
-            Self::Legacy => NICKNAME_LIMIT,
-            Self::Online => ONLINE_NAME_LIMIT,
-        }
-    }
-
-    fn password_limit(self) -> usize {
-        match self {
-            Self::Legacy => PASSWORD_LIMIT,
-            Self::Online => ONLINE_PASSWORD_LIMIT,
-        }
-    }
-
-    /// Login's rule. Online it signs in to an account, so it takes the
-    /// account's password; a guest has Play as Guest.
-    fn accepts(self, nickname: &str, password: &str) -> bool {
-        match self {
-            Self::Legacy => login_ok(nickname, password),
-            Self::Online => valid_name(nickname) && valid_password(password),
         }
     }
 }
@@ -280,10 +252,8 @@ pub(crate) enum WolLoginAction {
     /// The dialog closes with `0x539` (Login) or 2 (Back): the teardown slide
     /// runs and `0x00787010` continues with the result.
     Close(u16),
-    /// VERA: Forgot Password opened its popup; the lobby mails the code.
-    Account(AccountRequest),
-    /// VERA online: Remember password was unticked for the remembered
-    /// account, which this computer forgets at once.
+    /// VERA online: Login's Remember password was unticked for the
+    /// remembered account, which this computer forgets at once.
     ForgetSignIn,
     /// Forget Account found the nickname in the combo: API+0x94 clears the
     /// slot, after AutoLogin/LastValid were cleared when they matched.
@@ -321,10 +291,10 @@ pub(crate) struct WolLoginState {
     pub(crate) buttons: ShellButtonInteraction<u16>,
     /// The nickname combo's open list.
     pub(crate) popup: ComboPopupInteraction<()>,
-    /// VERA online: the password edit holds [`REMEMBERED_PLACEHOLDER`] for
-    /// the account this computer remembers, and Login signs in without it.
-    pub(crate) remembered: bool,
-    /// VERA online: the open account popup.
+    /// VERA online: the account this computer signs in to without its
+    /// password.
+    pub(crate) remembered: Option<String>,
+    /// VERA online: the open popup.
     pub(crate) account: Option<WolAccountForm>,
     focus_started_at: Instant,
 }
@@ -342,50 +312,6 @@ impl WolLoginState {
     /// `0x497` (`0x0079A8E2..`), then `0x00787010`'s focus choice
     /// (`0x00787429..0x00787459`). Writes the globals as the proc does.
     pub(crate) fn open(globals: &mut WolAccountGlobals, credentials: &[WolCredential]) -> Self {
-        Self::open_with_policy(globals, credentials, LoginPolicy::Legacy)
-    }
-
-    /// `remembered` is the account this computer signs in to without its
-    /// password; it fills an empty username. Otherwise `last`, the name of
-    /// the last successful sign-in (`[VERA] OnlineName=`), fills it, as the
-    /// WOL persona file's LastValid fills an empty nickname at WOL entry
-    /// (`0x0077B322..0x0077B399`). VERA: online visits never read that
-    /// file, so VERA.INI keeps the name instead.
-    pub(crate) fn open_online(
-        globals: &mut WolAccountGlobals,
-        remembered: Option<&str>,
-        last: Option<&str>,
-    ) -> Self {
-        globals.remember = false;
-        if globals.nickname.is_empty()
-            && let Some(name) = remembered.or(last.filter(|name| valid_name(name)))
-        {
-            globals.nickname = name.to_owned();
-        }
-        let mut state = Self::open_with_policy(globals, &[], LoginPolicy::Online);
-        if remembered.is_some_and(|name| name.eq_ignore_ascii_case(&globals.nickname)) {
-            state
-                .password
-                .set_units_limited(REMEMBERED_PLACEHOLDER, ONLINE_PASSWORD_LIMIT);
-            state.remembered = true;
-            state.remember_checked = true;
-            state.remember_enabled = true;
-            state.login_enabled = valid_name(&globals.nickname);
-            globals.remember = true;
-        }
-        state
-    }
-
-    fn open_with_policy(
-        globals: &mut WolAccountGlobals,
-        credentials: &[WolCredential],
-        policy: LoginPolicy,
-    ) -> Self {
-        let credentials = if policy == LoginPolicy::Legacy {
-            credentials
-        } else {
-            &[]
-        };
         let rows = credentials
             .iter()
             .filter(|credential| {
@@ -411,36 +337,30 @@ impl WolLoginState {
             }
         };
         let mut nickname = edit(false);
-        nickname.set_units_limited(globals.nickname.encode_utf16(), policy.nickname_limit());
-        if policy == LoginPolicy::Online {
-            globals.nickname = nickname.narrow_text(policy.nickname_limit() + 1);
-        }
+        nickname.set_units_limited(globals.nickname.encode_utf16(), NICKNAME_LIMIT);
         let mut password = edit(true);
-        if policy == LoginPolicy::Legacy && !globals.nickname.is_empty() {
+        if !globals.nickname.is_empty() {
             password.set_units_limited(globals.password.encode_utf16(), PASSWORD_LIMIT);
             globals.changed = false;
         }
         let mut state = Self {
-            policy,
+            policy: LoginPolicy::Legacy,
             nickname,
             password,
             rows,
             remember_checked: found,
             remember_enabled: false,
-            forget_enabled: policy == LoginPolicy::Legacy && !globals.nickname.is_empty(),
-            login_enabled: policy.accepts(&globals.nickname, &globals.password),
+            forget_enabled: !globals.nickname.is_empty(),
+            login_enabled: login_ok(&globals.nickname, &globals.password),
             focused_control: NICKNAME,
             buttons: ShellButtonInteraction::default(),
             popup: ComboPopupInteraction::default(),
-            remembered: false,
+            remembered: None,
             account: None,
             focus_started_at: Instant::now(),
         };
         state.focus(
-            if policy == LoginPolicy::Legacy
-                && !globals.nickname.is_empty()
-                && globals.password.is_empty()
-            {
+            if !globals.nickname.is_empty() && globals.password.is_empty() {
                 PASSWORD
             } else {
                 NICKNAME
@@ -449,20 +369,55 @@ impl WolLoginState {
         state
     }
 
+    /// VERA online: the buttons open their popups, which start from the last
+    /// username. `remembered` is the account this computer signs in to
+    /// without its password; it fills an empty username, and Login's popup
+    /// starts from it. Otherwise `last`, the name of the last successful
+    /// sign-in (`[VERA] OnlineName=`), fills it, as the WOL persona file's
+    /// LastValid fills an empty nickname at WOL entry
+    /// (`0x0077B322..0x0077B399`). VERA: online visits never read that
+    /// file, so VERA.INI keeps the name instead.
+    pub(crate) fn open_online(
+        globals: &mut WolAccountGlobals,
+        remembered: Option<&str>,
+        last: Option<&str>,
+    ) -> Self {
+        globals.password.clear();
+        globals.remember = false;
+        if globals.nickname.is_empty()
+            && let Some(name) = remembered.or(last.filter(|name| valid_name(name)))
+        {
+            globals.nickname = name.to_owned();
+        }
+        Self {
+            policy: LoginPolicy::Online,
+            nickname: edit(false),
+            password: edit(true),
+            rows: Vec::new(),
+            remember_checked: false,
+            remember_enabled: false,
+            forget_enabled: false,
+            login_enabled: true,
+            focused_control: NICKNAME,
+            buttons: ShellButtonInteraction::default(),
+            popup: ComboPopupInteraction::default(),
+            remembered: remembered.map(str::to_owned),
+            account: None,
+            focus_started_at: Instant::now(),
+        }
+    }
+
     pub(crate) fn button_enabled(&self, control: u16) -> bool {
         match control {
             LOGIN => self.login_enabled,
             FORGET => self.policy == LoginPolicy::Legacy && self.forget_enabled,
             MANAGE if self.policy == LoginPolicy::Online => false,
-            // Play as Guest, Forgot Password and Delete Account act on the
-            // typed username.
-            PLAY_AS_GUEST | FORGOT_PASSWORD | DELETE_ACCOUNT => valid_name(&self.typed_nickname()),
             _ => true,
         }
     }
 
     fn typed_nickname(&self) -> String {
-        self.nickname.narrow_text(self.policy.nickname_limit() + 1)
+        self.nickname.narrow_text(NICKNAME_LIMIT + 1)
     }
 
     /// Only the two NewEdits take focus: owner-draw buttons hand it back
@@ -491,34 +446,13 @@ impl WolLoginState {
             .set_units_limited(globals.password.encode_utf16(), PASSWORD_LIMIT);
     }
 
-    /// The remembered account's placeholder gives way to a typed password.
-    fn forget_placeholder(&mut self, globals: &mut WolAccountGlobals) {
-        if self.remembered {
-            self.remembered = false;
-            self.password.set_units_limited([], ONLINE_PASSWORD_LIMIT);
-            self.password_changed(globals);
-        }
-    }
-
     /// CBN_EDITCHANGE on `0x628` (`0x0079A04F..0x0079A1F5`): the typed
     /// nickname is looked up in the store. A stored one brings its password
     /// and a checked Remember; otherwise the password empties and Remember
     /// shows `0xB77E68`.
     fn nickname_changed(&mut self, globals: &mut WolAccountGlobals, credentials: &[WolCredential]) {
-        let typed = self.nickname.narrow_text(self.policy.nickname_limit() + 1);
+        let typed = self.typed_nickname();
         globals.password.clear();
-        if self.policy == LoginPolicy::Online {
-            // Another name is another account: its password starts empty.
-            globals.nickname = typed;
-            globals.remember = false;
-            self.remembered = false;
-            self.password.set_units_limited([], ONLINE_PASSWORD_LIMIT);
-            self.remember_checked = false;
-            self.remember_enabled = false;
-            self.forget_enabled = false;
-            self.login_enabled = false;
-            return;
-        }
         let checked = match lookup(credentials, &typed) {
             Some(stored) => {
                 globals.nickname = stored.nickname.clone();
@@ -535,22 +469,16 @@ impl WolLoginState {
         self.remember_checked = checked;
         self.remember_enabled = false;
         self.forget_enabled = !globals.nickname.is_empty();
-        self.login_enabled = self.policy.accepts(&globals.nickname, &globals.password);
+        self.login_enabled = login_ok(&globals.nickname, &globals.password);
     }
 
     /// EN_CHANGE on `0x72C` (`0x0079A59B..0x0079A67A`): Remember becomes
     /// available exactly when Login does; Forget is disabled.
     fn password_changed(&mut self, globals: &mut WolAccountGlobals) {
         globals.changed = true;
-        globals.password = self.password.narrow_text(self.policy.password_limit() + 1);
-        let ok = self
-            .policy
-            .accepts(&self.typed_nickname(), &globals.password);
+        globals.password = self.password.narrow_text(PASSWORD_LIMIT + 1);
+        let ok = login_ok(&self.typed_nickname(), &globals.password);
         self.remember_enabled = ok;
-        if self.policy == LoginPolicy::Online && !self.remember_enabled {
-            self.remember_checked = false;
-            globals.remember = false;
-        }
         self.forget_enabled = false;
         self.login_enabled = ok;
     }
@@ -562,9 +490,6 @@ impl WolLoginState {
         globals: &mut WolAccountGlobals,
         credentials: &[WolCredential],
     ) {
-        if self.policy == LoginPolicy::Online {
-            return;
-        }
         self.popup.close();
         globals.nickname.clear();
         globals.password.clear();
@@ -576,7 +501,7 @@ impl WolLoginState {
         {
             globals.nickname = row.nickname.clone();
             self.nickname
-                .set_units_limited(row.nickname.encode_utf16(), self.policy.nickname_limit());
+                .set_units_limited(row.nickname.encode_utf16(), NICKNAME_LIMIT);
             if let Some(stored) = credentials.iter().find(|stored| stored.slot == row.slot) {
                 globals.password = stored.password.clone();
             }
@@ -587,31 +512,21 @@ impl WolLoginState {
         self.remember_checked = checked;
         self.remember_enabled = false;
         self.forget_enabled = !globals.nickname.is_empty();
-        self.login_enabled = self.policy.accepts(&globals.nickname, &globals.password);
+        self.login_enabled = login_ok(&globals.nickname, &globals.password);
     }
 
     /// `0x72D`'s click: the auto-checkbox toggles, then the proc stores its
     /// state in `0xB77E68`.
-    pub(crate) fn toggle_remember(
-        &mut self,
-        globals: &mut WolAccountGlobals,
-    ) -> Option<WolLoginAction> {
+    pub(crate) fn toggle_remember(&mut self, globals: &mut WolAccountGlobals) {
         if !self.remember_enabled {
-            return None;
-        }
-        if self.remembered {
-            // VERA online: unticked, this computer forgets the account at
-            // once, and its Login needs the password.
-            self.forget_placeholder(globals);
-            self.focus(PASSWORD);
-            return Some(WolLoginAction::ForgetSignIn);
+            return;
         }
         self.remember_checked = !self.remember_checked;
         globals.remember = self.remember_checked;
-        None
     }
 
-    /// Activate a right-panel button. Disabled windows take no click.
+    /// Activate a right-panel button. Disabled windows take no click. VERA
+    /// online: every button but Back opens its popup.
     pub(crate) fn activate(
         &mut self,
         control: u16,
@@ -620,65 +535,74 @@ impl WolLoginState {
         if !self.button_enabled(control) {
             return None;
         }
-        match control {
-            LOGIN => Some(WolLoginAction::Close(LOGIN)),
-            BACK => Some(WolLoginAction::Close(2)),
-            MANAGE => Some(WolLoginAction::Manage),
-            FORGET => self.forget(globals),
-            PLAY_AS_GUEST => {
-                // A guest signs in by name alone: neither a typed password
-                // nor this computer's remembered sign-in goes with it.
-                globals.nickname = self.typed_nickname();
-                globals.password.clear();
-                globals.remember = false;
-                Some(WolLoginAction::Close(LOGIN))
+        // The popups start from the last username.
+        let last = globals.nickname.clone();
+        let last = last.as_str();
+        let form = match control {
+            LOGIN if self.policy == LoginPolicy::Online => {
+                let remembered = self.remembered.as_deref();
+                WolAccountForm::sign_in(remembered.unwrap_or(last), remembered)
             }
-            CREATE_ACCOUNT => {
-                self.account = Some(WolAccountForm::register(&self.typed_nickname()));
-                None
-            }
-            FORGOT_PASSWORD => {
-                let form = WolAccountForm::reset(&self.typed_nickname());
-                let request = form.forgot_request();
-                self.account = Some(form);
-                Some(WolLoginAction::Account(request))
-            }
-            DELETE_ACCOUNT => {
-                self.account = Some(WolAccountForm::delete(&self.typed_nickname()));
-                None
-            }
-            _ => None,
+            LOGIN => return Some(WolLoginAction::Close(LOGIN)),
+            BACK => return Some(WolLoginAction::Close(2)),
+            MANAGE => return Some(WolLoginAction::Manage),
+            FORGET => return self.forget(globals),
+            PLAY_AS_GUEST => WolAccountForm::guest(last),
+            CREATE_ACCOUNT => WolAccountForm::register(last),
+            FORGOT_PASSWORD => WolAccountForm::forgot(last),
+            DELETE_ACCOUNT => WolAccountForm::delete(last),
+            _ => return None,
+        };
+        self.account = Some(form);
+        None
+    }
+
+    /// VERA online: this computer forgot its remembered sign-in, unticked in
+    /// Login's popup.
+    pub(crate) fn forget_remembered(&mut self) {
+        self.remembered = None;
+    }
+
+    /// VERA online: the lobby deleted account `name`. Its popup says so until
+    /// closed; the service forgets the account's remembered sign-in itself.
+    pub(crate) fn account_deleted(&mut self, name: &str) {
+        if self.remembers(name) {
+            self.remembered = None;
         }
     }
 
-    /// VERA online: the lobby deleted the typed account. Its popup says so
-    /// until closed, and the page drops the remembered placeholder; the
-    /// service forgets the sign-in itself.
-    pub(crate) fn account_deleted(&mut self, globals: &mut WolAccountGlobals) {
-        self.forget_placeholder(globals);
+    fn remembers(&self, name: &str) -> bool {
+        self.remembered
+            .as_deref()
+            .is_some_and(|known| known.eq_ignore_ascii_case(name))
     }
 
-    /// VERA online: a confirmed account or a new password signs in at once,
-    /// as Login with that name and password would; Remember password stays
-    /// as it was ticked.
+    /// VERA online: Login's or Play as Guest's popup signs in, as gamemd's
+    /// Login closes the page with the account globals set. A guest's
+    /// password is empty, as is the remembered sign-in's.
     pub(crate) fn sign_in(
         &mut self,
         sign_in: AccountSignIn,
+        remember: bool,
         globals: &mut WolAccountGlobals,
-    ) -> Option<WolLoginAction> {
-        let remember = self.remember_checked;
+    ) -> WolLoginAction {
         self.account = None;
-        self.nickname
-            .set_units_limited(sign_in.name.encode_utf16(), self.policy.nickname_limit());
-        self.nickname_changed(globals, &[]);
-        self.password.set_units_limited(
-            sign_in.password.encode_utf16(),
-            self.policy.password_limit(),
-        );
-        self.password_changed(globals);
-        self.remember_checked = remember && self.remember_enabled;
-        globals.remember = self.remember_checked;
-        self.activate(LOGIN, globals)
+        globals.nickname = sign_in.name;
+        globals.password = sign_in.password;
+        globals.remember = remember;
+        WolLoginAction::Close(LOGIN)
+    }
+
+    /// VERA online: a confirmed account or a new password signs in at once.
+    /// A new password keeps this computer's remembered sign-in of the
+    /// account.
+    pub(crate) fn signed_up(
+        &mut self,
+        sign_in: AccountSignIn,
+        globals: &mut WolAccountGlobals,
+    ) -> WolLoginAction {
+        let remember = self.remembers(&sign_in.name);
+        self.sign_in(sign_in, remember, globals)
     }
 
     /// Forget Account (`0x0079A6A0..0x0079A8B0`).
@@ -694,8 +618,7 @@ impl WolLoginState {
                 nickname: row.nickname,
             }
         });
-        self.nickname
-            .set_units_limited([], self.policy.nickname_limit());
+        self.nickname.set_units_limited([], NICKNAME_LIMIT);
         self.password.set_units_limited([], PASSWORD_LIMIT);
         globals.nickname.clear();
         globals.password.clear();
@@ -712,29 +635,25 @@ impl WolLoginState {
         globals: &mut WolAccountGlobals,
         credentials: &[WolCredential],
     ) {
+        // VERA online: the page has no fields; its popups take the text.
+        if self.policy == LoginPolicy::Online {
+            return;
+        }
         for unit in text.encode_utf16() {
             match self.focused_control {
                 NICKNAME => {
-                    if self.nickname.insert_unit_filtered(
-                        unit,
-                        self.policy.nickname_limit(),
-                        true,
-                        &[],
-                    ) {
+                    if self
+                        .nickname
+                        .insert_unit_filtered(unit, NICKNAME_LIMIT, true, &[])
+                    {
                         self.nickname_changed(globals, credentials);
                     }
                 }
                 PASSWORD => {
-                    if self.policy == LoginPolicy::Online && !(0x20..0x7F).contains(&unit) {
-                        continue;
-                    }
-                    self.forget_placeholder(globals);
-                    if self.password.insert_unit_filtered(
-                        unit,
-                        self.policy.password_limit(),
-                        true,
-                        &[],
-                    ) {
+                    if self
+                        .password
+                        .insert_unit_filtered(unit, PASSWORD_LIMIT, true, &[])
+                    {
                         self.password_changed(globals);
                     }
                 }
@@ -752,6 +671,13 @@ impl WolLoginState {
         globals: &mut WolAccountGlobals,
         credentials: &[WolCredential],
     ) -> Option<WolLoginAction> {
+        if self.policy == LoginPolicy::Online {
+            // VERA online: Enter is Login's click; the page has no fields.
+            return match key {
+                WolEditKey::Enter => self.activate(LOGIN, globals),
+                _ => None,
+            };
+        }
         match key {
             WolEditKey::Tab { .. } => {
                 // GetNextDlgTabItem (`0x00600C70`): the two edits are the
@@ -763,30 +689,10 @@ impl WolLoginState {
                 });
                 None
             }
-            WolEditKey::Enter if self.policy == LoginPolicy::Online => {
-                // VERA online: Login when it is enabled (an account's
-                // password, or its remembered sign-in), else Play as Guest
-                // while no password is typed.
-                globals.nickname = self.typed_nickname();
-                if self.login_enabled {
-                    Some(WolLoginAction::Close(LOGIN))
-                } else if globals.password.is_empty() {
-                    self.activate(PLAY_AS_GUEST, globals)
-                } else {
-                    None
-                }
-            }
             WolEditKey::Enter => {
                 globals.password = self.password.narrow_text(PASSWORD_LIMIT + 1);
-                self.policy
-                    .accepts(&self.typed_nickname(), &globals.password)
+                login_ok(&self.typed_nickname(), &globals.password)
                     .then_some(WolLoginAction::Close(LOGIN))
-            }
-            WolEditKey::Backspace | WolEditKey::Delete
-                if self.remembered && self.focused_control == PASSWORD =>
-            {
-                self.forget_placeholder(globals);
-                None
             }
             key => {
                 let nickname = self.focused_control == NICKNAME;
@@ -847,6 +753,17 @@ pub(crate) struct WolLoginLayout {
     /// The password NewEdit after its init inset (`0x00614CCF`).
     pub(crate) password: RectPx,
     pub(crate) remember: RectPx,
+    /// VERA online: the info pane in place of the fields.
+    pub(crate) info: Option<WolLoginInfoLayout>,
+}
+
+/// VERA online: the online page's left side, over its art: the latest news,
+/// with the players-online count on its heading row, above the online
+/// rules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WolLoginInfoLayout {
+    pub(crate) news: RectPx,
+    pub(crate) rules: RectPx,
 }
 
 impl WolLoginLayout {
@@ -855,23 +772,12 @@ impl WolLoginLayout {
     }
 
     pub(crate) fn nickname_text_rect(&self) -> RectPx {
-        if self.policy == LoginPolicy::Online {
-            self.page.scale.derive_rect(self.nickname_face, |rect| {
-                RectPx::new(rect.x + 3, rect.y + 1, rect.w - 6, rect.h - 2)
-            })
-        } else {
-            crate::ui::skirmish_shell::combo_text_rect(self.nickname_face, self.page.scale)
-        }
+        crate::ui::skirmish_shell::combo_text_rect(self.nickname_face, self.page.scale)
     }
 
     pub(crate) fn tooltip_key(&self, control: u16) -> Option<&'static str> {
         match self.policy {
-            LoginPolicy::Online => match control {
-                NICKNAME => Some("VERA:LoginNameHelp"),
-                PASSWORD => Some("VERA:LoginPasswordHelp"),
-                REMEMBER => tooltip_key(REMEMBER),
-                _ => ONLINE_PAGE.button(control).map(|spec| spec.tooltip_key),
-            },
+            LoginPolicy::Online => ONLINE_PAGE.button(control).map(|spec| spec.tooltip_key),
             LoginPolicy::Legacy => tooltip_key(control),
         }
     }
@@ -937,13 +843,22 @@ impl WolLoginLayout {
                 password.h - 2,
             )),
             remember: px(child_window(196, 207, 213, 13)),
+            // Over the art, clear of its frame and the right column.
+            info: (policy == LoginPolicy::Online).then(|| WolLoginInfoLayout {
+                news: px(RectPx::new(36, 36, 560, 312)),
+                rules: px(RectPx::new(36, 364, 560, 176)),
+            }),
         }
     }
 
     /// The child under `(x, y)`, buttons first (template order otherwise).
+    /// The online page has only its buttons.
     pub(crate) fn control_at(&self, x: i32, y: i32) -> Option<u16> {
         if let Some(button) = self.page.buttons.iter().find(|b| b.rect.contains(x, y)) {
             return Some(button.id);
+        }
+        if self.policy == LoginPolicy::Online {
+            return None;
         }
         [
             (REMEMBER, self.remember),
@@ -1176,112 +1091,84 @@ mod tests {
     }
 
     #[test]
-    fn online_login_takes_an_account_password_and_play_as_guest_a_name() {
+    fn online_buttons_open_their_popups_from_the_last_username() {
+        use crate::ui::wol_account::{AccountFormAction, FORM_OK, FormKind};
         let mut globals = WolAccountGlobals {
-            nickname: "Alpha".into(),
+            nickname: "Boris".into(),
             password: "previous-secret".into(),
             remember: true,
             ..Default::default()
         };
-        let mut login = WolLoginState::open_online(&mut globals, None, None);
-        let credentials = stored();
-        assert!(login.rows.is_empty() && login.password.units.is_empty());
+        let mut login = WolLoginState::open_online(&mut globals, Some("Tanya"), None);
         assert!(globals.password.is_empty() && !globals.remember);
-        assert!(!login.login_enabled && !login.remember_enabled);
-        assert!(
-            login.button_enabled(PLAY_AS_GUEST),
-            "a name alone is a guest's"
-        );
-        // Editing a name that exists in the native store must not recall it.
-        login.edit_key(WolEditKey::Backspace, &mut globals, &credentials);
-        login.insert_text("a", &mut globals, &credentials);
-        assert_eq!(globals.nickname, "Alpha");
-        assert!(globals.password.is_empty());
-        login.edit_key(
-            WolEditKey::Tab { reverse: false },
-            &mut globals,
-            &credentials,
-        );
-        assert_eq!(login.focused_control, PASSWORD);
-        login.insert_text("seven77", &mut globals, &credentials);
-        assert!(!login.login_enabled, "an account password has 8 or more");
-        login.insert_text("8", &mut globals, &credentials);
-        assert!(login.login_enabled && login.remember_enabled);
-        login.toggle_remember(&mut globals);
-        assert!(globals.remember);
-        assert_eq!(
-            login.edit_key(WolEditKey::Enter, &mut globals, &credentials),
-            Some(WolLoginAction::Close(LOGIN))
-        );
-        assert_eq!(globals.password, "seven778");
-        for debug in [
-            format!("{globals:?}"),
-            format!("{login:?}"),
-            format!("{credentials:?}"),
+        // The page takes no text: its popups do.
+        login.insert_text("x", &mut globals, &[]);
+        assert_eq!(globals.nickname, "Boris");
+        for (button, kind, name) in [
+            (PLAY_AS_GUEST, FormKind::Guest, "Boris"),
+            (CREATE_ACCOUNT, FormKind::Register, "Boris"),
+            (FORGOT_PASSWORD, FormKind::Forgot, "Boris"),
+            (DELETE_ACCOUNT, FormKind::Delete, "Boris"),
+            // Login starts from the remembered account.
+            (LOGIN, FormKind::SignIn, "Tanya"),
         ] {
-            assert!(!debug.contains("seven778") && !debug.contains("12345678"));
+            assert!(login.button_enabled(button));
+            assert_eq!(login.activate(button, &mut globals), None);
+            let form = login.account.as_ref().unwrap();
+            assert_eq!((form.kind, form.fields[0].text().as_str()), (kind, name));
         }
+        // Login's popup signs in with the remembered sign-in: no password.
+        let Some(AccountFormAction::SignIn { sign_in, remember }) =
+            login.account.as_mut().unwrap().activate(FORM_OK)
+        else {
+            panic!("Login's sign-in");
+        };
+        assert_eq!(
+            login.sign_in(sign_in, remember, &mut globals),
+            WolLoginAction::Close(LOGIN)
+        );
+        assert!(login.account.is_none());
+        assert_eq!(
+            (globals.nickname.as_str(), globals.password.as_str()),
+            ("Tanya", "")
+        );
+        assert!(globals.remember);
+        // Enter is Login's click.
+        assert_eq!(login.edit_key(WolEditKey::Enter, &mut globals, &[]), None);
+        assert_eq!(login.account.as_ref().unwrap().kind, FormKind::SignIn);
     }
 
     #[test]
-    fn a_remembered_account_signs_in_without_its_password_until_unticked() {
+    fn a_new_password_keeps_the_remembered_sign_in() {
         let mut globals = WolAccountGlobals::default();
         let mut login = WolLoginState::open_online(&mut globals, Some("Tanya"), None);
-        assert_eq!(globals.nickname, "Tanya");
-        assert!(login.remembered && login.remember_checked && login.login_enabled);
-        assert!(globals.password.is_empty() && globals.remember);
-        assert_eq!(login.password.units.len(), REMEMBERED_PLACEHOLDER.len());
-        // Forgot Password's new password signs in, still remembered.
-        let reset = AccountSignIn {
-            name: "Tanya".into(),
+        assert_eq!(globals.nickname, "Tanya", "it fills an empty username");
+        let reset = |name: &str| AccountSignIn {
+            name: name.into(),
             password: "n3w-password".into(),
         };
-        let mut reset_login = login.clone();
-        let mut reset_globals = globals.clone();
-        assert_eq!(
-            reset_login.sign_in(reset, &mut reset_globals),
-            Some(WolLoginAction::Close(LOGIN))
-        );
-        assert!(reset_globals.remember && reset_globals.password == "n3w-password");
-        assert_eq!(
-            login.toggle_remember(&mut globals),
-            Some(WolLoginAction::ForgetSignIn)
-        );
-        assert!(!login.remembered && !globals.remember);
-        assert!(login.password.units.is_empty());
-        assert_eq!(login.focused_control, PASSWORD);
-
-        let mut globals = WolAccountGlobals::default();
-        let mut login = WolLoginState::open_online(&mut globals, Some("Tanya"), None);
-        login.focus(PASSWORD);
-        login.insert_text("n", &mut globals, &[]);
-        assert!(!login.remembered, "typing replaces the placeholder");
-        assert_eq!(globals.password, "n");
-        // Another remembered name keeps the typed one.
-        let mut globals = WolAccountGlobals {
-            nickname: "Boris".into(),
-            ..Default::default()
-        };
-        let login = WolLoginState::open_online(&mut globals, Some("Tanya"), None);
-        assert!(!login.remembered && !globals.remember);
+        login.signed_up(reset("tanya"), &mut globals);
+        assert!(globals.remember && globals.password == "n3w-password");
+        login.signed_up(reset("Boris"), &mut globals);
+        assert!(!globals.remember, "another account was never remembered");
+        login.account_deleted("TANYA");
+        login.signed_up(reset("Tanya"), &mut globals);
+        assert!(!globals.remember, "a deleted account is forgotten");
     }
 
     #[test]
     fn the_last_online_name_fills_an_empty_login_after_a_remembered_account() {
-        // The last sign-in's name comes back, and Enter plays as it.
+        // The last sign-in's name comes back, and the popups start from it.
         let mut globals = WolAccountGlobals::default();
         let mut login = WolLoginState::open_online(&mut globals, None, Some("Boris"));
         assert_eq!(globals.nickname, "Boris");
-        assert!(!login.remembered && !globals.remember);
-        assert_eq!(
-            login.edit_key(WolEditKey::Enter, &mut globals, &[]),
-            Some(WolLoginAction::Close(LOGIN))
-        );
+        assert_eq!(login.activate(LOGIN, &mut globals), None);
+        let form = login.account.as_ref().unwrap();
+        assert!(!form.remembered && form.fields[0].text() == "Boris");
         // A remembered account still comes first.
         let mut globals = WolAccountGlobals::default();
-        let login = WolLoginState::open_online(&mut globals, Some("Tanya"), Some("Boris"));
+        WolLoginState::open_online(&mut globals, Some("Tanya"), Some("Boris"));
         assert_eq!(globals.nickname, "Tanya");
-        assert!(login.remembered);
         // A name typed earlier this run stays, and a saved name the lobby
         // would refuse fills nothing.
         let mut globals = WolAccountGlobals {
@@ -1293,46 +1180,6 @@ mod tests {
         let mut globals = WolAccountGlobals::default();
         WolLoginState::open_online(&mut globals, None, Some("[New Player]"));
         assert!(globals.nickname.is_empty());
-    }
-
-    #[test]
-    fn play_as_guest_signs_in_by_name_alone() {
-        // A typed password stays behind.
-        let mut globals = WolAccountGlobals::default();
-        let mut login = WolLoginState::open_online(&mut globals, None, None);
-        login.insert_text("Boris", &mut globals, &[]);
-        login.focus(PASSWORD);
-        login.insert_text("secret-pw", &mut globals, &[]);
-        login.toggle_remember(&mut globals);
-        assert!(globals.remember);
-        assert_eq!(
-            login.activate(PLAY_AS_GUEST, &mut globals),
-            Some(WolLoginAction::Close(LOGIN))
-        );
-        assert_eq!(globals.nickname, "Boris");
-        assert!(globals.password.is_empty() && !globals.remember);
-        // So does this computer's remembered sign-in.
-        let mut globals = WolAccountGlobals::default();
-        let mut login = WolLoginState::open_online(&mut globals, Some("Tanya"), None);
-        assert_eq!(
-            login.activate(PLAY_AS_GUEST, &mut globals),
-            Some(WolLoginAction::Close(LOGIN))
-        );
-        assert!(globals.password.is_empty() && !globals.remember);
-        // Enter plays as a guest while no password is typed, and waits for
-        // a whole one otherwise.
-        let mut globals = WolAccountGlobals::default();
-        let mut login = WolLoginState::open_online(&mut globals, None, None);
-        assert_eq!(login.edit_key(WolEditKey::Enter, &mut globals, &[]), None);
-        login.insert_text("Boris", &mut globals, &[]);
-        let mut short = login.clone();
-        assert_eq!(
-            login.edit_key(WolEditKey::Enter, &mut globals, &[]),
-            Some(WolLoginAction::Close(LOGIN))
-        );
-        short.focus(PASSWORD);
-        short.insert_text("seven77", &mut globals, &[]);
-        assert_eq!(short.edit_key(WolEditKey::Enter, &mut globals, &[]), None);
     }
 
     #[test]
@@ -1378,32 +1225,15 @@ mod tests {
         );
         assert_eq!(layout.tooltip_key(LOGIN), Some("VERA:LoginHelp"));
         assert_eq!(layout.tooltip_key(BACK), Some("STT:WOLWelcomeBack"));
+        // No fields: the info pane takes the left side, clear of the column.
         assert_eq!(
-            layout.control_at(layout.password.x + 1, layout.password.y + 1),
-            Some(PASSWORD)
+            layout.control_at(native.password.x + 1, native.password.y + 1),
+            None
         );
-        let mut globals = WolAccountGlobals::default();
-        let mut login = WolLoginState::open_online(&mut globals, None, None);
-        assert!(!login.button_enabled(PLAY_AS_GUEST) && !login.button_enabled(DELETE_ACCOUNT));
-        login.insert_text("Player_12345678901234567", &mut globals, &[]);
-        assert_eq!(globals.nickname.len(), 24);
-        assert!(!login.login_enabled, "Login needs the account's password");
-        assert!(login.button_enabled(PLAY_AS_GUEST) && login.button_enabled(DELETE_ACCOUNT));
-        assert_eq!(login.activate(CREATE_ACCOUNT, &mut globals), None);
-        assert_eq!(
-            login.account.as_ref().map(|form| form.fields[0].text()),
-            Some("Player_12345678901234567".into())
-        );
-        assert_eq!(
-            login.activate(FORGOT_PASSWORD, &mut globals),
-            Some(WolLoginAction::Account(AccountRequest::Forgot {
-                name: "Player_12345678901234567".into()
-            }))
-        );
-        assert!(!LoginPolicy::Online.accepts("Player with spaces", "12345678"));
-        assert!(!LoginPolicy::Online.accepts("Player_123456789012345678", "12345678"));
-        assert!(!LoginPolicy::Online.accepts("a", ""));
-        assert!(LoginPolicy::Online.accepts("a", "12345678"));
-        assert!(!LoginPolicy::Online.accepts("a", "\u{e9}12345678"));
+        let info = layout.info.unwrap();
+        assert!(native.info.is_none());
+        assert!(info.news.y + info.news.h < info.rules.y);
+        assert!(info.news.x + info.news.w < layout.page.right_panel.top.x);
+        assert!(info.rules.y + info.rules.h < layout.status_help.y);
     }
 }

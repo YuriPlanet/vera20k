@@ -1877,6 +1877,10 @@ impl ApplicationHandler for App {
                 (self.shell_capture.is_none() && self.tactical_capture.is_none())
                     .then(|| crate::app::map_library::poll(state))
                     .flatten(),
+                // Nor the login page's counts and news.
+                (self.shell_capture.is_none() && self.tactical_capture.is_none())
+                    .then(|| crate::app::shell_wol::login_info::poll(state))
+                    .flatten(),
                 Self::poll_campaign(state),
                 Self::campaign_score_animation_deadline(state),
                 // Captures replay sealed input; they never check or ask.

@@ -756,35 +756,28 @@ impl LiveRoundFlow {
                 let layout = crate::app::shell_wol::login_layout(state);
                 click(
                     state,
-                    RectPx::new(
-                        layout.nickname_face.x,
-                        layout.nickname_face.y,
-                        layout.nickname_face.w / 2,
-                        layout.nickname_face.h,
-                    ),
+                    layout
+                        .page
+                        .button_rect(crate::ui::wol_login::PLAY_AS_GUEST)
+                        .context("Play as Guest button")?,
                 );
+                // Its popup starts from the last username: replace it.
                 App::handle_wol_key(state, Some(KeyCode::Home), true, None);
                 for _ in 0..32 {
                     App::handle_wol_key(state, Some(KeyCode::Delete), true, None);
                 }
                 App::handle_wol_key(state, None, true, Some(&self.online_config().account));
-                let control = crate::ui::wol_login::PLAY_AS_GUEST;
                 ensure!(
                     state
                         .frontend
                         .wol
                         .as_ref()
                         .and_then(|visit| visit.login())
-                        .is_some_and(|login| login.button_enabled(control)),
-                    "the online username did not enable Play as Guest"
+                        .and_then(|login| login.account.as_ref())
+                        .is_some_and(|form| form.ok_enabled()),
+                    "the online username did not enable Play as Guest's OK"
                 );
-                click(
-                    state,
-                    layout
-                        .page
-                        .button_rect(control)
-                        .context("Play as Guest button")?,
-                );
+                App::handle_wol_key(state, Some(KeyCode::Enter), true, None);
                 self.record(frame, "Username submitted through Play as Guest");
                 self.phase = RoundPhase::Lobby;
             }

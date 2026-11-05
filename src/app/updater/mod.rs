@@ -39,8 +39,9 @@ use manifest::{Offer, Release, Version};
 /// How often a pending check or download is polled.
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
-/// Where a release that needs a newer updater is downloaded by hand.
-const WEBSITE: &str = "https://vera20k.org/";
+/// Where a release that needs a newer updater is downloaded by hand; the
+/// online login page also reads its news there.
+pub(crate) const WEBSITE: &str = "https://vera20k.org/";
 
 /// Set only for the Release workflow's update test (`tools/update_test.py`):
 /// its runners have no retail game data, so no main menu to ask on, and the
