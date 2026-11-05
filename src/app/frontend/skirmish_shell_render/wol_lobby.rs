@@ -789,3 +789,101 @@ pub(crate) fn paint_wol_lobby_popup(
     }
     paint
 }
+
+/// VERA's player card over the modern lobby, on the online Create Game box:
+/// a caption and value per row, the player list's badge beside the name, the
+/// four buttons and the status line.
+pub(crate) fn paint_wol_player_card(
+    state: &AppState,
+    view: &crate::app::shell_wol::player_card::PlayerCardView,
+    art: Option<&WolPageArt>,
+    scale: ShellScale,
+) -> WolLobbyPaint {
+    let mut paint = WolLobbyPaint::default();
+    let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
+        return paint;
+    };
+    let plain = |text: &str, rect: RectPx, align: ShellAlign, rgb: [f32; 3]| PaintLabel {
+        text: text.to_owned().into(),
+        rect,
+        align,
+        rgb,
+        path_a_reveal: None,
+    };
+    let layout = &view.layout;
+    let mut labels = Vec::new();
+    for (row, ((caption, value), &(caption_rect, value_rect))) in
+        view.rows.iter().zip(&layout.rows).enumerate()
+    {
+        labels.push(plain(
+            caption,
+            caption_rect,
+            ShellAlign(ShellAlign::H_RIGHT.0 | ShellAlign::V_CENTER.0),
+            SHELL_LABEL_TEXT_RGB,
+        ));
+        // The name sits after its badge as in the modern player list.
+        let value_rect = match (row, view.badge, art) {
+            (0, Some(file), Some(art)) => {
+                push_icon(&mut paint.icons, art, file, value_rect, 2, scale);
+                scale.derive_rect(value_rect, |rect| {
+                    let x = 2 + PLAYER_NAME_X - PLAYER_BADGE_X;
+                    RectPx::new(rect.x + x, rect.y, rect.w - x, rect.h)
+                })
+            }
+            _ => value_rect,
+        };
+        labels.push(plain(
+            value,
+            value_rect,
+            ShellAlign::V_CENTER,
+            SHELL_LABEL_TEXT_RGB,
+        ));
+    }
+    let button_align = ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0);
+    for button in &view.buttons {
+        labels.push(plain(
+            &button.caption,
+            crate::app::frontend::shell_pass::owner_draw_button_label_rect(
+                button.rect,
+                button.pressed,
+            ),
+            button_align,
+            if button.enabled {
+                SHELL_LABEL_TEXT_RGB
+            } else {
+                shell_paint::SHELL_TEXT_RGB_DISABLED
+            },
+        ));
+    }
+    labels.push(plain(
+        &view.status,
+        layout.status,
+        ShellAlign::NONE,
+        SHELL_LABEL_TEXT_RGB,
+    ));
+    let buttons: Vec<ModalButton> = view
+        .buttons
+        .iter()
+        .map(|button| ModalButton {
+            rect: button.rect,
+            pressed: button.pressed,
+            enabled: button.enabled,
+        })
+        .collect();
+    let background = atlas
+        .ra2_dialog_background
+        .or_else(|| atlas.mode_two_dialog_background(None));
+    let draw = shell_paint::paint_modal_shp(
+        &state.renderer.bit_font,
+        background,
+        super::type3_button_frames(atlas),
+        layout.dialog,
+        &buttons,
+        &labels,
+        scale,
+        POPUP_DEPTHS,
+    );
+    paint.controls = draw.sprites;
+    paint.texts = draw.text;
+    paint
+}

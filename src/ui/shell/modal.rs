@@ -671,6 +671,71 @@ pub fn wol_account_form_layout_on(
     }
 }
 
+/// VERA's player card in the online lobby on the online Create Game box: a
+/// caption and value per row, Message and Add or Remove Buddy over Full
+/// Profile and Close, and the status line inside the frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WolPlayerCardLayout {
+    pub dialog: RectPx,
+    /// Each row's right-aligned caption and its value.
+    pub rows: [(RectPx, RectPx); PLAYER_CARD_ROWS],
+    pub message: RectPx,
+    pub buddy: RectPx,
+    pub profile: RectPx,
+    pub close: RectPx,
+    pub status: RectPx,
+}
+
+pub const PLAYER_CARD_ROWS: usize = 5;
+
+/// The account popups' caption and field columns 18 units apart from the
+/// Room name row, and two rows of the online box's OK and Cancel buttons.
+pub fn wol_player_card_layout(screen_w: i32, screen_h: i32) -> WolPlayerCardLayout {
+    let dialog = menu_box(screen_w, screen_h);
+    let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
+    let status = child(0, 186, 291, 12);
+    WolPlayerCardLayout {
+        dialog,
+        rows: std::array::from_fn(|row| {
+            let y = 41 + 18 * row as i32;
+            (child(11, y, 113, 12), child(133, y, 150, 12))
+        }),
+        message: child(33, 134, 83, 15),
+        buddy: child(184, 134, 83, 15),
+        profile: child(33, 152, 83, 15),
+        close: child(184, 152, 83, 15),
+        status: RectPx::new(
+            dialog.x + ONLINE_STATUS_INSET,
+            status.y,
+            dialog.w - 2 * ONLINE_STATUS_INSET,
+            status.h,
+        ),
+    }
+}
+
+/// The player card on the lobby page's shell mapping, as
+/// [`wol_create_game_layout_on`].
+pub fn wol_player_card_layout_on(
+    screen_w: i32,
+    screen_h: i32,
+    scale: geom::ShellScale,
+) -> WolPlayerCardLayout {
+    if scale.is_retail() {
+        return wol_player_card_layout(screen_w, screen_h);
+    }
+    let base = wol_player_card_layout(geom::SHELL_BASE_W, geom::SHELL_BASE_H);
+    let s = |rect| scale.scale_rect(rect);
+    WolPlayerCardLayout {
+        dialog: s(base.dialog),
+        rows: base.rows.map(|(caption, value)| (s(caption), s(value))),
+        message: s(base.message),
+        buddy: s(base.buddy),
+        profile: s(base.profile),
+        close: s(base.close),
+        status: s(base.status),
+    }
+}
+
 /// VERA's Create Game box in the LAN lobby, the online box's art and
 /// buttons: Max players in the password row, Allow spectators in the clan row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

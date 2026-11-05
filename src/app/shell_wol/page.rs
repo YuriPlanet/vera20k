@@ -122,6 +122,21 @@ pub(crate) fn open_page_dialog(state: &mut AppState) {
     apply(state, actions);
 }
 
+/// VERA's player card's Message: `0xCF` opened on its player, addressed as
+/// `0x497` addresses the last pager. The reply window stays for a later open.
+pub(crate) fn open_page_dialog_to(state: &mut AppState, name: &str) {
+    let Some(visit) = state.frontend.wol.as_mut() else {
+        return;
+    };
+    let mut page = WolPageDialog::new();
+    let actions = page.address(
+        name,
+        &mut state.frontend.wol_lobby_globals.page_last_control,
+    );
+    visit.page_dialog = Some(Box::new(page));
+    apply(state, actions);
+}
+
 /// State 7 (`State_Machine 0x0048CC2C`): the PageUser event's dialog over
 /// the running match. The state machine's admission runs first; Cancel
 /// ends the state (`0x0048CC31`).

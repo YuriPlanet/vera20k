@@ -132,12 +132,20 @@ impl WolPageDialog {
         let mut page = Self::new();
         let mut actions = Vec::new();
         if window.remaining(now) > 0 {
-            page.name
-                .set_units_limited(last_pager.unwrap_or_default().encode_utf16(), 0);
-            page.focus_to(Some(TEXT), last, &mut actions);
+            actions = page.address(last_pager.unwrap_or_default(), last);
             window.arm(now, 0);
         }
         (page, actions)
+    }
+
+    /// The name set with `0x4B4` and the focus moved to the text edit, as
+    /// `0x497` addresses the last pager; VERA's player card addresses its
+    /// player the same way.
+    pub(crate) fn address(&mut self, name: &str, last: &mut u16) -> Vec<WolPageAction> {
+        let mut actions = Vec::new();
+        self.name.set_units_limited(name.encode_utf16(), 0);
+        self.focus_to(Some(TEXT), last, &mut actions);
+        actions
     }
 
     fn name_text(&self) -> String {
@@ -291,8 +299,11 @@ impl WolPageDialog {
                 self.text.set_units_limited([], 0);
                 self.send_enabled = false;
                 self.focus_to(Some(TEXT), last, &mut actions);
+                // gamemd truncates the name to WOL's 9 characters. VERA's
+                // names run to 24: an addressed one (the last pager, the
+                // player card's player) is sent whole; typing stops at 9.
                 let mut name = self.name_text();
-                name.truncate(NAME_LIMIT);
+                name.truncate(crate::ui::wol_account::NAME_LIMIT);
                 actions.push(match (name.is_empty(), text.is_empty()) {
                     (false, false) => WolPageAction::Send { name, text },
                     (true, _) => WolPageAction::Notice("TXT_NAME_ERROR"),
@@ -489,6 +500,24 @@ mod tests {
         assert!(page.text.units.is_empty() && !page.send_enabled && last == SEND);
         // A second Enter with Page disabled does nothing.
         assert!(page.key(LanEditKey::Enter, &mut last).is_empty());
+    }
+
+    /// VERA's player card addresses a page to a name longer than WOL's 9
+    /// characters, and Send keeps all of it.
+    #[test]
+    fn an_addressed_page_sends_a_long_vera_name_whole() {
+        let mut last = TEXT;
+        let mut page = WolPageDialog::new();
+        assert!(page.address("Commander_Tanya", &mut last).is_empty());
+        assert_eq!(page.focus, Some(TEXT));
+        page.insert_text("gg", &mut last);
+        assert_eq!(
+            page.key(LanEditKey::Enter, &mut last),
+            vec![WolPageAction::Send {
+                name: "Commander_Tanya".into(),
+                text: "gg".encode_utf16().collect()
+            }]
+        );
     }
 
     #[test]
