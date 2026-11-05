@@ -603,7 +603,7 @@ fn ladder_record(name: &str) -> Option<WolLadderRecord> {
     }
 }
 
-/// The high scores: Tanya's 1520 points (a three-star general's badge) at
+/// The high scores: Tanya's 1520 points (a five-star general's badge) at
 /// rank 7; Boris's 90 points (lieutenant) at rank 123 with every co-op
 /// campaign finished.
 fn high_score(name: &str) -> Option<WolHighScoreRecord> {

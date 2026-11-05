@@ -619,11 +619,12 @@ and the `high_scores` of those that ever played one. Every ranked game, Quick Ma
 game or free-for-all, moves one rating per player, shown as OS: μ − σ, as Beyond All Reason
 shows skill, about 16.7 for a new player. A record's `points` is its player's OS rounded,
 and `rank` their place among the season's players by OS. A high score's `points` are its
-player's badge points, the ranked games of every season times the OS, over ten, rounded,
-and `rank` their place by them. One lookup fills both of the game's tables: its ladder
-table from `records`, and its high-score table, whose points pick each player's badge
-(Private below 32 up to Commander in Chief at 2001), from `high_scores`. Badges therefore
-grow with play and skill and outlast seasons. A lobby from before them sends no
+player's badge points, the ranked games of every season times the OS, over ten, rounded
+and at most 2000, and `rank` their place by them. One lookup fills both of the game's
+tables: its ladder table from `records`, and its high-score table, whose points pick each
+player's badge (Private below 32 up to Five-Star General from 1501; the game's Commander in
+Chief badge, from 2001, never shows), from `high_scores`. Badges therefore grow with play
+and skill and outlast seasons. A lobby from before them sends no
 `high_scores`, and the game then shows no badges. After a rated game each of its players
 hears their new OS from `VERA20k`, such as `Ranked game won: your OS is now 19.57 (+2.90).`
 
