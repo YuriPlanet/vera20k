@@ -1476,6 +1476,145 @@ mod tests {
     }
 
     #[test]
+    fn mind_control_sounds_retain_fixed_bindings_through_reset_and_save() {
+        let bad = IniFile::from_str(
+            "[AudioVisual]\nYuriMindControlSound=Unknown\nMindClearedSound=Unknown\n\
+             MasterMindOverloadDeathSound=Unknown\n",
+        );
+        let sounds = Arc::new(SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=Capture\n1=Release\n2=Overload\n3=none\n4=<none>\n",
+        )));
+        let new_owner = || {
+            NativeRulesProcessOwner::from_cold_start_sources(
+                bad.clone(),
+                None,
+                IniFile::empty(),
+                Arc::clone(&sounds),
+                Arc::default(),
+            )
+            .unwrap()
+        };
+        let cues = |rules: &RuleSet| {
+            [
+                rules.mind_control.mind_control_sound.clone(),
+                rules.mind_control.mind_cleared_sound.clone(),
+                rules.mind_control.overload_sound.clone(),
+            ]
+        };
+        let mut owner = new_owner();
+        let first = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &bad)
+            .unwrap();
+        // Yuri's uninitialized native field gets deterministic silence until
+        // a successful binding; the other two native fields start at-1.
+        assert_eq!(cues(&first.rules), [None, None, None]);
+        let early = IniFile::from_str(
+            "[AudioVisual]\nYuriMindControlSound=capture\nMindClearedSound=release\n\
+             MasterMindOverloadDeathSound=overload\n",
+        );
+        let loaded = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(Some(&early)), &bad)
+            .unwrap();
+        let expected = [
+            Some("Capture".into()),
+            Some("Release".into()),
+            Some("Overload".into()),
+        ];
+        assert_eq!(cues(&loaded.rules), expected);
+        let fresh = new_owner()
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &bad)
+            .unwrap();
+        assert_eq!(
+            loaded.rules.source_ini_hash(),
+            fresh.rules.source_ini_hash()
+        );
+        assert_ne!(
+            loaded.rules.simulation_config_hash(),
+            fresh.rules.simulation_config_hash()
+        );
+        let bytes =
+            crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+        owner.install_saved_scenario_rules(crate::util::save_codec::deserialize(&bytes).unwrap());
+        let restored = owner
+            .project_saved_scenario_rules(owner.saved_scenario_rules().unwrap())
+            .unwrap();
+        assert_eq!(cues(&restored), expected);
+        let none = IniFile::from_str(
+            "[AudioVisual]\nYuriMindControlSound=none\nMindClearedSound=<none>\n\
+             MasterMindOverloadDeathSound=\n",
+        );
+        let loaded = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &none)
+            .unwrap();
+        assert_eq!(
+            cues(&loaded.rules),
+            [
+                Some("none".into()),
+                Some("<none>".into()),
+                Some("Overload".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn mind_cleared_type_sound_keeps_a_valid_override_and_rejects_unknown_first_read() {
+        let sounds = Arc::new(SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=Release\n1=TypeRelease\n2=none\n",
+        )));
+        let build = |first: &str| {
+            let root = IniFile::from_str(&format!(
+                "[AudioVisual]\nMindClearedSound=Release\n[InfantryTypes]\n0=E1\n\
+                 [E1]\nMindClearedSound={first}\n",
+            ));
+            let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+                root,
+                None,
+                IniFile::empty(),
+                Arc::clone(&sounds),
+                Arc::default(),
+            )
+            .unwrap();
+            let loaded = owner
+                .load_scenario(
+                    NativeScenarioRulesPrefix::Campaign(None),
+                    &IniFile::from_str("[E1]\nMindClearedSound=Unknown\n"),
+                )
+                .unwrap();
+            (owner, loaded.rules)
+        };
+        let (mut owner, retained) = build("TypeRelease");
+        assert_eq!(
+            retained.object("E1").unwrap().mind_cleared_sound.as_deref(),
+            Some("TypeRelease")
+        );
+        let bytes =
+            crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+        owner.install_saved_scenario_rules(crate::util::save_codec::deserialize(&bytes).unwrap());
+        let restored = owner
+            .project_saved_scenario_rules(owner.saved_scenario_rules().unwrap())
+            .unwrap();
+        assert_eq!(
+            restored.object("E1").unwrap().mind_cleared_sound.as_deref(),
+            Some("TypeRelease")
+        );
+        let (_, unknown) = build("Unknown");
+        assert_eq!(unknown.object("E1").unwrap().mind_cleared_sound, None);
+        assert_eq!(
+            unknown.mind_control.mind_cleared_sound.as_deref(),
+            Some("Release")
+        );
+        let (_, registered_none) = build("none");
+        assert_eq!(
+            registered_none
+                .object("E1")
+                .unwrap()
+                .mind_cleared_sound
+                .as_deref(),
+            Some("none")
+        );
+    }
+
+    #[test]
     fn global_sound_bindings_survive_invalid_layers_reset_and_save() {
         let root = IniFile::from_str(
             "[AudioVisual]\nBombTickingSound=Unknown\nBombAttachSound=Unknown\n\

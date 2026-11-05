@@ -2460,6 +2460,16 @@ impl ProcessedRulesLayers {
             .psychic_reveal()
     }
 
+    /// ReadAudioVisual669AE3/669FFC/66A0C1 retains these fixed Voc IDs.
+    pub(crate) fn mind_control_sounds(&self) -> [Option<&str>; 3] {
+        let sounds = &self.native_registry_state().rules_global_sounds;
+        [
+            sounds.mind_control(),
+            sounds.mind_cleared(),
+            sounds.mastermind_overload(),
+        ]
+    }
+
     /// Final Difficulty readers after the ordered Process passes. Keeping the
     /// typed rows preserves literal f64 defaults separately from ReadDouble's
     /// widened f32 authored values (ReadDifficulty @ 0x0066D270).

@@ -6496,10 +6496,14 @@ impl RuleSet {
         // ordered Process owner's, published by from_processed_rules.
         let bridge_warheads = crate::rules::bridge_warheads::BridgeWarheads::default();
 
-        let mind_control = crate::rules::mind_control_rules::MindControlRules::from_ini(
+        let mut mind_control = crate::rules::mind_control_rules::MindControlRules::from_ini(
             ini,
             processed.mind_control_attack_line_frames(),
         );
+        let [capture, release, overload] = processed.mind_control_sounds();
+        mind_control.mind_control_sound = capture.map(str::to_owned);
+        mind_control.mind_cleared_sound = release.map(str::to_owned);
+        mind_control.overload_sound = overload.map(str::to_owned);
 
         // [General] rocket blocks + [CombatDamage] missile warheads, retained
         // pass by pass by the ordered Process owner.
@@ -7475,6 +7479,23 @@ impl RuleSet {
         self.general.bomb_ticking_sound.hash(&mut hasher);
         self.general.bomb_attach_sound.hash(&mut hasher);
         self.general.psychic_reveal_activate_sound.hash(&mut hasher);
+        b"mind-control-sound-references-v1".hash(&mut hasher);
+        (
+            &self.mind_control.mind_control_sound,
+            &self.mind_control.mind_cleared_sound,
+            &self.mind_control.overload_sound,
+        )
+            .hash(&mut hasher);
+        self.object_list
+            .iter()
+            .map(|object| {
+                (
+                    (object.category, object.id.to_ascii_uppercase()),
+                    &object.mind_cleared_sound,
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
         b"infantry-sequence-bank-v1".hash(&mut hasher);
         Self::by_upper_id(self.object_list.iter().filter_map(|object| {
             object
