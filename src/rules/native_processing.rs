@@ -2502,6 +2502,15 @@ impl ProcessedRulesLayers {
             .rules_mind_control_attack_line_frames
     }
 
+    /// Rules+314/+318, retained ReadCombatDamage66C973..66C9AC scalars.
+    pub(crate) fn drain_money_controls(&self) -> (i32, i32) {
+        let state = self.native_type_construction_trace.registry_state();
+        (
+            state.rules_drain_money_frame_delay,
+            state.rules_drain_money_amount,
+        )
+    }
+
     /// Rules+1866, retained by AudioVisual66B7A7..66B7D2 through the
     /// current-RGB default of ReadColorRGB474B50.
     pub(crate) fn chrono_beam_color(&self) -> [u8; 3] {
@@ -3526,6 +3535,8 @@ pub(crate) struct NativeRulesRegistryState {
     #[serde(default = "crate::rules::ruleset::default_missing_cameo")]
     rules_missing_cameo: String,
     rules_mind_control_attack_line_frames: i32,
+    rules_drain_money_frame_delay: i32,
+    rules_drain_money_amount: i32,
     rules_line_trail_override: [u8; 3],
     rules_chrono_beam_color: [u8; 3],
     rules_prism_support: PrismSupportRules,
@@ -3621,6 +3632,8 @@ impl Default for NativeRulesRegistryState {
             rules_missing_cameo: crate::rules::ruleset::DEFAULT_MISSING_CAMEO.to_owned(),
             // MindControlAttackLineFrames, Rules+310: constructor 0x00665ABE.
             rules_mind_control_attack_line_frames: 15,
+            rules_drain_money_frame_delay: general.drain_money_frame_delay,
+            rules_drain_money_amount: general.drain_money_amount,
             rules_line_trail_override: general.line_trail_color_override,
             rules_chrono_beam_color: general.chrono_beam_color,
             rules_prism_support: PrismSupportRules::default(),
@@ -4031,6 +4044,8 @@ impl NativeRulesRegistryState {
             rules_tiberium_explosion_damage: self.rules_tiberium_explosion_damage,
             rules_ion_cannon_damage: self.rules_ion_cannon_damage,
             rules_mind_control_attack_line_frames: self.rules_mind_control_attack_line_frames,
+            rules_drain_money_frame_delay: self.rules_drain_money_frame_delay,
+            rules_drain_money_amount: self.rules_drain_money_amount,
             rules_line_trail_override: self.rules_line_trail_override,
             rules_chrono_beam_color: self.rules_chrono_beam_color,
             rules_prism_support: self.rules_prism_support,
@@ -5157,6 +5172,8 @@ struct RulesPassProcessor {
     #[cfg(feature = "phobos")]
     rules_missing_cameo: String,
     rules_mind_control_attack_line_frames: i32,
+    rules_drain_money_frame_delay: i32,
+    rules_drain_money_amount: i32,
     rules_line_trail_override: [u8; 3],
     rules_chrono_beam_color: [u8; 3],
     rules_prism_support: PrismSupportRules,
@@ -5237,6 +5254,8 @@ impl RulesPassProcessor {
             rules_missing_cameo: registry_state.rules_missing_cameo,
             rules_mind_control_attack_line_frames: registry_state
                 .rules_mind_control_attack_line_frames,
+            rules_drain_money_frame_delay: registry_state.rules_drain_money_frame_delay,
+            rules_drain_money_amount: registry_state.rules_drain_money_amount,
             rules_line_trail_override: registry_state.rules_line_trail_override,
             rules_chrono_beam_color: registry_state.rules_chrono_beam_color,
             rules_prism_support: registry_state.rules_prism_support,
@@ -8230,11 +8249,21 @@ impl RulesPassProcessor {
             "MindControlAttackLineFrames",
             self.rules_mind_control_attack_line_frames,
         );
-        for key in [
+        let anim = self.resolve_scalar_from(
+            section,
             "DrainAnimationType",
-            "ControlledAnimationType",
-            "PermaControlledAnimationType",
-        ] {
+            RulesTypeFamily::Animation,
+            0x80,
+        );
+        self.rules_type_references
+            .read_pointer("DrainAnimationType", anim);
+        // RulesClass::ReadCombatDamage66BBB0, original66C973..66C9AC:
+        // signed ReadInt5276D0, current defaults, no clamps, in this order.
+        self.rules_drain_money_frame_delay =
+            section.read_int("DrainMoneyFrameDelay", self.rules_drain_money_frame_delay);
+        self.rules_drain_money_amount =
+            section.read_int("DrainMoneyAmount", self.rules_drain_money_amount);
+        for key in ["ControlledAnimationType", "PermaControlledAnimationType"] {
             let anim = self.resolve_scalar_from(section, key, RulesTypeFamily::Animation, 0x80);
             self.rules_type_references.read_pointer(key, anim);
         }
@@ -8599,6 +8628,8 @@ impl RulesPassProcessor {
                     rules_missing_cameo: self.rules_missing_cameo,
                     rules_mind_control_attack_line_frames: self
                         .rules_mind_control_attack_line_frames,
+                    rules_drain_money_frame_delay: self.rules_drain_money_frame_delay,
+                    rules_drain_money_amount: self.rules_drain_money_amount,
                     rules_line_trail_override: self.rules_line_trail_override,
                     rules_chrono_beam_color: self.rules_chrono_beam_color,
                     rules_prism_support: self.rules_prism_support,
