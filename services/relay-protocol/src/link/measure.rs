@@ -127,6 +127,16 @@ impl LossStats {
         }
     }
 
+    /// Test support: one fold done at 0‰, so the direction is good and
+    /// later folds keep the hysteresis.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn measured_good() -> Self {
+        Self {
+            folds: 1,
+            ..Self::default()
+        }
+    }
+
     /// Adds one judgement's counts and folds once 32 are judged (spec §4.3
     /// step 4), then applies the lossy and severe bands (spec §5.2, §5.4).
     pub(crate) fn add(&mut self, judged: u32, lost: u32) {

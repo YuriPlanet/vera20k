@@ -568,6 +568,48 @@ impl ClientSession {
     }
 }
 
+#[cfg(any(test, feature = "test-support"))]
+impl ClientSession {
+    /// Test support only, for tests that must start from a good uplink,
+    /// such as the replay of spec appendix A: presets the uplink as
+    /// measured, one fold done at 0‰, so it is good instead of lossy before
+    /// its first fold (spec §5.4). May be called before configuring the
+    /// ordering or the start; later folds judge as usual.
+    pub fn preset_uplink_measured_good(&mut self) {
+        self.measured_good = true;
+        if let Some(ordering) = self.ordering.as_mut() {
+            ordering.link.loss = LossStats::measured_good();
+        }
+        if let Some(heard) = self.hop.last_heard_ms {
+            self.evaluate_uplink(heard.max(self.clock_ms));
+        }
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl RelayServer {
+    /// Test support only, for tests that must start from a good downlink,
+    /// such as the replay of spec appendix A: presets the downlink of
+    /// `source`'s hop in `room` as measured, one fold done at 0‰, so the
+    /// reader is good instead of lossy before its first fold (spec §5.4).
+    /// The hop must be admitted (after its CONFIRM); it may be before the
+    /// reader subscribes. Later folds judge as usual. Returns false when
+    /// the relay holds no such hop.
+    pub fn preset_reader_measured_good(&mut self, room: [u8; 16], source: u8) -> bool {
+        let Some(peer) = self.rooms.get_mut(&room).and_then(|room| {
+            room.peers
+                .iter_mut()
+                .find(|peer| peer.ticket.source == source)
+        }) else {
+            return false;
+        };
+        peer.link.loss = LossStats::measured_good();
+        let heard = peer.link.last_heard_ms;
+        peer.evaluate_reader(heard);
+        true
+    }
+}
+
 impl RelayServer {
     /// A snapshot of the downlink of `source`'s newest admitted hop in
     /// `room`; see [`ReaderLinkStats`]. `None` when the relay holds no such

@@ -308,6 +308,10 @@ pub struct ClientSession {
     hop: link::HopLink,
     // The `now_ms` of the timed call in progress (spec §4.2, §4.4).
     clock_ms: u64,
+    // Test support: start the uplink measured good (see
+    // `preset_uplink_measured_good`).
+    #[cfg(any(test, feature = "test-support"))]
+    measured_good: bool,
 }
 
 impl fmt::Debug for ClientSession {
@@ -354,6 +358,8 @@ impl ClientSession {
             federation: None,
             hop: link::HopLink::default(),
             clock_ms: 0,
+            #[cfg(any(test, feature = "test-support"))]
+            measured_good: false,
         })
     }
 

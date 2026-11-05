@@ -684,8 +684,8 @@ mod tests {
         }
         subscribe(&mut server, &mut reader, 1, 0);
         // Measured good: the initial lossy state has its own test.
-        for peer in &mut server.rooms.get_mut(&[5; 16]).unwrap().peers {
-            peer.link.loss = Default::default();
+        for source in 0..2 {
+            assert!(server.preset_reader_measured_good([5; 16], source));
         }
         (server, reader)
     }
@@ -702,6 +702,14 @@ mod tests {
             connect(&mut server, peer, 0);
             configure(&mut server, peer, &cert, 0);
         }
+        // The other reader, preset before it subscribes, starts good.
+        assert!(server.preset_reader_measured_good([5; 16], 1));
+        subscribe(&mut server, &mut other, 1, 0);
+        let preset = server.reader_link_stats([5; 16], 1).unwrap();
+        assert_eq!(
+            (preset.downlink, preset.piggyback_depth),
+            (LinkState::Good, 1)
+        );
         subscribe(&mut server, &mut reader, 1, 0);
         let fresh = stats(&server);
         assert_eq!(

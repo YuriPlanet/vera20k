@@ -552,6 +552,10 @@ impl ClientSession {
                 leave: None,
                 link: crate::link::ClientLink::new(parsed.tick_hz),
             });
+            #[cfg(any(test, feature = "test-support"))]
+            if self.measured_good {
+                self.preset_uplink_measured_good();
+            }
         }
         let mut payload = vec![READY_REQUEST];
         payload.extend_from_slice(&certificate);
@@ -2683,7 +2687,7 @@ mod tests {
         let replies = server
             .process_at(endpoint(&first), &bytes, unix(0), 0)
             .unwrap();
-        first.ordering.as_mut().unwrap().link.loss = Default::default();
+        first.preset_uplink_measured_good();
         for reply in &replies {
             first.receive_at(&reply.bytes, 0).unwrap();
         }
@@ -3734,7 +3738,7 @@ mod tests {
         }
         let peers = &mut server.rooms.get_mut(&[5; 16]).unwrap().peers;
         peers[0].link.loss.lossy = true;
-        peers[1].link.loss = Default::default();
+        peers[1].link.loss = crate::link::LossStats::measured_good();
         server.advance_clock(300, unix(300));
         let first = server.drain_ordering_push(300, unix(300));
         let (lossy_at, good_at) = (endpoint(&lossy), endpoint(&good));

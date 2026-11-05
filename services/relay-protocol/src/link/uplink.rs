@@ -722,8 +722,47 @@ mod tests {
             .unwrap();
         session.hop.last_heard_ms = Some(0);
         session.note_ordering_receipt(true, true);
-        session.ordering.as_mut().unwrap().link.loss = Default::default();
+        session.preset_uplink_measured_good();
         session
+    }
+
+    #[test]
+    fn a_measured_good_preset_before_configuring_starts_the_uplink_good() {
+        let key = SecretKey::new([4; 32]);
+        let ticket = Ticket {
+            room: [5; 16],
+            source: 0,
+            expires: 1200,
+            nonce: [1; 16],
+            player: [1; 16],
+            generation: 1,
+        }
+        .sign(&key)
+        .unwrap();
+        let mut session = ClientSession::new(
+            &ticket,
+            *crate::derive_packet_key(&key, &ticket).expose_for_https(),
+            [9; 32],
+        )
+        .unwrap();
+        session.preset_uplink_measured_good();
+        session.ready = true;
+        let certificate = OrderingCertificate {
+            room: [5; 16],
+            sources_mask: 3,
+            tick_hz: 30,
+            expires: 1400,
+            pacing: Default::default(),
+        }
+        .sign(&key)
+        .unwrap();
+        session
+            .configure_ordering_at(&certificate, [7; 32], 0, &mut Vec::new())
+            .unwrap();
+        session.hop.last_heard_ms = Some(0);
+        session.evaluate_uplink(0);
+        let stats = session.link_stats();
+        assert_eq!((stats.uplink, stats.up_loss_folds), (LinkState::Good, 1));
     }
 
     #[test]
