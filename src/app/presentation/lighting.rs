@@ -213,6 +213,8 @@ pub(crate) fn building_palette_light(
 /// draw to one row; an explicit cell drawer selects cell common; otherwise the
 /// global ANIM Convert selects top. AltPalette selects the first ColorScheme
 /// (one row), not the player's 53-row scheme.
+/// RESIDUAL (dormant): the IsVeins arm that precedes these (00423122..0042317E:
+/// the player's scheme at cell common) is not ported; no retail anim sets it.
 pub(crate) fn anim_palette_light(
     grid: &CellLightGrid,
     cell: (u16, u16),
