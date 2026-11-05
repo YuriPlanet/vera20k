@@ -391,7 +391,7 @@ pub(crate) fn build_display_effect_instances(
         .collect::<Vec<_>>();
     let local_owner = input.local_owner;
     for &stable_id in sim.display_layers().ordered_ids() {
-        if let Some(light) = sim.building_spotlight(stable_id, input.rules) {
+        if let Some(light) = sim.building_spotlight(stable_id, local_owner, input.rules) {
             super::particles::build_spotlight_instance(
                 input,
                 stable_id,

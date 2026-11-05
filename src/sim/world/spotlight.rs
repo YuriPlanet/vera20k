@@ -204,9 +204,15 @@ pub struct BuildingSpotlight {
 impl Simulation {
     /// BuildingLightDraw435BE0 uses the child's coordinates, the parent's
     /// virtual center/operational state, and the retained rules. No draw query
-    /// mutates gameplay, RNG or timers. Native +6E7's represented constructor
-    /// state is false; foreign native save bytes are not imported by this engine.
-    pub fn building_spotlight(&self, id: u64, rules: &RuleSet) -> Option<BuildingSpotlight> {
+    /// mutates gameplay, RNG or timers. `viewer` is the player whose map draws
+    /// it: a parent the FoggedObject constructor (`0x004D10D5`) fogged on that
+    /// map (`+0x6E7`) draws nothing (`0x00435C44..0x00435C4C`).
+    pub fn building_spotlight(
+        &self,
+        id: u64,
+        viewer: Option<crate::sim::intern::InternedId>,
+        rules: &RuleSet,
+    ) -> Option<BuildingSpotlight> {
         let light = self.substrate.spotlights.get(id)?;
         let parent = light.parent.and_then(|p| self.substrate.entities.get(p))?;
         if !light.alive
@@ -215,6 +221,7 @@ impl Simulation {
             || (parent.category() != EntityCategory::Structure && !cfg!(feature = "ares"))
             || (parent.category() == EntityCategory::Structure
                 && self.building_operational_state(parent.stable_id(), rules) != Some(true))
+            || viewer.is_some_and(|viewer| self.fog.is_object_fogged(viewer, parent.stable_id()))
         {
             return None;
         }

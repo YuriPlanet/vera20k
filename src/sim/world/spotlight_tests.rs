@@ -34,7 +34,7 @@ fn overflowed_authored_spotlight_motion_keeps_its_last_pose_and_cleanup() {
         sim.set_spotlight_behavior(id, 2);
         sim.visit_spotlight(id, &rules, UninitContext::new(&rules, None));
         assert_eq!(sim.substrate.spotlights.get(id).unwrap().coord, before);
-        assert!(sim.building_spotlight(id, &rules).is_some());
+        assert!(sim.building_spotlight(id, None, &rules).is_some());
         // Invalid authored motion must not bypass ordinary orphan cleanup.
         sim.substrate.spotlights_pointer_expired(p, true);
         sim.visit_spotlight(id, &rules, UninitContext::new(&rules, None));
@@ -45,6 +45,32 @@ fn overflowed_authored_spotlight_motion_keeps_its_last_pose_and_cleanup() {
                 .any(|i| i == id)
         );
     }
+}
+/// BuildingLight Draw_It (`0x00435C44..0x00435C4C`) draws nothing while its
+/// building is fogged (`+0x6E7`) on the drawing player's map.
+#[test]
+fn a_fogged_building_draws_no_spotlight() {
+    let rules = rules();
+    let mut sim = Simulation::with_seed(9);
+    let p = parent(&mut sim, EntityCategory::Structure);
+    sim.construct_spotlight(p, &rules);
+    let id = sim
+        .substrate
+        .entities
+        .get(p)
+        .unwrap()
+        .building_light
+        .light()
+        .unwrap();
+    sim.set_spotlight_behavior(id, 2);
+    let (player, other) = (
+        sim.interner.intern("Americans"),
+        sim.interner.intern("Russians"),
+    );
+    assert!(sim.building_spotlight(id, Some(player), &rules).is_some());
+    sim.fog.set_object_fogged_for_test(player, p, true);
+    assert!(sim.building_spotlight(id, Some(player), &rules).is_none());
+    assert!(sim.building_spotlight(id, Some(other), &rules).is_some());
 }
 fn parent(sim: &mut Simulation, category: EntityCategory) -> u64 {
     parent_id(sim, category, 1)
@@ -356,7 +382,7 @@ fn spotlight_cone_geometry_matches_original_before_projection() {
         sim.substrate.spotlights.get_mut(id).unwrap().coord =
             serde_json::from_value(row["coord"].clone()).unwrap();
         let light = sim
-            .building_spotlight(id, &rules)
+            .building_spotlight(id, None, &rules)
             .expect("operational spotlight draws");
         assert_eq!(
             light.beam_origin,
