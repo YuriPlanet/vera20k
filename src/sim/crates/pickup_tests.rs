@@ -1348,6 +1348,84 @@ fn random_unit_crate_keeps_rejected_draws_before_an_eligible_vehicle() {
 }
 
 #[test]
+fn retained_powerup_ordinal_keeps_a_late_duplicate_anim_constructor() {
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+
+    let first = RulesLayerStack::new(IniFile::from_str(
+        "[Animations]\n0=OLD\n1=MONEY\n[Powerups]\nMoney=20,MONEY,yes,2000\n",
+    ))
+    .process()
+    .unwrap();
+    let (_, trace) = first.into_ini_and_native_type_construction_trace();
+    let mut layers = RulesLayerStack::new(IniFile::empty());
+    // AbstractType410800 truncates IDs to24 bytes. WeaponRead772589 uses
+    // the full25-byte name after AnimRead679A5D, allocating an unread twin.
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str(
+            "[Animations]\n0=ABCDEFGHIJKLMNOPQRSTUVWXY\n\
+             [VehicleTypes]\n0=U\n[U]\nPrimary=W\n\
+             [W]\nAssaultAnim=ABCDEFGHIJKLMNOPQRSTUVWXY\n",
+        ),
+    );
+    let art = IniFile::from_str("[ABCDEFGHIJKLMNOPQRSTUVWX]\nRandomRate=900,300\n");
+    let processed = layers
+        .process_with_fixed_art_and_registry_state(
+            &art,
+            trace
+                .into_registry_state_discarding_events()
+                .destructive_reset(),
+        )
+        .unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    assert_eq!(
+        rules.anim_type_art_read_states(),
+        &[
+            ("ABCDEFGHIJKLMNOPQRSTUVWX".into(), true),
+            ("ABCDEFGHIJKLMNOPQRSTUVWX".into(), false)
+        ]
+    );
+    assert_eq!(rules.powerups.animation_index(POWERUP_MONEY), 1);
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    rules.bind_anim_frame_count_for_test("ABCDEFGHIJKLMNOPQRSTUVWX", 2);
+    let mut sim = sim_with_grid(31);
+    let rng = sim.scenario_rng.native_state_hex();
+    assert!(spawn_pickup_anim(
+        &mut sim,
+        &rules,
+        POWERUP_MONEY,
+        CELL,
+        None
+    ));
+    assert_eq!(sim.anims().count(), 1);
+    // The late twin's4275C0/C6 defaults are zero: ctor4221C5 skips the
+    // RandomRate draw. The first same-named type must not supply its ART.
+    assert_eq!(sim.scenario_rng.native_state_hex(), rng);
+    let bytes = crate::util::save_codec::serialize(&sim).unwrap();
+    let mut sim: Simulation = crate::util::save_codec::deserialize(&bytes).unwrap();
+    // Native loading restarts Scenario RNG from the saved seed; the visit
+    // must not advance that new stream either.
+    let rng = sim.scenario_rng.native_state_hex();
+    let id = *sim.anims().next().unwrap().0;
+    let key = sim.interner.resolve(sim.anim(id).unwrap().type_id());
+    assert!(!rules.art().anim_runtime_config(key).unwrap().art_body_read);
+    assert!(
+        crate::rules::art_data::effect_shp_candidates(
+            crate::rules::art_data::EffectImageKind::Animation,
+            Some(rules.art()),
+            key,
+            key,
+            ".TEM",
+            "TEMPERATE",
+        )
+        .is_empty()
+    );
+    sim.visit_anim(id, &rules, None, FrameEffects::default());
+    assert!(sim.anim(id).is_some());
+    assert_eq!(sim.scenario_rng.native_state_hex(), rng);
+}
+
+#[test]
 fn retail_cash_pickup_does_not_rebind_a_failed_animation_until_reread() {
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
 

@@ -726,7 +726,8 @@ fn spawn_pickup_anim(
 ) -> bool {
     // Preserve the existing bounded lookup for a saved index whose Type was
     // deleted without a replacement. Native only checks -1 before indexing.
-    let Some(anim) = rules.anim_type_name_by_index(rules.powerups.animation_index(slot)) else {
+    let Some(anim) = rules.anim_type_runtime_key_by_index(rules.powerups.animation_index(slot))
+    else {
         return true;
     };
     let (Ok(rx), Ok(ry)) = (u16::try_from(cell.0), u16::try_from(cell.1)) else {
@@ -734,7 +735,7 @@ fn spawn_pickup_anim(
     };
     // 483307..483334 rereads the retained Cell only for an admitted anim.
     let center = crate_center(sim, cell, receiver);
-    let type_name = sim.interner.intern(anim);
+    let type_name = sim.interner.intern(&anim);
     let mut descriptor = crate::sim::components::AnimClassSpawnDescriptor::new(
         type_name,
         rx,

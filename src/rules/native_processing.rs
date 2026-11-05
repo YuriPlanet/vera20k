@@ -59,6 +59,29 @@ pub(crate) fn abstract_type_stored_id(incoming: &str) -> String {
     incoming.chars().take(0x18).collect()
 }
 
+/// Runtime identity for one retained AnimType array slot. AbstractType410800
+/// stores24 bytes, but AnimFind428B80 compares the full input, so two objects
+/// can have the same stored name and different ART/read state. Name lookups
+/// retain the first slot; pointer/index consumers keep the selected object.
+/// The NUL namespace cannot collide with a native C-string ID and is never
+/// used as a filename: the slot's ObjectImageState owns resource requests.
+pub(crate) fn anim_type_runtime_key<'a>(
+    names: impl Iterator<Item = &'a str> + Clone,
+    index: usize,
+) -> Option<std::borrow::Cow<'a, str>> {
+    let name = names.clone().nth(index)?;
+    Some(
+        if names
+            .take(index)
+            .any(|prior| prior.eq_ignore_ascii_case(name))
+        {
+            std::borrow::Cow::Owned(format!("\0ANIM:{index}:{name}"))
+        } else {
+            std::borrow::Cow::Borrowed(name)
+        },
+    )
+}
+
 /// HouseTypeClass::FindIndexOfName5117D0: the literal `<random>` returns-2;
 /// otherwise each current Country's Name+64 is compared before its ID+24.
 /// Both comparisons are case-insensitive, and an unknown token returns-1.
@@ -4336,8 +4359,9 @@ impl RulesTypeFamily {
     }
 }
 
-/// Resolved names preserve native factory spelling and vector order. These
-/// pointer bindings belong to the retained Rules object, not merged INI text.
+/// Resolved identities preserve native factory selection and vector order;
+/// colliding AnimTypes keep distinct runtime keys. These pointer bindings
+/// belong to the retained Rules object, not merged INI text.
 /// Native reader corpus: tools/rules_oracle/select_anim_inputs.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 struct SelectAnimRulesState {
@@ -5776,6 +5800,24 @@ impl RulesPassProcessor {
         }
     }
 
+    /// Native factories still compare literal stored IDs. Only their resolved
+    /// pointer projection uses a distinct key for colliding AnimType slots.
+    fn resolved_type_key(&self, family: RulesTypeFamily, index: usize) -> String {
+        let members = &self.families[&family];
+        if family == RulesTypeFamily::Animation {
+            anim_type_runtime_key(
+                members
+                    .iter()
+                    .map(|member| member.native_stored_id.as_str()),
+                index,
+            )
+            .expect("factory returned a live AnimType index")
+            .into_owned()
+        } else {
+            members[index].native_stored_id.clone()
+        }
+    }
+
     /// None retains the prior pointer; Some(None) is an authored null.
     /// ReadString's empty default and FindOrAllocate are shared by scalar
     /// allocation sites and the fields which retain their resolved identities.
@@ -5792,7 +5834,7 @@ impl RulesPassProcessor {
         }
         Some(
             self.find_or_allocate(family, &incoming)
-                .map(|index| self.families[&family][index].native_stored_id.clone()),
+                .map(|index| self.resolved_type_key(family, index)),
         )
     }
 
@@ -5824,7 +5866,7 @@ impl RulesPassProcessor {
             .map(|indices| {
                 indices
                     .into_iter()
-                    .map(|index| self.families[&family][index].native_stored_id.clone())
+                    .map(|index| self.resolved_type_key(family, index))
                     .collect()
             })
     }
@@ -5942,7 +5984,7 @@ impl RulesPassProcessor {
                 .iter()
                 .map(|member| member.native_stored_id.as_str()),
         )?;
-        Some(Some(members[index].native_stored_id.clone()))
+        Some(Some(self.resolved_type_key(family, index)))
     }
 
     /// Shared Ares/Phobos pointer-vector reader: Building specialization
@@ -5988,7 +6030,7 @@ impl RulesPassProcessor {
         let mut resolved = Vec::new();
         for token in section.read_list(key, capacity)? {
             if let Some(index) = self.find_or_allocate(family, token) {
-                resolved.push(self.families[&family][index].native_stored_id.clone());
+                resolved.push(self.resolved_type_key(family, index));
             }
         }
         Some(resolved)
@@ -8076,11 +8118,7 @@ impl RulesPassProcessor {
                     |incoming| {
                         let animation =
                             self.find_or_allocate(RulesTypeFamily::Animation, incoming)?;
-                        Some(
-                            self.families[&RulesTypeFamily::Animation][animation]
-                                .native_stored_id
-                                .clone(),
-                        )
+                        Some(self.resolved_type_key(RulesTypeFamily::Animation, animation))
                     },
                 );
                 let member = &mut self.family_mut(RulesTypeFamily::Projectile)[index];
