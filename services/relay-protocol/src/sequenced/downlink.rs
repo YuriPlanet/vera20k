@@ -738,7 +738,7 @@ mod tests {
             (LinkState::Lossy, 2)
         );
         let peer = &mut server.rooms.get_mut(&[5; 16]).unwrap().peers[0];
-        peer.link.loss.add(32, 0);
+        peer.link.loss.add(32, 0, 10);
         peer.evaluate_reader(10);
         assert_eq!(stats(&server).downlink, LinkState::Good);
         super::super::tests::renew(&mut server, &mut reader, 20_000);

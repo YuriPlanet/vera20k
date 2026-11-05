@@ -881,7 +881,7 @@ impl ReaderLink {
                 .judge(down.high, down.bits, now_ms, wait, sent, |sequence| {
                     lost.push(sequence)
                 });
-        self.loss.add(judged, missing);
+        self.loss.add(judged, missing, now_ms);
         lost.into_iter()
             .map(|sequence| {
                 let entry = &mut self.log[(sequence % SENDLOG_READER as u64) as usize];
@@ -1057,7 +1057,7 @@ impl ClientSession {
         let (judged, lost) = hop
             .cursor
             .judge(up.high, up.bits, now_ms, wait, sent, |_| {});
-        ordering.link.loss.add(judged, lost);
+        ordering.link.loss.add(judged, lost, now_ms);
     }
 
     /// Re-evaluates the uplink state at `now_ms` (spec §5.2, §5.5).

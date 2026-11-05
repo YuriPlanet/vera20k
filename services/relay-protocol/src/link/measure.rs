@@ -10,7 +10,8 @@ pub(crate) const REORDER_THRESHOLD: u64 = 3;
 const LOSS_FOLD_PACKETS: u32 = 32;
 const LOSSY_ENTER: u16 = 5;
 const LOSSY_EXIT: u16 = 2;
-const LOSSY_EXIT_CLEAN_FOLDS: u32 = 8;
+/// A measured lossy state leaves only this long after its last loss.
+const LOSSY_EXIT_QUIET_MS: u64 = 20_000;
 const SEVERE_ENTER: u16 = 150;
 const SEVERE_EXIT: u16 = 100;
 const QUEUE_DELAY_FLOOR: u32 = 100;
@@ -71,8 +72,8 @@ pub(crate) struct LossStats {
     pub(crate) permille_max: u16,
     pub(crate) lossy: bool,
     pub(crate) severe: bool,
-    // Consecutive folds that found no lost packet (spec §5.4).
-    clean_folds: u32,
+    // When the last lost packet was judged (spec §5.4).
+    last_loss_ms: Option<u64>,
 }
 
 impl LossCursor {
@@ -153,18 +154,17 @@ impl LossStats {
 
     /// Adds one judgement's counts and folds once 32 are judged (spec §4.3
     /// step 4), then applies the lossy and severe bands (spec §5.2, §5.4).
-    pub(crate) fn add(&mut self, judged: u32, lost: u32) {
+    /// `now_ms` is when the counts were judged.
+    pub(crate) fn add(&mut self, judged: u32, lost: u32, now_ms: u64) {
         self.judged += judged;
         self.lost += lost;
+        if lost > 0 {
+            self.last_loss_ms = Some(now_ms);
+        }
         if self.judged < LOSS_FOLD_PACKETS {
             return;
         }
         let sample = (u64::from(self.lost) * 1000 / u64::from(self.judged)) as u32;
-        self.clean_folds = if self.lost == 0 {
-            self.clean_folds + 1
-        } else {
-            0
-        };
         self.permille = ((3 * u32::from(self.permille) + sample) / 4) as u16;
         self.judged = 0;
         self.lost = 0;
@@ -175,8 +175,11 @@ impl LossStats {
         // measurement (spec §5.4). Later folds keep the hysteresis.
         let first = self.folds == 1;
         self.lossy = if self.lossy && !first {
-            // Leaving also takes eight folds in a row without a loss.
-            self.permille > LOSSY_EXIT || self.clean_folds < LOSSY_EXIT_CLEAN_FOLDS
+            // Leaving also takes 20 s without any lost packet.
+            self.permille > LOSSY_EXIT
+                || self
+                    .last_loss_ms
+                    .is_some_and(|at| now_ms.saturating_sub(at) < LOSSY_EXIT_QUIET_MS)
         } else {
             self.permille >= LOSSY_ENTER
         };
@@ -538,42 +541,38 @@ mod tests {
     #[test]
     fn loss_folds_every_32_judged_packets_with_hysteresis() {
         let mut stats = LossStats::default();
-        stats.add(31, 0);
+        stats.add(31, 0, 0);
         assert_eq!(stats.folds, 0);
-        stats.add(1, 0);
+        stats.add(1, 0, 0);
         assert_eq!((stats.permille, stats.folds, stats.lossy), (0, 1, false));
         // 1 of 32: sample 31, (0 + 31) / 4 = 7, at least the 5‰ entry.
-        stats.add(32, 1);
+        stats.add(32, 1, 0);
         assert_eq!((stats.permille, stats.lossy), (7, true));
-        // 5, 3, 2 (at the 2‰ exit), 1, 0, 0, 0: seven clean folds stay
-        // lossy; leaving also takes eight in a row without a loss.
-        for _ in 0..7 {
-            stats.add(32, 0);
+        // 5, 3, 2: at the 2‰ exit, but a loss within 20 s keeps it lossy.
+        for _ in 0..3 {
+            stats.add(32, 0, 19_999);
         }
-        assert_eq!((stats.permille, stats.lossy), (0, true));
-        stats.add(32, 0);
-        assert!(!stats.lossy);
-        stats.add(32, 32); // (0 + 1000) / 4 = 250
+        assert_eq!((stats.permille, stats.lossy), (2, true));
+        stats.add(32, 0, 20_000);
+        assert!(!stats.lossy, "20 s after the last loss, at most 2‰");
+        stats.add(32, 32, 0); // (0 + 1000) / 4 = 250
         assert_eq!((stats.permille, stats.severe), (250, true));
-        stats.add(32, 0); // 187
-        stats.add(32, 0); // 140
-        stats.add(32, 0); // 105
+        stats.add(32, 0, 0); // 187
+        stats.add(32, 0, 0); // 140
+        stats.add(32, 0, 0); // 105
         assert!(stats.severe);
-        stats.add(32, 0); // 78
+        stats.add(32, 0, 0); // 78
         assert!(!stats.severe);
         assert_eq!(stats.permille_max, 250);
-        // A lost packet restarts the clean count.
+        // Another loss within the 20 s restarts the wait.
         let mut stats = LossStats::initial();
-        stats.add(32, 1); // first fold: 7, lossy
-        for _ in 0..7 {
-            stats.add(32, 0);
+        stats.add(32, 1, 0); // first fold: 7, lossy
+        stats.add(320, 1, 15_000); // another loss at 15 s
+        for _ in 0..5 {
+            stats.add(32, 0, 34_999);
         }
-        stats.add(320, 1); // 0‰ by rounding, but a loss
-        for _ in 0..7 {
-            stats.add(32, 0);
-        }
-        assert!(stats.lossy);
-        stats.add(32, 0);
+        assert_eq!((stats.permille, stats.lossy), (0, true));
+        stats.add(32, 0, 35_000);
         assert!(!stats.lossy);
     }
 
@@ -636,7 +635,7 @@ mod tests {
         // Spec §5.4: the eight clean folds apply only to a measured loss.
         let mut stats = LossStats::initial();
         assert!(stats.lossy);
-        stats.add(32, 0);
+        stats.add(32, 0, 0);
         assert_eq!((stats.folds, stats.permille, stats.lossy), (1, 0, false));
     }
 
