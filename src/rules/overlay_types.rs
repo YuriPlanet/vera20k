@@ -351,7 +351,7 @@ impl OverlayTypeRegistry {
     pub fn from_processed_rules(
         processed: &crate::rules::native_processing::ProcessedRulesLayers,
     ) -> Self {
-        let mut registry = Self::from_projected_ini(processed.ini());
+        let mut registry = Self::from_projected_ini(processed.ini(), processed.terrain_rules());
         for (index, (_, damage_levels, explodes, cell_anim, image)) in
             processed.overlay_type_states().enumerate()
         {
@@ -364,7 +364,7 @@ impl OverlayTypeRegistry {
         registry
     }
 
-    fn from_projected_ini(ini: &IniFile) -> Self {
+    fn from_projected_ini(ini: &IniFile, terrain_rules: &TerrainRules) -> Self {
         let section = match ini.section("OverlayTypes") {
             Some(s) => s,
             None => {
@@ -395,7 +395,8 @@ impl OverlayTypeRegistry {
 
         // Native registry allocation follows declaration order; numeric key
         // text is not a sorting authority.
-        let terrain_rules = TerrainRules::from_ini(ini);
+        // Land is a retained global table, not a re-read of merged INI keys.
+        // RecalcAttributes47D2B0 and RecalcZoneType483C80 use that same table.
         let clear_semantics = terrain_rules.semantics_for_land_type(LandType::Clear.as_index());
         let clear_speed_costs = clear_semantics.map(|semantics| semantics.speed_costs);
         let clear_ground_blocked =
@@ -423,8 +424,9 @@ impl OverlayTypeRegistry {
                 let land_speed_costs = land_semantics.map(|semantics| semantics.speed_costs);
                 let land_ground_blocked =
                     land_semantics.is_some_and(|semantics| semantics.ground_blocked);
-                let land_wheel_speed_zero =
-                    land_speed_costs.is_some_and(|speed_costs| speed_costs.wheel == Some(0));
+                let land_wheel_speed_zero = land_speed_costs.is_some_and(|speed_costs| {
+                    speed_costs.wheel.is_some_and(|speed| speed.is_zero())
+                });
                 // OverlayTypeClass::ReadINI5FE7B1..5FE7DA stores all of EAX,
                 // with no clamp. The retained pass reader uses current values.
                 let strength = type_section.read_int("Strength", 1);
@@ -478,8 +480,9 @@ impl OverlayTypeRegistry {
                     track,
                     land_speed_costs: clear_speed_costs,
                     land_ground_blocked: clear_ground_blocked,
-                    land_wheel_speed_zero: clear_speed_costs
-                        .is_some_and(|speed_costs| speed_costs.wheel == Some(0)),
+                    land_wheel_speed_zero: clear_speed_costs.is_some_and(|speed_costs| {
+                        speed_costs.wheel.is_some_and(|speed| speed.is_zero())
+                    }),
                     ..OverlayTypeFlags::default()
                 });
             }
@@ -1001,7 +1004,7 @@ NoUseTileLandType=no
         assert!(flags.land_wheel_speed_zero);
         assert_eq!(
             flags.land_speed_costs.expect("Tiberium speed row").wheel,
-            Some(0)
+            Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO)
         );
     }
 

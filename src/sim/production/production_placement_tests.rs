@@ -302,7 +302,8 @@ fn resolved_clear_grid_with_override(
     mut override_cell: impl FnMut(&mut ResolvedTerrainCell),
 ) -> ResolvedTerrainGrid {
     let clear_speed_costs = SpeedCostProfile {
-        float: Some(0),
+        float: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         ..crate::map::resolved_terrain::TEST_OPEN_SPEED_COSTS
     };
     crate::map::resolved_terrain::test_grid(width, height, |rx, ry| {
@@ -1530,8 +1531,10 @@ fn free_unit_search_asks_wheel_ground_whatever_the_free_units_speed_type() {
     for frame in 0..(STOCK_4X3_FALLBACK_POOL.len() as u32 * 2) {
         let (sim, _, spawned) = complete_stock_allied_refinery_on(frame, &[], |cell| {
             if (cell.rx, cell.ry) == WHEEL_ONLY {
-                cell.speed_costs.track = Some(0);
-                cell.base_speed_costs.track = Some(0);
+                cell.speed_costs.track =
+                    Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+                cell.base_speed_costs.track =
+                    Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
             }
         });
         let pick = STOCK_4X3_FALLBACK_POOL[(frame as usize) % STOCK_4X3_FALLBACK_POOL.len()];

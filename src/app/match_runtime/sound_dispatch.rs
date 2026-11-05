@@ -2245,8 +2245,8 @@ mod tests {
     /// the Ready line, VERA runs no tail.
     #[test]
     fn launch_lines_match_native() {
-        let rules =
-            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        let rules = crate::rules::ruleset::RuleSet::from_ini_with_sounds_for_test(
+            &crate::rules::ini_parser::IniFile::from_str(
                 "[General]\nFixtureOnly=1\n[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
                  [BuildingTypes]\n[SuperWeaponTypes]\n0=IronCurtainSpecial\n\
                  1=GeneticConverterSpecial\n2=PsychicRevealSpecial\n3=NukeSpecial\n\
@@ -2256,8 +2256,14 @@ mod tests {
                  [NukeSpecial]\nType=MultiMissile\n\
                  [AudioVisual]\nGeneticMutatorActivateSound=GeneticMutatorActivate\n\
                  PsychicRevealActivateSound=PsychicRevealActivate\nDigSound=NukeSiren\n",
-            ))
-            .unwrap();
+            ),
+            &[
+                "GeneticMutatorActivate",
+                "PsychicRevealActivate",
+                "NukeSiren",
+            ],
+        )
+        .unwrap();
         let oracle: serde_json::Value =
             serde_json::from_str(crate::test_fixture::text("tools/superweapon_oracle.json"))
                 .unwrap();
@@ -2440,26 +2446,15 @@ mod tests {
         );
     }
 
-    /// Stock `[AudioVisual]` values, so the table below is what a retail
-    /// skirmish actually plays.
-    fn stock_audio_visual() -> crate::rules::ruleset::GeneralRules {
-        // The parse of each key from stock `[AudioVisual]` text is pinned in
-        // `rules::ruleset::tests::superweapon_activate_sounds_parse_their_stock_values`.
-        let mut general = crate::rules::ruleset::GeneralRules::default();
-        general.psychic_dominator_activate_sound = Some("PsychicDominatorActivate".to_string());
-        general.genetic_mutator_activate_sound = Some("GeneticMutatorActivate".to_string());
-        general.psychic_reveal_activate_sound = Some("PsychicRevealActivate".to_string());
-        general.dig_sound = Some("NukeSiren".to_string());
-        general.storm_sound = Some("WeatherIntro".to_string());
-        general
-    }
-
     /// The whole `SuperClass::Launch @ 0x006CC390` cue table, one row per
     /// `Type=` case. Addresses are on `superweapon_launch_cue`.
     #[test]
     fn every_superweapon_case_plays_the_cue_its_native_arm_plays() {
         use crate::rules::superweapon_type::SuperWeaponKind as K;
-        let g = stock_audio_visual();
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let g = retail.rules.general;
         let cue = |kind, start: Option<&str>| superweapon_launch_cue(kind, &g, start);
         let generic = cue(K::GenericWarhead, None);
         assert_eq!(generic.sound_id, None);

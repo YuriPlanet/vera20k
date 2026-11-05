@@ -56,13 +56,15 @@ fn rules_with_patch(patch: &str) -> RuleSet {
 /// pure Float movers.
 fn clear_costs() -> SpeedCostProfile {
     SpeedCostProfile {
-        foot: Some(100),
-        track: Some(100),
-        wheel: Some(100),
-        float: Some(0),
-        amphibious: Some(100),
-        float_beach: Some(100),
-        hover: Some(100),
+        foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+
+        float: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
     }
 }
 
@@ -81,13 +83,14 @@ fn water_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     cell.land_type = water;
     cell.base_land_type = water;
     let costs = SpeedCostProfile {
-        foot: Some(0),
-        track: Some(0),
-        wheel: Some(0),
-        float: Some(100),
-        amphibious: Some(100),
-        float_beach: Some(100),
-        hover: Some(100),
+        foot: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        track: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
     };
     cell.speed_costs = costs;
     cell.base_speed_costs = costs;

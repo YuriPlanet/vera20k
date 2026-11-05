@@ -175,10 +175,12 @@ fn a_plain_step_answers_as_the_full_body() {
         assert_eq!(answered(&sim, id, 0), 0);
     }
     // A zero Wheel row refuses only the truck.
-    terrain_cell(&mut sim, TARGET).speed_costs.wheel = Some(0);
+    terrain_cell(&mut sim, TARGET).speed_costs.wheel =
+        Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
     assert_eq!(answered(&sim, ENGINEER, 0), 0);
     assert_eq!(answered(&sim, TRUCK, 0), 7);
-    terrain_cell(&mut sim, TARGET).speed_costs.foot = Some(0);
+    terrain_cell(&mut sim, TARGET).speed_costs.foot =
+        Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
     assert_eq!(answered(&sim, ENGINEER, 0), 7);
     sim.substrate
         .entities

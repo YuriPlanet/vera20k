@@ -2387,8 +2387,9 @@ pub use crate::map::scenario_menu::MapMenuEntry;
 pub(crate) fn load_map_initial_with_assets(
     ra2_dir: PathBuf,
     asset_manager: &mut AssetManager,
-    native_rules: Option<&crate::rules::process_owner::NativeRulesProcessOwner>,
+    mut native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
     requested_map: Option<&str>,
+    mode_rules_file: Option<&str>,
     progress: &mut dyn crate::app::loading::pump::LoadingProgressSink,
 ) -> Result<MapLoadInitial> {
     // Check RA2_QUICKPLAY env var: if it names a .map/.mpr file, load that directly.
@@ -2440,15 +2441,15 @@ pub(crate) fn load_map_initial_with_assets(
         let theater = crate::map::theater::load_theater(asset_manager, theater_name)
             .ok_or_else(|| anyhow::anyhow!("random map: theater {theater_name} unavailable"))?;
 
-        // Terrain rules feed the zone classifier's wheel-impassable table. The
-        // table is observably inert during generation (the classifier runs at
-        // start-placement time, before any rock/rough/cliff terrain exists), but
-        // it is resolved faithfully from `rulesmd.ini` when present; a missing
-        // file falls back to the passable defaults.
+        // Generate598A74 -> InitMap599A56 enters Full_Init before generated
+        // terrain or starts: root/LANG/committed mode update global89EA40.
+        // This .SED path has no preview cache and cannot reuse its land rows.
+        let mode_rules =
+            crate::rules::retail_sources::select_mode_ini(asset_manager, mode_rules_file)
+                .map_err(anyhow::Error::msg)?;
         let terrain_rules = native_rules
-            .map(|owner| {
-                crate::rules::terrain_rules::TerrainRules::from_ini(owner.selected_rules_root())
-            })
+            .as_deref_mut()
+            .map(|owner| owner.prepare_random_map_terrain_rules(mode_rules.as_ref(), true))
             .unwrap_or_default();
         let resolved =
             crate::map::rmg::build::ResolvedTheaterInputs::from_theater(&theater, &terrain_rules);
@@ -2463,7 +2464,8 @@ pub(crate) fn load_map_initial_with_assets(
         // `[AI] NeutralTechBuildings` plus each type's `Foundation=`. The phase
         // runs for every map type except 0, so an empty list here would both
         // strip the buildings and skip the draws the original consumes.
-        let tech_types = crate::app::loading::init_helpers::load_neutral_tech_types(native_rules);
+        let tech_types =
+            crate::app::loading::init_helpers::load_neutral_tech_types(native_rules.as_deref());
         let mut generated = crate::map::rmg::build::generate_map(
             &options,
             &settings,
@@ -4394,7 +4396,7 @@ mod random_map_retail_tests {
                 let mut asset_manager = AssetManager::new(&ra2, MediaArchiveMode::STOCK_DIGITAL)
                     .expect("AssetManager::new");
                 let audio = crate::rules::audio_sources::AudioDefinitions::select(&asset_manager);
-                let (_, _, native_rules) = crate::rules::retail_sources::load_startup_rules(
+                let (_, _, mut native_rules) = crate::rules::retail_sources::load_startup_rules(
                     &asset_manager,
                     std::sync::Arc::clone(audio.sounds()),
                     std::sync::Arc::clone(audio.eva()),
@@ -4404,8 +4406,9 @@ mod random_map_retail_tests {
                 let initial = load_map_initial_with_assets(
                     seed_dir,
                     &mut asset_manager,
-                    Some(&native_rules),
+                    Some(&mut native_rules),
                     Some(&seed_name),
+                    None,
                     &mut SilentProgress,
                 )
                 .unwrap_or_else(|err| panic!("{tag}: the .SED branch failed: {err}"));

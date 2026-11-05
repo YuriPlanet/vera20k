@@ -70,15 +70,17 @@ fn launch_session(seed_name: &str) -> SkirmishLaunchSession {
 fn start_production_worker(
     assets: &mut crate::assets::asset_manager::AssetManager,
     options: &RmgOptions,
-    native_rules: &crate::rules::process_owner::NativeRulesProcessOwner,
+    native_rules: &mut crate::rules::process_owner::NativeRulesProcessOwner,
     runtime: &mut MultiplayerShellRuntime,
     retention: &mut RandomMapGenerationRetention,
     shared_cell_dummy: &crate::map::resolved_terrain::SharedCellDummy,
 ) -> std::sync::mpsc::Receiver<RandomMapUpdate> {
     begin_random_map_generation_owners(runtime, retention, options);
-    let prepared = prepare_random_map_generation(assets, options, Some(native_rules), None)
-        .expect("production retail generation preparation");
     let decision = retention.map_storage_decision(options);
+    let terrain = native_rules.prepare_random_map_terrain_rules(None, decision.reinitializes());
+    let prepared =
+        prepare_random_map_generation(assets, options, Some(native_rules), None, terrain)
+            .expect("production retail generation preparation");
     let receiver = spawn_random_map_generation_worker(
         options.clone(),
         prepared.settings,
@@ -132,7 +134,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     )
     .expect("active-retail AssetManager");
     let audio = crate::rules::audio_sources::AudioDefinitions::select(&assets);
-    let (_, _, native_rules) = crate::rules::retail_sources::load_startup_rules(
+    let (_, _, mut native_rules) = crate::rules::retail_sources::load_startup_rules(
         &assets,
         std::sync::Arc::clone(audio.sounds()),
         std::sync::Arc::clone(audio.eva()),
@@ -201,7 +203,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     let receiver = start_production_worker(
         &mut assets,
         &options,
-        &native_rules,
+        &mut native_rules,
         &mut runtime,
         &mut retention,
         &shared_cell_dummy,
@@ -236,7 +238,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     let receiver = start_production_worker(
         &mut assets,
         &options,
-        &native_rules,
+        &mut native_rules,
         &mut runtime,
         &mut retention,
         &shared_cell_dummy,
@@ -292,7 +294,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     let receiver = start_production_worker(
         &mut assets,
         &options,
-        &native_rules,
+        &mut native_rules,
         &mut runtime,
         &mut retention,
         &shared_cell_dummy,
@@ -342,7 +344,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     let receiver = start_production_worker(
         &mut assets,
         &options,
-        &native_rules,
+        &mut native_rules,
         &mut runtime,
         &mut retention,
         &shared_cell_dummy,
@@ -411,8 +413,9 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     let direct_initial = super::loading::init::load_map_initial_with_assets(
         seed_dir.clone(),
         &mut assets,
-        Some(&native_rules),
+        Some(&mut native_rules),
         Some(seed_name),
+        Some("MPBattleMD.ini"),
         &mut SilentProgress,
     )
     .expect("direct .SED launch regeneration");
@@ -465,7 +468,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         .load_random_map_snapshot_for_test(
             seed_dir.clone(),
             &mut assets,
-            Some(&native_rules),
+            Some(&mut native_rules),
             &mut SilentProgress,
         )
         .expect("accepted UI .SED regeneration and admitted bundle transfer");

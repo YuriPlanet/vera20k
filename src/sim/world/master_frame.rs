@@ -345,6 +345,7 @@ impl Simulation {
                 &self.houses,
                 &self.resolved_terrain,
                 &mut self.bombs,
+                &mut self.sound_events,
                 rules,
             ),
             FrameStep::Kamikaze => self.kamikaze_update(rules, effects),

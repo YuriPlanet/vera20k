@@ -278,7 +278,7 @@ impl PlainCell {
                     .speed_costs
                     .cost_for_speed_type(speed)
                     .map_or(0, |cost| {
-                        (1 << (8 + n)) | (u32::from(cost != 0) << (16 + n))
+                        (1 << (8 + n)) | (u32::from(!cost.is_zero()) << (16 + n))
                     })
             })
             .fold(0, |rows, row| rows | row);

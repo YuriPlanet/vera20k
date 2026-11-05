@@ -170,7 +170,9 @@ fn unit(
     if let Some(clear) = input["clear_speed"].as_f64() {
         // The oracle writes the Clear row of every SpeedType; after the spawn,
         // which would refuse a zero row.
-        let percent = Some((clear * 100.0) as u8);
+        let percent = Some(crate::util::native_x87::NativeF32Bits::from_bits(
+            (clear as f32).to_bits(),
+        ));
         let terrain = sim.resolved_terrain.as_mut().unwrap();
         for y in 0..33 {
             for x in 0..33 {

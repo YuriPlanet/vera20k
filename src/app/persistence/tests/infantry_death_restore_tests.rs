@@ -248,11 +248,12 @@ pub(super) fn death_load_world(rules: &RuleSet) -> (Simulation, ResolvedTerrainG
                     cell.rx = rx;
                     cell.ry = ry;
                     let clear = SpeedCostProfile {
-                        foot: Some(100),
-                        track: Some(100),
-                        wheel: Some(100),
-                        hover: Some(100),
-                        amphibious: Some(100),
+                        foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                        track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                        wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                        hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                        amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
                         ..SpeedCostProfile::default()
                     };
                     cell.speed_costs = clear;

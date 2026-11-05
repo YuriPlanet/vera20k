@@ -332,6 +332,46 @@ pub struct SoundRegistry {
     defaults: SoundDefaults,
 }
 
+/// Fixed Voc bindings retained by Rules across scenario and RMG resets.
+/// Ctor665946/66594C/6659AC stores -1; names represent resolved catalog IDs.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub(crate) struct GlobalSoundReferences {
+    bomb_ticking: Option<String>,
+    bomb_attach: Option<String>,
+    psychic_reveal: Option<String>,
+}
+
+impl GlobalSoundReferences {
+    pub(crate) fn bomb_ticking(&self) -> Option<&str> {
+        self.bomb_ticking.as_deref()
+    }
+
+    pub(crate) fn bomb_attach(&self) -> Option<&str> {
+        self.bomb_attach.as_deref()
+    }
+
+    pub(crate) fn psychic_reveal(&self) -> Option<&str> {
+        self.psychic_reveal.as_deref()
+    }
+
+    pub(crate) fn read_pass(&mut self, pass: &IniFile, sounds: &SoundRegistry) {
+        let Some(section) = pass.section("AudioVisual") else {
+            return;
+        };
+        // ReadAudioVisual669A60..669AD8 /669FC3..669FF0: current-ID defaults,
+        // ReadString128 and fixed VocFind7514D0. A registered none is a cue.
+        self.bomb_ticking =
+            sounds.read_rules_reference(section, "BombTickingSound", self.bomb_ticking.take());
+        self.bomb_attach =
+            sounds.read_rules_reference(section, "BombAttachSound", self.bomb_attach.take());
+        self.psychic_reveal = sounds.read_rules_reference(
+            section,
+            "PsychicRevealActivateSound",
+            self.psychic_reveal.take(),
+        );
+    }
+}
+
 impl SoundRegistry {
     /// Parse the selected SOUNDMD.INI into the process Voc registry.
     ///
@@ -441,8 +481,13 @@ impl SoundRegistry {
     /// Voc FindIndex7514D0. Missing, empty and unknown names retain the
     /// previous signed ID (constructor -1); later rules passes do not erase
     /// an earlier valid selection. Names here represent that resolved ID.
-    pub(crate) fn read_rules_reference(&self, section: &IniSection, key: &str) -> Option<String> {
-        section.read_string_with(key, 0x80, None, |current, name| {
+    pub(crate) fn read_rules_reference(
+        &self,
+        section: &IniSection,
+        key: &str,
+        current: Option<String>,
+    ) -> Option<String> {
+        section.read_string_with(key, 0x80, current, |current, name| {
             self.get(name).map(|entry| entry.id.clone()).or(current)
         })
     }

@@ -2315,6 +2315,7 @@ fn a_due_ivan_bomb_precedes_the_same_turn_mastermind_overload() {
         assert!(controller.lifecycle.object_alive());
         let expired = controller
             .bomb
+            .as_ref()
             .unwrap()
             .expired(sim.session.binary_frame() as i32);
         if expired {

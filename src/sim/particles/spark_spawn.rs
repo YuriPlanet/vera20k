@@ -14,8 +14,8 @@
 use glam::IVec3;
 use thiserror::Error;
 
-use super::{Particle, ParticleSystem, SparkRuntimeState};
-use crate::rules::particle_type::{ParticleBehavesLike, ParticleType};
+use super::{Particle, ParticleSystem};
+use crate::rules::particle_type::ParticleType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
@@ -43,8 +43,6 @@ const FACING_STEP: i32 = 3;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub(crate) enum SparkSpawnError {
-    #[error("particle type {0} is not behavior-3 Spark")]
-    NonSparkParticle(String),
     #[error("spark spawn x87 evaluation failed: {0}")]
     X87(#[from] NativeX87Error),
     #[error(transparent)]
@@ -111,26 +109,12 @@ pub(super) fn spark_spawn_pass(
             sim.particle_rng().next_raw_abs_modulo(half as u32) as i32 + half
         };
 
-        // VERA-internal, gamemd equivalent UNCHECKED, and both arms diverge on
-        // the RNG stream rather than merely on the picture:
-        // - Native fetches the particle type at `0x0062E8EA` and takes the three
-        //   shared draws at `0x0062E8EF`/`0x0062E903`/`0x0062E90E`
-        //   unconditionally; with `HoldsWhat` absent it would index
-        //   `g_ParticleTypeClass_Array[-1]` and fault. Skipping the draws here
-        //   is a divergence, not a no-op — but only for a system that authors
-        //   no `HoldsWhat`, which no stock Spark system does.
-        // - Native never tests the particle's `BehavesLike` on this path. The
-        //   `Err` below additionally skips the countdown, `done_spawning` and
-        //   the facing draw for that tick, so a Spark SYSTEM holding a
-        //   non-Spark particle behaves differently here. Stock authors no such
-        //   pairing.
+        // AI_Spark62E840 dispatches the held particle's own behavior; the
+        // system writes its shared +10C velocity regardless of that behavior.
+        // Null (<none>) retains the existing safety skip for native's invalid
+        // array[-1] route. Missing HoldsWhat binds a real empty-named type.
         if let Some(particle_type_id) = holds_what {
             let particle_type = rules.particle_type(particle_type_id).clone();
-            if particle_type.behaves_like != ParticleBehavesLike::Spark {
-                return Err(SparkSpawnError::NonSparkParticle(
-                    particle_type.name.clone(),
-                ));
-            }
 
             // (3) Three shared draws, taken unconditionally at `0x0062E8EF`,
             // `0x0062E903` and `0x0062E90E`. Native divides them (crossed: the
@@ -218,13 +202,7 @@ pub(super) fn spark_spawn_pass(
                 vy = X87Chop53::store_f32(X87Chop53::mul(scale, X87Chop53::load_f32(vy)?))?;
                 vz = X87Chop53::store_f32(X87Chop53::mul(scale, X87Chop53::load_f32(vz)?))?;
 
-                let spark = particle
-                    .spark
-                    .as_mut()
-                    .expect("a Spark particle carries its runtime state");
-                spark.velocity_x = vx;
-                spark.velocity_y = vy;
-                spark.velocity_z = vz;
+                particle.direction = [vx, vy, vz];
             }
         }
         // Original62EBF2..62EC60, inside the admitted burst and before the
@@ -285,15 +263,9 @@ pub(super) fn spark_spawn_pass(
     Ok(())
 }
 
-/// `ParticleClass::Constructor @ 0x0062B5E0`, restricted to what a Spark
-/// particle needs. Consumes one lifetime draw always, and one colour draw when
-/// the type authors a non-zero `StartColor1`/`StartColor2` pair.
-///
-/// The constructor has a third conditional draw, at `0x0062B7F2`, gated on
-/// `ParticleType+0x314 == 1`. `+0x314` is `BehavesLike` and Spark is 3, so it
-/// never fires on this path; it is named here so the ledger is complete rather
-/// than merely correct.
-///
+/// AI_Spark62E840 calls the shared Particle constructor with identical
+/// source and target, then replaces its direction. The held particle's own
+/// type controls the constructor's Smoke draw and colour/lifetime draws.
 fn construct_spark_particle(
     sim: &mut Simulation,
     particle_type: &ParticleType,
@@ -321,7 +293,7 @@ where
 {
     // The shared constructor allocates AbstractClass+10 before its lifetime
     // draw, as original62B5E0 does for every particle behavior.
-    let (mut particle, start_rgb) = Particle::new_with_ground(
+    let particle = Particle::new_with_ground(
         particle_type_id,
         system_coords,
         system_coords,
@@ -330,16 +302,6 @@ where
         &mut ground_height,
     )?;
 
-    // Both coordinate arguments are the system's own coordinate, so direction
-    // normalization is a no-op; the caller supplies the Spark velocity.
-    particle.spark = Some(SparkRuntimeState {
-        velocity_x: NativeF32Bits::POSITIVE_ZERO,
-        velocity_y: NativeF32Bits::POSITIVE_ZERO,
-        velocity_z: NativeF32Bits::POSITIVE_ZERO,
-        start_rgb,
-        color_index: 0,
-        color_accumulator: NativeF64Bits::POSITIVE_ZERO,
-    });
     Simulation::reveal_particle(&mut sim.substrate, particle.stable_id());
     Ok(particle)
 }

@@ -350,9 +350,10 @@ fn wobble_target(frame: i32, location: IVec3, target: IVec3) -> IVec3 {
         )
         .expect("the divisor is 3 or 9"),
     );
-    let octant =
-        crate::sim::wave::direction_from_projected((location.x, location.y), (target.x, target.y))
-            as usize;
+    let octant = crate::util::direction::direction_from_projected(
+        (location.x, location.y),
+        (target.x, target.y),
+    ) as usize;
     IVec3::new(
         target.x.wrapping_add(OCTANT_X[octant].wrapping_mul(step)),
         target.y.wrapping_add(OCTANT_Y[octant].wrapping_mul(step)),

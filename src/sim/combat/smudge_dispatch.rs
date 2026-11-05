@@ -687,7 +687,8 @@ mod dispatch_tests {
     fn test_default_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
         ResolvedTerrainCell {
             speed_costs: crate::rules::terrain_rules::SpeedCostProfile {
-                track: Some(100),
+                track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
                 ..Default::default()
             },
             ..crate::map::resolved_terrain::test_filled_smudge_cell(rx, ry)
@@ -814,13 +815,14 @@ mod dispatch_tests {
             assert!(!survivor_smudge_cell_passable(
                 1, 3, &raw, &terrain, &overlay,
             ));
-            terrain.cell_mut_for_test(1, 4).unwrap().speed_costs.track = Some(0);
+            terrain.cell_mut_for_test(1, 4).unwrap().speed_costs.track =
+                Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
             assert!(!survivor_smudge_cell_passable(
                 1, 4, &raw, &terrain, &overlay,
             ));
 
             let bridge = terrain.cell_mut_for_test(1, 5).unwrap();
-            bridge.speed_costs.track = Some(0);
+            bridge.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
             bridge.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
             raw.mark_ground(1, 5, 0x40);
             assert!(
@@ -833,7 +835,8 @@ mod dispatch_tests {
             ));
 
             let wall_bridge = terrain.cell_mut_for_test(1, 6).unwrap();
-            wall_bridge.speed_costs.track = Some(0);
+            wall_bridge.speed_costs.track =
+                Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
             wall_bridge.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
             overlay.place_overlay(1, 6, 0, 0);
             assert!(!survivor_smudge_cell_passable(

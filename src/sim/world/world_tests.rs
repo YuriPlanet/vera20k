@@ -2746,13 +2746,14 @@ fn move_command(entity_id: u64, (target_rx, target_ry): (u16, u16)) -> Command {
 /// bridgehead cells.
 const OPEN_SPEED_COSTS: crate::rules::terrain_rules::SpeedCostProfile =
     crate::rules::terrain_rules::SpeedCostProfile {
-        foot: Some(100),
-        track: Some(100),
-        wheel: Some(100),
-        float: Some(100),
-        amphibious: Some(100),
-        float_beach: Some(100),
-        hover: Some(100),
+        foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
     };
 
 /// A water terrain grid for ship tests: every cell Water land with the Water
@@ -3233,7 +3234,8 @@ fn structural_bridge_for_fallout(
         cell.bridge_deck_level = ground_level + 4;
         if water_below {
             let costs = SpeedCostProfile {
-                float: Some(100),
+                float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
                 ..Default::default()
             };
             cell.land_type = LandType::Water.as_index();
@@ -7482,13 +7484,14 @@ fn parked_friendly_on_the_route_is_scattered_out_of_the_way() {
         use crate::map::resolved_terrain::zone_class;
         use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
         let rock = SpeedCostProfile {
-            foot: Some(0),
-            track: Some(0),
-            wheel: Some(0),
-            float: Some(0),
-            amphibious: Some(0),
-            float_beach: Some(0),
-            hover: Some(0),
+            foot: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            track: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            float: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            amphibious: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            float_beach: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            hover: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         };
         let terrain = sim.resolved_terrain.as_mut().expect("stacking terrain");
         for ry in (0..24).filter(|&ry| ry != PARKED_AT.1) {

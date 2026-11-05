@@ -1371,7 +1371,7 @@ fn restore_object_references(
 
         // A bomb's planter (`BombClass+0x24`) is a pointer its expiry nulls
         // (`BombListClass::PointerGotInvalid @ 0x00439150`).
-        if let Some(planter) = entity.bomb.and_then(|bomb| bomb.planter()) {
+        if let Some(planter) = entity.bomb.as_ref().and_then(|bomb| bomb.planter()) {
             require_resolved_reference(
                 entity_ids.contains(&planter),
                 "EntityStore",

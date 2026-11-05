@@ -52,6 +52,10 @@ pub(super) struct RandomMapStorageDecision {
 }
 
 impl RandomMapStorageDecision {
+    pub(super) fn reinitializes(&self) -> bool {
+        self.reinitialize
+    }
+
     /// Apply only the guarded native Resize side effect. Preview redraws never
     /// receive this decision and cannot reconstruct the process dummy.
     fn apply_resize_to(&self, shared_cell_dummy: &crate::map::resolved_terrain::SharedCellDummy) {
@@ -108,8 +112,11 @@ impl RandomMapPreviewRules {
         theater: &str,
         assets: &crate::assets::asset_manager::AssetManager,
         theater_ext: &str,
+        terrain_rules: crate::rules::terrain_rules::TerrainRules,
     ) -> Option<Self> {
-        let processed = owner.random_map_preview_projection(mode, theater).ok()?;
+        let processed = owner
+            .random_map_preview_projection(mode, theater, terrain_rules)
+            .ok()?;
         let mut rules = crate::rules::ruleset::RuleSet::from_processed_rules(&processed).ok()?;
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(
             owner.fixed_art(),
@@ -542,8 +549,11 @@ impl PreparedRandomMapGeneration {
     /// These are the same resolved settings, theater, TMP geometry and neutral
     /// structures passed to `generate_map`; preparation does not consume RNG.
     pub(super) fn multiplayer_digest(&self) -> String {
-        let mut bytes = b"VERA20k RMG dependencies v1\0".to_vec();
+        let mut bytes = b"VERA20k RMG dependencies v2\0".to_vec();
         bytes.extend_from_slice(self.settings.multiplayer_digest().as_bytes());
+        // Retained rows may differ despite identical current source text.
+        // These are the land-derived inputs that generation actually consumes.
+        bytes.extend(self.resolved_inputs.wheel_impassable.map(u8::from));
         bytes.extend_from_slice(crate::util::sha256::sha256_hex(&self.theater.ini_data).as_bytes());
         bytes.extend_from_slice(self.blocks.multiplayer_digest().as_bytes());
         for technology in &self.tech_types {
@@ -564,6 +574,7 @@ pub(super) fn prepare_random_map_generation(
     options: &crate::map::rmg::RmgOptions,
     native_rules: Option<&crate::rules::process_owner::NativeRulesProcessOwner>,
     mode_rules_override: Option<&crate::rules::ini_parser::IniFile>,
+    terrain_rules: crate::rules::terrain_rules::TerrainRules,
 ) -> Option<PreparedRandomMapGeneration> {
     let settings = crate::map::rmg::RmgSettings::load(asset_manager);
     let theater_name = crate::map::rmg::emit::theater_name(options.theater);
@@ -571,11 +582,6 @@ pub(super) fn prepare_random_map_generation(
         log::warn!("random map: theater {theater_name} unavailable");
         return None;
     };
-    let terrain_rules = native_rules
-        .map(|owner| {
-            crate::rules::terrain_rules::TerrainRules::from_ini(owner.selected_rules_root())
-        })
-        .unwrap_or_default();
     let resolved_inputs =
         crate::map::rmg::build::ResolvedTheaterInputs::from_theater(&theater, &terrain_rules);
     let blocks =
@@ -590,6 +596,7 @@ pub(super) fn prepare_random_map_generation(
             theater_name,
             asset_manager,
             theater.extension,
+            terrain_rules.clone(),
         )
     });
     Some(PreparedRandomMapGeneration {
@@ -907,7 +914,14 @@ impl App {
             )
             .map(|mode| mode.override_file.clone())
         };
-        let (manager, native_rules, _) = state.process_assets.manager_and_rules_with_tile_cache();
+        // InitMap599BAE..599BD3 uses this same tuple before deciding whether
+        // the land reader runs at59A0F0. Select it before any Rules projection.
+        let map_storage_decision = state
+            .frontend
+            .random_map_retention
+            .map_storage_decision(options);
+        let (manager, mut native_rules, _) =
+            state.process_assets.manager_and_rules_with_tile_cache();
         let Some(asset_manager) = manager else {
             return false;
         };
@@ -921,6 +935,21 @@ impl App {
                 return false;
             }
         };
+        if let Some(owner) = native_rules.as_deref_mut() {
+            owner.prepare_random_map_sound_references(
+                mode_rules.as_ref(),
+                map_storage_decision.reinitialize,
+            );
+        }
+        let terrain_rules = native_rules
+            .as_deref_mut()
+            .map(|owner| {
+                owner.prepare_random_map_terrain_rules(
+                    mode_rules.as_ref(),
+                    map_storage_decision.reinitialize,
+                )
+            })
+            .unwrap_or_default();
         let Some(PreparedRandomMapGeneration {
             theater,
             terrain_rules,
@@ -932,18 +961,15 @@ impl App {
         }) = prepare_random_map_generation(
             asset_manager,
             options,
-            native_rules,
+            native_rules.as_deref(),
             mode_rules.as_ref(),
+            terrain_rules,
         )
         else {
             return false;
         };
         let options = options.clone();
         let shared_cell_dummy = state.process_assets.shared_cell_dummy.clone();
-        let map_storage_decision = state
-            .frontend
-            .random_map_retention
-            .map_storage_decision(&options);
         // Generation stays single-threaded and seed-driven; the thread changes
         // only where it runs, never the order it consumes its RNG in.
         match spawn_random_map_generation_worker(
@@ -1580,8 +1606,14 @@ mod tests {
             urban_presence: 2,
             ..Default::default()
         };
-        let prepared =
-            prepare_random_map_generation(&mut assets, &options, Some(&rules), None).unwrap();
+        let prepared = prepare_random_map_generation(
+            &mut assets,
+            &options,
+            Some(&rules),
+            None,
+            rules.project_random_map_terrain_rules(None, true),
+        )
+        .unwrap();
         let generated = crate::map::rmg::build::generate_map(
             &options,
             &prepared.settings,
@@ -1642,9 +1674,14 @@ mod tests {
         };
         let mode_rules =
             crate::rules::retail_sources::select_mode_ini(&assets, Some("MPBattleMD.ini")).unwrap();
-        let prepared =
-            prepare_random_map_generation(&mut assets, &options, Some(&rules), mode_rules.as_ref())
-                .expect("registered production theater");
+        let prepared = prepare_random_map_generation(
+            &mut assets,
+            &options,
+            Some(&rules),
+            mode_rules.as_ref(),
+            rules.project_random_map_terrain_rules(mode_rules.as_ref(), true),
+        )
+        .expect("registered production theater");
         let tech_footprints: std::collections::HashMap<_, _> = prepared
             .tech_types
             .iter()
@@ -1915,6 +1952,7 @@ mod tests {
             "TEMPERATE",
             &assets,
             prepared.theater.extension,
+            rules.project_random_map_terrain_rules(Some(&mode), true),
         )
         .unwrap();
         control.overlays[0].frame = 1;

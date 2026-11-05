@@ -22,7 +22,7 @@ use crate::rules::insignia_type::InsigniaTypeCatalog;
 use crate::rules::locomotor_type::SpeedType;
 use crate::rules::phobos_radiation::RadiationTypeCatalog;
 use crate::rules::phobos_shields::ShieldTypeCatalog;
-use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
+use crate::rules::sound_ini::{EvaRegistry, GlobalSoundReferences, SoundRegistry};
 
 use crate::rules::missile_spawn::{MissileFamily, MissileSpawnRules};
 use crate::rules::object_image::{ImageTheater, ObjectImageKind, ObjectImageState};
@@ -521,7 +521,7 @@ fn process_native_rules_cold_start_inner(
     // Executed prefix: tools/rules_oracle/cold_colors.{py,json,meta.json}.
     processor.allocate_colors(selected_rules_root);
     processor.rules_color_add.apply_pass(selected_rules_root);
-    processor.allocate_audio_visual_references(selected_rules_root);
+    processor.allocate_audio_visual_references(selected_rules_root, fixed_sounds);
     let after_audio_visual = processor.native_type_construction_events.len();
     if let Some(langrule) = langrule {
         processor.apply_pass(langrule, fixed_art, fixed_eva, false, fixed_sounds)?;
@@ -797,6 +797,11 @@ impl ProcessedRulesLayers {
 
     pub(crate) fn native_registry_state(&self) -> &NativeRulesRegistryState {
         self.native_type_construction_trace.registry_state()
+    }
+
+    pub(crate) fn install_global_sounds(&mut self, sounds: GlobalSoundReferences) {
+        self.native_type_construction_trace
+            .install_global_sounds(sounds);
     }
 
     /// Restore the inherited image calls of Terrain, Bullet and TechnoTypes
@@ -1129,6 +1134,11 @@ impl ProcessedRulesLayers {
                 }
             }
         }
+        if !registry.rules_land.valid_saved_state() {
+            return Err(RulesError::InvalidSavedState(
+                "land row has invalid derived ground blocking",
+            ));
+        }
         registry.validate_techno_type_order()?;
         registry.validate_prerequisites()?;
         registry.validate_radiation_types()?;
@@ -1155,6 +1165,9 @@ impl ProcessedRulesLayers {
                     .is_some_and(|index| index >= warhead_count)
                 || member
                     .holds_what
+                    .is_some_and(|index| index >= particle_count)
+                || member
+                    .particle_next
                     .is_some_and(|index| index >= particle_count)
         }) {
             return Err(RulesError::InvalidSavedState(
@@ -1405,6 +1418,45 @@ impl ProcessedRulesLayers {
         })
     }
 
+    /// TechnoType+CD5/CD8..D10 after the last admitted ReadINI712170 body.
+    pub(crate) fn gattling_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            bool,
+            &crate::rules::gattling_type::GattlingStages,
+        ),
+    > {
+        let families = &self
+            .native_type_construction_trace
+            .registry_state()
+            .families;
+        [
+            RulesTypeFamily::Building,
+            RulesTypeFamily::Aircraft,
+            RulesTypeFamily::Vehicle,
+            RulesTypeFamily::Infantry,
+        ]
+        .into_iter()
+        .flat_map(move |family| {
+            let category = family.object_category().expect("TechnoType family");
+            families
+                .get(&family)
+                .into_iter()
+                .flatten()
+                .map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        member.is_gattling,
+                        &member.gattling_stages,
+                    )
+                })
+        })
+    }
+
     /// Final retained InfantryType state; the merged present-key history cannot
     /// represent admitted missing-Pip calls. Projection performs no new read.
     pub(crate) fn infantry_pip_states(&self) -> impl Iterator<Item = (&str, InfantryPips)> {
@@ -1607,26 +1659,51 @@ impl ProcessedRulesLayers {
             })
     }
 
-    /// ParticleSystemType+294 after every reached ReadINI: the bound
-    /// ParticleType's stored ID, or `None` for `<none>` and unread types.
-    pub(crate) fn particle_system_holds_what_states(
+    /// Project every actual allocation in native array order, including empty
+    /// IDs and constructor-only types. References remain array indices; a
+    /// truncated duplicate name must not collapse either allocated object.
+    pub(crate) fn particle_type_projections(
         &self,
-    ) -> impl Iterator<Item = (&str, Option<&str>)> {
-        let families = &self
-            .native_type_construction_trace
+    ) -> impl Iterator<Item = crate::rules::particle_type::ParticleType> {
+        use crate::rules::particle_type::{ParticleType, ParticleTypeId};
+        self.native_type_construction_trace
             .registry_state()
-            .families;
-        families
+            .families
+            .get(&RulesTypeFamily::Particle)
+            .into_iter()
+            .flatten()
+            .map(|member| {
+                ParticleType::from_read_state(
+                    &member.native_stored_id,
+                    &member.body,
+                    &member.particle_read,
+                    member
+                        .particle_next
+                        .map(|index| ParticleTypeId(index as u32)),
+                    member.particle_warhead.clone(),
+                )
+            })
+    }
+
+    pub(crate) fn particle_system_type_projections(
+        &self,
+    ) -> impl Iterator<Item = crate::rules::particle_system_type::ParticleSystemType> {
+        use crate::rules::{
+            particle_system_type::ParticleSystemType, particle_type::ParticleTypeId,
+        };
+        self.native_type_construction_trace
+            .registry_state()
+            .families
             .get(&RulesTypeFamily::ParticleSystem)
             .into_iter()
             .flatten()
-            .map(move |member| {
-                let particle = member.holds_what.map(|index| {
-                    families[&RulesTypeFamily::Particle][index]
-                        .native_stored_id
-                        .as_str()
-                });
-                (member.native_stored_id.as_str(), particle)
+            .map(|member| {
+                ParticleSystemType::from_read_state(
+                    &member.native_stored_id,
+                    &member.body,
+                    member.particle_system_behavior,
+                    member.holds_what.map(|index| ParticleTypeId(index as u32)),
+                )
             })
     }
 
@@ -1864,13 +1941,6 @@ impl ProcessedRulesLayers {
     ) -> impl Iterator<Item = (&str, Option<&UnitDeliveryRules>)> {
         self.member_states(RulesTypeFamily::SuperWeapon, |member| {
             member.unit_delivery.as_ref()
-        })
-    }
-
-    /// Each ParticleType's `Warhead=` after every reached pass.
-    pub(crate) fn particle_warhead_states(&self) -> impl Iterator<Item = (&str, Option<&str>)> {
-        self.member_states(RulesTypeFamily::Particle, |member| {
-            member.particle_warhead.as_deref()
         })
     }
 
@@ -2356,6 +2426,40 @@ impl ProcessedRulesLayers {
             .rules_fog_rate
     }
 
+    /// Immutable projection of the retained global land-speed table.
+    pub(crate) fn terrain_rules(&self) -> &crate::rules::terrain_rules::TerrainRules {
+        &self.native_registry_state().rules_land
+    }
+
+    /// RMG's immutable projection shares its selected global land table.
+    pub(crate) fn install_terrain_rules(
+        &mut self,
+        rules: crate::rules::terrain_rules::TerrainRules,
+    ) {
+        self.native_type_construction_trace
+            .install_terrain_rules(rules);
+    }
+
+    /// ReadAudioVisual669A60/669A99/669FC3 fixed-catalog IDs. These scalar
+    /// Rules fields survive TypeReset6686C0 and Rules Save674730/Load675210.
+    pub(crate) fn bomb_ticking_sound(&self) -> Option<&str> {
+        self.native_registry_state()
+            .rules_global_sounds
+            .bomb_ticking()
+    }
+
+    pub(crate) fn bomb_attach_sound(&self) -> Option<&str> {
+        self.native_registry_state()
+            .rules_global_sounds
+            .bomb_attach()
+    }
+
+    pub(crate) fn psychic_reveal_activate_sound(&self) -> Option<&str> {
+        self.native_registry_state()
+            .rules_global_sounds
+            .psychic_reveal()
+    }
+
     /// Final Difficulty readers after the ordered Process passes. Keeping the
     /// typed rows preserves literal f64 defaults separately from ReadDouble's
     /// widened f32 authored values (ReadDifficulty @ 0x0066D270).
@@ -2407,6 +2511,13 @@ impl ProcessedRulesLayers {
         self.native_type_construction_trace
             .registry_state()
             .rules_patrol_scan_minutes
+    }
+
+    pub(crate) fn ai_hate_delays(&self) -> &[i32] {
+        &self
+            .native_type_construction_trace
+            .registry_state()
+            .rules_ai_hate_delays
     }
 
     /// Rules+147C/+14BC after ordered General/AudioVisual reads. Original
@@ -2528,6 +2639,22 @@ impl ProcessedRulesLayers {
         self.native_type_construction_trace
             .registry_state()
             .rules_mind_control_attack_line_frames
+    }
+
+    /// Rules+314/+318, retained ReadCombatDamage66C973..66C9AC scalars.
+    pub(crate) fn drain_money_controls(&self) -> (i32, i32) {
+        let state = self.native_type_construction_trace.registry_state();
+        (
+            state.rules_drain_money_frame_delay,
+            state.rules_drain_money_amount,
+        )
+    }
+
+    /// Rules+D6C, retained ReadGeneral66FC36..66FC50 boolean.
+    pub(crate) fn attack_cursor_on_disguise(&self) -> bool {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_attack_cursor_on_disguise
     }
 
     /// Rules+1866, retained by AudioVisual66B7A7..66B7D2 through the
@@ -2765,6 +2892,17 @@ impl NativeTypeConstructionTrace {
 
     pub(crate) fn registry_state(&self) -> &NativeRulesRegistryState {
         &self.registry_state
+    }
+
+    pub(crate) fn install_terrain_rules(
+        &mut self,
+        rules: crate::rules::terrain_rules::TerrainRules,
+    ) {
+        self.registry_state.install_terrain_rules(rules);
+    }
+
+    pub(crate) fn install_global_sounds(&mut self, sounds: GlobalSoundReferences) {
+        self.registry_state.install_global_sounds(sounds);
     }
 
     pub(crate) fn into_parts(
@@ -3520,7 +3658,11 @@ pub(crate) struct NativeRulesRegistryState {
     rules_shroud_rate: NativeF64Bits,
     #[serde(default = "crate::rules::ruleset::default_fog_rate")]
     rules_fog_rate: NativeF64Bits,
+    // Ctor665946/66594C/6659AC=-1; fixed Voc IDs represented by canonical names.
+    rules_global_sounds: GlobalSoundReferences,
     rules_difficulty_rows: [crate::rules::ruleset::DifficultyRules; 3],
+    /// Global89EA40 survives type resets and is saved by67F87D, restored67FAF1.
+    rules_land: crate::rules::terrain_rules::TerrainRules,
     rules_gravity: i32,
     rules_tree_strength: i32,
     rules_wind_direction: i32,
@@ -3535,6 +3677,7 @@ pub(crate) struct NativeRulesRegistryState {
     rules_infantry_repair_rate: NativeF64Bits,
     rules_maximum_cheer_rate: i32,
     rules_talk_bubble_time: i32,
+    rules_attack_cursor_on_disguise: bool,
     rules_spotlight: crate::rules::ruleset::SpotlightRules,
     rules_ammo_crate_damage: i32,
     rules_tiberium_explosion_damage: i32,
@@ -3554,10 +3697,17 @@ pub(crate) struct NativeRulesRegistryState {
     #[serde(default = "crate::rules::ruleset::default_missing_cameo")]
     rules_missing_cameo: String,
     rules_mind_control_attack_line_frames: i32,
+    rules_drain_money_frame_delay: i32,
+    rules_drain_money_amount: i32,
     rules_line_trail_override: [u8; 3],
     rules_chrono_beam_color: [u8; 3],
     rules_prism_support: PrismSupportRules,
     rules_patrol_scan_minutes: NativeF64Bits,
+    /// RulesClass+1174: constructor00665650 at00666E3F..00666E59 makes an
+    /// empty integer vector. ReadGeneral0066FDB1..0066FDD9 uses
+    /// ReadINI_IntVector00475D70 with the current vector as its default.
+    /// It survives Type reset006686C0 and saved Rules state.
+    rules_ai_hate_delays: Vec<i32>,
     rules_comp_easy_bonus: bool,
     rules_prism_type: Option<String>,
     rules_drop_zone_anim: Option<String>,
@@ -3615,7 +3765,9 @@ impl Default for NativeRulesRegistryState {
             rules_shroud_grow: general.shroud_grow,
             rules_shroud_rate: general.shroud_rate,
             rules_fog_rate: general.fog_rate,
+            rules_global_sounds: GlobalSoundReferences::default(),
             rules_difficulty_rows: general.difficulty_rows,
+            rules_land: Default::default(),
             rules_gravity: general.gravity,
             rules_tree_strength: general.tree_strength,
             rules_wind_direction: general.wind_direction(),
@@ -3632,6 +3784,7 @@ impl Default for NativeRulesRegistryState {
             ),
             rules_maximum_cheer_rate: crate::rules::ruleset::DEFAULT_MAXIMUM_CHEER_RATE,
             rules_talk_bubble_time: general.talk_bubble_time,
+            rules_attack_cursor_on_disguise: general.attack_cursor_on_disguise,
             rules_spotlight: general.spotlight,
             // Rules665CD4=700; pointer fields665A18/665A24/666BD5 start null.
             rules_ammo_crate_damage: 100,
@@ -3649,10 +3802,13 @@ impl Default for NativeRulesRegistryState {
             rules_missing_cameo: crate::rules::ruleset::DEFAULT_MISSING_CAMEO.to_owned(),
             // MindControlAttackLineFrames, Rules+310: constructor 0x00665ABE.
             rules_mind_control_attack_line_frames: 15,
+            rules_drain_money_frame_delay: general.drain_money_frame_delay,
+            rules_drain_money_amount: general.drain_money_amount,
             rules_line_trail_override: general.line_trail_color_override,
             rules_chrono_beam_color: general.chrono_beam_color,
             rules_prism_support: PrismSupportRules::default(),
             rules_patrol_scan_minutes: general.patrol_scan_minutes,
+            rules_ai_hate_delays: general.ai_hate_delays().to_vec(),
             rules_comp_easy_bonus: general.comp_easy_bonus,
             rules_prism_type: None,
             rules_drop_zone_anim: None,
@@ -3672,6 +3828,25 @@ impl Default for NativeRulesRegistryState {
 }
 
 impl NativeRulesRegistryState {
+    pub(crate) fn terrain_rules(&self) -> &crate::rules::terrain_rules::TerrainRules {
+        &self.rules_land
+    }
+
+    pub(crate) fn install_terrain_rules(
+        &mut self,
+        rules: crate::rules::terrain_rules::TerrainRules,
+    ) {
+        self.rules_land = rules;
+    }
+
+    pub(crate) fn global_sounds(&self) -> &GlobalSoundReferences {
+        &self.rules_global_sounds
+    }
+
+    pub(crate) fn install_global_sounds(&mut self, sounds: GlobalSoundReferences) {
+        self.rules_global_sounds = sounds;
+    }
+
     /// Read one presentation HSV from the retained paired Colors registry.
     /// Native66D3A0 appends kind1 then kind53 for each entry; Ares loading
     /// stores a kind1 ordinal. A negative index is no override: the loading
@@ -4038,7 +4213,9 @@ impl NativeRulesRegistryState {
             rules_shroud_grow: self.rules_shroud_grow,
             rules_shroud_rate: self.rules_shroud_rate,
             rules_fog_rate: self.rules_fog_rate,
+            rules_global_sounds: self.rules_global_sounds,
             rules_difficulty_rows: self.rules_difficulty_rows,
+            rules_land: self.rules_land,
             rules_gravity: self.rules_gravity,
             rules_tree_strength: self.rules_tree_strength,
             rules_drop_zone_radius: self.rules_drop_zone_radius,
@@ -4054,15 +4231,19 @@ impl NativeRulesRegistryState {
             rules_infantry_repair_rate: self.rules_infantry_repair_rate,
             rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
             rules_talk_bubble_time: self.rules_talk_bubble_time,
+            rules_attack_cursor_on_disguise: self.rules_attack_cursor_on_disguise,
             rules_spotlight: self.rules_spotlight,
             rules_ammo_crate_damage: self.rules_ammo_crate_damage,
             rules_tiberium_explosion_damage: self.rules_tiberium_explosion_damage,
             rules_ion_cannon_damage: self.rules_ion_cannon_damage,
             rules_mind_control_attack_line_frames: self.rules_mind_control_attack_line_frames,
+            rules_drain_money_frame_delay: self.rules_drain_money_frame_delay,
+            rules_drain_money_amount: self.rules_drain_money_amount,
             rules_line_trail_override: self.rules_line_trail_override,
             rules_chrono_beam_color: self.rules_chrono_beam_color,
             rules_prism_support: self.rules_prism_support,
             rules_patrol_scan_minutes: self.rules_patrol_scan_minutes,
+            rules_ai_hate_delays: self.rules_ai_hate_delays,
             rules_comp_easy_bonus: self.rules_comp_easy_bonus,
             // Plain index vectors, so RulesClass keeps them; the next pass
             // reads them as its default.
@@ -4400,6 +4581,9 @@ struct ProcessedType {
     /// TechnoType ctor71136F/711781, generic flag read71287E and FV pair
     /// reads747BBD..747E90, retained across every reached Rules pass.
     gunner_turrets: GunnerTurrets,
+    /// TechnoType ctor71148A/711490..49C/711765..77F; ReadINI714016..71410F.
+    is_gattling: bool,
+    gattling_stages: crate::rules::gattling_type::GattlingStages,
     /// Infantry ctor5236BD/C7 and unconditional ReadPip5240D1..524125.
     /// Missing type sections skip the whole reader; missing keys do not.
     #[serde(default)]
@@ -4483,6 +4667,15 @@ struct ProcessedType {
     /// ParticleSystemType+294, the bound ParticleType's index: constructor -1
     /// (`0x006440B3`), rebound by every reached ReadINI (`0x0064430F..0x00644323`).
     holds_what: Option<usize>,
+    /// ParticleTypeReadINI644F50's per-body reset state and retained +310
+    /// NextParticle binding (645315..64535B), owned by the allocated type.
+    #[serde(default)]
+    particle_read: crate::rules::particle_type::ParticleReadState,
+    #[serde(default)]
+    particle_next: Option<usize>,
+    /// Constructor6440B9 and reached reader644461 store -1 for no behavior.
+    #[serde(default)]
+    particle_system_behavior: crate::rules::particle_system_type::ParticleSystemBehavesLike,
     /// SuperWeaponType+9C `WeaponType=`, the stored ID of its WeaponType:
     /// constructor null (`0x006CE5CB`); ReadINI (`0x006CEA4A..0x006CEA8C`)
     /// keeps it on an empty ReadString128 and otherwise stores
@@ -4962,6 +5155,8 @@ impl ProcessedType {
             unit_shp: Default::default(),
             unit_speed_type: SpeedType::Invalid,
             gunner_turrets: GunnerTurrets::default(),
+            is_gattling: false,
+            gattling_stages: Default::default(),
             infantry_pips: InfantryPips::default(),
             infantry_infiltration: InfantryInfiltration::default(),
             infantry_art: InfantryArt::default(),
@@ -5003,6 +5198,9 @@ impl ProcessedType {
             aircraft_crashable: None,
             armor_id: ArmorId::NONE,
             holds_what: None,
+            particle_read: Default::default(),
+            particle_next: None,
+            particle_system_behavior: Default::default(),
             super_weapon_weapon: None,
             super_weapon_aux_building: None,
             unit_delivery: None,
@@ -5158,7 +5356,11 @@ struct RulesPassProcessor {
     rules_shroud_grow: bool,
     rules_shroud_rate: NativeF64Bits,
     rules_fog_rate: NativeF64Bits,
+    // Ctor665946/66594C/6659AC=-1; fixed Voc IDs represented by canonical names.
+    rules_global_sounds: GlobalSoundReferences,
     rules_difficulty_rows: [crate::rules::ruleset::DifficultyRules; 3],
+    /// Global89EA40 survives type resets and is saved by67F87D, restored67FAF1.
+    rules_land: crate::rules::terrain_rules::TerrainRules,
     rules_gravity: i32,
     rules_tree_strength: i32,
     rules_wind_direction: i32,
@@ -5173,6 +5375,7 @@ struct RulesPassProcessor {
     rules_infantry_repair_rate: NativeF64Bits,
     rules_maximum_cheer_rate: i32,
     rules_talk_bubble_time: i32,
+    rules_attack_cursor_on_disguise: bool,
     rules_spotlight: crate::rules::ruleset::SpotlightRules,
     rules_ammo_crate_damage: i32,
     rules_tiberium_explosion_damage: i32,
@@ -5187,10 +5390,13 @@ struct RulesPassProcessor {
     #[cfg(feature = "phobos")]
     rules_missing_cameo: String,
     rules_mind_control_attack_line_frames: i32,
+    rules_drain_money_frame_delay: i32,
+    rules_drain_money_amount: i32,
     rules_line_trail_override: [u8; 3],
     rules_chrono_beam_color: [u8; 3],
     rules_prism_support: PrismSupportRules,
     rules_patrol_scan_minutes: NativeF64Bits,
+    rules_ai_hate_delays: Vec<i32>,
     rules_comp_easy_bonus: bool,
     rules_prism_type: Option<String>,
     rules_drop_zone_anim: Option<String>,
@@ -5239,7 +5445,9 @@ impl RulesPassProcessor {
             rules_shroud_grow: registry_state.rules_shroud_grow,
             rules_shroud_rate: registry_state.rules_shroud_rate,
             rules_fog_rate: registry_state.rules_fog_rate,
+            rules_global_sounds: registry_state.rules_global_sounds,
             rules_difficulty_rows: registry_state.rules_difficulty_rows,
+            rules_land: registry_state.rules_land,
             rules_gravity: registry_state.rules_gravity,
             rules_tree_strength: registry_state.rules_tree_strength,
             rules_wind_direction: registry_state.rules_wind_direction,
@@ -5254,6 +5462,7 @@ impl RulesPassProcessor {
             rules_infantry_repair_rate: registry_state.rules_infantry_repair_rate,
             rules_maximum_cheer_rate: registry_state.rules_maximum_cheer_rate,
             rules_talk_bubble_time: registry_state.rules_talk_bubble_time,
+            rules_attack_cursor_on_disguise: registry_state.rules_attack_cursor_on_disguise,
             rules_spotlight: registry_state.rules_spotlight,
             rules_ammo_crate_damage: registry_state.rules_ammo_crate_damage,
             rules_tiberium_explosion_damage: registry_state.rules_tiberium_explosion_damage,
@@ -5267,10 +5476,13 @@ impl RulesPassProcessor {
             rules_missing_cameo: registry_state.rules_missing_cameo,
             rules_mind_control_attack_line_frames: registry_state
                 .rules_mind_control_attack_line_frames,
+            rules_drain_money_frame_delay: registry_state.rules_drain_money_frame_delay,
+            rules_drain_money_amount: registry_state.rules_drain_money_amount,
             rules_line_trail_override: registry_state.rules_line_trail_override,
             rules_chrono_beam_color: registry_state.rules_chrono_beam_color,
             rules_prism_support: registry_state.rules_prism_support,
             rules_patrol_scan_minutes: registry_state.rules_patrol_scan_minutes,
+            rules_ai_hate_delays: registry_state.rules_ai_hate_delays,
             rules_comp_easy_bonus: registry_state.rules_comp_easy_bonus,
             rules_prism_type: registry_state.rules_prism_type,
             rules_drop_zone_anim: registry_state.rules_drop_zone_anim,
@@ -5386,6 +5598,7 @@ impl RulesPassProcessor {
         });
         self.crate_rules = crate_rules;
         self.powerups.apply_pass(pass);
+        self.rules_land.apply_pass(pass);
         self.allocate_combat_references(pass);
         // ReadGeneral's rocket blocks and ReadCombatDamage's rocket warheads.
         // They read and write no other Process state, so one call per pass
@@ -5401,7 +5614,7 @@ impl RulesPassProcessor {
         #[cfg(feature = "phobos")]
         self.allocate_attach_effect_types(pass);
         // Elevation and Wall contain no Type factories.
-        self.allocate_audio_visual_references(pass);
+        self.allocate_audio_visual_references(pass, fixed_sounds);
         self.process_special_weapons(pass);
         self.process_tiberiums(pass)?;
         // AdvancedCommandBar contains no Type factory.
@@ -5951,6 +6164,12 @@ impl RulesPassProcessor {
         let Some(section) = pass.section("General") else {
             return;
         };
+        // ReadGeneral0066FDB1..0066FDD9 / ReadINI_IntVector00475D70:
+        // exact key, 512-byte string, comma tokens through CRT atoi; an
+        // absent/empty read keeps the prior vector. Counts are raw frames.
+        if let Some(delays) = section.read_int_list("AIHateDelays") {
+            self.rules_ai_hate_delays = delays;
+        }
         // ReadGeneral66EBD4..66EBEE: exact-case signed ReadInt5276D0,
         // current Rules+580 as default, no clamp. Ctor665D92 stores1.
         self.rules_maximum_cheer_rate =
@@ -6011,6 +6230,12 @@ impl RulesPassProcessor {
         // and RulesClass survives the destructive Type reset6686C0.
         self.rules_tree_strength = section.read_int("TreeStrength", self.rules_tree_strength);
         self.rules_talk_bubble_time = section.read_talk_bubble_time(self.rules_talk_bubble_time);
+        // RulesClass::ReadGeneral66D530, original66FC36..66FC50:
+        // current byte through ReadBool5295F0; Type reset retains this scalar.
+        self.rules_attack_cursor_on_disguise = section.read_bool(
+            "AttackCursorOnDisguise",
+            self.rules_attack_cursor_on_disguise,
+        );
 
         for &(key, family, is_list) in SITES {
             // An ordinary build never reads the NPSE extension, so it neither
@@ -7663,6 +7888,12 @@ impl RulesPassProcessor {
                 .techno_references
                 .destroy_particle_systems = systems;
         }
+        // TechnoTypeClass::ReadINI712170, original714016..71410F:
+        // read the current-default flag before the count/rates and stage gate.
+        let member = &mut self.family_mut(family)[index];
+        member.is_gattling = raw.read_bool("IsGattling", member.is_gattling);
+        member.gattling_stages.apply_pass(raw, member.is_gattling);
+
         // ReadINI714570..71458A passes the current+634 to ReadInt5276D0.
         // An absent exact-case key (also physically blank values omitted by
         // the INI loader) retains it. Present integers stay signed/unclamped.
@@ -8115,10 +8346,22 @@ impl RulesPassProcessor {
         while index < self.family_len(RulesTypeFamily::Particle) {
             if let Some((_id, raw, _effective)) =
                 self.begin_rules_member_read(RulesTypeFamily::Particle, index, pass)
-                && let Some(warhead) =
-                    self.resolve_scalar_from(&raw, "Warhead", RulesTypeFamily::Warhead, 0x80)
             {
-                self.family_mut(RulesTypeFamily::Particle)[index].particle_warhead = warhead;
+                if let Some(warhead) =
+                    self.resolve_scalar_from(&raw, "Warhead", RulesTypeFamily::Warhead, 0x80)
+                {
+                    self.family_mut(RulesTypeFamily::Particle)[index].particle_warhead = warhead;
+                }
+                // ParticleTypeReadINI644F50,645315..64535B: empty retains;
+                // otherwise FindOrAllocate645430 recognizes only <none> as
+                // null. The live-count loop also visits newly allocated types.
+                if let Some(name) = raw.read_name("NextParticle", 0x20) {
+                    let next = self.find_or_allocate_particle(name);
+                    self.family_mut(RulesTypeFamily::Particle)[index].particle_next = next;
+                }
+                self.family_mut(RulesTypeFamily::Particle)[index]
+                    .particle_read
+                    .apply_pass(&raw);
             }
             index += 1;
         }
@@ -8137,7 +8380,10 @@ impl RulesPassProcessor {
                 // binds the empty-named ParticleType.
                 let holds_what = raw.read_string("HoldsWhat", "", 0x40);
                 let particle = self.find_or_allocate_particle(&holds_what);
-                self.family_mut(RulesTypeFamily::ParticleSystem)[index].holds_what = particle;
+                let member = &mut self.family_mut(RulesTypeFamily::ParticleSystem)[index];
+                member.holds_what = particle;
+                member.particle_system_behavior =
+                    crate::rules::particle_system_type::ParticleSystemType::read_behavior(&raw);
             }
             index += 1;
         }
@@ -8262,11 +8508,21 @@ impl RulesPassProcessor {
             "MindControlAttackLineFrames",
             self.rules_mind_control_attack_line_frames,
         );
-        for key in [
+        let anim = self.resolve_scalar_from(
+            section,
             "DrainAnimationType",
-            "ControlledAnimationType",
-            "PermaControlledAnimationType",
-        ] {
+            RulesTypeFamily::Animation,
+            0x80,
+        );
+        self.rules_type_references
+            .read_pointer("DrainAnimationType", anim);
+        // RulesClass::ReadCombatDamage66BBB0, original66C973..66C9AC:
+        // signed ReadInt5276D0, current defaults, no clamps, in this order.
+        self.rules_drain_money_frame_delay =
+            section.read_int("DrainMoneyFrameDelay", self.rules_drain_money_frame_delay);
+        self.rules_drain_money_amount =
+            section.read_int("DrainMoneyAmount", self.rules_drain_money_amount);
+        for key in ["ControlledAnimationType", "PermaControlledAnimationType"] {
             let anim = self.resolve_scalar_from(section, key, RulesTypeFamily::Animation, 0x80);
             self.rules_type_references.read_pointer(key, anim);
         }
@@ -8390,13 +8646,14 @@ impl RulesPassProcessor {
         self.phobos_attach_effect_types = Some(catalog);
     }
 
-    fn allocate_audio_visual_references(&mut self, pass: &IniFile) {
+    fn allocate_audio_visual_references(&mut self, pass: &IniFile, fixed_sounds: &SoundRegistry) {
         let Some(section) = pass.section("AudioVisual") else {
             return;
         };
         // Original 66920D..669258 reads these first, including the cold
         // startup's same AudioVisual call before any complete Process.
         self.rules_detail = self.rules_detail.read_pass(section);
+        self.rules_global_sounds.read_pass(pass, fixed_sounds);
         // gamemd.exe ReadAudioVisual66A68E/66A693: current byte default.
         self.rules_shroud_grow = section.read_bool("ShroudGrow", self.rules_shroud_grow);
         // AudioVisual66B385..66B39E: ReadRange474620, current +14BC default.
@@ -8603,7 +8860,9 @@ impl RulesPassProcessor {
                     rules_shroud_grow: self.rules_shroud_grow,
                     rules_shroud_rate: self.rules_shroud_rate,
                     rules_fog_rate: self.rules_fog_rate,
+                    rules_global_sounds: self.rules_global_sounds,
                     rules_difficulty_rows: self.rules_difficulty_rows,
+                    rules_land: self.rules_land,
                     rules_gravity: self.rules_gravity,
                     rules_tree_strength: self.rules_tree_strength,
                     rules_wind_direction: self.rules_wind_direction,
@@ -8618,6 +8877,7 @@ impl RulesPassProcessor {
                     rules_infantry_repair_rate: self.rules_infantry_repair_rate,
                     rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
                     rules_talk_bubble_time: self.rules_talk_bubble_time,
+                    rules_attack_cursor_on_disguise: self.rules_attack_cursor_on_disguise,
                     rules_spotlight: self.rules_spotlight,
                     rules_ammo_crate_damage: self.rules_ammo_crate_damage,
                     rules_tiberium_explosion_damage: self.rules_tiberium_explosion_damage,
@@ -8631,10 +8891,13 @@ impl RulesPassProcessor {
                     rules_missing_cameo: self.rules_missing_cameo,
                     rules_mind_control_attack_line_frames: self
                         .rules_mind_control_attack_line_frames,
+                    rules_drain_money_frame_delay: self.rules_drain_money_frame_delay,
+                    rules_drain_money_amount: self.rules_drain_money_amount,
                     rules_line_trail_override: self.rules_line_trail_override,
                     rules_chrono_beam_color: self.rules_chrono_beam_color,
                     rules_prism_support: self.rules_prism_support,
                     rules_patrol_scan_minutes: self.rules_patrol_scan_minutes,
+                    rules_ai_hate_delays: self.rules_ai_hate_delays,
                     rules_comp_easy_bonus: self.rules_comp_easy_bonus,
                     rules_prism_type: self.rules_prism_type,
                     rules_drop_zone_anim: self.rules_drop_zone_anim,
@@ -8727,6 +8990,10 @@ mod chrono_beam_rules_tests;
 #[cfg(test)]
 #[path = "control_line_rules_tests.rs"]
 mod control_line_rules_tests;
+
+#[cfg(test)]
+#[path = "disguise_cursor_rules_tests.rs"]
+mod disguise_cursor_rules_tests;
 
 #[cfg(test)]
 #[path = "native_type_reader_tests.rs"]

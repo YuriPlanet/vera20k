@@ -1171,6 +1171,7 @@ impl Simulation {
                 score.hash(hasher);
             }
             house.enemy_house().hash(hasher);
+            house.hash_scouted_houses(hasher);
 
             if let Some((rx, ry)) = house.base_center() {
                 1u8.hash(hasher);
@@ -1267,6 +1268,12 @@ impl Simulation {
             {
                 b"house-strategy-timer-v1".hash(hasher);
                 house.strategy_timer().hash(hasher);
+            }
+            if *house.enemy_search_timer()
+                != crate::sim::house_state::enemy_search_timer_at_construction()
+            {
+                b"house-enemy-search-timer-v1".hash(hasher);
+                house.enemy_search_timer().hash(hasher);
             }
             house.team_creation().hash_state(hasher);
             if *house.ai_unit_choices() != Default::default() {
@@ -1588,26 +1595,11 @@ fn hash_particle(p: &crate::sim::particles::Particle, hasher: &mut impl Hasher) 
     p.state_ai_advance().hash(hasher);
     (p.drift_x(), p.drift_y(), p.drift_z()).hash(hasher);
     p.prev_delta().hash(hasher);
-    match p.spark() {
-        None => 0_u8.hash(hasher),
-        Some(spark) => {
-            1_u8.hash(hasher);
-            spark.velocity_x.bits().hash(hasher);
-            spark.velocity_y.bits().hash(hasher);
-            spark.velocity_z.bits().hash(hasher);
-            spark.start_rgb.hash(hasher);
-            spark.color_index.hash(hasher);
-            spark.color_accumulator.bits().hash(hasher);
-        }
-    }
-    // Behavior-4 state, hashed only when present so other particles hash as
-    // before.
-    if let Some(railgun) = p.railgun() {
-        railgun.position.map(|v| v.bits()).hash(hasher);
-        railgun.start_rgb.hash(hasher);
-        railgun.color_index.hash(hasher);
-        railgun.color_accumulator.bits().hash(hasher);
-    }
+    p.target().to_array().hash(hasher);
+    p.float_position().map(|value| value.bits()).hash(hasher);
+    p.start_rgb().hash(hasher);
+    p.color_index().hash(hasher);
+    p.color_accumulator().bits().hash(hasher);
 }
 
 /// One entity's components, in the order the state hash folds them.
@@ -3716,7 +3708,7 @@ mod particle_hash_tests {
     use super::Simulation;
     use crate::rules::particle_system_type::ParticleSystemTypeId;
     use crate::rules::particle_type::ParticleTypeId;
-    use crate::sim::particles::{Particle, ParticleSystem, SparkRuntimeState};
+    use crate::sim::particles::{Particle, ParticleSystem};
     use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
     use glam::IVec3;
 
@@ -3732,11 +3724,10 @@ mod particle_hash_tests {
         id
     }
 
-    fn particle_with_spark(spark: Option<SparkRuntimeState>) -> Particle {
+    fn test_particle() -> Particle {
         let mut particle = Particle::test_fixture(ParticleTypeId(0), IVec3::new(-1, 2, 3));
         particle.set_origin_for_test(IVec3::ZERO);
         particle.set_lifetime_remaining_for_test(9);
-        particle.set_spark_for_test(spark);
         particle
     }
 
@@ -3749,49 +3740,21 @@ mod particle_hash_tests {
     }
 
     #[test]
-    fn every_raw_spark_field_changes_the_state_hash() {
-        let base = SparkRuntimeState {
-            velocity_x: NativeF32Bits::from_bits(0x0000_0000),
-            velocity_y: NativeF32Bits::from_bits(0x3f80_0000),
-            velocity_z: NativeF32Bits::from_bits(0xc0c0_0000),
-            start_rgb: [80, 255, 255],
-            color_index: 0,
-            color_accumulator: NativeF64Bits::POSITIVE_ZERO,
-        };
-        let base_hash = hash_with_particle(particle_with_spark(Some(base)));
-        let variants = [
-            SparkRuntimeState {
-                velocity_x: NativeF32Bits::NEGATIVE_ZERO,
-                ..base
-            },
-            SparkRuntimeState {
-                velocity_y: NativeF32Bits::from_bits(0x4000_0000),
-                ..base
-            },
-            SparkRuntimeState {
-                velocity_z: NativeF32Bits::from_bits(0xc100_0000),
-                ..base
-            },
-            SparkRuntimeState {
-                start_rgb: [255, 255, 100],
-                ..base
-            },
-            SparkRuntimeState {
-                color_index: -1,
-                ..base
-            },
-            SparkRuntimeState {
-                color_accumulator: NativeF64Bits::NEGATIVE_ZERO,
-                ..base
-            },
+    fn common_particle_color_and_position_fields_change_the_state_hash() {
+        let base = test_particle();
+        let base_hash = hash_with_particle(base.clone());
+        let edits: [fn(&mut Particle); 5] = [
+            |p| p.set_color_for_test([80, 255, 255], 0, NativeF64Bits::POSITIVE_ZERO),
+            |p| p.set_color_for_test([0; 3], -1, NativeF64Bits::POSITIVE_ZERO),
+            |p| p.set_color_for_test([0; 3], 0, NativeF64Bits::NEGATIVE_ZERO),
+            |p| p.float_position_mut_for_test()[0] = NativeF32Bits::NEGATIVE_ZERO,
+            |p| p.set_target_for_test(IVec3::ONE),
         ];
-        for variant in variants {
-            assert_ne!(
-                base_hash,
-                hash_with_particle(particle_with_spark(Some(variant)))
-            );
+        for edit in edits {
+            let mut changed = base.clone();
+            edit(&mut changed);
+            assert_ne!(base_hash, hash_with_particle(changed));
         }
-        assert_ne!(base_hash, hash_with_particle(particle_with_spark(None)));
     }
 
     fn hash_with_system(system: ParticleSystem) -> u64 {
@@ -3804,8 +3767,7 @@ mod particle_hash_tests {
     #[test]
     fn saved_system_and_particle_fields_change_the_state_hash() {
         let mut base = fake_system(IVec3::ZERO);
-        base.particles_mut_for_test()
-            .push(particle_with_spark(None));
+        base.particles_mut_for_test().push(test_particle());
         let base_hash = hash_with_system(base.clone());
         let owner_house = Simulation::new().interner.intern("Americans");
         type Edit = Box<dyn Fn(&mut ParticleSystem)>;
@@ -3841,9 +3803,7 @@ mod particle_hash_tests {
             Box::new(|s| s.particles_mut_for_test()[0].set_drift_x_for_test(1)),
             Box::new(|s| s.particles_mut_for_test()[0].set_drift_y_for_test(1)),
             Box::new(|s| s.particles_mut_for_test()[0].set_drift_z_for_test(1)),
-            Box::new(|s| {
-                s.particles_mut_for_test()[0].prev_delta_mut_for_test()[2] = 1
-            }),
+            Box::new(|s| s.particles_mut_for_test()[0].prev_delta_mut_for_test()[2] = 1),
         ];
         for (index, edit) in edits.iter().enumerate() {
             let mut system = base.clone();

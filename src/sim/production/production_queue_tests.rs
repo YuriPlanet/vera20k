@@ -2195,8 +2195,8 @@ fn failed_vehicle_exit_promotes_a_fresh_identity_that_can_deliver_after_cells_cl
     assert_eq!(credits_for_owner(&sim, "Americans"), 50_700);
     for cell in terrain.cells_mut_for_test() {
         cell.land_type = crate::rules::terrain_rules::LandType::Clear.as_index();
-        cell.speed_costs.track = Some(100);
-        cell.speed_costs.wheel = Some(100);
+        cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
+        cell.speed_costs.wheel = Some(crate::util::native_x87::NativeF32Bits::ONE);
         cell.zone_type = crate::map::resolved_terrain::zone_class::GROUND;
     }
     let clear_grid = PathGrid::from_resolved_terrain(&terrain);

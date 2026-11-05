@@ -411,7 +411,7 @@ impl LoadingRequest {
         &self,
         ra2_dir: std::path::PathBuf,
         asset_manager: &mut AssetManager,
-        native_rules: Option<&crate::rules::process_owner::NativeRulesProcessOwner>,
+        native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<MapLoadInitial> {
         let mut loaded = init::load_map_initial_with_assets(
@@ -419,6 +419,9 @@ impl LoadingRequest {
             asset_manager,
             native_rules,
             Some(self.startup().physical_map_file()),
+            self.startup()
+                .launch_session()
+                .map(|launch| launch.mode.override_file.as_str()),
             progress,
         )?;
         if let LoadingStartup::Network(_) = self.startup() {
@@ -520,7 +523,7 @@ impl LoadingRequest {
         self,
         ra2_dir: PathBuf,
         assets: &mut AssetManager,
-        native_rules: Option<&crate::rules::process_owner::NativeRulesProcessOwner>,
+        native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
         mapgen_retention: &mut crate::app::shell_random_map::RandomMapGenerationRetention,
         resident: Option<&mut crate::sim::world::Simulation>,
         progress: &mut dyn LoadingProgressSink,
@@ -535,7 +538,7 @@ impl LoadingRequest {
         self,
         ra2_dir: PathBuf,
         assets: &mut AssetManager,
-        native_rules: Option<&crate::rules::process_owner::NativeRulesProcessOwner>,
+        native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<init::RandomMapLaunchSnapshot> {
         let prepared = self.prepare(
@@ -2557,7 +2560,7 @@ fn prepare_loading_session(
                 request.prepare(
                     ra2_dir,
                     assets,
-                    process_assets.native_rules(),
+                    process_assets.native_rules_mut_with_tile_cache().0,
                     mapgen_retention,
                     resident.as_deref_mut(),
                     &mut sink,
@@ -2566,7 +2569,7 @@ fn prepare_loading_session(
                 request.prepare(
                     ra2_dir,
                     assets,
-                    process_assets.native_rules(),
+                    process_assets.native_rules_mut_with_tile_cache().0,
                     mapgen_retention,
                     resident.as_deref_mut(),
                     &mut NoopProgressSink,
@@ -2980,6 +2983,25 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
     }
     let variant = selected_loading_art_variant(state);
     ensure_loading_composition_snapshot(state);
+    // DrawLoading553311..5533C0 asks the current mode's Cooperative slot,
+    // then selects by ScenarioName rather than the active progress record.
+    let cooperative_background = state
+        .frontend
+        .loading_session
+        .as_ref()
+        .map(|session| session.stage.startup())
+        .filter(|startup| {
+            startup.launch_session().is_some_and(|launch| {
+                launch.mode.class == crate::skirmish_modes::MpModeClass::Cooperative
+            })
+        })
+        .and_then(|startup| {
+            state
+                .frontend
+                .multiplayer_shell_runtime
+                .cooperative_registry()
+                .loading_art(startup.selected_map_file())
+        });
     let Some(assets) = state
         .frontend
         .loading_session
@@ -3088,10 +3110,19 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
                     String::new()
                 })
         });
-    let art = crate::render::loading_screen_chrome::LoadingScreenArtInput {
-        variant,
-        #[cfg(feature = "ares")]
-        background: country_background.as_ref().map(|file| {
+    let cooperative_palette = cooperative_background.and_then(|(_, name)| {
+        crate::render::loading_screen_chrome::load_named_ui_palette(assets, name)
+    });
+    let background = cooperative_background.map(|(name, palette_name)| {
+        crate::render::loading_screen_chrome::LoadingCountryBackground {
+            name,
+            palette: cooperative_palette.as_ref(),
+            palette_name,
+        }
+    });
+    #[cfg(feature = "ares")]
+    let background = background.or_else(|| {
+        country_background.as_ref().map(|file| {
             let early = state
                 .frontend
                 .loading_session
@@ -3104,9 +3135,11 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
                 palette: early.palette.as_ref(),
                 palette_name: &early.palette_name,
             }
-        }),
-        #[cfg(not(feature = "ares"))]
-        background: None,
+        })
+    });
+    let art = crate::render::loading_screen_chrome::LoadingScreenArtInput {
+        variant,
+        background,
     };
     let atlas = build_loading_screen_atlas_with_composition(
         &state.renderer.gpu,
