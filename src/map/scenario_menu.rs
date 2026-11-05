@@ -29,10 +29,16 @@ pub struct MapMenuEntry {
 }
 pub(crate) fn read_map_menu_entry_from_ini(ini: &IniFile, file_name: &str) -> MapMenuEntry {
     let basic = crate::map::basic::parse_basic_section(ini);
+    // The shell's sprite font carries only the Latin-1 glyph set (native
+    // drew its menus through the system font, which has the local
+    // codepage). A `[Basic] Name` written in UTF-8 Chinese — community
+    // defense maps do this — parses fine but has no glyphs to draw, so the
+    // selector shows mojibake. A name outside Latin-1 falls back to the
+    // ASCII file token, which always renders.
     let display_name = basic
         .name
         .clone()
-        .filter(|s| !s.trim().is_empty())
+        .filter(|s| !s.trim().is_empty() && s.chars().all(|c| u32::from(c) <= 0xFF))
         .unwrap_or_else(|| file_name.to_string());
 
     let player_capacity = skirmish_player_capacity(ini);

@@ -457,6 +457,21 @@ mod tests {
     }
 
     #[test]
+    fn menu_entry_falls_back_past_the_latin1_glyph_set() {
+        // Community defense maps write `[Basic] Name` in UTF-8 Chinese; the
+        // shell's sprite font has no glyphs above Latin-1, so the selector
+        // would draw mojibake. The entry shows the ASCII file token instead,
+        // while a Latin-1 name keeps rendering as authored.
+        let ini = IniFile::from_str("[Basic]\nName=\u{5927}\u{4ed9}\u{9632}\u{5b88}\n");
+        let entry = read_map_menu_entry_from_ini(&ini, "DaxianSoloDefense55.yrm");
+        assert_eq!(entry.display_name, "DaxianSoloDefense55.yrm");
+
+        let ini = IniFile::from_str("[Basic]\nName=D\u{e9}fense Libre\u{e9}\n");
+        let entry = read_map_menu_entry_from_ini(&ini, "keep.map");
+        assert_eq!(entry.display_name, "D\u{e9}fense Libre\u{e9}");
+    }
+
+    #[test]
     fn menu_entry_exposes_header_preview_start_bounds() {
         let ini = IniFile::from_str(
             "[Basic]\nName=Header Starts\nNewINIFormat=5\n\
