@@ -7,6 +7,10 @@
 //! `Slot01=type,side,colour,start,team` for each computer row the map shows,
 //! -2 standing for Random and for no team. The options keep their
 //! `[Skirmish]` key names.
+//!
+//! `[Last Setup]` holds the page the player last left Skirmish from, with
+//! `Map=` naming its map's section; the page puts it back on the next visit
+//! to that map. No map's section has a space, so none can take it.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -27,6 +31,14 @@ use super::{
 };
 
 pub(super) const FILE_NAME: &str = "SkirmishSetups.ini";
+const LAST_SETUP_SECTION: &str = "Last Setup";
+
+/// The page the player last left: its map's section name and its setup.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct LastSetup {
+    pub(super) map: String,
+    pub(super) setup: SkirmishSavedSetup,
+}
 
 /// The section that holds a map's setup.
 pub(super) fn section_name(map_file: &str) -> String {
@@ -41,20 +53,43 @@ pub(super) fn section_name(map_file: &str) -> String {
     name
 }
 
-/// Every setup in the file, by section. A section without `Player` is none.
-pub(super) fn read_setups(bytes: &[u8]) -> HashMap<String, SkirmishSavedSetup> {
+/// Every map's setup in the file, by section, and the last setup. A section
+/// without `Player` is none.
+pub(super) fn read_setups(
+    bytes: &[u8],
+) -> (HashMap<String, SkirmishSavedSetup>, Option<LastSetup>) {
     let Ok(ini) = IniFile::from_bytes(bytes) else {
-        return HashMap::new();
+        return Default::default();
     };
-    ini.section_names()
+    let last = ini.section(LAST_SETUP_SECTION).and_then(|section| {
+        Some(LastSetup {
+            map: section.read_string("Map", "", 0x400),
+            setup: read_setup(section)?,
+        })
+    });
+    let setups = ini
+        .section_names()
         .into_iter()
+        .filter(|name| !name.eq_ignore_ascii_case(LAST_SETUP_SECTION))
         .filter_map(|name| Some((name.to_owned(), read_setup(ini.section(name)?)?)))
-        .collect()
+        .collect();
+    (setups, last)
 }
 
 /// The file with the map's section holding `setup` and every other section
 /// kept.
 pub(super) fn write_setup(file: &[u8], section: &str, setup: &SkirmishSavedSetup) -> Vec<u8> {
+    replace_section(file, section, setup_values(setup))
+}
+
+/// The file with `[Last Setup]` holding `last` and every other section kept.
+pub(super) fn write_last_setup(file: &[u8], last: &LastSetup) -> Vec<u8> {
+    let mut values = vec![("Map".to_owned(), last.map.clone())];
+    values.extend(setup_values(&last.setup));
+    replace_section(file, LAST_SETUP_SECTION, values)
+}
+
+fn setup_values(setup: &SkirmishSavedSetup) -> Vec<(String, String)> {
     let mut values = vec![("Player".to_owned(), seat_value(setup.player))];
     for (index, computer) in setup.computers.iter().enumerate() {
         values.push((
@@ -81,6 +116,10 @@ pub(super) fn write_setup(file: &[u8], section: &str, setup: &SkirmishSavedSetup
     ] {
         values.push((key.to_owned(), value));
     }
+    values
+}
+
+fn replace_section(file: &[u8], section: &str, values: Vec<(String, String)>) -> Vec<u8> {
     let values: Vec<(&str, &str)> = values
         .iter()
         .map(|(key, value)| (key.as_str(), value.as_str()))
@@ -206,7 +245,7 @@ mod tests {
 
         let other = b"[xmp27t8.map]\r\nPlayer=-2,-2,-2,-2\r\n";
         let file = write_setup(other, &section, &setup);
-        let setups = read_setups(&file);
+        let (setups, _) = read_setups(&file);
         assert_eq!(setups.get(&section), Some(&setup));
         assert!(setups.contains_key("xmp27t8.map"), "{setups:?}");
 
@@ -214,5 +253,38 @@ mod tests {
         let file = write_setup(&file, &section, &setup);
         let text = String::from_utf8(file).unwrap();
         assert_eq!(text.matches(&format!("[{section}]")).count(), 1, "{text}");
+    }
+
+    /// The last setup reads back on its own, never as a map's setup for Load
+    /// Setup, even beside a map whose file has its name.
+    #[test]
+    fn the_last_setup_reads_back_apart_from_the_map_setups() {
+        let setup = |credits| SkirmishSavedSetup {
+            player: SkirmishSetupSeat {
+                country: SkirmishCountryChoice::Random,
+                color: None,
+                start: LaunchStartPosition::Position(2),
+                team: 1,
+            },
+            computers: Vec::new(),
+            game_speed: 3,
+            credits,
+            unit_count: 10,
+            short_game: true,
+            super_weapons: true,
+            build_off_ally: true,
+            crates: true,
+            mcv_redeploy: true,
+        };
+        let map = section_name("Last Setup");
+        let last = LastSetup {
+            map: map.clone(),
+            setup: setup(9000),
+        };
+        let file = write_last_setup(&write_setup(b"", &map, &setup(5000)), &last);
+        let (setups, read) = read_setups(&file);
+        assert_eq!(read, Some(last));
+        assert_eq!(setups.len(), 1, "{setups:?}");
+        assert_eq!(setups.get(&map), Some(&setup(5000)));
     }
 }
