@@ -757,6 +757,19 @@ pub(crate) struct WolLoginLayout {
     pub(crate) info: Option<WolLoginInfoLayout>,
 }
 
+/// VERA online: the news and rules panels in the shell's authored 800x600
+/// units, over the art, clear of its frame and the right column.
+const INFO_NEWS: RectPx = RectPx::new(36, 36, 560, 312);
+const INFO_RULES: RectPx = RectPx::new(36, 364, 560, 176);
+/// VERA online: the account popups centre on the news and rules they cover,
+/// not on the whole page with its button column.
+pub(crate) const POPUP_AREA: RectPx = RectPx::new(
+    INFO_NEWS.x,
+    INFO_NEWS.y,
+    INFO_NEWS.w,
+    INFO_RULES.y + INFO_RULES.h - INFO_NEWS.y,
+);
+
 /// VERA online: the online page's left side, over its art: the latest news,
 /// with the players-online count on its heading row, above the online
 /// rules.
@@ -843,10 +856,9 @@ impl WolLoginLayout {
                 password.h - 2,
             )),
             remember: px(child_window(196, 207, 213, 13)),
-            // Over the art, clear of its frame and the right column.
             info: (policy == LoginPolicy::Online).then(|| WolLoginInfoLayout {
-                news: px(RectPx::new(36, 36, 560, 312)),
-                rules: px(RectPx::new(36, 364, 560, 176)),
+                news: px(INFO_NEWS),
+                rules: px(INFO_RULES),
             }),
         }
     }
@@ -1235,5 +1247,31 @@ mod tests {
         assert!(info.news.y + info.news.h < info.rules.y);
         assert!(info.news.x + info.news.w < layout.page.right_panel.top.x);
         assert!(info.rules.y + info.rules.h < layout.status_help.y);
+    }
+
+    #[test]
+    fn account_popups_centre_on_the_news_and_rules_they_cover() {
+        use crate::ui::shell::modal::wol_account_form_layout_on;
+        for layout in [
+            WolLoginLayout::new(800, 600, LoginPolicy::Online),
+            WolLoginLayout::responsive(1920, 1080, LoginPolicy::Online),
+        ] {
+            let info = layout.info.unwrap();
+            let (left, right) = (info.news.x, info.news.x + info.news.w);
+            let (top, bottom) = (info.news.y, info.rules.y + info.rules.h);
+            // Login's popup; every account popup is the same box.
+            let popup = wol_account_form_layout_on(POPUP_AREA, 2, true, layout.page.scale).dialog;
+            assert!(popup.x >= left && popup.x + popup.w <= right, "{popup:?}");
+            assert!(popup.y >= top && popup.y + popup.h <= bottom, "{popup:?}");
+            // Centred to the pixel: the doubled centres differ by at most 2.
+            assert!(
+                (2 * popup.x + popup.w - (left + right)).abs() <= 2,
+                "{popup:?}"
+            );
+            assert!(
+                (2 * popup.y + popup.h - (top + bottom)).abs() <= 2,
+                "{popup:?}"
+            );
+        }
     }
 }
