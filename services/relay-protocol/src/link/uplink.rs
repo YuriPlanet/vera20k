@@ -65,6 +65,8 @@ pub(crate) struct Gap {
     pub(crate) since_ms: u64,
     // An UPLINK went out while this gap was open.
     pub(crate) uplinked: bool,
+    // An UPLINK went `resend_after` ms or more into the gap (§6.7 item 1).
+    pub(crate) resent: bool,
     // Fallback PULLs sent for it, when the next is due, and the watermark
     // it last saw: an advance restarts the grace (spec §7.7).
     pub(crate) pulls: u32,
@@ -93,6 +95,11 @@ struct Due {
     timeout: bool,
     // A lossy copy is due and this send serves as it.
     copy: bool,
+}
+
+/// `max(16, 4 rttvar)`: how long into a gap its second UPLINK waits.
+fn gap_resend_ms(link: &super::ClientLink) -> u64 {
+    GAP_UPLINK_SPACING_MS.max(4 * u64::from(link.rtt.rttvar))
 }
 
 fn since(at: Option<u64>, now_ms: u64) -> u64 {
@@ -150,15 +157,21 @@ impl ClientSession {
         if fresh && state == LinkState::Congested && since_last < CONGESTED_SEND_SPACING_MS {
             return None;
         }
+        let resend = gap_resend_ms(link);
         let normal = self.hop.uplinks == 0
             || link.recovered
             || (fresh
                 && (state != LinkState::Congested || since_last >= CONGESTED_SEND_SPACING_MS))
             || schedule.gap.is_some_and(|gap| {
-                !gap.uplinked
-                    && since_last >= GAP_UPLINK_SPACING_MS
-                    && (gap.kind == OrderingGap::Reordered
-                        || now_ms.saturating_sub(gap.since_ms) >= u64::from(schedule.turn_ms))
+                since_last >= GAP_UPLINK_SPACING_MS
+                    && if gap.uplinked {
+                        // Once more when the gap outlasts max(16, 4 rttvar):
+                        // a snapshot the relay can judge (§6.7 item 1).
+                        !gap.resent && now_ms.saturating_sub(gap.since_ms) >= resend
+                    } else {
+                        gap.kind == OrderingGap::Reordered
+                            || now_ms.saturating_sub(gap.since_ms) >= u64::from(schedule.turn_ms)
+                    }
             })
             || (schedule.recv_next > schedule.acked_recv_next
                 && since_last >= self.ack_interval(state))
@@ -302,8 +315,11 @@ impl ClientSession {
         schedule.last_uplink_ms = Some(now_ms);
         schedule.acked_recv_next = recv_next;
         link.recovered = false;
+        let resend = gap_resend_ms(link);
+        let schedule = &mut link.schedule;
         if let Some(gap) = schedule.gap.as_mut() {
             gap.uplinked = true;
+            gap.resent |= now_ms.saturating_sub(gap.since_ms) >= resend;
         }
         if kind == Kind::Normal {
             schedule.checksums = None;
@@ -368,6 +384,8 @@ impl ClientSession {
             down: self.hop.down,
             srtt_ms: saturate(link.rtt.srtt),
             base_ms: saturate(link.rtt.base()),
+            // 0 with srtt (spec §3.2).
+            rttvar_ms: saturate(link.rtt.srtt.map(|_| link.rtt.rttvar)),
             link: link.link_byte(),
             checksums: checksums.to_vec(),
             pace,
@@ -451,10 +469,14 @@ impl ClientSession {
                 0
             });
         }
-        if let Some(gap) = schedule.gap.filter(|gap| !gap.uplinked) {
-            let grace = match gap.kind {
-                OrderingGap::Reordered => 0,
-                OrderingGap::BehindStatus => gap.since_ms + u64::from(schedule.turn_ms),
+        if let Some(gap) = schedule.gap.filter(|gap| !gap.resent) {
+            let grace = if gap.uplinked {
+                gap.since_ms + gap_resend_ms(link)
+            } else {
+                match gap.kind {
+                    OrderingGap::Reordered => 0,
+                    OrderingGap::BehindStatus => gap.since_ms + u64::from(schedule.turn_ms),
+                }
             };
             consider(after(GAP_UPLINK_SPACING_MS).max(grace));
         }
@@ -531,6 +553,7 @@ impl ClientSession {
                     kind,
                     since_ms: now_ms,
                     uplinked: false,
+                    resent: false,
                     pulls: 0,
                     next_pull_ms: None,
                     watermark: link.schedule.recv_next.max(1),
@@ -806,6 +829,8 @@ mod tests {
         session.hop.first_pack = false;
         let first = poll(&mut session, 0).expect("the start sends at once");
         assert_eq!(decoded(&first).flags, FLAG_PUSH);
+        // No sample: srtt_ms 0 and rttvar_ms 0 (spec §3.2).
+        assert_eq!((decoded(&first).srtt_ms, decoded(&first).rttvar_ms), (0, 0));
         assert!(poll(&mut session, 0).is_none(), "one UPLINK per service");
         assert!(poll(&mut session, 99).is_none());
         assert!(
@@ -846,7 +871,21 @@ mod tests {
         // turn_ms at 30 Hz is 67.
         assert!(poll(&mut session, 86).is_none());
         assert!(poll(&mut session, 87).is_some());
-        assert!(poll(&mut session, 200).is_none(), "once per gap");
+    }
+
+    #[test]
+    fn a_lasting_gap_uplinks_once_more_after_four_rttvar_then_waits_for_the_pull() {
+        let mut session = started();
+        poll(&mut session, 0).unwrap();
+        link(&mut session).rtt.sample(40, 0); // rttvar 20: again at 80 ms
+        session.set_ordering_gap(Some(OrderingGap::Reordered), 20);
+        assert!(poll(&mut session, 36).is_some(), "the first, 16 ms on");
+        assert!(poll(&mut session, 99).is_none());
+        assert!(
+            poll(&mut session, 100).is_some(),
+            "the second, max(16, 4 * 20)"
+        );
+        assert!(poll(&mut session, 200).is_none(), "at most two per gap");
     }
 
     #[test]

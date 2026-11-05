@@ -20,7 +20,7 @@ pub(crate) use codec::{
     UPLINK_REQUEST, append_feedback, decode_uplink, read_feedback,
 };
 pub(crate) use measure::{
-    JitterMeter, LossCursor, LossStats, RttEstimator, StateClock, link_state, pto,
+    JitterMeter, LossCursor, LossStats, RttEstimator, StateClock, link_state, pto, reader_rtt,
 };
 
 use crate::{
@@ -785,6 +785,7 @@ pub(crate) struct ReaderLink {
     pub(crate) loss: LossStats,
     pub(crate) delayed: bool,
     pub(crate) srtt_c: u16,
+    pub(crate) rttvar_c: u16,
     pub(crate) jittery: bool,
     pub(crate) last_heard_ms: u64,
     pub(crate) clock: StateClock,
@@ -804,6 +805,7 @@ impl ReaderLink {
             loss: LossStats::initial(),
             delayed: false,
             srtt_c: 0,
+            rttvar_c: 0,
             jittery: false,
             last_heard_ms: now_ms,
             clock,
@@ -862,15 +864,23 @@ impl ReaderLink {
 
     /// Judges `UPLINK.down_high` / `down_bits` (spec §4.3, §7.1 step 4) and
     /// returns the logged sends judged lost, oldest first.
-    pub(crate) fn judge(&mut self, down: RecvWindow) -> Vec<SendRecord> {
+    /// `now_ms` is when the feedback arrived (`t_fb`): a feedback is judged
+    /// once, and its verdict never changes with time.
+    pub(crate) fn judge(&mut self, down: RecvWindow, now_ms: u64) -> Vec<SendRecord> {
         let mut lost = Vec::new();
         let log = &mut self.log;
-        let (judged, missing) = self.cursor.judge(
-            down.high,
-            down.bits,
-            |sequence| log[(sequence % SENDLOG_READER as u64) as usize].sequence == sequence,
-            |sequence| lost.push(sequence),
-        );
+        // §4.3: wait srtt_c + 4 rttvar_c (§4.6 defaults before a report).
+        let (srtt, rttvar) = reader_rtt(self.srtt_c, self.rttvar_c);
+        let sent = |sequence: u64| {
+            let entry = log[(sequence % SENDLOG_READER as u64) as usize];
+            (entry.sequence == sequence).then_some(entry.at_ms)
+        };
+        let wait = srtt + 4 * rttvar;
+        let (judged, missing) =
+            self.cursor
+                .judge(down.high, down.bits, now_ms, wait, sent, |sequence| {
+                    lost.push(sequence)
+                });
         self.loss.add(judged, missing);
         lost.into_iter()
             .map(|sequence| {
@@ -1024,17 +1034,29 @@ impl ClientSession {
                 .rtt
                 .sample(rtt.min(u64::from(u32::MAX)) as u32, now_ms);
         }
+        self.judge_uplink(feedback.up, now_ms);
+    }
+
+    /// Uplink loss from feedback `up` that arrived at `now_ms` (spec §4.3
+    /// `t_fb`): a missing sequence counts once it went srtt + 4 rttvar
+    /// before, the §4.6 defaults before a sample. Judged once per feedback.
+    fn judge_uplink(&mut self, up: RecvWindow, now_ms: u64) {
+        let Some(ordering) = self.ordering.as_mut() else {
+            return;
+        };
+        let rtt = &ordering.link.rtt;
+        let wait = rtt
+            .srtt
+            .map_or(300, |srtt| u64::from(srtt) + 4 * u64::from(rtt.rttvar));
         let hop = &mut self.hop;
         let log = &hop.log;
-        let (judged, lost) = hop.cursor.judge(
-            high,
-            feedback.up.bits,
-            |sequence| {
-                let entry = log[(sequence % SENDLOG_CLIENT as u64) as usize];
-                entry.sequence == sequence
-            },
-            |_| {},
-        );
+        let sent = |sequence: u64| {
+            let entry = log[(sequence % SENDLOG_CLIENT as u64) as usize];
+            (entry.sequence == sequence).then_some(entry.at_ms)
+        };
+        let (judged, lost) = hop
+            .cursor
+            .judge(up.high, up.bits, now_ms, wait, sent, |_| {});
         ordering.link.loss.add(judged, lost);
     }
 

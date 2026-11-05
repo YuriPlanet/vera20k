@@ -150,6 +150,22 @@ impl PushSubscription {
 }
 
 impl Peer {
+    /// Queues what the sends judged `lost` still owe for retransmission
+    /// (spec §7.3). Returns how many sends were lost.
+    pub(crate) fn owe_lost(&mut self, lost: &[SendRecord], now_ms: u64) -> u64 {
+        if let Some(push) = self.push.as_mut() {
+            for send in lost.iter().filter(|send| send.count > 0) {
+                push.enqueue_lost(
+                    send,
+                    self.link.sent_after(send.sequence),
+                    self.link.srtt_c,
+                    now_ms,
+                );
+            }
+        }
+        lost.len() as u64
+    }
+
     /// Re-evaluates this reader's downlink state (spec §5.2) and applies the
     /// §5.5 side effects of a change. Returns the current state.
     pub(crate) fn evaluate_reader(&mut self, now_ms: u64) -> LinkState {
@@ -558,7 +574,12 @@ impl RelayServer {
                 LinkState::Congested => CONGESTED_ACK_DELAY_MS,
                 _ => GOOD_ACK_DELAY_MS,
             };
-            let timeout = pto(peer.link.srtt_c, ack_delay, push.pto_backoff);
+            let timeout = pto(
+                peer.link.srtt_c,
+                peer.link.rttvar_c,
+                ack_delay,
+                push.pto_backoff,
+            );
             // A probe also waits a PTO after the previous probe, or a capped
             // PTO would probe every pass.
             let quiet = peer
@@ -788,6 +809,7 @@ mod tests {
                 down: crate::RecvWindow::default(),
                 srtt_ms: 0,
                 base_ms: 0,
+                rttvar_ms: 0,
                 link,
                 checksums: Vec::new(),
                 pace: None,
@@ -817,6 +839,30 @@ mod tests {
         server.drain_ordering_push(370, unix(370));
         server.drain_ordering_push(378, unix(378));
         assert_eq!(stats(&server).packets_by_kind[2], 1);
+    }
+
+    /// Spec §4.3: a feedback judges a missing send only if it went
+    /// srtt_c + 4 rttvar_c before the feedback arrived; later push passes
+    /// never judge it again, the next feedback does.
+    #[test]
+    fn only_a_feedback_old_enough_judges_a_send_lost() {
+        let (mut server, _reader) = reader_room(87);
+        server.advance_clock(300, unix(300));
+        server.drain_ordering_push(300, unix(300));
+        let peer = &mut server.rooms.get_mut(&[5; 16]).unwrap().peers[0];
+        let pack = peer.link.latest(|send| send.kind == SEND_FRESH).unwrap();
+        (peer.link.srtt_c, peer.link.rttvar_c) = (40, 10);
+        // A later datagram arrived; the pack did not. Wait: 40 + 4 * 10.
+        let (high, bits) = (pack.sequence + 3, !(1u64 << 3));
+        let young = pack.at_ms + 79;
+        assert!(peer.link.judge(RecvWindow { high, bits }, young).is_empty());
+        server.drain_ordering_push(young + 200, unix(young + 200));
+        assert_eq!(stats(&server).packets_by_kind[3], 0, "no judging by time");
+        let peer = &mut server.rooms.get_mut(&[5; 16]).unwrap().peers[0];
+        assert_eq!(
+            peer.link.judge(RecvWindow { high, bits }, young + 1).len(),
+            1
+        );
     }
 
     #[test]

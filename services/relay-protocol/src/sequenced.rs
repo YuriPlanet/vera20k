@@ -2446,6 +2446,7 @@ mod tests {
             down: RecvWindow::default(),
             srtt_ms: 0,
             base_ms: 0,
+            rttvar_ms: 0,
             link: 0,
             checksums: Vec::new(),
             pace: None,
@@ -6004,19 +6005,10 @@ impl RelayServer {
         }
         peer.link.jittery = jittery;
         peer.link.srtt_c = uplink.srtt_ms;
+        peer.link.rttvar_c = uplink.rttvar_ms;
         // §7.1 step 4: downlink loss, and what the lost packs owe (§7.3).
-        let lost = peer.link.judge(uplink.down);
-        self.ordering_counts.down_lost_packets += lost.len() as u64;
-        if let Some(push) = peer.push.as_mut() {
-            for send in lost.iter().filter(|send| send.count > 0) {
-                push.enqueue_lost(
-                    send,
-                    peer.link.sent_after(send.sequence),
-                    peer.link.srtt_c,
-                    now_ms,
-                );
-            }
-        }
+        let lost = peer.link.judge(uplink.down, now_ms);
+        self.ordering_counts.down_lost_packets += peer.owe_lost(&lost, now_ms);
         peer.evaluate_reader(now_ms);
         let mut batch_error = None;
         for (index, opaque) in uplink.batches.iter().enumerate() {
