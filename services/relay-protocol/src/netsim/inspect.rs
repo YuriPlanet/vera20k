@@ -35,6 +35,7 @@ pub struct Uplink {
     pub down_bits: u64,
     pub srtt_ms: u16,
     pub base_ms: u16,
+    pub rttvar_ms: u16,
     pub link: u8,
     pub checksums: Vec<(u32, u32)>,
     /// `(pace, frames_per_second, tick_micros)` when flags bit1.
@@ -142,13 +143,13 @@ fn u16_at(bytes: &[u8], offset: usize) -> u16 {
 /// UPLINK by spec §3.2, with each of its six relay decoding rules.
 fn uplink(payload: &[u8]) -> Result<Uplink, String> {
     let fail = |rule: &str| Err(format!("UPLINK {rule}"));
-    if payload.len() < 33 {
+    if payload.len() < 35 {
         return fail("shorter than its fixed part");
     }
     let flags = payload[1];
     // Rule 2: reserved flag and link bits (bit4..7 of each) are zero;
     // link bit3 is JITTERY (§3.2).
-    if flags & 0xF0 != 0 || payload[30] & 0xF0 != 0 {
+    if flags & 0xF0 != 0 || payload[32] & 0xF0 != 0 {
         return fail("reserved bits");
     }
     let recv_next = u64_at(payload, 2);
@@ -164,11 +165,11 @@ fn uplink(payload: &[u8]) -> Result<Uplink, String> {
     if down_high == 0 && down_bits != 0 {
         return fail("down_bits without down_high");
     }
-    let checksum_count = usize::from(payload[31]);
+    let checksum_count = usize::from(payload[33]);
     if checksum_count > 2 {
         return fail("checksum_count");
     }
-    let mut offset = 32;
+    let mut offset = 34;
     let mut checksums = Vec::new();
     for _ in 0..checksum_count {
         if offset + 8 > payload.len() {
@@ -236,7 +237,8 @@ fn uplink(payload: &[u8]) -> Result<Uplink, String> {
         down_bits,
         srtt_ms: u16_at(payload, 26),
         base_ms: u16_at(payload, 28),
-        link: payload[30],
+        rttvar_ms: u16_at(payload, 30),
+        link: payload[32],
         checksums,
         pace,
         first_batch_id,
