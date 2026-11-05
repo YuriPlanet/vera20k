@@ -34,8 +34,8 @@ pub(crate) struct MapPictures {
     /// The newest map shown without a picture.
     wanted: Option<MapPictureRequest>,
     running: Option<Running>,
-    /// This build's pictures for the game folder (`super::generation_folder`),
-    /// found on first use.
+    /// The pictures for the game folder (`super::generation_folder`), found on
+    /// first use.
     folder: Option<PathBuf>,
 }
 
