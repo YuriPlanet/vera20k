@@ -786,7 +786,7 @@ impl Federation {
                     // A departure carries nothing, or 1 when silence ended it.
                     length > 1 || (length == 1 && payload[offset + ENTRY_HEADER] != 1)
                 } else {
-                    length <= OPAQUE_OVERHEAD || length > OPAQUE_OVERHEAD + ORDERING_BATCH_CAPACITY
+                    length == 0 || length > ORDERING_BATCH_CAPACITY
                 }
             {
                 return Err(RelayError::Malformed);

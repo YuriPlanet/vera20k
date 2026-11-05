@@ -186,10 +186,10 @@ pub(crate) fn decode_uplink(payload: &[u8]) -> Result<Uplink<'_>, RelayError> {
     })
 }
 
-/// Batch length bounds of an UPLINK: `40 < len ≤ 552`, a nonce, at least
-/// one ciphertext byte and a tag (transport spec §3.2).
-const OPAQUE_MIN: u64 = 41;
-const OPAQUE_MAX: u64 = ORDERING_BATCH_CAPACITY as u64 + 40;
+/// Batch length bounds of an UPLINK: plaintext `1 ≤ len ≤ 512`
+/// (compaction spec §3.1, §7.1).
+const OPAQUE_MIN: u64 = 1;
+const OPAQUE_MAX: u64 = ORDERING_BATCH_CAPACITY as u64;
 
 /// Appends the hop feedback tail `[up_high varint][up_bits u64]
 /// [echo_delay varint]` (spec §3.3, §3.4; compaction spec §7.2, §7.3).
@@ -345,13 +345,7 @@ mod tests {
         assert!(mutate(&|b| b[15] |= 0x08).is_ok(), "bit3 JITTERY");
         // first_batch_id ≥ 1; batch length bounds.
         assert_eq!(mutate(&|b| b[18] = 0), malformed);
-        assert_eq!(
-            mutate(&|b| {
-                b[19] = 40;
-                b.pop();
-            }),
-            malformed
-        );
+        assert_eq!(mutate(&|b| b[19] = 0), malformed);
         // recv_next ≥ 1; bit0 of down_bits when down_high > 0.
         assert_eq!(mutate(&|b| b[2] = 0), malformed);
         assert_eq!(mutate(&|b| b[4] = 0x7E), malformed);

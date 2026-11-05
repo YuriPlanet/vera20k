@@ -66,40 +66,27 @@ pub(super) fn piggyback_packs(
     new: &[Vec<u8>],
     datagrams: usize,
 ) -> (Vec<(Vec<u8>, usize)>, usize, usize) {
-    let fresh = pack_entries(new, datagrams);
+    let fresh = super::pack::encode_pack_v2(new, datagrams);
     let count: usize = fresh.iter().map(|(_, entries)| entries).sum();
     if fresh.is_empty() || old.is_empty() {
         return (fresh, count, 0);
     }
     let limit = fresh.len();
-    // The fewest old records to drop, counted as `pack_entries` packs, with
+    // The fewest old records to drop, counted as PACK v2 packs, with
     // one copy for the packs that go out.
     let new = &new[..count];
-    let Some(skip) =
-        (0..old.len()).find(|&skip| pack_count(old[skip..].iter().chain(new)) <= limit)
-    else {
+    let Some(skip) = (0..old.len()).find(|&skip| {
+        let records: Vec<&[u8]> = old[skip..].iter().chain(new).map(Vec::as_slice).collect();
+        super::pack::count_packs_v2(&records) <= limit
+    }) else {
         return (fresh, count, 0);
     };
     let records: Vec<Vec<u8>> = old[skip..].iter().chain(new).cloned().collect();
-    (pack_entries(&records, usize::MAX), count, old.len() - skip)
-}
-
-/// How many packs `pack_entries` makes of `records`, without building them.
-fn pack_count<'a>(records: impl Iterator<Item = &'a Vec<u8>>) -> usize {
-    let (mut packs, mut length, mut entries) = (0, 0, 0);
-    for record in records {
-        if packs == 0
-            || entries == usize::from(u8::MAX)
-            || length + record.len() - 6 > MAX_WIRE_PAYLOAD
-        {
-            packs += 1;
-            length = PACK_HEADER;
-            entries = 0;
-        }
-        length += record.len() - 6;
-        entries += 1;
-    }
-    packs
+    (
+        super::pack::encode_pack_v2(&records, usize::MAX),
+        count,
+        old.len() - skip,
+    )
 }
 
 /// Whether a reader in `state` gets the 8 ms repeat (spec §7.2, §7.5):
@@ -398,7 +385,7 @@ impl RelayServer {
                 else {
                     break;
                 };
-                let packs = pack_entries(&records, datagrams);
+                let packs = super::pack::encode_pack_v2(&records, datagrams);
                 let entries: usize = packs.iter().map(|(_, entries)| entries).sum();
                 datagrams -= packs.len();
                 plan.first.extend(packs.into_iter().map(|(pack, _)| pack));
@@ -594,7 +581,9 @@ impl RelayServer {
             'segments: for (start, end) in segments.into_iter().filter(|(a, b)| a < b) {
                 let records = ordering.hot_page(start, (end - start) as usize);
                 let mut next = start;
-                for (pack, entries) in pack_entries(&records, capacity - repeats.len()) {
+                for (pack, entries) in
+                    super::pack::encode_pack_v2(&records, capacity - repeats.len())
+                {
                     repeats.push(pack);
                     next += entries as u64;
                 }
@@ -633,7 +622,7 @@ impl RelayServer {
                 let end = newest.first + u64::from(newest.count);
                 if from < end {
                     let records = ordering.hot_page(from, (end - from) as usize);
-                    probes = pack_entries(&records, capacity - repeats.len())
+                    probes = super::pack::encode_pack_v2(&records, capacity - repeats.len())
                         .into_iter()
                         .map(|(pack, _)| pack)
                         .collect();
@@ -801,7 +790,7 @@ mod tests {
             .iter()
             .map(|packet| &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN])
             .filter(|payload| payload[0] == PACK_EVENT)
-            .map(|payload| (read_u64(payload, 1), payload[9]))
+            .map(|payload| super::super::pack::pack_v2_range(payload).unwrap())
             .collect()
     }
 
@@ -961,7 +950,7 @@ mod tests {
         server.advance_clock(310, unix(310));
         let packets = server.drain_ordering_push(310, unix(310));
         let pack = &packets[0].bytes[SERVER_HEADER..packets[0].bytes.len() - HOP_TAG_LEN];
-        assert_eq!((pack[0], read_u64(pack, 1), pack[9]), (PACK_EVENT, 1, 2));
+        assert_eq!(super::super::pack::pack_v2_range(pack), Some((1, 2)));
         assert_eq!(stats(&server).packets_by_kind[3], 1);
         assert_eq!(stats(&server).retransmit_ranges, 0);
     }
@@ -1018,7 +1007,7 @@ mod tests {
             .map(|packet| &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN])
             .find(|payload| payload[0] == PACK_EVENT)
             .unwrap();
-        assert_eq!(read_u64(first_pack, 1), 1);
+        assert_eq!(super::super::pack::pack_v2_range(first_pack).unwrap().0, 1);
     }
 
     #[test]
@@ -1043,17 +1032,22 @@ mod tests {
         let new = vec![frame_end(5)];
         let (packs, entries, piggybacked) = piggyback_packs(&old, &new, 8);
         assert_eq!((packs.len(), entries, piggybacked), (1, 1, 4));
-        assert_eq!(read_u64(&packs[0].0, 1), 1);
-        // A full batch and 13 frame ends fill 669 of 681 bytes: one more
-        // 7-byte record fits, two would add a pack.
+        assert_eq!(super::super::pack::pack_v2_range(&packs[0].0), Some((1, 5)));
+        // PACK v2: a full batch (517 B) and 159 frame ends (1 B each) fill
+        // 680 of 681 bytes with its 4 B header: one more frame end fits, two
+        // would add a pack.
         let mut opaque = vec![0; 9];
-        opaque.extend_from_slice(&[7; 552]);
+        opaque.extend_from_slice(&[7; 512]);
         let mut busy = vec![OrderingRoom::encoded_entry(5, 5, BATCH_EVENT, &opaque)];
-        busy.extend((6..19).map(frame_end));
+        busy.extend((6..165).map(frame_end));
         let (packs, entries, piggybacked) = piggyback_packs(&old, &busy, 8);
-        assert_eq!((packs.len(), entries, piggybacked), (1, 14, 1));
-        assert_eq!(read_u64(&packs[0].0, 1), 4);
-        busy.push(frame_end(19));
+        assert_eq!((packs.len(), entries, piggybacked), (1, 160, 1));
+        assert_eq!(packs[0].0.len(), 681);
+        assert_eq!(
+            super::super::pack::pack_v2_range(&packs[0].0),
+            Some((4, 161))
+        );
+        busy.push(frame_end(165));
         let (packs, _, piggybacked) = piggyback_packs(&old, &busy, 8);
         assert_eq!((packs.len(), piggybacked), (1, 0));
     }

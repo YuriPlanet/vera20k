@@ -252,7 +252,7 @@ impl ClientSession {
         self.confirm(cookie, out)
     }
 
-    /// An end-to-end encrypted DATA datagram for `target` (a source or
+    /// A plaintext DATA datagram for `target` (a source or
     /// `BROADCAST`) at `now_ms`; `Unregistered` before the hop is ready.
     pub fn data_at(
         &mut self,
@@ -390,7 +390,7 @@ impl ClientSession {
 
     /// Seals `plaintext` as the next batch (spec §6.1) and returns its ID:
     /// consecutive from 1 for this match, carried across hop renewals. The
-    /// ciphertext stays fixed until the batch is acknowledged. The batch goes
+    /// bytes stay fixed until the batch is acknowledged. The batch goes
     /// out with the next UPLINK (§6.2, §6.3 row 1).
     ///
     /// Errors: `Unregistered` before ordering is configured, before a STATUS
@@ -871,7 +871,7 @@ impl ReaderLink {
         now_ms: u64,
     ) {
         let (first, count) = pack.map_or((0, 0), |pack| {
-            (u64::from_le_bytes(pack[1..9].try_into().unwrap()), pack[9])
+            crate::sequenced::pack::pack_v2_range(pack).expect("a pack this relay wrote")
         });
         self.log[(sequence % SENDLOG_READER as u64) as usize] = SendRecord {
             sequence,

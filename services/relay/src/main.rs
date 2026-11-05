@@ -99,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state_dir = std::env::var_os("STATE_DIRECTORY")
         .or_else(|| std::env::var_os("VERA_RELAY_STATE_DIR"))
         .map(PathBuf::from)
-        .ok_or("relay encrypted journal requires STATE_DIRECTORY or VERA_RELAY_STATE_DIR")?;
+        .ok_or("relay journal requires STATE_DIRECTORY or VERA_RELAY_STATE_DIR")?;
     let mut server = RelayServer::with_journal(SecretKey::new(key), 1024, &state_dir)?;
     let mut buffer = [0u8; MAX_DATAGRAM + 1];
     let mut counts = TrafficCounts::default();

@@ -1,8 +1,8 @@
 //! Authenticated datagram routing and fixed-clock opaque command ordering for
-//! VERA clients. This transport owns no simulation state or payload keys.
+//! VERA clients. This transport owns no simulation state.
 //!
 //! The HTTPS lobby signs a 98-byte v2 ticket and separately returns its derived
-//! packet key and a match-private payload key. Every datagram travels in
+//! packet key and a match payload key, which clients no longer use. Every datagram travels in
 //! envelope v3 (`envelope`, bandwidth-compaction spec §6) under the hop's
 //! packet key; after its handshake a hop is named by the session the relay
 //! assigns (§6.2). Relayed DATA is plaintext (§3.2). Domain-separated
@@ -13,10 +13,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
-use chacha20poly1305::{
-    Tag, XChaCha20Poly1305, XNonce,
-    aead::{AeadInOut, KeyInit},
-};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use zeroize::Zeroize;
@@ -62,7 +58,6 @@ const COOKIE_LEN: usize = 40;
 const TICKET_DOMAIN: &[u8] = b"VERA20k relay ticket v2\0";
 const KEY_DOMAIN: &[u8] = b"VERA20k relay packet key v2\0";
 const COOKIE_DOMAIN: &[u8] = b"VERA20k relay source v2\0";
-const KEY_CHECK_DOMAIN: &[u8] = b"VERA20k relay key equality v2\0";
 const INGRESS_PER_SECOND: u64 = 16_384;
 const HANDSHAKES_PER_SECOND: u64 = 512;
 const PLAYER_HANDSHAKES_PER_SECOND: u64 = 8;
@@ -101,12 +96,6 @@ impl SecretKey {
     /// For an HTTPS response to the admitted client, never logs or UDP.
     pub fn expose_for_https(&self) -> &[u8; 32] {
         &self.0
-    }
-
-    fn same_key(&self, other: &Self) -> bool {
-        self.mac(KEY_CHECK_DOMAIN, &[])
-            .verify_slice(&other.mac(KEY_CHECK_DOMAIN, &[]).finalize().into_bytes())
-            .is_ok()
     }
 }
 
@@ -257,32 +246,10 @@ impl ReplayWindow {
     }
 }
 
-/// Fixed-capacity plaintext returned only after both authentication layers pass.
-pub struct DecryptedPayload {
-    bytes: [u8; MAX_PAYLOAD],
-    length: usize,
-}
-
-impl DecryptedPayload {
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.bytes[..self.length]
-    }
-}
-
-impl fmt::Debug for DecryptedPayload {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DecryptedPayload")
-            .field("length", &self.length)
-            .finish_non_exhaustive()
-    }
-}
-
 pub struct ClientSession {
     ticket_bytes: [u8; TICKET_LEN],
     ticket: Ticket,
     key: SecretKey,
-    payload_key: SecretKey,
-    payload_prefix: [u8; 16],
     sent: u64,
     received: ReplayWindow,
     probe: Option<u64>,
@@ -327,19 +294,19 @@ pub enum ServerEvent<'a> {
 }
 
 impl ClientSession {
+    /// A hop for `ticket` under its `packet_key`. `_payload_key` is the
+    /// match key the lobby still grants; relayed traffic is plaintext
+    /// (compaction spec §3.2), so it is accepted and not used, and the lobby
+    /// needs no change.
     pub fn new(
         ticket: &[u8],
         packet_key: [u8; 32],
-        payload_key: [u8; 32],
+        _payload_key: [u8; 32],
     ) -> Result<Self, RelayError> {
-        let mut payload_prefix = [0; 16];
-        getrandom::fill(&mut payload_prefix).map_err(|_| RelayError::EntropyUnavailable)?;
         Ok(Self {
             ticket: Ticket::parse(ticket)?,
             ticket_bytes: ticket.try_into().map_err(|_| RelayError::Malformed)?,
             key: SecretKey::new(packet_key),
-            payload_key: SecretKey::new(payload_key),
-            payload_prefix,
             sent: 0,
             received: ReplayWindow::default(),
             probe: None,
@@ -384,18 +351,18 @@ impl ClientSession {
 
     /// Prepare a fresh key without discarding the admitted route. Identity
     /// cannot change during a match, and delayed grants cannot roll it back.
+    /// `_payload_key` as in `new`.
     pub fn renewal(
         &self,
         ticket: &[u8],
         packet_key: [u8; 32],
-        payload_key: [u8; 32],
+        _payload_key: [u8; 32],
     ) -> Result<Self, RelayError> {
-        let mut next = Self::new(ticket, packet_key, payload_key)?;
+        let mut next = Self::new(ticket, packet_key, [0; 32])?;
         if next.ticket.room != self.ticket.room
             || next.ticket.source != self.ticket.source
             || next.ticket.player != self.ticket.player
             || next.ticket.generation != self.ticket.generation
-            || !self.payload_key.same_key(&next.payload_key)
             || next.ticket.nonce == self.ticket.nonce
             || next.ticket.expires <= self.ticket.expires
         {
@@ -951,7 +918,7 @@ impl RelayServer {
         }
     }
 
-    /// Enable full-match encrypted replay on the existing relay's private
+    /// Enable full-match replay on the existing relay's private
     /// StateDirectory. Existing room files are never overwritten or resumed;
     /// those of long-ended matches move to its `archive` subfolder.
     pub fn with_journal(
@@ -2319,19 +2286,27 @@ mod tests {
     }
 
     #[test]
-    fn renewals_keep_the_match_key() {
+    fn renewals_keep_the_identity_and_ignore_the_payload_key() {
         let key = SecretKey::new([75; 32]);
         let first = client(&key, 1, 0);
-        let ticket = Ticket {
+        let renewed = |ticket: Ticket| {
+            let signed = ticket.sign(&key).unwrap();
+            let packet_key = *derive_packet_key(&key, &signed).expose_for_https();
+            first.renewal(&signed, packet_key, [88; 32])
+        };
+        let next = Ticket {
             expires: 1250,
             nonce: [23; 16],
             ..first.ticket
-        }
-        .sign(&key)
-        .unwrap();
-        let packet_key = *derive_packet_key(&key, &ticket).expose_for_https();
-        assert!(first.renewal(&ticket, packet_key, [88; 32]).is_err());
-        let renewed = first.renewal(&ticket, packet_key, [89; 32]).unwrap();
-        assert_ne!(first.payload_prefix, renewed.payload_prefix);
+        };
+        assert!(renewed(next).is_ok(), "relayed traffic is plaintext");
+        assert!(renewed(Ticket { source: 1, ..next }).is_err());
+        assert!(
+            renewed(Ticket {
+                expires: 1200,
+                ..next
+            })
+            .is_err()
+        );
     }
 }

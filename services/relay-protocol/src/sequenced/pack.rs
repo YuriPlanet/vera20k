@@ -38,7 +38,6 @@ const RESERVED: u8 = 1 << 7;
 
 /// The state an entry is written against: the previous entry's frame and
 /// each source's last BATCH ID in this pack (§5.2).
-#[derive(Clone, Copy)]
 struct Context {
     frame: u32,
     batch_ids: [Option<u64>; 256],
@@ -62,10 +61,29 @@ fn record_frame(record: &[u8]) -> u32 {
     u32::from_le_bytes(record[9..13].try_into().expect("canonical record"))
 }
 
+/// What `write_entry` changed in a `Context`, to take back.
+struct Undo {
+    frame: u32,
+    batch: Option<(u8, Option<u64>)>,
+}
+
+impl Context {
+    fn undo(&mut self, undo: Undo) {
+        self.frame = undo.frame;
+        if let Some((source, id)) = undo.batch {
+            self.batch_ids[usize::from(source)] = id;
+        }
+    }
+}
+
 /// Appends `record`'s entry against `context` and advances it.
-fn write_entry(record: &[u8], context: &mut Context, out: &mut Vec<u8>) {
+fn write_entry(record: &[u8], context: &mut Context, out: &mut Vec<u8>) -> Undo {
     let kind = record[0];
     let frame = record_frame(record);
+    let mut undo = Undo {
+        frame: context.frame,
+        batch: None,
+    };
     let body = &record[CANONICAL_HEAD..];
     debug_assert!(frame >= context.frame, "PACK records go forward in frames");
     let delta = frame - context.frame;
@@ -98,6 +116,7 @@ fn write_entry(record: &[u8], context: &mut Context, out: &mut Vec<u8>) {
             let contents = &body[9..];
             varint::write(contents.len() as u64, out);
             out.extend_from_slice(contents);
+            undo.batch = Some((source, context.batch_ids[usize::from(source)]));
             context.batch_ids[usize::from(source)] = Some(id);
         }
         FRAME_END_EVENT => {}
@@ -112,6 +131,7 @@ fn write_entry(record: &[u8], context: &mut Context, out: &mut Vec<u8>) {
         // RATE and DESYNC travel as their canonical bodies.
         _ => out.extend_from_slice(body),
     }
+    undo
 }
 
 /// Packs consecutive canonical records into PACK v2 payloads (§5.2, §5.4),
@@ -119,7 +139,7 @@ fn write_entry(record: &[u8], context: &mut Context, out: &mut Vec<u8>) {
 /// records it carries, in order; their counts sum to the records packed,
 /// a prefix of `records`. Empty when `records` is empty or `datagrams` is 0.
 ///
-/// The packing is today's `pack_entries`: greedy, each payload filled while
+/// The packing is greedy, each payload filled while
 /// the next record's v2 size fits `envelope::PACK_LIMIT` (681 bytes) and
 /// `count` stays at most 255. Every record fits a pack alone.
 ///
@@ -135,41 +155,75 @@ fn write_entry(record: &[u8], context: &mut Context, out: &mut Vec<u8>) {
 /// `P` of 1..=`ORDERING_BATCH_CAPACITY` bytes. The relay's history only
 /// holds such records; anything else is a caller bug (debug assertion).
 pub fn encode_pack_v2(records: &[Vec<u8>], datagrams: usize) -> Vec<(Vec<u8>, usize)> {
+    let records: Vec<&[u8]> = records.iter().map(Vec::as_slice).collect();
+    pack(&records, datagrams, true)
+}
+
+/// How many PACKs `encode_pack_v2` makes of all of `records`, without
+/// building them (the piggyback's packet count, transport spec §7.4).
+pub(crate) fn count_packs_v2(records: &[&[u8]]) -> usize {
+    pack(records, usize::MAX, false).len()
+}
+
+/// The greedy packing of `encode_pack_v2`; unless `build`, every pack
+/// comes back empty with only its record count.
+fn pack(records: &[&[u8]], datagrams: usize, build: bool) -> Vec<(Vec<u8>, usize)> {
     let mut packs = Vec::new();
     let mut next = 0;
     let mut entry = Vec::with_capacity(PACK_LIMIT);
+    let mut header = Vec::with_capacity(1 + 2 * varint::MAX_LEN + 1);
     while next < records.len() && packs.len() < datagrams {
-        let first = &records[next];
-        let mut pack = Vec::with_capacity(PACK_LIMIT);
-        pack.push(PACK_EVENT);
+        let first = records[next];
+        header.clear();
+        header.push(PACK_EVENT);
         varint::write(
             u64::from_le_bytes(first[1..9].try_into().expect("canonical record")),
-            &mut pack,
+            &mut header,
         );
-        varint::write(u64::from(record_frame(first)), &mut pack);
-        let count_at = pack.len();
-        pack.push(0);
+        varint::write(u64::from(record_frame(first)), &mut header);
+        header.push(0);
+        let mut pack = if build { header.clone() } else { Vec::new() };
+        let mut length = header.len();
         let mut context = Context::new(record_frame(first));
         let mut count = 0;
         while next < records.len() && count < usize::from(u8::MAX) {
             entry.clear();
             // A record that does not fit is written again, against the next
             // pack's fresh context.
-            let mut trial = context;
-            write_entry(&records[next], &mut trial, &mut entry);
-            if pack.len() + entry.len() > PACK_LIMIT {
+            let undo = write_entry(records[next], &mut context, &mut entry);
+            if length + entry.len() > PACK_LIMIT {
                 debug_assert!(count > 0, "every record fits a pack alone");
+                context.undo(undo);
                 break;
             }
-            pack.extend_from_slice(&entry);
-            context = trial;
+            length += entry.len();
+            if build {
+                pack.extend_from_slice(&entry);
+            }
             count += 1;
             next += 1;
         }
-        pack[count_at] = count as u8;
+        if build {
+            pack[header.len() - 1] = count as u8;
+        }
         packs.push((pack, count));
     }
     packs
+}
+
+/// The first sequence and record count of a PACK v2 this relay wrote,
+/// from its header alone (spec §5.2); `None` if the header is malformed.
+pub(crate) fn pack_v2_range(pack: &[u8]) -> Option<(u64, u8)> {
+    if pack.first() != Some(&PACK_EVENT) {
+        return None;
+    }
+    let mut reader = Reader {
+        bytes: pack,
+        offset: 1,
+    };
+    let base = reader.varint().ok()?;
+    reader.varint().ok()?;
+    Some((base, reader.byte().ok()?))
 }
 
 /// Reads one PACK v2 payload (from its `12` byte) into its canonical

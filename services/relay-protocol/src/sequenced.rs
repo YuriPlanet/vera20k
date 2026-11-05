@@ -1,9 +1,7 @@
-//! Fixed-clock ordering of opaque encrypted batches. A reader's cursor never
+//! Fixed-clock ordering of plaintext batches (bandwidth-compaction spec §3). A reader's cursor never
 //! participates in clock advancement, admission, or another reader's progress.
 
 use std::collections::{BTreeMap, VecDeque};
-
-use sha2::Digest;
 
 use super::*;
 use crate::link::Reader;
@@ -23,7 +21,6 @@ const CERTIFICATE_V2_MAGIC: &[u8; 4] = b"VO2C";
 const CERTIFICATE_V2_DOMAIN: &[u8] = b"VERA20k relay ordering certificate v2\0";
 // VO2C flags byte: the host turned relay pacing off.
 const CERTIFICATE_PACING_OFF: u8 = 1;
-const ORDER_KEY_DOMAIN: &[u8] = b"VERA20k relay ordering payload key v1\0";
 const MAX_MATCH_SECONDS: u64 = 24 * 60 * 60;
 const START_DELAY_MS: u64 = 200;
 const MAX_HISTORY_ENTRIES: usize = 4096;
@@ -47,7 +44,6 @@ pub(super) const ROOM_LIFETIME_MS: u64 =
 // After a resume nobody may pause for this long, so no player can hold a
 // match paused by pausing again after every resume.
 const PAUSE_COOLDOWN_MS: u64 = 30_000;
-const OPAQUE_OVERHEAD: usize = 24 + 16;
 const ENTRY_OVERHEAD: usize = 128;
 const READY_REQUEST: u8 = 0;
 const PULL_REQUEST: u8 = 2;
@@ -70,7 +66,6 @@ pub(super) const DESYNC_TAIL: usize = DESYNC_ENTRY_BYTES - 13;
 // Consecutive history entries in one datagram: `[event][base seq u64][count
 // u8]`, then per entry `[len u16]` and its bytes without the sequence.
 pub(super) const PACK_EVENT: u8 = 12;
-const PACK_HEADER: usize = 10;
 // A federated control record travels between relays as an entry of this
 // source: a rate change under `RATE_BATCH`, a desync under `DESYNC_BATCH`.
 pub(super) const CONTROL_SOURCE: u8 = u8::MAX;
@@ -330,10 +325,10 @@ pub enum OrderEntry {
         frame: u32,
         source: u8,
         batch_id: u64,
-        /// `None` when the contents fail authentication under the match
-        /// payload key. Every member holding that key reads the same relayed
-        /// bytes, so all of them find the same batch unreadable.
-        bytes: Option<DecryptedPayload>,
+        /// The plaintext event packet body (compaction spec §3.1, §4). A
+        /// body that does not decode is the source's unreadable batch; every
+        /// member reads the same bytes, so all of them find it unreadable.
+        bytes: Vec<u8>,
     },
     FrameEnd {
         sequence: u64,
@@ -412,7 +407,6 @@ pub enum OrderEvent {
 #[derive(Clone)]
 pub(super) struct SealedBatch {
     pub(super) id: u64,
-    digest: [u8; 32],
     pub(super) opaque: Vec<u8>,
 }
 
@@ -420,7 +414,7 @@ pub(super) struct SealedBatch {
 pub(super) struct ClientOrdering {
     certificate: Vec<u8>,
     agreement: [u8; 32],
-    // The four most recently sealed batches retain their exact ciphertext.
+    // The four most recently sealed batches retain their exact bytes.
     // Accepted entries stay cached until a new batch needs the slot, so a
     // delayed app-side acceptance receipt can still retry immutable bytes.
     pub(super) sealed: VecDeque<SealedBatch>,
@@ -452,24 +446,6 @@ impl ClientOrdering {
     }
 }
 
-fn order_cipher(key: &SecretKey, room: &[u8; 16], source: u8) -> XChaCha20Poly1305 {
-    let mut mac = key.mac(ORDER_KEY_DOMAIN, room);
-    mac.update(&[source]);
-    let mut derived: [u8; 32] = mac.finalize().into_bytes().into();
-    let cipher = XChaCha20Poly1305::new(&derived.into());
-    derived.zeroize();
-    cipher
-}
-
-fn order_aad(room: &[u8; 16], source: u8, batch_id: u64) -> [u8; 29] {
-    let mut aad = [0; 29];
-    aad[..4].copy_from_slice(CERTIFICATE_MAGIC);
-    aad[4..20].copy_from_slice(room);
-    aad[20] = source;
-    aad[21..].copy_from_slice(&batch_id.to_le_bytes());
-    aad
-}
-
 impl ClientSession {
     /// Bounded client pipeline, below the existing relay's eight pending
     /// batches per source. This changes neither its wire format nor admission.
@@ -487,7 +463,6 @@ impl ClientSession {
             || self.ticket.source != previous.ticket.source
             || self.ticket.player != previous.ticket.player
             || self.ticket.generation != previous.ticket.generation
-            || !self.payload_key.same_key(&previous.payload_key)
         {
             return Err(RelayError::Authentication);
         }
@@ -563,8 +538,7 @@ impl ClientSession {
     }
 
     /// Seals `batch_id` (the next ID) or checks a retained one has the same
-    /// plaintext, with stable ciphertext across retries and hop renewals.
-    /// Retired IDs can never be sealed again with the same nonce.
+    /// plaintext, stable across retries and hop renewals.
     pub(super) fn seal_batch(&mut self, batch_id: u64, plaintext: &[u8]) -> Result<(), RelayError> {
         if !self.ready {
             return Err(RelayError::Unregistered);
@@ -573,9 +547,8 @@ impl ClientSession {
             return Err(RelayError::Malformed);
         }
         let ordering = self.ordering.as_mut().ok_or(RelayError::Unregistered)?;
-        let digest: [u8; 32] = Sha256::digest(plaintext).into();
         if let Some(batch) = ordering.sealed.iter().find(|batch| batch.id == batch_id) {
-            if batch.digest != digest {
+            if batch.opaque != plaintext {
                 return Err(RelayError::Authentication);
             }
             return Ok(());
@@ -589,20 +562,8 @@ impl ClientSession {
         let next_batch = batch_id
             .checked_add(1)
             .ok_or(RelayError::CounterExhausted)?;
-        let mut nonce = [0; 24];
-        nonce[..16].copy_from_slice(&self.payload_prefix);
-        nonce[16..].copy_from_slice(&batch_id.to_le_bytes());
-        let mut opaque = Vec::with_capacity(plaintext.len() + OPAQUE_OVERHEAD);
-        opaque.extend_from_slice(&nonce);
-        opaque.extend_from_slice(plaintext);
-        let tag = order_cipher(&self.payload_key, &self.ticket.room, self.ticket.source)
-            .encrypt_inout_detached(
-                &XNonce::from(nonce),
-                &order_aad(&self.ticket.room, self.ticket.source, batch_id),
-                (&mut opaque[24..]).into(),
-            )
-            .map_err(|_| RelayError::Authentication)?;
-        opaque.extend_from_slice(&tag);
+        // Plaintext `P` (compaction spec §3.1).
+        let opaque = plaintext.to_vec();
         if ordering.sealed.len() == Self::ORDERING_SUBMISSION_WINDOW {
             let oldest = ordering.sealed.front().expect("full sealed batch cache");
             if oldest.id > ordering.accepted_through {
@@ -612,7 +573,6 @@ impl ClientSession {
         }
         ordering.sealed.push_back(SealedBatch {
             id: batch_id,
-            digest,
             opaque,
         });
         ordering.next_batch = next_batch;
@@ -828,33 +788,16 @@ impl ClientSession {
                     lost: length == 15,
                 })
             }
+            // `[3][seq u64][frame u32][source u8][batch_id u64][P]`, `P`
+            // plaintext of 1..=512 bytes (compaction spec §3.1).
             (BATCH_EVENT, length)
-                if length > 22 + OPAQUE_OVERHEAD
-                    && length <= 22 + OPAQUE_OVERHEAD + ORDERING_BATCH_CAPACITY
+                if length > 22
+                    && length <= 22 + ORDERING_BATCH_CAPACITY
                     && payload[13] < MAX_PEERS =>
             {
                 let source = payload[13];
                 let batch_id = read_u64(payload, 14);
                 let opaque = &payload[22..];
-                let nonce: [u8; 24] = opaque[..24].try_into().unwrap();
-                let length = opaque.len() - OPAQUE_OVERHEAD;
-                let mut bytes = DecryptedPayload {
-                    bytes: [0; MAX_PAYLOAD],
-                    length,
-                };
-                bytes.bytes[..length].copy_from_slice(&opaque[24..24 + length]);
-                let tag: [u8; 16] = opaque[24 + length..].try_into().unwrap();
-                // The hop MAC authenticated this entry's place in the stream,
-                // so an unreadable batch is still delivered: dropping it would
-                // leave a sequence gap that every pull repeats.
-                let readable = order_cipher(&self.payload_key, &self.ticket.room, source)
-                    .decrypt_inout_detached(
-                        &XNonce::from(nonce),
-                        &order_aad(&self.ticket.room, source, batch_id),
-                        (&mut bytes.bytes[..length]).into(),
-                        &Tag::from(tag),
-                    )
-                    .is_ok();
                 // The canonical batch is also its acceptance receipt. A lost
                 // ACK must not block the next local submission after replay.
                 if source == self.ticket.source
@@ -875,7 +818,7 @@ impl ClientSession {
                     frame: read_u32(payload, 9),
                     source,
                     batch_id,
-                    bytes: readable.then_some(bytes),
+                    bytes: opaque.to_vec(),
                 })
             }
             _ => OrderEvent::Unrecognized,
@@ -887,87 +830,11 @@ impl ClientSession {
         &mut self,
         payload: &[u8],
     ) -> Result<Vec<OrderEvent>, RelayError> {
-        unpack_entries(payload)?
+        pack::decode_pack_v2(payload)?
             .iter()
             .map(|entry| self.receive_ordering(entry))
             .collect()
     }
-}
-
-/// A PACK reply's entries, each rebuilt to its canonical bytes with its
-/// sequence: the pack's base plus its index.
-fn unpack_entries(payload: &[u8]) -> Result<Vec<Vec<u8>>, RelayError> {
-    if payload.len() < PACK_HEADER || payload[0] != PACK_EVENT || payload[9] == 0 {
-        return Err(RelayError::Malformed);
-    }
-    let base = read_u64(payload, 1);
-    let mut entries = Vec::with_capacity(usize::from(payload[9]));
-    let mut offset = PACK_HEADER;
-    for index in 0..u64::from(payload[9]) {
-        let Some(length) = payload
-            .get(offset..offset + 2)
-            .map(|length| usize::from(u16::from_le_bytes([length[0], length[1]])))
-        else {
-            return Err(RelayError::Malformed);
-        };
-        let end = offset + 2 + length;
-        // Replies never travel packed: only history entries do.
-        if length == 0
-            || end > payload.len()
-            || matches!(
-                payload[offset + 2],
-                READY_EVENT
-                    | STATUS_EVENT
-                    | ACK_EVENT
-                    | ERROR_EVENT
-                    | PAUSE_STATUS_EVENT
-                    | PACK_EVENT
-            )
-        {
-            return Err(RelayError::Malformed);
-        }
-        let sequence = base.checked_add(index).ok_or(RelayError::Malformed)?;
-        let mut entry = Vec::with_capacity(length + 8);
-        entry.push(payload[offset + 2]);
-        entry.extend_from_slice(&sequence.to_le_bytes());
-        entry.extend_from_slice(&payload[offset + 3..end]);
-        entries.push(entry);
-        offset = end;
-    }
-    if offset != payload.len() {
-        return Err(RelayError::Malformed);
-    }
-    Ok(entries)
-}
-
-/// Packs consecutive committed entries into PACK replies, at most
-/// `datagrams` of them, each as full as the server payload allows. Returns
-/// each reply with the number of entries it carries.
-fn pack_entries(records: &[Vec<u8>], datagrams: usize) -> Vec<(Vec<u8>, usize)> {
-    let mut packs = Vec::new();
-    let mut next = 0;
-    while next < records.len() && packs.len() < datagrams {
-        let mut pack = Vec::with_capacity(MAX_WIRE_PAYLOAD);
-        pack.push(PACK_EVENT);
-        pack.extend_from_slice(&records[next][1..9]);
-        pack.push(0);
-        let mut count = 0;
-        // Every entry fits a pack alone: a full batch packs to 578 bytes.
-        while next < records.len()
-            && count < usize::from(u8::MAX)
-            && pack.len() + records[next].len() - 6 <= MAX_WIRE_PAYLOAD
-        {
-            let record = &records[next];
-            pack.extend_from_slice(&((record.len() - 8) as u16).to_le_bytes());
-            pack.push(record[0]);
-            pack.extend_from_slice(&record[9..]);
-            count += 1;
-            next += 1;
-        }
-        pack[9] = count as u8;
-        packs.push((pack, count));
-    }
-    packs
 }
 
 /// The outlier and a source it differed from, once one sampled frame's
@@ -2333,7 +2200,7 @@ impl OrderingRoom {
                     Ok(records) => {
                         let mut output = vec![self.status(now_ms)];
                         output.extend(
-                            pack_entries(&records, records.len())
+                            pack::encode_pack_v2(&records, records.len())
                                 .into_iter()
                                 .map(|(pack, _)| pack),
                         );
@@ -2493,7 +2360,7 @@ mod tests {
         .unwrap()
     }
 
-    /// The batch ciphertexts of an encoded client UPLINK datagram.
+    /// The batches of an encoded client UPLINK datagram.
     fn uplink_batches(datagram: &[u8]) -> Vec<Vec<u8>> {
         crate::link::decode_uplink(&datagram[CLIENT_HEADER..datagram.len() - HOP_TAG_LEN])
             .unwrap()
@@ -2794,7 +2661,7 @@ mod tests {
         assert_eq!(stats.uplink_state_ms, [1000, 0, 1999, 500]);
     }
 
-    /// Spec appendix A packets 20 and 25: a pack with two piggybacked frame
+    /// Spec appendix A packets 20 and 25 in PACK v2: a pack with two piggybacked frame
     /// ends before a batch, and a status heartbeat's feedback.
     #[test]
     fn appendix_pack_and_status_heartbeat_have_their_layouts() {
@@ -2809,13 +2676,14 @@ mod tests {
             OrderingRoom::encoded_entry(6, 5, FRAME_END_EVENT, &[]),
             OrderingRoom::encoded_entry(7, 6, FRAME_END_EVENT, &[]),
         ];
-        let packs = pack_entries(&records, 1);
+        // PACK v2 (compaction spec §5.2): 86 B, 128 B in v1.
+        let packs = pack::encode_pack_v2(&records, 1);
         let (pack, count) = &packs[0];
-        assert_eq!((pack.len(), *count), (128, 5));
-        assert_eq!(&pack[..10], &[PACK_EVENT, 3, 0, 0, 0, 0, 0, 0, 0, 5]);
-        assert_eq!(&pack[10..17], &[5, 0, FRAME_END_EVENT, 3, 0, 0, 0]);
-        assert_eq!(&pack[24..27], &[88, 0, BATCH_EVENT]);
-        assert_eq!(&pack[114..121], &[5, 0, FRAME_END_EVENT, 5, 0, 0, 0]);
+        assert_eq!((pack.len(), *count), (86, 5));
+        assert_eq!(&pack[..6], &[PACK_EVENT, 3, 3, 5, 0x04, 0x14]);
+        assert_eq!(&pack[6..10], &[0x13, 0, 1, 74]);
+        assert_eq!(&pack[84..], &[0x04, 0x14]);
+        assert_eq!(pack::decode_pack_v2(pack).unwrap(), records);
 
         let key = SecretKey::new([78; 32]);
         let mut reader = client(&key, 1);
@@ -2866,13 +2734,13 @@ mod tests {
             .iter()
             .map(|entry| entry.bytes.clone())
             .collect();
-        assert_eq!(unpack_entries(payload).unwrap(), history);
+        assert_eq!(pack::decode_pack_v2(payload).unwrap(), history);
         let entries: Vec<_> = received(&mut first, &packets[1].bytes)
             .into_iter()
             .map(|event| match event {
                 OrderEvent::Entry(OrderEntry::Batch {
                     sequence, bytes, ..
-                }) => (sequence, Some(bytes.unwrap().as_bytes().to_vec())),
+                }) => (sequence, Some(bytes)),
                 OrderEvent::Entry(OrderEntry::FrameEnd { sequence, .. }) => (sequence, None),
                 _ => panic!("a batch or frame end"),
             })
@@ -3455,7 +3323,7 @@ mod tests {
         for packet in server.drain_ordering_push(300, unix(300)) {
             let payload = &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN];
             if payload[0] == PACK_EVENT {
-                lost = unpack_entries(payload)
+                lost = pack::decode_pack_v2(payload)
                     .unwrap()
                     .into_iter()
                     .find(|entry| entry[0] == PAUSE_EVENT);
@@ -3504,7 +3372,7 @@ mod tests {
         assert!(
             packets.iter().any(|packet| {
                 let payload = &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN];
-                payload[0] == PACK_EVENT && unpack_entries(payload).unwrap().contains(&lost)
+                payload[0] == PACK_EVENT && pack::decode_pack_v2(payload).unwrap().contains(&lost)
             }),
             "disk replay retains exactly the lost canonical marker bytes"
         );
@@ -3517,7 +3385,7 @@ mod tests {
                         markers.push((epoch, paused))
                     }
                     OrderEvent::Entry(OrderEntry::Batch { frame, bytes, .. }) => {
-                        inputs.push((frame, bytes.unwrap().as_bytes().to_vec()))
+                        inputs.push((frame, bytes))
                     }
                     _ => {}
                 }
@@ -3937,7 +3805,7 @@ mod tests {
     }
 
     #[test]
-    fn renewed_push_replays_journal_ciphertext_and_follows_a_rebound_hop() {
+    fn renewed_push_replays_journal_batches_and_follows_a_rebound_hop() {
         let directory = TestDirectory::new();
         let key = SecretKey::new([73; 32]);
         let mut server = RelayServer::with_journal(key.clone(), 2, &directory.0).unwrap();
@@ -3964,18 +3832,18 @@ mod tests {
         {
             let payload = &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN];
             if payload[0] == PACK_EVENT {
-                canonical = canonical.or(unpack_entries(payload)
+                canonical = canonical.or(pack::decode_pack_v2(payload)
                     .unwrap()
                     .into_iter()
                     .find(|entry| entry[0] == BATCH_EVENT));
             }
             for event in received(&mut reader, &packet.bytes) {
                 if let OrderEvent::Entry(OrderEntry::Batch { bytes, .. }) = event {
-                    assert_eq!(bytes.unwrap().as_bytes(), b"immutable pushed input");
+                    assert_eq!(bytes, b"immutable pushed input");
                 }
             }
         }
-        let canonical = canonical.expect("the original encrypted batch was pushed");
+        let canonical = canonical.expect("the original batch was pushed");
         server.advance_clock(250_000, unix(250_000));
         assert!(
             server.rooms[&[5; 16]]
@@ -3997,7 +3865,7 @@ mod tests {
         let replay = server.drain_ordering_push(250_000, unix(250_000));
         assert!(replay.iter().any(|packet| {
             let payload = &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN];
-            payload[0] == PACK_EVENT && unpack_entries(payload).unwrap().contains(&canonical)
+            payload[0] == PACK_EVENT && pack::decode_pack_v2(payload).unwrap().contains(&canonical)
         }));
         for packet in replay {
             reader.receive(&packet.bytes).unwrap();
@@ -4328,12 +4196,7 @@ mod tests {
                     source,
                     bytes,
                     ..
-                }) => Some((
-                    *sequence,
-                    *frame,
-                    *source,
-                    bytes.as_ref().unwrap().as_bytes(),
-                )),
+                }) => Some((*sequence, *frame, *source, bytes.as_slice())),
                 _ => None,
             })
             .collect();
@@ -4415,7 +4278,7 @@ mod tests {
                     }) => {
                         assert_eq!(*sequence, cursor);
                         cursor += 1;
-                        let bytes = bytes.as_ref().unwrap().as_bytes();
+                        let bytes = bytes.as_slice();
                         saw_old_input |= bytes == b"active input";
                         saw_new_input |= bytes == b"healthy input after lease renewal";
                     }
@@ -4467,12 +4330,9 @@ mod tests {
         first
             .test_submit(1, b"private ordered command", &mut bytes)
             .unwrap();
+        // Plaintext (compaction spec §3.1).
         let opaque = uplink_batches(&bytes).remove(0);
-        assert!(
-            !bytes
-                .windows(b"private ordered command".len())
-                .any(|part| part == b"private ordered command")
-        );
+        assert_eq!(opaque, b"private ordered command");
         let accepted = server
             .process_at(endpoint(&first), &bytes, 1000, 0)
             .unwrap();
@@ -4756,7 +4616,7 @@ mod tests {
             .filter_map(|event| match event {
                 OrderEvent::Entry(OrderEntry::Batch {
                     batch_id, bytes, ..
-                }) => Some((batch_id, bytes.as_ref().unwrap().as_bytes().to_vec())),
+                }) => Some((batch_id, bytes.clone())),
                 _ => None,
             })
             .collect();
@@ -4764,7 +4624,7 @@ mod tests {
     }
 
     #[test]
-    fn full_submission_window_survives_renewal_with_immutable_retry_ciphertext() {
+    fn full_submission_window_survives_renewal_with_immutable_retry_bytes() {
         let key = SecretKey::new([74; 32]);
         let mut server = RelayServer::new(key.clone(), 2);
         let (mut sender, mut peer) = (client(&key, 0), client(&key, 1));
@@ -5103,30 +4963,15 @@ mod tests {
         let packets = server
             .process_at(endpoint(&second), &bytes, 1000, 300)
             .unwrap();
-        // The pack's first entry is the batch.
-        let mut tampered = packets
-            .into_iter()
-            .find(|packet| {
-                packet.bytes[SERVER_HEADER] == PACK_EVENT
-                    && packet.bytes[SERVER_HEADER + PACK_HEADER + 2] == BATCH_EVENT
-            })
-            .unwrap()
-            .bytes;
-        // Even a hop-authenticated ciphertext with altered associated batch id
-        // cannot be released as plaintext to the gameplay owner; it arrives
-        // unreadable in its place. Packed, its byte 14 is 4 bytes later.
-        tampered[SERVER_HEADER + 18] ^= 1;
-        let split = tampered.len() - HOP_TAG_LEN;
-        let tag = second
-            .key
-            .mac(crate::envelope::SERVER_DOMAIN, &tampered[..split])
-            .finalize()
-            .into_bytes();
-        tampered[split..].copy_from_slice(&tag[..HOP_TAG_LEN]);
-        assert!(matches!(
-            &received(&mut second, &tampered)[0],
-            OrderEvent::Entry(OrderEntry::Batch { bytes: None, .. })
-        ));
+        // Batches travel plaintext (compaction spec §3): what the relay
+        // committed is what every reader gets.
+        assert!(packets.iter().any(|packet| {
+            matches!(
+                received(&mut second, &packet.bytes)[..],
+                [OrderEvent::Entry(OrderEntry::Batch { ref bytes, .. }), ..]
+                    if bytes == b"authenticated plaintext"
+            )
+        }));
         server.advance_clock(112_000, unix(112_000));
         let replay = pull(&mut server, &mut second, 1, 112_000);
         assert!(matches!(
@@ -5157,11 +5002,6 @@ mod tests {
         );
         let room = directory.0.join("05".repeat(16));
         let before = std::fs::read(room.join("stream.data")).unwrap();
-        assert!(
-            !before
-                .windows(b"authenticated plaintext".len())
-                .any(|part| part == b"authenticated plaintext")
-        );
         // Restart migration is unsupported: an existing journal is never
         // overwritten, even by a valid freshly connected principal.
         let mut restarted = RelayServer::with_journal(key.clone(), 2, &directory.0).unwrap();
