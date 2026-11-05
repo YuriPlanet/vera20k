@@ -164,7 +164,7 @@ fn octant_cell_open(
     if terrain
         .land_speed_costs(cells.land_type(native))
         .cost_for_speed_type(SpeedType::Foot)
-        == Some(0)
+        .is_some_and(|cost| cost.is_zero())
     {
         return false;
     }

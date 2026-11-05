@@ -117,7 +117,7 @@ pub(crate) fn recalc_zone_type(
     outside: bool,
     overlay_zone_type: Option<u8>,
     land_type: u8,
-    wheel_speed: Option<u8>,
+    wheel_speed: Option<crate::util::native_x87::NativeF32Bits>,
     terrain_object_occupation: Option<i32>,
 ) -> u8 {
     if outside {
@@ -798,9 +798,10 @@ pub struct ResolvedTerrainGrid {
 #[cfg(any(test, feature = "test-support"))]
 pub fn test_flat_ground_grid(size: u16) -> ResolvedTerrainGrid {
     let costs = SpeedCostProfile {
-        foot: Some(100),
-        track: Some(100),
-        wheel: Some(100),
+        foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         ..Default::default()
     };
     test_grid(size, size, |rx, ry| ResolvedTerrainCell {
@@ -818,15 +819,16 @@ pub(crate) const TEST_RETAIL_CLEAR_INI: &str = "[Clear]\nFoot=100%\nTrack=100%\n
 
 /// The row the production land reader makes of retail `[Clear]`.
 #[cfg(any(test, feature = "test-support"))]
-pub(crate) const TEST_RETAIL_CLEAR_SPEED_COSTS: SpeedCostProfile = SpeedCostProfile {
-    foot: Some(100),
-    track: Some(100),
-    wheel: Some(100),
-    float: Some(0),
-    amphibious: Some(80),
-    float_beach: Some(0),
-    hover: Some(50),
-};
+pub(crate) fn test_retail_clear_speed_costs() -> SpeedCostProfile {
+    static ROW: std::sync::OnceLock<SpeedCostProfile> = std::sync::OnceLock::new();
+    *ROW.get_or_init(|| {
+        TerrainRules::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            TEST_RETAIL_CLEAR_INI,
+        ))
+        .row(LandType::Clear)
+        .speed_costs
+    })
+}
 
 /// Retail `[Clear]` read by the production land reader, for binding a test
 /// grid's land rows as a scenario load binds its rules.
@@ -841,8 +843,8 @@ pub fn test_retail_clear_rules() -> TerrainRules {
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn test_retail_clear_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
-        speed_costs: TEST_RETAIL_CLEAR_SPEED_COSTS,
-        base_speed_costs: TEST_RETAIL_CLEAR_SPEED_COSTS,
+        speed_costs: test_retail_clear_speed_costs(),
+        base_speed_costs: test_retail_clear_speed_costs(),
         ..test_clear_cell(rx, ry)
     }
 }
@@ -876,13 +878,14 @@ pub fn test_grid(
 /// Every SpeedType at 100%.
 #[cfg(any(test, feature = "test-support"))]
 pub const TEST_OPEN_SPEED_COSTS: SpeedCostProfile = SpeedCostProfile {
-    foot: Some(100),
-    track: Some(100),
-    wheel: Some(100),
-    float: Some(100),
-    amphibious: Some(100),
-    float_beach: Some(100),
-    hover: Some(100),
+    foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
 };
 
 /// [`test_flat_cell`], named for the Clear land it carries.
@@ -1492,7 +1495,8 @@ impl ResolvedTerrainCell {
     /// overlay fields are the knobs a test turns.
     pub fn clear_for_test(rx: u16, ry: u16) -> Self {
         let speed_costs = SpeedCostProfile {
-            wheel: Some(100),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
             ..Default::default()
         };
         Self {

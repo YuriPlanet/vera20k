@@ -499,7 +499,8 @@ fn drivable_slope_cell(
     slope_type: u8,
 ) -> crate::map::resolved_terrain::ResolvedTerrainCell {
     let clear = crate::rules::terrain_rules::SpeedCostProfile {
-        track: Some(100),
+        track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         ..Default::default()
     };
     crate::map::resolved_terrain::ResolvedTerrainCell {
@@ -740,7 +741,8 @@ fn walk_arrival_keeps_list_order_and_snapshot_continuation() {
             .flat_map(|ry| {
                 (0..6).map(move |rx| {
                     let costs = SpeedCostProfile {
-                        foot: Some(100),
+                        foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
                         ..Default::default()
                     };
                     let mut cell = drive_speed_test_cell(rx, ry, costs);
@@ -1286,9 +1288,10 @@ fn walk_infantry_corridor(
     middle: crate::map::resolved_terrain::ResolvedTerrainCell,
 ) -> Vec<(u16, u16)> {
     let clear_costs = crate::rules::terrain_rules::SpeedCostProfile {
-        foot: Some(100),
-        track: Some(100),
-        wheel: Some(100),
+        foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         ..Default::default()
     };
     let clear = |cell: crate::map::resolved_terrain::ResolvedTerrainCell| {

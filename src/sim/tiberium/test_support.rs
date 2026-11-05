@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use crate::map::resolved_terrain::{
-    ResolvedTerrainCell, ResolvedTerrainGrid, TEST_RETAIL_CLEAR_SPEED_COSTS,
+    ResolvedTerrainCell, ResolvedTerrainGrid, test_retail_clear_speed_costs,
 };
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -30,8 +30,8 @@ pub(crate) const TEST_GRID_SIZE: u16 = 64;
 /// `0x005FD04F` for TIB01).
 pub(crate) fn flat_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
     crate::map::resolved_terrain::test_grid(width, height, |rx, ry| ResolvedTerrainCell {
-        speed_costs: TEST_RETAIL_CLEAR_SPEED_COSTS,
-        base_speed_costs: TEST_RETAIL_CLEAR_SPEED_COSTS,
+        speed_costs: test_retail_clear_speed_costs(),
+        base_speed_costs: test_retail_clear_speed_costs(),
         ..crate::map::resolved_terrain::test_tiberium_cell(rx, ry)
     })
 }

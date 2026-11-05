@@ -217,13 +217,16 @@ fn install_empty_arena_navigation(
 /// A `size` x `size` grid of clear ground cells.
 fn clear_ground(size: u16) -> crate::map::resolved_terrain::ResolvedTerrainGrid {
     let clear = crate::rules::terrain_rules::SpeedCostProfile {
-        foot: Some(100),
-        track: Some(100),
-        wheel: Some(100),
+        foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
         float: None,
-        amphibious: Some(80),
+        amphibious: Some(crate::rules::terrain_rules::test_speed_percent(80)),
         float_beach: None,
-        hover: Some(50),
+        hover: Some(crate::util::native_x87::NativeF32Bits::from_bits(
+            0x3f00_0000,
+        )),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
     };
     let cell = |x, y| {
         let mut cell = crate::map::resolved_terrain::test_flat_cell(x, y);

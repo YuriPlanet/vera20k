@@ -116,13 +116,14 @@ fn edit_cells(input: &Value, terrain: &mut ResolvedTerrainGrid) {
             bridge.clone()
         };
         let none = SpeedCostProfile {
-            foot: Some(0),
-            track: Some(0),
-            wheel: Some(0),
-            float: Some(0),
-            amphibious: Some(0),
-            float_beach: Some(0),
-            hover: Some(0),
+            foot: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            track: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            float: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            amphibious: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            float_beach: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            hover: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         };
         for (wx, wy) in water {
             let c = terrain.cell_mut_for_test(wx, wy).unwrap();

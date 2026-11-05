@@ -241,7 +241,7 @@ fn the_land_row_refuses_after_the_wall_arm() {
         .cell_mut_for_test(16, 15)
         .unwrap()
         .speed_costs
-        .foot = Some(0);
+        .foot = Some(crate::rules::terrain_rules::test_speed_percent(0));
     assert_eq!(entry(&sim, &rules, &registry, WALLI), Ok(7));
 }
 

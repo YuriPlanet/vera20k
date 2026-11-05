@@ -572,10 +572,15 @@ mod tests {
         let mut terrain = flat_terrain(20, 20);
         for cell in terrain.cells_mut_for_test() {
             // Retail ground rows used by the compact admission matrix.
-            cell.speed_costs.float = Some(0);
-            cell.base_speed_costs.float = Some(0);
-            cell.speed_costs.hover = Some(50);
-            cell.base_speed_costs.hover = Some(50);
+            cell.speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+            cell.base_speed_costs.float =
+                Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+            cell.speed_costs.hover = Some(crate::util::native_x87::NativeF32Bits::from_bits(
+                0x3f00_0000,
+            ));
+            cell.base_speed_costs.hover = Some(crate::util::native_x87::NativeF32Bits::from_bits(
+                0x3f00_0000,
+            ));
         }
         sim.resolved_terrain = Some(terrain);
         sim.set_playfield_bounds_for_test(Some(test_playfield_bounds()));
@@ -590,8 +595,8 @@ mod tests {
             .cell_mut_for_test(cell.0, cell.1)
             .unwrap();
         water.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
-        water.speed_costs.float = Some(100);
-        water.base_speed_costs.float = Some(100);
+        water.speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::ONE);
+        water.base_speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::ONE);
     }
 
     #[test]

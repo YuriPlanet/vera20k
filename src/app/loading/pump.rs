@@ -411,7 +411,7 @@ impl LoadingRequest {
         &self,
         ra2_dir: std::path::PathBuf,
         asset_manager: &mut AssetManager,
-        native_rules: Option<&crate::rules::process_owner::NativeRulesProcessOwner>,
+        native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<MapLoadInitial> {
         let mut loaded = init::load_map_initial_with_assets(
@@ -419,6 +419,9 @@ impl LoadingRequest {
             asset_manager,
             native_rules,
             Some(self.startup().physical_map_file()),
+            self.startup()
+                .launch_session()
+                .map(|launch| launch.mode.override_file.as_str()),
             progress,
         )?;
         if let LoadingStartup::Network(_) = self.startup() {
@@ -520,7 +523,7 @@ impl LoadingRequest {
         self,
         ra2_dir: PathBuf,
         assets: &mut AssetManager,
-        native_rules: Option<&crate::rules::process_owner::NativeRulesProcessOwner>,
+        native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
         mapgen_retention: &mut crate::app::shell_random_map::RandomMapGenerationRetention,
         resident: Option<&mut crate::sim::world::Simulation>,
         progress: &mut dyn LoadingProgressSink,
@@ -535,7 +538,7 @@ impl LoadingRequest {
         self,
         ra2_dir: PathBuf,
         assets: &mut AssetManager,
-        native_rules: Option<&crate::rules::process_owner::NativeRulesProcessOwner>,
+        native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<init::RandomMapLaunchSnapshot> {
         let prepared = self.prepare(
@@ -2557,7 +2560,7 @@ fn prepare_loading_session(
                 request.prepare(
                     ra2_dir,
                     assets,
-                    process_assets.native_rules(),
+                    process_assets.native_rules_mut_with_tile_cache().0,
                     mapgen_retention,
                     resident.as_deref_mut(),
                     &mut sink,
@@ -2566,7 +2569,7 @@ fn prepare_loading_session(
                 request.prepare(
                     ra2_dir,
                     assets,
-                    process_assets.native_rules(),
+                    process_assets.native_rules_mut_with_tile_cache().0,
                     mapgen_retention,
                     resident.as_deref_mut(),
                     &mut NoopProgressSink,

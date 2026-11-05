@@ -4186,7 +4186,7 @@ mod tests {
                 .flat_map(|ry| {
                     (0..10).map(move |rx| {
                         let mut cell = test_terrain_cell(rx, ry);
-                        cell.speed_costs.foot = Some(100);
+                        cell.speed_costs.foot = Some(crate::util::native_x87::NativeF32Bits::ONE);
                         cell
                     })
                 })
@@ -4231,7 +4231,8 @@ mod tests {
                 }
                 for cell in case["blocked_terrain"].as_array().into_iter().flatten() {
                     let (x, y) = xy(cell);
-                    terrain.cell_mut_for_test(x, y).unwrap().speed_costs.foot = Some(0);
+                    terrain.cell_mut_for_test(x, y).unwrap().speed_costs.foot =
+                        Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
                 }
                 for cell in case["raw"].as_array().into_iter().flatten() {
                     let (x, y) = xy(cell);

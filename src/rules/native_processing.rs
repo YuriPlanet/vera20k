@@ -1100,6 +1100,11 @@ impl ProcessedRulesLayers {
                 }
             }
         }
+        if !registry.rules_land.valid_saved_state() {
+            return Err(RulesError::InvalidSavedState(
+                "land row has invalid derived ground blocking",
+            ));
+        }
         registry.validate_techno_type_order()?;
         registry.validate_prerequisites()?;
         registry.validate_radiation_types()?;
@@ -2388,6 +2393,20 @@ impl ProcessedRulesLayers {
             .rules_fog_rate
     }
 
+    /// Immutable projection of the retained global land-speed table.
+    pub(crate) fn terrain_rules(&self) -> &crate::rules::terrain_rules::TerrainRules {
+        &self.native_registry_state().rules_land
+    }
+
+    /// RMG's immutable projection shares its selected global land table.
+    pub(crate) fn install_terrain_rules(
+        &mut self,
+        rules: crate::rules::terrain_rules::TerrainRules,
+    ) {
+        self.native_type_construction_trace
+            .install_terrain_rules(rules);
+    }
+
     /// Final Difficulty readers after the ordered Process passes. Keeping the
     /// typed rows preserves literal f64 defaults separately from ReadDouble's
     /// widened f32 authored values (ReadDifficulty @ 0x0066D270).
@@ -2820,6 +2839,13 @@ impl NativeTypeConstructionTrace {
 
     pub(crate) fn registry_state(&self) -> &NativeRulesRegistryState {
         &self.registry_state
+    }
+
+    pub(crate) fn install_terrain_rules(
+        &mut self,
+        rules: crate::rules::terrain_rules::TerrainRules,
+    ) {
+        self.registry_state.install_terrain_rules(rules);
     }
 
     pub(crate) fn into_parts(
@@ -3576,6 +3602,8 @@ pub(crate) struct NativeRulesRegistryState {
     #[serde(default = "crate::rules::ruleset::default_fog_rate")]
     rules_fog_rate: NativeF64Bits,
     rules_difficulty_rows: [crate::rules::ruleset::DifficultyRules; 3],
+    /// Global89EA40 survives type resets and is saved by67F87D, restored67FAF1.
+    rules_land: crate::rules::terrain_rules::TerrainRules,
     rules_gravity: i32,
     rules_tree_strength: i32,
     rules_wind_direction: i32,
@@ -3679,6 +3707,7 @@ impl Default for NativeRulesRegistryState {
             rules_shroud_rate: general.shroud_rate,
             rules_fog_rate: general.fog_rate,
             rules_difficulty_rows: general.difficulty_rows,
+            rules_land: Default::default(),
             rules_gravity: general.gravity,
             rules_tree_strength: general.tree_strength,
             rules_wind_direction: general.wind_direction(),
@@ -3739,6 +3768,17 @@ impl Default for NativeRulesRegistryState {
 }
 
 impl NativeRulesRegistryState {
+    pub(crate) fn terrain_rules(&self) -> &crate::rules::terrain_rules::TerrainRules {
+        &self.rules_land
+    }
+
+    pub(crate) fn install_terrain_rules(
+        &mut self,
+        rules: crate::rules::terrain_rules::TerrainRules,
+    ) {
+        self.rules_land = rules;
+    }
+
     /// Read one presentation HSV from the retained paired Colors registry.
     /// Native66D3A0 appends kind1 then kind53 for each entry; Ares loading
     /// stores a kind1 ordinal. A negative index is no override: the loading
@@ -4106,6 +4146,7 @@ impl NativeRulesRegistryState {
             rules_shroud_rate: self.rules_shroud_rate,
             rules_fog_rate: self.rules_fog_rate,
             rules_difficulty_rows: self.rules_difficulty_rows,
+            rules_land: self.rules_land,
             rules_gravity: self.rules_gravity,
             rules_tree_strength: self.rules_tree_strength,
             rules_drop_zone_radius: self.rules_drop_zone_radius,
@@ -5245,6 +5286,8 @@ struct RulesPassProcessor {
     rules_shroud_rate: NativeF64Bits,
     rules_fog_rate: NativeF64Bits,
     rules_difficulty_rows: [crate::rules::ruleset::DifficultyRules; 3],
+    /// Global89EA40 survives type resets and is saved by67F87D, restored67FAF1.
+    rules_land: crate::rules::terrain_rules::TerrainRules,
     rules_gravity: i32,
     rules_tree_strength: i32,
     rules_wind_direction: i32,
@@ -5330,6 +5373,7 @@ impl RulesPassProcessor {
             rules_shroud_rate: registry_state.rules_shroud_rate,
             rules_fog_rate: registry_state.rules_fog_rate,
             rules_difficulty_rows: registry_state.rules_difficulty_rows,
+            rules_land: registry_state.rules_land,
             rules_gravity: registry_state.rules_gravity,
             rules_tree_strength: registry_state.rules_tree_strength,
             rules_wind_direction: registry_state.rules_wind_direction,
@@ -5479,6 +5523,7 @@ impl RulesPassProcessor {
         });
         self.crate_rules = crate_rules;
         self.powerups.apply_pass(pass);
+        self.rules_land.apply_pass(pass);
         self.allocate_combat_references(pass);
         // ReadGeneral's rocket blocks and ReadCombatDamage's rocket warheads.
         // They read and write no other Process state, so one call per pass
@@ -8739,6 +8784,7 @@ impl RulesPassProcessor {
                     rules_shroud_rate: self.rules_shroud_rate,
                     rules_fog_rate: self.rules_fog_rate,
                     rules_difficulty_rows: self.rules_difficulty_rows,
+                    rules_land: self.rules_land,
                     rules_gravity: self.rules_gravity,
                     rules_tree_strength: self.rules_tree_strength,
                     rules_wind_direction: self.rules_wind_direction,

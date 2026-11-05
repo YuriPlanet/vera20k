@@ -186,7 +186,7 @@ fn accepted_chain_runs_sensor_callback_and_consumes_more_paid_points_in_same_obj
                 (0..32).map(move |x| {
                     let mut cell =
                         crate::map::resolved_terrain::ResolvedTerrainCell::clear_for_test(x, y);
-                    cell.speed_costs.track = Some(100);
+                    cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
                     cell
                 })
             })
