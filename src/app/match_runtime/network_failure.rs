@@ -6,8 +6,9 @@ use crate::app::{App, AppState};
 use crate::sim::world::NetworkInterruption;
 use crate::ui::shell::controller::{DialogController, ShellKey};
 use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::layout::LaidOutControl;
-use crate::ui::shell::modal::{body_ok_layout, control};
+use crate::ui::shell::modal::{body_ok_layout_in, control};
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::PhysicalKey;
 
@@ -166,10 +167,11 @@ pub(crate) fn take_acknowledged(state: &mut AppState) -> bool {
     true
 }
 
+/// The box keeps gamemd's centring on the match's frame.
 fn button_feed(width: i32, height: i32) -> [LaidOutControl; 1] {
     [LaidOutControl {
         id: control::OK,
-        rect: body_ok_layout(width, height).ok,
+        rect: body_ok_layout_in(RectPx::new(0, 0, width, height)).ok,
     }]
 }
 

@@ -11,7 +11,7 @@ use super::in_game_shell::{
 };
 use super::preview::{
     aspect_fit_rect, build_preview_surface_instance, ensure_map_preview_texture,
-    project_preview_start_positions, push_start_marker_sprites,
+    ensure_zoom_texture, project_preview_start_positions, push_start_marker_sprites, zoom_draws,
 };
 use super::text::{
     button_text_rect, localized_label, push_start_marker_labels, rect_to_text_rect, static_label,
@@ -43,6 +43,7 @@ pub(crate) fn render_multiplayer_setup(
         .filter(|protocol| protocol.blocking_map_transfer())
         .and_then(|protocol| protocol.transfer_progress())
     {
+        crate::app::frontend::preview_zoom::close(state);
         let (progress_meter, texts) =
             crate::app::loading::pump::transfer_progress_draws(state, completed, total)?;
         let layout = crate::app::input::multiplayer_setup::layout(state);
@@ -81,6 +82,7 @@ pub(crate) fn render_multiplayer_setup(
         );
     }
     let Some(view) = crate::app::shell_network_setup::view(state) else {
+        crate::app::frontend::preview_zoom::close(state);
         return Ok(());
     };
     crate::app::input::multiplayer_setup::update_geometry(state);
@@ -97,12 +99,13 @@ pub(crate) fn render_multiplayer_setup(
     let wave = exit.or_else(|| state.frontend.shell_first_paint_slide.clone());
     let sliding = wave.is_some();
     if let Some(index) = view.selected_map_index {
-        ensure_map_preview_texture(state, index);
+        ensure_map_preview_texture(state, index, layout.map_preview);
     } else if !view.host {
         super::preview::ensure_received_preview_texture(state);
     } else {
         state.frontend.skirmish_preview_texture = None;
     }
+    let zoom_layout = ensure_zoom_texture(state, scale, !sliding && !view.preview_hidden);
     let heading = localized_label(state, view.page().title_key, view.page().title_key);
     let accept_highlight = state
         .frontend
@@ -480,7 +483,7 @@ pub(crate) fn render_multiplayer_setup(
                             .preview_source_bounds()
                     })
                     .flatten();
-                if let Some(bounds) = state
+                let bounds = state
                     .frontend
                     .network_setup_protocol
                     .as_ref()
@@ -493,8 +496,11 @@ pub(crate) fn render_multiplayer_setup(
                             })
                             .filter(|entry| !super::preview::is_random_map_sentinel_entry(entry))
                             .and_then(|entry| entry.preview_source_bounds.as_ref())
-                    })
-                {
+                    });
+                overlay.zoom = zoom_layout
+                    .as_ref()
+                    .map(|zoom_layout| zoom_draws(state, atlas, zoom_layout, bounds, scale));
+                if let Some(bounds) = bounds {
                     let fitted = aspect_fit_rect(layout.map_preview, preview.width, preview.height);
                     let positions = project_preview_start_positions(bounds, fitted);
                     push_start_marker_sprites(&mut controls, atlas, &positions, scale, 0.00056);
@@ -780,7 +786,7 @@ pub(crate) fn render_multiplayer_setup(
         );
     }
     // The page dialog 0xCF over C2/C9 (0x0077D820 keeps the page painting).
-    if let Some(page) = crate::app::frontend::wol_welcome_render::page_dialogs_paint(state) {
+    if let Some((_, page)) = crate::app::frontend::wol_welcome_render::page_dialogs_paint(state) {
         overlay.controls.extend(page.controls);
         overlay.texts.extend(page.texts);
     }

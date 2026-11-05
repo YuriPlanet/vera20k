@@ -2013,6 +2013,11 @@ fn clamp_camera_point_for_state(
     sw: f32,
     sh: f32,
 ) -> (f32, f32) {
+    // VERA-only: a map picture puts the camera where a map's own preview
+    // shows, which can reach rows past the playable area's edges.
+    if state.platform.capture_presentation.map_picture {
+        return point;
+    }
     let (frame_w, frame_h) = (sw.max(0.0) as u32, sh.max(0.0) as u32);
     let (viewport_w, viewport_h) = state.sidebar_frame_for(frame_w, frame_h).tactical_size();
     let viewport = (viewport_w as f32, viewport_h as f32);
@@ -2102,7 +2107,8 @@ fn shown_world_rect(area: (f32, f32, f32, f32)) -> (f32, f32, f32, f32) {
 
 /// The world rectangle the tactical camera can show on the loaded map
 /// (`shown_world_rect` of its scroll rectangle), or None before a simulation
-/// has its LocalSize. Captures record it to frame the whole map.
+/// has its LocalSize. Pictures of whole maps (`app::map_picture`) are framed
+/// by it.
 pub(crate) fn tactical_view_area(state: &AppState) -> Option<(f32, f32, f32, f32)> {
     let runtime = state.match_state.sim_runtime.as_ref()?;
     let bounds = runtime.view().playfield_authority().0?;

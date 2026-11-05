@@ -53,23 +53,32 @@ never finishes loading leaves in the first frame once silent for 60 seconds, or 
 minutes after the first client was ready; the native loading timeout leaves that
 departure to the relay. A match spread over several relays is cancelled instead.
 At each deadline, missing input is empty; a command joins the next unsealed
-frame. The sender also waits for that commit. Each new command batch goes out
-twice, so one lost uplink datagram does not hold it and every later batch for
-the 100 ms retry.
+frame. The sender also waits for that commit.
 Frames use the existing Event codec and simulation queues, with a fresh compression
-cache per self-contained encrypted batch. The relay never receives payload keys.
-A batch that fails the payload key's authentication or does not decode makes its
-sender leave at that frame on every client, as if by Leave; the rest of its
-stream is ignored.
+cache per self-contained batch. Batches travel in plain text: the relay can read
+them, and only the per-hop MAC authenticates them. A batch's Event packet header
+is not sent; each client rebuilds it from the batch's source and frame. A batch
+that does not decode, or whose House is not its source's, makes its sender leave
+at that frame on every client, as if by Leave; the rest of its stream is ignored.
 
-Clients negotiate server-pushed updates from that same retained history. Healthy
-clients send cumulative receive watermarks instead of continually requesting new
-frames; gaps use the existing replay reader. The relay pushes each
-unacknowledged entry once more about 8 ms after the first copy, so one lost
-datagram costs about that delay rather than a repair round trip. Repeats use
-only capacity fresh entries leave, under their own relay budget, so heavy load
-drops repeats before it delays a fresh entry. Older relays fall back to
-polling, and older clients can still pull from an upgraded relay.
+Redundancy follows each player's measured link
+(`services/relay/adaptive-transport/spec.md`). One merged UPLINK request carries
+unacknowledged batches, the receive watermark, the per-hop receipt feedback,
+checksums and pace. The relay pushes each turn packed, with the reader's
+unacknowledged records piggybacked into the space the turn leaves. A good link
+sends each batch and turn once. A lossy or jittery link also gets 16 ms uplink
+copies and 8 ms downlink repeats. A congested link gets neither, and a silent
+one only probes. Losses that the receipt feedback shows are retransmitted by the
+relay; a lasting gap falls back to the existing replay reader. Clients and relay
+ship together: older clients are not supported.
+
+Every datagram uses the compact envelope
+(`services/relay/bandwidth-compaction/spec.md`): a 32-bit session the relay
+assigns at admission, a 32-bit hop sequence and a 4-byte truncated HMAC, 13 bytes
+in all. History packs encode each record relative to the previous one and decode
+alone. The receiving client rebuilds the same canonical records, so journal,
+replay and federation are unchanged. Measured traffic is in
+`services/relay/adaptive-transport/results.md`.
 
 When every active player and the relay support synchronized pause, any player
 can use the Pause key or Options' **Pause All Players** / **Resume All Players**
@@ -114,8 +123,8 @@ every active client to report; a room with an older client or one spread over
 several relays keeps its speed. Native lockstep instead slows every match to its
 slowest player (ProcessNetwork `0x00647BF4..0x00647E6D`).
 
-The relay keeps a bounded RAM cache and the full encrypted match journal on
-disk. Temporary connection loss keeps the player's identity, units, input cursor
+The relay keeps a bounded RAM cache and the full match journal on disk. The
+journal is not encrypted: it holds plain commands and relies on file permissions. Temporary connection loss keeps the player's identity, units, input cursor
 and world in the match; the client renews its ticket and reads missed frames when
 connectivity returns. The UI shows Reconnecting or Catching up while healthy
 clients continue. After ten minutes of silence the relay removes the player

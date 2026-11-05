@@ -5,7 +5,7 @@
 //!
 //! Each House's state lives in the House array, [`crate::sim::houses::Houses`].
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::map::playfield::local_to_packed_cell;
 use crate::rules::object_type::ObjectCategory;
@@ -217,6 +217,12 @@ const fn last_attacker_house_index_default() -> i32 {
 /// [`HouseState::strategy_timer`]'s constructor value: started at frame 0
 /// with no delay, so expired.
 pub(crate) const fn strategy_timer_at_construction() -> CdTimer {
+    CdTimer::started(0, 0)
+}
+
+/// HouseClass::Constructor004F5BAE..004F5BBA starts the enemy-search
+/// countdown at the construction frame,0, with no delay.
+pub(crate) const fn enemy_search_timer_at_construction() -> CdTimer {
     CdTimer::started(0, 0)
 }
 
@@ -732,6 +738,14 @@ pub struct HouseState {
     /// still scans that order, never this map's key order.
     #[serde(default)]
     grudge_scores: BTreeMap<InternedId, i32>,
+    /// HouseClass's ScoutStruct marks (+561C), consumed by Script_Scout6EE800.
+    /// Constructor4F602A..4F6181 registers every peer with mark0; unmarked
+    /// peers are implicit in Houses::order(), including later registrations.
+    /// Save50422D..50427B retains the marks. Rust snapshots retain logical
+    /// identities: native Load503641 only fixes up the final peer pointer,
+    /// whose allocation-dependent stale-address effects are not reproduced.
+    #[serde(default)]
+    scouted_houses: BTreeSet<InternedId>,
     /// House selected by `HouseClass::UpdateAngerNodes`, or native `-1` as None.
     #[serde(default)]
     enemy_house: Option<InternedId>,
@@ -823,6 +837,11 @@ pub struct HouseState {
     /// (`0x004F5B9D..0x004F5BA8`). Persisted and hashed (schema v234).
     #[serde(default = "strategy_timer_at_construction")]
     strategy_timer: CdTimer,
+    /// House+5640/+5648. Post_Map_Init00686A12..00686A2B starts it once;
+    /// AI_Building_Strategy004FD50F..004FD538 only reads it. HouseSave504080
+    /// preserves it in the raw House payload; snapshots and hashes do too.
+    #[serde(default = "enemy_search_timer_at_construction")]
+    enemy_search_timer: CdTimer,
     /// The team timer and `RatioAITriggerTeam=` (`HouseClass+0x5798`/`+0x57A0`,
     /// `+0x565C`), owned by `sim::ai_team_creation`. Persisted and hashed
     /// (schema v238).
@@ -1023,6 +1042,27 @@ impl HouseState {
         }
     }
 
+    pub(crate) fn has_scouted_house(&self, peer: InternedId) -> bool {
+        self.scouted_houses.contains(&peer)
+    }
+
+    /// HouseClass::Mark_Threat_Source00504860: mark a registered peer, with
+    /// no alliance, defeat, human or passive gate. The shared House array
+    /// supplies the constructor-registered peer list without duplicating it.
+    pub(crate) fn mark_scouted_house(&mut self, peer: InternedId, order: &[InternedId]) {
+        if peer != self.name && order.contains(&peer) {
+            self.scouted_houses.insert(peer);
+        }
+    }
+
+    pub(crate) fn hash_scouted_houses(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        if !self.scouted_houses.is_empty() {
+            b"house-scout-marks-v1".hash(hasher);
+            self.scouted_houses.hash(hasher);
+        }
+    }
+
     /// The House update's EVA pass retains the funds-nag timer and the
     /// low-power guard it advanced.
     pub(crate) fn retain_eva_nag_state(&mut self, funds_timer: CdTimer, low_power_guard: bool) {
@@ -1100,6 +1140,19 @@ impl HouseState {
     /// restarts at this frame with the delay `AI_Building_Strategy` returned.
     pub(crate) fn restart_strategy_timer(&mut self, frame: i32, delay: i32) {
         self.strategy_timer.start(frame, delay);
+    }
+
+    /// ScenarioClass::Post_Map_Init006869EA..00686A2B: only IsHuman and
+    /// MultiplayPassive gate this one-time start; PlayerControl does not.
+    pub(crate) fn initialize_enemy_search_timer(
+        &mut self,
+        frame: i32,
+        general: &crate::rules::ruleset::GeneralRules,
+    ) {
+        if !self.is_human() && !self.multiplay_passive() {
+            self.enemy_search_timer
+                .start(frame, self.difficulty_value(general.ai_hate_delays()));
+        }
     }
 
     /// House+577A, stored after SpySat's map callback (`509069/509017`).
@@ -1561,6 +1614,10 @@ impl HouseState {
 
     pub const fn strategy_timer(&self) -> &CdTimer {
         &self.strategy_timer
+    }
+
+    pub(crate) const fn enemy_search_timer(&self) -> &CdTimer {
+        &self.enemy_search_timer
     }
 
     pub const fn team_creation(&self) -> &crate::sim::ai_team_creation::HouseTeamCreation {
@@ -2674,6 +2731,7 @@ impl HouseState {
             current_iq: 0,
             authored_iq: 0,
             grudge_scores: BTreeMap::new(),
+            scouted_houses: BTreeSet::new(),
             enemy_house: None,
             waypoint_edge: 0,
             stats: MatchStatistics::default(),
@@ -2687,6 +2745,7 @@ impl HouseState {
             economy: Economy::new(credits),
             strategy_emergency: HouseStrategyEmergencyState::default(),
             strategy_timer: strategy_timer_at_construction(),
+            enemy_search_timer: enemy_search_timer_at_construction(),
             team_creation: Default::default(),
             ai_activation: HouseAiActivationLatches::default(),
             ai_production: Default::default(),

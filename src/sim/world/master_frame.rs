@@ -65,7 +65,8 @@ pub(crate) enum FrameStep {
     /// Publish the terrain navigation and smudge changes the object pass left
     /// pending.
     TerrainNavigation,
-    /// `IonBlastClass::UpdateAll @ 0x0053D310` (`0x0055B64B`).
+    /// `IonBlastClass::UpdateAll @ 0x0053D310` (`0x0055B64B`), then
+    /// `AlphaShapeClass::PurgeDisabled @ 0x00420E90` (`0x0055B650`).
     IonBlasts,
     /// `MapClass__UpdateCrateRegenTimers @ 0x0056BBE0` (`0x0055B65A`).
     CrateRegen,
@@ -453,6 +454,7 @@ impl Simulation {
             FrameStep::IonBlasts => {
                 frame.bridge_state_changed |=
                     self.update_ion_blasts(rules, overlay_registry, effects);
+                self.alpha_shapes.purge_disabled();
             }
             FrameStep::CrateRegen => {
                 // Called between `AlphaShapeClass::PurgeDisabled` and the

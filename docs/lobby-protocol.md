@@ -195,13 +195,12 @@ RelayGrant is `{address,ticket,packet_key,payload_key,source_index,ordering_cert
 of the user's relay in the match. The service chooses it at start and every later grant for that match names it;
 ticket is the signed relay protocol ticket encoded base64url without padding and
 packet_key is 32 bytes encoded the same way. Credentials are unique to each user
-and each new match. `payload_key` is a random 32-byte match payload-encryption key
-shared by the participants and encoded the same way. It is delivered only over
-authenticated HTTPS, stored only in private match state, and never placed in a
-relay ticket or disclosed to the relay. It remains unchanged through bootstrap,
-timing confirmation and renewal. The HTTPS lobby is a trusted key distributor:
-a compromised lobby could disclose or replace payload keys; relay-blind payload
-encryption does not protect against that compromise. `source_index` is the immutable canonical user index, 0–29.
+and each new match. `payload_key` is a random 32-byte match key encoded the same way.
+It remains unchanged through bootstrap, timing confirmation and renewal. Current
+clients accept it and do not use it: gameplay batches and DATA travel in plain
+text under the per-hop MAC, and the relay can read them
+(`services/relay/bandwidth-compaction/spec.md` §3). The field stays in the grant
+so the lobby needs no change; removing it is a follow-up. `source_index` is the immutable canonical user index, 0–29.
 `ordering_certificate` is 66 base64url-encoded bytes: `VO1C`, room UUID16,
 source mask LEu32, fixed FPS LEu16, expiry LEu64, then HMAC-SHA256 over the
 first34 bytes with domain `VERA20k relay ordering certificate v1\0`. A lobby
@@ -411,12 +410,21 @@ A game whose online match reached play adds `network_quality` to that match's
 `finish`: its own record of how the match ran, which it also logs as
 `Network quality:`. It is
 `{played_seconds,catch_up:{episodes,seconds,max_backlog_frames,skipped_draws},`
-`network:{gaps,repair_pulls,command_round_trip_ms,max_jitter_reserve_ms,underruns},`
+`network:{gaps,repair_pulls,command_round_trip_ms,max_jitter_reserve_ms,underruns,`
+`underrun_wait_ms,max_underrun_wait_ms,link},`
 `performance:{tick_ms_p50,tick_ms_p99,fps_p50,fps_p5,unfocused_seconds},`
 `pacing:{slowdowns,slowed_by,slowed_seconds},outcome:{desync_frame,reconnects}}`.
 Times are seconds, or milliseconds where the name says so; `command_round_trip_ms`
 is `{mean,max,samples}` or null, `tick_ms_p50`, `tick_ms_p99`, `fps_p50`, `fps_p5` and
 `desync_frame` may be null, and `slowed_by` lists the House each relay slowdown named.
+`underruns` counts the waits for a frame due but not yet received; `underrun_wait_ms`
+sums how late each waited-for frame arrived after its deadline and
+`max_underrun_wait_ms` is the longest, leaving out waits that end in a reconnect or
+catch-up. `link` is the relay hop as the game's relay client measured it,
+`{rtt_ms_p50,max_up_loss_permille,up_lossy_seconds,up_congested_seconds,rto_timeouts,`
+`gaps_repaired_by_push,max_arrival_jitter_ms}` (`rtt_ms_p50` may be null), or null
+without one (`services/relay/adaptive-transport/spec.md` §10.1). Older games send none
+of these three, so a service reads the report with or without them.
 A start cancelled before play and a match an external launcher formed send none. The
 service may keep reports for its operator without the player's name or address; one it
 cannot read is dropped and the match still finishes. A service that refuses the field
@@ -462,9 +470,10 @@ sets the welcome that sign-in responses carry as `motd`: non-blank text of at mo
 2048 UTF-8 bytes. `{text:null}` clears it. Both return `{welcome}`, the text or `null`.
 
 Released clients sign in with `User-Agent: VERA20k/<MAJOR.MINOR.PATCH> multiplayer-client`.
-A client that names a version older than 0.2.6 is refused at sign-in with 426
-`upgrade_required`, since clients before it cannot play through the relays' turn
-transport (#3845); one that names no version is not.
+A client that names a version older than 0.2.7 is refused at sign-in with 426
+`upgrade_required`, since clients before it cannot play through the relays'
+adaptive transport (UPLINK, `services/relay/README.md`); one that names no
+version is not.
 A session whose version is older than `version` in
 `https://downloads.vera20k.org/latest.json`, which the lobby reads at most every
 10 minutes, receives one such chat line per newer release, naming both versions,

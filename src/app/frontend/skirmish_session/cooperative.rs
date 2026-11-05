@@ -191,6 +191,25 @@ impl CooperativeRegistry {
                 .any(|token| scenario_is_map(scenario, token))
         })
     }
+
+    /// DrawLoading552D60 calls CoopCampaignDefs49E400: the first campaign
+    /// with any case-insensitive map-token prefix of the logical ScenarioName.
+    /// Its55334C..55336A gate requires both authored names; they are literal,
+    /// including LS800 names at640 pixels. An unmatched custom scenario uses
+    /// VERA's safe ordinary-art fallback rather than native's unchecked pointer.
+    pub(crate) fn loading_art(&self, scenario: &str) -> Option<(&str, &str)> {
+        let campaign = self.campaigns.iter().find(|campaign| {
+            campaign
+                .stages
+                .iter()
+                .flat_map(|stage| &stage.map_variants)
+                .any(|token| scenario_starts_with(scenario, token))
+        })?;
+        (!campaign.load_screen.is_empty() && !campaign.load_screen_pallet.is_empty()).then_some((
+            campaign.load_screen.as_str(),
+            campaign.load_screen_pallet.as_str(),
+        ))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1941,6 +1960,26 @@ mod tests {
             CooperativeAiDifficulty::Easy
         );
         assert_eq!(registry.campaigns[0].stages[1].map_variants[2], "A2C");
+    }
+
+    #[test]
+    fn cooperative_loading_art_uses_first_prefix_match_and_requires_both_names() {
+        let mut registry = registry();
+        assert_eq!(
+            registry.loading_art("a2b.map.suffix"),
+            Some(("LSA.shp", "LSA.pal"))
+        );
+        assert_eq!(registry.campaign_for_scenario("a2b.map.suffix"), None);
+        registry.campaigns[1].stages[0].map_variants[0] = "A2".into();
+        registry.campaigns[1].load_screen = "later.shp".into();
+        registry.campaigns[1].load_screen_pallet = "later.pal".into();
+        registry.campaigns[0].load_screen_pallet.clear();
+        assert_eq!(
+            registry.loading_art("A2.MAP"),
+            None,
+            "empty first match does not select a later campaign"
+        );
+        assert_eq!(registry.loading_art("unlisted.map"), None);
     }
 
     /// A room's exInfo scenario names a campaign by any stage's variant as

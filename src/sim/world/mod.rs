@@ -64,6 +64,7 @@ mod house_base;
 mod house_cheer_tests;
 mod house_defeat;
 pub(crate) use house_defeat::{HouseBlowupSubset, PlayerOutcomeRequest};
+mod alpha_shape;
 mod ion_blast;
 mod spotlight;
 pub(crate) use house_base::HouseBaseState;
@@ -1626,6 +1627,10 @@ pub struct Simulation {
         deserialize_with = "ion_blast::load"
     )]
     ion_blasts: Vec<ion_blast::IonBlast>,
+    /// AlphaShapeClass's vector (`0x0088A0F0`), owned by `alpha_shape`.
+    /// Saved, never hashed.
+    #[serde(default)]
+    alpha_shapes: alpha_shape::AlphaShapes,
     /// Per-cell terrain speed modifier config (slope climb/descend).
     /// Built from [General] rules at map load.
     #[serde(skip)]
@@ -4490,6 +4495,7 @@ impl Simulation {
             psychic_dominator: Default::default(),
             unit_deliveries: Default::default(),
             ion_blasts: Vec::new(),
+            alpha_shapes: Default::default(),
             terrain_speed_config: terrain_speed::TerrainSpeedConfig::default(),
             input_delay_ticks: u64::from(crate::util::config::default_input_delay_ticks()),
             quit_requested: false,

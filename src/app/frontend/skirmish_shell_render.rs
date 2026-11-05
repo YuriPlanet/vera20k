@@ -628,7 +628,15 @@ fn render_skirmish_shell_with_atlas(
         }
         _ => Vec::new(),
     };
-    ensure_selected_preview_texture(state);
+    // While the setup dialog is up it owns the preview box, so the image goes in
+    // its own 0x468 rect rather than the chooser's.
+    let setup_preview_rect = setup_layout.map(|layout| layout.preview);
+    let preview_rect = setup_preview_rect
+        .or_else(|| choose_map_layout.as_ref().map(|layout| layout.preview))
+        .unwrap_or(layout.map_preview);
+    ensure_selected_preview_texture(state, preview_rect);
+    let zoom_layout =
+        ensure_zoom_texture(state, layout.scale, !sliding && !leaving && !message_box_up);
     let selected_entry = state
         .frontend
         .scenario_catalog
@@ -645,12 +653,6 @@ fn render_skirmish_shell_with_atlas(
             .is_some();
     let selected_preview_bounds =
         selected_entry.and_then(|entry| entry.preview_source_bounds.as_ref());
-    // While the setup dialog is up it owns the preview box, so the image goes in
-    // its own 0x468 rect rather than the chooser's.
-    let setup_preview_rect = setup_layout.map(|layout| layout.preview);
-    let preview_rect = setup_preview_rect
-        .or_else(|| choose_map_layout.as_ref().map(|layout| layout.preview))
-        .unwrap_or(layout.map_preview);
     let fitted_preview_rect = state
         .frontend
         .skirmish_preview_texture
@@ -660,6 +662,15 @@ fn render_skirmish_shell_with_atlas(
         .zip(fitted_preview_rect)
         .map(|(bounds, rect)| project_preview_start_positions(bounds, rect))
         .unwrap_or_default();
+    let zoom = zoom_layout.as_ref().map(|zoom_layout| {
+        zoom_draws(
+            state,
+            atlas,
+            zoom_layout,
+            selected_preview_bounds.filter(|_| !preview_has_baked_start_markers),
+            layout.scale,
+        )
+    });
     // The map preview static and its markers sit in the top panel.
     let draw_start_marker_overlays = !sliding
         && !message_box_up
@@ -891,6 +902,7 @@ fn render_skirmish_shell_with_atlas(
         .renderer
         .batch_renderer
         .create_instance_buffer(&state.renderer.gpu, &cursor_instances);
+    let zoom_buffers = zoom.as_ref().map(|zoom| zoom.buffers(state));
     // Default-cursor frame-0 texture, borrowed for the duration of the pass.
     let cursor_texture = state
         .match_state
@@ -983,6 +995,9 @@ fn render_skirmish_shell_with_atlas(
     );
     // Reset scissor to full render so any subsequent draws / passes aren't clipped.
     pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
+    if let Some(buffers) = zoom_buffers.as_ref() {
+        draw_zoom(&mut pass, state, atlas, buffers);
+    }
     // Software cursor draws last, on top of all chrome/controls/modals.
     if let (Some((buffer, count)), Some(texture)) = (cursor_buffer.as_ref(), cursor_texture) {
         state

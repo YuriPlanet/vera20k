@@ -1,17 +1,17 @@
 //! VERA online ordering adaptation. The authenticated relay seals an immutable
 //! timeline; no client infers a missing participant's input or rewrites a tick.
 //! Native Event/OutList/DoList and the ordinary simulation transaction retain
-//! gameplay authority. Fresh packet caches make each encrypted batch standalone.
+//! gameplay authority. Fresh packet caches make each batch standalone.
 
 use std::collections::{BTreeMap, VecDeque};
 
 use vera20k_relay_protocol::{
-    CHECKSUM_INTERVAL, ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent, OrderPace,
-    OrderingCertificate, paced_rates,
+    CHECKSUM_INTERVAL, ClientLinkStats, ORDERING_BATCH_CAPACITY, OrderEntry, OrderError,
+    OrderEvent, OrderPace, OrderingCertificate, paced_rates,
 };
 
 use super::{LiveCommandError, StartupAgreement, StartupError};
-use crate::net::event_packet::{EventPacketCodec, decode_frame_info};
+use crate::net::event_packet::{EVENT_PACKET_HEADER_LEN, EventPacketCodec};
 use crate::net::udp::LanUdpTransport;
 use crate::sim::command::{CommandRecord, ExitRecord, REMOVE_PLAYER_OPCODE};
 use crate::sim::command_queue::FrameInfo;
@@ -22,14 +22,10 @@ const BUFFERED_FRAMES: usize = 64;
 const REORDER_WINDOW: u64 = 256;
 const MAX_FRAME_RECORDS: usize = 4096;
 const SAMPLE_HISTORY: usize = 4096;
-// A batch's version byte before its EventPacketCodec packet.
-const BATCH_HEADER: usize = 1;
-const BATCH_VERSION: u8 = 2;
-const PUSH_PROBE_INTERVAL_MS: i32 = 500;
-const PUSH_REPROBE_INTERVAL_MS: i32 = 5_000;
-const PUSH_WATERMARK_INTERVAL_MS: i32 = 100;
+// READY_REQUEST resends until the start (spec §6.0).
+const CONFIGURE_INTERVAL_MS: i32 = 125;
+// A restoring process reads history by PULL every 100 ms (spec §7.7).
 const REPLAY_RETRY_INTERVAL_MS: i32 = 100;
-const PUSH_SILENCE_REPAIR_MS: u32 = 1_000;
 const PAUSE_PROBE_INTERVAL_MS: i32 = 500;
 const PAUSE_COMPATIBILITY_PROBE_INTERVAL_MS: i32 = 5_000;
 const COMMAND_TRACE_HISTORY: usize = 256;
@@ -48,12 +44,9 @@ const MAX_TICK_COSTS: usize = 256;
 /// that owns it. Wall-clock observations; never simulation or delivery input.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DeliveryCounters {
-    /// Times the pushed stream stood behind the relay's head past its
-    /// one-frame reorder grace: lost datagrams, or push credit the relay had
-    /// not yet sent while this PC was behind.
-    pub gaps: u64,
-    /// Pull requests sent to repair a gap or a silent push subscription.
-    pub repair_pulls: u64,
+    /// The relay session's link measurements as last read (spec §10.1),
+    /// including the stream gaps it was told of and its fallback Pulls.
+    pub link: Option<ClientLinkStats>,
     /// Local command batches whose sealed frame came back, with the
     /// first-transmission to frame-receipt time of each.
     pub round_trips: u64,
@@ -207,13 +200,6 @@ struct PauseRequest {
     acknowledged_epoch: Option<u64>,
 }
 
-#[derive(Debug)]
-enum PushDelivery {
-    Probing { attempts: u8 },
-    Active,
-    PullOnly,
-}
-
 #[derive(Debug, Clone, Copy)]
 struct Unreadable {
     since: u32,
@@ -277,7 +263,8 @@ struct Submission {
     id: u64,
     records: Vec<CommandRecord>,
     bytes: Vec<u8>,
-    last_sent: Option<u32>,
+    // Handed to the relay session, which schedules its UPLINKs (spec §6).
+    sealed: bool,
 }
 
 /// The relay's DESYNC record: the sampled frame and the outlier's and the
@@ -323,13 +310,7 @@ pub(super) struct SequencedSession {
     statuses: u64,
     unreadable: Option<Unreadable>,
     last_control: Option<u32>,
-    push: PushDelivery,
-    last_push_control: Option<u32>,
-    push_watermark: u64,
-    push_confirmations: u64,
     remote_next_sequence: u64,
-    repair_gap_since: Option<u32>,
-    gap_counted: bool,
     delivery: DeliveryCounters,
     pause: CanonicalPause,
     /// VERA: the current pause found this game catching up, and it has not
@@ -431,13 +412,7 @@ impl SequencedSession {
             statuses: 0,
             unreadable: None,
             last_control: None,
-            push: PushDelivery::Probing { attempts: 0 },
-            last_push_control: None,
-            push_watermark: 1,
-            push_confirmations: 0,
             remote_next_sequence: 1,
-            repair_gap_since: None,
-            gap_counted: false,
             delivery: DeliveryCounters::default(),
             pause: CanonicalPause::default(),
             pause_found_behind: false,
@@ -571,9 +546,7 @@ impl SequencedSession {
     }
 
     pub(super) fn timing(&self) -> Option<SequencedTiming> {
-        matches!(self.push, PushDelivery::Active)
-            .then_some(self.latest_frame_receipt)
-            .flatten()
+        self.latest_frame_receipt
     }
 
     pub(super) fn pause_status(&self) -> MultiplayerPauseStatus {
@@ -625,7 +598,7 @@ impl SequencedSession {
         if self.restoring && service_due(self.last_restore_log, now, 5000) {
             self.last_restore_log = Some(now);
             log::info!(
-                "Rejoin: frame {:?}, frontier {}, head {}, next sequence {} of {}, buffered {}, started {}, statuses {}, push {:?}",
+                "Rejoin: frame {:?}, frontier {}, head {}, next sequence {} of {}, buffered {}, started {}, statuses {}",
                 self.current.map(|(context, done)| (context.frame, done)),
                 self.frontier(),
                 self.head_frame,
@@ -634,7 +607,6 @@ impl SequencedSession {
                 self.frames.len(),
                 self.started,
                 self.statuses,
-                self.push,
             );
         }
         while let Some(received) = transport.pop_ordering_received_with_time() {
@@ -672,28 +644,20 @@ impl SequencedSession {
         self.service_delivery(transport, now);
         self.service_pause(transport, now);
         self.service_pace(transport, now);
-        for pending in &mut self.submissions {
-            // An unready route or failed local send cannot start the remote
-            // receipt timer. The next service retries the same retained bytes.
-            if pending.id > self.accepted_batch && service_due(pending.last_sent, now, 100) {
-                // A fresh transmission goes out twice. The relay accepts batch
-                // IDs in order, so one lost datagram would otherwise hold this
-                // and every later batch until the retry; the copy is an
-                // idempotent retry of identical ciphertext.
-                let copies = if pending.last_sent.is_none() { 2 } else { 1 };
-                let mut sent = false;
-                for _ in 0..copies {
-                    sent |= transport
-                        .submit_ordering(pending.id, &pending.bytes)
-                        .is_ok();
-                }
-                if sent {
-                    pending.last_sent = Some(now);
-                    if let Some(trace) = trace_mut(&mut self.command_traces, pending.id) {
-                        trace.sent_at.get_or_insert_with(Instant::now);
-                    }
-                }
-            }
+        if let Err(error) = self.seal_submissions(transport) {
+            self.error = Some(error.into());
+            return;
+        }
+        // The relay session decides every UPLINK (spec §6.3); this layer only
+        // hands over its stream position.
+        let gap = self.ordering_gap();
+        transport.report_ordering_position(
+            self.next_sequence,
+            gap,
+            vera20k_relay_protocol::turn_ms(self.pace_fps),
+        );
+        if self.started {
+            let _ = transport.poll_uplink();
         }
         // Network silence is recoverable until the relay departs this source
         // after ten minutes. Keep the same stream cursor,
@@ -737,8 +701,8 @@ impl SequencedSession {
             self.pace_meter
                 .report(now, self.frames.len(), self.pace_fps, measured)
         {
-            // A lost report only goes stale at the relay.
-            let _ = transport.report_ordering_pace(pace, ran, tick_micros);
+            // It rides the next UPLINK once; a lost one only goes stale.
+            transport.queue_ordering_pace(pace, ran, tick_micros);
         }
     }
 
@@ -762,93 +726,77 @@ impl SequencedSession {
         }
     }
 
-    fn service_delivery(&mut self, transport: &mut LanUdpTransport, now: u32) {
-        if self.started {
-            match &mut self.push {
-                PushDelivery::Probing { attempts } => {
-                    // Old relays reject unknown controls, but three lost
-                    // replies look the same. Pull meanwhile and keep probing
-                    // at a slower rate; only a relay's explicit refusal ends
-                    // the handshake.
-                    let interval = if *attempts < 3 {
-                        PUSH_PROBE_INTERVAL_MS
-                    } else {
-                        PUSH_REPROBE_INTERVAL_MS
-                    };
-                    if service_due(self.last_push_control, now, interval) {
-                        let confirmations = transport.relay_confirmations();
-                        if transport
-                            .set_ordering_push(true, self.next_sequence)
-                            .is_ok()
-                        {
-                            *attempts = attempts.saturating_add(1);
-                            self.last_push_control = Some(now);
-                            self.push_watermark = self.next_sequence;
-                            self.push_confirmations = confirmations;
-                        }
-                    }
-                }
-                PushDelivery::Active => {
-                    // RelayServer::confirm starts a renewed lease or a new path
-                    // without the old subscription. Re-subscribe on any READY
-                    // rather than up to a watermark interval later; after a
-                    // keepalive READY that is only an early watermark.
-                    let confirmations = transport.relay_confirmations();
-                    if (confirmations != self.push_confirmations
-                        || self.next_sequence.saturating_sub(self.push_watermark) >= 32
-                        || service_due(self.last_push_control, now, PUSH_WATERMARK_INTERVAL_MS))
-                        && transport
-                            .set_ordering_push(true, self.next_sequence)
-                            .is_ok()
-                    {
-                        self.last_push_control = Some(now);
-                        self.push_watermark = self.next_sequence;
-                        self.push_confirmations = confirmations;
-                    }
-                }
-                PushDelivery::PullOnly => {}
+    /// Seals each local batch with the relay session in order; it retries
+    /// them until acknowledged (spec §6.1-§6.3). An unready route seals on a
+    /// later service.
+    fn seal_submissions(&mut self, transport: &mut LanUdpTransport) -> Result<(), SequencedError> {
+        for pending in self
+            .submissions
+            .iter_mut()
+            .filter(|pending| !pending.sealed)
+        {
+            let Ok(id) = transport.seal_ordering_batch(&pending.bytes) else {
+                break;
+            };
+            if id != pending.id {
+                return Err(SequencedError::InvalidTimeline);
+            }
+            pending.sealed = true;
+            if let Some(trace) = trace_mut(&mut self.command_traces, pending.id) {
+                trace.sent_at.get_or_insert_with(Instant::now);
             }
         }
-        let active_push = self.started && matches!(self.push, PushDelivery::Active);
-        let gap = self.cursor_gap();
-        // A status can overtake its immediately following pushed datagrams.
-        // Allow one nominal frame for reordering before requesting repair;
-        // healthy delivery must not turn every watermark into another Pull.
-        let gap_ready = if gap {
-            let since = *self.repair_gap_since.get_or_insert(now);
-            now.wrapping_sub(since) >= 1000_u32.div_ceil(u32::from(self.pace_fps))
-        } else {
-            self.repair_gap_since = None;
-            self.gap_counted = false;
-            false
-        };
-        if active_push && gap_ready && !self.gap_counted {
-            self.gap_counted = true;
-            self.delivery.gaps += 1;
+        Ok(())
+    }
+
+    /// The gap the uplink scheduler acts on (spec §6.3 row 2), while the
+    /// frame buffer has room for what is missing.
+    fn ordering_gap(&self) -> Option<vera20k_relay_protocol::OrderingGap> {
+        use vera20k_relay_protocol::OrderingGap;
+        if self.frames.len() >= BUFFERED_FRAMES {
+            return None;
         }
-        let silent = self
-            .last_response
-            .is_some_and(|last| now.wrapping_sub(last) > PUSH_SILENCE_REPAIR_MS);
-        let pull_needed = !active_push || gap_ready || silent;
-        let interval = if active_push {
-            REPLAY_RETRY_INTERVAL_MS
-        } else if self.started {
-            16
+        if self
+            .entries
+            .first_key_value()
+            .is_some_and(|(seq, _)| *seq > self.next_sequence)
+        {
+            Some(OrderingGap::Reordered)
+        } else if self.remote_next_sequence > self.next_sequence {
+            Some(OrderingGap::BehindStatus)
         } else {
-            125
-        };
-        if pull_needed && service_due(self.last_control, now, interval) {
-            if !self.started {
-                let _ = transport.configure_ordering(self.agreement);
+            None
+        }
+    }
+
+    fn service_delivery(&mut self, transport: &mut LanUdpTransport, now: u32) {
+        if !self.started {
+            // Only READY_REQUEST until the start: its STATUS replies carry
+            // the start, and there are no records to pull (spec §6.0).
+            if service_due(self.last_control, now, CONFIGURE_INTERVAL_MS)
+                && transport.configure_ordering(self.agreement).is_ok()
+            {
                 // Before the first request that can bring back an entry.
                 transport.set_ordering_restore(self.restoring);
-            }
-            if transport.pull_ordering(self.next_sequence).is_ok() {
                 self.last_control = Some(now);
-                if active_push {
-                    self.delivery.repair_pulls += 1;
-                }
             }
+            return;
+        }
+        if self.restoring {
+            // RESTORING: the relay pushes no new records; read them by PULL.
+            if self.cursor_gap()
+                && service_due(self.last_control, now, REPLAY_RETRY_INTERVAL_MS)
+                && transport.pull_ordering(self.next_sequence).is_ok()
+            {
+                self.last_control = Some(now);
+            }
+            return;
+        }
+        // Gaps go to the relay first by UPLINK; the session pulls only
+        // after its grace (spec §7.7).
+        let _ = transport.poll_repair_pull();
+        if let Some(stats) = transport.relay_link_stats() {
+            self.delivery.link = Some(stats);
         }
     }
 
@@ -961,20 +909,9 @@ impl SequencedSession {
                 }
                 self.finish_pause_request();
             }
-            OrderEvent::PushState {
-                enabled,
-                next_sequence,
+            OrderEvent::Ack {
+                batch_id, frame, ..
             } => {
-                if next_sequence == 0 || next_sequence > self.next_sequence {
-                    return Err(SequencedError::InvalidTimeline);
-                }
-                self.push = if enabled {
-                    PushDelivery::Active
-                } else {
-                    PushDelivery::PullOnly
-                };
-            }
-            OrderEvent::Ack { batch_id, frame } => {
                 if batch_id == 0 {
                     return Err(SequencedError::InvalidTimeline);
                 }
@@ -1015,26 +952,16 @@ impl SequencedSession {
                 OrderError::NotConfigured => {
                     self.started = false;
                     self.last_control = None;
-                    self.push = PushDelivery::Probing { attempts: 0 };
-                    self.last_push_control = None;
-                    self.repair_gap_since = None;
                 }
                 OrderError::NotStarted | OrderError::Backpressure => {}
                 OrderError::BatchGap => {
                     let accepted = expected
                         .checked_sub(1)
                         .ok_or(SequencedError::InvalidTimeline)?;
-                    // Reordered submissions and retries of older accepted
-                    // IDs both return the relay's next expected ID. Its
-                    // authenticated prefix receipt never moves backwards.
+                    // The relay's authenticated prefix receipt never moves
+                    // backwards. It resets no batch: the session's RTO
+                    // resends them (spec §6.4).
                     self.accept_through(accepted)?;
-                    if expected > self.accepted_batch {
-                        for pending in &mut self.submissions {
-                            if pending.id >= expected {
-                                pending.last_sent = None;
-                            }
-                        }
-                    }
                 }
                 OrderError::HistoryGap => return Err(SequencedError::HistoryExpired),
                 OrderError::Inactive | OrderError::StorageUnavailable => {
@@ -1128,9 +1055,7 @@ impl SequencedSession {
                     if self.refused & 1 << source != 0 {
                         continue;
                     }
-                    let decoded = bytes
-                        .as_ref()
-                        .and_then(|bytes| decode_batch(bytes.as_bytes(), house, frame).ok());
+                    let decoded = decode_batch(&bytes, house, frame).ok();
                     let Some(records) = decoded else {
                         // VERA relay adaptation: every client reads the same
                         // ordered bytes, so each refuses the same batch. Its
@@ -1425,7 +1350,8 @@ impl SequencedSession {
                     .find(|(frame, _)| *frame + CHECKSUM_INTERVAL == context.frame)
                     .copied(),
             );
-            if transport.report_ordering_checksums(&reports).is_ok() {
+            reports.reverse();
+            if transport.queue_ordering_checksums(&reports).is_ok() {
                 self.sample_sent = Some(context.frame);
             }
         }
@@ -1444,6 +1370,9 @@ impl SequencedSession {
                 {
                     return Err(SequencedError::InvalidTimeline.into());
                 }
+                // A batch is the packet's command records alone: no version
+                // byte and no FRAME_INFO, which every reader rebuilds
+                // (bandwidth-compaction spec §4).
                 let encoded = EventPacketCodec::default()
                     .encode_packet(
                         &records,
@@ -1455,15 +1384,13 @@ impl SequencedSession {
                             delay: 0,
                         },
                         0,
-                        ORDERING_BATCH_CAPACITY - BATCH_HEADER,
+                        EVENT_PACKET_HEADER_LEN + ORDERING_BATCH_CAPACITY,
                     )
                     .map_err(super::CommandExchangeError::from)?;
                 if encoded.mirrors.is_empty() {
                     return Err(SequencedError::InvalidTimeline.into());
                 }
-                let mut bytes = Vec::with_capacity(ORDERING_BATCH_CAPACITY);
-                bytes.push(BATCH_VERSION);
-                bytes.extend(encoded.bytes);
+                let bytes = encoded.bytes[EVENT_PACKET_HEADER_LEN..].to_vec();
                 let next_batch = self
                     .next_batch
                     .checked_add(1)
@@ -1481,7 +1408,7 @@ impl SequencedSession {
                     id: self.next_batch,
                     records: encoded.mirrors,
                     bytes,
-                    last_sent: None,
+                    sealed: false,
                 });
                 self.next_batch = next_batch;
                 self.service(transport, now);
@@ -1589,18 +1516,25 @@ fn roster_mask(houses: &[Option<i8>; 30]) -> u32 {
         .fold(0, |m, (s, _)| m | (1 << s))
 }
 
+/// A batch's command records (bandwidth-compaction spec §4): the packet
+/// rebuilt with the FRAME_INFO of its source's `house`, its record's
+/// `frame` and zeros, then the unchanged `EventPacketCodec` decode.
 fn decode_batch(bytes: &[u8], house: i8, frame: u32) -> Result<Vec<CommandRecord>, SequencedError> {
-    if bytes.len() < BATCH_HEADER + 14
-        || bytes.len() > ORDERING_BATCH_CAPACITY
-        || bytes[0] != BATCH_VERSION
-    {
+    if bytes.is_empty() || bytes.len() > ORDERING_BATCH_CAPACITY {
         return Err(SequencedError::InvalidTimeline);
     }
-    let packet = &bytes[BATCH_HEADER..];
-    if decode_frame_info(packet).is_none_or(|info| info.house_id != house || info.event_frame != 0)
-    {
-        return Err(SequencedError::InvalidTimeline);
+    let header = FrameInfo {
+        house_id: house,
+        event_frame: i32::try_from(frame).map_err(|_| SequencedError::InvalidTimeline)?,
+        checksum: 0,
+        timing_word: 0,
+        delay: 0,
     }
+    .encode();
+    let mut packet = Vec::with_capacity(EVENT_PACKET_HEADER_LEN + bytes.len());
+    packet.extend_from_slice(&header.as_bytes()[..EVENT_PACKET_HEADER_LEN]);
+    packet.extend_from_slice(bytes);
+    let packet = packet.as_slice();
     let mut records = Vec::new();
     let mut invalid = false;
     let mut header = true;
@@ -1720,6 +1654,7 @@ mod restore_tests {
             tick_hz: 30,
             start_delay_ms: 0,
             started: true,
+            feedback: Default::default(),
         })
     }
 
@@ -1845,6 +1780,7 @@ mod stall_tests {
             tick_hz: 30,
             start_delay_ms: 0,
             started: true,
+            feedback: Default::default(),
         };
         session
             .receive(OrderEvent::Status(status), Instant::now())
@@ -2000,6 +1936,7 @@ mod departure_tests {
             tick_hz: 30,
             start_delay_ms: 0,
             started: false,
+            feedback: Default::default(),
         };
         session
             .receive(OrderEvent::Status(status), Instant::now())
@@ -2014,7 +1951,7 @@ mod departure_tests {
         ));
     }
 
-    /// A batch the payload key cannot open departs its sender in its frame
+    /// A batch that does not decode departs its sender in its frame
     /// instead of leaving a sequence gap that every pull repeats.
     #[test]
     fn an_unreadable_batch_departs_its_sender_in_its_frame() {
@@ -2031,7 +1968,7 @@ mod departure_tests {
                 frame: 2,
                 source: 1,
                 batch_id: 1,
-                bytes: None,
+                bytes: b"not a batch".to_vec(),
             },
             OrderEntry::FrameEnd {
                 sequence: 3,
@@ -2074,12 +2011,14 @@ mod departure_tests {
             replies
                 .unwrap()
                 .into_iter()
-                .flat_map(|reply| match client.receive(&reply.bytes).unwrap() {
-                    ServerEvent::Ordering(event) => vec![Ok(event)],
-                    ServerEvent::OrderingPack(events) => events.into_iter().map(Ok).collect(),
-                    ServerEvent::Challenge(cookie) => vec![Err(cookie.to_vec())],
-                    _ => Vec::new(),
-                })
+                .flat_map(
+                    |reply| match client.receive_at(&reply.bytes, now_ms).unwrap() {
+                        ServerEvent::Ordering(event) => vec![Ok(event)],
+                        ServerEvent::OrderingPack(events) => events.into_iter().map(Ok).collect(),
+                        ServerEvent::Challenge(cookie) => vec![Err(cookie.to_vec())],
+                        _ => Vec::new(),
+                    },
+                )
                 .collect::<Vec<_>>()
         };
         let certificate = OrderingCertificate {
@@ -2109,30 +2048,40 @@ mod departure_tests {
             .collect();
         let mut bytes = Vec::new();
         for client in &mut clients {
-            client.probe(&mut bytes).unwrap();
+            client.probe_at(0, &mut bytes).unwrap();
             let [Err(cookie)] = &events(client, &bytes, 0)[..] else {
                 panic!("challenge");
             };
-            client.confirm(&cookie.clone(), &mut bytes).unwrap();
+            client.confirm_at(&cookie.clone(), 0, &mut bytes).unwrap();
             events(client, &bytes, 0);
             client
-                .configure_ordering(&certificate, [7; 32], &mut bytes)
+                .configure_ordering_at(&certificate, [7; 32], 0, &mut bytes)
                 .unwrap();
             events(client, &bytes, 0);
         }
-        for batch_id in 1..=2 {
-            clients[1]
-                .submit_ordering(batch_id, b"not a batch", &mut bytes)
+        // The start is due 200 ms after both were ready; the next
+        // READY_REQUEST's STATUS reports it.
+        for client in &mut clients {
+            client
+                .configure_ordering_at(&certificate, [7; 32], 300, &mut bytes)
                 .unwrap();
-            events(&mut clients[1], &bytes, 0);
+            events(client, &bytes, 300);
         }
-        clients[1].leave_ordering(&mut bytes).unwrap();
-        events(&mut clients[1], &bytes, 100);
-        clients[0].pull_ordering(1, &mut bytes).unwrap();
+        for batch_id in 1..=2 {
+            assert_eq!(
+                clients[1].seal_ordering_batch(b"not a batch").unwrap(),
+                batch_id
+            );
+            assert!(clients[1].poll_uplink(300 + batch_id, &mut bytes));
+            events(&mut clients[1], &bytes, 300 + batch_id);
+        }
+        clients[1].leave_ordering_at(400, &mut bytes).unwrap();
+        events(&mut clients[1], &bytes, 400);
+        clients[0].pull_ordering_at(1, 700, &mut bytes).unwrap();
         let mut houses = [None; 30];
         houses[..2].copy_from_slice(&[Some(0), Some(1)]);
         let mut session = SequencedSession::with_roster(houses, 0, [7; 32], 30);
-        for event in events(&mut clients[0], &bytes, 400) {
+        for event in events(&mut clients[0], &bytes, 700) {
             if let Ok(event @ OrderEvent::Entry(_)) = event {
                 session.receive(event, Instant::now()).unwrap();
             }
