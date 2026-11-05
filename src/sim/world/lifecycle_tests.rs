@@ -96,7 +96,7 @@ fn native_trigger_reveal_cell_put_discovers_unshrouded_campaign_resident() {
         let scenario = sim.scenario_rng.native_state_hex();
         let main = sim.main_rng.native_state_hex();
         let mapgen = sim.mapgen_rng.native_state_hex();
-        sim.discover_cell_put_object(id, (10, 10), super::UninitContext::default());
+        sim.discover_by_player(id, Some((10, 10)), super::UninitContext::default());
         let history = sim.substrate.entities.get(id).unwrap().discovery;
         assert_eq!(
             history.discovered_by_current_house(),

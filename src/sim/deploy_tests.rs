@@ -344,6 +344,15 @@ fn a_lit_yard_lights_as_it_opens_and_goes_dark_as_it_undeploys() {
     let yard = deployed_type(&sim, "GACNST").stable_id();
     assert!(sim.entities().get(yard).unwrap().building_up());
     assert!(!sim.lighting_sources.buildings().contains_key(&yard));
+    // Loaded mid-buildup, the yard has not opened yet and gets no light.
+    let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "Lit yard", 0);
+    let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .unwrap()
+        .sim;
+    restored.restore_after_snapshot_load().unwrap();
+    restored.resolve_type_handles(&rules);
+    restored.rebuild_lighting_sources_after_load(&rules);
+    assert!(!restored.lighting_sources.buildings().contains_key(&yard));
 
     tick_n(&mut sim, &rules, 60);
     let entity = sim.entities().get(yard).unwrap();

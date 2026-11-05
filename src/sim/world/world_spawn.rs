@@ -2241,9 +2241,9 @@ impl Simulation {
                     entity.initialize_building_idle_body(self.session.binary_frame() as i32);
                 }
                 // BuildingUnlimbo440D25..440D6C lights a campaign building or
-                // discovers it for Player, which CellPUT already did, and
-                // 440E5C..440E76 discovers it for an AI owner: the shared
-                // discovery owner already ran both admitted routes. Do not add
+                // discovers it for Player, and 440E5C..440E76 discovers it for
+                // an AI owner: the Unlimbo above already ran both through the
+                // shared discovery owner. Do not add
                 // an eager human opening: GrandOpening4467C9 and
                 // UpdateAnimation451145..451218 own readiness, and a hidden
                 // turret must keep Guard queued.
