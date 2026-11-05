@@ -196,13 +196,12 @@ RelayGrant is `{address,ticket,packet_key,payload_key,source_index,ordering_cert
 of the user's relay in the match. The service chooses it at start and every later grant for that match names it;
 ticket is the signed relay protocol ticket encoded base64url without padding and
 packet_key is 32 bytes encoded the same way. Credentials are unique to each user
-and each new match. `payload_key` is a random 32-byte match payload-encryption key
-shared by the participants and encoded the same way. It is delivered only over
-authenticated HTTPS, stored only in private match state, and never placed in a
-relay ticket or disclosed to the relay. It remains unchanged through bootstrap,
-timing confirmation and renewal. The HTTPS lobby is a trusted key distributor:
-a compromised lobby could disclose or replace payload keys; relay-blind payload
-encryption does not protect against that compromise. `source_index` is the immutable canonical user index, 0–29.
+and each new match. `payload_key` is a random 32-byte match key encoded the same way.
+It remains unchanged through bootstrap, timing confirmation and renewal. Current
+clients accept it and do not use it: gameplay batches and DATA travel in plain
+text under the per-hop MAC, and the relay can read them
+(`services/relay/bandwidth-compaction/spec.md` §3). The field stays in the grant
+so the lobby needs no change; removing it is a follow-up. `source_index` is the immutable canonical user index, 0–29.
 `ordering_certificate` is 66 base64url-encoded bytes: `VO1C`, room UUID16,
 source mask LEu32, fixed FPS LEu16, expiry LEu64, then HMAC-SHA256 over the
 first34 bytes with domain `VERA20k relay ordering certificate v1\0`. A lobby
