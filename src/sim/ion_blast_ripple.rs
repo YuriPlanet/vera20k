@@ -1,6 +1,6 @@
 //! The IonBlast ripple tables and their displacements.
 //!
-//! `Show_Loading_Screen` builds the 80 ripple frames once per process
+//! `Init_Bulk_Data` builds the 80 ripple frames once per process
 //! (`0x0053D330`, latch `0x00AA014C`): 512x256 one-byte surfaces
 //! (`0x00A9FFC8..0x00AA0108`) filled with -1. Frame `n` writes every point
 //! whose distance `d = Sqrt_Approx(x² + 4y²)` from the centre lies in a ring

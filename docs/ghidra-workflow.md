@@ -307,6 +307,13 @@ was checked:
   0x7014A0, `TechnoClass__RecordKill` 0x702D40 and `NotifyBridgeSpanCollapse`
   0x575EE0. Recorded as
   [`2026-11-04-trigger-audit-notes.json`](../tools/ghidra_pass/passes/2026-11-04-trigger-audit-notes.json).
+- `[2026-11-05 lighting audit]`: ten renames from the lighting audit and paragraphs
+  correcting stale lighting plates. The chrono screen functions once named after the
+  nuke flash are `ChronoScreenEffect__Start` 0x53B460, `__Update` 0x53B560 and
+  `__RenderDistortion` 0x53BBA0; `Init_Bulk_Data` 0x531680 (once
+  `Show_Loading_Screen`) draws nothing; `BulletClass__DrawVoxel` 0x46B0C0 was
+  `VoxelAnim__Draw`. The light masks 0x83E1AC and 0x829C20 got plates. Recorded as
+  [`2026-11-05-lighting-audit.json`](../tools/ghidra_pass/passes/2026-11-05-lighting-audit.json).
 
 Destructor and COM-interface method names rest on the bytes. For the 2,356 method
 names taken from YRpp's declaration order, each body's `ret N` was compared with
