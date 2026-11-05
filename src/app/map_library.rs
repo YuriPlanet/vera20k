@@ -601,7 +601,7 @@ fn start_catalog(state: &AppState) -> Option<Receiver<Result<Vec<OnlineMap>>>> {
 
 /// One worker thread whose result arrives on the receiver. `None` where
 /// threads cannot start, as in the browser build, which has no library yet.
-fn spawn<T: Send + 'static>(
+pub(crate) fn spawn<T: Send + 'static>(
     name: &str,
     cancel: Arc<AtomicBool>,
     work: impl FnOnce(&AtomicBool) -> Result<T> + Send + 'static,

@@ -11,7 +11,9 @@ use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::ui::shell::combobox::{ComboPopup, ComboPress};
 use crate::ui::shell::modal::WolAccountFormLayout;
 use crate::ui::skirmish_shell::{COMBO_DROPDOWN_ROW_H, COMBO_FACE_H};
-use crate::ui::wol_account::{AccountDone, AccountFormAction, FORM_CANCEL, WolAccountForm};
+use crate::ui::wol_account::{
+    AccountDone, AccountFormAction, FORM_CANCEL, FORM_REMEMBER, WolAccountForm,
+};
 use crate::ui::wol_login::*;
 use winit::keyboard::KeyCode;
 
@@ -53,22 +55,15 @@ pub(crate) fn open_login_art(state: &mut AppState) -> bool {
     state.frontend.wol_login_art.is_some()
 }
 
-/// The open account popup's rects on the login page's shell mapping.
+/// The open popup's rects on the login page's shell mapping.
 pub(crate) fn account_form_layout(state: &AppState) -> Option<WolAccountFormLayout> {
-    let count = state
-        .frontend
-        .wol
-        .as_ref()?
-        .login()?
-        .account
-        .as_ref()?
-        .fields
-        .len();
+    let form = state.frontend.wol.as_ref()?.login()?.account.as_ref()?;
     let page = login_layout(state).page;
     Some(crate::ui::shell::modal::wol_account_form_layout_on(
         page.screen.w,
         page.screen.h,
-        count,
+        form.fields.len(),
+        form.remember.is_some(),
         page.scale,
     ))
 }
@@ -104,6 +99,9 @@ pub(super) fn open(state: &mut AppState) {
         WolLoginState::open(&mut state.frontend.wol_account, &visit.credentials)
     };
     visit.page = WolPage::Login(Box::new(login));
+    if visit.provider == super::WolProvider::Online {
+        super::login_info::refresh(state);
+    }
     open_login_art(state);
     let _ = App::ensure_skirmish_shell_chrome(state);
     state.frontend.shell_controller.reset_to(DIALOG, true);
@@ -149,9 +147,6 @@ fn dispatch(state: &mut AppState, action: WolLoginAction) {
         // 0x00773E90 needs the registry URL `Manage` and an HTMLPath; a
         // retail install has neither and it returns.
         WolLoginAction::Manage => {}
-        WolLoginAction::Account(request) => {
-            service::request(state, WolServiceRequest::Account(request));
-        }
         WolLoginAction::ForgetSignIn => service::request(state, WolServiceRequest::ForgetSignIn),
     }
 }
@@ -160,6 +155,17 @@ fn form_action(state: &mut AppState, action: AccountFormAction) {
     match action {
         AccountFormAction::Send(request) => {
             service::request(state, WolServiceRequest::Account(request));
+        }
+        AccountFormAction::SignIn { sign_in, remember } => {
+            if let Some(action) = with_login(state, |login, globals, _| {
+                login.sign_in(sign_in, remember, globals)
+            }) {
+                dispatch(state, action);
+            }
+        }
+        AccountFormAction::ForgetSignIn => {
+            with_login(state, |login, _, _| login.forget_remembered());
+            dispatch(state, WolLoginAction::ForgetSignIn);
         }
         AccountFormAction::Close => {
             with_login(state, |login, _, _| login.account = None);
@@ -174,9 +180,9 @@ pub(super) fn account_answered(state: &mut AppState, answer: Result<(), String>)
     let action = with_login(state, |login, globals, _| {
         let form = login.account.as_mut().filter(|form| form.busy)?;
         match form.answered(answer)? {
-            AccountDone::SignIn(sign_in) => login.sign_in(sign_in, globals),
-            AccountDone::Deleted => {
-                login.account_deleted(globals);
+            AccountDone::SignIn(sign_in) => Some(login.signed_up(sign_in, globals)),
+            AccountDone::Deleted { name } => {
+                login.account_deleted(&name);
                 None
             }
         }
@@ -318,8 +324,6 @@ pub(super) fn cursor_moved(state: &mut AppState) {
 enum Press {
     Nothing,
     Cue(LauncherCue),
-    /// Remember password toggled, perhaps forgetting the remembered account.
-    Remember(Option<WolLoginAction>),
     Button,
 }
 
@@ -389,7 +393,8 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                     && crate::ui::skirmish_shell::checkbox_icon_rect(layout.remember, scale)
                         .contains(x, y)
                 {
-                    return Press::Remember(login.toggle_remember(globals));
+                    login.toggle_remember(globals);
+                    return Press::Cue(LauncherCue::Checkbox);
                 }
                 Press::Nothing
             }
@@ -405,12 +410,6 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     });
     match press {
         Some(Press::Cue(cue)) => App::play_launcher_options_cue(state, cue),
-        Some(Press::Remember(action)) => {
-            App::play_launcher_options_cue(state, LauncherCue::Checkbox);
-            if let Some(action) = action {
-                dispatch(state, action);
-            }
-        }
         // Owner-draw buttons play GUIMainButtonSound on the press.
         Some(Press::Button) => App::play_main_menu_button_sound(state),
         _ => {}
@@ -418,7 +417,8 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     state.platform.window.request_redraw();
 }
 
-/// The account popup over the page takes the pointer.
+/// The popup over the page takes the pointer. Remember password toggles on
+/// a press on its box, as the Create Game box's checkboxes.
 fn account_mouse(
     state: &mut AppState,
     rects: &WolAccountFormLayout,
@@ -427,23 +427,41 @@ fn account_mouse(
     y: i32,
 ) {
     let over = WolAccountForm::control_at(rects, x, y);
-    let (pressed_button, action) = with_login(state, |login, _, _| {
+    let scale = login_layout(state).page.scale;
+    let on_box = rects.remember.is_some_and(|rect| {
+        crate::ui::skirmish_shell::checkbox_icon_rect(rect, scale).contains(x, y)
+    });
+    let (press, action) = with_login(state, |login, _, _| {
         let form = login.account.as_mut()?;
-        Some(if pressed {
-            (form.press(over), None)
-        } else {
+        Some(if !pressed {
             let action = form
                 .buttons
                 .release(over)
                 .and_then(|control| form.activate(control));
-            (false, action)
+            (Press::Nothing, action)
+        } else if over == Some(FORM_REMEMBER) {
+            form.buttons.press(None);
+            if on_box {
+                (
+                    Press::Cue(LauncherCue::Checkbox),
+                    form.activate(FORM_REMEMBER),
+                )
+            } else {
+                (Press::Nothing, None)
+            }
+        } else if form.press(over) {
+            (Press::Button, None)
+        } else {
+            (Press::Nothing, None)
         })
     })
     .flatten()
-    .unwrap_or_default();
-    // Owner-draw buttons play GUIMainButtonSound on the press.
-    if pressed_button {
-        App::play_main_menu_button_sound(state);
+    .unwrap_or((Press::Nothing, None));
+    match press {
+        Press::Cue(cue) => App::play_launcher_options_cue(state, cue),
+        // Owner-draw buttons play GUIMainButtonSound on the press.
+        Press::Button => App::play_main_menu_button_sound(state),
+        Press::Nothing => {}
     }
     if let Some(action) = action {
         form_action(state, action);

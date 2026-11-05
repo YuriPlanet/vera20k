@@ -584,30 +584,46 @@ pub struct WolAccountFormLayout {
     pub dialog: RectPx,
     /// Each field's right-aligned caption and its edit.
     pub fields: Vec<(RectPx, RectPx)>,
+    /// Login's Remember password box, the row under the fields, as the
+    /// online Create Game box's checkboxes.
+    pub remember: Option<RectPx>,
     pub ok: RectPx,
     pub cancel: RectPx,
     pub status: RectPx,
 }
 
-/// `count` fields (at most four) 18 units apart, centred on the Create Game
-/// box's Room name and Password rows.
-pub fn wol_account_form_layout(screen_w: i32, screen_h: i32, count: usize) -> WolAccountFormLayout {
+/// `count` fields and the `remember` row (at most four rows) 18 units apart,
+/// centred on the Create Game box's Room name and Password rows.
+pub fn wol_account_form_layout(
+    screen_w: i32,
+    screen_h: i32,
+    count: usize,
+    remember: bool,
+) -> WolAccountFormLayout {
     let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
-    let count = count.min(4) as i32;
-    let top = 40 + 9 * (4 - count);
+    let count = count.min(4 - usize::from(remember)) as i32;
+    let top = 40 + 9 * (4 - count - i32::from(remember));
+    let row = |index: i32| top + 18 * index;
     let status = child(0, 172, 291, 24);
     WolAccountFormLayout {
         dialog,
         fields: (0..count)
-            .map(|row| {
-                let y = top + 18 * row;
+            .map(|index| {
+                let y = row(index);
                 (
                     child(11, y + 1, 113, 12),
                     new_edit_window(child(133, y, 140, 12)),
                 )
             })
             .collect(),
+        remember: remember.then(|| {
+            let (edit, check) = (
+                child(133, row(count), 140, 12),
+                child(34, row(count), 234, 14),
+            );
+            RectPx::new(edit.x, check.y, edit.w, check.h)
+        }),
         ok: child(33, 128, 83, 15),
         cancel: child(184, 128, 83, 15),
         status: RectPx::new(
@@ -625,12 +641,13 @@ pub fn wol_account_form_layout_on(
     screen_w: i32,
     screen_h: i32,
     count: usize,
+    remember: bool,
     scale: geom::ShellScale,
 ) -> WolAccountFormLayout {
     if scale.is_retail() {
-        return wol_account_form_layout(screen_w, screen_h, count);
+        return wol_account_form_layout(screen_w, screen_h, count, remember);
     }
-    let base = wol_account_form_layout(geom::SHELL_BASE_W, geom::SHELL_BASE_H, count);
+    let base = wol_account_form_layout(geom::SHELL_BASE_W, geom::SHELL_BASE_H, count, remember);
     let s = |rect| scale.scale_rect(rect);
     WolAccountFormLayout {
         dialog: s(base.dialog),
@@ -639,6 +656,7 @@ pub fn wol_account_form_layout_on(
             .iter()
             .map(|&(caption, edit)| (s(caption), s(edit)))
             .collect(),
+        remember: base.remember.map(s),
         ok: s(base.ok),
         cancel: s(base.cancel),
         status: s(base.status),
@@ -1188,7 +1206,7 @@ mod tests {
 
     #[test]
     fn account_popups_keep_their_fields_between_the_title_and_the_buttons() {
-        let create = wol_account_form_layout(800, 600, 4);
+        let create = wol_account_form_layout(800, 600, 4, false);
         let frame = create.dialog;
         let (_, first) = create.fields[0];
         let (_, last) = create.fields[3];
@@ -1201,8 +1219,16 @@ mod tests {
         assert!(create.status.y >= create.ok.y + create.ok.h);
         assert!(create.status.y + create.status.h <= frame.y + frame.h);
         // One field sits mid-way between the four's first and last rows.
-        let (_, code) = wol_account_form_layout(800, 600, 1).fields[0];
+        let (_, code) = wol_account_form_layout(800, 600, 1, false).fields[0];
         assert!(((code.y - first.y) - (last.y - code.y)).abs() <= 1);
+        // Login's two fields and Remember password take the rows of three
+        // fields, the box in the edits' column.
+        let login = wol_account_form_layout(800, 600, 2, true);
+        let three = wol_account_form_layout(800, 600, 3, false);
+        assert_eq!(login.fields[..], three.fields[..2]);
+        let (remember, (_, third)) = (login.remember.unwrap(), three.fields[2]);
+        assert_eq!(remember.x, three.fields[2].1.x - 1);
+        assert!(remember.y <= third.y && remember.y + remember.h >= third.y + third.h);
     }
 
     #[test]

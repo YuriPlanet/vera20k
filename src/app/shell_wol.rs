@@ -24,6 +24,7 @@ mod live_service;
 pub(crate) use live_service::lobby_base_url;
 pub(crate) mod lobby;
 mod login;
+pub(crate) mod login_info;
 pub(crate) mod my_info;
 pub(crate) mod options;
 pub(crate) mod page;

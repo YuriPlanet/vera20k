@@ -564,16 +564,19 @@ or `sign_in_token` for a name without an account returns 404 `no_account`; other
 that name enters as a guest. A lobby without accounts set up refuses a password with
 503 `accounts_unavailable`.
 
-VERA20k's online login page has Password and Remember password under the name. Login
-signs in to an account with its password, and Play as Guest under the name alone, with
-no password or remembered sign-in; Enter does Play as Guest while no password is typed.
-Create Account, Forgot Password and Delete Account follow. Create Account asks
-for the name, email and password, then the mailed code, and signs in. Forgot Password
-mails the typed name's code, then asks for it and a new password, and signs in. Delete
-Account asks for the typed name's password, then says the account is deleted and
-forgets a remembered sign-in of it. A remembered
+VERA20k's online login page has its buttons beside an info pane, and each button opens
+a popup. Login asks for the name and password, with Remember password, and Play as Guest
+for the name alone, with no password or remembered sign-in; Enter on the page opens Login.
+Create Account asks for the name, email and password, then the mailed code, and signs in.
+Forgot Password asks for the name and mails its code, then asks for it and a new
+password, and signs in. Delete Account asks for the name and its password, then says the
+account is deleted and forgets a remembered sign-in of it. The pane shows the players
+online, or while nobody is, the last 24 hours' games (`GET /v1/stats`), vera20k.org's five
+newest news posts in the game's language (`GET https://vera20k.org/news.json?lang=en` or
+`zh-CN`: `{posts:[{date,title,summary}]}`) and the online rules; it reads both each time
+the page opens. A remembered
 sign-in lives in `Account.json` beside `VERA.INI` as `{name, sign_in_token}` per lobby,
-readable only by its owner; the page then shows the name with a masked password.
+readable only by its owner; Login's popup then opens on the name with a masked password.
 Unticking Remember password forgets it here and at the lobby, and so does a password
 sign-in of that name or a remembered sign-in of another account. A `wrong_password` or
 `no_account` answer to it forgets it too. Signing in under another name leaves it.

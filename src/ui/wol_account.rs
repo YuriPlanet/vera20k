@@ -1,8 +1,9 @@
-//! VERA: the online login page's account popups (docs/lobby-protocol.md
-//! "Accounts"): Create Account, the mailed code that confirms it, Forgot
-//! Password's code and new password, and Delete Account's password. gamemd
-//! has no such dialog; they use the online Create Game box's art, field
-//! column and buttons.
+//! VERA: the online login page's popups (docs/lobby-protocol.md
+//! "Accounts"): Login's username and password, Play as Guest's username,
+//! Create Account and the mailed code that confirms it, Forgot Password's
+//! username and then its code and new password, and Delete Account's
+//! username and password. gamemd has no such dialog; they use the online
+//! Create Game box's art, field column, checkbox rows and buttons.
 
 use crate::ui::shell::button::ShellButtonInteraction;
 use crate::ui::shell::modal::WolAccountFormLayout;
@@ -12,6 +13,8 @@ use crate::util::time::Instant;
 
 pub(crate) const FORM_OK: u16 = 1;
 pub(crate) const FORM_CANCEL: u16 = 2;
+/// Login's Remember password box.
+pub(crate) const FORM_REMEMBER: u16 = 3;
 /// The first field's control id; the others follow. Not gamemd controls:
 /// the ids only name their rects.
 pub(crate) const FIRST_FIELD: u16 = 0x7FE0;
@@ -22,6 +25,9 @@ const EMAIL_LIMIT: usize = 254;
 const PASSWORD_MIN: usize = 8;
 pub(crate) const PASSWORD_LIMIT: usize = 64;
 const CODE_LENGTH: usize = 6;
+/// What Login's password field holds for this computer's remembered sign-in
+/// of the typed username: masked, it shows that Login needs no password.
+const REMEMBERED_PLACEHOLDER: [u16; 8] = [b'*' as u16; 8];
 
 /// A lobby player name: 1 to 24 letters, digits, `_` or `-`. The one
 /// owner of the rule: names also become persona INI section names.
@@ -140,8 +146,15 @@ impl FieldKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FormKind {
+    /// Login: an account's username and password, or this computer's
+    /// remembered sign-in, and Remember password.
+    SignIn,
+    /// Play as Guest: a username alone.
+    Guest,
     Register,
     Verify,
+    /// Forgot Password's first step: the account whose email gets a code.
+    Forgot,
     Reset,
     Delete,
     /// Delete's account is gone: no fields, and OK closes the popup.
@@ -186,6 +199,15 @@ impl AccountField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AccountFormAction {
     Send(AccountRequest),
+    /// Login or Play as Guest: sign in to the lobby. The password is empty
+    /// for a guest and for this computer's remembered sign-in.
+    SignIn {
+        sign_in: AccountSignIn,
+        remember: bool,
+    },
+    /// Remember password was unticked on the remembered sign-in: this
+    /// computer forgets it at once.
+    ForgetSignIn,
     Close,
 }
 
@@ -194,10 +216,12 @@ pub(crate) enum AccountFormAction {
 pub(crate) enum AccountDone {
     SignIn(AccountSignIn),
     /// The account is deleted; the form stays open to say so.
-    Deleted,
+    Deleted {
+        name: String,
+    },
 }
 
-/// A finished form: sign in to this account with this password.
+/// Sign in to this account with this password.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct AccountSignIn {
     pub(crate) name: String,
@@ -228,6 +252,12 @@ pub(crate) struct WolAccountForm {
     pub(crate) status: String,
     /// A request is out; OK waits for its answer.
     pub(crate) busy: bool,
+    /// Login's Remember password box: whether it is ticked.
+    pub(crate) remember: Option<bool>,
+    /// Login: the password field holds [`REMEMBERED_PLACEHOLDER`] for this
+    /// computer's remembered sign-in of the typed username, and OK signs in
+    /// with it.
+    pub(crate) remembered: bool,
     focus_started_at: Instant,
 }
 
@@ -253,13 +283,72 @@ impl WolAccountForm {
             password: String::new(),
             status,
             busy: false,
+            remember: None,
+            remembered: false,
             focus_started_at: Instant::now(),
         };
         form.focus(0);
         form
     }
 
-    /// Create Account, its username prefilled from the login page's.
+    /// A valid `name` fills the first field, the username, and the next
+    /// field takes the focus.
+    fn prefill_name(&mut self, name: &str) {
+        if valid_name(name) {
+            self.fields[0]
+                .edit
+                .set_units_limited(name.encode_utf16(), NAME_LIMIT);
+            self.focus(1);
+        }
+    }
+
+    /// Login, its username prefilled. When that is `remembered`, the account
+    /// this computer signs in to without its password, the password field
+    /// holds the placeholder and Remember password is ticked.
+    pub(crate) fn sign_in(name: &str, remembered: Option<&str>) -> Self {
+        let mut form = Self::with_fields(
+            FormKind::SignIn,
+            vec![
+                AccountField::new(FieldKind::Name, "VERA:Username"),
+                AccountField::new(FieldKind::Password, "VERA:Password"),
+            ],
+            String::new(),
+        );
+        form.remember = Some(false);
+        form.prefill_name(name);
+        if valid_name(name) && remembered.is_some_and(|known| known.eq_ignore_ascii_case(name)) {
+            form.fields[1]
+                .edit
+                .set_units_limited(REMEMBERED_PLACEHOLDER, PASSWORD_LIMIT);
+            form.remembered = true;
+            form.remember = Some(true);
+        }
+        form.status = form.sign_in_status();
+        form
+    }
+
+    fn sign_in_status(&self) -> String {
+        if self.remembered {
+            "This computer remembers this account's sign-in, so Login needs no password.".into()
+        } else {
+            "Enter your account's username and password.".into()
+        }
+    }
+
+    /// Play as Guest, its username prefilled.
+    pub(crate) fn guest(name: &str) -> Self {
+        let mut form = Self::with_fields(
+            FormKind::Guest,
+            vec![AccountField::new(FieldKind::Name, "VERA:Username")],
+            "Play unranked without an account, under a username of 1 to 24 letters, \
+             digits, _ or -."
+                .into(),
+        );
+        form.prefill_name(name);
+        form
+    }
+
+    /// Create Account, its username prefilled.
     pub(crate) fn register(name: &str) -> Self {
         let mut form = Self::with_fields(
             FormKind::Register,
@@ -271,12 +360,7 @@ impl WolAccountForm {
             ],
             "Choose a username and a password of 8 to 64 characters.".into(),
         );
-        if valid_name(name) {
-            form.fields[0]
-                .edit
-                .set_units_limited(name.encode_utf16(), NAME_LIMIT);
-            form.focus(1);
-        }
+        form.prefill_name(name);
         form
     }
 
@@ -293,8 +377,19 @@ impl WolAccountForm {
         form
     }
 
-    /// Forgot Password for `name`: the code is on its way.
-    pub(crate) fn reset(name: &str) -> Self {
+    /// Forgot Password, its username prefilled: OK mails the code.
+    pub(crate) fn forgot(name: &str) -> Self {
+        let mut form = Self::with_fields(
+            FormKind::Forgot,
+            vec![AccountField::new(FieldKind::Name, "VERA:Username")],
+            "Enter your account's username, and we mail a code to its email.".into(),
+        );
+        form.prefill_name(name);
+        form
+    }
+
+    /// Forgot Password for `name` once its code is on its way.
+    fn reset(name: String) -> Self {
         let mut form = Self::with_fields(
             FormKind::Reset,
             vec![
@@ -302,45 +397,43 @@ impl WolAccountForm {
                 AccountField::new(FieldKind::Password, "VERA:NewPassword"),
                 AccountField::new(FieldKind::Confirm, "VERA:ConfirmPassword"),
             ],
-            format!("Asking VERA20k Online to mail a code for {name}..."),
+            format!("If {name} has an account, its email has a code. Choose a new password."),
         );
-        form.name = name.to_owned();
-        form.busy = true;
+        form.name = name;
         form
     }
 
-    /// Delete Account for `name`: its password confirms it.
+    /// Delete Account, its username prefilled: its password confirms it.
     pub(crate) fn delete(name: &str) -> Self {
         let mut form = Self::with_fields(
             FormKind::Delete,
-            vec![AccountField::new(FieldKind::Password, "VERA:Password")],
-            format!(
-                "Delete {name} for good, with its email, password and ranked games? \
-                 Enter its password to confirm."
-            ),
+            vec![
+                AccountField::new(FieldKind::Name, "VERA:Username"),
+                AccountField::new(FieldKind::Password, "VERA:Password"),
+            ],
+            "Delete the account for good, with its email, password and ranked games? \
+             Enter its username and password to confirm."
+                .into(),
         );
-        form.name = name.to_owned();
+        form.prefill_name(name);
         form
-    }
-
-    /// The request Forgot Password sends as the form opens.
-    pub(crate) fn forgot_request(&self) -> AccountRequest {
-        AccountRequest::Forgot {
-            name: self.name.clone(),
-        }
     }
 
     pub(crate) fn field_id(index: usize) -> u16 {
         FIRST_FIELD + index as u16
     }
 
-    /// The control under a point of `layout`: OK, Cancel or a field.
+    /// The control under a point of `layout`: OK, Cancel, Remember password
+    /// or a field.
     pub(crate) fn control_at(layout: &WolAccountFormLayout, x: i32, y: i32) -> Option<u16> {
         if layout.ok.contains(x, y) {
             return Some(FORM_OK);
         }
         if layout.cancel.contains(x, y) {
             return Some(FORM_CANCEL);
+        }
+        if layout.remember.is_some_and(|rect| rect.contains(x, y)) {
+            return Some(FORM_REMEMBER);
         }
         layout
             .fields
@@ -379,13 +472,13 @@ impl WolAccountForm {
 
     /// The request OK sends, when every field is right.
     fn request(&self) -> Option<AccountRequest> {
+        let name = self.text(FieldKind::Name);
         let password = self.text(FieldKind::Password);
         let passwords_match =
             || valid_password(&password) && self.text(FieldKind::Confirm) == password;
         let code = self.text(FieldKind::Code);
         match self.kind {
             FormKind::Register => {
-                let name = self.text(FieldKind::Name);
                 let email = self.text(FieldKind::Email);
                 (valid_name(&name) && valid_email(&email) && passwords_match()).then_some(
                     AccountRequest::Register {
@@ -399,6 +492,7 @@ impl WolAccountForm {
                 name: self.name.clone(),
                 code,
             }),
+            FormKind::Forgot => valid_name(&name).then_some(AccountRequest::Forgot { name }),
             FormKind::Reset => {
                 (valid_code(&code) && passwords_match()).then(|| AccountRequest::Reset {
                     name: self.name.clone(),
@@ -406,16 +500,35 @@ impl WolAccountForm {
                     password,
                 })
             }
-            FormKind::Delete => valid_password(&password).then(|| AccountRequest::Delete {
-                name: self.name.clone(),
-                password,
-            }),
-            FormKind::Deleted => None,
+            FormKind::Delete => (valid_name(&name) && valid_password(&password))
+                .then_some(AccountRequest::Delete { name, password }),
+            FormKind::SignIn | FormKind::Guest | FormKind::Deleted => None,
         }
     }
 
+    /// Login's or Play as Guest's sign-in, when its fields are right.
+    fn sign_in_action(&self) -> Option<AccountFormAction> {
+        let name = self.text(FieldKind::Name);
+        let password = match self.kind {
+            FormKind::SignIn if self.remembered => String::new(),
+            FormKind::SignIn => {
+                Some(self.text(FieldKind::Password)).filter(|p| valid_password(p))?
+            }
+            FormKind::Guest => String::new(),
+            _ => return None,
+        };
+        valid_name(&name).then(|| AccountFormAction::SignIn {
+            sign_in: AccountSignIn { name, password },
+            remember: self.remember == Some(true),
+        })
+    }
+
     pub(crate) fn ok_enabled(&self) -> bool {
-        self.kind == FormKind::Deleted || (!self.busy && self.request().is_some())
+        match self.kind {
+            FormKind::Deleted => true,
+            FormKind::SignIn | FormKind::Guest => self.sign_in_action().is_some(),
+            _ => !self.busy && self.request().is_some(),
+        }
     }
 
     pub(crate) fn caret_visible(&self, now: Instant) -> bool {
@@ -442,44 +555,87 @@ impl WolAccountForm {
         Some(&mut self.fields.get_mut(self.focused)?.edit)
     }
 
-    /// OK sends the form's request and waits; Cancel, or OK once the
-    /// account is deleted, closes it.
+    /// The remembered sign-in's placeholder gives way to a typed password,
+    /// or to another username.
+    fn drop_placeholder(&mut self) {
+        if !self.remembered {
+            return;
+        }
+        self.remembered = false;
+        if let Some(field) = self
+            .fields
+            .iter_mut()
+            .find(|field| field.kind == FieldKind::Password)
+        {
+            field.edit.set_units_limited([], PASSWORD_LIMIT);
+        }
+        self.status = self.sign_in_status();
+    }
+
+    /// Remember password's click. Unticked on the remembered sign-in, this
+    /// computer forgets it at once, and Login needs the password.
+    pub(crate) fn toggle_remember(&mut self) -> Option<AccountFormAction> {
+        let ticked = self.remember.as_mut()?;
+        *ticked = !*ticked;
+        if *ticked || !self.remembered {
+            return None;
+        }
+        self.drop_placeholder();
+        self.focus(1);
+        self.status = "This computer forgot the sign-in. Enter the account's password.".into();
+        Some(AccountFormAction::ForgetSignIn)
+    }
+
+    /// OK sends the form's request and waits, or signs in; Cancel, or OK
+    /// once the account is deleted, closes it.
     pub(crate) fn activate(&mut self, control: u16) -> Option<AccountFormAction> {
         match control {
             FORM_OK if self.kind == FormKind::Deleted => Some(AccountFormAction::Close),
+            FORM_OK if matches!(self.kind, FormKind::SignIn | FormKind::Guest) => {
+                self.sign_in_action()
+            }
             FORM_OK => {
                 let request = self.request().filter(|_| !self.busy)?;
-                if let AccountRequest::Register {
-                    name,
-                    email,
-                    password,
-                } = &request
-                {
-                    self.name = name.clone();
-                    self.email = email.clone();
-                    self.password = password.clone();
-                }
-                if let AccountRequest::Reset { password, .. } = &request {
-                    self.password = password.clone();
+                match &request {
+                    AccountRequest::Register {
+                        name,
+                        email,
+                        password,
+                    } => {
+                        self.name = name.clone();
+                        self.email = email.clone();
+                        self.password = password.clone();
+                    }
+                    AccountRequest::Reset { password, .. } => self.password = password.clone(),
+                    AccountRequest::Forgot { name } | AccountRequest::Delete { name, .. } => {
+                        self.name = name.clone();
+                    }
+                    AccountRequest::Verify { .. } => {}
                 }
                 self.busy = true;
                 self.status = "Contacting VERA20k Online...".into();
                 Some(AccountFormAction::Send(request))
             }
             FORM_CANCEL => Some(AccountFormAction::Close),
+            FORM_REMEMBER => self.toggle_remember(),
             _ => None,
         }
     }
 
     pub(crate) fn insert_text(&mut self, text: &str) {
-        let Some(field) = self.fields.get_mut(self.focused) else {
+        let Some(kind) = self.fields.get(self.focused).map(|field| field.kind) else {
             return;
         };
         for unit in text.encode_utf16() {
-            if field.kind.admits(unit) {
-                field
-                    .edit
-                    .insert_unit_filtered(unit, field.kind.limit(), true, &[]);
+            if !kind.admits(unit) {
+                continue;
+            }
+            if kind == FieldKind::Password {
+                self.drop_placeholder();
+            }
+            let edit = &mut self.fields[self.focused].edit;
+            if edit.insert_unit_filtered(unit, kind.limit(), true, &[]) && kind == FieldKind::Name {
+                self.drop_placeholder();
             }
         }
     }
@@ -490,30 +646,43 @@ impl WolAccountForm {
             return self.activate(FORM_OK);
         }
         let count = self.fields.len();
-        let edit = &mut self.fields.get_mut(self.focused)?.edit;
+        let kind = self.fields.get(self.focused)?.kind;
+        if let WolEditKey::Tab { reverse } = key {
+            self.focus(if reverse {
+                (self.focused + count - 1) % count
+            } else {
+                (self.focused + 1) % count
+            });
+            return None;
+        }
+        if self.remembered
+            && kind == FieldKind::Password
+            && matches!(key, WolEditKey::Backspace | WolEditKey::Delete)
+        {
+            self.drop_placeholder();
+            return None;
+        }
+        let edit = &mut self.fields[self.focused].edit;
+        let before = edit.units.clone();
         match key {
-            WolEditKey::Tab { reverse } => {
-                self.focus(if reverse {
-                    (self.focused + count - 1) % count
-                } else {
-                    (self.focused + 1) % count
-                });
-            }
-            WolEditKey::Enter => {}
             WolEditKey::Backspace => edit.backspace(),
             WolEditKey::Delete => edit.delete(),
             WolEditKey::Left => edit.left(),
             WolEditKey::Right => edit.right(),
             WolEditKey::Home => edit.home(),
             WolEditKey::End => edit.end(),
+            WolEditKey::Tab { .. } | WolEditKey::Enter => {}
+        }
+        if kind == FieldKind::Name && edit.units != before {
+            self.drop_placeholder();
         }
         None
     }
 
     /// The lobby answered the form's request. Register's success turns the
-    /// form into the code's; a confirmed code or reset gives the sign-in; a
-    /// deletion leaves the form saying so; a refusal shows the lobby's
-    /// message.
+    /// form into the code's, and Forgot's into the code and new password's;
+    /// a confirmed code or reset gives the sign-in; a deletion leaves the
+    /// form saying so; a refusal shows the lobby's message.
     pub(crate) fn answered(&mut self, answer: Result<(), String>) -> Option<AccountDone> {
         self.busy = false;
         self.buttons = ShellButtonInteraction::default();
@@ -530,12 +699,8 @@ impl WolAccountForm {
                 );
                 None
             }
-            // Forgot Password's code went out; the reset itself signs in.
-            FormKind::Reset if self.password.is_empty() => {
-                self.status = format!(
-                    "If {} has an account, its email has a code. Choose a new password.",
-                    self.name
-                );
+            FormKind::Forgot => {
+                *self = Self::reset(std::mem::take(&mut self.name));
                 None
             }
             FormKind::Verify | FormKind::Reset => Some(AccountDone::SignIn(AccountSignIn {
@@ -549,9 +714,11 @@ impl WolAccountForm {
                     "{} is deleted, with its email, password and ranked games.",
                     self.name
                 );
-                Some(AccountDone::Deleted)
+                Some(AccountDone::Deleted {
+                    name: self.name.clone(),
+                })
             }
-            FormKind::Deleted => None,
+            FormKind::SignIn | FormKind::Guest | FormKind::Deleted => None,
         }
     }
 }
@@ -632,18 +799,19 @@ mod tests {
     }
 
     #[test]
-    fn forgot_password_waits_for_the_code_then_resets() {
-        let mut form = WolAccountForm::reset("Tanya");
+    fn forgot_password_asks_for_the_username_then_resets() {
+        let mut form = WolAccountForm::forgot("");
+        assert!(!form.ok_enabled(), "no username yet");
+        form.insert_text("Tanya");
         assert_eq!(
-            form.forgot_request(),
-            AccountRequest::Forgot {
+            form.edit_key(WolEditKey::Enter),
+            Some(AccountFormAction::Send(AccountRequest::Forgot {
                 name: "Tanya".into()
-            }
+            }))
         );
-        type_into(&mut form, &["123456", "n3w-password", "n3w-password"]);
-        assert!(!form.ok_enabled(), "the code is still on its way");
         assert_eq!(form.answered(Ok(())), None);
-        assert!(form.ok_enabled());
+        assert_eq!(form.kind, FormKind::Reset);
+        type_into(&mut form, &["123456", "n3w-password", "n3w-password"]);
         assert!(matches!(
             form.activate(FORM_OK),
             Some(AccountFormAction::Send(AccountRequest::Reset { .. }))
@@ -658,8 +826,9 @@ mod tests {
     }
 
     #[test]
-    fn delete_account_takes_the_password_then_says_it_is_gone() {
+    fn delete_account_takes_the_username_and_password_then_says_it_is_gone() {
         let mut form = WolAccountForm::delete("Tanya");
+        assert_eq!(form.focused, 1, "a known username skips to the password");
         form.insert_text("short");
         assert!(
             !form.ok_enabled(),
@@ -679,7 +848,12 @@ mod tests {
             (FormKind::Delete, "Wrong password.")
         );
         form.activate(FORM_OK);
-        assert_eq!(form.answered(Ok(())), Some(AccountDone::Deleted));
+        assert_eq!(
+            form.answered(Ok(())),
+            Some(AccountDone::Deleted {
+                name: "Tanya".into()
+            })
+        );
         assert!(form.fields.is_empty() && form.ok_enabled());
         // No field takes the keys; OK closes.
         form.insert_text("x");
@@ -687,6 +861,50 @@ mod tests {
         assert_eq!(
             form.edit_key(WolEditKey::Enter),
             Some(AccountFormAction::Close)
+        );
+    }
+
+    #[test]
+    fn login_signs_in_with_the_password_or_the_remembered_sign_in() {
+        let sign_in = |name: &str, password: &str, remember| {
+            Some(AccountFormAction::SignIn {
+                sign_in: AccountSignIn {
+                    name: name.into(),
+                    password: password.into(),
+                },
+                remember,
+            })
+        };
+        // The remembered account needs no password until Remember password
+        // is unticked, which forgets it at once.
+        let mut form = WolAccountForm::sign_in("tanya", Some("Tanya"));
+        assert!(form.remembered && form.remember == Some(true));
+        assert_eq!(form.clone().activate(FORM_OK), sign_in("tanya", "", true));
+        assert_eq!(
+            form.activate(FORM_REMEMBER),
+            Some(AccountFormAction::ForgetSignIn)
+        );
+        assert!(!form.remembered && form.fields[1].text().is_empty());
+        assert!(!form.ok_enabled(), "now it needs the password");
+        form.insert_text("s3cret-pw");
+        assert_eq!(form.activate(FORM_OK), sign_in("tanya", "s3cret-pw", false));
+        // Another username is another account: the placeholder goes.
+        let mut form = WolAccountForm::sign_in("Tanya", Some("Tanya"));
+        form.focus(0);
+        form.edit_key(WolEditKey::Backspace);
+        assert!(!form.remembered && !form.ok_enabled());
+        assert_eq!(
+            form.activate(FORM_REMEMBER),
+            None,
+            "nothing remembered to forget"
+        );
+        assert_eq!(form.remember, Some(false));
+        // A guest signs in by name alone.
+        let mut guest = WolAccountForm::guest("");
+        guest.insert_text("Boris");
+        assert_eq!(
+            guest.edit_key(WolEditKey::Enter),
+            sign_in("Boris", "", false)
         );
     }
 

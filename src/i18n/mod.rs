@@ -40,6 +40,11 @@ pub fn select_language(tag: &str) -> &'static str {
     LANGUAGES[index].0
 }
 
+/// The process language's tag, such as `en` or `zh-CN`.
+pub fn selected_language() -> &'static str {
+    LANGUAGES[selected_index()].0
+}
+
 fn language_index(tag: &str) -> Option<usize> {
     LANGUAGES
         .iter()

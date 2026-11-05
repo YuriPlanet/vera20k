@@ -31,17 +31,23 @@ mod quick_match;
 pub enum WolTarget {
     /// `0x10F` settled after a controlled server list, empty fields.
     LoginSteady,
-    /// The online login page with a typed guest name, with no
-    /// authentication submitted.
+    /// The online login page and its info pane, filled in place; nothing is
+    /// read or sent.
+    ModernLoginPage,
+    /// Login's popup over it, a username and password typed and Remember
+    /// password ticked; nothing is sent.
+    ModernLogin,
+    /// Play as Guest's popup with a typed username; nothing is sent.
     ModernUsername,
-    /// Create Account over it, filled in; nothing is sent.
+    /// Create Account's popup, filled in; nothing is sent.
     ModernCreateAccount,
     /// Create Account's mailed-code popup, its request answered in place.
     ModernAccountCode,
-    /// Forgot Password's code and new password popup, its code request
-    /// answered in place.
+    /// Forgot Password's code and new password popup, its username's code
+    /// request answered in place.
     ModernForgotPassword,
-    /// Delete Account's password popup, filled in; nothing is sent.
+    /// Delete Account's username and password popup, filled in; nothing is
+    /// sent.
     ModernDeleteAccount,
     /// A typed nickname and an eight-character password: Login enabled.
     LoginTyped,
@@ -356,7 +362,9 @@ impl WolTarget {
     pub(in crate::app::diagnostics::shell_capture) fn online_login(self) -> bool {
         matches!(
             self,
-            Self::ModernUsername
+            Self::ModernLoginPage
+                | Self::ModernLogin
+                | Self::ModernUsername
                 | Self::ModernCreateAccount
                 | Self::ModernAccountCode
                 | Self::ModernForgotPassword
@@ -369,6 +377,8 @@ impl WolTarget {
         !matches!(
             self,
             Self::LoginSteady
+                | Self::ModernLoginPage
+                | Self::ModernLogin
                 | Self::ModernUsername
                 | Self::ModernCreateAccount
                 | Self::ModernAccountCode
@@ -644,6 +654,8 @@ impl WolTarget {
 
 pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-0x10f-steady", WolTarget::LoginSteady),
+    ("wol-modern-login-page", WolTarget::ModernLoginPage),
+    ("wol-modern-login", WolTarget::ModernLogin),
     ("wol-modern-username", WolTarget::ModernUsername),
     ("wol-modern-create-account", WolTarget::ModernCreateAccount),
     ("wol-modern-account-code", WolTarget::ModernAccountCode),
@@ -1259,41 +1271,23 @@ impl WolCapture {
                 let layout = crate::app::shell_wol::login_layout(state);
                 match self.target {
                     target if target.online_login() => {
-                        login_click(state, layout.nickname_face);
-                        App::handle_wol_key(
-                            state,
-                            Some(winit::keyboard::KeyCode::Home),
-                            true,
-                            None,
+                        use crate::app::shell_wol::login_info::{LobbyStats, News};
+                        // Captures read nothing: the pane shows fixed news.
+                        state.frontend.login_info.set(
+                            Some(LobbyStats {
+                                online: 12,
+                                games_24h: 30,
+                            }),
+                            News::Posts(capture_news()),
                         );
-                        for _ in 0..32 {
-                            App::handle_wol_key(
-                                state,
-                                Some(winit::keyboard::KeyCode::Delete),
-                                true,
-                                None,
-                            );
-                        }
-                        App::handle_wol_key(state, None, true, Some("Player"));
-                        let login = state
-                            .frontend
-                            .wol
-                            .as_ref()
-                            .and_then(|visit| visit.login())
-                            .context("username form")?;
+                        let login = login_mut(state)?;
                         ensure!(
                             login.policy == crate::ui::wol_login::LoginPolicy::Online
-                                && login.password.units.is_empty()
-                                && !login.login_enabled
-                                && login.button_enabled(crate::ui::wol_login::PLAY_AS_GUEST)
-                                && !login.remember_enabled,
-                            "the online login page did not take a guest name"
+                                && login.account.is_none(),
+                            "the online login page did not open on its own"
                         );
-                        self.event(
-                            frame,
-                            "Username typed; Play as Guest enabled, Login waits for a password",
-                        );
-                        if target != WolTarget::ModernUsername {
+                        self.event(frame, "the online login page and its info pane");
+                        if target != WolTarget::ModernLoginPage {
                             self.account_popup(state, frame, target, &layout)?;
                         }
                         MoviesCapture::restore_neutral_pointer(state);
@@ -4601,38 +4595,80 @@ impl WolCapture {
         target: WolTarget,
         layout: &crate::ui::wol_login::WolLoginLayout,
     ) -> Result<()> {
-        use crate::ui::wol_account::{AccountFormAction, FORM_OK, FormKind, WolAccountForm};
+        use crate::ui::wol_account::{AccountFormAction, AccountRequest, FORM_OK, FormKind};
+        use crate::ui::wol_login::{
+            CREATE_ACCOUNT, DELETE_ACCOUNT, FORGOT_PASSWORD, LOGIN, PLAY_AS_GUEST,
+        };
         const PASSWORD: &str = "s3cret-pw";
-        if target == WolTarget::ModernForgotPassword {
-            let mut form = WolAccountForm::reset("Player");
-            ensure!(
-                form.answered(Ok(())).is_none(),
-                "the code request signed in"
-            );
-            login_mut(state)?.account = Some(form);
-            account_type(state, &["123456", PASSWORD, PASSWORD]);
-            self.event(frame, "Forgot Password: code and new password typed");
-        } else if target == WolTarget::ModernDeleteAccount {
-            login_click(state, button(layout, crate::ui::wol_login::DELETE_ACCOUNT)?);
-            account_type(state, &[PASSWORD]);
-            self.event(frame, "Delete Account: password typed");
-        } else {
-            login_click(state, button(layout, crate::ui::wol_login::CREATE_ACCOUNT)?);
-            account_type(state, &["player@example.com", PASSWORD, PASSWORD]);
-            self.event(frame, "Create Account filled in");
-            if target == WolTarget::ModernAccountCode {
+        let control = match target {
+            WolTarget::ModernLogin => LOGIN,
+            WolTarget::ModernUsername => PLAY_AS_GUEST,
+            WolTarget::ModernForgotPassword => FORGOT_PASSWORD,
+            WolTarget::ModernDeleteAccount => DELETE_ACCOUNT,
+            _ => CREATE_ACCOUNT,
+        };
+        welcome_click(state, button(layout, control)?);
+        match target {
+            WolTarget::ModernLogin => {
+                account_type(state, &["Player", PASSWORD]);
+                let remember = crate::app::shell_wol::account_form_layout(state)
+                    .and_then(|rects| rects.remember)
+                    .context("Remember password")?;
+                welcome_click(
+                    state,
+                    crate::ui::skirmish_shell::checkbox_icon_rect(remember, layout.page.scale),
+                );
+                ensure!(
+                    login_mut(state)?
+                        .account
+                        .as_ref()
+                        .is_some_and(|form| form.remember == Some(true)),
+                    "Remember password did not tick"
+                );
+                self.event(frame, "Login: username and password typed, Remember ticked");
+            }
+            WolTarget::ModernUsername => {
+                account_type(state, &["Player"]);
+                self.event(frame, "Play as Guest: username typed");
+            }
+            WolTarget::ModernForgotPassword => {
+                account_type(state, &["Player"]);
                 let form = login_mut(state)?
                     .account
                     .as_mut()
-                    .context("Create Account")?;
+                    .context("Forgot Password")?;
                 ensure!(
-                    matches!(form.activate(FORM_OK), Some(AccountFormAction::Send(_)))
-                        && form.answered(Ok(())).is_none()
-                        && form.kind == FormKind::Verify,
-                    "Create Account did not move on to its code"
+                    matches!(
+                        form.activate(FORM_OK),
+                        Some(AccountFormAction::Send(AccountRequest::Forgot { .. }))
+                    ) && form.answered(Ok(())).is_none()
+                        && form.kind == FormKind::Reset,
+                    "Forgot Password did not move on to its code"
                 );
-                account_type(state, &["123456"]);
-                self.event(frame, "the mailed code typed");
+                account_type(state, &["123456", PASSWORD, PASSWORD]);
+                self.event(frame, "Forgot Password: code and new password typed");
+            }
+            WolTarget::ModernDeleteAccount => {
+                account_type(state, &["Player", PASSWORD]);
+                self.event(frame, "Delete Account: username and password typed");
+            }
+            _ => {
+                account_type(state, &["Player", "player@example.com", PASSWORD, PASSWORD]);
+                self.event(frame, "Create Account filled in");
+                if target == WolTarget::ModernAccountCode {
+                    let form = login_mut(state)?
+                        .account
+                        .as_mut()
+                        .context("Create Account")?;
+                    ensure!(
+                        matches!(form.activate(FORM_OK), Some(AccountFormAction::Send(_)))
+                            && form.answered(Ok(())).is_none()
+                            && form.kind == FormKind::Verify,
+                        "Create Account did not move on to its code"
+                    );
+                    account_type(state, &["123456"]);
+                    self.event(frame, "the mailed code typed");
+                }
             }
         }
         let form = login_mut(state)?
@@ -4668,6 +4704,7 @@ impl WolCapture {
                 "remember_enabled": login.remember_enabled,
                 "remember_checked": login.remember_checked,
                 "focused": login.focused_control,
+                "popup": login.account.as_ref().map(|form| format!("{:?}", form.kind)),
             })),
         })
     }
@@ -4926,6 +4963,38 @@ fn welcome_click(state: &mut AppState, rect: RectPx) {
     App::handle_wol_mouse_down(state);
     App::handle_wol_mouse_up(state);
     MoviesCapture::restore_neutral_pointer(state);
+}
+
+/// The info pane's posts in the online login captures.
+fn capture_news() -> Vec<crate::app::shell_wol::login_info::NewsPost> {
+    [
+        (
+            "2026-11-03",
+            "The map library on the website, and a leaderboard on the way",
+            "Browse the online map library and send in your own maps. A large team \
+             leaderboard comes next.",
+        ),
+        (
+            "2026-11-01",
+            "VERA20K 0.2.4: automatic updates and rooms for 30 players",
+            "The game now updates itself, runs on Intel Macs, and online rooms seat up to \
+             30 players.",
+        ),
+        (
+            "2026-10-29",
+            "VERA20K 0.2.3: steadier online matches",
+            "Online matches no longer hang on a player who drops, and one busy match can't \
+             freeze the others.",
+        ),
+    ]
+    .map(
+        |(date, title, summary)| crate::app::shell_wol::login_info::NewsPost {
+            date: date.into(),
+            title: title.into(),
+            summary: summary.into(),
+        },
+    )
+    .into()
 }
 
 fn login_mut(state: &mut AppState) -> Result<&mut crate::ui::wol_login::WolLoginState> {
