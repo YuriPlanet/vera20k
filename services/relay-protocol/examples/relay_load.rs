@@ -18,17 +18,20 @@
 use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use vera20k_relay_protocol::envelope::MAX_DATAGRAM;
 use vera20k_relay_protocol::netsim::adaptive_client::AdaptiveClient;
 use vera20k_relay_protocol::netsim::client::HeadlessClient;
 use vera20k_relay_protocol::netsim::network::Rng;
 use vera20k_relay_protocol::{
-    ClientSession, MAX_DATAGRAM, MAX_TICKET_LIFETIME, OrderingCertificate, SecretKey, Ticket,
-    derive_packet_key,
+    ClientSession, MAX_TICKET_LIFETIME, OrderingCertificate, SecretKey, Ticket, derive_packet_key,
 };
 
+/// `ClientSession::new` still takes the lobby's payload key; batches are
+/// plaintext and it goes unused (bandwidth-compaction spec §3.2).
 const PAYLOAD_KEY: [u8; 32] = [89; 32];
-/// Plaintext bytes per command, as the network simulation's default.
-const COMMAND_BYTES: usize = 34;
+/// Plaintext bytes per command, a move's records as the network
+/// simulation's default (bandwidth-compaction spec §2, §4).
+const COMMAND_BYTES: usize = 19;
 /// The game loop's service period (spec §6.3).
 const SERVICE_MS: u64 = 16;
 /// A big room's players run on several threads, so the generator is not
@@ -124,6 +127,9 @@ struct Stats {
     resends: u64,
     socket_errors: u64,
     decode_errors: u64,
+    /// Relay datagrams whose 4-byte tag failed at a player
+    /// (`ClientSession::mac_failures`, spec §6.4 item 6).
+    mac_failures: u64,
     ordering_errors: u64,
     stalled_players: u64,
     errors: BTreeMap<String, u64>,
@@ -142,6 +148,7 @@ impl Stats {
         self.resends += other.resends;
         self.socket_errors += other.socket_errors;
         self.decode_errors += other.decode_errors;
+        self.mac_failures += other.mac_failures;
         self.ordering_errors += other.ordering_errors;
         self.stalled_players += other.stalled_players;
         for (code, count) in other.errors {
@@ -338,6 +345,7 @@ fn drive(players: &mut [Player], timing: Timing, mut rng: Rng) -> Stats {
             *stats.errors.entry(code.clone()).or_default() += count;
         }
         stats.decode_errors += log.refused.values().sum::<u64>();
+        stats.mac_failures += player.client.mac_failures();
         if let Some(link) = player.client.link_stats() {
             stats.resends += link.rto_timeouts;
         }
@@ -402,7 +410,7 @@ fn main() {
 \"frame_gap_ms\":{{\"p50\":{},\"p99\":{},\"max\":{},\"hitches\":{},\"count\":{}}},\
 \"sent_per_s\":{},\"received_per_s\":{},\"sent_bytes_per_s\":{},\"received_bytes_per_s\":{},\
 \"batches\":{},\"resends\":{},\"pulls\":{},\
-\"socket_errors\":{},\"decode_errors\":{},\"ordering_errors\":{},\"stalled_players\":{},\"errors\":{{{}}}}}",
+\"socket_errors\":{},\"decode_errors\":{},\"mac_failures\":{},\"ordering_errors\":{},\"stalled_players\":{},\"errors\":{{{}}}}}",
         options.rooms,
         options.players,
         options.tick_hz,
@@ -427,6 +435,7 @@ fn main() {
         total.pulls,
         total.socket_errors,
         total.decode_errors,
+        total.mac_failures,
         total.ordering_errors,
         total.stalled_players,
         total
