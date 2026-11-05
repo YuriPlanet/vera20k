@@ -938,7 +938,10 @@ fn a_computer_mcv_deploy_replaces_the_human_spy_photo_with_normal_sight() {
         &retail.fixed_art,
     ));
     let soundmd = crate::rules::retail_ini_fixture::retail_ini("soundmd.ini").unwrap();
-    rules.bind_type_sound_references(&retail.processed_rules, &SoundRegistry::from_ini(&soundmd));
+    rules.bind_type_sound_references(
+        retail.processed_rules.as_ref(),
+        &SoundRegistry::from_ini(&soundmd),
+    );
     assert!(rules.general.allies_allowed && rules.general.paranoid);
     assert_eq!(rules.weapon("SpyCameraWeapon").unwrap().damage, 6);
     let (rules, mut sim, americans) = world(rules);

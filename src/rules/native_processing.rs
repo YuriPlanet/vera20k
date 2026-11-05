@@ -1776,6 +1776,21 @@ impl ProcessedRulesLayers {
             })
     }
 
+    /// TechnoRead712170 and ReadTypeData679A10 visit each concrete object
+    /// independently. Preserve its own admitted passes even when another
+    /// category has the same stored ID in the compatibility INI.
+    pub(crate) fn techno_type_read_section(
+        &self,
+        category: ObjectCategory,
+        index: i32,
+    ) -> Option<&IniSection> {
+        self.native_registry_state()
+            .families
+            .get(&RulesTypeFamily::from_object_category(category))?
+            .get(usize::try_from(index).ok()?)
+            .map(|member| &member.body)
+    }
+
     /// Already bound Country identities from each reached TechnoTypeExt read.
     #[cfg(feature = "ares")]
     pub(crate) fn factory_owner_states(

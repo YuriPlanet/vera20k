@@ -663,7 +663,7 @@ impl NativeRulesProcessOwner {
         rules: &mut RuleSet,
         processed: &ProcessedRulesLayers,
     ) {
-        rules.bind_type_sound_references(processed.ini(), &self.sources.fixed_sounds);
+        rules.bind_type_sound_references(processed, &self.sources.fixed_sounds);
         rules.bind_terrain_type_sound_references(processed, &self.sources.fixed_sounds);
         rules.bind_type_eva_references(processed.ini(), &self.sources.fixed_eva);
     }
@@ -1612,6 +1612,56 @@ mod tests {
                 .as_deref(),
             Some("none")
         );
+    }
+
+    #[test]
+    fn same_named_technos_keep_their_own_sound_read_history() {
+        use crate::rules::object_type::ObjectCategory;
+
+        let root = IniFile::from_str(
+            "[AudioVisual]\nMindClearedSound=Release\n[BuildingTypes]\n0=SAME\n\
+             [SAME]\nMindClearedSound=TypeRelease\nCreateSound=TypeRelease\nImmuneToPsionics=no\n",
+        );
+        let sounds = Arc::new(SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=Release\n1=TypeRelease\n",
+        )));
+        let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+            root,
+            None,
+            IniFile::empty(),
+            sounds,
+            Arc::default(),
+        )
+        .unwrap();
+        let map = IniFile::from_str(
+            "[InfantryTypes]\n0=SAME\n[SAME]\nMindClearedSound=Unknown\nCreateSound=Unknown\n",
+        );
+        let loaded = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &map)
+            .unwrap();
+        let fields = |rules: &RuleSet, category| {
+            let object = rules.object_in_category(category, "SAME").unwrap();
+            (
+                object.mind_cleared_sound.clone(),
+                object.create_sound().map(str::to_owned),
+            )
+        };
+        // TechnoRead713949 defaults to each object's own +5B0, not another
+        // class with the same ID. Only the Building existed for the first read.
+        let expected = (Some("TypeRelease".into()), Some("TypeRelease".into()));
+        assert_eq!(fields(&loaded.rules, ObjectCategory::Building), expected);
+        assert_eq!(
+            fields(&loaded.rules, ObjectCategory::Infantry),
+            (None, None)
+        );
+        let bytes =
+            crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+        owner.install_saved_scenario_rules(crate::util::save_codec::deserialize(&bytes).unwrap());
+        let restored = owner
+            .project_saved_scenario_rules(owner.saved_scenario_rules().unwrap())
+            .unwrap();
+        assert_eq!(fields(&restored, ObjectCategory::Building), expected);
+        assert_eq!(fields(&restored, ObjectCategory::Infantry), (None, None));
     }
 
     #[test]
