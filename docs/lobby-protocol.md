@@ -410,12 +410,21 @@ A game whose online match reached play adds `network_quality` to that match's
 `finish`: its own record of how the match ran, which it also logs as
 `Network quality:`. It is
 `{played_seconds,catch_up:{episodes,seconds,max_backlog_frames,skipped_draws},`
-`network:{gaps,repair_pulls,command_round_trip_ms,max_jitter_reserve_ms,underruns},`
+`network:{gaps,repair_pulls,command_round_trip_ms,max_jitter_reserve_ms,underruns,`
+`underrun_wait_ms,max_underrun_wait_ms,link},`
 `performance:{tick_ms_p50,tick_ms_p99,fps_p50,fps_p5,unfocused_seconds},`
 `pacing:{slowdowns,slowed_by,slowed_seconds},outcome:{desync_frame,reconnects}}`.
 Times are seconds, or milliseconds where the name says so; `command_round_trip_ms`
 is `{mean,max,samples}` or null, `tick_ms_p50`, `tick_ms_p99`, `fps_p50`, `fps_p5` and
 `desync_frame` may be null, and `slowed_by` lists the House each relay slowdown named.
+`underruns` counts the waits for a frame due but not yet received; `underrun_wait_ms`
+sums how late each waited-for frame arrived after its deadline and
+`max_underrun_wait_ms` is the longest, leaving out waits that end in a reconnect or
+catch-up. `link` is the relay hop as the game's relay client measured it,
+`{rtt_ms_p50,max_up_loss_permille,up_lossy_seconds,up_congested_seconds,rto_timeouts,`
+`gaps_repaired_by_push,max_arrival_jitter_ms}` (`rtt_ms_p50` may be null), or null
+without one (`services/relay/adaptive-transport/spec.md` §10.1). Older games send none
+of these three, so a service reads the report with or without them.
 A start cancelled before play and a match an external launcher formed send none. The
 service may keep reports for its operator without the player's name or address; one it
 cannot read is dropped and the match still finishes. A service that refuses the field
