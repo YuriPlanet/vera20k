@@ -1514,7 +1514,11 @@ mod tests {
         use crate::ui::wol_login::{LoginPolicy, WolAccountGlobals, WolLoginState};
         let mut visit = visit();
         let mut globals = WolAccountGlobals::default();
-        visit.page = WolPage::Login(Box::new(WolLoginState::open_online(&mut globals, None)));
+        visit.page = WolPage::Login(Box::new(WolLoginState::open_online(
+            &mut globals,
+            None,
+            None,
+        )));
         let modern = visit.login().unwrap().policy.page_spec();
         assert_eq!(modern, LoginPolicy::Online.page_spec());
         let column = ShellSlideKind::WolLogin.column(9, Some(modern));

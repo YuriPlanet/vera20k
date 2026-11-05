@@ -346,11 +346,19 @@ impl WolLoginState {
     }
 
     /// `remembered` is the account this computer signs in to without its
-    /// password; it fills an empty username.
-    pub(crate) fn open_online(globals: &mut WolAccountGlobals, remembered: Option<&str>) -> Self {
+    /// password; it fills an empty username. Otherwise `last`, the name of
+    /// the last successful sign-in (`[VERA] OnlineName=`), fills it, as the
+    /// WOL persona file's LastValid fills an empty nickname at WOL entry
+    /// (`0x0077B322..0x0077B399`). VERA: online visits never read that
+    /// file, so VERA.INI keeps the name instead.
+    pub(crate) fn open_online(
+        globals: &mut WolAccountGlobals,
+        remembered: Option<&str>,
+        last: Option<&str>,
+    ) -> Self {
         globals.remember = false;
         if globals.nickname.is_empty()
-            && let Some(name) = remembered
+            && let Some(name) = remembered.or(last.filter(|name| valid_name(name)))
         {
             globals.nickname = name.to_owned();
         }
@@ -1175,7 +1183,7 @@ mod tests {
             remember: true,
             ..Default::default()
         };
-        let mut login = WolLoginState::open_online(&mut globals, None);
+        let mut login = WolLoginState::open_online(&mut globals, None, None);
         let credentials = stored();
         assert!(login.rows.is_empty() && login.password.units.is_empty());
         assert!(globals.password.is_empty() && !globals.remember);
@@ -1218,7 +1226,7 @@ mod tests {
     #[test]
     fn a_remembered_account_signs_in_without_its_password_until_unticked() {
         let mut globals = WolAccountGlobals::default();
-        let mut login = WolLoginState::open_online(&mut globals, Some("Tanya"));
+        let mut login = WolLoginState::open_online(&mut globals, Some("Tanya"), None);
         assert_eq!(globals.nickname, "Tanya");
         assert!(login.remembered && login.remember_checked && login.login_enabled);
         assert!(globals.password.is_empty() && globals.remember);
@@ -1244,7 +1252,7 @@ mod tests {
         assert_eq!(login.focused_control, PASSWORD);
 
         let mut globals = WolAccountGlobals::default();
-        let mut login = WolLoginState::open_online(&mut globals, Some("Tanya"));
+        let mut login = WolLoginState::open_online(&mut globals, Some("Tanya"), None);
         login.focus(PASSWORD);
         login.insert_text("n", &mut globals, &[]);
         assert!(!login.remembered, "typing replaces the placeholder");
@@ -1254,15 +1262,44 @@ mod tests {
             nickname: "Boris".into(),
             ..Default::default()
         };
-        let login = WolLoginState::open_online(&mut globals, Some("Tanya"));
+        let login = WolLoginState::open_online(&mut globals, Some("Tanya"), None);
         assert!(!login.remembered && !globals.remember);
+    }
+
+    #[test]
+    fn the_last_online_name_fills_an_empty_login_after_a_remembered_account() {
+        // The last sign-in's name comes back, and Enter plays as it.
+        let mut globals = WolAccountGlobals::default();
+        let mut login = WolLoginState::open_online(&mut globals, None, Some("Boris"));
+        assert_eq!(globals.nickname, "Boris");
+        assert!(!login.remembered && !globals.remember);
+        assert_eq!(
+            login.edit_key(WolEditKey::Enter, &mut globals, &[]),
+            Some(WolLoginAction::Close(LOGIN))
+        );
+        // A remembered account still comes first.
+        let mut globals = WolAccountGlobals::default();
+        let login = WolLoginState::open_online(&mut globals, Some("Tanya"), Some("Boris"));
+        assert_eq!(globals.nickname, "Tanya");
+        assert!(login.remembered);
+        // A name typed earlier this run stays, and a saved name the lobby
+        // would refuse fills nothing.
+        let mut globals = WolAccountGlobals {
+            nickname: "Alpha".into(),
+            ..Default::default()
+        };
+        WolLoginState::open_online(&mut globals, None, Some("Boris"));
+        assert_eq!(globals.nickname, "Alpha");
+        let mut globals = WolAccountGlobals::default();
+        WolLoginState::open_online(&mut globals, None, Some("[New Player]"));
+        assert!(globals.nickname.is_empty());
     }
 
     #[test]
     fn play_as_guest_signs_in_by_name_alone() {
         // A typed password stays behind.
         let mut globals = WolAccountGlobals::default();
-        let mut login = WolLoginState::open_online(&mut globals, None);
+        let mut login = WolLoginState::open_online(&mut globals, None, None);
         login.insert_text("Boris", &mut globals, &[]);
         login.focus(PASSWORD);
         login.insert_text("secret-pw", &mut globals, &[]);
@@ -1276,7 +1313,7 @@ mod tests {
         assert!(globals.password.is_empty() && !globals.remember);
         // So does this computer's remembered sign-in.
         let mut globals = WolAccountGlobals::default();
-        let mut login = WolLoginState::open_online(&mut globals, Some("Tanya"));
+        let mut login = WolLoginState::open_online(&mut globals, Some("Tanya"), None);
         assert_eq!(
             login.activate(PLAY_AS_GUEST, &mut globals),
             Some(WolLoginAction::Close(LOGIN))
@@ -1285,7 +1322,7 @@ mod tests {
         // Enter plays as a guest while no password is typed, and waits for
         // a whole one otherwise.
         let mut globals = WolAccountGlobals::default();
-        let mut login = WolLoginState::open_online(&mut globals, None);
+        let mut login = WolLoginState::open_online(&mut globals, None, None);
         assert_eq!(login.edit_key(WolEditKey::Enter, &mut globals, &[]), None);
         login.insert_text("Boris", &mut globals, &[]);
         let mut short = login.clone();
@@ -1346,7 +1383,7 @@ mod tests {
             Some(PASSWORD)
         );
         let mut globals = WolAccountGlobals::default();
-        let mut login = WolLoginState::open_online(&mut globals, None);
+        let mut login = WolLoginState::open_online(&mut globals, None, None);
         assert!(!login.button_enabled(PLAY_AS_GUEST) && !login.button_enabled(DELETE_ACCOUNT));
         login.insert_text("Player_12345678901234567", &mut globals, &[]);
         assert_eq!(globals.nickname.len(), 24);
