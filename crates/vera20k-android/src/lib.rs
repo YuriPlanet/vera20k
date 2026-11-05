@@ -20,6 +20,7 @@
 use android_activity::AndroidApp;
 use jni::JavaVM;
 use jni::objects::{JObject, JString};
+use jni::sys::{JNI_VERSION_1_6, jint};
 use winit::platform::android::EventLoopBuilderExtAndroid;
 
 /// Run `f` with the activity this process belongs to.
@@ -73,6 +74,37 @@ pub extern "system" fn Java_org_vera20k_VeraActivity_nativeOnFolderPicked(
     vera20k::util::folder_picker::deliver(picked);
 }
 
+/// Bind `nativeOnFolderPicked` to this activity's class.
+///
+/// Registered from `android_main`, not `JNI_OnLoad`: `FindClass` on the loading
+/// thread uses the system class loader and cannot see `org.vera20k.VeraActivity`,
+/// so the earlier attempt silently fell through to the symbol lookup that fails
+/// on this device (`UnsatisfiedLinkError` for a name `readelf --dyn-syms` shows
+/// in the packaged library). Here the activity object is at hand, and the class
+/// it reports carries the app's own loader.
+///
+/// Returns whether the binding took; a caller reports it rather than letting a
+/// later crash say so.
+fn register_folder_picker_native() -> bool {
+    with_activity(|env, activity| {
+        let Ok(class) = env.get_object_class(activity) else {
+            let _ = env.exception_clear();
+            return false;
+        };
+        let methods = [jni::NativeMethod {
+            name: "nativeOnFolderPicked".into(),
+            sig: "(Ljava/lang/String;)V".into(),
+            fn_ptr: Java_org_vera20k_VeraActivity_nativeOnFolderPicked as *mut std::ffi::c_void,
+        }];
+        let registered = env.register_native_methods(class, &methods).is_ok();
+        if !registered {
+            let _ = env.exception_clear();
+        }
+        registered
+    })
+    .unwrap_or(false)
+}
+
 /// Ask the system to keep the display on while this window is visible.
 ///
 /// The intro movie runs for minutes with nothing to touch, and Android's own
@@ -115,6 +147,13 @@ fn android_main(app: AndroidApp) {
 
     let log_path = vera20k::entry::init_logging();
     vera20k::entry::log_banner(log_path.as_deref());
+    // Bind the picker's callback before the player can reach the button, and say
+    // whether it took: a silent failure here is what turned a missing folder
+    // picker into an `UnsatisfiedLinkError` at the worst moment.
+    log::info!(
+        "asset import: folder-picker callback registered: {}",
+        register_folder_picker_native()
+    );
 
     // Android can start a second activity in this same, still-cached process
     // after the player exits to the launcher and taps the icon again. A second
