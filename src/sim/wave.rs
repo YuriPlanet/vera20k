@@ -851,8 +851,6 @@ pub fn sonic_wave_table() -> &'static [i16; 500] {
 // Direction75F230 calls Sin4CACB0/Cos4CAD00(pi/8): retail entries512/2560
 // are 3EC3EF15/3F6C835E. Their Chop53 ratio and its reciprocal give these
 // exact thresholds; analytic tan(pi/8) would change boundary comparisons.
-const TAN_PI_OVER_EIGHT_F64: NativeF64Bits = NativeF64Bits::from_bits(0x3fda_8279_a061_eb64);
-const INV_TAN_PI_OVER_EIGHT_F64: NativeF64Bits = NativeF64Bits::from_bits(0x4003_504f_2e96_fc59);
 
 /// Outputs shared by the two active Wave geometry helpers.
 #[derive(Debug, Clone, Copy)]
@@ -884,48 +882,6 @@ fn draw_point(coord: ProjectileCoord, camera: [i32; 2]) -> [i32; 2] {
         (x as i32).wrapping_sub(camera[0]),
         (y as i32).wrapping_sub(camera[1]),
     ]
-}
-
-/// `0x0075F230`: the octant (0 north, clockwise) from `from` to `to`. Wave
-/// passes projected screen points; Fire's stream wobble (`0x0062FCEB`) passes
-/// lepton X/Y.
-pub(crate) fn direction_from_projected(from: (i32, i32), to: (i32, i32)) -> i32 {
-    // `0x0075F230`: dx=to.x-from.x and n=from.y-to.y. The four equality
-    // boundaries are intentionally asymmetric.
-    let dx = to.0.wrapping_sub(from.0);
-    let n = from.1.wrapping_sub(to.1);
-    if dx == 0 {
-        return if n > 0 { 0 } else { 4 };
-    }
-
-    let slope = X87Chop53::div(X87Chop53::load_i32(n), X87Chop53::load_i32(dx))
-        .expect("nonzero projected dx divides exactly in the verified finite domain");
-    let tan = load_f64(TAN_PI_OVER_EIGHT_F64);
-    let inv_tan = load_f64(INV_TAN_PI_OVER_EIGHT_F64);
-    let neg_tan = X87Chop53::neg(tan);
-    let neg_inv_tan = X87Chop53::neg(inv_tan);
-
-    let band = if X87Chop53::compare(slope, tan) != X87Ordering::Less
-        && X87Chop53::compare(slope, inv_tan) == X87Ordering::Less
-    {
-        Some(5)
-    } else if X87Chop53::compare(slope, neg_tan) != X87Ordering::Less
-        && X87Chop53::compare(slope, tan) == X87Ordering::Less
-    {
-        Some(6)
-    } else if X87Chop53::compare(slope, neg_inv_tan) != X87Ordering::Less
-        && X87Chop53::compare(slope, neg_tan) == X87Ordering::Less
-    {
-        Some(7)
-    } else {
-        None
-    };
-    match band {
-        Some(base) if dx > 0 => base - 4,
-        Some(base) => base,
-        None if n > 0 => 0,
-        None => 4,
-    }
 }
 
 /// Shared arithmetic in Draw_NonMagnetic761640 and Draw_Magnetic762070.
@@ -1075,7 +1031,10 @@ fn wave_geometry(
         source,
         target,
         edges,
-        direction_octant: direction_from_projected(source_screen, firer_b_screen),
+        direction_octant: crate::util::direction::direction_from_projected(
+            source_screen,
+            firer_b_screen,
+        ),
     }
 }
 
