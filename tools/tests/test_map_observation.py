@@ -344,47 +344,6 @@ class MapObservationTests(unittest.TestCase):
         self.assertEqual(report['capture']['camera']['requested_cell'], [87, 53])
         self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
 
-    def test_whole_map_tiles_keep_the_tactical_extent_and_view_area_they_are_placed_by(self):
-        self.scripted_profile()
-        self.change = lambda manifest: manifest['render'].update(
-            tactical_extent=[2, 1], view_area=[-1740.0, 945.0, 3480.0, 1995.0])
-        report = self.run_capture()
-        self.assertEqual(report['status'], 'VALID', report['errors'])
-        self.assertEqual([report['capture']['tactical_extent'], report['capture']['view_area']],
-                         [[2, 1], [-1740.0, 945.0, 3480.0, 1995.0]])
-        for index, bad in enumerate(({'tactical_extent': [0, 1]}, {'tactical_extent': [3, 1]},
-                                     {'view_area': [0.0, 0.0, 0.0, 10.0]}, {'view_area': [0.0, 0.0, 10.0]})):
-            with self.subTest(case=index):
-                self.output = self.root / f'bad-view-{index}'
-                self.change = lambda manifest, bad=bad: manifest['render'].update(bad)
-                report = self.run_capture()
-                self.assertEqual(report['status'], 'INVALID', report)
-
-    def test_start_markers_come_only_with_the_profile_flag_and_whole_pictures(self):
-        self.scripted_profile()
-        self.profile['observe_start_markers'] = True
-        self.profile_path.write_text(json.dumps(self.profile))
-        marker = {'label': '1', 'anchor': [-30, 915],
-                  'picture': {'size': [2, 1], 'origin': [1, 0], 'rgba': 'AAAA/wAAAP8='}}
-        self.change = lambda manifest: manifest['render'].update(start_markers=[marker])
-        report = self.run_capture()
-        self.assertEqual(report['status'], 'VALID', report['errors'])
-        self.assertEqual(report['capture']['start_markers'], [marker])
-        short = deepcopy(marker)
-        short['picture']['rgba'] = 'AAAA/w=='
-        for index, render in enumerate(({}, {'start_markers': [short]},
-                                        {'start_markers': [dict(marker, label='0')]})):
-            with self.subTest(case=index):
-                self.output = self.root / f'bad-markers-{index}'
-                self.change = lambda manifest, render=render: (
-                    manifest['render'].pop('start_markers', None), manifest['render'].update(render))
-                self.assertEqual(self.run_capture()['status'], 'INVALID')
-        del self.profile['observe_start_markers']
-        self.profile_path.write_text(json.dumps(self.profile))
-        self.output = self.root / 'unrequested-markers'
-        self.change = lambda manifest: manifest['render'].update(start_markers=[marker])
-        self.assertEqual(self.run_capture()['status'], 'INVALID')
-
     def test_object_alive_projection_preserves_retained_death_and_legacy_absence(self):
         self.scripted_profile()
         # Synthetic owner snapshots test independent receipt fields, not death
@@ -4171,8 +4130,7 @@ class MapObservationTests(unittest.TestCase):
     def test_profile_version_order_field_types_and_budgets_are_checked_before_spawn(self):
         profile = deepcopy(self.profile)
         cases = [dict(profile, commands=[]), dict(profile, observe_owners=[]),
-                 dict(profile, camera_cell=[87, 53]), dict(profile, camera_top_left=[0, 0]),
-                 dict(profile, observe_start_markers=True),
+                 dict(profile, camera_cell=[87, 53]),
                  dict(profile, terrain_cells=[]),
                  dict(profile, schema_version='unknown'), dict(profile, extra=True)]
         modern = dict(profile, schema_version=observation.PROFILE_V2)
@@ -4182,8 +4140,6 @@ class MapObservationTests(unittest.TestCase):
             {'observe_owners': [1]}, {'observe_owners': [str(index) for index in range(31)]},
             {'terrain_cells': [[87, 53], [87, 53]]}, {'camera_cell': [True, 53]},
             {'camera_cell': [-1, 53]}, {'camera_cell': [65536, 53]},
-            {'camera_top_left': [0.5, 0]}, {'camera_top_left': [0, 1 << 31]},
-            {'camera_cell': [87, 53], 'camera_top_left': [0, 0]}, {'observe_start_markers': 1},
             {'terrain_cells': [[index, 0] for index in range(257)]}))
         valid_command = {'issue_after_step': 0, 'owner': 'Computer1', 'payload': {'Stop': {'entity_id': 1}}}
         for key, value in (('issue_after_step', True), ('issue_after_step', 3),

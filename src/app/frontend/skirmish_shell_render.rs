@@ -628,7 +628,13 @@ fn render_skirmish_shell_with_atlas(
         }
         _ => Vec::new(),
     };
-    ensure_selected_preview_texture(state);
+    // While the setup dialog is up it owns the preview box, so the image goes in
+    // its own 0x468 rect rather than the chooser's.
+    let setup_preview_rect = setup_layout.map(|layout| layout.preview);
+    let preview_rect = setup_preview_rect
+        .or_else(|| choose_map_layout.as_ref().map(|layout| layout.preview))
+        .unwrap_or(layout.map_preview);
+    ensure_selected_preview_texture(state, preview_rect);
     let selected_entry = state
         .frontend
         .scenario_catalog
@@ -645,12 +651,6 @@ fn render_skirmish_shell_with_atlas(
             .is_some();
     let selected_preview_bounds =
         selected_entry.and_then(|entry| entry.preview_source_bounds.as_ref());
-    // While the setup dialog is up it owns the preview box, so the image goes in
-    // its own 0x468 rect rather than the chooser's.
-    let setup_preview_rect = setup_layout.map(|layout| layout.preview);
-    let preview_rect = setup_preview_rect
-        .or_else(|| choose_map_layout.as_ref().map(|layout| layout.preview))
-        .unwrap_or(layout.map_preview);
     let fitted_preview_rect = state
         .frontend
         .skirmish_preview_texture

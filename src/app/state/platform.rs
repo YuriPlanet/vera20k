@@ -128,6 +128,10 @@ pub(crate) struct CapturePresentation {
     pub(crate) sidebar: crate::ui::main_menu_dialogs::options::SidebarSize,
     pub(crate) hd_radar: bool,
     pub(crate) smooth_sidebar: bool,
+    /// A map picture (`app::map_picture`) draws the battlefield alone,
+    /// without the build description over it, and its camera goes past the
+    /// playable area's edges.
+    pub(crate) map_picture: bool,
 }
 
 impl Default for CapturePresentation {
@@ -137,6 +141,7 @@ impl Default for CapturePresentation {
             sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
             hd_radar: false,
             smooth_sidebar: false,
+            map_picture: false,
         }
     }
 }

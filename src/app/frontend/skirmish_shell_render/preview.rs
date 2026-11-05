@@ -24,6 +24,9 @@ use super::{
 pub(crate) struct SkirmishPreviewTexture {
     pub selected_map_idx: usize,
     pub texture: BatchTexture,
+    /// The size the preview box fits: the texture's own, or for VERA's
+    /// picture of the map the size of the map's own preview whose place it
+    /// shows, so both fill the same rectangle.
     pub width: u32,
     pub height: u32,
     /// Set when the texture holds a random-map setup preview rather than a
@@ -32,6 +35,13 @@ pub(crate) struct SkirmishPreviewTexture {
     /// Set when the texture holds a LAN guest's received `Preview.bin`,
     /// carrying its arrival number.
     pub received_preview: Option<u32>,
+    /// Whether Options' HD Map Previews was on when a chooser map's texture
+    /// was made; a change remakes it.
+    pub hd_setting: bool,
+    /// When the texture holds VERA's own picture of the map
+    /// (`app::map_picture`) rather than the map's `[PreviewPack]`, the size
+    /// of the preview box it was shrunk for.
+    pub hd_picture: Option<(i32, i32)>,
 }
 
 fn preview_fits_texture(width: u32, height: u32, rgba_len: usize, maximum_side: u32) -> bool {
@@ -90,6 +100,8 @@ pub(super) fn ensure_received_preview_texture(state: &mut AppState) {
         height,
         setup_preview_generation: None,
         received_preview: Some(arrival),
+        hd_setting: false,
+        hd_picture: None,
     });
 }
 
@@ -231,6 +243,7 @@ pub(super) fn build_start_marker_instances(
 pub(super) fn selected_preview_texture_is_current(
     state: &AppState,
     selected_map_idx: usize,
+    preview_box: RectPx,
 ) -> bool {
     state
         .frontend
@@ -243,6 +256,10 @@ pub(super) fn selected_preview_texture_is_current(
             cached.setup_preview_generation.is_none()
                 && cached.received_preview.is_none()
                 && cached.selected_map_idx == selected_map_idx
+                && cached.hd_setting == state.hd_map_previews()
+                && cached
+                    .hd_picture
+                    .is_none_or(|size| size == (preview_box.w, preview_box.h))
         })
 }
 
@@ -399,6 +416,8 @@ pub(super) fn ensure_random_map_setup_preview_texture(state: &mut AppState) -> b
         height: preview.height,
         setup_preview_generation: Some(generation),
         received_preview: None,
+        hd_setting: false,
+        hd_picture: None,
     });
     true
 }
@@ -426,16 +445,21 @@ pub(super) fn preview_map_idx(state: &AppState) -> usize {
         .unwrap_or(shell.selected_map_idx)
 }
 
-pub(super) fn ensure_selected_preview_texture(state: &mut AppState) {
+pub(super) fn ensure_selected_preview_texture(state: &mut AppState, preview_box: RectPx) {
     if ensure_random_map_setup_preview_texture(state) {
         return;
     }
     let selected_map_idx = preview_map_idx(state);
-    ensure_map_preview_texture(state, selected_map_idx);
+    ensure_map_preview_texture(state, selected_map_idx, preview_box);
 }
 
-/// Shared map preview cache used by offline and network setup/chooser pages.
-pub(super) fn ensure_map_preview_texture(state: &mut AppState, selected_map_idx: usize) {
+/// Shared map preview cache used by offline and network setup/chooser pages,
+/// for a preview drawn in `preview_box`.
+pub(super) fn ensure_map_preview_texture(
+    state: &mut AppState,
+    selected_map_idx: usize,
+    preview_box: RectPx,
+) {
     let selected_entry = state
         .frontend
         .scenario_catalog
@@ -453,11 +477,12 @@ pub(super) fn ensure_map_preview_texture(state: &mut AppState, selected_map_idx:
     let selected_is_random_sentinel = selected_entry
         .as_ref()
         .is_some_and(is_random_map_sentinel_entry);
-    if !selected_is_random_sentinel && selected_preview_texture_is_current(state, selected_map_idx)
+    if !selected_is_random_sentinel
+        && selected_preview_texture_is_current(state, selected_map_idx, preview_box)
     {
         return;
     }
-
+    let hd_setting = state.hd_map_previews();
     let ra2_dir = state
         .platform
         .game_config
@@ -476,6 +501,65 @@ pub(super) fn ensure_map_preview_texture(state: &mut AppState, selected_map_idx:
         })
         // An online library row has no file: its catalog header holds it.
         .or_else(|| crate::app::map_library::online_preview(state, selected_map_idx));
+    // VERA's own picture of the map, once one is kept, shrunk here by area to
+    // the size the box shows it at: it is up to four times that size, and the
+    // GPU's linear filter, which reads four texels, would alias the shrink.
+    if hd_setting
+        && selected_entry.is_some()
+        && !selected_is_random_sentinel
+        && let Some(picture) = crate::app::map_picture::picture_for_map(state, selected_map_idx)
+        && preview_fits_texture(
+            picture.width,
+            picture.height,
+            picture.rgba.len(),
+            state.renderer.gpu.device.limits().max_texture_dimension_2d,
+        )
+    {
+        // The picture shows the place of the map's own preview in that
+        // preview's shape (`map_picture::placement`), so fitted by the
+        // preview's size it fills the very rectangle the preview did and the
+        // map stays put as one replaces the other. A picture of another
+        // shape found no such place.
+        let own = decoded
+            .as_ref()
+            .map(|own| (own.width, own.height))
+            .filter(|&own| same_shape(own, (picture.width, picture.height)));
+        let (fit_w, fit_h) = own.unwrap_or((picture.width, picture.height));
+        let fitted = aspect_fit_rect(preview_box, fit_w, fit_h);
+        let (width, height, rgba) =
+            if fitted.w > 0 && fitted.h > 0 && (fitted.w as u32) < picture.width {
+                let (width, height) = (fitted.w as u32, fitted.h as u32);
+                let rgba = crate::render::area_scale::scale(
+                    &picture.rgba,
+                    picture.width as usize,
+                    picture.height as usize,
+                    width as usize,
+                    height as usize,
+                );
+                (width, height, rgba)
+            } else {
+                (picture.width, picture.height, picture.rgba)
+            };
+        let (_, texture) = state.renderer.batch_renderer.create_updatable_texture(
+            &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
+            &rgba,
+            width,
+            height,
+            wgpu::FilterMode::Linear,
+        );
+        state.frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
+            selected_map_idx,
+            texture,
+            width: fit_w,
+            height: fit_h,
+            setup_preview_generation: None,
+            received_preview: None,
+            hd_setting,
+            hd_picture: Some((preview_box.w, preview_box.h)),
+        });
+        return;
+    }
 
     let Some(decoded) = decoded.as_ref() else {
         state.frontend.skirmish_preview_texture = None;
@@ -504,6 +588,8 @@ pub(super) fn ensure_map_preview_texture(state: &mut AppState, selected_map_idx:
         height: decoded.height,
         setup_preview_generation: None,
         received_preview: None,
+        hd_setting,
+        hd_picture: None,
     });
 }
 
@@ -515,6 +601,13 @@ pub(super) fn should_draw_start_marker_overlays(
     fitted_preview_rect.is_some()
         && !projected_start_positions.is_empty()
         && !preview_has_baked_start_markers
+}
+
+/// Whether `picture` has `own`'s proportions, each side rounded to within a
+/// pixel.
+fn same_shape(own: (u32, u32), picture: (u32, u32)) -> bool {
+    let cross = |a: u32, b: u32| u64::from(a) * u64::from(b);
+    cross(own.0, picture.1).abs_diff(cross(own.1, picture.0)) <= u64::from(own.0) + u64::from(own.1)
 }
 
 pub(super) fn aspect_fit_rect(dst: RectPx, src_w: u32, src_h: u32) -> RectPx {
@@ -570,6 +663,20 @@ mod tests {
         assert!(!preview_fits_texture(1, 1024, 4096, 1023));
         assert!(!preview_fits_texture(1024, 1, 4095, 1024));
         assert!(!preview_fits_texture(0, 1, 0, 1024));
+    }
+
+    #[test]
+    fn hd_picture_of_the_preview_place_fits_the_preview_rectangle() {
+        // A 160 x 81 preview's place drawn at most 576 wide is 576 x 292,
+        // which fitted by its own size ends a pixel lower than the preview.
+        let preview_box = RectPx::new(0, 0, 144, 112);
+        assert!(same_shape((160, 81), (576, 292)));
+        assert_ne!(
+            aspect_fit_rect(preview_box, 576, 292),
+            aspect_fit_rect(preview_box, 160, 81)
+        );
+        // A picture of [Header]'s square rectangle found no place.
+        assert!(!same_shape((160, 81), (448, 448)));
     }
 
     #[test]
