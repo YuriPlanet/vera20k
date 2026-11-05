@@ -1147,6 +1147,7 @@ impl App {
                 shell_preview_overlay_registry: None,
                 map_library: Default::default(),
                 login_info: Default::default(),
+                map_pictures: Default::default(),
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 updater: Default::default(),
                 skirmish_shell_state,
@@ -1320,8 +1321,9 @@ impl App {
 /// `RA2_QUICKPLAY=<map>`: VERA-internal authored-map sandbox using the legacy
 /// Battle loader, with one local house and no generated opponents or forces.
 /// The mode is the roster's Battle row, as the skirmish shell would select it;
-/// without one the shortcut does not launch.
-fn quickplay_launch_session(
+/// without one the shortcut does not launch. Map pictures load their map with
+/// it too (`map_picture::session`).
+pub(crate) fn quickplay_launch_session(
     selected_map: String,
     modes: &[crate::skirmish_modes::SkirmishGameMode],
 ) -> Option<crate::skirmish_launch::SkirmishLaunchSession> {

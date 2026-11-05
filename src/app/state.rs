@@ -129,6 +129,16 @@ impl AppState {
         }
     }
 
+    /// Whether the setup screens show VERA's own map pictures
+    /// (`[VERA] HdMapPreviews=`, `app::map_picture`). Captures keep the map's
+    /// `[PreviewPack]` picture, which retail comparisons check, and the
+    /// browser build cannot start the hidden run that draws one.
+    pub(crate) fn hd_map_previews(&self) -> bool {
+        cfg!(not(all(target_arch = "wasm32", target_os = "unknown")))
+            && self.platform.capture_client_size.is_none()
+            && self.persistence.options_profile.hd_map_previews
+    }
+
     /// The same for a frame of `width` x `height`. Captures take their own
     /// size (`CapturePresentation`), Normal unless the profile says.
     pub(crate) fn sidebar_frame_for(

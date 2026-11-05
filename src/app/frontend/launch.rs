@@ -137,6 +137,8 @@ pub enum AppLaunchMode {
     Usage,
     ShellCapture(ShellCaptureRequest),
     TacticalCapture(TacticalCaptureRequest),
+    /// A hidden run that draws one map's picture for the setup screens.
+    MapPicture(crate::app::map_picture::MapPictureRequest),
 }
 
 #[derive(Debug)]
@@ -357,6 +359,10 @@ where
     I: IntoIterator<Item = OsString>,
 {
     let args: Vec<OsString> = args.into_iter().collect();
+    // The menus start this run with a map name that must reach it untouched.
+    if crate::app::map_picture::is_invocation(args.iter().cloned()) {
+        return crate::app::map_picture::parse_args(args).map(AppLaunchMode::MapPicture);
+    }
     if args
         .iter()
         .any(|arg| arg == OsStr::new("--replay") || arg == OsStr::new("--replay-capture"))

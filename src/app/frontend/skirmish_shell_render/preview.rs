@@ -32,6 +32,12 @@ pub(crate) struct SkirmishPreviewTexture {
     /// Set when the texture holds a LAN guest's received `Preview.bin`,
     /// carrying its arrival number.
     pub received_preview: Option<u32>,
+    /// Whether Options' HD Map Previews was on when a chooser map's texture
+    /// was made; a change remakes it.
+    pub hd_setting: bool,
+    /// Whether the texture holds VERA's own picture of the map
+    /// (`app::map_picture`) rather than the map's `[PreviewPack]`.
+    pub hd_picture: bool,
 }
 
 fn preview_fits_texture(width: u32, height: u32, rgba_len: usize, maximum_side: u32) -> bool {
@@ -90,6 +96,8 @@ pub(super) fn ensure_received_preview_texture(state: &mut AppState) {
         height,
         setup_preview_generation: None,
         received_preview: Some(arrival),
+        hd_setting: false,
+        hd_picture: false,
     });
 }
 
@@ -243,6 +251,7 @@ pub(super) fn selected_preview_texture_is_current(
             cached.setup_preview_generation.is_none()
                 && cached.received_preview.is_none()
                 && cached.selected_map_idx == selected_map_idx
+                && cached.hd_setting == state.hd_map_previews()
         })
 }
 
@@ -399,6 +408,8 @@ pub(super) fn ensure_random_map_setup_preview_texture(state: &mut AppState) -> b
         height: preview.height,
         setup_preview_generation: Some(generation),
         received_preview: None,
+        hd_setting: false,
+        hd_picture: false,
     });
     true
 }
@@ -457,6 +468,40 @@ pub(super) fn ensure_map_preview_texture(state: &mut AppState, selected_map_idx:
     {
         return;
     }
+    let hd_setting = state.hd_map_previews();
+    // VERA's own picture of the map, once one is kept. It is several times
+    // the box's size, so it shrinks smoothly rather than by dropped pixels.
+    if hd_setting
+        && selected_entry.is_some()
+        && !selected_is_random_sentinel
+        && let Some(picture) = crate::app::map_picture::picture_for_map(state, selected_map_idx)
+        && preview_fits_texture(
+            picture.width,
+            picture.height,
+            picture.rgba.len(),
+            state.renderer.gpu.device.limits().max_texture_dimension_2d,
+        )
+    {
+        let (_, texture) = state.renderer.batch_renderer.create_updatable_texture(
+            &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
+            &picture.rgba,
+            picture.width,
+            picture.height,
+            wgpu::FilterMode::Linear,
+        );
+        state.frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
+            selected_map_idx,
+            texture,
+            width: picture.width,
+            height: picture.height,
+            setup_preview_generation: None,
+            received_preview: None,
+            hd_setting,
+            hd_picture: true,
+        });
+        return;
+    }
 
     let ra2_dir = state
         .platform
@@ -504,6 +549,8 @@ pub(super) fn ensure_map_preview_texture(state: &mut AppState, selected_map_idx:
         height: decoded.height,
         setup_preview_generation: None,
         received_preview: None,
+        hd_setting,
+        hd_picture: false,
     });
 }
 

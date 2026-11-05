@@ -90,6 +90,7 @@ impl MapPresentationProfile {
             sidebar: SidebarSize::from_ini_value(self.sidebar),
             hd_radar: self.hd_radar,
             smooth_sidebar: self.smooth_sidebar,
+            map_picture: false,
         };
         crate::app::App::sync_zoom_pass(state);
     }

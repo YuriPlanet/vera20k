@@ -87,6 +87,12 @@ impl PathsConfig {
         self.settings_dir.join("Maps")
     }
 
+    /// VERA's own pictures of maps for the setup screens' previews, by each
+    /// map's SHA-256 (`app::map_picture`).
+    pub fn map_pictures_dir(&self) -> PathBuf {
+        self.settings_dir.join("MapPreviews")
+    }
+
     fn separate_settings_from_assets(&mut self) -> Result<()> {
         if resolved_directory(&self.settings_dir).starts_with(resolved_directory(&self.ra2_dir)) {
             self.settings_dir = default_settings_dir()?;

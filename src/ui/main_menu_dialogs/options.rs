@@ -84,6 +84,8 @@ pub(crate) const HD_RADAR_LABEL: &str = "HD Radar";
 pub(crate) const HD_RADAR_HELP: &str = "Draw the radar at the screen's full resolution when the sidebar is enlarged, so each map cell shows.";
 pub(crate) const SMOOTH_SIDEBAR_LABEL: &str = "Smooth Sidebar";
 pub(crate) const SMOOTH_SIDEBAR_HELP: &str = "Lightly smooth the sidebar's pictures and buttons with xBR when the sidebar is enlarged. Text stays sharp.";
+pub(crate) const HD_MAP_PREVIEWS_LABEL: &str = "HD Map Previews";
+pub(crate) const HD_MAP_PREVIEWS_HELP: &str = "Show a sharp picture of the whole map in Skirmish, LAN and online games, drawn the first time each map is shown. Untick for the map's own small preview.";
 pub(crate) const SHIFT_QUEUE_LABEL: &str = "Shift-Click Batch Queue";
 /// The two category pages retail's string table has no band name for.
 pub(crate) const CONTROLS_LABEL: &str = "Controls";
@@ -575,6 +577,11 @@ pub(crate) enum LauncherCheckboxId {
     /// at that multiple (`render::sidebar_smoothing`). Saved; a battle
     /// follows it at once.
     SmoothSidebar,
+    /// VERA's own box: the setup screens' map preview shows VERA's own
+    /// drawing of the whole map (`app::map_picture`) instead of the
+    /// map's `[PreviewPack]` picture. On by default; saved, and the next
+    /// preview follows it.
+    HdMapPreviews,
     /// VERA's developer box: the window's FPS readout. Like Full Screen it
     /// shows and changes live state at once, and is never saved: the readout
     /// starts hidden at every launch.
@@ -640,6 +647,7 @@ pub(crate) enum LauncherOptionsEvent {
     VeraIconChanged(bool),
     HdRadarChanged(bool),
     SmoothSidebarChanged(bool),
+    HdMapPreviewsChanged(bool),
     FpsCounterChanged(bool),
     SkipIntroChanged(bool),
     CustomEndGameBannerChanged(bool),
@@ -689,6 +697,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) vera_icon: bool,
     pub(crate) hd_radar: bool,
     pub(crate) smooth_sidebar: bool,
+    pub(crate) hd_map_previews: bool,
     pub(crate) shift_queue: bool,
     pub(crate) wol_test_service: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
@@ -735,6 +744,7 @@ impl Default for LauncherOptionsValues {
             vera_icon: false,
             hd_radar: false,
             smooth_sidebar: false,
+            hd_map_previews: true,
             shift_queue: false,
             wol_test_service: false,
             fps_counter: false,
@@ -1109,6 +1119,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::VeraIcon => &mut self.values.vera_icon,
             LauncherCheckboxId::HdRadar => &mut self.values.hd_radar,
             LauncherCheckboxId::SmoothSidebar => &mut self.values.smooth_sidebar,
+            LauncherCheckboxId::HdMapPreviews => &mut self.values.hd_map_previews,
             LauncherCheckboxId::FpsCounter => &mut self.values.fps_counter,
             LauncherCheckboxId::SkipIntro => &mut self.values.skip_intro,
             LauncherCheckboxId::CustomEndGameBanner => &mut self.values.custom_end_game_banner,
@@ -1156,6 +1167,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothSidebar => self
                 .pending_events
                 .push(LauncherOptionsEvent::SmoothSidebarChanged(checked)),
+            LauncherCheckboxId::HdMapPreviews => self
+                .pending_events
+                .push(LauncherOptionsEvent::HdMapPreviewsChanged(checked)),
             LauncherCheckboxId::FpsCounter => self
                 .pending_events
                 .push(LauncherOptionsEvent::FpsCounterChanged(checked)),
@@ -1366,6 +1380,7 @@ impl Category {
                 Setting::Checkbox(Check::VeraIcon),
                 Setting::Checkbox(Check::HdRadar),
                 Setting::Checkbox(Check::SmoothSidebar),
+                Setting::Checkbox(Check::HdMapPreviews),
             ],
             Self::Audio => &[
                 Setting::Slider(Slider::Score),
@@ -1397,7 +1412,7 @@ impl Category {
                 "Detail, difficulty, target lines, hidden objects, queueing and end-game screens."
             }
             Self::Interface => {
-                "Sidebar size and smoothing, HD radar, health bars, tooltips and the VERA icon."
+                "Sidebar size and smoothing, HD radar and map previews, health bars, tooltips and the VERA icon."
             }
             Self::Audio => "Music, sound and voice volume.",
             Self::Controls => {
@@ -2054,6 +2069,7 @@ mod tests {
                     Check::VeraIcon,
                     Check::HdRadar,
                     Check::SmoothSidebar,
+                    Check::HdMapPreviews,
                     Check::ShiftQueue,
                     Check::FpsCounter,
                     Check::SkipIntro,

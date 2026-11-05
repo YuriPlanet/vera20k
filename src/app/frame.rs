@@ -672,9 +672,7 @@ impl App {
         state: &mut AppState,
         event_loop: &ActiveEventLoop,
         mut shell_capture: Option<&mut crate::app::diagnostics::shell_capture::ShellCaptureSession>,
-        mut tactical_capture: Option<
-            &mut crate::app::diagnostics::tactical_capture::session::TacticalCaptureSession,
-        >,
+        mut hidden_run: Option<&mut crate::app::hidden_run::HiddenRun>,
         pass: FramePass,
     ) -> Result<FrameRenderOutcome> {
         if let Some(presented) = crate::app::persistence::commands::pump_saved_game_load(state) {
@@ -685,8 +683,8 @@ impl App {
             });
         }
         anyhow::ensure!(
-            shell_capture.is_none() || tactical_capture.is_none(),
-            "shell and tactical capture cannot share a render"
+            shell_capture.is_none() || hidden_run.is_none(),
+            "a shell capture and a hidden run cannot share a render"
         );
         if state
             .match_state
@@ -701,14 +699,14 @@ impl App {
         state.platform.frame_pacer.clear_render_continuation();
         #[cfg(feature = "telemetry-dashboard")]
         crate::app::telemetry_capture::synchronize_observer(state);
-        if let Some(session) = tactical_capture.as_deref_mut() {
+        if let Some(session) = hidden_run.as_deref_mut() {
             session.drive_before_render(state)?;
         }
         state
             .match_state
             .match_diagnostics
             .begin_presentation_observation();
-        crate::app::presentation::interpolation::prepare(state, tactical_capture.is_some());
+        crate::app::presentation::interpolation::prepare(state, hidden_run.is_some());
         let tooltip_ms = crate::app::input::tooltips::update(state);
         // `Init_Game` plays the startup logo (`0x0052C5E2`) before it presents
         // the splash (`0x0052C5F3`): the splash waits while a movie owns the
@@ -773,7 +771,7 @@ impl App {
         let shell_capture_owns_simulation = shell_capture
             .as_deref()
             .is_some_and(|capture| capture.owns_simulation_steps(state));
-        let ordinary_online = tactical_capture.is_none()
+        let ordinary_online = hidden_run.is_none()
             && !shell_capture_owns_simulation
             && Self::next_online_render_frame(state).is_some();
         // A capture that checks every committed frame needs one per render.
@@ -783,7 +781,7 @@ impl App {
         let runtime_pass = Self::service_match_runtime(
             state,
             event_loop,
-            tactical_capture.is_none() && !shell_capture_owns_simulation,
+            hidden_run.is_none() && !shell_capture_owns_simulation,
             catch_up_allowed,
         );
         if runtime_pass.quit_requested {
@@ -825,14 +823,14 @@ impl App {
         } else {
             crate::app::input::messages::update(
                 state,
-                runtime_pass.main_tick_admitted || tactical_capture.is_some(),
+                runtime_pass.main_tick_admitted || hidden_run.is_some(),
             )
         };
         // Atlas growths publish before the picture is judged. Captures wait
         // for them, so their pictures never depend on worker timing.
         crate::app::match_runtime::sim_tick::publish_entity_atlas_growth(
             state,
-            shell_capture.is_some() || tactical_capture.is_some(),
+            shell_capture.is_some() || hidden_run.is_some(),
         );
         // A changed picture is drawn in this same pass, so each drawn frame
         // still follows exactly one match service. The picture is judged by
@@ -1219,7 +1217,7 @@ impl App {
                 // (`tactical_composite`). Captures and the actor observer
                 // record every draw's composite.
                 let cadence = if shell_capture.is_some()
-                    || tactical_capture.is_some()
+                    || hidden_run.is_some()
                     || state.match_state.live_network.is_some()
                     || state
                         .match_state
@@ -1425,8 +1423,8 @@ impl App {
         } else {
             None
         };
-        let tactical_capture_current_frame =
-            match (tactical_capture.as_deref_mut(), game_render_output.as_ref()) {
+        let hidden_run_current_frame =
+            match (hidden_run.as_deref_mut(), game_render_output.as_ref()) {
                 (Some(session), Some(render_output)) => {
                     session.observe_after_render(state, render_output)?
                 }
@@ -1438,9 +1436,8 @@ impl App {
         }
         let replay_capture_current_frame = game_render_output.is_some()
             && state.match_state.match_diagnostics.playback_capture_ready();
-        let capture_current_frame = shell_capture_current_frame
-            || tactical_capture_current_frame
-            || replay_capture_current_frame;
+        let capture_current_frame =
+            shell_capture_current_frame || hidden_run_current_frame || replay_capture_current_frame;
         let pending_capture = if capture_current_frame {
             Some(crate::render::frame_readback::PendingBgra8Readback::encode(
                 &state.renderer.gpu.device,
@@ -1491,9 +1488,9 @@ impl App {
                     .expect("shell capture session exists when readback is requested")
                     .readback_timeout()?
             } else {
-                tactical_capture
+                hidden_run
                     .as_deref()
-                    .expect("tactical capture session exists when readback is requested")
+                    .expect("hidden run exists when readback is requested")
                     .readback_timeout()?
             })
         } else {
@@ -1552,7 +1549,7 @@ impl App {
             });
         let still = crate::app::match_runtime::redraw_gate::still_frame(
             state,
-            shell_capture.is_some() || tactical_capture.is_some(),
+            shell_capture.is_some() || hidden_run.is_some(),
             runtime_pass.screen_shake_offset,
             picture_clock,
         );
@@ -1648,10 +1645,9 @@ impl App {
                 session.complete(state, surface_format, &pixels)?;
                 session.is_terminal()
             } else {
-                tactical_capture
-                    .expect("tactical capture session exists when readback completes")
-                    .complete_after_readback(state, surface_format, &pixels)?;
-                true
+                hidden_run
+                    .expect("hidden run exists when readback completes")
+                    .complete_after_readback(state, surface_format, &pixels)?
             };
             if capture_terminal {
                 event_loop.exit();
