@@ -1482,6 +1482,20 @@ fn forget_sign_in(settings: Option<&std::path::Path>, service: &LiveService) {
     }
 }
 
+/// The lobby deleted `name` with its remembered sign-ins: this computer's
+/// sign-in of it goes too, and another account's stays.
+fn forget_deleted_sign_in(settings: Option<&std::path::Path>, lobby: &str, name: &str) {
+    let Some(dir) = settings else {
+        return;
+    };
+    if account::load(dir, lobby)
+        .is_some_and(|remembered| remembered.name.eq_ignore_ascii_case(name))
+        && let Err(error) = account::forget(dir, lobby)
+    {
+        log::warn!("Could not forget the deleted account's sign-in: {error}");
+    }
+}
+
 /// Keep the sign-in the lobby gave a password sign-in with Remember password,
 /// in place of another account's, which the lobby then forgets.
 fn remember_sign_in(
@@ -1540,6 +1554,9 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             });
         }
         WolServiceRequest::ForgetSignIn => forget_sign_in(settings_dir(state), service),
+        WolServiceRequest::AccountDeleted { name } => {
+            forget_deleted_sign_in(settings_dir(state), &service.lobby, &name);
+        }
         WolServiceRequest::ListChannels { kind, .. } => {
             let _ = service.requests.send(http::Request::Channels(kind));
         }

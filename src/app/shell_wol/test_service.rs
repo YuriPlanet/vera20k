@@ -364,7 +364,7 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
             store_credential(&mut state.frontend.wol_test_credentials, nickname, password);
             return;
         }
-        WolServiceRequest::ForgetSignIn => return,
+        WolServiceRequest::ForgetSignIn | WolServiceRequest::AccountDeleted { .. } => return,
         WolServiceRequest::ForgetCredential { slot } => {
             state
                 .frontend

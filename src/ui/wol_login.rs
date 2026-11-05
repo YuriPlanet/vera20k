@@ -32,10 +32,11 @@ pub(crate) const NICKNAME: u16 = 0x0628;
 pub(crate) const PASSWORD: u16 = 0x072C;
 pub(crate) const REMEMBER: u16 = 0x072D;
 /// VERA's online page puts Create Account and Forgot Password where gamemd's
-/// Forget Account and Manage Account stand. Not gamemd controls: the ids only
-/// name their rects.
+/// Forget Account and Manage Account stand, and Delete Account below them.
+/// Not gamemd controls: the ids only name their rects.
 pub(crate) const CREATE_ACCOUNT: u16 = 0x7FF0;
 pub(crate) const FORGOT_PASSWORD: u16 = 0x7FF1;
+pub(crate) const DELETE_ACCOUNT: u16 = 0x7FF2;
 /// EM_LIMITTEXT / CB_LIMITTEXT at `0x0079A925..0x0079A94E`.
 pub(crate) const NICKNAME_LIMIT: usize = 9;
 pub(crate) const PASSWORD_LIMIT: usize = 8;
@@ -87,9 +88,10 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     },
 };
 
-/// The online sign-in opens the visit: Login, then Create Account and Forgot
-/// Password (docs/lobby-protocol.md "Accounts"), and Back leaves WOL with the
-/// welcome Main Menu's help.
+/// The online sign-in opens the visit: Login, then Create Account, Forgot
+/// Password and Delete Account (docs/lobby-protocol.md "Accounts"), and Back
+/// leaves WOL with the welcome Main Menu's help. Delete Account takes the
+/// fourth stacked place, as My Info's (`wol_my_info`).
 const ONLINE_PAGE: MenuPageSpec = MenuPageSpec {
     stacked: &[
         PAGE.stacked[0],
@@ -103,6 +105,13 @@ const ONLINE_PAGE: MenuPageSpec = MenuPageSpec {
             id: FORGOT_PASSWORD,
             csf_key: "VERA:ForgotPassword",
             tooltip_key: "VERA:ForgotPasswordHelp",
+            ..PAGE.stacked[2]
+        },
+        MenuPageButtonSpec {
+            id: DELETE_ACCOUNT,
+            dlu_top: 204,
+            csf_key: "VERA:DeleteAccount",
+            tooltip_key: "VERA:DeleteAccountHelp",
             ..PAGE.stacked[2]
         },
     ],
@@ -265,6 +274,9 @@ pub(crate) enum WolLoginAction {
     /// VERA online: Remember password was unticked for the remembered
     /// account, which this computer forgets at once.
     ForgetSignIn,
+    /// VERA online: the lobby deleted this account; a sign-in this computer
+    /// remembers for it goes too.
+    AccountDeleted(String),
     /// Forget Account found the nickname in the combo: API+0x94 clears the
     /// slot, after AutoLogin/LastValid were cleared when they matched.
     Forget { slot: u32, nickname: String },
@@ -425,8 +437,8 @@ impl WolLoginState {
             LOGIN => self.login_enabled,
             FORGET => self.policy == LoginPolicy::Legacy && self.forget_enabled,
             MANAGE if self.policy == LoginPolicy::Online => false,
-            // Forgot Password mails the code of the typed username.
-            FORGOT_PASSWORD => valid_name(&self.typed_nickname()),
+            // Forgot Password and Delete Account act on the typed username.
+            FORGOT_PASSWORD | DELETE_ACCOUNT => valid_name(&self.typed_nickname()),
             _ => true,
         }
     }
@@ -607,8 +619,23 @@ impl WolLoginState {
                 self.account = Some(form);
                 Some(WolLoginAction::Account(request))
             }
+            DELETE_ACCOUNT => {
+                self.account = Some(WolAccountForm::delete(&self.typed_nickname()));
+                None
+            }
             _ => None,
         }
+    }
+
+    /// VERA online: the lobby deleted the typed account. Its popup says so
+    /// until closed, and the page drops the remembered placeholder.
+    pub(crate) fn account_deleted(
+        &mut self,
+        name: String,
+        globals: &mut WolAccountGlobals,
+    ) -> WolLoginAction {
+        self.forget_placeholder(globals);
+        WolLoginAction::AccountDeleted(name)
     }
 
     /// VERA online: a confirmed account or a new password signs in at once,
@@ -796,20 +823,6 @@ pub(crate) struct WolLoginLayout {
 }
 
 impl WolLoginLayout {
-    pub(crate) fn with_policy(mut self, policy: LoginPolicy) -> Self {
-        self.policy = policy;
-        if policy == LoginPolicy::Online {
-            for button in &mut self.page.buttons {
-                button.id = match button.id {
-                    FORGET => CREATE_ACCOUNT,
-                    MANAGE => FORGOT_PASSWORD,
-                    id => id,
-                };
-            }
-        }
-        self
-    }
-
     pub(crate) fn page_spec(&self) -> &'static MenuPageSpec {
         self.policy.page_spec()
     }
@@ -837,24 +850,30 @@ impl WolLoginLayout {
         }
     }
 
-    pub(crate) fn new(width: i32, height: i32) -> Self {
-        Self::build(width, height, ShellScale::RETAIL)
+    pub(crate) fn new(width: i32, height: i32, policy: LoginPolicy) -> Self {
+        Self::build(width, height, ShellScale::RETAIL, policy)
     }
 
-    pub(crate) fn responsive(width: i32, height: i32) -> Self {
-        Self::build(width, height, ShellScale::from_screen(width, height))
+    pub(crate) fn responsive(width: i32, height: i32, policy: LoginPolicy) -> Self {
+        Self::build(
+            width,
+            height,
+            ShellScale::from_screen(width, height),
+            policy,
+        )
     }
 
-    fn build(width: i32, height: i32, scale: ShellScale) -> Self {
+    fn build(width: i32, height: i32, scale: ShellScale, policy: LoginPolicy) -> Self {
         let status_template = RectPx::new(2, 354, 316, 12);
+        let spec = policy.page_spec();
         let (mut page, status_help) = if scale.is_retail() {
             (
-                menu_page::compute_layout(&PAGE, width as u32, height as u32),
+                menu_page::compute_layout(spec, width as u32, height as u32),
                 status_line_rect(status_template, width, height),
             )
         } else {
             (
-                menu_page::compute_responsive_layout(&PAGE, width as u32, height as u32),
+                menu_page::compute_responsive_layout(spec, width as u32, height as u32),
                 scale.scale_rect(status_line_rect(
                     status_template,
                     SHELL_BASE_W,
@@ -876,7 +895,7 @@ impl WolLoginLayout {
         let combo = child_window(196, 147, 141, 143);
         let password = child_window(196, 177, 140, 14);
         Self {
-            policy: LoginPolicy::Legacy,
+            policy,
             page,
             status_help,
             labels: [
@@ -931,7 +950,7 @@ mod tests {
 
     #[test]
     fn layout_matches_the_executed_800x600_relayout() {
-        let layout = WolLoginLayout::new(800, 600);
+        let layout = WolLoginLayout::new(800, 600, LoginPolicy::Legacy);
         let buttons: Vec<(u16, RectPx)> = layout
             .page
             .buttons
@@ -962,7 +981,7 @@ mod tests {
             "monitor 0x71C"
         );
         // 640x480: the right column moves left by 160, the left side stays.
-        let small = WolLoginLayout::new(640, 480);
+        let small = WolLoginLayout::new(640, 480, LoginPolicy::Legacy);
         assert_eq!(
             small.page.button_rect(BACK),
             Some(RectPx::new(484, 409, 156, 42))
@@ -1218,9 +1237,9 @@ mod tests {
     }
 
     #[test]
-    fn online_page_offers_create_account_and_forgot_password() {
-        let layout = WolLoginLayout::new(800, 600).with_policy(LoginPolicy::Online);
-        let native = WolLoginLayout::new(800, 600);
+    fn online_page_offers_create_account_forgot_password_and_delete_account() {
+        let layout = WolLoginLayout::new(800, 600, LoginPolicy::Online);
+        let native = WolLoginLayout::new(800, 600, LoginPolicy::Legacy);
         assert_eq!(
             layout
                 .page
@@ -1228,11 +1247,16 @@ mod tests {
                 .iter()
                 .map(|button| button.id)
                 .collect::<Vec<_>>(),
-            [LOGIN, CREATE_ACCOUNT, FORGOT_PASSWORD, BACK]
+            [LOGIN, CREATE_ACCOUNT, FORGOT_PASSWORD, DELETE_ACCOUNT, BACK]
         );
         assert_eq!(
             layout.page.button_rect(CREATE_ACCOUNT),
             native.page.button_rect(FORGET)
+        );
+        // The next 42-pixel tile below Forgot Password.
+        assert_eq!(
+            layout.page.button_rect(DELETE_ACCOUNT),
+            Some(RectPx::new(644, 325, 156, 42))
         );
         assert_eq!(
             layout.page_spec().button(FORGOT_PASSWORD).unwrap().csf_key,
@@ -1245,10 +1269,10 @@ mod tests {
         );
         let mut globals = WolAccountGlobals::default();
         let mut login = WolLoginState::open_online(&mut globals, None);
-        assert!(!login.login_enabled && !login.button_enabled(FORGOT_PASSWORD));
+        assert!(!login.login_enabled && !login.button_enabled(DELETE_ACCOUNT));
         login.insert_text("Player_12345678901234567", &mut globals, &[]);
         assert_eq!(globals.nickname.len(), 24);
-        assert!(login.login_enabled && login.button_enabled(FORGOT_PASSWORD));
+        assert!(login.login_enabled && login.button_enabled(DELETE_ACCOUNT));
         assert_eq!(login.activate(CREATE_ACCOUNT, &mut globals), None);
         assert_eq!(
             login.account.as_ref().map(|form| form.fields[0].text()),

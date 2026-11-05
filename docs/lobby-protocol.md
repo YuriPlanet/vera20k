@@ -549,6 +549,10 @@ password. Every request below is a `POST` with a JSON body; a refusal's
   `invalid_password`.
 - `/v1/accounts/forget` `{name,sign_in_token}` returns 200 and drops that remembered
   sign-in.
+- `/v1/accounts/delete` `{name,password}` returns 200, deletes the account with its
+  email, remembered sign-ins and ranked games, signs out its player and mails the owner;
+  anyone may then take the name. A wrong password counts as at `/v1/sessions` (403
+  `wrong_password`, the lock), and a name without an account returns 404 `no_account`.
 
 At `/v1/sessions` an account's name needs its `password` or a `sign_in_token`, never
 both: with neither it returns 403 `name_claimed`, with a wrong one 403 `wrong_password`,
@@ -561,9 +565,11 @@ that name enters as a guest. A lobby without accounts set up refuses a password 
 503 `accounts_unavailable`.
 
 VERA20k's online login page has Password and Remember password under the name, and
-Create Account and Forgot Password under Login. Create Account asks for the name,
-email and password, then the mailed code, and signs in. Forgot Password mails the
-typed name's code, then asks for it and a new password, and signs in. A remembered
+Create Account, Forgot Password and Delete Account under Login. Create Account asks
+for the name, email and password, then the mailed code, and signs in. Forgot Password
+mails the typed name's code, then asks for it and a new password, and signs in. Delete
+Account asks for the typed name's password, then says the account is deleted and
+forgets a remembered sign-in of it. A remembered
 sign-in lives in `Account.json` beside `VERA.INI` as `{name, sign_in_token}` per lobby,
 readable only by its owner; the page then shows the name with a masked password.
 Unticking Remember password forgets it here and at the lobby, and so does a password

@@ -1,7 +1,8 @@
 //! VERA: the online login page's account popups (docs/lobby-protocol.md
-//! "Accounts"): Create Account, the mailed code that confirms it, and Forgot
-//! Password's code and new password. gamemd has no such dialog; they use the
-//! online Create Game box's art, field column and buttons.
+//! "Accounts"): Create Account, the mailed code that confirms it, Forgot
+//! Password's code and new password, and Delete Account's password. gamemd
+//! has no such dialog; they use the online Create Game box's art, field
+//! column and buttons.
 
 use crate::ui::shell::button::ShellButtonInteraction;
 use crate::ui::shell::modal::WolAccountFormLayout;
@@ -82,6 +83,10 @@ pub(crate) enum AccountRequest {
         code: String,
         password: String,
     },
+    Delete {
+        name: String,
+        password: String,
+    },
 }
 
 /// Never shows a password or code.
@@ -92,6 +97,7 @@ impl std::fmt::Debug for AccountRequest {
             Self::Verify { name, .. } => ("Verify", name),
             Self::Forgot { name } => ("Forgot", name),
             Self::Reset { name, .. } => ("Reset", name),
+            Self::Delete { name, .. } => ("Delete", name),
         };
         f.debug_struct("AccountRequest")
             .field("kind", &kind)
@@ -137,6 +143,9 @@ pub(crate) enum FormKind {
     Register,
     Verify,
     Reset,
+    Delete,
+    /// Delete's account is gone: no fields, and OK closes the popup.
+    Deleted,
 }
 
 #[derive(Clone)]
@@ -177,7 +186,15 @@ impl AccountField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AccountFormAction {
     Send(AccountRequest),
-    Cancel,
+    Close,
+}
+
+/// What a request the lobby accepted gives the form's owner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum AccountDone {
+    SignIn(AccountSignIn),
+    /// This account is deleted; the form stays open to say so.
+    Deleted(String),
 }
 
 /// A finished form: sign in to this account with this password.
@@ -292,6 +309,20 @@ impl WolAccountForm {
         form
     }
 
+    /// Delete Account for `name`: its password confirms it.
+    pub(crate) fn delete(name: &str) -> Self {
+        let mut form = Self::with_fields(
+            FormKind::Delete,
+            vec![AccountField::new(FieldKind::Password, "VERA:Password")],
+            format!(
+                "Delete {name} for good, with its email, password and ranked games? \
+                 Enter its password to confirm."
+            ),
+        );
+        form.name = name.to_owned();
+        form
+    }
+
     /// The request Forgot Password sends as the form opens.
     pub(crate) fn forgot_request(&self) -> AccountRequest {
         AccountRequest::Forgot {
@@ -375,11 +406,16 @@ impl WolAccountForm {
                     password,
                 })
             }
+            FormKind::Delete => valid_password(&password).then(|| AccountRequest::Delete {
+                name: self.name.clone(),
+                password,
+            }),
+            FormKind::Deleted => None,
         }
     }
 
     pub(crate) fn ok_enabled(&self) -> bool {
-        !self.busy && self.request().is_some()
+        self.kind == FormKind::Deleted || (!self.busy && self.request().is_some())
     }
 
     pub(crate) fn caret_visible(&self, now: Instant) -> bool {
@@ -402,13 +438,15 @@ impl WolAccountForm {
         }
     }
 
-    pub(crate) fn focused_edit_mut(&mut self) -> &mut SavedSeedDescriptionEdit {
-        &mut self.fields[self.focused].edit
+    pub(crate) fn focused_edit_mut(&mut self) -> Option<&mut SavedSeedDescriptionEdit> {
+        Some(&mut self.fields.get_mut(self.focused)?.edit)
     }
 
-    /// OK sends the form's request and waits; Cancel closes it.
+    /// OK sends the form's request and waits; Cancel, or OK once the
+    /// account is deleted, closes it.
     pub(crate) fn activate(&mut self, control: u16) -> Option<AccountFormAction> {
         match control {
+            FORM_OK if self.kind == FormKind::Deleted => Some(AccountFormAction::Close),
             FORM_OK => {
                 let request = self.request().filter(|_| !self.busy)?;
                 if let AccountRequest::Register {
@@ -428,13 +466,15 @@ impl WolAccountForm {
                 self.status = "Contacting VERA20k Online...".into();
                 Some(AccountFormAction::Send(request))
             }
-            FORM_CANCEL => Some(AccountFormAction::Cancel),
+            FORM_CANCEL => Some(AccountFormAction::Close),
             _ => None,
         }
     }
 
     pub(crate) fn insert_text(&mut self, text: &str) {
-        let field = &mut self.fields[self.focused];
+        let Some(field) = self.fields.get_mut(self.focused) else {
+            return;
+        };
         for unit in text.encode_utf16() {
             if field.kind.admits(unit) {
                 field
@@ -446,17 +486,20 @@ impl WolAccountForm {
 
     /// Tab moves between the fields, Enter clicks OK and Escape Cancel.
     pub(crate) fn edit_key(&mut self, key: WolEditKey) -> Option<AccountFormAction> {
-        let edit = &mut self.fields[self.focused].edit;
+        if key == WolEditKey::Enter {
+            return self.activate(FORM_OK);
+        }
+        let count = self.fields.len();
+        let edit = &mut self.fields.get_mut(self.focused)?.edit;
         match key {
             WolEditKey::Tab { reverse } => {
-                let count = self.fields.len();
                 self.focus(if reverse {
                     (self.focused + count - 1) % count
                 } else {
                     (self.focused + 1) % count
                 });
             }
-            WolEditKey::Enter => return self.activate(FORM_OK),
+            WolEditKey::Enter => {}
             WolEditKey::Backspace => edit.backspace(),
             WolEditKey::Delete => edit.delete(),
             WolEditKey::Left => edit.left(),
@@ -468,9 +511,10 @@ impl WolAccountForm {
     }
 
     /// The lobby answered the form's request. Register's success turns the
-    /// form into the code's; a confirmed code or reset gives the sign-in;
-    /// a refusal shows the lobby's message.
-    pub(crate) fn answered(&mut self, answer: Result<(), String>) -> Option<AccountSignIn> {
+    /// form into the code's; a confirmed code or reset gives the sign-in; a
+    /// deletion leaves the form saying so; a refusal shows the lobby's
+    /// message.
+    pub(crate) fn answered(&mut self, answer: Result<(), String>) -> Option<AccountDone> {
         self.busy = false;
         self.buttons = ShellButtonInteraction::default();
         if let Err(message) = answer {
@@ -494,10 +538,20 @@ impl WolAccountForm {
                 );
                 None
             }
-            FormKind::Verify | FormKind::Reset => Some(AccountSignIn {
+            FormKind::Verify | FormKind::Reset => Some(AccountDone::SignIn(AccountSignIn {
                 name: self.name.clone(),
                 password: std::mem::take(&mut self.password),
-            }),
+            })),
+            FormKind::Delete => {
+                self.kind = FormKind::Deleted;
+                self.fields.clear();
+                self.status = format!(
+                    "{} is deleted, with its email, password and ranked games.",
+                    self.name
+                );
+                Some(AccountDone::Deleted(self.name.clone()))
+            }
+            FormKind::Deleted => None,
         }
     }
 }
@@ -570,10 +624,10 @@ mod tests {
         form.activate(FORM_OK);
         assert_eq!(
             form.answered(Ok(())),
-            Some(AccountSignIn {
+            Some(AccountDone::SignIn(AccountSignIn {
                 name: "Tanya".into(),
                 password: "s3cret-pw".into(),
-            })
+            }))
         );
     }
 
@@ -596,10 +650,46 @@ mod tests {
         ));
         assert_eq!(
             form.answered(Ok(())),
-            Some(AccountSignIn {
+            Some(AccountDone::SignIn(AccountSignIn {
                 name: "Tanya".into(),
                 password: "n3w-password".into(),
-            })
+            }))
+        );
+    }
+
+    #[test]
+    fn delete_account_takes_the_password_then_says_it_is_gone() {
+        let mut form = WolAccountForm::delete("Tanya");
+        form.insert_text("short");
+        assert!(
+            !form.ok_enabled(),
+            "under 8 characters cannot be its password"
+        );
+        form.insert_text("-pw");
+        assert_eq!(
+            form.edit_key(WolEditKey::Enter),
+            Some(AccountFormAction::Send(AccountRequest::Delete {
+                name: "Tanya".into(),
+                password: "short-pw".into(),
+            }))
+        );
+        assert_eq!(form.answered(Err("Wrong password.".into())), None);
+        assert_eq!(
+            (form.kind, form.status.as_str()),
+            (FormKind::Delete, "Wrong password.")
+        );
+        form.activate(FORM_OK);
+        assert_eq!(
+            form.answered(Ok(())),
+            Some(AccountDone::Deleted("Tanya".into()))
+        );
+        assert!(form.fields.is_empty() && form.ok_enabled());
+        // No field takes the keys; OK closes.
+        form.insert_text("x");
+        assert_eq!(form.edit_key(WolEditKey::Tab { reverse: false }), None);
+        assert_eq!(
+            form.edit_key(WolEditKey::Enter),
+            Some(AccountFormAction::Close)
         );
     }
 

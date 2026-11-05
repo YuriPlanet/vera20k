@@ -125,6 +125,9 @@ pub(crate) enum WolServiceRequest {
     /// VERA online: Remember password was unticked for the remembered
     /// account; this computer forgets its sign-in, here and at the lobby.
     ForgetSignIn,
+    /// VERA online: the lobby deleted this account with its remembered
+    /// sign-ins; this computer forgets its own sign-in of it.
+    AccountDeleted { name: String },
     /// Forget Account: API+0x94(slot, "", "", 1).
     ForgetCredential { slot: u32 },
     /// Remember after a login: `0x00789500(nickname, password, changed,
@@ -1518,7 +1521,11 @@ mod tests {
         let modern = visit.login().unwrap().policy.page_spec();
         assert_eq!(modern, LoginPolicy::Online.page_spec());
         let column = ShellSlideKind::WolLogin.column(9, Some(modern));
-        assert_eq!((column.top_buttons, column.bottom_button), (3, true));
+        assert_eq!(
+            (column.top_buttons, column.bottom_button),
+            (4, true),
+            "Delete Account is the fourth"
+        );
         visit.page = WolPage::Login(Box::new(WolLoginState::open(&mut globals, &[])));
         let native = visit.login().unwrap().policy.page_spec();
         assert_eq!(native, LoginPolicy::Legacy.page_spec());

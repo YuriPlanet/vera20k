@@ -149,6 +149,10 @@ fn account_call(request: &crate::ui::wol_account::AccountRequest) -> (&'static s
             "/v1/accounts/reset",
             json!({"name": name, "code": code, "password": password}),
         ),
+        AccountRequest::Delete { name, password } => (
+            "/v1/accounts/delete",
+            json!({"name": name, "password": password}),
+        ),
     }
 }
 

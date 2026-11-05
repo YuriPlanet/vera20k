@@ -41,6 +41,8 @@ pub enum WolTarget {
     /// Forgot Password's code and new password popup, its code request
     /// answered in place.
     ModernForgotPassword,
+    /// Delete Account's password popup, filled in; nothing is sent.
+    ModernDeleteAccount,
     /// A typed nickname and an eight-character password: Login enabled.
     LoginTyped,
     /// Back on `0x10F`: a fresh `0x10E` settled.
@@ -358,6 +360,7 @@ impl WolTarget {
                 | Self::ModernCreateAccount
                 | Self::ModernAccountCode
                 | Self::ModernForgotPassword
+                | Self::ModernDeleteAccount
         )
     }
 
@@ -370,6 +373,7 @@ impl WolTarget {
                 | Self::ModernCreateAccount
                 | Self::ModernAccountCode
                 | Self::ModernForgotPassword
+                | Self::ModernDeleteAccount
                 | Self::LoginTyped
                 | Self::LoginBack
                 | Self::ServerListWait
@@ -647,6 +651,7 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
         "wol-modern-forgot-password",
         WolTarget::ModernForgotPassword,
     ),
+    ("wol-modern-delete-account", WolTarget::ModernDeleteAccount),
     ("wol-0x10f-typed", WolTarget::LoginTyped),
     ("wol-0x10f-back", WolTarget::LoginBack),
     ("wol-0xc4-server-list-wait", WolTarget::ServerListWait),
@@ -4582,8 +4587,9 @@ impl WolCapture {
             && state.frontend.shell_first_paint_slide.is_none())
     }
 
-    /// Create Account or Forgot Password over the online login page. The
-    /// lobby's answers come in place, so nothing reaches the live lobby.
+    /// Create Account, Forgot Password or Delete Account over the online
+    /// login page. The lobby's answers come in place, so nothing reaches the
+    /// live lobby.
     fn account_popup(
         &mut self,
         state: &mut AppState,
@@ -4602,6 +4608,10 @@ impl WolCapture {
             login_mut(state)?.account = Some(form);
             account_type(state, &["123456", PASSWORD, PASSWORD]);
             self.event(frame, "Forgot Password: code and new password typed");
+        } else if target == WolTarget::ModernDeleteAccount {
+            login_click(state, button(layout, crate::ui::wol_login::DELETE_ACCOUNT)?);
+            account_type(state, &[PASSWORD]);
+            self.event(frame, "Delete Account: password typed");
         } else {
             login_click(state, button(layout, crate::ui::wol_login::CREATE_ACCOUNT)?);
             account_type(state, &["player@example.com", PASSWORD, PASSWORD]);
