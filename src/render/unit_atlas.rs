@@ -522,7 +522,7 @@ fn sprite_place(entry: &UnitSpriteEntry) -> SpritePlace {
 
 impl UnitAtlas {
     /// Replace the resident sprites' pixels whole and index them.
-    pub(crate) fn set_rendered_cache(&mut self, rendered: Vec<CachedUnitSprite>) {
+    fn set_rendered_cache(&mut self, rendered: Vec<CachedUnitSprite>) {
         self.rendered_cache = rendered;
         self.rendered_index = RenderedIndex::default();
         for index in 0..self.rendered_cache.len() {
