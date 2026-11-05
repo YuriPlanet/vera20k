@@ -64,8 +64,9 @@ pub(crate) struct Gap {
     pub(crate) kind: OrderingGap,
     pub(crate) since_ms: u64,
     // An UPLINK went out while this gap was open.
-    pub(crate) uplinked: bool,
-    // An UPLINK went `resend_after` ms or more into the gap (§6.7 item 1).
+    // When the first UPLINK went while the gap was open.
+    pub(crate) uplinked: Option<u64>,
+    // An UPLINK went max(16, 4 rttvar) ms after that one (§6.7 item 1).
     pub(crate) resent: bool,
     // Fallback PULLs sent for it, when the next is due, and the watermark
     // it last saw: an advance restarts the grace (spec §7.7).
@@ -164,10 +165,10 @@ impl ClientSession {
                 && (state != LinkState::Congested || since_last >= CONGESTED_SEND_SPACING_MS))
             || schedule.gap.is_some_and(|gap| {
                 since_last >= GAP_UPLINK_SPACING_MS
-                    && if gap.uplinked {
-                        // Once more when the gap outlasts max(16, 4 rttvar):
-                        // a snapshot the relay can judge (§6.7 item 1).
-                        !gap.resent && now_ms.saturating_sub(gap.since_ms) >= resend
+                    && if let Some(first) = gap.uplinked {
+                        // Once more max(16, 4 rttvar) after the first: a
+                        // snapshot the relay can judge (§6.7 item 1).
+                        !gap.resent && now_ms.saturating_sub(first) >= resend
                     } else {
                         gap.kind == OrderingGap::Reordered
                             || now_ms.saturating_sub(gap.since_ms) >= u64::from(schedule.turn_ms)
@@ -318,8 +319,10 @@ impl ClientSession {
         let resend = gap_resend_ms(link);
         let schedule = &mut link.schedule;
         if let Some(gap) = schedule.gap.as_mut() {
-            gap.uplinked = true;
-            gap.resent |= now_ms.saturating_sub(gap.since_ms) >= resend;
+            match gap.uplinked {
+                None => gap.uplinked = Some(now_ms),
+                Some(first) => gap.resent |= now_ms.saturating_sub(first) >= resend,
+            }
         }
         if kind == Kind::Normal {
             schedule.checksums = None;
@@ -470,8 +473,8 @@ impl ClientSession {
             });
         }
         if let Some(gap) = schedule.gap.filter(|gap| !gap.resent) {
-            let grace = if gap.uplinked {
-                gap.since_ms + gap_resend_ms(link)
+            let grace = if let Some(first) = gap.uplinked {
+                first + gap_resend_ms(link)
             } else {
                 match gap.kind {
                     OrderingGap::Reordered => 0,
@@ -552,7 +555,7 @@ impl ClientSession {
                 link.schedule.gap = Some(Gap {
                     kind,
                     since_ms: now_ms,
-                    uplinked: false,
+                    uplinked: None,
                     resent: false,
                     pulls: 0,
                     next_pull_ms: None,
@@ -561,7 +564,7 @@ impl ClientSession {
             }
             (Some(open), Some(kind)) => open.kind = kind,
             (Some(open), None) => {
-                if open.uplinked && open.pulls == 0 {
+                if open.uplinked.is_some() && open.pulls == 0 {
                     link.gaps_repaired_by_push += 1;
                 }
                 link.schedule.gap = None;
@@ -798,7 +801,7 @@ mod tests {
         poll(&mut session, 10).unwrap();
         assert!(poll(&mut session, 26).is_some(), "a copy before any fold");
         // 32 judged, none lost: the first fold decides good.
-        link(&mut session).loss.add(32, 0);
+        link(&mut session).loss.add(32, 0, 30);
         assert!(!link(&mut session).loss.lossy);
         poll(&mut session, 40);
         assert_eq!(session.link_stats().uplink, LinkState::Good);
@@ -880,12 +883,24 @@ mod tests {
         link(&mut session).rtt.sample(40, 0); // rttvar 20: again at 80 ms
         session.set_ordering_gap(Some(OrderingGap::Reordered), 20);
         assert!(poll(&mut session, 36).is_some(), "the first, 16 ms on");
-        assert!(poll(&mut session, 99).is_none());
+        assert!(poll(&mut session, 115).is_none());
         assert!(
-            poll(&mut session, 100).is_some(),
-            "the second, max(16, 4 * 20)"
+            poll(&mut session, 116).is_some(),
+            "the second, max(16, 4 * 20) after the first"
         );
-        assert!(poll(&mut session, 200).is_none(), "at most two per gap");
+        assert!(poll(&mut session, 300).is_none(), "at most two per gap");
+    }
+
+    #[test]
+    fn a_gap_behind_a_status_resends_only_after_its_first_uplink() {
+        let mut session = started();
+        poll(&mut session, 0).unwrap();
+        session.set_ordering_gap(Some(OrderingGap::BehindStatus), 20);
+        // max(16, 4 * 0) from the gap would be 36, before the turn's grace.
+        assert!(poll(&mut session, 86).is_none());
+        assert!(poll(&mut session, 87).is_some(), "the first, after turn_ms");
+        assert!(poll(&mut session, 102).is_none());
+        assert!(poll(&mut session, 103).is_some(), "the second, 16 ms later");
     }
 
     #[test]
