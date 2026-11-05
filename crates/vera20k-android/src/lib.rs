@@ -70,6 +70,9 @@ pub extern "system" fn Java_org_vera20k_VeraActivity_nativeOnFolderPicked(
     match &picked {
         Some(uri) => {
             log::info!("asset import: folder picked: {uri}");
+            // The dialog switches to its copying step before the copy's first
+            // progress callback can arrive.
+            vera20k::util::import_status::note(vera20k::util::import_status::ImportEvent::Started);
             // The copy itself runs on the Java side (only ContentResolver can
             // read a SAF tree); this starts it and returns immediately.
             let _ = env.call_method(
@@ -98,15 +101,27 @@ pub extern "system" fn Java_org_vera20k_VeraActivity_nativeImportFinished(
         .ok()
         .map(|value| value.to_string_lossy().into_owned())
         .unwrap_or_default();
+    use vera20k::util::import_status::{self, ImportEvent};
     if let Some(path) = text.strip_prefix("ok:") {
         log::info!("asset import: copied into {path}; config.toml written");
+        import_status::note(ImportEvent::Done);
     } else {
-        log::error!(
-            "asset import: {}",
-            text.strip_prefix("failed:").unwrap_or(&text)
-        );
+        let reason = text.strip_prefix("failed:").unwrap_or(&text).to_owned();
+        log::error!("asset import: {reason}");
+        import_status::note(ImportEvent::Failed(reason));
     }
     let _ = env.exception_clear();
+}
+
+/// The import's copy progress, in bytes. Runs on the copy's own thread.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_vera20k_VeraActivity_nativeImportProgress(
+    _env: jni::JNIEnv,
+    _activity: JObject,
+    copied_bytes: jni::sys::jlong,
+) {
+    use vera20k::util::import_status::{self, ImportEvent};
+    import_status::note(ImportEvent::Progress(copied_bytes.max(0) as u64));
 }
 
 /// Bind `nativeOnFolderPicked` to this activity's class.
@@ -136,6 +151,11 @@ fn register_folder_picker_native() -> bool {
                 name: "nativeImportFinished".into(),
                 sig: "(Ljava/lang/String;)V".into(),
                 fn_ptr: Java_org_vera20k_VeraActivity_nativeImportFinished as *mut std::ffi::c_void,
+            },
+            jni::NativeMethod {
+                name: "nativeImportProgress".into(),
+                sig: "(J)V".into(),
+                fn_ptr: Java_org_vera20k_VeraActivity_nativeImportProgress as *mut std::ffi::c_void,
             },
         ];
         let registered = env.register_native_methods(class, &methods).is_ok();

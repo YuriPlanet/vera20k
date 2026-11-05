@@ -22,6 +22,12 @@ class VeraActivity : NativeActivity() {
     private companion object {
         /** Unique within this activity; "VR" in ASCII. */
         const val REQUEST_PICK_FOLDER = 0x5652
+
+        /** A retail installation is about 1.5 GB; leave headroom for the copy. */
+        const val REQUIRED_BYTES = 1700L shl 20
+
+        /** How many bytes may pass between two progress callbacks. */
+        const val PROGRESS_STEP_BYTES = 16L shl 20
     }
 
     /**
@@ -56,6 +62,12 @@ class VeraActivity : NativeActivity() {
     /** Implemented in `crates/vera20k-android`; reports the copy's outcome. */
     private external fun nativeImportFinished(result: String)
 
+    /** Implemented in `crates/vera20k-android`; bytes copied so far. */
+    private external fun nativeImportProgress(copiedBytes: Long)
+
+    private var copiedBytes = 0L
+    private var reportedBytes = 0L
+
     /**
      * Copies the chosen tree into the app's own folder and points config.toml at
      * the copy.
@@ -67,14 +79,26 @@ class VeraActivity : NativeActivity() {
      * afterwards reads real files, which is what its memory-mapped asset loading
      * needs.
      *
-     * Runs off the UI thread; [nativeImportFinished] carries the result back as
-     * "ok:<path>" or "failed:<reason>".
+     * Runs off the UI thread; progress arrives through [nativeImportProgress]
+     * and the outcome through [nativeImportFinished] as "ok:<path>" or
+     * "failed:<reason>".
      */
     fun startImport(treeUri: String) {
         Thread {
+            val target = File(filesDir, "ra2")
             val result = try {
-                val target = File(filesDir, "ra2")
                 target.mkdirs()
+                // Refuse before copying rather than half-way: a retail
+                // installation is about 1.5 GB and the copy is all-or-nothing.
+                val free = target.usableSpace
+                if (free < REQUIRED_BYTES) {
+                    throw IOException(
+                        "not enough free space: " + (free shr 20) + " MB free, " +
+                            (REQUIRED_BYTES shr 20) + " MB needed",
+                    )
+                }
+                copiedBytes = 0
+                reportedBytes = 0
                 copyTree(Uri.parse(treeUri), target)
                 writeConfig(target.absolutePath)
                 "ok:${target.absolutePath}"
@@ -118,6 +142,13 @@ class VeraActivity : NativeActivity() {
                     contentResolver.openInputStream(source)?.use { input ->
                         out.outputStream().use { output -> input.copyTo(output, 1 shl 16) }
                     } ?: throw IOException("cannot read $name")
+                    copiedBytes += out.length()
+                    // Report in 16 MB steps: the native side only draws text,
+                    // and a callback per file would flood it.
+                    if (copiedBytes - reportedBytes >= PROGRESS_STEP_BYTES) {
+                        reportedBytes = copiedBytes
+                        nativeImportProgress(copiedBytes)
+                    }
                 }
             }
         } ?: throw IOException("cannot list $documentId")

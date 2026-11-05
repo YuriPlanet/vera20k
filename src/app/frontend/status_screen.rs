@@ -152,6 +152,23 @@ pub(crate) fn shell_error_buttons(state: &AppState) -> Buttons {
     Buttons::for_shell_error(state)
 }
 
+/// Move the importing thread's progress and outcome into the dialog.
+///
+/// The copy belongs to the platform thread that can read the chosen tree, so it
+/// reports through `util::import_status` and the card drains it here, on the
+/// frame it draws.
+fn apply_import_events(state: &mut AppState) {
+    use crate::util::import_status::ImportEvent;
+    for event in crate::util::import_status::drain() {
+        match event {
+            ImportEvent::Started => state.frontend.asset_import.start_copy(None),
+            ImportEvent::Progress(bytes) => state.frontend.asset_import.advance_copy(bytes),
+            ImportEvent::Done => state.frontend.asset_import.finish_copy(),
+            ImportEvent::Failed(reason) => state.frontend.asset_import.fail(reason),
+        }
+    }
+}
+
 // --- palette -------------------------------------------------------------
 /// The Red Alert 2 button read: a #CE0000 core fading to black, edged in
 /// #FF0000 between black hairlines, under #FFFF00 type.
@@ -379,6 +396,7 @@ pub(crate) fn render(
     detail: &str,
     buttons: Buttons,
 ) {
+    apply_import_events(state);
     state.frontend.status_screen_drawn = true;
     // The in-repo stroke face is a skeleton: its capitals are unambiguous where
     // its lowercase forms are not, so the card sets every string in caps. That
