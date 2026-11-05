@@ -47,6 +47,62 @@ pub struct Scenario {
     pub drop_rules: Vec<DropRule>,
     #[serde(default)]
     pub desync: Option<Desync>,
+    /// Which headless client runs: the phase 1 model of the current
+    /// production policy, or the production adaptive `ClientSession`.
+    #[serde(default)]
+    pub client: ClientKind,
+    #[serde(default)]
+    pub service: ServiceMode,
+    /// Each client's first service in ms; random within 50 ms when absent.
+    #[serde(default)]
+    pub start_offsets_ms: Option<Vec<u64>>,
+    /// Commands at fixed times, besides the Poisson ones of `apm`.
+    #[serde(default)]
+    pub commands: Vec<ClientAt>,
+    /// Leave the match (adaptive client).
+    #[serde(default)]
+    pub leaves: Vec<ClientAt>,
+    /// Renew the hop's ticket and move to the new hop (adaptive client).
+    #[serde(default)]
+    pub renewals: Vec<ClientAt>,
+    /// Read the stream as a rejoining process does, RESTORING set and by
+    /// PULL, over `[from_ms, to_ms)` (adaptive client).
+    #[serde(default)]
+    pub restoring: Vec<ClientWindow>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ClientKind {
+    #[default]
+    Model,
+    Adaptive,
+}
+
+/// `periodic`: every client serves every 16 ms with its own phase, as the
+/// game loop does. `event`: also at once on every datagram, content event
+/// and `next_uplink_deadline`, which the appendix A timeline assumes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ServiceMode {
+    #[default]
+    Periodic,
+    Event,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientAt {
+    pub client: u8,
+    pub at_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClientWindow {
+    pub client: u8,
+    pub from_ms: u64,
+    pub to_ms: u64,
 }
 
 fn default_seed() -> u64 {
@@ -111,6 +167,9 @@ pub struct LinkSpec {
     /// `[from_ms, to_ms)` windows in which nothing gets through.
     #[serde(default)]
     pub outages: Vec<[u64; 2]>,
+    /// `[at_ms, delay_ms]`: from `at_ms` on, the fixed delay is `delay_ms`.
+    #[serde(default)]
+    pub delay_changes: Vec<[f64; 2]>,
 }
 
 fn default_delay_ms() -> f64 {
@@ -128,6 +187,7 @@ impl Default for LinkSpec {
             bandwidth_bps: 0,
             queue_ms: 0.0,
             outages: Vec::new(),
+            delay_changes: Vec::new(),
         }
     }
 }
@@ -220,6 +280,24 @@ impl Scenario {
             .any(|group| group.first > group.last || group.last >= scenario.players)
         {
             return Err("a group's first..=last must name players".into());
+        }
+        let named = |client: u8| client < scenario.players;
+        if !scenario
+            .commands
+            .iter()
+            .chain(&scenario.leaves)
+            .chain(&scenario.renewals)
+            .all(|at| named(at.client))
+            || !scenario.restoring.iter().all(|window| named(window.client))
+            || scenario
+                .start_offsets_ms
+                .as_ref()
+                .is_some_and(|offsets| offsets.len() != usize::from(scenario.players))
+        {
+            return Err(
+                "commands, leaves, renewals, restoring and start_offsets_ms must name players"
+                    .into(),
+            );
         }
         Ok(scenario)
     }

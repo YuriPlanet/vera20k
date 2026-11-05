@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::{OrderEntry, OrderStatus};
+use crate::{OrderEntry, OrderStatus, OrderingGap};
 
 /// Records past the watermark kept for later (spec §3.5: `recv_next + 256`;
 /// the current client's `REORDER_WINDOW`, src/net/live_commands/sequenced.rs
@@ -174,6 +174,27 @@ impl StreamReader {
                 .is_some_and(|(sequence, _)| *sequence > self.next)
     }
 
+    /// The gap as spec §6.3 row 2 names it: a buffered record past the
+    /// watermark is reordering; otherwise a STATUS ahead of it.
+    pub fn gap_kind(&self) -> Option<OrderingGap> {
+        if self
+            .ahead
+            .first_key_value()
+            .is_some_and(|(sequence, _)| *sequence > self.next)
+        {
+            Some(OrderingGap::Reordered)
+        } else if self.remote_next > self.next {
+            Some(OrderingGap::BehindStatus)
+        } else {
+            None
+        }
+    }
+
+    /// The relay's `next_seq` from its latest STATUS.
+    pub fn remote_next(&self) -> u64 {
+        self.remote_next
+    }
+
     /// The next contiguous record, which moves the watermark past it.
     pub fn pop(&mut self) -> Option<Record> {
         let entry = self.ahead.first_entry()?;
@@ -184,5 +205,34 @@ impl StreamReader {
         self.next += 1;
         self.read.push(record);
         Some(record)
+    }
+}
+
+/// How often spec §6.3 row 2 would send a gap UPLINK on this stream: once
+/// per gap, at once for reordering, after `turn_ms` for a STATUS ahead.
+/// Both clients count it the same way, so the baseline and the adaptive
+/// transport compare (coordinator's phase 2 note on RTT 200 ms with jitter).
+#[derive(Debug, Default)]
+pub struct GapTriggers {
+    since: Option<u64>,
+    counted: bool,
+    /// When each trigger fired, in virtual µs.
+    pub times: Vec<u64>,
+}
+
+impl GapTriggers {
+    pub fn observe(&mut self, gap: Option<OrderingGap>, now_ms: u64, turn_ms: u64, at_us: u64) {
+        let Some(gap) = gap else {
+            self.since = None;
+            self.counted = false;
+            return;
+        };
+        let since = *self.since.get_or_insert(now_ms);
+        if !self.counted
+            && (gap == OrderingGap::Reordered || now_ms.saturating_sub(since) >= turn_ms)
+        {
+            self.counted = true;
+            self.times.push(at_us);
+        }
     }
 }

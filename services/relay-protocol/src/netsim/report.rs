@@ -4,6 +4,9 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
+use super::scenario::ClientKind;
+use crate::{ClientLinkStats, ReaderLinkStats};
+
 /// IPv4 and UDP headers, counted into every datagram's bytes.
 pub const IP_UDP_BYTES: usize = 28;
 
@@ -96,11 +99,98 @@ pub struct ClientReport {
     pub errors: BTreeMap<String, f64>,
     /// Datagrams the client session refused (duplicates, replays).
     pub refused: BTreeMap<String, f64>,
+    /// Gap UPLINKs spec §6.3 row 2 would send on this stream: one per gap,
+    /// at once when reordered, after `turn_ms` behind a STATUS. Counted the
+    /// same way for both clients, so the baseline shows how often the
+    /// adaptive transport would fire it.
+    pub gap_uplink_triggers: f64,
+    /// The adaptive client's §10.1 statistics at the end of the run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link: Option<LinkSummary>,
+    /// The relay's §10.2 view of this reader at the end of the run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reader: Option<ReaderSummary>,
+}
+
+/// `ClientLinkStats` (spec §10.1) as the report prints it.
+#[derive(Debug, Serialize, Clone, Default)]
+pub struct LinkSummary {
+    pub uplink: String,
+    pub up_loss_permille: u16,
+    /// Mean over folds (spec §10.1).
+    pub up_loss_permille_mean: f64,
+    pub up_loss_permille_max: u16,
+    pub uplink_state_ms: [u64; 4],
+    pub uplink_state_entries: [u64; 4],
+    pub copies: u64,
+    pub rto_timeouts: u64,
+    pub rto_backoff_max: u32,
+    pub datagrams_received: u64,
+    pub gaps: u64,
+    pub gaps_repaired_by_push: u64,
+    pub repair_pulls: u64,
+    pub srtt_p50_ms: Option<u32>,
+    pub srtt_p99_ms: Option<u32>,
+    pub base_ms: Option<u32>,
+    pub delayed_ms: u64,
+}
+
+impl LinkSummary {
+    pub fn of(stats: ClientLinkStats) -> Self {
+        Self {
+            uplink: format!("{:?}", stats.uplink),
+            up_loss_permille: stats.up_loss_permille,
+            up_loss_permille_mean: if stats.up_loss_folds == 0 {
+                0.0
+            } else {
+                stats.up_loss_permille_sum as f64 / stats.up_loss_folds as f64
+            },
+            up_loss_permille_max: stats.up_loss_permille_max,
+            uplink_state_ms: stats.uplink_state_ms,
+            uplink_state_entries: stats.uplink_state_entries,
+            copies: stats.copies,
+            rto_timeouts: stats.rto_timeouts,
+            rto_backoff_max: stats.rto_backoff_max,
+            datagrams_received: stats.datagrams_received,
+            gaps: stats.gaps,
+            gaps_repaired_by_push: stats.gaps_repaired_by_push,
+            repair_pulls: stats.repair_pulls,
+            srtt_p50_ms: stats.srtt_p50_ms,
+            srtt_p99_ms: stats.srtt_p99_ms,
+            base_ms: stats.base_ms,
+            delayed_ms: stats.delayed_ms,
+        }
+    }
+}
+
+/// `ReaderLinkStats` (spec §10.2) as the report prints it.
+#[derive(Debug, Serialize, Clone, Default)]
+pub struct ReaderSummary {
+    pub downlink: String,
+    pub down_loss_permille: u16,
+    pub piggyback_depth: u8,
+    /// Datagrams by send-log kind: non-PACK, new, repeat, retransmission,
+    /// tail probe (spec §4.2).
+    pub packets_by_kind: [u64; 5],
+    pub bytes_by_kind: [u64; 5],
+}
+
+impl ReaderSummary {
+    pub fn of(stats: ReaderLinkStats) -> Self {
+        Self {
+            downlink: format!("{:?}", stats.downlink),
+            down_loss_permille: stats.down_loss_permille,
+            piggyback_depth: stats.piggyback_depth,
+            packets_by_kind: stats.packets_by_kind,
+            bytes_by_kind: stats.bytes_by_kind,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Clone)]
 pub struct Report {
     pub scenario: String,
+    pub client: ClientKind,
     pub seed: u64,
     pub players: u8,
     pub tick_hz: u16,
@@ -172,5 +262,8 @@ pub fn mean(label: &str, members: &[(&ClientReport, Vec<f64>, Vec<f64>)]) -> Cli
         executed_frames: avg(&|report| report.executed_frames),
         errors: sum_maps(&|report| &report.errors),
         refused: sum_maps(&|report| &report.refused),
+        gap_uplink_triggers: avg(&|report| report.gap_uplink_triggers),
+        link: None,
+        reader: None,
     }
 }

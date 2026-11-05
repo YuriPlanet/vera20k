@@ -112,12 +112,22 @@ impl Link {
         } else {
             1
         };
-        Ok((0..copies).map(|_| departs_us + self.delay_us()).collect())
+        Ok((0..copies)
+            .map(|_| departs_us + self.delay_us(now_us))
+            .collect())
     }
 
-    /// Fixed delay plus jitter uniform in [-jitter, +jitter], never negative.
-    fn delay_us(&mut self) -> u64 {
+    /// Fixed delay (the latest `delay_changes` entry due by `now_us`) plus
+    /// jitter uniform in [-jitter, +jitter], never negative.
+    fn delay_us(&mut self, now_us: u64) -> u64 {
+        let delay = self
+            .spec
+            .delay_changes
+            .iter()
+            .filter(|[at_ms, _]| *at_ms * 1000.0 <= now_us as f64)
+            .last()
+            .map_or(self.spec.delay_ms, |[_, delay]| *delay);
         let jitter = self.spec.jitter_ms * (2.0 * self.rng.unit() - 1.0);
-        ((self.spec.delay_ms + jitter).max(0.0) * 1000.0) as u64
+        ((delay + jitter).max(0.0) * 1000.0) as u64
     }
 }

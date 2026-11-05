@@ -13,28 +13,34 @@
 //! accepts, as `services/relay/src/main.rs` does. Each client's game loop
 //! runs every 16 ms with its own phase and passes the 16 ms wall bucket.
 
+pub mod adaptive_client;
+pub mod client;
 pub mod inspect;
 pub mod model_client;
 pub mod network;
 pub mod reader;
 pub mod report;
 pub mod scenario;
+pub mod trace;
 
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BinaryHeap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap};
 use std::net::{Ipv4Addr, SocketAddrV4};
 
 use crate::{
-    ClientSession, ForwardDatagram, OrderingCertificate, RelayServer, SecretKey, Ticket,
-    derive_packet_key, turn_frames,
+    ClientLinkStats, ClientSession, ForwardDatagram, OrderingCertificate, ReaderLinkStats,
+    RelayServer, SecretKey, Ticket, derive_packet_key, turn_frames,
 };
+use adaptive_client::AdaptiveClient;
+use client::{HeadlessClient, Outgoing};
 use inspect::Detail;
 use model_client::ModelClient;
 use network::{Link, Loss, Rng};
 use reader::Record;
 use report::{ClientReport, Distribution, Report, Traffic};
 pub use scenario::Scenario;
-use scenario::{Direction, DropRule};
+use scenario::{ClientKind, Direction, DropRule, ServiceMode};
+use trace::{Origin, Trace, WireRecord};
 
 /// The relay's wall clock in Unix seconds at virtual time zero.
 const UNIX_BASE: u64 = 1_000_000;
@@ -46,12 +52,28 @@ const RELAY_PASS_US: u64 = 1_000;
 const START_SPREAD_US: u64 = 50_000;
 /// Random streams per client: uplink, downlink, commands, start time.
 const STREAMS: u64 = 4;
+const PAYLOAD_KEY: [u8; 32] = [89; 32];
+/// The room every scenario plays in.
+pub const ROOM: [u8; 16] = [0x42; 16];
+
+#[derive(Debug, Clone, Copy)]
+enum Action {
+    Command,
+    Leave,
+    Renew,
+    Restore(bool),
+}
 
 enum Event {
     RelayPass,
+    /// The periodic game-loop service, which schedules the next one.
     ClientTick(usize),
-    ToRelay(usize, Vec<u8>),
+    /// An extra event-mode service.
+    Wake(usize),
+    /// A client datagram copy reaching the relay, with its wire record.
+    ToRelay(usize, Vec<u8>, usize),
     ToClient(usize, Vec<u8>),
+    Action(usize, Action),
 }
 
 struct Queued {
@@ -92,7 +114,10 @@ struct Observed {
 struct Client {
     label: String,
     endpoint: SocketAddrV4,
-    model: ModelClient,
+    driver: Box<dyn HeadlessClient>,
+    ticket: Ticket,
+    /// Each hop's ticket nonce, which names relay datagrams' hop.
+    nonces: Vec<[u8; 16]>,
     up: Link,
     down: Link,
     commands: Rng,
@@ -103,6 +128,9 @@ struct Client {
     /// Datagrams seen per (direction, kind), for drop rules.
     seen: HashMap<(Direction, &'static str), u64>,
     observed: Observed,
+    wakes: BTreeSet<u64>,
+    last_stats: Option<ClientLinkStats>,
+    last_reader: Option<ReaderLinkStats>,
 }
 
 /// The relay's journal directory, removed with the simulation.
@@ -125,6 +153,7 @@ impl Drop for JournalDirectory {
 
 pub struct Simulation {
     scenario: Scenario,
+    key: SecretKey,
     relay: RelayServer,
     _journal: JournalDirectory,
     clients: Vec<Client>,
@@ -132,6 +161,7 @@ pub struct Simulation {
     queue: BinaryHeap<Queued>,
     order: u64,
     relay_rejects: BTreeMap<String, u64>,
+    trace: Option<Trace>,
 }
 
 fn unix(now_ms: u64) -> u64 {
@@ -141,10 +171,9 @@ fn unix(now_ms: u64) -> u64 {
 impl Simulation {
     pub fn new(scenario: Scenario) -> Self {
         let key = SecretKey::new([0x5A; 32]);
-        let room = [0x42; 16];
         let expires = UNIX_BASE + crate::MAX_TICKET_LIFETIME;
         let certificate = OrderingCertificate {
-            room,
+            room: ROOM,
             sources_mask: (1u32 << scenario.players) - 1,
             tick_hz: scenario.tick_hz,
             expires,
@@ -157,19 +186,18 @@ impl Simulation {
         for (index, (label, up, down)) in scenario.client_networks().into_iter().enumerate() {
             let source = index as u8;
             let ticket = Ticket {
-                room,
+                room: ROOM,
                 source,
                 expires,
                 nonce: [source + 1; 16],
                 player: [source + 101; 16],
                 generation: 1,
-            }
-            .sign(&key)
-            .expect("ticket");
+            };
+            let signed = ticket.sign(&key).expect("ticket");
             let session = ClientSession::new(
-                &ticket,
-                *derive_packet_key(&key, &ticket).expose_for_https(),
-                [89; 32],
+                &signed,
+                *derive_packet_key(&key, &signed).expose_for_https(),
+                PAYLOAD_KEY,
             )
             .expect("client session");
             let stream = |n: u64| Rng::new(scenario.seed, index as u64 * STREAMS + n);
@@ -179,17 +207,30 @@ impl Simulation {
                 .desync
                 .filter(|desync| desync.client == source)
                 .map(|desync| desync.frame);
-            clients.push(Client {
-                label,
-                endpoint,
-                model: ModelClient::new(
+            let driver: Box<dyn HeadlessClient> = match scenario.client {
+                ClientKind::Model => Box::new(ModelClient::new(
                     session,
                     certificate.clone(),
                     scenario.players,
                     scenario.tick_hz,
                     scenario.command_bytes,
                     fault,
-                ),
+                )),
+                ClientKind::Adaptive => Box::new(AdaptiveClient::new(
+                    session,
+                    certificate.clone(),
+                    PAYLOAD_KEY,
+                    scenario.tick_hz,
+                    scenario.command_bytes,
+                    fault,
+                )),
+            };
+            clients.push(Client {
+                label,
+                endpoint,
+                driver,
+                ticket,
+                nonces: vec![ticket.nonce],
                 up: Link::new(up, stream(0)),
                 down: Link::new(down, stream(1)),
                 commands: stream(2),
@@ -197,24 +238,63 @@ impl Simulation {
                 pack_high: 1,
                 seen: HashMap::new(),
                 observed: Observed::default(),
+                wakes: BTreeSet::new(),
+                last_stats: None,
+                last_reader: None,
             });
         }
         let journal = JournalDirectory::new();
         let mut simulation = Self {
-            relay: RelayServer::with_journal(key, 4, &journal.0).expect("relay journal"),
+            relay: RelayServer::with_journal(key.clone(), 4, &journal.0).expect("relay journal"),
+            key,
             _journal: journal,
             clients,
             endpoints,
             queue: BinaryHeap::new(),
             order: 0,
             relay_rejects: BTreeMap::new(),
+            trace: None,
             scenario,
         };
         simulation.schedule(0, Event::RelayPass);
         for index in 0..simulation.clients.len() {
-            let start = Rng::new(simulation.scenario.seed, index as u64 * STREAMS + 3).next_u64()
-                % START_SPREAD_US;
+            let start = match &simulation.scenario.start_offsets_ms {
+                Some(offsets) => offsets[index] * 1000,
+                None => {
+                    Rng::new(simulation.scenario.seed, index as u64 * STREAMS + 3).next_u64()
+                        % START_SPREAD_US
+                }
+            };
             simulation.schedule(start, Event::ClientTick(index));
+        }
+        let actions: Vec<(u8, u64, Action)> = simulation
+            .scenario
+            .commands
+            .iter()
+            .map(|at| (at.client, at.at_ms, Action::Command))
+            .chain(
+                simulation
+                    .scenario
+                    .leaves
+                    .iter()
+                    .map(|at| (at.client, at.at_ms, Action::Leave)),
+            )
+            .chain(
+                simulation
+                    .scenario
+                    .renewals
+                    .iter()
+                    .map(|at| (at.client, at.at_ms, Action::Renew)),
+            )
+            .chain(simulation.scenario.restoring.iter().flat_map(|window| {
+                [
+                    (window.client, window.from_ms, Action::Restore(true)),
+                    (window.client, window.to_ms, Action::Restore(false)),
+                ]
+            }))
+            .collect();
+        for (client, at_ms, action) in actions {
+            simulation.schedule(at_ms * 1000, Event::Action(usize::from(client), action));
         }
         simulation
     }
@@ -236,6 +316,15 @@ impl Simulation {
     fn measured(&self, at_us: u64) -> bool {
         let (from, to) = self.window();
         (from..to).contains(&at_us)
+    }
+
+    /// The client's clock: the 16 ms wall bucket in ms for the game loop
+    /// (src/net/live_commands.rs line 472), whole ms in event mode.
+    fn client_ms(&self, at_us: u64) -> u64 {
+        match self.scenario.service {
+            ServiceMode::Periodic => at_us / 1000 / SERVICE_MS * SERVICE_MS,
+            ServiceMode::Event => at_us / 1000,
+        }
     }
 
     fn dropped_by_rule(
@@ -260,9 +349,26 @@ impl Simulation {
         drop
     }
 
-    fn send_up(&mut self, index: usize, bytes: Vec<u8>, at_us: u64) {
+    fn record(&mut self, record: WireRecord) -> usize {
+        match self.trace.as_mut() {
+            Some(trace) => {
+                trace.wire.push(record);
+                trace.wire.len() - 1
+            }
+            None => usize::MAX,
+        }
+    }
+
+    fn send_up(&mut self, index: usize, outgoing: Outgoing, at_us: u64) {
+        let Outgoing {
+            bytes,
+            hop,
+            service,
+            heartbeat,
+        } = outgoing;
         let measured = self.measured(at_us);
-        let kind = match inspect::client_datagram(&bytes) {
+        let parsed = inspect::client_datagram(&bytes);
+        let kind = match &parsed {
             Ok(datagram) => {
                 if let Detail::Submit { batch_id } = datagram.detail {
                     let entry = self.clients[index]
@@ -271,6 +377,16 @@ impl Simulation {
                         .entry(batch_id)
                         .or_insert((at_us, 0));
                     entry.1 += 1;
+                }
+                if let Detail::Uplink(uplink) = &datagram.detail {
+                    for batch_id in uplink.batch_ids() {
+                        let entry = self.clients[index]
+                            .observed
+                            .submits
+                            .entry(batch_id)
+                            .or_insert((at_us, 0));
+                        entry.1 += 1;
+                    }
                 }
                 datagram.kind
             }
@@ -289,24 +405,36 @@ impl Simulation {
                 .up
                 .transmit(at_us, bytes.len() + report::IP_UDP_BYTES)
         };
-        match lost {
-            Ok(arrivals) => {
-                for arrival in arrivals {
-                    self.schedule(arrival, Event::ToRelay(index, bytes.clone()));
-                }
-            }
-            Err(_) if measured => self.clients[index].observed.lost_up += 1,
-            Err(_) => {}
+        let arrivals = lost.clone().unwrap_or_default();
+        let wire = self.record(WireRecord {
+            client: index,
+            direction: Direction::Up,
+            hop,
+            service,
+            heartbeat,
+            sent_us: at_us,
+            arrivals_us: arrivals.clone(),
+            origin: Origin::Client,
+            len: bytes.len(),
+            parsed,
+            relay_result: None,
+        });
+        if lost.is_err() && measured {
+            self.clients[index].observed.lost_up += 1;
+        }
+        for arrival in arrivals {
+            self.schedule(arrival, Event::ToRelay(index, bytes.clone(), wire));
         }
     }
 
-    fn send_down(&mut self, index: usize, bytes: Vec<u8>, at_us: u64) {
+    fn send_down(&mut self, index: usize, bytes: Vec<u8>, at_us: u64, origin: Origin) {
         let measured = self.measured(at_us);
         let client = &mut self.clients[index];
-        let kinds: Vec<&'static str> = match inspect::server_datagram(&bytes) {
-            Ok(datagram) => match datagram.detail {
-                Detail::Pack { base, count } => {
-                    let end = base + u64::from(count);
+        let parsed = inspect::server_datagram(&bytes);
+        let kinds: Vec<&'static str> = match &parsed {
+            Ok(datagram) => match &datagram.detail {
+                Detail::Pack { base, count, .. } => {
+                    let end = base + u64::from(*count);
                     let fresh = end > client.pack_high;
                     client.pack_high = client.pack_high.max(end);
                     vec![
@@ -321,6 +449,12 @@ impl Simulation {
                 vec!["MALFORMED"]
             }
         };
+        let hop = parsed
+            .as_ref()
+            .ok()
+            .and_then(|datagram| datagram.nonce)
+            .and_then(|nonce| client.nonces.iter().position(|known| *known == nonce))
+            .unwrap_or(0);
         if measured {
             client.observed.down.add(kinds[0], bytes.len());
         }
@@ -331,21 +465,32 @@ impl Simulation {
                 .down
                 .transmit(at_us, bytes.len() + report::IP_UDP_BYTES)
         };
-        match lost {
-            Ok(arrivals) => {
-                for arrival in arrivals {
-                    self.schedule(arrival, Event::ToClient(index, bytes.clone()));
-                }
-            }
-            Err(_) if measured => self.clients[index].observed.lost_down += 1,
-            Err(_) => {}
+        let arrivals = lost.clone().unwrap_or_default();
+        self.record(WireRecord {
+            client: index,
+            direction: Direction::Down,
+            hop,
+            service: None,
+            heartbeat: false,
+            sent_us: at_us,
+            arrivals_us: arrivals.clone(),
+            origin,
+            len: bytes.len(),
+            parsed,
+            relay_result: None,
+        });
+        if lost.is_err() && measured {
+            self.clients[index].observed.lost_down += 1;
+        }
+        for arrival in arrivals {
+            self.schedule(arrival, Event::ToClient(index, bytes.clone()));
         }
     }
 
-    fn route(&mut self, datagrams: Vec<ForwardDatagram>, at_us: u64) {
+    fn route(&mut self, datagrams: Vec<ForwardDatagram>, at_us: u64, origin: Origin) {
         for datagram in datagrams {
             if let Some(&index) = self.endpoints.get(&datagram.endpoint) {
-                self.send_down(index, datagram.bytes, at_us);
+                self.send_down(index, datagram.bytes, at_us, origin);
             }
         }
     }
@@ -354,33 +499,110 @@ impl Simulation {
         let now_ms = at_us / 1000;
         self.relay.advance_clock(now_ms, unix(now_ms));
         let pushed = self.relay.drain_ordering_push(now_ms, unix(now_ms));
-        self.route(pushed, at_us);
+        self.route(pushed, at_us, Origin::Push);
+        if self.trace.is_some() && self.scenario.client == ClientKind::Adaptive {
+            for index in 0..self.clients.len() {
+                let stats = self.relay.reader_link_stats(ROOM, index as u8);
+                if stats != self.clients[index].last_reader {
+                    self.clients[index].last_reader = stats;
+                    if let Some(stats) = stats {
+                        self.trace
+                            .as_mut()
+                            .unwrap()
+                            .reader_stats
+                            .push((at_us, index, stats));
+                    }
+                }
+            }
+        }
     }
 
-    fn client_tick(&mut self, index: usize, at_us: u64) {
-        let now_ms = at_us / 1000 / SERVICE_MS * SERVICE_MS;
+    fn client_tick(&mut self, index: usize, at_us: u64, periodic: bool) {
+        let now_ms = self.client_ms(at_us);
         let apm = self.scenario.apm;
         let client = &mut self.clients[index];
-        if apm > 0.0 && client.model.started() {
+        if apm > 0.0 && client.driver.started() {
             let mean_us = 60_000_000.0 / apm;
             let next = client
                 .next_command_us
                 .get_or_insert_with(|| at_us + client.commands.exponential(mean_us) as u64);
             while *next <= at_us {
-                client.model.queue_command(*next);
+                client.driver.queue_command(*next);
+                if let Some(trace) = self.trace.as_mut() {
+                    trace.issued[index].push(*next);
+                }
                 *next += client.commands.exponential(mean_us) as u64;
             }
         }
-        client.model.tick(now_ms, at_us);
-        for bytes in client.model.take_output() {
-            self.send_up(index, bytes, at_us);
+        client.driver.tick(now_ms, at_us);
+        let output = client.driver.take_output();
+        if let Some(trace) = self.trace.as_mut() {
+            trace.services.push((at_us, index));
+            if let Some(stats) = self.clients[index].driver.link_stats()
+                && Some(stats) != self.clients[index].last_stats
+            {
+                self.clients[index].last_stats = Some(stats);
+                trace.client_stats.push((at_us, index, stats));
+            }
         }
-        self.schedule(at_us + SERVICE_MS * 1000, Event::ClientTick(index));
+        for outgoing in output {
+            self.send_up(index, outgoing, at_us);
+        }
+        if periodic {
+            self.schedule(at_us + SERVICE_MS * 1000, Event::ClientTick(index));
+        }
+        if self.scenario.service == ServiceMode::Event {
+            for wake_ms in self.clients[index].driver.wakeups() {
+                // A deadline already due that this service did not meet
+                // is tried again a millisecond later.
+                let wake_us = (wake_ms * 1000).max(at_us + 1000);
+                if self.clients[index].wakes.insert(wake_us) {
+                    self.schedule(wake_us, Event::Wake(index));
+                }
+            }
+        }
+    }
+
+    fn renew(&mut self, index: usize, at_us: u64) {
+        let now_ms = self.client_ms(at_us);
+        let client = &mut self.clients[index];
+        let mut ticket = client.ticket;
+        ticket.nonce[15] = ticket.nonce[15].wrapping_add(100);
+        // A renewal must outlive the ticket it replaces (ClientSession::renewal).
+        ticket.expires = (unix(at_us / 1000) + crate::MAX_TICKET_LIFETIME).max(ticket.expires + 1);
+        let signed = ticket.sign(&self.key).expect("renewed ticket");
+        client.ticket = ticket;
+        client.nonces.push(ticket.nonce);
+        client.driver.renew(
+            &signed,
+            *derive_packet_key(&self.key, &signed).expose_for_https(),
+            now_ms,
+        );
+        for outgoing in self.clients[index].driver.take_output() {
+            self.send_up(index, outgoing, at_us);
+        }
     }
 
     /// Runs the scenario to its end and reports the measurement window.
-    pub fn run(mut self) -> Report {
+    pub fn run(self) -> Report {
+        self.run_inner(false).0
+    }
+
+    /// Like `run`, and also returns every datagram and observation snapshot.
+    pub fn run_traced(self) -> (Report, Trace) {
+        let (report, trace) = self.run_inner(true);
+        (report, trace.expect("traced"))
+    }
+
+    fn run_inner(mut self, traced: bool) -> (Report, Option<Trace>) {
+        if traced {
+            self.trace = Some(Trace {
+                issued: vec![Vec::new(); self.clients.len()],
+                ..Trace::default()
+            });
+        }
         let (_, end) = self.window();
+        let event_mode = self.scenario.service == ServiceMode::Event;
         while let Some(Queued { at_us, event, .. }) = self.queue.pop() {
             if at_us >= end {
                 break;
@@ -390,16 +612,33 @@ impl Simulation {
                     self.relay_pass(at_us);
                     self.schedule(at_us + RELAY_PASS_US, Event::RelayPass);
                 }
-                Event::ClientTick(index) => self.client_tick(index, at_us),
-                Event::ToRelay(index, bytes) => {
+                Event::ClientTick(index) => self.client_tick(index, at_us, true),
+                Event::Wake(index) => {
+                    self.clients[index].wakes.remove(&at_us);
+                    self.client_tick(index, at_us, false);
+                }
+                Event::ToRelay(index, bytes, wire) => {
                     let now_ms = at_us / 1000;
                     let endpoint = self.clients[index].endpoint;
-                    match self
+                    let result = self
                         .relay
-                        .process_at(endpoint, &bytes, unix(now_ms), now_ms)
+                        .process_at(endpoint, &bytes, unix(now_ms), now_ms);
+                    if let Some(record) = self
+                        .trace
+                        .as_mut()
+                        .and_then(|trace| trace.wire.get_mut(wire))
+                        && record.relay_result.is_none()
                     {
+                        record.relay_result = Some(
+                            result
+                                .as_ref()
+                                .map(|_| ())
+                                .map_err(|error| format!("{error:?}")),
+                        );
+                    }
+                    match result {
                         Ok(output) => {
-                            self.route(output, at_us);
+                            self.route(output, at_us, Origin::Reply);
                             self.relay_pass(at_us);
                         }
                         Err(error) => {
@@ -413,16 +652,46 @@ impl Simulation {
                     }
                 }
                 Event::ToClient(index, bytes) => {
-                    let now_ms = at_us / 1000 / SERVICE_MS * SERVICE_MS;
+                    let now_ms = self.client_ms(at_us);
                     let client = &mut self.clients[index];
-                    client.model.deliver(&bytes, now_ms);
-                    for bytes in client.model.take_output() {
-                        self.send_up(index, bytes, at_us);
+                    client.driver.deliver(&bytes, now_ms, at_us);
+                    for outgoing in client.driver.take_output() {
+                        self.send_up(index, outgoing, at_us);
+                    }
+                    if event_mode {
+                        self.client_tick(index, at_us, false);
+                    }
+                }
+                Event::Action(index, action) => {
+                    match action {
+                        Action::Command => {
+                            self.clients[index].driver.queue_command(at_us);
+                            if let Some(trace) = self.trace.as_mut() {
+                                trace.issued[index].push(at_us);
+                            }
+                        }
+                        Action::Leave => self.clients[index].driver.leave(),
+                        Action::Renew => self.renew(index, at_us),
+                        Action::Restore(restoring) => {
+                            self.clients[index].driver.set_restoring(restoring)
+                        }
+                    }
+                    if event_mode {
+                        self.client_tick(index, at_us, false);
                     }
                 }
             }
         }
-        self.report()
+        let report = self.report();
+        if let Some(trace) = self.trace.as_mut() {
+            for client in &self.clients {
+                let log = client.driver.log();
+                trace.seals.push(log.seals.clone());
+                trace.executed.push(log.commands.clone());
+                trace.streams.push(client.driver.reader().read().to_vec());
+            }
+        }
+        (report, self.trace.take())
     }
 
     fn report(&self) -> Report {
@@ -433,9 +702,9 @@ impl Simulation {
         let in_window = |at: u64| (from..to).contains(&at);
         let count = |times: &[u64]| times.iter().filter(|at| in_window(**at)).count() as f64;
         let mut rows = Vec::new();
-        for client in &self.clients {
+        for (index, client) in self.clients.iter().enumerate() {
             let observed = &client.observed;
-            let log = &client.model.log;
+            let log = client.driver.log();
             let direction = |traffic: &Traffic, lost: u64| report::Direction {
                 packets_per_s: traffic.packets as f64 / seconds,
                 bytes_per_s: traffic.bytes as f64 / seconds,
@@ -493,7 +762,7 @@ impl Simulation {
                 },
                 batches: batches.len() as f64,
                 executed_frames: client
-                    .model
+                    .driver
                     .reader()
                     .read()
                     .iter()
@@ -501,6 +770,12 @@ impl Simulation {
                     .count() as f64,
                 errors: to_f64(&log.errors),
                 refused: to_f64(&log.refused),
+                gap_uplink_triggers: count(&log.gap_triggers.times),
+                link: client.driver.link_stats().map(report::LinkSummary::of),
+                reader: (self.scenario.client == ClientKind::Adaptive)
+                    .then(|| self.relay.reader_link_stats(ROOM, index as u8))
+                    .flatten()
+                    .map(report::ReaderSummary::of),
             };
             rows.push((row, latencies, turns));
         }
@@ -531,7 +806,7 @@ impl Simulation {
         let streams: Vec<&[Record]> = self
             .clients
             .iter()
-            .map(|client| client.model.reader().read())
+            .map(|client| client.driver.reader().read())
             .collect();
         let shortest = streams.iter().map(|stream| stream.len()).min().unwrap_or(0);
         let stream_consistent = streams
@@ -546,8 +821,8 @@ impl Simulation {
             .iter()
             .filter(|client| {
                 client
-                    .model
-                    .log
+                    .driver
+                    .log()
                     .advances
                     .last()
                     .is_none_or(|last| to.saturating_sub(*last) > 2_000_000)
@@ -555,6 +830,7 @@ impl Simulation {
             .count();
         Report {
             scenario: self.scenario.name.clone(),
+            client: self.scenario.client,
             seed: self.scenario.seed,
             players: self.scenario.players,
             tick_hz: rate,
@@ -581,5 +857,9 @@ pub fn run_json(text: &str) -> Result<Report, String> {
     Ok(Simulation::new(Scenario::from_json(text)?).run())
 }
 
+#[cfg(test)]
+mod appendix_a;
+#[cfg(test)]
+mod judgments;
 #[cfg(test)]
 mod tests;

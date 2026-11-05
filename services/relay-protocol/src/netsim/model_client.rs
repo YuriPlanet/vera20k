@@ -14,7 +14,8 @@
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
-use super::reader::{Record, StreamReader};
+use super::client::{HeadlessClient, Outgoing};
+use super::reader::{GapTriggers, Record, StreamReader};
 use crate::{
     CHECKSUM_INTERVAL, ClientSession, ORDERING_BATCH_CAPACITY, OrderError, OrderEvent, OrderPace,
     ServerEvent,
@@ -94,6 +95,10 @@ pub struct ModelLog {
     pub errors: BTreeMap<String, u64>,
     /// Datagrams `ClientSession::receive` refused (duplicates, replays).
     pub refused: BTreeMap<String, u64>,
+    /// Spec §6.3 row 2 triggers this stream would make.
+    pub gap_triggers: GapTriggers,
+    /// (time µs, batch id) of each batch sealed (adaptive client).
+    pub seals: Vec<(u64, u64)>,
 }
 
 pub struct ModelClient {
@@ -135,7 +140,9 @@ pub struct ModelClient {
     frame_issues: HashMap<u32, Vec<u64>>,
     command_bytes: usize,
     fill: u8,
-    out: Vec<Vec<u8>>,
+    out: Vec<Outgoing>,
+    services: u64,
+    in_service: bool,
     pub log: ModelLog,
 }
 
@@ -185,30 +192,20 @@ impl ModelClient {
             command_bytes,
             fill: 0,
             out: Vec::new(),
+            services: 0,
+            in_service: false,
             log: ModelLog::default(),
         }
     }
 
-    pub fn started(&self) -> bool {
-        self.reader.started()
-    }
-
-    pub fn reader(&self) -> &StreamReader {
-        &self.reader
-    }
-
-    pub fn take_output(&mut self) -> Vec<Vec<u8>> {
-        std::mem::take(&mut self.out)
-    }
-
-    /// A player command issued at `at_us`, batched at the next service.
-    pub fn queue_command(&mut self, at_us: u64) {
-        self.queued.push(at_us);
-    }
-
     fn send(&mut self, result: Result<(), crate::RelayError>, bytes: Vec<u8>) -> bool {
         if result.is_ok() {
-            self.out.push(bytes);
+            self.out.push(Outgoing {
+                bytes,
+                hop: 0,
+                service: self.in_service.then_some(self.services),
+                heartbeat: false,
+            });
         }
         result.is_ok()
     }
@@ -216,7 +213,7 @@ impl ModelClient {
     /// The transport's receive path (src/net/udp.rs line 1618-1665): a
     /// challenge is confirmed at once; ordering events wait for the game's
     /// next service.
-    pub fn deliver(&mut self, bytes: &[u8], now_ms: u64) {
+    fn receive_datagram(&mut self, bytes: &[u8], now_ms: u64) {
         let mut out = Vec::new();
         match self.session.receive(bytes) {
             Ok(ServerEvent::Challenge(cookie)) => {
@@ -245,10 +242,13 @@ impl ModelClient {
     /// `service_pending_commands` (src/net/live_commands.rs line 465-494).
     /// `now_ms` is the 16 ms wall bucket in ms, as production passes it
     /// (`now_wall_bucket.wrapping_shl(4)`, line 472).
-    pub fn tick(&mut self, now_ms: u64, at_us: u64) {
+    fn serve(&mut self, now_ms: u64, at_us: u64) {
+        self.services += 1;
+        self.in_service = true;
         self.service_transport(now_ms);
         self.service(now_ms, at_us);
         self.flush(now_ms, at_us);
+        self.in_service = false;
     }
 
     /// src/net/udp.rs line 1361-1405.
@@ -279,6 +279,10 @@ impl ModelClient {
             self.receive(event);
         }
         self.assemble(at_us);
+        let turn_ms = u64::from(crate::turn_ms(self.pace_fps));
+        self.log
+            .gap_triggers
+            .observe(self.reader.gap_kind(), now, turn_ms, at_us);
         self.service_delivery(now);
         self.service_pause(now);
         self.service_pace(now);
@@ -592,5 +596,29 @@ impl ModelClient {
             });
             self.service(now, at_us);
         }
+    }
+}
+
+impl HeadlessClient for ModelClient {
+    fn deliver(&mut self, bytes: &[u8], now_ms: u64, _at_us: u64) {
+        self.receive_datagram(bytes, now_ms);
+    }
+    fn tick(&mut self, now_ms: u64, at_us: u64) {
+        self.serve(now_ms, at_us);
+    }
+    fn take_output(&mut self) -> Vec<Outgoing> {
+        std::mem::take(&mut self.out)
+    }
+    fn started(&self) -> bool {
+        self.reader.started()
+    }
+    fn reader(&self) -> &StreamReader {
+        &self.reader
+    }
+    fn queue_command(&mut self, at_us: u64) {
+        self.queued.push(at_us);
+    }
+    fn log(&self) -> &ModelLog {
+        &self.log
     }
 }
