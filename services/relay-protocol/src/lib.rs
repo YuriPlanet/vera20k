@@ -1370,7 +1370,7 @@ impl RelayServer {
                 let previous =
                     std::mem::replace(peer, new_peer(message, session, source, now, now_ms));
                 peer.link.carry_path(&previous.link);
-                replaced = Some(previous.session);
+                replaced = Some(previous);
             }
             if message.sequence <= peer.received.maximum && peer.endpoint != source {
                 return Err(RelayError::Replay);
@@ -1420,8 +1420,16 @@ impl RelayServer {
                 },
             );
         }
-        if let Some(old) = replaced {
-            self.release_session(old, now);
+        // The replaced hop keeps its session for LEAVE: a client that quits
+        // before the new READY arrives leaves from it (spec §6.2 "续期").
+        if let Some(old) = replaced
+            && let Some(slot) = self.sessions.get_mut(&old.session)
+        {
+            slot.hop = SessionHop::Leaving(Box::new(LeavingHop {
+                ticket: old.ticket,
+                key: old.key.clone(),
+                until: now.saturating_add(LEAVE_GRACE),
+            }));
         }
         let mut admission = prior.unwrap_or(Admission {
             generation: message.ticket.generation,
@@ -1765,15 +1773,16 @@ pub struct SessionEntry {
     pub source: u8,
     /// The hop's current endpoint: the address of its last authenticated
     /// fresh datagram (§6.2, NAT rebinding). `None` once its ticket expired
-    /// (the hop then only answers LEAVE, to the LEAVE's address).
+    /// or a renewal replaced it (the hop then only answers LEAVE, to the
+    /// LEAVE's address).
     pub endpoint: Option<SocketAddrV4>,
     /// The hop's ticket expiry, unix seconds like `process`'s `now`.
     pub expires: u64,
-    /// Whether the hop accepts only LEAVE: after its LEAVE or its ticket's
-    /// expiry (§6.2 "释放").
+    /// Whether the hop accepts only LEAVE: after its LEAVE, its ticket's
+    /// expiry or its renewal (§6.2 "续期", "释放").
     pub leaving: bool,
     /// The sequence of the relay's next datagram on this hop; `None` once
-    /// its ticket expired.
+    /// its ticket expired or a renewal replaced it.
     pub next_sequence: Option<u64>,
 }
 
@@ -1795,8 +1804,8 @@ impl ClientSession {
 impl RelayServer {
     /// Test support only: every hop in the session table (§6.2), ordered by
     /// session. A hop is in it from its accepted CONFIRM until
-    /// `LEAVE_GRACE` seconds after its LEAVE or its ticket's expiry; a newer
-    /// hop of the same source (a renewal) releases it at once.
+    /// `LEAVE_GRACE` seconds after its LEAVE, its ticket's expiry or the
+    /// accepted CONFIRM of its renewal (§6.2).
     pub fn session_table(&self) -> Vec<SessionEntry> {
         let mut table: Vec<_> = self
             .sessions
@@ -2087,14 +2096,25 @@ mod tests {
             )
             .unwrap();
         connect(&mut server, &mut renewed, endpoint);
+        // The renewal takes the hop over; the old session takes only LEAVE
+        // until its grace ends, then retires (spec §6.2 "续期", "释放").
         let table = server.session_table();
-        assert_eq!(table.len(), 1);
-        assert_ne!(Some(table[0].session), first.session());
-        assert_eq!(server.session_retired_until(0x0102_0304), Some(1600));
+        assert_eq!(table.len(), 2);
+        let old = table
+            .iter()
+            .find(|entry| entry.session == 0x0102_0304)
+            .unwrap();
+        assert!(old.leaving && old.endpoint.is_none());
         first.data(BROADCAST, b"old hop", &mut bytes).unwrap();
         assert_eq!(
             server.process(endpoint, &bytes, 1000).err(),
             Some(RelayError::Unregistered)
+        );
+        let released = 1000 + LEAVE_GRACE;
+        server.process(endpoint, &bytes, released).ok();
+        assert_eq!(
+            server.session_retired_until(0x0102_0304),
+            Some(released + 600)
         );
         assert_eq!(server.take_mac_failure_counts().unknown_sessions, 1);
     }

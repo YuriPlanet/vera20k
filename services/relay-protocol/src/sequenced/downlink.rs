@@ -75,10 +75,9 @@ pub(super) fn piggyback_packs(
     // The fewest old records to drop, counted as PACK v2 packs, with
     // one copy for the packs that go out.
     let new = &new[..count];
-    let Some(skip) = (0..old.len()).find(|&skip| {
-        let records: Vec<&[u8]> = old[skip..].iter().chain(new).map(Vec::as_slice).collect();
-        super::pack::count_packs_v2(&records) <= limit
-    }) else {
+    let all: Vec<&[u8]> = old.iter().chain(new).map(Vec::as_slice).collect();
+    let Some(skip) = (0..old.len()).find(|&skip| super::pack::fits_packs_v2(&all[skip..], limit))
+    else {
         return (fresh, count, 0);
     };
     let records: Vec<Vec<u8>> = old[skip..].iter().chain(new).cloned().collect();
