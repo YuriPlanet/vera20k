@@ -3,7 +3,8 @@
 //! later, commands at 480 (A) and 950 (B), A leaving at 1480 and B at 2000;
 //! lost are B's second UPLINK and the relay's turn 3 pack to B. Clients
 //! serve at once on every datagram, content event and UPLINK deadline,
-//! which the appendix's timeline assumes.
+//! which the appendix's timeline assumes. Both directions of both clients
+//! start measured good (appendix A.1), through the test-support presets.
 //!
 //! Times are the relay clock in ms. The relay seals on whole milliseconds,
 //! so the appendix's x.3 / x.7 times arrive up to 1 ms later; every time
@@ -19,7 +20,7 @@ const B: usize = 1;
 
 const SCENARIO: &str = r#"{ "name": "appendix-a", "service": "event",
     "players": 2, "tick_hz": 30, "warmup_ms": 0, "duration_ms": 2100,
-    "start_offsets_ms": [0, 30],
+    "start_offsets_ms": [0, 30], "preset_measured_good": true,
     "network": { "link": { "delay_ms": 20 } },
     "commands": [ { "client": 0, "at_ms": 480 }, { "client": 1, "at_ms": 950 } ],
     "leaves": [ { "client": 0, "at_ms": 1480 }, { "client": 1, "at_ms": 2000 } ],

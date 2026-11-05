@@ -146,8 +146,9 @@ fn uplink(payload: &[u8]) -> Result<Uplink, String> {
         return fail("shorter than its fixed part");
     }
     let flags = payload[1];
-    // Rule 2: reserved flag and link bits are zero.
-    if flags & 0xF0 != 0 || payload[30] & 0xF8 != 0 {
+    // Rule 2: reserved flag and link bits (bit4..7 of each) are zero;
+    // link bit3 is JITTERY (§3.2).
+    if flags & 0xF0 != 0 || payload[30] & 0xF0 != 0 {
         return fail("reserved bits");
     }
     let recv_next = u64_at(payload, 2);
