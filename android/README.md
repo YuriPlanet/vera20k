@@ -86,11 +86,10 @@ for releases.
 4. **No on-device error surface.** `system_dialog` has no Android branch, so a
    fatal start-up error here is only visible in `files/logs/ra2.log`. A
    `Toast`/`AlertDialog` via JNI is still open.
-5. **Movie audio and frame pacing.** The intro only plays after a touch skips
-   it on this device; the tap-to-skip path is what reaches the main menu. Why the
-   movie itself renders black there is open — the same run shows
-   `Drok` playing and the shell loading, so it is the movie presenter, not the
-   engine loop.
+5. **One process, one game.** Exiting from the menu ends the process on purpose:
+   winit cannot build a second event loop, so a cached process would serve the
+   launcher's next tap nothing but a splash. A future multi-activity design would
+   have to rework the entry around that constraint.
 
 ## Verified on this machine
 
@@ -108,12 +107,14 @@ for releases.
   AAudio at 512 frames/44100 Hz, and the log at
   `/data/user/0/org.vera20k/files/logs/ra2.log` — so the data-directory,
   settings, logging, Vulkan and audio paths all work on Android.
-- **The main menu renders on it.** With retail data pushed under
-  `Android/data/org.vera20k/files/ra2` and `files/config.toml` naming it, a tap
-  during the intro movie skips it (`Touch skipped the movie`), the shell loads
-  (`Loaded ra2ts_l.bik for main menu`, music `Drok`) and the menu paints. The
-  window carries `KEEP_SCREEN_ON`, and after screen-off and wake it draws again
-  (`Application resumed — surface rebuilt`).
+- **The intro movie plays and touch skips it.** Tapping during the movie logs
+  `Touch skipped the movie` and lands on the shell (`Loaded ra2ts_l.bik for main
+  menu`, music `Drok`), which paints.
+- **The window carries `KEEP_SCREEN_ON`** for the process lifetime, so the movie
+  holds the display without synthetic input.
+- **Leaving and returning works both ways**: screen-off then wake, and HOME then
+  re-entry, both log `Application resumed — surface rebuilt` and draw the menu
+  again; exiting from the menu then tapping the icon is a cold start.
 - Build the native side with `--profile fast` (or `shipping`) for anything you
   run on the device: the `dev` profile is slow enough that the intro movie
   starves the main thread and Android kills the app for an ANR.
