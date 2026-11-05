@@ -591,7 +591,8 @@ fn free_anim_material_transport_preserves_special_draw_fallbacks() {
         // after the separate HasBounce ground shadow.
         ("BOUNCER", "Bouncer=yes\n", 0x600, 1., 4),
         ("METEOR", "IsMeteor=yes\n", 0x600, 1., 4),
-        ("RING1", "", 0x600, 0.5, 0),
+        // Retail never sets 8A0DF0, so 422CB3 skips RING1's D3D ring.
+        ("RING1", "Flat=yes\n", 0x600, 1., 4),
         ("TILED", "Tiled=yes\n", 0x600, 0.5, 0),
     ] {
         let (sim, rules, id, atlas) = fixture(name, keys, flags, 0);

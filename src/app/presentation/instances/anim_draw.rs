@@ -3,10 +3,15 @@
 //!
 //! Callers retain admission, palette selection, coordinates and Display order.
 //! This owner resolves the source rectangles and their separate draw flags.
-//! Tiled and the special RING1 path retain their previous body presentation;
-//! their separate native draw arms are outside this port. Bouncer and IsMeteor
-//! types have no body arm of their own: the instance's HasBounce byte only adds
-//! the ground shadow ahead of the ordinary or Flat body.
+//! Tiled keeps its previous single-sprite body. Its native column arm
+//! (4235D3..42371B) is dormant in retail: of the two Tiled types, only
+//! IONBEAM is spawned, by IonBlast's frame 0 for TAction94, which no retail map
+//! uses, and gamemd reads Rules ChronoBeam (CHRONOBM) only in its reader.
+//! Custom maps still reach it through TAction41/94. RING1 takes the ordinary
+//! arms: the D3D ring (422CB9..422FC9) needs 8A0DF0, which is 0 in the image
+//! and only ever stored 0 (WinMain 6BDD98/6BDE37). Bouncer and IsMeteor
+//! types have no body arm of their own: the instance's HasBounce byte only
+//! adds the ground shadow ahead of the ordinary or Flat body.
 
 use super::helpers::{
     apply_shape_z_adjust, compute_sprite_depth_params_lifted, in_view, lifted_z_adjust,
@@ -98,10 +103,10 @@ fn depth_policy(flags: u32) -> RenderZPolicy {
 }
 
 /// Whether the body takes the ported ordinary/Flat arms (4237AE/423728).
-/// Tiled and the special RING1 path are excluded; a Bouncer or IsMeteor body
-/// takes them like any other, after its HasBounce ground shadow.
-pub(super) fn ordinary_anim_type(name: &str, config: Option<&AnimTypeRuntimeConfig>) -> bool {
-    !name.eq_ignore_ascii_case("RING1") && config.is_none_or(|config| !config.tiled)
+/// Only Tiled is excluded; a Bouncer or IsMeteor body takes them like any
+/// other, after its HasBounce ground shadow.
+pub(super) fn ordinary_anim_type(config: Option<&AnimTypeRuntimeConfig>) -> bool {
+    config.is_none_or(|config| !config.tiled)
 }
 
 pub(super) fn anim_draw_pieces(
@@ -119,7 +124,7 @@ pub(super) fn anim_draw_pieces(
         body.uv_size = entry.uv_size;
         body.source_palette = entry.source_palette;
     }
-    let ordinary = ordinary_anim_type(&input.key.type_id, input.config);
+    let ordinary = ordinary_anim_type(input.config);
     let mut pieces = Vec::with_capacity(3);
     let visible = |instance: &SpriteInstance| {
         in_view(

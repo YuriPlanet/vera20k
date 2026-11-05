@@ -519,9 +519,9 @@ pub(crate) fn build_display_effect_instances(
         // just as the building-slot caller. Special draw arms retain their
         // existing frame selection until their own renderer is ported, and so
         // does a HasBounce ground shadow ahead of them, which natively takes
-        // AC + Start in every arm (4233CD). Residual: no retail Tiled or RING1
-        // type sets Bouncer=, IsMeteor= or Start=.
-        let start = if super::anim_draw::ordinary_anim_type(type_name, config) {
+        // AC + Start in every arm (4233CD). Residual: no retail Tiled type
+        // sets Bouncer=, IsMeteor= or Start=.
+        let start = if super::anim_draw::ordinary_anim_type(config) {
             config.map_or(0, |config| config.start)
         } else {
             0
@@ -563,7 +563,7 @@ pub(crate) fn build_display_effect_instances(
         let instance_scheme = remap_color.is_some()
             && !anim.use_cell_drawer()
             && entry.is_some_and(|entry| entry.source_palette != 0)
-            && super::anim_draw::ordinary_anim_type(type_name, config);
+            && super::anim_draw::ordinary_anim_type(config);
         let tint = if is_parachute || instance_scheme {
             [1.0; 3]
         } else {
@@ -586,7 +586,7 @@ pub(crate) fn build_display_effect_instances(
         // the packed RGB565 blitter, rather than alpha-blending the source.
         // Original full draw controls: spatial_oracle/anim_translucency.
         let (alpha, draw_state) = if (remap_color.is_none() || instance_scheme)
-            && super::anim_draw::ordinary_anim_type(type_name, config)
+            && super::anim_draw::ordinary_anim_type(config)
         {
             (
                 1.0,

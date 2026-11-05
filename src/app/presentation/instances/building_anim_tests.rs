@@ -418,20 +418,17 @@ fn bouncing_slot_anims_take_the_ordinary_material_after_their_ground_shadow() {
 }
 
 #[test]
-fn special_slot_anims_keep_their_existing_translucent_material() {
-    for (name, keys) in [("RING1", ""), ("TILED", "Tiled=yes\n")] {
-        let (mut sim, rules, building, anim, atlas) = material_fixture(name, keys);
-        force_slot_translucency(&mut sim, anim);
-        let palette = PaletteLight::color_scheme([1000; 3], 1000);
-        let inherited = DrawState {
-            remap_row: 7,
-            ..DrawState::default()
-        };
-        let order = NativeDisplayOrder::from_display(sim.display_layers());
-        let planned =
-            emit_with_material(&sim, &rules, building, &atlas, &order, palette, inherited);
-        assert_slot_replay(planned, anim, 0.5, inherited, palette);
-    }
+fn tiled_slot_anims_keep_their_existing_translucent_material() {
+    let (mut sim, rules, building, anim, atlas) = material_fixture("TILED", "Tiled=yes\n");
+    force_slot_translucency(&mut sim, anim);
+    let palette = PaletteLight::color_scheme([1000; 3], 1000);
+    let inherited = DrawState {
+        remap_row: 7,
+        ..DrawState::default()
+    };
+    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let planned = emit_with_material(&sim, &rules, building, &atlas, &order, palette, inherited);
+    assert_slot_replay(planned, anim, 0.5, inherited, palette);
 }
 
 #[test]
