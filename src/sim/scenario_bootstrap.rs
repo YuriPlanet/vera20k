@@ -5817,6 +5817,18 @@ mod tests {
     }
 
     #[test]
+    fn scenario_prefix_accepts_mental_omega_override_names() {
+        let mut session = one_player_battle_launch("mo-mode.mmx").session().clone();
+        session.mode.override_file = "MPBattleMO.ini".to_string();
+        assert_eq!(
+            stock_offline_start_callback_family(&session),
+            Ok(StockOfflineStartCallbackFamily::Battle)
+        );
+        session.mode.override_file = "MPBattleXX.ini".to_string();
+        assert!(stock_offline_start_callback_family(&session).is_err());
+    }
+
+    #[test]
     fn scenario_prefix_rejects_invalid_map_cell_extents() {
         let launch = one_player_battle_launch("invalid-size.mmx");
         for (width, height) in [(0, 64), (64, 0), (513, 512), (u32::MAX, 1)] {

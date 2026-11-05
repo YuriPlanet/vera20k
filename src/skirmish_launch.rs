@@ -238,14 +238,18 @@ impl SkirmishLaunchMode {
 
     /// The stock row of this id when every consumed field matches it, keys
     /// and file names compared ASCII case-insensitively. The class is not
-    /// compared; the stock row supplies it.
+    /// compared; the stock row supplies it. Mental Omega's own MPModesMD.ini
+    /// names each stock override's `MO` twin (`MPBattleMO.ini`); its
+    /// contents still go through the mode layer.
     pub fn matching_stock(&self) -> Option<Self> {
         Self::stock(self.id).filter(|stock| {
+            let mo_override = stock.override_file.replace("MD.ini", "MO.ini");
             self.ui_name_key.eq_ignore_ascii_case(&stock.ui_name_key)
                 && self.tooltip_key.eq_ignore_ascii_case(&stock.tooltip_key)
-                && self
+                && (self
                     .override_file
                     .eq_ignore_ascii_case(&stock.override_file)
+                    || self.override_file.eq_ignore_ascii_case(&mo_override))
                 && self.map_filter.eq_ignore_ascii_case(&stock.map_filter)
                 && self.random_maps_allowed == stock.random_maps_allowed
                 && self.allies_allowed == stock.allies_allowed
