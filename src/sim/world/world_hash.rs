@@ -1268,6 +1268,12 @@ impl Simulation {
                 b"house-strategy-timer-v1".hash(hasher);
                 house.strategy_timer().hash(hasher);
             }
+            if *house.enemy_search_timer()
+                != crate::sim::house_state::enemy_search_timer_at_construction()
+            {
+                b"house-enemy-search-timer-v1".hash(hasher);
+                house.enemy_search_timer().hash(hasher);
+            }
             house.team_creation().hash_state(hasher);
             if *house.ai_unit_choices() != Default::default() {
                 b"house-ai-unit-choices-v1".hash(hasher);
@@ -3841,9 +3847,7 @@ mod particle_hash_tests {
             Box::new(|s| s.particles_mut_for_test()[0].set_drift_x_for_test(1)),
             Box::new(|s| s.particles_mut_for_test()[0].set_drift_y_for_test(1)),
             Box::new(|s| s.particles_mut_for_test()[0].set_drift_z_for_test(1)),
-            Box::new(|s| {
-                s.particles_mut_for_test()[0].prev_delta_mut_for_test()[2] = 1
-            }),
+            Box::new(|s| s.particles_mut_for_test()[0].prev_delta_mut_for_test()[2] = 1),
         ];
         for (index, edit) in edits.iter().enumerate() {
             let mut system = base.clone();

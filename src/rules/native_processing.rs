@@ -2381,6 +2381,13 @@ impl ProcessedRulesLayers {
             .rules_patrol_scan_minutes
     }
 
+    pub(crate) fn ai_hate_delays(&self) -> &[i32] {
+        &self
+            .native_type_construction_trace
+            .registry_state()
+            .rules_ai_hate_delays
+    }
+
     /// Rules+147C/+14BC after ordered General/AudioVisual reads. Original
     /// ctor665650 and read blocks66E5D5/66B385 establish null/1024 defaults,
     /// empty retention and exact-case keys; the existing factory owns identity.
@@ -3530,6 +3537,11 @@ pub(crate) struct NativeRulesRegistryState {
     rules_chrono_beam_color: [u8; 3],
     rules_prism_support: PrismSupportRules,
     rules_patrol_scan_minutes: NativeF64Bits,
+    /// RulesClass+1174: constructor00665650 at00666E3F..00666E59 makes an
+    /// empty integer vector. ReadGeneral0066FDB1..0066FDD9 uses
+    /// ReadINI_IntVector00475D70 with the current vector as its default.
+    /// It survives Type reset006686C0 and saved Rules state.
+    rules_ai_hate_delays: Vec<i32>,
     rules_comp_easy_bonus: bool,
     rules_prism_type: Option<String>,
     rules_drop_zone_anim: Option<String>,
@@ -3625,6 +3637,7 @@ impl Default for NativeRulesRegistryState {
             rules_chrono_beam_color: general.chrono_beam_color,
             rules_prism_support: PrismSupportRules::default(),
             rules_patrol_scan_minutes: general.patrol_scan_minutes,
+            rules_ai_hate_delays: general.ai_hate_delays().to_vec(),
             rules_comp_easy_bonus: general.comp_easy_bonus,
             rules_prism_type: None,
             rules_drop_zone_anim: None,
@@ -4035,6 +4048,7 @@ impl NativeRulesRegistryState {
             rules_chrono_beam_color: self.rules_chrono_beam_color,
             rules_prism_support: self.rules_prism_support,
             rules_patrol_scan_minutes: self.rules_patrol_scan_minutes,
+            rules_ai_hate_delays: self.rules_ai_hate_delays,
             rules_comp_easy_bonus: self.rules_comp_easy_bonus,
             // Plain index vectors, so RulesClass keeps them; the next pass
             // reads them as its default.
@@ -5161,6 +5175,7 @@ struct RulesPassProcessor {
     rules_chrono_beam_color: [u8; 3],
     rules_prism_support: PrismSupportRules,
     rules_patrol_scan_minutes: NativeF64Bits,
+    rules_ai_hate_delays: Vec<i32>,
     rules_comp_easy_bonus: bool,
     rules_prism_type: Option<String>,
     rules_drop_zone_anim: Option<String>,
@@ -5241,6 +5256,7 @@ impl RulesPassProcessor {
             rules_chrono_beam_color: registry_state.rules_chrono_beam_color,
             rules_prism_support: registry_state.rules_prism_support,
             rules_patrol_scan_minutes: registry_state.rules_patrol_scan_minutes,
+            rules_ai_hate_delays: registry_state.rules_ai_hate_delays,
             rules_comp_easy_bonus: registry_state.rules_comp_easy_bonus,
             rules_prism_type: registry_state.rules_prism_type,
             rules_drop_zone_anim: registry_state.rules_drop_zone_anim,
@@ -5920,6 +5936,12 @@ impl RulesPassProcessor {
         let Some(section) = pass.section("General") else {
             return;
         };
+        // ReadGeneral0066FDB1..0066FDD9 / ReadINI_IntVector00475D70:
+        // exact key, 512-byte string, comma tokens through CRT atoi; an
+        // absent/empty read keeps the prior vector. Counts are raw frames.
+        if let Some(delays) = section.read_int_list("AIHateDelays") {
+            self.rules_ai_hate_delays = delays;
+        }
         // ReadGeneral66EBD4..66EBEE: exact-case signed ReadInt5276D0,
         // current Rules+580 as default, no clamp. Ctor665D92 stores1.
         self.rules_maximum_cheer_rate =
@@ -8603,6 +8625,7 @@ impl RulesPassProcessor {
                     rules_chrono_beam_color: self.rules_chrono_beam_color,
                     rules_prism_support: self.rules_prism_support,
                     rules_patrol_scan_minutes: self.rules_patrol_scan_minutes,
+                    rules_ai_hate_delays: self.rules_ai_hate_delays,
                     rules_comp_easy_bonus: self.rules_comp_easy_bonus,
                     rules_prism_type: self.rules_prism_type,
                     rules_drop_zone_anim: self.rules_drop_zone_anim,
