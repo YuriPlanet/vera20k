@@ -4862,6 +4862,10 @@ pub struct RuleSet {
     /// Raw terrain SHP counts used by authoritative TIBTRE animation timing.
     /// Presentation keeps its separate body-frame projection.
     terrain_assets: crate::rules::terrain_asset_catalog::TerrainAssetCatalog,
+    /// Every loaded ObjectType `AlphaImage=` SHP (`bind_alpha_images`). Not
+    /// in the fingerprint: it places and draws light glows, which no
+    /// gameplay reads.
+    alpha_images: crate::rules::alpha_image_assets::AlphaImageCatalog,
     /// Complete immutable per-object animation timing catalog. Gameplay reads
     /// this rules-owned resource directly; presentation cannot replace timing
     /// on an individual frame.
@@ -6704,6 +6708,7 @@ impl RuleSet {
             buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog::default(),
             rubble_assets: crate::rules::building_rubble::RubbleAssetCatalog::default(),
             terrain_assets: crate::rules::terrain_asset_catalog::TerrainAssetCatalog::default(),
+            alpha_images: crate::rules::alpha_image_assets::AlphaImageCatalog::default(),
             animation_sequences: BTreeMap::new(),
             animation_sequence_by_handle: Vec::new(),
             unit_shp_read_states: BTreeMap::new(),
@@ -10554,6 +10559,35 @@ impl RuleSet {
     /// Raw SHP header count used by `TerrainClass::AI` midpoint timing.
     pub fn terrain_spawner_frame_count(&self, name: &str) -> Option<u16> {
         self.terrain_assets.frame_count(name)
+    }
+
+    /// Load every ObjectType `AlphaImage=` SHP the folded rules name
+    /// ([`crate::rules::alpha_image_assets`]).
+    pub fn bind_alpha_images(
+        &mut self,
+        overlays: &crate::rules::overlay_types::OverlayTypeRegistry,
+        assets: &crate::assets::asset_manager::AssetManager,
+    ) {
+        self.alpha_images =
+            crate::rules::alpha_image_assets::AlphaImageCatalog::bind(self, overlays, assets);
+    }
+
+    /// The loaded AlphaImage a type's `AlphaImage=` names: the type's +0xAC
+    /// pointer, `None` where it stays null.
+    pub fn alpha_image(
+        &self,
+        name: &str,
+    ) -> Option<&std::sync::Arc<crate::rules::alpha_image_assets::AlphaImage>> {
+        self.alpha_images.get(name)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn supply_alpha_image_for_test(
+        &mut self,
+        name: &str,
+        image: crate::rules::alpha_image_assets::AlphaImage,
+    ) {
+        self.alpha_images.insert_for_test(name, image);
     }
 
     fn rebuild_animation_sequences(

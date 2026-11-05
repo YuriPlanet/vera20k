@@ -451,8 +451,7 @@ fn load_with_assets(
         theater.extension,
         crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
     );
-    let _alpha_image_bindings =
-        crate::rules::alpha_image_assets::bind(&rules, &overlay_registry, &assets);
+    rules.bind_alpha_images(&overlay_registry, &assets);
     rules.bind_animation_sequences(&infantry_sequences);
     let overlay_shp_ids = crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
         &overlay_registry,
