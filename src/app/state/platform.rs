@@ -102,8 +102,11 @@ pub(crate) struct PlatformState {
     /// mutated afterwards.
     pub(crate) game_config: Option<crate::util::config::GameConfig>,
     /// A sealed capture's exact surface. Present only in capture runs, which
-    /// keep it through match launch and never zoom or go full screen.
+    /// keep it through match launch and never go full screen.
     pub(crate) capture_client_size: Option<PhysicalSize<u32>>,
+    /// A capture's battle zoom and sidebar size in place of the Options
+    /// choices; read only while `capture_client_size` is set.
+    pub(crate) capture_presentation: CapturePresentation,
     /// Whether the windowed window still has to be put on the Display choice's
     /// screen. Set when the window comes back from full screen, because winit
     /// restores the placement it saved on entry and does that on its own
@@ -113,6 +116,29 @@ pub(crate) struct PlatformState {
     /// Whether `options_profile.window_placement` moved since VERA.INI was
     /// last written, so leaving the game writes it once. Presentation-only.
     pub(crate) window_placement_unsaved: bool,
+}
+
+/// The Options presentation choices a capture runs its battle at. A sealed
+/// map profile may set them (`MapPresentationProfile`); otherwise a capture
+/// keeps zoom 100%, the Normal sidebar, the native radar and the sidebar's
+/// own pixels, whatever its size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CapturePresentation {
+    pub(crate) zoom: crate::ui::main_menu_dialogs::options::Zoom,
+    pub(crate) sidebar: crate::ui::main_menu_dialogs::options::SidebarSize,
+    pub(crate) hd_radar: bool,
+    pub(crate) smooth_sidebar: bool,
+}
+
+impl Default for CapturePresentation {
+    fn default() -> Self {
+        Self {
+            zoom: crate::ui::main_menu_dialogs::options::Zoom::Percent(100),
+            sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
+            hd_radar: false,
+            smooth_sidebar: false,
+        }
+    }
 }
 
 impl PlatformState {
@@ -141,6 +167,7 @@ impl PlatformState {
             redraw_gate: crate::app::match_runtime::redraw_gate::RedrawGate::from_environment(),
             game_config,
             capture_client_size,
+            capture_presentation: CapturePresentation::default(),
             recenter_windowed: false,
             window_placement_unsaved: false,
         }

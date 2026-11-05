@@ -9,7 +9,7 @@ use super::{OverlayTypeRegistry, ResolvedTerrainGrid};
 
 mod platform;
 
-pub(crate) use platform::PlatformState;
+pub(crate) use platform::{CapturePresentation, PlatformState};
 
 /// All initialized state. Created in `resumed()` when the window is available.
 /// pub(crate) so the app presentation/render paths can access fields.
@@ -99,27 +99,49 @@ impl AppState {
         self.render_dimensions().1
     }
 
-    /// The sidebar's place and size in the match frame (`ui::sidebar::frame`).
+    /// The sidebar's place and size in the match frame (`ui::sidebar::frame`),
+    /// drawn at the window's pixels when the match zooms.
     pub(crate) fn sidebar_frame(&self) -> crate::ui::sidebar::SidebarFrame {
+        let zoom = self
+            .match_zoom_pass()
+            .map_or(100, |pass| pass.geometry().percent);
         self.sidebar_frame_for(self.render_width(), self.render_height())
+            .in_window(zoom, self.hd_radar() || self.smooth_sidebar())
     }
 
-    /// The same for a frame of `width` x `height`. Captures keep the native
-    /// size, as they keep the zoom at 100%.
+    /// Whether VERA's HD radar is on (`[VERA] HdRadar=`); a capture takes its
+    /// profile's choice (`CapturePresentation`).
+    pub(crate) fn hd_radar(&self) -> bool {
+        if self.platform.capture_client_size.is_some() {
+            self.platform.capture_presentation.hd_radar
+        } else {
+            self.persistence.options_profile.hd_radar
+        }
+    }
+
+    /// Whether VERA's smooth sidebar is on (`[VERA] SmoothSidebar=`); a
+    /// capture takes its profile's choice (`CapturePresentation`).
+    pub(crate) fn smooth_sidebar(&self) -> bool {
+        if self.platform.capture_client_size.is_some() {
+            self.platform.capture_presentation.smooth_sidebar
+        } else {
+            self.persistence.options_profile.smooth_sidebar
+        }
+    }
+
+    /// The same for a frame of `width` x `height`. Captures take their own
+    /// size (`CapturePresentation`), Normal unless the profile says.
     pub(crate) fn sidebar_frame_for(
         &self,
         width: u32,
         height: u32,
     ) -> crate::ui::sidebar::SidebarFrame {
-        let percent = if self.platform.capture_client_size.is_some() {
-            100
+        let size = if self.platform.capture_client_size.is_some() {
+            self.platform.capture_presentation.sidebar
         } else {
-            self.persistence
-                .options_profile
-                .sidebar
-                .percent(width, height)
+            self.persistence.options_profile.sidebar
         };
-        crate::ui::sidebar::SidebarFrame::new(width, height, percent)
+        crate::ui::sidebar::SidebarFrame::new(width, height, size.percent(width, height))
     }
 
     /// The zoom pass a match frame goes through: the battlefield and the

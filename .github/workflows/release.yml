@@ -45,8 +45,8 @@ name: Release
 # once a year, to releases that have been out for a few weeks.
 #
 # Each installer holds the game program, its licenses (LICENSE-GPL, and
-# LGPL-2.1-or-later.txt for the Bink decoder), the third-party notices
-# (THIRD_PARTY_LICENSES.html) and a README.txt made from
+# LGPL-2.1-or-later.txt for the Bink decoder and xBR scaler), the third-party
+# notices (THIRD_PARTY_LICENSES.html) and a README.txt made from
 # .github/release/README.txt.in; the Windows one also config.toml.example. They
 # never hold game files (README.md, README.txt.in). Their one piece of game art
 # is the app icon, Red Alert 2's red star from retail game.exe

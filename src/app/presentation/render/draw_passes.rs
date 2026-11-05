@@ -56,6 +56,9 @@ pub(super) struct DrawPassData<'a> {
     pub sidebar_unavailable: &'a [SpriteInstance],
     pub sidebar_flash: &'a [SpriteInstance],
     pub sidebar_gclock: &'a [SpriteInstance],
+    /// `SidebarInstances::smooth_chrome` and `smooth_command_bar`.
+    pub smooth_chrome: bool,
+    pub smooth_command_bar: bool,
 }
 
 /// Draw the sidebar into its own surface, as gamemd draws `g_SidebarSurface`
@@ -80,6 +83,16 @@ fn draw_sidebar_surface(
         .as_ref()
         .and_then(|set| set.resolve_side(side_index))
         .map(|resolved| resolved.atlas);
+    // Instances moved to the smooth sidebar's chrome copy draw from it.
+    let chrome_texture = |smooth: bool| {
+        chrome.and_then(|atlas| {
+            if smooth {
+                atlas.smooth_texture()
+            } else {
+                Some(&atlas.texture)
+            }
+        })
+    };
     let renderer = &mut state.renderer;
     let Some(surface) = renderer.sidebar_surface.as_ref() else {
         return;
@@ -91,12 +104,12 @@ fn draw_sidebar_surface(
     let mut draw = |tex: Option<&BatchTexture>, key: &'static str| {
         draw_pooled_with_camera(&mut pass, batch, camera, pool, tex, key);
     };
-    draw(chrome.map(|atlas| &atlas.texture), "sidebar_chrome");
+    draw(chrome_texture(data.smooth_chrome), "sidebar_chrome");
     draw(
         presentation
             .sidebar_cameo_atlas
             .as_ref()
-            .map(|atlas| &atlas.texture),
+            .map(|atlas| atlas.sidebar_texture()),
         "sidebar_cameo",
     );
     // StripDraw6A9AF8 outlines the hovered slot before its masks.
@@ -229,7 +242,7 @@ fn draw_sidebar_surface(
         batch,
         surface.camera(SidebarPart::Bar),
         pool,
-        chrome.map(|atlas| &atlas.texture),
+        chrome_texture(data.smooth_command_bar),
         "command_bar",
     );
 }

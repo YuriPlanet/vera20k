@@ -12,17 +12,17 @@ use super::{
     CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL,
     CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, DEVELOPER_OPTIONS_LABEL,
     DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget, FPS_COUNTER_HELP,
-    FPS_COUNTER_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, HAS_CHECK_FOR_UPDATES,
-    HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL,
-    HealthBarMode, LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId,
-    LauncherComboId, LauncherCue, LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId,
-    MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL,
-    OptionsDialogState, PhysicalControlFrame, RENDER_INTERPOLATION_HELP,
+    FPS_COUNTER_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, HAS_CHECK_FOR_UPDATES, HD_RADAR_HELP,
+    HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
+    HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode, LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton,
+    LauncherCheckboxId, LauncherComboId, LauncherCue, LauncherOptionsEvent, LauncherParentResult,
+    LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP,
+    ORIGINAL_SHAPE_LABEL, OptionsDialogState, PhysicalControlFrame, RENDER_INTERPOLATION_HELP,
     RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL,
     SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP,
-    SKIP_INTRO_LABEL, Setting, SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL, WOL_TEST_SERVICE_HELP,
-    WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL,
-    Zoom,
+    SKIP_INTRO_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, Setting, SidebarSize,
+    VERA_ICON_HELP, VERA_ICON_LABEL, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL,
+    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{
@@ -497,6 +497,8 @@ impl OptionsDialogState {
             LauncherCheckboxId::RightClickOrders => RIGHT_CLICK_ORDERS_LABEL,
             LauncherCheckboxId::LockCursor => LOCK_CURSOR_LABEL,
             LauncherCheckboxId::VeraIcon => VERA_ICON_LABEL,
+            LauncherCheckboxId::HdRadar => HD_RADAR_LABEL,
+            LauncherCheckboxId::SmoothSidebar => SMOOTH_SIDEBAR_LABEL,
             LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
             LauncherCheckboxId::WolTestService => WOL_TEST_SERVICE_LABEL,
             LauncherCheckboxId::FpsCounter => FPS_COUNTER_LABEL,
@@ -555,6 +557,8 @@ impl OptionsDialogState {
             LauncherCheckboxId::RightClickOrders => self.values.right_click_orders,
             LauncherCheckboxId::LockCursor => self.values.lock_cursor,
             LauncherCheckboxId::VeraIcon => self.values.vera_icon,
+            LauncherCheckboxId::HdRadar => self.values.hd_radar,
+            LauncherCheckboxId::SmoothSidebar => self.values.smooth_sidebar,
             LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
             LauncherCheckboxId::WolTestService => self.values.wol_test_service,
             LauncherCheckboxId::FpsCounter => self.values.fps_counter,
@@ -769,6 +773,8 @@ impl OptionsDialogState {
                 }
                 LauncherCheckboxId::LockCursor => LauncherStatusHelp::Text(LOCK_CURSOR_HELP),
                 LauncherCheckboxId::VeraIcon => LauncherStatusHelp::Text(VERA_ICON_HELP),
+                LauncherCheckboxId::HdRadar => LauncherStatusHelp::Text(HD_RADAR_HELP),
+                LauncherCheckboxId::SmoothSidebar => LauncherStatusHelp::Text(SMOOTH_SIDEBAR_HELP),
                 LauncherCheckboxId::ShiftQueue => LauncherStatusHelp::Text(SHIFT_QUEUE_HELP),
                 LauncherCheckboxId::WolTestService => {
                     LauncherStatusHelp::Text(WOL_TEST_SERVICE_HELP)
