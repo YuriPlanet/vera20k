@@ -9,6 +9,7 @@ use super::*;
 
 mod downlink;
 pub(crate) mod federation;
+pub(crate) mod pack;
 
 /// A `VO1C` certificate; `VO2C` adds one flags byte.
 pub const ORDERING_CERTIFICATE_LEN: usize = 66;
