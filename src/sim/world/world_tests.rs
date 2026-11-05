@@ -904,6 +904,66 @@ Rate=120
     );
 }
 
+/// Hover's wake (`HoverLocomotionClass::Process`, `0x00514A85..0x00514AC3`)
+/// starts at the Foot's whole Location (`+0x9C`), Z included: the Anim's
+/// Unlimbo (`0x005F4EC0`) keeps it through `AnimTypeClass` vt+0x6C
+/// (`0x0041CF80`) and `SetLocation` (`0x005F6940`). A hovering hull's wake
+/// starts at the hull's height, not on the water below it.
+#[test]
+fn a_hover_wake_starts_at_the_hulls_height() {
+    use crate::sim::movement::hover::HoverRuntime;
+    use crate::util::native_x87::NativeF64Bits;
+    let ini = IniFile::from_str(
+        "[General]\nWake=WAKE1\n\
+         [InfantryTypes]\n[VehicleTypes]\n0=HOVR\n[AircraftTypes]\n[BuildingTypes]\n\
+         [HOVR]\nStrength=300\nArmor=heavy\nSpeed=6\nMovementZone=Amphibious\n\
+         SpeedType=Hover\nLocomotor={4A582742-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let art = IniFile::from_str("[WAKE1]\nLayer=ground\nYSortAdjust=-288\nRate=120\n");
+    let mut rules =
+        RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("hover rules should parse");
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+    rules.bind_anim_frame_count_for_test("WAKE1", 15);
+    let mut sim = Simulation::new();
+    let id = sim
+        .spawn_object("HOVR", "Americans", 0, 0, 64, &rules)
+        .expect("spawn hover");
+    // The gate reads the `CellClass+0xEC` mirror; stamp Water on the fixture.
+    let mut terrain = water_terrain(2, 1);
+    for cell in terrain.cells_mut_for_test() {
+        cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
+    }
+    sim.resolved_terrain = Some(terrain);
+    let hover = sim.substrate.entities.get_mut(id).expect("hover");
+    let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Hover);
+    *locomotor.hover_runtime_mut().expect("Hover payload") =
+        HoverRuntime::moving_for_test(Some(DriveCoord::cell(1, 0, 0)), NativeF64Bits::ONE);
+    hover.locomotor = Some(locomotor);
+    // Afloat about HoverHeight's equilibrium above the level-0 water.
+    hover.position.set_exact_z_leptons_for_test(Some(90));
+    let hull = crate::sim::movement::ground_pose::object_location(
+        sim.substrate.entities.get(id).expect("hover"),
+        sim.resolved_terrain.as_ref(),
+    );
+    assert_eq!(hull.z, 90);
+
+    sim.spawn_wakes_for_frame(&rules);
+
+    let wakes: Vec<_> = sim
+        .logic_order()
+        .iter()
+        .filter_map(|id| sim.anim(*id))
+        .filter(|anim| sim.interner.resolve(anim.type_id()) == "WAKE1")
+        .map(|anim| anim.world_coord())
+        .collect();
+    assert_eq!(wakes.len(), 1, "one wake for the moving hover");
+    assert_eq!(
+        (wakes[0].x, wakes[0].y, wakes[0].z),
+        (hull.x, hull.y, hull.z),
+        "the wake starts at the hull, not on the water"
+    );
+}
+
 #[test]
 fn advance_tick_finishes_dying_infantry_from_rules_catalog() {
     let ini = IniFile::from_str(
