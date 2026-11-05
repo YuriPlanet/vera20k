@@ -2569,6 +2569,13 @@ pub(crate) fn load_map_initial_with_assets(
             resident.retire_scenario_started();
             crate::app::process_assets::transfer_outgoing_simulation_rules(owner, resident)?;
         }
+        if owner.multiplayer_countries().next().is_none() {
+            // Direct .SED adapters can bypass PrepareSession52E11E/52E123.
+            // Populate its Country sources before InitMap599825 uses array[0];
+            // normal shell entry has already performed these same reads.
+            owner.read_multiplayer_country(&crate::rules::ini_parser::IniFile::empty(), -1);
+            owner.refresh_multiplayer_country_bodies();
+        }
         let synthetic_ini = generated_full_init_ini(&settings, &options, owner)?;
         let tmcj4f =
             select_tmcj4f_for_full_init(asset_manager, full_init_entry_mode, the_team_enabled)?;
@@ -4163,7 +4170,10 @@ mod full_init_rules_gate_tests {
         );
         directory.write("isotem.pal", &[0; 768]);
         directory.write("unittem.pal", &[0; 768]);
-        directory.write("aimd.ini", b"");
+        let Some((_, retail)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        directory.write("aimd.ini", retail.get_ref("AIMD.INI").unwrap());
         directory.write(
             "mode.ini",
             b"[Animations]\n0=MODE\n[Powerups]\nMoney=7,MODE,yes,125\n[Clear]\nWheel=0%\n",
@@ -4191,7 +4201,6 @@ mod full_init_rules_gate_tests {
             Arc::default(),
         )
         .unwrap();
-        owner.read_multiplayer_country(&IniFile::empty(), 0);
         let mut assets = AssetManager::from_loose_root_for_test(directory.path());
         let initial = load_map_initial_with_assets(
             directory.path().to_owned(),

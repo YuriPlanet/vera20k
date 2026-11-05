@@ -22,7 +22,6 @@ use crate::render::tile_atlas::{self, TileAtlas};
 use crate::render::unit_atlas::{self, UnitAtlas};
 use crate::rules::effect_asset_catalog::tolerant_anim_class_roots;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::process_owner::NativeRulesProcessOwner;
 #[cfg(test)]
 use crate::rules::retail_sources::load_startup_rules;
 use crate::rules::ruleset::RuleSet;
@@ -311,36 +310,6 @@ pub(crate) fn load_rules_with_prefix_for_test(
         .ok()?
         .into_parts();
     Some((rules, processed_ini, fixed_art_ini, receipt))
-}
-
-/// Resolve the neutral tech buildings the random map generator may place.
-///
-/// The type list lives in `[AI] NeutralTechBuildings` and each footprint in
-/// `Foundation=`, so RULESMD/LANGRULE and fixed ARTMD are both needed.
-/// An unavailable INI yields an empty catalog, which the placement phase
-/// treats as "place nothing" rather than as an error.
-pub(crate) fn load_neutral_tech_types(
-    owner: Option<&NativeRulesProcessOwner>,
-) -> Vec<crate::map::rmg::phases::tech_buildings::TechType> {
-    let Some(owner) = owner else {
-        log::warn!("random map: startup rules/art unavailable; placing no neutral tech buildings");
-        return Vec::new();
-    };
-    let Ok(processed) = owner.startup_compatibility_projection() else {
-        log::warn!(
-            "random map: startup rules projection failed; placing no neutral tech buildings"
-        );
-        return Vec::new();
-    };
-    let types = crate::map::rmg::tech_catalog::resolve(
-        processed.neutral_tech_buildings(),
-        owner.fixed_art(),
-    );
-    log::info!(
-        "random map: resolved {} neutral tech building type(s)",
-        types.len()
-    );
-    types
 }
 
 /// Install the process-selected ART metadata before terrain construction or
