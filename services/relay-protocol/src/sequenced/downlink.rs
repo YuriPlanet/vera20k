@@ -14,6 +14,9 @@ const CONGESTED_ACK_DELAY_MS: u64 = 200;
 const GOOD_ACK_DELAY_MS: u64 = 100;
 /// `srtt_c` until a reader reports one (spec §4.6, §7.3).
 const DEFAULT_SRTT_MS: u64 = 100;
+/// Records the retransmission queue may owe a reader at most; the rest is
+/// left to the fallback PULL (spec §7.3, §7.7).
+const RETRANSMIT_QUEUE_RECORDS: u64 = PUSH_WINDOW + ORDERING_PULL_LIMIT as u64;
 
 /// `ranges` minus `cut`, in order. Ranges are `[from, to)` of record seqs.
 pub(super) fn subtract(ranges: &[(u64, u64)], cut: (u64, u64)) -> Vec<(u64, u64)> {
@@ -69,14 +72,34 @@ pub(super) fn piggyback_packs(
         return (fresh, count, 0);
     }
     let limit = fresh.len();
-    for skip in 0..old.len() {
-        let records: Vec<Vec<u8>> = old[skip..].iter().chain(&new[..count]).cloned().collect();
-        let packs = pack_entries(&records, usize::MAX);
-        if packs.len() <= limit {
-            return (packs, count, old.len() - skip);
+    // The fewest old records to drop, counted as `pack_entries` packs, with
+    // one copy for the packs that go out.
+    let new = &new[..count];
+    let Some(skip) =
+        (0..old.len()).find(|&skip| pack_count(old[skip..].iter().chain(new)) <= limit)
+    else {
+        return (fresh, count, 0);
+    };
+    let records: Vec<Vec<u8>> = old[skip..].iter().chain(new).cloned().collect();
+    (pack_entries(&records, usize::MAX), count, old.len() - skip)
+}
+
+/// How many packs `pack_entries` makes of `records`, without building them.
+fn pack_count<'a>(records: impl Iterator<Item = &'a Vec<u8>>) -> usize {
+    let (mut packs, mut length, mut entries) = (0, 0, 0);
+    for record in records {
+        if packs == 0
+            || entries == usize::from(u8::MAX)
+            || length + record.len() - 6 > MAX_WIRE_PAYLOAD
+        {
+            packs += 1;
+            length = PACK_HEADER;
+            entries = 0;
         }
+        length += record.len() - 6;
+        entries += 1;
     }
-    (fresh, count, 0)
+    packs
 }
 
 /// Whether a reader in `state` gets the 8 ms repeat (spec §7.2, §7.5):
@@ -145,7 +168,21 @@ impl PushSubscription {
             queued += range.1 - range.0;
             merge(&mut self.retransmit, range);
         }
+        self.cap_retransmit();
         queued
+    }
+
+    /// Keeps the oldest `RETRANSMIT_QUEUE_RECORDS` records of the queue.
+    fn cap_retransmit(&mut self) {
+        let mut left = RETRANSMIT_QUEUE_RECORDS;
+        self.retransmit.retain_mut(|(from, to)| {
+            if left == 0 {
+                return false;
+            }
+            *to = (*to).min(*from + left);
+            left -= *to - *from;
+            true
+        });
     }
 }
 
@@ -355,7 +392,10 @@ impl RelayServer {
                 if datagrams == 0 || from >= to {
                     continue;
                 }
-                let Ok(records) = ordering.history_page(from, (to - from) as usize) else {
+                // Read no more than this pass's packs can hold.
+                let fits = datagrams * usize::from(u8::MAX);
+                let Ok(records) = ordering.history_page(from, ((to - from) as usize).min(fits))
+                else {
                     break;
                 };
                 let packs = pack_entries(&records, datagrams);
@@ -741,9 +781,16 @@ mod tests {
         peer.link.loss.add(32, 0, 10);
         peer.evaluate_reader(10);
         assert_eq!(stats(&server).downlink, LinkState::Good);
+        // Congested before the renewal: its hold carries to the new hop.
+        let peer = &mut server.rooms.get_mut(&[5; 16]).unwrap().peers[0];
+        peer.link.delayed = true;
+        peer.evaluate_reader(19_000);
         super::super::tests::renew(&mut server, &mut reader, 20_000);
         let renewed = &server.rooms[&[5; 16]].peers[0].link;
         assert_eq!((renewed.loss.folds, renewed.loss.lossy), (1, false));
+        assert_eq!(renewed.clock.state, LinkState::Congested);
+        // DELAYED carried too, so the new hop renews the hold itself.
+        assert!(renewed.delayed && renewed.congested_at >= Some(19_000));
     }
 
     fn stats(server: &RelayServer) -> crate::ReaderLinkStats {
@@ -889,6 +936,22 @@ mod tests {
         at(&mut server, 12_000, true);
         assert_eq!(at(&mut server, 21_999, false).0, LinkState::Congested);
         assert_eq!(at(&mut server, 22_000, false).0, LinkState::Lossy);
+    }
+
+    /// Review fix: lost PULL replies of adjacent pages cannot merge into an
+    /// unbounded range; the queue keeps PUSH_WINDOW + ORDERING_PULL_LIMIT
+    /// records from the watermark and the rest is the fallback PULL's.
+    #[test]
+    fn the_retransmission_queue_is_bounded() {
+        let mut push = PushSubscription::new(1, false, (true, 3), 0);
+        for page in 0..100u64 {
+            let send = SendRecord {
+                kind: crate::link::SEND_OTHER,
+                ..lost_send(page + 1, 1 + 32 * page, 32)
+            };
+            push.enqueue_lost(&send, [].iter(), 1, 1000 * page);
+        }
+        assert_eq!(push.retransmit, [(1, 1 + RETRANSMIT_QUEUE_RECORDS)]);
     }
 
     #[test]

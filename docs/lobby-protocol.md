@@ -463,9 +463,10 @@ sets the welcome that sign-in responses carry as `motd`: non-blank text of at mo
 2048 UTF-8 bytes. `{text:null}` clears it. Both return `{welcome}`, the text or `null`.
 
 Released clients sign in with `User-Agent: VERA20k/<MAJOR.MINOR.PATCH> multiplayer-client`.
-A client that names a version older than 0.2.6 is refused at sign-in with 426
-`upgrade_required`, since clients before it cannot play through the relays' turn
-transport (#3845); one that names no version is not.
+A client that names a version older than 0.2.7 is refused at sign-in with 426
+`upgrade_required`, since clients before it cannot play through the relays'
+adaptive transport (UPLINK, `services/relay/README.md`); one that names no
+version is not.
 A session whose version is older than `version` in
 `https://downloads.vera20k.org/latest.json`, which the lobby reads at most every
 10 minutes, receives one such chat line per newer release, naming both versions,

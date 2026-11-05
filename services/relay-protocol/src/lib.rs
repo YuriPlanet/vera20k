@@ -1308,9 +1308,8 @@ impl RelayServer {
                     return Err(RelayError::Authentication);
                 }
                 // A renewed hop keeps the measured loss (spec §5.4).
-                let loss = peer.link.loss;
-                *peer = new_peer(message, source, now, now_ms);
-                peer.link.loss = loss;
+                let previous = std::mem::replace(peer, new_peer(message, source, now, now_ms));
+                peer.link.carry_path(&previous.link);
             }
             if message.sequence <= peer.received.maximum && peer.endpoint != source {
                 return Err(RelayError::Replay);

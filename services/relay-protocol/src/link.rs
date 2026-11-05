@@ -187,7 +187,8 @@ pub struct ClientLinkStats {
 
 /// A snapshot of one reader's downlink at the relay (spec §7.1, §10.2), for
 /// the newest admitted hop of that source. Counters are per hop: a renewed
-/// hop is a new `Peer` and starts from zero and Good (spec §4.7).
+/// hop is a new `Peer` whose counters start from zero, while it keeps the
+/// measured loss, the state and their hold timers (spec §4.7).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ReaderLinkStats {
     /// Whether this hop holds a push subscription (an UPLINK with PUSH within
@@ -779,8 +780,8 @@ pub(crate) struct SendRecord {
 }
 
 /// One reader hop's downlink measurement at the relay (spec §4.1, §4.2,
-/// §4.3, §5, §7.1). It belongs to the hop's `Peer`, so a renewed hop starts
-/// from Good and zero loss (§4.7).
+/// §4.3, §5, §7.1). It belongs to the hop's `Peer`; a renewed hop takes
+/// over the path measurement with `carry_path` (§4.7).
 #[derive(Debug)]
 pub(crate) struct ReaderLink {
     pub(crate) up: RecvWindow,
@@ -820,6 +821,20 @@ impl ReaderLink {
             packets_by_kind: [0; 5],
             bytes_by_kind: [0; 5],
         }
+    }
+
+    /// A renewed hop keeps the path measurement of the hop it replaces:
+    /// loss with its 20 s hold, the state with its 10 s congestion hold,
+    /// DELAYED, JITTERY and the reported RTT (spec §4.7). Windows, send
+    /// log, judgement cursor and counters stay the new hop's own.
+    pub(crate) fn carry_path(&mut self, previous: &ReaderLink) {
+        self.loss = previous.loss;
+        self.clock = previous.clock;
+        self.congested_at = previous.congested_at;
+        self.delayed = previous.delayed;
+        self.jittery = previous.jittery;
+        self.srtt_c = previous.srtt_c;
+        self.rttvar_c = previous.rttvar_c;
     }
 
     /// An authenticated datagram of this hop (spec §4.1, §5.1).

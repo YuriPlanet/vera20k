@@ -5933,13 +5933,26 @@ impl RelayServer {
         now_ms: u64,
     ) -> Result<Vec<ForwardDatagram>, RelayError> {
         let uplink = crate::link::decode_uplink(message.payload)?;
-        let reserved = self.reserve_ordering(
-            uplink
-                .batches
-                .iter()
-                .map(|opaque| 2 * (9 + opaque.len() + ENTRY_OVERHEAD))
-                .sum(),
-        );
+        // Reserve memory only for batches past the source's last accepted
+        // one: duplicates take none, and most UPLINKs carry none new.
+        let last = self
+            .rooms
+            .get(&message.ticket.room)
+            .and_then(|room| room.ordering.as_ref())
+            .and_then(|ordering| {
+                ordering.sources[usize::from(message.ticket.source)]
+                    .last_batch
+                    .as_ref()
+            })
+            .map_or(0, |(id, _, _)| *id);
+        let new_bytes: usize = uplink
+            .batches
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| uplink.first_batch_id + *index as u64 > last)
+            .map(|(_, opaque)| 2 * (9 + opaque.len() + ENTRY_OVERHEAD))
+            .sum();
+        let reserved = new_bytes == 0 || self.reserve_ordering(new_bytes);
         let ticket = message.ticket;
         let room = self
             .rooms
