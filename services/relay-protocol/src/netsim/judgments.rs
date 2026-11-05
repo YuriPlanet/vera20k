@@ -118,10 +118,10 @@ fn copies_since(trace: &Trace, client: usize, from_us: u64) -> u64 {
 
 // --- Judgment 1 (spec §1.2, §3) and the one-UPLINK-per-service rule (§6.3) ---
 
-/// Every datagram parses by spec §3 (the inspector applies the six UPLINK
-/// decoding rules of §3.2 and the 681-byte payload cap of §3.1); none of the
-/// removed requests or PushState appears (§1.2); every ACK is the 31-byte
-/// layout (§3.3) and every STATUS the 50-byte one (§3.4); every UPLINK has
+/// Every datagram parses by spec §3 as the bandwidth compaction encodes it
+/// (the inspector applies the six UPLINK decoding rules of §3.2, ACK and
+/// STATUS with their feedback tail, §3.3 and §3.4); none of the removed
+/// requests or PushState appears (§1.2); every UPLINK has
 /// PUSH set (§3.2 flags bit0, "对局开始后始终置 1") unless the client left;
 /// a PROBE carries no batch and no checksum (§6.3 row 5, §6.6); and one
 /// service sends at most one UPLINK, heartbeat included (§6.3).
@@ -148,12 +148,6 @@ pub(super) fn check_wire(trace: &Trace) -> Check {
             },
         )?;
         match &datagram.detail {
-            Detail::Ack { feedback, .. } => ensure(feedback.is_some(), || {
-                format!("13-byte ACK at {} ms (spec §3.3)", record.sent_ms())
-            })?,
-            Detail::Status { feedback, .. } => ensure(feedback.is_some(), || {
-                format!("32-byte STATUS at {} ms (spec §3.4)", record.sent_ms())
-            })?,
             Detail::Uplink(uplink) => {
                 ensure(uplink.flags & FLAG_PUSH != 0, || {
                     format!("UPLINK without PUSH at {} ms (spec §3.2)", record.sent_ms())
@@ -517,7 +511,7 @@ fn j04_only_a_lossy_reader_gets_8_ms_repeats() {
 
 /// In each push pass, the PACKs that carry new records (sequences never
 /// pushed to this reader) number exactly what the new records alone need
-/// by §3.5 packing; only the first of them carries older records; and no
+/// by PACK v2 packing (bandwidth-compaction spec §5.4); only the first of them carries older records; and no
 /// older record is below the reader's `acked_next`.
 fn check_piggyback(trace: &Trace, client: usize) -> Check {
     let mut pushed_high = 1;
@@ -544,14 +538,9 @@ fn check_piggyback(trace: &Trace, client: usize) -> Check {
             .flat_map(|record| record.pack().unwrap().1)
             .filter(|entry| entry.seq >= pushed_high)
             .collect();
-        // PACK v1 (transport spec §3.5) under envelope v2, PACK v2
-        // (bandwidth-compaction spec §5.4) under v3.
-        let needed = if fresh[0].parsed.as_ref().unwrap().version == 2 {
-            inspect::packs_needed(&new_records.iter().map(|r| r.len).collect::<Vec<_>>())
-        } else {
-            let canonical: Vec<Vec<u8>> = new_records.iter().map(|r| r.canonical.clone()).collect();
-            inspect::v3::packs_needed(&canonical)?
-        };
+        // By PACK v2 packing (bandwidth-compaction spec §5.4).
+        let canonical: Vec<Vec<u8>> = new_records.iter().map(|r| r.canonical.clone()).collect();
+        let needed = inspect::v3::packs_needed(&canonical)?;
         ensure(fresh.len() == needed, || {
             format!(
                 "client {client} at {} ms: {} new packs for records needing {needed} (spec §7.4)",
@@ -805,12 +794,7 @@ pub(super) fn check_bitmaps(trace: &Trace, clients: usize) -> Check {
         // Relay side.
         for record in &down {
             let feedback = match record.parsed.as_ref().map(|d| &d.detail) {
-                Ok(Detail::Ack {
-                    feedback: Some(f), ..
-                })
-                | Ok(Detail::Status {
-                    feedback: Some(f), ..
-                }) => *f,
+                Ok(Detail::Ack { feedback: f, .. }) | Ok(Detail::Status { feedback: f, .. }) => *f,
                 _ => continue,
             };
             let t = record.sent_us;

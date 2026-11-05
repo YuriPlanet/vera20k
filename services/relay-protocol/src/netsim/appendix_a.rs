@@ -58,7 +58,18 @@ fn arrives(record: &WireRecord, at_ms: f64) {
     );
 }
 
-/// Envelope sequence and payload length (spec §3.1).
+/// The envelope's hop sequence (bandwidth-compaction spec §6.1).
+fn hop(record: &WireRecord, hop_seq: u64) {
+    assert_eq!(
+        record.hop_seq(),
+        hop_seq,
+        "{} at {} ms",
+        record.kind(),
+        record.sent_ms()
+    );
+}
+
+/// Envelope sequence and payload length (bandwidth-compaction spec §6.1).
 fn envelope(record: &WireRecord, hop_seq: u64, payload_len: usize) {
     let datagram = record.parsed.as_ref().unwrap();
     assert_eq!(
@@ -89,7 +100,7 @@ fn status(record: &WireRecord) -> (u32, u64, u64, u32, u16, u32, bool, Feedback)
             *tick_hz,
             *start_delay_ms,
             *started,
-            feedback.expect("50-byte STATUS"),
+            *feedback,
         ),
         other => panic!("not a STATUS: {other:?}"),
     }
@@ -106,38 +117,31 @@ fn shape(records: &[PackRecord]) -> Vec<(u64, u8, u32)> {
 }
 
 #[test]
-fn appendix_a_packet_by_packet() {
+fn appendix_a_timeline_and_fields() {
     let (_, trace) = Simulation::new(Scenario::from_json(SCENARIO).unwrap()).run_traced();
     use Direction::{Down, Up};
-    // The transport spec's bytes: envelope v2 only. The compacted wire is
-    // `appendix_a_packet_by_packet_compacted`'s.
-    if trace.wire[0].parsed.as_ref().is_ok_and(|d| d.version != 2) {
-        return;
-    }
 
     // A.2, packets 1-4, and B's four 30 ms later.
     for (client, t) in [(A, 0.0), (B, 30.0)] {
         let hello = packet(&trace, Up, client, "HELLO", t);
-        envelope(hello, 1, 0);
-        assert_eq!(hello.len, 146);
+        hop(hello, 1);
         arrives(hello, t + 20.0);
         let challenge = packet(&trace, Down, client, "CHALLENGE", t + 20.0);
-        assert_eq!(challenge.len, 120);
-        envelope(challenge, 1, 40); // echoes HELLO's sequence
+        hop(challenge, 1); // echoes HELLO's sequence
         arrives(challenge, t + 40.0);
         let confirm = packet(&trace, Up, client, "CONFIRM", t + 40.0);
-        envelope(confirm, 2, 40);
+        hop(confirm, 2);
         let ready = packet(&trace, Down, client, "READY", t + 60.0);
-        envelope(ready, 1, 0); // peer.sent's first use
+        hop(ready, 1); // peer.sent's first use
         arrives(ready, t + 80.0);
     }
 
     // A.3, packets 5-7: A's configuration and its two replies.
     let request = packet(&trace, Up, A, "READY_REQUEST", 80.0);
-    envelope(request, 3, 100);
+    hop(request, 3);
     arrives(request, 100.0);
     let ready = packet(&trace, Down, A, "O_READY", 100.0);
-    envelope(ready, 2, 9);
+    hop(ready, 2);
     assert!(matches!(
         ready.parsed.as_ref().unwrap().detail,
         Detail::OrderReady {
@@ -146,7 +150,7 @@ fn appendix_a_packet_by_packet() {
         }
     ));
     let reply = packet(&trace, Down, A, "STATUS", 100.0);
-    envelope(reply, 3, 50);
+    hop(reply, 3);
     arrives(reply, 120.0);
     let (head, oldest, next, active, hz, delay, started, feedback) = status(reply);
     assert_eq!(
@@ -160,7 +164,7 @@ fn appendix_a_packet_by_packet() {
 
     // Packet 8: B's configuration starts the match at 130 + 200.
     let request = packet(&trace, Up, B, "READY_REQUEST", 110.0);
-    envelope(request, 3, 100);
+    hop(request, 3);
     let ready = packet(&trace, Down, B, "O_READY", 130.0);
     assert!(matches!(
         ready.parsed.as_ref().unwrap().detail,
@@ -173,21 +177,21 @@ fn appendix_a_packet_by_packet() {
     assert_eq!((delay, started), (200, false));
 
     // Packets 9-12: the 125 ms resends.
-    envelope(packet(&trace, Up, A, "READY_REQUEST", 205.0), 4, 100);
-    envelope(packet(&trace, Down, A, "O_READY", 225.0), 4, 9);
+    hop(packet(&trace, Up, A, "READY_REQUEST", 205.0), 4);
+    hop(packet(&trace, Down, A, "O_READY", 225.0), 4);
     let reply = packet(&trace, Down, A, "STATUS", 225.0);
-    envelope(reply, 5, 50);
+    hop(reply, 5);
     assert_eq!(status(reply).5, 105);
-    envelope(packet(&trace, Up, B, "READY_REQUEST", 235.0), 4, 100);
+    hop(packet(&trace, Up, B, "READY_REQUEST", 235.0), 4);
     assert_eq!(status(packet(&trace, Down, B, "STATUS", 255.0)).5, 75);
     // A's second RTT sample (§4.4): srtt 40, rttvar 15.
     let stats = trace.client_stats_at(A, 245_500).unwrap();
     assert_eq!((stats.srtt_ms, stats.rttvar_ms), (Some(40), Some(15)));
 
     // Packet 13: the reply that says the match started.
-    envelope(packet(&trace, Up, A, "READY_REQUEST", 330.0), 5, 100);
+    hop(packet(&trace, Up, A, "READY_REQUEST", 330.0), 5);
     let reply = packet(&trace, Down, A, "STATUS", 350.0);
-    envelope(reply, 7, 50);
+    hop(reply, 7);
     let (head, _, _, _, _, delay, started, _) = status(reply);
     assert_eq!((head, delay, started), (0, 0, true));
     arrives(reply, 370.0);
@@ -196,7 +200,7 @@ fn appendix_a_packet_by_packet() {
 
     // Packet 14: A's first UPLINK, in the service that read the start.
     let first = packet(&trace, Up, A, "UPLINK", 370.0);
-    envelope(first, 6, 35);
+    hop(first, 6);
     arrives(first, 390.0);
     let uplink = first.uplink().unwrap();
     assert_eq!(uplink.flags, FLAG_PUSH);
@@ -209,7 +213,7 @@ fn appendix_a_packet_by_packet() {
     assert!(uplink.checksums.is_empty() && uplink.batches.is_empty() && uplink.pace.is_none());
     // B's first, at 400.
     let first = packet(&trace, Up, B, "UPLINK", 400.0);
-    envelope(first, 6, 35);
+    hop(first, 6);
     assert_eq!(
         (
             first.uplink().unwrap().recv_next,
@@ -220,20 +224,20 @@ fn appendix_a_packet_by_packet() {
 
     // A.4, packet 15: turn 1 to A and, once B subscribed at 420, to B.
     let turn = packet(&trace, Down, A, "PACK", 396.7);
-    envelope(turn, 8, 24);
+    hop(turn, 8);
     arrives(turn, 416.7);
     let (base, records) = pack(turn);
     assert_eq!(base, 1);
     assert_eq!(shape(&records), [(1, 4, 1), (2, 4, 2)]);
     let turn = packet(&trace, Down, B, "PACK", 420.0);
-    envelope(turn, 8, 24);
+    hop(turn, 8);
     arrives(turn, 440.0);
     assert_eq!(pack(turn).0, 1);
 
     // Packet 16: turn 2 with turn 1 piggybacked, to both.
     for client in [A, B] {
         let turn = packet(&trace, Down, client, "PACK", 463.3);
-        envelope(turn, 9, 38);
+        hop(turn, 9);
         let (base, records) = pack(turn);
         assert_eq!(base, 1);
         assert_eq!(
@@ -244,7 +248,7 @@ fn appendix_a_packet_by_packet() {
 
     // Packet 17: A's acknowledgement, 100 ms after its last UPLINK.
     let ack = packet(&trace, Up, A, "UPLINK", 470.0);
-    envelope(ack, 7, 35);
+    hop(ack, 7);
     let uplink = ack.uplink().unwrap();
     assert_eq!(
         (uplink.recv_next, uplink.down_high, uplink.down_bits),
@@ -254,7 +258,7 @@ fn appendix_a_packet_by_packet() {
 
     // Packet 18: A's command, sent in the service that sealed it.
     let command = packet(&trace, Up, A, "UPLINK", 480.0);
-    envelope(command, 8, 119);
+    hop(command, 8);
     arrives(command, 500.0);
     let uplink = command.uplink().unwrap();
     assert_eq!(uplink.flags, FLAG_PUSH);
@@ -264,20 +268,17 @@ fn appendix_a_packet_by_packet() {
     );
     assert_eq!((uplink.srtt_ms, uplink.base_ms, uplink.link), (40, 40, 0));
     assert_eq!(uplink.rttvar_ms, 11);
-    assert_eq!(
-        (uplink.first_batch_id, uplink.batches.clone()),
-        (1, vec![74])
-    );
+    assert_eq!((uplink.first_batch_id, uplink.batches.len()), (1, 1));
 
     // Packet 19: its ACK.
     let reply = packet(&trace, Down, A, "ACK", 500.0);
-    envelope(reply, 10, 31);
+    hop(reply, 10);
     arrives(reply, 520.0);
     match reply.parsed.as_ref().unwrap().detail {
         Detail::Ack {
             batch_id,
             frame,
-            feedback: Some(feedback),
+            feedback,
         } => {
             assert_eq!((batch_id, frame), (1, 5));
             assert_eq!(
@@ -290,26 +291,18 @@ fn appendix_a_packet_by_packet() {
 
     // Packet 20: turn 3 to A, from A's acked_next 3, with the batch in frame 5.
     let turn = packet(&trace, Down, A, "PACK", 530.0);
-    envelope(turn, 11, 128);
+    hop(turn, 11);
     let (base, records) = pack(turn);
     assert_eq!(base, 3);
     assert_eq!(
         shape(&records),
         [(3, 4, 3), (4, 4, 4), (5, 3, 5), (6, 4, 5), (7, 4, 6)]
     );
-    assert_eq!(
-        (
-            records[2].len,
-            records[2].source,
-            records[2].batch_id,
-            records[2].opaque_len
-        ),
-        (88, Some(0), Some(1), Some(74))
-    );
+    assert_eq!((records[2].source, records[2].batch_id), (Some(0), Some(1)));
 
     // Packet 21: B's acknowledgement, lost.
     let lost = packet(&trace, Up, B, "UPLINK", 500.0);
-    envelope(lost, 7, 35);
+    hop(lost, 7);
     assert!(lost.lost());
     assert_eq!(lost.uplink().unwrap().recv_next, 5);
 
@@ -322,7 +315,7 @@ fn appendix_a_packet_by_packet() {
 
     // Packet 23: turn 4 to B repairs turn 3 by piggyback.
     let turn = packet(&trace, Down, B, "PACK", 596.7);
-    envelope(turn, 11, 156);
+    hop(turn, 11);
     arrives(turn, 616.7);
     let (base, records) = pack(turn);
     assert_eq!((base, records.len()), (1, 9));
@@ -331,7 +324,7 @@ fn appendix_a_packet_by_packet() {
 
     // Packet 24: B's acknowledgement shows relay seq 10 missing.
     let ack = packet(&trace, Up, B, "UPLINK", 616.7);
-    envelope(ack, 8, 35);
+    hop(ack, 8);
     arrives(ack, 636.7);
     let uplink = ack.uplink().unwrap();
     assert_eq!(
@@ -342,9 +335,9 @@ fn appendix_a_packet_by_packet() {
 
     // Packet 25: B's status heartbeat, 250 ms after its subscription, after
     // turn 5 (B's seq 12).
-    envelope(packet(&trace, Down, B, "PACK", 663.3), 12, 24);
+    hop(packet(&trace, Down, B, "PACK", 663.3), 12);
     let heartbeat = packet(&trace, Down, B, "STATUS", 670.0);
-    envelope(heartbeat, 13, 50);
+    hop(heartbeat, 13);
     arrives(heartbeat, 690.0);
     let (head, _, next, active, _, _, started, feedback) = status(heartbeat);
     assert_eq!((head, next, active, started), (10, 12, 0b11, true));
@@ -423,9 +416,9 @@ fn appendix_a_packet_by_packet() {
     // A.5, packets 31-32: A's LEAVE and its echo.
     let leave = packet(&trace, Up, A, "LEAVE", 1480.0);
     let leave_seq = leave.hop_seq();
-    envelope(leave, leave_seq, 1);
+    hop(leave, leave_seq);
     let echo = packet(&trace, Down, A, "LEAVE_ACK", 1500.0);
-    envelope(echo, leave_seq, 0);
+    hop(echo, leave_seq);
     // §11 row 8: no UPLINK after the Leave.
     assert!(
         !trace
@@ -437,10 +430,7 @@ fn appendix_a_packet_by_packet() {
     let (_, records) = pack(packet(&trace, Down, B, "PACK", 1530.0));
     let tail = &records[records.len() - 3..];
     assert_eq!(shape(tail), [(37, 5, 35), (38, 4, 35), (39, 4, 36)]);
-    assert_eq!(
-        (tail[0].len, tail[0].source, tail[0].lost),
-        (6, Some(0), false)
-    );
+    assert_eq!((tail[0].source, tail[0].lost), (Some(0), false));
     let heartbeat = trace
         .of(B, Down)
         .filter(|r| r.kind() == "STATUS" && r.sent_us > 1_530_000)
@@ -450,10 +440,9 @@ fn appendix_a_packet_by_packet() {
 
     // Packets 34-35: B's LEAVE and its echo.
     let leave = packet(&trace, Up, B, "LEAVE", 2000.0);
-    envelope(
+    hop(
         packet(&trace, Down, B, "LEAVE_ACK", 2020.0),
         leave.hop_seq(),
-        0,
     );
 }
 
@@ -475,15 +464,15 @@ fn sized(record: &WireRecord, len: usize, hop_seq: u64, payload_len: usize) {
     envelope(record, hop_seq, payload_len);
 }
 
-/// Appendix A again on the compacted wire, every length and byte derived
+/// Appendix A on the compacted wire, every length and byte derived
 /// from services/relay/bandwidth-compaction/spec.md alone: envelope v3 of
 /// 13 B (§6.1), varint UPLINK / ACK / STATUS (§7, §8), plaintext batches
 /// without version or FRAME_INFO (§3, §4: A's move command is 34 - 1 - 14 =
 /// 19 B, the default `command_bytes` less 15) and PACK v2 (§5.2, §5.4). Same scenario, same timeline; only bytes
-/// change (§0 "发送策略不变").
+/// change (§0 "发送策略不变"). `appendix_a_timeline_and_fields` holds the
+/// rest of the appendix: times, link statistics and record shapes.
 #[test]
-#[ignore = "waits for bandwidth compaction"]
-fn appendix_a_packet_by_packet_compacted() {
+fn appendix_a_packet_by_packet() {
     let scenario = SCENARIO.replacen(
         r#""name": "appendix-a","#,
         r#""name": "appendix-a-v3", "keep_wire_bytes": true,"#,
@@ -491,7 +480,7 @@ fn appendix_a_packet_by_packet_compacted() {
     );
     let (_, trace) = Simulation::new(Scenario::from_json(&scenario).unwrap()).run_traced();
     use Direction::{Down, Up};
-    let session = |record: &WireRecord| record.parsed.as_ref().unwrap().session.unwrap();
+    let session = |record: &WireRecord| record.parsed.as_ref().unwrap().session;
 
     // A.2, packets 1-4: session 0 until READY names the hop's (§6.1, §6.2).
     for (client, t) in [(A, 0.0), (B, 30.0)] {

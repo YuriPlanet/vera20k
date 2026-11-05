@@ -118,8 +118,6 @@ struct Client {
     endpoint: SocketAddrV4,
     driver: Box<dyn HeadlessClient>,
     ticket: Ticket,
-    /// Each hop's ticket nonce, which names v2 relay datagrams' hop.
-    nonces: Vec<[u8; 16]>,
     /// Each hop's v3 session once its READY was seen (compaction spec §6.2),
     /// which names v3 datagrams' hop.
     sessions: Vec<Option<u32>>,
@@ -236,7 +234,6 @@ impl Simulation {
                 endpoint,
                 driver,
                 ticket,
-                nonces: vec![ticket.nonce],
                 sessions: vec![None],
                 hop_keys: vec![hop_key],
                 recent_uplinks: Default::default(),
@@ -405,14 +402,6 @@ impl Simulation {
         let parsed = inspect::client_datagram(&bytes);
         let kind = match &parsed {
             Ok(datagram) => {
-                if let Detail::Submit { batch_id } = datagram.detail {
-                    let entry = self.clients[index]
-                        .observed
-                        .submits
-                        .entry(batch_id)
-                        .or_insert((at_us, 0));
-                    entry.1 += 1;
-                }
                 if let Detail::Uplink(uplink) = &datagram.detail {
                     for batch_id in uplink.batch_ids() {
                         let entry = self.clients[index]
@@ -495,27 +484,22 @@ impl Simulation {
                 vec!["MALFORMED"]
             }
         };
+        // Compaction spec §6.2: the READY with the hop's first relay
+        // sequence names the newest hop's session; session 0 (CHALLENGE)
+        // belongs to the hop being set up, the newest.
+        let newest = client.sessions.len() - 1;
         let hop = match parsed.as_ref() {
-            Ok(datagram) if datagram.version == 3 => {
-                // Compaction spec §6.2: a READY with the hop's first relay
-                // sequence names the newest hop's session; session 0
-                // (CHALLENGE) belongs to the hop being set up, the newest.
-                let newest = client.nonces.len() - 1;
+            Ok(datagram) => {
                 if let Detail::HopReady { session } = datagram.detail {
                     client.sessions[newest] = Some(session);
                 }
-                let session = datagram.session.unwrap_or(0);
                 client
                     .sessions
                     .iter()
-                    .position(|known| *known == Some(session))
+                    .position(|known| *known == Some(datagram.session))
                     .unwrap_or(newest)
             }
-            parsed => parsed
-                .ok()
-                .and_then(|datagram| datagram.nonce)
-                .and_then(|nonce| client.nonces.iter().position(|known| *known == nonce))
-                .unwrap_or(0),
+            Err(_) => newest,
         };
         if measured {
             client.observed.down.add(kinds[0], bytes.len());
@@ -750,7 +734,6 @@ impl Simulation {
         ticket.expires = (unix(at_us / 1000) + crate::MAX_TICKET_LIFETIME).max(ticket.expires + 1);
         let signed = ticket.sign(&self.key).expect("renewed ticket");
         client.ticket = ticket;
-        client.nonces.push(ticket.nonce);
         client.sessions.push(None);
         let hop_key = *derive_packet_key(&self.key, &signed).expose_for_https();
         client.hop_keys.push(hop_key);

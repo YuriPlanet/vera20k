@@ -63,7 +63,7 @@ fn outages_and_a_full_queue_lose_datagrams_on_the_link() {
 }
 
 #[test]
-fn the_inspector_rejects_a_length_that_disagrees_with_the_envelope() {
+fn the_inspector_rejects_a_hello_of_the_wrong_length() {
     let key = SecretKey::new([3; 32]);
     let ticket = Ticket {
         room: [1; 16],

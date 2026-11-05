@@ -31,10 +31,6 @@ const FORGET_READINESS_MS: u64 = 625 * 16;
 const LEAVE_RETRY_MS: u64 = 16;
 /// The pace report's tick cost, spec appendix A.4 packet 30.
 const TICK_MICROS: u32 = 2_100;
-const BATCH_VERSION: u8 = 2;
-/// The version byte and FRAME_INFO header the compaction takes out of each
-/// batch (bandwidth-compaction spec §4: "每个批次少 15 B").
-const BATCH_HEADER: usize = 1 + 14;
 
 fn due(last: Option<u64>, now: u64, interval: u64) -> bool {
     last.is_none_or(|last| now.saturating_sub(last) >= interval)
@@ -71,9 +67,6 @@ pub struct AdaptiveClient {
     samples_due: Vec<u32>,
     leaving: bool,
     last_leave: Option<u64>,
-    /// Whether this client's envelope is v3 (bandwidth-compaction spec
-    /// §6.1), read from its first datagram; batches follow it (below).
-    compacted: Option<bool>,
     left: bool,
     out: Vec<Outgoing>,
     services: u64,
@@ -121,7 +114,6 @@ impl AdaptiveClient {
             samples_due: Vec::new(),
             leaving: false,
             last_leave: None,
-            compacted: None,
             left: false,
             out: Vec::new(),
             services: 0,
@@ -226,21 +218,10 @@ impl AdaptiveClient {
         if !self.queued.is_empty() {
             let fits = ORDERING_BATCH_CAPACITY / self.command_bytes;
             let take = self.queued.len().min(fits);
-            // `command_bytes` is a command's share of the current batch,
-            // version byte and FRAME_INFO included. Compacted, the batch is
-            // the command records alone (bandwidth-compaction spec §4), 15 B
-            // less: the default 34 B move is 19 B (§2). The netsim takes the
-            // compacted batch with the v3 envelope (§14 steps 1 and 2).
-            let (mut bytes, len) = if self.compacted == Some(true) {
-                (
-                    Vec::new(),
-                    (take * self.command_bytes)
-                        .saturating_sub(BATCH_HEADER)
-                        .max(1),
-                )
-            } else {
-                (vec![BATCH_VERSION], take * self.command_bytes)
-            };
+            // A batch is its command records alone, no version byte or
+            // FRAME_INFO (bandwidth-compaction spec §4).
+            let len = take * self.command_bytes;
+            let mut bytes = Vec::with_capacity(len);
             while bytes.len() < len {
                 self.fill = self.fill.wrapping_add(1);
                 bytes.push(self.fill);
@@ -471,11 +452,6 @@ impl HeadlessClient for AdaptiveClient {
         self.in_service = false;
     }
     fn take_output(&mut self) -> Vec<Outgoing> {
-        if self.compacted.is_none()
-            && let Some(first) = self.out.first()
-        {
-            self.compacted = Some(first.bytes.first().is_some_and(|hdr| hdr >> 5 == 3));
-        }
         std::mem::take(&mut self.out)
     }
     fn started(&self) -> bool {

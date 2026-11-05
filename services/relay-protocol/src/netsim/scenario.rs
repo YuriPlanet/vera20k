@@ -4,12 +4,12 @@
 //! ```json
 //! {
 //!   "name": "2p-good-idle", "seed": 1, "players": 2, "tick_hz": 30,
-//!   "warmup_ms": 5000, "duration_ms": 60000, "apm": 0, "command_bytes": 34,
+//!   "warmup_ms": 5000, "duration_ms": 60000, "apm": 0, "command_bytes": 19,
 //!   "network": { "link": { "delay_ms": 20 } },
 //!   "groups": [ { "label": "lossy", "first": 1, "last": 1,
 //!                 "network": { "up": { "delay_ms": 20, "loss": 0.05 },
 //!                              "down": { "delay_ms": 20, "loss": 0.05 } } } ],
-//!   "drop_rules": [ { "direction": "up", "client": 1, "kind": "SUBMIT", "nth": 2 } ],
+//!   "drop_rules": [ { "direction": "up", "client": 1, "kind": "UPLINK", "nth": 2 } ],
 //!   "desync": { "client": 1, "frame": 300 }
 //! }
 //! ```
@@ -146,8 +146,10 @@ fn default_warmup_ms() -> u64 {
 fn default_duration_ms() -> u64 {
     60_000
 }
+/// A move command's records, the batch without the version byte and
+/// FRAME_INFO header (bandwidth-compaction spec §2: "指令本体 约 19").
 fn default_command_bytes() -> usize {
-    34
+    19
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

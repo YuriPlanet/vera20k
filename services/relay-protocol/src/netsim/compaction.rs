@@ -3,7 +3,7 @@
 //! transport spec is services/relay/adaptive-transport/spec.md). Every
 //! expectation comes from the spec, cited next to it; the wire is read by
 //! the independent inspector (`inspect::v3`) and the implementation only
-//! through its public interface. All of them wait for the compacted wire.
+//! through its public interface.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -41,7 +41,7 @@ fn sessions(trace: &Trace) -> HashMap<(usize, usize), u32> {
         .collect()
 }
 
-/// §6.1, §6.3, §6.4: every datagram is envelope v3 with a 4-byte tag that
+/// §6.1, §6.3, §6.4: every datagram (all parsed as envelope v3) has a 4-byte tag that
 /// verifies under its hop's key and direction's domain; its payload is
 /// within 720 B; HELLO, CONFIRM and CHALLENGE carry session 0 and every
 /// other datagram its hop's session; each hop's sequences count from 1,
@@ -55,12 +55,6 @@ fn check_envelopes(trace: &Trace) -> Check {
     for record in &trace.wire {
         let datagram = parsed(record);
         let at = record.sent_ms();
-        ensure(datagram.version == v3::VERSION, || {
-            format!(
-                "{} at {at} ms is envelope v{} (spec §6.1, §10)",
-                datagram.kind, datagram.version
-            )
-        })?;
         ensure(datagram.payload_len <= v3::MAX_PAYLOAD, || {
             format!(
                 "{} at {at} ms: {} B payload (spec §6.1)",
@@ -84,7 +78,7 @@ fn check_envelopes(trace: &Trace) -> Check {
                 )
             },
         )?;
-        let session = datagram.session.unwrap();
+        let session = datagram.session;
         let handshake = matches!(datagram.kind, "HELLO" | "CONFIRM" | "CHALLENGE");
         let expected = if handshake {
             0
@@ -281,7 +275,6 @@ const BUSY: &str = r#"{ "name": "compaction", "players": 3, "keep_wire_bytes": t
     "restoring": [ { "client": 2, "from_ms": 8000, "to_ms": 10000 } ] }"#;
 
 #[test]
-#[ignore = "waits for bandwidth compaction"]
 fn bc01_every_datagram_has_the_v3_layout() {
     let (report, trace) = run(BUSY);
     assert_eq!(report.malformed, 0);
@@ -293,7 +286,6 @@ fn bc01_every_datagram_has_the_v3_layout() {
 }
 
 #[test]
-#[ignore = "waits for bandwidth compaction"]
 fn bc02_every_pack_decodes_alone_and_is_the_one_encoding() {
     let (_, trace) = run(BUSY);
     check_packs_alone(&trace).unwrap();
@@ -304,7 +296,6 @@ fn bc02_every_pack_decodes_alone_and_is_the_one_encoding() {
 }
 
 #[test]
-#[ignore = "waits for bandwidth compaction"]
 fn bc03_every_client_reads_the_relays_canonical_history() {
     let (report, trace) = run(BUSY);
     check_consistency(&report, &trace, 15_000_000).unwrap();
@@ -360,7 +351,6 @@ fn check_forged_flood(report: &Report, trace: &Trace, clients: usize, end_us: u6
 }
 
 #[test]
-#[ignore = "waits for bandwidth compaction"]
 fn bc04_forgeries_from_another_address_change_nothing() {
     // 300 forged a second from one IP on A's session.
     let (report, trace) = run(r#"{ "name": "bc04", "players": 2, "keep_wire_bytes": true,
@@ -382,7 +372,6 @@ fn bc04_forgeries_from_another_address_change_nothing() {
 }
 
 #[test]
-#[ignore = "waits for bandwidth compaction"]
 fn bc06_forgeries_from_many_ips_drop_none_of_the_sessions_datagrams() {
     // §6.4 item 2: eight IPs, 2000 forged a second on A's one session,
     // 6000 in 3 s, past the 4096-a-minute alert; each fails alone and A's
@@ -408,7 +397,6 @@ fn bc06_forgeries_from_many_ips_drop_none_of_the_sessions_datagrams() {
 }
 
 #[test]
-#[ignore = "waits for bandwidth compaction"]
 fn bc07_sessions_are_allocated_per_hop_and_released_after_leave() {
     // A's first LEAVE_ACK is lost, so A sends its LEAVE again.
     let (_, trace) = run(r#"{ "name": "bc07", "players": 2, "keep_wire_bytes": true,
@@ -460,13 +448,12 @@ fn bc07_sessions_are_allocated_per_hop_and_released_after_leave() {
         !trace.wire.iter().any(|r| r.direction == Direction::Down
             && r.sent_us > first_leave
             && r.kind() != "LEAVE_ACK"
-            && parsed(r).session == Some(released)),
+            && parsed(r).session == released),
         "a relay datagram other than LEAVE_ACK on a leaving session"
     );
 }
 
 #[test]
-#[ignore = "waits for bandwidth compaction"]
 fn bc08_a_rebound_client_is_followed_but_a_forger_or_replay_is_not() {
     // §6.2 "换地址": the first datagram from the new address with a valid
     // tag and a fresh sequence moves the hop's endpoint; §6.4 item 5: a
@@ -536,7 +523,6 @@ fn fuzz_payloads(random: &mut network::Rng, first: u8, cases: usize) -> Vec<Vec<
 }
 
 #[test]
-#[ignore = "waits for bandwidth compaction"]
 fn bc09_decoders_survive_random_input() {
     // §12.2: random bytes to the envelope v3 decoders of both sides, and
     // random UPLINK (§7.1) and PACK v2 (§5.2) bodies under a valid tag, so

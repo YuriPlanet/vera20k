@@ -156,10 +156,8 @@ fn envelope(bytes: &[u8]) -> Result<(u8, u32, u32, &[u8]), String> {
 fn datagram(kind: &'static str, session: u32, seq: u32, length: usize, detail: Detail) -> Datagram {
     Datagram {
         kind,
-        version: VERSION,
         hop_seq: u64::from(seq),
-        nonce: None,
-        session: Some(session),
+        session,
         payload_len: length,
         detail,
     }
@@ -364,7 +362,7 @@ pub fn server_datagram(bytes: &[u8]) -> Result<Datagram, String> {
                         tick_hz,
                         start_delay_ms,
                         started,
-                        feedback: Some(feedback),
+                        feedback,
                     };
                     "STATUS"
                 }
@@ -377,7 +375,7 @@ pub fn server_datagram(bytes: &[u8]) -> Result<Datagram, String> {
                     detail = Detail::Ack {
                         batch_id,
                         frame,
-                        feedback: Some(feedback),
+                        feedback,
                     };
                     "ACK"
                 }
@@ -596,7 +594,6 @@ pub fn decode_pack(payload: &[u8]) -> Result<(u64, u8, Vec<PackRecord>), String>
             seq,
             kind,
             frame: frame as u32,
-            len: canonical.len() - 8,
             source,
             batch_id,
             opaque_len,
