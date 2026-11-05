@@ -17,7 +17,7 @@ use super::userdata::{ScriptContext, techno_handle};
 thread_local! {
     /// The frame context for the dispatch in progress; `None` outside the
     /// dispatch, where every query returns an empty table.
-    static CURRENT: RefCell<Option<ScriptContext>> = RefCell::new(None);
+    static CURRENT: RefCell<Option<ScriptContext>> = const { RefCell::new(None) };
 }
 
 /// Publish the frame context for the duration of the `Update` dispatch.
@@ -60,7 +60,7 @@ fn filter_ids(ctx: &ScriptContext, filter: &dyn Fn(&EntitySnapshot) -> bool) -> 
         .entity_order
         .iter()
         .copied()
-        .filter(|id| snapshot.entity(*id).is_some_and(|entity| filter(&entity)))
+        .filter(|id| snapshot.entity(*id).is_some_and(|entity| filter(entity)))
         .collect()
 }
 
@@ -173,9 +173,7 @@ fn house_table(lua: &Lua) -> mlua::Result<Table> {
     // not wired yet: documented stub, returns nil (do not fake it).
     house.set(
         "GetPlayer",
-        lua.create_function(|_, (): ()| -> mlua::Result<Value> {
-            Ok(Value::Nil)
-        })?,
+        lua.create_function(|_, (): ()| -> mlua::Result<Value> { Ok(Value::Nil) })?,
     )?;
 
     // House.GetCount() -- registered-house count; not wired yet (stub, 0).

@@ -34,7 +34,9 @@ impl ScriptContext {
     }
 
     fn queue(&self, owner: InternedId, command: Command) {
-        self.commands.borrow_mut().push(PendingCommand { owner, command });
+        self.commands
+            .borrow_mut()
+            .push(PendingCommand { owner, command });
     }
 }
 
@@ -210,10 +212,7 @@ impl UserData for HouseUserdata {
         });
 
         methods.add_method("GetAIDifficulty", |_, this, ()| {
-            Ok(this
-                .context
-                .house(this.name)
-                .map(|house| house.difficulty))
+            Ok(this.context.house(this.name).map(|house| house.difficulty))
         });
 
         methods.add_method("IsAlliedWith", |_, this, other: AnyUserData| {
@@ -267,7 +266,12 @@ mod tests {
     use crate::map::entities::EntityCategory;
 
     /// One player-owned tank at cell (40, 20); the shared command buffer.
-    fn tank_fixture() -> (Lua, ScriptContext, Rc<RefCell<Vec<PendingCommand>>>, InternedId) {
+    fn tank_fixture() -> (
+        Lua,
+        ScriptContext,
+        Rc<RefCell<Vec<PendingCommand>>>,
+        InternedId,
+    ) {
         let house = InternedId::from_index(1);
         let mut snapshot = FrameSnapshot::default();
         snapshot.house_order.push(house);
@@ -316,7 +320,12 @@ mod tests {
         let queued = commands.borrow();
         assert_eq!(queued.len(), 1);
         assert_eq!(queued[0].owner, house);
-        let Command::Move { entity_id, target_rx, target_ry } = queued[0].command else {
+        let Command::Move {
+            entity_id,
+            target_rx,
+            target_ry,
+        } = queued[0].command
+        else {
             panic!("expected Command::Move, got {:?}", queued[0].command);
         };
         assert_eq!(entity_id, 7);
@@ -340,7 +349,10 @@ mod tests {
         assert_eq!(queued.len(), 2);
         assert_eq!(queued[0].owner, house);
         assert!(matches!(queued[0].command, Command::Stop { entity_id: 7 }));
-        assert!(matches!(queued[1].command, Command::Scatter { entity_id: 7 }));
+        assert!(matches!(
+            queued[1].command,
+            Command::Scatter { entity_id: 7 }
+        ));
     }
 
     #[test]
@@ -356,9 +368,17 @@ mod tests {
         assert!(!stale_move, "a dead unit must refuse orders");
 
         // Buildings are not mobile: the same id cannot move once recategorized.
-        context.snapshot.borrow_mut().entities.get_mut(&7).expect("tank").category =
-            EntityCategory::Structure;
-        let building_move: bool = lua.load("return live:MoveTo(1, 1)").eval().expect("building");
+        context
+            .snapshot
+            .borrow_mut()
+            .entities
+            .get_mut(&7)
+            .expect("tank")
+            .category = EntityCategory::Structure;
+        let building_move: bool = lua
+            .load("return live:MoveTo(1, 1)")
+            .eval()
+            .expect("building");
         assert!(!building_move, "a structure must refuse move orders");
 
         // The refusals queued nothing.
@@ -371,7 +391,11 @@ mod tests {
         let handle = techno_handle(&lua, &context, 7).expect("tank handle");
         lua.globals().set("u", handle).expect("global");
 
-        for script in ["return u:MoveTo(1/0, 0)", "return u:MoveTo(-5, 0)", "return u:MoveTo(0, 70000)"] {
+        for script in [
+            "return u:MoveTo(1/0, 0)",
+            "return u:MoveTo(-5, 0)",
+            "return u:MoveTo(0, 70000)",
+        ] {
             let admitted: bool = lua.load(script).eval().expect(script);
             assert!(!admitted, "{script} must refuse");
         }
