@@ -5710,6 +5710,12 @@ impl TriggerRuntime {
     pub(crate) fn mark_crate_pickup_event(&mut self) {
         self.dirty[3] = true;
     }
+    /// LogicClass::AI's ambient fade writes Scenario+34AB after each step
+    /// (`0x0055B4BA`), so the next Logic55AFB0 poll tries events 45/46
+    /// before event 13.
+    pub(crate) fn mark_ambient_light_changed(&mut self) {
+        self.dirty[2] = true;
+    }
     /// TagClass::IsTransferable6E57C0 reads each linked LIVE Trigger's
     /// Type+A0, without enabled, pending or difficulty tests (retail gamemd).
     pub(crate) fn object_tag_is_transferable(&self, object: u64) -> bool {

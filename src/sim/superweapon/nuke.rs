@@ -47,14 +47,6 @@
 //!   trigger action 127 sets it (`0x006DFABF` -> `0x0053B460`) and
 //!   `0x0053B560` steps it through the shared pre-object scheduler. Its
 //!   private state and presentation commands are in `chrono_screen`.
-//! - The bridge units' draw brightening by four times the active profile's
-//!   Level (`UnitClass::DrawIt 0x0073D03B`, `InfantryClass::DrawIt
-//!   0x00519319`), the nuke's included, is not ported for any profile.
-//! - `LightConvertClass`'s constructor (`0x00555DA0`) tints a new palette
-//!   with the Ion profile while a storm rages, then the nuke's while the
-//!   flash fades in (`0x00555EE8`), then the Dominator's; VERA tints every
-//!   palette with UpdateLighting's choice, which puts the nuke first. Only a
-//!   palette created while a storm rages over a fading-in flash differs.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{ObjectCategory, ObjectType};
