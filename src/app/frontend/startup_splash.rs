@@ -6,7 +6,7 @@
 //! like the menus, so it lines up with the menu that follows it.
 //!
 //! It also carries VERA20K's own legal notices, which gamemd's splash lacks; see
-//! [`LEGAL_NOTICE`] and [`BINK_NOTICE`].
+//! [`LEGAL_NOTICE`] and [`FFMPEG_NOTICE`].
 
 use crate::util::time::{Duration, Instant};
 
@@ -106,10 +106,12 @@ const LEGAL_NOTICE: [&str; 3] = [
     concat!("License and source: ", env!("VERA20K_SOURCE")),
 ];
 
-/// The Bink decoder's LGPL 2.1 (section 6) puts FFmpeg's copyright, as FFmpeg
-/// shows it, and a reference to that license's text among the copyright notices
-/// a program shows. Drawn bottom left, above the trademark lines.
-const BINK_NOTICE: &str = "Bink decoder © the FFmpeg developers. License: LGPL-2.1-or-later.txt";
+/// The LGPL 2.1 (section 6) of the code ported from FFmpeg, the Bink decoder and
+/// the sidebar's xBR scaler, puts FFmpeg's copyright, as FFmpeg shows it, and a
+/// reference to that license's text among the copyright notices a program
+/// shows. Drawn bottom left, above the trademark lines.
+const FFMPEG_NOTICE: &str =
+    "Bink decoder and xBR scaler © the FFmpeg developers. License: LGPL-2.1-or-later.txt";
 
 /// The minimum on-screen hold, anchored at the first successful present.
 ///
@@ -437,7 +439,7 @@ fn compose_startup_splash(
         client_width,
         client_height,
         font,
-        BINK_NOTICE,
+        FFMPEG_NOTICE,
         10,
         first_bottom_y - 3 - font.cell_height as i32,
     );
@@ -556,8 +558,8 @@ mod tests {
     }
 
     #[test]
-    fn bink_notice_is_drawn_left_aligned_above_the_trademark_lines() {
-        let root = crate::map::source::test_support::TestDirectory::new("splash-bink-notice");
+    fn ffmpeg_notice_is_drawn_left_aligned_above_the_trademark_lines() {
+        let root = crate::map::source::test_support::TestDirectory::new("splash-ffmpeg-notice");
         let assets = AssetManager::from_loose_root_for_test(root.path());
         let font = FntFile::solid_for_test(2);
         let (width, height) = (800, 600);
@@ -571,7 +573,7 @@ mod tests {
         assert_eq!(white.first(), Some(&10));
         assert_eq!(
             white.last(),
-            Some(&(10 + font.text_width(BINK_NOTICE) as usize - 1))
+            Some(&(10 + font.text_width(FFMPEG_NOTICE) as usize - 1))
         );
     }
 

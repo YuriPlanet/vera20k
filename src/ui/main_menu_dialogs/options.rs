@@ -80,6 +80,10 @@ pub(crate) const LOCK_CURSOR_HELP: &str =
 pub(crate) const VERA_ICON_LABEL: &str = "VERA Icon";
 pub(crate) const VERA_ICON_HELP: &str =
     "Show VERA's own icon instead of Red Alert 2's red star on the game window, taskbar and Dock.";
+pub(crate) const HD_RADAR_LABEL: &str = "HD Radar";
+pub(crate) const HD_RADAR_HELP: &str = "Draw the radar at the screen's full resolution when the sidebar is enlarged, so each map cell shows.";
+pub(crate) const SMOOTH_SIDEBAR_LABEL: &str = "Smooth Sidebar";
+pub(crate) const SMOOTH_SIDEBAR_HELP: &str = "Lightly smooth the sidebar's pictures and buttons with xBR when the sidebar is enlarged. Text stays sharp.";
 pub(crate) const SHIFT_QUEUE_LABEL: &str = "Shift-Click Batch Queue";
 /// The two category pages retail's string table has no band name for.
 pub(crate) const CONTROLS_LABEL: &str = "Controls";
@@ -562,6 +566,15 @@ pub(crate) enum LauncherCheckboxId {
     /// instead of Red Alert 2's red star (`app::window_icon`). It applies at
     /// once and is saved; the installed program's own icon stays the red star.
     VeraIcon,
+    /// VERA's own box: when the sidebar draws at a whole multiple of its
+    /// pixels, the radar draws at that multiple too (`render::radar::hd`).
+    /// Saved; a battle follows it at once.
+    HdRadar,
+    /// VERA's own box: when the sidebar draws at a whole multiple of its
+    /// pixels, its cameos and frame pieces draw from lightly smoothed xBR copies
+    /// at that multiple (`render::sidebar_smoothing`). Saved; a battle
+    /// follows it at once.
+    SmoothSidebar,
     /// VERA's developer box: the window's FPS readout. Like Full Screen it
     /// shows and changes live state at once, and is never saved: the readout
     /// starts hidden at every launch.
@@ -625,6 +638,8 @@ pub(crate) enum LauncherOptionsEvent {
     RightClickOrdersChanged(bool),
     LockCursorChanged(bool),
     VeraIconChanged(bool),
+    HdRadarChanged(bool),
+    SmoothSidebarChanged(bool),
     FpsCounterChanged(bool),
     SkipIntroChanged(bool),
     CustomEndGameBannerChanged(bool),
@@ -672,6 +687,8 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) right_click_orders: bool,
     pub(crate) lock_cursor: bool,
     pub(crate) vera_icon: bool,
+    pub(crate) hd_radar: bool,
+    pub(crate) smooth_sidebar: bool,
     pub(crate) shift_queue: bool,
     pub(crate) wol_test_service: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
@@ -716,6 +733,8 @@ impl Default for LauncherOptionsValues {
             right_click_orders: false,
             lock_cursor: false,
             vera_icon: false,
+            hd_radar: false,
+            smooth_sidebar: false,
             shift_queue: false,
             wol_test_service: false,
             fps_counter: false,
@@ -1088,6 +1107,8 @@ impl OptionsDialogState {
             LauncherCheckboxId::RightClickOrders => &mut self.values.right_click_orders,
             LauncherCheckboxId::LockCursor => &mut self.values.lock_cursor,
             LauncherCheckboxId::VeraIcon => &mut self.values.vera_icon,
+            LauncherCheckboxId::HdRadar => &mut self.values.hd_radar,
+            LauncherCheckboxId::SmoothSidebar => &mut self.values.smooth_sidebar,
             LauncherCheckboxId::FpsCounter => &mut self.values.fps_counter,
             LauncherCheckboxId::SkipIntro => &mut self.values.skip_intro,
             LauncherCheckboxId::CustomEndGameBanner => &mut self.values.custom_end_game_banner,
@@ -1129,6 +1150,12 @@ impl OptionsDialogState {
             LauncherCheckboxId::VeraIcon => self
                 .pending_events
                 .push(LauncherOptionsEvent::VeraIconChanged(checked)),
+            LauncherCheckboxId::HdRadar => self
+                .pending_events
+                .push(LauncherOptionsEvent::HdRadarChanged(checked)),
+            LauncherCheckboxId::SmoothSidebar => self
+                .pending_events
+                .push(LauncherOptionsEvent::SmoothSidebarChanged(checked)),
             LauncherCheckboxId::FpsCounter => self
                 .pending_events
                 .push(LauncherOptionsEvent::FpsCounterChanged(checked)),
@@ -1337,6 +1364,8 @@ impl Category {
                 Setting::List(List::HealthBars),
                 Setting::Checkbox(Check::Tooltips),
                 Setting::Checkbox(Check::VeraIcon),
+                Setting::Checkbox(Check::HdRadar),
+                Setting::Checkbox(Check::SmoothSidebar),
             ],
             Self::Audio => &[
                 Setting::Slider(Slider::Score),
@@ -1367,7 +1396,9 @@ impl Category {
             Self::Gameplay => {
                 "Detail, difficulty, target lines, hidden objects, queueing and end-game screens."
             }
-            Self::Interface => "Sidebar size, health bars, tooltips and the VERA icon.",
+            Self::Interface => {
+                "Sidebar size and smoothing, HD radar, health bars, tooltips and the VERA icon."
+            }
             Self::Audio => "Music, sound and voice volume.",
             Self::Controls => {
                 "Scroll rate, right-click orders, mouse wheel zoom and the cursor lock."
@@ -2021,6 +2052,8 @@ mod tests {
                     Check::RightClickOrders,
                     Check::LockCursor,
                     Check::VeraIcon,
+                    Check::HdRadar,
+                    Check::SmoothSidebar,
                     Check::ShiftQueue,
                     Check::FpsCounter,
                     Check::SkipIntro,

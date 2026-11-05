@@ -1247,6 +1247,9 @@ impl App {
                         .as_ref()
                         .unwrap()
                         .draw(&mut encoder, &view);
+                    crate::app::presentation::sidebar_surface::draw_window_copy(
+                        state, &mut encoder, &view,
+                    );
                     render_output
                 } else {
                     let render_output = render::render_game(state, &mut encoder, times, cadence)?;

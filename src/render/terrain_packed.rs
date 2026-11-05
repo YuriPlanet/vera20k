@@ -692,7 +692,11 @@ impl TerrainDrawRenderer {
             camera.screen_size[0] as u32,
             camera.screen_size[1] as u32,
         ]);
-        let rect = composite_rect(pieces, camera, tactical);
+        // A surface drawn at whole surface pixels per camera pixel clips in
+        // camera pixels, then scales: each of its pieces covers the blocks.
+        let scale = surface.map_or(1, |surface| surface.scale);
+        let scaled = |rect: [u32; 4]| rect.map(|value| value * scale);
+        let rect = composite_rect(pieces, camera, tactical).map(scaled);
         let Some(rect) = rect else {
             return TerrainBatchStats::default();
         };
@@ -831,7 +835,7 @@ impl TerrainDrawRenderer {
             pass.set_vertex_buffer(0, buffer.slice(..));
             pass.set_bind_group(0, camera_group, &[]);
             for piece in pieces {
-                let Some(clip) = piece_scissor(piece.instance, camera, tactical) else {
+                let Some(clip) = piece_scissor(piece.instance, camera, tactical).map(scaled) else {
                     continue;
                 };
                 assert_eq!(

@@ -547,6 +547,7 @@ pub(crate) fn minimap_camera_target(
         minimap.native_click_target_in_rect(
             cursor_x,
             cursor_y,
+            sidebar_cursor_centre(state),
             rect.x,
             rect.y,
             rect.w,
@@ -574,6 +575,7 @@ pub(crate) fn minimap_input_target(
         .as_ref()?
         .native_input_target_in_rect(
             sidebar_cursor(state),
+            sidebar_cursor_centre(state),
             [rect.x, rect.y, rect.w, rect.h],
             &runtime.simulation,
             &runtime.resources.rules,
@@ -668,6 +670,20 @@ fn sidebar_cursor(state: &AppState) -> (f32, f32) {
     )
 }
 
+/// The centre of the window pixel under the cursor, in the same layout space.
+/// The cursor sits on that pixel's corner in frame pixels; the HD radar picks
+/// its own finer pixels at the centre.
+fn sidebar_cursor_centre(state: &AppState) -> (f32, f32) {
+    let half = 0.5
+        / state
+            .match_zoom_pass()
+            .map_or(1.0, |pass| pass.geometry().scale());
+    state.sidebar_frame().point_to_layout(
+        state.match_state.input.cursor_x + half,
+        state.match_state.input.cursor_y + half,
+    )
+}
+
 /// The radar aperture in the sidebar's layout space. Input regions take it in
 /// frame pixels through [`crate::ui::sidebar::SidebarFrame::rect_to_frame`].
 pub(crate) fn active_minimap_screen_rect(state: &AppState) -> crate::ui::sidebar::Rect {
@@ -686,6 +702,25 @@ pub(crate) fn active_minimap_screen_rect(state: &AppState) -> crate::ui::sidebar
 // ---------------------------------------------------------------------------
 // Chrome / theme helpers
 // ---------------------------------------------------------------------------
+
+/// Keep VERA's smooth sidebar (`render::sidebar_smoothing`) at this frame's
+/// draw scale, or drop its copies when the option is off or the sidebar draws
+/// at its own pixels.
+pub(crate) fn prepare_smooth_sidebar(state: &mut AppState) {
+    let scale = state
+        .smooth_sidebar()
+        .then(|| state.sidebar_frame().draw_scale())
+        .filter(|&scale| scale > 1);
+    let side = current_sidebar_side(state);
+    let (gpu, batch) = (&state.renderer.gpu, &state.renderer.batch_renderer);
+    let presentation = &mut state.match_state.match_presentation;
+    if let Some(atlas) = presentation.sidebar_cameo_atlas.as_mut() {
+        atlas.set_smooth_scale(gpu, batch, scale);
+    }
+    if let Some(set) = presentation.sidebar_chrome.as_mut() {
+        set.set_smooth_scale(side, gpu, batch, scale);
+    }
+}
 
 pub(crate) fn current_sidebar_theme(
     state: &AppState,
