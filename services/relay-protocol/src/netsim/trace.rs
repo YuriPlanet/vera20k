@@ -102,6 +102,8 @@ pub struct Trace {
     pub misrouted: Vec<(u64, SocketAddrV4)>,
     /// Every forged datagram and the relay's answer to it.
     pub forged: Vec<Forged>,
+    /// Every replayed datagram (`forgery` is the client) and the answer.
+    pub replayed: Vec<Forged>,
     /// The relay's canonical records in sequence order, when an interface
     /// reads them (`Simulation::relay_history`).
     pub relay_history: Option<Vec<Vec<u8>>>,

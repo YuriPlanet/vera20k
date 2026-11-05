@@ -109,6 +109,11 @@ fn shape(records: &[PackRecord]) -> Vec<(u64, u8, u32)> {
 fn appendix_a_packet_by_packet() {
     let (_, trace) = Simulation::new(Scenario::from_json(SCENARIO).unwrap()).run_traced();
     use Direction::{Down, Up};
+    // The transport spec's bytes: envelope v2 only. The compacted wire is
+    // `appendix_a_packet_by_packet_compacted`'s.
+    if trace.wire[0].parsed.as_ref().is_ok_and(|d| d.version != 2) {
+        return;
+    }
 
     // A.2, packets 1-4, and B's four 30 ms later.
     for (client, t) in [(A, 0.0), (B, 30.0)] {
@@ -474,14 +479,14 @@ fn sized(record: &WireRecord, len: usize, hop_seq: u64, payload_len: usize) {
 /// from services/relay/bandwidth-compaction/spec.md alone: envelope v3 of
 /// 13 B (§6.1), varint UPLINK / ACK / STATUS (§7, §8), plaintext batches
 /// without version or FRAME_INFO (§3, §4: A's move command is 34 - 1 - 14 =
-/// 19 B) and PACK v2 (§5.2, §5.4). Same scenario, same timeline; only bytes
+/// 19 B, the default `command_bytes` less 15) and PACK v2 (§5.2, §5.4). Same scenario, same timeline; only bytes
 /// change (§0 "发送策略不变").
 #[test]
 #[ignore = "waits for bandwidth compaction"]
 fn appendix_a_packet_by_packet_compacted() {
     let scenario = SCENARIO.replacen(
         r#""name": "appendix-a","#,
-        r#""name": "appendix-a-v3", "keep_wire_bytes": true, "command_bytes": 19,"#,
+        r#""name": "appendix-a-v3", "keep_wire_bytes": true,"#,
         1,
     );
     let (_, trace) = Simulation::new(Scenario::from_json(&scenario).unwrap()).run_traced();
