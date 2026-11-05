@@ -74,7 +74,9 @@ jobs:
           "$local_sdkmanager" --install \
             "platforms;android-36" "build-tools;$BUILD_TOOLS_VERSION" "ndk;$NDK_VERSION"
           # The debug keystore lives in the checkout (build.gradle.kts points it
-          # there), and AGP only generates one at the default location.
+          # there), and AGP only generates one at the default location. keytool
+          # does not create the git-ignored folder.
+          mkdir -p android/.android
           keytool -genkeypair -keystore android/.android/debug.keystore \
             -storepass android -alias androiddebugkey -keypass android \
             -keyalg RSA -keysize 2048 -validity 10000 \
@@ -105,9 +107,10 @@ jobs:
           # matching the rust-cache policy above.
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
-      - name: Assemble the APK
+      # The import tests run on the JVM; no device or emulator is needed.
+      - name: Assemble the APK and run the import tests
         working-directory: android
-        run: ./gradlew :app:assembleDebug --no-daemon
+        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest --no-daemon
 
       - name: Verify the package
         run: |

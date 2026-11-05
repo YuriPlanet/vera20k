@@ -162,4 +162,4 @@ They have not been independently reproduced for the current code.
 
 ## TODO
 
-Save/Map files import/export, touch UI, audio focus, LAN locks, CI.
+Save/Map files import/export, touch UI, audio focus, LAN locks.
