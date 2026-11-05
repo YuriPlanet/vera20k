@@ -672,7 +672,7 @@ impl CellLightGrid {
     /// RESIDUAL: ordinary animations draw through native palette lighting
     /// (`presentation::lighting::anim_palette_light`), which picks the Convert
     /// apart from this scalar. Only the compatibility draws read this tint:
-    /// Tiled anims, RING1 and remapped anims without an instance scheme. It
+    /// Tiled anims and remapped anims without an instance scheme. It
     /// folds the cell's hue into the brightness, so on a map whose `[Lighting]`
     /// RGB is not neutral, or beside a coloured lamp, those anims are hue-shifted
     /// where gamemd only dims them.

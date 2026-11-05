@@ -187,7 +187,7 @@ fn bouncer_and_meteor_bodies_take_the_ordinary_arms_without_a_type_keyed_ground_
     assert_eq!(ordinary.len(), 2);
     for keys in ["Bouncer=yes\n", "IsMeteor=yes\n"] {
         let (atlas, key, config) = fixture(keys);
-        assert!(ordinary_anim_type(&key.type_id, Some(&config)), "{keys}");
+        assert!(ordinary_anim_type(Some(&config)), "{keys}");
         let pieces = summary(anim_draw_pieces(&atlas, input(&atlas, &key, &config)));
         assert_eq!(pieces, ordinary, "{keys}");
     }
