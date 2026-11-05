@@ -1732,19 +1732,47 @@ fn check_jitter(trace: &Trace, client: usize, tick_hz: u16) -> Result<bool, Stri
     Ok(set)
 }
 
-/// Phase 1 baselines of the current protocol (commit 720f12400, same
-/// scenario files and seeds), per client over the 60 s window.
-const BASELINE_30P_LOSS_1PCT_300APM_HITCHES: f64 = 0.2;
-const BASELINE_30P_LOSS_1PCT_300APM_P99_MS: f64 = 127.2;
-const BASELINE_2P_JITTER_IDLE_HITCHES: f64 = 14.5;
-const BASELINE_2P_JITTER_300APM_HITCHES: f64 = 13.0;
+/// The current protocol's results on the same scenario files with seeds
+/// 1-5, run at commit 720f12400 (the phase 1 runner, seed overridden):
+/// every client's hitches summed over the room, per seed, and the room's
+/// command p99 in ms, per seed.
+const BASELINE_30P_LOSS_1PCT_300APM_HITCHES: [u64; 5] = [6, 7, 5, 4, 2];
+const BASELINE_30P_LOSS_1PCT_300APM_P99_MS: [f64; 5] =
+    [127.191, 127.237, 127.218, 127.160, 127.189];
+const BASELINE_2P_JITTER_IDLE_HITCHES: [u64; 5] = [29, 32, 35, 31, 35];
+const BASELINE_2P_JITTER_300APM_HITCHES: [u64; 5] = [26, 38, 34, 30, 34];
+const SEEDS: [u64; 5] = [1, 2, 3, 4, 5];
 
-fn baseline_scenario(file: &str, name: &str) -> Scenario {
-    Scenario::list_from_json(file)
+/// Hitches of the new protocol against the baseline over the same seeds
+/// and clients, so both counts cover the same client-minutes. Taking each
+/// count as Poisson, the difference `new - old` has variance `new + old`;
+/// the new protocol is no worse when `new <= old + 2 sqrt(new + old)`, a
+/// one-sided bound of about 97.7 %. Hitches come in bursts, so their real
+/// variance is larger and this bound is, if anything, strict.
+fn hitches_no_worse(name: &str, new: u64, old: u64) {
+    let bound = old as f64 + 2.0 * ((new + old) as f64).sqrt();
+    assert!(
+        new as f64 <= bound,
+        "{name}: {new} hitches over five seeds, baseline {old}, bound {bound:.1}"
+    );
+}
+
+/// Mean and sample variance.
+fn mean_variance(values: &[f64]) -> (f64, f64) {
+    let n = values.len() as f64;
+    let mean = values.iter().sum::<f64>() / n;
+    let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0);
+    (mean, variance)
+}
+
+fn baseline_scenario(file: &str, name: &str, seed: u64) -> Scenario {
+    let mut scenario = Scenario::list_from_json(file)
         .unwrap()
         .into_iter()
         .find(|scenario| scenario.name == name)
-        .unwrap()
+        .unwrap();
+    scenario.seed = seed;
+    scenario
 }
 
 #[test]
@@ -1786,7 +1814,7 @@ fn jt1_a_jittery_good_link_gets_repeats_and_two_deep_piggyback() {
 /// without loss stays Good after its initial lossy state (§5.4): with the
 /// time threshold of §4.3, a datagram reordered by jitter is no loss.
 #[test]
-#[ignore = "waits for the adaptive transport implementation of spec d424310de (§4.3 time threshold, §5.3 DELAYED less 2 rttvar, §5.4 eight clean folds)"]
+#[ignore = "waits for the adaptive transport implementation of spec 252237ee4"]
 fn jt1b_a_lossless_jittery_reader_stays_good() {
     let (_, trace) = run(r#"{ "name": "jt1", "players": 2,
         "warmup_ms": 0, "duration_ms": 30000, "apm": 60,
@@ -1817,42 +1845,50 @@ fn jt2_a_steady_link_is_not_jittery() {
 }
 
 #[test]
-#[ignore = "waits for the adaptive transport implementation of spec d424310de (§4.3 time threshold, §5.3 DELAYED less 2 rttvar, §5.4 eight clean folds)"]
+#[ignore = "slow; five 30-player minutes. Waits for the adaptive transport implementation of spec 252237ee4"]
 fn jt3_one_percent_loss_in_a_full_room_is_no_worse_than_the_baseline() {
-    let scenario = baseline_scenario(
-        include_str!("../../netsim/loss-1pct.json"),
-        "30p-loss-1pct-300apm",
-    );
-    let (report, trace) = Simulation::new(scenario).run_traced();
-    for client in 0..30 {
-        let stats = trace.client_stats_at(client, u64::MAX).unwrap();
-        assert!(
-            stats.uplink_state_entries[LinkState::Lossy.index()] >= 1,
-            "client {client} uplink"
-        );
-        assert!(
-            trace
-                .reader_stats
-                .iter()
-                .any(|(_, c, s)| *c == client && s.downlink == LinkState::Lossy),
-            "client {client} downlink"
-        );
+    let file = include_str!("../../netsim/loss-1pct.json");
+    let mut hitches = 0;
+    let mut p99s = Vec::new();
+    for seed in SEEDS {
+        let scenario = baseline_scenario(file, "30p-loss-1pct-300apm", seed);
+        let (report, trace) = Simulation::new(scenario).run_traced();
+        // §5.4: both directions of every client go lossy at 1% loss.
+        for client in 0..30 {
+            let stats = trace.client_stats_at(client, u64::MAX).unwrap();
+            assert!(
+                stats.uplink_state_entries[LinkState::Lossy.index()] >= 1,
+                "seed {seed} client {client} uplink"
+            );
+            assert!(
+                trace
+                    .reader_stats
+                    .iter()
+                    .any(|(_, c, s)| *c == client && s.downlink == LinkState::Lossy),
+                "seed {seed} client {client} downlink"
+            );
+        }
+        hitches += report.clients.iter().map(|c| c.hitches as u64).sum::<u64>();
+        p99s.push(report.groups[0].command_latency_ms.p99);
     }
-    let group = &report.groups[0];
-    assert!(
-        group.hitches <= BASELINE_30P_LOSS_1PCT_300APM_HITCHES,
-        "hitches {}",
-        group.hitches
+    hitches_no_worse(
+        "30p-loss-1pct-300apm",
+        hitches,
+        BASELINE_30P_LOSS_1PCT_300APM_HITCHES.iter().sum(),
     );
+    // The p99 per seed: the new mean is no worse when within two standard
+    // errors of the difference of the two means (Welch, five seeds each).
+    let (new_mean, new_var) = mean_variance(&p99s);
+    let (old_mean, old_var) = mean_variance(&BASELINE_30P_LOSS_1PCT_300APM_P99_MS);
+    let bound = old_mean + 2.0 * ((new_var + old_var) / 5.0).sqrt();
     assert!(
-        group.command_latency_ms.p99 <= BASELINE_30P_LOSS_1PCT_300APM_P99_MS,
-        "p99 {}",
-        group.command_latency_ms.p99
+        new_mean <= bound,
+        "p99 per seed {p99s:?}, mean {new_mean:.1}, baseline {old_mean:.1}, bound {bound:.1}"
     );
 }
 
 #[test]
-#[ignore = "waits for the adaptive transport implementation of spec d424310de (§4.3 time threshold, §5.3 DELAYED less 2 rttvar, §5.4 eight clean folds)"]
+#[ignore = "waits for the adaptive transport implementation of spec 252237ee4"]
 fn jt4_pure_jitter_hitches_no_more_than_the_baseline() {
     // §5.3 judges DELAYED on `srtt - 2 rttvar`, so ±50 ms jitter is no
     // congestion and the jittery reader gets its repeats (§7.2).
@@ -1864,12 +1900,14 @@ fn jt4_pure_jitter_hitches_no_more_than_the_baseline() {
             BASELINE_2P_JITTER_300APM_HITCHES,
         ),
     ] {
-        let report = Simulation::new(baseline_scenario(file, name)).run();
-        let hitches = report.groups[0].hitches;
-        assert!(
-            hitches <= baseline,
-            "{name}: {hitches} hitches, baseline {baseline}"
-        );
+        let hitches: u64 = SEEDS
+            .iter()
+            .map(|seed| {
+                let report = Simulation::new(baseline_scenario(file, name, *seed)).run();
+                report.clients.iter().map(|c| c.hitches as u64).sum::<u64>()
+            })
+            .sum();
+        hitches_no_worse(name, hitches, baseline.iter().sum());
     }
 }
 

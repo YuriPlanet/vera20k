@@ -191,7 +191,7 @@ fn appendix_a_packet_by_packet() {
 
     // Packet 14: A's first UPLINK, in the service that read the start.
     let first = packet(&trace, Up, A, "UPLINK", 370.0);
-    envelope(first, 6, 33);
+    envelope(first, 6, 35);
     arrives(first, 390.0);
     let uplink = first.uplink().unwrap();
     assert_eq!(uplink.flags, FLAG_PUSH);
@@ -200,10 +200,11 @@ fn appendix_a_packet_by_packet() {
         (1, 7, 0x7F)
     );
     assert_eq!((uplink.srtt_ms, uplink.base_ms, uplink.link), (40, 40, 0));
+    assert_eq!(uplink.rttvar_ms, 11);
     assert!(uplink.checksums.is_empty() && uplink.batches.is_empty() && uplink.pace.is_none());
     // B's first, at 400.
     let first = packet(&trace, Up, B, "UPLINK", 400.0);
-    envelope(first, 6, 33);
+    envelope(first, 6, 35);
     assert_eq!(
         (
             first.uplink().unwrap().recv_next,
@@ -238,7 +239,7 @@ fn appendix_a_packet_by_packet() {
 
     // Packet 17: A's acknowledgement, 100 ms after its last UPLINK.
     let ack = packet(&trace, Up, A, "UPLINK", 470.0);
-    envelope(ack, 7, 33);
+    envelope(ack, 7, 35);
     let uplink = ack.uplink().unwrap();
     assert_eq!(
         (uplink.recv_next, uplink.down_high, uplink.down_bits),
@@ -248,7 +249,7 @@ fn appendix_a_packet_by_packet() {
 
     // Packet 18: A's command, sent in the service that sealed it.
     let command = packet(&trace, Up, A, "UPLINK", 480.0);
-    envelope(command, 8, 117);
+    envelope(command, 8, 119);
     arrives(command, 500.0);
     let uplink = command.uplink().unwrap();
     assert_eq!(uplink.flags, FLAG_PUSH);
@@ -257,6 +258,7 @@ fn appendix_a_packet_by_packet() {
         (3, 8, 0xFF)
     );
     assert_eq!((uplink.srtt_ms, uplink.base_ms, uplink.link), (40, 40, 0));
+    assert_eq!(uplink.rttvar_ms, 11);
     assert_eq!(
         (uplink.first_batch_id, uplink.batches.clone()),
         (1, vec![74])
@@ -302,7 +304,7 @@ fn appendix_a_packet_by_packet() {
 
     // Packet 21: B's acknowledgement, lost.
     let lost = packet(&trace, Up, B, "UPLINK", 500.0);
-    envelope(lost, 7, 33);
+    envelope(lost, 7, 35);
     assert!(lost.lost());
     assert_eq!(lost.uplink().unwrap().recv_next, 5);
 
@@ -324,7 +326,7 @@ fn appendix_a_packet_by_packet() {
 
     // Packet 24: B's acknowledgement shows relay seq 10 missing.
     let ack = packet(&trace, Up, B, "UPLINK", 616.7);
-    envelope(ack, 8, 33);
+    envelope(ack, 8, 35);
     arrives(ack, 636.7);
     let uplink = ack.uplink().unwrap();
     assert_eq!(
