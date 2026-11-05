@@ -12,6 +12,7 @@
 //! `g_MuteSWLaunches` label is wrong), and the connection nodes
 //! `[0xA8DA78]`; it refuses pages only from a match.
 
+use crate::ui::wol_account::NAME_LIMIT;
 use crate::ui::wol_options::WolPreferences;
 use crate::util::native_string::wcs_starts_with_ignore_case;
 
@@ -188,7 +189,8 @@ fn parse_locate_or_say(line: &[u16], commands: &WolChatCommands) -> WolChatLine 
     if !commands.online.is_empty() && line.starts_with(&commands.online) {
         let rest = skip_spaces(&line[commands.online.len()..]);
         // 0078A517: `cmp ebx, 0xa; jge` stops after ten units, silently.
-        let (name, _) = take_word(rest, 10);
+        // VERA deviation: after the lobby's 24-unit names.
+        let (name, _) = take_word(rest, NAME_LIMIT);
         return if name.is_empty() {
             WolChatLine::Notice("TXT_NO_NAME")
         } else {
@@ -610,12 +612,12 @@ mod tests {
     }
 
     #[test]
-    fn locate_is_case_sensitive_and_truncates_names_to_ten_units() {
+    fn locate_is_case_sensitive_and_truncates_names_to_24_units() {
         let c = commands();
         assert_eq!(
-            parse(&w("/locate abcdefghijkl"), &c, false),
+            parse(&w("/locate Commander_Tanya_of_Allies"), &c, false),
             WolChatLine::Locate {
-                name: w("abcdefghij")
+                name: w("Commander_Tanya_of_Allie")
             }
         );
         assert_eq!(
