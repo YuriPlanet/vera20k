@@ -74,13 +74,17 @@ fn ensure(condition: bool, message: impl FnOnce() -> String) -> Check {
     if condition { Ok(()) } else { Err(message()) }
 }
 
-/// Spec §5.4: each direction counts as lossy until its first loss fold.
-/// When the client's uplink made its first fold (µs), or the end.
+/// Spec §5.4: each direction counts as lossy until its first loss fold,
+/// and leaves the lossy state only once its estimate is down and its last
+/// 8 folds lost nothing. When the client's uplink first left that initial
+/// lossy state (µs), or the end.
 fn uplink_settled_us(trace: &Trace, client: usize) -> u64 {
     trace
         .client_stats
         .iter()
-        .find(|(_, c, stats)| *c == client && stats.up_loss_folds >= 1)
+        .find(|(_, c, stats)| {
+            *c == client && stats.up_loss_folds >= 1 && stats.uplink != LinkState::Lossy
+        })
         .map_or(u64::MAX, |(at, ..)| *at)
 }
 
@@ -1779,9 +1783,10 @@ fn jt1_a_jittery_good_link_gets_repeats_and_two_deep_piggyback() {
 }
 
 /// §7.2: JITTERY does not change the reader's state, so a jittery link
-/// without loss stays Good after its initial lossy state (§5.4).
+/// without loss stays Good after its initial lossy state (§5.4): with the
+/// time threshold of §4.3, a datagram reordered by jitter is no loss.
 #[test]
-#[ignore = "spec (c): reordering by more than 3 datagrams under ±50 ms jitter is judged loss (§4.3), and one such datagram per fold passes the 5‰ entry of §5.4, so a lossless jittery reader goes Lossy (jt1 scenario: Lossy at 12110.7 ms, no datagram lost)"]
+#[ignore = "waits for the adaptive transport implementation of spec d424310de (§4.3 time threshold, §5.3 DELAYED less 2 rttvar, §5.4 eight clean folds)"]
 fn jt1b_a_lossless_jittery_reader_stays_good() {
     let (_, trace) = run(r#"{ "name": "jt1", "players": 2,
         "warmup_ms": 0, "duration_ms": 30000, "apm": 60,
@@ -1812,7 +1817,7 @@ fn jt2_a_steady_link_is_not_jittery() {
 }
 
 #[test]
-#[ignore = "spec (c): at 1% loss the 5‰ / 2‰ band flips state (folds of 32 with no loss decay the estimate below 2‰), so every reader spends part of the minute Good without repeats, and its full packs then need PULL: 3.6 hitches a minute against 0.2, p99 140 ms against 127.2"]
+#[ignore = "waits for the adaptive transport implementation of spec d424310de (§4.3 time threshold, §5.3 DELAYED less 2 rttvar, §5.4 eight clean folds)"]
 fn jt3_one_percent_loss_in_a_full_room_is_no_worse_than_the_baseline() {
     let scenario = baseline_scenario(
         include_str!("../../netsim/loss-1pct.json"),
@@ -1847,8 +1852,10 @@ fn jt3_one_percent_loss_in_a_full_room_is_no_worse_than_the_baseline() {
 }
 
 #[test]
-#[ignore = "spec (c): ±50 ms jitter each way puts srtt (about 200 ms) at base (about 100 ms) + max(base, 100), so §5.3 judges DELAYED, the reader is Congested and §7.2 sends no repeats though JITTERY: 23 hitches a minute against 14.5 (client 0 ends Congested with 28)"]
+#[ignore = "waits for the adaptive transport implementation of spec d424310de (§4.3 time threshold, §5.3 DELAYED less 2 rttvar, §5.4 eight clean folds)"]
 fn jt4_pure_jitter_hitches_no_more_than_the_baseline() {
+    // §5.3 judges DELAYED on `srtt - 2 rttvar`, so ±50 ms jitter is no
+    // congestion and the jittery reader gets its repeats (§7.2).
     let file = include_str!("../../netsim/rtt200-jitter50.json");
     for (name, baseline) in [
         ("2p-rtt200-jitter50-idle", BASELINE_2P_JITTER_IDLE_HITCHES),
