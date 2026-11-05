@@ -593,9 +593,15 @@ pub(crate) fn shp_visitor<'a>(
             let obj = rules.and_then(|r| r.object(type_str));
             let image = obj.map_or(type_str, |o| o.image.as_str());
             let art = rules.and_then(|r| r.art().resolve_metadata_entry(type_str, image));
+            let [x, y] = crate::sim::movement::ground_pose::object_center_xy(entity);
+            let coords_cell = (
+                crate::util::lepton::lepton_to_cell(x) as u16,
+                crate::util::lepton::lepton_to_cell(y) as u16,
+            );
             crate::app::presentation::lighting::building_palette_light(
                 input.lighting,
                 (pos.rx(), pos.ry()),
+                coords_cell,
                 art,
                 gate_open_frame.is_some(),
             )

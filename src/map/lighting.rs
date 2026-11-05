@@ -34,8 +34,7 @@ pub const LIGHT_CLAMP_MAX: i32 = 2000;
 pub const LIGHT_SCALE16_IDENTITY: i32 = 0x10000;
 
 /// Scenario Ground/Level: original 0068A92E/0068A968 multiply by double
-/// [007E4658] = 1000.0, then add 0.01 and truncate. See the Ground/Level
-/// correction in LIGHTCONVERT_ROW_RGB565_ORACLE_2026_09_09.md.
+/// [007E4658] = 1000.0, then add 0.01 and truncate.
 pub const GROUND_LEVEL_UNIT_SCALE: i32 = LIGHT_UNIT;
 
 /// Leptons per cell in RA2's coordinate system.
@@ -674,18 +673,13 @@ impl CellLightGrid {
     /// or colour-shifted map. `None` means no animation art record was found for
     /// the draw, which leaves the flag at its INI default of false.
     ///
-    /// DRIFT, deferred, not a consequence of the flag: gamemd chooses the
-    /// palette convert *separately* from the brightness scalar, and an ordinary
-    /// animation uses the global animation convert allocated once at init
-    /// regardless of which cell it sits on — only the brightness comes from the
-    /// cell. This grid folds hue and brightness into one multiplier, so on the
-    /// unflagged path it also hue-shifts an animation where gamemd only dims it.
-    /// That fires on every muzzle flash, smoke, splash and death animation on
-    /// essentially every stock map, since almost all ship a non-unit `[Lighting]`
-    /// RGB channel. Deferred rather than fixed because what the native convert
-    /// table does internally is UNCHECKED, so the size of the pixel difference is
-    /// unknown; and because the correct repair is a per-consumer split of hue
-    /// from brightness, not a blanket change to this accessor.
+    /// RESIDUAL: ordinary animations draw through native palette lighting
+    /// (`presentation::lighting::anim_palette_light`), which picks the Convert
+    /// apart from this scalar. Only the compatibility draws read this tint:
+    /// Tiled anims, RING1 and remapped anims without an instance scheme. It
+    /// folds the cell's hue into the brightness, so on a map whose `[Lighting]`
+    /// RGB is not neutral, or beside a coloured lamp, those anims are hue-shifted
+    /// where gamemd only dims them.
     pub fn anim_tint_at(&self, cell: (u16, u16), art: Option<&AnimTypeRuntimeConfig>) -> [f32; 3] {
         if art.is_some_and(|config| config.use_normal_light) {
             return DEFAULT_TINT;
@@ -1422,8 +1416,8 @@ fn build_cell_light_from_raw(
     // CellClass 004845C0/C2 seeds both fields from capped top, then passes
     // the common pointer in EDX to 005558E0. The helper scales common (and
     // zeros it for near-black RGB); it does not normalize source additive.
-    // Original 00483F7A..00483FD8 publishes those distinct outputs. See
-    // LIGHTCONVERT_ROW_RGB565_ORACLE_2026_09_09.md and palette_oracle fixtures.
+    // Original 00483F7A..00483FD8 publishes those distinct outputs. Executed:
+    // tools/palette_oracle fixtures.
     let normalized = normalize_light_at_detail(raw_rgb, top_high, detail_level);
     let common_high = normalized.common_scalar;
     let scaled_bottom = ((i64::from(raw_bottom_scalar) * i64::from(normalized.scale16)) >> 16)

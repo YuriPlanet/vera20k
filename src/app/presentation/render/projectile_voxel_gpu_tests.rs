@@ -502,6 +502,7 @@ fn kirov_pose_upload_and_replay(interpolated: bool) {
                 kind,
                 "BlimpBombP",
                 HouseColorIndex(8),
+                [1000; 3],
                 None,
                 sim.resolved_terrain().unwrap(),
                 cam,
