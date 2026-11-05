@@ -1171,6 +1171,7 @@ impl Simulation {
                 score.hash(hasher);
             }
             house.enemy_house().hash(hasher);
+            house.hash_scouted_houses(hasher);
 
             if let Some((rx, ry)) = house.base_center() {
                 1u8.hash(hasher);
@@ -3841,9 +3842,7 @@ mod particle_hash_tests {
             Box::new(|s| s.particles_mut_for_test()[0].set_drift_x_for_test(1)),
             Box::new(|s| s.particles_mut_for_test()[0].set_drift_y_for_test(1)),
             Box::new(|s| s.particles_mut_for_test()[0].set_drift_z_for_test(1)),
-            Box::new(|s| {
-                s.particles_mut_for_test()[0].prev_delta_mut_for_test()[2] = 1
-            }),
+            Box::new(|s| s.particles_mut_for_test()[0].prev_delta_mut_for_test()[2] = 1),
         ];
         for (index, edit) in edits.iter().enumerate() {
             let mut system = base.clone();
