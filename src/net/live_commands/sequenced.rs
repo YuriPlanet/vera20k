@@ -974,7 +974,9 @@ impl SequencedSession {
                     PushDelivery::PullOnly
                 };
             }
-            OrderEvent::Ack { batch_id, frame } => {
+            OrderEvent::Ack {
+                batch_id, frame, ..
+            } => {
                 if batch_id == 0 {
                     return Err(SequencedError::InvalidTimeline);
                 }
@@ -1720,6 +1722,7 @@ mod restore_tests {
             tick_hz: 30,
             start_delay_ms: 0,
             started: true,
+            feedback: Default::default(),
         })
     }
 
@@ -1845,6 +1848,7 @@ mod stall_tests {
             tick_hz: 30,
             start_delay_ms: 0,
             started: true,
+            feedback: Default::default(),
         };
         session
             .receive(OrderEvent::Status(status), Instant::now())
@@ -2000,6 +2004,7 @@ mod departure_tests {
             tick_hz: 30,
             start_delay_ms: 0,
             started: false,
+            feedback: Default::default(),
         };
         session
             .receive(OrderEvent::Status(status), Instant::now())

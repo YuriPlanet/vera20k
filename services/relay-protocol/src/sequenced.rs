@@ -266,6 +266,13 @@ pub fn turn_frames(rate: u16) -> u32 {
     u32::from(rate).div_ceil(15).max(1)
 }
 
+/// A turn's duration `turn_frames(rate) * 1000 / rate` in whole
+/// milliseconds, rounded up (spec §2): 67 at 30 Hz, 50 at 45 Hz, 100 at
+/// 20 Hz. `ClientSession::set_ordering_turn_ms` takes this value.
+pub fn turn_ms(rate: u16) -> u32 {
+    (turn_frames(rate) * 1000).div_ceil(u32::from(rate.max(1)))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum OrderError {
@@ -309,6 +316,8 @@ pub struct OrderStatus {
     pub tick_hz: u16,
     pub start_delay_ms: u32,
     pub started: bool,
+    /// The relay's hop feedback appended to every STATUS (spec §3.4).
+    pub feedback: HopFeedback,
 }
 
 #[derive(Debug)]
@@ -379,6 +388,8 @@ pub enum OrderEvent {
         frame: u32,
     },
     /// Acknowledges this hop's opt-in and its cumulative contiguous cursor.
+    /// Removed with request 4: an UPLINK's PUSH flag subscribes without a
+    /// reply (spec §1.2, §3.4).
     PushState {
         enabled: bool,
         next_sequence: u64,
@@ -388,9 +399,13 @@ pub enum OrderEvent {
         sources_mask: u32,
     },
     Status(OrderStatus),
+    /// ACK (event 2, spec §3.3): the relay accepted this source's batches
+    /// through `batch_id` (`accepted_through`, cumulative), the last of them
+    /// into `frame`.
     Ack {
         batch_id: u64,
         frame: u32,
+        feedback: HopFeedback,
     },
     Entry(OrderEntry),
     Error {
@@ -468,6 +483,11 @@ impl ClientSession {
 
     /// Move the current stream cache at hop-lease promotion, after the old
     /// route's last receive/submit. Candidate creation alone is only a snapshot.
+    ///
+    /// Also moves the path measurement (spec §4.7): `loss‰`, `srtt`, `base`
+    /// and the uplink state carry over; this hop's `down` window, send log
+    /// and loss cursor start empty. The next `poll_uplink` on this session
+    /// sends an UPLINK at once, with PUSH and every unacknowledged batch.
     pub fn adopt_ordering_from(&mut self, previous: &mut Self) -> Result<(), RelayError> {
         if self.ticket.room != previous.ticket.room
             || self.ticket.source != previous.ticket.source
@@ -484,6 +504,11 @@ impl ClientSession {
     /// While set, this source's batches in the stream belong to the process
     /// this one replaces. The stream must have been read past its last one
     /// before this is cleared and a batch submitted.
+    ///
+    /// Also the UPLINK RESTORING flag (flags bit3, spec §3.2, §11 row 9):
+    /// while set the relay keeps the subscription but pushes no new records,
+    /// and the caller reads history with `pull_ordering_at`. Clearing it lets
+    /// the relay push again from the acknowledged watermark.
     pub fn set_ordering_restore(&mut self, restoring: bool) {
         if let Some(ordering) = self.ordering.as_mut() {
             ordering.restoring = restoring;
@@ -795,6 +820,8 @@ impl ClientSession {
                 tick_hz: u16::from_le_bytes(payload[25..27].try_into().unwrap()),
                 start_delay_ms: read_u32(payload, 27),
                 started: payload[31] != 0,
+                // A1: the 50-byte layout arrives with A2.
+                feedback: hop_feedback(payload, 32),
             }),
             (ACK_EVENT, 13..) => {
                 let batch_id = read_u64(payload, 1);
@@ -809,6 +836,7 @@ impl ClientSession {
                 OrderEvent::Ack {
                     batch_id,
                     frame: read_u32(payload, 9),
+                    feedback: hop_feedback(payload, 13),
                 }
             }
             (FRAME_END_EVENT, 13) => OrderEvent::Entry(OrderEntry::FrameEnd {
@@ -1002,6 +1030,21 @@ fn desync_outlier(reports: &[(u8, u32)], active: u32) -> Option<((u8, u32), (u8,
         return Some((outlier, majority));
     }
     (active & !reported == 0).then_some((differing, first))
+}
+
+/// The `[up_high u64][up_bits u64][echo_delay u16]` tail of ACK and STATUS
+/// at `offset`, or none when the reply is shorter.
+fn hop_feedback(payload: &[u8], offset: usize) -> HopFeedback {
+    if payload.len() < offset + 18 {
+        return HopFeedback::default();
+    }
+    HopFeedback {
+        up: RecvWindow {
+            high: read_u64(payload, offset),
+            bits: read_u64(payload, offset + 8),
+        },
+        echo_delay_ms: u16::from_le_bytes([payload[offset + 16], payload[offset + 17]]),
+    }
 }
 
 fn read_u32(bytes: &[u8], offset: usize) -> u32 {
@@ -4126,7 +4169,7 @@ mod tests {
             .submit_ordering(3, b"healthy input after lease renewal", &mut bytes)
             .unwrap();
         let acked = events(&mut server, &mut active, &bytes, 250_000);
-        assert!(matches!(acked[0], OrderEvent::Ack { batch_id: 3, frame } if frame > 4096));
+        assert!(matches!(acked[0], OrderEvent::Ack { batch_id: 3, frame, .. } if frame > 4096));
         // The host returns after >300 seconds, retains its original principal,
         // and starts from sequence1 even though the hot cache evicted it.
         server.advance_clock(350_000, unix(350_000));
@@ -4190,7 +4233,7 @@ mod tests {
         host.submit_ordering(1, b"recovered host input", &mut bytes)
             .unwrap();
         assert!(
-            matches!(events(&mut server, &mut host, &bytes, now_ms)[0], OrderEvent::Ack { batch_id: 1, frame } if frame > last_frame)
+            matches!(events(&mut server, &mut host, &bytes, now_ms)[0], OrderEvent::Ack { batch_id: 1, frame, .. } if frame > last_frame)
         );
         assert!(
             server.rooms[&[5; 16]]
@@ -4300,7 +4343,8 @@ mod tests {
             events(&mut server, &mut first, &bytes, 300)[0],
             OrderEvent::Ack {
                 batch_id: 2,
-                frame: 4
+                frame: 4,
+                ..
             }
         ));
         first.leave_ordering(&mut bytes).unwrap();
