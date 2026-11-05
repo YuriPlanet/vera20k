@@ -105,9 +105,10 @@
 18    8     down_bits            u64，bit i = 1 表示序号 down_high − i 已收到（bit0 必为 1，除非 down_high = 0）
 26    2     srtt_ms              u16，0 表示还没有样本
 28    2     base_ms              u16，0 表示还没有样本
-30    1     link                 u8，见下
-31    1     checksum_count       0..2
-32    8×n   {frame u32, checksum u32} × checksum_count
+30    2     rttvar_ms            u16，RFC 6298 的 RTT 波动值；srtt_ms 为 0 时也为 0
+32    1     link                 u8，见下
+33    1     checksum_count       0..2
+34    8×n   {frame u32, checksum u32} × checksum_count
 ..    7     pace                 仅当 flags.bit1：[pace u8][frames_per_second u16][tick_micros u32]，tick_micros = 0 表示没有
 ..    1     batch_count          0..4
 ..    8     first_batch_id       仅当 batch_count > 0
@@ -135,7 +136,7 @@
 
 **opaque（同现状）：** `[nonce 24][ciphertext n][tag 16]`，其中 `1 ≤ n ≤ 512`。
 
-**长度上限：** 固定部分 33 B（偏移 0~32，含 `checksum_count` 和 `batch_count`）。不含批次时最多 33 + 16（2 个 checksum）+ 7（pace）= 56 B。加上 `first_batch_id`（8 B）和一个最大批次（2 + 552 B）共 618 B，小于 681 B。所以**第一个未确认批次一定装得下**。
+**长度上限：** 固定部分 35 B（偏移 0~34，含 `checksum_count` 和 `batch_count`）。不含批次时最多 35 + 16（2 个 checksum）+ 7（pace）= 58 B。加上 `first_batch_id`（8 B）和一个最大批次（2 + 552 B）共 620 B，小于 681 B。所以**第一个未确认批次一定装得下**。
 
 **中继解码规则（任何一条不满足，整包按 Malformed 丢弃，不回复）：**
 
@@ -252,6 +253,7 @@ RecvWindow { high: u64, bits: u64 }
    - **时间条件：** 位图里没收到的序号 s，还要满足 `now − sent_at(s) ≥ srtt + 4 × rttvar`，才判为丢失。客户端用自己的 `srtt` / `rttvar`；中继用 §4.6 的 `srtt_c` / `rttvar_c`。不满足时，在 s 处停下，`eval_next = s`，s 和它后面的序号留到下次反馈再判。
    - 已收到的序号不受时间条件限制，直接计入。
    - 等待期间如果 s 落到位图范围之外（`s < high − 63`），按第 2 步不计入统计。
+   - **不只在收到反馈时判定。** 发送方保留最近一份反馈 `(high, bits)`：中继在每一轮推送开始时、客户端在每次服务时，都用它把等待中的序号再判一遍。时间条件一满足就判丢、触发重传，不用等下一份反馈（良好状态下下一份反馈要等 100 ms）。
    - 原因：只靠"被后面 3 个包越过"判丢，抖动大的链路上，乱序的包会被误判为丢失。端到端测试中，±50 ms 抖动、零丢包的链路被判为丢包状态。时间条件参照 RFC 9002 的 time threshold。
 4. **折算：** `n ≥ 32` 时：
    - `sample = l × 1000 / n`
@@ -271,7 +273,7 @@ RecvWindow { high: u64, bits: u64 }
    - 第一个样本：`srtt = R`，`rttvar = R / 2`。
    - 之后：`rttvar = (3 × rttvar + |srtt − R|) / 4`，`srtt = (7 × srtt + R) / 8`。
 5. **基准 RTT：** `base = min(win_prev, win_cur)`。`win_cur` 是当前 10 s 窗口里的最小 R。窗口到期时，`win_prev = win_cur ?? win_prev`，`win_cur = 空`。
-6. `srtt` 和 `base` 填进 `UPLINK`，单位 ms，按 u16 饱和。
+6. `srtt`、`rttvar` 和 `base` 填进 `UPLINK`，单位 ms，向下取整，按 u16 饱和。
 
 中继不自己算 RTT，下行要用的 RTT 一律取客户端上报的值。
 
@@ -285,7 +287,8 @@ RecvWindow { high: u64, bits: u64 }
 
 `PTO = clamp(srtt_c + max(16, 4 × rttvar_c) + ack_delay_max, 50, 1000)`
 
-- `srtt_c` 和 `rttvar_c` 是客户端上报的值。没有上报时，`srtt_c = 100`、`rttvar_c = 50`。`UPLINK` 只带 `srtt`，`rttvar_c` 取 `srtt_c / 2`。
+- `srtt_c` 和 `rttvar_c` 是客户端在 `UPLINK` 里上报的 `srtt_ms` / `rttvar_ms`。没有上报（`srtt_ms = 0`）时，`srtt_c = 100`、`rttvar_c = 50`。
+  - 早先 `UPLINK` 不带 `rttvar`，中继只能取 `srtt_c / 2`。端到端测试发现这个值太保守：好链路上中继要等约 3 倍 RTT 才判一个包丢失，总是被客户端的兜底 PULL 抢先，按确认重传几乎派不上用场。
 - `ack_delay_max` 取 §6.3 里这个读者当前状态下的确认间隔：良好 100，丢包 `turn_ms`，拥堵 200。
 - 连续探测：第 k 次 `PTO_k = min(PTO << k, 1000)`。`acked_next` 前进时 k 归零。
 
@@ -494,7 +497,7 @@ ReaderLink {
   eval_next, n, l, down_loss‰,              // §4.3
   lossy, severe,                            // §5.4，严重丢包回差
   delayed,                                  // 来自 UPLINK.link.bit2
-  srtt_c,                                   // 来自 UPLINK.srtt_ms
+  srtt_c, rttvar_c,                         // 来自 UPLINK.srtt_ms / rttvar_ms
   last_heard_ms,                            // 本跳最后一次收到任何数据报
   retransmit: VecDeque<(u64,u64)>,          // 待重传的 seq 区间 [from, to)，按 from 排序且不重叠
   repeat_next, unrepeated_since,            // 已有的 8 ms 补推状态
@@ -506,7 +509,7 @@ ReaderLink {
 
 1. 更新 `last_heard_ms`。
 2. 把收到的 `recv_next` 合并进 `acked_next`（取最大值），并刷新推送租约（3000 ms，同现状）。
-3. 记下 `link`、`srtt_ms`。
+3. 记下 `link`、`srtt_ms`、`rttvar_ms`。
 4. 用 `down_high` / `down_bits` 做下行丢包判定（§4.3），判为丢失的包进入 §7.3 的重传流程。
 
 **RESTORING 标志：** 只维持订阅，不推送新记录，等同现在客户端断线重放时的行为。
@@ -1023,7 +1026,7 @@ A 的第二个 RTT 样本也是 40：`srtt = 40`，`rttvar = 15`。
 
 #### 包 14：A → R，第一个 `UPLINK`（A 在 t = 370 发出，R 在 t = 390 收到）
 
-信封：`kind = 4`、`sent = 6`、`len = 33`。
+信封：`kind = 4`、`sent = 6`、`len = 35`。
 
 | payload 偏移 | 长度 | 字段 | 值 | 含义 |
 |---|---|---|---|---|
@@ -1034,9 +1037,10 @@ A 的第二个 RTT 样本也是 40：`srtt = 40`，`rttvar = 15`。
 | 18 | 8 | down_bits | 0x7F | 序号 7..1 全部收到 |
 | 26 | 2 | srtt_ms | 40 | |
 | 28 | 2 | base_ms | 40 | |
-| 30 | 1 | link | 0x00 | 上行良好；样本还不到 8 个，DELAYED 恒为假 |
-| 31 | 1 | checksum_count | 0 | |
-| 32 | 1 | batch_count | 0 | 没有未确认批次（flags 没有 PACE，所以没有 pace 段） |
+| 30 | 2 | rttvar_ms | 11 | 三个样本都是 40：20 → 15 → 11.25，向下取整 |
+| 32 | 1 | link | 0x00 | 上行良好；样本还不到 8 个，DELAYED 恒为假 |
+| 33 | 1 | checksum_count | 0 | |
+| 34 | 1 | batch_count | 0 | 没有未确认批次（flags 没有 PACE，所以没有 pace 段） |
 
 **R 的处理（§7.1）：**
 - 建立 A 的推送订阅：`acked_next = 1`，`sent_next = 1`，租约 3000 ms。
@@ -1100,7 +1104,7 @@ R：A 的 `acked_next = 3`。
 
 满足条件 1：有从未发过的批次，立即发送。
 
-信封：`kind = 4`、`sent = 8`、`len = 117`。
+信封：`kind = 4`、`sent = 8`、`len = 119`。
 
 | payload 偏移 | 长度 | 字段 | 值 | 含义 |
 |---|---|---|---|---|
@@ -1111,14 +1115,15 @@ R：A 的 `acked_next = 3`。
 | 18 | 8 | down_bits | 0xFF | |
 | 26 | 2 | srtt_ms | 40 | |
 | 28 | 2 | base_ms | 40 | |
-| 30 | 1 | link | 0x00 | |
-| 31 | 1 | checksum_count | 0 | |
-| 32 | 1 | batch_count | 1 | |
-| 33 | 8 | first_batch_id | 1 | |
-| 41 | 2 | len | 74 | opaque 长度 = 24 + 34 + 16 |
-| 43 | 24 | nonce | prefix ‖ 1 | |
-| 67 | 34 | ciphertext | … | 中继解不开，原样转发 |
-| 101 | 16 | tag | … | AEAD 标签 |
+| 30 | 2 | rttvar_ms | 11 | 同包 14，期间没有新的 RTT 样本 |
+| 32 | 1 | link | 0x00 | |
+| 33 | 1 | checksum_count | 0 | |
+| 34 | 1 | batch_count | 1 | |
+| 35 | 8 | first_batch_id | 1 | |
+| 43 | 2 | len | 74 | opaque 长度 = 24 + 34 + 16 |
+| 45 | 24 | nonce | prefix ‖ 1 | |
+| 69 | 34 | ciphertext | … | 中继解不开，原样转发 |
+| 103 | 16 | tag | … | AEAD 标签 |
 
 **R 的处理（§8）：**
 - 来源 0 还没接收过批次，`last_batch.id` 视为 0。`id = 1 = 0 + 1`，接收。
