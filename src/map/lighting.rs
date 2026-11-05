@@ -675,13 +675,13 @@ impl CellLightGrid {
     /// or colour-shifted map. `None` means no animation art record was found for
     /// the draw, which leaves the flag at its INI default of false.
     ///
-    /// RESIDUAL: ordinary animations draw through native palette lighting
+    /// RESIDUAL: animations draw through native palette lighting
     /// (`presentation::lighting::anim_palette_light`), which picks the Convert
     /// apart from this scalar. Only the compatibility draws read this tint:
-    /// Tiled anims and remapped anims without an instance scheme. It
-    /// folds the cell's hue into the brightness, so on a map whose `[Lighting]`
-    /// RGB is not neutral, or beside a coloured lamp, those anims are hue-shifted
-    /// where gamemd only dims them.
+    /// remapped anims without an instance scheme. It folds the cell's hue into
+    /// the brightness, so on a map whose `[Lighting]` RGB is not neutral, or
+    /// beside a coloured lamp, those anims are hue-shifted where gamemd only
+    /// dims them.
     pub fn anim_tint_at(&self, cell: (u16, u16), art: Option<&AnimTypeRuntimeConfig>) -> [f32; 3] {
         if art.is_some_and(|config| config.use_normal_light) {
             return DEFAULT_TINT;
