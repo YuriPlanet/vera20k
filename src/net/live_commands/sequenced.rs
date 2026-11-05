@@ -1,7 +1,7 @@
 //! VERA online ordering adaptation. The authenticated relay seals an immutable
 //! timeline; no client infers a missing participant's input or rewrites a tick.
 //! Native Event/OutList/DoList and the ordinary simulation transaction retain
-//! gameplay authority. Fresh packet caches make each encrypted batch standalone.
+//! gameplay authority. Fresh packet caches make each batch standalone.
 
 use std::collections::{BTreeMap, VecDeque};
 
@@ -11,7 +11,7 @@ use vera20k_relay_protocol::{
 };
 
 use super::{LiveCommandError, StartupAgreement, StartupError};
-use crate::net::event_packet::{EventPacketCodec, decode_frame_info};
+use crate::net::event_packet::{EVENT_PACKET_HEADER_LEN, EventPacketCodec};
 use crate::net::udp::LanUdpTransport;
 use crate::sim::command::{CommandRecord, ExitRecord, REMOVE_PLAYER_OPCODE};
 use crate::sim::command_queue::FrameInfo;
@@ -22,9 +22,6 @@ const BUFFERED_FRAMES: usize = 64;
 const REORDER_WINDOW: u64 = 256;
 const MAX_FRAME_RECORDS: usize = 4096;
 const SAMPLE_HISTORY: usize = 4096;
-// A batch's version byte before its EventPacketCodec packet.
-const BATCH_HEADER: usize = 1;
-const BATCH_VERSION: u8 = 2;
 // READY_REQUEST resends until the start (spec §6.0).
 const CONFIGURE_INTERVAL_MS: i32 = 125;
 // A restoring process reads history by PULL every 100 ms (spec §7.7).
@@ -1060,9 +1057,7 @@ impl SequencedSession {
                     if self.refused & 1 << source != 0 {
                         continue;
                     }
-                    let decoded = bytes
-                        .as_ref()
-                        .and_then(|bytes| decode_batch(bytes.as_bytes(), house, frame).ok());
+                    let decoded = decode_batch(&bytes, house, frame).ok();
                     let Some(records) = decoded else {
                         // VERA relay adaptation: every client reads the same
                         // ordered bytes, so each refuses the same batch. Its
@@ -1377,6 +1372,9 @@ impl SequencedSession {
                 {
                     return Err(SequencedError::InvalidTimeline.into());
                 }
+                // A batch is the packet's command records alone: no version
+                // byte and no FRAME_INFO, which every reader rebuilds
+                // (bandwidth-compaction spec §4).
                 let encoded = EventPacketCodec::default()
                     .encode_packet(
                         &records,
@@ -1388,15 +1386,13 @@ impl SequencedSession {
                             delay: 0,
                         },
                         0,
-                        ORDERING_BATCH_CAPACITY - BATCH_HEADER,
+                        EVENT_PACKET_HEADER_LEN + ORDERING_BATCH_CAPACITY,
                     )
                     .map_err(super::CommandExchangeError::from)?;
                 if encoded.mirrors.is_empty() {
                     return Err(SequencedError::InvalidTimeline.into());
                 }
-                let mut bytes = Vec::with_capacity(ORDERING_BATCH_CAPACITY);
-                bytes.push(BATCH_VERSION);
-                bytes.extend(encoded.bytes);
+                let bytes = encoded.bytes[EVENT_PACKET_HEADER_LEN..].to_vec();
                 let next_batch = self
                     .next_batch
                     .checked_add(1)
@@ -1522,18 +1518,25 @@ fn roster_mask(houses: &[Option<i8>; 30]) -> u32 {
         .fold(0, |m, (s, _)| m | (1 << s))
 }
 
+/// A batch's command records (bandwidth-compaction spec §4): the packet
+/// rebuilt with the FRAME_INFO of its source's `house`, its record's
+/// `frame` and zeros, then the unchanged `EventPacketCodec` decode.
 fn decode_batch(bytes: &[u8], house: i8, frame: u32) -> Result<Vec<CommandRecord>, SequencedError> {
-    if bytes.len() < BATCH_HEADER + 14
-        || bytes.len() > ORDERING_BATCH_CAPACITY
-        || bytes[0] != BATCH_VERSION
-    {
+    if bytes.is_empty() || bytes.len() > ORDERING_BATCH_CAPACITY {
         return Err(SequencedError::InvalidTimeline);
     }
-    let packet = &bytes[BATCH_HEADER..];
-    if decode_frame_info(packet).is_none_or(|info| info.house_id != house || info.event_frame != 0)
-    {
-        return Err(SequencedError::InvalidTimeline);
+    let header = FrameInfo {
+        house_id: house,
+        event_frame: i32::try_from(frame).map_err(|_| SequencedError::InvalidTimeline)?,
+        checksum: 0,
+        timing_word: 0,
+        delay: 0,
     }
+    .encode();
+    let mut packet = Vec::with_capacity(EVENT_PACKET_HEADER_LEN + bytes.len());
+    packet.extend_from_slice(&header.as_bytes()[..EVENT_PACKET_HEADER_LEN]);
+    packet.extend_from_slice(bytes);
+    let packet = packet.as_slice();
     let mut records = Vec::new();
     let mut invalid = false;
     let mut header = true;
@@ -1950,7 +1953,7 @@ mod departure_tests {
         ));
     }
 
-    /// A batch the payload key cannot open departs its sender in its frame
+    /// A batch that does not decode departs its sender in its frame
     /// instead of leaving a sequence gap that every pull repeats.
     #[test]
     fn an_unreadable_batch_departs_its_sender_in_its_frame() {
@@ -1967,7 +1970,7 @@ mod departure_tests {
                 frame: 2,
                 source: 1,
                 batch_id: 1,
-                bytes: None,
+                bytes: b"not a batch".to_vec(),
             },
             OrderEntry::FrameEnd {
                 sequence: 3,

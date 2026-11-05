@@ -27,10 +27,11 @@ use vera20k_relay_protocol::{
 type Result<T> = std::result::Result<T, String>;
 
 const SILENT: u8 = 2;
-// The server header is 48 bytes; its kind byte 4 is control (4), and a control
-// payload's first byte 1 is a Status. Released clients share this layout.
-const CONTROL_KIND: (usize, u8) = (4, 4);
-const PAYLOAD_KIND: (usize, u8) = (48, 1);
+// Envelope v3 (bandwidth-compaction spec §6.1): `hdr` is version 3 in bits
+// 5..7 and kind control (4) in bits 0..4, the payload starts after 9 bytes, and
+// a control payload's first byte 1 is a Status.
+const CONTROL_HDR: (usize, u8) = (0, 3 << 5 | 4);
+const PAYLOAD_KIND: (usize, u8) = (9, 1);
 const BATCH: &[u8] = b"relay-compat-v1";
 const DEADLINE: Duration = Duration::from_secs(150);
 
@@ -131,7 +132,7 @@ impl Peer {
 }
 
 fn is_status(packet: &[u8]) -> bool {
-    packet.get(CONTROL_KIND.0) == Some(&CONTROL_KIND.1)
+    packet.get(CONTROL_HDR.0) == Some(&CONTROL_HDR.1)
         && packet.get(PAYLOAD_KIND.0) == Some(&PAYLOAD_KIND.1)
 }
 

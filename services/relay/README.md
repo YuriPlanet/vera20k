@@ -2,15 +2,29 @@
 
 The relay forwards authenticated datagrams and sequences modern online gameplay.
 It owns the certified match clock and immutable command stream; clients own the
-simulation. Legacy v2 datagram routing remains supported.
+simulation. Older clients, which speak envelope v2, are not supported.
 The shared codec in `../relay-protocol` binds each ticket to a match and player,
-authenticates packet contents, rejects replayed game traffic, and challenges a new source address
-before admitting it. Protocol v2 also encrypts gameplay payloads end to end
-with XChaCha20-Poly1305. The relay forwards ciphertext and never receives the
-match payload key. A new match requires new tickets and a new payload key;
-there is no v1 or plaintext fallback.
-The HTTPS lobby is trusted to distribute those keys. Encryption protects the
-network path and relay; a compromised lobby remains outside that guarantee.
+authenticates every datagram per hop, rejects replayed game traffic, and
+challenges a new source address before admitting it
+(`bandwidth-compaction/spec.md` holds the full rules). Every datagram is
+envelope v3, 13 bytes around its payload of at most 720:
+
+```
+[hdr: version 3 in bits 5..7, kind in bits 0..4][session u32][seq u32][payload][tag 4]
+```
+
+The tag is the first 4 bytes of HMAC-SHA256 under the hop's packet key over
+`"VERA20k relay client v3\0"` or `"VERA20k relay server v3\0"`, then the header
+and payload, compared in constant time. HELLO and CONFIRM carry the ticket in
+their payload and session 0, as does the CHALLENGE answer; the relay assigns a
+random non-zero session on CONFIRM and hands it over in the envelope of its first
+READY (sequence 1), which the client claims by its tag. Every later datagram of
+the hop names it by that session. Gameplay travels plaintext: DATA is
+`[target]` or `[source]` then the message, and ordered batches are the plain
+command records. The relay and its journal can read every command; the
+transport no longer protects payloads from the relay. The lobby still grants a
+match payload key, which clients accept and do not use.
+The HTTPS lobby is trusted to distribute tickets and packet keys.
 
 The signed 98-byte ticket contains version 2, match UUID, source index, expiry,
 nonce, player UUID and the player's monotonic admission generation. A later
@@ -18,10 +32,16 @@ return-confirmed generation retires that player's previous hop membership; an em
 legacy room is removed. A sequenced match and its journal survive expired peers.
 Generation tombstones last for the maximum 300-second ticket
 lifetime, so old still-valid grants cannot recreate retired rooms. Renewals keep
-the same player, match, generation and payload key. The client gets the payload
-key only through authenticated HTTPS, derives a distinct source key, and uses a
-fresh OS-random 128-bit nonce prefix plus a checked packet counter. Renewal or
-reconstruction generates a new prefix; NAT rebinding retains the counter.
+the same player, match and generation, and are a new hop with a new session;
+the relay releases the old one at once. A released session is never assigned
+again for 10 minutes. Each hop counts its sequences from 1 to `u32::MAX`; the
+client renews at 2³² − 2¹⁶, and a relay that ran out would stop sending on the
+hop. An authenticated datagram whose sequence the replay window accepts moves
+its hop to the address it came from (NAT rebinding); a replay or forgery
+cannot. A datagram with an unknown session is dropped without an HMAC, one with
+a wrong tag only by itself; the relay reports both counts (`mac_failures`,
+`unknown_sessions`) and an alert per session past 4,096 failures in a fixed
+minute (`session_alerts`). No count ever drops a valid datagram.
 
 Each player gets eight handshakes/second, admitted or not, enough for paired
 old/new routes during renewal; Leave acknowledgements, which need no admission,
@@ -32,7 +52,7 @@ as many packets, count only datagrams that authenticate and pass their sender's
 own limits, including the replay window and the 2,048 packet/second principal
 cap, so forged, junk or replayed traffic cannot spend capacity other players
 need. Rejecting one costs at most three HMACs. These packet caps are joined by
-actual ciphertext output budgets: 2 MiB/second per sender and 64 MiB/second per
+actual output byte budgets: 2 MiB/second per sender and 64 MiB/second per
 room and relay. Rooms share each relay-wide total max-min fairly: every second,
 each room reserves what it asked for the second before, the largest asks cut to
 one level so the reservations fit, and spends past its reservation only what no
@@ -41,7 +61,7 @@ Handshakes, and Leave for a room no longer held, take part as one more room.
 Whole broadcasts reserve all recipient bytes
 before forwarding, preventing partial delivery when a budget is exhausted.
 Fixed one-second windows allow ordinary short bursts, including simultaneous
-NAT rebinding. Limits count ciphertext, framing and MAC bytes, not just input
+NAT rebinding. Limits count payload, framing and tag bytes, not just input
 packet count. Provider-level protection is still needed for link saturation.
 
 Build from the repository root:
@@ -103,8 +123,8 @@ from packet loss and client timeouts.
 
 Modern ordering uses authenticated control kind4 and a lobby-signed `VO1C` or
 `VO2C` certificate (see `../../docs/lobby-protocol.md`). Every source that becomes ready
-certifies the same initial world; fixed FPS deadlines then commit encrypted
-batches sorted by source and
+certifies the same initial world; fixed FPS deadlines then commit batches
+sorted by source and
 batch ID, followed by an explicit frame end. An absent input contributes nothing.
 The clock seals in turns of `turn_frames(rate)` = ⌈rate / 15⌉ frames (4 at
 60 Hz, 3 at 45, 2 at 30 and 20, 1 at 15 and slower), counted in whole turns
@@ -119,10 +139,17 @@ Clients send everything but Ready (request 0), Pull (2), Leave (3) and Pause
 (`services/relay/adaptive-transport/spec.md` holds the full rules):
 
 ```
-[8][flags][recv_next u64][down_high u64][down_bits u64][srtt_ms u16][base_ms u16][rttvar_ms u16][link]
-[checksum_count 0..2]{[frame u32][checksum u32]} [pace u8][fps u16][tick µs u32 if flags bit1]
-[batch_count 0..4][first_batch_id u64 if any]{[len u16][opaque]}
+[8][flags][recv_next varint][down_high varint][down_bits u64][srtt_ms varint][base_ms varint][rttvar_ms varint][link]
+[checksum_count 0..2]{[frame varint][checksum u32]} [pace u8][fps varint][tick µs varint if flags bit1]
+[batch_count 0..4][first_batch_id varint if any]{[len varint 1..512][batch]}
 ```
+
+A varint is unsigned LEB128 in its shortest form, at most 10 bytes, within the
+field's former width (frames u32, milliseconds u16); anything else is
+malformed. Pull is `[2][next varint]`, Pause `[5][request id varint][expected
+epoch varint][paused]`, Error `[6][code][expected varint]` and PauseStatus
+`[8][supported u32][active u32][request id varint][epoch varint][paused][frame
+u32]`.
 
 Flags: bit0 PUSH subscribes or renews push, bit1 PACE, bit2 PROBE asks for a
 Status, bit3 RESTORING keeps the subscription without new records; `link` is
@@ -144,9 +171,11 @@ idempotent; modified batch retries and source impersonation fail
 authentication.
 
 Every datagram's envelope sequence feeds a 64-bit receive window at the other
-end. ACK, `[2][accepted through u64][frame u32]`, and Status, 32 bytes as
-before, both end in the relay's window for the hop and the delay since its
-newest datagram, `[up_high u64][up_bits u64][echo delay ms u16]`: the client
+end. ACK, `[2][accepted through varint][frame varint]`, and Status,
+`[1][head frame varint][oldest seq varint][next seq varint][active sources
+u32][tick Hz u16][start delay ms varint][started]`, both end in the relay's
+window for the hop and the delay since its newest datagram, `[up_high
+varint][up_bits u64][echo delay ms varint]`: the client
 measures its RTT and uplink loss from them. Each side judges its own sends
 three behind the newest feedback, once per feedback: a missing send counts as
 lost only if it went srtt + 4 rttvar before the feedback arrived (the relay
@@ -162,11 +191,17 @@ holds. The client also reports JITTERY when the arrival jitter of new-turn
 packs, RFC 3550 smoothed, reaches max(10, turn_ms / 4) ms over 16 samples,
 until half that.
 
-History entries travel packed: consecutive entries fill one datagram up to the
-681-byte server payload as `[12][base seq LE u64][count]`, then per entry
-`[len LE u16]` and the entry without its 8-byte sequence (its kind byte, then
-the rest); the client rebuilds each canonical entry with sequence base plus its
-index and reads it as if it had come alone. Status, Ack, Error and the other
+History entries travel packed (PACK v2): consecutive entries fill one datagram
+up to a 681-byte payload as `[12][base seq varint][base frame varint][count]`,
+then per entry a tag byte (kind in bits 0..3; bits 4..5 the frame: same as the
+previous, the next, or a varint delta of at least 2 after the tag; bit 6 a
+BATCH's ID one more than the pack's previous BATCH of its source) and the
+entry's fields: BATCH `[source][batch id varint unless bit 6][len varint][batch]`,
+DEPARTURE `[source][lost 0 or 1]`, PAUSE `[epoch varint][paused][source]`, RATE
+and DESYNC their canonical bytes after the frame. The relay writes the one
+shortest encoding and the client refuses any other. Each pack decodes alone:
+the client rebuilds each canonical entry, byte for byte, with sequence base plus
+its index and reads it as if it had come alone. Status, Ack, Error and the other
 replies stay datagrams of their own. Each pushed reader has 64 entries of
 independent delivery credit, counted in new entries only. Receive watermarks
 acknowledge contiguous retained data, never simulation progress or another
@@ -277,7 +312,7 @@ packet stalls the whole merged stream.
 
 The RAM hot cache retains4,096 entries/2 MiB per room under a64 MiB global
 budget. Eviction from this cache does not evict match history: every complete
-canonical frame first appends to the encrypted full-match disk journal. The data
+canonical frame first appends to the full-match disk journal. The data
 file uses a length prefix per entry and the separate offset index is also on
 disk; no full-match index grows in RAM. Push and Pull share one reader for the
 cache and journal, always from the recipient's independent sequence. Active
@@ -318,9 +353,10 @@ every room starts a millisecond after the previous one ended, plus once after
 each datagram it accepts, so rejected traffic, junk included, adds no pass.
 
 Explicit Leave is retried on the original socket until a terminal acknowledgement
-echoes that exact signed request. This idempotent operation alone remains valid
-after ticket expiry, for as long past it as a room can live plus 300 seconds:
-both MACs still verify, and an existing room checks its
+echoes that exact signed request. After a Leave, or once its ticket expired, a
+session takes only Leave, each answered again, for as long as a room can live
+plus 300 seconds; then it is released. Its tag still verifies, and an existing
+room checks its
 certified source and retained principal/generation. An already expired, absent
 room can acknowledge without recreating membership or storage. Other expired
 operations remain rejected. Menu cleanup retains this transport until the
@@ -332,7 +368,7 @@ The unit owns `/var/lib/vera20k-relay` through `StateDirectory=vera20k-relay` an
 `StateDirectoryMode=0700`. The executable requires `STATE_DIRECTORY`, or an
 explicit absolute `VERA_RELAY_STATE_DIR` for local development. Journal files
 are mode0600 in a mode0700 directory named only from the16-byte signed room ID.
-They contain encrypted batches and public ordering metadata, never payload keys.
+They contain the plaintext batches and ordering metadata, never keys.
 Journal reservations share 8 GiB and never preallocate disk space. Each room
 reserves all departures, an hour of empty frame ends at its certified FPS
 (0.9–5.2 MiB) and 32 MiB of commands per certified source, and keeps what it
