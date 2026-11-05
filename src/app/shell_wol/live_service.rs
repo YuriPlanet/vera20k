@@ -1522,6 +1522,22 @@ fn account_answered(
     }
 }
 
+/// VERA: keep the name the lobby accepted as `[VERA] OnlineName=`, so the
+/// next visit's login starts with it
+/// ([`crate::ui::wol_login::WolLoginState::open_online`]).
+fn remember_online_name(state: &mut AppState, nickname: &str) {
+    let profile = &mut state.persistence.options_profile;
+    if profile.online_name == nickname {
+        return;
+    }
+    profile.online_name = nickname.to_owned();
+    if let Some(config) = state.platform.game_config.as_ref()
+        && let Err(error) = profile.commit_online_name(config.paths.settings_dir())
+    {
+        log::warn!("Could not save the online name: {error}");
+    }
+}
+
 /// Keep the sign-in the lobby gave a password sign-in with Remember password,
 /// in place of another account's, which the lobby then forgets.
 fn remember_sign_in(
@@ -2199,6 +2215,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             if let Some(token) = sign_in_token {
                 remember_sign_in(settings_dir(state), service, &nickname, token);
             }
+            remember_online_name(state, &nickname);
             service.player_id = player_id;
             state.frontend.wol_account.nickname = nickname;
             state.frontend.wol_account.password.clear();

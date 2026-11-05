@@ -18,7 +18,7 @@ use crate::ui::shell::geom::{
 use crate::ui::shell::layout::status_line_rect;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::skirmish_shell::{COMBO_FACE_H, SavedSeedDescriptionEdit};
-use crate::ui::wol_account::{AccountSignIn, WolAccountForm};
+use crate::ui::wol_account::{AccountSignIn, WolAccountForm, valid_name};
 
 pub(crate) const DIALOG: DialogId = DialogId(0x010F);
 pub(crate) const LOGIN: u16 = 0x0539;
@@ -372,12 +372,20 @@ impl WolLoginState {
     /// VERA online: the buttons open their popups, which start from the last
     /// username. `remembered` is the account this computer signs in to
     /// without its password; it fills an empty username, and Login's popup
-    /// starts from it.
-    pub(crate) fn open_online(globals: &mut WolAccountGlobals, remembered: Option<&str>) -> Self {
+    /// starts from it. Otherwise `last`, the name of the last successful
+    /// sign-in (`[VERA] OnlineName=`), fills it, as the WOL persona file's
+    /// LastValid fills an empty nickname at WOL entry
+    /// (`0x0077B322..0x0077B399`). VERA: online visits never read that
+    /// file, so VERA.INI keeps the name instead.
+    pub(crate) fn open_online(
+        globals: &mut WolAccountGlobals,
+        remembered: Option<&str>,
+        last: Option<&str>,
+    ) -> Self {
         globals.password.clear();
         globals.remember = false;
         if globals.nickname.is_empty()
-            && let Some(name) = remembered
+            && let Some(name) = remembered.or(last.filter(|name| valid_name(name)))
         {
             globals.nickname = name.to_owned();
         }
@@ -1091,7 +1099,7 @@ mod tests {
             remember: true,
             ..Default::default()
         };
-        let mut login = WolLoginState::open_online(&mut globals, Some("Tanya"));
+        let mut login = WolLoginState::open_online(&mut globals, Some("Tanya"), None);
         assert!(globals.password.is_empty() && !globals.remember);
         // The page takes no text: its popups do.
         login.insert_text("x", &mut globals, &[]);
@@ -1133,7 +1141,7 @@ mod tests {
     #[test]
     fn a_new_password_keeps_the_remembered_sign_in() {
         let mut globals = WolAccountGlobals::default();
-        let mut login = WolLoginState::open_online(&mut globals, Some("Tanya"));
+        let mut login = WolLoginState::open_online(&mut globals, Some("Tanya"), None);
         assert_eq!(globals.nickname, "Tanya", "it fills an empty username");
         let reset = |name: &str| AccountSignIn {
             name: name.into(),
@@ -1146,6 +1154,32 @@ mod tests {
         login.account_deleted("TANYA");
         login.signed_up(reset("Tanya"), &mut globals);
         assert!(!globals.remember, "a deleted account is forgotten");
+    }
+
+    #[test]
+    fn the_last_online_name_fills_an_empty_login_after_a_remembered_account() {
+        // The last sign-in's name comes back, and the popups start from it.
+        let mut globals = WolAccountGlobals::default();
+        let mut login = WolLoginState::open_online(&mut globals, None, Some("Boris"));
+        assert_eq!(globals.nickname, "Boris");
+        assert_eq!(login.activate(LOGIN, &mut globals), None);
+        let form = login.account.as_ref().unwrap();
+        assert!(!form.remembered && form.fields[0].text() == "Boris");
+        // A remembered account still comes first.
+        let mut globals = WolAccountGlobals::default();
+        WolLoginState::open_online(&mut globals, Some("Tanya"), Some("Boris"));
+        assert_eq!(globals.nickname, "Tanya");
+        // A name typed earlier this run stays, and a saved name the lobby
+        // would refuse fills nothing.
+        let mut globals = WolAccountGlobals {
+            nickname: "Alpha".into(),
+            ..Default::default()
+        };
+        WolLoginState::open_online(&mut globals, None, Some("Boris"));
+        assert_eq!(globals.nickname, "Alpha");
+        let mut globals = WolAccountGlobals::default();
+        WolLoginState::open_online(&mut globals, None, Some("[New Player]"));
+        assert!(globals.nickname.is_empty());
     }
 
     #[test]

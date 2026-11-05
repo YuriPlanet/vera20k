@@ -1039,32 +1039,10 @@ impl App {
         // `prepare_multiplayer_settings` just refreshed above. The retained Rust
         // controls follow that same order, so a durable record changed since the
         // last visit reaches the page instead of the page keeping its old face.
-        state.frontend.multiplayer_shell_runtime.hydrate_shell(
+        state.frontend.multiplayer_shell_runtime.open_skirmish_page(
             &mut state.frontend.skirmish_shell_state,
-            state.frontend.scenario_catalog.shell_maps(),
+            &state.frontend.scenario_catalog,
             &state.frontend.skirmish_modes,
-        );
-        // VERA: a saved index on an Online row (the list grew since it was
-        // saved) names no file here. It moves to the first local map; with none,
-        // it goes past the end, which Start reports as no selected map.
-        let shell = &mut state.frontend.skirmish_shell_state;
-        let catalog = &state.frontend.scenario_catalog;
-        if catalog
-            .records()
-            .get(shell.selected_map_idx)
-            .is_some_and(|record| record.is_online())
-        {
-            shell.selected_map_idx = catalog
-                .first_local_index()
-                .unwrap_or(catalog.records().len());
-        }
-        crate::ui::skirmish_shell::repair_teams_for_selected_mode(
-            &mut state.frontend.skirmish_shell_state,
-            &state.frontend.skirmish_modes,
-        );
-        crate::ui::skirmish_shell::initialize_rows_for_selected_map(
-            &mut state.frontend.skirmish_shell_state,
-            state.frontend.scenario_catalog.shell_maps(),
         );
         // The skirmish dialog (0x102) slides its controls in on first paint like
         // every shell dialog; the per-frame slide trigger starts that wave once

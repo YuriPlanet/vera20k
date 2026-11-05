@@ -229,6 +229,10 @@ pub(crate) struct RetailOptionsProfile {
     /// updater offered it; empty, the default, offers every newer release.
     /// Only the updater changes it ([`Self::commit_skipped_update`]).
     pub(crate) skipped_update: String,
+    /// `[VERA] OnlineName=`: the name of the last successful online sign-in,
+    /// as a guest or an account; empty, the default, until one succeeds.
+    /// Only that sign-in changes it ([`Self::commit_online_name`]).
+    pub(crate) online_name: String,
     /// `[VERA] Display=`: the screen the game opens on, by the window system's
     /// own name (`\\.\DISPLAY1`). Absent or empty means the system's choice,
     /// which is how every earlier build behaved. A name no longer attached
@@ -328,6 +332,7 @@ impl Default for RetailOptionsProfile {
             translate_chat: None,
             language: crate::i18n::DEFAULT_LANGUAGE.to_owned(),
             skipped_update: String::new(),
+            online_name: String::new(),
             display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
             window_placement: None,
         }
@@ -589,6 +594,11 @@ impl RetailOptionsProfile {
             if let Some(value) = vera.read_name("SkipUpdate", 16) {
                 self.skipped_update = value.to_owned();
             }
+            if let Some(value) =
+                vera.read_name("OnlineName", crate::ui::wol_account::NAME_LIMIT + 1)
+            {
+                self.online_name = value.to_owned();
+            }
             if let Some(value) = vera.read_name("Display", DISPLAY_CAPACITY) {
                 self.display =
                     crate::ui::main_menu_dialogs::options::DisplayTarget::from_ini_value(value);
@@ -816,6 +826,19 @@ impl RetailOptionsProfile {
             input,
             VERA_SECTION,
             &[("SkipUpdate", self.skipped_update.as_str())],
+        )
+    }
+
+    /// The online sign-in's writer: `[VERA] OnlineName=` alone.
+    pub(crate) fn commit_online_name(&self, settings_dir: &Path) -> io::Result<()> {
+        profile_file::update(settings_dir, |input| self.transform_online_name(input))
+    }
+
+    fn transform_online_name(&self, input: &[u8]) -> Vec<u8> {
+        set_ini_values(
+            input,
+            VERA_SECTION,
+            &[("OnlineName", self.online_name.as_str())],
         )
     }
 
@@ -1649,6 +1672,25 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                 .retained_profile
                 .skipped_update,
             "0.2.4"
+        );
+    }
+
+    #[test]
+    fn online_name_round_trips_and_survives_the_quit_writer() {
+        let startup = RetailStartupOptions::default();
+        let input = b"[VERA]\nTranslateChat=off\n";
+        let mut profile = load_snapshot(&startup, input).retained_profile;
+        assert_eq!(profile.online_name, "");
+        profile.online_name = "Boris_2".to_owned();
+        let written = profile.transform_online_name(input);
+        assert!(String::from_utf8_lossy(&written).contains("TranslateChat=off"));
+        // Quit writes the profile loaded at startup, which predates the sign-in.
+        let quit = load_snapshot(&startup, input)
+            .retained_profile
+            .transform_settings(&written);
+        assert_eq!(
+            load_snapshot(&startup, &quit).retained_profile.online_name,
+            "Boris_2"
         );
     }
 
