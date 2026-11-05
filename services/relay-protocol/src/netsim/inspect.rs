@@ -4,15 +4,32 @@
 //! the 13-byte ACK, 32-byte STATUS and PushState) for the baseline, and the
 //! adaptive one (UPLINK request 8, the 31-byte ACK and 50-byte STATUS of
 //! spec §3.2-§3.4). Which ones a run may contain is the judgments' business.
+//!
+//! It also reads the compacted wire of services/relay/bandwidth-compaction/
+//! spec.md (below "compaction spec"): envelope v3 (§6.1), PACK v2 (§5.2,
+//! §5.3), the varint ordering messages (§7) and plaintext batches (§3.1).
+//! `client_datagram` / `server_datagram` tell the two apart by the first
+//! byte: v2 starts with the magic "VR2C" / "VR2S", v3 with `hdr`, whose
+//! bits 5..7 are 3 (compaction spec §6.1); `'V'` = 0x56 has 2 there. Every
+//! PACK record also carries its canonical record bytes (transport spec
+//! §3.5: `[kind][seq u64][frame u32][rest]`), rebuilt from either PACK
+//! version, for byte comparisons (compaction spec §5.1, §12.2).
+
+pub mod v3;
 
 /// One datagram, by its envelope and payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Datagram {
     pub kind: &'static str,
+    /// The envelope version: 2 (`VR2C` / `VR2S`) or 3 (compaction spec §6.1).
+    pub version: u8,
     /// The hop counter: `sent` of a client envelope, `seq` of a relay one.
     pub hop_seq: u64,
-    /// A relay envelope's ticket nonce (bytes 21..37), which names the hop.
+    /// A v2 relay envelope's ticket nonce (bytes 21..37), which names the hop.
     pub nonce: Option<[u8; 16]>,
+    /// A v3 envelope's `session` (compaction spec §6.1, §6.2), which names
+    /// the hop; 0 on HELLO and CONFIRM.
+    pub session: Option<u32>,
     /// The envelope's payload length.
     pub payload_len: usize,
     pub detail: Detail,
@@ -75,6 +92,13 @@ pub struct PackRecord {
     pub opaque_len: Option<usize>,
     /// DEPARTURE of a lost connection.
     pub lost: bool,
+    /// The canonical record: `[kind][seq u64][frame u32][rest]` (transport
+    /// spec §3.5), the same whichever PACK version carried it (compaction
+    /// spec §5.1).
+    pub canonical: Vec<u8>,
+    /// The bytes this record took in its PACK: `2 + len` in v1, its entry
+    /// in v2.
+    pub wire_len: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,6 +142,11 @@ pub enum Detail {
         base: u64,
         count: u8,
         records: Vec<PackRecord>,
+    },
+    /// A v3 READY answering a CONFIRM: the hop's new session (compaction
+    /// spec §6.1, §6.2). A READY answering a PING carries none.
+    HopReady {
+        session: u32,
     },
 }
 
@@ -246,9 +275,32 @@ fn uplink(payload: &[u8]) -> Result<Uplink, String> {
     })
 }
 
+/// A client datagram of either envelope version (see the module notes).
+pub fn client_datagram(bytes: &[u8]) -> Result<Datagram, String> {
+    if is_v3(bytes) {
+        v3::client_datagram(bytes)
+    } else {
+        client_datagram_v2(bytes)
+    }
+}
+
+/// A relay datagram of either envelope version (see the module notes).
+pub fn server_datagram(bytes: &[u8]) -> Result<Datagram, String> {
+    if is_v3(bytes) {
+        v3::server_datagram(bytes)
+    } else {
+        server_datagram_v2(bytes)
+    }
+}
+
+/// Compaction spec §6.1: `hdr` bits 5..7 are the protocol version, 3.
+fn is_v3(bytes: &[u8]) -> bool {
+    bytes.first().is_some_and(|hdr| hdr >> 5 == v3::VERSION)
+}
+
 /// A client datagram: `[VR2C][kind][ticket 98][sent u64][target][len u16]
 /// [payload][hmac 32]` (spec §3.1).
-pub fn client_datagram(bytes: &[u8]) -> Result<Datagram, String> {
+fn client_datagram_v2(bytes: &[u8]) -> Result<Datagram, String> {
     if bytes.len() < CLIENT_HEADER + MAC || &bytes[..4] != b"VR2C" {
         return Err("client envelope".into());
     }
@@ -307,8 +359,10 @@ pub fn client_datagram(bytes: &[u8]) -> Result<Datagram, String> {
     };
     Ok(Datagram {
         kind,
+        version: 2,
         hop_seq,
         nonce: None,
+        session: None,
         payload_len: length,
         detail,
     })
@@ -334,6 +388,9 @@ fn packed_record(seq: u64, record: &[u8]) -> Result<PackRecord, String> {
             record.len()
         ));
     }
+    let mut canonical = vec![record[0]];
+    canonical.extend_from_slice(&seq.to_le_bytes());
+    canonical.extend_from_slice(&record[1..]);
     Ok(PackRecord {
         seq,
         kind: record[0],
@@ -343,6 +400,8 @@ fn packed_record(seq: u64, record: &[u8]) -> Result<PackRecord, String> {
         batch_id: (record[0] == 3).then(|| u64_at(record, 6)),
         opaque_len: (record[0] == 3).then(|| record.len() - 14),
         lost: record[0] == 5 && record.len() == 7,
+        canonical,
+        wire_len: 2 + record.len(),
     })
 }
 
@@ -356,7 +415,7 @@ fn feedback(payload: &[u8], offset: usize) -> Feedback {
 
 /// A relay datagram: `[VR2S][kind][room 16][nonce 16][seq u64][source]
 /// [len u16][payload][hmac 32]` (spec §3.1).
-pub fn server_datagram(bytes: &[u8]) -> Result<Datagram, String> {
+fn server_datagram_v2(bytes: &[u8]) -> Result<Datagram, String> {
     if bytes.len() < SERVER_HEADER + MAC || &bytes[..4] != b"VR2S" {
         return Err("server envelope".into());
     }
@@ -448,8 +507,10 @@ pub fn server_datagram(bytes: &[u8]) -> Result<Datagram, String> {
     };
     Ok(Datagram {
         kind,
+        version: 2,
         hop_seq,
         nonce: Some(nonce),
+        session: None,
         payload_len: length,
         detail,
     })

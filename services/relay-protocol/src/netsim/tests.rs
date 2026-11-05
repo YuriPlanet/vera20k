@@ -87,3 +87,61 @@ fn the_inspector_rejects_a_length_that_disagrees_with_the_envelope() {
     bytes.push(0);
     assert!(inspect::client_datagram(&bytes).is_err());
 }
+
+/// The inspector's own compacted-wire code against the spec's rules
+/// (bandwidth-compaction spec §5.2-§5.4, §8): its encoder's PACK decodes
+/// back to the same canonical records, and §5.3 rule 6's non-shortest
+/// forms and §8's are refused.
+#[test]
+fn the_v3_inspector_round_trips_and_refuses_non_shortest_forms() {
+    use inspect::v3;
+    let mut at = 0;
+    assert!(v3::read_varint(&[0x80, 0x00], &mut at).is_err());
+    let mut ten = vec![0xFF; 9];
+    ten.push(0x02);
+    assert!(v3::read_varint(&ten, &mut { 0 }).is_err());
+    ten[9] = 0x01;
+    assert_eq!(v3::read_varint(&ten, &mut { 0 }), Ok(u64::MAX));
+    let record = |kind: u8, seq: u64, frame: u32, rest: &[u8]| {
+        let mut bytes = vec![kind];
+        bytes.extend_from_slice(&seq.to_le_bytes());
+        bytes.extend_from_slice(&frame.to_le_bytes());
+        bytes.extend_from_slice(rest);
+        bytes
+    };
+    let batch = |id: u64| {
+        let mut rest = vec![2];
+        rest.extend_from_slice(&id.to_le_bytes());
+        rest.extend_from_slice(&[7; 19]);
+        rest
+    };
+    let records = vec![
+        record(3, 300, 5, &batch(9)),
+        record(3, 301, 5, &batch(10)),
+        record(4, 302, 5, &[]),
+        record(4, 303, 9, &[]),
+    ];
+    let pack = v3::encode_pack(&records).unwrap();
+    // [12][300 = AC 02][5][4], BATCH absolute, BATCH by bit6, FRAME_END
+    // same frame, FRAME_END by delta 4.
+    assert_eq!(pack[..8], [12, 0xAC, 0x02, 5, 4, 0x03, 2, 9]);
+    assert_eq!(pack[28..32], [0x43, 2, 19, 7]);
+    assert_eq!(pack[pack.len() - 3..], [0x04, 0x24, 4]);
+    let (base, _, decoded) = v3::decode_pack(&pack).unwrap();
+    assert_eq!(base, 300);
+    let canonical: Vec<Vec<u8>> = decoded.into_iter().map(|r| r.canonical).collect();
+    assert_eq!(canonical, records);
+    // §5.3 rule 6: an absolute ID where bit6 applies.
+    let mut unchained = pack[..28].to_vec();
+    unchained.extend_from_slice(&[0x03, 2, 10, 19]);
+    unchained.extend_from_slice(&pack[32..]);
+    assert!(v3::decode_pack(&unchained).is_err());
+    // §5.3 rule 6: delta 1 written as code 2.
+    let mut slow = pack[..pack.len() - 2].to_vec();
+    slow.extend_from_slice(&[0x24, 1]);
+    assert!(v3::decode_pack(&slow).is_err());
+    let key = [5; 32];
+    let sealed = v3::seal(&key, true, v3::PING, 77, 3, &[]);
+    assert!(v3::tag_ok(&key, true, &sealed) && !v3::tag_ok(&key, false, &sealed));
+    assert_eq!(inspect::client_datagram(&sealed).unwrap().kind, "PING");
+}

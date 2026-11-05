@@ -451,3 +451,256 @@ fn appendix_a_packet_by_packet() {
         0,
     );
 }
+
+/// A v3 datagram's payload (bandwidth-compaction spec §6.1).
+fn payload_v3(record: &WireRecord) -> &[u8] {
+    let bytes = record.bytes.as_ref().expect("keep_wire_bytes");
+    &bytes[super::inspect::v3::HEADER..bytes.len() - super::inspect::v3::HOP_TAG_LEN]
+}
+
+/// Datagram length (no IP/UDP), hop sequence and payload length.
+fn sized(record: &WireRecord, len: usize, hop_seq: u64, payload_len: usize) {
+    assert_eq!(
+        record.len,
+        len,
+        "{} at {} ms",
+        record.kind(),
+        record.sent_ms()
+    );
+    envelope(record, hop_seq, payload_len);
+}
+
+/// Appendix A again on the compacted wire, every length and byte derived
+/// from services/relay/bandwidth-compaction/spec.md alone: envelope v3 of
+/// 13 B (§6.1), varint UPLINK / ACK / STATUS (§7, §8), plaintext batches
+/// without version or FRAME_INFO (§3, §4: A's move command is 34 - 1 - 14 =
+/// 19 B) and PACK v2 (§5.2, §5.4). Same scenario, same timeline; only bytes
+/// change (§0 "发送策略不变").
+#[test]
+#[ignore = "waits for bandwidth compaction"]
+fn appendix_a_packet_by_packet_compacted() {
+    let scenario = SCENARIO.replacen(
+        r#""name": "appendix-a","#,
+        r#""name": "appendix-a-v3", "keep_wire_bytes": true, "command_bytes": 19,"#,
+        1,
+    );
+    let (_, trace) = Simulation::new(Scenario::from_json(&scenario).unwrap()).run_traced();
+    use Direction::{Down, Up};
+    let session = |record: &WireRecord| record.parsed.as_ref().unwrap().session.unwrap();
+
+    // A.2, packets 1-4: session 0 until READY names the hop's (§6.1, §6.2).
+    for (client, t) in [(A, 0.0), (B, 30.0)] {
+        let hello = packet(&trace, Up, client, "HELLO", t);
+        sized(hello, 111, 1, 98);
+        assert_eq!(session(hello), 0);
+        let challenge = packet(&trace, Down, client, "CHALLENGE", t + 20.0);
+        sized(challenge, 53, 1, 40);
+        assert_eq!(session(challenge), 0);
+        let confirm = packet(&trace, Up, client, "CONFIRM", t + 40.0);
+        sized(confirm, 151, 2, 138);
+        assert_eq!(session(confirm), 0);
+        let ready = packet(&trace, Down, client, "READY", t + 60.0);
+        sized(ready, 13, 1, 0);
+        assert_ne!(session(ready), 0);
+        // Every later datagram of the hop carries it, both ways.
+        let hop_session = session(ready);
+        assert!(
+            trace
+                .of(client, Up)
+                .chain(trace.of(client, Down))
+                .filter(|r| r.sent_us > ready.sent_us
+                    && !matches!(r.kind(), "HELLO" | "CONFIRM" | "CHALLENGE"))
+                .all(|r| session(r) == hop_session)
+        );
+    }
+
+    // A.3, packets 5-7.
+    sized(packet(&trace, Up, A, "READY_REQUEST", 80.0), 113, 3, 100);
+    let ready = packet(&trace, Down, A, "O_READY", 100.0);
+    sized(ready, 22, 2, 9);
+    assert_eq!(payload_v3(ready), [0, 1, 0, 0, 0, 3, 0, 0, 0]);
+    let reply = packet(&trace, Down, A, "STATUS", 100.0);
+    sized(reply, 35, 3, 22);
+    assert_eq!(
+        payload_v3(reply),
+        [
+            1, 0, 1, 1, 3, 0, 0, 0, 30, 0, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0
+        ]
+    );
+    // Packet 8: start_delay_ms 200 takes two varint bytes (0xC8 0x01).
+    sized(packet(&trace, Up, B, "READY_REQUEST", 110.0), 113, 3, 100);
+    let reply = packet(&trace, Down, B, "STATUS", 130.0);
+    sized(reply, 36, 3, 23);
+    assert_eq!(&payload_v3(reply)[10..12], [0xC8, 0x01]);
+    // Packets 9-13: 105 and 75 fit one byte.
+    sized(packet(&trace, Down, A, "STATUS", 225.0), 35, 5, 22);
+    sized(packet(&trace, Down, B, "STATUS", 255.0), 35, 5, 22);
+    let reply = packet(&trace, Down, A, "STATUS", 350.0);
+    sized(reply, 35, 7, 22);
+    assert_eq!(payload_v3(reply)[11], 1); // started
+
+    // Packet 14: the first UPLINK, 18 B.
+    let first = packet(&trace, Up, A, "UPLINK", 370.0);
+    sized(first, 31, 6, 18);
+    assert_eq!(
+        payload_v3(first),
+        [8, 1, 1, 7, 0x7F, 0, 0, 0, 0, 0, 0, 0, 40, 40, 11, 0, 0, 0]
+    );
+    sized(packet(&trace, Up, B, "UPLINK", 400.0), 31, 6, 18);
+
+    // A.4, packets 15-16: two and four FRAME_ENDs, one tag byte each.
+    let turn = packet(&trace, Down, A, "PACK", 396.7);
+    sized(turn, 19, 8, 6);
+    assert_eq!(payload_v3(turn), [12, 1, 1, 2, 0x04, 0x14]);
+    sized(packet(&trace, Down, B, "PACK", 420.0), 19, 8, 6);
+    for client in [A, B] {
+        let turn = packet(&trace, Down, client, "PACK", 463.3);
+        sized(turn, 21, 9, 8);
+        assert_eq!(payload_v3(turn), [12, 1, 1, 4, 0x04, 0x14, 0x14, 0x14]);
+    }
+
+    // Packet 17.
+    let ack = packet(&trace, Up, A, "UPLINK", 470.0);
+    sized(ack, 31, 7, 18);
+    assert_eq!(
+        payload_v3(ack),
+        [8, 1, 3, 8, 0xFF, 0, 0, 0, 0, 0, 0, 0, 40, 40, 11, 0, 0, 0]
+    );
+
+    // Packet 18: the 19 B plaintext rides as [count 1][id 1][len 19][P].
+    let plaintext = &trace.plaintexts[A][0].1;
+    assert_eq!((trace.plaintexts[A][0].0, plaintext.len()), (1, 19));
+    let command = packet(&trace, Up, A, "UPLINK", 480.0);
+    sized(command, 52, 8, 39);
+    let body = payload_v3(command);
+    assert_eq!(
+        body[..20],
+        [
+            8, 1, 3, 8, 0xFF, 0, 0, 0, 0, 0, 0, 0, 40, 40, 11, 0, 0, 1, 1, 19
+        ]
+    );
+    assert_eq!(&body[20..], plaintext.as_slice());
+
+    // Packet 19: the ACK, 13 B.
+    let reply = packet(&trace, Down, A, "ACK", 500.0);
+    sized(reply, 26, 10, 13);
+    assert_eq!(
+        payload_v3(reply),
+        [2, 1, 5, 8, 0x7F, 0, 0, 0, 0, 0, 0, 0, 0]
+    );
+
+    // Packet 20: f3 f4 piggybacked, the BATCH one frame on (tag 0x13, an
+    // absolute ID: first of its source in the pack), f5 same frame, f6.
+    let turn = packet(&trace, Down, A, "PACK", 530.0);
+    sized(turn, 44, 11, 31);
+    let body = payload_v3(turn);
+    assert_eq!(body[..10], [12, 3, 3, 5, 0x04, 0x14, 0x13, 0, 1, 19]);
+    assert_eq!(&body[10..29], plaintext.as_slice());
+    assert_eq!(body[29..], [0x04, 0x14]);
+
+    // Packets 21-23 to and from B.
+    let lost = packet(&trace, Up, B, "UPLINK", 500.0);
+    sized(lost, 31, 7, 18);
+    assert!(lost.lost());
+    let turn = packet(&trace, Down, B, "PACK", 530.0);
+    sized(turn, 46, 10, 33);
+    assert!(turn.lost());
+    let turn = packet(&trace, Down, B, "PACK", 596.7);
+    sized(turn, 48, 11, 35);
+    let body = payload_v3(turn);
+    assert_eq!(
+        body[..12],
+        [12, 1, 1, 9, 0x04, 0x14, 0x14, 0x14, 0x13, 0, 1, 19]
+    );
+    assert_eq!(body[31..], [0x04, 0x14, 0x14, 0x14]);
+
+    // Packet 24: down_bits 0x7FD stays a fixed u64.
+    let ack = packet(&trace, Up, B, "UPLINK", 616.7);
+    sized(ack, 31, 8, 18);
+    assert_eq!(
+        payload_v3(ack),
+        [
+            8, 1, 10, 11, 0xFD, 0x07, 0, 0, 0, 0, 0, 0, 40, 40, 11, 0, 0, 0
+        ]
+    );
+
+    // Packet 25: turn 5 from B's acked_next 10, then the heartbeat.
+    let turn = packet(&trace, Down, B, "PACK", 663.3);
+    sized(turn, 19, 12, 6);
+    assert_eq!(payload_v3(turn), [12, 10, 9, 2, 0x04, 0x14]);
+    let heartbeat = packet(&trace, Down, B, "STATUS", 670.0);
+    sized(heartbeat, 35, 13, 22);
+    assert_eq!(
+        payload_v3(heartbeat),
+        [
+            1, 10, 1, 12, 3, 0, 0, 0, 30, 0, 0, 1, 8, 0x7D, 0, 0, 0, 0, 0, 0, 0, 33
+        ]
+    );
+
+    // Packet 26.
+    let ack = packet(&trace, Up, B, "UPLINK", 716.7);
+    sized(ack, 31, 9, 18);
+    assert_eq!(payload_v3(ack)[3], 13);
+    assert_eq!(payload_v3(ack)[4..6], [0xF7, 0x1F]);
+
+    // Packets 27-28: one checksum adds [frame 15][checksum u32], 5 B.
+    for client in [A, B] {
+        let first = trace
+            .of(client, Up)
+            .find(|r| r.uplink().is_some_and(|u| !u.checksums.is_empty()))
+            .expect("a checksum UPLINK");
+        assert_eq!((first.len, first.payload_len()), (36, 23));
+        assert_eq!(payload_v3(first)[16..18], [1, 15]);
+    }
+
+    // Packet 29 and its ACK into frame 19.
+    // It may also carry frame 15's checksum (packets 27-28), 5 B more.
+    let command = packet(&trace, Up, B, "UPLINK", 950.0);
+    let extra = 5 * command.uplink().unwrap().checksums.len();
+    sized(command, 52 + extra, command.hop_seq(), 39 + extra);
+    let reply = packet(&trace, Down, B, "ACK", 970.0);
+    sized(reply, 26, reply.hop_seq(), 13);
+    assert_eq!(payload_v3(reply)[..3], [2, 1, 19]);
+    // Turn 10: B's BATCH as one 23 B entry with B's plaintext.
+    for client in [A, B] {
+        let (_, records) = pack(packet(&trace, Down, client, "PACK", 996.7));
+        let batch = &records[records.len() - 3];
+        assert_eq!(batch.wire_len, 23);
+        assert_eq!(&batch.canonical[22..], trace.plaintexts[B][0].1.as_slice());
+    }
+
+    // Packet 30: [pace 0][fps 30][tick_micros 2100 = 0xB4 0x10].
+    let paced = trace
+        .of(A, Up)
+        .find(|r| r.uplink().is_some_and(|u| u.flags & FLAG_PACE != 0))
+        .expect("a pace UPLINK");
+    let extra = 5 * paced.uplink().unwrap().checksums.len();
+    assert_eq!((paced.len, paced.payload_len()), (35 + extra, 22 + extra));
+    assert_eq!(payload_v3(paced)[1], 3);
+    assert_eq!(payload_v3(paced)[17 + extra..], [0, 30, 0xB4, 0x10, 0]);
+
+    // A.5, packets 31-32.
+    let leave = packet(&trace, Up, A, "LEAVE", 1480.0);
+    sized(leave, 14, leave.hop_seq(), 1);
+    sized(
+        packet(&trace, Down, A, "LEAVE_ACK", 1500.0),
+        13,
+        leave.hop_seq(),
+        0,
+    );
+    // Packet 33: DEPARTURE [tag 0x05 or 0x15][source 0][lost 0], f35, f36.
+    let turn = packet(&trace, Down, B, "PACK", 1530.0);
+    let body = payload_v3(turn);
+    assert_eq!(body[body.len() - 4..], [0, 0, 0x04, 0x14]);
+    let (_, records) = pack(turn);
+    assert_eq!(records[records.len() - 3].wire_len, 3);
+    // Packets 34-35.
+    let leave = packet(&trace, Up, B, "LEAVE", 2000.0);
+    sized(leave, 14, leave.hop_seq(), 1);
+    sized(
+        packet(&trace, Down, B, "LEAVE_ACK", 2020.0),
+        13,
+        leave.hop_seq(),
+        0,
+    );
+}

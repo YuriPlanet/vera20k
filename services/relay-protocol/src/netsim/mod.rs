@@ -60,6 +60,7 @@ enum Action {
     Leave,
     Renew,
     Restore(bool),
+    Rebind,
 }
 
 enum Event {
@@ -72,6 +73,8 @@ enum Event {
     ToRelay(usize, Vec<u8>, usize),
     ToClient(usize, Vec<u8>),
     Action(usize, Action),
+    /// The next datagram of `scenario.forgeries[i]`.
+    Forge(usize),
 }
 
 struct Queued {
@@ -114,8 +117,13 @@ struct Client {
     endpoint: SocketAddrV4,
     driver: Box<dyn HeadlessClient>,
     ticket: Ticket,
-    /// Each hop's ticket nonce, which names relay datagrams' hop.
+    /// Each hop's ticket nonce, which names v2 relay datagrams' hop.
     nonces: Vec<[u8; 16]>,
+    /// Each hop's v3 session once its READY was seen (compaction spec §6.2),
+    /// which names v3 datagrams' hop.
+    sessions: Vec<Option<u32>>,
+    /// Each hop's packet key (`derive_packet_key`), for tag checks.
+    hop_keys: Vec<[u8; 32]>,
     up: Link,
     down: Link,
     commands: Rng,
@@ -163,6 +171,8 @@ pub struct Simulation {
     /// it sent (before loss) and what reached it (copies included).
     relay_sent: Traffic,
     relay_received: Traffic,
+    /// Datagrams sent per `scenario.forgeries` entry.
+    forged_sent: Vec<usize>,
     trace: Option<Trace>,
 }
 
@@ -196,12 +206,9 @@ impl Simulation {
                 generation: 1,
             };
             let signed = ticket.sign(&key).expect("ticket");
-            let mut session = ClientSession::new(
-                &signed,
-                *derive_packet_key(&key, &signed).expose_for_https(),
-                PAYLOAD_KEY,
-            )
-            .expect("client session");
+            let hop_key = *derive_packet_key(&key, &signed).expose_for_https();
+            let mut session =
+                ClientSession::new(&signed, hop_key, PAYLOAD_KEY).expect("client session");
             if scenario.preset_measured_good {
                 session.preset_uplink_measured_good();
             }
@@ -226,6 +233,8 @@ impl Simulation {
                 driver,
                 ticket,
                 nonces: vec![ticket.nonce],
+                sessions: vec![None],
+                hop_keys: vec![hop_key],
                 up: Link::new(up, stream(0)),
                 down: Link::new(down, stream(1)),
                 commands: stream(2),
@@ -250,6 +259,7 @@ impl Simulation {
             relay_rejects: BTreeMap::new(),
             relay_sent: Traffic::default(),
             relay_received: Traffic::default(),
+            forged_sent: vec![0; scenario.forgeries.len()],
             trace: None,
             scenario,
         };
@@ -289,9 +299,25 @@ impl Simulation {
                     (window.client, window.to_ms, Action::Restore(false)),
                 ]
             }))
+            .chain(
+                simulation
+                    .scenario
+                    .rebinds
+                    .iter()
+                    .map(|at| (at.client, at.at_ms, Action::Rebind)),
+            )
             .collect();
         for (client, at_ms, action) in actions {
             simulation.schedule(at_ms * 1000, Event::Action(usize::from(client), action));
+        }
+        let forgeries: Vec<u64> = simulation
+            .scenario
+            .forgeries
+            .iter()
+            .map(|forgery| forgery.from_ms)
+            .collect();
+        for (index, from_ms) in forgeries.into_iter().enumerate() {
+            simulation.schedule(from_ms * 1000, Event::Forge(index));
         }
         simulation
     }
@@ -413,6 +439,7 @@ impl Simulation {
             arrivals_us: arrivals.clone(),
             origin: Origin::Client,
             len: bytes.len(),
+            bytes: self.scenario.keep_wire_bytes.then(|| bytes.clone()),
             parsed,
             relay_result: None,
         });
@@ -446,12 +473,28 @@ impl Simulation {
                 vec!["MALFORMED"]
             }
         };
-        let hop = parsed
-            .as_ref()
-            .ok()
-            .and_then(|datagram| datagram.nonce)
-            .and_then(|nonce| client.nonces.iter().position(|known| *known == nonce))
-            .unwrap_or(0);
+        let hop = match parsed.as_ref() {
+            Ok(datagram) if datagram.version == 3 => {
+                // Compaction spec §6.2: a READY with the hop's first relay
+                // sequence names the newest hop's session; session 0
+                // (CHALLENGE) belongs to the hop being set up, the newest.
+                let newest = client.nonces.len() - 1;
+                if let Detail::HopReady { session } = datagram.detail {
+                    client.sessions[newest] = Some(session);
+                }
+                let session = datagram.session.unwrap_or(0);
+                client
+                    .sessions
+                    .iter()
+                    .position(|known| *known == Some(session))
+                    .unwrap_or(newest)
+            }
+            parsed => parsed
+                .ok()
+                .and_then(|datagram| datagram.nonce)
+                .and_then(|nonce| client.nonces.iter().position(|known| *known == nonce))
+                .unwrap_or(0),
+        };
         if measured {
             client.observed.down.add(kinds[0], bytes.len());
             self.relay_sent.add(kinds[0], bytes.len());
@@ -474,6 +517,7 @@ impl Simulation {
             arrivals_us: arrivals.clone(),
             origin,
             len: bytes.len(),
+            bytes: self.scenario.keep_wire_bytes.then(|| bytes.clone()),
             parsed,
             relay_result: None,
         });
@@ -489,7 +533,89 @@ impl Simulation {
         for datagram in datagrams {
             if let Some(&index) = self.endpoints.get(&datagram.endpoint) {
                 self.send_down(index, datagram.bytes, at_us, origin);
+            } else if let Some(trace) = self.trace.as_mut() {
+                // A former address after a rebind, or a forger's.
+                trace.misrouted.push((at_us, datagram.endpoint));
             }
+        }
+    }
+
+    /// A forger's address: `10.9.<forgery>.<k + 1>` (compaction spec §6.4
+    /// counts failures per IP, so each one is its own).
+    fn forger_endpoint(forgery: usize, k: u8) -> SocketAddrV4 {
+        SocketAddrV4::new(Ipv4Addr::new(10, 9, forgery as u8, k + 1), 50_000)
+    }
+
+    /// One forged CONTROL datagram on the client's newest known session, a
+    /// random sequence and a random tag (compaction spec §6.4), then the
+    /// next one. No session yet: nothing to forge, try again later.
+    fn forge(&mut self, index: usize, at_us: u64) {
+        let forgery = self.scenario.forgeries[index];
+        if at_us >= forgery.to_ms * 1000 {
+            return;
+        }
+        let period_us = 1_000_000 / u64::from(forgery.per_second);
+        let client = usize::from(forgery.client);
+        let sent = self.forged_sent[index];
+        let session = self.clients[client]
+            .sessions
+            .iter()
+            .rev()
+            .flatten()
+            .next()
+            .copied();
+        if let Some(session) = session {
+            let mut random = Rng::new(
+                self.scenario.seed ^ 0xF0F0,
+                (index as u64) << 32 | sent as u64,
+            );
+            let mut bytes = vec![inspect::v3::VERSION << 5 | inspect::v3::CONTROL];
+            bytes.extend_from_slice(&session.to_le_bytes());
+            bytes.extend_from_slice(&(random.next_u64() as u32 | 1).to_le_bytes());
+            // An empty UPLINK body would do; random bytes after its type.
+            bytes.push(8);
+            bytes.extend((0..17).map(|_| random.next_u64() as u8));
+            bytes.extend_from_slice(&(random.next_u64() as u32).to_le_bytes());
+            let endpoint = if forgery.spoof_client {
+                self.clients[client].endpoint
+            } else {
+                Self::forger_endpoint(index, (sent % usize::from(forgery.addresses)) as u8)
+            };
+            let now_ms = at_us / 1000;
+            let result = self
+                .relay
+                .process_at(endpoint, &bytes, unix(now_ms), now_ms);
+            let replies = result.as_ref().map_or(0, |output| output.len());
+            if let Some(trace) = self.trace.as_mut() {
+                trace.forged.push(trace::Forged {
+                    forgery: index,
+                    at_us,
+                    endpoint,
+                    result: result
+                        .as_ref()
+                        .map(|_| ())
+                        .map_err(|error| format!("{error:?}")),
+                    replies,
+                });
+            }
+            if let Ok(output) = result {
+                self.route(output, at_us, Origin::Reply);
+            }
+        }
+        self.forged_sent[index] += usize::from(session.is_some());
+        self.schedule(at_us + period_us, Event::Forge(index));
+    }
+
+    /// The client moves to a new address (compaction spec §6.2 "换地址"):
+    /// datagrams to the old one are lost from now on.
+    fn rebind(&mut self, index: usize) {
+        let old = self.clients[index].endpoint;
+        let new = SocketAddrV4::new(*old.ip(), old.port() + 1);
+        self.endpoints.remove(&old);
+        self.endpoints.insert(new, index);
+        self.clients[index].endpoint = new;
+        if let Some(trace) = self.trace.as_mut() {
+            trace.endpoints[index].push(new);
         }
     }
 
@@ -571,11 +697,10 @@ impl Simulation {
         let signed = ticket.sign(&self.key).expect("renewed ticket");
         client.ticket = ticket;
         client.nonces.push(ticket.nonce);
-        client.driver.renew(
-            &signed,
-            *derive_packet_key(&self.key, &signed).expose_for_https(),
-            now_ms,
-        );
+        client.sessions.push(None);
+        let hop_key = *derive_packet_key(&self.key, &signed).expose_for_https();
+        client.hop_keys.push(hop_key);
+        client.driver.renew(&signed, hop_key, now_ms);
         for outgoing in self.clients[index].driver.take_output() {
             self.send_up(index, outgoing, at_us);
         }
@@ -592,19 +717,11 @@ impl Simulation {
         (report, trace.expect("traced"))
     }
 
-    fn run_inner(mut self, traced: bool) -> (Report, Option<Trace>) {
-        if traced {
-            self.trace = Some(Trace {
-                issued: vec![Vec::new(); self.clients.len()],
-                ..Trace::default()
-            });
-        }
-        let (_, end) = self.window();
+    /// Handles every event before `end_us`, in order.
+    fn step_until(&mut self, end_us: u64) {
         let event_mode = self.scenario.service == ServiceMode::Event;
-        while let Some(Queued { at_us, event, .. }) = self.queue.pop() {
-            if at_us >= end {
-                break;
-            }
+        while self.queue.peek().is_some_and(|next| next.at_us < end_us) {
+            let Queued { at_us, event, .. } = self.queue.pop().unwrap();
             match event {
                 Event::RelayPass => {
                     self.relay_pass(at_us);
@@ -671,6 +788,7 @@ impl Simulation {
                         self.client_tick(index, at_us, false);
                     }
                 }
+                Event::Forge(index) => self.forge(index, at_us),
                 Event::Action(index, action) => {
                     match action {
                         Action::Command => {
@@ -684,6 +802,7 @@ impl Simulation {
                         Action::Restore(restoring) => {
                             self.clients[index].driver.set_restoring(restoring)
                         }
+                        Action::Rebind => self.rebind(index),
                     }
                     if event_mode {
                         self.client_tick(index, at_us, false);
@@ -691,13 +810,37 @@ impl Simulation {
                 }
             }
         }
+    }
+
+    /// The relay's canonical history, every committed record in sequence
+    /// order (compaction spec §12.2). No production interface reads it yet:
+    /// `history` is private to the ordering room and the journal encrypted,
+    /// so this waits for a test-support hook (reported).
+    fn relay_history(&self) -> Option<Vec<Vec<u8>>> {
+        None
+    }
+
+    fn run_inner(mut self, traced: bool) -> (Report, Option<Trace>) {
+        if traced {
+            self.trace = Some(Trace {
+                issued: vec![Vec::new(); self.clients.len()],
+                endpoints: self.clients.iter().map(|c| vec![c.endpoint]).collect(),
+                ..Trace::default()
+            });
+        }
+        let (_, end) = self.window();
+        self.step_until(end);
         let report = self.report();
+        let history = self.relay_history();
         if let Some(trace) = self.trace.as_mut() {
+            trace.relay_history = history;
             for client in &self.clients {
                 let log = client.driver.log();
                 trace.seals.push(log.seals.clone());
                 trace.executed.push(log.commands.clone());
                 trace.streams.push(client.driver.reader().read().to_vec());
+                trace.plaintexts.push(log.plaintexts.clone());
+                trace.hop_keys.push(client.hop_keys.clone());
             }
         }
         (report, self.trace.take())
@@ -870,6 +1013,8 @@ pub fn run_json(text: &str) -> Result<Report, String> {
 
 #[cfg(test)]
 mod appendix_a;
+#[cfg(test)]
+mod compaction;
 #[cfg(test)]
 mod judgments;
 #[cfg(test)]
