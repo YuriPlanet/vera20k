@@ -616,7 +616,20 @@ team ladders refuses `winners`; the game then finishes again without it.
 `ladder` with up to 64 names answers with the running season's records of those that
 played a rated game in it (`season` is `null` and `records` empty when no season runs).
 The game shows them as each player's rank and badge: one lookup fills both its ladder
-and high-score tables.
+and high-score tables. Every ranked game, Quick Match, team game or free-for-all, moves
+one rating per player, shown as OS: μ − σ, as Beyond All Reason shows skill, about 16.7
+for a new player. A record's `points` is its player's OS rounded, and `rank` their place
+among the season's players by OS. After a rated game each of its players hears their new
+OS from `VERA20k`, such as `Ranked game won: your OS is now 19.57 (+2.90).`
+
+`GET /v1/players/<name>` answers the player profile vera20k.org shows:
+`{name,os,season,rank,wins,losses,disconnects,games}`, `rank` being `null` when the player
+is unranked in the running season, and `games` their 20 newest rated games, each
+`{ended,sides,size,won,os,change}`. A name without an account answers 404.
+`GET /v1/leaderboard` answers the leaderboard vera20k.org shows, renewed once a minute:
+`{season,updated_at,total,players}`, `season` being `null` when no season runs, `total` the
+players ranked in it and `players` the best 1,000 of them by OS, then wins, each
+`{name,os,rank,wins,losses}`.
 
 While a season runs, the host's options for a game room whose players are all on teams,
 or in a mode without alliances, give an odds line, which the room hears from the `VERA20k`
