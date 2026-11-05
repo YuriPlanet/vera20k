@@ -68,6 +68,21 @@ dir vollständig zugeschrieben.
 
 Diskutiert wird auf [Discord](https://discord.gg/kmjRUn5m5F) und in der QQ-Gruppe (1097193563).
 
+## Architektur
+
+Die Engine besteht aus drei Hauptteilen:
+
+- **Simulation:** Verwaltet Spielzustand und Spiellogik.
+- **Rendering:** Eine völlig neue GPU-Rendering-Pipeline mit den ursprünglichen Spieldaten,
+  gebaut, um das ursprüngliche Erscheinungsbild zu bewahren.
+- **Anwendung:** Übernimmt Eingaben, Menüs, Audio und Plattformintegration und verbindet die Systeme.
+
+Diese Trennung unterstützt einen deterministischen Spielablauf.
+
+Die Pfeile zeigen den Datenfluss:
+
+![Die Anwendung sendet Befehle an die Simulation, die den Weltzustand zurückgibt; die Anwendung sendet Zeichendaten an das Rendering.](docs/images/architecture.de.png)
+
 ## Kompilieren und starten
 
 Du brauchst:

@@ -69,6 +69,21 @@ contribution.
 
 Discussion is on [Discord](https://discord.gg/kmjRUn5m5F) and in the QQ group (1097193563).
 
+## Architecture
+
+The engine has three main parts:
+
+- **Simulation:** Owns gameplay state and logic.
+- **Rendering:** An absolutely new GPU rendering pipeline using the original game assets, built
+  to preserve the original look.
+- **Application:** Handles input, menus, audio, and platform integration, connecting the systems.
+
+This separation supports deterministic gameplay.
+
+Arrows show data flow:
+
+![Application sends commands to simulation, which returns world state; application sends draw data to rendering.](docs/images/architecture.png)
+
 ## Build and run
 
 You need:
