@@ -1630,8 +1630,15 @@ fn merge_overlay_zone_type(current: Option<u8>, candidate: Option<u8>) -> Option
     }
 }
 
-pub(super) fn wheel_speed_at_or_below_one_percent(wheel: Option<u8>) -> bool {
-    wheel.is_some_and(|speed| speed <= 1)
+pub(super) fn wheel_speed_at_or_below_one_percent(
+    wheel: Option<crate::util::native_x87::NativeF32Bits>,
+) -> bool {
+    // RecalcZoneType483D57..483D69 accepts only Greater here: its AH41 test
+    // makes Less, Equal and Unordered impassable.
+    wheel.is_some_and(|speed| {
+        crate::rules::terrain_rules::compare_speed_to_one_percent(speed)
+            != crate::util::native_x87::MaskedX87Ordering::Greater
+    })
 }
 
 /// Reproduce the active map-load order: initialize every allocated Size-diamond

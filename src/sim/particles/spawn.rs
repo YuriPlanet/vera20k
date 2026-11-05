@@ -1073,8 +1073,8 @@ mod tests {
     }
 
     #[test]
-    fn spawn_particle_returns_false_when_holds_what_unset() {
-        // [Sys] without HoldsWhat — minimal INI to leave holds_what = None.
+    fn spawn_particle_constructs_empty_named_type_when_holds_what_unset() {
+        // ParticleSystemTypeReadINI64430F binds the empty-named ParticleType.
         let ini_text = "[ParticleSystems]\n\
                         1=NoHold\n\
                         [NoHold]\n\
@@ -1100,13 +1100,16 @@ mod tests {
             .particle_systems
             .take_for_tick(sys_id)
             .unwrap();
-        assert!(!spawn_particle(
+        assert!(spawn_particle(
             &mut sys,
             IVec3::ZERO,
             IVec3::ZERO,
             &rules,
             &mut sim
         ));
-        assert!(sys.particles.is_empty());
+        assert_eq!(sys.particles.len(), 1);
+        let particle = &sys.particles[0];
+        assert_eq!(rules.particle_type(particle.type_id()).name, "");
+        assert_eq!(particle.lifetime_remaining(), 1);
     }
 }

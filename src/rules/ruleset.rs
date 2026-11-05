@@ -34,7 +34,7 @@ use crate::rules::object_type::{
     BuildCategory, FactoryType, HouseMasks, ObjectCategory, ObjectType,
 };
 use crate::rules::particle_system_type::{ParticleSystemType, ParticleSystemTypeId};
-use crate::rules::particle_type::{ParticleType, ParticleTypeId, PendingParticleType};
+use crate::rules::particle_type::{ParticleType, ParticleTypeId};
 use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup};
 use crate::rules::projectile_type::ProjectileType;
 use crate::rules::radar_event_config::RadarEventConfig;
@@ -956,6 +956,12 @@ pub struct GeneralRules {
     /// vector (`0x00667034`), which native would index out of bounds; VERA treats
     /// a missing entry as 0 (no grant).
     pub multiplayer_ai_cm: Vec<i32>,
+    /// `[General] AIHateDelays=`: raw frame counts in Hard/Normal/Easy order.
+    /// RulesClass::ReadGeneral0066FDB1..0066FDD9 reads the retained vector
+    /// through ReadINI_IntVector00475D70. Post_Map_Init00686A12..00686A2B
+    /// starts each nonhuman, nonpassive House's enemy-search timer from it.
+    /// The native constructor leaves the vector empty, not at retail30,50,70.
+    ai_hate_delays: Vec<i32>,
     /// Aircraft types in native Rules `PadAircraft` order. BuildingType's
     /// virtual value calculation reads the first two entries for the bundled
     /// helipad-cost branch.
@@ -1017,8 +1023,9 @@ pub struct GeneralRules {
     /// Slots 3/4/6..10 come from `[General]`; slot 5 is the second declared
     /// `[Animations]` entry. Slots 0..2 intentionally have no external anim.
     pub infantry_death_anims: [Option<String>; 11],
-    /// Whether the attack cursor appears on a disguised Spy (AttackCursorOnDisguise= in [General]).
-    /// Default false (vanilla RA2). When false, a disguised Spy does not show the attack cursor.
+    /// `[General] AttackCursorOnDisguise`, Rules+D6C: constructor66681A
+    /// clears it; ReadGeneral66FC36..66FC50 retains the current byte.
+    /// The shared manual-attack query owns the disguise and blink exceptions.
     pub attack_cursor_on_disguise: bool,
     /// `[General] DefaultMirageDisguises=` selection pool, in source order.
     pub default_mirage_disguises: Vec<String>,
@@ -1739,15 +1746,20 @@ pub struct GeneralRules {
     /// `0x006AF748`). ReadRange at `0x00670300`; constructor `0x1000`
     /// (`0x00667656`). Retail `14` is 3584.
     pub slave_miner_slave_scan: i32,
-    /// `[General] DrainMoneyFrameDelay=` (`Rules+0x314`, stock 30). The drained
+    /// `[CombatDamage] DrainMoneyFrameDelay=` (`Rules+0x314`, stock 30).
+    /// RulesClass::Constructor665650 writes100 at665AC8; ReadCombatDamage
+    /// 66C973..66C98C retains the current signed value through ReadInt5276D0.
+    /// The drained
     /// object's `TechnoClass::AI_Update @ 0x006FA167..0x006FA17B` transfers
     /// money only on frames where `g_CurrentFrameCounter % delay == 0`
-    /// (signed `IDIV`, remainder test). Constructor default UNCHECKED.
+    /// (signed `IDIV`, remainder test).
     pub drain_money_frame_delay: i32,
-    /// `[General] DrainMoneyAmount=` (`Rules+0x318`, stock 30). Per transfer
+    /// `[CombatDamage] DrainMoneyAmount=` (`Rules+0x318`, stock 30).
+    /// Constructor665AD2 writes0; ReadCombatDamage66C992..66C9AC retains it.
+    /// Per transfer
     /// `min(amount, Available_Money(victim))` moves from the victim's wallet
     /// (`Spend_Money @ 0x004F9790`) to the drainer's (`Add_Credits @
-    /// 0x004F9950`) at `0x006FA183..0x006FA1C0`. Constructor default UNCHECKED.
+    /// 0x004F9950`) at `0x006FA183..0x006FA1C0`.
     pub drain_money_amount: i32,
     /// `Rules+0x1788`, `[General] SlaveMinerLongScan=` in leptons: how far a
     /// slave miner looks for a field. ReadRange at `0x0067031F`; constructor
@@ -2656,6 +2668,7 @@ impl Default for GeneralRules {
             anim_to_infantry: Vec::new(),
             base_unit_types: Vec::new(),
             multiplayer_ai_cm: Vec::new(),
+            ai_hate_delays: Vec::new(),
             pad_aircraft_types: Vec::new(),
             separate_aircraft: false,
             prism_type: None,
@@ -2859,8 +2872,8 @@ impl Default for GeneralRules {
             buildup_time: f64::from_bits(0x3FA9_9999_9999_999A),
             slave_miner_short_scan: 0x500,
             slave_miner_slave_scan: 0x1000,
-            drain_money_frame_delay: 30,
-            drain_money_amount: 30,
+            drain_money_frame_delay: 100,
+            drain_money_amount: 0,
             slave_miner_long_scan: 0x5000,
             slave_miner_scan_correction: 0x300,
             slave_miner_kick_frame_delay: 0x7FFF_FFFF,
@@ -3509,6 +3522,10 @@ impl GeneralRules {
         self.maximum_cheer_rate
     }
 
+    pub(crate) fn ai_hate_delays(&self) -> &[i32] {
+        &self.ai_hate_delays
+    }
+
     pub(crate) fn cheer_sound(&self) -> Option<&str> {
         self.cheer_sound.as_deref()
     }
@@ -3886,6 +3903,8 @@ impl GeneralRules {
             multiplayer_ai_cm: general
                 .read_int_list("MultiplayerAICM")
                 .unwrap_or(defaults.multiplayer_ai_cm),
+            // The retained RulesClass vector is projected after all passes.
+            ai_hate_delays: defaults.ai_hate_delays,
             pad_aircraft_types: defaults.pad_aircraft_types.clone(),
             separate_aircraft: general.read_bool("SeparateAircraft", defaults.separate_aircraft),
             // Only the ordered Process projection binds these references/reads.
@@ -3894,7 +3913,8 @@ impl GeneralRules {
             tiberium_grows: general.read_bool("TiberiumGrows", true),
             tiberium_spreads: general.read_bool("TiberiumSpreads", true),
             growth_rate_minutes: general.read_double("GrowthRate", 2.0) as f32,
-            attack_cursor_on_disguise: general.read_bool("AttackCursorOnDisguise", false),
+            // Published from the retained General pass owner.
+            attack_cursor_on_disguise: defaults.attack_cursor_on_disguise,
             // Filled from the native ordered TerrainType list owner after
             // processing, including allocation/none-token/retention semantics.
             default_mirage_disguises: Vec::new(),
@@ -4150,8 +4170,9 @@ impl GeneralRules {
             buildup_time: general.read_double("BuildupTime", f64::from_bits(0x3FA9_9999_9999_999A)),
             slave_miner_short_scan: general.read_range("SlaveMinerShortScan", 0x500),
             slave_miner_slave_scan: general.read_range("SlaveMinerSlaveScan", 0x1000),
-            drain_money_frame_delay: general.read_int("DrainMoneyFrameDelay", 30),
-            drain_money_amount: general.read_int("DrainMoneyAmount", 30),
+            // Published from the retained CombatDamage pass owner below.
+            drain_money_frame_delay: defaults.drain_money_frame_delay,
+            drain_money_amount: defaults.drain_money_amount,
             slave_miner_long_scan: general.read_range("SlaveMinerLongScan", 0x5000),
             slave_miner_scan_correction: general.read_range("SlaveMinerScanCorrection", 0x300),
             slave_miner_kick_frame_delay: general.read_int("SlaveMinerKickFrameDelay", 0x7FFF_FFFF),
@@ -5075,6 +5096,7 @@ impl RuleSet {
         );
         rules.general.prism_support = processed.prism_support();
         rules.general.patrol_scan_minutes = processed.patrol_scan_minutes();
+        rules.general.ai_hate_delays = processed.ai_hate_delays().to_vec();
         (rules.general.shroud_grow, rules.general.shroud_rate) = processed.shroud_growth_inputs();
         rules.general.fog_rate = processed.fog_rate();
         rules.general.prism_type = processed.prism_type().map(str::to_owned);
@@ -5367,6 +5389,16 @@ impl RuleSet {
                 object.gunner_turrets = gunner_turrets.clone();
             }
         }
+        for (category, name, is_gattling, stages) in processed.gattling_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == category && object.id == name)
+            {
+                object.is_gattling = is_gattling;
+                object.gattling_stages = *stages;
+            }
+        }
         #[cfg(feature = "ares")]
         for (category, name, state) in processed.factory_owner_states() {
             if let Some(object) = rules
@@ -5647,15 +5679,6 @@ impl RuleSet {
                 .and_then(|super_weapon| super_weapon.generic_warhead.as_mut())
             {
                 settings.warhead = warhead.map(str::to_owned);
-            }
-        }
-        for (name, warhead) in processed.particle_warhead_states() {
-            if let Some(particle) = rules
-                .particle_types
-                .iter_mut()
-                .find(|particle| particle.name.eq_ignore_ascii_case(name))
-            {
-                particle.warhead = warhead.map(str::to_owned);
             }
         }
         for (name, references, damage) in processed.voxel_anim_reference_states() {
@@ -6107,6 +6130,9 @@ impl RuleSet {
         let mut building_ids: Vec<String> = Vec::new();
         let production: ProductionRules = ProductionRules::from_ini(ini);
         let mut general: GeneralRules = GeneralRules::from_ini(ini);
+        (general.drain_money_frame_delay, general.drain_money_amount) =
+            processed.drain_money_controls();
+        general.attack_cursor_on_disguise = processed.attack_cursor_on_disguise();
         general.tree_strength = processed.tree_strength();
         general.threat_coefficient_defaults = processed.threat_coefficient_defaults();
         general.bomb_ticking_sound = processed.bomb_ticking_sound().map(str::to_owned);
@@ -6142,7 +6168,7 @@ impl RuleSet {
         let initial_veteran = ini
             .section_or_empty("SpecialFlags")
             .read_bool("InitialVeteran", false);
-        let terrain_rules: TerrainRules = TerrainRules::from_ini(ini);
+        let terrain_rules: TerrainRules = processed.terrain_rules().clone();
         let tiberium_types = TiberiumTypeRegistry::from_processed_rules(processed);
         let bridge_rules: BridgeRules = BridgeRules::from_ini(ini);
         let crate_rules = CrateRules::default();
@@ -6488,12 +6514,11 @@ impl RuleSet {
                 .count(),
         );
 
-        // Step 7: Two-pass parse for [Particles] and [ParticleSystems].
-        // NextParticle is resolved in pass 2 so that INI ordering does not
-        // matter; HoldsWhat is the ordered Rules processor's retained binding.
-        let (particle_types, particle_types_by_name) = parse_particle_types(ini);
+        // Preserve actual allocations and per-pass bindings, including
+        // constructor-only particles reached through HoldsWhat/NextParticle.
+        let particle_types = processed.particle_type_projections().collect::<Vec<_>>();
         let (particle_system_types, particle_system_types_by_name) =
-            parse_particle_system_types(processed, &particle_types_by_name);
+            parse_particle_system_types(processed);
         let (voxel_anim_types, voxel_anim_types_by_name) = parse_voxel_anim_types(ini);
 
         log::info!(
@@ -7419,6 +7444,19 @@ impl RuleSet {
         // v34: Country starting-veterancy; optional extensions add domains below.
         b"rules-simulation-config-v34".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        // A previous scenario's list survives RulesClass's Type reset even
+        // when the incoming source text omits AIHateDelays.
+        if !self.general.ai_hate_delays.is_empty() {
+            b"ai-hate-delays-v1".hash(&mut hasher);
+            self.general.ai_hate_delays.hash(&mut hasher);
+        }
+        // Identical current text can inherit different CombatDamage values.
+        b"drain-money-controls-v1".hash(&mut hasher);
+        self.general.drain_money_frame_delay.hash(&mut hasher);
+        self.general.drain_money_amount.hash(&mut hasher);
+        // The separately saved global89EA40 table can differ for identical
+        // current INI text after earlier Process passes or a load.
+        self.terrain_rules.hash(&mut hasher);
         // ReadAudioVisual669A60/669A99/669FC3 can retain different fixed
         // sound references for identical current INI text after a reset/load.
         b"global-sound-references-v1".hash(&mut hasher);
@@ -7439,6 +7477,8 @@ impl RuleSet {
             })
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
+        b"attack-cursor-disguise-v1".hash(&mut hasher);
+        self.general.attack_cursor_on_disguise.hash(&mut hasher);
         // InfantryType ReadINI5245B8..5245F5 retains both theft bytes across
         // invalid later reads. Flattened text alone cannot identify that state.
         let mut theft_flags: Vec<_> = self
@@ -7504,6 +7544,19 @@ impl RuleSet {
             b"projectile-degenerates-v1".hash(&mut hasher);
             degenerating_projectiles.hash(&mut hasher);
         }
+        // Per-pass gates and overlapping writes can retain different tables
+        // for identical current sources.
+        b"gattling-v1".hash(&mut hasher);
+        self.object_list
+            .iter()
+            .map(|object| {
+                (
+                    (object.category, object.id.to_ascii_uppercase()),
+                    (object.is_gattling, object.gattling_stages),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
         b"country-parent-v1".hash(&mut hasher);
         // The native parent lookup scans registration order and checks Name
         // aliases as well as IDs. These retained inputs can differ after an
@@ -10890,64 +10943,6 @@ fn project_country_side_registry<'a>(
     }
 }
 
-/// Two-pass parse of `[Particles]`: collect `Pending` entries from each
-/// referenced section, then resolve each `NextParticle=` name to a
-/// `ParticleTypeId`. Missing references log a warning and stay `None`.
-fn parse_particle_types(ini: &IniFile) -> (Vec<ParticleType>, HashMap<String, ParticleTypeId>) {
-    let ids: Vec<String> = parse_registry(ini, "Particles");
-    if ids.is_empty() {
-        return (Vec::new(), HashMap::new());
-    }
-
-    // Pass 1: parse each section into PendingParticleType. Skip IDs whose
-    // section is missing — matches the behavior used elsewhere in this file.
-    let mut pending: Vec<PendingParticleType> = Vec::with_capacity(ids.len());
-    for id in &ids {
-        if let Some(section) = ini.section(id) {
-            pending.push(ParticleType::from_ini_section_pending(id, section));
-        } else {
-            log::trace!(
-                "ParticleType '{}' listed in [Particles] but has no section",
-                id
-            );
-        }
-    }
-
-    // Build the name → ID map (uppercase keys for case-insensitive lookup).
-    let mut by_name: HashMap<String, ParticleTypeId> = HashMap::with_capacity(pending.len());
-    for (idx, p) in pending.iter().enumerate() {
-        by_name.insert(
-            p.partial.name.to_ascii_uppercase(),
-            ParticleTypeId(idx as u32),
-        );
-    }
-
-    // Pass 2: resolve NextParticle references.
-    let particle_types: Vec<ParticleType> = pending
-        .into_iter()
-        .map(|p| {
-            let mut partial = p.partial;
-            if let Some(ref next_name) = p.next_particle_name {
-                let key = next_name.to_ascii_uppercase();
-                match by_name.get(&key) {
-                    Some(&id) => partial.next_particle = Some(id),
-                    None => {
-                        log::warn!(
-                            "ParticleType '{}': NextParticle='{}' references unknown particle, leaving unresolved",
-                            partial.name,
-                            next_name
-                        );
-                    }
-                }
-            }
-            partial
-        })
-        .collect();
-
-    log::info!("Particles: {} loaded", particle_types.len());
-    (particle_types, by_name)
-}
-
 /// `[VoxelAnims]` registry: the flying-debris types a death throws.
 ///
 /// Registry order is the id order, exactly as for particles and particle
@@ -10977,64 +10972,21 @@ fn parse_voxel_anim_types(ini: &IniFile) -> (Vec<VoxelAnimType>, HashMap<String,
     (types, by_name)
 }
 
-/// `[ParticleSystems]` in registry order, each bound to the ParticleType its
-/// retained `HoldsWhat` names (ParticleSystemType+294).
-///
-/// RESIDUAL: a reached pass that omits `HoldsWhat` binds the native
-/// empty-named ParticleType, a section-less type with constructor values that
-/// the `[Particles]` projection cannot list. VERA holds `None`, so the system
-/// spawns none of that type's particles. Only a layer that states a system
-/// without its `HoldsWhat` reaches it; every retail ParticleSystem section is
-/// in RULESMD and names a particle.
+/// System allocations retain their own body and direct HoldsWhat index.
 fn parse_particle_system_types(
     processed: &ProcessedRulesLayers,
-    p_by_name: &HashMap<String, ParticleTypeId>,
 ) -> (
     Vec<ParticleSystemType>,
     HashMap<String, ParticleSystemTypeId>,
 ) {
-    let ini = processed.ini();
-    let ids: Vec<String> = parse_registry(ini, "ParticleSystems");
-    if ids.is_empty() {
-        return (Vec::new(), HashMap::new());
+    let types: Vec<_> = processed.particle_system_type_projections().collect();
+    let mut by_name = HashMap::with_capacity(types.len());
+    for (index, system) in types.iter().enumerate() {
+        by_name
+            .entry(system.name.to_ascii_uppercase())
+            .or_insert(ParticleSystemTypeId(index as u32));
     }
-    // Equal truncated stored IDs share one projected body, the last such
-    // member's; its binding is inserted last.
-    let holds_what: HashMap<String, Option<&str>> = processed
-        .particle_system_holds_what_states()
-        .map(|(id, particle)| (id.to_ascii_uppercase(), particle))
-        .collect();
-
-    let mut particle_system_types = Vec::with_capacity(ids.len());
-    let mut by_name: HashMap<String, ParticleSystemTypeId> = HashMap::with_capacity(ids.len());
-    for id in &ids {
-        let Some(section) = ini.section(id) else {
-            log::trace!(
-                "ParticleSystemType '{}' listed in [ParticleSystems] but has no section",
-                id
-            );
-            continue;
-        };
-        let mut system = ParticleSystemType::from_ini_section(id, section);
-        if let Some(&Some(particle)) = holds_what.get(&id.to_ascii_uppercase()) {
-            system.holds_what = p_by_name.get(&particle.to_ascii_uppercase()).copied();
-            if system.holds_what.is_none() && !particle.is_empty() {
-                log::warn!(
-                    "ParticleSystemType '{}': HoldsWhat='{}' references unknown particle, leaving unresolved",
-                    id,
-                    particle
-                );
-            }
-        }
-        by_name.insert(
-            id.to_ascii_uppercase(),
-            ParticleSystemTypeId(particle_system_types.len() as u32),
-        );
-        particle_system_types.push(system);
-    }
-
-    log::info!("ParticleSystems: {} loaded", particle_system_types.len());
-    (particle_system_types, by_name)
+    (types, by_name)
 }
 
 #[cfg(test)]
@@ -12508,6 +12460,74 @@ CellSpread=0
     }
 
     #[test]
+    fn ai_hate_delays_retain_layers_and_saved_rules_lifetime() {
+        use crate::rules::native_processing::RulesLayerKind;
+        let Some(root) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let mut layers = RulesLayerStack::new(root);
+        assert_eq!(
+            RuleSet::from_rules_layers(&layers)
+                .unwrap()
+                .general
+                .ai_hate_delays(),
+            [30, 50, 70]
+        );
+        layers.push(
+            RulesLayerKind::LangRule,
+            IniFile::from_str("[General]\nAIHateDelays=31,51,71\n"),
+        );
+        assert_eq!(
+            RuleSet::from_rules_layers(&layers)
+                .unwrap()
+                .general
+                .ai_hate_delays(),
+            [31, 51, 71]
+        );
+        layers.push(
+            RulesLayerKind::GameMode,
+            IniFile::from_str("[General]\nAIHateDelays=32,52,72\n"),
+        );
+        assert_eq!(
+            RuleSet::from_rules_layers(&layers)
+                .unwrap()
+                .general
+                .ai_hate_delays(),
+            [32, 52, 72]
+        );
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[General]\nAIHateDelays=-7junk,0,15,99\n"),
+        );
+        let processed = layers.process().unwrap();
+        assert_eq!(
+            RuleSet::from_processed_rules(&processed)
+                .unwrap()
+                .general
+                .ai_hate_delays(),
+            [-7, 0, 15, 99]
+        );
+        let (_, trace) = processed.into_ini_and_native_type_construction_trace();
+        let retained = trace
+            .into_registry_state_discarding_events()
+            .destructive_reset();
+        let bytes = crate::util::save_codec::serialize(&retained).unwrap();
+        let retained = crate::util::save_codec::deserialize(&bytes).unwrap();
+        let missing = IniFile::from_str("[General]\naihatedelays=1,2,3\nAIHateDelays=\n");
+        let processed = RulesLayerStack::new(missing.clone())
+            .process_with_fixed_art_and_registry_state(&IniFile::empty(), retained)
+            .unwrap();
+        let retained = RuleSet::from_processed_rules(&processed).unwrap();
+        assert_eq!(retained.general.ai_hate_delays(), [-7, 0, 15, 99]);
+        let fresh = RuleSet::from_ini(&missing).unwrap();
+        assert!(fresh.general.ai_hate_delays().is_empty());
+        assert_ne!(
+            retained.simulation_config_hash(),
+            fresh.simulation_config_hash()
+        );
+    }
+
+    #[test]
     fn parse_tier1_superweapon_rules() {
         let ini_text = "[General]\n\
 ForceShieldRadius=5\n\
@@ -13929,7 +13949,7 @@ MaxLowPowerProductionSpeed=0.85
     }
 
     #[test]
-    fn two_pass_resolves_next_particle_regardless_of_order() {
+    fn factory_resolves_next_particle_regardless_of_order() {
         let extra = "\
 [Particles]
 1=ChainEnd
@@ -13951,7 +13971,7 @@ BehavesLike=Gas
     }
 
     #[test]
-    fn two_pass_resolves_holds_what() {
+    fn factory_resolves_holds_what() {
         let extra = "\
 [Particles]
 1=Smoke1
@@ -13974,7 +13994,7 @@ BehavesLike=Smoke
     }
 
     #[test]
-    fn missing_reference_logs_and_leaves_none() {
+    fn next_particle_allocates_a_missing_section_type() {
         let extra = "\
 [Particles]
 1=GhostRef
@@ -13986,7 +14006,12 @@ BehavesLike=Gas
         let ini = IniFile::from_str(&make_particle_test_rules(extra));
         let rs = RuleSet::from_ini(&ini).unwrap();
         let id = rs.p_type_id_by_name("GhostRef").unwrap();
-        assert_eq!(rs.particle_type(id).next_particle, None);
+        let next = rs.particle_type(id).next_particle.unwrap();
+        assert_eq!(rs.particle_type(next).name, "DoesNotExist");
+        assert_eq!(
+            rs.particle_type(next).behaves_like,
+            crate::rules::particle_type::ParticleBehavesLike::Unknown
+        );
     }
 
     #[test]

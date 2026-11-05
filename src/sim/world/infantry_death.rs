@@ -392,7 +392,7 @@ impl Simulation {
                 // unbound row admits.
                 cell.speed_costs
                     .cost_for_speed_type(crate::rules::locomotor_type::SpeedType::Foot)
-                    == Some(0)
+                    .is_some_and(|cost| cost.is_zero())
             });
         if footless && !on_bridge {
             return false;

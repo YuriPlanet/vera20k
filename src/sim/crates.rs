@@ -1402,8 +1402,9 @@ pub(crate) mod tests {
             .unwrap()
             .cell_mut_for_test(cell.0, cell.1)
             .unwrap();
-        terrain_cell.speed_costs.track = Some(0);
-        terrain_cell.speed_costs.float = Some(100);
+        terrain_cell.speed_costs.track =
+            Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+        terrain_cell.speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::ONE);
 
         let result = validate_and_stamp_candidate(
             &mut sim,
@@ -1430,8 +1431,8 @@ pub(crate) mod tests {
             .unwrap()
             .cell_mut_for_test(cell.0, cell.1)
             .unwrap();
-        zero_cell.speed_costs.track = Some(100);
-        zero_cell.speed_costs.float = Some(0);
+        zero_cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
+        zero_cell.speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
         assert_eq!(
             validate_and_stamp_candidate(
                 &mut zero_float,
@@ -1459,7 +1460,8 @@ pub(crate) mod tests {
             .cell_mut_for_test(cell.0, cell.1)
             .unwrap();
         terrain_cell.bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
-        terrain_cell.speed_costs.track = Some(0);
+        terrain_cell.speed_costs.track =
+            Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
         visible
             .substrate
             .raw_cell_occupation
@@ -1484,7 +1486,7 @@ pub(crate) mod tests {
             .cell_mut_for_test(cell.0, cell.1)
             .unwrap();
         terrain_cell.bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
-        terrain_cell.speed_costs.track = Some(100);
+        terrain_cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
         non_object_deck
             .substrate
             .raw_cell_occupation
@@ -1512,7 +1514,7 @@ pub(crate) mod tests {
             .cell_mut_for_test(cell.0, cell.1)
             .unwrap();
         terrain_cell.bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
-        terrain_cell.speed_costs.track = Some(100);
+        terrain_cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
         object_deck
             .substrate
             .raw_cell_occupation
@@ -1620,7 +1622,10 @@ pub(crate) mod tests {
                 .cell(cell.0, cell.1)
                 .unwrap();
             assert_eq!(projected.land_type, LandType::Road.as_index());
-            assert_eq!(projected.speed_costs.foot, Some(37));
+            assert_eq!(
+                projected.speed_costs.foot,
+                Some(crate::rules::terrain_rules::test_speed_percent(37))
+            );
         }
         let repeated = sim.overlay_grid.as_mut().unwrap().recalculate_runtime_cell(
             sim.resolved_terrain.as_mut().unwrap(),
@@ -1710,7 +1715,7 @@ pub(crate) mod tests {
             .cell_mut_for_test(cell.0, cell.1)
             .unwrap()
             .speed_costs
-            .track = Some(0);
+            .track = Some(crate::rules::terrain_rules::test_speed_percent(0));
 
         assert_eq!(
             validate_and_stamp_candidate(
@@ -2586,8 +2591,10 @@ pub(crate) mod tests {
             let wrong_movement_decoy = (13, 12);
             let mut terrain = uniform_terrain(false);
             for cell in terrain.cells_mut_for_test() {
-                cell.speed_costs.float = Some(0);
-                cell.speed_costs.track = Some(0);
+                cell.speed_costs.float =
+                    Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+                cell.speed_costs.track =
+                    Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
             }
             let drawn_cell = terrain
                 .cell_mut_for_test(drawn.0, drawn.1)
@@ -2605,8 +2612,8 @@ pub(crate) mod tests {
             let destination_cell = terrain
                 .cell_mut_for_test(destination.0, destination.1)
                 .expect("destination cell");
-            destination_cell.speed_costs.float = Some(100);
-            destination_cell.speed_costs.track = Some(100);
+            destination_cell.speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::ONE);
+            destination_cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
             destination_cell.land_type = if drawn_is_water {
                 LandType::Clear.as_index()
             } else {
@@ -2616,9 +2623,9 @@ pub(crate) mod tests {
                 .cell_mut_for_test(wrong_movement_decoy.0, wrong_movement_decoy.1)
                 .expect("wrong-movement decoy");
             if drawn_is_water {
-                decoy.speed_costs.track = Some(100);
+                decoy.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
             } else {
-                decoy.speed_costs.float = Some(100);
+                decoy.speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::ONE);
             }
             sim.resolved_terrain = Some(terrain);
 
@@ -2654,7 +2661,7 @@ pub(crate) mod tests {
         let mut sim = sim_with_grid(1);
         let mut terrain = uniform_terrain(false);
         for cell in terrain.cells_mut_for_test() {
-            cell.speed_costs.track = Some(0);
+            cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
         }
         // Both preferred candidates are on ring 9. Engine ring order encounters
         // (29,11) first and (11,20) second, while nearest-to-origin would choose
@@ -2663,9 +2670,9 @@ pub(crate) mod tests {
             .cell_mut_for_test(29, 11)
             .expect("candidate A")
             .speed_costs
-            .track = Some(100);
+            .track = Some(crate::rules::terrain_rules::test_speed_percent(100));
         let selected = terrain.cell_mut_for_test(11, 20).expect("candidate B");
-        selected.speed_costs.track = Some(100);
+        selected.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
         selected.bridge_facts.raw_flags |= BRIDGE_FLAG_STRUCTURAL;
         sim.resolved_terrain = Some(terrain);
 
@@ -2700,7 +2707,7 @@ pub(crate) mod tests {
         let mut sim = sim_with_grid(1);
         let mut terrain = uniform_terrain(false);
         for cell in terrain.cells_mut_for_test() {
-            cell.speed_costs.track = Some(0);
+            cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
         }
         // Both candidates are valid cells inside the 40x40 terrain rectangle.
         // Ring order visits (8,3) first, but the native diamond below admits
@@ -2710,12 +2717,12 @@ pub(crate) mod tests {
             .cell_mut_for_test(8, 3)
             .expect("rectangular-only candidate")
             .speed_costs
-            .track = Some(100);
+            .track = Some(crate::rules::terrain_rules::test_speed_percent(100));
         terrain
             .cell_mut_for_test(8, 5)
             .expect("in-diamond candidate")
             .speed_costs
-            .track = Some(100);
+            .track = Some(crate::rules::terrain_rules::test_speed_percent(100));
         sim.resolved_terrain = Some(terrain);
         sim.set_playfield_bounds_for_test(Some(PlayfieldBounds {
             base: 10,
@@ -2751,13 +2758,14 @@ pub(crate) mod tests {
         use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
 
         let speed_costs = SpeedCostProfile {
-            foot: Some(100),
-            track: Some(100),
-            wheel: Some(100),
-            float: Some(100),
-            amphibious: Some(100),
-            float_beach: Some(100),
-            hover: Some(100),
+            foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         };
         let land_type = if water {
             LandType::Water.as_index()

@@ -107,30 +107,6 @@ pub struct ParticleSystem {
     in_limbo: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct SparkRuntimeState {
-    pub velocity_x: NativeF32Bits,
-    pub velocity_y: NativeF32Bits,
-    pub velocity_z: NativeF32Bits,
-    pub start_rgb: [u8; 3],
-    pub color_index: i32,
-    pub color_accumulator: NativeF64Bits,
-}
-
-/// Behavior-4 state. `ParticleSystemClass::AI_Railgun @ 0x0062F230` replaces
-/// the particle's direction (`+0x10C`) after construction; the constructor
-/// (`0x0062B707..0x0062B71B`) stores its coordinate as floats (`+0x118`), which
-/// `ParticleClass::AI_Railgun @ 0x0062C3A0` advances every frame. The colour
-/// fields are the constructor's `+0xB0` seed and the `+0xB4`/`+0xB8` step that
-/// Spark also uses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct RailgunRuntimeState {
-    pub position: [NativeF32Bits; 3],
-    pub start_rgb: [u8; 3],
-    pub color_index: i32,
-    pub color_accumulator: NativeF64Bits,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Particle {
     /// Shared Object handle for its native Display AIR entry.
@@ -143,6 +119,18 @@ pub struct Particle {
     coords: IVec3,
     #[serde(with = "ivec3_serde")]
     origin: IVec3,
+    /// Constructor62B674..62B69F retains both endpoints; GetDrawFrame62D830
+    /// uses them even after the parent system has retired.
+    #[serde(with = "ivec3_serde")]
+    target: IVec3,
+    /// Constructor62B707..62B71B stores the original (unclamped) source as
+    /// floats for every particle. AI_Railgun62C3A0 advances these words.
+    float_position: [NativeF32Bits; 3],
+    /// Shared +B0/+B4/+B8 colour state, initialized by Constructor62B5E0
+    /// for every behavior and consumed by Spark/Railgun AI and drawing.
+    start_rgb: [u8; 3],
+    color_index: i32,
+    color_accumulator: NativeF64Bits,
     /// `+0x10C`: the constructor's normalized target vector, which Fire's AI
     /// scales into its step and AI_Railgun replaces with its drift vector.
     /// It is distinct from the Gas motion words.
@@ -162,13 +150,6 @@ pub struct Particle {
     drift_x: i32,
     drift_y: i32,
     drift_z: i32,
-
-    /// Authoritative behavior-3 state. Generic direction/velocity fields
-    /// remain authoritative for the existing Smoke/Gas/Fire implementations only.
-    spark: Option<SparkRuntimeState>,
-    /// Authoritative behavior-4 state; `None` for every other behavior.
-    #[serde(default)]
-    railgun: Option<RailgunRuntimeState>,
 
     /// `+0x100`: Fire's step, written by its AI (`0x0062CBB0`) and added to
     /// Location by its move (`0x0062D64E`). Zero for every other behavior.
@@ -232,8 +213,20 @@ impl Particle {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub fn set_spark_for_test(&mut self, value: Option<SparkRuntimeState>) {
-        self.spark = value;
+    pub fn set_color_for_test(&mut self, rgb: [u8; 3], index: i32, accumulator: NativeF64Bits) {
+        self.start_rgb = rgb;
+        self.color_index = index;
+        self.color_accumulator = accumulator;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn float_position_mut_for_test(&mut self) -> &mut [NativeF32Bits; 3] {
+        &mut self.float_position
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_target_for_test(&mut self, target: IVec3) {
+        self.target = target;
     }
 
     pub const fn type_id(&self) -> ParticleTypeId {
@@ -292,12 +285,47 @@ impl Particle {
         self.drift_z
     }
 
-    pub const fn spark(&self) -> Option<SparkRuntimeState> {
-        self.spark
+    pub const fn target(&self) -> IVec3 {
+        self.target
+    }
+    pub const fn float_position(&self) -> [NativeF32Bits; 3] {
+        self.float_position
+    }
+    pub const fn start_rgb(&self) -> [u8; 3] {
+        self.start_rgb
+    }
+    pub const fn color_index(&self) -> i32 {
+        self.color_index
+    }
+    pub const fn color_accumulator(&self) -> NativeF64Bits {
+        self.color_accumulator
     }
 
-    pub const fn railgun(&self) -> Option<RailgunRuntimeState> {
-        self.railgun
+    /// ParticleClass::GetDrawFrame @ 0x0062D830: Fire projects each saved
+    /// endpoint separately through6D2140, then75F230. Both animation bytes
+    /// are sign-extended; unknown behavior returns frame zero.
+    pub fn draw_frame(&self, kind: &ParticleType) -> i32 {
+        let state = i32::from(self.animation_state as i8);
+        match kind.behaves_like {
+            ParticleBehavesLike::Gas | ParticleBehavesLike::Smoke => state,
+            ParticleBehavesLike::Fire => {
+                let project = |point: IVec3| {
+                    let (x, y) = crate::util::lepton::project_absolute_lepton_xy(point.x, point.y);
+                    (
+                        x,
+                        y.wrapping_sub(crate::util::native_x87::adjust_for_z_standard(point.z)),
+                    )
+                };
+                let octant = crate::util::direction::direction_from_projected(
+                    project(self.origin),
+                    project(self.target),
+                );
+                state + (octant & 3) * i32::from(kind.end_state_ai as i8)
+            }
+            ParticleBehavesLike::Unknown
+            | ParticleBehavesLike::Spark
+            | ParticleBehavesLike::Railgun => 0,
+        }
     }
 
     pub const fn prev_delta(&self) -> [i32; 3] {
@@ -325,7 +353,6 @@ impl Particle {
     /// normalized direction and drift. Original Particle62B5E0 reaches
     /// Abstract410230 -> Scenario68BCB0 before its lifetime draw. Spark, Fire,
     /// Smoke and Gas all use this boundary; children never join global Logic.
-    /// Gas, Smoke and Fire read no colour, so the seed is dropped here.
     /// Executed constructor/CRC controls: tools/procedural_drawing_oracle/electric_bolt.
     pub(super) fn new(
         type_id: ParticleTypeId,
@@ -334,18 +361,17 @@ impl Particle {
         pt: &ParticleType,
         sim: &mut Simulation,
     ) -> Self {
-        let (particle, _start_rgb) =
-            Self::new_with_ground(type_id, coords, target, pt, sim, |sim, x, y| {
-                spark_world::constructor_ground_height(sim, x, y)
-            })
-            .expect("particle construction requires supported ground facts");
+        let particle = Self::new_with_ground(type_id, coords, target, pt, sim, |sim, x, y| {
+            spark_world::constructor_ground_height(sim, x, y)
+        })
+        .expect("particle construction requires supported ground facts");
         Simulation::reveal_particle(&mut sim.substrate, particle.stable_id);
         particle
     }
 
     /// Constructor62B5E0 terrain seam used by the existing Spark controls,
-    /// with the start colour its seed (`0x0062BA51`) picks for any type with
-    /// a `ColorList`. Spark registers only after that colour initialization.
+    /// including the colour seed (`0x0062BA51`) for any type with a
+    /// `ColorList`. Spark registers only after that colour initialization.
     pub(super) fn new_with_ground<E, F>(
         type_id: ParticleTypeId,
         coords: IVec3,
@@ -353,7 +379,7 @@ impl Particle {
         pt: &ParticleType,
         sim: &mut Simulation,
         mut ground: F,
-    ) -> Result<(Self, [u8; 3]), E>
+    ) -> Result<Self, E>
     where
         F: FnMut(&Simulation, i32, i32) -> Result<Option<i32>, E>,
     {
@@ -391,6 +417,14 @@ impl Particle {
             type_id,
             coords: location,
             origin: coords,
+            target,
+            float_position: coords.to_array().map(|axis| {
+                use crate::util::native_x87::MaskedX87Chop53 as Fpu;
+                Fpu::store_f32_masked_chop(Fpu::load_i32(axis))
+            }),
+            start_rgb,
+            color_index: 0,
+            color_accumulator: NativeF64Bits::POSITIVE_ZERO,
             direction,
             motion: [
                 NativeF32Bits::POSITIVE_ZERO,
@@ -407,11 +441,9 @@ impl Particle {
             drift_x: 0,
             drift_y: 0,
             drift_z: 0,
-            spark: None,
-            railgun: None,
             prev_delta: [0; 3],
         };
-        Ok((particle, start_rgb))
+        Ok(particle)
     }
 }
 
@@ -573,7 +605,10 @@ impl ParticleSystem {
     /// sets it here, before each of those reads, once its owner no longer
     /// holds it. An owner gone altogether also ends spawning: AI_Fire's owner
     /// test sets the byte too.
-    pub(crate) fn apply_fire_link_release(&mut self, entities: &crate::sim::entity_store::EntityStore) {
+    pub(crate) fn apply_fire_link_release(
+        &mut self,
+        entities: &crate::sim::entity_store::EntityStore,
+    ) {
         if !self.owner_fire_link {
             return;
         }
@@ -680,6 +715,14 @@ impl Particle {
             type_id,
             coords,
             origin: coords,
+            target: coords,
+            float_position: coords.to_array().map(|axis| {
+                use crate::util::native_x87::MaskedX87Chop53 as Fpu;
+                Fpu::store_f32_masked_chop(Fpu::load_i32(axis))
+            }),
+            start_rgb: [0; 3],
+            color_index: 0,
+            color_accumulator: NativeF64Bits::POSITIVE_ZERO,
             direction: [NativeF32Bits::POSITIVE_ZERO; 3],
             motion: [NativeF32Bits::POSITIVE_ZERO; 3],
             velocity: NativeF32Bits::POSITIVE_ZERO,
@@ -692,8 +735,6 @@ impl Particle {
             drift_x: 0,
             drift_y: 0,
             drift_z: 0,
-            spark: None,
-            railgun: None,
             prev_delta: [0; 3],
         }
     }

@@ -1666,11 +1666,11 @@ mod tests {
     /// `[Clear]` row whose Track entry the new ore's Mark admission reads
     /// (`0x004834A0`, called at `0x005FD00C`; `0x005FD04F` for TIB01).
     fn flat_clear_resolved_grid(width: u16, height: u16) -> ResolvedTerrainGrid {
-        use crate::map::resolved_terrain::TEST_RETAIL_CLEAR_SPEED_COSTS;
+        use crate::map::resolved_terrain::test_retail_clear_speed_costs;
         crate::map::resolved_terrain::test_grid(width, height, |rx, ry| ResolvedTerrainCell {
             allows_tiberium: true,
-            speed_costs: TEST_RETAIL_CLEAR_SPEED_COSTS,
-            base_speed_costs: TEST_RETAIL_CLEAR_SPEED_COSTS,
+            speed_costs: test_retail_clear_speed_costs(),
+            base_speed_costs: test_retail_clear_speed_costs(),
             ..crate::map::resolved_terrain::test_loader_clear_cell(rx, ry)
         })
     }

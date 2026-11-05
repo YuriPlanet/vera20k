@@ -459,7 +459,7 @@ fn allied_object_shared_grants_match_original_without_forking_weapon_selection()
         }
         let before = sim.state_hash();
         assert_eq!(
-            friendly_attack_is_admitted(&sim, &battle.rules, actor, target),
+            object_attack_is_admitted(&sim, &battle.rules, actor, target),
             row["action"] == 5,
             "{}: Techno admission boundary only",
             input["name"]

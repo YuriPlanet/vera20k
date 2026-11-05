@@ -1150,12 +1150,18 @@ impl LanCapture {
         // A path, as a bare name would be read from VERA's random-map folder.
         let sed_path = host_dir.join(crate::map::skirmish_scenarios::RANDMAP_SED);
         fs::write(&sed_path, &sed)?;
+        let mode_file = state
+            .match_state
+            .session
+            .network_setup()
+            .map(|launch| launch.mode.override_file.clone());
         let (manager, rules, _) = state.process_assets.manager_and_rules_with_tile_cache();
         let initial = crate::app::loading::init::load_map_initial_with_assets(
             host_dir,
             manager.context("controlled host assets")?,
             rules,
             Some(sed_path.to_str().context("controlled host seed path")?),
+            mode_file.as_deref(),
             &mut Silent,
         )?;
         let map = initial.map_data();

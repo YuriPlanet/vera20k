@@ -73,7 +73,8 @@ pub(crate) fn resolve_debug_speed_type(state: &AppState) -> SpeedType {
 pub(crate) fn land_row(cell: &ResolvedTerrainCell, speed_type: SpeedType) -> u8 {
     cell.speed_costs
         .cost_for_speed_type(speed_type)
-        .unwrap_or(0)
+        // Debug palette alone quantizes its label; gameplay keeps the bits.
+        .map_or(0, |speed| (f32::from_bits(speed.bits()) * 100.0) as u8)
 }
 
 /// Build terrain cost overlay instances for all visible cells.

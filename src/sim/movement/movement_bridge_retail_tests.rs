@@ -3353,7 +3353,7 @@ fn tank_cannot_reach_the_riverbed_beside_bay_of_pigs_high_bridge() {
         );
         assert_eq!(
             track_row,
-            Some(0),
+            Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
             "the riverbed at {cell:?} has a nonzero Track row; T1-13 now has a BayOPigs arm \
              and this test must be replaced by a real run"
         );

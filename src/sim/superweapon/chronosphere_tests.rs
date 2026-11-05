@@ -113,7 +113,8 @@ fn world_with_cells(
 fn retail_water_world() -> Option<(RuleSet, Simulation, InternedId)> {
     use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
     let float = SpeedCostProfile {
-        float: Some(100),
+        float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         ..SpeedCostProfile::default()
     };
     let water = LandType::Water.as_index();
@@ -465,7 +466,8 @@ fn retail_skirmish_chrono_warp_sinks_a_landed_harrier_to_terminal_cleanup() {
                 cell.land_type = LandType::Water.as_index();
                 cell.base_land_type = cell.land_type;
                 cell.speed_costs = SpeedCostProfile {
-                    float: Some(100),
+                    float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
                     ..Default::default()
                 };
                 cell.base_speed_costs = cell.speed_costs;
