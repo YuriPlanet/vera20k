@@ -580,9 +580,15 @@ impl App {
         let sidebar_layout_spec = SidebarChromeLayoutSpec::stock();
         let mut startup_asset_manager = game_config.as_ref().and_then(|config| {
             startup_asset_or_error(
-                AssetManager::new(&config.paths.ra2_dir, startup_options.media_archive_mode)
-                    .and_then(|assets| assets.with_ini_roots(&config.ini))
-                    .context("Could not load the game archives"),
+                AssetManager::new_with_family(
+                    &config.paths.ra2_dir,
+                    startup_options.media_archive_mode,
+                    crate::assets::asset_manager::ArchiveFamily::for_ini_profile(
+                        config.ini.profile,
+                    ),
+                )
+                .and_then(|assets| assets.with_ini_roots(&config.ini))
+                .context("Could not load the game archives"),
                 &mut main_menu_shell_error,
             )
         });
