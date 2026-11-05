@@ -261,9 +261,13 @@ impl<'a> FireSubject<'a> {
             EntityCategory::Aircraft => FirerClass::Aircraft,
             EntityCategory::Structure => FirerClass::Building,
         };
+        // T9 (`0x006FC13F`) compares the target with the firer's `+0x11C`
+        // without testing `+0x82`; T32/T33 test `+0x82` themselves
+        // (`0x006FC57D`, `0x006FC5C7`). A garrison occupant or cargo rider
+        // stores no Transporter (vera20k#3838).
         let transport = firer
             .passenger_role
-            .inside_transport_id()
+            .transporter()
             .and_then(|id| self.world.substrate.entities.get(id));
         // U5 reads the `+0x418` tether latch (`radio::tether`) and
         // `RadioLinks[0]`.
@@ -289,7 +293,7 @@ impl<'a> FireSubject<'a> {
             transporter: match transport {
                 None => Transporter::None,
                 Some(transport) if transport.is_warped_out() => Transporter::WarpedOut,
-                Some(transport) if transport.passenger_role.is_inside_transport() => {
+                Some(transport) if transport.passenger_role.transporter().is_some() => {
                     Transporter::Nested
                 }
                 Some(_) => Transporter::Plain,
