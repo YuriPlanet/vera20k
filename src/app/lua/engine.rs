@@ -38,7 +38,7 @@ pub(crate) struct LuaHost {
     /// frame dispatch never clones the whole world.
     snapshot: Rc<RefCell<crate::app::lua::snapshot::FrameSnapshot>>,
     /// Commands queued by mods this frame, to be flushed after `on_frame`.
-    queued_commands: Rc<RefCell<Vec<super::userdata::PendingCommand>>>,
+    queued_commands: Rc<RefCell<Vec<super::PendingCommand>>>,
 }
 
 impl LuaHost {
@@ -134,6 +134,11 @@ impl LuaHost {
     /// Called by the app after the simulation tick has committed.
     pub(crate) fn refresh_snapshot(&mut self, snapshot: crate::app::lua::snapshot::FrameSnapshot) {
         *self.snapshot.borrow_mut() = snapshot;
+    }
+
+    /// Take the commands queued by mods this frame.
+    pub(crate) fn take_queued_commands(&mut self) -> Vec<super::PendingCommand> {
+        std::mem::take(&mut *self.queued_commands.borrow_mut())
     }
 
     fn start(

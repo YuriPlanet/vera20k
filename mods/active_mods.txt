@@ -3,3 +3,4 @@
 # <game_root>/scripts/active_mods.txt, the VERA profile, <game_root>/active_mods.txt
 # (see src/app/lua/loader.rs). The first file that exists wins.
 lua_probe
+move_probe

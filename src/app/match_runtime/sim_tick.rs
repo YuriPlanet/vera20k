@@ -2021,6 +2021,24 @@ fn advance_one_simulation_frame(
                 );
             }
             state.lua.on_frame(frame);
+            // Mod orders: drain the queue the userdata handles filled this
+            // frame and submit each through the same local-command admission
+            // as player input, stamped for the next frame's dispatch (the
+            // same convention `Simulation::issue_generated_frame_commands`
+            // uses for house-generated orders).
+            let pending = state.lua.take_queued_commands();
+            if !pending.is_empty()
+                && let Some(runtime) = state.match_state.sim_runtime.as_mut()
+            {
+                let execute_tick = runtime.simulation.session().tick().saturating_add(1);
+                for order in pending {
+                    let envelope =
+                        crate::sim::command::CommandEnvelope::new(order.owner, execute_tick, order.command);
+                    if !runtime.simulation.issue_local_command(envelope) {
+                        log::warn!("LuaAPI: a mod order was not admitted");
+                    }
+                }
+            }
         }
         for text in state.lua.take_messages() {
             crate::app::input::messages::post_lua_message(state, &text);

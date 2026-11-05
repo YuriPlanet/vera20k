@@ -17,6 +17,21 @@
 
 use std::path::PathBuf;
 
+use crate::sim::command::Command;
+use crate::sim::intern::InternedId;
+
+/// One order a script issued this frame. The app owns admission: after the
+/// Lua dispatch it drains these and submits each through
+/// `Simulation::issue_local_command`, the same path player input takes, so
+/// mod orders stay inside the deterministic command stream. Not feature-gated:
+/// the app drains the queue on every build, and the inert host's queue is
+/// simply always empty.
+#[derive(Debug)]
+pub(crate) struct PendingCommand {
+    pub(crate) owner: InternedId,
+    pub(crate) command: Command,
+}
+
 /// Where the host looks for scripts, mirroring WolfCTOS's `scripts/` tree.
 ///
 /// `game_root` is the retail installation (the folder holding `ra2.mix` and the

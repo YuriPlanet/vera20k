@@ -34,4 +34,9 @@ impl LuaHost {
     pub(crate) fn take_messages(&mut self) -> Vec<String> {
         Vec::new()
     }
+
+    /// Commands queued by scripts: none in this build.
+    pub(crate) fn take_queued_commands(&mut self) -> Vec<super::PendingCommand> {
+        Vec::new()
+    }
 }

@@ -14,14 +14,8 @@ use mlua::{AnyUserData, Lua, MetaMethod, UserData, UserDataMethods};
 use crate::sim::command::Command;
 use crate::sim::intern::InternedId;
 
+use super::PendingCommand;
 use super::snapshot::{EntitySnapshot, FrameSnapshot, HouseSnapshot};
-
-/// One order a script issued this frame. The app owns admission.
-#[derive(Debug)]
-pub(crate) struct PendingCommand {
-    pub(crate) owner: InternedId,
-    pub(crate) command: Command,
-}
 
 /// Handles shared by every userdata of one host.
 #[derive(Clone)]
