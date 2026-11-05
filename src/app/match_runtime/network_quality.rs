@@ -7,7 +7,9 @@
 //! `finish`), and the closed report stays for the external launch result
 //! until the next install.
 
-use crate::net::live_commands::{DeliveryCounters, NetworkRecoveryStatus};
+use crate::net::live_commands::{
+    ClientLinkStats, DeliveryCounters, LinkState, NetworkRecoveryStatus,
+};
 use crate::util::time::{Duration, Instant};
 
 use super::super::AppState;
@@ -80,6 +82,46 @@ pub(crate) struct DeliveryReport {
     /// The playout reserve the pacer learned from late receipts, at most.
     pub(crate) max_jitter_reserve_ms: f64,
     pub(crate) underruns: u64,
+    /// How late the waited-for frames arrived after their deadlines, summed
+    /// and at most. A wait that ends in a recovery is counted, not timed.
+    pub(crate) underrun_wait_ms: f64,
+    pub(crate) max_underrun_wait_ms: f64,
+    /// The relay hop as the relay client measured it; null without one.
+    pub(crate) link: Option<LinkReport>,
+}
+
+/// One match's relay hop from the adaptive transport's own measurements
+/// (`services/relay/adaptive-transport/spec.md` §10.1).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub(crate) struct LinkReport {
+    /// Median smoothed round trip to the relay.
+    pub(crate) rtt_ms_p50: Option<u32>,
+    /// Highest smoothed uplink loss.
+    pub(crate) max_up_loss_permille: u16,
+    /// Time the uplink spent lossy and congested (spec §5.2).
+    pub(crate) up_lossy_seconds: f64,
+    pub(crate) up_congested_seconds: f64,
+    /// Resend timeouts of unacknowledged local batches (spec §4.5).
+    pub(crate) rto_timeouts: u64,
+    /// Stream gaps the relay's repeats or resends closed before any Pull.
+    pub(crate) gaps_repaired_by_push: u64,
+    /// Highest smoothed arrival jitter of the relay's new turns (spec §4.8).
+    pub(crate) max_arrival_jitter_ms: f64,
+}
+
+impl From<&ClientLinkStats> for LinkReport {
+    fn from(link: &ClientLinkStats) -> Self {
+        let seconds = |state: LinkState| link.uplink_state_ms[state.index()] as f64 / 1000.0;
+        Self {
+            rtt_ms_p50: link.srtt_p50_ms,
+            max_up_loss_permille: link.up_loss_permille_max,
+            up_lossy_seconds: seconds(LinkState::Lossy),
+            up_congested_seconds: seconds(LinkState::Congested),
+            rto_timeouts: link.rto_timeouts,
+            gaps_repaired_by_push: link.gaps_repaired_by_push,
+            max_arrival_jitter_ms: link.jitter_max_us as f64 / 1000.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -137,6 +179,8 @@ pub(crate) struct NetworkQualityStats {
     max_backlog_frames: u32,
     max_reserve_micros: u32,
     underruns: u64,
+    underrun_wait_micros: u64,
+    max_underrun_wait_micros: u64,
     played: Duration,
     unfocused: Duration,
     slowed: Duration,
@@ -212,8 +256,8 @@ impl NetworkQualityStats {
                 skipped_draws: self.live.skipped_draws,
             },
             network: DeliveryReport {
-                gaps: delivery.gaps,
-                repair_pulls: delivery.repair_pulls,
+                gaps: delivery.link.map_or(0, |link| link.gaps),
+                repair_pulls: delivery.link.map_or(0, |link| link.repair_pulls),
                 command_round_trip_ms: (delivery.round_trips > 0).then(|| RoundTripReport {
                     mean: delivery.round_trip_total_ms / delivery.round_trips,
                     max: delivery.round_trip_max_ms,
@@ -221,6 +265,9 @@ impl NetworkQualityStats {
                 }),
                 max_jitter_reserve_ms: f64::from(self.max_reserve_micros) / 1000.0,
                 underruns: self.underruns,
+                underrun_wait_ms: self.underrun_wait_micros as f64 / 1000.0,
+                max_underrun_wait_ms: self.max_underrun_wait_micros as f64 / 1000.0,
+                link: delivery.link.as_ref().map(LinkReport::from),
             },
             performance: PerformanceReport {
                 tick_ms_p50: self.tick_ms.quantile(0.5),
@@ -299,6 +346,8 @@ pub(crate) fn observe_pass(state: &mut AppState) {
     if let Some(pacing) = pacing {
         stats.max_reserve_micros = stats.max_reserve_micros.max(pacing.reserve_micros);
         stats.underruns = pacing.underruns;
+        stats.underrun_wait_micros = pacing.underrun_wait_micros;
+        stats.max_underrun_wait_micros = pacing.max_underrun_wait_micros;
     }
     stats.max_backlog_frames = stats.max_backlog_frames.max(backlog);
     stats.delivery = delivery;
@@ -358,12 +407,41 @@ mod tests {
                 "played_seconds": 0.0,
                 "catch_up": {"episodes": 0, "seconds": 0.0, "max_backlog_frames": 0, "skipped_draws": 0},
                 "network": {"gaps": 0, "repair_pulls": 0, "command_round_trip_ms": null,
-                    "max_jitter_reserve_ms": 0.0, "underruns": 0},
+                    "max_jitter_reserve_ms": 0.0, "underruns": 0, "underrun_wait_ms": 0.0,
+                    "max_underrun_wait_ms": 0.0, "link": null},
                 "performance": {"tick_ms_p50": null, "tick_ms_p99": null, "fps_p50": null,
                     "fps_p5": null, "unfocused_seconds": 0.0},
                 "pacing": {"slowdowns": 0, "slowed_by": [], "slowed_seconds": 0.0},
                 "outcome": {"desync_frame": null, "reconnects": 0},
             })
+        );
+    }
+
+    /// The relay hop's report reads the uplink's time by state, and the gap
+    /// and Pull counts come from the same measurements.
+    #[test]
+    fn the_link_report_reads_the_relay_clients_measurements() {
+        let mut stats = NetworkQualityStats::default();
+        stats.delivery.link = Some(ClientLinkStats {
+            uplink_state_ms: [60_000, 2_500, 500, 1_000],
+            srtt_p50_ms: Some(42),
+            up_loss_permille_max: 31,
+            rto_timeouts: 2,
+            gaps: 5,
+            gaps_repaired_by_push: 4,
+            repair_pulls: 1,
+            jitter_max_us: 12_345,
+            ..ClientLinkStats::default()
+        });
+        let report = serde_json::to_value(stats.summarize()).unwrap();
+        let network = &report["network"];
+        assert_eq!(network["gaps"], 5);
+        assert_eq!(network["repair_pulls"], 1);
+        assert_eq!(
+            network["link"],
+            serde_json::json!({"rtt_ms_p50": 42, "max_up_loss_permille": 31,
+                "up_lossy_seconds": 2.5, "up_congested_seconds": 0.5, "rto_timeouts": 2,
+                "gaps_repaired_by_push": 4, "max_arrival_jitter_ms": 12.345})
         );
     }
 }

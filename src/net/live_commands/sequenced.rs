@@ -6,8 +6,8 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use vera20k_relay_protocol::{
-    CHECKSUM_INTERVAL, ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent, OrderPace,
-    OrderingCertificate, paced_rates,
+    CHECKSUM_INTERVAL, ClientLinkStats, ORDERING_BATCH_CAPACITY, OrderEntry, OrderError,
+    OrderEvent, OrderPace, OrderingCertificate, paced_rates,
 };
 
 use super::{LiveCommandError, StartupAgreement, StartupError};
@@ -44,10 +44,9 @@ const MAX_TICK_COSTS: usize = 256;
 /// that owns it. Wall-clock observations; never simulation or delivery input.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DeliveryCounters {
-    /// Gaps in the pushed stream the relay session was told of, and the
-    /// fallback Pulls it sent for them (spec §7.7, §10.1).
-    pub gaps: u64,
-    pub repair_pulls: u64,
+    /// The relay session's link measurements as last read (spec §10.1),
+    /// including the stream gaps it was told of and its fallback Pulls.
+    pub link: Option<ClientLinkStats>,
     /// Local command batches whose sealed frame came back, with the
     /// first-transmission to frame-receipt time of each.
     pub round_trips: u64,
@@ -797,8 +796,7 @@ impl SequencedSession {
         // after its grace (spec §7.7).
         let _ = transport.poll_repair_pull();
         if let Some(stats) = transport.relay_link_stats() {
-            self.delivery.gaps = stats.gaps;
-            self.delivery.repair_pulls = stats.repair_pulls;
+            self.delivery.link = Some(stats);
         }
     }
 

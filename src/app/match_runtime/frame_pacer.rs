@@ -118,6 +118,10 @@ impl OnlineFrameDecision {
 pub(crate) struct OnlinePacingStatus {
     pub(crate) reserve_micros: u32,
     pub(crate) underruns: u64,
+    /// How late the waited-for frames arrived after their deadlines, summed
+    /// and at most. A wait that ends in a recovery is counted, not timed.
+    pub(crate) underrun_wait_micros: u64,
+    pub(crate) max_underrun_wait_micros: u64,
     pub(crate) catching_up: bool,
 }
 
@@ -135,6 +139,9 @@ struct OnlinePacer {
     stable: Duration,
     underrun: Option<(u32, Instant)>,
     underruns: u64,
+    // Match diagnostics only; playout never reads them.
+    underrun_wait: Duration,
+    max_underrun_wait: Duration,
     catching_up: bool,
 }
 impl OnlinePacer {
@@ -148,6 +155,8 @@ impl OnlinePacer {
             stable: Duration::ZERO,
             underrun: None,
             underruns: 0,
+            underrun_wait: Duration::ZERO,
+            max_underrun_wait: Duration::ZERO,
             catching_up: false,
         }
     }
@@ -164,10 +173,13 @@ impl OnlinePacer {
         let reserve = (self.receipt.frames_per_second == receipt.frames_per_second)
             .then_some(self.reserve)
             .unwrap_or_default();
-        let underruns = self.underruns;
+        let (underruns, underrun_wait, max_underrun_wait) =
+            (self.underruns, self.underrun_wait, self.max_underrun_wait);
         *self = Self::new(receipt, now);
         self.reserve = reserve.min(Duration::from_millis(20)).min(self.span(1));
         self.underruns = underruns;
+        self.underrun_wait = underrun_wait;
+        self.max_underrun_wait = max_underrun_wait;
     }
 
     fn span(&self, frames: u32) -> Duration {
@@ -281,7 +293,10 @@ impl OnlinePacer {
             && frame == next_frame
             && !recovering
         {
-            self.learn(receipt.received_at.saturating_duration_since(deadline), now);
+            let wait = receipt.received_at.saturating_duration_since(deadline);
+            self.underrun_wait = self.underrun_wait.saturating_add(wait);
+            self.max_underrun_wait = self.max_underrun_wait.max(wait);
+            self.learn(wait, now);
         }
         // A whole turn waiting is on time; two frames beyond it, or one
         // beyond it two frames late, is a backlog.
@@ -597,6 +612,8 @@ impl LocalFramePacer {
         self.online.as_ref().map(|online| OnlinePacingStatus {
             reserve_micros: online.reserve.as_micros() as u32,
             underruns: online.underruns,
+            underrun_wait_micros: online.underrun_wait.as_micros() as u64,
+            max_underrun_wait_micros: online.max_underrun_wait.as_micros() as u64,
             catching_up: online.catching_up,
         })
     }
@@ -975,6 +992,41 @@ mod tests {
         let arrived = push_receipt(due + Duration::from_millis(30), 95);
         pacer.online_frame_decision(arrived.received_at, 95, 95, arrived, false, false);
         assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 20_000);
+    }
+
+    /// The match report times each frame wait from the frame's deadline to
+    /// its socket receipt.
+    #[test]
+    fn underrun_waits_are_timed_from_the_deadline_to_the_frame_receipt() {
+        let start = Instant::now();
+        let mut pacer = LocalFramePacer::new();
+        let first = push_receipt(start, 1);
+        pacer.online_frame_decision(start, 1, 1, first, false, false);
+        // Frame 2 arrives 30 ms late; asking again while it is missing
+        // starts no second wait.
+        let due = pacer.online.as_ref().unwrap().deadline(2);
+        for now in [due, due + Duration::from_millis(2)] {
+            assert_eq!(
+                pacer.online_frame_decision(now, 2, 1, first, false, false),
+                OnlineFrameDecision::WaitingForCanonical
+            );
+        }
+        let second = push_receipt(due + Duration::from_millis(30), 2);
+        pacer.online_frame_decision(second.received_at, 2, 2, second, false, false);
+        // Frame 3 is 5 ms late.
+        let due = pacer.online.as_ref().unwrap().deadline(3);
+        pacer.online_frame_decision(due, 3, 2, second, false, false);
+        let third = push_receipt(due + Duration::from_millis(5), 3);
+        pacer.online_frame_decision(third.received_at, 3, 3, third, false, false);
+        // Frame 4's wait ends in a recovery: counted, not timed.
+        let due = pacer.online.as_ref().unwrap().deadline(4);
+        pacer.online_frame_decision(due, 4, 3, third, false, false);
+        let fourth = push_receipt(due + Duration::from_millis(500), 4);
+        pacer.online_frame_decision(fourth.received_at, 4, 4, fourth, false, true);
+        let status = pacer.online_pacing_status().unwrap();
+        assert_eq!(status.underruns, 3);
+        assert_eq!(status.underrun_wait_micros, 35_000);
+        assert_eq!(status.max_underrun_wait_micros, 30_000);
     }
 
     #[test]
