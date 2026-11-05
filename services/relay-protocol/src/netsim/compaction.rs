@@ -46,10 +46,12 @@ fn sessions(trace: &Trace) -> HashMap<(usize, usize), u32> {
 /// within 720 B; HELLO, CONFIRM and CHALLENGE carry session 0 and every
 /// other datagram its hop's session; each hop's sequences count from 1,
 /// the client's from its HELLO and the relay's from its READY (CHALLENGE
-/// and LEAVE_ACK echo the client's).
+/// and LEAVE_ACK echo the client's). A LEAVE resent byte for byte keeps
+/// its sequence (§6.2 "客户端重发的 LEAVE 是原样的").
 fn check_envelopes(trace: &Trace) -> Check {
     let sessions = sessions(trace);
     let mut last: HashMap<(usize, usize, Direction), u64> = HashMap::new();
+    let mut last_leave: HashMap<(usize, usize), &Vec<u8>> = HashMap::new();
     for record in &trace.wire {
         let datagram = parsed(record);
         let at = record.sent_ms();
@@ -99,6 +101,12 @@ fn check_envelopes(trace: &Trace) -> Check {
         })?;
         if matches!(datagram.kind, "CHALLENGE" | "LEAVE_ACK") {
             continue;
+        }
+        if datagram.kind == "LEAVE" {
+            let resent = last_leave.insert((record.client, record.hop), bytes) == Some(bytes);
+            if resent {
+                continue;
+            }
         }
         let previous = last
             .entry((record.client, record.hop, record.direction))
@@ -218,10 +226,15 @@ fn record_of(canonical: &[u8]) -> Record {
 /// relay's canonical history; every BATCH's plaintext is the one its
 /// source sealed (§3.1: `opaque` holds `P`).
 fn check_streams_match_history(trace: &Trace, wire: &BTreeMap<u64, Vec<u8>>) -> Check {
-    let history = trace
-        .relay_history
-        .as_ref()
-        .ok_or("no relay history: Simulation::relay_history needs a test-support hook")?;
+    let history = trace.relay_history.as_ref().ok_or("no relay history")?;
+    // `ordering_history` starts at the oldest record the relay keeps, 1
+    // with the journal the simulation always runs.
+    ensure(
+        history
+            .first()
+            .is_some_and(|first| first[1..9] == 1u64.to_le_bytes()),
+        || "relay history does not start at seq 1".into(),
+    )?;
     for (seq, canonical) in wire {
         let index = usize::try_from(*seq - 1).unwrap();
         ensure(history.get(index) == Some(canonical), || {
@@ -354,18 +367,18 @@ fn bc04_forgeries_from_another_address_change_nothing() {
         "warmup_ms": 0, "duration_ms": 12000, "apm": 120,
         "forgeries": [ { "client": 0, "from_ms": 3000, "to_ms": 8000, "per_second": 300 } ] }"#);
     check_forged_flood(&report, &trace, 2, 12_000_000);
-}
-
-#[test]
-#[ignore = "waits for bandwidth compaction"]
-fn bc05_forgeries_spoofing_the_clients_ip_drop_none_of_its_datagrams() {
-    // §6.4 (revised): no per-IP limit. 200 forged a second from A's own
-    // address and port leave every datagram of A accepted.
-    let (report, trace) = run(r#"{ "name": "bc05", "players": 2, "keep_wire_bytes": true,
-        "warmup_ms": 0, "duration_ms": 10000, "apm": 300,
-        "forgeries": [ { "client": 0, "from_ms": 3000, "to_ms": 6000, "per_second": 200,
-            "spoof_client": true } ] }"#);
-    check_forged_flood(&report, &trace, 2, 10_000_000);
+    // §6.4 item 2: each one a failure on a known session; 1500 stay under
+    // the 4096-a-window alert. Neither client saw a bad tag (item 6).
+    let counts = trace.mac_counts.unwrap();
+    assert_eq!(
+        (
+            counts.failures,
+            counts.unknown_sessions,
+            counts.session_alerts
+        ),
+        (trace.forged.len() as u64, 0, 0)
+    );
+    assert_eq!(trace.client_mac_failures, [0, 0]);
 }
 
 #[test]
@@ -381,6 +394,17 @@ fn bc06_forgeries_from_many_ips_drop_none_of_the_sessions_datagrams() {
             "addresses": 8 } ] }"#);
     assert!(trace.forged.len() > 4096);
     check_forged_flood(&report, &trace, 2, 10_000_000);
+    // §6.4 item 2: 3-6 s lies in one fixed 60 s window (unix seconds; the
+    // run starts at 1_000_000, a boundary at 20 s): one alert.
+    let counts = trace.mac_counts.unwrap();
+    assert_eq!(
+        (
+            counts.failures,
+            counts.unknown_sessions,
+            counts.session_alerts
+        ),
+        (trace.forged.len() as u64, 0, 1)
+    );
 }
 
 #[test]

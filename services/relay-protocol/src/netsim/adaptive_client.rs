@@ -531,6 +531,13 @@ impl HeadlessClient for AdaptiveClient {
         self.restoring = restoring;
         self.session.set_ordering_restore(restoring);
     }
+    fn mac_failures(&self) -> u64 {
+        self.session.mac_failures()
+            + self
+                .candidate
+                .as_ref()
+                .map_or(0, |candidate| candidate.mac_failures())
+    }
     fn link_stats(&self) -> Option<ClientLinkStats> {
         Some(self.session.link_stats())
     }

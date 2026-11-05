@@ -65,4 +65,8 @@ pub trait HeadlessClient {
     fn link_stats(&self) -> Option<ClientLinkStats> {
         None
     }
+    /// Relay datagrams whose tag failed (compaction spec §6.4 item 6).
+    fn mac_failures(&self) -> u64 {
+        0
+    }
 }

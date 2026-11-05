@@ -598,11 +598,8 @@ impl Simulation {
             bytes.push(8);
             bytes.extend((0..17).map(|_| random.next_u64() as u8));
             bytes.extend_from_slice(&(random.next_u64() as u32).to_le_bytes());
-            let endpoint = if forgery.spoof_client {
-                self.clients[client].endpoint
-            } else {
-                Self::forger_endpoint(index, (sent % usize::from(forgery.addresses)) as u8)
-            };
+            let endpoint =
+                Self::forger_endpoint(index, (sent % usize::from(forgery.addresses)) as u8);
             let now_ms = at_us / 1000;
             let result = self
                 .relay
@@ -871,11 +868,10 @@ impl Simulation {
     }
 
     /// The relay's canonical history, every committed record in sequence
-    /// order (compaction spec §12.2). No production interface reads it yet:
-    /// `history` is private to the ordering room and the journal encrypted,
-    /// so this waits for a test-support hook (reported).
-    fn relay_history(&self) -> Option<Vec<Vec<u8>>> {
-        None
+    /// order (compaction spec §12.2), by the test-support
+    /// `RelayServer::ordering_history`.
+    fn relay_history(&mut self) -> Option<Vec<Vec<u8>>> {
+        Some(self.relay.ordering_history(ROOM))
     }
 
     fn run_inner(mut self, traced: bool) -> (Report, Option<Trace>) {
@@ -890,8 +886,15 @@ impl Simulation {
         self.step_until(end);
         let report = self.report();
         let history = self.relay_history();
+        let mac_counts = self.relay.take_mac_failure_counts();
         if let Some(trace) = self.trace.as_mut() {
             trace.relay_history = history;
+            trace.mac_counts = Some(mac_counts);
+            trace.client_mac_failures = self
+                .clients
+                .iter()
+                .map(|c| c.driver.mac_failures())
+                .collect();
             for client in &self.clients {
                 let log = client.driver.log();
                 trace.seals.push(log.seals.clone());

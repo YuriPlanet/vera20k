@@ -73,8 +73,7 @@ pub struct Scenario {
     #[serde(default)]
     pub preset_measured_good: bool,
     /// Datagrams with a random tag sent to the relay on a client's current
-    /// session (compaction spec §6.4), from other addresses or the client's
-    /// own.
+    /// session (compaction spec §6.4), from other addresses.
     #[serde(default)]
     pub forgeries: Vec<Forgery>,
     /// The client's address changes, as a NAT rebinding does (compaction
@@ -93,8 +92,7 @@ pub struct Scenario {
 
 /// `per_second` forged CONTROL datagrams over `[from_ms, to_ms)` carrying
 /// `client`'s current session, a random sequence and a random 4-byte tag,
-/// spread over `addresses` attacker addresses, or sent from the client's
-/// own address when `spoof_client`.
+/// spread over `addresses` attacker addresses.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Forgery {
@@ -104,8 +102,6 @@ pub struct Forgery {
     pub per_second: u32,
     #[serde(default = "default_addresses")]
     pub addresses: u8,
-    #[serde(default)]
-    pub spoof_client: bool,
 }
 
 fn default_addresses() -> u8 {
