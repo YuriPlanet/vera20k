@@ -1494,7 +1494,7 @@ fn retail_goldst_uncached_reveal_border_matches_native_admission_and_transport()
             );
         });
         assert_eq!(
-            trace.walks.len(),
+            trace.map_calls,
             case["map_calls"].as_array().unwrap().len(),
             "Map call count {name}"
         );
