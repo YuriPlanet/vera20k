@@ -15,7 +15,7 @@
 | 1 | 删除端到端加密，批次以明文传送 | 每个批次少 40 B |
 | 2 | 批次去掉多余头部（版本号、事件包头） | 每个批次少 15 B |
 | 3 | PACK 编码改为 v2：记录字段相对编码，包内自包含 | 每条批次记录少约 11 B，每条帧结束记录少 6 B |
-| 4 | 信封改为 v3：会话 ID 代替票据和房间号；序号 4 B；MAC 4 B；去掉 magic、长度等冗余字段 | 中继发出的每个包少 67 B，客户端发出的每个包少 133 B |
+| 4 | 信封改为 v3：会话 ID 代替票据和房间号；序号 4 B；MAC 4 B；去掉 magic、长度等冗余字段 | 中继发出的每个包少 67 B，客户端发出的每个包少 132~133 B（DATA 包的 target 移进 payload，少 132 B） |
 
 此外，`UPLINK`、ACK、STATUS 里的整数字段改为 varint 编码。
 
@@ -103,6 +103,8 @@
 
 ### 3.2 删除的内容
 
+- **DATA 消息**（中继转发的玩家间消息）**同样改为明文**，去掉它的端到端加密（`payload_cipher`、`DecryptedPayload` 的解密路径）。大厅仍会下发负载密钥，客户端接收后不再使用，这样大厅服务不用改；从大厅协议里删掉这个字段列为后续项。
+
 - **加密相关：** 对局负载密钥的派生（`ORDER_KEY_DOMAIN`、`payload_key`、`payload_prefix`）、`order_cipher` / `order_aad`、`OPAQUE_OVERHEAD`。
 - **读不懂的批次：** 客户端"批次解密失败就把发送者判为离开"的路径改为"批次**解码**失败"：明文不是合法的事件包时，仍按现有规则判该来源离开。
 - **`ModifiedRetry`：** 原来比较的是密文，改为比较明文字节。语义不变，客户端缓存的已封批次照样不可修改。
@@ -178,7 +180,13 @@ tag u8:  bit0..3  kind（3 BATCH、4 FRAME_END、5 DEPARTURE、9 PAUSE、10 RATE
 2. **bit6 = 1** 只能用在本包内**之前已经出现过同一来源 BATCH** 的条目上。
 3. **varint：** 必须是最短编码，长度不超过 10 字节，值不超过 u64（§8）。
 4. **长度：** 所有长度字段和 `count` 要和 payload 正好吻合，不能有多余字节。
-5. **大小：** `P` 的长度必须在 1..512 之间；单个 PACK 的 payload 不超过信封上限（§6.1）。
+5. **大小：** `P` 的长度必须在 1..512 之间；单个 PACK 的 payload 不超过 681 B（打包上限，§5.4）。
+6. **非最短编码一律拒收**，所以编码唯一对编码器和解码器都成立：
+   - 第一条的帧号编码不是 0；
+   - 帧号编码 2 的增量 d < 2；
+   - bit6 用在非 BATCH 条目上；
+   - 能用 bit6（本包内之前已有同一来源的 BATCH，且 ID 正好加 1）却没用。
+7. **超出规范宽度：** 帧号累加超过 u32，或序号（`base_seq + i`）超过 u64。
 
 ### 5.4 编码（中继）
 
@@ -216,6 +224,8 @@ tag u8:  bit0..3  kind（3 BATCH、4 FRAME_END、5 DEPARTURE、9 PAUSE、10 RATE
 - `hdr`：bit5..7 是协议版本，本方案为 3；bit0..4 是 kind，取值见下表。
 - `session`：中继在 CONFIRM 时分配给这一跳的 32 位随机 ID（§6.2）。HELLO 和 CONFIRM 本身没有会话，这个字段填 0。
 - `seq`：逐跳序号，u32，从 1 开始。每跳的票据最长 300 s，按每秒 100 个包算约 3 万个，远不到上限；到达上限时这一跳必须续期，同现有的 `CounterExhausted`。
+  - **中继侧：** 中继不能自己续期。在票据寿命和推送预算的约束下，中继的序号实际不可能用尽；万一用尽，中继停止向这一跳发送，客户端按断线流程续期。
+- **信封负载上限：** 720 B，涵盖联邦房间的 CONFIRM（票据 98 + cookie 40 + 名单最长 561 = 699 B）。整个数据报最长 733 B，加上 IP/UDP 头仍低于 IPv6 的最小 MTU 1280。PACK 的打包上限仍是 681 B（§5.4），不变，因为改它会改变包数。
 - **去掉的字段：**
   - `magic`：版本已在 hdr 里；
   - `len`：UDP 自带长度；
@@ -229,26 +239,27 @@ tag u8:  bit0..3  kind（3 BATCH、4 FRAME_END、5 DEPARTURE、9 PAUSE、10 RATE
 | kind | 方向 | payload |
 |---|---|---|
 | HELLO（0） | 上行 | `[ticket 98]` |
-| CHALLENGE（0） | 下行 | `[cookie 40]`；`seq` 回显 HELLO 的 seq（同现状） |
+| CHALLENGE（0） | 下行 | `[cookie 40]`；`seq` 回显 HELLO 的 seq（同现状）；信封 `session` 填 0 |
 | CONFIRM（1） | 上行 | `[ticket 98][cookie 40][联邦名单，可选]` |
-| READY（1） | 下行 | 对 CONFIRM 的回复：`[session u32]`；对 PING 的回复：空 |
-| DATA（2） | 双向 | 上行 `[target u8][数据]`；下行 `[source u8][数据]` |
+| READY（1） | 下行 | payload 为空。对 CONFIRM 的回复：信封 `session` 填新分配的会话 ID，`seq` 是中继在这一跳的第 1 个序号；对 PING 的回复：正常的 session 和 seq |
+| DATA（2） | 双向 | 上行 `[target u8][数据]`；下行 `[source u8][数据]`。数据是**明文**，DATA 同样去掉端到端加密（§3.2） |
 | PING（3） | 上行 | 空 |
 | CONTROL（4） | 双向 | 排序请求和回复，同传输方案，字段按 §7 改为 varint |
 | LEAVE_ACK（5） | 下行 | 空；`seq` 回显 LEAVE 的 seq（同现状） |
 
 ### 6.2 会话 ID
 
-- **分配：** 中继收到合法的 CONFIRM 后，生成一个在本中继上唯一、非零的 32 位随机数作为 session，在 READY 的 payload 里交给客户端。之后这一跳的所有数据报都带这个 session，双向一致。
+- **分配：** 中继收到合法的 CONFIRM 后，生成一个在本中继上唯一、非零的 32 位随机数作为 session，写在回复 READY 的信封 `session` 字段里交给客户端。
+- **客户端认领 READY：** 客户端在 READY 到达之前还不知道新会话的 ID。它用正在握手的跳的密钥校验 tag；续期过渡期内有新旧两跳，最多试两次密钥，校验通过的那一跳认领这个 session。之后这一跳的所有数据报都带这个 session，双向一致。
 - **查找：** 中继用 `session → Peer` 的哈希表找到这一跳，取出跳密钥、重放窗口、读者链路状态。以前要从票据重新派生，现在只在 HELLO 和 CONFIRM 时派生一次。
 - **续期：** 新票据走一遍 HELLO/CONFIRM，拿到新 session。续期过渡期内，新旧两跳的 session 不同，客户端按 session 区分。这正好对应传输方案 §4.7"新旧两跳各自计算"。
 - **换地址（NAT 重绑定）：** 中继收到一个已知 session、MAC 校验通过、但来源地址不同的数据报，就把这一跳的端点更新为新地址（同现状，只是查找键从票据换成 session）。
 - **中继重启：** 会话表丢失。客户端收不到回复，判为断开，按现有的重连流程重新 HELLO（同现状：重启本来就会丢失 `Peer`）。
-- **释放：** 票据过期或 LEAVE 后删除这个 session，之后用它的数据报一律丢弃。同一个 session 值至少 10 分钟内不重复分配。
+- **释放：** LEAVE 之后，或者票据过期满 `LEAVE_GRACE` 之后，删除这个 session。票据过期到宽限期结束之间，这个 session 只接受 LEAVE（同现有的 Leave 宽限期）。删除后，用它的数据报一律丢弃；同一个 session 值至少 10 分钟内不重复分配。
 
 ### 6.3 MAC
 
-- `tag = HMAC-SHA256(跳密钥, 域标签 ‖ hdr ‖ session ‖ seq ‖ payload)` 的前 4 字节。跳密钥和域标签沿用现有的派生方式（`derive_packet_key`、`CLIENT_DOMAIN` / `SERVER_DOMAIN`），域标签的版本号改为 v3。
+- `tag = HMAC-SHA256(跳密钥, 域标签 ‖ hdr ‖ session ‖ seq ‖ payload)` 的前 4 字节。跳密钥和域标签沿用现有的派生方式（`derive_packet_key`、`CLIENT_DOMAIN` / `SERVER_DOMAIN`）。**只有** `CLIENT_DOMAIN` 和 `SERVER_DOMAIN` 的版本号改为 v3；`KEY_DOMAIN`、`TICKET_DOMAIN`、`COOKIE_DOMAIN` 不变，大厅不受影响。
 - 校验用常数时间比较。
 - **重放窗口：** 128 位，规则同现有 `ReplayWindow`，只是序号宽度改为 u32。
 
@@ -257,8 +268,12 @@ tag u8:  bit0..3  kind（3 BATCH、4 FRAME_END、5 DEPARTURE、9 PAUSE、10 RATE
 截到 4 B 以后，每个伪造包的成功率是 2⁻³²。WebRTC/SRTP 的标准套件 `AES_CM_128_HMAC_SHA1_32` 用的也是 4 B 认证标签。为了把在线猜测的成功率压到可以忽略，必须做到：
 
 1. **失败限速：**
-   - 每个来源地址每秒最多 64 次 MAC 校验失败，超出部分不再做 HMAC 运算，直接丢弃；
-   - 每个 session 每秒最多 256 次失败，一分钟内累计超过 4096 次时，记录一条告警。
+   - 每个来源地址每秒最多 64 次 MAC 校验失败，超出部分不再做 HMAC 运算，直接丢弃。"来源地址"按 IP 算，不含端口（攻击者可以随意换端口）；
+   - 每个 session 每秒最多 256 次失败，超出部分同样不做 HMAC 运算、直接丢弃；一分钟内累计超过 4096 次时，记录一条告警；
+   - 每秒的限额按固定的 1 秒窗口统计，告警按固定的 60 秒窗口统计，和中继现有的预算一致；
+   - 带着未知 session（或 session 为 0 却不是 HELLO/CONFIRM）的数据报没有密钥可校验，直接丢弃，计入该地址的失败次数；
+   - HELLO 和 CONFIRM 的 tag 校验失败，同样计入该地址的失败次数；
+   - 客户端不限速：它只接受来自中继地址的数据报，校验失败的直接丢弃并计数。
    - 按这个速率，单个地址猜中一次约需 2 年。
 2. **每跳独立密钥、票据最长 300 s：** 同现状。
 3. **重放窗口：** 同现状。
