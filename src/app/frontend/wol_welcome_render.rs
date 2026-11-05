@@ -557,6 +557,28 @@ pub(crate) fn render_wol_page(
             }),
         _ => None,
     };
+    // VERA online's account popup over the login page.
+    let account_form = match (&painted, children) {
+        (Painted::Login(layout), true) => state
+            .frontend
+            .wol
+            .as_ref()
+            .and_then(|visit| visit.login())
+            .and_then(|login| login.account.as_ref())
+            .zip(crate::app::shell_wol::account_form_layout(state))
+            .map(|(form, rects)| {
+                (
+                    rects.dialog,
+                    crate::app::frontend::skirmish_shell_render::paint_wol_account_form(
+                        state,
+                        form,
+                        &rects,
+                        layout.page.scale,
+                    ),
+                )
+            }),
+        _ => None,
+    };
     let options_page = match &state.frontend.wol.as_ref().expect("checked").page {
         WolPage::Options(page) => Some(page.as_ref()),
         _ => None,
@@ -990,6 +1012,14 @@ pub(crate) fn render_wol_page(
         });
         text.extend(login.texts);
         text.extend(login.popup_texts);
+    }
+    if let (Some(atlas), Some((dialog, form))) = (controls_atlas, account_form) {
+        hide_glyphs_under(&mut text, dialog);
+        draws.push(TexturedDraw {
+            texture: &atlas.texture,
+            instances: form.controls,
+        });
+        text.extend(form.texts);
     }
     if let (Some(atlas), Some(my_info)) = (controls_atlas, my_info_children) {
         draws.push(TexturedDraw {

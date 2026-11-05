@@ -12,8 +12,9 @@ use crate::assets::mix_archive::MixArchive;
 use crate::assets::mix_hash::mix_hash;
 use crate::assets::pal_file::Palette;
 use crate::assets::shp_file::ShpFile;
-use crate::render::batch::{BatchRenderer, BatchTexture};
+use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::gpu::GpuContext;
+use crate::render::sidebar_smoothing::{self, SidebarPieces, SmoothCopy};
 
 #[path = "sidebar_chrome_command_bar.rs"]
 mod command_bar;
@@ -343,11 +344,40 @@ pub struct SidebarChromeAtlas {
     /// Global DARKEN.SHP source, converted with this side's ordinary N=1
     /// palette (SidebarLoadSHPs6A588C). Its resolver is LoadFileFromMIX.
     pub(crate) darken: Option<SidebarDarkenMask>,
+    /// The pieces the sidebar's column and command bar draw, kept for VERA's
+    /// smooth sidebar (`render::sidebar_smoothing`).
+    sidebar_pieces: SidebarPieces,
+    /// Their copy at the sidebar's draw scale while it is on.
+    smooth: Option<SmoothCopy>,
 }
 
 impl SidebarChromeAtlas {
     pub fn source_identity(&self) -> &SidebarChromeAtlasIdentity {
         &self.source_identity
+    }
+
+    /// Follow the smooth sidebar's scale; None draws the atlas's own pixels.
+    pub fn set_smooth_scale(
+        &mut self,
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        scale: Option<u32>,
+    ) {
+        let source = self.sidebar_pieces.source();
+        sidebar_smoothing::follow_scale(&mut self.smooth, source, scale, gpu, batch);
+    }
+
+    /// The smooth copy of the sidebar's pieces, when there is one.
+    pub fn smooth_texture(&self) -> Option<&BatchTexture> {
+        self.smooth.as_ref().and_then(SmoothCopy::texture)
+    }
+
+    /// Point `instances`, drawn from this atlas by the sidebar's column or
+    /// command bar, at the same pixels of the smooth copy, and say whether
+    /// they were. They stay on the atlas when there is no copy, or one draws
+    /// a piece it lacks.
+    pub fn retarget_to_smooth(&self, instances: &mut [SpriteInstance]) -> bool {
+        self.smooth_texture().is_some() && self.sidebar_pieces.retarget(instances)
     }
 }
 
@@ -372,27 +402,50 @@ impl SidebarChromeSet {
     }
 
     pub fn resolve_side(&self, side_index: i32) -> Option<ResolvedSidebarChrome<'_>> {
-        let requested_theme = sidebar_theme_for_side(side_index);
+        let (actual_theme, index) = self.resolve_index(side_index)?;
+        Some(ResolvedSidebarChrome {
+            requested_theme: sidebar_theme_for_side(side_index),
+            actual_theme,
+            atlas: &self.atlases[index].1,
+        })
+    }
+
+    /// The theme and the place in `atlases` of the atlas `side_index` draws.
+    fn resolve_index(&self, side_index: i32) -> Option<(SidebarTheme, usize)> {
+        let position = |side| self.atlases.iter().position(|(s, _)| *s == side);
         #[cfg(feature = "ares")]
-        let (actual_theme, atlas) = {
-            let (_, atlas) = self.atlases.iter().find(|(side, _)| *side == side_index)?;
-            (atlas.source_identity.atlas_theme, atlas)
+        let resolved = {
+            let index = position(side_index)?;
+            (self.atlases[index].1.source_identity.atlas_theme, index)
         };
         #[cfg(not(feature = "ares"))]
-        let (actual_theme, atlas) = {
-            let lookup = |index| {
-                self.atlases
-                    .iter()
-                    .find(|(side, _)| *side == index)
-                    .map(|(_, a)| a)
-            };
-            select_sidebar_theme(requested_theme, lookup(0), lookup(1), lookup(2))?
+        let resolved = {
+            let (allied, soviet, yuri) = (position(0), position(1), position(2));
+            let (theme, &index) = select_sidebar_theme(
+                sidebar_theme_for_side(side_index),
+                allied.as_ref(),
+                soviet.as_ref(),
+                yuri.as_ref(),
+            )?;
+            (theme, index)
         };
-        Some(ResolvedSidebarChrome {
-            requested_theme,
-            actual_theme,
-            atlas,
-        })
+        Some(resolved)
+    }
+
+    /// Follow the smooth sidebar's scale with the atlas `side_index` draws;
+    /// the others drop their copies.
+    pub fn set_smooth_scale(
+        &mut self,
+        side_index: i32,
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        scale: Option<u32>,
+    ) {
+        let current = self.resolve_index(side_index).map(|(_, index)| index);
+        for (index, (_, atlas)) in self.atlases.iter_mut().enumerate() {
+            let scale = scale.filter(|_| current == Some(index));
+            atlas.set_smooth_scale(gpu, batch, scale);
+        }
     }
 }
 
@@ -1160,6 +1213,52 @@ fn build_theme_atlas(
     }
 
     let texture = batch.create_texture(gpu, &rgba, atlas_width, atlas_height);
+    // VERA's smooth sidebar scales what the column and the command bar draw:
+    // every piece but the pause menu's panel, buttons and backgrounds, and
+    // the extras nothing draws.
+    let sidebar_pieces: Vec<[u32; 4]> = command_bar
+        .entries()
+        .copied()
+        .chain(
+            [
+                top_strip_left_uv,
+                top_strip_sidebar_uv,
+                top_strip_thin_uv,
+                unknown_top_housing_uv,
+                unknown_mid_panel_uv,
+                Some(radar_uv),
+                Some(side1_uv),
+                tabs_uv,
+                Some(side2_uv),
+                Some(side3_uv),
+                power_uv,
+            ]
+            .into_iter()
+            .flatten(),
+        )
+        .chain(tab_frames_packed.iter().flatten().flatten().copied())
+        .chain(repair_frames_packed.iter().flatten().copied())
+        .chain(sell_frames_packed.iter().flatten().copied())
+        .chain(top_button_frames.iter().flatten().flatten().copied())
+        .chain(scroll_up_frames_packed.iter().flatten().copied())
+        .chain(scroll_down_frames_packed.iter().flatten().copied())
+        .chain(powerp_uvs.iter().flatten().copied())
+        .map(|entry| {
+            [
+                (entry.uv_origin[0] * atlas_width as f32).round() as u32,
+                (entry.uv_origin[1] * atlas_height as f32).round() as u32,
+                entry.pixel_size[0] as u32,
+                entry.pixel_size[1] as u32,
+            ]
+        })
+        .collect();
+    let sidebar_pieces = SidebarPieces::gather(
+        &rgba,
+        [atlas_width, atlas_height],
+        &sidebar_pieces,
+        CHROME_PADDING,
+        gpu.device.limits().max_texture_dimension_2d,
+    );
     Some(SidebarChromeAtlas {
         source_identity,
         texture,
@@ -1193,6 +1292,8 @@ fn build_theme_atlas(
         gclock_texture,
         gclock_frames,
         darken: SidebarDarkenMask::load(gpu, batch, asset_manager, &generic_palette),
+        sidebar_pieces,
+        smooth: None,
     })
 }
 

@@ -1,6 +1,7 @@
 //! The sidebar radar (`RadarClass`): the generated terrain surface and its
 //! geometry, the retained object tracker, the client-local event array, the
-//! housing animation, and the minimap renderer that draws them.
+//! housing animation, the minimap renderer that draws them, and VERA's
+//! optional HD radar.
 
 pub mod anim;
 mod current_cell;
@@ -9,6 +10,7 @@ mod events;
 pub(crate) use events::saved_radar_fixture;
 pub(crate) use events::{ClientRadarEvents, SavedRadarEventsError};
 pub(super) mod geometry;
+mod hd;
 mod helpers;
 mod interaction;
 pub(crate) use interaction::{NativeRadarCameraTarget, NativeRadarInputTarget};

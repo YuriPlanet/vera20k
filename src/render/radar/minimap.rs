@@ -36,9 +36,10 @@ use std::collections::HashMap;
 use super::current_cell::CurrentRadarCellAuthority;
 use super::events::{ClientRadarEvents, RadarEventSource};
 use super::geometry::NativeRadarSurfaceGeometry;
+use super::hd::HdRadar;
 pub(crate) use super::helpers::minimap_overlay_datum;
 use super::helpers::{
-    COLOR_SHROUD, MINIMAP_DEPTH, MINIMAP_HEIGHT, MINIMAP_WIDTH, RadarSurfacePixel,
+    COLOR_SHROUD, CellVisibility, MINIMAP_DEPTH, MINIMAP_HEIGHT, MINIMAP_WIDTH, RadarSurfacePixel,
     cell_visibility_color, dim_color, set_pixel, surface_visibility_color,
 };
 pub use super::helpers::{OverlayClassification, default_minimap_rect};
@@ -143,6 +144,9 @@ pub struct MinimapRenderer {
     radar_events: ClientRadarEvents,
     /// Client-local `RadarClass+0x14DC..0x14F8` current/previous rectangle.
     pub(super) viewport_state: NativeRadarViewportState,
+    /// VERA's optional HD radar (`[VERA] HdRadar=`, [`super::hd`]): drawn in
+    /// place of `map_texture` while present.
+    hd: Option<HdRadar>,
 }
 
 impl MinimapRenderer {
@@ -229,7 +233,39 @@ impl MinimapRenderer {
             radar_tracker: RetainedRadarTracker::default(),
             radar_events: ClientRadarEvents::default(),
             viewport_state: NativeRadarViewportState::default(),
+            hd: None,
         }
+    }
+
+    /// VERA's HD radar: draw the radar at `scale` times its native pixels, or
+    /// natively for none or 1. Only a generated surface has an HD form; the
+    /// mapless fallback stays native.
+    pub(crate) fn set_hd_scale(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        scale: Option<u32>,
+    ) {
+        let scale = scale
+            .filter(|&scale| scale > 1)
+            .filter(|_| self.native_radar_terrain.is_some());
+        if self.hd.as_ref().map(HdRadar::scale) == scale {
+            return;
+        }
+        if let Some(terrain) = &mut self.native_radar_terrain {
+            terrain.set_hd_scale(scale);
+        }
+        self.hd = scale
+            .zip(self.native_radar_surface)
+            .map(|(scale, surface)| HdRadar::new(device, queue, batch, surface, scale));
+        // Paint the new picture on the next update, even within this tick.
+        self.last_fog_generation = u64::MAX;
+    }
+
+    /// The HD radar's scale while it is drawn.
+    pub(super) fn hd_scale(&self) -> Option<u32> {
+        self.hd.as_ref().map(HdRadar::scale)
     }
 
     /// Synchronously install a changed normalized LocalSize authority and
@@ -284,6 +320,8 @@ impl MinimapRenderer {
         self.map_pixel_h = projection.map_pixel_h;
         self.native_radar_surface = projection.native_radar_surface;
         self.native_radar_terrain = projection.native_radar_terrain;
+        // The next `set_hd_scale` builds the HD radar for the new surface.
+        self.hd = None;
         self.structural_bridge_radar_color =
             super::helpers::structural_bridge_radar_color(overlay_radar_colors);
         self.playfield_bounds = playfield_bounds;
@@ -449,8 +487,9 @@ impl MinimapRenderer {
                     // It retains the legacy per-cell presentation path.
                     &[]
                 };
+                let viewer = fog.by_owner().get(&local_owner);
                 for terrain_pixel in pixels {
-                    let color = match surface_visibility_color(local_owner, fog, terrain_pixel) {
+                    let color = match surface_visibility_color(viewer, terrain_pixel) {
                         Some(color) => color,
                         None => continue,
                     };
@@ -511,6 +550,10 @@ impl MinimapRenderer {
                     }
                 }
             }
+        }
+
+        if let Some(hd) = &mut self.hd {
+            hd.image_mut().keep_native_terrain(&self.rgba_scratch);
         }
 
         // Trigger/action precedes LogicClass: action 40 clears all, forces the
@@ -672,9 +715,31 @@ impl MinimapRenderer {
             }
         }
 
+        // VERA's HD radar: terrain, shroud and fog per HD pixel, under the
+        // object, event and beacon pixels composed above.
+        if let (Some(hd), Some((terrain, revision))) = (
+            self.hd.as_mut(),
+            self.native_radar_terrain
+                .as_ref()
+                .and_then(NativeRadarTerrainSurface::hd_rgb565),
+        ) {
+            let viewer = local_owner
+                .filter(|_| !full_visibility)
+                .map(|owner| fog.by_owner().get(&owner));
+            let image = hd.image_mut();
+            image.paint(terrain, revision, |rx, ry| match viewer {
+                None => CellVisibility::Revealed,
+                Some(viewer) => CellVisibility::of(viewer, rx, ry),
+            });
+            image.draw_objects(rgba);
+        }
+
         let consumed_radar_terrain_generation = staged_radar_terrain_update.finish_infallible(
             &mut self.last_radar_terrain_dirty_generation,
             || {
+                if let Some(hd) = &self.hd {
+                    hd.upload(queue);
+                }
                 queue.write_texture(
                     wgpu::TexelCopyTextureInfo {
                         texture: &self.map_texture_raw,
@@ -774,7 +839,10 @@ impl MinimapRenderer {
     }
 
     /// Spacebar review of the eight most recent accepted event cells.
-    pub(crate) fn cycle_radar_event(&mut self, now: crate::util::time::Instant) -> Option<(u16, u16)> {
+    pub(crate) fn cycle_radar_event(
+        &mut self,
+        now: crate::util::time::Instant,
+    ) -> Option<(u16, u16)> {
         self.radar_events.cycle_cell(now)
     }
 
@@ -828,9 +896,10 @@ impl MinimapRenderer {
         (&self.rgba_scratch, [MINIMAP_WIDTH, MINIMAP_HEIGHT])
     }
 
-    /// Get a reference to the minimap texture for drawing.
+    /// Get a reference to the minimap texture for drawing: the HD radar's
+    /// while it is on. Both fill the same normalized copy frame.
     pub fn map_texture(&self) -> &BatchTexture {
-        &self.map_texture
+        self.hd.as_ref().map_or(&self.map_texture, HdRadar::texture)
     }
 
     /// Get a reference to the white texture for drawing viewport lines.

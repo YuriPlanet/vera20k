@@ -101,7 +101,8 @@ EXTENSION_FIELDS = frozenset(('commands', 'gestures', 'observe_owners', 'observe
                               'observe_tooltips',
                               'camera_cell', 'camera_top_left', 'observe_start_markers',
                               'cursor_position', 'terrain_cells',
-                              'observe_super_weapons', 'observe_diplomacy', 'observe_sidebar_steps'))
+                              'observe_super_weapons', 'observe_diplomacy', 'observe_sidebar_steps',
+                              'presentation'))
 ASCII_UPPER = str.maketrans('abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')
 COPIES = {'profile': 'profile.json', 'config': 'config.toml', 'contract': 'contract.json'}
 # Process Main RNG reads (native global 0x886B88): `rng.main` and every
@@ -568,6 +569,22 @@ def _profile_extensions(profile: Mapping[str, Any], *, production_commands: bool
             _bounded_int(audio[key], f'profile.observe_audio.{key}', 1, maximum)
     if 'allow_load_segments' in profile and type(profile['allow_load_segments']) is not bool:
         raise ValidationError('profile.allow_load_segments must be a boolean')
+    if 'presentation' in profile:
+        # The `[VERA]` Zoom/Sidebar/HdRadar/SmoothSidebar values; Rust owns their
+        # effect on the frame.
+        presentation = require_object(profile['presentation'], 'profile.presentation')
+        optional = tuple(key for key in ('hd_radar', 'smooth_sidebar') if key in presentation)
+        require_exact_keys(presentation, ('zoom', 'sidebar') + optional, 'profile.presentation')
+        for key in optional:
+            if type(presentation[key]) is not bool:
+                raise ValidationError(f'profile.presentation.{key} must be a boolean')
+        zoom = _bounded_int(presentation['zoom'], 'profile.presentation.zoom', 0, 10_000)
+        if zoom != 0 and (zoom < 100 or zoom % 50):
+            raise ValidationError('profile.presentation.zoom must be 0 (Auto) or a 50-step percent from 100')
+        if require_int(presentation['sidebar'], 'profile.presentation.sidebar') not in (100, 150, 200):
+            raise ValidationError('profile.presentation.sidebar must be 100, 150 or 200')
+        if 'gestures' in profile or 'cursor_position' in profile:
+            raise ValidationError('profile.presentation cannot combine with gestures or cursor_position')
     commands = require_array(profile.get('commands', []), 'profile.commands')
     if len(commands) > 1024:
         raise ValidationError('profile.commands exceeds 1024 rows')
@@ -3281,8 +3298,16 @@ def validate_capture(directory: Path, profile: Mapping[str, Any],
     for key in ('ready', 'sidebar_view_present'):
         require_value(render.get(key), True, f'render.{key}')
     width, height = _integer(profile, 'width', 1), _integer(profile, 'height', 1)
-    for key in ('internal_extent', 'surface_extent'):
-        _require_equal(render.get(key), [width, height], f'render.{key}')
+    _require_equal(render.get('surface_extent'), [width, height], 'render.surface_extent')
+    if 'presentation' in profile:
+        # A zoomed battle frame is the window over the zoom.
+        extent = require_array(render.get('internal_extent'), 'render.internal_extent')
+        if len(extent) != 2:
+            raise ValidationError('render.internal_extent must contain exactly two dimensions')
+        for axis, limit in enumerate((width, height)):
+            _bounded_int(extent[axis], f'render.internal_extent[{axis}]', 1, limit)
+    else:
+        _require_equal(render.get('internal_extent'), [width, height], 'render.internal_extent')
     # The battlefield at the frame's top-left and the world rectangle the
     # camera can show, which tools/map_render.py crops and places tiles by.
     if 'tactical_extent' in render:

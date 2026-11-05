@@ -74,6 +74,8 @@ struct Targets {
 pub(crate) struct PackedSurface {
     targets: Targets,
     stencil: packed::Stencil,
+    /// Surface pixels per camera pixel, whole: each camera pixel is a block.
+    scale: u32,
 }
 
 pub(crate) struct TerrainDrawRenderer {
@@ -518,15 +520,19 @@ impl TerrainDrawRenderer {
 
     /// Attach output-local derived scratch without changing the tactical
     /// camera, frame counters or primary target. Recreate only on resize.
+    /// `scale` is the surface's pixels per camera pixel (the sidebar's at the
+    /// window's pixels, `SidebarFrame::in_window`).
     pub(crate) fn create_packed_surface(
         &self,
         device: &wgpu::Device,
         color: &wgpu::Texture,
         depth: &wgpu::TextureView,
+        scale: u32,
     ) -> PackedSurface {
         PackedSurface {
             targets: self.create_targets(device, color, depth),
             stencil: self.packed.create_stencil(color.size()),
+            scale: scale.max(1),
         }
     }
 
@@ -1256,7 +1262,10 @@ mod webgl_shader_tests {
                 "ion blast",
                 tactical_shader::source(include_str!("terrain_ion_blast.wgsl")),
             ),
-            ("scaled copy", include_str!("scaled_copy.wgsl").to_owned()),
+            (
+                "scaled copy",
+                crate::render::scaled_copy::shader_source(true),
+            ),
             (
                 "chrono screen",
                 crate::render::chrono_screen::shader_source(true),
