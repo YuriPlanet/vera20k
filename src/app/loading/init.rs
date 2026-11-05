@@ -2421,7 +2421,8 @@ pub(crate) fn load_map_initial_with_assets(
         .or(quickplay_seed);
     if let Some(seed_name) = seed_selection.as_deref() {
         let mut options = crate::map::rmg::RmgOptions::default();
-        let seed_path = ra2_dir.join(seed_name);
+        // A received seed's name is already its cached path.
+        let seed_path = crate::map::source::random_map_dir(&ra2_dir).join(seed_name);
         let mut seed_source = None;
         match crate::util::file_system::read(&seed_path) {
             Ok(bytes) => {

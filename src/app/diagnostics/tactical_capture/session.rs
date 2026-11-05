@@ -184,14 +184,10 @@ impl TacticalCaptureSession {
                     seed_name == crate::app::shell_random_map::RANDMAP_SED_FILE,
                     "generated capture requires the normal accepted RandMap.Sed record"
                 );
-                let path = state
-                    .platform
-                    .game_config
-                    .as_ref()
-                    .unwrap()
-                    .paths
-                    .ra2_dir
-                    .join(seed_name);
+                let path = crate::map::source::random_map_dir(
+                    &state.platform.game_config.as_ref().unwrap().paths.ra2_dir,
+                )
+                .join(seed_name);
                 let bytes = std::fs::read(&path).context("read capture setup seed")?;
                 let ini = crate::rules::ini_parser::IniFile::from_bytes(&bytes)
                     .context("parse capture setup seed")?;

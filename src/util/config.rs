@@ -80,8 +80,9 @@ impl PathsConfig {
         &self.legacy_settings_dir
     }
 
-    /// VERA's own folder for maps it downloads or receives, so nothing is
-    /// written into the retail installation (`map::source::keep_received_map`).
+    /// VERA's own folder for maps it downloads or receives and for the
+    /// random-map dialog's files, so nothing is written into the retail
+    /// installation (`map::source::keep_received_map`, `random_map_dir`).
     pub fn downloaded_maps_dir(&self) -> PathBuf {
         self.settings_dir.join("Maps")
     }

@@ -1129,7 +1129,7 @@ impl App {
             .frontend
             .multiplayer_shell_runtime
             .random_map_options_for_setup();
-        let available = Self::saved_seed_dir(state)
+        let available = Self::random_map_dir(state)
             .is_some_and(|dir| crate::map::rmg::saved_seeds::saved_seeds_available(&dir));
         state.frontend.skirmish_shell_state.random_map_setup_modal =
             Some(crate::ui::skirmish_shell::RandomMapSetupModalState::open(
