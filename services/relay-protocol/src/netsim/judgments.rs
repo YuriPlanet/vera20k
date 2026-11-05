@@ -1166,12 +1166,16 @@ fn j09_an_outage_adds_no_loss() {
 
 // --- Judgment 10 (spec §5.2, §5.3, §6.3 rows 1-2, §7.2) ---
 
-/// Once the client judges DELAYED (§5.3) its uplink is Congested (§5.2),
-/// the UPLINK link byte carries bit2, no copy is sent while congested
+/// Once the client judges DELAYED (§5.3) its uplink is Congested (§5.2)
+/// and stays so for the 10 s hold after DELAYED last held, no longer; the
+/// UPLINK link byte's bit2 is DELAYED itself, so it may clear inside the
+/// hold; no copy is sent while congested
 /// (§6.3 row 6 is lossy only), an UPLINK carrying a never-sent batch is at
 /// least 33 ms after the previous UPLINK (row 1, 拥堵), any two UPLINKs are
 /// at least 16 ms apart (row 2); the relay judges the reader Congested
-/// (§5.2 from link bit2), sends it no 8 ms repeat and keeps K <= 2 (§7.2).
+/// (§5.2 from link bit2) for at most 10 s after the last DELAYED UPLINK
+/// reached it, sends it no 8 ms repeat (JITTERY or not) and keeps K <= 2
+/// (§7.2).
 fn check_congestion(trace: &Trace, client: usize) -> Check {
     let entered = trace
         .client_stats
@@ -1194,8 +1198,15 @@ fn check_congestion(trace: &Trace, client: usize) -> Check {
             ensure(copies == first, || {
                 format!("copy while congested at {} ms", record.sent_ms())
             })?;
-            ensure(uplink.link & 4 != 0, || {
-                format!("DELAYED bit clear at {} ms (spec §3.2)", record.sent_ms())
+            // §5.2: the congested hold may outlast DELAYED; the bit says
+            // DELAYED itself (§3.2, §5.3).
+            let delayed = stats.unwrap().delayed;
+            ensure((uplink.link & 4 != 0) == delayed, || {
+                format!(
+                    "DELAYED bit {} with DELAYED {delayed} at {} ms (spec §3.2)",
+                    uplink.link & 4 != 0,
+                    record.sent_ms()
+                )
             })?;
             if let Some(previous) = previous {
                 ensure(t - previous >= 16_000, || {
@@ -1222,6 +1233,31 @@ fn check_congestion(trace: &Trace, client: usize) -> Check {
     ensure(copies_at_entry.is_some(), || {
         "no UPLINK while congested".into()
     })?;
+    // §5.2: the congested state holds 10 s after its condition last held,
+    // and no longer (50 ms of slack for services and passes).
+    const HOLD_US: u64 = 10_000_000 + 50_000;
+    let mut last_delayed: Option<u64> = None;
+    for (at, c, stats) in &trace.client_stats {
+        if *c != client {
+            continue;
+        }
+        if stats.delayed {
+            last_delayed = Some(*at);
+        }
+        if stats.uplink == LinkState::Congested {
+            ensure(last_delayed.is_some_and(|d| *at <= d + HOLD_US), || {
+                format!(
+                    "uplink Congested at {} ms, more than 10 s after DELAYED (spec §5.2)",
+                    ms(*at)
+                )
+            })?;
+        }
+    }
+    let delayed_arrivals: Vec<u64> = ups
+        .iter()
+        .filter(|r| r.uplink().unwrap().link & 4 != 0)
+        .filter_map(|r| r.arrived_us())
+        .collect();
     let mut congested_seen = false;
     let mut previous: Option<&crate::ReaderLinkStats> = None;
     for (at, c, stats) in &trace.reader_stats {
@@ -1230,6 +1266,17 @@ fn check_congestion(trace: &Trace, client: usize) -> Check {
         }
         if stats.downlink == LinkState::Congested {
             congested_seen = true;
+            ensure(
+                delayed_arrivals
+                    .iter()
+                    .any(|d| *d <= *at && *at <= d + HOLD_US),
+                || {
+                    format!(
+                        "reader Congested at {} ms, more than 10 s after a DELAYED UPLINK (spec §5.2)",
+                        ms(*at)
+                    )
+                },
+            )?;
             ensure(stats.piggyback_depth <= 2, || {
                 format!("K {} while congested", stats.piggyback_depth)
             })?;
