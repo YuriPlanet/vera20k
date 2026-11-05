@@ -205,9 +205,32 @@ pub struct Report {
     pub malformed: u64,
     /// Datagrams the relay rejected, by error and kind.
     pub relay_rejects: BTreeMap<String, u64>,
+    /// The whole room's relay traffic, counted at the network layer.
+    pub relay: RelayTraffic,
     pub groups: Vec<ClientReport>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub clients: Vec<ClientReport>,
+}
+
+/// The relay's datagrams and bytes a second (IP/UDP headers included):
+/// `sent` as it sent them, before any loss; `received` as they reached it.
+#[derive(Debug, Serialize, Clone, Default)]
+pub struct RelayTraffic {
+    pub sent_packets_per_s: f64,
+    pub sent_bytes_per_s: f64,
+    pub received_packets_per_s: f64,
+    pub received_bytes_per_s: f64,
+}
+
+impl RelayTraffic {
+    pub fn of(sent: &Traffic, received: &Traffic, seconds: f64) -> Self {
+        Self {
+            sent_packets_per_s: sent.packets as f64 / seconds,
+            sent_bytes_per_s: sent.bytes as f64 / seconds,
+            received_packets_per_s: received.packets as f64 / seconds,
+            received_bytes_per_s: received.bytes as f64 / seconds,
+        }
+    }
 }
 
 /// The mean client of `members`, with latency and turn samples pooled.

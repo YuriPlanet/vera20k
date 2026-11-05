@@ -159,6 +159,10 @@ pub struct Simulation {
     queue: BinaryHeap<Queued>,
     order: u64,
     relay_rejects: BTreeMap<String, u64>,
+    /// The relay's own traffic at the network layer, in the window: what
+    /// it sent (before loss) and what reached it (copies included).
+    relay_sent: Traffic,
+    relay_received: Traffic,
     trace: Option<Trace>,
 }
 
@@ -241,6 +245,8 @@ impl Simulation {
             queue: BinaryHeap::new(),
             order: 0,
             relay_rejects: BTreeMap::new(),
+            relay_sent: Traffic::default(),
+            relay_received: Traffic::default(),
             trace: None,
             scenario,
         };
@@ -445,6 +451,7 @@ impl Simulation {
             .unwrap_or(0);
         if measured {
             client.observed.down.add(kinds[0], bytes.len());
+            self.relay_sent.add(kinds[0], bytes.len());
         }
         let lost = if self.dropped_by_rule(index, Direction::Down, &kinds) {
             Err(Loss::Rule)
@@ -606,6 +613,11 @@ impl Simulation {
                     self.client_tick(index, at_us, false);
                 }
                 Event::ToRelay(index, bytes, wire) => {
+                    if self.measured(at_us) {
+                        let kind = inspect::client_datagram(&bytes)
+                            .map_or("MALFORMED", |datagram| datagram.kind);
+                        self.relay_received.add(kind, bytes.len());
+                    }
                     let now_ms = at_us / 1000;
                     let endpoint = self.clients[index].endpoint;
                     let result = self
@@ -834,6 +846,7 @@ impl Simulation {
                 .map(|client| client.observed.malformed)
                 .sum(),
             relay_rejects: self.relay_rejects.clone(),
+            relay: report::RelayTraffic::of(&self.relay_sent, &self.relay_received, seconds),
             groups,
             clients: rows.into_iter().map(|(row, ..)| row).collect(),
         }
