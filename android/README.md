@@ -74,11 +74,11 @@ for releases.
    APK to 37 MB, so the remaining gain is link time and disk more than download
    size — but debug-symbol handling is AGP's business and the size moved between
    builds (37 MB, then 75 MB), which a pinned shipping profile would settle.
-2. **Retail assets (P3).** The engine runs once game data is present, but the
-   only path today is a `config.toml` pointing at a folder the player cannot
-   reach from inside the app. The plan's P3 import flow is still the gate for a
-   real user; the smoke test pushed the data over adb and wrote
-   `files/config.toml` by hand.
+2. **Live import progress.** The dialog shows the copy's step and the folder it
+   landed in, and the copy refuses a folder without `ra2md.mix`/`ra2.mix` before
+   touching anything, but the byte counter is wired and unexercised: the copy
+   reports every 16 MB and the card renders `Copying: N MB` only if a frame draws
+   between two reports, which a fast local copy can skip entirely.
 3. **Portrait, not landscape.** The manifest asks for `sensorLandscape`, but
    Android 16 ignores manifest orientation on large screens: the surface came up
    2400x3392 in portrait (log below). Rotation and a portrait-capable layout are
@@ -115,6 +115,12 @@ for releases.
 - **Leaving and returning works both ways**: screen-off then wake, and HOME then
   re-entry, both log `Application resumed — surface rebuilt` and draw the menu
   again; exiting from the menu then tapping the icon is a cold start.
+- **The import flow is complete.** With no installation the card offers
+  Import Game Files; Choose Folder opens the system picker, the chosen tree is
+  copied into `files/ra2`, `files/config.toml` is written, the card names that
+  copy (`Game files: /data/user/0/org.vera20k/files/ra2`), and the next launch
+  plays. A folder without `ra2md.mix`/`ra2.mix` is refused before anything is
+  copied, so a failed import cannot damage a working installation.
 - Build the native side with `--profile fast` (or `shipping`) for anything you
   run on the device: the `dev` profile is slow enough that the intro movie
   starves the main thread and Android kills the app for an ANR.
