@@ -1710,7 +1710,7 @@ fn project_pre_fill_start_assignment(
 /// the startup crates, AI credits and alliances that VERA's
 /// `finalize_scenario_post_map` runs later. The reveal reads none of them,
 /// and a noncampaign CellPUT already discovered every object for the current
-/// house (`discover_cell_put_object`), so no effect is known.
+/// house (`discover_by_player`), so no effect is known.
 pub fn apply_launch_shroud_option(
     sim: &mut Simulation,
     context: crate::sim::world::UninitContext<'_>,

@@ -1258,8 +1258,9 @@ fn infantry_owner_discovery_leaves_building_power_radar_and_spysat_inputs_unchan
 
 #[test]
 fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
-    // Retail Building440DFD/446767 allocate a nullable614 only after successful
-    // placement. Exercise both actual Unlimbo paths, including failed marks.
+    // A campaign Unlimbo lights its building (`0x00440D6C..0x00440E02`) only
+    // after a successful placement. Exercise both actual Unlimbo paths,
+    // including failed marks.
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[BuildingTypes]\n0=GALITE\n[GALITE]\nStrength=100\n\
          LightVisibility=5000\nLightIntensity=.2\n",
@@ -1280,24 +1281,21 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
         .first_key_value()
         .unwrap();
     assert!(source.active);
-    assert_eq!((source.rx, source.ry), (6, 5));
+    assert_eq!(
+        (source.center_x, source.center_y),
+        (6 * 256 + 128, 5 * 256 + 128)
+    );
     assert_eq!(authored.lighting_sources.pending().len(), 1);
     authored.lighting_sources.discard_pending();
     authored
         .lighting_sources
         .set_building_light_active(authored_id, false);
-    Simulation::allocate_building_light(
-        &authored.interner,
-        &authored.substrate,
-        &mut authored.lighting_sources,
-        authored_id,
-        &rules,
-    );
+    authored.light_building(authored_id, &rules);
     assert!(
-        !authored.lighting_sources.buildings()[&authored_id].active,
-        "a repeated construction callback must not activate an existing614"
+        authored.lighting_sources.buildings()[&authored_id].active,
+        "the light block Enables an existing614 (0x00554A60)"
     );
-    assert_eq!(authored.lighting_sources.pending().len(), 1);
+    assert_eq!(authored.lighting_sources.pending().len(), 2);
 
     let mut held = Simulation::with_seed(0x1a42);
     install_constructor_test_playfield(&mut held);
@@ -1359,6 +1357,44 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
     );
     assert!(failed_new.lighting_sources.buildings().is_empty());
     assert!(failed_new.lighting_sources.pending().is_empty());
+}
+
+/// A campaign Unlimbo skips the light block for a building the player has
+/// not discovered on ground open to the player (`Cell+0x12C & 0x10`,
+/// `0x00440D25..0x00440D4B`) and discovers it for the player instead
+/// (`0x00440D61`). A human-owned one CellPUT missed, here on open but
+/// unmapped ground, opens and so lights (`0x004466D5`).
+#[test]
+fn campaign_unlimbo_discovers_a_building_on_open_ground_instead_of_lighting_it() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=GALITE\n[GALITE]\nStrength=100\n\
+         LightVisibility=5000\nLightIntensity=.2\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::with_seed(0x1a44);
+    install_constructor_test_playfield(&mut sim);
+    install_constructor_flat_terrain(&mut sim);
+    install_american_house(&mut sim);
+    let player = sim.interner.get("Americans").unwrap();
+    sim.session.set_current_house_for_test(Some(player));
+    sim.fog = crate::sim::vision::FogState::new(10, 10);
+    sim.fog.set_ground_bits_for_test(player, 6, 5, 0x10);
+    assert_eq!(
+        sim.spawn_from_map(
+            &[map_entity("GALITE", EntityCategory::Structure, (6, 5))],
+            Some(&rules),
+        ),
+        1
+    );
+    let (&id, light) = sim
+        .lighting_sources
+        .buildings()
+        .first_key_value()
+        .expect("the opening lights the lamp");
+    assert!(light.active);
+    let lamp = sim.substrate.entities.get(id).unwrap();
+    assert!(lamp.discovery.discovered_by_current_house());
+    assert!(lamp.building_art.actually_placed());
 }
 
 fn install_constructor_test_playfield(sim: &mut Simulation) {

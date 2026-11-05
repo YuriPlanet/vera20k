@@ -1608,13 +1608,6 @@ impl Simulation {
             // Infantry51E114 restores its class water sentinel after Foot.
             entity.mission_leaf.reset_infantry_water_state();
         }
-        Self::allocate_building_light(
-            &self.interner,
-            &self.substrate,
-            &mut self.lighting_sources,
-            stable_id,
-            rules,
-        );
         Self::initialize_cloak_after_unlimbo(
             &self.interner,
             &self.session,
@@ -2228,13 +2221,6 @@ impl Simulation {
                 .with_unlimbo_facing(facing),
         );
         if matches!(outcome, RevealOutcome::Revealed { .. }) {
-            Self::allocate_building_light(
-                &self.interner,
-                &self.substrate,
-                &mut self.lighting_sources,
-                stable_id,
-                rules,
-            );
             if self
                 .substrate
                 .entities
@@ -2254,12 +2240,13 @@ impl Simulation {
                 if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
                     entity.initialize_building_idle_body(self.session.binary_frame() as i32);
                 }
-                // BuildingUnlimbo440D25..440D6C discovers for Player only on
-                // revealed ground in campaign mode;440E5C..440E76 discovers
-                // for an AI owner. The shared discovery owner already ran
-                // both admitted routes. Do not add an eager human opening:
-                // GrandOpening4467C9 and UpdateAnimation451145..451218 own
-                // readiness, and a hidden turret must keep Guard queued.
+                // BuildingUnlimbo440D25..440D6C lights a campaign building or
+                // discovers it for Player, and 440E5C..440E76 discovers it for
+                // an AI owner: the Unlimbo above already ran both through the
+                // shared discovery owner. Do not add
+                // an eager human opening: GrandOpening4467C9 and
+                // UpdateAnimation451145..451218 own readiness, and a hidden
+                // turret must keep Guard queued.
             }
         }
         (stable_id, outcome)
@@ -3088,6 +3075,8 @@ impl Simulation {
         // Selling449E74/449E80 caches the building's refund before its Limbo
         // and the new Unit's Unlimbo. Those callbacks may change the owner.
         let failed_unlimbo_refund = production::techno_refund(self, rules, sid);
+        // Selling449F12..449F1E turns the light off before the attacker list.
+        self.lighting_sources.set_building_light_active(sid, false);
         let targeters: Vec<u64> = self
             .substrate
             .entities

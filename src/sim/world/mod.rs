@@ -3732,14 +3732,8 @@ impl Simulation {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub fn allocate_building_light_for_test(&mut self, id: u64, rules: &RuleSet) {
-        Self::allocate_building_light(
-            &self.interner,
-            &self.substrate,
-            &mut self.lighting_sources,
-            id,
-            rules,
-        );
+    pub fn light_building_for_test(&mut self, id: u64, rules: &RuleSet) {
+        self.light_building(id, rules);
     }
 
     #[cfg(any(test, feature = "test-support"))]

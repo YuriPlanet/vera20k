@@ -375,9 +375,11 @@ impl Simulation {
                     &mut self.lighting_sources,
                 );
                 // `LightSourceClass::UpdateLightConverts @ 0x00554D50`
-                // (0x0055B5EA..0x0055B5F1, a 6 ms budget) applies queued cell
-                // light converts on a wall-clock budget; the renderer's
-                // `DeferredCellLightRefresh` owns that. `EMPulseClass::UpdateAll
+                // (0x0055B5EA..0x0055B5F1, a 6 ms budget) applies the cell
+                // light converts a deferred light change queued. Every light
+                // change passes mode 0 (Enable, Deactivate, ChangeLevels and
+                // the destructor all push 0), so the queue stays empty and
+                // presentation applies each change at once. `EMPulseClass::UpdateAll
                 // @ 0x004C54A0` (0x0055B5F6) expires EMPulses. RESIDUAL:
                 // EMPulseClass is not modelled. Its constructor (0x004C52B0)
                 // has no caller, so the walk always finds an empty vector: no

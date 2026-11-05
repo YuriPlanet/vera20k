@@ -397,6 +397,10 @@ impl Simulation {
         if first_opening {
             self.open_super_weapon_anims(id, damaged, garrisoned, rules);
         }
+        // 0x004466D5..0x0044676C: the light block Unlimbo shares.
+        if first_opening {
+            self.light_building(id, rules);
+        }
         // 0x0044678B..0x004467C3: the sensor arm, last in the first-opening
         // block before the ready latch.
         if first_opening {

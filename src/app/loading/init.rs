@@ -507,7 +507,7 @@ mod map_wall_owner_candidate_tests {
                 lamp.lifecycle.set_in_limbo_for_test(false);
                 lamp.lifecycle.set_cell_marked_for_test(true);
                 sim.entities_mut_for_test().insert(lamp);
-                sim.allocate_building_light_for_test(id, &rules);
+                sim.light_building_for_test(id, &rules);
                 id += 1;
             }
         }
@@ -518,7 +518,7 @@ mod map_wall_owner_candidate_tests {
             let area = point_light_area_cells(source, 128, 128, |x, y| {
                 terrain.cell(x, y).map(|c| c.level)
             });
-            if (source.rx, source.ry) == (24, 24) {
+            if (source.center_x, source.center_y) == (24 * 256 + 128, 24 * 256 + 128) {
                 let actual: Vec<[u16; 2]> = area.iter().map(|((x, y), _)| [*x, *y]).collect();
                 let expected: Vec<[u16; 2]> =
                     serde_json::from_value(native["area"].clone()).unwrap();
@@ -1251,7 +1251,7 @@ mod map_wall_owner_candidate_tests {
         lamp.install_building_up(BuildingUp::completing_in_ticks(9, 0), 0);
         sim.entities_mut_for_test().insert(lamp);
         sim.add_entity_occupancy(41);
-        sim.allocate_building_light_for_test(41, rules);
+        sim.light_building_for_test(41, rules);
         owner
     }
 
@@ -1297,15 +1297,9 @@ mod map_wall_owner_candidate_tests {
             .set_building_light_active(41, false);
         let disabled = derive_lighting_view(&config, Some(&sim), 2);
         assert!(disabled.point_lights.is_empty());
-        // Repeated allocation/construction must not reactivate an existing614.
-        sim.allocate_building_light_for_test(41, &rules);
-        assert!(
-            derive_lighting_view(&config, Some(&sim), 2)
-                .point_lights
-                .is_empty()
-        );
-        sim.lighting_sources_mut_for_test()
-            .set_building_light_active(41, true);
+        // The Unlimbo/opening light block Enables an existing614 (554A60).
+        sim.light_building_for_test(41, &rules);
+        assert_eq!(derive_lighting_view(&config, Some(&sim), 2), lit);
         fatal_lamp_stage(&mut sim, &rules, 41);
         assert!(
             derive_lighting_view(&config, Some(&sim), 2)
