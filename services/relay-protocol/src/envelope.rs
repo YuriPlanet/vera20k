@@ -150,9 +150,9 @@ impl Direction {
 }
 
 /// Reads the header without the tag (§6.1): the cheap first step that lets
-/// the relay find the hop by `session` (§6.2) and apply the failure limits
-/// before any HMAC (§6.4). The result is unauthenticated: no state may
-/// change on it alone (§6.4 condition 4).
+/// the relay find the hop by `session` (§6.2) and drop an unknown session
+/// without an HMAC (§6.4 item 1). The result is unauthenticated: no state
+/// may change on it alone (§6.4 item 5).
 ///
 /// `Err(RelayError::Malformed)` when `bytes` is shorter than `OVERHEAD` or
 /// longer than `MAX_DATAGRAM`, the version is not `VERSION`, or the kind is

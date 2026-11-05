@@ -40,20 +40,43 @@ const RESERVED: u8 = 1 << 7;
 /// each source's last BATCH ID in this pack (§5.2).
 struct Context {
     frame: u32,
-    batch_ids: [Option<u64>; 256],
+    // (source, last ID), at most one per source; a pack has few sources.
+    batch_ids: Vec<(u8, u64)>,
 }
 
 impl Context {
     fn new(frame: u32) -> Self {
         Self {
             frame,
-            batch_ids: [None; 256],
+            batch_ids: Vec::new(),
+        }
+    }
+
+    fn last_id(&self, source: u8) -> Option<u64> {
+        self.batch_ids
+            .iter()
+            .find(|(known, _)| *known == source)
+            .map(|(_, id)| *id)
+    }
+
+    fn set_last_id(&mut self, source: u8, id: Option<u64>) {
+        let at = self
+            .batch_ids
+            .iter()
+            .position(|(known, _)| *known == source);
+        match (at, id) {
+            (Some(at), Some(id)) => self.batch_ids[at].1 = id,
+            (Some(at), None) => {
+                self.batch_ids.swap_remove(at);
+            }
+            (None, Some(id)) => self.batch_ids.push((source, id)),
+            (None, None) => {}
         }
     }
 
     /// Whether `id` may and so must be written as bit6 (§5.3 rule 6).
     fn follows(&self, source: u8, id: u64) -> bool {
-        self.batch_ids[usize::from(source)].and_then(|last| last.checked_add(1)) == Some(id)
+        self.last_id(source).and_then(|last| last.checked_add(1)) == Some(id)
     }
 }
 
@@ -71,7 +94,7 @@ impl Context {
     fn undo(&mut self, undo: Undo) {
         self.frame = undo.frame;
         if let Some((source, id)) = undo.batch {
-            self.batch_ids[usize::from(source)] = id;
+            self.set_last_id(source, id);
         }
     }
 }
@@ -116,8 +139,8 @@ fn write_entry(record: &[u8], context: &mut Context, out: &mut Vec<u8>) -> Undo 
             let contents = &body[9..];
             varint::write(contents.len() as u64, out);
             out.extend_from_slice(contents);
-            undo.batch = Some((source, context.batch_ids[usize::from(source)]));
-            context.batch_ids[usize::from(source)] = Some(id);
+            undo.batch = Some((source, context.last_id(source)));
+            context.set_last_id(source, Some(id));
         }
         FRAME_END_EVENT => {}
         DEPARTURE_EVENT => out.extend_from_slice(&[body[0], u8::from(body.len() == 2)]),
@@ -159,10 +182,12 @@ pub fn encode_pack_v2(records: &[Vec<u8>], datagrams: usize) -> Vec<(Vec<u8>, us
     pack(&records, datagrams, true)
 }
 
-/// How many PACKs `encode_pack_v2` makes of all of `records`, without
-/// building them (the piggyback's packet count, transport spec §7.4).
-pub(crate) fn count_packs_v2(records: &[&[u8]]) -> usize {
-    pack(records, usize::MAX, false).len()
+/// Whether `encode_pack_v2` packs all of `records` into at most `limit`
+/// PACKs, found without building them and stopping past `limit` (the
+/// piggyback's packet count, transport spec §7.4).
+pub(crate) fn fits_packs_v2(records: &[&[u8]], limit: usize) -> bool {
+    let packs = pack(records, limit.saturating_add(1), false);
+    packs.len() <= limit
 }
 
 /// The greedy packing of `encode_pack_v2`; unless `build`, every pack
@@ -290,7 +315,8 @@ pub fn decode_pack_v2(payload: &[u8]) -> Result<Vec<Vec<u8>>, RelayError> {
         .ok_or(RelayError::Malformed)?;
         context.frame = frame;
         let sequence = base_seq.checked_add(index).ok_or(RelayError::Malformed)?;
-        let mut record = Vec::with_capacity(CANONICAL_HEAD + 9 + ORDERING_BATCH_CAPACITY);
+        // The longest tail but a batch's: DESYNC's 14 bytes.
+        let mut record = Vec::with_capacity(CANONICAL_HEAD + 14);
         record.push(kind);
         record.extend_from_slice(&sequence.to_le_bytes());
         record.extend_from_slice(&frame.to_le_bytes());
@@ -298,7 +324,8 @@ pub fn decode_pack_v2(payload: &[u8]) -> Result<Vec<Vec<u8>>, RelayError> {
             BATCH_EVENT => {
                 let source = reader.byte()?;
                 let id = if next_id {
-                    context.batch_ids[usize::from(source)]
+                    context
+                        .last_id(source)
                         .and_then(|last| last.checked_add(1))
                         .ok_or(RelayError::Malformed)?
                 } else {
@@ -313,10 +340,12 @@ pub fn decode_pack_v2(payload: &[u8]) -> Result<Vec<Vec<u8>>, RelayError> {
                 if !(1..=ORDERING_BATCH_CAPACITY).contains(&length) {
                     return Err(RelayError::Malformed);
                 }
+                let contents = reader.take(length)?;
+                record.reserve(9 + length);
                 record.push(source);
                 record.extend_from_slice(&id.to_le_bytes());
-                record.extend_from_slice(reader.take(length)?);
-                context.batch_ids[usize::from(source)] = Some(id);
+                record.extend_from_slice(contents);
+                context.set_last_id(source, Some(id));
             }
             FRAME_END_EVENT => {}
             DEPARTURE_EVENT => {
@@ -451,6 +480,19 @@ mod tests {
             .collect();
         assert_eq!(decoded, records);
         assert_eq!(encode_pack_v2(&records, 1).len(), 1);
+    }
+
+    #[test]
+    fn fitting_counts_the_packs_the_encoder_makes() {
+        let records: Vec<_> = (0..5)
+            .map(|index| batch(1 + index, 7, 1, 20 + index, &[0x55; 300]))
+            .collect();
+        let refs: Vec<&[u8]> = records.iter().map(Vec::as_slice).collect();
+        let packs = encode_pack_v2(&records, usize::MAX).len();
+        assert_eq!(packs, 3);
+        assert!(fits_packs_v2(&refs, packs));
+        assert!(!fits_packs_v2(&refs, packs - 1));
+        assert!(fits_packs_v2(&refs[1..], 2));
     }
 
     #[test]

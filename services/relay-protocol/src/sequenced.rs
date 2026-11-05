@@ -63,8 +63,8 @@ const DESYNC_ENTRY_BYTES: usize = 27;
 // A DESYNC record after its sequence and frame: sample frame u32, outlier
 // source u8 and checksum u32, other source u8 and checksum u32.
 pub(super) const DESYNC_TAIL: usize = DESYNC_ENTRY_BYTES - 13;
-// Consecutive history entries in one datagram: `[event][base seq u64][count
-// u8]`, then per entry `[len u16]` and its bytes without the sequence.
+// Consecutive history entries in one datagram, PACK v2 (compaction spec
+// §5.2, `pack.rs`).
 pub(super) const PACK_EVENT: u8 = 12;
 // A federated control record travels between relays as an entry of this
 // source: a rate change under `RATE_BATCH`, a desync under `DESYNC_BATCH`.
@@ -3393,6 +3393,63 @@ mod tests {
         }
         assert_eq!(markers, [(1, true), (2, false)]);
         assert_eq!(inputs, [(4, b"accepted before pause".to_vec())]);
+    }
+
+    /// Compaction spec §6.2 "续期": the relay accepted the renewal's CONFIRM
+    /// but its READY never arrived, and the player quits from the old hop.
+    /// The old session still takes the LEAVE, answers it, and the stream
+    /// records a Leave, not a lost connection.
+    #[test]
+    fn a_player_quitting_before_its_renewal_ready_still_leaves() {
+        let key = SecretKey::new([73; 32]);
+        let (mut server, mut first, mut second) = paced_room(&key);
+        server.advance_clock(300, unix(300));
+        let mut ticket = first.ticket;
+        ticket.expires += 50;
+        ticket.nonce[15] ^= 0x40;
+        let signed = ticket.sign(&key).unwrap();
+        let mut candidate = first
+            .renewal(
+                &signed,
+                *derive_packet_key(&key, &signed).expose_for_https(),
+                [89; 32],
+            )
+            .unwrap();
+        let mut bytes = Vec::new();
+        candidate.probe(&mut bytes).unwrap();
+        let challenge = server
+            .process_at(endpoint(&first), &bytes, unix(300), 300)
+            .unwrap()
+            .remove(0);
+        let ServerEvent::Challenge(cookie) = candidate.receive(&challenge.bytes).unwrap() else {
+            panic!("challenge");
+        };
+        candidate.confirm(cookie, &mut bytes).unwrap();
+        // The relay takes the renewal; its READY is lost.
+        server
+            .process_at(endpoint(&first), &bytes, unix(300), 300)
+            .unwrap();
+        first.leave_ordering(&mut bytes).unwrap();
+        for _ in 0..2 {
+            let ack = server
+                .process_at(endpoint(&first), &bytes, unix(300), 300)
+                .unwrap();
+            assert!(matches!(
+                first.receive(&ack[0].bytes),
+                Ok(ServerEvent::Ordering(OrderEvent::Left))
+            ));
+        }
+        server.advance_clock(700, unix(700));
+        let departures: Vec<_> = pull(&mut server, &mut second, 1, 700)
+            .into_iter()
+            .filter_map(|event| match event {
+                OrderEvent::Entry(OrderEntry::Departure { source, lost, .. }) => {
+                    Some((source, lost))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(departures, [(0, false)]);
     }
 
     #[test]

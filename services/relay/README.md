@@ -5,8 +5,9 @@ It owns the certified match clock and immutable command stream; clients own the
 simulation. Older clients, which speak envelope v2, are not supported.
 The shared codec in `../relay-protocol` binds each ticket to a match and player,
 authenticates every datagram per hop, rejects replayed game traffic, and
-challenges a new source address before admitting it
-(`bandwidth-compaction/spec.md` holds the full rules). Every datagram is
+challenges a new client's address before admitting its hop; an admitted hop
+then moves to a new address without a challenge (see below;
+`bandwidth-compaction/spec.md` holds the full rules). Every datagram is
 envelope v3, 13 bytes around its payload of at most 720:
 
 ```
@@ -33,12 +34,17 @@ legacy room is removed. A sequenced match and its journal survive expired peers.
 Generation tombstones last for the maximum 300-second ticket
 lifetime, so old still-valid grants cannot recreate retired rooms. Renewals keep
 the same player, match and generation, and are a new hop with a new session;
-the relay releases the old one at once. A released session is never assigned
-again for 10 minutes. Each hop counts its sequences from 1 to `u32::MAX`; the
-client renews at 2³² − 2¹⁶, and a relay that ran out would stop sending on the
-hop. An authenticated datagram whose sequence the replay window accepts moves
-its hop to the address it came from (NAT rebinding); a replay or forgery
-cannot. A datagram with an unknown session is dropped without an HMAC, one with
+the old session then takes only Leave, so a player quitting before the new
+READY still leaves, and is released like an expired one. A released session
+is never assigned again for 10 minutes. Each hop counts its sequences from 1
+to `u32::MAX` (a 300-second ticket never comes near it), and a relay that ran
+out would stop sending on the hop. An authenticated datagram whose sequence
+the replay window accepts moves its hop to the address it came from (NAT
+rebinding), push subscription included; a replay or forgery cannot. This
+skips the path check the handshake makes, a deliberate trade-off: an on-path
+attacker who forwards a copy first can divert the reader's push stream until
+the client's next datagram moves it back, which such an attacker could disrupt
+anyway; source address spoofing is out of scope. A datagram with an unknown session is dropped without an HMAC, one with
 a wrong tag only by itself; the relay reports both counts (`mac_failures`,
 `unknown_sessions`) and an alert per session past 4,096 failures in a fixed
 minute (`session_alerts`). No count ever drops a valid datagram.
