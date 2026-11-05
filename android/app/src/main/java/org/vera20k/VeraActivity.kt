@@ -28,6 +28,9 @@ class VeraActivity : NativeActivity() {
 
         /** How many bytes may pass between two progress callbacks. */
         const val PROGRESS_STEP_BYTES = 16L shl 20
+
+        /** What the engine opens directly; a folder without these is not RA2. */
+        val REQUIRED_ARCHIVES = listOf("ra2md.mix", "ra2.mix")
     }
 
     /**
@@ -99,6 +102,14 @@ class VeraActivity : NativeActivity() {
                 }
                 copiedBytes = 0
                 reportedBytes = 0
+                // Refuse a folder that is not a retail installation before
+                // copying: an empty folder would otherwise be accepted, the
+                // config would point at it, and the next launch would report
+                // missing game files with no hint about which step went wrong.
+                val missing = missingRetailArchives(Uri.parse(treeUri))
+                if (missing.isNotEmpty()) {
+                    throw IOException("that folder has no " + missing.joinToString(" or "))
+                }
                 copyTree(Uri.parse(treeUri), target)
                 writeConfig(target.absolutePath)
                 "ok:${target.absolutePath}"
@@ -119,6 +130,31 @@ class VeraActivity : NativeActivity() {
     private fun copyTree(treeUri: Uri, dir: File) {
         val rootId = DocumentsContract.getTreeDocumentId(treeUri)
         copyChildren(treeUri, rootId, dir)
+    }
+
+    /**
+     * Which of the retail archives the chosen folder is missing, if any.
+     *
+     * The engine opens these two directly, so a folder without them cannot be a
+     * Yuri's Revenge installation; catching that here keeps the config from
+     * pointing at something the next launch will reject.
+     */
+    private fun missingRetailArchives(treeUri: Uri): List<String> {
+        val rootId = DocumentsContract.getTreeDocumentId(treeUri)
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, rootId)
+        val present = mutableSetOf<String>()
+        contentResolver.query(
+            children,
+            arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+            null,
+            null,
+            null,
+        )?.use { cursor ->
+            while (cursor.moveToNext()) {
+                cursor.getString(0)?.lowercase()?.let(present::add)
+            }
+        }
+        return REQUIRED_ARCHIVES.filterNot(present::contains)
     }
 
     private fun copyChildren(treeUri: Uri, documentId: String, dir: File) {
