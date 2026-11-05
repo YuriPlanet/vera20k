@@ -424,9 +424,23 @@ vera20k.exe:\n{config}"
 holding ra2md.mix and ra2.mix with the rest of the game, then start VERA20K again."
                 ),
             };
+            // An unconfigured launch resolves the installation to the
+            // executable's own directory, which on Android is `/system/bin`
+            // (app_process). Naming that path sends the player looking for game
+            // files that were never there, so say what is actually true: no
+            // installation is configured.
+            let executable_dir = std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf));
             let game_files = game_files.map_or_else(
                 || "No game installation configured".to_owned(),
-                |path| path.display().to_string(),
+                |path| {
+                    if executable_dir.as_deref() == Some(std::path::Path::new(&path)) {
+                        "No game installation configured".to_owned()
+                    } else {
+                        path.display().to_string()
+                    }
+                },
             );
             (
                 title,
