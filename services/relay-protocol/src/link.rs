@@ -864,17 +864,9 @@ impl ReaderLink {
 
     /// Judges `UPLINK.down_high` / `down_bits` (spec §4.3, §7.1 step 4) and
     /// returns the logged sends judged lost, oldest first.
+    /// `now_ms` is when the feedback arrived (`t_fb`): a feedback is judged
+    /// once, and its verdict never changes with time.
     pub(crate) fn judge(&mut self, down: RecvWindow, now_ms: u64) -> Vec<SendRecord> {
-        self.judge_feedback(Some(down), now_ms)
-    }
-
-    /// Judges the newest feedback again at the start of a push pass, for
-    /// sends that waited out their RTT since (spec §4.3).
-    pub(crate) fn rejudge(&mut self, now_ms: u64) -> Vec<SendRecord> {
-        self.judge_feedback(None, now_ms)
-    }
-
-    fn judge_feedback(&mut self, down: Option<RecvWindow>, now_ms: u64) -> Vec<SendRecord> {
         let mut lost = Vec::new();
         let log = &mut self.log;
         // §4.3: wait srtt_c + 4 rttvar_c (§4.6 defaults before a report).
@@ -884,16 +876,11 @@ impl ReaderLink {
             (entry.sequence == sequence).then_some(entry.at_ms)
         };
         let wait = srtt + 4 * rttvar;
-        let (judged, missing) = match down {
-            Some(down) => self
-                .cursor
+        let (judged, missing) =
+            self.cursor
                 .judge(down.high, down.bits, now_ms, wait, sent, |sequence| {
                     lost.push(sequence)
-                }),
-            None => self
-                .cursor
-                .rejudge(now_ms, wait, sent, |sequence| lost.push(sequence)),
-        };
+                });
         self.loss.add(judged, missing);
         lost.into_iter()
             .map(|sequence| {
@@ -1047,13 +1034,13 @@ impl ClientSession {
                 .rtt
                 .sample(rtt.min(u64::from(u32::MAX)) as u32, now_ms);
         }
-        self.judge_uplink(Some(feedback.up), now_ms);
+        self.judge_uplink(feedback.up, now_ms);
     }
 
-    /// Uplink loss from `feedback`, or from the newest feedback again at a
-    /// service (spec §4.3): a missing sequence counts once it was sent
-    /// srtt + 4 rttvar ago, the §4.6 defaults before a sample.
-    pub(crate) fn judge_uplink(&mut self, feedback: Option<RecvWindow>, now_ms: u64) {
+    /// Uplink loss from feedback `up` that arrived at `now_ms` (spec §4.3
+    /// `t_fb`): a missing sequence counts once it went srtt + 4 rttvar
+    /// before, the §4.6 defaults before a sample. Judged once per feedback.
+    fn judge_uplink(&mut self, up: RecvWindow, now_ms: u64) {
         let Some(ordering) = self.ordering.as_mut() else {
             return;
         };
@@ -1067,12 +1054,9 @@ impl ClientSession {
             let entry = log[(sequence % SENDLOG_CLIENT as u64) as usize];
             (entry.sequence == sequence).then_some(entry.at_ms)
         };
-        let (judged, lost) = match feedback {
-            Some(up) => hop
-                .cursor
-                .judge(up.high, up.bits, now_ms, wait, sent, |_| {}),
-            None => hop.cursor.rejudge(now_ms, wait, sent, |_| {}),
-        };
+        let (judged, lost) = hop
+            .cursor
+            .judge(up.high, up.bits, now_ms, wait, sent, |_| {});
         ordering.link.loss.add(judged, lost);
     }
 

@@ -57,8 +57,6 @@ impl RecvWindow {
 pub(crate) struct LossCursor {
     max_high: u64,
     eval_next: u64,
-    // The newest feedback, judged again while sequences wait (spec §4.3).
-    last_bits: u64,
 }
 
 /// Smoothed loss of one direction and its hysteresis bands (spec §4.3 step
@@ -97,7 +95,6 @@ impl LossCursor {
             return (0, 0);
         }
         self.max_high = high;
-        self.last_bits = bits;
         let (mut judged, mut missing) = (0, 0);
         if high > REORDER_THRESHOLD {
             // Older sequences are outside the bitmap and never counted.
@@ -128,19 +125,6 @@ impl LossCursor {
 }
 
 impl LossCursor {
-    /// Judges the newest feedback again at `now_ms`, for sequences that
-    /// waited out their RTT since it arrived (spec §4.3).
-    pub(crate) fn rejudge(
-        &mut self,
-        now_ms: u64,
-        wait_ms: u64,
-        sent: impl FnMut(u64) -> Option<u64>,
-        lost: impl FnMut(u64),
-    ) -> (u32, u32) {
-        let (high, bits) = (self.max_high, self.last_bits);
-        self.judge(high, bits, now_ms, wait_ms, sent, lost)
-    }
-
     /// Judges nothing before hop sequence `next` (spec §5.5, on recovery).
     pub(crate) fn skip_to(&mut self, next: u64) {
         self.eval_next = self.eval_next.max(next);
@@ -671,15 +655,15 @@ mod tests {
     fn a_missing_packet_waits_an_rtt_before_it_counts_as_lost() {
         let mut cursor = LossCursor::default();
         let mut lost = Vec::new();
-        // 1..=10 sent at 100 + s; 5 missing. At 150 it is 45 ms old: under
-        // the 100 ms wait, judging stops before it.
+        // 1..=10 sent at 100 + s; 5 missing. The feedback arrives at 150,
+        // 45 ms after it went: under the 100 ms wait, judging stops there.
         let bits = 0b11_1111_1111 & !(1 << 5);
         let sent = |s: u64| Some(100 + s);
         assert_eq!(
             cursor.judge(10, bits, 150, 100, sent, |s| lost.push(s)),
             (4, 0)
         );
-        // 105 ms old at the next feedback: lost, and judging goes on.
+        // The next feedback arrives 105 ms after it went: lost.
         assert_eq!(
             cursor.judge(11, bits << 1 | 1, 210, 100, sent, |s| lost.push(s)),
             (4, 1)
@@ -695,21 +679,6 @@ mod tests {
             rtt.sample(40, at);
         }
         assert_eq!((rtt.srtt, rtt.rttvar), (Some(40), 11));
-    }
-
-    #[test]
-    fn a_waiting_sequence_is_judged_again_without_new_feedback() {
-        let mut cursor = LossCursor::default();
-        let bits = 0b1111 & !(1 << 2); // 1..=4 from high 4: 2 missing
-        let sent = |s: u64| Some(s);
-        assert_eq!(
-            cursor.judge(5, bits << 1 | 1, 50, 100, sent, |_| {}),
-            (1, 0)
-        );
-        assert_eq!(cursor.rejudge(101, 100, sent, |_| {}), (0, 0));
-        let mut lost = Vec::new();
-        assert_eq!(cursor.rejudge(102, 100, sent, |s| lost.push(s)), (1, 1));
-        assert_eq!(lost, [2]);
     }
 
     #[test]

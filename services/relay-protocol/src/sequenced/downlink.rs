@@ -318,10 +318,6 @@ impl RelayServer {
             .peers
             .iter_mut()
             .find(|peer| peer.ticket.source == source)?;
-        // Sends that waited out their RTT since the last feedback are
-        // judged now, and their retransmission goes in this pass (§4.3).
-        let lost = peer.link.rejudge(now_ms);
-        self.ordering_counts.down_lost_packets += peer.owe_lost(&lost, now_ms);
         let state = peer.evaluate_reader(now_ms);
         self.ordering_counts.reader_states[state.index()] += 1;
         let ordering = room.ordering.as_mut()?;
@@ -845,11 +841,11 @@ mod tests {
         assert_eq!(stats(&server).packets_by_kind[2], 1);
     }
 
-    /// Spec §4.3: a push pass judges the newest feedback again, so a send
-    /// that waits out srtt_c + 4 rttvar_c is retransmitted without another
-    /// UPLINK.
+    /// Spec §4.3: a feedback judges a missing send only if it went
+    /// srtt_c + 4 rttvar_c before the feedback arrived; later push passes
+    /// never judge it again, the next feedback does.
     #[test]
-    fn a_push_pass_retransmits_a_send_whose_wait_ran_out() {
+    fn only_a_feedback_old_enough_judges_a_send_lost() {
         let (mut server, _reader) = reader_room(87);
         server.advance_clock(300, unix(300));
         server.drain_ordering_push(300, unix(300));
@@ -857,15 +853,16 @@ mod tests {
         let pack = peer.link.latest(|send| send.kind == SEND_FRESH).unwrap();
         (peer.link.srtt_c, peer.link.rttvar_c) = (40, 10);
         // A later datagram arrived; the pack did not. Wait: 40 + 4 * 10.
-        let high = pack.sequence + 3;
-        let bits = !(1u64 << 3);
-        assert!(peer.link.judge(RecvWindow { high, bits }, 300).is_empty());
-        let pass = |server: &mut RelayServer, at: u64| {
-            server.drain_ordering_push(at, unix(at));
-            stats(server).packets_by_kind[3]
-        };
-        assert_eq!(pass(&mut server, 379), 0);
-        assert_eq!(pass(&mut server, 380), 1);
+        let (high, bits) = (pack.sequence + 3, !(1u64 << 3));
+        let young = pack.at_ms + 79;
+        assert!(peer.link.judge(RecvWindow { high, bits }, young).is_empty());
+        server.drain_ordering_push(young + 200, unix(young + 200));
+        assert_eq!(stats(&server).packets_by_kind[3], 0, "no judging by time");
+        let peer = &mut server.rooms.get_mut(&[5; 16]).unwrap().peers[0];
+        assert_eq!(
+            peer.link.judge(RecvWindow { high, bits }, young + 1).len(),
+            1
+        );
     }
 
     #[test]
