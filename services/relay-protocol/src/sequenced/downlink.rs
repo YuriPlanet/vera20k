@@ -447,8 +447,7 @@ impl RelayServer {
             .iter()
             .chain(&plan.fresh)
             .map(|payload| {
-                SERVER_HEADER
-                    + MAC_LEN
+                envelope::OVERHEAD
                     + payload.len()
                     + if payload[0] == STATUS_EVENT {
                         crate::link::FEEDBACK_LEN
@@ -648,7 +647,7 @@ impl RelayServer {
             .map(|pack| (pack, SEND_REPEAT))
             .chain(probes.iter().map(|pack| (pack, SEND_PROBE)))
         {
-            let length = SERVER_HEADER + MAC_LEN + pack.len();
+            let length = envelope::OVERHEAD + pack.len();
             if bytes + length > bytes_left {
                 break;
             }
@@ -800,7 +799,7 @@ mod tests {
     fn packs(packets: &[ForwardDatagram]) -> Vec<(u64, u8)> {
         packets
             .iter()
-            .map(|packet| &packet.bytes[SERVER_HEADER..packet.bytes.len() - MAC_LEN])
+            .map(|packet| &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN])
             .filter(|payload| payload[0] == PACK_EVENT)
             .map(|payload| (read_u64(payload, 1), payload[9]))
             .collect()
@@ -865,9 +864,7 @@ mod tests {
             }
             .encode(&mut payload);
             let mut bytes = Vec::new();
-            reader
-                .encode(CONTROL, BROADCAST, &payload, &mut bytes)
-                .unwrap();
+            reader.encode(CONTROL, &payload, &mut bytes).unwrap();
             server
                 .process_at(super::super::tests::endpoint(&reader), &bytes, unix(at), at)
                 .unwrap();
@@ -963,7 +960,7 @@ mod tests {
         merge(&mut peer.push.as_mut().unwrap().retransmit, (1, 3));
         server.advance_clock(310, unix(310));
         let packets = server.drain_ordering_push(310, unix(310));
-        let pack = &packets[0].bytes[SERVER_HEADER..packets[0].bytes.len() - MAC_LEN];
+        let pack = &packets[0].bytes[SERVER_HEADER..packets[0].bytes.len() - HOP_TAG_LEN];
         assert_eq!((pack[0], read_u64(pack, 1), pack[9]), (PACK_EVENT, 1, 2));
         assert_eq!(stats(&server).packets_by_kind[3], 1);
         assert_eq!(stats(&server).retransmit_ranges, 0);
@@ -1018,7 +1015,7 @@ mod tests {
         let packets = server.drain_ordering_push(1600, unix(1600));
         let first_pack = packets
             .iter()
-            .map(|packet| &packet.bytes[SERVER_HEADER..packet.bytes.len() - MAC_LEN])
+            .map(|packet| &packet.bytes[SERVER_HEADER..packet.bytes.len() - HOP_TAG_LEN])
             .find(|payload| payload[0] == PACK_EVENT)
             .unwrap();
         assert_eq!(read_u64(first_pack, 1), 1);

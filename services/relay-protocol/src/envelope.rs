@@ -21,8 +21,8 @@ use crate::{RelayError, SecretKey};
 
 /// MAC domain labels at v3 (§6.3); `KEY_DOMAIN`, `TICKET_DOMAIN` and
 /// `COOKIE_DOMAIN` stay at v2, so the lobby is unchanged.
-const CLIENT_DOMAIN: &[u8] = b"VERA20k relay client v3\0";
-const SERVER_DOMAIN: &[u8] = b"VERA20k relay server v3\0";
+pub(crate) const CLIENT_DOMAIN: &[u8] = b"VERA20k relay client v3\0";
+pub(crate) const SERVER_DOMAIN: &[u8] = b"VERA20k relay server v3\0";
 
 /// The protocol version in `hdr` bits 5..7 (§6.1). Datagrams of any other
 /// version are dropped (§10).

@@ -7,7 +7,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use vera20k_relay_protocol::{
-    ForwardDatagram, MAX_DATAGRAM, OrderingCounts, RelayError, RelayServer, SecretKey,
+    ForwardDatagram, MAX_DATAGRAM, MacFailureCounts, OrderingCounts, RelayError, RelayServer,
+    SecretKey,
 };
 
 /// Aggregate operational counts only. No request, endpoint, room identity,
@@ -48,9 +49,9 @@ impl TrafficCounts {
         *count += 1;
     }
 
-    fn report(&self, seconds: u64, rooms: usize, ordering: OrderingCounts) {
+    fn report(&self, seconds: u64, rooms: usize, ordering: OrderingCounts, mac: MacFailureCounts) {
         eprintln!(
-            "VERA20k relay interval_s={seconds} rooms={rooms} slowdowns={} raises={} catching_up_s={} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={} pushed={} pushed_bytes={} pull_replies={} desyncs={} push_packets={:?} push_bytes={:?} piggybacked_records={} down_lost={} retransmitted_records={} readers_avg={:?} offline_unsent={}",
+            "VERA20k relay interval_s={seconds} rooms={rooms} slowdowns={} raises={} catching_up_s={} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={} pushed={} pushed_bytes={} pull_replies={} desyncs={} push_packets={:?} push_bytes={:?} piggybacked_records={} down_lost={} retransmitted_records={} readers_avg={:?} offline_unsent={} mac_failures={} unknown_sessions={} session_alerts={}",
             ordering.slowdowns,
             ordering.raises,
             ordering.catching_up_s,
@@ -81,6 +82,11 @@ impl TrafficCounts {
                 .reader_states
                 .map(|seen| seen as f64 / ordering.reader_passes.max(1) as f64),
             ordering.offline_unsent_packets,
+            // Statistics only: no count drops a datagram (compaction spec
+            // §6.4). An alert is a session failing over 4096 tags a minute.
+            mac.failures,
+            mac.unknown_sessions,
+            mac.session_alerts,
         );
     }
 }
@@ -132,7 +138,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let elapsed = reported_at.elapsed().as_secs();
         if elapsed >= 60 {
-            counts.report(elapsed, server.room_count(), server.take_ordering_counts());
+            counts.report(
+                elapsed,
+                server.room_count(),
+                server.take_ordering_counts(),
+                server.take_mac_failure_counts(),
+            );
             counts = TrafficCounts::default();
             reported_at = Instant::now();
         }

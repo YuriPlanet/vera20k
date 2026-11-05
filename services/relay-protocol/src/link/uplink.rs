@@ -5,7 +5,7 @@ use super::codec::{FLAG_PACE, FLAG_PROBE, FLAG_PUSH, FLAG_RESTORING, PaceSegment
 use std::collections::VecDeque;
 
 use super::{LinkState, OrderingGap};
-use crate::{BROADCAST, CONTROL, ClientSession, MAX_WIRE_PAYLOAD, RelayError};
+use crate::{CONTROL, ClientSession, MAX_WIRE_PAYLOAD, RelayError};
 
 const UPLINK_HEARTBEAT_MS: u64 = 250;
 const COPY_SPACING_MS: u64 = 16;
@@ -226,21 +226,20 @@ impl ClientSession {
         true
     }
 
-    /// The batches that fit after `head` bytes, from `accepted_through + 1`
-    /// (spec §6.2): their first ID and ciphertexts.
-    fn fitting_batches(&self, head: usize) -> (u64, Vec<Vec<u8>>) {
+    /// The batches an UPLINK may carry, from `accepted_through + 1`
+    /// (spec §6.2): their first ID and contents, at most four.
+    /// `encode_uplink` keeps those that fit.
+    fn fitting_batches(&self) -> (u64, Vec<Vec<u8>>) {
         let ordering = self.ordering.as_ref().expect("ordering");
         let first = ordering.accepted_through + 1;
-        let mut length = head + 8;
         let mut batches = Vec::new();
         for id in first..ordering.next_batch {
             let Some(batch) = ordering.sealed.iter().find(|batch| batch.id == id) else {
                 break;
             };
-            if batches.len() == MAX_BATCHES || length + 2 + batch.opaque.len() > MAX_WIRE_PAYLOAD {
+            if batches.len() == MAX_BATCHES {
                 break;
             }
-            length += 2 + batch.opaque.len();
             batches.push(batch.opaque.clone());
         }
         (first, batches)
@@ -300,10 +299,10 @@ impl ClientSession {
                 (Vec::new(), None)
             }
         };
-        let (first_batch, batches) = if kind == Kind::Probe {
+        let (first_batch, mut batches) = if kind == Kind::Probe {
             (0, Vec::new())
         } else {
-            self.fitting_batches(Uplink::head_len(checksums.len(), pace.is_some()))
+            self.fitting_batches()
         };
         let recv_next = schedule.recv_next.max(1);
         self.encode_uplink(
@@ -312,7 +311,7 @@ impl ClientSession {
             &checksums,
             pace,
             first_batch,
-            &batches,
+            &mut batches,
             out,
         )?;
         self.hop.uplinks += 1;
@@ -383,7 +382,7 @@ impl ClientSession {
         checksums: &[(u32, u32)],
         pace: Option<PaceSegment>,
         first_batch: u64,
-        batches: &[Vec<u8>],
+        batches: &mut Vec<Vec<u8>>,
         out: &mut Vec<u8>,
     ) -> Result<(), RelayError> {
         let link = &self.ordering.as_ref().expect("ordering").link;
@@ -402,9 +401,13 @@ impl ClientSession {
             first_batch_id: first_batch,
             batches: batches.iter().map(Vec::as_slice).collect(),
         };
+        let mut uplink = uplink;
+        uplink.fit(MAX_WIRE_PAYLOAD);
+        let fitting = uplink.batches.len();
         let mut payload = Vec::with_capacity(MAX_WIRE_PAYLOAD);
         uplink.encode(&mut payload);
-        self.encode(CONTROL, BROADCAST, &payload, out)
+        batches.truncate(fitting);
+        self.encode(CONTROL, &payload, out)
     }
 
     /// `heartbeat_uplink`'s body (spec §6.6).
@@ -426,8 +429,7 @@ impl ClientSession {
             return self.send_uplink(Kind::Probe, false, now_ms, out).is_ok();
         };
         // Batches as §6.2 packs them now; the checksum segment repeats.
-        let (first_batch, batches) =
-            self.fitting_batches(Uplink::head_len(last.checksums.len(), false));
+        let (first_batch, mut batches) = self.fitting_batches();
         if self
             .encode_uplink(
                 last.flags,
@@ -435,7 +437,7 @@ impl ClientSession {
                 &last.checksums,
                 None,
                 first_batch,
-                &batches,
+                &mut batches,
                 out,
             )
             .is_err()
@@ -680,7 +682,7 @@ impl ClientSession {
         if ordering.restoring {
             flags |= FLAG_RESTORING;
         }
-        let batches: Vec<Vec<u8>> = batch
+        let mut batches: Vec<Vec<u8>> = batch
             .and_then(|id| ordering.sealed.iter().find(|sealed| sealed.id == id))
             .map(|sealed| sealed.opaque.clone())
             .into_iter()
@@ -692,7 +694,7 @@ impl ClientSession {
             &checksums,
             pace,
             batch.unwrap_or(0),
-            &batches,
+            &mut batches,
             out,
         )?;
         let schedule = &mut self.ordering.as_mut().expect("ordering").link.schedule;
@@ -718,7 +720,7 @@ impl ClientSession {
 mod tests {
     use super::*;
     use crate::link::decode_uplink;
-    use crate::{CLIENT_HEADER, MAC_LEN, OrderPace, OrderingCertificate, SecretKey, Ticket};
+    use crate::{CLIENT_HEADER, HOP_TAG_LEN, OrderPace, OrderingCertificate, SecretKey, Ticket};
 
     /// A ready, started session at 0 whose first PACK arrived, its uplink
     /// measured good.
@@ -741,6 +743,7 @@ mod tests {
         )
         .unwrap();
         session.ready = true;
+        session.session = Some(1);
         let certificate = OrderingCertificate {
             room: [5; 16],
             sources_mask: 3,
@@ -780,6 +783,7 @@ mod tests {
         .unwrap();
         session.preset_uplink_measured_good();
         session.ready = true;
+        session.session = Some(1);
         let certificate = OrderingCertificate {
             room: [5; 16],
             sources_mask: 3,
@@ -826,7 +830,7 @@ mod tests {
     }
 
     fn decoded(datagram: &[u8]) -> Uplink<'_> {
-        decode_uplink(&datagram[CLIENT_HEADER..datagram.len() - MAC_LEN]).unwrap()
+        decode_uplink(&datagram[CLIENT_HEADER..datagram.len() - HOP_TAG_LEN]).unwrap()
     }
 
     fn link(session: &mut ClientSession) -> &mut crate::link::ClientLink {

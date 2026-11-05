@@ -1683,7 +1683,6 @@ fn drain_socket(
             report.malformed_datagrams += 1;
             continue;
         };
-        let decrypted;
         let (datagram, source, received_scope) = if let Some(route) = relay.as_mut() {
             if source != route.address || length > vera20k_relay_protocol::MAX_DATAGRAM {
                 report.malformed_datagrams += 1;
@@ -1761,9 +1760,8 @@ fn drain_socket(
                 }
                 Ok(ServerEvent::Payload { source, bytes }) => {
                     route.last_response = Some(now_ticks);
-                    decrypted = bytes;
                     (
-                        decrypted.as_bytes(),
+                        bytes,
                         relay_peer_endpoint(source).expect("authenticated source range"),
                         None,
                     )

@@ -2,8 +2,10 @@
 //! VERA clients. This transport owns no simulation state or payload keys.
 //!
 //! The HTTPS lobby signs a 98-byte v2 ticket and separately returns its derived
-//! packet key and a match-private payload key. The relay never receives the
-//! latter: gameplay, including chat, is end-to-end encrypted. Domain-separated
+//! packet key and a match-private payload key. Every datagram travels in
+//! envelope v3 (`envelope`, bandwidth-compaction spec §6) under the hop's
+//! packet key; after its handshake a hop is named by the session the relay
+//! assigns (§6.2). Relayed DATA is plaintext (§3.2). Domain-separated
 //! HMAC-SHA256 uses RustCrypto's constant-time verification:
 //! https://docs.rs/hmac/0.12.1/hmac/ . Neither key type prints secret bytes.
 
@@ -40,26 +42,26 @@ type HmacSha256 = Hmac<Sha256>;
 
 pub const MAX_PEERS: u8 = 30;
 pub const BROADCAST: u8 = 255;
+/// The largest DATA message a client relays.
 pub const MAX_PAYLOAD: usize = 640;
 pub const TICKET_LEN: usize = 98;
-const PAYLOAD_HEADER: usize = 25;
-const PAYLOAD_TAG: usize = 16;
-const MAX_WIRE_PAYLOAD: usize = MAX_PAYLOAD + PAYLOAD_HEADER + PAYLOAD_TAG;
-pub const MAX_DATAGRAM: usize = 146 + MAX_WIRE_PAYLOAD;
+/// The packing limit of PACK and UPLINK payloads, unchanged by the
+/// compaction (bandwidth-compaction spec §5.4).
+const MAX_WIRE_PAYLOAD: usize = envelope::PACK_LIMIT;
+pub const MAX_DATAGRAM: usize = envelope::MAX_DATAGRAM;
 pub const MAX_TICKET_LIFETIME: u64 = 300;
 const TICKET_BODY_LEN: usize = 66;
-const CLIENT_HEADER: usize = 114;
-const SERVER_HEADER: usize = 48;
+/// Hop envelope bytes before the payload, either direction (§6.1).
+const CLIENT_HEADER: usize = envelope::HEADER_LEN;
+#[cfg(test)]
+const SERVER_HEADER: usize = envelope::HEADER_LEN;
+use envelope::HOP_TAG_LEN;
+/// A full HMAC-SHA256: ticket signatures and federation links.
 const MAC_LEN: usize = 32;
 const COOKIE_LEN: usize = 40;
-const CLIENT_MAGIC: &[u8; 4] = b"VR2C";
-const SERVER_MAGIC: &[u8; 4] = b"VR2S";
 const TICKET_DOMAIN: &[u8] = b"VERA20k relay ticket v2\0";
 const KEY_DOMAIN: &[u8] = b"VERA20k relay packet key v2\0";
-const CLIENT_DOMAIN: &[u8] = b"VERA20k relay client v2\0";
-const SERVER_DOMAIN: &[u8] = b"VERA20k relay server v2\0";
 const COOKIE_DOMAIN: &[u8] = b"VERA20k relay source v2\0";
-const PAYLOAD_KEY_DOMAIN: &[u8] = b"VERA20k relay payload key v2\0";
 const KEY_CHECK_DOMAIN: &[u8] = b"VERA20k relay key equality v2\0";
 const INGRESS_PER_SECOND: u64 = 16_384;
 const HANDSHAKES_PER_SECOND: u64 = 512;
@@ -275,26 +277,6 @@ impl fmt::Debug for DecryptedPayload {
     }
 }
 
-fn payload_cipher(key: &SecretKey, room: &[u8; 16], source: u8) -> XChaCha20Poly1305 {
-    // A distinct source key prevents cross-player nonce collisions. The full
-    // entropy match key stays only in HTTPS recipients, never RelayServer.
-    let mut mac = key.mac(PAYLOAD_KEY_DOMAIN, room);
-    mac.update(&[source]);
-    let mut derived: [u8; 32] = mac.finalize().into_bytes().into();
-    let cipher = XChaCha20Poly1305::new(&derived.into());
-    derived.zeroize();
-    cipher
-}
-
-fn payload_aad(room: &[u8; 16], source: u8, target: u8) -> [u8; 20] {
-    let mut aad = [0; 20];
-    aad[..2].copy_from_slice(&[2, DATA]);
-    aad[2..18].copy_from_slice(room);
-    aad[18] = source;
-    aad[19] = target;
-    aad
-}
-
 pub struct ClientSession {
     ticket_bytes: [u8; TICKET_LEN],
     ticket: Ticket,
@@ -305,6 +287,10 @@ pub struct ClientSession {
     received: ReplayWindow,
     probe: Option<u64>,
     ready: bool,
+    // Assigned by the READY answering this hop's CONFIRM (spec §6.2).
+    session: Option<u32>,
+    // Relay datagrams of this session with a wrong tag (spec §6.4 item 6).
+    mac_failures: u64,
     ordering: Option<sequenced::ClientOrdering>,
     // The lobby's relay roster of a federated match, sent with each CONFIRM.
     federation: Option<Vec<u8>>,
@@ -330,9 +316,10 @@ impl fmt::Debug for ClientSession {
 pub enum ServerEvent<'a> {
     Challenge(&'a [u8]),
     Ready,
+    /// A relayed DATA message, plaintext (spec §3.2, §6.1).
     Payload {
         source: u8,
-        bytes: DecryptedPayload,
+        bytes: &'a [u8],
     },
     Ordering(OrderEvent),
     /// Consecutive history entries packed into one datagram, in order.
@@ -357,6 +344,8 @@ impl ClientSession {
             received: ReplayWindow::default(),
             probe: None,
             ready: false,
+            session: None,
+            mac_failures: 0,
             ordering: None,
             federation: None,
             hop: link::HopLink::default(),
@@ -421,7 +410,12 @@ impl ClientSession {
     }
 
     pub(crate) fn probe(&mut self, out: &mut Vec<u8>) -> Result<(), RelayError> {
-        self.encode(if self.ready { PING } else { HELLO }, BROADCAST, &[], out)?;
+        if self.ready {
+            self.encode(PING, &[], out)?;
+        } else {
+            let ticket = self.ticket_bytes;
+            self.encode(HELLO, &ticket, out)?;
+        }
         self.probe = Some(self.sent);
         Ok(())
     }
@@ -430,9 +424,10 @@ impl ClientSession {
         if cookie.len() != COOKIE_LEN {
             return Err(RelayError::Malformed);
         }
-        let mut payload = cookie.to_vec();
+        let mut payload = self.ticket_bytes.to_vec();
+        payload.extend_from_slice(cookie);
         payload.extend(self.federation.iter().flatten());
-        self.encode(CONFIRM, BROADCAST, &payload, out)
+        self.encode(CONFIRM, &payload, out)
     }
 
     pub(crate) fn data(
@@ -450,55 +445,37 @@ impl ClientSession {
         {
             return Err(RelayError::Malformed);
         }
+        // `[target u8][data]`, plaintext (spec §3.2, §6.1).
+        let mut wire = Vec::with_capacity(1 + payload.len());
+        wire.push(target);
+        wire.extend_from_slice(payload);
+        self.encode(DATA, &wire, out)
+    }
+
+    /// One envelope v3 datagram of this hop (spec §6.1): HELLO and CONFIRM
+    /// carry session 0, every other kind the hop's session.
+    fn encode(&mut self, kind: u8, payload: &[u8], out: &mut Vec<u8>) -> Result<(), RelayError> {
+        let session = match kind {
+            HELLO | CONFIRM => 0,
+            _ => self.session.ok_or(RelayError::Unregistered)?,
+        };
         let sequence = self
             .sent
             .checked_add(1)
+            .filter(|sequence| *sequence <= u64::from(u32::MAX))
             .ok_or(RelayError::CounterExhausted)?;
-        let mut nonce = [0; 24];
-        nonce[..16].copy_from_slice(&self.payload_prefix);
-        nonce[16..].copy_from_slice(&sequence.to_le_bytes());
-        let mut wire = [0; MAX_WIRE_PAYLOAD];
-        wire[0] = target;
-        wire[1..PAYLOAD_HEADER].copy_from_slice(&nonce);
-        let end = PAYLOAD_HEADER + payload.len();
-        wire[PAYLOAD_HEADER..end].copy_from_slice(payload);
-        // RustCrypto 0.11 AeadInOut; fixed buffers, 24-byte XChaCha nonce and
-        // 16-byte tag. https://docs.rs/chacha20poly1305/0.11.0/chacha20poly1305/
-        let tag = payload_cipher(&self.payload_key, &self.ticket.room, self.ticket.source)
-            .encrypt_inout_detached(
-                &XNonce::from(nonce),
-                &payload_aad(&self.ticket.room, self.ticket.source, target),
-                (&mut wire[PAYLOAD_HEADER..end]).into(),
-            )
-            .map_err(|_| RelayError::Authentication)?;
-        wire[end..end + PAYLOAD_TAG].copy_from_slice(&tag);
-        self.encode(DATA, target, &wire[..end + PAYLOAD_TAG], out)
-    }
-
-    fn encode(
-        &mut self,
-        kind: u8,
-        target: u8,
-        payload: &[u8],
-        out: &mut Vec<u8>,
-    ) -> Result<(), RelayError> {
-        if payload.len() > MAX_WIRE_PAYLOAD || (target >= MAX_PEERS && target != BROADCAST) {
-            return Err(RelayError::Malformed);
-        }
-        self.sent = self
-            .sent
-            .checked_add(1)
-            .ok_or(RelayError::CounterExhausted)?;
-        out.clear();
-        out.extend_from_slice(CLIENT_MAGIC);
-        out.push(kind);
-        out.extend_from_slice(&self.ticket_bytes);
-        out.extend_from_slice(&self.sent.to_le_bytes());
-        out.push(target);
-        out.extend_from_slice(&(payload.len() as u16).to_le_bytes());
-        out.extend_from_slice(payload);
-        let tag = self.key.mac(CLIENT_DOMAIN, out).finalize().into_bytes();
-        out.extend_from_slice(&tag);
+        envelope::seal(
+            envelope::Direction::Up,
+            &self.key,
+            envelope::Header {
+                kind,
+                session,
+                sequence: sequence as u32,
+            },
+            payload,
+            out,
+        )?;
+        self.sent = sequence;
         if kind != HELLO {
             self.hop_sent(self.sent);
         }
@@ -506,27 +483,32 @@ impl ClientSession {
     }
 
     pub(crate) fn receive<'a>(&mut self, bytes: &'a [u8]) -> Result<ServerEvent<'a>, RelayError> {
-        if bytes.len() < SERVER_HEADER + MAC_LEN || &bytes[..4] != SERVER_MAGIC {
-            return Err(RelayError::Malformed);
-        }
-        let length = u16::from_le_bytes([bytes[46], bytes[47]]) as usize;
-        if length > MAX_WIRE_PAYLOAD || bytes.len() != SERVER_HEADER + length + MAC_LEN {
-            return Err(RelayError::Malformed);
-        }
-        self.key
-            .mac(SERVER_DOMAIN, &bytes[..bytes.len() - MAC_LEN])
-            .verify_slice(&bytes[bytes.len() - MAC_LEN..])
-            .map_err(|_| RelayError::Authentication)?;
-        if bytes[5..21] != self.ticket.room
-            || bytes[21..37] != self.ticket.nonce
-            || bytes[45] >= MAX_PEERS
-        {
+        let header = envelope::peek(envelope::Direction::Down, bytes)?;
+        // The READY answering a CONFIRM brings the session; this hop claims
+        // it by its tag (spec §6.2 "客户端认领 READY").
+        let claim = header.kind == READY && !self.ready && header.session != 0;
+        let expected = match header.kind {
+            CHALLENGE => 0,
+            _ if claim => header.session,
+            _ => self.session.ok_or(RelayError::Unregistered)?,
+        };
+        if header.session != expected {
             return Err(RelayError::Authentication);
         }
-        let sequence = u64::from_le_bytes(bytes[37..45].try_into().expect("checked server header"));
-        let payload = &bytes[SERVER_HEADER..SERVER_HEADER + length];
-        match bytes[4] {
-            CHALLENGE if length == COOKIE_LEN && self.probe == Some(sequence) => {
+        let payload = match envelope::open(envelope::Direction::Down, &self.key, bytes) {
+            Ok((_, payload)) => payload,
+            Err(error) => {
+                // A renewal's other hop tries the same READY or CHALLENGE
+                // (spec §6.2): only this session's own datagrams count.
+                if error == RelayError::Authentication && header.kind != CHALLENGE && !claim {
+                    self.mac_failures += 1;
+                }
+                return Err(error);
+            }
+        };
+        let sequence = u64::from(header.sequence);
+        match header.kind {
+            CHALLENGE if payload.len() == COOKIE_LEN && self.probe == Some(sequence) => {
                 self.probe = None;
                 self.ready = false;
                 // The relay drops the subscription of a new path, so its
@@ -535,15 +517,16 @@ impl ClientSession {
                 self.hop.first_pack = false;
                 Ok(ServerEvent::Challenge(payload))
             }
-            READY if payload.is_empty() && bytes[45] == self.ticket.source => {
+            READY if payload.is_empty() => {
                 self.received.accept(sequence)?;
                 self.hop_heard(sequence);
+                if claim {
+                    self.session = Some(header.session);
+                }
                 self.ready = true;
                 Ok(ServerEvent::Ready)
             }
-            CONTROL if self.ready && bytes[45] == self.ticket.source => {
-                // Hop authentication protects the ordering authority; batch
-                // contents additionally authenticate under the match-only key.
+            CONTROL if self.ready => {
                 self.received.accept(sequence)?;
                 self.hop_heard(sequence);
                 if payload.first() == Some(&sequenced::PACK_EVENT) {
@@ -553,47 +536,19 @@ impl ClientSession {
                 }
                 Ok(ServerEvent::Ordering(self.receive_ordering(payload)?))
             }
-            LEAVE_ACK
-                if payload.is_empty()
-                    && bytes[45] == self.ticket.source
-                    && self.accepts_ordering_leave_ack(sequence) =>
-            {
+            LEAVE_ACK if payload.is_empty() && self.accepts_ordering_leave_ack(sequence) => {
                 // This terminal response echoes the exact cached request,
                 // like Challenge. It survives expiry of the peer's independent
                 // server sequence and cannot admit or resume any game traffic.
                 Ok(ServerEvent::Ordering(OrderEvent::Left))
             }
-            DATA if payload.len() > PAYLOAD_HEADER + PAYLOAD_TAG && self.ready => {
-                let target = payload[0];
-                if target != BROADCAST && target != self.ticket.source {
-                    return Err(RelayError::Authentication);
-                }
-                let nonce: [u8; 24] = payload[1..PAYLOAD_HEADER]
-                    .try_into()
-                    .expect("checked encrypted payload");
-                let length = payload.len() - PAYLOAD_HEADER - PAYLOAD_TAG;
-                let mut plaintext = DecryptedPayload {
-                    bytes: [0; MAX_PAYLOAD],
-                    length,
-                };
-                plaintext.bytes[..length]
-                    .copy_from_slice(&payload[PAYLOAD_HEADER..PAYLOAD_HEADER + length]);
-                let tag: [u8; 16] = payload[PAYLOAD_HEADER + length..]
-                    .try_into()
-                    .expect("checked encrypted tag");
-                payload_cipher(&self.payload_key, &self.ticket.room, bytes[45])
-                    .decrypt_inout_detached(
-                        &XNonce::from(nonce),
-                        &payload_aad(&self.ticket.room, bytes[45], target),
-                        (&mut plaintext.bytes[..length]).into(),
-                        &Tag::from(tag),
-                    )
-                    .map_err(|_| RelayError::Authentication)?;
+            // `[source u8][data]`, plaintext (spec §3.2, §6.1).
+            DATA if self.ready && payload.len() > 1 && payload[0] < MAX_PEERS => {
                 self.received.accept(sequence)?;
                 self.hop_heard(sequence);
                 Ok(ServerEvent::Payload {
-                    source: bytes[45],
-                    bytes: plaintext,
+                    source: payload[0],
+                    bytes: &payload[1..],
                 })
             }
             _ => Err(RelayError::Malformed),
@@ -603,75 +558,80 @@ impl ClientSession {
 
 struct Incoming<'a> {
     ticket: Ticket,
-    ticket_bytes: &'a [u8; TICKET_LEN],
+    // HELLO and CONFIRM only: the ticket they carry (spec §6.1).
+    ticket_bytes: Option<&'a [u8; TICKET_LEN]>,
     key: SecretKey,
     kind: u8,
+    // The hop's session; 0 on HELLO and CONFIRM (spec §6.1).
+    session: u32,
     sequence: u64,
+    // DATA's `target`, else `BROADCAST`.
     target: u8,
+    // The payload after the ticket (HELLO, CONFIRM) or target (DATA).
     payload: &'a [u8],
 }
 
-fn incoming<'a>(key: &SecretKey, bytes: &'a [u8], now: u64) -> Result<Incoming<'a>, RelayError> {
-    if bytes.len() < CLIENT_HEADER + MAC_LEN || &bytes[..4] != CLIENT_MAGIC {
+/// A HELLO or CONFIRM (spec §6.1): `[ticket 98]`, then for CONFIRM
+/// `[cookie 40][roster]`. The ticket's signature and expiry are checked and
+/// the hop key derived from it before the envelope tag.
+fn handshake_incoming<'a>(
+    key: &SecretKey,
+    header: envelope::Header,
+    bytes: &'a [u8],
+    now: u64,
+) -> Result<Incoming<'a>, RelayError> {
+    let body = &bytes[CLIENT_HEADER..bytes.len() - HOP_TAG_LEN];
+    if header.session != 0 || body.len() < TICKET_LEN {
         return Err(RelayError::Malformed);
     }
-    let length = u16::from_le_bytes([bytes[CLIENT_HEADER - 2], bytes[CLIENT_HEADER - 1]]) as usize;
-    if length > MAX_WIRE_PAYLOAD || bytes.len() != CLIENT_HEADER + length + MAC_LEN {
+    let ticket_bytes: &[u8; TICKET_LEN] = body[..TICKET_LEN].try_into().expect("checked length");
+    let payload = &body[TICKET_LEN..];
+    if (header.kind == HELLO && !payload.is_empty())
+        || (header.kind == CONFIRM
+            && payload.len() != COOKIE_LEN
+            && !(payload.len() > COOKIE_LEN
+                && sequenced::federation::is_roster_len(payload.len() - COOKIE_LEN)))
+    {
         return Err(RelayError::Malformed);
     }
-    let ticket_bytes: &[u8; TICKET_LEN] = bytes[5..5 + TICKET_LEN]
-        .try_into()
-        .expect("checked client header");
     let ticket = Ticket::parse(ticket_bytes)?;
     key.mac(TICKET_DOMAIN, &ticket_bytes[..TICKET_BODY_LEN])
         .verify_slice(&ticket_bytes[TICKET_BODY_LEN..])
         .map_err(|_| RelayError::Authentication)?;
-    let target = bytes[CLIENT_HEADER - 3];
-    let kind = bytes[4];
-    // Leave outlives its ticket only as long as any room the ticket named can.
-    if ticket.expires > now.saturating_add(MAX_TICKET_LIFETIME)
-        || (ticket.expires <= now
-            && !(kind == CONTROL
-                && target == BROADCAST
-                && bytes[CLIENT_HEADER..CLIENT_HEADER + length] == [sequenced::LEAVE_REQUEST]
-                && now < ticket.expires.saturating_add(LEAVE_GRACE)))
-    {
+    if ticket.expires > now.saturating_add(MAX_TICKET_LIFETIME) || ticket.expires <= now {
         return Err(RelayError::Expired);
     }
     let packet_key = derive_packet_key(key, ticket_bytes);
-    packet_key
-        .mac(CLIENT_DOMAIN, &bytes[..bytes.len() - MAC_LEN])
-        .verify_slice(&bytes[bytes.len() - MAC_LEN..])
-        .map_err(|_| RelayError::Authentication)?;
-    if (target >= MAX_PEERS && target != BROADCAST)
-        || !matches!(kind, HELLO | CONFIRM | DATA | PING | CONTROL)
-        || (kind == CONFIRM
-            && length != COOKIE_LEN
-            && !(length > COOKIE_LEN && sequenced::federation::is_roster_len(length - COOKIE_LEN)))
-        || (kind == DATA
-            && (length <= PAYLOAD_HEADER + PAYLOAD_TAG || bytes[CLIENT_HEADER] != target))
-        || (matches!(kind, HELLO | PING) && length != 0)
-        || (kind == CONTROL && (length == 0 || target != BROADCAST))
-    {
-        return Err(RelayError::Malformed);
-    }
-    let sequence = u64::from_le_bytes(
-        bytes[5 + TICKET_LEN..CLIENT_HEADER - 3]
-            .try_into()
-            .expect("checked client header"),
-    );
-    if sequence == 0 {
+    envelope::open(envelope::Direction::Up, &packet_key, bytes)?;
+    if header.sequence == 0 {
         return Err(RelayError::Replay);
     }
     Ok(Incoming {
         ticket,
-        ticket_bytes,
+        ticket_bytes: Some(ticket_bytes),
         key: packet_key,
-        kind,
-        sequence,
-        target,
-        payload: &bytes[CLIENT_HEADER..CLIENT_HEADER + length],
+        kind: header.kind,
+        session: 0,
+        sequence: u64::from(header.sequence),
+        target: BROADCAST,
+        payload,
     })
+}
+
+/// The framing of a session datagram's payload (spec §6.1): PING empty,
+/// CONTROL non-empty, DATA `[target][1..=MAX_PAYLOAD bytes]`.
+fn session_payload(kind: u8, payload: &[u8]) -> Result<(u8, &[u8]), RelayError> {
+    match kind {
+        PING if payload.is_empty() => Ok((BROADCAST, payload)),
+        CONTROL if !payload.is_empty() => Ok((BROADCAST, payload)),
+        DATA if payload.len() > 1
+            && payload.len() <= 1 + MAX_PAYLOAD
+            && (payload[0] < MAX_PEERS || payload[0] == BROADCAST) =>
+        {
+            Ok((payload[0], &payload[1..]))
+        }
+        _ => Err(RelayError::Malformed),
+    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -792,13 +752,50 @@ impl SharedBudget {
 struct Peer {
     ticket: Ticket,
     key: SecretKey,
+    // This hop's key in `RelayServer::sessions` (spec §6.2).
+    session: u32,
     endpoint: SocketAddrV4,
     received: ReplayWindow,
     sent: u64,
     last_seen: u64,
+    // After its LEAVE the hop accepts only LEAVE, until this second
+    // (spec §6.2 "释放").
+    left_until: Option<u64>,
     push: Option<sequenced::PushSubscription>,
     link: link::ReaderLink,
 }
+
+/// A hop whose ticket expired: it accepts only LEAVE until `until`, unix
+/// seconds (spec §6.2 "释放").
+struct LeavingHop {
+    ticket: Ticket,
+    key: SecretKey,
+    until: u64,
+}
+
+/// Where a session's hop lives (spec §6.2).
+enum SessionHop {
+    /// A peer of `room` with this `source`.
+    Peer {
+        room: [u8; 16],
+        source: u8,
+    },
+    Leaving(Box<LeavingHop>),
+}
+
+struct SessionSlot {
+    hop: SessionHop,
+    // Tag failures in the fixed 60 s window `failure_window` (spec §6.4
+    // item 2).
+    failure_window: u64,
+    failures: u64,
+}
+
+/// A released session may not be assigned again for this long (spec §6.2).
+const SESSION_QUARANTINE: u64 = 600;
+/// Failures of one session in one fixed window that log an alert (§6.4).
+const SESSION_ALERT_FAILURES: u64 = 4096;
+const SESSION_ALERT_WINDOW: u64 = 60;
 
 #[derive(Default)]
 struct Room {
@@ -866,29 +863,21 @@ pub struct OrderingCounts {
     pub offline_unsent_packets: u64,
 }
 
-/// Envelope v3 tag failures at the relay (compaction spec §6.4), since
-/// `take_mac_failure_counts` last read them. Each datagram counts in at
-/// most one of `failures`, `address_limited` and `session_limited`. No
-/// player, room or endpoint identity.
+/// Envelope v3 datagrams the relay dropped for their session or tag
+/// (compaction spec §6.4), since `take_mac_failure_counts` last read them.
+/// Statistics only: no count ever drops a datagram. No player, room or
+/// endpoint identity.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct MacFailureCounts {
-    /// Datagrams whose tag the relay computed and found wrong (§6.3),
-    /// HELLO and CONFIRM included, plus `unknown_sessions`. Each counts
-    /// toward its source IP's limit.
+    /// Datagrams dropped for a wrong tag (§6.3), HELLO and CONFIRM
+    /// included, plus `unknown_sessions`.
     pub failures: u64,
     /// Of `failures`, datagrams with an unknown session, or session 0 on a
-    /// kind other than HELLO and CONFIRM: no key to verify, dropped and
-    /// charged to their address (§6.4 condition 1).
+    /// kind other than HELLO and CONFIRM: no key to verify, dropped without
+    /// an HMAC (§6.4 item 1).
     pub unknown_sessions: u64,
-    /// Datagrams dropped without computing HMAC because their source IP
-    /// (any port) had already failed 64 times in the same fixed second of
-    /// `now` (§6.4 condition 1).
-    pub address_limited: u64,
-    /// Datagrams dropped without computing HMAC because their session had
-    /// already failed 256 times in the same fixed second (§6.4 condition 1).
-    pub session_limited: u64,
-    /// Warnings logged because one session failed more than 4096 times
-    /// within one fixed 60-second window (§6.4 condition 1).
+    /// Alerts: a session failed more than 4096 times within one fixed
+    /// 60-second window of `now` (§6.4 item 2). Each window alerts once.
     pub session_alerts: u64,
 }
 
@@ -921,6 +910,15 @@ pub struct RelayServer {
     ended_orderings: HashMap<[u8; 16], u64>,
     // Since `take_ordering_counts` last read them.
     ordering_counts: OrderingCounts,
+    // Every live or leaving hop by its session (spec §6.2).
+    sessions: HashMap<u32, SessionSlot>,
+    // Released sessions until they may be assigned again (spec §6.2).
+    retired_sessions: HashMap<u32, u64>,
+    // Since `take_mac_failure_counts` last read them.
+    mac_counts: MacFailureCounts,
+    // Test support: the next session assigned (`preset_next_session`).
+    #[cfg(any(test, feature = "test-support"))]
+    next_session: Option<u32>,
 }
 
 impl RelayServer {
@@ -945,6 +943,11 @@ impl RelayServer {
             journal_directory: None,
             ended_orderings: HashMap::new(),
             ordering_counts: OrderingCounts::default(),
+            sessions: HashMap::new(),
+            retired_sessions: HashMap::new(),
+            mac_counts: MacFailureCounts::default(),
+            #[cfg(any(test, feature = "test-support"))]
+            next_session: None,
         }
     }
 
@@ -999,9 +1002,24 @@ impl RelayServer {
         if bytes.starts_with(sequenced::federation::LINK_MAGIC) {
             return self.federation_receive(bytes, now, now_millis);
         }
-        let message = incoming(&self.key, bytes, now)?;
+        let header = envelope::peek(envelope::Direction::Up, bytes)?;
+        let (message, leaving) = if matches!(header.kind, HELLO | CONFIRM) {
+            match handshake_incoming(&self.key, header, bytes, now) {
+                Err(RelayError::Authentication) => {
+                    self.mac_counts.failures += 1;
+                    return Err(RelayError::Authentication);
+                }
+                message => (message?, false),
+            }
+        } else {
+            self.session_incoming(header, bytes, now)?
+        };
         if message.kind == CONTROL && message.payload == [sequenced::LEAVE_REQUEST] {
             return self.ordering_leave(source, &message, now, now_millis);
+        }
+        // A leaving hop accepts only LEAVE (spec §6.2 "释放").
+        if leaving {
+            return Err(RelayError::Unregistered);
         }
         // Only the authenticated room needs a fresh boundary before a
         // submission. The socket loop advances every room independently.
@@ -1032,19 +1050,14 @@ impl RelayServer {
         let Some(index) = room
             .peers
             .iter()
-            .position(|peer| peer.ticket == message.ticket)
+            .position(|peer| peer.session == message.session)
         else {
             return Err(RelayError::Unregistered);
         };
-        if room.peers[index].endpoint != source {
-            return if message.kind == PING {
-                self.allow_handshake(&message, now)?;
-                self.challenge_budgeted(source, &message, now)
-            } else {
-                Err(RelayError::Unregistered)
-            };
-        }
         room.peers[index].received.accept(message.sequence)?;
+        // NAT rebinding: an authenticated, fresh datagram moves the hop
+        // (spec §6.2 "换地址", §6.4 item 5).
+        room.peers[index].endpoint = source;
         room.peers[index].link.heard(message.sequence, now_millis);
         // Any datagram of the hop ends the reader's offline state (§5.1);
         // push still waits for its subscription.
@@ -1078,19 +1091,14 @@ impl RelayServer {
         } else {
             room.peers
                 .iter()
-                .filter(|peer| {
-                    peer.ticket.source != message.ticket.source
-                        && now.saturating_sub(peer.last_seen) <= 30
-                        && (message.target == BROADCAST || message.target == peer.ticket.source)
-                })
+                .filter(|peer| data_recipient(peer, &message, now))
                 .count()
         };
-        let packet_bytes = SERVER_HEADER
-            + MAC_LEN
+        let packet_bytes = envelope::OVERHEAD
             + if message.kind == PING {
                 0
             } else {
-                message.payload.len()
+                1 + message.payload.len()
             };
         // Players homed on other relays of a federated match get one copy
         // through each of their relays.
@@ -1129,10 +1137,7 @@ impl RelayServer {
         }
         let mut output = Vec::with_capacity(recipients);
         for peer in &mut room.peers {
-            if peer.ticket.source != message.ticket.source
-                && now.saturating_sub(peer.last_seen) <= 30
-                && (message.target == BROADCAST || message.target == peer.ticket.source)
-            {
+            if data_recipient(peer, &message, now) {
                 output.push(server_packet(
                     peer,
                     DATA,
@@ -1160,10 +1165,52 @@ impl RelayServer {
         if self.last_pruned == now {
             return;
         }
+        // An expired hop leaves the room but keeps its session for Leave
+        // (spec §6.2 "释放").
+        let mut expired = Vec::new();
         self.rooms.retain(|_, room| {
-            room.peers.retain(|peer| peer.ticket.expires > now);
+            room.peers.retain_mut(|peer| {
+                if peer.ticket.expires > now {
+                    return true;
+                }
+                let until = peer
+                    .left_until
+                    .unwrap_or(u64::MAX)
+                    .min(peer.ticket.expires.saturating_add(LEAVE_GRACE));
+                expired.push((
+                    peer.session,
+                    LeavingHop {
+                        ticket: peer.ticket,
+                        key: peer.key.clone(),
+                        until,
+                    },
+                ));
+                false
+            });
             !room.peers.is_empty() || room.ordering.is_some()
         });
+        for (session, hop) in expired {
+            if let Some(slot) = self.sessions.get_mut(&session) {
+                slot.hop = SessionHop::Leaving(Box::new(hop));
+            }
+        }
+        let released: Vec<u32> = self
+            .sessions
+            .iter()
+            .filter(|(_, slot)| match &slot.hop {
+                SessionHop::Leaving(hop) => hop.until <= now,
+                SessionHop::Peer { room, source } => self
+                    .rooms
+                    .get(room)
+                    .and_then(|room| room.peers.iter().find(|peer| peer.ticket.source == *source))
+                    .is_none_or(|peer| peer.left_until.is_some_and(|until| until <= now)),
+            })
+            .map(|(session, _)| *session)
+            .collect();
+        for session in released {
+            self.release_session(session, now);
+        }
+        self.retired_sessions.retain(|_, until| *until > now);
         self.admissions
             .retain(|_, admission| admission.retain_until > now);
         self.ended_orderings.retain(|_, expires| *expires > now);
@@ -1237,7 +1284,7 @@ impl RelayServer {
         message: &Incoming<'_>,
         now: u64,
     ) -> Result<Vec<ForwardDatagram>, RelayError> {
-        let cost = (SERVER_HEADER + MAC_LEN + COOKIE_LEN) as u64;
+        let cost = (envelope::OVERHEAD + COOKIE_LEN) as u64;
         if !self.outgoing.admit_part(
             &mut self.handshake_outgoing,
             now,
@@ -1304,7 +1351,7 @@ impl RelayServer {
                 &message.ticket,
             )?),
         };
-        let cost = (SERVER_HEADER + MAC_LEN) as u64;
+        let cost = envelope::OVERHEAD as u64;
         if !self.outgoing.admit_part(
             &mut self.handshake_outgoing,
             now,
@@ -1313,16 +1360,32 @@ impl RelayServer {
         ) {
             return Err(RelayError::RateLimited);
         }
+        let reuses = self
+            .rooms
+            .get(&message.ticket.room)
+            .is_some_and(|room| room.peers.iter().any(|peer| peer.ticket == message.ticket));
+        // A new hop gets a new session (spec §6.2 "分配", "续期").
+        let session = if reuses { 0 } else { self.allocate_session()? };
         if newer {
             let old = prior.expect("newer generation has an admission");
             if let Some(room) = self.rooms.get_mut(&old.room) {
-                room.peers
-                    .retain(|peer| peer.ticket.player != message.ticket.player);
+                let mut released = Vec::new();
+                room.peers.retain(|peer| {
+                    let keep = peer.ticket.player != message.ticket.player;
+                    if !keep {
+                        released.push(peer.session);
+                    }
+                    keep
+                });
                 if room.peers.is_empty() && room.ordering.is_none() {
                     self.rooms.remove(&old.room);
                 }
+                for old in released {
+                    self.release_session(old, now);
+                }
             }
         }
+        let mut replaced = None;
         let room = self.rooms.entry(message.ticket.room).or_default();
         if federation.is_some() {
             room.federation = federation;
@@ -1337,8 +1400,10 @@ impl RelayServer {
                     return Err(RelayError::Authentication);
                 }
                 // A renewed hop keeps the measured loss (spec §5.4).
-                let previous = std::mem::replace(peer, new_peer(message, source, now, now_ms));
+                let previous =
+                    std::mem::replace(peer, new_peer(message, session, source, now, now_ms));
                 peer.link.carry_path(&previous.link);
+                replaced = Some(previous.session);
             }
             if message.sequence <= peer.received.maximum && peer.endpoint != source {
                 return Err(RelayError::Replay);
@@ -1361,7 +1426,7 @@ impl RelayServer {
                 link::SEND_OTHER,
             )?
         } else {
-            let mut peer = new_peer(message, source, now, now_ms);
+            let mut peer = new_peer(message, session, source, now, now_ms);
             peer.received.accept(message.sequence)?;
             peer.link.heard(message.sequence, now_ms);
             let reply = server_packet(
@@ -1375,6 +1440,22 @@ impl RelayServer {
             room.peers.push(peer);
             reply
         };
+        if !reuses {
+            self.sessions.insert(
+                session,
+                SessionSlot {
+                    hop: SessionHop::Peer {
+                        room: message.ticket.room,
+                        source: message.ticket.source,
+                    },
+                    failure_window: 0,
+                    failures: 0,
+                },
+            );
+        }
+        if let Some(old) = replaced {
+            self.release_session(old, now);
+        }
         let mut admission = prior.unwrap_or(Admission {
             generation: message.ticket.generation,
             room: message.ticket.room,
@@ -1407,24 +1488,18 @@ impl RelayServer {
         Ok(vec![reply])
     }
 
+    /// CHALLENGE: session 0, the HELLO's sequence (spec §6.1).
     fn challenge(&self, source: SocketAddrV4, message: &Incoming<'_>, now: u64) -> ForwardDatagram {
         let expires = now.saturating_add(10);
         let mut cookie = expires.to_le_bytes().to_vec();
         let tag = self
-            .cookie_mac(source, message.ticket_bytes, expires)
+            .cookie_mac(source, message.ticket_bytes.expect("a handshake"), expires)
             .finalize()
             .into_bytes();
         cookie.extend_from_slice(&tag);
         ForwardDatagram {
             endpoint: source,
-            bytes: encode_server(
-                &message.ticket,
-                &message.key,
-                CHALLENGE,
-                message.sequence,
-                message.ticket.source,
-                &cookie,
-            ),
+            bytes: encode_server(&message.key, CHALLENGE, 0, message.sequence, &cookie),
         }
     }
 
@@ -1455,27 +1530,45 @@ impl RelayServer {
         if expires < now || expires > now.saturating_add(10) {
             return Err(RelayError::Expired);
         }
-        self.cookie_mac(source, message.ticket_bytes, expires)
+        self.cookie_mac(source, message.ticket_bytes.expect("a handshake"), expires)
             .verify_slice(&message.payload[8..COOKIE_LEN])
             .map_err(|_| RelayError::Authentication)
     }
 }
 
-fn new_peer(message: &Incoming<'_>, endpoint: SocketAddrV4, now: u64, now_ms: u64) -> Peer {
+fn new_peer(
+    message: &Incoming<'_>,
+    session: u32,
+    endpoint: SocketAddrV4,
+    now: u64,
+    now_ms: u64,
+) -> Peer {
     Peer {
         ticket: message.ticket,
         key: message.key.clone(),
+        session,
         endpoint,
         received: ReplayWindow::default(),
         sent: 0,
         last_seen: now,
+        left_until: None,
         push: None,
         link: link::ReaderLink::new(now_ms),
     }
 }
 
+/// Whether `peer` gets `message`'s DATA: another recently heard source it
+/// addresses.
+fn data_recipient(peer: &Peer, message: &Incoming<'_>, now: u64) -> bool {
+    peer.ticket.source != message.ticket.source
+        && now.saturating_sub(peer.last_seen) <= 30
+        && (message.target == BROADCAST || message.target == peer.ticket.source)
+}
+
 /// One datagram on `peer`'s hop, logged at `now_ms` as `send_kind`
-/// (spec §4.2; `link::SEND_*`).
+/// (spec §4.2; `link::SEND_*`). DATA carries `source` first (compaction
+/// spec §6.1). The relay never renews a hop: past `u32::MAX` it stops
+/// sending on it (compaction spec §6.1).
 fn server_packet(
     peer: &mut Peer,
     kind: u8,
@@ -1484,11 +1577,20 @@ fn server_packet(
     now_ms: u64,
     send_kind: u8,
 ) -> Result<ForwardDatagram, RelayError> {
-    peer.sent = peer
+    let sequence = peer
         .sent
         .checked_add(1)
+        .filter(|sequence| *sequence <= u64::from(u32::MAX))
         .ok_or(RelayError::CounterExhausted)?;
-    let bytes = encode_server(&peer.ticket, &peer.key, kind, peer.sent, source, payload);
+    let bytes = if kind == DATA {
+        let mut data = Vec::with_capacity(1 + payload.len());
+        data.push(source);
+        data.extend_from_slice(payload);
+        encode_server(&peer.key, kind, peer.session, sequence, &data)
+    } else {
+        encode_server(&peer.key, kind, peer.session, sequence, payload)
+    };
+    peer.sent = sequence;
     let pack =
         (kind == CONTROL && payload.first() == Some(&sequenced::PACK_EVENT)).then_some(payload);
     peer.link
@@ -1499,30 +1601,155 @@ fn server_packet(
     })
 }
 
+/// An envelope v3 relay datagram (spec §6.1). Callers bound `payload` to
+/// `envelope::MAX_PAYLOAD` and `sequence` to `u32`.
 fn encode_server(
-    ticket: &Ticket,
     key: &SecretKey,
     kind: u8,
+    session: u32,
     sequence: u64,
-    source: u8,
     payload: &[u8],
 ) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(SERVER_HEADER + payload.len() + MAC_LEN);
-    bytes.extend_from_slice(SERVER_MAGIC);
-    bytes.push(kind);
-    bytes.extend_from_slice(&ticket.room);
-    bytes.extend_from_slice(&ticket.nonce);
-    bytes.extend_from_slice(&sequence.to_le_bytes());
-    bytes.push(source);
-    bytes.extend_from_slice(&(payload.len() as u16).to_le_bytes());
-    bytes.extend_from_slice(payload);
-    let tag = key.mac(SERVER_DOMAIN, &bytes).finalize().into_bytes();
-    bytes.extend_from_slice(&tag);
+    let mut bytes = Vec::with_capacity(envelope::OVERHEAD + payload.len());
+    envelope::seal(
+        envelope::Direction::Down,
+        key,
+        envelope::Header {
+            kind,
+            session,
+            sequence: sequence as u32,
+        },
+        payload,
+        &mut bytes,
+    )
+    .expect("a relay kind within the envelope limit");
     bytes
 }
 
-// Milestone C1 of the bandwidth compaction: envelope v3 interface only.
-#[allow(unused_variables)]
+impl RelayServer {
+    /// Authenticates a datagram on a session (spec §6.2, §6.4): an unknown
+    /// session is dropped without an HMAC; a known one's tag is verified
+    /// under its hop key, a failure dropping only this datagram. Returns the
+    /// message and whether its hop is leaving (accepts only LEAVE).
+    fn session_incoming<'a>(
+        &mut self,
+        header: envelope::Header,
+        bytes: &'a [u8],
+        now: u64,
+    ) -> Result<(Incoming<'a>, bool), RelayError> {
+        let Some(slot) = self.sessions.get(&header.session) else {
+            self.mac_counts.failures += 1;
+            self.mac_counts.unknown_sessions += 1;
+            return Err(RelayError::Unregistered);
+        };
+        let (ticket, key, leaving) = match &slot.hop {
+            SessionHop::Peer { room, source } => {
+                let peer = self
+                    .rooms
+                    .get(room)
+                    .and_then(|room| room.peers.iter().find(|peer| peer.ticket.source == *source))
+                    .filter(|peer| peer.session == header.session)
+                    .ok_or(RelayError::Unregistered)?;
+                (peer.ticket, peer.key.clone(), peer.left_until.is_some())
+            }
+            SessionHop::Leaving(hop) => (hop.ticket, hop.key.clone(), true),
+        };
+        let payload = match envelope::open(envelope::Direction::Up, &key, bytes) {
+            Ok((_, payload)) => payload,
+            Err(RelayError::Authentication) => {
+                self.count_session_failure(header.session, now);
+                return Err(RelayError::Authentication);
+            }
+            Err(error) => return Err(error),
+        };
+        let (target, payload) = session_payload(header.kind, payload)?;
+        if header.sequence == 0 {
+            return Err(RelayError::Replay);
+        }
+        Ok((
+            Incoming {
+                ticket,
+                ticket_bytes: None,
+                key,
+                kind: header.kind,
+                session: header.session,
+                sequence: u64::from(header.sequence),
+                target,
+                payload,
+            },
+            leaving,
+        ))
+    }
+
+    fn count_session_failure(&mut self, session: u32, now: u64) {
+        self.mac_counts.failures += 1;
+        let Some(slot) = self.sessions.get_mut(&session) else {
+            return;
+        };
+        let window = now / SESSION_ALERT_WINDOW;
+        if slot.failure_window != window {
+            slot.failure_window = window;
+            slot.failures = 0;
+        }
+        slot.failures += 1;
+        if slot.failures == SESSION_ALERT_FAILURES + 1 {
+            self.mac_counts.session_alerts += 1;
+        }
+    }
+
+    /// A random non-zero session neither held nor retired (spec §6.2).
+    fn allocate_session(&mut self) -> Result<u32, RelayError> {
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(session) = self.next_session.take() {
+            return Ok(session);
+        }
+        loop {
+            let mut bytes = [0; 4];
+            getrandom::fill(&mut bytes).map_err(|_| RelayError::EntropyUnavailable)?;
+            let session = u32::from_le_bytes(bytes);
+            if session != 0
+                && !self.sessions.contains_key(&session)
+                && !self.retired_sessions.contains_key(&session)
+            {
+                return Ok(session);
+            }
+        }
+    }
+
+    /// Drops `session`; it is not assigned again for 10 minutes (§6.2).
+    fn release_session(&mut self, session: u32, now: u64) {
+        if self.sessions.remove(&session).is_some() {
+            self.retired_sessions
+                .insert(session, now.saturating_add(SESSION_QUARANTINE));
+        }
+    }
+
+    /// A LEAVE on `session` puts a live hop into its leaving state
+    /// (spec §6.2 "释放").
+    fn leave_session(&mut self, session: u32, now: u64) {
+        let Some(SessionSlot {
+            hop: SessionHop::Peer { room, source },
+            ..
+        }) = self.sessions.get(&session)
+        else {
+            return;
+        };
+        if let Some(peer) = self
+            .rooms
+            .get_mut(room)
+            .and_then(|room| {
+                room.peers
+                    .iter_mut()
+                    .find(|peer| peer.ticket.source == *source)
+            })
+            .filter(|peer| peer.session == session)
+        {
+            peer.left_until
+                .get_or_insert(now.saturating_add(LEAVE_GRACE));
+        }
+    }
+}
+
 impl ClientSession {
     /// The session the relay assigned this hop in the envelope of the READY
     /// answering its CONFIRM (compaction spec §6.1, §6.2), which every later
@@ -1533,13 +1760,13 @@ impl ClientSession {
     /// the old and new hops tell their datagrams apart by it
     /// (`envelope::peek`).
     pub fn session(&self) -> Option<u32> {
-        todo!("C2: compaction spec §6.2")
+        self.session
     }
 
-    /// Relay datagrams this hop dropped for a wrong tag (§6.4: the client
-    /// does not rate-limit, it only counts).
+    /// Relay datagrams on this hop's session dropped for a wrong tag
+    /// (§6.4 item 6: the client does not rate-limit, it only counts).
     pub fn mac_failures(&self) -> u64 {
-        todo!("C2: compaction spec §6.4")
+        self.mac_failures
     }
 
     /// Whether this hop's next sequence has reached
@@ -1548,17 +1775,16 @@ impl ClientSession {
     /// hop keeps sending until `u32::MAX`; past that every send is
     /// `RelayError::CounterExhausted`.
     pub fn sequence_wants_renewal(&self) -> bool {
-        todo!("C2: compaction spec §6.1, §11 case 7")
+        self.sent + 1 >= u64::from(envelope::RENEWAL_SEQUENCE)
     }
 }
 
-#[allow(unused_variables)]
 impl RelayServer {
-    /// Tag failures and failure-limited drops since the last call
+    /// Datagrams dropped for their session or tag since the last call
     /// (compaction spec §6.4); the relay's journal reports them like
     /// `take_ordering_counts`.
     pub fn take_mac_failure_counts(&mut self) -> MacFailureCounts {
-        todo!("C2: compaction spec §6.4")
+        std::mem::take(&mut self.mac_counts)
     }
 }
 
@@ -1571,60 +1797,130 @@ pub struct SessionEntry {
     pub room: [u8; 16],
     pub source: u8,
     /// The hop's current endpoint: the address of its last authenticated
-    /// datagram (§6.2, NAT rebinding).
-    pub endpoint: SocketAddrV4,
+    /// fresh datagram (§6.2, NAT rebinding). `None` once its ticket expired
+    /// (the hop then only answers LEAVE, to the LEAVE's address).
+    pub endpoint: Option<SocketAddrV4>,
     /// The hop's ticket expiry, unix seconds like `process`'s `now`.
     pub expires: u64,
-    /// The sequence of the relay's next datagram on this hop.
-    pub next_sequence: u32,
+    /// Whether the hop accepts only LEAVE: after its LEAVE or its ticket's
+    /// expiry (§6.2 "释放").
+    pub leaving: bool,
+    /// The sequence of the relay's next datagram on this hop; `None` once
+    /// its ticket expired.
+    pub next_sequence: Option<u64>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
-#[allow(unused_variables)]
 impl ClientSession {
     /// Test support only: the next datagram this hop sends carries
     /// sequence `next` (1..=`u32::MAX`), as if the hop had already sent
     /// `next - 1`, so tests reach `envelope::RENEWAL_SEQUENCE` and
-    /// `CounterExhausted` (§6.1, §11 case 7) without sending billions. Also
-    /// marks every sequence below `next` as sent for the hop's link
-    /// measurements; use it before the hop's first send or between sends.
+    /// `CounterExhausted` (§6.1, §11 case 7) without sending billions. The
+    /// skipped sequences count as never sent for the hop's link
+    /// measurements. Use it between sends.
     pub fn preset_next_sequence(&mut self, next: u32) {
-        todo!("C2: compaction spec §11 case 7")
+        assert!(next > 0, "hop sequences start at 1");
+        self.sent = u64::from(next) - 1;
     }
 }
 
 #[cfg(any(test, feature = "test-support"))]
-#[allow(unused_variables)]
 impl RelayServer {
     /// Test support only: every hop in the session table (§6.2), ordered by
-    /// session. A hop is in it from its accepted CONFIRM until it leaves or
-    /// its ticket has been expired for `LEAVE_GRACE` seconds; after expiry
-    /// it accepts only Leave.
+    /// session. A hop is in it from its accepted CONFIRM until
+    /// `LEAVE_GRACE` seconds after its LEAVE or its ticket's expiry; a newer
+    /// hop of the same source (a renewal) releases it at once.
     pub fn session_table(&self) -> Vec<SessionEntry> {
-        todo!("C2: compaction spec §6.2")
+        let mut table: Vec<_> = self
+            .sessions
+            .iter()
+            .filter_map(|(session, slot)| match &slot.hop {
+                SessionHop::Peer { room, source } => {
+                    let peer = self
+                        .rooms
+                        .get(room)?
+                        .peers
+                        .iter()
+                        .find(|peer| peer.ticket.source == *source)?;
+                    Some(SessionEntry {
+                        session: *session,
+                        room: *room,
+                        source: *source,
+                        endpoint: Some(peer.endpoint),
+                        expires: peer.ticket.expires,
+                        leaving: peer.left_until.is_some(),
+                        next_sequence: Some(peer.sent + 1),
+                    })
+                }
+                SessionHop::Leaving(hop) => Some(SessionEntry {
+                    session: *session,
+                    room: hop.ticket.room,
+                    source: hop.ticket.source,
+                    endpoint: None,
+                    expires: hop.ticket.expires,
+                    leaving: true,
+                    next_sequence: None,
+                }),
+            })
+            .collect();
+        table.sort_unstable_by_key(|entry| entry.session);
+        table
+    }
+
+    /// Test support only: `room`'s canonical records in sequence order,
+    /// from the oldest the relay keeps (1 with a journal): the journal's,
+    /// then those in memory (compaction spec §12.2). Empty when the relay
+    /// holds no ordering for `room`.
+    pub fn ordering_history(&mut self, room: [u8; 16]) -> Vec<Vec<u8>> {
+        self.rooms
+            .get_mut(&room)
+            .and_then(|room| room.ordering.as_mut())
+            .map_or_else(Vec::new, |ordering| ordering.full_history())
     }
 
     /// Test support only: until when a released `session` may not be
     /// assigned again, unix seconds: its release `now` + 600 (§6.2);
-    /// `None` when it is held or was never released.
+    /// `None` when it is held or that time has passed.
     pub fn session_retired_until(&self, session: u32) -> Option<u64> {
-        todo!("C2: compaction spec §6.2")
+        self.retired_sessions.get(&session).copied()
     }
 
     /// Test support only: the next session this relay assigns is `session`
     /// instead of a random draw, so tests and fixed byte samples know it in
     /// advance (§6.2, §12.3). Panics when `session` is 0, held or retired.
     pub fn preset_next_session(&mut self, session: u32) {
-        todo!("C2: compaction spec §6.2")
+        assert!(
+            session != 0
+                && !self.sessions.contains_key(&session)
+                && !self.retired_sessions.contains_key(&session),
+            "session {session:#x} is not free"
+        );
+        self.next_session = Some(session);
     }
 
     /// Test support only: the relay's next datagram on `session`'s hop
     /// carries sequence `next` (1..=`u32::MAX`), so tests reach the end of
     /// its counter (§6.1, §11 case 7). Past `u32::MAX` the relay stops
-    /// sending on that hop (§6.1). Returns false when no hop holds
+    /// sending on that hop (§6.1). Returns false when no live hop holds
     /// `session`.
     pub fn preset_relay_sequence(&mut self, session: u32, next: u32) -> bool {
-        todo!("C2: compaction spec §6.1, §11 case 7")
+        assert!(next > 0, "hop sequences start at 1");
+        let Some(SessionSlot {
+            hop: SessionHop::Peer { room, source },
+            ..
+        }) = self.sessions.get(&session)
+        else {
+            return false;
+        };
+        let Some(peer) = self.rooms.get_mut(room).and_then(|room| {
+            room.peers
+                .iter_mut()
+                .find(|peer| peer.ticket.source == *source)
+        }) else {
+            return false;
+        };
+        peer.sent = u64::from(next) - 1;
+        true
     }
 }
 
@@ -1687,11 +1983,6 @@ mod tests {
         first
             .data(BROADCAST, b"unchanged game datagram", &mut bytes)
             .unwrap();
-        assert!(
-            !bytes
-                .windows(b"unchanged game datagram".len())
-                .any(|part| part == b"unchanged game datagram")
-        );
         let forwarded = server.process(a, &bytes, 1000).unwrap();
         assert_eq!(
             forwarded.len(),
@@ -1704,7 +1995,7 @@ mod tests {
             Ok(ServerEvent::Payload {
                 source: 0,
                 bytes
-            }) if bytes.as_bytes() == b"unchanged game datagram"
+            }) if bytes == b"unchanged game datagram"
         ));
         assert!(matches!(
             second.receive(&forwarded[0].bytes),
@@ -1719,48 +2010,149 @@ mod tests {
             server.process(a, &bytes, 1000),
             Err(RelayError::Authentication)
         ));
+        // Past its ticket the hop only takes LEAVE (compaction spec §6.2).
+        first.data(BROADCAST, b"late", &mut bytes).unwrap();
         assert!(matches!(
             server.process(a, &bytes, 2000),
-            Err(RelayError::Expired)
+            Err(RelayError::Unregistered)
         ));
     }
 
     #[test]
-    fn source_rebinding_requires_return_challenge_and_reordered_packets_cannot_move_it_back() {
+    fn a_fresh_authenticated_datagram_moves_the_hop_and_a_replay_or_forgery_does_not() {
+        // Compaction spec §6.2 "换地址", §6.4 items 2 and 5.
         let key = SecretKey::new([91; 32]);
         let mut server = RelayServer::new(key.clone(), 1);
         let mut first = client(&key, 1, 0);
+        let mut second = client(&key, 1, 1);
         let old = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 31001);
         let new = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 31002);
+        let attacker = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 31003);
         connect(&mut server, &mut first, old);
+        connect(
+            &mut server,
+            &mut second,
+            SocketAddrV4::new(Ipv4Addr::LOCALHOST, 31004),
+        );
+        let session = first.session().unwrap();
+        let endpoint = |server: &RelayServer| {
+            server
+                .session_table()
+                .into_iter()
+                .find(|entry| entry.session == session)
+                .unwrap()
+                .endpoint
+        };
+        let mut sent = Vec::new();
+        first.data(1, b"from old", &mut sent).unwrap();
+        assert_eq!(server.process(old, &sent, 1000).unwrap().len(), 1);
+        // A replay from elsewhere, and a forgery, change nothing.
+        assert_eq!(
+            server.process(attacker, &sent, 1000).err(),
+            Some(RelayError::Replay)
+        );
+        let mut forged = Vec::new();
+        first.data(1, b"forged", &mut forged).unwrap();
+        *forged.last_mut().unwrap() ^= 1;
+        assert_eq!(
+            server.process(attacker, &forged, 1000).err(),
+            Some(RelayError::Authentication)
+        );
+        assert_eq!(endpoint(&server), Some(old));
+        assert_eq!(server.take_mac_failure_counts().failures, 1);
+        // The client's next datagram from its new address moves the hop.
+        first.data(1, b"from new", &mut sent).unwrap();
+        assert_eq!(server.process(new, &sent, 1000).unwrap().len(), 1);
+        assert_eq!(endpoint(&server), Some(new));
+        second.data(0, b"reply", &mut sent).unwrap();
+        assert_eq!(
+            server
+                .process(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 31004), &sent, 1000)
+                .unwrap()[0]
+                .endpoint,
+            new
+        );
+        assert!(!format!("{first:?} {key:?}").contains("91, 91"));
+    }
+
+    #[test]
+    fn sessions_are_assigned_by_confirm_and_released_into_a_quarantine() {
+        // Compaction spec §6.1 READY row, §6.2 "分配", "续期", "释放".
+        let key = SecretKey::new([92; 32]);
+        let mut server = RelayServer::new(key.clone(), 1);
+        let mut first = client(&key, 1, 0);
+        let endpoint = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 31101);
+        server.preset_next_session(0x0102_0304);
         let mut bytes = Vec::new();
         first.probe(&mut bytes).unwrap();
-        let challenge = server.process(new, &bytes, 1000).unwrap().remove(0);
+        let challenge = server.process(endpoint, &bytes, 1000).unwrap().remove(0);
+        assert_eq!(challenge.bytes[1..5], [0; 4], "CHALLENGE has no session");
         let ServerEvent::Challenge(cookie) = first.receive(&challenge.bytes).unwrap() else {
-            panic!("challenge required");
+            panic!("challenge");
         };
         first.confirm(cookie, &mut bytes).unwrap();
-        assert!(matches!(
-            server.process(old, &bytes, 1000),
-            Err(RelayError::Authentication)
-        ));
-        let old_confirm = bytes.clone();
-        let ready = server.process(new, &bytes, 1000).unwrap().remove(0);
-        assert!(matches!(
-            first.receive(&ready.bytes),
-            Ok(ServerEvent::Ready)
-        ));
-        assert!(matches!(
-            server.process(old, &old_confirm, 1000),
-            Err(RelayError::Authentication)
-        ));
-        first.data(29, b"peer not registered", &mut bytes).unwrap();
-        assert!(matches!(
-            server.process(old, &bytes, 1000),
-            Err(RelayError::Unregistered)
-        ));
-        assert!(server.process(new, &bytes, 1000).unwrap().is_empty());
-        assert!(!format!("{first:?} {key:?}").contains("91, 91"));
+        assert_eq!(bytes[1..5], [0; 4], "CONFIRM has no session");
+        let ready = server.process(endpoint, &bytes, 1000).unwrap().remove(0);
+        assert_eq!(
+            envelope::peek(envelope::Direction::Down, &ready.bytes),
+            Ok(envelope::Header {
+                kind: READY,
+                session: 0x0102_0304,
+                sequence: 1,
+            })
+        );
+        assert_eq!(first.session(), None);
+        first.receive(&ready.bytes).unwrap();
+        assert_eq!(first.session(), Some(0x0102_0304));
+        // A renewal is a new hop with a new session; the old one retires.
+        let ticket = Ticket {
+            expires: 1250,
+            nonce: [33; 16],
+            ..first.ticket
+        }
+        .sign(&key)
+        .unwrap();
+        let mut renewed = first
+            .renewal(
+                &ticket,
+                *derive_packet_key(&key, &ticket).expose_for_https(),
+                [89; 32],
+            )
+            .unwrap();
+        connect(&mut server, &mut renewed, endpoint);
+        let table = server.session_table();
+        assert_eq!(table.len(), 1);
+        assert_ne!(Some(table[0].session), first.session());
+        assert_eq!(server.session_retired_until(0x0102_0304), Some(1600));
+        first.data(BROADCAST, b"old hop", &mut bytes).unwrap();
+        assert_eq!(
+            server.process(endpoint, &bytes, 1000).err(),
+            Some(RelayError::Unregistered)
+        );
+        assert_eq!(server.take_mac_failure_counts().unknown_sessions, 1);
+    }
+
+    #[test]
+    fn the_hop_counter_ends_at_u32_max() {
+        // Compaction spec §6.1, §11 case 7.
+        let key = SecretKey::new([93; 32]);
+        let mut server = RelayServer::new(key.clone(), 1);
+        let mut first = client(&key, 1, 0);
+        connect(
+            &mut server,
+            &mut first,
+            SocketAddrV4::new(Ipv4Addr::LOCALHOST, 31201),
+        );
+        assert!(!first.sequence_wants_renewal());
+        first.preset_next_sequence(envelope::RENEWAL_SEQUENCE);
+        assert!(first.sequence_wants_renewal());
+        first.preset_next_sequence(u32::MAX);
+        let mut bytes = Vec::new();
+        first.data(BROADCAST, b"last", &mut bytes).unwrap();
+        assert_eq!(
+            first.data(BROADCAST, b"past", &mut bytes),
+            Err(RelayError::CounterExhausted)
+        );
     }
 
     #[test]
@@ -1920,40 +2312,16 @@ mod tests {
         assert!(!server.rooms.contains_key(&[1; 16]));
         assert!(matches!(
             server.process(endpoint, &old_packet, 1000),
-            Err(RelayError::Authentication)
+            Err(RelayError::Unregistered)
         ));
         assert_eq!(server.admissions.len(), 1);
         assert_eq!(server.admissions[&first.ticket.player].generation, 2);
     }
 
     #[test]
-    fn payload_key_and_context_are_required_and_renewals_keep_the_match_key() {
+    fn renewals_keep_the_match_key() {
         let key = SecretKey::new([75; 32]);
-        let mut server = RelayServer::new(key.clone(), 1);
-        let mut first = client(&key, 1, 0);
-        let mut second = client(&key, 1, 1);
-        let a = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 32300);
-        let b = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 32301);
-        connect(&mut server, &mut first, a);
-        connect(&mut server, &mut second, b);
-        let mut bytes = Vec::new();
-        first.data(1, b"private match chat", &mut bytes).unwrap();
-        let forwarded = server.process(a, &bytes, 1000).unwrap().remove(0);
-        second.payload_key = SecretKey::new([88; 32]);
-        assert!(matches!(
-            second.receive(&forwarded.bytes),
-            Err(RelayError::Authentication)
-        ));
-        second.payload_key = SecretKey::new([89; 32]);
-        let payload = &forwarded.bytes[SERVER_HEADER..forwarded.bytes.len() - MAC_LEN];
-        let forged = encode_server(&second.ticket, &second.key, DATA, 99, 2, payload);
-        assert!(matches!(
-            second.receive(&forged),
-            Err(RelayError::Authentication)
-        ));
-        assert!(
-            matches!(second.receive(&forwarded.bytes), Ok(ServerEvent::Payload { bytes, .. }) if bytes.as_bytes() == b"private match chat")
-        );
+        let first = client(&key, 1, 0);
         let ticket = Ticket {
             expires: 1250,
             nonce: [23; 16],

@@ -1,8 +1,9 @@
 //! UPLINK (request 8, spec §3.2) and the hop feedback tail of ACK and
-//! STATUS (spec §3.3, §3.4). Little-endian throughout.
+//! STATUS (spec §3.3, §3.4), in the varint encoding of the bandwidth
+//! compaction (its §7.1-§7.3, §8). Fixed-width integers are little-endian.
 
 use super::{HopFeedback, RecvWindow};
-use crate::RelayError;
+use crate::{ORDERING_BATCH_CAPACITY, RelayError, varint};
 
 pub(crate) const UPLINK_REQUEST: u8 = 8;
 pub(crate) const FLAG_PUSH: u8 = 1;
@@ -11,16 +12,13 @@ pub(crate) const FLAG_PROBE: u8 = 1 << 2;
 pub(crate) const FLAG_RESTORING: u8 = 1 << 3;
 pub(crate) const LINK_DELAYED: u8 = 1 << 2;
 pub(crate) const LINK_JITTERY: u8 = 1 << 3;
-/// `[up_high u64][up_bits u64][echo_delay u16]`.
-pub(crate) const FEEDBACK_LEN: usize = 18;
+/// The longest `[up_high varint][up_bits u64][echo_delay varint]`.
+pub(crate) const FEEDBACK_LEN: usize = varint::MAX_LEN + 8 + 3;
 pub(crate) const MAX_UPLINK_CHECKSUMS: usize = 2;
 pub(crate) const MAX_UPLINK_BATCHES: usize = 4;
-/// `40 < len ≤ 552`: nonce, at least one ciphertext byte and tag.
-const MIN_OPAQUE_EXCLUSIVE: usize = 40;
-const MAX_OPAQUE: usize = 552;
 
-/// One pace segment: `[pace u8][frames_per_second u16][tick_micros u32]`,
-/// `tick_micros` 0 for none.
+/// One pace segment: `[pace u8][frames_per_second varint][tick_micros
+/// varint]`, `tick_micros` 0 for none.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PaceSegment {
     pub pace: u8,
@@ -46,62 +44,84 @@ pub(crate) struct Uplink<'a> {
 }
 
 impl Uplink<'_> {
-    /// The encoded length before any batch.
-    pub(crate) fn head_len(checksums: usize, pace: bool) -> usize {
-        35 + 8 * checksums + if pace { 7 } else { 0 }
+    /// `[8][flags u8][recv_next varint][down_high varint][down_bits u64]
+    /// [srtt_ms varint][base_ms varint][rttvar_ms varint][link u8]
+    /// [checksum_count u8]{[frame varint][checksum u32]}[pace segment]
+    /// [batch_count u8][first_batch_id varint]{[len varint][P len]}`
+    /// (compaction spec §7.1).
+    pub(crate) fn encode(&self, out: &mut Vec<u8>) {
+        self.encode_head(out);
+        out.push(self.batches.len() as u8);
+        if !self.batches.is_empty() {
+            varint::write(self.first_batch_id, out);
+        }
+        for batch in &self.batches {
+            varint::write(batch.len() as u64, out);
+            out.extend_from_slice(batch);
+        }
     }
 
-    pub(crate) fn encode(&self, out: &mut Vec<u8>) {
+    fn encode_head(&self, out: &mut Vec<u8>) {
         let flags = (self.flags & !FLAG_PACE) | if self.pace.is_some() { FLAG_PACE } else { 0 };
         out.push(UPLINK_REQUEST);
         out.push(flags);
-        out.extend_from_slice(&self.recv_next.to_le_bytes());
-        out.extend_from_slice(&self.down.high.to_le_bytes());
+        varint::write(self.recv_next, out);
+        varint::write(self.down.high, out);
         out.extend_from_slice(&self.down.bits.to_le_bytes());
-        out.extend_from_slice(&self.srtt_ms.to_le_bytes());
-        out.extend_from_slice(&self.base_ms.to_le_bytes());
-        out.extend_from_slice(&self.rttvar_ms.to_le_bytes());
+        varint::write(self.srtt_ms.into(), out);
+        varint::write(self.base_ms.into(), out);
+        varint::write(self.rttvar_ms.into(), out);
         out.push(self.link);
         out.push(self.checksums.len() as u8);
         for (frame, checksum) in &self.checksums {
-            out.extend_from_slice(&frame.to_le_bytes());
+            varint::write((*frame).into(), out);
             out.extend_from_slice(&checksum.to_le_bytes());
         }
         if let Some(pace) = self.pace {
             out.push(pace.pace);
-            out.extend_from_slice(&pace.frames_per_second.to_le_bytes());
-            out.extend_from_slice(&pace.tick_micros.to_le_bytes());
+            varint::write(pace.frames_per_second.into(), out);
+            varint::write(pace.tick_micros.into(), out);
         }
-        out.push(self.batches.len() as u8);
-        if !self.batches.is_empty() {
-            out.extend_from_slice(&self.first_batch_id.to_le_bytes());
-        }
+    }
+
+    /// Keeps the leading batches that fit `limit` bytes encoded, in order
+    /// (spec §6.2: the batches that fit, from `accepted_through + 1`).
+    pub(crate) fn fit(&mut self, limit: usize) {
+        let mut head = Vec::new();
+        self.encode_head(&mut head);
+        let mut length = head.len() + 1 + varint::encoded_len(self.first_batch_id);
+        let mut fitting = 0;
         for batch in &self.batches {
-            out.extend_from_slice(&(batch.len() as u16).to_le_bytes());
-            out.extend_from_slice(batch);
+            length += varint::encoded_len(batch.len() as u64) + batch.len();
+            if length > limit {
+                break;
+            }
+            fitting += 1;
         }
+        self.batches.truncate(fitting);
     }
 }
 
 /// Decodes an UPLINK control payload under every Malformed rule of spec
-/// §3.2: exact length, at most 2 checksums and 4 batches, reserved bits 0
-/// (flags 4..7, link 4..7), `first_batch_id ≥ 1`, `40 < len ≤ 552`,
-/// `recv_next ≥ 1`, and bit0 of `down_bits` set when `down_high > 0`. The
-/// pace byte must also name an [`crate::OrderPace`].
+/// §3.2 and compaction spec §7.1, §8: exact length, at most 2 checksums and
+/// 4 batches, reserved bits 0 (flags 4..7, link 4..7), `first_batch_id ≥
+/// 1`, `1 ≤ len ≤ 512`, `recv_next ≥ 1`, bit0 of `down_bits` set when
+/// `down_high > 0`, shortest varints within their fields' former widths.
+/// The pace byte must also name an [`crate::OrderPace`].
 pub(crate) fn decode_uplink(payload: &[u8]) -> Result<Uplink<'_>, RelayError> {
     let mut reader = Reader(payload);
     if reader.u8()? != UPLINK_REQUEST {
         return Err(RelayError::Malformed);
     }
     let flags = reader.u8()?;
-    let recv_next = reader.u64()?;
+    let recv_next = reader.varint()?;
     let down = RecvWindow {
-        high: reader.u64()?,
+        high: reader.varint()?,
         bits: reader.u64()?,
     };
-    let srtt_ms = reader.u16()?;
-    let base_ms = reader.u16()?;
-    let rttvar_ms = reader.u16()?;
+    let srtt_ms = reader.varint_u16()?;
+    let base_ms = reader.varint_u16()?;
+    let rttvar_ms = reader.varint_u16()?;
     let link = reader.u8()?;
     let checksum_count = usize::from(reader.u8()?);
     if flags & 0xF0 != 0
@@ -114,13 +134,13 @@ pub(crate) fn decode_uplink(payload: &[u8]) -> Result<Uplink<'_>, RelayError> {
     }
     let mut checksums = Vec::with_capacity(checksum_count);
     for _ in 0..checksum_count {
-        checksums.push((reader.u32()?, reader.u32()?));
+        checksums.push((reader.varint_u32()?, reader.u32()?));
     }
     let pace = if flags & FLAG_PACE != 0 {
         let pace = PaceSegment {
             pace: reader.u8()?,
-            frames_per_second: reader.u16()?,
-            tick_micros: reader.u32()?,
+            frames_per_second: reader.varint_u16()?,
+            tick_micros: reader.varint_u32()?,
         };
         if pace.pace > 2 {
             return Err(RelayError::Malformed);
@@ -136,16 +156,16 @@ pub(crate) fn decode_uplink(payload: &[u8]) -> Result<Uplink<'_>, RelayError> {
     let mut first_batch_id = 0;
     let mut batches = Vec::with_capacity(batch_count);
     if batch_count > 0 {
-        first_batch_id = reader.u64()?;
+        first_batch_id = reader.varint()?;
         if first_batch_id == 0 || first_batch_id.checked_add(batch_count as u64 - 1).is_none() {
             return Err(RelayError::Malformed);
         }
         for _ in 0..batch_count {
-            let length = usize::from(reader.u16()?);
-            if length <= MIN_OPAQUE_EXCLUSIVE || length > MAX_OPAQUE {
+            let length = reader.varint()?;
+            if !(OPAQUE_MIN..=OPAQUE_MAX).contains(&length) {
                 return Err(RelayError::Malformed);
             }
-            batches.push(reader.take(length)?);
+            batches.push(reader.take(length as usize)?);
         }
     }
     if !reader.0.is_empty() {
@@ -166,29 +186,36 @@ pub(crate) fn decode_uplink(payload: &[u8]) -> Result<Uplink<'_>, RelayError> {
     })
 }
 
-/// Appends the hop feedback tail (spec §3.3, §3.4).
+/// Batch length bounds of an UPLINK: `40 < len ≤ 552`, a nonce, at least
+/// one ciphertext byte and a tag (transport spec §3.2).
+const OPAQUE_MIN: u64 = 41;
+const OPAQUE_MAX: u64 = ORDERING_BATCH_CAPACITY as u64 + 40;
+
+/// Appends the hop feedback tail `[up_high varint][up_bits u64]
+/// [echo_delay varint]` (spec §3.3, §3.4; compaction spec §7.2, §7.3).
 pub(crate) fn append_feedback(payload: &mut Vec<u8>, feedback: HopFeedback) {
-    payload.extend_from_slice(&feedback.up.high.to_le_bytes());
+    varint::write(feedback.up.high, payload);
     payload.extend_from_slice(&feedback.up.bits.to_le_bytes());
-    payload.extend_from_slice(&feedback.echo_delay_ms.to_le_bytes());
+    varint::write(feedback.echo_delay_ms.into(), payload);
 }
 
-/// The feedback tail at `offset`; the caller checked the length.
-pub(crate) fn read_feedback(payload: &[u8], offset: usize) -> HopFeedback {
-    let mut reader = Reader(&payload[offset..offset + FEEDBACK_LEN]);
-    HopFeedback {
+/// Reads the feedback tail from `reader`.
+pub(crate) fn read_feedback(reader: &mut Reader<'_>) -> Result<HopFeedback, RelayError> {
+    Ok(HopFeedback {
         up: RecvWindow {
-            high: reader.u64().expect("checked feedback"),
-            bits: reader.u64().expect("checked feedback"),
+            high: reader.varint()?,
+            bits: reader.u64()?,
         },
-        echo_delay_ms: reader.u16().expect("checked feedback"),
-    }
+        echo_delay_ms: reader.varint_u16()?,
+    })
 }
 
-struct Reader<'a>(&'a [u8]);
+/// A cursor over a message: fixed-width little-endian fields and §8
+/// varints, each `Malformed` past the end.
+pub(crate) struct Reader<'a>(pub(crate) &'a [u8]);
 
 impl<'a> Reader<'a> {
-    fn take(&mut self, length: usize) -> Result<&'a [u8], RelayError> {
+    pub(crate) fn take(&mut self, length: usize) -> Result<&'a [u8], RelayError> {
         if self.0.len() < length {
             return Err(RelayError::Malformed);
         }
@@ -196,17 +223,33 @@ impl<'a> Reader<'a> {
         self.0 = tail;
         Ok(head)
     }
-    fn u8(&mut self) -> Result<u8, RelayError> {
+    pub(crate) fn u8(&mut self) -> Result<u8, RelayError> {
         Ok(self.take(1)?[0])
     }
-    fn u16(&mut self) -> Result<u16, RelayError> {
+    pub(crate) fn u16(&mut self) -> Result<u16, RelayError> {
         Ok(u16::from_le_bytes(self.take(2)?.try_into().unwrap()))
     }
-    fn u32(&mut self) -> Result<u32, RelayError> {
+    pub(crate) fn u32(&mut self) -> Result<u32, RelayError> {
         Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
     }
-    fn u64(&mut self) -> Result<u64, RelayError> {
+    pub(crate) fn u64(&mut self) -> Result<u64, RelayError> {
         Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
+    }
+    pub(crate) fn varint(&mut self) -> Result<u64, RelayError> {
+        let (value, length) = varint::read(self.0)?;
+        self.0 = &self.0[length..];
+        Ok(value)
+    }
+    /// A varint field that kept its former `u32` width (§7.1).
+    pub(crate) fn varint_u32(&mut self) -> Result<u32, RelayError> {
+        u32::try_from(self.varint()?).map_err(|_| RelayError::Malformed)
+    }
+    /// A varint field that kept its former `u16` width (§7.1).
+    pub(crate) fn varint_u16(&mut self) -> Result<u16, RelayError> {
+        u16::try_from(self.varint()?).map_err(|_| RelayError::Malformed)
+    }
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 
@@ -214,14 +257,7 @@ impl<'a> Reader<'a> {
 mod tests {
     use super::*;
 
-    fn le(values: &[(u64, usize)]) -> Vec<u8> {
-        values
-            .iter()
-            .flat_map(|&(value, width)| value.to_le_bytes()[..width].to_vec())
-            .collect()
-    }
-
-    fn appendix_uplink<'a>(recv_next: u64, high: u64, bits: u64) -> Uplink<'a> {
+    fn quiet_uplink<'a>(recv_next: u64, high: u64, bits: u64) -> Uplink<'a> {
         Uplink {
             flags: FLAG_PUSH,
             recv_next,
@@ -237,93 +273,55 @@ mod tests {
         }
     }
 
-    /// Spec appendix A packets 14 and 24: UPLINKs without batches, 35 B.
+    /// Compaction spec §7.1: a UPLINK without batches, 18 B (35 B before).
     #[test]
-    fn appendix_uplinks_without_batches_encode_field_for_field() {
-        for (uplink, recv_next, high, bits) in [
-            (appendix_uplink(1, 7, 0x7F), 1, 7, 0x7F),
-            (appendix_uplink(10, 11, 0x7FD), 10, 11, 0x7FD),
-        ] {
-            let mut bytes = Vec::new();
-            uplink.encode(&mut bytes);
-            let expected = le(&[
-                (8, 1),
-                (1, 1),
-                (recv_next, 8),
-                (high, 8),
-                (bits, 8),
-                (40, 2),
-                (40, 2),
-                (11, 2),
-                (0, 1),
-                (0, 1),
-                (0, 1),
-            ]);
-            assert_eq!(bytes, expected);
-            assert_eq!(bytes.len(), 35);
-            assert_eq!(decode_uplink(&bytes).unwrap(), uplink);
-        }
-    }
-
-    /// Spec appendix A packet 18: one 74-byte batch, 119 B.
-    #[test]
-    fn appendix_uplink_with_a_batch_encodes_field_for_field() {
-        let opaque = [0xAB; 74];
-        let mut uplink = appendix_uplink(3, 8, 0xFF);
-        uplink.first_batch_id = 1;
-        uplink.batches = vec![&opaque];
+    fn uplinks_encode_their_integers_as_varints() {
+        let uplink = quiet_uplink(1, 7, 0x7F);
         let mut bytes = Vec::new();
         uplink.encode(&mut bytes);
-        let mut expected = le(&[
-            (8, 1),
-            (1, 1),
-            (3, 8),
-            (8, 8),
-            (0xFF, 8),
-            (40, 2),
-            (40, 2),
-            (11, 2),
-            (0, 1),
-            (0, 1),
-            (1, 1),
-            (1, 8),
-            (74, 2),
-        ]);
-        expected.extend_from_slice(&opaque);
+        #[rustfmt::skip]
+        let expected = [
+            8, FLAG_PUSH, 1, 7, 0x7F, 0, 0, 0, 0, 0, 0, 0, 40, 40, 11, 0, 0, 0,
+        ];
         assert_eq!(bytes, expected);
-        assert_eq!(bytes.len(), 119);
+        assert_eq!(decode_uplink(&bytes).unwrap(), uplink);
+        let opaque = [0xAB; 74];
+        let mut uplink = quiet_uplink(300, 8, 0xFF);
+        uplink.first_batch_id = 1;
+        uplink.batches = vec![&opaque];
+        uplink.checksums = vec![(15, 9)];
+        let mut bytes = Vec::new();
+        uplink.encode(&mut bytes);
+        assert_eq!(bytes[2..4], [0xAC, 0x02], "recv_next 300");
+        assert_eq!(bytes.len(), 18 + 5 + 1 + 1 + 1 + 74);
         assert_eq!(decode_uplink(&bytes).unwrap(), uplink);
     }
 
     #[test]
-    fn the_largest_first_batch_fits_beside_both_checksums_and_pace() {
-        let opaque = [1; MAX_OPAQUE];
-        let mut uplink = appendix_uplink(1, 0, 0);
-        uplink.flags = FLAG_PUSH | FLAG_PACE;
-        uplink.checksums = vec![(15, 1), (30, 2)];
-        uplink.pace = Some(PaceSegment {
-            pace: 0,
-            frames_per_second: 30,
-            tick_micros: 2100,
-        });
+    fn fit_keeps_the_leading_batches_within_the_limit() {
+        let opaque = [1; 300];
+        let mut uplink = quiet_uplink(1, 0, 0);
         uplink.first_batch_id = 1;
-        uplink.batches = vec![&opaque];
+        uplink.batches = vec![&opaque, &opaque, &opaque];
+        uplink.fit(crate::MAX_WIRE_PAYLOAD);
+        assert_eq!(uplink.batches.len(), 2);
         let mut bytes = Vec::new();
         uplink.encode(&mut bytes);
-        assert_eq!(bytes.len(), 620);
         assert!(bytes.len() <= crate::MAX_WIRE_PAYLOAD);
-        assert_eq!(bytes[1], FLAG_PUSH | FLAG_PACE);
-        assert_eq!(decode_uplink(&bytes).unwrap(), uplink);
+        uplink.fit(bytes.len() - 1);
+        assert_eq!(uplink.batches.len(), 1);
     }
 
     #[test]
     fn every_malformed_rule_rejects_the_uplink() {
         let opaque = [1; 41];
-        let mut uplink = appendix_uplink(1, 7, 0x7F);
+        let mut uplink = quiet_uplink(1, 7, 0x7F);
         uplink.first_batch_id = 1;
         uplink.batches = vec![&opaque];
         let mut good = Vec::new();
         uplink.encode(&mut good);
+        // [8][flags][recv_next 2][high 3][bits 4..12][40][40][11][link 15]
+        // [checksums 16][batches 17][first id 18][len 19][opaque 20..]
         assert!(decode_uplink(&good).is_ok());
         let mutate = |change: &dyn Fn(&mut Vec<u8>)| {
             let mut bytes = good.clone();
@@ -331,7 +329,7 @@ mod tests {
             decode_uplink(&bytes).map(|_| ())
         };
         let malformed = Err(RelayError::Malformed);
-        // 1: exact length.
+        // Exact length.
         assert_eq!(mutate(&|b| b.push(0)), malformed);
         assert_eq!(
             mutate(&|b| {
@@ -339,53 +337,50 @@ mod tests {
             }),
             malformed
         );
-        // 2: counts and reserved bits.
-        assert_eq!(mutate(&|b| b[33] = 3), malformed);
-        assert_eq!(mutate(&|b| b[34] = 5), malformed);
+        // Counts and reserved bits.
+        assert_eq!(mutate(&|b| b[16] = 3), malformed);
+        assert_eq!(mutate(&|b| b[17] = 5), malformed);
         assert_eq!(mutate(&|b| b[1] |= 0x10), malformed);
-        assert_eq!(mutate(&|b| b[32] |= 0x10), malformed);
-        assert!(mutate(&|b| b[32] |= 0x08).is_ok(), "bit3 JITTERY");
-        // 3: first_batch_id ≥ 1.
-        assert_eq!(mutate(&|b| b[35..43].fill(0)), malformed);
-        // 4: 40 < len ≤ 552.
+        assert_eq!(mutate(&|b| b[15] |= 0x10), malformed);
+        assert!(mutate(&|b| b[15] |= 0x08).is_ok(), "bit3 JITTERY");
+        // first_batch_id ≥ 1; batch length bounds.
+        assert_eq!(mutate(&|b| b[18] = 0), malformed);
         assert_eq!(
             mutate(&|b| {
-                b[43] = 40;
+                b[19] = 40;
                 b.pop();
             }),
             malformed
         );
-        // 5: recv_next ≥ 1.
-        assert_eq!(mutate(&|b| b[2..10].fill(0)), malformed);
-        // 6: bit0 of down_bits when down_high > 0.
-        assert_eq!(mutate(&|b| b[18] = 0x7E), malformed);
-        // No feedback yet (down_high 0) needs no bit.
-        assert!(
-            mutate(&|b| {
-                b[10..26].fill(0);
-            })
-            .is_ok()
+        // recv_next ≥ 1; bit0 of down_bits when down_high > 0.
+        assert_eq!(mutate(&|b| b[2] = 0), malformed);
+        assert_eq!(mutate(&|b| b[4] = 0x7E), malformed);
+        // Varints: shortest, within the field's former width (§7.1, §8).
+        assert_eq!(
+            mutate(&|b| b.splice(12..13, [0xA8, 0x00]).for_each(drop)),
+            malformed
+        );
+        assert_eq!(
+            mutate(&|b| b.splice(12..13, [0x80, 0x80, 0x04]).for_each(drop)),
+            malformed,
+            "srtt past u16"
         );
     }
 
-    /// Spec appendix A packet 19: the 31-byte ACK.
     #[test]
-    fn appendix_ack_feedback_appends_field_for_field() {
-        let mut ack = le(&[(2, 1), (1, 8), (5, 4)]);
-        append_feedback(
-            &mut ack,
-            HopFeedback {
-                up: RecvWindow {
-                    high: 8,
-                    bits: 0x7F,
-                },
-                echo_delay_ms: 0,
+    fn feedback_round_trips_with_varints() {
+        let feedback = HopFeedback {
+            up: RecvWindow {
+                high: 8,
+                bits: 0x7F,
             },
-        );
-        assert_eq!(
-            ack,
-            le(&[(2, 1), (1, 8), (5, 4), (8, 8), (0x7F, 8), (0, 2)])
-        );
-        assert_eq!(read_feedback(&ack, 13).up.bits, 0x7F);
+            echo_delay_ms: 300,
+        };
+        let mut ack = vec![2, 1, 5];
+        append_feedback(&mut ack, feedback);
+        assert_eq!(ack, [2, 1, 5, 8, 0x7F, 0, 0, 0, 0, 0, 0, 0, 0xAC, 0x02]);
+        let mut reader = Reader(&ack[3..]);
+        assert_eq!(read_feedback(&mut reader), Ok(feedback));
+        assert!(reader.is_empty());
     }
 }

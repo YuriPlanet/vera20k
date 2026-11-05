@@ -17,7 +17,7 @@ mod uplink;
 pub(crate) use codec::Uplink;
 pub(crate) use codec::{
     FEEDBACK_LEN, FLAG_PROBE, FLAG_PUSH, FLAG_RESTORING, LINK_DELAYED, LINK_JITTERY, PaceSegment,
-    UPLINK_REQUEST, append_feedback, decode_uplink, read_feedback,
+    Reader, UPLINK_REQUEST, append_feedback, decode_uplink, read_feedback,
 };
 pub(crate) use measure::{
     JitterMeter, LossCursor, LossStats, RttEstimator, StateClock, link_state, pto, reader_rtt,

@@ -3732,9 +3732,9 @@ fn sequenced_lost_first_uplink_is_resent_until_the_subscription_pushes() {
         let mut replies = Vec::new();
         let mut bytes = [0; MAX_DATAGRAM + 1];
         while let Ok((length, std::net::SocketAddr::V4(source))) = socket.recv_from(&mut bytes) {
-            // Lose the second client's first UPLINK (CONTROL kind 4, request
-            // 8 after the 114-byte client header).
-            let uplink = bytes[4] == 4 && bytes[114] == 8;
+            // Lose the second client's first UPLINK (CONTROL kind 4 in the
+            // v3 `hdr`, request 8 after the 9-byte envelope header).
+            let uplink = bytes[0] & 0x1F == 4 && bytes[9] == 8;
             if uplink && source == second_address && dropped.is_none() {
                 dropped = Some(step);
                 continue;
@@ -4054,7 +4054,7 @@ fn sequenced_pause_stops_at_one_boundary_and_recovers_a_lost_resume() {
         let deliver = |packet: vera20k_relay_protocol::ForwardDatagram| {
             // Protocol v2 has a 48-byte server header; payload kind8 is
             // PauseStatus. Lose those replies but retain canonical history.
-            let lost_status = lose_pause_status && packet.bytes.get(48) == Some(&8);
+            let lost_status = lose_pause_status && packet.bytes.get(9) == Some(&8);
             if packet.endpoint != second_address || (!lose_second && !lost_status) {
                 socket.send_to(&packet.bytes, packet.endpoint).unwrap();
             }
