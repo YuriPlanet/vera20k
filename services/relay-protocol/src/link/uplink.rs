@@ -872,6 +872,37 @@ mod tests {
     }
 
     #[test]
+    fn jittery_new_turn_arrivals_set_link_bit3_but_pull_replies_are_not_measured() {
+        let mut session = started();
+        poll(&mut session, 0).unwrap();
+        let frame_end = |sequence: u64, frame: u32| {
+            vec![crate::OrderEvent::Entry(crate::OrderEntry::FrameEnd {
+                sequence,
+                frame,
+            })]
+        };
+        // 30 Hz two-frame turns, alternately on time and 60 ms late.
+        let mut at = 0;
+        for turn in 1..=18u64 {
+            at += if turn % 2 == 0 { 127 } else { 7 };
+            let recv_next = 2 * turn - 1;
+            session.set_ordering_received_next(recv_next);
+            session.measure_jitter(&frame_end(recv_next + 1, 2 * turn as u32), at);
+        }
+        assert!(session.link_stats().jittery);
+        session.hop.last_heard_ms = Some(at);
+        let jittery = poll_silent(&mut session, at + 300).unwrap();
+        assert_eq!(decoded(&jittery).link, crate::link::LINK_JITTERY);
+        // A PULL's reply packs, after its STATUS, take no sample.
+        let samples = session.link_stats().jitter_us;
+        let link = link(&mut session);
+        link.pull_reply_ms = Some(at + 400);
+        session.measure_jitter(&frame_end(100, 100), at + 400);
+        session.measure_jitter(&frame_end(101, 101), at + 400);
+        assert_eq!(session.link_stats().jitter_us, samples);
+    }
+
+    #[test]
     fn acknowledged_batches_never_time_out_a_later_first_send() {
         let mut session = started();
         poll(&mut session, 0).unwrap();

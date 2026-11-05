@@ -79,10 +79,16 @@ pub(super) fn piggyback_packs(
     (fresh, count, 0)
 }
 
+/// Whether a reader in `state` gets the 8 ms repeat (spec §7.2, §7.5):
+/// lossy, or good and JITTERY.
+pub(super) fn repeats_on(state: LinkState, jittery: bool) -> bool {
+    state == LinkState::Lossy || (state == LinkState::Good && jittery)
+}
+
 impl PushSubscription {
     /// The §5.5 side effects of the reader's state change on this
     /// subscription.
-    pub(super) fn on_transition(&mut self, previous: LinkState, state: LinkState) {
+    pub(super) fn on_transition(&mut self, previous: LinkState, state: LinkState, jittery: bool) {
         if previous == LinkState::Offline {
             // Push again from the watermark.
             self.sent_next = self.acknowledged_next;
@@ -91,7 +97,7 @@ impl PushSubscription {
             self.retransmit.clear();
             self.retransmitted.clear();
             self.pto_backoff = 0;
-        } else if previous == LinkState::Lossy && state != LinkState::Lossy {
+        } else if repeats_on(previous, jittery) && !repeats_on(state, jittery) {
             self.unrepeated_since = None;
             self.repeat_next = self.sent_next;
         }
@@ -154,7 +160,7 @@ impl Peer {
                 self.link.skip_judged_to(self.sent + 1);
             }
             if let Some(push) = self.push.as_mut() {
-                push.on_transition(previous, state);
+                push.on_transition(previous, state, self.link.jittery);
             }
         }
         self.link.clock.state
@@ -436,7 +442,7 @@ impl RelayServer {
             room.peers
                 .iter()
                 .find(|peer| peer.ticket == ticket)
-                .map(|peer| peer.link.clock.state == LinkState::Lossy)
+                .map(|peer| repeats_on(peer.link.clock.state, peer.link.jittery))
         })?;
         let push = self
             .rooms
@@ -519,7 +525,7 @@ impl RelayServer {
         // Item 4: repeats, less what the retransmission queue holds.
         let mut repeats = Vec::new();
         let mut repeated_to = None;
-        if state == LinkState::Lossy
+        if repeats_on(state, peer.link.jittery)
             && push
                 .unrepeated_since
                 .is_some_and(|at| now_ms.saturating_sub(at) >= PUSH_REPEAT_MS)
@@ -728,6 +734,50 @@ mod tests {
         subscribe(&mut server, &mut reader, end, 441);
         assert_eq!(stats(&server).piggyback_depth, 2);
         assert_eq!(turn(&mut server, 510)[0].0, end);
+    }
+
+    /// Spec §7.2, §7.5: a good but JITTERY reader gets K = 2 and the 8 ms
+    /// repeat, and stays good; clearing JITTERY turns the repeat off.
+    #[test]
+    fn a_jittery_good_reader_gets_repeats_until_its_jitter_clears() {
+        let (mut server, mut reader) = reader_room(85);
+        let mut uplink = |server: &mut RelayServer, link: u8, at: u64| {
+            let mut payload = Vec::new();
+            crate::link::Uplink {
+                flags: crate::link::FLAG_PUSH,
+                recv_next: 1,
+                down: crate::RecvWindow::default(),
+                srtt_ms: 0,
+                base_ms: 0,
+                link,
+                checksums: Vec::new(),
+                pace: None,
+                first_batch_id: 0,
+                batches: Vec::new(),
+            }
+            .encode(&mut payload);
+            let mut bytes = Vec::new();
+            reader
+                .encode(CONTROL, BROADCAST, &payload, &mut bytes)
+                .unwrap();
+            server
+                .process_at(super::super::tests::endpoint(&reader), &bytes, unix(at), at)
+                .unwrap();
+        };
+        uplink(&mut server, crate::link::LINK_JITTERY, 290);
+        let jittery = stats(&server);
+        assert_eq!((jittery.downlink, jittery.jittery), (LinkState::Good, true));
+        assert_eq!(jittery.piggyback_depth, 2);
+        server.advance_clock(300, unix(300));
+        server.drain_ordering_push(300, unix(300));
+        server.drain_ordering_push(308, unix(308));
+        assert_eq!(stats(&server).packets_by_kind[2], 1);
+        // Calm again: the next turn is not repeated.
+        uplink(&mut server, 0, 320);
+        server.advance_clock(370, unix(370));
+        server.drain_ordering_push(370, unix(370));
+        server.drain_ordering_push(378, unix(378));
+        assert_eq!(stats(&server).packets_by_kind[2], 1);
     }
 
     #[test]

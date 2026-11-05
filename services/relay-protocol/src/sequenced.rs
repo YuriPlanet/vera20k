@@ -550,7 +550,7 @@ impl ClientSession {
                 accepted_through: 0,
                 restoring: false,
                 leave: None,
-                link: crate::link::ClientLink::with_turn_ms(turn_ms(parsed.tick_hz)),
+                link: crate::link::ClientLink::new(parsed.tick_hz),
             });
         }
         let mut payload = vec![READY_REQUEST];
@@ -626,7 +626,10 @@ impl ClientSession {
         }
         let mut payload = vec![PULL_REQUEST];
         payload.extend_from_slice(&next_seq.to_le_bytes());
-        self.encode(CONTROL, BROADCAST, &payload, out)
+        self.encode(CONTROL, BROADCAST, &payload, out)?;
+        // Its reply packs are no new-turn arrivals (spec §4.8).
+        self.ordering.as_mut().expect("ordering").link.pull_pending = true;
+        Ok(())
     }
 
     /// Request zero advertises pause support and asks for current status.
@@ -5985,6 +5988,17 @@ impl RelayServer {
         }
         // §7.1 step 3.
         peer.link.delayed = uplink.link & crate::link::LINK_DELAYED != 0;
+        let jittery = uplink.link & crate::link::LINK_JITTERY != 0;
+        if peer.link.jittery
+            && !jittery
+            && peer.link.clock.state == crate::link::LinkState::Good
+            && let Some(push) = peer.push.as_mut()
+        {
+            // The repeat turns off (spec §7.5).
+            push.unrepeated_since = None;
+            push.repeat_next = push.sent_next;
+        }
+        peer.link.jittery = jittery;
         peer.link.srtt_c = uplink.srtt_ms;
         // §7.1 step 4: downlink loss, and what the lost packs owe (§7.3).
         let lost = peer.link.judge(uplink.down);

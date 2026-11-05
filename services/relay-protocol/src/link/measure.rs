@@ -8,8 +8,8 @@ use super::{LinkState, RecvWindow};
 pub(crate) const REORDER_THRESHOLD: u64 = 3;
 /// Judged packets per fold of the smoothed loss (spec §4.3).
 const LOSS_FOLD_PACKETS: u32 = 32;
-const LOSSY_ENTER: u16 = 30;
-const LOSSY_EXIT: u16 = 10;
+const LOSSY_ENTER: u16 = 5;
+const LOSSY_EXIT: u16 = 2;
 const SEVERE_ENTER: u16 = 150;
 const SEVERE_EXIT: u16 = 100;
 const QUEUE_DELAY_FLOOR: u32 = 100;
@@ -22,6 +22,9 @@ const PTO_MIN: u64 = 50;
 const PTO_MAX: u64 = 1000;
 /// `srtt_c` the relay assumes until a reader reports one (spec §4.6).
 const PTO_DEFAULT_SRTT: u64 = 100;
+const JITTER_MIN_SAMPLES: u64 = 16;
+/// The JITTERY floor in µs (spec §4.8, `max(10, turn_ms / 4)` ms).
+const JITTERY_FLOOR_US: u64 = 10_000;
 /// srtt values above this share the last percentile bucket.
 const SRTT_BUCKETS: usize = 2001;
 
@@ -258,6 +261,76 @@ fn backed_off(timeout: u64, backoff: u32, max: u64) -> u64 {
         .min(max)
 }
 
+/// The client's downlink arrival jitter of new-turn packs (spec §4.8):
+/// RFC 3550 smoothing in µs and the JITTERY hysteresis, with the time it
+/// held and how often it was entered (spec §10.1).
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct JitterMeter {
+    // The previous new-turn pack: its arrival ms and newest frame.
+    previous: Option<(u64, u32)>,
+    pub(crate) jitter_us: u64,
+    pub(crate) max_us: u64,
+    samples: u64,
+    pub(crate) jittery: bool,
+    since: Option<u64>,
+    pub(crate) jittery_ms: u64,
+    pub(crate) entries: u64,
+}
+
+impl JitterMeter {
+    /// A new-turn pack whose newest frame is `frame` arrived at `now_ms`,
+    /// sealed at `rate` frames a second, with turns of `turn_ms`.
+    pub(crate) fn sample(&mut self, now_ms: u64, frame: u32, rate: u16, turn_ms: u32) {
+        if let Some((at, previous_frame)) = self.previous {
+            let arrived_us = i128::from(now_ms.saturating_sub(at)) * 1000;
+            let sealed_us = i128::from(frame.saturating_sub(previous_frame)) * 1_000_000
+                / i128::from(rate.max(1));
+            let deviation = (arrived_us - sealed_us).unsigned_abs() as u64;
+            // J = J + (|D| - J) / 16, in signed steps.
+            let jitter = self.jitter_us as i128;
+            self.jitter_us = (jitter + (i128::from(deviation) - jitter) / 16).max(0) as u64;
+            self.max_us = self.max_us.max(self.jitter_us);
+            self.samples += 1;
+            if self.samples >= JITTER_MIN_SAMPLES {
+                let enter = JITTERY_FLOOR_US.max(u64::from(turn_ms) * 1000 / 4);
+                let jittery = if self.jittery {
+                    self.jitter_us > enter / 2
+                } else {
+                    self.jitter_us >= enter
+                };
+                self.set(jittery, now_ms);
+            }
+        }
+        self.previous = Some((now_ms, frame));
+    }
+
+    fn set(&mut self, jittery: bool, now_ms: u64) {
+        match (self.jittery, jittery) {
+            (false, true) => {
+                self.entries += 1;
+                self.since = Some(now_ms);
+            }
+            (true, false) => {
+                self.jittery_ms += self.since.map_or(0, |at| now_ms.saturating_sub(at));
+                self.since = None;
+            }
+            _ => {}
+        }
+        self.jittery = jittery;
+    }
+
+    /// The next new-turn pack only sets the reference again: after a
+    /// pause, an outage or a PULL (spec §4.8).
+    pub(crate) fn restart(&mut self) {
+        self.previous = None;
+    }
+
+    /// JITTERY's total time including the open span.
+    pub(crate) fn jittery_total(&self, now_ms: u64) -> u64 {
+        self.jittery_ms + self.since.map_or(0, |at| now_ms.saturating_sub(at))
+    }
+}
+
 /// `PTO_k` in ms (spec §4.6): `srtt_c` is the reader's reported srtt, 0 for
 /// none; `ack_delay_max` its state's acknowledgement interval.
 pub(crate) fn pto(srtt_c: u16, ack_delay_max: u64, backoff: u32) -> u64 {
@@ -405,27 +478,51 @@ mod tests {
         let mut stats = LossStats::default();
         stats.add(31, 0);
         assert_eq!(stats.folds, 0);
-        // 4 of 40: sample 100, (3 * 0 + 100) / 4 = 25, below the lossy entry.
-        stats.add(9, 4);
-        assert_eq!((stats.permille, stats.folds, stats.lossy), (25, 1, false));
-        stats.add(32, 2); // sample 62: (75 + 62) / 4 = 34
-        assert_eq!((stats.permille, stats.lossy), (34, true));
-        stats.add(32, 0); // 25: still lossy above 10
-        stats.add(32, 0); // 18
-        stats.add(32, 0); // 13
+        stats.add(1, 0);
+        assert_eq!((stats.permille, stats.folds, stats.lossy), (0, 1, false));
+        // 1 of 32: sample 31, (0 + 31) / 4 = 7, at least the 5‰ entry.
+        stats.add(32, 1);
+        assert_eq!((stats.permille, stats.lossy), (7, true));
+        stats.add(32, 0); // 5
+        stats.add(32, 0); // 3: still lossy above 2
         assert!(stats.lossy);
-        stats.add(32, 0); // 9: leaves
-        assert_eq!((stats.permille, stats.lossy), (9, false));
-        stats.add(32, 32); // (27 + 1000) / 4 = 256
-        assert_eq!((stats.permille, stats.severe), (256, true));
-        stats.add(32, 0); // 192
-        stats.add(32, 0); // 144
+        stats.add(32, 0); // 2: leaves
+        assert_eq!((stats.permille, stats.lossy), (2, false));
+        stats.add(32, 32); // (6 + 1000) / 4 = 251
+        assert_eq!((stats.permille, stats.severe), (251, true));
+        stats.add(32, 0); // 188
+        stats.add(32, 0); // 141
+        stats.add(32, 0); // 105
         assert!(stats.severe);
-        stats.add(32, 0); // 108
-        assert!(stats.severe);
-        stats.add(32, 0); // 81
+        stats.add(32, 0); // 78
         assert!(!stats.severe);
-        assert_eq!(stats.permille_max, 256);
+        assert_eq!(stats.permille_max, 251);
+    }
+
+    #[test]
+    fn jitter_smooths_new_turn_deviations_and_needs_16_samples() {
+        let mut meter = JitterMeter::default();
+        // 30 Hz, two-frame turns 66.7 ms apart; every other turn 60 ms late.
+        let mut at = 0;
+        for turn in 0..=16u32 {
+            at += if turn % 2 == 0 { 67 } else { 7 + 60 + 60 };
+            meter.sample(at, 2 * turn, 30, 67);
+        }
+        assert!(meter.jitter_us > 16_750, "{}", meter.jitter_us);
+        assert!(meter.jittery, "16 samples: enter at max(10, 67/4) ms");
+        assert_eq!(meter.entries, 1);
+        // On time again: J decays and JITTERY clears at half the entry.
+        for turn in 17..200u32 {
+            at += 67;
+            meter.sample(at, 2 * turn, 30, 67);
+        }
+        assert!(!meter.jittery);
+        assert!(meter.jittery_total(at) > 0);
+        // A restart takes no sample from the gap.
+        meter.restart();
+        let before = meter.jitter_us;
+        meter.sample(at + 5000, 400, 30, 67);
+        assert_eq!(meter.jitter_us, before);
     }
 
     #[test]

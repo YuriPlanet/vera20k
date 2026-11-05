@@ -16,10 +16,12 @@ mod uplink;
 #[cfg(test)]
 pub(crate) use codec::Uplink;
 pub(crate) use codec::{
-    FEEDBACK_LEN, FLAG_PROBE, FLAG_PUSH, FLAG_RESTORING, LINK_DELAYED, PaceSegment, UPLINK_REQUEST,
-    append_feedback, decode_uplink, read_feedback,
+    FEEDBACK_LEN, FLAG_PROBE, FLAG_PUSH, FLAG_RESTORING, LINK_DELAYED, LINK_JITTERY, PaceSegment,
+    UPLINK_REQUEST, append_feedback, decode_uplink, read_feedback,
 };
-pub(crate) use measure::{LossCursor, LossStats, RttEstimator, StateClock, link_state, pto};
+pub(crate) use measure::{
+    JitterMeter, LossCursor, LossStats, RttEstimator, StateClock, link_state, pto,
+};
 
 use crate::{
     ClientSession, OrderError, OrderEvent, OrderPace, OrderStatus, RelayError, RelayServer,
@@ -35,8 +37,8 @@ pub enum LinkState {
     /// None of the other states holds.
     #[default]
     Good = 0,
-    /// `loss‰` is inside the lossy hysteresis band: entered at 30‰ or more,
-    /// left at 10‰ or less, only after at least one fold (spec §4.3, §5.4).
+    /// `loss‰` is inside the lossy hysteresis band: entered at 5‰ or more,
+    /// left at 2‰ or less, only after at least one fold (spec §4.3, §5.4).
     Lossy = 1,
     /// DELAYED holds, or (uplink only) a Backpressure error arrived in the
     /// last 2000 ms (spec §5.2, §5.3).
@@ -166,6 +168,18 @@ pub struct ClientLinkStats {
     /// Milliseconds during which `delayed` was true.
     pub delayed_ms: u64,
 
+    // --- §10.1 jitter (spec §4.8) ---
+    /// Smoothed arrival jitter J of new-turn packs, in µs.
+    pub jitter_us: u64,
+    /// Highest J so far, in µs.
+    pub jitter_max_us: u64,
+    /// JITTERY (`UPLINK.link` bit 3): J reached `max(10, turn_ms / 4)` ms
+    /// after at least 16 samples, until it falls to half that.
+    pub jittery: bool,
+    /// Milliseconds during which JITTERY held, and times it was entered.
+    pub jittery_ms: u64,
+    pub jittery_entries: u64,
+
     /// This hop's downlink receive window (spec §4.1), the values the next
     /// UPLINK carries as `down_high` / `down_bits`.
     pub down: RecvWindow,
@@ -186,8 +200,9 @@ pub struct ReaderLinkStats {
     pub down_loss_permille: u16,
     /// Severe downlink loss (spec §5.2).
     pub severe: bool,
-    /// The current piggyback depth K (spec §7.2): 1 good, 2 lossy, 3 severe,
-    /// `min(K, 2)` congested; 0 while offline or unsubscribed.
+    /// The current piggyback depth K (spec §7.2): 1 good (2 when JITTERY),
+    /// 2 lossy, 3 severe, `min(K, 2)` congested; 0 while offline or
+    /// unsubscribed.
     pub piggyback_depth: u8,
     /// Highest `recv_next` this reader acknowledged.
     pub acked_next: u64,
@@ -205,6 +220,10 @@ pub struct ReaderLinkStats {
     /// The relay's `up` receive window for this hop (spec §4.1), the values
     /// its next ACK or STATUS carries as `up_high` / `up_bits`.
     pub up: RecvWindow,
+    /// JITTERY from the reader's latest UPLINK (`link` bit 3, spec §7.2):
+    /// while good it raises K to 2 and turns the 8 ms repeat on; it does
+    /// not change `downlink`.
+    pub jittery: bool,
 }
 
 impl ClientSession {
@@ -347,6 +366,17 @@ impl ClientSession {
         // Leave the offline state first: its recovery skips the loss cursor
         // past everything sent before (spec §5.5).
         self.evaluate_uplink(now_ms);
+        match &event {
+            ServerEvent::OrderingPack(events) => self.measure_jitter(events, now_ms),
+            ServerEvent::Ordering(OrderEvent::Status(_)) => {
+                if let Some(ordering) = self.ordering.as_mut()
+                    && std::mem::take(&mut ordering.link.pull_pending)
+                {
+                    ordering.link.pull_reply_ms = Some(now_ms);
+                }
+            }
+            _ => {}
+        }
         if let Some(feedback) = feedback {
             self.take_feedback(feedback, now_ms);
         }
@@ -529,6 +559,11 @@ impl ClientSession {
         stats.srtt_p50_ms = link.rtt.srtt_percentile(50);
         stats.srtt_p99_ms = link.rtt.srtt_percentile(99);
         stats.delayed_ms = delayed_ms;
+        stats.jitter_us = link.jitter.jitter_us;
+        stats.jitter_max_us = link.jitter.max_us;
+        stats.jittery = link.jitter.jittery;
+        stats.jittery_ms = link.jitter.jittery_total(link.clock.last_ms());
+        stats.jittery_entries = link.jitter.entries;
         stats
     }
 }
@@ -553,6 +588,7 @@ impl RelayServer {
             packets_by_kind: link.packets_by_kind,
             bytes_by_kind: link.bytes_by_kind,
             up: link.up,
+            jittery: link.jittery,
             ..ReaderLinkStats::default()
         };
         if let Some(push) = peer.push.as_ref() {
@@ -651,19 +687,30 @@ pub(crate) struct ClientLink {
     pub(crate) repair_pulls: u64,
     // Set on leaving the offline state until its recovery UPLINK went.
     pub(crate) recovered: bool,
+    // Downlink new-turn jitter (spec §4.8), with the sealing rate it
+    // measures against, a pause in the stream, and a PULL whose reply
+    // packs are not measured.
+    pub(crate) jitter: JitterMeter,
+    pub(crate) jitter_rate: u16,
+    pub(crate) stream_paused: bool,
+    pub(crate) pull_pending: bool,
+    pub(crate) pull_reply_ms: Option<u64>,
     pub(crate) schedule: uplink::Schedule,
 }
 
 impl ClientLink {
-    pub(crate) fn with_turn_ms(turn_ms: u32) -> Self {
+    pub(crate) fn new(rate: u16) -> Self {
         let mut link = Self::default();
-        link.schedule.turn_ms = turn_ms;
+        link.schedule.turn_ms = crate::turn_ms(rate);
+        link.jitter_rate = rate;
         link
     }
 
     /// The `UPLINK.link` byte (spec §3.2).
     pub(crate) fn link_byte(&self) -> u8 {
-        self.clock.state as u8 | if self.rtt.delayed { LINK_DELAYED } else { 0 }
+        self.clock.state as u8
+            | if self.rtt.delayed { LINK_DELAYED } else { 0 }
+            | if self.jitter.jittery { LINK_JITTERY } else { 0 }
     }
 }
 
@@ -689,6 +736,7 @@ pub(crate) struct ReaderLink {
     pub(crate) loss: LossStats,
     pub(crate) delayed: bool,
     pub(crate) srtt_c: u16,
+    pub(crate) jittery: bool,
     pub(crate) last_heard_ms: u64,
     pub(crate) clock: StateClock,
     pub(crate) packets_by_kind: [u64; 5],
@@ -707,6 +755,7 @@ impl ReaderLink {
             loss: LossStats::default(),
             delayed: false,
             srtt_c: 0,
+            jittery: false,
             last_heard_ms: now_ms,
             clock,
             packets_by_kind: [0; 5],
@@ -828,7 +877,8 @@ impl ReaderLink {
         previous
     }
 
-    /// K for this reader's state (spec §7.2); 0 while offline.
+    /// K for this reader's state (spec §7.2): JITTERY raises a good
+    /// reader's to 2; 0 while offline.
     pub(crate) fn piggyback_depth(&self) -> u8 {
         let by_loss = if self.loss.lossy {
             if self.loss.severe { 3 } else { 2 }
@@ -837,7 +887,7 @@ impl ReaderLink {
         };
         match self.clock.state {
             LinkState::Offline => 0,
-            LinkState::Good => 1,
+            LinkState::Good => 1 + u8::from(self.jittery),
             LinkState::Lossy => by_loss,
             LinkState::Congested => by_loss.min(2),
         }
@@ -857,6 +907,50 @@ impl ClientSession {
     /// the relay's window and is never logged.
     pub(crate) fn hop_sent(&mut self, sequence: u64) {
         self.hop.record_send(sequence, self.clock_ms);
+    }
+
+    /// One PACK's part in the downlink jitter (spec §4.8): a pack bringing a
+    /// FRAME_END at or past `recv_next` is a new-turn arrival, unless it is
+    /// part of a PULL reply, the stream is paused or the uplink is offline.
+    /// Pause and RATE records in the stream restart the reference and set
+    /// the sealing rate.
+    pub(crate) fn measure_jitter(&mut self, events: &[OrderEvent], now_ms: u64) {
+        let Some(ordering) = self.ordering.as_mut() else {
+            return;
+        };
+        let link = &mut ordering.link;
+        let recv_next = link.schedule.recv_next.max(1);
+        let newest = events
+            .iter()
+            .filter_map(|event| match event {
+                OrderEvent::Entry(crate::OrderEntry::FrameEnd { sequence, frame })
+                    if *sequence >= recv_next =>
+                {
+                    Some(*frame)
+                }
+                _ => None,
+            })
+            .max();
+        if let Some(frame) = newest
+            && !link.stream_paused
+            && link.clock.state != LinkState::Offline
+            && link.pull_reply_ms != Some(now_ms)
+        {
+            let turn_ms = link.schedule.turn_ms;
+            link.jitter.sample(now_ms, frame, link.jitter_rate, turn_ms);
+        }
+        for event in events {
+            match event {
+                OrderEvent::Entry(crate::OrderEntry::Pause { paused, .. }) => {
+                    link.stream_paused = *paused;
+                    link.jitter.restart();
+                }
+                OrderEvent::Entry(crate::OrderEntry::Rate {
+                    frames_per_second, ..
+                }) => link.jitter_rate = *frames_per_second,
+                _ => {}
+            }
+        }
     }
 
     /// ACK or STATUS feedback received at `now_ms` (spec §4.3, §4.4).
@@ -917,6 +1011,7 @@ impl ClientSession {
                 link.rto_backoff = 0;
                 // Nothing sent before the recovery is judged (spec §5.5).
                 self.hop.cursor.skip_to(self.sent + 1);
+                link.jitter.restart();
             }
             _ => {}
         }
